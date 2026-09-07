@@ -365,7 +365,7 @@ describe('SettingsNeoPage', () => {
       expect(container.textContent).toContain(
         'Визначає, коли з’являється кнопка «Показати більше».',
       );
-      expect(container.textContent).toContain('Стислий опис файлів у картках');
+      expect(container.textContent).toContain('Стислий опис файлів');
 
       saveUserDutySettings.mockClear();
       for (const [label, value] of [
@@ -668,7 +668,7 @@ describe('SettingsNeoPage', () => {
     });
 
     expect(container.textContent).toContain('Оперативний');
-    expect(container.textContent).toContain('Стислий опис файлів у картках');
+    expect(container.textContent).toContain('Стислий опис файлів');
     expect(container.querySelector('[data-message-card-mock="true"]')).not.toBeNull();
     expect(container.querySelector('[data-media-summary-mock="true"]')).toBeNull();
 
@@ -677,7 +677,7 @@ describe('SettingsNeoPage', () => {
     const switchButton = Array.from(container.querySelectorAll('button')).find(
       (button) =>
         (button.textContent === 'on' || button.textContent === 'off') &&
-        button.parentElement?.textContent?.includes('Стислий опис файлів у картках'),
+        button.parentElement?.textContent?.includes('Стислий опис файлів'),
     );
     expect(switchButton).toBeTruthy();
 
@@ -734,7 +734,7 @@ describe('SettingsNeoPage', () => {
 
     expect(container.querySelector('#settings-neo-panel-duty')).not.toBeNull();
     expect(container.textContent).toContain('Оперативний');
-    expect(container.textContent).toContain('Стислий опис файлів у картках');
+    expect(container.textContent).toContain('Стислий опис файлів');
   });
 
   it('renders the my reports tab as a redirect', async () => {

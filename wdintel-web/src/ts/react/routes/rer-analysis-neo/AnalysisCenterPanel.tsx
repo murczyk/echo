@@ -252,12 +252,12 @@ export function AnalysisCenterPanel({
             onToggleMessageBookmark={page.onToggleMessageBookmark}
             onToggleMessageImportant={page.onToggleMessageImportant}
             onToggleMessageTag={page.onToggleMessageTag}
-            onAddFrequencyToFilter={page.addFrequencyToFilter}
             profiles={page.profiles}
             tagsMap={page.tagsMap}
             tagsOrder={page.tagsOrder}
             tagsLoading={page.filtersLoading && Object.keys(page.tagsMap).length === 0}
             tagsLayout={page.tagsLayout}
+            collapseMediaPreviews={page.collapseMediaPreviews}
             mediaSummaryEnabled={page.mediaSummaryEnabled}
             messageTextPreviewLines={page.messageTextPreviewLines}
             showCallsignAddForm={page.showAnalysisCallsignAddForm}

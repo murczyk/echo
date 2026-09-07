@@ -99,6 +99,8 @@ export function SettingsDutySection({
             onMessageTextPreviewLinesChange={onMessageTextPreviewLinesChange}
             mediaSummaryEnabled={mediaSummaryEnabled}
             onMediaSummaryEnabledChange={onMediaSummaryEnabledChange}
+            collapseMediaPreviews={collapseMediaPreviews}
+            onCollapseMediaPreviewsChange={onCollapseMediaPreviewsChange}
             loadInProgress={loadInProgress}
           />
 
@@ -115,32 +117,6 @@ export function SettingsDutySection({
               <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 0.8 }}>
                 Стрічки
               </Typography>
-              <FormControlLabel
-                sx={{
-                  alignItems: 'flex-start',
-                  m: 0,
-                  gap: 1.5,
-                  '& .MuiFormControlLabel-label': { width: '100%' },
-                }}
-                control={
-                  <Switch
-                    checked={collapseMediaPreviews}
-                    onChange={(_, checked) => onCollapseMediaPreviewsChange(checked)}
-                    disabled={loadInProgress}
-                  />
-                }
-                label={
-                  <Stack spacing={0.75} sx={{ pt: 0.25 }}>
-                    <Typography variant="body1" sx={{ fontWeight: 600, lineHeight: 1.35 }}>
-                      Згортати медіа в картках
-                    </Typography>
-                    <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
-                      Аудіо, фото, відео та координати показуються компактним банером (наприклад «1
-                      аудіо») і розгортаються лише після натискання. Прискорює прокрутку стрічок.
-                    </Typography>
-                  </Stack>
-                }
-              />
               <FormControlLabel
                 sx={{
                   alignItems: 'flex-start',

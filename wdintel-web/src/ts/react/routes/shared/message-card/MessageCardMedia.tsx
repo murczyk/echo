@@ -13,7 +13,7 @@ import {
   useAudioTranscriptionPreferences,
 } from './MessageCardAudioTranscription';
 
-const AUDIO_PLAYER_MIN_HEIGHT_PX = 48;
+const AUDIO_PLAYER_MIN_HEIGHT_PX = 40;
 const AUDIO_PLAYER_TOP_PADDING_PX = 0;
 const AUDIO_PLAYER_Z_INDEX = 0;
 const AUDIO_DERIVED_IMAGE_MAX_SOURCE_SIZE_BYTES = 100 * 1024 * 1024;
@@ -297,20 +297,17 @@ export function MessageMediaAudioPlayer({
 
   return (
     <div className={`w-full min-w-0${showTranscription ? ' audio-transcription-layout' : ''}`}>
-      <div className="audio-player-row flex w-full min-w-0 items-stretch gap-2">
+      <div className="audio-player-row message-card-audio-row flex w-full min-w-0 items-stretch gap-2">
         <div
           ref={hostRef}
-          className="relative z-0 flex w-full min-h-12 min-w-0 max-w-[460px] items-stretch overflow-hidden pb-1"
+          className="message-card-audio-host relative z-0 flex min-w-0 flex-1 items-stretch overflow-hidden"
           data-audio-player-host
           data-audio-player-min-height-px={AUDIO_PLAYER_MIN_HEIGHT_PX}
           data-audio-player-top-padding-px={AUDIO_PLAYER_TOP_PADDING_PX}
           data-audio-player-z-index={AUDIO_PLAYER_Z_INDEX}
         />
         <Tooltip title={downloadLabel} enterDelay={400}>
-          <MessageCardDisabledControlCursorWrapper
-            className="self-stretch items-center"
-            disabled={downloading}
-          >
+          <MessageCardDisabledControlCursorWrapper className="items-center" disabled={downloading}>
             <Button
               component="a"
               size="small"
@@ -370,9 +367,10 @@ export function MessageMediaAudioPlayer({
 
 export function MessageMediaDownloadLink({
   attachment,
+  selected = false,
   isDownloadStarting,
   onDownloadStart,
-}: { attachment: MessageMediaInfo } & MessageCardDownloadGuardProps) {
+}: { attachment: MessageMediaInfo; selected?: boolean } & MessageCardDownloadGuardProps) {
   const displayName = mediaAttachmentDisplayName(attachment);
   const downloadKey = messageCardMediaDownloadKey(String(attachment.id));
   const downloading = isDownloadStarting(downloadKey);
@@ -391,6 +389,8 @@ export function MessageMediaDownloadLink({
           disabled={downloading}
           aria-busy={downloading}
           aria-label={downloading ? 'Завантаження…' : undefined}
+          aria-current={selected ? 'true' : undefined}
+          data-summary-selected={selected ? 'true' : undefined}
           onClick={(event) =>
             guardMessageCardDownloadClick(event, downloadKey, {
               isDownloadStarting,
@@ -411,9 +411,12 @@ export function MessageMediaDownloadLink({
             fontWeight: 500,
             color: 'text.primary',
             borderColor: 'divider',
+            ...(selected
+              ? { borderColor: 'primary.main', boxShadow: 1, backgroundColor: 'action.selected' }
+              : {}),
             '&:hover': {
-              backgroundColor: 'action.hover',
-              borderColor: 'text.primary',
+              backgroundColor: selected ? 'action.selected' : 'action.hover',
+              borderColor: selected ? 'primary.main' : 'text.primary',
             },
             alignSelf: 'flex-start',
             overflow: 'hidden',
@@ -535,7 +538,10 @@ export function MessageMediaThumbnailDownloadLink({
   const label = `Завантажити вкладення: ${displayName}`;
   return (
     <Tooltip title={label} enterDelay={400}>
-      <MessageCardDisabledControlCursorWrapper disabled={downloading}>
+      <MessageCardDisabledControlCursorWrapper
+        disabled={downloading}
+        className="message-card-thumbnail-download"
+      >
         <IconButton
           component="a"
           href={href}
@@ -554,10 +560,6 @@ export function MessageMediaThumbnailDownloadLink({
             });
           }}
           sx={{
-            position: 'absolute',
-            top: 5,
-            right: 5,
-            zIndex: 3,
             width: 22,
             height: 22,
             color: 'rgba(255, 255, 255, 0.92)',

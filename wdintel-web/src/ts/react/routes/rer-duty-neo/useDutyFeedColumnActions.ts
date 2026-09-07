@@ -46,7 +46,6 @@ export function useDutyFeedColumnActions(
       removeMessageFeed,
       handleMessageBookmark,
       handleMessageImportant,
-      addFrequencyToFilter,
       handleMessageCopy,
       applyFilter,
       handleToggleTag,
@@ -74,7 +73,6 @@ export function useDutyFeedColumnActions(
         handleMessageBookmark(feedId, msgId, currentlyBookmarked),
       onMessageImportant: (msgId, currentlyImportant) =>
         handleMessageImportant(feedId, msgId, currentlyImportant),
-      onMessageAddFrequencyToFilter: (_feedId, freq) => addFrequencyToFilter(feedId, freq),
       onMessageCopy: handleMessageCopy,
       onMessageCreateReport: (messageId, message) => {
         deps.openReportComposer({ id: messageId, message });
@@ -165,8 +163,6 @@ export function useDutyFeedColumnActions(
         latest().onMessageBookmark(msgId, currentlyBookmarked),
       onMessageImportant: (msgId, currentlyImportant) =>
         latest().onMessageImportant(msgId, currentlyImportant),
-      onMessageAddFrequencyToFilter: (fId, freq) =>
-        latest().onMessageAddFrequencyToFilter(fId, freq),
       onMessageCopy: (text, feedbackId) => latest().onMessageCopy(text, feedbackId),
       onMessageCreateReport: (msgId, message) => latest().onMessageCreateReport(msgId, message),
       onMessageEditReport: (reportId) => latest().onMessageEditReport(reportId),

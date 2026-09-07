@@ -21,7 +21,7 @@ Rules:
 - Do not interpret this rule as "remove all MUI".
 - Closed menus, dialogs, and popovers should remain unmounted when practical.
 - Preserve `memo`, stable default references, and conditional rendering used to reduce repeated work.
-- On Duty, when user setting `dutyCollapseMediaPreviews` is on (default), heavy media stays behind reveal banners until opened; do not mount those players/previews on every closed card by default.
+- On Duty, when user setting `dutyCollapseMediaPreviews` is on (default), heavy attachments stay behind one exclusive reveal section until opened; do not mount those players/previews on every closed card by default.
 - If a requested change needs structural layout inside the protected hot path, stop and call out the performance trade-off before implementing it.
 
 ## Theme parity
@@ -36,3 +36,7 @@ Rules:
 - Keep leaf MUI components when they provide the required theme, accessibility, or interaction behavior.
 - Use filled MUI icons for actionable controls by default; use outlined variants only where an established visual or semantic convention specifically requires them.
 - MUI buttons rendered as anchors within `.rer-duty` must locally override generic link-inheritance styles with higher-specificity `sx` when using a semantic contained color.
+
+Coordinate values do not belong in the MessageCard header metadata ribbon. Previewable coordinates belong to the attachment area; nonempty raw `msg.coords` values that cannot be previewed are rendered only as textual fallback in the main card content.
+
+Attachment category controls intentionally use the Figma-specified outlined media, document, coordinate, and speaker icons. This is an established exception to the default filled-action-icon rule; do not replace them with filled variants solely because the controls are actionable.

@@ -18,6 +18,7 @@ import { MessageCardWatermark } from './MessageCardWatermark';
 import type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
 import {
   MessageCardHeader,
+  MessageCardMetadata,
   type MessageCardDisplayMode,
   type MessageCardHeaderProps,
 } from './MessageCardHeader';
@@ -131,7 +132,6 @@ export type MessageCardProps = {
   onCopyTextWithNetworkAndNote?: () => void;
   onCopyEtalon?: () => void;
   onCopyLocation?: () => void;
-  onAddFrequencyToFilter?: (freq: string) => void;
   onCreateReport?: () => void;
   onEditReport?: (reportId: number) => void;
   onDelete?: () => void;
@@ -192,7 +192,6 @@ function MessageCardComponent({
   onCopyTextWithNetworkAndNote,
   onCopyEtalon,
   onCopyLocation,
-  onAddFrequencyToFilter,
   onCreateReport,
   onEditReport,
   onDelete,
@@ -328,8 +327,6 @@ function MessageCardComponent({
     id,
     msg,
     copiedFeedbackId,
-    groupName,
-    senderName,
     etalonDisplayModel,
     mapHref,
     analysisHref,
@@ -344,11 +341,9 @@ function MessageCardComponent({
     onCopyTextWithNetworkAndNote,
     onCopyEtalon: onCopyEtalonAction,
     onCopyLocation: onCopyLocationAction,
-    onAddFrequencyToFilter,
     onDelete,
     onEditDetails,
     onExcludeMessageEntity,
-    metadataTrigger,
     excludeMenuOptions,
     attachmentArchiveDownload,
     readOnly,
@@ -358,13 +353,10 @@ function MessageCardComponent({
   return (
     <li
       ref={messageRootRef as React.RefObject<HTMLLIElement>}
-      className="list-none flex flex-col px-0 pb-3 mb-0"
+      className="message-card-item list-none flex flex-col px-0 pb-[12px] mb-0"
       style={displayMode === 'analysis' ? ANALYSIS_MESSAGE_CARD_VISIBILITY_STYLE : undefined}
     >
-      <MessageCardRoot
-        className="message-card-root relative flex flex-col w-full px-[12px] py-[10px] rounded bg-(--color-card) overflow-hidden"
-        style={{ gap: compactLayout ? '10px' : '12px' }}
-      >
+      <MessageCardRoot className="message-card-root relative flex w-full flex-col overflow-hidden">
         {watermarkUserName !== '' && (
           <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
             <MessageCardWatermark authUserName={watermarkUserName} />
@@ -372,6 +364,15 @@ function MessageCardComponent({
         )}
         <MessageCardHeader {...headerProps} />
         <MessageCardContentWithDownloadGuard
+          metadata={
+            <MessageCardMetadata
+              msg={msg}
+              groupName={groupName}
+              senderName={senderName}
+              etalonDisplayModel={etalonDisplayModel}
+              metadataTrigger={metadataTrigger}
+            />
+          }
           messageId={id}
           msg={msg}
           tagsMap={tagsMap}

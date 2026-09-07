@@ -124,8 +124,8 @@ export function useMessageUppy(busy: boolean, occupiedAttachmentCount = 0) {
       if (file) forgetMessageUploadFailure(uppy, file.id);
       updateFiles();
     };
-    const handleFileRemoved = (file: UppyFile<any, any>) => {
-      forgetMessageUploadFailure(uppy, file.id);
+    const handleFileRemoved = (file: UppyFile<any, any> | undefined) => {
+      if (file) forgetMessageUploadFailure(uppy, file.id);
       updateFilesAndClearError();
     };
 

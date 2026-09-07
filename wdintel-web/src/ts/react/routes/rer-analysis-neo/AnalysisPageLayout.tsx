@@ -227,15 +227,28 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
 
       {!analysisMapVisible ? <CreateMessageFab onClick={() => setCreateMessageOpen(true)} /> : null}
       <ManageMessageDrawer
-        open={createMessageOpen || isPresent(page.editorMessage) || isPresent(page.reportSource)}
+        open={
+          createMessageOpen ||
+          isPresent(page.editorMessage) ||
+          isPresent(page.reportSource) ||
+          (page.editTargetLoadState?.status !== undefined &&
+            page.editTargetLoadState.status !== 'idle')
+        }
         cyberEchoEnabled={page.cyberEchoEnabled}
         currentUser={page.currentUser}
         editTarget={page.editorMessage}
         editAsReport={page.editorEditAsReport}
+        editTargetLoadState={page.editTargetLoadState}
+        onRetryEditTargetLoad={page.retryEditTargetLoad}
         reportSource={page.reportSource}
         editSaveInFlight={page.editorSaveInFlight}
         onClose={() => {
-          if (isPresent(page.editorMessage) || isPresent(page.reportSource)) {
+          if (
+            isPresent(page.editorMessage) ||
+            isPresent(page.reportSource) ||
+            (page.editTargetLoadState?.status !== undefined &&
+              page.editTargetLoadState.status !== 'idle')
+          ) {
             page.closeEditor();
           } else {
             setCreateMessageOpen(false);
