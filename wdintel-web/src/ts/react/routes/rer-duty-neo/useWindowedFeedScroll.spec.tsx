@@ -5,6 +5,7 @@ import { act, useRef, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWindowedFeedScroll } from './useWindowedFeedScroll';
+import { useRerDutyNavigation } from './useRerDutyNavigation';
 
 const renderedItemRefs = new Map<number, (node: HTMLDivElement | null) => void>();
 let latestScrollHandle: ReturnType<typeof useWindowedFeedScroll> | null = null;
@@ -1862,6 +1863,90 @@ describe('useWindowedFeedScroll', () => {
 
     expect(onLanded).not.toHaveBeenCalled();
     expect(scroller.scrollTop).toBeLessThan(200);
+  });
+
+  it.each(['layout wait', 'easing'] as const)(
+    '#3400 releases arrow loading when its scroll owner unmounts during %s',
+    async (phase) => {
+      let navigationOwner: ReturnType<typeof useRerDutyNavigation> | null = null;
+      const NavigationHarness = ({
+        visible,
+        enabled = true,
+      }: {
+        visible: boolean;
+        enabled?: boolean;
+      }) => {
+        navigationOwner = useRerDutyNavigation();
+        return visible ? (
+          <TestScroller ids={[1, 2]} autoScrollAllowed={false} enabled={enabled} />
+        ) : null;
+      };
+      vi.spyOn(window, 'matchMedia').mockImplementation(
+        () => ({ matches: false }) as MediaQueryList,
+      );
+
+      await act(async () => {
+        root.render(<NavigationHarness visible />);
+      });
+      const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+      setClampedScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 1_000 });
+      const operation = navigationOwner!.beginExplicitNavigation('mf-0');
+      const releaseLoading = vi.fn();
+      const landed = vi.fn();
+      navigationOwner!.registerExplicitLoading(operation, releaseLoading);
+      navigationOwner!.registerExplicitLanding(operation, { id: 2, timestamp: 200 }, landed);
+      const navigation = navigationOwner!.getExplicitScrollNavigation(
+        'mf-0',
+        operation.generation,
+      )!;
+
+      act(() => latestScrollHandle?.scrollToBottom('smooth', 'explicit', navigation));
+      if (phase === 'easing') {
+        await act(async () => {
+          await waitForAnimationFrame();
+          await waitForAnimationFrame();
+          await waitForAnimationFrame();
+          await waitForAnimationFrame();
+        });
+        expect(scroller.scrollTop).toBeGreaterThan(0);
+      }
+
+      await act(async () => {
+        root.render(<NavigationHarness visible={false} />);
+      });
+
+      expect(landed).not.toHaveBeenCalled();
+      expect(releaseLoading).toHaveBeenCalledTimes(1);
+      expect(navigationOwner!.isExplicitNavigationLoading('mf-0')).toBe(false);
+    },
+  );
+
+  it('#3400 releases arrow loading when its scroll owner becomes disabled', async () => {
+    let navigationOwner: ReturnType<typeof useRerDutyNavigation> | null = null;
+    const NavigationHarness = ({ enabled }: { enabled: boolean }) => {
+      navigationOwner = useRerDutyNavigation();
+      return <TestScroller ids={[1, 2]} autoScrollAllowed={false} enabled={enabled} />;
+    };
+    vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: false }) as MediaQueryList);
+
+    await act(async () => {
+      root.render(<NavigationHarness enabled />);
+    });
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setClampedScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 1_000 });
+    const operation = navigationOwner!.beginExplicitNavigation('mf-0');
+    const releaseLoading = vi.fn();
+    navigationOwner!.registerExplicitLoading(operation, releaseLoading);
+    navigationOwner!.registerExplicitLanding(operation, { id: 2, timestamp: 200 }, vi.fn());
+    const navigation = navigationOwner!.getExplicitScrollNavigation('mf-0', operation.generation)!;
+    act(() => latestScrollHandle?.scrollToBottom('smooth', 'explicit', navigation));
+
+    await act(async () => {
+      root.render(<NavigationHarness enabled={false} />);
+    });
+
+    expect(releaseLoading).toHaveBeenCalledTimes(1);
+    expect(navigationOwner!.isExplicitNavigationLoading('mf-0')).toBe(false);
   });
 
   it('pins follow-tail appends after layout stabilizes when reduced motion is preferred', async () => {

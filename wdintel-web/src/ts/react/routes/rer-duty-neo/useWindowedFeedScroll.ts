@@ -189,6 +189,8 @@ export function useWindowedFeedScroll({
     const currentItemIds = refs.itemIdsRef.current;
     const topStatusChanged = refs.previousTopStatusRef.current !== topStatus;
     if (!enabled) {
+      follow.stopBottomSettle();
+      follow.clearFollowScroll();
       return;
     }
     refs.previousTopStatusRef.current = topStatus;

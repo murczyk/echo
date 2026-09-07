@@ -421,6 +421,48 @@ test('#3360 lets an OFF arrow land an explicitly requested tail page', async ({ 
   await expect(page.getByText('Завантажено нові повідомлення')).toBeVisible();
 });
 
+test('#3400 releases narrow-screen arrow loading when its scroll owner is replaced', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 800, height: 900 });
+  const arrowRequestStarted = createDeferred<void>();
+  const arrowResponse = createDeferred<InboxMessagesRspRaw>();
+  let newerRequestCount = 0;
+  await installRerDutyShortStateMocks(page, {
+    disableAutoScroll: true,
+    inboxCountResponseForRequest: () => ({ quantity: 1, first_element_ts: null }),
+    inboxResponseForRequest: (requestBody) => {
+      if (readSinceId(requestBody) === 40) {
+        newerRequestCount += 1;
+        if (newerRequestCount === 1) {
+          arrowRequestStarted.resolve();
+          return arrowResponse.promise;
+        }
+        return buildInboxResponse([]);
+      }
+      if (readSinceId(requestBody) !== null) return buildInboxResponse([]);
+      return buildInboxResponse(initialInboxIds);
+    },
+  });
+
+  await page.goto('/rer-duty-neo?state-short=short-1');
+  const arrow = page.getByRole('button', { name: 'Завантажити нові та перейти вниз' });
+  await page.getByRole('button', { name: 'Додати стрічку' }).click();
+  await expect(page.getByRole('tab', { name: 'Стрічка 1' })).toBeVisible();
+  await page.getByRole('tab', { name: 'Стрічка 1' }).click();
+  await expect(page.locator('[data-duty-message-id="40"]')).toBeAttached();
+  await arrow.click();
+  await arrowRequestStarted.promise;
+  arrowResponse.resolve(buildInboxResponse([41]));
+
+  await page.getByRole('tab', { name: 'Стрічка 2' }).click();
+  await expect(page.locator('[data-duty-feed-column-active="true"]')).toBeVisible();
+  await page.getByRole('tab', { name: 'Стрічка 1' }).click();
+  await expect(arrow).toBeEnabled();
+  await arrow.click();
+  await expect(arrow).toBeEnabled();
+});
+
 test('#3360 verifies an OFF arrow landing when a positive count has no newer page', async ({
   page,
 }) => {
