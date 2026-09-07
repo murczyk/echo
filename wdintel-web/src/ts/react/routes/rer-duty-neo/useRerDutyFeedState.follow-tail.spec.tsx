@@ -2,7 +2,7 @@
  * @vitest-environment happy-dom
  */
 import React, { act } from 'react';
-import type { Root } from 'react-dom/client';
+import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InboxMessage, InboxMessagesRsp } from '../../../../Bindings';
 import { minimalInboxMessage } from './inbox-message-mocks';
@@ -14,6 +14,7 @@ import {
   rangeRsp,
   settleReactCommits as flushMicrotasks,
 } from './useRerDutyFeedState.test-utils';
+import { useRerDutyFeedInteractionActions } from './useRerDutyFeedInteractionActions';
 import {
   DUTY_FEED_UNREAD_PREFETCH_MIN,
   DUTY_FEED_MESSAGE_WINDOW_LIMIT,
@@ -99,6 +100,7 @@ describe('useRerDutyFeedState — follow tail and scheduled scrolling', () => {
       await apiRef.current!.loadFeedNewerMessages('mf-0', {
         scrollToEndAfterLoad: true,
         followGeneration: generation,
+        explicitNavigation: true,
       });
       await flushMicrotasks();
     });
@@ -161,26 +163,72 @@ describe('useRerDutyFeedState — follow tail and scheduled scrolling', () => {
     runNextRaf();
     runNextRaf();
     expect(scrollToEnd).toHaveBeenCalledTimes(1);
-    expect(scrollToEnd).toHaveBeenCalledWith('smooth');
+    expect(scrollToEnd).toHaveBeenCalledWith('smooth', { intent: 'automatic-follow' });
   });
 
-  it('runs an explicit follow pin with continuous auto-scroll disabled', async () => {
+  it('#3360 lands an OFF arrow operation once after its target renders', async () => {
     const { apiRef, scrollToEnd } = await mountLoadedFeed(true);
-    const generation = apiRef.current!.beginFollowTail('mf-0');
+    let handleArrowClick: ((feedId: string) => Promise<void>) | null = null;
+    function ArrowActions() {
+      const feedState = apiRef.current!;
+      handleArrowClick = useRerDutyFeedInteractionActions({
+        messageFeeds: feedState.messageFeeds,
+        showArrowResult: feedState.showArrowResult,
+        columnRefsRef: feedState.columnRefsRef,
+        setWatchModeByFeedId: feedState.setWatchModeByFeedId,
+        setLoadingNewerFeedIds: feedState.setLoadingNewerFeedIds,
+        loadFeedInitialMessages: feedState.loadFeedInitialMessages,
+        loadFeedNewerMessages: feedState.loadFeedNewerMessages,
+        flushPendingNewerMessages: feedState.flushPendingNewerMessages,
+        requestValidatedInboxCount: feedState.requestValidatedInboxCount,
+        catchUpFeedUnreadToTail: feedState.catchUpFeedUnreadToTail,
+        dutyDisableAutoScroll: true,
+        setMessageFeeds: feedState.setMessageFeeds,
+        beginExplicitNavigation: feedState.beginExplicitNavigation,
+        isExplicitNavigationCurrent: feedState.isExplicitNavigationCurrent,
+        registerExplicitLanding: feedState.registerExplicitLanding,
+        getExplicitScrollNavigation: feedState.getExplicitScrollNavigation,
+        registerExplicitLoading: feedState.registerExplicitLoading,
+        cancelExplicitNavigation: feedState.cancelExplicitNavigation,
+        registerExplicitScheduledWork: feedState.registerExplicitScheduledWork,
+        clearExplicitScheduledWork: feedState.clearExplicitScheduledWork,
+      }).handleArrowClick;
+      return null;
+    }
+    const host = document.createElement('div');
+    const actionRoot = createRoot(host);
+    document.body.appendChild(host);
+    hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 1, firstElementTs: null });
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
       inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]),
     );
 
-    await act(async () => {
-      await apiRef.current!.loadFeedNewerMessages('mf-0', {
-        scrollToEndAfterLoad: true,
-        followGeneration: generation,
+    try {
+      await act(async () => actionRoot.render(<ArrowActions />));
+      await act(async () => {
+        await handleArrowClick!('mf-0');
+        await flushMicrotasks();
       });
-      await flushMicrotasks();
-    });
-    runNextRaf();
-    runNextRaf();
-    expect(scrollToEnd).toHaveBeenCalledTimes(1);
+      expect(apiRef.current!.messageFeeds[0].readIds.has(2)).toBe(false);
+
+      runNextRaf();
+      expect(scrollToEnd).toHaveBeenCalledTimes(1);
+      const navigation = scrollToEnd.mock.calls[0][1]?.navigation;
+      expect(navigation).toMatchObject({ targetId: 2, feedId: 'mf-0' });
+      expect(navigation?.isCurrent()).toBe(true);
+
+      navigation?.onLanded();
+      runNextRaf();
+      runNextRaf();
+      await act(async () => flushMicrotasks());
+
+      expect(scrollToEnd).toHaveBeenCalledTimes(1);
+      expect(apiRef.current!.messageFeeds[0].readIds.has(2)).toBe(true);
+      expect(apiRef.current!.arrowResultByFeedId['mf-0']).toBe('Завантажено нові повідомлення');
+    } finally {
+      act(() => actionRoot.unmount());
+      host.remove();
+    }
   });
 
   it('restores available after a confirmed-tail request fails', async () => {

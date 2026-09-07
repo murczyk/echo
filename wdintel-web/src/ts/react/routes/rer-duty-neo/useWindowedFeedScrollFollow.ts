@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { recordDutyScrollDebugEvent } from './duty-scroll-debug';
 import {
   DUTY_FOLLOW_LAYOUT_STABLE_FRAMES,
@@ -12,6 +12,8 @@ import {
   INITIAL_BOTTOM_SETTLE_FRAMES,
   INITIAL_BOTTOM_SETTLE_TIMEOUT_MS,
   nowMs,
+  ScrollNavigationIntent,
+  type ExplicitScrollNavigation,
   type ScrollStateOpts,
   type WindowedFeedScrollRefs,
 } from './windowed-feed-scroll-shared';
@@ -23,6 +25,29 @@ export function useWindowedFeedScrollFollow(args: {
   updateScrollState: (opts?: ScrollStateOpts) => void;
 }) {
   const { refs, debugFeedId, captureAnchorSnapshot, updateScrollState } = args;
+  const explicitNavigationRef = useRef<ExplicitScrollNavigation | null>(null);
+
+  const isOwnedExplicitNavigation = useCallback((navigation: ExplicitScrollNavigation) => {
+    const owned = explicitNavigationRef.current;
+    return owned?.feedId === navigation.feedId && owned.generation === navigation.generation;
+  }, []);
+
+  const detachExplicitNavigation = useCallback(
+    (navigation: ExplicitScrollNavigation) => {
+      if (!isOwnedExplicitNavigation(navigation)) return false;
+      explicitNavigationRef.current = null;
+      return true;
+    },
+    [isOwnedExplicitNavigation],
+  );
+
+  const abandonExplicitNavigation = useCallback(
+    (navigation = explicitNavigationRef.current) => {
+      if (!navigation || !detachExplicitNavigation(navigation)) return;
+      navigation.onUnavailable();
+    },
+    [detachExplicitNavigation],
+  );
 
   const stopBottomSettle = useCallback(() => {
     const wasActive = refs.bottomSettleActiveRef.current;
@@ -48,7 +73,8 @@ export function useWindowedFeedScrollFollow(args: {
       refs.followScrollRafRef.current = null;
     }
     refs.followScrollWaitRef.current = null;
-  }, [refs]);
+    abandonExplicitNavigation();
+  }, [abandonExplicitNavigation, refs]);
 
   useEffect(() => stopBottomSettle, [stopBottomSettle]);
   useEffect(() => () => clearFollowScroll(), [clearFollowScroll]);
@@ -56,15 +82,38 @@ export function useWindowedFeedScrollFollow(args: {
   const scrollToBottom = useCallback(
     (
       behavior: ScrollBehavior = 'auto',
-      debugReason = 'imperative',
+      intent: ScrollNavigationIntent = ScrollNavigationIntent.Explicit,
       options?: { enableFollow?: boolean; skipLayoutWait?: boolean },
+      navigation?: ExplicitScrollNavigation,
     ) => {
-      if (!refs.enabledRef.current) return;
+      const debugReason = intent;
+      if (intent === ScrollNavigationIntent.Explicit && navigation) {
+        if (!isOwnedExplicitNavigation(navigation)) abandonExplicitNavigation();
+        explicitNavigationRef.current = navigation;
+      }
+      if (!refs.enabledRef.current) {
+        if (navigation) abandonExplicitNavigation(navigation);
+        return;
+      }
+      if (intent !== ScrollNavigationIntent.Explicit && !refs.autoScrollAllowedRef.current) return;
       const scroller = refs.scrollerRef.current;
-      if (!scroller) return;
+      if (!scroller) {
+        if (navigation) abandonExplicitNavigation(navigation);
+        return;
+      }
+      const confirmLanding = (active: HTMLDivElement) => {
+        if (!navigation || !navigation.isCurrent()) return;
+        if (!refs.itemRefsRef.current.has(navigation.targetId)) {
+          abandonExplicitNavigation(navigation);
+          return;
+        }
+        if (distanceToBottom(active) <= 1 && detachExplicitNavigation(navigation)) {
+          navigation.onLanded();
+        }
+      };
       // Pending poll scrollToEnd('smooth') races layout; wait until height is stable first.
       if (behavior === 'smooth' && options?.skipLayoutWait !== true) {
-        refs.scheduleFollowScrollWhenStableRef.current?.(debugReason);
+        refs.scheduleFollowScrollWhenStableRef.current?.(debugReason, intent, options, navigation);
         return;
       }
 
@@ -121,6 +170,7 @@ export function useWindowedFeedScrollFollow(args: {
             allowTopReached: false,
           });
           captureAnchorSnapshot();
+          confirmLanding(active);
           recordDutyScrollDebugEvent(
             debugFeedId,
             'scroll-to-bottom',
@@ -151,6 +201,18 @@ export function useWindowedFeedScrollFollow(args: {
           if (!refs.enabledRef.current) {
             refs.followAnimatingRef.current = false;
             refs.smoothFollowUntilMsRef.current = 0;
+            if (navigation) abandonExplicitNavigation(navigation);
+            return;
+          }
+          if (navigation && !navigation.isCurrent()) {
+            refs.followAnimatingRef.current = false;
+            refs.smoothFollowUntilMsRef.current = 0;
+            detachExplicitNavigation(navigation);
+            return;
+          }
+          if (intent !== ScrollNavigationIntent.Explicit && !refs.autoScrollAllowedRef.current) {
+            refs.followAnimatingRef.current = false;
+            refs.smoothFollowUntilMsRef.current = 0;
             return;
           }
           if (enableFollow && refs.liveBottomFollowRef.current !== true) {
@@ -162,6 +224,7 @@ export function useWindowedFeedScrollFollow(args: {
           if (!active) {
             refs.followAnimatingRef.current = false;
             refs.smoothFollowUntilMsRef.current = 0;
+            if (navigation) abandonExplicitNavigation(navigation);
             return;
           }
           const frameNowMs = nowMs();
@@ -226,7 +289,8 @@ export function useWindowedFeedScrollFollow(args: {
         allowTopReached: false,
       });
       captureAnchorSnapshot();
-      if (!debugReason.startsWith('settle:')) {
+      confirmLanding(scroller);
+      if (intent !== ScrollNavigationIntent.Initial) {
         recordDutyScrollDebugEvent(
           debugFeedId,
           'scroll-to-bottom',
@@ -234,11 +298,19 @@ export function useWindowedFeedScrollFollow(args: {
         );
       }
     },
-    [captureAnchorSnapshot, debugFeedId, refs, updateScrollState],
+    [
+      abandonExplicitNavigation,
+      captureAnchorSnapshot,
+      debugFeedId,
+      detachExplicitNavigation,
+      isOwnedExplicitNavigation,
+      refs,
+      updateScrollState,
+    ],
   );
 
   const startBottomSettle = useCallback(() => {
-    if (!refs.enabledRef.current) return;
+    if (!refs.enabledRef.current || !refs.autoScrollAllowedRef.current) return;
     stopBottomSettle();
     if (!refs.scrollerRef.current) return;
 
@@ -252,7 +324,8 @@ export function useWindowedFeedScrollFollow(args: {
 
     if (typeof ResizeObserver !== 'undefined') {
       const observer = new ResizeObserver(() => {
-        if (refs.bottomSettleActiveRef.current) scrollToBottom('auto', 'settle:resize');
+        if (refs.bottomSettleActiveRef.current)
+          scrollToBottom('auto', ScrollNavigationIntent.Initial);
       });
       refs.bottomSettleResizeObserverRef.current = observer;
       if (refs.scrollerRef.current) observer.observe(refs.scrollerRef.current);
@@ -269,7 +342,7 @@ export function useWindowedFeedScrollFollow(args: {
         refs.bottomSettleRafRef.current = null;
         return;
       }
-      scrollToBottom('auto', 'settle:frame');
+      scrollToBottom('auto', ScrollNavigationIntent.Initial);
       refs.bottomSettleFramesRemainingRef.current -= 1;
       if (refs.bottomSettleFramesRemainingRef.current > 0) {
         refs.bottomSettleRafRef.current = requestAnimationFrame(settleFrame);
@@ -281,8 +354,14 @@ export function useWindowedFeedScrollFollow(args: {
   }, [debugFeedId, refs, scrollToBottom, stopBottomSettle]);
 
   const scheduleFollowScrollWhenStable = useCallback(
-    (debugReason: string, options?: { enableFollow?: boolean }) => {
+    (
+      debugReason: string,
+      intent: ScrollNavigationIntent,
+      options?: { enableFollow?: boolean },
+      navigation?: ExplicitScrollNavigation,
+    ) => {
       const enableFollow = options?.enableFollow !== false;
+      if (intent !== ScrollNavigationIntent.Explicit && !refs.autoScrollAllowedRef.current) return;
       const now = nowMs();
       const scroller = refs.scrollerRef.current;
       const height = scroller?.scrollHeight ?? 0;
@@ -301,6 +380,7 @@ export function useWindowedFeedScrollFollow(args: {
 
       refs.followScrollWaitRef.current = {
         debugReason,
+        intent,
         startedAtMs: now,
         lastHeight: height,
         stableFrames: 0,
@@ -319,6 +399,11 @@ export function useWindowedFeedScrollFollow(args: {
         if (!wait) return;
         if (!refs.enabledRef.current) {
           refs.followScrollWaitRef.current = null;
+          if (navigation) abandonExplicitNavigation(navigation);
+          return;
+        }
+        if (wait.intent !== ScrollNavigationIntent.Explicit && !refs.autoScrollAllowedRef.current) {
+          refs.followScrollWaitRef.current = null;
           return;
         }
         if (wait.enableFollow && refs.liveBottomFollowRef.current !== true) {
@@ -328,6 +413,7 @@ export function useWindowedFeedScrollFollow(args: {
         const activeScroller = refs.scrollerRef.current;
         if (!activeScroller) {
           refs.followScrollWaitRef.current = null;
+          if (navigation) abandonExplicitNavigation(navigation);
           return;
         }
 
@@ -356,15 +442,20 @@ export function useWindowedFeedScrollFollow(args: {
           'follow:layout-stable',
           `reason=${wait.debugReason}; height=${nextHeight.toFixed(1)}; frames=${wait.stableFrames}; timedOut=${timedOut}; behavior=${nextBehavior}; enableFollow=${wait.enableFollow}`,
         );
-        scrollToBottom(nextBehavior, wait.debugReason, {
-          skipLayoutWait: true,
-          enableFollow: wait.enableFollow,
-        });
+        scrollToBottom(
+          nextBehavior,
+          wait.intent,
+          {
+            skipLayoutWait: true,
+            enableFollow: wait.enableFollow,
+          },
+          navigation,
+        );
       };
 
       refs.followScrollRafRef.current = requestAnimationFrame(tick);
     },
-    [debugFeedId, refs, scrollToBottom, stopBottomSettle],
+    [abandonExplicitNavigation, debugFeedId, refs, scrollToBottom, stopBottomSettle],
   );
   refs.scheduleFollowScrollWhenStableRef.current = scheduleFollowScrollWhenStable;
 

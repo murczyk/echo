@@ -21,11 +21,11 @@ Implementation plan (active-only desktop → pending soak → cheap cards → op
 - **Badge** = loaded unread + trimmed unread + (beyond-tail preview when known). Near bottom **ignores** residual poll stock from a lagging read cursor; it **keeps** a real matching tail preview.
 - Mid-list read cursor advances from **DOM viewport-visible** rows. At bottom still marks through the **window tail** id.
 - Near bottom without watch: keep loading newer until there are **≥10 loaded-unread after last-seen** (or the server is exhausted). Watch + physical bottom still mark-all-read and drains the live tail.
-- **Pending newer buffer** (Elm `notRenderedMessagesYet`): while near-bottom but not following and **not** physically at the bottom, newer fetch results stay in `pendingNewerItems` (off the DOM). Prefetch runway counts pending unread. Flush into the window on scroll idle (~140ms), immediately at physical bottom / arrow / follow, and when a feed becomes the active column.
+- **Pending newer buffer** (Elm `notRenderedMessagesYet`): background results that could evict visible rows remain pending. Native scrolling commits the longest safe ordered prefix while preserving the visible anchor; the down-arrow may then navigate and land on the current tail. Pending tails detached by an older-window trim are discarded and re-fetched from the retained boundary.
 - **Active-only card trees (narrow):** narrow multi-feed mounts MessageCards only for the active tab.
 - **Idle viewport offload (multi-feed):** after ~10s without pointer/wheel/touch on a feed, off-viewport rows in that column become height placeholders; interaction remounts the full 40-window. All columns stay visible.
 - **Collapsed media (Duty, [#3161](https://github.com/echoua/echo/issues/3161)):** optional setting (default of) hides audio / photo·video / coordinates behind a reveal banner until clicked. Toggle in Settings → Оперативний.
-- Arrow down: load (if needed) → follow → hard unread catch-up. FAB shows a spinner while newer `get-inbox` is in flight.
+- Arrow down: explicit load (if needed) → one landing → hard unread catch-up. It does not authorize later background following. FAB shows a spinner while newer `get-inbox` is in flight.
 
 ## Do not
 

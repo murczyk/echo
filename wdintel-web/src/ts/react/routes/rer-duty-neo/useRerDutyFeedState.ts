@@ -4,8 +4,6 @@ import { isNullOrUndefined } from '../../utils/misc';
 
 import type { SignalGroupEntry, SignalProfileEntry } from '../../../../Bindings';
 import { fetchInboxCount, fetchInboxMessages } from '../../services/api/inbox';
-import { isUnauthorizedError } from '../../services/api/client';
-import { AUTH_UNAUTHORIZED_EVENT } from '../../auth-redirect';
 import type { FeedColumnHandle } from './FeedColumn';
 import {
   buildInboxReq,
@@ -39,7 +37,13 @@ import { compareMessageTuple } from './utils';
 import { loadDutyNotificationPreview } from './dutyNotificationPreview';
 import type { TailAvailability } from './types';
 import { beginDutyScrollDebugActivity, recordDutyScrollDebugEvent } from './duty-scroll-debug';
-import { getDutyFollowScrollBehavior } from './duty-follow-scroll';
+import { useRerDutyDeferredLanding, useRerDutyNavigation } from './useRerDutyNavigation';
+import { useRerDutyPollingErrors } from './useRerDutyPollingErrors';
+import { useRerDutyPollingLifecycle } from './useRerDutyPollingLifecycle';
+import { useRerDutyInitialLoadTrigger } from './useRerDutyInitialLoadTrigger';
+import { useRerDutyTailPollRequests } from './useRerDutyTailPollRequests';
+import { useRerDutyPollingCoordinator } from './useRerDutyPollingCoordinator';
+import { useRerDutyPollingFeedWork } from './useRerDutyPollingFeedWork';
 import {
   DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS,
   withDutyFeedRequestDeadline,
@@ -74,34 +78,20 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       createEmptyFeedState(id, filter),
     );
   });
-  const [error, setError] = useState<string | null>(null);
-  const pollingErrorRef = useRef<string | null>(null);
-  const authenticationFailedRef = useRef(false);
-  const reportPollingFailure = useCallback((pollingError: unknown) => {
-    if (isUnauthorizedError(pollingError)) {
-      authenticationFailedRef.current = true;
-      return;
-    }
-    if (pollingErrorRef.current !== null) return;
-    const message = pollingError instanceof Error ? pollingError.message : String(pollingError);
-    pollingErrorRef.current = message;
-    setError(message);
-  }, []);
-  const clearPollingFailure = useCallback(() => {
-    const pollingError = pollingErrorRef.current;
-    if (pollingError === null) return;
-    pollingErrorRef.current = null;
-    setError((current) => (current === pollingError ? null : current));
-  }, []);
+  const {
+    error,
+    errorNotificationVersion,
+    setError,
+    reportPollingFailure,
+    clearPollingFailure,
+    authenticationFailedRef,
+  } = useRerDutyPollingErrors();
   const messageFeedsRef = useRef(messageFeeds);
   const loadNewerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const activeCountPollPromiseRef = useRef<Promise<void> | null>(null);
   const countPollRerunRequestedRef = useRef(false);
   const pollLifecycleMountedRef = useRef(true);
   const pollLifecycleGenerationRef = useRef(0);
   const pollNotificationCyclesRef = useRef<Set<DutyNotificationPollCycle>>(new Set());
-  const pollCountThenLoadNewerIfNeededRef = useRef<(() => Promise<void>) | null>(null);
-  const activePollTailWorkPromiseByFeedIdRef = useRef<Partial<Record<string, Promise<void>>>>({});
   const invalidateFeedLoadsRef = useRef<(feedId: string) => void>(() => {});
   const countRequestPromiseByFeedIdRef = useRef<
     Record<
@@ -115,12 +105,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       } | null>
     >
   >({});
-  const tailCountRequestPromiseByFeedIdRef = useRef<Record<string, Promise<number | null>>>({});
   const pollIntervalMs = getDutyPollIntervalMs(deps.pollIntervalSec);
-  const tailPreviewPromiseByFeedIdRef = useRef<
-    Record<string, Promise<ConfirmedTailPreview | null>>
-  >({});
-  const tailPreviewGenerationByFeedIdRef = useRef<Record<string, number>>({});
   const [watchModeByFeedId, setWatchModeByFeedId] = useState<Record<string, boolean>>({});
   const [loadingNewerFeedIds, setLoadingNewerFeedIds] = useState<Set<string>>(new Set());
   const [arrowResultByFeedId, setArrowResultByFeedId] = useState<Record<string, string | null>>({});
@@ -129,10 +114,27 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const loadGenerationByFeedIdRef = useRef<Record<string, number>>({});
   const pendingReloadFeedIdsRef = useRef<Set<string>>(new Set());
   const editReloadFeedIdsRef = useRef<Set<string>>(new Set());
-  const pendingScrollToEndRef = useRef<Record<string, number>>({});
-  const scheduledScrollToEndRef = useRef<Record<string, number>>({});
-  const followTailByFeedIdRef = useRef<Record<string, boolean>>({});
-  const followGenerationByFeedIdRef = useRef<Record<string, number>>({});
+  const resetTailRequestsRef = useRef<(feedId: string) => void>(() => {});
+  const navigation = useRerDutyNavigation();
+  const {
+    pendingScrollToEndRef,
+    scheduledScrollToEndRef,
+    followTailByFeedIdRef,
+    followGenerationByFeedIdRef,
+    beginFollowTail,
+    ensureFollowTail,
+    beginExplicitNavigation,
+    cancelFollowTail,
+    isFollowTailValid,
+    isExplicitNavigationCurrent,
+    registerExplicitLanding,
+    registerExplicitLoading,
+    isExplicitNavigationLoading,
+    cancelExplicitNavigation,
+    registerExplicitScheduledWork,
+    clearExplicitScheduledWork,
+    getExplicitScrollNavigation,
+  } = navigation;
   const physicallyAtBottomByFeedIdRef = useRef<Record<string, boolean>>({});
   const [tailAvailabilityByFeedId, setTailAvailabilityByFeedId] = useState<
     Record<string, TailAvailability>
@@ -178,11 +180,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   }, []);
 
   const resetTailState = useCallback((feedId: string) => {
-    tailPreviewGenerationByFeedIdRef.current[feedId] =
-      (tailPreviewGenerationByFeedIdRef.current[feedId] ?? 0) + 1;
+    resetTailRequestsRef.current(feedId);
     delete newestExhaustedCursorByFeedIdRef.current[feedId];
-    delete tailCountRequestPromiseByFeedIdRef.current[feedId];
-    delete tailPreviewPromiseByFeedIdRef.current[feedId];
     delete confirmedTailPreviewByFeedIdRef.current[feedId];
     setConfirmedTailPreviewByFeedId((previous) => {
       if (!(feedId in previous)) return previous;
@@ -222,9 +221,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   );
   const invalidateTailPreview = useCallback(
     (feedId: string) => {
-      tailPreviewGenerationByFeedIdRef.current[feedId] =
-        (tailPreviewGenerationByFeedIdRef.current[feedId] ?? 0) + 1;
-      delete tailPreviewPromiseByFeedIdRef.current[feedId];
+      resetTailRequestsRef.current(feedId);
       setConfirmedTailPreview(feedId, undefined);
     },
     [setConfirmedTailPreview],
@@ -345,35 +342,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     },
     [],
   );
-  const beginFollowTail = useCallback((feedId: string) => {
-    const generation = (followGenerationByFeedIdRef.current[feedId] ?? 0) + 1;
-    followGenerationByFeedIdRef.current[feedId] = generation;
-    followTailByFeedIdRef.current[feedId] = true;
-    delete pendingScrollToEndRef.current[feedId];
-    return generation;
-  }, []);
-  const ensureFollowTail = useCallback(
-    (feedId: string) => {
-      const generation = followGenerationByFeedIdRef.current[feedId];
-      if (followTailByFeedIdRef.current[feedId] === true && generation !== undefined) {
-        return generation;
-      }
-      return beginFollowTail(feedId);
-    },
-    [beginFollowTail],
-  );
-  const cancelFollowTail = useCallback((feedId: string) => {
-    followGenerationByFeedIdRef.current[feedId] =
-      (followGenerationByFeedIdRef.current[feedId] ?? 0) + 1;
-    followTailByFeedIdRef.current[feedId] = false;
-    delete pendingScrollToEndRef.current[feedId];
-  }, []);
-  const isFollowTailValid = useCallback(
-    (feedId: string, generation: number) =>
-      followTailByFeedIdRef.current[feedId] === true &&
-      followGenerationByFeedIdRef.current[feedId] === generation,
-    [],
-  );
   const setTailAvailability = useCallback((feedId: string, availability: TailAvailability) => {
     const previousAvailability = tailAvailabilityByFeedIdRef.current[feedId] ?? 'unknown';
     if (previousAvailability !== availability) {
@@ -388,38 +356,56 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       previous[feedId] === availability ? previous : { ...previous, [feedId]: availability },
     );
   }, []);
-  /** Arrow / watch catch-up: clear local badge and pin read cursor to loaded tail. */
+  /** Explicit landing may acknowledge only the boundary it physically reached. */
   const catchUpFeedUnreadToTail = useCallback(
-    (feedId: string) => {
+    (feedId: string, confirmedTarget?: MessageCursor) => {
       const feed = messageFeedsRef.current.find((candidate) => candidate.id === feedId);
       if (!feed) return;
-      const tail = feed.items.at(-1);
-      if (tail != null) {
+      const target =
+        confirmedTarget ??
+        (feed.items.at(-1)
+          ? { id: feed.items.at(-1)![0], timestamp: feed.items.at(-1)![1].timestamp }
+          : null);
+      if (target != null) {
+        const readThroughTarget = (id: number, timestamp: number | null) =>
+          compareMessageTuple({ id, timestamp }, target) <= 0;
+        const remainingUnreadCount =
+          feed.items.filter(
+            ([id, message]) => !feed.readIds.has(id) && !readThroughTarget(id, message.timestamp),
+          ).length +
+          [...feed.windowedUnreadItems.entries()].filter(
+            ([id, timestamp]) => !readThroughTarget(id, timestamp),
+          ).length +
+          (feed.pendingNewerItems ?? []).filter(([id]) => !feed.readIds.has(id)).length;
         advanceFeedReadCursor(
           feedId,
-          { id: tail[0], timestamp: tail[1].timestamp },
-          0,
+          target,
+          remainingUnreadCount,
           buildFeedCountSignature(feed, freqs),
         );
-        newestExhaustedCursorByFeedIdRef.current[feedId] = tail[0];
       } else {
         resetOrRewindFeedReadCursor(feedId, null);
-        delete newestExhaustedCursorByFeedIdRef.current[feedId];
       }
       invalidateTailPreview(feedId);
-      setTailAvailability(feedId, feed.items.length > 0 ? 'exhausted' : 'unknown');
       setMessageFeeds((previous) =>
-        previous.map((candidate) =>
-          candidate.id !== feedId
-            ? candidate
-            : {
-                ...candidate,
-                readIds: new Set(candidate.items.map(([id]) => id)),
-                windowedUnreadItems: new Map<number, number>(),
-                unreadCount: 0,
-                pendingNewerItems: [],
-              },
-        ),
+        previous.map((candidate) => {
+          if (candidate.id !== feedId || !target) return candidate;
+          const throughTarget = (id: number, timestamp: number | null) =>
+            compareMessageTuple({ id, timestamp }, target) <= 0;
+          const readIds = new Set(candidate.readIds);
+          candidate.items.forEach(([id, message]) => {
+            if (throughTarget(id, message.timestamp)) readIds.add(id);
+          });
+          const windowedUnreadItems = new Map(candidate.windowedUnreadItems);
+          windowedUnreadItems.forEach((timestamp, id) => {
+            if (throughTarget(id, timestamp)) windowedUnreadItems.delete(id);
+          });
+          const unreadCount =
+            candidate.items.filter(([id]) => !readIds.has(id)).length +
+            windowedUnreadItems.size +
+            (candidate.pendingNewerItems ?? []).filter(([id]) => !readIds.has(id)).length;
+          return { ...candidate, readIds, windowedUnreadItems, unreadCount };
+        }),
       );
     },
     [
@@ -582,115 +568,15 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     },
     [buildReqForFeed, freqs, getFeedLoadGeneration],
   );
-  const requestValidatedTailCount = useCallback(
-    (feedId: string, tailId: number) => {
-      const existingPromise = tailCountRequestPromiseByFeedIdRef.current[feedId];
-      if (existingPromise) return existingPromise;
-      const feed = messageFeedsRef.current.find((candidate) => candidate.id === feedId);
-      if (!feed || feed.loading || feed.items.at(-1)?.[0] !== tailId) {
-        return Promise.resolve(null);
-      }
-      const requestGeneration = getFeedLoadGeneration(feedId);
-      const requestSignature = buildFeedCountSignature(feed, freqs);
-      const requestPromise = (async () => {
-        const finishDebugActivity = beginDutyScrollDebugActivity(
-          feedId,
-          'tailCount',
-          `tail=${tailId}`,
-        );
-        let quantity: number;
-        try {
-          ({ quantity } = await withDutyFeedRequestDeadline(
-            DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS,
-            (signal) =>
-              fetchInboxCount(
-                buildReqForFeed(feed, { sinceIdNoninclusive: tailId, nolimit: true }),
-                {
-                  signal,
-                },
-              ),
-          ));
-          finishDebugActivity(`ok; quantity=${quantity}; tail=${tailId}`);
-        } catch (error) {
-          finishDebugActivity(
-            `error; tail=${tailId}; ${error instanceof Error ? error.message : String(error)}`,
-          );
-          throw error;
-        }
-        const currentFeed = messageFeedsRef.current.find((candidate) => candidate.id === feedId);
-        if (
-          !currentFeed ||
-          currentFeed.loading ||
-          getFeedLoadGeneration(feedId) !== requestGeneration ||
-          currentFeed.items.at(-1)?.[0] !== tailId ||
-          buildFeedCountSignature(currentFeed, freqs) !== requestSignature
-        ) {
-          recordDutyScrollDebugEvent(feedId, 'counter:discard', `tail=${tailId} became stale`);
-          return null;
-        }
-        recordDutyScrollDebugEvent(feedId, 'counter:accept', `tail=${tailId}; newer=${quantity}`);
-        return quantity;
-      })();
-      tailCountRequestPromiseByFeedIdRef.current[feedId] = requestPromise;
-      requestPromise.then(
-        () => {
-          if (tailCountRequestPromiseByFeedIdRef.current[feedId] === requestPromise) {
-            delete tailCountRequestPromiseByFeedIdRef.current[feedId];
-          }
-        },
-        () => {
-          if (tailCountRequestPromiseByFeedIdRef.current[feedId] === requestPromise) {
-            delete tailCountRequestPromiseByFeedIdRef.current[feedId];
-          }
-        },
-      );
-      return requestPromise;
-    },
-    [buildReqForFeed, freqs, getFeedLoadGeneration],
-  );
-  const requestValidatedTailPreview = useCallback(
-    (feedId: string): Promise<ConfirmedTailPreview | null> => {
-      const existingPromise = tailPreviewPromiseByFeedIdRef.current[feedId];
-      if (existingPromise) return existingPromise;
-      const feed = messageFeedsRef.current.find((candidate) => candidate.id === feedId);
-      const tailId = feed?.items.at(-1)?.[0];
-      if (!feed || feed.loading || pendingReloadFeedIdsRef.current.has(feedId) || tailId == null) {
-        return Promise.resolve(null);
-      }
-      const requestGeneration = getFeedLoadGeneration(feedId);
-      const previewGeneration = tailPreviewGenerationByFeedIdRef.current[feedId] ?? 0;
-      tailPreviewGenerationByFeedIdRef.current[feedId] = previewGeneration;
-      const requestSignature = buildFeedCountSignature(feed, freqs);
-      const requestPromise = (async () => {
-        const count = await requestValidatedTailCount(feedId, tailId);
-        const currentFeed = messageFeedsRef.current.find((candidate) => candidate.id === feedId);
-        if (
-          count === null ||
-          !currentFeed ||
-          getFeedLoadGeneration(feedId) !== requestGeneration ||
-          currentFeed.items.at(-1)?.[0] !== tailId ||
-          buildFeedCountSignature(currentFeed, freqs) !== requestSignature
-        ) {
-          return null;
-        }
-        return {
-          tailId,
-          count,
-          generation: previewGeneration,
-        };
-      })();
-      tailPreviewPromiseByFeedIdRef.current[feedId] = requestPromise;
-      requestPromise
-        .finally(() => {
-          if (tailPreviewPromiseByFeedIdRef.current[feedId] === requestPromise) {
-            delete tailPreviewPromiseByFeedIdRef.current[feedId];
-          }
-        })
-        .catch(() => {});
-      return requestPromise;
-    },
-    [buildReqForFeed, freqs, getFeedLoadGeneration, requestValidatedTailCount],
-  );
+  const tailPolling = useRerDutyTailPollRequests({
+    messageFeedsRef,
+    pendingReloadFeedIdsRef,
+    getFeedLoadGeneration,
+    buildReqForFeed,
+    getFeedCountSignature: (feed) => buildFeedCountSignature(feed, freqs),
+  });
+  const { startFeedWork, forgetFeedWork } = useRerDutyPollingFeedWork();
+  resetTailRequestsRef.current = tailPolling.resetTailRequests;
 
   useEffect(() => {
     return () => {
@@ -722,6 +608,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     invalidateFeedLoads,
     removeFeedLoads,
   } = useRerDutyDirectionalLoads({
+    disableAutoScroll: deps.disableAutoScroll,
     messageFeeds,
     messageFeedsRef,
     setMessageFeeds,
@@ -744,6 +631,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     followTailByFeedIdRef,
     followGenerationByFeedIdRef,
     isFollowTailValid,
+    isExplicitNavigationLoading,
     setTailAvailability,
     getTailAvailability: (feedId) => tailAvailabilityByFeedIdRef.current[feedId] ?? 'unknown',
     invalidateTailPreview,
@@ -820,12 +708,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     retainFeedIds(messageFeeds.map((feed) => feed.id));
   }, [messageFeeds, retainFeedIds]);
 
-  const pollCountThenLoadNewerIfNeeded = useCallback(async () => {
+  const runPollCycle = useCallback(async () => {
     if (authenticationFailedRef.current) return;
-    if (activeCountPollPromiseRef.current) {
-      countPollRerunRequestedRef.current = true;
-      return activeCountPollPromiseRef.current;
-    }
     const lifecycleGeneration = pollLifecycleGenerationRef.current;
     const isLifecycleCurrent = () =>
       !authenticationFailedRef.current &&
@@ -850,10 +734,10 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         try {
           entry = await requestValidatedInboxCount(feed.id);
           if (!isLifecycleCurrent()) return;
-          clearPollingFailure();
+          clearPollingFailure(`${feed.id}:count`);
         } catch (error) {
           if (!isLifecycleCurrent()) return;
-          reportPollingFailure(error);
+          reportPollingFailure(`${feed.id}:count`, error);
           return;
         }
         if (!isLifecycleCurrent()) return;
@@ -975,13 +859,17 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           if (!nearBottom) {
             let preview: ConfirmedTailPreview | null;
             try {
-              preview = await requestValidatedTailPreview(feedId);
+              preview = await tailPolling.requestValidatedTailPreview(feedId);
             } catch (error) {
-              reportPollingFailure(error);
+              reportPollingFailure(`${feedId}:preview`, error);
               return;
             }
-            if (!preview || tailPreviewGenerationByFeedIdRef.current[feedId] !== preview.generation)
+            if (
+              !preview ||
+              tailPolling.tailPreviewGenerationByFeedIdRef.current[feedId] !== preview.generation
+            )
               return;
+            clearPollingFailure(`${feedId}:preview`);
             setConfirmedTailPreview(feedId, preview);
             setTailAvailability(feedId, preview.count > 0 ? 'available' : 'exhausted');
             return;
@@ -989,7 +877,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           // Near bottom: keep beyond-tail preview fresh for the badge (cursor-aligned
           // inbox quantity matches tailCount when last-seen == loadedTail).
           if (loadedTailId != null && entry.cursorId === loadedTailId) {
-            const generation = tailPreviewGenerationByFeedIdRef.current[feedId] ?? 0;
+            const generation = tailPolling.tailPreviewGenerationByFeedIdRef.current[feedId] ?? 0;
             setConfirmedTailPreview(feedId, {
               tailId: loadedTailId,
               count: quantity,
@@ -1008,9 +896,9 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
               setTailAvailability(feedId, 'checking');
               let tailQuantity: number | null;
               try {
-                tailQuantity = await requestValidatedTailCount(feedId, loadedTailId!);
+                tailQuantity = await tailPolling.requestValidatedTailCount(feedId, loadedTailId!);
               } catch (error) {
-                reportPollingFailure(error);
+                reportPollingFailure(`${feedId}:tail-count`, error);
                 setTailAvailability(
                   feedId,
                   previousAvailability === 'loading' ? 'available' : previousAvailability,
@@ -1021,13 +909,14 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
                 setTailAvailability(feedId, previousAvailability);
                 return;
               }
+              clearPollingFailure(`${feedId}:tail-count`);
               if (tailQuantity <= 0) {
                 setTailAvailability(feedId, 'exhausted');
                 invalidateTailPreview(feedId);
                 return;
               }
               confirmedTailAvailable = true;
-              const generation = tailPreviewGenerationByFeedIdRef.current[feedId] ?? 0;
+              const generation = tailPolling.tailPreviewGenerationByFeedIdRef.current[feedId] ?? 0;
               setConfirmedTailPreview(feedId, {
                 tailId: loadedTailId!,
                 count: tailQuantity,
@@ -1080,17 +969,15 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
             }
           }
         };
-        if (!isLifecycleCurrent() || activePollTailWorkPromiseByFeedIdRef.current[feedId]) return;
-        const tailWork = runTailWork();
-        activePollTailWorkPromiseByFeedIdRef.current[feedId] = tailWork;
+        if (!isLifecycleCurrent()) return;
+        const tailWork = startFeedWork(feedId, runTailWork);
+        if (!tailWork) return;
         void tailWork
-          .catch((error) => {
-            if (isLifecycleCurrent()) reportPollingFailure(error);
+          .then(() => {
+            if (isLifecycleCurrent()) clearPollingFailure(`${feedId}:tail-work`);
           })
-          .finally(() => {
-            if (activePollTailWorkPromiseByFeedIdRef.current[feedId] === tailWork) {
-              delete activePollTailWorkPromiseByFeedIdRef.current[feedId];
-            }
+          .catch((error) => {
+            if (isLifecycleCurrent()) reportPollingFailure(`${feedId}:tail-work`, error);
           });
       });
       let softDeadlineTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -1109,22 +996,12 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         pollNotificationCyclesRef.current.delete(cycle);
       });
     };
-    const promise = run().finally(() => {
-      if (activeCountPollPromiseRef.current === promise) activeCountPollPromiseRef.current = null;
-      const rerunRequested = countPollRerunRequestedRef.current;
-      countPollRerunRequestedRef.current = false;
-      if (isLifecycleCurrent() && rerunRequested && messageFeedsRef.current.length > 0) {
-        void pollCountThenLoadNewerIfNeededRef.current?.();
-      }
-    });
-    activeCountPollPromiseRef.current = promise;
-    return promise;
+    await run();
   }, [
     loadFeedNewerMessages,
     deps.disableAutoScroll,
     requestValidatedInboxCount,
-    requestValidatedTailCount,
-    requestValidatedTailPreview,
+    tailPolling,
     isFollowTailValid,
     setConfirmedTailPreview,
     invalidateTailPreview,
@@ -1133,124 +1010,45 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     reportPollingFailure,
     clearPollingFailure,
     buildReqForFeed,
+    startFeedWork,
   ]);
-  pollCountThenLoadNewerIfNeededRef.current = pollCountThenLoadNewerIfNeeded;
+  const pollCountThenLoadNewerIfNeeded = useRerDutyPollingCoordinator({
+    runCycle: runPollCycle,
+    rerunRequestedRef: countPollRerunRequestedRef,
+    canRerun: () => !authenticationFailedRef.current && messageFeedsRef.current.length > 0,
+  });
 
-  const feedIds = useMemo(() => messageFeeds.map((w) => w.id).join(','), [messageFeeds]);
-  const feedsNeedingLoadKey = useMemo(
-    () =>
-      messageFeeds
-        .filter((w) => {
-          if (!w.loading) return false;
-          if (w.items.length === 0) return true;
-          return pendingReloadFeedIdsRef.current.has(w.id);
-        })
-        .map(
-          (w) =>
-            `${w.id}:${loadGenerationByFeedIdRef.current[w.id] ?? 0}:${JSON.stringify(w.filter)}`,
-        )
-        .join(';'),
-    [messageFeeds],
-  );
-  const loadFeedInitialMessagesRef = useRef(loadFeedInitialMessages);
-  loadFeedInitialMessagesRef.current = loadFeedInitialMessages;
-  /** Tracks auto-started reload requests so a pending manual fetch does not duplicate them. */
-  const loadStartedKeysRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (shortStateIdRef.current && !shortStateReady) return;
-    const needingLoad = messageFeeds.filter((w) => {
-      if (!w.loading) return false;
-      if (w.items.length === 0) return true;
-      return pendingReloadFeedIdsRef.current.has(w.id);
-    });
-    const needingKeys = new Set(
-      needingLoad.map(
-        (w) =>
-          `${w.id}:${loadGenerationByFeedIdRef.current[w.id] ?? 0}:${JSON.stringify(w.filter)}`,
-      ),
-    );
-    const started = loadStartedKeysRef.current;
-    [...started].forEach((key) => {
-      if (!needingKeys.has(key)) started.delete(key);
-    });
-    needingLoad.forEach((w) => {
-      const key = `${w.id}:${loadGenerationByFeedIdRef.current[w.id] ?? 0}:${JSON.stringify(w.filter)}`;
-      if (!started.has(key)) {
-        started.add(key);
-        const preserveUnread = editReloadFeedIdsRef.current.delete(w.id);
-        loadFeedInitialMessagesRef.current(w.id, { preserveUnread });
-      }
-    });
-  }, [feedIds, feedsNeedingLoadKey, shortStateReady]);
+  useRerDutyInitialLoadTrigger({
+    messageFeeds,
+    shortStateReady,
+    hasShortState: Boolean(shortStateIdRef.current),
+    pendingReloadFeedIdsRef,
+    editReloadFeedIdsRef,
+    loadGenerationByFeedIdRef,
+    loadFeedInitialMessages,
+  });
 
-  useEffect(() => {
-    if (shortStateIdRef.current && !shortStateReady) return;
-    loadNewerRef.current = setInterval(() => {
-      pollCountThenLoadNewerIfNeeded();
-    }, pollIntervalMs);
-    return () => {
-      if (loadNewerRef.current) clearInterval(loadNewerRef.current);
-    };
-  }, [pollCountThenLoadNewerIfNeeded, pollIntervalMs, shortStateReady]);
+  useRerDutyPollingLifecycle({
+    ready: shortStateReady,
+    hasShortState: Boolean(shortStateIdRef.current),
+    pollIntervalMs,
+    poll: pollCountThenLoadNewerIfNeeded,
+    intervalRef: loadNewerRef,
+    authenticationFailedRef,
+    mountedRef: pollLifecycleMountedRef,
+    lifecycleGenerationRef: pollLifecycleGenerationRef,
+    notificationCyclesRef: pollNotificationCyclesRef,
+    rerunRequestedRef: countPollRerunRequestedRef,
+  });
 
-  useEffect(() => {
-    pollLifecycleMountedRef.current = true;
-    const stopPolling = () => {
-      authenticationFailedRef.current = true;
-    };
-    window.addEventListener(AUTH_UNAUTHORIZED_EVENT, stopPolling);
-    return () => {
-      window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, stopPolling);
-      pollLifecycleMountedRef.current = false;
-      pollLifecycleGenerationRef.current += 1;
-      pollNotificationCyclesRef.current.forEach(cancelDutyNotificationPollCycle);
-      pollNotificationCyclesRef.current.clear();
-      countPollRerunRequestedRef.current = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    const recover = () => {
-      if (document.visibilityState !== 'hidden') void pollCountThenLoadNewerIfNeeded();
-    };
-    window.addEventListener('focus', recover);
-    window.addEventListener('online', recover);
-    document.addEventListener('visibilitychange', recover);
-    return () => {
-      window.removeEventListener('focus', recover);
-      window.removeEventListener('online', recover);
-      document.removeEventListener('visibilitychange', recover);
-    };
-  }, [pollCountThenLoadNewerIfNeeded]);
-
-  useEffect(() => {
-    const pendingEntries = Object.entries(pendingScrollToEndRef.current).filter(
-      ([feedId, generation]) => scheduledScrollToEndRef.current[feedId] !== generation,
-    );
-    if (pendingEntries.length === 0) return;
-    const refs = columnRefsRef.current;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        pendingEntries.forEach(([feedId, capturedGeneration]) => {
-          if (scheduledScrollToEndRef.current[feedId] !== capturedGeneration) return;
-          if (pendingScrollToEndRef.current[feedId] !== capturedGeneration) {
-            delete scheduledScrollToEndRef.current[feedId];
-            return;
-          }
-          if (!isFollowTailValid(feedId, capturedGeneration)) {
-            delete scheduledScrollToEndRef.current[feedId];
-            return;
-          }
-          delete pendingScrollToEndRef.current[feedId];
-          delete scheduledScrollToEndRef.current[feedId];
-          refs[feedId]?.scrollToEnd(getDutyFollowScrollBehavior());
-        });
-      });
-    });
-    pendingEntries.forEach(([feedId, generation]) => {
-      scheduledScrollToEndRef.current[feedId] = generation;
-    });
-  }, [messageFeeds]);
+  useRerDutyDeferredLanding({
+    changeKey: messageFeeds,
+    disableAutoScroll: deps.disableAutoScroll,
+    columnRefsRef,
+    pendingScrollToEndRef,
+    scheduledScrollToEndRef,
+    isFollowTailValid,
+  });
 
   const crud = useRerDutyFeedCrud(
     messageFeeds,
@@ -1263,6 +1061,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         [feedId]: (loadGenerationByFeedIdRef.current[feedId] ?? 0) + 1,
       };
       removeFeedLoads(feedId);
+      forgetFeedWork(feedId);
       clearFeedUnreadBaselines(feedId);
       resetTailState(feedId);
       [
@@ -1287,6 +1086,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     messageFeeds,
     setMessageFeeds,
     error,
+    errorNotificationVersion,
     setError,
     shortStateReady,
     columnRefsRef,
@@ -1296,8 +1096,16 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     tailAvailabilityByFeedId,
     confirmedTailPreviewByFeedId,
     beginFollowTail,
+    beginExplicitNavigation,
     ensureFollowTail,
     cancelFollowTail,
+    isExplicitNavigationCurrent,
+    registerExplicitLanding,
+    registerExplicitLoading,
+    cancelExplicitNavigation,
+    registerExplicitScheduledWork,
+    clearExplicitScheduledWork,
+    getExplicitScrollNavigation,
     loadFeedInitialMessages,
     reloadEmptyFeeds,
     reloadFeeds,

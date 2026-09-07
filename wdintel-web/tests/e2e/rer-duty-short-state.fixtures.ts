@@ -5,7 +5,7 @@ import { networkSettingsResponse } from './fixture-responses';
 type ShortStateFixtureOptions = {
   shortStateId?: string;
   shortState?: unknown;
-  inboxResponse?: InboxMessagesRspRaw | null;
+  inboxResponse?: InboxMessagesRspRaw | null | Promise<InboxMessagesRspRaw | null>;
   inboxResponseForRequest?: (
     requestBody: unknown,
   ) => InboxMessagesRspRaw | Promise<InboxMessagesRspRaw>;
@@ -18,6 +18,11 @@ type ShortStateFixtureOptions = {
   signalGroups?: string[];
   tagsResponse?: unknown[];
   networkInfoResponse?: unknown[];
+  disableAutoScroll?: boolean;
+  userSettingsResponse?:
+    | { tagsLayout: string; disableAutoScroll: boolean }
+    | Promise<{ tagsLayout: string; disableAutoScroll: boolean }>;
+  userSettingsFailure?: boolean;
 };
 
 type ShortStateFixtureHandle = {
@@ -52,10 +57,10 @@ function emptyUserResponse() {
   };
 }
 
-function emptyUserSettingsResponse() {
+function emptyUserSettingsResponse(disableAutoScroll = false) {
   return {
     tagsLayout: 'compact',
-    disableAutoScroll: false,
+    disableAutoScroll,
   };
 }
 
@@ -204,7 +209,15 @@ export async function installRerDutyShortStateMocks(
     }
 
     if (pathname === '/api/user/settings') {
-      await fulfillJson(route, emptyUserSettingsResponse());
+      if (options.userSettingsFailure) {
+        await route.fulfill({ status: 500, body: 'Settings unavailable' });
+        return;
+      }
+      await fulfillJson(
+        route,
+        await (options.userSettingsResponse ??
+          emptyUserSettingsResponse(options.disableAutoScroll)),
+      );
       return;
     }
 
@@ -294,7 +307,7 @@ export async function installRerDutyShortStateMocks(
       lastInboxRequest = request.postDataJSON();
       const response = options.inboxResponseForRequest
         ? await options.inboxResponseForRequest(lastInboxRequest)
-        : (options.inboxResponse ?? emptyDutyInboxResponse());
+        : ((await options.inboxResponse) ?? emptyDutyInboxResponse());
       await fulfillJson(route, response);
       return;
     }

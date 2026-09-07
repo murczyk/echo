@@ -2,10 +2,12 @@
  * @vitest-environment happy-dom
  */
 import React, { act } from 'react';
+import { createRoot } from 'react-dom/client';
 import type { Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InboxMessage, InboxMessagesRsp } from '../../../../Bindings';
 import { minimalInboxMessage } from './inbox-message-mocks';
+import { useRerDutyFeedInteractionActions } from './useRerDutyFeedInteractionActions';
 import {
   createDutyFeedStateFixture,
   getDutyApiMocks,
@@ -36,6 +38,323 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
   });
 
   afterEach(fixture.cleanup);
+  it('#3360 retains buffered arrivals when a complete arrow action is cancelled', async () => {
+    const { apiRef } = await mountLoadedFeed(true);
+    let actions: ReturnType<typeof useRerDutyFeedInteractionActions> | null = null;
+    function Actions() {
+      const feedState = apiRef.current!;
+      actions = useRerDutyFeedInteractionActions({
+        messageFeeds: feedState.messageFeeds,
+        showArrowResult: vi.fn(),
+        columnRefsRef: feedState.columnRefsRef,
+        setWatchModeByFeedId: feedState.setWatchModeByFeedId,
+        setLoadingNewerFeedIds: feedState.setLoadingNewerFeedIds,
+        loadFeedInitialMessages: feedState.loadFeedInitialMessages,
+        loadFeedNewerMessages: feedState.loadFeedNewerMessages,
+        flushPendingNewerMessages: feedState.flushPendingNewerMessages,
+        requestValidatedInboxCount: feedState.requestValidatedInboxCount,
+        catchUpFeedUnreadToTail: feedState.catchUpFeedUnreadToTail,
+        dutyDisableAutoScroll: true,
+        setMessageFeeds: feedState.setMessageFeeds,
+        beginExplicitNavigation: feedState.beginExplicitNavigation,
+        isExplicitNavigationCurrent: feedState.isExplicitNavigationCurrent,
+        registerExplicitLanding: feedState.registerExplicitLanding,
+        registerExplicitLoading: feedState.registerExplicitLoading,
+        cancelExplicitNavigation: feedState.cancelExplicitNavigation,
+        registerExplicitScheduledWork: feedState.registerExplicitScheduledWork,
+        clearExplicitScheduledWork: feedState.clearExplicitScheduledWork,
+        getExplicitScrollNavigation: feedState.getExplicitScrollNavigation,
+      });
+      return null;
+    }
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const actionRoot = createRoot(host);
+    try {
+      await act(async () => actionRoot.render(<Actions />));
+      hoisted.fetchInboxCount.mockResolvedValue({ quantity: 19, firstElementTs: null });
+      const response = deferred('cancelled complete arrow response');
+      hoisted.fetchInboxMessages.mockImplementationOnce(() => response.promise);
+      let click: Promise<void> | undefined;
+      await act(async () => {
+        click = actions!.handleArrowClick('mf-0');
+        await flushMicrotasks();
+      });
+      apiRef.current!.cancelFollowTail('mf-0');
+      await act(async () => {
+        response.resolve(rangeRsp(2, 20));
+        await click;
+        await flushMicrotasks();
+      });
+      const feed = apiRef.current!.messageFeeds[0];
+      expect(feed.pendingNewerItems.map(([id]) => id)).toEqual(
+        rangeRsp(2, 20).inboxItems.map(([id]) => id),
+      );
+      expect(feed.unreadCount).toBeGreaterThan(0);
+    } finally {
+      act(() => actionRoot.unmount());
+      host.remove();
+    }
+  });
+
+  it('#3360 releases cancelled arrow loading before its count response settles', async () => {
+    const { apiRef } = await mountLoadedFeed(true);
+    let actions: ReturnType<typeof useRerDutyFeedInteractionActions> | null = null;
+    function Actions() {
+      const feedState = apiRef.current!;
+      actions = useRerDutyFeedInteractionActions({
+        messageFeeds: feedState.messageFeeds,
+        showArrowResult: vi.fn(),
+        columnRefsRef: feedState.columnRefsRef,
+        setWatchModeByFeedId: feedState.setWatchModeByFeedId,
+        setLoadingNewerFeedIds: feedState.setLoadingNewerFeedIds,
+        loadFeedInitialMessages: feedState.loadFeedInitialMessages,
+        loadFeedNewerMessages: feedState.loadFeedNewerMessages,
+        flushPendingNewerMessages: feedState.flushPendingNewerMessages,
+        requestValidatedInboxCount: feedState.requestValidatedInboxCount,
+        catchUpFeedUnreadToTail: feedState.catchUpFeedUnreadToTail,
+        dutyDisableAutoScroll: true,
+        setMessageFeeds: feedState.setMessageFeeds,
+        beginExplicitNavigation: feedState.beginExplicitNavigation,
+        isExplicitNavigationCurrent: feedState.isExplicitNavigationCurrent,
+        registerExplicitLanding: feedState.registerExplicitLanding,
+        registerExplicitLoading: feedState.registerExplicitLoading,
+        cancelExplicitNavigation: feedState.cancelExplicitNavigation,
+        registerExplicitScheduledWork: feedState.registerExplicitScheduledWork,
+        clearExplicitScheduledWork: feedState.clearExplicitScheduledWork,
+        getExplicitScrollNavigation: feedState.getExplicitScrollNavigation,
+      });
+      return null;
+    }
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const actionRoot = createRoot(host);
+    const count = deferred<number>('cancelled arrow count');
+    hoisted.fetchInboxCount.mockImplementationOnce(() => count.promise);
+    try {
+      await act(async () => actionRoot.render(<Actions />));
+      let click: Promise<void> | undefined;
+      await act(async () => {
+        click = actions!.handleArrowClick('mf-0');
+        await flushMicrotasks();
+      });
+      expect(apiRef.current!.loadingNewerFeedIds.has('mf-0')).toBe(true);
+      await act(async () => {
+        apiRef.current!.cancelFollowTail('mf-0');
+        await flushMicrotasks();
+      });
+      expect(apiRef.current!.loadingNewerFeedIds.has('mf-0')).toBe(false);
+      await act(async () => {
+        count.resolve(0);
+        await click;
+        await flushMicrotasks();
+      });
+      expect(apiRef.current!.loadingNewerFeedIds.has('mf-0')).toBe(false);
+    } finally {
+      act(() => actionRoot.unmount());
+      host.remove();
+    }
+  });
+
+  it('#3360 does not acknowledge an arrow response cancelled before its deferred landing', async () => {
+    const { apiRef } = await mountLoadedFeed(true);
+    const operation = apiRef.current!.beginExplicitNavigation('mf-0');
+    const response = deferred('landing cancelled after response');
+    hoisted.fetchInboxMessages.mockImplementationOnce(() => response.promise);
+    const load = apiRef.current!.loadFeedNewerMessages('mf-0', {
+      nolimit: true,
+      scrollToEndAfterLoad: true,
+      explicitNavigation: true,
+      followGeneration: operation.generation,
+    });
+    await act(async () => {
+      response.resolve(rangeRsp(2, 20));
+      await load;
+      await flushMicrotasks();
+    });
+    apiRef.current!.cancelFollowTail('mf-0');
+    runNextRaf();
+    runNextRaf();
+    runNextRaf();
+    await act(async () => flushMicrotasks());
+    expect(apiRef.current!.messageFeeds[0].readIds.has(2)).toBe(false);
+  });
+
+  it('#3360 acknowledges only a verified explicit target and preserves later pending arrivals', async () => {
+    const { apiRef, scrollToEnd } = await mountLoadedFeed(true);
+    const operation = apiRef.current!.beginExplicitNavigation('mf-0');
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(2, 20));
+    await act(async () => {
+      await apiRef.current!.loadFeedNewerMessages('mf-0', {
+        nolimit: true,
+        scrollToEndAfterLoad: true,
+        explicitNavigation: true,
+        explicitOperation: operation,
+        followGeneration: operation.generation,
+      });
+      await flushMicrotasks();
+    });
+
+    let acknowledgements = 0;
+    apiRef.current!.registerExplicitLanding(operation, { id: 20, timestamp: 2000 }, () => {
+      acknowledgements += 1;
+      apiRef.current!.catchUpFeedUnreadToTail('mf-0', { id: 20, timestamp: 2000 });
+    });
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) => ({
+          ...feed,
+          pendingNewerItems: rangeRsp(21, 21).inboxItems,
+          unreadCount: 20,
+        })),
+      );
+      await flushMicrotasks();
+    });
+    const navigation = apiRef.current!.getExplicitScrollNavigation('mf-0', operation.generation);
+    expect(navigation).toBeDefined();
+    navigation.onLanded();
+    navigation.onLanded();
+    await act(async () => flushMicrotasks());
+
+    const feed = apiRef.current!.messageFeeds[0];
+    expect(acknowledgements).toBe(1);
+    expect(feed.readIds.has(20)).toBe(true);
+    expect(feed.readIds.has(21)).toBe(false);
+    expect(feed.pendingNewerItems.map(([id]) => id)).toEqual([21]);
+    expect(feed.unreadCount).toBe(1);
+  });
+
+  it('#3360 makes an explicit target unavailable when its column disappears before deferred landing', async () => {
+    const { apiRef, scrollToEnd } = await mountLoadedFeed(true);
+    const operation = apiRef.current!.beginExplicitNavigation('mf-0');
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(2, 2));
+    await act(async () => {
+      await apiRef.current!.loadFeedNewerMessages('mf-0', {
+        scrollToEndAfterLoad: true,
+        explicitNavigation: true,
+        explicitOperation: operation,
+        followGeneration: operation.generation,
+      });
+      await flushMicrotasks();
+    });
+    const acknowledge = vi.fn();
+    apiRef.current!.registerExplicitLanding(operation, { id: 2, timestamp: 200 }, acknowledge);
+    const navigation = apiRef.current!.getExplicitScrollNavigation('mf-0', operation.generation);
+    navigation?.onUnavailable();
+
+    expect(acknowledge).not.toHaveBeenCalled();
+    expect(apiRef.current!.getExplicitScrollNavigation('mf-0', operation.generation)).toBeNull();
+    expect(apiRef.current!.messageFeeds[0].readIds.has(2)).toBe(false);
+  });
+
+  it('#3360 makes a superseded landing callback unable to acknowledge the newer operation', async () => {
+    const { apiRef } = await mountLoadedFeed(true);
+    const first = apiRef.current!.beginExplicitNavigation('mf-0');
+    const acknowledged = vi.fn();
+    apiRef.current!.registerExplicitLanding(first, { id: 1, timestamp: 100 }, acknowledged);
+    const firstNavigation = apiRef.current!.getExplicitScrollNavigation('mf-0', first.generation);
+    expect(firstNavigation).not.toBeNull();
+
+    const second = apiRef.current!.beginExplicitNavigation('mf-0');
+    firstNavigation?.onLanded();
+
+    expect(acknowledged).not.toHaveBeenCalled();
+    expect(apiRef.current!.isExplicitNavigationCurrent(first)).toBe(false);
+    expect(apiRef.current!.isExplicitNavigationCurrent(second)).toBe(true);
+  });
+
+  it('#3360 keeps a cancelled explicit response unread', async () => {
+    const { apiRef } = await mountLoadedFeed(true);
+    const generation = apiRef.current!.beginFollowTail('mf-0');
+    const response = deferred('cancelled explicit response');
+    hoisted.fetchInboxMessages.mockImplementationOnce(() => response.promise);
+    const load = apiRef.current!.loadFeedNewerMessages('mf-0', {
+      explicitNavigation: true,
+      scrollToEndAfterLoad: true,
+      followGeneration: generation,
+    });
+    apiRef.current!.cancelFollowTail('mf-0');
+    await act(async () => {
+      response.resolve(rangeRsp(2, 20));
+      await load;
+      await flushMicrotasks();
+    });
+    expect(apiRef.current!.messageFeeds[0].readIds.has(2)).toBe(false);
+  });
+
+  it('#3360 protects visible rows during a physical-bottom background flush', async () => {
+    const { apiRef } = await mountLoadedFeed(true);
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) => ({
+          ...feed,
+          items: rangeRsp(1, 40).inboxItems,
+          pendingNewerItems: rangeRsp(41, 60).inboxItems,
+        })),
+      );
+    });
+    await act(async () => {
+      apiRef.current!.flushPendingNewerMessages('mf-0', {
+        urgent: true,
+        allowWindowTrim: true,
+        protectedItemIds: Array.from({ length: 26 }, (_, index) => index + 15),
+      });
+      await flushMicrotasks();
+    });
+    expect(apiRef.current!.messageFeeds[0].items.some(([id]) => id === 15)).toBe(true);
+    expect(apiRef.current!.messageFeeds[0].items.at(-1)?.[0]).toBe(54);
+    expect(apiRef.current!.messageFeeds[0].pendingNewerItems?.map(([id]) => id)).toEqual([
+      55, 56, 57, 58, 59, 60,
+    ]);
+  });
+
+  it('#3360 keeps reading rows when a delayed ON response arrives after scroll-away', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) => ({ ...feed, items: rangeRsp(21, 60).inboxItems })),
+      );
+    });
+    apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = true;
+    apiRef.current!.physicallyAtBottomByFeedIdRef.current['mf-0'] = true;
+    const generation = apiRef.current!.beginFollowTail('mf-0');
+    const response = deferred('reader moved');
+    hoisted.fetchInboxMessages.mockImplementationOnce(() => response.promise);
+    const load = apiRef.current!.loadFeedNewerMessages('mf-0', {
+      scrollToEndAfterLoad: true,
+      followGeneration: generation,
+    });
+    apiRef.current!.cancelFollowTail('mf-0');
+    apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = false;
+    apiRef.current!.physicallyAtBottomByFeedIdRef.current['mf-0'] = false;
+    await act(async () => {
+      response.resolve(rangeRsp(61, 80));
+      await load;
+      await flushMicrotasks();
+    });
+    expect(apiRef.current!.messageFeeds[0].items.some(([id]) => id === 25)).toBe(true);
+  });
+
+  it('#3360 does not let a setting change authorize automatic read advancement', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    const generation = apiRef.current!.beginFollowTail('mf-0');
+    const response = deferred('setting changed');
+    hoisted.fetchInboxMessages.mockImplementationOnce(() => response.promise);
+    const load = apiRef.current!.loadFeedNewerMessages('mf-0', {
+      scrollToEndAfterLoad: true,
+      followGeneration: generation,
+    });
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} disableAutoScroll />);
+      await flushMicrotasks();
+    });
+    await act(async () => {
+      response.resolve(rangeRsp(2, 20));
+      await load;
+      await flushMicrotasks();
+    });
+    expect(apiRef.current!.messageFeeds[0].readIds.has(2)).toBe(false);
+  });
   it('preserves confirmed preview count while buffering a near-bottom newer page', async () => {
     const { apiRef } = await mountLoadedFeed();
     await act(async () => {
@@ -525,7 +844,11 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       apiRef.current!.setMessageFeeds((prev) =>
         prev.map((feed) => (feed.id === 'mf-0' ? { ...feed, unreadCount: 25 } : feed)),
       );
-      loadPromise = apiRef.current!.loadFeedNewerMessages('mf-0');
+      const followGeneration = apiRef.current!.beginFollowTail('mf-0');
+      loadPromise = apiRef.current!.loadFeedNewerMessages('mf-0', {
+        scrollToEndAfterLoad: true,
+        followGeneration,
+      });
     });
     await act(async () => {
       newerResponse.resolve(
@@ -546,13 +869,17 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
 
     const feedAfterAppend = apiRef.current!.messageFeeds[0];
     expect(feedAfterAppend.items.at(-1)?.[0]).toBe(80);
-    expect(feedAfterAppend.unreadCount).toBe(25);
+    expect(feedAfterAppend.unreadCount).toBe(0);
 
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
       inboxRsp([[81, minimalInboxMessage({ timestamp: 8100 })]]),
     );
     await act(async () => {
-      await apiRef.current!.loadFeedNewerMessages('mf-0', { skipIfNewestExhausted: true });
+      await apiRef.current!.loadFeedNewerMessages('mf-0', {
+        skipIfNewestExhausted: true,
+        scrollToEndAfterLoad: true,
+        followGeneration: apiRef.current!.ensureFollowTail('mf-0'),
+      });
     });
 
     expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(3);
@@ -1306,7 +1633,8 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       expect(feed.unreadCount).toBeGreaterThan(0);
     });
 
-    it('does not mark-all-read when user prefs disable auto-scroll even if watch mode and at bottom', async () => {
+    // #3360: background polling cannot replace the visible window while automatic follow is off.
+    it('buffers without marking read when user prefs disable auto-scroll even at bottom', async () => {
       const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
         current: null,
       };
@@ -1336,9 +1664,40 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       });
 
       const feed = apiRef.current!.messageFeeds[0];
-      expect(feed.items.map(([id]) => id).sort()).toEqual([1, 2]);
+      expect(feed.items.map(([id]) => id)).toEqual([1]);
+      expect(feed.pendingNewerItems?.map(([id]) => id)).toEqual([2]);
       expect(feed.readIds.has(2)).toBe(false);
       expect(feed.unreadCount).toBeGreaterThan(0);
+    });
+
+    it('#3360 keeps a full reading window intact during a non-physical pending flush', async () => {
+      const { apiRef } = await mountLoadedFeed();
+      const items = Array.from(
+        { length: DUTY_FEED_MESSAGE_WINDOW_LIMIT },
+        (_, index) => [index + 1, minimalInboxMessage({ timestamp: (index + 1) * 100 })] as const,
+      );
+      await act(async () => {
+        apiRef.current!.setMessageFeeds((feeds) =>
+          feeds.map((feed) => ({
+            ...feed,
+            items: [...items],
+            pendingNewerItems: [[41, minimalInboxMessage({ timestamp: 4100 })]],
+          })),
+        );
+        await flushMicrotasks();
+      });
+
+      await act(async () => {
+        apiRef.current!.flushPendingNewerMessages('mf-0', {
+          allowWindowTrim: false,
+          protectedItemIds: [1],
+        });
+        await flushMicrotasks();
+      });
+
+      const feed = apiRef.current!.messageFeeds[0];
+      expect(feed.items.map(([id]) => id)).toEqual(items.map(([id]) => id));
+      expect(feed.pendingNewerItems?.map(([id]) => id)).toEqual([41]);
     });
 
     it('does not mark-all-read when only near-bottom (range) is true without watch mode', async () => {

@@ -36,6 +36,7 @@ function buildFeedColumnView(
   const {
     messageFeeds,
     dutyDisableAutoScroll,
+    initialPositioningReady,
     watchModeByFeedId,
     loadingNewerFeedIds,
     arrowResultByFeedId,
@@ -50,6 +51,8 @@ function buildFeedColumnView(
     canRemove: messageFeeds.length > 1,
     maxWidth: dutyFeedColumnMaxWidth(messageFeeds.length, deps.narrowScreen),
     isWatchMode: !dutyDisableAutoScroll && (watchModeByFeedId[feed.id] ?? true),
+    autoScrollAllowed: !dutyDisableAutoScroll,
+    initialPositioningReady,
     loadingNewer: loadingNewerFeedIds.has(feed.id),
     arrowResultMessage: arrowResultByFeedId[feed.id] ?? null,
     bottomUnreadCount: feedIndicatorUnreadCount(feed, confirmedTailPreviewByFeedId[feed.id], {
@@ -60,6 +63,7 @@ function buildFeedColumnView(
       feed.items.length === 0 ? true : (physicallyAtBottomByFeedIdRef.current[feed.id] ?? false),
     tailAvailability: tailAvailabilityByFeedId[feed.id] ?? 'unknown',
     unreadPrefetchNeeded: feedNeedsUnreadPrefetch(feed),
+    // OFF blocks following, not anchor-preserving manual reading through buffered arrivals.
     pendingNewerFlushNeeded: (feed.pendingNewerItems?.length ?? 0) > 0,
   };
 }
