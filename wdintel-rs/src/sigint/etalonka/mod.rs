@@ -138,7 +138,7 @@ pub async fn bl_etalonka_report_networks_data(
         crate::messenger::group::get_identity_sigint_groups(dbx, user_login)
             .await
             .c(h!())?;
-    let networks_data = load_networks(dbx, req).await.context(h!())?;
+    let networks_data = load_networks(dbx, req, &groups).await.context(h!())?;
 
     Ok(collect_etalonka_data(
         dbx,
@@ -162,7 +162,8 @@ pub async fn bl_etalonka_report_networks_batch_id_data(
         crate::messenger::group::get_identity_sigint_groups(dbx, user_login)
             .await
             .c(h!())?;
-    let networks_data = load_networks_by_id(dbx, req).await.context(h!())?;
+    let networks_data =
+        load_networks_by_id(dbx, req, &groups).await.context(h!())?;
 
     Ok(collect_etalonka_data(
         dbx,

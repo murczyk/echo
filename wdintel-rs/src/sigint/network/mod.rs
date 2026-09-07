@@ -77,6 +77,10 @@ pub async fn network_list(
     )
     .await?;
     let user_id = login_id_from_identity(&user)?;
+    let groups =
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &user_id)
+            .await
+            .context(h!())?;
 
     let text_search_mode =
         resolve_network_text_search_mode(&env.dbx, &req).await?;
@@ -84,14 +88,16 @@ pub async fn network_list(
         &req,
         NetworkQueryKind::List,
         text_search_mode,
+        &groups,
     )
     .all(&env.dbx)
     .await
     .context(h!())?;
 
-    let res = render_networks(networks, &env.dbx, &user_id)
-        .await
-        .context(h!())?;
+    let res =
+        render_networks_with_groups(networks, &env.dbx, &user_id, &groups)
+            .await
+            .context(h!())?;
 
     let status_counts = load_network_status_counts(&env.dbx, &req).await?;
 
@@ -116,6 +122,7 @@ fn build_networks_query(
         req,
         kind,
         NetworkTextSearchMode::Substring,
+        &["test-group".to_string()],
     )
 }
 
@@ -123,6 +130,7 @@ fn build_networks_query_with_text_search_mode(
     req: &ListNetworksReq,
     kind: NetworkQueryKind,
     text_search_mode: NetworkTextSearchMode,
+    groups: &[String],
 ) -> Select<sigint_network::Entity> {
     let mut query = sigint_network::Entity::find();
     query = apply_network_list_filters_with_text_search_mode(
@@ -133,7 +141,7 @@ fn build_networks_query_with_text_search_mode(
     );
 
     if matches!(kind, NetworkQueryKind::List) {
-        query = sort::apply_network_sorts(query, req.sort_by.as_ref());
+        query = sort::apply_network_sorts(query, req.sort_by.as_ref(), groups);
 
         let has_filters = req.filter_freq.is_some()
             || req.filter_text.is_some()
@@ -195,6 +203,7 @@ fn build_networks_counts_query_with_text_search_mode(
         req,
         NetworkQueryKind::Counts,
         text_search_mode,
+        &[],
     )
     .select_only()
     .column_as(
@@ -5677,10 +5686,12 @@ mod tests {
             .build(DbBackend::Postgres)
             .to_string();
 
-        assert!(sql.contains("MAX(sigint_network_freq.last_seen_dt)"));
+        assert!(sql.contains("MAX(inbox_item.datetime)"));
         assert!(sql.contains(
-            "sigint_network_freq.last_seen_dt <= sigint_network.active_to"
+            "datasource_group.group_master_key = ANY(ARRAY ['test-group'])"
         ));
+        assert!(sql.contains("inbox_item.datetime <= sigint_network.active_to"));
+        assert!(sql.contains("network_freq.deleted = false"));
         assert!(sql.contains("DESC"));
         assert!(sql.contains("\"sigint_network\".\"name\" ASC"));
         assert!(sql.contains("\"sigint_network\".\"id\" ASC"));
@@ -5847,6 +5858,7 @@ mod tests {
             &req,
             NetworkQueryKind::List,
             text_search_mode,
+            &[],
         )
         .all(&env.dbx)
         .await
@@ -5881,6 +5893,7 @@ mod tests {
             &req,
             NetworkQueryKind::List,
             text_search_mode,
+            &[],
         )
         .all(&env.dbx)
         .await
@@ -5927,6 +5940,7 @@ mod tests {
             &req,
             NetworkQueryKind::List,
             text_search_mode,
+            &[],
         )
         .all(&env.dbx)
         .await
@@ -5944,6 +5958,7 @@ mod tests {
             &req,
             NetworkQueryKind::List,
             text_search_mode,
+            &[],
         )
         .all(&env.dbx)
         .await
@@ -6043,6 +6058,7 @@ mod tests {
             &req,
             NetworkQueryKind::List,
             text_search_mode,
+            &[],
         )
         .all(&env.dbx)
         .await
@@ -6086,6 +6102,7 @@ mod tests {
             &req,
             NetworkQueryKind::List,
             text_search_mode,
+            &[],
         )
         .all(&env.dbx)
         .await
@@ -6121,6 +6138,7 @@ mod tests {
             &req,
             NetworkQueryKind::List,
             text_search_mode,
+            &[],
         )
         .all(&env.dbx)
         .await

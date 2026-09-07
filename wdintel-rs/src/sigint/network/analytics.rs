@@ -53,6 +53,18 @@ WHERE network_link.sigint_network_id = ANY($1)
       network.active_to IS NULL
       OR inbox_item.datetime <= network.active_to
   )
+  AND EXISTS (
+      SELECT 1
+      FROM sigint_network_freq network_freq
+      WHERE network_freq.network_id = network_link.sigint_network_id
+        AND network_freq.freq = inbox_item.freq
+        AND network_freq.deleted = false
+        AND inbox_item.datetime >= network_freq.active_from
+        AND (
+            network_freq.active_to IS NULL
+            OR inbox_item.datetime <= network_freq.active_to
+        )
+  )
 GROUP BY
     network_link.sigint_network_id,
     day,
