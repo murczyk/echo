@@ -309,7 +309,11 @@ async fn read_units_with_orbit_visibility(
     let total_count = selected_unit_count(req, &status_counts);
     let total_count_u64 = u64::try_from(total_count).c(h!())?;
     let sort_by = unit_list_sort(req.sort_by.as_ref(), can_view_orbit);
-    if let Some((column, order)) = simple_unit_list_sort(&sort_by) {
+    if matches!(sort_by, ListUnitsSortBy::NaturalMilitarySortAsc)
+        && has_unit_global_search(req)
+    {
+        units = apply_unit_search_order(units, req, can_view_orbit);
+    } else if let Some((column, order)) = simple_unit_list_sort(&sort_by) {
         units = units
             .order_by(column, order.clone())
             .order_by(sigint_unit::Column::Id, order);
@@ -626,11 +630,7 @@ fn apply_unit_list_filters(
         .search_mode
         .as_ref()
         .unwrap_or(&ListUnitsSearchMode::Strict);
-    let global_filter_columns = if can_view_orbit {
-        r#"concat_ws(' ', "sigint_unit"."name", "sigint_unit"."other", "sigint_unit"."team_or_crew", "sigint_unit"."section", "sigint_unit"."squad", "sigint_unit"."platoon", "sigint_unit"."company", "sigint_unit"."battalion", "sigint_unit"."regiment", "sigint_unit"."brigade", "sigint_unit"."division", "sigint_unit"."corps", "sigint_unit"."army", "sigint_unit"."military_district", "sigint_unit"."army_region", "sigint_unit"."comment", "sigint_unit"."orbit_note")"#
-    } else {
-        r#"concat_ws(' ', "sigint_unit"."name", "sigint_unit"."other", "sigint_unit"."team_or_crew", "sigint_unit"."section", "sigint_unit"."squad", "sigint_unit"."platoon", "sigint_unit"."company", "sigint_unit"."battalion", "sigint_unit"."regiment", "sigint_unit"."brigade", "sigint_unit"."division", "sigint_unit"."corps", "sigint_unit"."army", "sigint_unit"."military_district", "sigint_unit"."army_region", "sigint_unit"."comment")"#
-    };
+    let global_filter_columns = unit_global_filter_columns(can_view_orbit);
     let orbit_note_filter = if can_view_orbit {
         req.filter_orbit_note.as_deref()
     } else {
@@ -698,25 +698,12 @@ fn unit_text_filter(
 
     match mode {
         ListUnitsSearchMode::Strict => {
-            let mut condition = Condition::all();
-            for token in value.split_whitespace() {
-                let token = regex::escape(&token.to_lowercase());
-                let token_pattern = if token
-                    .chars()
-                    .all(|ch| ch.is_ascii_digit())
-                {
-                    format!("(^|[[:space:]]){token}([[:space:]]|$)")
-                } else {
-                    format!(
-                        "(^|[[:space:]])[^[:space:]]*{token}[^[:space:]]*([[:space:]]|$)"
-                    )
-                };
-                condition = condition.add(Expr::cust_with_values(
-                    format!("lower({column_sql}) ~ $1"),
-                    [token_pattern],
-                ));
-            }
-            Some(condition)
+            let (match_sql, patterns) =
+                unit_exact_match_sql_and_patterns(column_sql, value)?;
+            Some(
+                Condition::all()
+                    .add(Expr::cust_with_values(match_sql, patterns)),
+            )
         }
         ListUnitsSearchMode::Relaxed => {
             let escaped = value
@@ -732,6 +719,110 @@ fn unit_text_filter(
             )))
         }
     }
+}
+
+fn unit_global_filter_columns(can_view_orbit: bool) -> &'static str {
+    if can_view_orbit {
+        r#"concat_ws(' ', "sigint_unit"."name", "sigint_unit"."other", "sigint_unit"."team_or_crew", "sigint_unit"."section", "sigint_unit"."squad", "sigint_unit"."platoon", "sigint_unit"."company", "sigint_unit"."battalion", "sigint_unit"."regiment", "sigint_unit"."brigade", "sigint_unit"."division", "sigint_unit"."corps", "sigint_unit"."army", "sigint_unit"."military_district", "sigint_unit"."army_region", "sigint_unit"."comment", "sigint_unit"."orbit_note")"#
+    } else {
+        r#"concat_ws(' ', "sigint_unit"."name", "sigint_unit"."other", "sigint_unit"."team_or_crew", "sigint_unit"."section", "sigint_unit"."squad", "sigint_unit"."platoon", "sigint_unit"."company", "sigint_unit"."battalion", "sigint_unit"."regiment", "sigint_unit"."brigade", "sigint_unit"."division", "sigint_unit"."corps", "sigint_unit"."army", "sigint_unit"."military_district", "sigint_unit"."army_region", "sigint_unit"."comment")"#
+    }
+}
+
+fn unit_search_tokens(value: &str) -> Vec<String> {
+    value
+        .split(|character: char| !character.is_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .map(str::to_lowercase)
+        .collect()
+}
+
+fn has_unit_global_search(req: &ListUnitsReq) -> bool {
+    req.filter_text
+        .as_deref()
+        .is_some_and(|value| !unit_search_tokens(value).is_empty())
+}
+
+fn unit_exact_match_sql_and_patterns(
+    column_sql: &str,
+    value: &str,
+) -> Option<(String, Vec<String>)> {
+    let tokens = unit_search_tokens(value);
+    if tokens.is_empty() {
+        return None;
+    }
+    let normalized_sql = format!(
+        "concat(' ', regexp_replace(lower({column_sql}), '[[:punct:][:space:]]+', ' ', 'g'), ' ')"
+    );
+    let match_sql = tokens
+        .iter()
+        .enumerate()
+        .map(|(index, _)| format!("{normalized_sql} LIKE ${}", index + 1))
+        .collect::<Vec<_>>()
+        .join(" AND ");
+    let patterns = tokens
+        .into_iter()
+        .map(|token| format!("% {token} %"))
+        .collect();
+    Some((match_sql, patterns))
+}
+
+fn unit_echelon_sort_rank_sql() -> &'static str {
+    r#"CASE
+        WHEN btrim("sigint_unit"."other") <> '' THEN 13
+        WHEN btrim("sigint_unit"."team_or_crew") <> '' THEN 12
+        WHEN btrim("sigint_unit"."section") <> '' THEN 11
+        WHEN btrim("sigint_unit"."squad") <> '' THEN 10
+        WHEN btrim("sigint_unit"."platoon") <> '' THEN 9
+        WHEN btrim("sigint_unit"."company") <> '' THEN 8
+        WHEN btrim("sigint_unit"."battalion") <> '' THEN 7
+        WHEN btrim("sigint_unit"."regiment") <> '' THEN 6
+        WHEN btrim("sigint_unit"."brigade") <> '' THEN 5
+        WHEN btrim("sigint_unit"."division") <> '' THEN 4
+        WHEN btrim("sigint_unit"."corps") <> '' THEN 3
+        WHEN btrim("sigint_unit"."army") <> '' THEN 2
+        WHEN btrim("sigint_unit"."military_district") <> '' THEN 1
+        WHEN btrim("sigint_unit"."army_region") <> '' THEN 0
+        ELSE 14
+    END"#
+}
+
+fn apply_unit_search_order(
+    mut units: Select<sigint_unit::Entity>,
+    req: &ListUnitsReq,
+    can_view_orbit: bool,
+) -> Select<sigint_unit::Entity> {
+    if matches!(req.search_mode, Some(ListUnitsSearchMode::Relaxed)) {
+        if let Some((match_sql, patterns)) =
+            req.filter_text.as_deref().and_then(|value| {
+                unit_exact_match_sql_and_patterns(
+                    unit_global_filter_columns(can_view_orbit),
+                    value,
+                )
+            })
+        {
+            units = units.order_by_asc(Expr::cust_with_values(
+                format!("CASE WHEN {match_sql} THEN 0 ELSE 1 END"),
+                patterns,
+            ));
+        }
+    }
+    units = units.order_by_asc(Expr::cust(unit_echelon_sort_rank_sql()));
+    units = units.order_by_asc(sigint_unit::Column::ArmyRegion);
+    units = units.order_by_asc(sigint_unit::Column::MilitaryDistrict);
+    units = units.order_by_asc(sigint_unit::Column::Army);
+    units = units.order_by_asc(sigint_unit::Column::Corps);
+    units = units.order_by_asc(sigint_unit::Column::Division);
+    units = units.order_by_asc(sigint_unit::Column::Brigade);
+    units = units.order_by_asc(sigint_unit::Column::Regiment);
+    units = units.order_by_asc(sigint_unit::Column::Battalion);
+    units = units.order_by_asc(sigint_unit::Column::Company);
+    units = units.order_by_asc(sigint_unit::Column::Platoon);
+    units = units.order_by_asc(sigint_unit::Column::Squad);
+    units = units.order_by_asc(sigint_unit::Column::Section);
+    units = units.order_by_asc(sigint_unit::Column::TeamOrCrew);
+    units = units.order_by_asc(sigint_unit::Column::Other);
+    units.order_by_asc(sigint_unit::Column::Id)
 }
 
 fn available_units_query(
@@ -3397,6 +3488,97 @@ mod tests {
                 ..Default::default()
             },
             &[exact.id, child.id, grandchild.id],
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn unit_list_exact_and_fuzzy_search_rank_by_match_and_echelon() {
+        let env = cleanup().await.unwrap();
+        let regiment = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("123 мсп".to_string()),
+                regiment: Set("123 мсп".to_string()),
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let first_battalion = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("1 мсб 123 мсп".to_string()),
+                battalion: Set("1 мсб".to_string()),
+                regiment: Set("123 мсп".to_string()),
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let second_battalion = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("2 мсб 123 мсп".to_string()),
+                battalion: Set("2 мсб".to_string()),
+                regiment: Set("123 мсп".to_string()),
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let prefixed_number = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("1123 мсп".to_string()),
+                regiment: Set("1123 мсп".to_string()),
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let suffixed_number = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("1234 мсп".to_string()),
+                regiment: Set("1234 мсп".to_string()),
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_listed_unit_ids(
+            &env.dbx,
+            ListUnitsReq {
+                sort_by: Some(ListUnitsSortBy::NaturalMilitarySortAsc),
+                filter_text: Some("мсп 123".to_string()),
+                ..Default::default()
+            },
+            &[regiment.id, first_battalion.id, second_battalion.id],
+        )
+        .await;
+        assert_listed_unit_ids(
+            &env.dbx,
+            ListUnitsReq {
+                sort_by: Some(ListUnitsSortBy::NaturalMilitarySortAsc),
+                filter_text: Some("123 мсп".to_string()),
+                search_mode: Some(ListUnitsSearchMode::Relaxed),
+                ..Default::default()
+            },
+            &[
+                regiment.id,
+                first_battalion.id,
+                second_battalion.id,
+                prefixed_number.id,
+                suffixed_number.id,
+            ],
         )
         .await;
     }

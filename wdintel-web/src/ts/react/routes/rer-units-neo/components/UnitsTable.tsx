@@ -134,7 +134,7 @@ function SearchModeSettingsButton({
           selected={searchMode === 'strict'}
           onClick={() => changeMode('strict')}
         >
-          <ListItemText>Строгий пошук</ListItemText>
+          <ListItemText>Точний пошук</ListItemText>
         </MenuItem>
         <MenuItem
           role="menuitemradio"
@@ -150,7 +150,7 @@ function SearchModeSettingsButton({
 }
 
 const TEXT_FILTER_HELPERS: Record<UnitSearchMode, string> = {
-  strict: 'Режим: строгий',
+  strict: 'Режим: точний',
   relaxed: 'Режим: нечіткий',
 };
 
