@@ -59,7 +59,7 @@ describe('rer units helpers', () => {
         pagination: { pageIndex: 2, pageSize: 20 },
       }),
     ).toMatchObject({
-      sortBy: 'CreatedAtDesc',
+      sortBy: 'NaturalMilitarySortAsc',
       includeInactive: true,
       filterActive: false,
       filterText: '55 омсбр',
@@ -68,6 +68,19 @@ describe('rer units helpers', () => {
       limit: 20,
       offset: 40,
     });
+  });
+
+  it('keeps table sorting when there is no global unit search', () => {
+    expect(
+      buildUnitsListReq({
+        statusFilter: 'active',
+        globalFilter: '',
+        columnFilters: [],
+        sorting: [{ id: 'createdAt', desc: true }],
+        searchMode: 'strict',
+        pagination: { pageIndex: 0, pageSize: 20 },
+      }).sortBy,
+    ).toBe('CreatedAtDesc');
   });
 
   it('builds duplicate and Orbit presence filters with Orbit-link sorting', () => {
