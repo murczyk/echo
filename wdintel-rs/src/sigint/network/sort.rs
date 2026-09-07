@@ -19,6 +19,20 @@ pub(crate) fn network_first_aor_sort_sql() -> &'static str {
         AND area_of_responsibility.deleted = false)"
 }
 
+pub(crate) fn network_last_activity_sort_sql() -> &'static str {
+    "(SELECT MAX(sigint_network_freq.last_seen_dt) \
+      FROM sigint_network_freq \
+      WHERE sigint_network_freq.network_id = sigint_network.id \
+        AND sigint_network_freq.deleted = false \
+        AND sigint_network_freq.last_seen_dt >= sigint_network_freq.active_from \
+        AND (sigint_network_freq.active_to IS NULL \
+          OR sigint_network_freq.last_seen_dt <= sigint_network_freq.active_to) \
+        AND (sigint_network.active_from IS NULL \
+          OR sigint_network_freq.last_seen_dt >= sigint_network.active_from) \
+        AND (sigint_network.active_to IS NULL \
+          OR sigint_network_freq.last_seen_dt <= sigint_network.active_to))"
+}
+
 fn order_by_nulls_last(
     query: Select<sigint_network::Entity>,
     sort_sql: &str,
@@ -45,14 +59,16 @@ pub(crate) fn apply_network_sort(
         ListNetworksSortBy::NameDesc => query
             .order_by_desc(sigint_network::Column::Name)
             .order_by_asc(sigint_network::Column::Id),
-        ListNetworksSortBy::LastActivityAsc => query
-            .order_by_asc(sigint_network::Column::UpdatedAt)
-            .order_by_asc(sigint_network::Column::Name)
-            .order_by_asc(sigint_network::Column::Id),
-        ListNetworksSortBy::LastActivityDesc => query
-            .order_by_desc(sigint_network::Column::UpdatedAt)
-            .order_by_asc(sigint_network::Column::Name)
-            .order_by_asc(sigint_network::Column::Id),
+        ListNetworksSortBy::LastActivityAsc => {
+            order_by_nulls_last(query, network_last_activity_sort_sql(), false)
+                .order_by_asc(sigint_network::Column::Name)
+                .order_by_asc(sigint_network::Column::Id)
+        }
+        ListNetworksSortBy::LastActivityDesc => {
+            order_by_nulls_last(query, network_last_activity_sort_sql(), true)
+                .order_by_asc(sigint_network::Column::Name)
+                .order_by_asc(sigint_network::Column::Id)
+        }
         ListNetworksSortBy::AorAsc => {
             order_by_nulls_last(query, network_first_aor_sort_sql(), false)
                 .order_by_asc(sigint_network::Column::Name)

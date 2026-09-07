@@ -3793,6 +3793,7 @@ export type Network = {
   operationMode: string | null;
   operationType: string | null;
   operationPeriod: string | null;
+  lastActivityAt: number | null;
   lastUpdatedAt: number;
   lastUpdatedBy: string | null;
   activeFrom: number | null;

@@ -31,9 +31,10 @@ where
     let network_ids: Vec<i64> = networks.iter().map(|n| n.id).collect();
 
     // fetch all related data in bulk
-    let freqs_map = get_networks_freqs(txn, &network_ids, user_login)
-        .await
-        .context(h!())?;
+    let network_freqs =
+        get_networks_freqs(txn, &networks, &network_ids, user_login)
+            .await
+            .context(h!())?;
     let units_map =
         get_networks_units(txn, &network_ids).await.context(h!())?;
     let posts_map =
@@ -61,7 +62,11 @@ where
     for network in &networks {
         networks_res.push(Network {
             id: network.id,
-            freqs: freqs_map.get(&network.id).cloned().unwrap_or_default(),
+            freqs: network_freqs
+                .freqs_by_network_id
+                .get(&network.id)
+                .cloned()
+                .unwrap_or_default(),
             unit_ids: units_map.get(&network.id).cloned(),
             post_ids: posts_map.get(&network.id).cloned().unwrap_or_default(),
             descriptions: descs_map
@@ -77,6 +82,10 @@ where
             operation_mode: network.operation_mode.clone(),
             operation_type: network.operation_type.clone(),
             operation_period: network.operation_period.clone(),
+            last_activity_at: network_freqs
+                .last_activity_by_network_id
+                .get(&network.id)
+                .map(|timestamp| timestamp.and_utc().timestamp_millis()),
             last_updated_at: network.updated_at.and_utc().timestamp_millis(),
             last_updated_by: network.updated_by_login_id.map(|login_id| {
                 updated_by_logins
@@ -110,16 +119,25 @@ where
     Ok(networks_res)
 }
 
+struct NetworkFreqs {
+    freqs_by_network_id: HashMap<i64, Vec<NetworkFreq>>,
+    last_activity_by_network_id: HashMap<i64, NaiveDateTime>,
+}
+
 async fn get_networks_freqs<'a, 'async_trait, C>(
     txn: &'a C,
+    networks: &[sigint_network::Model],
     network_ids: &[i64],
     user_login: &uuid::Uuid,
-) -> Result<HashMap<i64, Vec<NetworkFreq>>, AppError>
+) -> Result<NetworkFreqs, AppError>
 where
     C: ConnectionTrait + 'async_trait,
 {
     if network_ids.is_empty() {
-        return Ok(HashMap::new());
+        return Ok(NetworkFreqs {
+            freqs_by_network_id: HashMap::new(),
+            last_activity_by_network_id: HashMap::new(),
+        });
     }
 
     let freqs = sigint_network_freq::Entity::find()
@@ -138,11 +156,35 @@ where
             .await
             .c(h!())?;
 
-    let mut freq_map: HashMap<i64, Vec<NetworkFreq>> = HashMap::new();
+    let networks_by_id = networks
+        .iter()
+        .map(|network| (network.id, network))
+        .collect::<HashMap<_, _>>();
+    let mut freqs_by_network_id: HashMap<i64, Vec<NetworkFreq>> =
+        HashMap::new();
+    let mut last_activity_by_network_id = HashMap::new();
 
     for freq in freqs {
+        if let (Some(network), Some(last_seen_dt)) =
+            (networks_by_id.get(&freq.network_id), freq.last_seen_dt)
+        {
+            if is_last_seen_in_activity_range(
+                last_seen_dt,
+                network.active_from,
+                network.active_to,
+                freq.active_from,
+                freq.active_to,
+            ) {
+                last_activity_by_network_id
+                    .entry(freq.network_id)
+                    .and_modify(|current| {
+                        *current = std::cmp::max(*current, last_seen_dt)
+                    })
+                    .or_insert(last_seen_dt);
+            }
+        }
         let keys = keys.remove(&freq.id).unwrap_or_default();
-        freq_map
+        freqs_by_network_id
             .entry(freq.network_id)
             .or_default()
             .push(NetworkFreq {
@@ -161,7 +203,29 @@ where
             });
     }
 
-    Ok(freq_map)
+    Ok(NetworkFreqs {
+        freqs_by_network_id,
+        last_activity_by_network_id,
+    })
+}
+
+fn is_last_seen_in_activity_range(
+    last_seen_dt: NaiveDateTime,
+    network_active_from: Option<NaiveDateTime>,
+    network_active_to: Option<NaiveDateTime>,
+    freq_active_from: NaiveDateTime,
+    freq_active_to: Option<NaiveDateTime>,
+) -> bool {
+    network_active_from
+        .map(|active_from| active_from <= last_seen_dt)
+        .unwrap_or(true)
+        && network_active_to
+            .map(|active_to| last_seen_dt <= active_to)
+            .unwrap_or(true)
+        && freq_active_from <= last_seen_dt
+        && freq_active_to
+            .map(|active_to| last_seen_dt <= active_to)
+            .unwrap_or(true)
 }
 
 pub async fn get_networks_units<'a, 'async_trait, C>(
@@ -468,6 +532,10 @@ async fn load_network_group_activity_postgres(
             sigint_inbox_item::Relation::SigintInboxItemNetwork.def(),
             Alias::new("sigint_inbox_item_network"),
         )
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item_network::Relation::SigintNetwork.def(),
+        )
         .join_as(
             JoinType::InnerJoin,
             signal_message::Relation::DatasourceGroup.def(),
@@ -502,6 +570,18 @@ async fn load_network_group_activity_postgres(
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.lte(dt_till))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+        .filter(
+            Expr::col(sigint_network::Column::ActiveFrom)
+                .is_null()
+                .or(Expr::col(sigint_inbox_item::Column::Datetime)
+                    .gte(Expr::col(sigint_network::Column::ActiveFrom))),
+        )
+        .filter(
+            Expr::col(sigint_network::Column::ActiveTo)
+                .is_null()
+                .or(Expr::col(sigint_inbox_item::Column::Datetime)
+                    .lte(Expr::col(sigint_network::Column::ActiveTo))),
+        )
         .filter(
             sigint_inbox_item_network::Column::SigintNetworkId
                 .eq_any(network_ids.to_vec()),
@@ -917,4 +997,42 @@ pub async fn fetch_count(
     .c(h!())?;
 
     Ok(result.map_or(0, |r| r.count))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dt(day: u32) -> NaiveDateTime {
+        NaiveDate::from_ymd_opt(2026, 9, day)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap()
+    }
+
+    // Regression for ECHO-3207: stale cached activity must not escape closed ranges.
+    #[test]
+    fn last_seen_must_be_inside_network_and_frequency_ranges() {
+        assert!(is_last_seen_in_activity_range(
+            dt(5),
+            Some(dt(1)),
+            Some(dt(7)),
+            dt(2),
+            Some(dt(6)),
+        ));
+        assert!(!is_last_seen_in_activity_range(
+            dt(8),
+            Some(dt(1)),
+            Some(dt(7)),
+            dt(2),
+            None,
+        ));
+        assert!(!is_last_seen_in_activity_range(
+            dt(7),
+            Some(dt(1)),
+            None,
+            dt(2),
+            Some(dt(6)),
+        ));
+    }
 }

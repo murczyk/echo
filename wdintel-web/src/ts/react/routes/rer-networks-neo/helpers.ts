@@ -1,4 +1,5 @@
 import dayjs from 'dayjs';
+import timezone from 'dayjs/plugin/timezone';
 import utc from 'dayjs/plugin/utc';
 import type { MRT_ColumnFiltersState, MRT_SortingState } from 'material-react-table';
 
@@ -10,7 +11,7 @@ import type {
   NetworkFreq,
   Unit,
 } from '../../../../Bindings';
-import { isPresent } from '../../utils/misc';
+import { APP_TIME_ZONE, isPresent } from '../../utils/misc';
 import type { SelectedSidebarUnitFilter } from '../rer-callsigns-neo/types';
 import type {
   ActivityLoadStateByNetworkId,
@@ -18,6 +19,7 @@ import type {
 } from './use-rer-networks-neo-page.types';
 
 dayjs.extend(utc);
+dayjs.extend(timezone);
 
 export type NetworkRowView = {
   id: number;
@@ -133,9 +135,9 @@ export function getNetworkStatusDescriptor(network: Network): NetworkStatusDescr
 
 export function buildActivityBars(
   activityByDay: Record<string, Record<string, number>> | null | undefined,
+  rangeEndMs = Date.now(),
 ): Array<{ value: number; title: string }> {
   const dayCounts = new Map<number, number>();
-  let lastKnownDayMs: number | null = null;
 
   for (const [dayKey, groups] of Object.entries(activityByDay ?? {})) {
     const dayMs = Number(dayKey);
@@ -143,11 +145,9 @@ export function buildActivityBars(
     const value = Object.values(groups ?? {}).reduce((sum, count) => sum + count, 0);
     const normalizedDayMs = dayjs.utc(dayMs).startOf('day').valueOf();
     dayCounts.set(normalizedDayMs, value);
-    lastKnownDayMs =
-      lastKnownDayMs === null ? normalizedDayMs : Math.max(lastKnownDayMs, normalizedDayMs);
   }
 
-  const rangeEnd = dayjs.utc(lastKnownDayMs ?? dayjs.utc().valueOf()).startOf('day');
+  const rangeEnd = dayjs.utc(dayjs(rangeEndMs).tz(APP_TIME_ZONE).format('YYYY-MM-DD'));
   return Array.from({ length: 10 }, (_, index) => {
     const day = rangeEnd.subtract(9 - index, 'day').startOf('day');
     return {
@@ -193,6 +193,10 @@ export function buildNetworkRowView(
   const inactiveFrequencies = network.freqs
     .filter((freq) => freq.deleted || freq.activeTo !== null)
     .filter((freq) => freq.freq.trim() !== '');
+  const lastActivityLabel = formatDateTime(network.lastActivityAt);
+  const lastActivityDetail = isPresent(network.lastActivityAt)
+    ? 'Останнє перехоплення'
+    : 'Немає перехоплень';
 
   return {
     id: network.id,
@@ -208,13 +212,9 @@ export function buildNetworkRowView(
     inactiveFrequencies,
     activityBars: buildActivityBars(activityByNetworkId.get(network.id)),
     activityLoadState: activityLoadStateByNetworkId.get(network.id) ?? 'loading',
-    lastActivityLabel: formatDateTime(network.lastUpdatedAt),
-    lastActivityDetail: network.lastUpdatedBy?.trim() || 'невідомий',
-    lastActivityTooltip: [
-      `Створено: ${formatDateTime(network.createdAt)}`,
-      `Оновлено: ${formatDateTime(network.lastUpdatedAt)}`,
-      `Автор: ${network.lastUpdatedBy?.trim() || 'невідомий'}`,
-    ].join('\n'),
+    lastActivityLabel,
+    lastActivityDetail,
+    lastActivityTooltip: `${lastActivityDetail}: ${lastActivityLabel}`,
     createdAtLabel: formatDate(network.createdAt),
   };
 }

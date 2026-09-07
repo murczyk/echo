@@ -1360,6 +1360,8 @@ pub async fn update_network(
         }
     }
 
+    let activity_range_changed = old_network.active_from != network.active_from
+        || old_network.active_to != network.active_to;
     txn.commit().await.context(h!())?;
 
     etalon_calc::invalidate_network_inbox(
@@ -1370,7 +1372,7 @@ pub async fn update_network(
     )
     .await
     .c(h!())?;
-    if is_restore_network || should_reactivate_for_do_not_archive {
+    if activity_range_changed {
         refresh_network_last_seen_after_state_change(&env.dbx, [network.id])
             .await
             .c(h!())?;
@@ -3484,6 +3486,12 @@ async fn cleanup_networks_worker_1(
                     .to_owned(),
             )
             .not(),
+        )
+        .filter(
+            sigint_network_freq::Column::LastSeenDt
+                .is_null()
+                .or(sigint_network_freq::Column::LastSeenDt
+                    .lt(cleanup_time)),
         )
         .filter(sigint_network_freq::Column::ActiveTo.is_null())
         .filter(sigint_network_freq::Column::Deleted.eq(false))
@@ -5669,7 +5677,11 @@ mod tests {
             .build(DbBackend::Postgres)
             .to_string();
 
-        assert!(sql.contains("\"sigint_network\".\"updated_at\" DESC"));
+        assert!(sql.contains("MAX(sigint_network_freq.last_seen_dt)"));
+        assert!(sql.contains(
+            "sigint_network_freq.last_seen_dt <= sigint_network.active_to"
+        ));
+        assert!(sql.contains("DESC"));
         assert!(sql.contains("\"sigint_network\".\"name\" ASC"));
         assert!(sql.contains("\"sigint_network\".\"id\" ASC"));
     }
@@ -6667,6 +6679,55 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(invalidation_task_count, 0);
+    }
+
+    // Regression for ECHO-3207: delayed derived links must not deactivate recently seen frequencies.
+    #[tokio::test]
+    #[serial]
+    async fn cleanup_worker_keeps_recently_seen_frequency_active() {
+        let env = cleanup().await.unwrap();
+        let old_dt = cleanup_old_dt();
+        seed_stale_freq_network(&env.dbx, old_dt, "Cleanup scan trigger").await;
+        let network = mk_sigint_network(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                name: Set("Recently seen network".to_string()),
+                created_at: Set(old_dt),
+                updated_at: Set(old_dt),
+                active_from: Set(Some(old_dt)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let network_freq = mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set("146.5500".to_string()),
+                active_from: Set(old_dt),
+                last_seen_dt: Set(Some(Utc::now().naive_utc())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        cleanup_networks_worker_1(&env.dbx).await.unwrap();
+
+        let network = sigint_network::Entity::find_by_id(network.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let network_freq =
+            sigint_network_freq::Entity::find_by_id(network_freq.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(network.active_to, None);
+        assert_eq!(network_freq.active_to, None);
     }
 
     #[tokio::test]

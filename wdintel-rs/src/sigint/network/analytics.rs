@@ -29,6 +29,8 @@ SELECT
 FROM echo_clickhouse_derived.message_network_link network_link
 JOIN sigint_inbox_item inbox_item
     ON inbox_item.id = network_link.sigint_inbox_item_id
+JOIN sigint_network network
+    ON network.id = network_link.sigint_network_id
 JOIN signal_message
     ON signal_message.id = inbox_item.id
 JOIN datasource_group
@@ -43,6 +45,14 @@ WHERE network_link.sigint_network_id = ANY($1)
   AND signal_group.is_archived = false
   AND inbox_item.datetime >= $5
   AND inbox_item.datetime <= $6
+  AND (
+      network.active_from IS NULL
+      OR inbox_item.datetime >= network.active_from
+  )
+  AND (
+      network.active_to IS NULL
+      OR inbox_item.datetime <= network.active_to
+  )
 GROUP BY
     network_link.sigint_network_id,
     day,

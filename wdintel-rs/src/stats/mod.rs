@@ -2880,6 +2880,8 @@ struct NetworkFreqRangeRow {
     freq: String,
     active_from: NaiveDateTime,
     active_to: Option<NaiveDateTime>,
+    network_active_from: Option<NaiveDateTime>,
+    network_active_to: Option<NaiveDateTime>,
 }
 
 async fn load_network_freq_ranges(
@@ -2887,12 +2889,18 @@ async fn load_network_freq_ranges(
     network_ids: Option<&HashSet<i64>>,
 ) -> Result<HashMap<(i64, String), Vec<NetworkFreqRangeRow>>, AppError> {
     let mut query = sigint_network_freq::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_network_freq::Relation::SigintNetwork.def(),
+        )
         .select_only()
         .column(sigint_network_freq::Column::Id)
         .column(sigint_network_freq::Column::NetworkId)
         .column(sigint_network_freq::Column::Freq)
         .column(sigint_network_freq::Column::ActiveFrom)
         .column(sigint_network_freq::Column::ActiveTo)
+        .column_as(sigint_network::Column::ActiveFrom, "network_active_from")
+        .column_as(sigint_network::Column::ActiveTo, "network_active_to")
         .filter(sigint_network_freq::Column::Deleted.eq(false));
     if let Some(network_ids) = network_ids {
         query = query.filter(
@@ -2920,7 +2928,10 @@ fn is_network_freq_active_at(
     freq: &NetworkFreqRangeRow,
     ts: NaiveDateTime,
 ) -> bool {
-    freq.active_from <= ts && freq.active_to.map(|dt| dt >= ts).unwrap_or(true)
+    freq.active_from <= ts
+        && freq.active_to.map(|dt| dt >= ts).unwrap_or(true)
+        && freq.network_active_from.map(|dt| dt <= ts).unwrap_or(true)
+        && freq.network_active_to.map(|dt| dt >= ts).unwrap_or(true)
 }
 
 pub async fn recalculate_last_seen_for_networks_exact(
@@ -2966,6 +2977,8 @@ pub async fn recalculate_last_seen_for_networks_exact(
                  nf_inner.id as network_freq_id,
                  max(coalesce(sii.datetime, sm.timestamp, sm.created_at)) as last_seen_dt
              from sigint_network_freq as nf_inner
+             join sigint_network as network_inner
+                 on network_inner.id = nf_inner.network_id
              join sigint_inbox_item_network as siin
                  on siin.sigint_network_id = nf_inner.network_id
              join sigint_inbox_item as sii
@@ -2978,6 +2991,8 @@ pub async fn recalculate_last_seen_for_networks_exact(
                and sii.freq = nf_inner.freq
                and coalesce(sii.datetime, sm.timestamp, sm.created_at) >= nf_inner.active_from
                and coalesce(sii.datetime, sm.timestamp, sm.created_at) <= coalesce(nf_inner.active_to, current_timestamp at time zone 'utc')
+               and coalesce(sii.datetime, sm.timestamp, sm.created_at) >= coalesce(network_inner.active_from, '-infinity'::timestamp)
+               and coalesce(sii.datetime, sm.timestamp, sm.created_at) <= coalesce(network_inner.active_to, current_timestamp at time zone 'utc')
              group by nf_inner.id
          ) as sub
          where nf.id = sub.network_freq_id"
@@ -3535,6 +3550,23 @@ fn batch_key_to_group_keys(batch_key: String) -> Vec<String> {
 mod tests {
     use super::*;
     use clap::{CommandFactory, Parser};
+
+    // Regression for ECHO-3207: cached activity follows both activity ranges.
+    #[test]
+    fn network_frequency_activity_checks_network_range() {
+        let freq = NetworkFreqRangeRow {
+            id: 1,
+            network_id: 1,
+            freq: "146.5000".to_string(),
+            active_from: ndt(2026, 9, 2, 0, 0),
+            active_to: Some(ndt(2026, 9, 8, 0, 0)),
+            network_active_from: Some(ndt(2026, 9, 1, 0, 0)),
+            network_active_to: Some(ndt(2026, 9, 7, 0, 0)),
+        };
+
+        assert!(is_network_freq_active_at(&freq, ndt(2026, 9, 6, 0, 0)));
+        assert!(!is_network_freq_active_at(&freq, ndt(2026, 9, 7, 12, 0)));
+    }
 
     #[test]
     fn historic_stats_help_lists_all_statistics_families() {

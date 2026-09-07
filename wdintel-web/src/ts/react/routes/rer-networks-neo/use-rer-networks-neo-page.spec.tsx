@@ -184,6 +184,7 @@ function buildNetwork(id: number, overrides: Partial<Network> = {}): Network {
     operationType: null,
     operationPeriod: null,
     doNotArchive: false,
+    lastActivityAt: null,
     lastUpdatedAt: now,
     lastUpdatedBy: 'tester',
     activeFrom: null,

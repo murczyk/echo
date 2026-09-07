@@ -73,6 +73,7 @@ pub struct Network {
     pub operation_mode: Option<String>,
     pub operation_type: Option<String>,
     pub operation_period: Option<String>,
+    pub last_activity_at: Option<i64>,
     pub last_updated_at: i64,
     pub last_updated_by: Option<String>,
     pub active_from: Option<i64>,
