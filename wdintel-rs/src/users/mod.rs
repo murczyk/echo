@@ -23,9 +23,35 @@ pub mod totp_challenge;
 pub mod totp_crypto;
 pub mod types;
 
+#[cfg(test)]
+mod session_tests;
+
 pub fn login_id_from_identity(user: &Identity) -> Result<Uuid, AppError> {
     let identity = user.id().map_err(|_| AppError::Unauthenticated)?;
     Uuid::parse_str(&identity).map_err(|_| AppError::Unauthenticated)
+}
+
+pub(crate) async fn load_active_login(
+    db: &impl ConnectionTrait,
+    login_id: &Uuid,
+) -> anyhow::Result<login::Model> {
+    let (login, organism) = login::Entity::find_by_id(*login_id)
+        .filter(login::Column::Deleted.eq(false))
+        .filter(login::Column::DeletedPermanently.eq(false))
+        .find_also_related(organism::Entity)
+        .one(db)
+        .await
+        .c(h!())?
+        .ok_or(AppError::Unauthenticated)
+        .c(h!())?;
+    if login.organism_id.is_some()
+        && !organism.is_some_and(|organism| {
+            organism.enabled && !organism.deleted_permanently
+        })
+    {
+        return Err(AppError::Unauthenticated).c(h!());
+    }
+    Ok(login)
 }
 
 pub(crate) async fn start_user_session(
@@ -34,6 +60,7 @@ pub(crate) async fn start_user_session(
     login_id: Uuid,
     db: &impl ConnectionTrait,
 ) -> Result<(), AppError> {
+    update_last_active_at(db, &login_id).await.c(h!())?;
     let session_id = Uuid::now_v7();
     crate::session::add_session(&mut env.redis.clone(), session_id, &login_id)
         .await
@@ -45,7 +72,6 @@ pub(crate) async fn start_user_session(
     .await
     .c(h!())?;
 
-    update_last_active_at(db, &login_id).await?;
     record_new_session(&login_id, session_id, env)
         .await
         .c(h!())?;
@@ -187,11 +213,7 @@ where
         Ok(login_id) => login_id,
         Err(_) => login_id_by_name(dbx, &user_id).await.c(h!())?,
     };
-    let login_obj = validate_login_id(dbx, &login_id).await.c(h!())?;
-    if let Some(e) = login_obj.validation_error {
-        return Err(e);
-    }
-    let login_obj = login_obj.login_model.c(h!())?;
+    let login_obj = load_active_login(dbx, &login_id).await.c(h!())?;
     let roles: Vec<String> = serde_json::from_value(login_obj.roles).c(h!())?;
     let mut is_any_good = false;
     for role in roles_list.clone() {
@@ -282,13 +304,13 @@ async fn keep_alive(
     req: Json<KeepAliveReq>,
 ) -> Result<Json<()>, AppError> {
     let req = req.into_inner();
-    let user_id = login_id_from_identity(&user)?;
+    let user_id = login_id_from_identity(&user).c(h!())?;
     match update_last_active_at(&env.dbx, &user_id).await {
         Err(AppError::Unauthenticated) => {
             user.logout();
             return Err(AppError::Unauthenticated);
         }
-        result => result?,
+        result => result.c(h!())?,
     }
     record_page_visit(&user_id, &req.page_id, &env, None)
         .await
@@ -742,15 +764,16 @@ async fn api_user(
     let Some(user) = user else {
         return Err(AppError::Unauthenticated);
     };
-    let user_id = login_id_from_identity(&user)?;
-    let Some(login_obj) = login::Entity::find_by_id(user_id)
-        .filter(login::Column::DeletedPermanently.eq(false))
-        .one(&env.dbx)
+    let user_id = login_id_from_identity(&user).c(h!())?;
+    let login_obj = match load_active_login(&env.dbx, &user_id)
         .await
-        .c(h!())?
-    else {
-        println!("user not found: {user_id}");
-        return Err(AppError::Unauthenticated);
+        .map_err(AppError::from)
+    {
+        Err(AppError::Unauthenticated) => {
+            user.logout();
+            return Err(AppError::Unauthenticated);
+        }
+        result => result.c(h!())?,
     };
     let delta_login = match login_obj.delta_login_id {
         None => None,
@@ -2192,12 +2215,9 @@ pub async fn update_last_active_at(
     db: &impl ConnectionTrait,
     user_id: &Uuid,
 ) -> Result<(), AppError> {
-    let mut user: login::ActiveModel = login::Entity::find_by_id(*user_id)
-        .filter(login::Column::DeletedPermanently.eq(false))
-        .one(db)
+    let mut user = load_active_login(db, user_id)
         .await
         .c(h!())?
-        .ok_or(AppError::Unauthenticated)?
         .into_active_model();
 
     user.last_active_at = Set(Some(Utc::now().naive_utc()));
@@ -2377,7 +2397,7 @@ mod tests {
         );
     }
 
-    async fn start_test_user_session(
+    pub(super) async fn start_test_user_session(
         env: web::Data<Env>,
         req: HttpRequest,
     ) -> Result<HttpResponse, AppError> {
