@@ -180,7 +180,7 @@ impl UnitNameResolver {
 
     fn resolve_by_containment(&self, value: &str) -> Option<i64> {
         let variants = unit_text_match_variants(value);
-        variants
+        let matches = variants
             .iter()
             .flat_map(|variant| {
                 self.candidates.iter().filter_map(move |candidate| {
@@ -201,8 +201,17 @@ impl UnitNameResolver {
                     None
                 })
             })
-            .min()
-            .map(|(_, unit_id)| unit_id)
+            .collect::<Vec<_>>();
+        let best_distance =
+            matches.iter().map(|(distance, _)| distance).min()?;
+        let mut best_unit_ids =
+            matches.iter().filter_map(|(distance, unit_id)| {
+                (distance == best_distance).then_some(unit_id)
+            });
+        let unit_id = best_unit_ids.next()?;
+        best_unit_ids
+            .all(|candidate_id| candidate_id == unit_id)
+            .then_some(*unit_id)
     }
 }
 
@@ -651,5 +660,18 @@ mod tests {
         );
         assert_eq!(resolver.resolve_by_containment("29 ап"), Some(20));
         assert_eq!(resolver.resolve_by_containment("9 ап"), None);
+    }
+
+    #[test]
+    fn leaves_ambiguous_unit_name_matches_unresolved() {
+        let resolver = UnitNameResolver::from_unit_names([
+            (10, "4 мсб 752 мсп".to_string()),
+            (11, "5 мсб 753 мсп".to_string()),
+        ]);
+
+        assert_eq!(
+            resolver.resolve_by_containment("4 мсб 752 мсп 5 мсб 753 мсп"),
+            None
+        );
     }
 }
