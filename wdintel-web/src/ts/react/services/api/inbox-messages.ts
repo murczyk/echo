@@ -202,6 +202,23 @@ export async function fetchMessagesByIds(
   return messages.map(([id, message]) => [id, normalizeInboxMessageFromWire(message)]);
 }
 
+export async function fetchMessagesByIdsWithMetadata(
+  messageIds: number[],
+  inboxReq?: Partial<InboxMessagesReq> | null,
+  options?: RequestOptions,
+): Promise<InboxMessagesRsp> {
+  const req: MessageIdsReq = {
+    messageIds,
+    inboxReq: inboxReq == null ? null : (inboxReq as InboxMessagesReq),
+  };
+  const raw = await postJson<InboxMessagesRspRaw>(
+    '/api/rer-importer/messages-by-id-with-metadata',
+    transformCamelToSnake(req),
+    options,
+  );
+  return mapRsp(raw);
+}
+
 function normalizeContentNode(node: unknown): InboxTextMarkedNode | null {
   if (typeof node === 'string') return node === 'CNNewlineC' ? node : null;
   if (isNullOrUndefined(node) || typeof node !== 'object') return null;

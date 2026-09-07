@@ -106,12 +106,12 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
   it('loads a direct-link target with an exact pagination cursor', async () => {
     const { apiRef } = await mountLoadedFeed();
     hoisted.fetchInboxMessages.mockClear();
-    hoisted.fetchMessagesByIds.mockClear();
+    hoisted.fetchMessagesByIdsWithMetadata.mockClear();
     hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(1, 40));
     hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(42, 81));
-    hoisted.fetchMessagesByIds.mockResolvedValueOnce([
-      [41, minimalInboxMessage({ timestamp: 4100, messageUid: 'target-uid' })],
-    ]);
+    hoisted.fetchMessagesByIdsWithMetadata.mockResolvedValueOnce(
+      inboxRsp([[41, minimalInboxMessage({ timestamp: 4100, messageUid: 'target-uid' })]]),
+    );
 
     await act(async () => {
       apiRef.current!.setFeedInitialTarget('mf-0', {
@@ -128,7 +128,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(hoisted.fetchInboxMessages).toHaveBeenCalledWith(
       expect.objectContaining({ sinceIdNoninclusive: 41, loadLatest: false }),
     );
-    expect(hoisted.fetchMessagesByIds).toHaveBeenCalledWith(
+    expect(hoisted.fetchMessagesByIdsWithMetadata).toHaveBeenCalledWith(
       [41],
       expect.objectContaining({ beforeIdNoninclusive: 41, loadLatest: false }),
     );
@@ -137,6 +137,60 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(loadedIds.at(0)).toBe(21);
     expect(loadedIds.indexOf(41)).toBe(20);
     expect(loadedIds.at(-1)).toBe(60);
+  });
+
+  it('merges reference metadata loaded exclusively for a direct-link target', async () => {
+    const setProfiles = vi.fn();
+    const setGroupInfos = vi.fn();
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+    await act(async () => {
+      root.render(
+        <TestHarness apiRef={apiRef} setProfiles={setProfiles} setGroupInfos={setGroupInfos} />,
+      );
+      await flushMicrotasks();
+    });
+    hoisted.fetchInboxMessages.mockClear();
+    hoisted.fetchMessagesByIdsWithMetadata.mockClear();
+    hoisted.fetchInboxMessages
+      .mockResolvedValueOnce(rangeRsp(1, 40))
+      .mockResolvedValueOnce(rangeRsp(42, 81));
+    const targetResponse = inboxRsp([
+      [41, minimalInboxMessage({ timestamp: 4100, messageUid: 'target-uid' })],
+    ]);
+    targetResponse.callsigns = [{ callsign: 'TARGET', res: [], networkHints: [] }];
+    targetResponse.signalProfiles = {
+      'target-sender': { givenName: 'Target', familyName: null },
+    };
+    targetResponse.signalGroups = [
+      {
+        masterKey: 'target-group',
+        name: 'Target group',
+        ignoreOperativny: false,
+        interseptionKind: 'rer',
+        disableNetworkAssignment: false,
+        groupStats: { activityLastDay: 0, activityLastWeek: 0 },
+        adminData: null,
+        areasOfResponsibility: null,
+      },
+    ];
+    hoisted.fetchMessagesByIdsWithMetadata.mockResolvedValueOnce(targetResponse);
+
+    await act(async () => {
+      apiRef.current!.setFeedInitialTarget('mf-0', {
+        beforeIdNoninclusive: 41,
+        messageIds: [41],
+      });
+      apiRef.current!.applyFilter('mf-0', apiRef.current!.messageFeeds[0].filter, true);
+      await flushMicrotasks();
+    });
+
+    expect(apiRef.current!.inboxCallsignInfoMap).toHaveProperty('target');
+    const updateProfiles = setProfiles.mock.calls.at(-1)?.[0];
+    const updateGroups = setGroupInfos.mock.calls.at(-1)?.[0];
+    expect(updateProfiles({})).toEqual(targetResponse.signalProfiles);
+    expect(updateGroups({})).toHaveProperty('target-group');
   });
 
   it('preserves a follow generation until cancellation', async () => {

@@ -10,7 +10,7 @@ import type {
   SignalProfileEntry,
 } from '../../../../Bindings';
 import { fetchInboxMessages } from '../../services/api/inbox';
-import { fetchMessagesByIds } from '../../services/api/inbox-messages';
+import { fetchMessagesByIdsWithMetadata } from '../../services/api/inbox-messages';
 import { DUTY_FEED_MESSAGE_WINDOW_LIMIT, windowInitialMessageItems } from './utils';
 import type { MessageFeedState } from './utils';
 import type { MessageCursor } from './utils';
@@ -160,19 +160,17 @@ export function useRerDutyInitialLoad(params: Params) {
           beforeIdNoninclusive: effectiveBeforeId,
         });
         let responses: InboxMessagesRsp[];
-        let targetItems: Array<[number, InboxMessage]> = [];
         if (initialTarget) {
           const newerReq = current.buildReqForFeed(effectiveFeed, {
             loadLatest: false,
             sinceIdNoninclusive: initialTarget.beforeIdNoninclusive,
           });
-          const [olderResponse, newerResponse, loadedTargetItems] = await Promise.all([
+          const [olderResponse, newerResponse, targetResponse] = await Promise.all([
             fetchInboxMessages(inboxReq),
             fetchInboxMessages(newerReq),
-            fetchMessagesByIds(initialTarget.messageIds, inboxReq),
+            fetchMessagesByIdsWithMetadata(initialTarget.messageIds, inboxReq),
           ]);
-          responses = [olderResponse, newerResponse];
-          targetItems = loadedTargetItems;
+          responses = [olderResponse, newerResponse, targetResponse];
         } else {
           responses = [await fetchInboxMessages(inboxReq)];
         }
@@ -182,10 +180,7 @@ export function useRerDutyInitialLoad(params: Params) {
         current.mergeInboxCallsigns(feedId, metadata.callsigns, { replace: true });
         const loadedItems = responses.flatMap((loadedResponse) => loadedResponse.inboxItems);
         const items = initialTarget
-          ? windowInitialMessageItemsAroundTarget(
-              [...loadedItems, ...targetItems],
-              initialTarget.messageIds,
-            )
+          ? windowInitialMessageItemsAroundTarget(loadedItems, initialTarget.messageIds)
           : windowInitialMessageItems(loadedItems);
         const previousFeed = current.messageFeedsRef.current.find(
           (candidate) => candidate.id === feedId,

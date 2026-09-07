@@ -383,18 +383,31 @@ async fn inbox_window_bl(
     let inbox_req = inbox_window_base_req(inbox_req);
     let target_req = inbox_window_target_req(&inbox_req);
     let candidate_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
-    let mut target_messages =
-        messages_by_id_bl(login, logins, env, &candidate_ids, &target_req)
-            .await
-            .context(h!())?
-            .into_iter()
-            .filter(|(_, message)| {
-                inbox_window_target_matches_context_filters(
-                    message,
-                    &target_req,
-                )
-            })
-            .collect::<HashMap<_, _>>();
+    let target_query = build_inbox_query_for_candidate_ids(
+        &env.dbx,
+        login,
+        env,
+        &target_req,
+        &candidate_ids,
+        false,
+    )
+    .await
+    .context(h!())?;
+    let mut target_messages = fetch_inbox_messages_with_query(
+        &env.dbx,
+        login,
+        logins,
+        env,
+        &target_req,
+        &target_query,
+    )
+    .await
+    .context(h!())?
+    .into_iter()
+    .filter(|(_, message)| {
+        inbox_window_target_matches_context_filters(message, &target_req)
+    })
+    .collect::<HashMap<_, _>>();
     let Some(target_message_id) = rows
         .iter()
         .map(|row| row.id)
@@ -479,20 +492,8 @@ fn inbox_window_base_req(mut inbox_req: InboxMessagesReq) -> InboxMessagesReq {
 
 fn inbox_window_target_req(inbox_req: &InboxMessagesReq) -> InboxMessagesReq {
     InboxMessagesReq {
-        search: inbox_req.search.clone(),
-        selected_groups: inbox_req.selected_groups.clone(),
-        selected_freqs: inbox_req.selected_freqs.clone(),
-        selected_networks: inbox_req.selected_networks.clone(),
-        without_network: inbox_req.without_network,
-        highlight_callsigns: inbox_req.highlight_callsigns,
-        highlight_keywords: inbox_req.highlight_keywords,
-        highlight_searchres: inbox_req.highlight_searchres,
-        highlight_signals: inbox_req.highlight_signals,
-        highlight_points: inbox_req.highlight_points,
-        highlight_keyword_set_id: inbox_req.highlight_keyword_set_id,
-        skip_group_stats: Some(true),
-        without_model_tags: inbox_req.without_model_tags,
-        ..Default::default()
+        load_latest: Some(true),
+        ..inbox_req.clone()
     }
 }
 
@@ -687,6 +688,54 @@ async fn messages_by_id(
         messages_by_id_bl(&login, &logins, &env, &req.message_ids, inbox_req)
             .await?;
     Ok(Json(MessageIdsRsp { messages }))
+}
+
+#[post("/api/rer-importer/messages-by-id-with-metadata")]
+async fn messages_by_id_with_metadata(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<MessageIdsReq>,
+) -> Result<Json<InboxMessagesRsp>, AppError> {
+    let login = login_id_from_identity(&user)?;
+    has_any_role(&env.dbx, &login, vec!["Rer", "ApiAgent"])
+        .await
+        .c(h!())?;
+    let is_admin = has_role(&env.dbx, &login, "Admin").await.is_ok();
+    let logins = crate::users::get_organism_login_ids(&env.dbx, user)
+        .await
+        .context(h!())?;
+    let req = req.into_inner();
+    let default_req = InboxMessagesReq {
+        highlight_points: Some(true),
+        ..Default::default()
+    };
+    let inbox_req = req.inbox_req.as_ref().unwrap_or(&default_req);
+    let messages =
+        messages_by_id_bl(&login, &logins, &env, &req.message_ids, inbox_req)
+            .await
+            .context(h!())?;
+    let callsigns = load_inbox_callsigns(&messages, &env).await.c(h!())?;
+    let signal_profiles = load_inbox_signal_profiles(&messages, &env.dbx)
+        .await
+        .c(h!())?;
+    let signal_groups = load_inbox_signal_groups(
+        &messages,
+        &env,
+        is_admin,
+        inbox_req.skip_group_stats.unwrap_or(false),
+    )
+    .await
+    .c(h!())?;
+
+    Ok(Json(InboxMessagesRsp {
+        inbox_items: messages,
+        poll_cursor_id: None,
+        callsigns,
+        signal_profiles,
+        signal_groups,
+        freq_pelengs_summary: None,
+        page_limit: None,
+    }))
 }
 
 #[post("/api/rer-importer/messages-by-uuid")]
@@ -4707,12 +4756,15 @@ mod tests {
     }
 
     #[test]
-    fn inbox_window_applies_context_filters_to_target_message() {
+    fn inbox_window_preserves_filters_for_target_query() {
         let inbox_req = inbox_window_base_req(InboxMessagesReq {
             around_message_ref: Some("target".to_string()),
             selected_groups: Some(vec!["group-1".to_string()]),
             selected_freqs: Some(vec!["123.45".to_string()]),
             selected_networks: Some(vec![7]),
+            selected_senders: Some(vec!["sender-1".to_string()]),
+            selected_tags: Some(vec![1]),
+            only_with_media: Some(true),
             without_network: Some(false),
             ..Default::default()
         });
@@ -4723,13 +4775,22 @@ mod tests {
         );
         assert_eq!(inbox_req.selected_freqs, Some(vec!["123.45".to_string()]));
         assert_eq!(inbox_req.selected_networks, Some(vec![7]));
+        assert_eq!(
+            inbox_req.selected_senders,
+            Some(vec!["sender-1".to_string()])
+        );
+        assert_eq!(inbox_req.selected_tags, Some(vec![1]));
+        assert_eq!(inbox_req.only_with_media, Some(true));
         assert!(inbox_req.around_message_ref.is_none());
 
         let target_req = inbox_window_target_req(&inbox_req);
         assert_eq!(target_req.selected_groups, inbox_req.selected_groups);
         assert_eq!(target_req.selected_freqs, inbox_req.selected_freqs);
         assert_eq!(target_req.selected_networks, inbox_req.selected_networks);
-        assert_eq!(target_req.without_network, inbox_req.without_network);
+        assert_eq!(target_req.selected_senders, inbox_req.selected_senders);
+        assert_eq!(target_req.selected_tags, inbox_req.selected_tags);
+        assert_eq!(target_req.only_with_media, inbox_req.only_with_media);
+        assert_eq!(target_req.load_latest, Some(true));
     }
 
     #[test]
@@ -4855,6 +4916,22 @@ mod tests {
         .unwrap();
 
         assert!(filtered_window.is_none());
+
+        let sender_filtered_window = inbox_window_bl(
+            &env,
+            &login.id,
+            &logins,
+            false,
+            &target_message_uuid.to_string(),
+            InboxMessagesReq {
+                selected_senders: Some(vec!["other-sender".to_string()]),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(sender_filtered_window.is_none());
     }
 
     fn generic_submit_req() -> InboxSubmitItem {

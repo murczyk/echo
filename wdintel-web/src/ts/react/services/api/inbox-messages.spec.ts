@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { fetchInboxWindow, fetchMessagesByIds } from './inbox-messages';
+import {
+  fetchInboxWindow,
+  fetchMessagesByIds,
+  fetchMessagesByIdsWithMetadata,
+} from './inbox-messages';
 import {
   getIntelligenceReports,
   getParentMessages,
@@ -163,6 +167,51 @@ describe('fetchMessagesByIds', () => {
         groupMasterKey: null,
       },
     ]);
+  });
+});
+
+describe('fetchMessagesByIdsWithMetadata', () => {
+  it('loads and normalizes message reference metadata without changing fetchMessagesByIds', async () => {
+    apiMocks.postJson.mockResolvedValueOnce({
+      inbox_items: [[7, { id: 7, text: 'target', group_master_key: 'target-group' }]],
+      poll_cursor_id: null,
+      callsigns: [{ callsign: 'TARGET', res: [], network_hints: [] }],
+      signal_profiles: {
+        'target-sender': { given_name: 'Target', family_name: null },
+      },
+      signal_groups: [
+        {
+          master_key: 'target-group',
+          name: 'Target group',
+          ignore_operativny: false,
+          interseption_kind: 'rer',
+          disable_network_assignment: false,
+          group_stats: { activityLastDay: 0, activityLastWeek: 0 },
+          admin_data: null,
+          areas_of_responsibility: null,
+        },
+      ],
+      freq_pelengs_summary: null,
+      page_limit: null,
+    });
+
+    const response = await fetchMessagesByIdsWithMetadata([7]);
+
+    expect(response.inboxItems[0][1]).toEqual(
+      expect.objectContaining({ text: 'target', groupMasterKey: 'target-group' }),
+    );
+    expect(response.signalProfiles['target-sender']).toEqual({
+      givenName: 'Target',
+      familyName: null,
+    });
+    expect(response.signalGroups[0]).toEqual(
+      expect.objectContaining({ masterKey: 'target-group', name: 'Target group' }),
+    );
+    expect(apiMocks.postJson).toHaveBeenCalledWith(
+      '/api/rer-importer/messages-by-id-with-metadata',
+      { message_ids: [7], inbox_req: null },
+      undefined,
+    );
   });
 });
 
