@@ -178,19 +178,31 @@ impl UnitNameResolver {
         }
     }
 
-    fn resolve_by_containment(&self, value: &str) -> Vec<i64> {
+    fn resolve_by_containment(&self, value: &str) -> Option<i64> {
         let variants = unit_text_match_variants(value);
-        let mut ids = BTreeSet::new();
-        for variant in variants {
-            for candidate in &self.candidates {
-                if unit_text_contains(&variant, &candidate.normalized_name)
-                    || unit_text_contains(&candidate.normalized_name, &variant)
-                {
-                    ids.insert(candidate.id);
-                }
-            }
-        }
-        ids.into_iter().collect()
+        variants
+            .iter()
+            .flat_map(|variant| {
+                self.candidates.iter().filter_map(move |candidate| {
+                    if unit_text_contains(variant, &candidate.normalized_name)
+                        || unit_text_contains(
+                            &candidate.normalized_name,
+                            variant,
+                        )
+                    {
+                        return Some((
+                            levenshtein::levenshtein(
+                                variant,
+                                &candidate.normalized_name,
+                            ),
+                            candidate.id,
+                        ));
+                    }
+                    None
+                })
+            })
+            .min()
+            .map(|(_, unit_id)| unit_id)
     }
 }
 
@@ -199,8 +211,8 @@ async fn resolve_unit_filter_values<C>(
     unit_name_resolver: &UnitNameResolver,
     orbit_text_resolver: &Option<crate::orbit::UnitTextSigintResolver>,
     req: &Value,
-    resolved_unit_values: &mut BTreeMap<String, Option<Vec<i64>>>,
-) -> anyhow::Result<BTreeMap<String, Vec<i64>>>
+    resolved_unit_values: &mut BTreeMap<String, Option<i64>>,
+) -> anyhow::Result<BTreeMap<String, i64>>
 where
     C: ConnectionTrait,
 {
@@ -222,7 +234,7 @@ where
         })
     {
         let resolved = match resolved_unit_values.get(value) {
-            Some(resolved) => resolved.clone(),
+            Some(resolved) => *resolved,
             None => {
                 let resolved = resolve_text_unit_filter_value(
                     db,
@@ -232,13 +244,12 @@ where
                 )
                 .await
                 .context(h!())?;
-                resolved_unit_values
-                    .insert(value.to_string(), resolved.clone());
+                resolved_unit_values.insert(value.to_string(), resolved);
                 resolved
             }
         };
-        if let Some(unit_ids) = resolved {
-            resolutions.insert(value.to_string(), unit_ids);
+        if let Some(unit_id) = resolved {
+            resolutions.insert(value.to_string(), unit_id);
         }
     }
     Ok(resolutions)
@@ -249,13 +260,12 @@ async fn resolve_text_unit_filter_value<C>(
     unit_name_resolver: &UnitNameResolver,
     orbit_text_resolver: &Option<crate::orbit::UnitTextSigintResolver>,
     value: &str,
-) -> anyhow::Result<Option<Vec<i64>>>
+) -> anyhow::Result<Option<i64>>
 where
     C: ConnectionTrait,
 {
-    let unit_ids = unit_name_resolver.resolve_by_containment(value);
-    if !unit_ids.is_empty() {
-        return Ok(Some(unit_ids));
+    if let Some(unit_id) = unit_name_resolver.resolve_by_containment(value) {
+        return Ok(Some(unit_id));
     }
     if let Some(unit_id) =
         crate::inbox::unit_resolution::resolve_sigint_unit_id(
@@ -266,20 +276,17 @@ where
         .await
         .context(h!())?
     {
-        return Ok(Some(vec![unit_id]));
+        return Ok(Some(unit_id));
     }
     let Some(orbit_text_resolver) = orbit_text_resolver else {
         return Ok(None);
     };
-    Ok(orbit_text_resolver
-        .resolve(value)
-        .context(h!())?
-        .map(|unit_id| vec![unit_id]))
+    orbit_text_resolver.resolve(value).context(h!())
 }
 
 fn build_migration_plan(
     req: &Value,
-    resolved_unit_values: &BTreeMap<String, Vec<i64>>,
+    resolved_unit_values: &BTreeMap<String, i64>,
 ) -> Option<MigrationPlan> {
     let before = req.clone();
     let mut after = req.clone();
@@ -315,7 +322,7 @@ fn migrate_field(
     converted: &mut Vec<ConvertedValue>,
     preserved: &mut Vec<(&'static str, String)>,
     has_legacy_value: &mut bool,
-    resolved_unit_values: &BTreeMap<String, Vec<i64>>,
+    resolved_unit_values: &BTreeMap<String, i64>,
 ) {
     let Some(values) = req.get(legacy_field).and_then(Value::as_array).cloned()
     else {
@@ -335,9 +342,12 @@ fn migrate_field(
         }
         *has_legacy_value = true;
         let parsed_unit_id = parse_unit_id_value(&value_str);
-        let Some(matched_ids) = parsed_unit_id
-            .map(|unit_id| vec![unit_id])
-            .or_else(|| resolved_unit_values.get(&value_str).cloned())
+        let Some(matched_ids) =
+            parsed_unit_id.map(|unit_id| vec![unit_id]).or_else(|| {
+                resolved_unit_values
+                    .get(&value_str)
+                    .map(|unit_id| vec![*unit_id])
+            })
         else {
             preserved.push((legacy_field, value_str));
             retained.push(value);
@@ -606,13 +616,12 @@ mod tests {
     }
 
     #[test]
-    fn appends_resolved_label_ids_and_preserves_legacy_labels() {
+    fn appends_resolved_label_id_and_preserves_legacy_label() {
         let req = json!({
             "selected_units": ["Alpha"],
             "selected_unit_ids": [5]
         });
-        let resolved_unit_values =
-            BTreeMap::from([("Alpha".to_string(), vec![10, 20])]);
+        let resolved_unit_values = BTreeMap::from([("Alpha".to_string(), 10)]);
 
         let plan = build_migration_plan(&req, &resolved_unit_values).unwrap();
 
@@ -620,7 +629,7 @@ mod tests {
             plan.after,
             json!({
                 "selected_units": ["Alpha"],
-                "selected_unit_ids": [5, 10, 20]
+                "selected_unit_ids": [5, 10]
             })
         );
         assert_eq!(plan.preserved, vec![]);
@@ -630,15 +639,17 @@ mod tests {
     fn resolves_unit_names_by_containment() {
         let resolver = UnitNameResolver::from_unit_names([
             (10, "1 мсб 7 омсп".to_string()),
+            (11, "7 омсп".to_string()),
             (20, "29 ап 18 мсд".to_string()),
+            (21, "29 ап 18 мсд 8 армія".to_string()),
         ]);
 
         assert_eq!(
             resolver
                 .resolve_by_containment("УКХ р/м зі складу 1 мсб 7 омсп 11 АК"),
-            vec![10]
+            Some(10)
         );
-        assert_eq!(resolver.resolve_by_containment("29 ап"), vec![20]);
-        assert!(resolver.resolve_by_containment("9 ап").is_empty());
+        assert_eq!(resolver.resolve_by_containment("29 ап"), Some(20));
+        assert_eq!(resolver.resolve_by_containment("9 ап"), None);
     }
 }

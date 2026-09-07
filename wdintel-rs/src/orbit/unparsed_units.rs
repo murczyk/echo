@@ -40,30 +40,45 @@ impl UnitTextSigintResolver {
         &self,
         unit_txt: &str,
     ) -> anyhow::Result<Option<i64>> {
-        let Some(review_unit) = prepare_review_unit(
+        let Some(hierarchy) = parsed_hierarchy(unit_txt) else {
+            return Ok(None);
+        };
+        let hierarchy = hierarchy
+            .iter()
+            .map(|(echelon, name)| (*echelon, name.as_str()))
+            .collect::<Vec<_>>();
+        let Some(review_unit) = test_link::prepare_review_hierarchy(
             1,
             unit_txt,
+            test_link::ReviewSubjectKind::UnparsedUnit,
+            &hierarchy,
             &self.matcher,
-            &self.link_inventory,
             tui::LinkMode::Automatic,
-        )
-        .c(h!())?
-        else {
+            &BTreeSet::new(),
+        ) else {
             return Ok(None);
         };
-        let Some((_, orbit_unit_id)) =
-            test_link::automatically_approved_link(&review_unit)
-        else {
-            return Ok(None);
-        };
-        let Some(sigint_unit_ids) = self.link_inventory.get(&orbit_unit_id)
-        else {
-            return Ok(None);
-        };
-        Ok(sigint_unit_ids
-            .first()
-            .copied()
-            .filter(|_| sigint_unit_ids.len() == 1))
+        Ok(review_unit
+            .matches
+            .iter()
+            .filter(|candidate| {
+                candidate.rating == ORBIT_TEST_LINK_UNITS_MAX_RATING
+                    && candidate.distance
+                        <= ORBIT_AUTO_LINK_MAX_LEVENSHTEIN_DISTANCE
+            })
+            .filter_map(|candidate| {
+                let sigint_unit_ids =
+                    self.link_inventory.get(&candidate.unit_id)?;
+                let sigint_unit_id = sigint_unit_ids
+                    .first()
+                    .copied()
+                    .filter(|_| sigint_unit_ids.len() == 1)?;
+                Some((candidate.distance, candidate.unit_id, sigint_unit_id))
+            })
+            .min_by_key(|(distance, orbit_unit_id, _)| {
+                (*distance, *orbit_unit_id)
+            })
+            .map(|(_, _, sigint_unit_id)| sigint_unit_id))
     }
 }
 
@@ -809,6 +824,23 @@ mod tests {
         .unwrap()
         .unwrap();
         assert_eq!(review_unit.would_automatically_resolve, Some(false));
+    }
+
+    #[test]
+    fn unit_text_resolver_keeps_one_closest_search_match() {
+        let mut first = source_unit("4 мсб");
+        first.unit_id = Uuid::from_u128(1);
+        let mut second = source_unit("4 мсб");
+        second.unit_id = Uuid::from_u128(2);
+        let resolver = UnitTextSigintResolver {
+            matcher: matching::TestLinkMatcher::from_units(vec![second, first]),
+            link_inventory: BTreeMap::from([
+                (Uuid::from_u128(1), BTreeSet::from([17])),
+                (Uuid::from_u128(2), BTreeSet::from([18])),
+            ]),
+        };
+
+        assert_eq!(resolver.resolve("4 мсб").unwrap(), Some(17));
     }
 
     #[test]
