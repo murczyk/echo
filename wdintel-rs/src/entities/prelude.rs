@@ -144,6 +144,7 @@ pub use super::seaql_im_migrations::Entity as SeaqlImMigrations;
 pub use super::secret_group_organism::Entity as SecretGroupOrganism;
 pub use super::secret_group_user::Entity as SecretGroupUser;
 pub use super::settlement::Entity as Settlement;
+pub use super::sigint_activity_decision_changelog::Entity as SigintActivityDecisionChangelog;
 pub use super::sigint_bookmark::Entity as SigintBookmark;
 pub use super::sigint_callsign::Entity as SigintCallsign;
 pub use super::sigint_callsign_changelog::Entity as SigintCallsignChangelog;
