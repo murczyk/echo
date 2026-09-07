@@ -27,11 +27,12 @@ impl UnitTextSigintResolver {
     where
         C: ConnectionTrait,
     {
-        let orbit_units = persistence::load_latest_synced_source_units(db)
-            .await
-            .c(h!())?;
+        let (_, matcher) =
+            persistence::load_latest_test_link_matcher_with_sync(db)
+                .await
+                .c(h!())?;
         Ok(Self {
-            matcher: matching::TestLinkMatcher::from_units(orbit_units),
+            matcher,
             link_inventory: load_link_inventory(db).await.c(h!())?,
         })
     }
@@ -144,10 +145,10 @@ async fn run_with_database(
         crate::inbox::unresolved_units::load_new_unresolved_unit_labels(db)
             .await
             .c(h!())?;
-    let orbit_units = persistence::load_latest_synced_source_units(db)
-        .await
-        .c(h!())?;
-    let matcher = matching::TestLinkMatcher::from_units(orbit_units);
+    let (_, matcher) =
+        persistence::load_latest_test_link_matcher_with_sync(db)
+            .await
+            .c(h!())?;
     let link_inventory = load_link_inventory(db).await.c(h!())?;
     let review_units =
         prepare_review_units(&labels, &matcher, &link_inventory, link_mode)
@@ -209,10 +210,10 @@ async fn print_dry_run_report(
         crate::inbox::unresolved_units::load_new_unresolved_unit_labels(db)
             .await
             .c(h!())?;
-    let orbit_units = persistence::load_latest_synced_source_units(db)
-        .await
-        .c(h!())?;
-    let matcher = matching::TestLinkMatcher::from_units(orbit_units);
+    let (_, matcher) =
+        persistence::load_latest_test_link_matcher_with_sync(db)
+            .await
+            .c(h!())?;
     let link_inventory = load_link_inventory(db).await.c(h!())?;
     let rows = labels
         .iter()
@@ -576,11 +577,10 @@ async fn persist_selection_batch(
     }
     let transaction = super::acquire_import_lock(db).await.c(h!())?;
     let login = crate::users::system_login_id(&transaction).await.c(h!())?;
-    let orbit_units =
-        persistence::load_latest_synced_source_units(&transaction)
+    let (_, matcher) =
+        persistence::load_latest_test_link_matcher_with_sync(&transaction)
             .await
             .c(h!())?;
-    let matcher = matching::TestLinkMatcher::from_units(orbit_units);
     let mut link_inventory = load_link_inventory(&transaction).await.c(h!())?;
     let mut unique_links = unique_sigint_links(&link_inventory);
     let mut sigint_units =
