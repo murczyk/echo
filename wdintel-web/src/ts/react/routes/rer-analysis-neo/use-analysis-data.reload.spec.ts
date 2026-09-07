@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { Network, Unit } from '../../../../Bindings';
+import type { Network, SignalGroupEntry, Unit } from '../../../../Bindings';
 import type { AnalysisFilterSectionId } from './types';
 import { buildAnalysisReq, emptyQueryState } from './helpers';
 import {
@@ -39,6 +39,7 @@ const mocks = vi.hoisted(() => ({
   fetchInboxMessages: vi.fn(),
   fetchNetworksByIds: vi.fn(),
   getLatestSenders: vi.fn(),
+  getGroupInfosBatch: vi.fn(),
   getTagsForDisplay: vi.fn(),
   getTagsMapForDisplay: vi.fn(),
   getUnitsList: vi.fn(),
@@ -80,6 +81,10 @@ vi.mock('../../services/api/units', () => ({
   },
 }));
 
+vi.mock('../../services/api/inbox-reference-data', () => ({
+  getGroupInfosBatch: mocks.getGroupInfosBatch,
+}));
+
 type Deferred<T> = {
   promise: Promise<T>;
   resolve: (value: T) => void;
@@ -119,6 +124,7 @@ beforeEach(() => {
   mocks.fetchAnalysisUnits.mockResolvedValue({ units: [] });
   mocks.fetchAnalysisLocations.mockResolvedValue({ locations: [] });
   mocks.getUnitsByIds.mockResolvedValue([]);
+  mocks.getGroupInfosBatch.mockResolvedValue([]);
   mocks.getTagsForDisplay.mockResolvedValue({ tagsMap: {}, tagsOrder: [] });
 });
 
@@ -279,6 +285,56 @@ describe('filterSectionsForInitialLoad', () => {
 });
 
 describe('loadFilterSectionData', () => {
+  it('fetches names for selected groups omitted from the current facet data', async () => {
+    const presentGroup = {
+      masterKey: 'present-group',
+      name: 'Present group',
+    } as SignalGroupEntry;
+    const missingGroup = {
+      masterKey: 'missing-group',
+      name: 'Missing group',
+    } as SignalGroupEntry;
+    mocks.fetchAnalysisGroups.mockResolvedValue({
+      groups: [{ masterKey: presentGroup.masterKey, count: 3 }],
+      groupNames: [presentGroup],
+    });
+    mocks.getGroupInfosBatch.mockResolvedValue([missingGroup]);
+    let currentGroupInfos: Record<string, SignalGroupEntry> = {};
+    let currentOptions = structuredClone(emptyOptions);
+
+    await loadFilterSectionData('groups', {
+      analysisReq: buildAnalysisReq(buildQueryState())!,
+      loadVersion: 0,
+      loadVersionRef: { current: 0 },
+      queryState: {
+        ...buildQueryState(),
+        groupsSelected: [presentGroup.masterKey, missingGroup.masterKey],
+      },
+      setAorEntries: vi.fn(),
+      setGroupInfos: (update) => {
+        currentGroupInfos = typeof update === 'function' ? update(currentGroupInfos) : update;
+      },
+      setNetworks: vi.fn(),
+      setOptions: (update) => {
+        currentOptions = typeof update === 'function' ? update(currentOptions) : update;
+      },
+      setProfiles: vi.fn(),
+      setTagsMap: vi.fn(),
+      setTagsOrder: vi.fn(),
+      unitsMap: {},
+    });
+
+    expect(mocks.getGroupInfosBatch).toHaveBeenCalledWith(['missing-group'], undefined);
+    expect(currentGroupInfos).toEqual({
+      'present-group': presentGroup,
+      'missing-group': missingGroup,
+    });
+    expect(currentOptions.groups).toEqual([
+      { value: 'present-group', label: 'Present group', count: 3 },
+      { value: 'missing-group', label: 'Missing group', count: 0 },
+    ]);
+  });
+
   it('builds uppercase callsign labels with lowercase filter values', async () => {
     mocks.fetchAnalysisCallsigns.mockResolvedValue({
       callsigns: [
