@@ -293,6 +293,19 @@ describe('AnalysisPageHeader', () => {
     ).not.toBeNull();
   });
 
+  it('keeps pagination visible while a direct-link message is active', () => {
+    const page = buildPage();
+    page.directMessageNavigation = {
+      targetMessageId: 21,
+      targetMessageIndex: 20,
+      totalCount: 40,
+    } as AnalysisPageViewModel['directMessageNavigation'];
+    const view = renderHeader(page, false, false);
+    rendered.push(view);
+
+    expect(view.container.querySelector('[data-testid="pagination"]')).not.toBeNull();
+  });
+
   it('moves actions into the settings menu as soon as the layout is narrow', () => {
     const page = buildPage();
     const view = renderHeader(page, false, false, 'messages', true);

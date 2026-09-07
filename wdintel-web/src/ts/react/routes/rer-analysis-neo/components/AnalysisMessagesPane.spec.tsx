@@ -10,6 +10,12 @@ import { ELLIPSIS } from '../../../utils/misc';
 
 import type { InboxMessage, SignalGroupEntry } from '../../../../../Bindings';
 
+const snackbarMocks = vi.hoisted(() => ({ notify: vi.fn() }));
+
+vi.mock('../../../components/PowerSnackbar', () => ({
+  useOptionalPowerSnackbar: () => ({ notify: snackbarMocks.notify }),
+}));
+
 vi.mock('@mui/material', () => ({
   Alert: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Backdrop: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -48,6 +54,7 @@ vi.mock('../../shared/message-card/MessageCard', () => ({
     onEditDetails: () => void;
     onCopyEtalon?: () => void;
     onCopyLocation?: () => void;
+    onCopyMessageLink?: () => void;
     messageComments?: Array<{ id: number; login: string; comment: string }>;
     senderName?: string | null;
     tagsLayout?: string;
@@ -85,6 +92,11 @@ vi.mock('../../shared/message-card/MessageCard', () => ({
       {props.onCopyLocation != null ? (
         <button type="button" onClick={props.onCopyLocation}>
           copy-location-{props.id}
+        </button>
+      ) : null}
+      {props.onCopyMessageLink != null ? (
+        <button type="button" onClick={props.onCopyMessageLink}>
+          copy-link-{props.id}
         </button>
       ) : null}
       {props.analysisCallsignActions != null ? <span>analysis-callsigns</span> : null}
@@ -247,6 +259,14 @@ async function scroll(scrollBox: HTMLElement): Promise<void> {
   });
 }
 
+async function flushAnimationFrames(count = 4): Promise<void> {
+  for (let frame = 0; frame < count; frame += 1) {
+    await act(async () => {
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    });
+  }
+}
+
 describe('AnalysisMessagesPane', () => {
   const rendered: Rendered[] = [];
 
@@ -259,6 +279,7 @@ describe('AnalysisMessagesPane', () => {
     }
     vi.unstubAllGlobals();
     vi.useRealTimers();
+    snackbarMocks.notify.mockReset();
   });
 
   it('shows the empty state when there are no messages', async () => {
@@ -266,6 +287,49 @@ describe('AnalysisMessagesPane', () => {
     rendered.push(view);
 
     expect(view.container.textContent).toContain('Немає жодного повідомлення для аналізу.');
+  });
+
+  it('shows a success snackbar after copying a message link', async () => {
+    const view = await renderComponent(buildProps({ messages: [[7, buildMessage()]] }));
+    rendered.push(view);
+
+    await click(getButton(view.container, 'copy-link-7'));
+
+    expect(snackbarMocks.notify).toHaveBeenCalledWith({
+      severity: 'success',
+      message: 'Посилання на повідомлення скопійовано.',
+    });
+  });
+
+  it('reports the target page while direct-link focus is active', async () => {
+    const onVisiblePageChange = vi.fn();
+    const messages = Array.from(
+      { length: 40 },
+      (_, index) => [index + 1, buildMessage()] as [number, InboxMessage],
+    );
+    const view = await renderComponent(
+      buildProps({
+        messages,
+        onVisiblePageChange,
+        directMessageNavigation: {
+          targetMessageId: 21,
+          targetMessageIndex: 20,
+          totalCount: 40,
+          focusActive: true,
+          newestFirst: false,
+          canLoadEarlier: false,
+          canLoadLater: false,
+          loadingEarlier: false,
+          loadingLater: false,
+          onClearFocus: vi.fn(),
+          onLoadEarlier: vi.fn().mockResolvedValue(false),
+          onLoadLater: vi.fn().mockResolvedValue(false),
+        },
+      }),
+    );
+    rendered.push(view);
+
+    expect(onVisiblePageChange).toHaveBeenCalledWith(1);
   });
 
   it('shows message skeletons while loading another page', async () => {
@@ -708,6 +772,54 @@ describe('AnalysisMessagesPane', () => {
     setScrollMetrics(scrollBox, { clientHeight: 600, scrollHeight: 3500, scrollTop: 0 });
     vi.spyOn(scrollBox, 'getBoundingClientRect').mockReturnValue({ top: 0 } as DOMRect);
     scrollBox.querySelectorAll<HTMLElement>('[data-message-id]').forEach((element, index) => {
+      vi.spyOn(element, 'getBoundingClientRect').mockImplementation(() => {
+        const revealedContentOffset = index >= 20 && scrollBox.scrollTop > 0 ? 57 : 0;
+        return {
+          bottom: (index + 1) * 100 + revealedContentOffset - scrollBox.scrollTop,
+          top: index * 100 + revealedContentOffset - scrollBox.scrollTop,
+        } as DOMRect;
+      });
+    });
+
+    await act(async () => {
+      view.root.render(<AnalysisMessagesPane {...props} pageNavigationTarget={1} />);
+    });
+    await flushAnimationFrames();
+    expect(scrollBox.scrollTop).toBe(2057);
+    expect(onVisiblePageChange).toHaveBeenLastCalledWith(1);
+    expect(onPageNavigationHandled).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      view.root.render(<AnalysisMessagesPane {...props} pageNavigationTarget={0} />);
+    });
+    await flushAnimationFrames();
+    expect(scrollBox.scrollTop).toBe(0);
+    expect(onVisiblePageChange).toHaveBeenLastCalledWith(0);
+    expect(onPageNavigationHandled).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a restored page at its first message when its page index changes', async () => {
+    const onPageNavigationHandled = vi.fn();
+    const onVisiblePageChange = vi.fn();
+    const messages = Array.from(
+      { length: 40 },
+      (_, index) => [40 - index, buildMessage()] as [number, InboxMessage],
+    );
+    const props = buildProps({
+      messages,
+      onPageNavigationHandled,
+      onVisiblePageChange,
+      pageIndex: 0,
+    });
+    const view = await renderComponent(props);
+    rendered.push(view);
+
+    const messageCard = view.container.querySelector('[data-testid="message-card-40"]');
+    const scrollBox = messageCard?.closest('ul')?.parentElement as HTMLElement | null;
+    if (scrollBox == null) throw new Error('Message scroll box is missing');
+    setScrollMetrics(scrollBox, { clientHeight: 600, scrollHeight: 4000, scrollTop: 0 });
+    vi.spyOn(scrollBox, 'getBoundingClientRect').mockReturnValue({ top: 0 } as DOMRect);
+    scrollBox.querySelectorAll<HTMLElement>('[data-message-id]').forEach((element, index) => {
       vi.spyOn(element, 'getBoundingClientRect').mockImplementation(
         () =>
           ({
@@ -716,19 +828,79 @@ describe('AnalysisMessagesPane', () => {
           }) as DOMRect,
       );
     });
+    onVisiblePageChange.mockClear();
 
     await act(async () => {
-      view.root.render(<AnalysisMessagesPane {...props} pageNavigationTarget={1} />);
+      view.root.render(<AnalysisMessagesPane {...props} pageIndex={1} pageNavigationTarget={1} />);
     });
+    await flushAnimationFrames();
+
     expect(scrollBox.scrollTop).toBe(2000);
     expect(onVisiblePageChange).toHaveBeenLastCalledWith(1);
-    expect(onPageNavigationHandled).toHaveBeenCalledTimes(1);
+
+    scrollBox.scrollTop = 0;
+    await scroll(scrollBox);
+    expect(onVisiblePageChange).toHaveBeenLastCalledWith(0);
+
+    scrollBox.scrollTop = 2100;
+    await scroll(scrollBox);
+    expect(onVisiblePageChange).toHaveBeenLastCalledWith(1);
+  });
+
+  it('scrolls to the first message of direct-link chunks after target focus clears', async () => {
+    const onPageNavigationHandled = vi.fn();
+    const onVisiblePageChange = vi.fn();
+    const messages = Array.from(
+      { length: 41 },
+      (_, index) => [index + 1, buildMessage()] as [number, InboxMessage],
+    );
+    const props = buildProps({
+      messages,
+      onPageNavigationHandled,
+      onVisiblePageChange,
+      directMessageNavigation: {
+        targetMessageId: 21,
+        targetMessageIndex: 20,
+        totalCount: 60,
+        focusActive: false,
+        newestFirst: true,
+        canLoadEarlier: true,
+        canLoadLater: false,
+        loadingEarlier: false,
+        loadingLater: false,
+        onClearFocus: vi.fn(),
+        onLoadEarlier: vi.fn().mockResolvedValue(true),
+        onLoadLater: vi.fn().mockResolvedValue(false),
+      },
+    });
+    const view = await renderComponent(props);
+    rendered.push(view);
+
+    const messageCard = view.container.querySelector('[data-testid="message-card-1"]');
+    const scrollBox = messageCard?.closest('ul')?.parentElement as HTMLElement | null;
+    if (scrollBox == null) throw new Error('Message scroll box is missing');
+    setScrollMetrics(scrollBox, { clientHeight: 600, scrollHeight: 4700, scrollTop: 2000 });
+    vi.spyOn(scrollBox, 'getBoundingClientRect').mockReturnValue({ top: 0 } as DOMRect);
+    scrollBox.querySelectorAll<HTMLElement>('[data-message-id]').forEach((element, index) => {
+      vi.spyOn(element, 'getBoundingClientRect').mockImplementation(
+        () => ({ top: index * 100 - scrollBox.scrollTop }) as DOMRect,
+      );
+    });
+    onVisiblePageChange.mockClear();
 
     await act(async () => {
       view.root.render(<AnalysisMessagesPane {...props} pageNavigationTarget={0} />);
     });
+    await flushAnimationFrames();
     expect(scrollBox.scrollTop).toBe(0);
     expect(onVisiblePageChange).toHaveBeenLastCalledWith(0);
+
+    await act(async () => {
+      view.root.render(<AnalysisMessagesPane {...props} pageNavigationTarget={2} />);
+    });
+    await flushAnimationFrames();
+    expect(scrollBox.scrollTop).toBe(4000);
+    expect(onVisiblePageChange).toHaveBeenLastCalledWith(2);
     expect(onPageNavigationHandled).toHaveBeenCalledTimes(2);
   });
 

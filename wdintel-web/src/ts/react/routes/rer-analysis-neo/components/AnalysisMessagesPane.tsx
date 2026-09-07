@@ -31,6 +31,7 @@ import type { AddPointHighlightBlacklistRequest } from '../../shared/message-car
 import type { AnalysisDirectMessageNavigation } from '../types';
 import { ANALYSIS_MESSAGES_PAGE_SIZE, getFirstLoadedMessagesPageIndex } from '../helpers';
 import { DEFAULT_MEDIA_SUMMARY_ENABLED } from '../../../hooks/duty-settings-defaults';
+import { useOptionalPowerSnackbar } from '../../../components/PowerSnackbar';
 
 type BotTagAction = {
   messageId: number;
@@ -158,6 +159,9 @@ function getTargetCardElement(targetElement: HTMLElement): HTMLElement {
 }
 
 const MESSAGE_PREFETCH_DISTANCE_PX = 480;
+const MESSAGE_PAGE_ALIGNMENT_MAX_FRAMES = 8;
+const MESSAGE_PAGE_ALIGNMENT_MIN_FRAMES = 4;
+const MESSAGE_PAGE_ALIGNMENT_STABLE_FRAMES = 2;
 
 type MessageLoadPosition = 'above' | 'below';
 
@@ -191,6 +195,45 @@ function restoreMessageViewportAnchor(
   const offset = messageElement.getBoundingClientRect().top - containerTop - anchor.offsetTop;
   if (Math.abs(offset) >= 0.5) container.scrollTop += offset;
   return true;
+}
+
+function stabilizeMessageAtContainerTop(
+  container: HTMLElement,
+  messageElement: HTMLElement,
+  onAligned: () => void,
+): () => void {
+  let animationFrameId: number | null = null;
+  let checkedFrames = 0;
+  let stableFrames = 0;
+  let cancelled = false;
+
+  const align = () => {
+    if (cancelled) return;
+    const containerTop = container.getBoundingClientRect().top + container.clientTop;
+    const offset = messageElement.getBoundingClientRect().top - containerTop;
+    if (Math.abs(offset) < 0.5) {
+      stableFrames += 1;
+    } else {
+      stableFrames = 0;
+      container.scrollTop += offset;
+    }
+    checkedFrames += 1;
+    if (
+      (checkedFrames >= MESSAGE_PAGE_ALIGNMENT_MIN_FRAMES &&
+        stableFrames >= MESSAGE_PAGE_ALIGNMENT_STABLE_FRAMES) ||
+      checkedFrames >= MESSAGE_PAGE_ALIGNMENT_MAX_FRAMES
+    ) {
+      onAligned();
+      return;
+    }
+    animationFrameId = window.requestAnimationFrame(align);
+  };
+
+  align();
+  return () => {
+    cancelled = true;
+    if (animationFrameId != null) window.cancelAnimationFrame(animationFrameId);
+  };
 }
 
 function getFocusedLoadDirection(
@@ -511,6 +554,7 @@ function AnalysisMessagesPaneComponent({
   directMessageNavigation,
 }: Props) {
   const theme = useTheme();
+  const { notify } = useOptionalPowerSnackbar();
   const [copiedFeedbackId, setCopiedFeedbackId] = useState<string | null>(copiedFeedbackIdProp);
   const [deleteMessageId, setDeleteMessageId] = useState<number | null>(null);
   const [bottomAnchorSpacerPx, setBottomAnchorSpacerPx] = useState(0);
@@ -533,6 +577,12 @@ function AnalysisMessagesPaneComponent({
   const updateVisiblePageIndex = useCallback(() => {
     const container = scrollContainerRef.current;
     if (container == null || messages.length === 0) return;
+    if (directMessageNavigation?.focusActive) {
+      onVisiblePageChange(
+        Math.floor(directMessageNavigation.targetMessageIndex / ANALYSIS_MESSAGES_PAGE_SIZE),
+      );
+      return;
+    }
     const messageElements = container.querySelectorAll<HTMLElement>('[data-message-id]');
     if (messageElements.length === 0) return;
 
@@ -545,14 +595,25 @@ function AnalysisMessagesPaneComponent({
       }
     }
 
-    const firstLoadedPageIndex = getFirstLoadedMessagesPageIndex(pageIndex, messages.length);
+    const targetLocalIndex =
+      directMessageNavigation == null
+        ? -1
+        : messages.findIndex(
+            ([messageId]) => messageId === directMessageNavigation.targetMessageId,
+          );
+    const firstLoadedMessageIndex =
+      directMessageNavigation != null && targetLocalIndex >= 0
+        ? directMessageNavigation.targetMessageIndex - targetLocalIndex
+        : getFirstLoadedMessagesPageIndex(pageIndex, messages.length) * ANALYSIS_MESSAGES_PAGE_SIZE;
     onVisiblePageChange(
-      Math.min(
-        pageIndex,
-        firstLoadedPageIndex + Math.floor(firstVisibleMessageIndex / ANALYSIS_MESSAGES_PAGE_SIZE),
+      Math.max(
+        0,
+        Math.floor(
+          (firstLoadedMessageIndex + firstVisibleMessageIndex) / ANALYSIS_MESSAGES_PAGE_SIZE,
+        ),
       ),
     );
-  }, [messages.length, onVisiblePageChange, pageIndex]);
+  }, [directMessageNavigation, messages, onVisiblePageChange, pageIndex]);
 
   useEffect(() => {
     setCopiedFeedbackId(copiedFeedbackIdProp);
@@ -562,7 +623,7 @@ function AnalysisMessagesPaneComponent({
     referenceTimeMsRef.current = Date.now();
   }, [messages]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (preserveScrollOnPageChangeRef.current) {
       preserveScrollOnPageChangeRef.current = false;
       return;
@@ -902,18 +963,28 @@ function AnalysisMessagesPaneComponent({
     if (pageNavigationTarget == null) return;
     const container = scrollContainerRef.current;
     if (container == null) return;
-    const firstLoadedPageIndex = getFirstLoadedMessagesPageIndex(pageIndex, messages.length);
+    const targetLocalIndex =
+      directMessageNavigation == null
+        ? -1
+        : messages.findIndex(
+            ([messageId]) => messageId === directMessageNavigation.targetMessageId,
+          );
+    const firstLoadedMessageIndex =
+      directMessageNavigation != null && targetLocalIndex >= 0
+        ? directMessageNavigation.targetMessageIndex - targetLocalIndex
+        : getFirstLoadedMessagesPageIndex(pageIndex, messages.length) * ANALYSIS_MESSAGES_PAGE_SIZE;
     const messageIndex =
-      (pageNavigationTarget - firstLoadedPageIndex) * ANALYSIS_MESSAGES_PAGE_SIZE;
+      pageNavigationTarget * ANALYSIS_MESSAGES_PAGE_SIZE - firstLoadedMessageIndex;
     const messageElement =
       container.querySelectorAll<HTMLElement>('[data-message-id]')[messageIndex];
     if (messageElement != null) {
-      const containerTop = container.getBoundingClientRect().top + container.clientTop;
-      container.scrollTop += messageElement.getBoundingClientRect().top - containerTop;
-      onVisiblePageChange(pageNavigationTarget);
+      return stabilizeMessageAtContainerTop(container, messageElement, () => {
+        onVisiblePageChange(pageNavigationTarget);
+        onPageNavigationHandled();
+      });
     }
-    onPageNavigationHandled();
   }, [
+    directMessageNavigation,
     messages.length,
     onPageNavigationHandled,
     onVisiblePageChange,
@@ -932,16 +1003,22 @@ function AnalysisMessagesPaneComponent({
     if (directMessageNavigation?.focusActive) directMessageNavigation.onClearFocus();
   }, [captureViewportAnchor, directMessageNavigation]);
 
-  const showCopiedFeedback = useCallback((value: string) => {
-    if (isPresent(copyFeedbackTimerRef.current)) {
-      window.clearTimeout(copyFeedbackTimerRef.current);
-    }
-    setCopiedFeedbackId(value);
-    copyFeedbackTimerRef.current = window.setTimeout(() => {
-      setCopiedFeedbackId((current) => (current === value ? null : current));
-      copyFeedbackTimerRef.current = null;
-    }, 1000);
-  }, []);
+  const showCopiedFeedback = useCallback(
+    (value: string) => {
+      if (isPresent(copyFeedbackTimerRef.current)) {
+        window.clearTimeout(copyFeedbackTimerRef.current);
+      }
+      setCopiedFeedbackId(value);
+      copyFeedbackTimerRef.current = window.setTimeout(() => {
+        setCopiedFeedbackId((current) => (current === value ? null : current));
+        copyFeedbackTimerRef.current = null;
+      }, 1000);
+      if (value.startsWith('link-')) {
+        notify({ severity: 'success', message: 'Посилання на повідомлення скопійовано.' });
+      }
+    },
+    [notify],
+  );
 
   const handleDeleteOpen = useCallback(
     (messageId: number) => {

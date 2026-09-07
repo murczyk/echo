@@ -155,7 +155,7 @@ export function AnalysisPageHeader({
   };
   const loading = page.countsLoading || page.messagesLoading || page.summaryLoading;
   const dateRangeLoading = page.mapAttrs?.daterangeLoading === 'true';
-  const showPagination = !isNarrowLayout && page.directMessageNavigation == null;
+  const showPagination = !isNarrowLayout;
   return (
     <PageHeader
       title="Аналіз"
@@ -233,6 +233,7 @@ export function AnalysisPageHeader({
                   loading={page.messagesLoading}
                   noMoreToLoad={page.noMoreToLoad}
                   busy={page.messagesPaging || page.messagesLoading}
+                  jumpDisabled={page.directMessageNavigation != null}
                   onFirstPage={page.loadFirstPage}
                   onLastPage={page.loadLastPage}
                   onPrevPage={page.loadPrevPage}

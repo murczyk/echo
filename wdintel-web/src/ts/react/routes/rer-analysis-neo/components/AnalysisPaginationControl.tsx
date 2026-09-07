@@ -28,6 +28,7 @@ type Props = {
   loading: boolean;
   noMoreToLoad: boolean;
   busy: boolean;
+  jumpDisabled?: boolean;
   onFirstPage: () => void;
   onLastPage: () => void;
   onPrevPage: () => void;
@@ -159,6 +160,7 @@ export function AnalysisPaginationControl({
   loading,
   noMoreToLoad,
   busy,
+  jumpDisabled = false,
   onFirstPage,
   onLastPage,
   onPrevPage,
@@ -188,7 +190,7 @@ export function AnalysisPaginationControl({
     busy ||
     (!hasLoadedNextPage && noMoreToLoad) ||
     (lastPageIndex !== null && rangePageIndex >= lastPageIndex);
-  const menuDisabled = !isMessagesTab || busy;
+  const menuDisabled = !isMessagesTab || busy || jumpDisabled;
   const firstDisabled = menuDisabled || rangePageIndex === 0;
   const lastDisabled =
     menuDisabled || lastPageIndex === null || totalCount === 0 || rangePageIndex === lastPageIndex;

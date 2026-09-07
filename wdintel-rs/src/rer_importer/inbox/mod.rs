@@ -407,13 +407,16 @@ async fn inbox_window_bl(
 
     let before_req = inbox_window_page_req(&inbox_req, target_message_id, true);
     let after_req = inbox_window_page_req(&inbox_req, target_message_id, false);
-    let (before_messages, after_messages) = tokio::try_join!(
-        get_inbox_messages(login, logins, env, &before_req),
-        get_inbox_messages(login, logins, env, &after_req),
-    )
-    .context(h!())?;
-    let has_more_before = before_messages.len() == INBOX_MESSAGES_PAGE_LIMIT;
-    let has_more_after = after_messages.len() == INBOX_MESSAGES_PAGE_LIMIT;
+    let (before_messages, after_messages, messages_before, messages_after) =
+        tokio::try_join!(
+            get_inbox_messages(login, logins, env, &before_req),
+            get_inbox_messages(login, logins, env, &after_req),
+            count_inbox_window_messages(env, login, &before_req),
+            count_inbox_window_messages(env, login, &after_req),
+        )
+        .context(h!())?;
+    let has_more_before = messages_before > before_messages.len() as i64;
+    let has_more_after = messages_after > after_messages.len() as i64;
     let inbox_items = merge_inbox_window_messages(
         before_messages,
         (target_message_id, target_message),
@@ -441,7 +444,23 @@ async fn inbox_window_bl(
         },
         has_more_before,
         has_more_after,
+        messages_before,
+        messages_after,
     }))
+}
+
+async fn count_inbox_window_messages(
+    env: &Env,
+    login: &uuid::Uuid,
+    req: &InboxMessagesReq,
+) -> Result<i64, AppError> {
+    let query = build_inbox_digest_query(login, env, req)
+        .await
+        .context(h!())?;
+    let (count, _) = query_inbox_digest(env.dbx.clone(), query)
+        .await
+        .context(h!())?;
+    Ok(count)
 }
 
 fn inbox_window_base_req(mut inbox_req: InboxMessagesReq) -> InboxMessagesReq {
@@ -994,12 +1013,32 @@ pub(crate) async fn messages_by_id_bl(
     Ok(messages)
 }
 
+#[derive(Serialize)]
+struct InboxMessagesApiRsp {
+    #[serde(flatten)]
+    inbox: InboxMessagesRsp,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    around_message_messages_before: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    around_message_messages_after: Option<i64>,
+}
+
+impl InboxMessagesApiRsp {
+    fn regular(inbox: InboxMessagesRsp) -> Self {
+        Self {
+            inbox,
+            around_message_messages_before: None,
+            around_message_messages_after: None,
+        }
+    }
+}
+
 #[post("/api/rer-importer/get-inbox")]
 async fn inbox_messages(
     user: Identity,
     env: actix_web::web::Data<Env>,
     req: Json<InboxMessagesReq>,
-) -> Result<Json<InboxMessagesRsp>, AppError> {
+) -> Result<Json<InboxMessagesApiRsp>, AppError> {
     let user_id = login_id_from_identity(&user)?;
     has_any_role(&env.dbx, &user_id, vec!["Rer", "ApiAgent"])
         .await
@@ -1028,18 +1067,26 @@ async fn inbox_messages(
             inbox_window_bl(&env, &login, &logins, is_admin, &message_ref, req)
                 .await
                 .context(h!())?;
-        return Ok(Json(
-            window
-                .map(|window| window.inbox)
-                .unwrap_or_else(|| empty_inbox_messages_rsp(Some(20))),
-        ));
+        let response = match window {
+            Some(window) => InboxMessagesApiRsp {
+                inbox: window.inbox,
+                around_message_messages_before: Some(window.messages_before),
+                around_message_messages_after: Some(window.messages_after),
+            },
+            None => {
+                InboxMessagesApiRsp::regular(empty_inbox_messages_rsp(Some(20)))
+            }
+        };
+        return Ok(Json(response));
     }
     if inbox_request_is_unbounded(&req) && req.load_latest != Some(true) {
         error!(
             "rejecting unbounded get-inbox request without load_latest; page_id={page_id:?}"
         );
         let page_limit = (req.nolimit != Some(true)).then_some(20);
-        return Ok(Json(empty_inbox_messages_rsp(page_limit)));
+        return Ok(Json(InboxMessagesApiRsp::regular(
+            empty_inbox_messages_rsp(page_limit),
+        )));
     }
     let poll_cursor_id = if inbox_request_is_unbounded_latest(&req) {
         latest_inbox_poll_cursor_id(&env.dbx, &req).await?
@@ -1081,7 +1128,7 @@ async fn inbox_messages(
         Some(20)
     };
 
-    Ok(Json(InboxMessagesRsp {
+    Ok(Json(InboxMessagesApiRsp::regular(InboxMessagesRsp {
         inbox_items,
         poll_cursor_id,
         callsigns,
@@ -1089,7 +1136,7 @@ async fn inbox_messages(
         signal_groups,
         freq_pelengs_summary,
         page_limit,
-    }))
+    })))
 }
 
 fn around_message_ref(req: &InboxMessagesReq) -> Option<String> {
@@ -4783,6 +4830,8 @@ mod tests {
         assert_eq!(window.inbox.inbox_items.len(), 41);
         assert_eq!(window.inbox.inbox_items[20].0, target_message_id);
         assert_eq!(window.inbox.inbox_items[20].1.text, "window-21");
+        assert_eq!(window.messages_before, 21);
+        assert_eq!(window.messages_after, 21);
         assert!(window.has_more_before);
         assert!(window.has_more_after);
         assert!(window

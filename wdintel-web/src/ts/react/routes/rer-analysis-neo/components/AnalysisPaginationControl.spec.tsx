@@ -232,6 +232,29 @@ describe('AnalysisPaginationControl', () => {
     );
   });
 
+  it('disables first/last jumps without disabling adjacent-page navigation', async () => {
+    const view = await renderComponent({
+      ...baseProps(),
+      rangePageIndex: 1,
+      totalCount: 100,
+      jumpDisabled: true,
+    });
+    rendered.push(view);
+
+    expect(
+      view.container.querySelector<HTMLButtonElement>(
+        '[aria-label="Перейти до першої або останньої сторінки"]',
+      )?.disabled,
+    ).toBe(true);
+    expect(
+      view.container.querySelector<HTMLButtonElement>('[aria-label="Попередня сторінка"]')
+        ?.disabled,
+    ).toBe(false);
+    expect(
+      view.container.querySelector<HTMLButtonElement>('[aria-label="Наступна сторінка"]')?.disabled,
+    ).toBe(false);
+  });
+
   it('wires first and last page menu actions', async () => {
     const onFirstPage = vi.fn();
     const onLastPage = vi.fn();

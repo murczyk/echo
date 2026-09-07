@@ -541,6 +541,8 @@ pub struct InboxWindowRsp {
     pub inbox: InboxMessagesRsp,
     pub has_more_before: bool,
     pub has_more_after: bool,
+    pub messages_before: i64,
+    pub messages_after: i64,
 }
 
 #[derive(

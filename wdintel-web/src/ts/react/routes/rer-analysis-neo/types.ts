@@ -57,6 +57,8 @@ export type AnalysisFilterOption = {
 
 export type AnalysisDirectMessageNavigation = {
   targetMessageId: number;
+  targetMessageIndex: number;
+  totalCount: number;
   focusActive: boolean;
   contextLoading?: boolean;
   newestFirst: boolean;

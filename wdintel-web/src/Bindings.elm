@@ -3499,6 +3499,8 @@ type alias InboxWindowRsp =
     , inbox : InboxMessagesRsp
     , hasMoreBefore : Bool
     , hasMoreAfter : Bool
+    , messagesBefore : Int
+    , messagesAfter : Int
     }
 
 
@@ -3509,6 +3511,8 @@ inboxWindowRspEncoder struct =
         , ( "inbox", (inboxMessagesRspEncoder) struct.inbox )
         , ( "has_more_before", (Json.Encode.bool) struct.hasMoreBefore )
         , ( "has_more_after", (Json.Encode.bool) struct.hasMoreAfter )
+        , ( "messages_before", (Json.Encode.int) struct.messagesBefore )
+        , ( "messages_after", (Json.Encode.int) struct.messagesAfter )
         ]
 
 
@@ -16040,6 +16044,8 @@ inboxWindowRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox" (inboxMessagesRspDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_more_before" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_more_after" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messages_before" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messages_after" (Json.Decode.int)))
 
 
 inboxMapItemDecoder : Json.Decode.Decoder InboxMapItem

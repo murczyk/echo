@@ -24,8 +24,10 @@ import {
   queryStateUiComparisonKey,
   shouldOpenAnalysisMapFromSearchParams,
   parseNewestFirstFromWindow,
+  parseMessagesPageIndexFromWindow,
   parseMessageUidFromWindow,
   removeMessageUidFromWindowUrl,
+  writeMessagesPageIndexToWindowUrl,
   getFirstLoadedMessagesPageIndex,
 } from './helpers';
 import { fetchInboxWindow } from '../../services/api/inbox-messages';
@@ -91,10 +93,27 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   );
   const leftPanelTouchedRef = useRef(initialPanelQueryState.leftPanelOpen != null);
   const [newestFirst, setNewestFirst] = useState(parseNewestFirstFromWindow);
+  const [initialMessagesPageIndex] = useState(parseMessagesPageIndexFromWindow);
+  const initialMessagesPageRestoredRef = useRef(initialMessagesPageIndex === 0);
   const [messagePageNavigationTarget, setMessagePageNavigationTarget] = useState<number | null>(
     null,
   );
-  const [visibleMessagesPageIndex, setVisibleMessagesPageIndex] = useState(0);
+  const [visibleMessagesPageIndex, setVisibleMessagesPageIndexState] =
+    useState(initialMessagesPageIndex);
+  const setVisibleMessagesPageIndex = useCallback(
+    (pageIndex: number) => {
+      const normalizedPageIndex = Math.max(0, Math.floor(pageIndex));
+      if (
+        !initialMessagesPageRestoredRef.current &&
+        normalizedPageIndex !== initialMessagesPageIndex
+      ) {
+        return;
+      }
+      setVisibleMessagesPageIndexState(normalizedPageIndex);
+      writeMessagesPageIndexToWindowUrl(normalizedPageIndex);
+    },
+    [initialMessagesPageIndex],
+  );
   const [rightPanelOpen, setRightPanelOpen] = useState(
     () => initialPanelQueryState.rightPanelOpen ?? false,
   );
@@ -266,12 +285,105 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     data.pageIndex,
     data.messages.length,
   );
-  const requestLoadedMessagesPage = useCallback((pageIndex: number) => {
-    setMessagePageNavigationTarget(pageIndex);
-  }, []);
+  const requestLoadedMessagesPage = useCallback(
+    (pageIndex: number) => {
+      setVisibleMessagesPageIndex(pageIndex);
+      setMessagePageNavigationTarget(pageIndex);
+    },
+    [setVisibleMessagesPageIndex],
+  );
+  const messagesPageRestoreInFlightRef = useRef(false);
+  useEffect(() => {
+    if (initialMessagesPageRestoredRef.current) return;
+    if (targetMessageContextActive) {
+      initialMessagesPageRestoredRef.current = true;
+      return;
+    }
+    if (
+      !data.hasLoadedInitialMessages ||
+      data.messagesLoading ||
+      data.messagesPaging ||
+      messagesPageRestoreInFlightRef.current
+    ) {
+      return;
+    }
+    if (data.pageIndex >= initialMessagesPageIndex) {
+      initialMessagesPageRestoredRef.current = true;
+      requestLoadedMessagesPage(initialMessagesPageIndex);
+      return;
+    }
+    if (data.noMoreToLoad) {
+      initialMessagesPageRestoredRef.current = true;
+      setVisibleMessagesPageIndex(data.pageIndex);
+      return;
+    }
+    messagesPageRestoreInFlightRef.current = true;
+    void data.loadMoreMessages().finally(() => {
+      messagesPageRestoreInFlightRef.current = false;
+    });
+  }, [
+    data.hasLoadedInitialMessages,
+    data.loadMoreMessages,
+    data.messagesLoading,
+    data.messagesPaging,
+    data.noMoreToLoad,
+    data.pageIndex,
+    initialMessagesPageIndex,
+    requestLoadedMessagesPage,
+    setVisibleMessagesPageIndex,
+    targetMessageContextActive,
+  ]);
   const clearMessagePageNavigationTarget = useCallback(() => {
     setMessagePageNavigationTarget(null);
   }, []);
+  const directTargetMessageIndex = targetMessageWindow
+    ? newestFirst
+      ? targetMessageWindow.messagesAfter
+      : targetMessageWindow.messagesBefore
+    : null;
+  const loadDirectAdjacentPage = useCallback(
+    async (targetPageIndex: number) => {
+      if (!targetMessageContextActive || directTargetMessageIndex == null) return false;
+      const targetLocalIndex = data.messages.findIndex(
+        ([messageId]) => messageId === targetMessageWindow?.targetMessageId,
+      );
+      if (targetLocalIndex < 0) return false;
+      clearTargetMessageFocus();
+      const firstLoadedMessageIndex = directTargetMessageIndex - targetLocalIndex;
+      const lastLoadedMessageIndex = firstLoadedMessageIndex + data.messages.length - 1;
+      const targetMessageIndex = targetPageIndex * ANALYSIS_MESSAGES_PAGE_SIZE;
+      if (
+        targetMessageIndex >= firstLoadedMessageIndex &&
+        targetMessageIndex <= lastLoadedMessageIndex
+      ) {
+        requestLoadedMessagesPage(targetPageIndex);
+        return true;
+      }
+
+      const load =
+        targetMessageIndex < firstLoadedMessageIndex
+          ? newestFirst
+            ? data.loadFocusedLater
+            : data.loadFocusedEarlier
+          : newestFirst
+            ? data.loadFocusedEarlier
+            : data.loadFocusedLater;
+      const loaded = await load();
+      if (loaded) requestLoadedMessagesPage(targetPageIndex);
+      return loaded;
+    },
+    [
+      data.loadFocusedEarlier,
+      data.loadFocusedLater,
+      data.messages,
+      clearTargetMessageFocus,
+      directTargetMessageIndex,
+      newestFirst,
+      requestLoadedMessagesPage,
+      targetMessageContextActive,
+      targetMessageWindow?.targetMessageId,
+    ],
+  );
   const loadFirstPage = useCallback(async () => {
     if (visibleMessagesPageIndex === 0) return;
     if (firstLoadedMessagesPageIndex === 0) {
@@ -307,15 +419,30 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   ]);
   const loadNextPage = useCallback(async () => {
     const targetPageIndex = visibleMessagesPageIndex + 1;
+    if (targetMessageContextActive) {
+      await loadDirectAdjacentPage(targetPageIndex);
+      return;
+    }
     if (targetPageIndex <= data.pageIndex) {
       requestLoadedMessagesPage(targetPageIndex);
       return;
     }
     await data.loadNextPage();
-  }, [data.loadNextPage, data.pageIndex, requestLoadedMessagesPage, visibleMessagesPageIndex]);
+  }, [
+    data.loadNextPage,
+    data.pageIndex,
+    loadDirectAdjacentPage,
+    requestLoadedMessagesPage,
+    targetMessageContextActive,
+    visibleMessagesPageIndex,
+  ]);
   const loadPrevPage = useCallback(async () => {
     const targetPageIndex = visibleMessagesPageIndex - 1;
     if (targetPageIndex < 0) return;
+    if (targetMessageContextActive) {
+      await loadDirectAdjacentPage(targetPageIndex);
+      return;
+    }
     if (targetPageIndex >= firstLoadedMessagesPageIndex) {
       requestLoadedMessagesPage(targetPageIndex);
       return;
@@ -324,7 +451,9 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   }, [
     data.loadPrevPage,
     firstLoadedMessagesPageIndex,
+    loadDirectAdjacentPage,
     requestLoadedMessagesPage,
+    targetMessageContextActive,
     visibleMessagesPageIndex,
   ]);
   const dataFreqValues = useMemo(
@@ -763,11 +892,16 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   ]);
 
   const directMessageNavigation = useMemo(() => {
-    const targetMessageId = targetMessageWindow?.targetMessageId;
-    if (!targetMessageContextActive || targetMessageId == null) return null;
+    if (!targetMessageContextActive || targetMessageWindow == null) return null;
+    const targetMessageId = targetMessageWindow.targetMessageId;
+    const targetMessageIndex = newestFirst
+      ? targetMessageWindow.messagesAfter
+      : targetMessageWindow.messagesBefore;
     const contextLoading = targetMessageContextLoading || data.messagesLoading;
     return {
       targetMessageId,
+      targetMessageIndex,
+      totalCount: targetMessageWindow.messagesBefore + targetMessageWindow.messagesAfter + 1,
       focusActive: targetMessageFocusActive,
       contextLoading,
       newestFirst,
@@ -801,6 +935,13 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
       (targetMessageLoading ||
         targetMessageWindow == null ||
         !data.messages.some(([messageId]) => messageId === targetMessageWindow.targetMessageId)));
+
+  useEffect(() => {
+    if (directMessageNavigation == null) return;
+    setVisibleMessagesPageIndex(
+      Math.floor(directMessageNavigation.targetMessageIndex / ANALYSIS_MESSAGES_PAGE_SIZE),
+    );
+  }, [directMessageNavigation?.targetMessageId, directMessageNavigation?.targetMessageIndex]);
 
   return {
     authUserName,
@@ -852,8 +993,9 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     messagesLoading: targetMessageLoading || data.messagesLoading,
     messagesOverallCount: data.messagesOverallCount,
     messagesPaging: data.messagesPaging,
-    messagesTotalCount: data.messagesTotalCount,
-    messagesTotalLoading: data.messagesTotalLoading,
+    messagesTotalCount: directMessageNavigation?.totalCount ?? data.messagesTotalCount,
+    messagesTotalLoading:
+      directMessageNavigation == null ? data.messagesTotalLoading : targetMessageContextLoading,
     messageComments: data.messageComments,
     messages: data.messages,
     directMessageLoading,

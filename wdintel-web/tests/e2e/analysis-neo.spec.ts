@@ -366,6 +366,44 @@ test.describe('@smoke', () => {
       element.dispatchEvent(new Event('scroll', { bubbles: true }));
     });
     await expect(range).toContainText('21-35 з 35');
+    await expect.poll(() => new URL(page.url()).searchParams.get('messagesPage')).toBe('2');
+
+    await page.reload();
+    await expect(messageList.locator('[data-message-id]')).toHaveCount(35);
+    await expect(range).toContainText('21-35 з 35');
+    await expect
+      .poll(() =>
+        page.locator('[data-message-id="121"]').evaluate((element) => {
+          const container = element.closest('ul')?.parentElement;
+          if (container == null) return null;
+          return Math.abs(
+            Math.round(
+              element.getBoundingClientRect().top -
+                container.getBoundingClientRect().top -
+                container.clientTop,
+            ),
+          );
+        }),
+      )
+      .toBeLessThanOrEqual(1);
+    await messageScrollContainer.evaluate(
+      (element) =>
+        new Promise<void>((resolve) => {
+          let previousScrollTop = element.scrollTop;
+          let stableFrames = 0;
+          const check = () => {
+            if (Math.abs(element.scrollTop - previousScrollTop) < 0.5) {
+              stableFrames += 1;
+            } else {
+              stableFrames = 0;
+              previousScrollTop = element.scrollTop;
+            }
+            if (stableFrames >= 3) resolve();
+            else requestAnimationFrame(check);
+          };
+          requestAnimationFrame(check);
+        }),
+    );
 
     await messageScrollContainer.evaluate((element) => {
       element.scrollTop = 0;

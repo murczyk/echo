@@ -39,6 +39,7 @@ export const ADJACENT_FREQS_RANGE_OPTIONS = [0, 0.0005, 0.002, 0.005] as const;
 const ONLY_WITH_MEDIA_PARAM = 'only_with_media';
 const LEFT_PANEL_OPEN_PARAM = 'leftPanelOpen';
 const RIGHT_PANEL_OPEN_PARAM = 'rightPanelOpen';
+const MESSAGES_PAGE_PARAM = 'messagesPage';
 
 export type AnalysisPanelQueryState = {
   leftPanelOpen: boolean | null;
@@ -167,6 +168,29 @@ export function parseNewestFirstFromWindow(): boolean {
   const url = new URL(window.location.href);
   const param = url.searchParams.get('newestFirst');
   return param !== 'false';
+}
+
+export function parseMessagesPageIndexFromWindow(): number {
+  if (typeof window === 'undefined') return 0;
+  const value = Number(new URL(window.location.href).searchParams.get(MESSAGES_PAGE_PARAM));
+  return Number.isSafeInteger(value) && value >= 1 ? value - 1 : 0;
+}
+
+export function writeMessagesPageIndexToWindowUrl(pageIndex: number): void {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  const normalizedPageIndex = Math.max(0, Math.floor(pageIndex));
+  if (normalizedPageIndex === 0) {
+    url.searchParams.delete(MESSAGES_PAGE_PARAM);
+  } else {
+    url.searchParams.set(MESSAGES_PAGE_PARAM, String(normalizedPageIndex + 1));
+  }
+  const query = url.searchParams.toString();
+  window.history.replaceState(
+    {},
+    '',
+    `${url.pathname}${query === '' ? '' : `?${query}`}${url.hash}`,
+  );
 }
 
 export function parseAnalysisPanelQueryStateFromWindow(): AnalysisPanelQueryState {

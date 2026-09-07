@@ -223,6 +223,8 @@ describe('fetchInboxWindow', () => {
       signal_groups: [],
       freq_pelengs_summary: null,
       page_limit: 20,
+      around_message_messages_before: 20,
+      around_message_messages_after: 19,
     });
 
     const result = await fetchInboxWindow({ messageRef: '019-id', inboxReq: null });
@@ -243,8 +245,10 @@ describe('fetchInboxWindow', () => {
           [102, expect.objectContaining({ text: 'after' })],
         ],
       },
-      hasMoreBefore: false,
-      hasMoreAfter: false,
+      hasMoreBefore: true,
+      hasMoreAfter: true,
+      messagesBefore: 20,
+      messagesAfter: 19,
     });
   });
 });

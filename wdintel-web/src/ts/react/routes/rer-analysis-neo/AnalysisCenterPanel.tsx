@@ -143,7 +143,7 @@ export function AnalysisCenterPanel({
             })}
           </Tabs>
         </Box>
-        {isNarrowLayout && centerTab === 'messages' && page.directMessageNavigation == null ? (
+        {isNarrowLayout && centerTab === 'messages' ? (
           <AnalysisPaginationControl
             centerTab={centerTab}
             pageIndex={page.pageIndex}
@@ -155,6 +155,7 @@ export function AnalysisCenterPanel({
             loading={page.messagesLoading}
             noMoreToLoad={page.noMoreToLoad}
             busy={page.messagesPaging || page.messagesLoading}
+            jumpDisabled={page.directMessageNavigation != null}
             onFirstPage={page.loadFirstPage}
             onLastPage={page.loadLastPage}
             onPrevPage={page.loadPrevPage}

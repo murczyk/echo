@@ -57,6 +57,8 @@ export type InboxMessagesRspRaw = {
   }>;
   freq_pelengs_summary: InboxMessagesRsp['freqPelengsSummary'];
   page_limit?: number | null;
+  around_message_messages_before?: number | null;
+  around_message_messages_after?: number | null;
 };
 
 export type InboxMessageTagRaw = {
@@ -457,13 +459,16 @@ export async function fetchInboxWindow(
   req: FetchInboxWindowReq,
   options?: RequestOptions,
 ): Promise<InboxWindowRsp | null> {
-  const inbox = await fetchInboxMessages(
-    {
-      ...(req.inboxReq ?? {}),
-      aroundMessageRef: req.messageRef,
-    } as InboxMessagesReq,
+  const inboxReq = {
+    ...(req.inboxReq ?? {}),
+    aroundMessageRef: req.messageRef,
+  } as InboxMessagesReq;
+  const raw = await postJson<InboxMessagesRspRaw>(
+    '/api/rer-importer/get-inbox',
+    inboxMsgtoSnakeBody(inboxReq) as any,
     options,
   );
+  const inbox = mapRsp(raw);
   const target = inbox.inboxItems
     .filter(
       ([messageId, message]) =>
@@ -475,11 +480,16 @@ export async function fetchInboxWindow(
   if (target == null) return null;
   const targetIndex = inbox.inboxItems.findIndex(([messageId]) => messageId === target[0]);
   const pageLimit = inbox.pageLimit ?? 20;
+  const messagesBefore = raw.around_message_messages_before ?? targetIndex;
+  const messagesAfter =
+    raw.around_message_messages_after ?? inbox.inboxItems.length - targetIndex - 1;
   return {
     targetMessageId: target[0],
     inbox,
-    hasMoreBefore: targetIndex >= pageLimit,
-    hasMoreAfter: inbox.inboxItems.length - targetIndex - 1 >= pageLimit,
+    hasMoreBefore: messagesBefore > targetIndex,
+    hasMoreAfter: messagesAfter > inbox.inboxItems.length - targetIndex - 1,
+    messagesBefore,
+    messagesAfter,
   };
 }
 

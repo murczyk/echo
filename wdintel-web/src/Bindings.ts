@@ -1341,6 +1341,8 @@ export type InboxWindowRsp = {
   inbox: InboxMessagesRsp;
   hasMoreBefore: boolean;
   hasMoreAfter: boolean;
+  messagesBefore: number;
+  messagesAfter: number;
 };
 
 export type InboxByGroupDigestRsp = {

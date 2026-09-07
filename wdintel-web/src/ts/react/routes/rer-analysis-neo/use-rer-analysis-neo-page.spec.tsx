@@ -268,10 +268,14 @@ function renderHook() {
     latest = useRerAnalysisNeoPage(null);
     return null;
   };
+  const rerender = () => {
+    act(() => {
+      root?.render(createElement(Harness));
+    });
+  };
 
-  act(() => {
-    root?.render(createElement(Harness));
-  });
+  rerender();
+  return rerender;
 }
 
 async function flushEffects() {
@@ -480,6 +484,74 @@ describe('useRerAnalysisNeoPage', () => {
     expect(new URL(window.location.href).searchParams.get('leftPanelOpen')).toBe('false');
     expect(new URL(window.location.href).searchParams.get('rightPanelOpen')).toBe('true');
     window.history.replaceState({}, '', originalUrl);
+  });
+
+  it('writes the visible messages chunk to the URL for browser reload', async () => {
+    renderHook();
+    await flushEffects();
+
+    act(() => latest?.setVisibleMessagesPageIndex(1));
+    expect(new URL(window.location.href).searchParams.get('messagesPage')).toBe('2');
+
+    act(() => latest?.setVisibleMessagesPageIndex(0));
+    expect(new URL(window.location.href).searchParams.has('messagesPage')).toBe(false);
+  });
+
+  it('retains the first chunk when restoring the second chunk after browser reload', async () => {
+    window.history.replaceState({}, '', `${window.location.pathname}?messagesPage=2`);
+    const analysisData = buildAnalysisData();
+    const firstPage = Array.from(
+      { length: 20 },
+      (_, index) => [40 - index, { text: `message-${40 - index}` } as InboxMessage] as const,
+    );
+    const secondPage = Array.from(
+      { length: 20 },
+      (_, index) => [20 - index, { text: `message-${20 - index}` } as InboxMessage] as const,
+    );
+    analysisData.messages = firstPage;
+    analysisData.loadNextPage.mockImplementationOnce(async () => {
+      currentAnalysisData = { ...analysisData, messages: secondPage, pageIndex: 1 };
+    });
+    analysisData.loadMoreMessages.mockImplementationOnce(async () => {
+      currentAnalysisData = {
+        ...analysisData,
+        messages: [...firstPage, ...secondPage],
+        pageIndex: 1,
+      };
+      return true;
+    });
+    currentAnalysisData = analysisData;
+
+    const rerender = renderHook();
+    await flushEffects();
+    rerender();
+    await flushEffects();
+
+    expect(latest?.visibleMessagesPageIndex).toBe(1);
+    expect(latest?.messages).toHaveLength(40);
+    expect(latest?.messagePageNavigationTarget).toBe(1);
+
+    act(() => {
+      latest?.clearMessagePageNavigationTarget();
+      latest?.setVisibleMessagesPageIndex(0);
+    });
+    expect(latest?.visibleMessagesPageIndex).toBe(0);
+    expect(new URL(window.location.href).searchParams.has('messagesPage')).toBe(false);
+  });
+
+  it('keeps the URL chunk visible while its messages are being restored', async () => {
+    window.history.replaceState({}, '', `${window.location.pathname}?messagesPage=2`);
+    const analysisData = buildAnalysisData();
+    analysisData.loadMoreMessages.mockReturnValueOnce(new Promise<boolean>(() => {}));
+    currentAnalysisData = analysisData;
+
+    renderHook();
+    await flushEffects();
+
+    act(() => latest?.setVisibleMessagesPageIndex(0));
+
+    expect(latest?.visibleMessagesPageIndex).toBe(1);
+    expect(new URL(window.location.href).searchParams.get('messagesPage')).toBe('2');
   });
 
   it('moves the active map from the center into the sidebar when the setting turns on', async () => {
@@ -824,6 +896,8 @@ describe('useRerAnalysisNeoPage', () => {
     );
     const focusedWindow = {
       targetMessageId: 50,
+      messagesBefore: 19,
+      messagesAfter: 20,
       inbox: {
         inboxItems: [[50, targetMessage]],
         pollCursorId: null,
@@ -854,6 +928,12 @@ describe('useRerAnalysisNeoPage', () => {
       toDateTimeStr: '2099-08-29T00:00',
     });
     expect(latest?.directMessageNavigation).not.toBeNull();
+    expect(latest?.directMessageNavigation).toMatchObject({
+      targetMessageIndex: 20,
+      totalCount: 40,
+    });
+    expect(latest?.visibleMessagesPageIndex).toBe(1);
+    expect(latest?.messagesTotalCount).toBe(40);
     expect(latest?.directMessageLoading).toBe(true);
 
     currentAnalysisData = {
@@ -869,6 +949,107 @@ describe('useRerAnalysisNeoPage', () => {
 
     act(() => latest?.directMessageNavigation?.onClearFocus());
     expect(new URL(window.location.href).searchParams.has('m')).toBe(false);
+    expect(latest?.directMessageNavigation?.focusActive).toBe(false);
+  });
+
+  it('updates the visible chunk across previous and next direct-link navigation', async () => {
+    const targetMessage = {
+      text: 'target',
+      date: null,
+      timestamp: null,
+    } as InboxMessage;
+    const messages = Array.from(
+      { length: 41 },
+      (_, index) =>
+        [
+          index + 1,
+          index === 20 ? targetMessage : ({ text: `message-${index + 1}` } as InboxMessage),
+        ] as [number, InboxMessage],
+    );
+    window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce({
+      targetMessageId: 21,
+      messagesBefore: 39,
+      messagesAfter: 20,
+      inbox: {
+        inboxItems: messages,
+        pollCursorId: null,
+        callsigns: [],
+        signalProfiles: {},
+        signalGroups: [],
+        freqPelengsSummary: null,
+        pageLimit: 20,
+      },
+      hasMoreBefore: true,
+      hasMoreAfter: false,
+    });
+    currentAnalysisData = {
+      ...buildAnalysisData(),
+      messages,
+    };
+
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.visibleMessagesPageIndex).toBe(1);
+    await act(async () => latest?.loadPrevPage());
+
+    expect(latest?.messagePageNavigationTarget).toBe(0);
+    expect(latest?.visibleMessagesPageIndex).toBe(0);
+    expect(latest?.directMessageNavigation?.focusActive).toBe(false);
+    expect(new URL(window.location.href).searchParams.has('messagesPage')).toBe(false);
+
+    act(() => latest?.clearMessagePageNavigationTarget());
+    await act(async () => latest?.loadNextPage());
+
+    expect(latest?.messagePageNavigationTarget).toBe(1);
+    expect(latest?.visibleMessagesPageIndex).toBe(1);
+    expect(new URL(window.location.href).searchParams.get('messagesPage')).toBe('2');
+  });
+
+  it('navigates to the next direct-link chunk and clears target focus', async () => {
+    const targetMessage = {
+      text: 'target',
+      date: null,
+      timestamp: null,
+    } as InboxMessage;
+    const messages = Array.from(
+      { length: 41 },
+      (_, index) =>
+        [
+          index + 1,
+          index === 20 ? targetMessage : ({ text: `message-${index + 1}` } as InboxMessage),
+        ] as [number, InboxMessage],
+    );
+    window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce({
+      targetMessageId: 21,
+      messagesBefore: 39,
+      messagesAfter: 20,
+      inbox: {
+        inboxItems: messages,
+        pollCursorId: null,
+        callsigns: [],
+        signalProfiles: {},
+        signalGroups: [],
+        freqPelengsSummary: null,
+        pageLimit: 20,
+      },
+      hasMoreBefore: true,
+      hasMoreAfter: false,
+    });
+    currentAnalysisData = {
+      ...buildAnalysisData(),
+      messages,
+    };
+
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.visibleMessagesPageIndex).toBe(1);
+    await act(async () => latest?.loadNextPage());
+
+    expect(latest?.messagePageNavigationTarget).toBe(2);
     expect(latest?.directMessageNavigation?.focusActive).toBe(false);
   });
 
