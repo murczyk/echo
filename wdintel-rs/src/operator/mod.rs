@@ -14,7 +14,7 @@ use actix_web::web::Json;
 use chrono::Utc;
 use echo_im::types::MessageAttachmentF1;
 use sea_orm::*;
-use sea_query::Expr;
+use sea_query::{Expr, OnConflict};
 
 const ECHO_OPERATOR_LABEL_PREFIX: &str = "EХО Оператор ";
 
@@ -517,13 +517,12 @@ async fn ensure_source_signal_group(
         return signal_group.update(txn).await.c(h!());
     }
 
-    signal_group::ActiveModel {
-        master_key: Set(group_master_key.to_string()),
-        name: Set(Some(group_name.to_string())),
-        datasource_id: Set(Some(datasource_id)),
-        ..Default::default()
-    }
-    .insert(txn)
+    insert_or_sync_signal_group(
+        txn,
+        datasource_id,
+        group_master_key.to_string(),
+        group_name,
+    )
     .await
     .c(h!())
 }
@@ -573,6 +572,37 @@ async fn sync_signal_group(
     }
 }
 
+async fn insert_or_sync_signal_group(
+    txn: &DatabaseTransaction,
+    datasource_id: i64,
+    master_key: String,
+    group_name: &str,
+) -> anyhow::Result<signal_group::Model> {
+    signal_group::Entity::insert(signal_group::ActiveModel {
+        master_key: Set(master_key.clone()),
+        name: Set(Some(group_name.to_string())),
+        datasource_id: Set(Some(datasource_id)),
+        ..Default::default()
+    })
+    .on_conflict(
+        OnConflict::column(signal_group::Column::MasterKey)
+            .do_nothing()
+            .to_owned(),
+    )
+    .exec_without_returning(txn)
+    .await
+    .c(h!())?;
+
+    let signal_group = signal_group::Entity::find_by_id(master_key)
+        .one(txn)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    sync_signal_group(txn, datasource_id, &signal_group, group_name)
+        .await
+        .c(h!())
+}
+
 async fn insert_datasource_group(
     txn: &DatabaseTransaction,
     datasource_id: i64,
@@ -597,13 +627,9 @@ async fn insert_datasource_group(
             .c(h!())?
     } else {
         let master_key = group_master_key.unwrap_or(echo_id);
-        let model = signal_group::ActiveModel {
-            master_key: Set(master_key),
-            name: Set(Some(group_name.to_string())),
-            datasource_id: Set(Some(datasource_id)),
-            ..Default::default()
-        };
-        model.insert(txn).await.c(h!())?
+        insert_or_sync_signal_group(txn, datasource_id, master_key, group_name)
+            .await
+            .c(h!())?
     };
 
     let model = datasource_group::ActiveModel {
@@ -784,5 +810,108 @@ mod tests {
             source_signal_group.datasource_id,
             Some(messenger_datasource.id)
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn ensure_group_handles_concurrent_source_group_creation() {
+        let env = cleanup().await.unwrap();
+        let setup_txn = env.dbx.begin().await.unwrap();
+        let group_name = "BBC NEWS";
+        let source_group_key = "120363419907122319@g.us";
+        let operator_group_id = "019ebab3-d6e8-7ff6-b662-004ee7394520";
+        let echo_group_key = mk_echo_id(operator_group_id.to_string());
+        let operator_datasource = mk_datasource(
+            &setup_txn,
+            datasource::ActiveModel {
+                kind: Set("echo_operator".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let fallback_signal_group = mk_signal_group(
+            &setup_txn,
+            signal_group::ActiveModel {
+                master_key: Set(echo_group_key.clone()),
+                name: Set(Some(group_name.to_string())),
+                datasource_id: Set(Some(operator_datasource.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let fallback_datasource_group = mk_datasource_group(
+            &setup_txn,
+            datasource_group::ActiveModel {
+                datasource_id: Set(operator_datasource.id),
+                group_master_key: Set(fallback_signal_group.master_key),
+                name: Set(group_name.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        setup_txn.commit().await.unwrap();
+
+        let first_txn = env.dbx.begin().await.unwrap();
+        mk_signal_group(
+            &first_txn,
+            signal_group::ActiveModel {
+                master_key: Set(source_group_key.to_string()),
+                name: Set(Some(group_name.to_string())),
+                datasource_id: Set(Some(operator_datasource.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let dbx = env.dbx.clone();
+        let mut concurrent_submission = tokio::spawn(async move {
+            let txn = dbx.begin().await.c(h!())?;
+            let group_master_key = ensure_group(
+                operator_datasource.id,
+                &txn,
+                types::Group {
+                    id: operator_group_id.to_string(),
+                    name: group_name.to_string(),
+                    source_signal_group_id: None,
+                    source_whatsapp_group_jid: Some(
+                        source_group_key.to_string(),
+                    ),
+                },
+            )
+            .await
+            .c(h!())?;
+            txn.commit().await.c(h!())?;
+            Ok::<_, anyhow::Error>(group_master_key)
+        });
+
+        assert!(tokio::time::timeout(
+            std::time::Duration::from_millis(100),
+            &mut concurrent_submission,
+        )
+        .await
+        .is_err());
+        first_txn.commit().await.unwrap();
+
+        let resolved_group_key = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            concurrent_submission,
+        )
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+        let datasource_group =
+            datasource_group::Entity::find_by_id(fallback_datasource_group.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(resolved_group_key, source_group_key);
+        assert_eq!(datasource_group.group_master_key, source_group_key);
     }
 }
