@@ -1,6 +1,7 @@
 use crate::entities::{
-    datasource, datasource_group, login, signal_group, signal_message_metadata,
-    signal_profile,
+    datasource, datasource_group, group_admin_data, login, organism_group,
+    secret_group_user, sigint_zone_datasource, signal_group, signal_group_aor,
+    signal_message_group, signal_message_metadata, signal_profile,
 };
 use crate::error::AppError;
 use crate::h;
@@ -13,6 +14,7 @@ use actix_web::web::Json;
 use chrono::Utc;
 use echo_im::types::MessageAttachmentF1;
 use sea_orm::*;
+use sea_query::Expr;
 
 const ECHO_OPERATOR_LABEL_PREFIX: &str = "EХО Оператор ";
 
@@ -230,9 +232,8 @@ async fn ensure_group(
     txn: &DatabaseTransaction,
     group: types::Group,
 ) -> anyhow::Result<String> {
-    let echo_id = mk_echo_id(group.id);
-
     let group_master_key = source_group_key(&group);
+    let echo_id = mk_echo_id(group.id);
 
     let keys = if let Some(master_key) = &group_master_key {
         vec![echo_id.clone(), master_key.clone()]
@@ -384,14 +385,21 @@ fn non_empty_source_key(key: &str) -> Option<&str> {
 
 async fn move_datasource_group_to_source_group(
     txn: &DatabaseTransaction,
-    model: &datasource_group::Model,
+    datasource_group: &datasource_group::Model,
     group_master_key: &str,
     signal_group: Option<&signal_group::Model>,
     group_name: &str,
 ) -> anyhow::Result<datasource_group::Model> {
+    let fallback_signal_group = signal_group::Entity::find_by_id(
+        datasource_group.group_master_key.clone(),
+    )
+    .one(txn)
+    .await
+    .c(h!())?
+    .c(h!())?;
     let signal_group = ensure_source_signal_group(
         txn,
-        model.datasource_id,
+        datasource_group.datasource_id,
         group_master_key,
         signal_group,
         group_name,
@@ -399,12 +407,111 @@ async fn move_datasource_group_to_source_group(
     .await
     .c(h!())?;
 
-    let mut model = model.clone().into_active_model();
-    model.group_master_key = Set(signal_group.master_key);
-    model.deleted = Set(false);
-    model.name = Set(group_name.to_string());
-    model.last_sync_at = Set(Utc::now().naive_utc());
-    model.update(txn).await.c(h!())
+    let mut datasource_group = datasource_group.clone().into_active_model();
+    datasource_group.group_master_key = Set(signal_group.master_key.clone());
+    datasource_group.deleted = Set(false);
+    datasource_group.name = Set(group_name.to_string());
+    datasource_group.last_sync_at = Set(Utc::now().naive_utc());
+    let datasource_group = datasource_group.update(txn).await.c(h!())?;
+
+    merge_signal_group_references(
+        txn,
+        datasource_group.id,
+        fallback_signal_group,
+        &signal_group,
+    )
+    .await
+    .c(h!())?;
+
+    Ok(datasource_group)
+}
+
+async fn merge_signal_group_references(
+    txn: &DatabaseTransaction,
+    datasource_group_id: i64,
+    source_signal_group: signal_group::Model,
+    target_signal_group: &signal_group::Model,
+) -> anyhow::Result<()> {
+    signal_message_group::Entity::update_many()
+        .filter(
+            signal_message_group::Column::GroupMasterKey
+                .eq(source_signal_group.master_key.clone()),
+        )
+        .filter(
+            signal_message_group::Column::DatasourceGroupId
+                .eq(datasource_group_id),
+        )
+        .col_expr(
+            signal_message_group::Column::GroupMasterKey,
+            Expr::value(target_signal_group.master_key.clone()),
+        )
+        .exec(txn)
+        .await
+        .c(h!())?;
+
+    group_admin_data::Entity::delete_many()
+        .filter(
+            group_admin_data::Column::GroupMasterKey
+                .eq(source_signal_group.master_key.clone()),
+        )
+        .exec(txn)
+        .await
+        .c(h!())?;
+
+    organism_group::Entity::delete_many()
+        .filter(
+            organism_group::Column::SignalGroupMasterKey
+                .eq(source_signal_group.master_key.clone()),
+        )
+        .exec(txn)
+        .await
+        .c(h!())?;
+
+    secret_group_user::Entity::delete_many()
+        .filter(
+            secret_group_user::Column::MasterKey
+                .eq(source_signal_group.master_key.clone()),
+        )
+        .exec(txn)
+        .await
+        .c(h!())?;
+
+    sigint_zone_datasource::Entity::delete_many()
+        .filter(
+            sigint_zone_datasource::Column::GroupMasterKey
+                .eq(source_signal_group.master_key.clone()),
+        )
+        .exec(txn)
+        .await
+        .c(h!())?;
+
+    signal_group_aor::Entity::delete_many()
+        .filter(
+            signal_group_aor::Column::MasterKey
+                .eq(source_signal_group.master_key.clone()),
+        )
+        .exec(txn)
+        .await
+        .c(h!())?;
+
+    crate::battle_line::requeue_settlement_links_for_group(
+        txn,
+        &source_signal_group.master_key,
+    )
+    .await
+    .c(h!())?;
+    crate::battle_line::requeue_settlement_links_for_group(
+        txn,
+        &target_signal_group.master_key,
+    )
+    .await
+    .c(h!())?;
+
+    let mut source_signal_group = source_signal_group.into_active_model();
+    source_signal_group.deleted = Set(true);
+    source_signal_group.update(txn).await.c(h!())?;
+
+    Ok(())
 }
 
 async fn ensure_source_signal_group(
@@ -528,8 +635,10 @@ fn mk_echo_id(id: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::signal_message;
     use crate::functest::tests::{
         cleanup, mk_datasource, mk_datasource_group, mk_signal_group,
+        mk_signal_message, mk_signal_message_group,
     };
     use serial_test::serial;
 
@@ -552,7 +661,8 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn ensure_group_moves_existing_echo_mapping_to_source_group() {
+    // Regression: https://github.com/echoua/echo/issues/3391
+    async fn ensure_group_moves_existing_echo_mapping_and_messages() {
         let env = cleanup().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
         let group_name = "BBC NEWS";
@@ -588,7 +698,7 @@ mod tests {
         )
         .await
         .unwrap();
-        mk_signal_group(
+        let fallback_signal_group = mk_signal_group(
             &txn,
             signal_group::ActiveModel {
                 master_key: Set(echo_group_key.clone()),
@@ -605,6 +715,26 @@ mod tests {
                 datasource_id: Set(operator_datasource.id),
                 group_master_key: Set(echo_group_key.clone()),
                 name: Set(group_name.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let historical_message = mk_signal_message(
+            &txn,
+            signal_message::ActiveModel {
+                datasource_group_id: Set(Some(fallback_datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let historical_message_group = mk_signal_message_group(
+            &txn,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(historical_message.id),
+                group_master_key: Set(Some(echo_group_key.clone())),
+                datasource_group_id: Set(Some(fallback_datasource_group.id)),
                 ..Default::default()
             },
         )
@@ -635,10 +765,29 @@ mod tests {
                 .await
                 .unwrap()
                 .unwrap();
+        let fallback_signal_group =
+            signal_group::Entity::find_by_id(fallback_signal_group.master_key)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        let historical_message_group =
+            signal_message_group::Entity::find_by_id(
+                historical_message_group.id,
+            )
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
 
         assert_eq!(resolved_group_key, source_group_key);
         assert_eq!(datasource_group.group_master_key, source_group_key);
         assert_eq!(datasource_group.datasource_id, operator_datasource.id);
+        assert_eq!(
+            historical_message_group.group_master_key.as_deref(),
+            Some(source_group_key)
+        );
+        assert!(fallback_signal_group.deleted);
         assert_eq!(
             source_signal_group.datasource_id,
             Some(messenger_datasource.id)
