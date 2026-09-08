@@ -3,6 +3,7 @@ import type { InboxMessagesRspRaw } from '../../src/ts/react/services/api/inbox-
 import { networkSettingsResponse } from './fixture-responses';
 
 type ShortStateFixtureOptions = {
+  enableAudioTranscription?: boolean;
   shortStateId?: string;
   shortState?: unknown;
   inboxResponse?: InboxMessagesRspRaw | null | Promise<InboxMessagesRspRaw | null>;
@@ -64,7 +65,7 @@ function emptyUserSettingsResponse(disableAutoScroll = false) {
   };
 }
 
-function emptySystemSettingsResponse() {
+function emptySystemSettingsResponse(enableAudioTranscription = false) {
   return {
     id: null,
     rer_analysis_units_exact_match_only_default: false,
@@ -89,7 +90,7 @@ function emptySystemSettingsResponse() {
     goi_association_message_uid_worker_enabled: false,
     report_chunking_hours: 1,
     limit_big_reports: false,
-    enable_audio_transcription: false,
+    enable_audio_transcription: enableAudioTranscription,
     show_classic_duty: false,
     show_classic_analysis: false,
     show_peleng_distance_to_battleline: false,
@@ -227,7 +228,7 @@ export async function installRerDutyShortStateMocks(
     }
 
     if (pathname === '/api/system-settings/current') {
-      await fulfillJson(route, emptySystemSettingsResponse());
+      await fulfillJson(route, emptySystemSettingsResponse(options.enableAudioTranscription));
       resolveSystemSettingsReady();
       return;
     }

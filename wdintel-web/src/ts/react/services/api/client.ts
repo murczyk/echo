@@ -35,6 +35,27 @@ export function isAbortError(error: unknown): boolean {
 const NETWORK_REQUEST_ERROR_MESSAGE =
   'Не вдалося підключитися до сервера. Перевірте мережу та спробуйте ще раз.';
 
+function httpStatusMessage(status: number): string {
+  return `Помилка сервера (${status}).`;
+}
+
+function isHtmlDocument(text: string): boolean {
+  return /^\s*(?:<!doctype\s+html\b|<html(?:\s|>))/i.test(text);
+}
+
+function errorMessageFromJson(data: unknown): string | null {
+  if (typeof data === 'string' && data.trim().length > 0) return data;
+  if (!data || typeof data !== 'object') return null;
+  const knownMessage =
+    (data as Record<string, unknown>).error ??
+    (data as Record<string, unknown>).message ??
+    (data as Record<string, unknown>).detail;
+  if (typeof knownMessage === 'string' && knownMessage.trim().length > 0) {
+    return knownMessage;
+  }
+  return JSON.stringify(data);
+}
+
 export async function tryRunAndReturnNullExceptUnauthorized<T>(
   request: () => Promise<T>,
 ): Promise<T | null> {
@@ -49,33 +70,23 @@ export async function tryRunAndReturnNullExceptUnauthorized<T>(
 }
 
 async function parseErrorMessage(response: Response): Promise<string> {
-  const contentType = response.headers.get('content-type') || '';
+  const contentType = (response.headers.get('content-type') || '').toLowerCase();
+  const text = await response.text();
 
-  if (contentType.includes('application/json')) {
-    try {
-      const data = await response.json();
-      if (typeof data === 'string') return data;
-      if (data && typeof data === 'object') {
-        const knownMessage =
-          typeof data === 'object' && data !== null
-            ? ((data as Record<string, unknown>).error ??
-              (data as Record<string, unknown>).message ??
-              (data as Record<string, unknown>).detail)
-            : undefined;
-        if (typeof knownMessage === 'string' && knownMessage.trim().length > 0) {
-          return knownMessage;
-        }
-        return JSON.stringify(data);
-      }
-    } catch (_) {
-      // fall through to text
-    }
+  if (contentType.includes('text/html') || isHtmlDocument(text)) {
+    return httpStatusMessage(response.status);
+  }
+  if (text.trim().length === 0) return httpStatusMessage(response.status);
+
+  try {
+    const message = errorMessageFromJson(JSON.parse(text));
+    if (message !== null) return message;
+  } catch (_) {
+    if (contentType.includes('json')) return httpStatusMessage(response.status);
+    return text;
   }
 
-  const text = await response.text();
-  if (text.trim().length > 0) return text;
-
-  return response.statusText || `HTTP ${response.status}`;
+  return text;
 }
 
 async function requestJson<T>(

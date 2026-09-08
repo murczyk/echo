@@ -3,6 +3,7 @@ import type { InboxMessagesRspRaw } from '../../src/ts/react/services/api/inbox-
 import { networkSettingsResponse } from './fixture-responses';
 
 type AnalysisNeoMockOptions = {
+  enableAudioTranscription?: boolean;
   summaryDelayMs?: number;
   sidebarDelayMs?: number;
   inboxDelayMs?: number;
@@ -230,6 +231,13 @@ export async function installAnalysisNeoApiMocks(
 
     const url = new URL(request.url());
     const { pathname } = url;
+
+    if (pathname === '/api/system-settings/current') {
+      await fulfillJson(route, {
+        enable_audio_transcription: options.enableAudioTranscription ?? false,
+      });
+      return;
+    }
 
     if (pathname === '/api/user/settings') {
       await fulfillJson(route, emptyUserSettingsResponse());

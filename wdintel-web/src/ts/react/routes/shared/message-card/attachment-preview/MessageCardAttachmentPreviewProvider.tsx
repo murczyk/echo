@@ -19,6 +19,7 @@ export function MessageCardAttachmentPreviewProvider({
   imageEditing,
   initialAction,
   reportDraft,
+  onPreviewActivated,
 }: {
   attachments: MessageCardPreviewItem[];
   initialIndex: number;
@@ -27,6 +28,7 @@ export function MessageCardAttachmentPreviewProvider({
   imageEditing?: ImageEditingCapability;
   initialAction?: 'edit-image';
   reportDraft?: AttachmentPreviewReportDraft;
+  onPreviewActivated?: () => void;
 } & Partial<MessageCardDownloadGuardProps>) {
   const [currentIndex, setCurrentIndex] = useState(() =>
     normalizePreviewIndex(initialIndex, attachments.length),
@@ -53,6 +55,10 @@ export function MessageCardAttachmentPreviewProvider({
   );
   const resolvedIndex = normalizePreviewIndex(currentIndex, attachments.length);
   const currentItem = attachments[resolvedIndex] ?? null;
+
+  useEffect(() => {
+    if (currentItem != null) onPreviewActivated?.();
+  }, [currentItem, onPreviewActivated]);
 
   if (currentItem == null) return null;
 

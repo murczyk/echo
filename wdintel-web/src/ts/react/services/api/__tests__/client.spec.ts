@@ -59,6 +59,100 @@ describe('api client 401 handling', () => {
   });
 });
 
+describe('HTTP error messages', () => {
+  beforeEach(() => vi.restoreAllMocks());
+
+  it('replaces an HTML gateway response with a concise status message', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response('<!doctype html><html><body>nginx 502 Bad Gateway</body></html>', {
+          status: 502,
+          headers: { 'content-type': 'text/html; charset=utf-8' },
+        }),
+      ),
+    );
+
+    await expect(getJson('/api/reports')).rejects.toMatchObject({
+      status: 502,
+      message: 'Помилка сервера (502).',
+    });
+  });
+
+  it.each([undefined, 'application/json'])(
+    'recognizes HTML without a correct content type',
+    async (contentType) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(
+          new Response('  <HTML><body>nginx failure</body></HTML>', {
+            status: 502,
+            headers: contentType ? { 'content-type': contentType } : undefined,
+          }),
+        ),
+      );
+
+      await expect(getJson('/api/reports')).rejects.toMatchObject({
+        status: 502,
+        message: 'Помилка сервера (502).',
+      });
+    },
+  );
+
+  it('preserves supported JSON messages and ordinary plain-text HTTP errors', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ detail: 'Деталі помилки' }), {
+            status: 400,
+            headers: { 'content-type': 'application/json' },
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify('Текстова JSON помилка'), {
+            status: 400,
+            headers: { 'content-type': 'application/json' },
+          }),
+        )
+        .mockResolvedValueOnce(new Response('[upstream] Request rejected', { status: 500 }))
+        .mockResolvedValueOnce(new Response('"name" must be unique', { status: 500 })),
+    );
+
+    await expect(getJson('/api/reports')).rejects.toMatchObject({ message: 'Деталі помилки' });
+    await expect(getJson('/api/reports')).rejects.toMatchObject({
+      message: 'Текстова JSON помилка',
+    });
+    await expect(getJson('/api/reports')).rejects.toMatchObject({
+      message: '[upstream] Request rejected',
+    });
+    await expect(getJson('/api/reports')).rejects.toMatchObject({
+      message: '"name" must be unique',
+    });
+  });
+
+  it.each(['{not valid json', ''])(
+    'keeps the HTTP status for malformed or empty JSON errors',
+    async (body) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(
+          new Response(body, {
+            status: 503,
+            headers: { 'content-type': 'application/json' },
+          }),
+        ),
+      );
+
+      await expect(getJson('/api/reports')).rejects.toMatchObject({
+        status: 503,
+        message: 'Помилка сервера (503).',
+      });
+    },
+  );
+});
+
 describe('tryRunAndReturnNullExceptUnauthorized', () => {
   // @test-scope parser: API error fallback normalization
   it('returns null for non-401 errors', async () => {

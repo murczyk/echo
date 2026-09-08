@@ -330,7 +330,6 @@ export function ManageMessageDrawer(props: Props) {
                 isReportEditIntent || isReportMode ? '100vw' : { xs: '100%', sm: 720, md: 1040 },
               maxWidth: '100vw',
               display: 'flex',
-              position: 'relative',
               backgroundColor: 'background.default',
               backgroundImage: 'none',
             },

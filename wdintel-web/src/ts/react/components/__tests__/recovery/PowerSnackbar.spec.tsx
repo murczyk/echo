@@ -422,6 +422,34 @@ describe('PowerSnackbarProvider', () => {
     await act(async () => root.unmount());
   });
 
+  it('caps notification width and wraps long text without hiding the close action', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const message = 'unbroken-notification-text'.repeat(80);
+    function LongNotificationHarness() {
+      const { notify } = usePowerSnackbar();
+      return <button type="button" onClick={() => notify({ severity: 'error', message })} />;
+    }
+
+    await act(async () =>
+      root.render(
+        <PowerSnackbarProvider>
+          <LongNotificationHarness />
+        </PowerSnackbarProvider>,
+      ),
+    );
+    await act(async () => container.querySelector<HTMLButtonElement>('button')?.click());
+
+    expect(document.body.querySelector('button[aria-label="Закрити сповіщення"]')).not.toBeNull();
+    const generatedStyles = Array.from(document.head.querySelectorAll('style'))
+      .map((style) => style.textContent ?? '')
+      .join('\n');
+    expect(generatedStyles).toContain('min(520px');
+    expect(generatedStyles).toContain('overflow-wrap:anywhere');
+    await act(async () => root.unmount());
+  });
+
   it('does not rerender hook consumers when queue state changes', async () => {
     vi.useFakeTimers();
     let renders = 0;

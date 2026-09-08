@@ -154,11 +154,110 @@ test('follows only while the bottom arrow is hidden and preserves the reading an
 
   await setBottomDistance(scroller, 0);
   await secondNewerRequestStarted.promise;
-  await expect(bottomButton).toBeVisible();
-  await expect(bottomButton.getByRole('button')).toBeDisabled();
+  await expect(bottomButton).toHaveCount(0);
 
   secondNewerResponse.resolve(buildInboxResponse([42]));
   await expect(list.locator('[data-duty-message-id="42"]')).toBeAttached();
   await expect.poll(() => readBottomDistance(scroller)).toBeLessThanOrEqual(1);
   await expect(bottomButton).toHaveCount(0);
+});
+
+// @test-scope regression: https://github.com/echoua/echo/issues/3360
+test('keeps an OFF reading anchor stable while a long snackbar error is shown @smoke', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const longError = 'unbroken-server-error-'.repeat(80);
+  await installRerDutyShortStateMocks(page, {
+    disableAutoScroll: true,
+    inboxResponse: buildInboxResponse(Array.from({ length: 40 }, (_, index) => index + 1)),
+  });
+  await page.route('**/api/rer-importer/get-inbox-count', async (route) => {
+    await route.fulfill({ status: 500, contentType: 'text/plain', body: longError });
+  });
+
+  await page.goto('/rer-duty-neo?state-short=short-1');
+  const scroller = page.locator('[data-duty-feed-scroller="true"]');
+  const list = page.locator('[data-duty-feed-list="true"]');
+  await expect(list.locator('[data-duty-message-id="1"]')).toBeAttached();
+  const anchorBefore = await readVisibleAnchor(scroller);
+  await expect(page.getByText(longError)).toBeVisible();
+  const snackbar = page.locator('.MuiSnackbar-root');
+  const snackbarBox = await snackbar.boundingBox();
+  expect(snackbarBox).not.toBeNull();
+  expect(snackbarBox!.width).toBeLessThanOrEqual(520);
+  expect(snackbarBox!.x).toBeGreaterThanOrEqual(24);
+  expect(snackbarBox!.x + snackbarBox!.width).toBeLessThanOrEqual(1280);
+  const closeButton = page.getByRole('button', { name: 'Закрити сповіщення' });
+  await expect(closeButton).toBeVisible();
+  const closeButtonBox = await closeButton.boundingBox();
+  expect(closeButtonBox).not.toBeNull();
+  expect(closeButtonBox!.y).toBeGreaterThanOrEqual(0);
+  expect(closeButtonBox!.y + closeButtonBox!.height).toBeLessThanOrEqual(900);
+  expect(
+    await snackbar.evaluate((element) => {
+      const alert = element.querySelector<HTMLElement>('.MuiAlert-root')!;
+      return alert.scrollWidth <= alert.clientWidth;
+    }),
+  ).toBe(true);
+  const message = snackbar.locator('.MuiAlert-message');
+  expect(
+    await message.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+      return element.scrollTop + element.clientHeight >= element.scrollHeight;
+    }),
+  ).toBe(true);
+  const anchor = list.locator(`[data-duty-message-id="${anchorBefore.id}"]`);
+  await expect.poll(() => readAnchorOffset(anchor)).toBeCloseTo(anchorBefore.offsetTop, 0);
+  await closeButton.click();
+  await expect(snackbar).toHaveCount(0);
+  await expect.poll(() => readAnchorOffset(anchor)).toBeCloseTo(anchorBefore.offsetTop, 0);
+});
+
+// @test-scope regression: https://github.com/echoua/echo/issues/3400
+test('keeps an unbroken snackbar error within the narrow viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const longError = 'unbroken-server-error-'.repeat(80);
+  await installRerDutyShortStateMocks(page, {
+    disableAutoScroll: true,
+    inboxResponse: buildInboxResponse(Array.from({ length: 40 }, (_, index) => index + 1)),
+  });
+  await page.route('**/api/rer-importer/get-inbox-count', async (route) => {
+    await route.fulfill({ status: 500, contentType: 'text/plain', body: longError });
+  });
+
+  await page.goto('/rer-duty-neo?state-short=short-1');
+  const scroller = page.locator('[data-duty-feed-scroller="true"]');
+  await expect(page.locator('[data-duty-message-id="1"]')).toBeAttached();
+  const scrollerBox = await scroller.boundingBox();
+  await expect(page.getByText(longError)).toBeVisible();
+  const snackbar = page.locator('.MuiSnackbar-root');
+  const snackbarBox = await snackbar.boundingBox();
+  expect(snackbarBox).not.toBeNull();
+  expect(snackbarBox!.width).toBeLessThanOrEqual(374);
+  expect(snackbarBox!.x).toBeGreaterThanOrEqual(8);
+  expect(snackbarBox!.x + snackbarBox!.width).toBeLessThanOrEqual(390);
+  const closeButton = page.getByRole('button', { name: 'Закрити сповіщення' });
+  await expect(closeButton).toBeVisible();
+  const closeButtonBox = await closeButton.boundingBox();
+  expect(closeButtonBox).not.toBeNull();
+  expect(closeButtonBox!.y).toBeGreaterThanOrEqual(0);
+  expect(closeButtonBox!.y + closeButtonBox!.height).toBeLessThanOrEqual(844);
+  expect(
+    await snackbar.evaluate((element) => {
+      const alert = element.querySelector<HTMLElement>('.MuiAlert-root')!;
+      return alert.scrollWidth <= alert.clientWidth;
+    }),
+  ).toBe(true);
+  const message = snackbar.locator('.MuiAlert-message');
+  expect(
+    await message.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+      return element.scrollTop + element.clientHeight >= element.scrollHeight;
+    }),
+  ).toBe(true);
+  expect(await scroller.boundingBox()).toEqual(scrollerBox);
+  await closeButton.click();
+  await expect(snackbar).toHaveCount(0);
+  expect(await scroller.boundingBox()).toEqual(scrollerBox);
 });
