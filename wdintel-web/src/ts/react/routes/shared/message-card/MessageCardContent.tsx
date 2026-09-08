@@ -57,6 +57,7 @@ import {
   isVideoMediaAttachment,
   mediaAttachmentContentType,
   mediaAttachmentDisplayName,
+  resolveMediaAttachmentId,
   MessageMediaAudioPlayer,
   MessageMediaDownloadLink,
   type MessageCardDownloadGuardProps,
@@ -333,6 +334,10 @@ export function MessageCardMessageBody({
     setActiveAttachmentSection(null);
   }, [collapseMediaPreviews, messageId]);
   const [attachmentPreviewIndex, setAttachmentPreviewIndex] = useState<number | null>(null);
+  const inlineAudioPlayersRef = useRef<Set<HTMLElement & { pause?: () => void }>>(new Set());
+  const pauseInlineAudioPlayers = useCallback(() => {
+    for (const player of inlineAudioPlayersRef.current) player.pause?.();
+  }, []);
   const [coordinatePreviewPoints, setCoordinatePreviewPoints] = useState<CoordinatePreviewPoint[]>(
     [],
   );
@@ -611,6 +616,19 @@ export function MessageCardMessageBody({
       };
     });
   }, [videoAttachments]);
+  const audioPreviewSources = useMemo(
+    () =>
+      audioAttachments.map((attachment) => ({
+        id: resolveMediaAttachmentId(attachment) || String(attachment.href ?? ''),
+        mediaId: resolveMediaAttachmentId(attachment) || null,
+        source: String(attachment.href ?? ''),
+        fileName: mediaAttachmentDisplayName(attachment),
+        contentType: mediaAttachmentContentType(attachment) || null,
+        sizeBytes: attachment.sizeBytes ?? null,
+        transcription: attachment.transcription ?? null,
+      })),
+    [audioAttachments],
+  );
   const previewAttachments = useMemo<MessageCardPreviewAttachment[]>(
     () => [
       ...images.map((image) => ({ type: 'image' as const, value: image })),
@@ -619,14 +637,24 @@ export function MessageCardMessageBody({
         type: 'document' as const,
         value: document,
       })),
+      ...audioPreviewSources.map((audio) => ({ type: 'audio' as const, value: audio })),
       ...(coordinatePreviewPoints.length > 0
         ? [{ type: 'coordinate' as const, points: coordinatePreviewPoints }]
         : []),
     ],
-    [coordinatePreviewPoints, images, previewableDocuments, videoPreviewSources],
+    [
+      audioPreviewSources,
+      coordinatePreviewPoints,
+      images,
+      previewableDocuments,
+      videoPreviewSources,
+    ],
   );
   const coordinatePreviewStartIndex =
-    images.length + videoPreviewSources.length + previewableDocuments.length;
+    images.length +
+    videoPreviewSources.length +
+    previewableDocuments.length +
+    audioPreviewSources.length;
 
   const showPointLinks = messageHasPalitraTag(msg, tagsMap);
   const hasCoordinateMapPreview = hasCoordinatePreviewCandidate(msg, tagsMap);
@@ -900,6 +928,7 @@ export function MessageCardMessageBody({
               attachments={previewAttachments}
               initialIndex={attachmentPreviewIndex}
               onClose={() => setAttachmentPreviewIndex(null)}
+              onPreviewActivated={pauseInlineAudioPlayers}
               isDownloadStarting={isDownloadStarting}
               onDownloadStart={onDownloadStart}
             />
@@ -961,6 +990,22 @@ export function MessageCardMessageBody({
                   attachment={attachment}
                   isDownloadStarting={isDownloadStarting}
                   onDownloadStart={onDownloadStart}
+                  onPlayerChange={(player, previousPlayer) => {
+                    if (player) inlineAudioPlayersRef.current.add(player);
+                    if (previousPlayer) inlineAudioPlayersRef.current.delete(previousPlayer);
+                  }}
+                  onOpenPreview={() => {
+                    const index = previewAttachments.findIndex(
+                      (item) =>
+                        item.type === 'audio' &&
+                        item.value.id ===
+                          (resolveMediaAttachmentId(attachment) || String(attachment.href ?? '')),
+                    );
+                    if (index >= 0) {
+                      blurActiveElement();
+                      setAttachmentPreviewIndex(index);
+                    }
+                  }}
                 />
               ))}
             </div>

@@ -14,6 +14,7 @@ import {
 import { getDocumentKind } from '../../message-card/message-card-document-utils';
 import {
   isImageMediaAttachment,
+  isAudioMediaAttachment,
   isVideoMediaAttachment,
 } from '../../message-card/MessageCardMedia';
 import { handleUnauthorizedMediaResponse } from '../../message-card/message-card-media-fetch';
@@ -312,6 +313,17 @@ export function AttachmentsSection({
             sizeBytes: file.size ?? undefined,
           },
         });
+      } else if (kind === 'audio' && previewUrl) {
+        items.push({
+          type: 'audio',
+          value: {
+            id: file.id,
+            source: previewUrl,
+            fileName: file.name ?? 'audio',
+            contentType: file.type ?? null,
+            sizeBytes: file.size ?? null,
+          },
+        });
       } else if (previewUrl) {
         const docKind = getDocumentKind({
           id: file.id,
@@ -383,6 +395,19 @@ export function AttachmentsSection({
             source: href,
             mimeType: contentType,
             sizeBytes,
+          },
+        });
+      } else if (isAudioMediaAttachment({ ...media, id, contentType, fileName, href })) {
+        items.push({
+          type: 'audio',
+          value: {
+            id,
+            mediaId: id || null,
+            source: href,
+            fileName: fileName ?? 'audio',
+            contentType: contentType ?? null,
+            sizeBytes: sizeBytes ?? null,
+            transcription: media.transcription ?? null,
           },
         });
       } else {

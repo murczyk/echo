@@ -229,24 +229,35 @@ export function syncAudioPlayerTheme(player: HTMLElement, paletteMode: 'light' |
   player.setAttribute('theme', paletteMode);
 }
 
-export function MessageMediaAudioPlayer({
-  attachment,
-  isDownloadStarting,
-  onDownloadStart,
-}: { attachment: MessageMediaInfo } & MessageCardDownloadGuardProps) {
+type AudioPlayerElement = HTMLElement & {
+  pause?: () => void;
+  play?: () => Promise<void>;
+  autoplay?: boolean;
+};
+
+export function AudioPlayerHost({
+  href,
+  displayName,
+  mediaId,
+  sizeBytes,
+  onPlayerChange,
+  suppressInitialAutoplay = false,
+  previewSizing = false,
+}: {
+  href: string;
+  displayName: string;
+  mediaId: string;
+  sizeBytes: number | null;
+  onPlayerChange?: (player: AudioPlayerElement | null, previousPlayer?: AudioPlayerElement) => void;
+  suppressInitialAutoplay?: boolean;
+  previewSizing?: boolean;
+}) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const playerRef = useRef<HTMLElement | null>(null);
+  const playerRef = useRef<AudioPlayerElement | null>(null);
   const paletteMode = useMuiPaletteMode();
-  const displayName = mediaAttachmentDisplayName(attachment);
-  const transcription = attachment.transcription?.trim() ?? '';
-  const { enabled: audioTranscriptionEnabled } = useAudioTranscriptionPreferences();
-  const showTranscription = audioTranscriptionEnabled && transcription !== '';
-  const href = String(attachment.href ?? '');
-  const mediaId = resolveMediaAttachmentId(attachment);
-  const sizeBytes = mediaAttachmentSizeBytes(attachment);
-  const hasExplicitAudioType = mediaAttachmentContentType(attachment).startsWith('audio/');
+  const hasExplicitAudioType = true;
   const canLoadDerivedImages =
-    (hasExplicitAudioType || !hasVideoFileExtension(attachment)) &&
+    hasExplicitAudioType &&
     (sizeBytes == null || sizeBytes <= AUDIO_DERIVED_IMAGE_MAX_SOURCE_SIZE_BYTES);
   const waveSrc = mediaId !== '' && canLoadDerivedImages ? mediaAttachmentWaveUrl(mediaId) : '';
   const spectrumSrc =
@@ -256,37 +267,73 @@ export function MessageMediaAudioPlayer({
   useLayoutEffect(() => {
     const host = hostRef.current;
     if (!host || href === '') return;
-
-    const player = document.createElement('custom-audio-player');
+    const player = document.createElement('custom-audio-player') as AudioPlayerElement;
     player.setAttribute('src', href);
     player.setAttribute('variant', 'echo');
     player.setAttribute('mode', 'compact');
     player.setAttribute('storage-key', storageKey);
     player.setAttribute('theme', getMuiPaletteMode());
-    if (displayName !== '<файл без назви>') {
-      player.setAttribute('file-name', displayName);
-    }
-    if (waveSrc !== '') {
-      player.setAttribute('wave-src', waveSrc);
-    }
-    if (spectrumSrc !== '') {
-      player.setAttribute('spectrum-src', spectrumSrc);
+    if (displayName !== '<файл без назви>') player.setAttribute('file-name', displayName);
+    if (waveSrc !== '') player.setAttribute('wave-src', waveSrc);
+    if (spectrumSrc !== '') player.setAttribute('spectrum-src', spectrumSrc);
+    const originalPlay = player.play;
+    const restorePlay = () => {
+      if (suppressInitialAutoplay) player.play = originalPlay;
+    };
+    if (suppressInitialAutoplay) {
+      player.play = () => Promise.resolve();
+      player.addEventListener('canplay', restorePlay, { once: true });
     }
     host.replaceChildren(player);
     playerRef.current = player;
-
+    onPlayerChange?.(player);
     return () => {
+      player.pause?.();
+      player.removeEventListener('canplay', restorePlay);
+      restorePlay();
       playerRef.current = null;
+      onPlayerChange?.(null, player);
       host.replaceChildren();
     };
-  }, [href, storageKey, waveSrc, spectrumSrc, displayName]);
+  }, [displayName, href, spectrumSrc, storageKey, suppressInitialAutoplay, waveSrc]);
 
   useLayoutEffect(() => {
-    const player = playerRef.current;
-    if (!player) return;
-    syncAudioPlayerTheme(player, paletteMode);
+    if (playerRef.current) syncAudioPlayerTheme(playerRef.current, paletteMode);
   }, [paletteMode]);
 
+  return (
+    <div
+      ref={hostRef}
+      className={`message-card-audio-host relative z-0 flex min-w-0 flex-1 items-stretch${
+        previewSizing ? ' message-card-audio-host--preview' : ' overflow-hidden'
+      }`}
+      data-audio-player-host
+      data-audio-player-min-height-px={AUDIO_PLAYER_MIN_HEIGHT_PX}
+      data-audio-player-top-padding-px={AUDIO_PLAYER_TOP_PADDING_PX}
+      data-audio-player-z-index={AUDIO_PLAYER_Z_INDEX}
+    />
+  );
+}
+
+export function MessageMediaAudioPlayer({
+  attachment,
+  isDownloadStarting,
+  onDownloadStart,
+  onOpenPreview,
+  onPlayerChange,
+}: {
+  attachment: MessageMediaInfo;
+  onOpenPreview?: () => void;
+  onPlayerChange?: (player: AudioPlayerElement | null, previousPlayer?: AudioPlayerElement) => void;
+} & MessageCardDownloadGuardProps) {
+  const playerRef = useRef<AudioPlayerElement | null>(null);
+  const displayName = mediaAttachmentDisplayName(attachment);
+  const transcription = attachment.transcription?.trim() ?? '';
+  const { enabled: audioTranscriptionEnabled } = useAudioTranscriptionPreferences();
+  const showTranscription = audioTranscriptionEnabled && transcription !== '';
+  const href = String(attachment.href ?? '');
+  const mediaId = resolveMediaAttachmentId(attachment);
+  const sizeBytes = mediaAttachmentSizeBytes(attachment);
   if (href === '') return null;
 
   const downloadKey = messageCardMediaDownloadKey(String(attachment.id));
@@ -298,14 +345,29 @@ export function MessageMediaAudioPlayer({
   return (
     <div className={`w-full min-w-0${showTranscription ? ' audio-transcription-layout' : ''}`}>
       <div className="audio-player-row message-card-audio-row flex w-full min-w-0 items-stretch gap-2">
-        <div
-          ref={hostRef}
-          className="message-card-audio-host relative z-0 flex min-w-0 flex-1 items-stretch overflow-hidden"
-          data-audio-player-host
-          data-audio-player-min-height-px={AUDIO_PLAYER_MIN_HEIGHT_PX}
-          data-audio-player-top-padding-px={AUDIO_PLAYER_TOP_PADDING_PX}
-          data-audio-player-z-index={AUDIO_PLAYER_Z_INDEX}
+        <AudioPlayerHost
+          href={href}
+          displayName={displayName}
+          mediaId={mediaId}
+          sizeBytes={sizeBytes}
+          onPlayerChange={(player, previousPlayer) => {
+            playerRef.current = player;
+            onPlayerChange?.(player, previousPlayer);
+          }}
         />
+        {onOpenPreview ? (
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={() => {
+              playerRef.current?.pause?.();
+              onOpenPreview();
+            }}
+            aria-label={`Відкрити аудіо: ${displayName}`}
+          >
+            Відкрити
+          </Button>
+        ) : null}
         <Tooltip title={downloadLabel} enterDelay={400}>
           <MessageCardDisabledControlCursorWrapper className="items-center" disabled={downloading}>
             <Button

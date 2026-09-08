@@ -73,7 +73,7 @@ export function ReportTextPreviewLayout({
   draft?: AttachmentPreviewReportDraft;
   visible: boolean;
 }) {
-  if (draft == null || !visible) return source;
+  if (draft == null) return source;
 
   return (
     <Box
@@ -93,21 +93,23 @@ export function ReportTextPreviewLayout({
       >
         {source}
       </Box>
-      <Box
-        data-attachment-preview-scroll
-        className="relative flex-col overscroll-contain touch-pan-y px-4 py-2.5 border-t border-white/12 bg-inherit text-(--color-text) transition-[max-height] duration-200 ease-out"
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          flex: '0 0 auto',
-          minWidth: 0,
-          minHeight: 0,
-          maxHeight: 176,
-          overflow: 'hidden',
-        }}
-      >
-        <ReportTextPreviewPane draft={draft} />
-      </Box>
+      {visible ? (
+        <Box
+          data-attachment-preview-scroll
+          className="relative flex-col overscroll-contain touch-pan-y px-4 pt-[24px] pb-2.5 border-t border-white/12 bg-inherit text-(--color-text) transition-[max-height] duration-200 ease-out"
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            flex: '0 0 auto',
+            minWidth: 0,
+            minHeight: 0,
+            maxHeight: 176,
+            overflow: 'hidden',
+          }}
+        >
+          <ReportTextPreviewPane draft={draft} />
+        </Box>
+      ) : null}
     </Box>
   );
 }

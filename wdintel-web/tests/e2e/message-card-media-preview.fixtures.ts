@@ -159,6 +159,7 @@ function buildMessageCardMediaPreviewMessage({
         file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.audio,
         size_bytes: 512,
         href: audio,
+        transcription: 'E2E audio transcription\nwith a second line',
       },
       {
         id: 'e2e-download',
@@ -343,6 +344,7 @@ async function installMessageCardMediaPreviewHostFixture(
   coordinateLabel: string | undefined,
   coordinatePointCount: number,
   messageText: string | undefined,
+  enableAudioTranscription: boolean,
 ): Promise<void> {
   const inboxResponse = buildMessageCardMediaPreviewInboxResponse({
     withPolishContent,
@@ -356,9 +358,17 @@ async function installMessageCardMediaPreviewHostFixture(
   const networkInfoResponse = withPolishContent ? MESSAGE_CARD_POLISH_NETWORKS : undefined;
 
   if (host === 'analysis') {
-    await installAnalysisNeoApiMocks(page, { inboxResponse, networkInfoResponse });
+    await installAnalysisNeoApiMocks(page, {
+      inboxResponse,
+      networkInfoResponse,
+      enableAudioTranscription,
+    });
   } else {
-    await installRerDutyShortStateMocks(page, { inboxResponse, networkInfoResponse });
+    await installRerDutyShortStateMocks(page, {
+      inboxResponse,
+      networkInfoResponse,
+      enableAudioTranscription,
+    });
   }
 
   if (withPartialCoordinateError || withCompleteCoordinateError || coordinateLabel != null) {
@@ -401,6 +411,7 @@ export async function openMessageCardPreviewHost(
     coordinateLabel,
     coordinatePointCount = 1,
     messageText,
+    enableAudioTranscription = false,
     deferredImageResponse,
   }: {
     revealAudio?: boolean;
@@ -411,6 +422,7 @@ export async function openMessageCardPreviewHost(
     coordinateLabel?: string;
     coordinatePointCount?: number;
     messageText?: string;
+    enableAudioTranscription?: boolean;
     deferredImageResponse?: DeferredMediaResponse;
   } = {},
 ): Promise<void> {
@@ -424,6 +436,7 @@ export async function openMessageCardPreviewHost(
     coordinateLabel,
     coordinatePointCount,
     messageText,
+    enableAudioTranscription,
   );
   await page.goto(
     host === 'analysis' ? '/rer-analysis-neo' : '/rer-duty-neo',

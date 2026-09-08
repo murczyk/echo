@@ -454,6 +454,17 @@ html[data-bs-theme='dark'] .message-card-root {
   max-width: 523px;
 }
 
+.message-card-audio-host--preview {
+  height: auto;
+  max-width: none;
+  overflow: visible;
+}
+
+.message-card-audio-host--preview:has(> custom-audio-player.layout-compact) {
+  height: 40px;
+  overflow: hidden;
+}
+
 @container (min-width: 760px) {
   .message-card-content-layout--with-sidebar {
     gap: 24px;
