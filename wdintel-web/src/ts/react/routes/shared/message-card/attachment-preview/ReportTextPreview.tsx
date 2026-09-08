@@ -96,7 +96,7 @@ export function ReportTextPreviewLayout({
       {visible ? (
         <Box
           data-attachment-preview-scroll
-          className="relative flex-col overscroll-contain touch-pan-y px-4 pt-[24px] pb-2.5 border-t border-white/12 bg-inherit text-(--color-text) transition-[max-height] duration-200 ease-out"
+          className="relative flex-col overscroll-contain touch-pan-y px-[16px] py-[8px] border-t border-white/12 bg-inherit text-(--color-text) transition-[max-height] duration-200 ease-out"
           sx={{
             display: 'flex',
             alignItems: 'center',

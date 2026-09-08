@@ -159,13 +159,24 @@ test.describe('@smoke manage message drawer attachment preview', () => {
 
     const videoControls = preview.locator('[data-attachment-preview-video-controls]');
     const reportPane = preview.locator('[data-attachment-preview-report-pane]');
+    const reportFooter = reportPane.locator('..');
     await expect(videoControls).toBeVisible();
     await expect(reportPane).toBeVisible();
+    await expect(reportFooter).toHaveCSS('padding-top', '8px');
+    await expect(reportFooter).toHaveCSS('padding-right', '16px');
+    await expect(reportFooter).toHaveCSS('padding-bottom', '8px');
+    await expect(reportFooter).toHaveCSS('padding-left', '16px');
     const controlsBox = await videoControls.boundingBox();
     const reportPaneBox = await reportPane.boundingBox();
     expect(controlsBox).not.toBeNull();
     expect(reportPaneBox).not.toBeNull();
     expect(controlsBox!.y + controlsBox!.height).toBeLessThanOrEqual(reportPaneBox!.y + 1);
+
+    await page.setViewportSize({ width: 375, height: 500 });
+    await expect(reportFooter).toHaveCSS('padding-top', '8px');
+    await expect(reportFooter).toHaveCSS('padding-right', '16px');
+    await expect(reportFooter).toHaveCSS('padding-bottom', '8px');
+    await expect(reportFooter).toHaveCSS('padding-left', '16px');
 
     await preview.getByRole('button', { name: 'Закрити' }).click();
     await expect(drawerReportText).toHaveValue('Оновлений текст розвіддонесення');
