@@ -15,7 +15,6 @@
     "prepare": "git -C .. config core.hooksPath .githooks || true",
     "strip-use-client": "node scripts/strip-use-client.mjs",
     "e2e": "playwright test --grep @smoke",
-    "e2e:analysis-references": "playwright test tests/e2e/analysis-neo.spec.ts --grep @message-references",
     "e2e:perf": "playwright test --grep @perf",
     "e2e:install": "playwright install --with-deps chromium",
     "test": "npm run test:prepare && npm run test:elm && npm run test:ts",
