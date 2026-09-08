@@ -115,6 +115,20 @@ export function PowerSnackbarProvider({
           sm: `calc(${DEFAULT_DESKTOP_INSET}px + env(safe-area-inset-right, 0px))`,
         }
       : `calc(${inset(rightInset)} + env(safe-area-inset-right, 0px))`;
+  const maxWidth =
+    rightInset === undefined
+      ? {
+          xs: 'calc(100vw - 16px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))',
+          sm: 'min(520px, calc(100vw - 48px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)))',
+        }
+      : `min(520px, calc(100vw - ${inset(rightInset)} - ${DEFAULT_NARROW_INSET}px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)))`;
+  const maxHeight =
+    bottomInset === undefined
+      ? {
+          xs: `calc(100dvh - ${DEFAULT_NARROW_INSET}px - env(safe-area-inset-top, 0px) - ${DEFAULT_NARROW_INSET}px - env(safe-area-inset-bottom, 0px))`,
+          sm: `calc(100dvh - ${DEFAULT_DESKTOP_INSET}px - env(safe-area-inset-top, 0px) - ${DEFAULT_DESKTOP_INSET}px - env(safe-area-inset-bottom, 0px))`,
+        }
+      : `calc(100dvh - ${inset(bottomInset)} - ${DEFAULT_NARROW_INSET}px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))`;
 
   const contextValue = useMemo(() => ({ notify }), [notify]);
 
@@ -134,8 +148,24 @@ export function PowerSnackbarProvider({
               bottom,
               right,
               left: 'auto',
-              maxWidth: 'calc(100vw - 16px)',
-              '& .MuiAlert-root': { width: '100%' },
+              width: 'fit-content',
+              maxWidth,
+              maxHeight,
+              '& .MuiAlert-root': {
+                width: '100%',
+                minWidth: 0,
+                maxHeight,
+                boxSizing: 'border-box',
+                overflow: 'hidden',
+              },
+              '& .MuiAlert-message': {
+                flex: '1 1 auto',
+                minWidth: 0,
+                minHeight: 0,
+                overflowY: 'auto',
+                overflowWrap: 'anywhere',
+              },
+              '& .MuiAlert-action': { flexShrink: 0 },
             }}
           >
             <Alert
