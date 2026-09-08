@@ -1309,9 +1309,9 @@ describe('useRerNetworksNeoPage', () => {
 
   it('requests activity data with a concrete upper bound and maps returned bars', async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-06-12T15:34:56Z'));
+    vi.setSystemTime(new Date('2026-09-07T22:30:00Z'));
 
-    const todayKey = dayjs().startOf('day').valueOf();
+    const todayKey = Date.UTC(2026, 8, 8);
     apiMock.getNetworksGroupsActivity.mockResolvedValueOnce({
       1: {
         [todayKey]: { alpha: 3 },
@@ -1324,7 +1324,7 @@ describe('useRerNetworksNeoPage', () => {
     expect(apiMock.getNetworksGroupsActivity).toHaveBeenCalledWith(
       {
         networkIds: [1, 2],
-        tillDateNoninclusiveMs: dayjs().startOf('day').add(1, 'day').valueOf(),
+        tillDateNoninclusiveMs: Date.UTC(2026, 8, 8, 21),
         period: null,
       },
       expect.any(Object),
