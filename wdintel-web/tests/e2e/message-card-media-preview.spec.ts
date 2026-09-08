@@ -20,6 +20,16 @@ async function openVideoPreview(page: Page) {
   return page.getByRole('dialog', { name: 'Перегляд відео' });
 }
 
+async function openAudioPreviewFromMixedCarousel(page: Page) {
+  const media = page.getByRole('button', { name: /^(Розгорнути|Згорнути) медіа:/ });
+  if ((await media.getAttribute('aria-expanded')) !== 'true') await media.click();
+  await openImagePreview(page);
+  for (let index = 0; index < 6; index += 1) {
+    await page.getByRole('button', { name: 'Наступне' }).click();
+  }
+  return page.getByRole('dialog', { name: 'Перегляд аудіо' });
+}
+
 async function openTextPreview(page: Page) {
   const documents = page.getByRole('button', { name: /^(Розгорнути|Згорнути) документи:/ });
   if ((await documents.getAttribute('aria-expanded')) !== 'true') await documents.click();
@@ -85,6 +95,7 @@ test.describe('@smoke', () => {
           name: `Завантажити вкладення: ${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.video1}`,
         }),
       ).toBeVisible();
+      await expect(page.getByRole('button', { name: /Відкрити аудіо:/ })).toHaveCount(0);
 
       const imageDialog = await openImagePreview(page);
       await expect(imageDialog).toBeVisible();
@@ -432,7 +443,7 @@ test.describe('message card media preview contract', () => {
     await openMessageCardPreviewHost(page, 'duty');
 
     let imageDialog = await openImagePreview(page);
-    await expectPreviewCounter(imageDialog, '1 / 6');
+    await expectPreviewCounter(imageDialog, '1 / 7');
 
     await imageDialog.getByRole('button', { name: 'Інформація' }).click();
     await expect(
@@ -460,10 +471,10 @@ test.describe('message card media preview contract', () => {
     );
 
     await imageDialog.getByRole('button', { name: 'Наступне' }).click();
-    await expectPreviewCounter(imageDialog, '2 / 6');
+    await expectPreviewCounter(imageDialog, '2 / 7');
 
     await page.keyboard.press('ArrowLeft');
-    await expectPreviewCounter(imageDialog, '1 / 6');
+    await expectPreviewCounter(imageDialog, '1 / 7');
 
     await verifyEscapeClose(page, imageDialog, () => openImagePreview(page));
   });
@@ -472,7 +483,7 @@ test.describe('message card media preview contract', () => {
     await openMessageCardPreviewHost(page, 'duty');
 
     const videoDialog = await openVideoPreview(page);
-    await expectPreviewCounter(videoDialog, '3 / 6');
+    await expectPreviewCounter(videoDialog, '3 / 7');
     await expect(videoDialog.getByRole('button', { name: 'Інформація' })).toBeVisible();
     await expectPopupAndClose(
       page,
@@ -489,10 +500,10 @@ test.describe('message card media preview contract', () => {
     );
 
     await videoDialog.getByRole('button', { name: 'Наступне' }).click();
-    await expectPreviewCounter(videoDialog, '4 / 6');
+    await expectPreviewCounter(videoDialog, '4 / 7');
 
     await page.keyboard.press('ArrowLeft');
-    await expectPreviewCounter(videoDialog, '3 / 6');
+    await expectPreviewCounter(videoDialog, '3 / 7');
 
     await verifyEscapeClose(page, videoDialog, () => openVideoPreview(page));
   });
@@ -503,7 +514,7 @@ test.describe('message card media preview contract', () => {
     await openMessageCardPreviewHost(page, 'duty');
 
     const textDialog = await openTextPreview(page);
-    await expectPreviewCounter(textDialog, '5 / 6');
+    await expectPreviewCounter(textDialog, '5 / 7');
     await expect(page.getByText('E2E TXT preview line 1')).toBeVisible();
     await expect(textDialog.getByRole('button', { name: 'Інформація' })).toBeVisible();
     await expectPopupAndClose(
@@ -528,7 +539,7 @@ test.describe('message card media preview contract', () => {
     await textDialog.getByRole('button', { name: 'Наступне' }).click();
 
     const markdownDialog = page.getByRole('dialog', { name: 'Перегляд документа' });
-    await expectPreviewCounter(markdownDialog, '6 / 6');
+    await expectPreviewCounter(markdownDialog, '6 / 7');
     await expect(
       markdownDialog.getByRole('heading', { name: 'E2E Markdown preview', level: 1 }),
     ).toBeVisible();
@@ -547,7 +558,161 @@ test.describe('message card media preview contract', () => {
       MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.markdown,
     );
 
+    await markdownDialog.getByRole('button', { name: 'Наступне' }).click();
+    const audioDialog = page.getByRole('dialog', { name: 'Перегляд аудіо' });
+    await expectPreviewCounter(audioDialog, '7 / 7');
+    await expect(audioDialog.locator('custom-audio-player')).toHaveCount(1);
+    await expect(
+      audioDialog.getByRole('heading', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.audio }),
+    ).toBeVisible();
+    await page.keyboard.press('ArrowRight');
+    await expectPreviewCounter(page.getByRole('dialog', { name: 'Перегляд зображення' }), '1 / 7');
     await page.keyboard.press('Escape');
-    await expect(markdownDialog).toHaveCount(0);
+    await expect(audioDialog).toHaveCount(0);
+  });
+
+  test('ECHO-3405 matches the audio content layout at the reference viewport', async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width: 1440, height: 1024 });
+
+    for (const host of ['duty', 'analysis'] as const) {
+      await openMessageCardPreviewHost(page, host, { enableAudioTranscription: true });
+      await page.getByRole('button', { name: /^(Розгорнути|Згорнути) аудіо:/ }).click();
+      const audioDialog = await openAudioPreviewFromMixedCarousel(page);
+      const content = audioDialog.locator('[data-audio-preview-content]');
+      const playerFrame = audioDialog.locator('[data-audio-preview-player]');
+      const player = playerFrame.locator('custom-audio-player');
+      const playerHost = audioDialog.locator('[data-audio-player-host]');
+      const transcription = audioDialog.locator('[data-audio-preview-transcription]');
+      await expect(player).toHaveClass(/layout-compact/);
+      await expect(transcription).toContainText('E2E audio transcription\nwith a second line');
+
+      const [contentBox, playerBox, transcriptionBox] = await Promise.all([
+        content.boundingBox(),
+        playerFrame.boundingBox(),
+        transcription.boundingBox(),
+      ]);
+      expect(contentBox?.width).toBe(685);
+      expect(playerBox?.width).toBe(685);
+      expect(playerBox?.height).toBe(40);
+      expect(transcriptionBox?.y).toBe((playerBox?.y ?? 0) + (playerBox?.height ?? 0) + 32);
+      expect(transcriptionBox?.x).toBe(contentBox?.x);
+      await expect(transcription.locator('.MuiTypography-root')).toHaveCSS('font-size', '14px');
+      await expect(transcription.locator('.MuiTypography-root')).toHaveCSS('line-height', '20px');
+
+      await audioDialog.screenshot({ path: testInfo.outputPath(`echo-3405-audio-${host}.png`) });
+      const playerId = await player.evaluate((element) => {
+        const audioPlayer = element as HTMLElement & { dataset: DOMStringMap };
+        audioPlayer.dataset.e2ePlayerId ??= `audio-player-${crypto.randomUUID()}`;
+        return audioPlayer.dataset.e2ePlayerId;
+      });
+      await player.locator('#layoutToggleBtn').click();
+      await expect(player).toHaveClass(/layout-extended/);
+      const [expandedFrameBox, expandedHostBox, expandedPlayerBox] = await Promise.all([
+        playerFrame.boundingBox(),
+        playerHost.boundingBox(),
+        player.boundingBox(),
+      ]);
+      expect(expandedFrameBox?.width).toBe(685);
+      expect(expandedHostBox?.width).toBe(685);
+      expect(expandedHostBox?.height).toBe(expandedPlayerBox?.height);
+      expect(expandedHostBox?.height).toBeGreaterThan(40);
+      await expect(player.locator('#autoplayBtn')).toBeVisible();
+      await expect(player.locator('#waveOverlayBtn')).toBeVisible();
+      await expect(player.locator('#setABtn')).toBeVisible();
+      expect(
+        await player.evaluate((element) => {
+          const host = element.parentElement;
+          const playerSurface = element.shadowRoot?.querySelector<HTMLElement>('.audio-player');
+          const controls = ['autoplayBtn', 'waveOverlayBtn', 'setABtn'].map((id) =>
+            element.shadowRoot?.getElementById(id),
+          );
+          const contains = (container: Element | null, child: Element | null) => {
+            if (!container || !child) return false;
+            const containerBox = container.getBoundingClientRect();
+            const childBox = child.getBoundingClientRect();
+            return (
+              childBox.left >= containerBox.left &&
+              childBox.right <= containerBox.right &&
+              childBox.top >= containerBox.top &&
+              childBox.bottom <= containerBox.bottom
+            );
+          };
+
+          return {
+            hostOverflow: host ? getComputedStyle(host).overflow : null,
+            controlsInsideHost: controls.every((control) => contains(host, control)),
+            controlsInsidePlayer: controls.every((control) => contains(playerSurface, control)),
+          };
+        }),
+      ).toEqual({
+        hostOverflow: 'visible',
+        controlsInsideHost: true,
+        controlsInsidePlayer: true,
+      });
+      await audioDialog.screenshot({
+        path: testInfo.outputPath(`echo-3405-audio-expanded-${host}.png`),
+      });
+      await player.locator('#layoutToggleBtn').click();
+      await expect(player).toHaveClass(/layout-compact/);
+      expect(await player.evaluate((element) => element.dataset.e2ePlayerId)).toBe(playerId);
+      expect((await playerHost.boundingBox())?.height).toBe(40);
+      await audioDialog.getByRole('button', { name: 'Закрити' }).click();
+    }
+
+    await page.setViewportSize({ width: 375, height: 500 });
+    await openMessageCardPreviewHost(page, 'duty', { enableAudioTranscription: true });
+    await page.getByRole('button', { name: /^(Розгорнути|Згорнути) аудіо:/ }).click();
+    const narrowDialog = await openAudioPreviewFromMixedCarousel(page);
+    const narrowPlayer = narrowDialog.locator('custom-audio-player');
+    const narrowStage = narrowDialog.locator('[data-attachment-preview-stage="audio"]');
+    await narrowPlayer.locator('#layoutToggleBtn').click();
+    await expect(narrowPlayer).toHaveClass(/layout-extended/);
+    await narrowPlayer.locator('#setABtn').scrollIntoViewIfNeeded();
+    await expect(narrowPlayer.locator('#setABtn')).toBeVisible();
+    const [narrowStageBox, narrowPlayerBox] = await Promise.all([
+      narrowStage.boundingBox(),
+      narrowPlayer.boundingBox(),
+    ]);
+    expect(narrowPlayerBox?.x).toBeGreaterThanOrEqual(narrowStageBox?.x ?? 0);
+    expect((narrowPlayerBox?.x ?? 0) + (narrowPlayerBox?.width ?? 0)).toBeLessThanOrEqual(
+      (narrowStageBox?.x ?? 0) + (narrowStageBox?.width ?? 0),
+    );
+    await narrowDialog.screenshot({
+      path: testInfo.outputPath('echo-3405-audio-expanded-narrow.png'),
+    });
+  });
+
+  test('audio preview preserves paused autoplay and settings through mixed-carousel navigation', async ({
+    page,
+  }) => {
+    await openMessageCardPreviewHost(page, 'duty');
+    await page.getByRole('button', { name: /^(Розгорнути|Згорнути) аудіо:/ }).click();
+    const audioDialog = await openAudioPreviewFromMixedCarousel(page);
+    await expectPreviewCounter(audioDialog, '7 / 7');
+    await expect(audioDialog.locator('custom-audio-player')).toHaveCount(1);
+    await audioDialog
+      .locator('custom-audio-player')
+      .evaluate((player: { setAutoplay: (autoplay: boolean) => void }) => player.setAutoplay(true));
+    await audioDialog.getByRole('button', { name: 'Закрити' }).click();
+    const reopenedAudioDialog = await openAudioPreviewFromMixedCarousel(page);
+    const audioPlayer = reopenedAudioDialog.locator('custom-audio-player');
+    await page.waitForTimeout(500);
+    await expect(
+      audioPlayer.evaluate((player: { isPlaying: boolean }) => player.isPlaying),
+    ).resolves.toBe(false);
+    await audioPlayer.evaluate((player: { setLoop: (loop: boolean) => void }) =>
+      player.setLoop(true),
+    );
+    await audioPlayer.locator('#playPauseBtn').click();
+    await expect
+      .poll(() => audioPlayer.evaluate((player: { isPlaying: boolean }) => player.isPlaying))
+      .toBe(true);
+    await audioDialog.getByRole('button', { name: 'Інформація' }).click();
+    await expect(page.getByRole('dialog', { name: 'Інформація про вкладення' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog', { name: 'Інформація про вкладення' })).toHaveCount(0);
+    await expect(audioDialog).toBeVisible();
   });
 });

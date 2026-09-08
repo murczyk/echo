@@ -26,7 +26,7 @@ export function useAttachmentPreviewSwipe({
       const target = event.target as HTMLElement | null;
       if (
         target?.closest(
-          'button, a, input, [role="slider"], .MuiSlider-root, [data-attachment-preview-controls], [data-attachment-preview-scroll]',
+          'button, a, input, [role="slider"], .MuiSlider-root, [data-audio-player-host], [data-attachment-preview-controls], [data-attachment-preview-scroll]',
         )
       ) {
         touchStartRef.current = null;

@@ -12,7 +12,7 @@ import { getAttachmentPreviewStageSx } from './message-card-attachment-preview';
 export const MessageCardAttachmentPreviewStage = forwardRef<
   HTMLDivElement,
   {
-    kind: 'image' | 'video' | 'document';
+    kind: 'image' | 'video' | 'audio' | 'document';
     children: ReactNode;
     cursor?: 'default' | 'grab';
     onPointerDown?: PointerEventHandler<HTMLDivElement>;
@@ -26,6 +26,7 @@ export const MessageCardAttachmentPreviewStage = forwardRef<
 ) {
   const theme = useTheme();
   const isDocument = kind === 'document';
+  const isScrollable = isDocument || kind === 'audio';
 
   return (
     <Box
@@ -41,14 +42,14 @@ export const MessageCardAttachmentPreviewStage = forwardRef<
         flex: '1 1 auto',
         position: 'relative',
         display: 'flex',
-        flexDirection: isDocument ? 'column' : 'row',
-        alignItems: isDocument ? 'stretch' : 'center',
-        justifyContent: isDocument ? 'flex-start' : 'center',
+        flexDirection: isScrollable ? 'column' : 'row',
+        alignItems: isScrollable ? 'stretch' : 'center',
+        justifyContent: isScrollable ? 'flex-start' : 'center',
         minHeight: 0,
-        overflow: 'hidden',
+        overflow: isScrollable ? 'auto' : 'hidden',
         borderRadius: 0,
         ...getAttachmentPreviewStageSx(),
-        color: isDocument ? theme.palette.text.primary : undefined,
+        color: isScrollable ? theme.palette.text.primary : undefined,
         cursor,
         userSelect: kind === 'image' ? 'none' : undefined,
       }}

@@ -1,7 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import { installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
-import { IMAGE_EDITOR_DRAWER_PNG, openCreateReportDrawer } from './image-editor-drawer.fixtures';
+import {
+  IMAGE_EDITOR_DRAWER_PNG,
+  openCreateMessageDrawer,
+  openCreateReportDrawer,
+} from './image-editor-drawer.fixtures';
 import {
   buildMessageCardMediaPreviewInboxResponse,
   installMessageCardMediaPreviewAssetRoutes,
@@ -11,6 +15,40 @@ import { installRerDutyShortStateMocks } from './rer-duty-short-state.fixtures';
 type ManageMessageDrawerHost = 'duty' | 'analysis';
 type LinkedMessageKind =
   'with-report' | 'forwarded-report' | 'own-report-without-accessible-parent';
+
+async function expectDrawerAtViewportRight(page: Page) {
+  const drawer = page.locator('.MuiDrawer-paperAnchorRight');
+  await expect(drawer).toBeVisible();
+  await expect
+    .poll(async () => {
+      const [bounds, viewportWidth] = await Promise.all([
+        drawer.boundingBox(),
+        page.evaluate(() => window.innerWidth),
+      ]);
+      return bounds ? Math.abs(bounds.x + bounds.width - viewportWidth) : Number.POSITIVE_INFINITY;
+    })
+    .toBeLessThanOrEqual(1);
+  const [bounds, viewport] = await Promise.all([
+    drawer.boundingBox(),
+    page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight })),
+  ]);
+  expect(bounds).not.toBeNull();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.y).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width + 1);
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(viewport.height + 1);
+  expect(Math.abs(bounds!.x + bounds!.width - viewport.width)).toBeLessThanOrEqual(1);
+}
+
+async function expectFullWidthDrawer(page: Page) {
+  await expectDrawerAtViewportRight(page);
+  const [bounds, viewportWidth] = await Promise.all([
+    page.locator('.MuiDrawer-paperAnchorRight').boundingBox(),
+    page.evaluate(() => window.innerWidth),
+  ]);
+  expect(bounds).not.toBeNull();
+  expect(Math.abs(bounds!.width - viewportWidth)).toBeLessThanOrEqual(1);
+}
 
 function linkedSummary(id: number, text: string) {
   return {
@@ -91,10 +129,28 @@ async function openLinkedMessageEditDrawer(
 
 test.describe('@smoke manage message drawer linked-message regressions', () => {
   for (const host of ['duty', 'analysis'] as const satisfies ManageMessageDrawerHost[]) {
+    test(`${host} creates an ordinary message drawer at the viewport right edge`, async ({
+      page,
+    }) => {
+      await openCreateMessageDrawer(page, host);
+      await expectDrawerAtViewportRight(page);
+
+      await page.getByRole('button', { name: 'Закрити' }).click();
+      await expect(page.locator('.MuiDrawer-paperAnchorRight')).toBeHidden();
+
+      await page.getByRole('button', { name: 'Додати повідомлення' }).click();
+      await expect(page.getByRole('heading', { name: 'Створити повідомлення' })).toBeVisible();
+      await expectDrawerAtViewportRight(page);
+
+      await page.setViewportSize({ width: 375, height: 500 });
+      await expectDrawerAtViewportRight(page);
+    });
+
     test(`${host} edits a message with an intelligence report as a message`, async ({ page }) => {
       await openLinkedMessageEditDrawer(page, host, 'with-report');
 
       await expect(page.getByRole('heading', { name: 'Редагувати повідомлення' })).toBeVisible();
+      await expectDrawerAtViewportRight(page);
       await expect(page.getByRole('heading', { name: 'Редагувати розвіддонесення' })).toHaveCount(
         0,
       );
@@ -117,6 +173,7 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       );
 
       await expect(page.getByRole('heading', { name: 'Редагувати розвіддонесення' })).toBeVisible();
+      await expectFullWidthDrawer(page);
       await expect(page.getByRole('heading', { name: 'Редагувати повідомлення' })).toHaveCount(0);
       expect(drawer.getCopyRequestCount()).toBe(0);
     });
@@ -126,6 +183,7 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
 test.describe('@smoke manage message drawer attachment preview', () => {
   test('keeps report text shared across image and video previews', async ({ page }) => {
     await openCreateReportDrawer(page);
+    await expectFullWidthDrawer(page);
 
     const drawerReportText = page.getByRole('textbox', { name: 'Текст розвіддонесення' });
     await expect(drawerReportText).toHaveValue('');
@@ -159,13 +217,24 @@ test.describe('@smoke manage message drawer attachment preview', () => {
 
     const videoControls = preview.locator('[data-attachment-preview-video-controls]');
     const reportPane = preview.locator('[data-attachment-preview-report-pane]');
+    const reportFooter = reportPane.locator('..');
     await expect(videoControls).toBeVisible();
     await expect(reportPane).toBeVisible();
+    await expect(reportFooter).toHaveCSS('padding-top', '8px');
+    await expect(reportFooter).toHaveCSS('padding-right', '16px');
+    await expect(reportFooter).toHaveCSS('padding-bottom', '8px');
+    await expect(reportFooter).toHaveCSS('padding-left', '16px');
     const controlsBox = await videoControls.boundingBox();
     const reportPaneBox = await reportPane.boundingBox();
     expect(controlsBox).not.toBeNull();
     expect(reportPaneBox).not.toBeNull();
     expect(controlsBox!.y + controlsBox!.height).toBeLessThanOrEqual(reportPaneBox!.y + 1);
+
+    await page.setViewportSize({ width: 375, height: 500 });
+    await expect(reportFooter).toHaveCSS('padding-top', '8px');
+    await expect(reportFooter).toHaveCSS('padding-right', '16px');
+    await expect(reportFooter).toHaveCSS('padding-bottom', '8px');
+    await expect(reportFooter).toHaveCSS('padding-left', '16px');
 
     await preview.getByRole('button', { name: 'Закрити' }).click();
     await expect(drawerReportText).toHaveValue('Оновлений текст розвіддонесення');
