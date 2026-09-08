@@ -2,10 +2,13 @@ import type {
   AreaOfResponsibility,
   ContentNode,
   GroupAdminData,
+  InboxItemContextReq,
+  InboxItemContextRsp,
   InboxMessage as InboxMessageType,
   InboxMessageMetadata,
   InboxMessageTag,
   InboxMessagesReq,
+  InboxWindowRsp,
   MessageIdsReq,
   InboxMessagesRsp,
   InterseptionKind,
@@ -54,6 +57,8 @@ export type InboxMessagesRspRaw = {
   }>;
   freq_pelengs_summary: InboxMessagesRsp['freqPelengsSummary'];
   page_limit?: number | null;
+  around_message_messages_before?: number | null;
+  around_message_messages_after?: number | null;
 };
 
 export type InboxMessageTagRaw = {
@@ -197,6 +202,23 @@ export async function fetchMessagesByIds(
   return messages.map(([id, message]) => [id, normalizeInboxMessageFromWire(message)]);
 }
 
+export async function fetchMessagesByIdsWithMetadata(
+  messageIds: number[],
+  inboxReq?: Partial<InboxMessagesReq> | null,
+  options?: RequestOptions,
+): Promise<InboxMessagesRsp> {
+  const req: MessageIdsReq = {
+    messageIds,
+    inboxReq: inboxReq == null ? null : (inboxReq as InboxMessagesReq),
+  };
+  const raw = await postJson<InboxMessagesRspRaw>(
+    '/api/rer-importer/messages-by-id-with-metadata',
+    transformCamelToSnake(req),
+    options,
+  );
+  return mapRsp(raw);
+}
+
 function normalizeContentNode(node: unknown): InboxTextMarkedNode | null {
   if (typeof node === 'string') return node === 'CNNewlineC' ? node : null;
   if (isNullOrUndefined(node) || typeof node !== 'object') return null;
@@ -249,6 +271,7 @@ function normalizeInboxMessage(
   },
 ): InboxMessageType {
   const raw = m as Record<string, unknown>;
+  const messageUuid = (m.messageUuid ?? raw.message_uuid ?? null) as string | null;
   const groupMasterKey = (m.groupMasterKey ?? raw.group_master_key ?? null) as string | null;
   const networkIds = (m.networkIds ?? raw.network_ids ?? null) as number[] | null;
   const networkName = (m.networkName ?? raw.network_name ?? null) as string | null;
@@ -285,6 +308,7 @@ function normalizeInboxMessage(
       : (m.media ?? []);
   return {
     ...m,
+    messageUuid,
     groupMasterKey,
     networkIds,
     networkName,
@@ -369,6 +393,7 @@ export function inboxMsgtoSnakeBody(req: InboxMessagesReq): object {
   return {
     since_id_noninclusive: req.sinceIdNoninclusive,
     before_id_noninclusive: req.beforeIdNoninclusive,
+    around_message_ref: req.aroundMessageRef,
     since_date_inclusive_ms: req.sinceDateInclusiveMs,
     till_date_inclusive_ms: req.tillDateInclusiveMs,
     only_show_unprocessed: req.onlyShowUnprocessed,
@@ -442,6 +467,49 @@ export async function fetchInboxMessages(
   return mapRsp(raw);
 }
 
+export type FetchInboxWindowReq = {
+  messageRef: string;
+  inboxReq: InboxMessagesReq | null;
+};
+
+export async function fetchInboxWindow(
+  req: FetchInboxWindowReq,
+  options?: RequestOptions,
+): Promise<InboxWindowRsp | null> {
+  const inboxReq = {
+    ...(req.inboxReq ?? {}),
+    aroundMessageRef: req.messageRef,
+  } as InboxMessagesReq;
+  const raw = await postJson<InboxMessagesRspRaw>(
+    '/api/rer-importer/get-inbox',
+    inboxMsgtoSnakeBody(inboxReq) as any,
+    options,
+  );
+  const inbox = mapRsp(raw);
+  const target = inbox.inboxItems
+    .filter(
+      ([messageId, message]) =>
+        String(messageId) === req.messageRef ||
+        message.messageUuid === req.messageRef ||
+        message.messageUid === req.messageRef,
+    )
+    .sort(([leftId], [rightId]) => leftId - rightId)[0];
+  if (target == null) return null;
+  const targetIndex = inbox.inboxItems.findIndex(([messageId]) => messageId === target[0]);
+  const pageLimit = inbox.pageLimit ?? 20;
+  const messagesBefore = raw.around_message_messages_before ?? targetIndex;
+  const messagesAfter =
+    raw.around_message_messages_after ?? inbox.inboxItems.length - targetIndex - 1;
+  return {
+    targetMessageId: target[0],
+    inbox,
+    hasMoreBefore: messagesBefore > targetIndex,
+    hasMoreAfter: messagesAfter > inbox.inboxItems.length - targetIndex - 1,
+    messagesBefore,
+    messagesAfter,
+  };
+}
+
 export type InboxMessagesDigestRsp = {
   quantity: number;
   firstElementTs: number | null;
@@ -460,5 +528,36 @@ export async function fetchInboxCount(
   return {
     quantity: raw.quantity,
     firstElementTs: raw.first_element_ts ?? null,
+  };
+}
+
+export type InboxItemContextRaw = {
+  message?: [number, unknown] | null;
+  group_master_keys?: string[];
+  groupMasterKeys?: string[];
+  sigint_inbox_item_ids?: number[];
+  sigintInboxItemIds?: number[];
+  sinceTs?: number | null;
+  since_ts?: number | null;
+  tillTs?: number | null;
+  till_ts?: number | null;
+};
+
+export async function fetchInboxItemContext(
+  req: InboxItemContextReq,
+  options?: RequestOptions,
+): Promise<InboxItemContextRsp> {
+  const raw = await postJson<InboxItemContextRaw>(
+    '/api/rer-importer/inbox-item-context',
+    { message_uid: req.messageUid },
+    options,
+  );
+  return {
+    message:
+      raw.message == null ? null : [raw.message[0], normalizeInboxMessageFromWire(raw.message[1])],
+    groupMasterKeys: raw.groupMasterKeys ?? raw.group_master_keys ?? [],
+    sigintInboxItemIds: raw.sigintInboxItemIds ?? raw.sigint_inbox_item_ids ?? [],
+    sinceTs: raw.sinceTs ?? raw.since_ts ?? null,
+    tillTs: raw.tillTs ?? raw.till_ts ?? null,
   };
 }

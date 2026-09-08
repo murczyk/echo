@@ -39,12 +39,13 @@ import {
   parseStateFromUrl,
   pushShortStateToUrl,
   pushStateToUrl,
+  resolveDutyTargetMessageIds,
   toRerDutyStateFromShort,
   toShortQueryState,
   windowInitialMessageItems,
-} from './utils';
-import type { MessageFeedState } from './utils';
-import type { InboxMessage, Network, SignalProfileEntry, Tag, Unit } from '../../../../Bindings';
+} from '../utils';
+import type { MessageFeedState } from '../utils';
+import type { InboxMessage, Network, SignalProfileEntry, Tag, Unit } from '../../../../../Bindings';
 
 function indicatorFeed(overrides: Partial<MessageFeedState>): MessageFeedState {
   return {
@@ -65,6 +66,14 @@ function indicatorFeed(overrides: Partial<MessageFeedState>): MessageFeedState {
 }
 
 describe('rer-duty utils', () => {
+  it('keeps only the exact inbox item for a numeric direct link', () => {
+    expect(resolveDutyTargetMessageIds('41', [39, 41, 43])).toEqual([41]);
+  });
+
+  it('keeps all context items for a message UID direct link', () => {
+    expect(resolveDutyTargetMessageIds('message-uid', [39, 41, 43])).toEqual([39, 41, 43]);
+  });
+
   it('etalon fallback when no networks: unit vs strict', () => {
     const base = { freq: '100.0' } as InboxMessage;
     expect(etalonFallbackWhenNoNetworks({ ...base, unit: '  1-й танк  ' })).toBe('1-й танк');

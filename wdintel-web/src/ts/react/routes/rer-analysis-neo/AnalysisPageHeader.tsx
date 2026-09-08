@@ -3,12 +3,12 @@ import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import {
   Button,
-  CircularProgress,
   IconButton,
   ListItemIcon,
   ListItemText,
   Menu,
   MenuItem,
+  Skeleton,
   Stack,
   Switch,
   Tooltip,
@@ -110,7 +110,7 @@ function AnalysisSettingsMenu({ page, loading, onOpenReport }: SettingsMenuProps
         >
           <ListItemIcon>
             {loading ? (
-              <CircularProgress size={20} color="inherit" />
+              <Skeleton variant="circular" width={20} height={20} />
             ) : (
               <RefreshOutlinedIcon fontSize="small" />
             )}
@@ -225,6 +225,7 @@ export function AnalysisPageHeader({
                 <AnalysisPaginationControl
                   centerTab={centerTab}
                   pageIndex={page.pageIndex}
+                  rangePageIndex={page.visibleMessagesPageIndex}
                   pageSize={ANALYSIS_MESSAGES_PAGE_SIZE}
                   messagesCount={page.messages.length}
                   totalCount={page.messagesTotalCount}
@@ -232,6 +233,7 @@ export function AnalysisPageHeader({
                   loading={page.messagesLoading}
                   noMoreToLoad={page.noMoreToLoad}
                   busy={page.messagesPaging || page.messagesLoading}
+                  jumpDisabled={page.directMessageNavigation != null}
                   onFirstPage={page.loadFirstPage}
                   onLastPage={page.loadLastPage}
                   onPrevPage={page.loadPrevPage}
@@ -253,7 +255,7 @@ export function AnalysisPageHeader({
                     }}
                   >
                     {loading && !dateRangeLoading ? (
-                      <CircularProgress size={20} color="inherit" />
+                      <Skeleton variant="circular" width={20} height={20} />
                     ) : (
                       <RefreshOutlinedIcon sx={{ fontSize: 20 }} />
                     )}

@@ -38,7 +38,6 @@ import {
   TableStateProvider,
   useTableStateContext,
 } from '../../../components/mui-customized/table/table-state-provider';
-import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
 import { TableEmptyState } from '../../../components/TableEmptyState';
 import { TableToolbarControls } from '../../../components/TableToolbarControls';
 import { MRT_ROW_ACTION_MODAL_PROPS } from '../../../components/MrtRowActionButton';
@@ -120,8 +119,8 @@ function AnalysisSummaryTableCardInner({
   );
   const resolvedLoaded = loaded ?? !loading;
   const showInitialSkeleton = !resolvedLoaded && data.length === 0;
+  const showLoadingSkeleton = loading || showInitialSkeleton;
   const showEmptyState = resolvedLoaded && !loading && data.length === 0;
-  const loadingVisible = loading && !showInitialSkeleton;
 
   useEffect(() => {
     if (!renameDialog) {
@@ -420,7 +419,7 @@ function AnalysisSummaryTableCardInner({
             minWidth: '100%',
           }}
         >
-          {showInitialSkeleton ? (
+          {showLoadingSkeleton ? (
             <SummaryTableLoadingState />
           ) : showEmptyState ? (
             <Box
@@ -437,9 +436,6 @@ function AnalysisSummaryTableCardInner({
           ) : (
             <MaterialReactTable table={table} />
           )}
-          {loadingVisible ? (
-            <SectionLoadingOverlay open ariaLabel="Оновлення таблиці частот" sx={{ zIndex: 2 }} />
-          ) : null}
         </Box>
       </Box>
 

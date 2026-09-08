@@ -130,6 +130,7 @@ export type MessageCardProps = {
   onCopyFreq?: () => void;
   onCopyTextWithNetwork?: () => void;
   onCopyTextWithNetworkAndNote?: () => void;
+  onCopyMessageLink?: () => void;
   onCopyEtalon?: () => void;
   onCopyLocation?: () => void;
   onCreateReport?: () => void;
@@ -190,6 +191,7 @@ function MessageCardComponent({
   onCopyFreq,
   onCopyTextWithNetwork,
   onCopyTextWithNetworkAndNote,
+  onCopyMessageLink,
   onCopyEtalon,
   onCopyLocation,
   onCreateReport,
@@ -339,6 +341,7 @@ function MessageCardComponent({
     onCopyFreq,
     onCopyTextWithNetwork,
     onCopyTextWithNetworkAndNote,
+    onCopyMessageLink,
     onCopyEtalon: onCopyEtalonAction,
     onCopyLocation: onCopyLocationAction,
     onDelete,
@@ -353,10 +356,15 @@ function MessageCardComponent({
   return (
     <li
       ref={messageRootRef as React.RefObject<HTMLLIElement>}
+      data-message-id={id}
+      data-message-uid={msg.messageUid ?? undefined}
       className="message-card-item list-none flex flex-col px-0 pb-[12px] mb-0"
       style={displayMode === 'analysis' ? ANALYSIS_MESSAGE_CARD_VISIBILITY_STYLE : undefined}
     >
-      <MessageCardRoot className="message-card-root relative flex w-full flex-col overflow-hidden">
+      <MessageCardRoot
+        data-message-card-root="true"
+        className="message-card-root relative flex w-full flex-col overflow-hidden"
+      >
         {watermarkUserName !== '' && (
           <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
             <MessageCardWatermark authUserName={watermarkUserName} />

@@ -22,7 +22,6 @@ use crate::sigint::sender::preferred_group_sender_expr;
 use crate::storage::mk_media_url;
 use crate::types::*;
 use crate::utils::string::*;
-use actix_web::web::Data;
 use chrono::Utc;
 use geoconvert::{LatLon, Mgrs};
 use itertools::Itertools;
@@ -39,6 +38,7 @@ pub enum InboxLocationSubmitMode {
 #[derive(Debug, FromQueryResult)]
 pub struct InboxMessageDesc {
     pub id: i64,
+    pub id_uuid: Option<uuid::Uuid>,
     pub message_uid: Option<String>,
     pub body: Option<String>,
     pub timestamp: Option<NaiveDateTime>,
@@ -1056,6 +1056,7 @@ pub async fn aggregate_to_inbox_messages(
         res.push((
             message.id,
             InboxMessage {
+                message_uuid: message.id_uuid.map(|uuid| uuid.to_string()),
                 message_uid: message.message_uid,
                 text: body.clone(),
                 media: media_infos,
@@ -1753,7 +1754,7 @@ async fn backfill_missing_messages_networks(
 
 pub async fn load_inbox_callsigns(
     inbox_items: &Vec<(i64, InboxMessage)>,
-    env: &Data<Env>,
+    env: &Env,
 ) -> Result<Vec<CallsignInfoRes>, AppError> {
     let mut callsigns: HashMap<String, Vec<i64>> = HashMap::new();
     inbox_items

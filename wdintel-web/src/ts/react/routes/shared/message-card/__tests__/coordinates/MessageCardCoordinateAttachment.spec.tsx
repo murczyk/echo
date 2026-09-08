@@ -6,7 +6,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { InboxMessage } from '../../../../../../../Bindings';
+import type { InboxMessage, Tag } from '../../../../../../../Bindings';
 import { CoordinateAttachmentThumbnail } from '../../CoordinateAttachmentThumbnail';
 import { MessageCardCoordinateAttachment } from '../../MessageCardCoordinateAttachment';
 import {
@@ -180,6 +180,58 @@ describe('MessageCardCoordinateAttachment', () => {
     expect(dialog).not.toBeNull();
     expect(dialog?.getAttribute('data-lat')).toBe('50.45044');
     expect(dialog?.getAttribute('data-lng')).toBe('30.52355');
+  });
+
+  it('keeps the map preview mounted when an equivalent message object is reloaded', async () => {
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      width: 180,
+      height: 120,
+    } as DOMRect);
+    const leaflet = await import('leaflet');
+    const buildMessage = () =>
+      ({
+        text: '50.45044, 30.52355',
+        coords: null,
+        coordsWithLocality: [],
+        media: [],
+        pointTokens: [{ etalon: 'ALPHA' }],
+        tags: [1],
+      }) as InboxMessage;
+    const buildTagsMap = () => ({ 1: { id: 1, isPalitra: true } }) as Record<number, Tag>;
+    vi.mocked(resolveMessageCoordinatePreview).mockResolvedValue({
+      points: [{ source: 'direct', lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355' }],
+      etalons: [],
+      lookupError: null,
+    });
+
+    await act(async () => {
+      root.render(
+        <MessageCardCoordinateAttachment msg={buildMessage()} tagsMap={buildTagsMap()} />,
+      );
+      await Promise.resolve();
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+    });
+
+    const previewButton = container.querySelector(
+      'button[aria-label="Open 50.45044, 30.52355 on map"]',
+    );
+    expect(previewButton).not.toBeNull();
+    expect(resolveMessageCoordinatePreview).toHaveBeenCalledTimes(1);
+    expect(leaflet.map).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      root.render(
+        <MessageCardCoordinateAttachment msg={buildMessage()} tagsMap={buildTagsMap()} />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(resolveMessageCoordinatePreview).toHaveBeenCalledTimes(1);
+    expect(leaflet.map).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('button[aria-label="Open 50.45044, 30.52355 on map"]')).toBe(
+      previewButton,
+    );
+    rectSpy.mockRestore();
   });
 
   it('shows one unified preview with the numeric point count', async () => {
@@ -467,8 +519,8 @@ describe('MessageCardCoordinateAttachment', () => {
       .mockImplementationOnce(() => first.promise)
       .mockImplementationOnce(() => second.promise);
 
-    const firstMsg = { pointTokens: [] } as InboxMessage;
-    const secondMsg = { pointTokens: [] } as InboxMessage;
+    const firstMsg = { pointTokens: [], text: '50.45, 30.52' } as InboxMessage;
+    const secondMsg = { pointTokens: [], text: '50.46, 30.53' } as InboxMessage;
 
     await act(async () => {
       root.render(<MessageCardCoordinateAttachment msg={firstMsg} />);

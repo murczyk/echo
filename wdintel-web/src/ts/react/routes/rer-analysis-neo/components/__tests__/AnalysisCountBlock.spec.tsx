@@ -28,7 +28,6 @@ vi.mock('@mui/material', () => ({
       {children}
     </button>
   ),
-  CircularProgress: () => <div>loading-spinner</div>,
   Collapse: ({ children, in: open }: { children: ReactNode; in: boolean }) =>
     open ? <div>{children}</div> : null,
   IconButton: ({
@@ -78,12 +77,12 @@ vi.mock('@mui/icons-material/Search', () => ({ default: () => <span>search</span
 
 import { vi } from 'vitest';
 
-import type { AnalysisCountItem } from '../types';
+import type { AnalysisCountItem } from '../../types';
 import {
   AnalysisCountBlock,
   analysisCountHeaderSx,
   analysisCountStatusSx,
-} from './AnalysisCountBlock';
+} from '../AnalysisCountBlock';
 
 type Rendered = {
   container: HTMLDivElement;
@@ -253,16 +252,15 @@ describe('AnalysisCountBlock', () => {
     expect(view.container.textContent).not.toContain('Немає даних');
   });
 
-  it('keeps existing items visible during background refresh and shows a spinner instead of skeletons', async () => {
+  it('replaces existing items with skeletons during background refresh', async () => {
     const view = await renderComponent([{ key: '147.3750', count: 51 }], true);
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('147.3750');
-    expect(view.container.textContent).toContain('loading-spinner');
-    expect(view.container.textContent).not.toContain('loading-skeleton');
+    expect(view.container.textContent).not.toContain('147.3750');
+    expect(view.container.textContent).toContain('loading-skeleton');
   });
 
-  it('keeps the summary count visible during a background refresh', async () => {
+  it('replaces the summary count with a skeleton during background refresh', async () => {
     const view = await renderComponent(
       [
         { key: '', count: 23 },
@@ -272,8 +270,8 @@ describe('AnalysisCountBlock', () => {
     );
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('Повідомлень: 23');
-    expect(view.container.textContent).toContain('loading-spinner');
+    expect(view.container.textContent).not.toContain('Повідомлень: 23');
+    expect(view.container.textContent).toContain('loading-skeleton');
   });
 
   it('reserves stable space for the summary and loading status', () => {

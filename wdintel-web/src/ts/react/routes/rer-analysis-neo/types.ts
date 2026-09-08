@@ -56,6 +56,22 @@ export type AnalysisFilterOption = {
   values?: string[];
 };
 
+export type AnalysisDirectMessageNavigation = {
+  targetMessageId: number;
+  targetMessageIndex: number;
+  totalCount: number;
+  focusActive: boolean;
+  contextLoading?: boolean;
+  newestFirst: boolean;
+  canLoadEarlier: boolean;
+  canLoadLater: boolean;
+  loadingEarlier: boolean;
+  loadingLater: boolean;
+  onClearFocus: () => void;
+  onLoadEarlier: () => Promise<boolean>;
+  onLoadLater: () => Promise<boolean>;
+};
+
 export type AnalysisAorEntry = {
   id: number;
   name: string;
@@ -207,6 +223,8 @@ export type AnalysisPageState = {
   messagesTotalCount: number | null;
   messagesTotalLoading: boolean;
   messages: Array<[number, InboxMessage]>;
+  directMessageLoading: boolean;
+  directMessageNavigation: AnalysisDirectMessageNavigation | null;
   networkDisplayMap: Record<number, string>;
   networks: Network[];
   newCallsigns: NewCallsignsRes;
@@ -214,6 +232,10 @@ export type AnalysisPageState = {
   noMoreToLoad: boolean;
   nolimitShown: boolean;
   pageIndex: number;
+  messagePageNavigationTarget: number | null;
+  messageViewportPreservationKey: number;
+  messageViewportPreserving: boolean;
+  visibleMessagesPageIndex: number;
   newestFirst: boolean;
   unitsExactMatchOnlyDefault: boolean | null;
   supportNonRerInterceptions: boolean;
@@ -310,6 +332,9 @@ export type AnalysisPageActions = {
   setCenterTab: (tab: AnalysisCenterTab) => void;
   setIncludeOnlyNewFreqs: (value: boolean) => void;
   setNewestFirst: (value: boolean) => void;
+  clearMessagePageNavigationTarget: () => void;
+  setMessageViewportCapture: (capture: (() => void) | null) => void;
+  setVisibleMessagesPageIndex: (pageIndex: number) => void;
   setRightSidebarTab: (tab: AnalysisSidebarTab) => void;
   toggleLeftPanel: () => void;
   toggleRightPanel: () => void;

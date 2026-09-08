@@ -35,7 +35,6 @@ vi.mock('@mui/material', () => ({
       {children}
     </button>
   ),
-  CircularProgress: () => <span data-testid="loading-spinner" />,
   FormControlLabel: (props: { control: ReactNode; label: ReactNode }) => (
     <label>
       {props.control}
@@ -82,6 +81,7 @@ vi.mock('@mui/material', () => ({
       {children}
     </button>
   ),
+  Skeleton: () => <span data-testid="loading-skeleton" />,
   Stack: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Switch: (props: {
     checked?: boolean;
@@ -107,7 +107,7 @@ vi.mock('@mui/icons-material/KeyboardArrowUp', () => ({ default: () => <span /> 
 vi.mock('@mui/icons-material/RefreshOutlined', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/SettingsOutlined', () => ({ default: () => <span /> }));
 
-vi.mock('../../components/PageHeader', () => ({
+vi.mock('../../../components/PageHeader', () => ({
   PageHeader: ({
     middle,
     titleLeadingActions,
@@ -138,7 +138,7 @@ vi.mock('../../components/PageHeader', () => ({
   ),
 }));
 
-vi.mock('../../components/SidePanelToggleButton', () => ({
+vi.mock('../../../components/SidePanelToggleButton', () => ({
   SidePanelToggleButton: ({
     side,
     label,
@@ -154,17 +154,17 @@ vi.mock('../../components/SidePanelToggleButton', () => ({
   ),
 }));
 
-vi.mock('./components/AnalysisHeaderControls', () => ({
+vi.mock('../components/AnalysisHeaderControls', () => ({
   AnalysisHeaderControls: ({ isCompactLayout }: { isCompactLayout?: boolean }) => (
     <span data-testid={isCompactLayout ? 'compact-header-controls' : 'regular-header-controls'} />
   ),
 }));
-vi.mock('./components/AnalysisPaginationControl', () => ({
+vi.mock('../components/AnalysisPaginationControl', () => ({
   AnalysisPaginationControl: () => <span data-testid="pagination" />,
 }));
 
-import { AnalysisPageHeader } from './AnalysisPageHeader';
-import type { AnalysisPageViewModel } from './types';
+import { AnalysisPageHeader } from '../AnalysisPageHeader';
+import type { AnalysisPageViewModel } from '../types';
 
 function buildPage(): AnalysisPageViewModel {
   return {
@@ -175,6 +175,8 @@ function buildPage(): AnalysisPageViewModel {
     messagesTotalCount: 0,
     messagesTotalLoading: false,
     pageIndex: 0,
+    messagePageNavigationTarget: null,
+    visibleMessagesPageIndex: 0,
     noMoreToLoad: false,
     messagesPaging: false,
     queryState: {} as AnalysisPageViewModel['queryState'],
@@ -184,6 +186,8 @@ function buildPage(): AnalysisPageViewModel {
     toggleRightPanel: vi.fn(),
     newestFirst: false,
     setNewestFirst: vi.fn(),
+    clearMessagePageNavigationTarget: vi.fn(),
+    setVisibleMessagesPageIndex: vi.fn(),
   } as unknown as AnalysisPageViewModel;
 }
 
@@ -289,6 +293,19 @@ describe('AnalysisPageHeader', () => {
     ).not.toBeNull();
   });
 
+  it('keeps pagination visible while a direct-link message is active', () => {
+    const page = buildPage();
+    page.directMessageNavigation = {
+      targetMessageId: 21,
+      targetMessageIndex: 20,
+      totalCount: 40,
+    } as AnalysisPageViewModel['directMessageNavigation'];
+    const view = renderHeader(page, false, false);
+    rendered.push(view);
+
+    expect(view.container.querySelector('[data-testid="pagination"]')).not.toBeNull();
+  });
+
   it('moves actions into the settings menu as soon as the layout is narrow', () => {
     const page = buildPage();
     const view = renderHeader(page, false, false, 'messages', true);
@@ -381,7 +398,7 @@ describe('AnalysisPageHeader', () => {
     rendered.push(view);
 
     const refreshButton = view.container.querySelector('[aria-label="Оновити"]');
-    expect(refreshButton?.querySelector('[data-testid="loading-spinner"]')).toBeNull();
+    expect(refreshButton?.querySelector('[data-testid="loading-skeleton"]')).toBeNull();
   });
 
   it('keeps the desktop right-panel toggle and omits the mobile opening control', () => {

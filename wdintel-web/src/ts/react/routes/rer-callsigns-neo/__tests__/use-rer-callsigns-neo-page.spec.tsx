@@ -5,14 +5,14 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { Callsign, Source, Unit, User } from '../../../../Bindings';
-import { useRerCallsignsNeoPage } from './use-rer-callsigns-neo-page';
+import type { Callsign, Source, Unit, User } from '../../../../../Bindings';
+import { useRerCallsignsNeoPage } from '../use-rer-callsigns-neo-page';
 
 const loadMockState = vi.hoisted(() => ({
   loaded: false,
 }));
 
-vi.mock('./use-rer-callsigns-neo-page.load', () => ({
+vi.mock('../use-rer-callsigns-neo-page.load', () => ({
   useRerCallsignsNeoPageLoad: ({
     setUser,
     setUnits,
@@ -102,7 +102,10 @@ describe('useRerCallsignsNeoPage duplicate hints', () => {
   it('exposes selectable units without blank-name entries', () => {
     const page = renderHookHarness();
 
-    expect(page.selectableUnits).toEqual([{ id: 1, name: '11 АК', active: true }]);
+    expect(page.selectableUnits).toEqual([
+      { id: 1, name: '11 АК', active: true },
+      { id: 2, name: '11 АК', active: true },
+    ]);
   });
 
   it('calculates duplicate hints immediately after quick paste', () => {
@@ -166,5 +169,40 @@ describe('useRerCallsignsNeoPage duplicate hints', () => {
         ],
       },
     ]);
+  });
+});
+
+describe('useRerCallsignsNeoPage unit filters', () => {
+  it('keeps the selected hierarchy while filtering the unit column for echo-3387', () => {
+    const page = renderHookHarness();
+    const hierarchyFilter = {
+      kind: 'group' as const,
+      label: '15 тп',
+      hierarchy: {
+        armyRegion: null,
+        militaryDistrict: 'ЛВО',
+        army: '6 А',
+        division: '69 мсд',
+        regiment: '15 тп',
+        battalion: null,
+      },
+    };
+
+    act(() => {
+      page.onPickUnitFilter(hierarchyFilter);
+    });
+    act(() => {
+      latestPage?.onFiltersChange((prev) => ({ ...prev, filterUnit: 'мсб' }));
+    });
+
+    expect(latestPage?.selectedSidebarUnitFilter).toEqual(hierarchyFilter);
+    expect(latestPage?.filters.filterUnit).toBe('мсб');
+
+    act(() => {
+      latestPage?.onClearUnitFilter();
+    });
+
+    expect(latestPage?.selectedSidebarUnitFilter).toBeNull();
+    expect(latestPage?.filters.filterUnit).toBe('мсб');
   });
 });

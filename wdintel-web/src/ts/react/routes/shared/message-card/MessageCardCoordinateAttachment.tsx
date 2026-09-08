@@ -6,6 +6,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { InboxMessage, Tag } from '../../../../../Bindings';
 import { useOptionalPowerSnackbar } from '../../../components/PowerSnackbar';
 import {
+  collectCoordinatePreviewEtalons,
   CoordinatePreviewLookupError,
   resolveMessageCoordinatePreview,
   type CoordinatePreviewPoint,
@@ -28,8 +29,23 @@ const PREVIEW_ROOT_MARGIN = '160px 0px';
 const EMPTY_TAGS_MAP: Record<number, Tag> = {};
 const EMPTY_POINTS: CoordinatePreviewPoint[] = [];
 
+function coordinatePreviewInputKey(message: InboxMessage, tagsMap: Record<number, Tag>): string {
+  return JSON.stringify({
+    coords: message.coords,
+    coordsWithLocality: message.coordsWithLocality,
+    etalons: collectCoordinatePreviewEtalons(message, tagsMap),
+    media: (message.media ?? []).map((media) => ({
+      id: media.id,
+      summary: media.summary,
+    })),
+    text: message.text,
+  });
+}
+
 export function MessageCardCoordinateAttachment({ msg, tagsMap, onPointsChange, onOpen }: Props) {
   const previewTagsMap = tagsMap ?? EMPTY_TAGS_MAP;
+  const previewInputKey = coordinatePreviewInputKey(msg, previewTagsMap);
+  const previewInputRef = useRef({ message: msg, tagsMap: previewTagsMap });
   const hostRef = useRef<HTMLDivElement | null>(null);
   const resolveRequestIdRef = useRef(0);
   const pendingPreviewLoadRef = useRef(false);
@@ -40,6 +56,7 @@ export function MessageCardCoordinateAttachment({ msg, tagsMap, onPointsChange, 
   const { notify } = useOptionalPowerSnackbar();
   const notifyRef = useRef(notify);
   notifyRef.current = notify;
+  previewInputRef.current = { message: msg, tagsMap: previewTagsMap };
 
   useEffect(() => {
     setPreview(undefined);
@@ -47,7 +64,7 @@ export function MessageCardCoordinateAttachment({ msg, tagsMap, onPointsChange, 
     setRetrying(false);
     pendingPreviewLoadRef.current = false;
     resolveRequestIdRef.current += 1;
-  }, [msg, previewTagsMap]);
+  }, [previewInputKey]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -77,7 +94,7 @@ export function MessageCardCoordinateAttachment({ msg, tagsMap, onPointsChange, 
     resolveRequestIdRef.current = requestId;
     pendingPreviewLoadRef.current = true;
 
-    void resolveMessageCoordinatePreview({ message: msg, tagsMap: previewTagsMap })
+    void resolveMessageCoordinatePreview(previewInputRef.current)
       .then((result) => {
         if (resolveRequestIdRef.current !== requestId) {
           return;
@@ -110,7 +127,7 @@ export function MessageCardCoordinateAttachment({ msg, tagsMap, onPointsChange, 
         }));
         setRetrying(false);
       });
-  }, [isNearViewport, msg, preview, previewTagsMap, retrying]);
+  }, [isNearViewport, preview, previewInputKey, retrying]);
 
   const points = preview?.points ?? EMPTY_POINTS;
   const previewAttachments: MessageCardPreviewAttachment[] =

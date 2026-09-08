@@ -4,6 +4,7 @@ import type {
   CountStatsRsp,
   FreqDailyActivityCount,
   InboxMessage,
+  InboxWindowRsp,
   MessageComment,
   NetworkCallsignRelationsRsp,
   Network,
@@ -33,6 +34,8 @@ export type UseAnalysisDataProps = {
   authUserName: string | null;
   currentUser: User | null;
   deferInitialLoad?: boolean;
+  focusedWindow?: InboxWindowRsp | null;
+  focusedMessageActive?: boolean;
   leftPanelOpen?: boolean;
   newestFirst: boolean;
   onError: (message: string) => void;
@@ -84,10 +87,12 @@ export type UseAnalysisDataResult = {
   loadGroupsActivity: (period?: AnalysisGroupsActivityPeriod) => Promise<void>;
   loadNewCallsigns: () => Promise<void>;
   loadFirstPage: () => Promise<void>;
+  loadFocusedEarlier: () => Promise<boolean>;
+  loadFocusedLater: () => Promise<boolean>;
   loadLastPage: () => Promise<void>;
   loadNextPage: () => Promise<void>;
   loadMoreMessages: () => Promise<boolean>;
-  loadPrevPage: () => Promise<void>;
+  loadPrevPage: (targetPageIndex?: number) => Promise<void>;
   loadMessagesForMap: (messageIds: number[]) => Promise<boolean>;
   loadSettlementMessagesForMap: (
     settlementId: number,
@@ -100,6 +105,10 @@ export type UseAnalysisDataResult = {
   messagesPaging: boolean;
   messagesTotalCount: number | null;
   messagesTotalLoading: boolean;
+  focusedHasMoreEarlier: boolean;
+  focusedHasMoreLater: boolean;
+  focusedLoadingEarlier: boolean;
+  focusedLoadingLater: boolean;
   messageComments: Record<number, MessageComment[]>;
   messages: Array<[number, InboxMessage]>;
   networkDisplayMap: Record<number, string>;

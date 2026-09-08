@@ -6,7 +6,6 @@ import {
   Box,
   Button,
   ButtonBase,
-  CircularProgress,
   Collapse,
   IconButton,
   InputBase,
@@ -17,8 +16,6 @@ import {
 } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import { useEffect, useId, useLayoutEffect, useMemo, useState } from 'react';
-import { isNullOrUndefined } from '../../../utils/misc';
-
 import type { AnalysisCountItem } from '../types';
 import { CompactText, CompactTitle } from '../../../components/CompactTypography';
 
@@ -80,8 +77,7 @@ export function AnalysisCountBlock({
           ),
     [detailItems, normalizedSearchQuery],
   );
-  const showLoadingSkeletons =
-    loading && detailItems.length === 0 && isNullOrUndefined(summaryItem);
+  const showLoadingSkeletons = loading;
   const hasHiddenItems = filteredDetailItems.length > 12;
   const visibleItems =
     expanded || !hasHiddenItems ? filteredDetailItems : filteredDetailItems.slice(0, 12);
@@ -129,7 +125,13 @@ export function AnalysisCountBlock({
   };
 
   return (
-    <Paper variant="outlined" component="section" aria-labelledby={headingId} sx={{ p: 2 }}>
+    <Paper
+      variant="outlined"
+      component="section"
+      aria-labelledby={headingId}
+      aria-busy={loading}
+      sx={{ p: 2 }}
+    >
       <Box
         sx={{
           ...analysisCountHeaderSx,
@@ -222,14 +224,10 @@ export function AnalysisCountBlock({
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
           <Box sx={analysisCountStatusSx}>
-            {summaryItem ? (
+            {showLoadingSkeletons ? (
+              <Skeleton variant="rounded" width={104} height={20} />
+            ) : summaryItem ? (
               <CompactText color="text.secondary">{`Повідомлень: ${summaryItem.count}`}</CompactText>
-            ) : null}
-            {loading && !showLoadingSkeletons ? (
-              <CircularProgress
-                size={16}
-                sx={summaryItem ? { position: 'absolute', left: -20 } : undefined}
-              />
             ) : null}
           </Box>
           <IconButton
