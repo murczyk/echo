@@ -2,7 +2,6 @@ use crate::entities::*;
 use crate::types::{AppError, Mode, ShortContext};
 use crate::{h, OneoffMergeDatasourceGroupPs};
 use sea_orm::*;
-use sea_query::Expr;
 
 pub async fn oneoff_merge_datasource_group(
     mode: Mode,
@@ -117,88 +116,19 @@ async fn merge_group_into(
     target_signal_group: &signal_group::Model,
 ) -> Result<(), AppError> {
     let datasource_group_id = datasource_group.id;
-    let mut model = datasource_group.into_active_model();
-    model.group_master_key = Set(target_signal_group.master_key.clone());
-    model.update(txn).await.c(h!())?;
+    let mut datasource_group = datasource_group.into_active_model();
+    datasource_group.group_master_key =
+        Set(target_signal_group.master_key.clone());
+    datasource_group.update(txn).await.c(h!())?;
 
-    signal_message_group::Entity::update_many()
-        .filter(
-            signal_message_group::Column::GroupMasterKey
-                .eq(source_signal_group.master_key.clone()),
-        )
-        .filter(
-            signal_message_group::Column::DatasourceGroupId
-                .eq(datasource_group_id),
-        )
-        .col_expr(
-            signal_message_group::Column::GroupMasterKey,
-            Expr::value(target_signal_group.master_key.clone()),
-        )
-        .exec(txn)
-        .await
-        .c(h!())?;
-
-    group_admin_data::Entity::delete_many()
-        .filter(
-            group_admin_data::Column::GroupMasterKey
-                .eq(source_signal_group.master_key.clone()),
-        )
-        .exec(txn)
-        .await
-        .c(h!())?;
-
-    organism_group::Entity::delete_many()
-        .filter(
-            organism_group::Column::SignalGroupMasterKey
-                .eq(source_signal_group.master_key.clone()),
-        )
-        .exec(txn)
-        .await
-        .c(h!())?;
-
-    secret_group_user::Entity::delete_many()
-        .filter(
-            secret_group_user::Column::MasterKey
-                .eq(source_signal_group.master_key.clone()),
-        )
-        .exec(txn)
-        .await
-        .c(h!())?;
-
-    sigint_zone_datasource::Entity::delete_many()
-        .filter(
-            sigint_zone_datasource::Column::GroupMasterKey
-                .eq(source_signal_group.master_key.clone()),
-        )
-        .exec(txn)
-        .await
-        .c(h!())?;
-
-    signal_group_aor::Entity::delete_many()
-        .filter(
-            signal_group_aor::Column::MasterKey
-                .eq(source_signal_group.master_key.clone()),
-        )
-        .exec(txn)
-        .await
-        .c(h!())?;
-
-    crate::battle_line::requeue_settlement_links_for_group(
+    super::merge_signal_group_references(
         txn,
-        &source_signal_group.master_key,
+        datasource_group_id,
+        source_signal_group,
+        target_signal_group,
     )
     .await
     .c(h!())?;
-    crate::battle_line::requeue_settlement_links_for_group(
-        txn,
-        &target_signal_group.master_key,
-    )
-    .await
-    .c(h!())?;
-
-    let mut source_signal_group = source_signal_group.into_active_model();
-    source_signal_group.deleted = Set(true);
-    source_signal_group.update(txn).await.c(h!())?;
 
     Ok(())
 }

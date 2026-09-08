@@ -76,6 +76,46 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(countCalls);
   });
 
+  it('#3360 does not rearm a newer-message failure after a successful count poll', async () => {
+    const { apiRef } = await mountLoadedFeed(true);
+    apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = true;
+    apiRef.current!.physicallyAtBottomByFeedIdRef.current['mf-0'] = true;
+    hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
+    hoisted.fetchInboxMessages.mockRejectedValue(new Error('ongoing newer failure'));
+
+    await startPoll();
+    await act(async () => flushMicrotasks());
+    expect(apiRef.current!.errorNotificationVersion).toBe(1);
+
+    await startPoll();
+    await act(async () => flushMicrotasks());
+    expect(apiRef.current!.errorNotificationVersion).toBe(1);
+  });
+
+  it('#3360 starts a new preview failure episode after an accepted preview recovery', async () => {
+    const { apiRef } = await mountLoadedFeed(true);
+    apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = false;
+    hoisted.fetchInboxCount
+      .mockResolvedValueOnce({ quantity: 1, firstElementTs: null })
+      .mockRejectedValueOnce(new Error('preview failed'));
+    await startPoll();
+    await act(async () => flushMicrotasks());
+    expect(apiRef.current!.errorNotificationVersion).toBe(1);
+
+    hoisted.fetchInboxCount
+      .mockResolvedValueOnce({ quantity: 1, firstElementTs: null })
+      .mockResolvedValueOnce({ quantity: 1, firstElementTs: null });
+    await startPoll();
+    await act(async () => flushMicrotasks());
+
+    hoisted.fetchInboxCount
+      .mockResolvedValueOnce({ quantity: 1, firstElementTs: null })
+      .mockRejectedValueOnce(new Error('preview failed'));
+    await startPoll();
+    await act(async () => flushMicrotasks());
+    expect(apiRef.current!.errorNotificationVersion).toBe(2);
+  });
+
   // Regression: https://github.com/echoua/echo/pull/3331
   it('keeps a captured preview current after auto-follow advances the unread cursor', async () => {
     const { apiRef } = await mountLoadedFeed();

@@ -12,6 +12,7 @@ import {
   DEFAULT_TOP_LOAD_BUFFER_PX,
   distanceToBottom,
   nowMs,
+  ScrollNavigationIntent,
   type ScrollStateOpts,
   type TopStatus,
   type UseWindowedFeedScrollOptions,
@@ -61,6 +62,8 @@ export function useWindowedFeedScroll({
   atBottomThresholdPx = DEFAULT_AT_BOTTOM_THRESHOLD_PX,
   resetKey = null,
   isWatchMode = true,
+  autoScrollAllowed = true,
+  initialPositioningReady = true,
   enabled = true,
   debugFeedId,
   unreadPrefetchNeeded = true,
@@ -77,6 +80,7 @@ export function useWindowedFeedScroll({
     resetKey,
     topStatus,
     isWatchMode,
+    autoScrollAllowed,
     loadingNewer,
     unreadPrefetchNeeded,
     pendingNewerFlushNeeded,
@@ -84,6 +88,7 @@ export function useWindowedFeedScroll({
   });
   const enabledBeforeRender = refs.enabledRef.current;
   refs.isWatchModeRef.current = isWatchMode;
+  refs.autoScrollAllowedRef.current = autoScrollAllowed;
   refs.loadingNewerRef.current = loadingNewer;
   refs.unreadPrefetchNeededRef.current = unreadPrefetchNeeded;
   refs.pendingNewerFlushNeededRef.current = pendingNewerFlushNeeded;
@@ -240,6 +245,7 @@ export function useWindowedFeedScroll({
       const target = refs.itemRefsRef.current.get(id);
       if (!scroller || !target) return null;
 
+      refs.hasInitialScrolledRef.current = true;
       stopDirectItemTracking();
       if (isItemFullyVisible(scroller, target)) {
         recordDutyScrollDebugEvent(
@@ -331,6 +337,8 @@ export function useWindowedFeedScroll({
     const currentItemIds = refs.itemIdsRef.current;
     const topStatusChanged = refs.previousTopStatusRef.current !== topStatus;
     if (!enabled) {
+      follow.stopBottomSettle();
+      follow.clearFollowScroll();
       return;
     }
     refs.previousTopStatusRef.current = topStatus;
@@ -345,11 +353,17 @@ export function useWindowedFeedScroll({
     }
 
     if (!refs.hasInitialScrolledRef.current) {
-      follow.scrollToBottom('auto', 'initial render');
-      follow.startBottomSettle();
-      refs.liveBottomFollowRef.current = true;
-      refs.hasInitialScrolledRef.current = true;
       refs.previousItemIdsRef.current = currentItemIds;
+      if (!initialPositioningReady) {
+        anchors.captureAnchorSnapshot();
+        return;
+      }
+      refs.hasInitialScrolledRef.current = true;
+      if (refs.autoScrollAllowedRef.current) {
+        follow.scrollToBottom('auto', ScrollNavigationIntent.Initial);
+        follow.startBottomSettle();
+      }
+      anchors.captureAnchorSnapshot();
       return;
     }
 
@@ -370,13 +384,17 @@ export function useWindowedFeedScroll({
         // Window start-trim would yank the viewport if scrollTop stayed put; restore first so
         // only the newly appended height stays below the fold for the deferred follow scroll.
         anchors.restoreAnchorPosition();
-        follow.scheduleFollowScrollWhenStable('items changed while following');
+        follow.scheduleFollowScrollWhenStable(
+          'items changed while following',
+          ScrollNavigationIntent.AutomaticFollow,
+        );
         refs.previousItemIdsRef.current = currentItemIds;
         anchors.captureAnchorSnapshot();
         return;
       } else if (
         refs.physicallyAtBottomRef.current === true &&
-        refs.isWatchModeRef.current === false
+        refs.isWatchModeRef.current === false &&
+        refs.autoScrollAllowedRef.current
       ) {
         // Watch off / disableAutoScroll: still append at the live edge so catch-up can
         // continue, but ease like Elm instead of instant pin + settle (teleport).
@@ -386,9 +404,11 @@ export function useWindowedFeedScroll({
           `${refs.previousItemIdsRef.current.length}→${currentItemIds.length}; watch=false`,
         );
         anchors.restoreAnchorPosition();
-        follow.scheduleFollowScrollWhenStable('items changed while catching up at bottom', {
-          enableFollow: false,
-        });
+        follow.scheduleFollowScrollWhenStable(
+          'items changed while catching up at bottom',
+          ScrollNavigationIntent.AutomaticFollow,
+          { enableFollow: false },
+        );
         refs.previousItemIdsRef.current = currentItemIds;
         anchors.captureAnchorSnapshot();
         return;
@@ -398,7 +418,13 @@ export function useWindowedFeedScroll({
         'items:preserve-anchor',
         `${refs.previousItemIdsRef.current[0] ?? '—'}→${refs.previousItemIdsRef.current.at(-1) ?? '—'} becomes ${currentItemIds[0] ?? '—'}→${currentItemIds.at(-1) ?? '—'}; follow=${refs.liveBottomFollowRef.current}; physical=${refs.physicallyAtBottomRef.current}; watch=${refs.isWatchModeRef.current}`,
       );
-      anchors.restoreAnchorPosition();
+      const previousIds = refs.previousItemIdsRef.current;
+      const isPureAppend =
+        currentItemIds.length >= previousIds.length &&
+        previousIds.every((id, index) => currentItemIds[index] === id);
+      // A pure append does not move any existing row; restoring a stale measured
+      // anchor here can itself create the prohibited watch-off navigation.
+      if (!itemsChanged || !isPureAppend) anchors.restoreAnchorPosition();
       refs.previousItemIdsRef.current = currentItemIds;
       anchors.captureAnchorSnapshot();
       // Re-check near-bottom so catch-up can arm another newer load.
@@ -428,6 +454,7 @@ export function useWindowedFeedScroll({
     topStatus,
     tracking,
     itemIds,
+    initialPositioningReady,
   ]);
 
   useLayoutEffect(() => {
@@ -452,10 +479,11 @@ export function useWindowedFeedScroll({
       if (
         refs.liveBottomFollowRef.current &&
         refs.physicallyAtBottomRef.current === true &&
-        refs.isWatchModeRef.current !== false
+        refs.isWatchModeRef.current !== false &&
+        refs.autoScrollAllowedRef.current
       ) {
         recordDutyScrollDebugEvent(debugFeedId, 'resize:follow-bottom');
-        follow.scrollToBottom('auto', 'list resized while following');
+        follow.scrollToBottom('auto', ScrollNavigationIntent.AutomaticFollow);
         return;
       }
       recordDutyScrollDebugEvent(debugFeedId, 'resize:preserve-anchor');
@@ -491,6 +519,9 @@ export function useWindowedFeedScroll({
   const handleScroll = useCallback<UIEventHandler<HTMLDivElement>>(() => {
     if (!refs.enabledRef.current) return;
     if (refs.isRestoringAnchorRef.current) return;
+    if (!initialPositioningReady && !refs.hasInitialScrolledRef.current) {
+      refs.hasInitialScrolledRef.current = true;
+    }
     if (directItemTargetIdRef.current !== null) {
       scheduleTrackedItemCenter('scroll');
     }
@@ -565,7 +596,7 @@ export function useWindowedFeedScroll({
     }
     if (refs.handleScrollRafRef.current !== null) return;
     refs.handleScrollRafRef.current = requestAnimationFrame(() => {
-      tracking.updateScrollState();
+      tracking.updateScrollState({ allowPendingFlush: true });
       refs.handleScrollRafRef.current = null;
     });
   }, [
@@ -573,6 +604,7 @@ export function useWindowedFeedScroll({
     bottomLoadBufferPx,
     debugFeedId,
     follow,
+    initialPositioningReady,
     refs,
     scheduleTrackedItemCenter,
     topLoadBufferPx,
@@ -597,16 +629,13 @@ export function useWindowedFeedScroll({
     [refs],
   );
 
-  const scrollToBottom = useCallback(
-    (
-      behavior: ScrollBehavior = 'auto',
-      debugReason = 'imperative',
-      options?: { enableFollow?: boolean; skipLayoutWait?: boolean },
-    ) => {
+  const scrollToBottom = useCallback<WindowedFeedScrollHandle['scrollToBottom']>(
+    (behavior, intent, navigation) => {
       stopDirectItemTracking();
-      follow.scrollToBottom(behavior, debugReason, options);
+      if (intent === ScrollNavigationIntent.Explicit) refs.hasInitialScrolledRef.current = true;
+      follow.scrollToBottom(behavior, intent, undefined, navigation);
     },
-    [follow, stopDirectItemTracking],
+    [follow, refs, stopDirectItemTracking],
   );
 
   return {

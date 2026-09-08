@@ -120,20 +120,23 @@ async fn load_review_data<C>(
 where
     C: ConnectionTrait,
 {
-    let (orbit_sync, orbit_units) =
-        persistence::load_latest_synced_source_units_with_sync(db)
-            .await
-            .c(h!())?;
+    let orbit_sync = persistence::load_latest_sync(db)
+        .await
+        .c(h!())?
+        .ok_or_else(|| anyhow::anyhow!("ORBIT data has not been synchronized"))
+        .c(h!())?;
     let linked_orbit_unit_ids = load_linked_orbit_unit_ids(db).await.c(h!())?;
-    let orbit_units = orbit_units
-        .into_iter()
-        .filter(|unit| !linked_orbit_unit_ids.contains(&unit.unit_id))
-        .collect::<Vec<_>>();
+    let matcher = persistence::load_test_link_matcher_excluding(
+        db,
+        &orbit_sync,
+        &linked_orbit_unit_ids,
+    )
+    .await
+    .c(h!())?;
     let sigint_units =
         test_link::load_linkable_sigint_units(db, false, activity_scope)
             .await
             .c(h!())?;
-    let matcher = matching::TestLinkMatcher::from_units(orbit_units);
     let suppressed_links =
         test_link::load_suppressed_links(db).await.c(h!())?;
     let manual_matches = test_link::prepare_review_units(

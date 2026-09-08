@@ -1,6 +1,7 @@
 use crate::entities::{
-    datasource, datasource_group, login, signal_group, signal_message_metadata,
-    signal_profile,
+    datasource, datasource_group, group_admin_data, login, organism_group,
+    secret_group_user, sigint_zone_datasource, signal_group, signal_group_aor,
+    signal_message_group, signal_message_metadata, signal_profile,
 };
 use crate::error::AppError;
 use crate::h;
@@ -13,6 +14,7 @@ use actix_web::web::Json;
 use chrono::Utc;
 use echo_im::types::MessageAttachmentF1;
 use sea_orm::*;
+use sea_query::{Expr, OnConflict};
 
 const ECHO_OPERATOR_LABEL_PREFIX: &str = "EХО Оператор ";
 
@@ -230,11 +232,8 @@ async fn ensure_group(
     txn: &DatabaseTransaction,
     group: types::Group,
 ) -> anyhow::Result<String> {
+    let group_master_key = source_group_key(&group);
     let echo_id = mk_echo_id(group.id);
-
-    let group_master_key = group
-        .source_signal_group_id
-        .or(group.source_whatsapp_group_jid);
 
     let keys = if let Some(master_key) = &group_master_key {
         vec![echo_id.clone(), master_key.clone()]
@@ -308,6 +307,18 @@ async fn ensure_group(
         )
         .await
         .c(h!())?
+    } else if let (Some(group_master_key), Some(datasource_group_by_echo_id)) =
+        (&group_master_key, datasource_group_by_echo_id)
+    {
+        move_datasource_group_to_source_group(
+            txn,
+            datasource_group_by_echo_id,
+            group_master_key,
+            signal_group_by_master_key,
+            &group.name,
+        )
+        .await
+        .c(h!())?
     } else if let Some(datasource_group_by_echo_id) =
         datasource_group_by_echo_id
     {
@@ -351,6 +362,169 @@ async fn ensure_group(
     };
 
     Ok(result.group_master_key)
+}
+
+fn source_group_key(group: &types::Group) -> Option<String> {
+    group
+        .source_signal_group_id
+        .as_deref()
+        .and_then(non_empty_source_key)
+        .or_else(|| {
+            group
+                .source_whatsapp_group_jid
+                .as_deref()
+                .and_then(non_empty_source_key)
+        })
+        .map(str::to_owned)
+}
+
+fn non_empty_source_key(key: &str) -> Option<&str> {
+    let key = key.trim();
+    (!key.is_empty()).then_some(key)
+}
+
+async fn move_datasource_group_to_source_group(
+    txn: &DatabaseTransaction,
+    datasource_group: &datasource_group::Model,
+    group_master_key: &str,
+    signal_group: Option<&signal_group::Model>,
+    group_name: &str,
+) -> anyhow::Result<datasource_group::Model> {
+    let signal_group = ensure_source_signal_group(
+        txn,
+        datasource_group.datasource_id,
+        group_master_key,
+        signal_group,
+        group_name,
+    )
+    .await
+    .c(h!())?;
+
+    let mut datasource_group = datasource_group.clone().into_active_model();
+    datasource_group.group_master_key = Set(signal_group.master_key.clone());
+    datasource_group.deleted = Set(false);
+    datasource_group.name = Set(group_name.to_string());
+    datasource_group.last_sync_at = Set(Utc::now().naive_utc());
+    datasource_group.update(txn).await.c(h!())
+}
+
+async fn merge_signal_group_references(
+    txn: &DatabaseTransaction,
+    datasource_group_id: i64,
+    source_signal_group: signal_group::Model,
+    target_signal_group: &signal_group::Model,
+) -> anyhow::Result<()> {
+    signal_message_group::Entity::update_many()
+        .filter(
+            signal_message_group::Column::GroupMasterKey
+                .eq(source_signal_group.master_key.clone()),
+        )
+        .filter(
+            signal_message_group::Column::DatasourceGroupId
+                .eq(datasource_group_id),
+        )
+        .col_expr(
+            signal_message_group::Column::GroupMasterKey,
+            Expr::value(target_signal_group.master_key.clone()),
+        )
+        .exec(txn)
+        .await
+        .c(h!())?;
+
+    group_admin_data::Entity::delete_many()
+        .filter(
+            group_admin_data::Column::GroupMasterKey
+                .eq(source_signal_group.master_key.clone()),
+        )
+        .exec(txn)
+        .await
+        .c(h!())?;
+
+    organism_group::Entity::delete_many()
+        .filter(
+            organism_group::Column::SignalGroupMasterKey
+                .eq(source_signal_group.master_key.clone()),
+        )
+        .exec(txn)
+        .await
+        .c(h!())?;
+
+    secret_group_user::Entity::delete_many()
+        .filter(
+            secret_group_user::Column::MasterKey
+                .eq(source_signal_group.master_key.clone()),
+        )
+        .exec(txn)
+        .await
+        .c(h!())?;
+
+    sigint_zone_datasource::Entity::delete_many()
+        .filter(
+            sigint_zone_datasource::Column::GroupMasterKey
+                .eq(source_signal_group.master_key.clone()),
+        )
+        .exec(txn)
+        .await
+        .c(h!())?;
+
+    signal_group_aor::Entity::delete_many()
+        .filter(
+            signal_group_aor::Column::MasterKey
+                .eq(source_signal_group.master_key.clone()),
+        )
+        .exec(txn)
+        .await
+        .c(h!())?;
+
+    crate::battle_line::requeue_settlement_links_for_group(
+        txn,
+        &source_signal_group.master_key,
+    )
+    .await
+    .c(h!())?;
+    crate::battle_line::requeue_settlement_links_for_group(
+        txn,
+        &target_signal_group.master_key,
+    )
+    .await
+    .c(h!())?;
+
+    let mut source_signal_group = source_signal_group.into_active_model();
+    source_signal_group.deleted = Set(true);
+    source_signal_group.update(txn).await.c(h!())?;
+
+    Ok(())
+}
+
+async fn ensure_source_signal_group(
+    txn: &DatabaseTransaction,
+    datasource_id: i64,
+    group_master_key: &str,
+    signal_group: Option<&signal_group::Model>,
+    group_name: &str,
+) -> anyhow::Result<signal_group::Model> {
+    if let Some(signal_group) = signal_group {
+        let signal_group =
+            sync_signal_group(txn, datasource_id, signal_group, group_name)
+                .await
+                .c(h!())?;
+        if !signal_group.deleted {
+            return Ok(signal_group);
+        }
+
+        let mut signal_group = signal_group.into_active_model();
+        signal_group.deleted = Set(false);
+        return signal_group.update(txn).await.c(h!());
+    }
+
+    insert_or_sync_signal_group(
+        txn,
+        datasource_id,
+        group_master_key.to_string(),
+        group_name,
+    )
+    .await
+    .c(h!())
 }
 
 async fn sync_datasource_group(
@@ -398,6 +572,37 @@ async fn sync_signal_group(
     }
 }
 
+async fn insert_or_sync_signal_group(
+    txn: &DatabaseTransaction,
+    datasource_id: i64,
+    master_key: String,
+    group_name: &str,
+) -> anyhow::Result<signal_group::Model> {
+    signal_group::Entity::insert(signal_group::ActiveModel {
+        master_key: Set(master_key.clone()),
+        name: Set(Some(group_name.to_string())),
+        datasource_id: Set(Some(datasource_id)),
+        ..Default::default()
+    })
+    .on_conflict(
+        OnConflict::column(signal_group::Column::MasterKey)
+            .do_nothing()
+            .to_owned(),
+    )
+    .exec_without_returning(txn)
+    .await
+    .c(h!())?;
+
+    let signal_group = signal_group::Entity::find_by_id(master_key)
+        .one(txn)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    sync_signal_group(txn, datasource_id, &signal_group, group_name)
+        .await
+        .c(h!())
+}
+
 async fn insert_datasource_group(
     txn: &DatabaseTransaction,
     datasource_id: i64,
@@ -422,13 +627,9 @@ async fn insert_datasource_group(
             .c(h!())?
     } else {
         let master_key = group_master_key.unwrap_or(echo_id);
-        let model = signal_group::ActiveModel {
-            master_key: Set(master_key),
-            name: Set(Some(group_name.to_string())),
-            datasource_id: Set(Some(datasource_id)),
-            ..Default::default()
-        };
-        model.insert(txn).await.c(h!())?
+        insert_or_sync_signal_group(txn, datasource_id, master_key, group_name)
+            .await
+            .c(h!())?
     };
 
     let model = datasource_group::ActiveModel {
@@ -445,4 +646,272 @@ async fn insert_datasource_group(
 
 fn mk_echo_id(id: String) -> String {
     format!("echo.{id}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entities::signal_message;
+    use crate::functest::tests::{
+        cleanup, mk_datasource, mk_datasource_group, mk_signal_group,
+        mk_signal_message, mk_signal_message_group,
+    };
+    use serial_test::serial;
+
+    #[test]
+    fn source_group_key_ignores_blank_values() {
+        let group = types::Group {
+            id: "operator-group".to_string(),
+            name: "BBC NEWS".to_string(),
+            source_signal_group_id: Some(" ".to_string()),
+            source_whatsapp_group_jid: Some(
+                "120363419907122319@g.us".to_string(),
+            ),
+        };
+
+        assert_eq!(
+            source_group_key(&group).as_deref(),
+            Some("120363419907122319@g.us")
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    // Regression: https://github.com/echoua/echo/issues/3391
+    async fn ensure_group_moves_mapping_to_reactivated_shared_source_group() {
+        let env = cleanup().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let group_name = "BBC NEWS";
+        let source_group_key = "120363419907122319@g.us";
+        let operator_group_id = "019ebab3-d6e8-7ff6-b662-004ee7394520";
+        let echo_group_key = mk_echo_id(operator_group_id.to_string());
+        let messenger_datasource = mk_datasource(
+            &txn,
+            datasource::ActiveModel {
+                kind: Set("whatsapp".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let operator_datasource = mk_datasource(
+            &txn,
+            datasource::ActiveModel {
+                kind: Set("echo_operator".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let source_signal_group = mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                master_key: Set(source_group_key.to_string()),
+                name: Set(Some(group_name.to_string())),
+                datasource_id: Set(Some(messenger_datasource.id)),
+                deleted: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let fallback_signal_group = mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                master_key: Set(echo_group_key.clone()),
+                name: Set(Some(group_name.to_string())),
+                datasource_id: Set(Some(operator_datasource.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let fallback_datasource_group = mk_datasource_group(
+            &txn,
+            datasource_group::ActiveModel {
+                datasource_id: Set(operator_datasource.id),
+                group_master_key: Set(echo_group_key.clone()),
+                name: Set(group_name.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let historical_message = mk_signal_message(
+            &txn,
+            signal_message::ActiveModel {
+                datasource_group_id: Set(Some(fallback_datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let historical_message_group = mk_signal_message_group(
+            &txn,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(historical_message.id),
+                group_master_key: Set(Some(echo_group_key.clone())),
+                datasource_group_id: Set(Some(fallback_datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let resolved_group_key = ensure_group(
+            operator_datasource.id,
+            &txn,
+            types::Group {
+                id: operator_group_id.to_string(),
+                name: group_name.to_string(),
+                source_signal_group_id: Some("".to_string()),
+                source_whatsapp_group_jid: Some(source_group_key.to_string()),
+            },
+        )
+        .await
+        .unwrap();
+        let datasource_group =
+            datasource_group::Entity::find_by_id(fallback_datasource_group.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        let source_signal_group =
+            signal_group::Entity::find_by_id(source_signal_group.master_key)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        let fallback_signal_group =
+            signal_group::Entity::find_by_id(fallback_signal_group.master_key)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        let historical_message_group =
+            signal_message_group::Entity::find_by_id(
+                historical_message_group.id,
+            )
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(resolved_group_key, source_group_key);
+        assert_eq!(datasource_group.group_master_key, source_group_key);
+        assert_eq!(datasource_group.datasource_id, operator_datasource.id);
+        assert_eq!(
+            historical_message_group.group_master_key.as_deref(),
+            Some(echo_group_key.as_str())
+        );
+        assert!(!fallback_signal_group.deleted);
+        assert!(!source_signal_group.deleted);
+        assert_eq!(
+            source_signal_group.datasource_id,
+            Some(messenger_datasource.id)
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn ensure_group_handles_concurrent_source_group_creation() {
+        let env = cleanup().await.unwrap();
+        let setup_txn = env.dbx.begin().await.unwrap();
+        let group_name = "BBC NEWS";
+        let source_group_key = "120363419907122319@g.us";
+        let operator_group_id = "019ebab3-d6e8-7ff6-b662-004ee7394520";
+        let echo_group_key = mk_echo_id(operator_group_id.to_string());
+        let operator_datasource = mk_datasource(
+            &setup_txn,
+            datasource::ActiveModel {
+                kind: Set("echo_operator".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let fallback_signal_group = mk_signal_group(
+            &setup_txn,
+            signal_group::ActiveModel {
+                master_key: Set(echo_group_key.clone()),
+                name: Set(Some(group_name.to_string())),
+                datasource_id: Set(Some(operator_datasource.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let fallback_datasource_group = mk_datasource_group(
+            &setup_txn,
+            datasource_group::ActiveModel {
+                datasource_id: Set(operator_datasource.id),
+                group_master_key: Set(fallback_signal_group.master_key),
+                name: Set(group_name.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        setup_txn.commit().await.unwrap();
+
+        let first_txn = env.dbx.begin().await.unwrap();
+        mk_signal_group(
+            &first_txn,
+            signal_group::ActiveModel {
+                master_key: Set(source_group_key.to_string()),
+                name: Set(Some(group_name.to_string())),
+                datasource_id: Set(Some(operator_datasource.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let dbx = env.dbx.clone();
+        let mut concurrent_submission = tokio::spawn(async move {
+            let txn = dbx.begin().await.c(h!())?;
+            let group_master_key = ensure_group(
+                operator_datasource.id,
+                &txn,
+                types::Group {
+                    id: operator_group_id.to_string(),
+                    name: group_name.to_string(),
+                    source_signal_group_id: None,
+                    source_whatsapp_group_jid: Some(
+                        source_group_key.to_string(),
+                    ),
+                },
+            )
+            .await
+            .c(h!())?;
+            txn.commit().await.c(h!())?;
+            Ok::<_, anyhow::Error>(group_master_key)
+        });
+
+        assert!(tokio::time::timeout(
+            std::time::Duration::from_millis(100),
+            &mut concurrent_submission,
+        )
+        .await
+        .is_err());
+        first_txn.commit().await.unwrap();
+
+        let resolved_group_key = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            concurrent_submission,
+        )
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+        let datasource_group =
+            datasource_group::Entity::find_by_id(fallback_datasource_group.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(resolved_group_key, source_group_key);
+        assert_eq!(datasource_group.group_master_key, source_group_key);
+    }
 }

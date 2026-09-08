@@ -749,6 +749,26 @@ export function appendWindowedMessageItems(
   return { items: trimmed.items, addedItems, removedItems: trimmed.removedItems };
 }
 
+/**
+ * Returns the largest ordered pending prefix that can enter a bounded window
+ * without evicting a currently visible row. Callers retain the remainder.
+ */
+export function safePendingNewerPrefix(
+  items: MessageItem[],
+  pending: MessageItem[],
+  protectedItemIds: readonly number[],
+): MessageItem[] {
+  if (protectedItemIds.length === 0) return pending;
+  const protectedIds = new Set(protectedItemIds);
+  let safeLength = 0;
+  for (let length = 1; length <= pending.length; length += 1) {
+    const preview = appendWindowedMessageItems(items, pending.slice(0, length));
+    if (preview.removedItems.some(([id]) => protectedIds.has(id))) break;
+    safeLength = length;
+  }
+  return pending.slice(0, safeLength);
+}
+
 export function retainReadIdsForItems(
   readIds: ReadonlySet<number>,
   items: MessageItem[],

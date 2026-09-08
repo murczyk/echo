@@ -1,10 +1,11 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act } from 'react';
+import { act, useRef, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWindowedFeedScroll } from '../useWindowedFeedScroll';
+import { useRerDutyNavigation } from '../useRerDutyNavigation';
 
 const renderedItemRefs = new Map<number, (node: HTMLDivElement | null) => void>();
 let latestScrollHandle: ReturnType<typeof useWindowedFeedScroll> | null = null;
@@ -27,6 +28,8 @@ function TestScroller(props: {
   onVisibleMessageIds?: (lastVisibleId: number, opts?: { atBottom?: boolean }) => void;
   enabled?: boolean;
   isWatchMode?: boolean;
+  autoScrollAllowed?: boolean;
+  initialPositioningReady?: boolean;
   unreadPrefetchNeeded?: boolean;
   pendingNewerFlushNeeded?: boolean;
   itemHeightPx?: number;
@@ -48,6 +51,8 @@ function TestScroller(props: {
     onVisibleMessageIds: props.onVisibleMessageIds,
     enabled: props.enabled ?? true,
     isWatchMode: props.isWatchMode ?? true,
+    autoScrollAllowed: props.autoScrollAllowed ?? true,
+    initialPositioningReady: props.initialPositioningReady ?? true,
     unreadPrefetchNeeded: props.unreadPrefetchNeeded,
     pendingNewerFlushNeeded: props.pendingNewerFlushNeeded,
     topLoadBufferPx: 80,
@@ -278,12 +283,19 @@ describe('useWindowedFeedScroll', () => {
     expect(onLoadNewer).not.toHaveBeenCalled();
   });
 
-  it('loads older but not newer when the initial pin is underfilled', async () => {
+  it('#3360 does not navigate an underfilled feed on initial open when auto-scroll is off', async () => {
     const onLoadOlder = vi.fn();
     const onLoadNewer = vi.fn();
 
     await act(async () => {
-      root.render(<TestScroller ids={[]} onLoadOlder={onLoadOlder} onLoadNewer={onLoadNewer} />);
+      root.render(
+        <TestScroller
+          ids={[]}
+          autoScrollAllowed={false}
+          onLoadOlder={onLoadOlder}
+          onLoadNewer={onLoadNewer}
+        />,
+      );
     });
 
     const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
@@ -291,7 +303,12 @@ describe('useWindowedFeedScroll', () => {
 
     await act(async () => {
       root.render(
-        <TestScroller ids={[1, 2, 3]} onLoadOlder={onLoadOlder} onLoadNewer={onLoadNewer} />,
+        <TestScroller
+          ids={[1, 2, 3]}
+          autoScrollAllowed={false}
+          onLoadOlder={onLoadOlder}
+          onLoadNewer={onLoadNewer}
+        />,
       );
     });
     await act(async () => {
@@ -300,7 +317,7 @@ describe('useWindowedFeedScroll', () => {
       await waitForAnimationFrame();
     });
 
-    expect(onLoadOlder).toHaveBeenCalledTimes(1);
+    expect(onLoadOlder).not.toHaveBeenCalled();
     expect(onLoadNewer).not.toHaveBeenCalled();
   });
 
@@ -563,7 +580,7 @@ describe('useWindowedFeedScroll', () => {
     expect(onVisibleMessageIds).toHaveBeenCalledTimes(1);
   });
 
-  it('initializes the first activation at bottom and reports normally', async () => {
+  it('retains the native initial position without synthetic bottom reporting', async () => {
     const onAtBottomChange = vi.fn();
     const onVisibleMessageIds = vi.fn();
 
@@ -587,13 +604,14 @@ describe('useWindowedFeedScroll', () => {
           ids={[1, 2, 3, 4]}
           onAtBottomChange={onAtBottomChange}
           onVisibleMessageIds={onVisibleMessageIds}
+          autoScrollAllowed={false}
         />,
       );
     });
 
-    expect(scroller.scrollTop).toBe(240);
-    expect(onAtBottomChange).toHaveBeenLastCalledWith(true);
-    expect(onVisibleMessageIds).toHaveBeenLastCalledWith(4, { atBottom: true });
+    expect(scroller.scrollTop).toBe(0);
+    expect(onAtBottomChange).not.toHaveBeenCalledWith(true);
+    expect(onVisibleMessageIds).not.toHaveBeenCalled();
   });
 
   it('restores bottom state when reopening an unchanged feed without scrolling', async () => {
@@ -962,15 +980,29 @@ describe('useWindowedFeedScroll', () => {
   });
 
   it('flushes pending newer pages immediately at physical bottom', async () => {
-    const onFlushPendingNewer = vi.fn();
-    await act(async () => {
-      root.render(
+    let makePending: (() => void) | null = null;
+    function PendingScroller() {
+      const [ids, setIds] = useState([1, 2, 3, 4]);
+      const [pending, setPending] = useState(false);
+      const pendingRef = useRef(pending);
+      pendingRef.current = pending;
+      makePending = () => setPending(true);
+      return (
         <TestScroller
-          ids={[1, 2, 3, 4]}
+          ids={ids}
           unreadPrefetchNeeded={false}
-          onFlushPendingNewer={onFlushPendingNewer}
-        />,
+          pendingNewerFlushNeeded={pending}
+          onFlushPendingNewer={() => {
+            if (!pendingRef.current) return;
+            pendingRef.current = false;
+            setIds((previous) => [...previous, 5]);
+            setPending(false);
+          }}
+        />
       );
+    }
+    await act(async () => {
+      root.render(<PendingScroller />);
     });
 
     const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
@@ -979,20 +1011,20 @@ describe('useWindowedFeedScroll', () => {
       scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
       await waitForAnimationFrame();
     });
-    onFlushPendingNewer.mockClear();
-
     await act(async () => {
-      root.render(
-        <TestScroller
-          ids={[1, 2, 3, 4]}
-          pendingNewerFlushNeeded
-          unreadPrefetchNeeded={false}
-          onFlushPendingNewer={onFlushPendingNewer}
-        />,
-      );
+      makePending!();
+      await waitForAnimationFrame();
     });
 
-    expect(onFlushPendingNewer).toHaveBeenCalled();
+    expect(container.querySelectorAll('[data-testid="item-5"]')).toHaveLength(1);
+    const scrollTopAfterFlush = scroller.scrollTop;
+    await act(async () => {
+      await waitForAnimationFrame();
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    expect(container.querySelectorAll('[data-testid="item-5"]')).toHaveLength(1);
+    expect(scroller.scrollTop).toBe(scrollTopAfterFlush);
   });
   it('cancels a pending idle newer load when the scroller unmounts', async () => {
     const onLoadNewer = vi.fn();
@@ -1316,26 +1348,49 @@ describe('useWindowedFeedScroll', () => {
     expect(scroller.scrollTop).toBe(975);
   });
 
-  it('keeps the initial render pinned to bottom while layout height settles', async () => {
+  it('keeps a direct message centered when initial positioning becomes ready', async () => {
+    const ids = [1, 2, 3, 4];
     await act(async () => {
-      root.render(<TestScroller ids={[]} />);
+      root.render(<TestScroller ids={[]} initialPositioningReady={false} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setClampedScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 200 });
+    mockVerticalLayout(scroller, { items: createItemLayouts(ids) });
+    await act(async () => {
+      root.render(<TestScroller ids={ids} initialPositioningReady={false} />);
+    });
+
+    latestScrollHandle?.scrollToItem(3);
+    expect(scroller.scrollTop).toBe(75);
+
+    await act(async () => {
+      root.render(<TestScroller ids={ids} initialPositioningReady />);
+    });
+
+    expect(scroller.scrollTop).toBe(75);
+  });
+
+  it('#3360 does not pin the initial render while layout height settles with auto-scroll off', async () => {
+    await act(async () => {
+      root.render(<TestScroller ids={[]} autoScrollAllowed={false} />);
     });
 
     const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
     setScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 240 });
 
     await act(async () => {
-      root.render(<TestScroller ids={[1, 2, 3, 4]} />);
+      root.render(<TestScroller ids={[1, 2, 3, 4]} autoScrollAllowed={false} />);
     });
 
-    expect(scroller.scrollTop).toBe(240);
+    expect(scroller.scrollTop).toBe(0);
 
     Object.defineProperty(scroller, 'scrollHeight', { value: 290, configurable: true });
     await act(async () => {
       await waitForAnimationFrame();
     });
 
-    expect(scroller.scrollTop).toBe(290);
+    expect(scroller.scrollTop).toBe(0);
   });
 
   it('uses the latest scroll position when a newer window commits before the next frame', async () => {
@@ -1695,11 +1750,12 @@ describe('useWindowedFeedScroll', () => {
     expect(scroller.scrollTop).toBe(150);
   });
 
-  it('eases watch-off catch-up appends instead of instant stick + settle', async () => {
+  // #3360: disabled auto-scroll must never turn a background append into navigation.
+  it('preserves the watch-off reading position after a background append', async () => {
     vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: false }) as MediaQueryList);
     const ids = [1, 2, 3, 4];
     await act(async () => {
-      root.render(<TestScroller ids={[]} isWatchMode={false} />);
+      root.render(<TestScroller ids={[]} isWatchMode={false} autoScrollAllowed={false} />);
     });
 
     const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
@@ -1709,19 +1765,19 @@ describe('useWindowedFeedScroll', () => {
     mockVerticalLayout(scroller, layout);
 
     await act(async () => {
-      root.render(<TestScroller ids={ids} isWatchMode={false} />);
+      root.render(<TestScroller ids={ids} isWatchMode={false} autoScrollAllowed={false} />);
     });
-    expect(scroller.scrollTop).toBe(100);
+    expect(scroller.scrollTop).toBe(0);
+    scroller.scrollTop = 100;
     act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
 
     const nextIds = [1, 2, 3, 4, 5];
     metrics.scrollHeight = 250;
     layout.items = createItemLayouts(nextIds);
     await act(async () => {
-      root.render(<TestScroller ids={nextIds} isWatchMode={false} />);
+      root.render(<TestScroller ids={nextIds} isWatchMode={false} autoScrollAllowed={false} />);
     });
 
-    // Must not instant-pin (the teleport from the debug log).
     expect(scroller.scrollTop).toBe(100);
 
     await act(async () => {
@@ -1729,18 +1785,14 @@ describe('useWindowedFeedScroll', () => {
       await waitForAnimationFrame();
       await waitForAnimationFrame();
     });
-    expect(scroller.scrollTop).toBeGreaterThan(100);
-    expect(scroller.scrollTop).toBeLessThan(150);
-
-    await waitForFollowEase();
-    expect(scroller.scrollTop).toBe(150);
+    expect(scroller.scrollTop).toBe(100);
   });
 
-  it('cancels watch-off layout wait when the user leaves the physical bottom', async () => {
+  it('does not schedule watch-off navigation after the reader leaves the physical bottom', async () => {
     vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: false }) as MediaQueryList);
     const ids = [1, 2, 3, 4];
     await act(async () => {
-      root.render(<TestScroller ids={[]} isWatchMode={false} />);
+      root.render(<TestScroller ids={[]} isWatchMode={false} autoScrollAllowed={false} />);
     });
 
     const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
@@ -1750,16 +1802,17 @@ describe('useWindowedFeedScroll', () => {
     mockVerticalLayout(scroller, layout);
 
     await act(async () => {
-      root.render(<TestScroller ids={ids} isWatchMode={false} />);
+      root.render(<TestScroller ids={ids} isWatchMode={false} autoScrollAllowed={false} />);
     });
-    expect(scroller.scrollTop).toBe(100);
+    expect(scroller.scrollTop).toBe(0);
+    scroller.scrollTop = 100;
     act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
 
     const nextIds = [1, 2, 3, 4, 5];
     metrics.scrollHeight = 250;
     layout.items = createItemLayouts(nextIds);
     await act(async () => {
-      root.render(<TestScroller ids={nextIds} isWatchMode={false} />);
+      root.render(<TestScroller ids={nextIds} isWatchMode={false} autoScrollAllowed={false} />);
     });
     // Layout-stability wait armed; ease has not started yet.
     expect(scroller.scrollTop).toBe(100);
@@ -1877,6 +1930,163 @@ describe('useWindowedFeedScroll', () => {
 
     expect(scroller.scrollTop).toBe(200);
     expect(onPhysicalBottomChange).toHaveBeenCalledWith(true);
+  });
+
+  it('#3360 confirms explicit landing only after the rendered target reaches the physical bottom', async () => {
+    const ids = [1, 2, 3, 4, 5, 6];
+    await act(async () => {
+      root.render(<TestScroller ids={ids} />);
+    });
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 300 };
+    setClampedScrollMetrics(scroller, metrics);
+    const onLanded = vi.fn();
+    const onUnavailable = vi.fn();
+    const navigation = {
+      feedId: 'mf-0',
+      generation: 7,
+      targetId: 6,
+      isCurrent: () => true,
+      onLanded,
+      onUnavailable,
+    };
+
+    Object.defineProperty(scroller, 'scrollTo', {
+      configurable: true,
+      value: vi.fn(),
+    });
+    act(() => {
+      latestScrollHandle?.scrollToBottom('auto', 'explicit', navigation);
+    });
+    expect(onLanded).not.toHaveBeenCalled();
+    expect(onUnavailable).not.toHaveBeenCalled();
+
+    Object.defineProperty(scroller, 'scrollTo', {
+      configurable: true,
+      value: () => {
+        scroller.scrollTop = scroller.scrollHeight - scroller.clientHeight;
+      },
+    });
+    act(() => {
+      latestScrollHandle?.scrollToBottom('auto', 'explicit', navigation);
+    });
+    expect(onLanded).toHaveBeenCalledTimes(1);
+    expect(onUnavailable).not.toHaveBeenCalled();
+  });
+
+  it('#3360 stops a smooth explicit landing when its operation is cancelled', async () => {
+    vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: false }) as MediaQueryList);
+    const ids = [1, 2, 3, 4, 5, 6];
+    await act(async () => {
+      root.render(<TestScroller ids={ids} />);
+    });
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 300 };
+    setClampedScrollMetrics(scroller, metrics);
+    let current = true;
+    const onLanded = vi.fn();
+    act(() => {
+      latestScrollHandle?.scrollToBottom('smooth', 'explicit', {
+        feedId: 'mf-0',
+        generation: 8,
+        targetId: 6,
+        isCurrent: () => current,
+        onLanded,
+        onUnavailable: vi.fn(),
+      });
+    });
+    await act(async () => {
+      await waitForAnimationFrame();
+    });
+    current = false;
+    await waitForFollowEase();
+
+    expect(onLanded).not.toHaveBeenCalled();
+    expect(scroller.scrollTop).toBeLessThan(200);
+  });
+
+  it.each(['layout wait', 'easing'] as const)(
+    '#3400 releases arrow loading when its scroll owner unmounts during %s',
+    async (phase) => {
+      let navigationOwner: ReturnType<typeof useRerDutyNavigation> | null = null;
+      const NavigationHarness = ({
+        visible,
+        enabled = true,
+      }: {
+        visible: boolean;
+        enabled?: boolean;
+      }) => {
+        navigationOwner = useRerDutyNavigation();
+        return visible ? (
+          <TestScroller ids={[1, 2]} autoScrollAllowed={false} enabled={enabled} />
+        ) : null;
+      };
+      vi.spyOn(window, 'matchMedia').mockImplementation(
+        () => ({ matches: false }) as MediaQueryList,
+      );
+
+      await act(async () => {
+        root.render(<NavigationHarness visible />);
+      });
+      const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+      setClampedScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 1_000 });
+      const operation = navigationOwner!.beginExplicitNavigation('mf-0');
+      const releaseLoading = vi.fn();
+      const landed = vi.fn();
+      navigationOwner!.registerExplicitLoading(operation, releaseLoading);
+      navigationOwner!.registerExplicitLanding(operation, { id: 2, timestamp: 200 }, landed);
+      const navigation = navigationOwner!.getExplicitScrollNavigation(
+        'mf-0',
+        operation.generation,
+      )!;
+
+      act(() => latestScrollHandle?.scrollToBottom('smooth', 'explicit', navigation));
+      if (phase === 'easing') {
+        await act(async () => {
+          await waitForAnimationFrame();
+          await waitForAnimationFrame();
+          await waitForAnimationFrame();
+          await waitForAnimationFrame();
+        });
+        expect(scroller.scrollTop).toBeGreaterThan(0);
+      }
+
+      await act(async () => {
+        root.render(<NavigationHarness visible={false} />);
+      });
+
+      expect(landed).not.toHaveBeenCalled();
+      expect(releaseLoading).toHaveBeenCalledTimes(1);
+      expect(navigationOwner!.isExplicitNavigationLoading('mf-0')).toBe(false);
+    },
+  );
+
+  it('#3400 releases arrow loading when its scroll owner becomes disabled', async () => {
+    let navigationOwner: ReturnType<typeof useRerDutyNavigation> | null = null;
+    const NavigationHarness = ({ enabled }: { enabled: boolean }) => {
+      navigationOwner = useRerDutyNavigation();
+      return <TestScroller ids={[1, 2]} autoScrollAllowed={false} enabled={enabled} />;
+    };
+    vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: false }) as MediaQueryList);
+
+    await act(async () => {
+      root.render(<NavigationHarness enabled />);
+    });
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setClampedScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 1_000 });
+    const operation = navigationOwner!.beginExplicitNavigation('mf-0');
+    const releaseLoading = vi.fn();
+    navigationOwner!.registerExplicitLoading(operation, releaseLoading);
+    navigationOwner!.registerExplicitLanding(operation, { id: 2, timestamp: 200 }, vi.fn());
+    const navigation = navigationOwner!.getExplicitScrollNavigation('mf-0', operation.generation)!;
+    act(() => latestScrollHandle?.scrollToBottom('smooth', 'explicit', navigation));
+
+    await act(async () => {
+      root.render(<NavigationHarness enabled={false} />);
+    });
+
+    expect(releaseLoading).toHaveBeenCalledTimes(1);
+    expect(navigationOwner!.isExplicitNavigationLoading('mf-0')).toBe(false);
   });
 
   it('pins follow-tail appends after layout stabilizes when reduced motion is preferred', async () => {

@@ -31,6 +31,7 @@ import {
   getTagsForDisplay,
 } from '../../services/api/analysis';
 import { isAbortError } from '../../services/api/client';
+import { getGroupInfosBatch } from '../../services/api/inbox-reference-data';
 import { getUnitsByIds, getUnitsList, mergeUnitsById } from '../../services/api/units';
 import {
   normalizeCallsignFilterValues,
@@ -455,19 +456,37 @@ export async function loadFilterSectionData(
     case 'groups': {
       const groupsRsp = await fetchAnalysisGroups(context.analysisReq, requestOptions);
       if (isStale() || isAborted()) return;
+      const returnedGroupKeys = new Set(groupsRsp.groupNames.map((item) => item.masterKey));
+      const missingSelectedGroupKeys = Array.from(
+        new Set(
+          context.queryState.groupsSelected.filter(
+            (masterKey) => !returnedGroupKeys.has(masterKey),
+          ),
+        ),
+      );
+      const missingSelectedGroupInfos = await getGroupInfosBatch(
+        missingSelectedGroupKeys,
+        requestOptions,
+      );
+      if (isStale() || isAborted()) return;
       const groupInfosByKey: Record<string, SignalGroupEntry> = {};
-      groupsRsp.groupNames.forEach((item) => {
+      [...groupsRsp.groupNames, ...missingSelectedGroupInfos].forEach((item) => {
         groupInfosByKey[item.masterKey] = item;
       });
       context.setGroupInfos((current) => ({ ...current, ...groupInfosByKey }));
       context.setOptions((current) => ({
         ...current,
-        groups: toFilterOptions(
-          groupsRsp.groups,
-          (item) => item.masterKey,
-          (item) => groupInfosByKey[item.masterKey]?.name ?? item.masterKey,
-          (item) => item.count,
-        ),
+        groups: [
+          ...toFilterOptions(
+            groupsRsp.groups,
+            (item) => item.masterKey,
+            (item) => groupInfosByKey[item.masterKey]?.name ?? item.masterKey,
+            (item) => item.count,
+          ),
+          ...missingSelectedGroupInfos
+            .filter((item) => !groupsRsp.groups.some((group) => group.masterKey === item.masterKey))
+            .map((item) => ({ value: item.masterKey, label: item.name, count: 0 })),
+        ],
       }));
       return;
     }
