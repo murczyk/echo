@@ -305,7 +305,7 @@ export function AudioPlayerHost({
     <div
       ref={hostRef}
       className={`message-card-audio-host relative z-0 flex min-w-0 flex-1 items-stretch${
-        previewSizing ? ' message-card-audio-host--preview' : ' overflow-hidden'
+        previewSizing ? ' message-card-audio-host--preview' : ''
       }`}
       data-audio-player-host
       data-audio-player-min-height-px={AUDIO_PLAYER_MIN_HEIGHT_PX}
@@ -319,14 +319,11 @@ export function MessageMediaAudioPlayer({
   attachment,
   isDownloadStarting,
   onDownloadStart,
-  onOpenPreview,
   onPlayerChange,
 }: {
   attachment: MessageMediaInfo;
-  onOpenPreview?: () => void;
   onPlayerChange?: (player: AudioPlayerElement | null, previousPlayer?: AudioPlayerElement) => void;
 } & MessageCardDownloadGuardProps) {
-  const playerRef = useRef<AudioPlayerElement | null>(null);
   const displayName = mediaAttachmentDisplayName(attachment);
   const transcription = attachment.transcription?.trim() ?? '';
   const { enabled: audioTranscriptionEnabled } = useAudioTranscriptionPreferences();
@@ -351,23 +348,9 @@ export function MessageMediaAudioPlayer({
           mediaId={mediaId}
           sizeBytes={sizeBytes}
           onPlayerChange={(player, previousPlayer) => {
-            playerRef.current = player;
             onPlayerChange?.(player, previousPlayer);
           }}
         />
-        {onOpenPreview ? (
-          <Button
-            size="small"
-            variant="outlined"
-            onClick={() => {
-              playerRef.current?.pause?.();
-              onOpenPreview();
-            }}
-            aria-label={`Відкрити аудіо: ${displayName}`}
-          >
-            Відкрити
-          </Button>
-        ) : null}
         <Tooltip title={downloadLabel} enterDelay={400}>
           <MessageCardDisabledControlCursorWrapper className="items-center" disabled={downloading}>
             <Button

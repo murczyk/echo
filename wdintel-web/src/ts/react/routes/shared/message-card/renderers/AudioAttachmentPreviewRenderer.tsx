@@ -63,10 +63,7 @@ export function AudioAttachmentPreviewRenderer({
           data-audio-preview-content
           className="m-auto flex w-[min(685px,calc(100%-32px))] flex-col py-[24px]"
         >
-          <div
-            data-audio-preview-player
-            className="mx-auto w-full max-w-[464px] has-[custom-audio-player.layout-extended]:max-w-full"
-          >
+          <div data-audio-preview-player className="mx-auto w-full">
             <AudioPlayerHost
               href={audio.source}
               displayName={audio.fileName}

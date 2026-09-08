@@ -445,13 +445,16 @@ html[data-bs-theme='dark'] .message-card-root {
 }
 
 .message-card-audio-row {
-  height: 40px;
   max-width: 523px;
 }
 
 .message-card-audio-host {
-  height: 40px;
   max-width: 523px;
+}
+
+.message-card-audio-row:has(> .message-card-audio-host > custom-audio-player.layout-compact),
+.message-card-audio-host:has(> custom-audio-player.layout-compact) {
+  height: 40px;
 }
 
 .message-card-audio-host--preview {

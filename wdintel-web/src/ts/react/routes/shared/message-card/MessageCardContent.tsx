@@ -983,7 +983,7 @@ export function MessageCardMessageBody({
           ) : null}
           {collapseMediaPreviews ? coordinateMapAttachment : null}
           {hasVisibleAudioContent ? (
-            <div className="mt-1 flex flex-col items-start w-full">
+            <div className="mt-1 flex w-full flex-col items-start gap-[8px]">
               {audioAttachments.map((attachment) => (
                 <MessageMediaAudioPlayer
                   key={attachment.id}
@@ -993,18 +993,6 @@ export function MessageCardMessageBody({
                   onPlayerChange={(player, previousPlayer) => {
                     if (player) inlineAudioPlayersRef.current.add(player);
                     if (previousPlayer) inlineAudioPlayersRef.current.delete(previousPlayer);
-                  }}
-                  onOpenPreview={() => {
-                    const index = previewAttachments.findIndex(
-                      (item) =>
-                        item.type === 'audio' &&
-                        item.value.id ===
-                          (resolveMediaAttachmentId(attachment) || String(attachment.href ?? '')),
-                    );
-                    if (index >= 0) {
-                      blurActiveElement();
-                      setAttachmentPreviewIndex(index);
-                    }
                   }}
                 />
               ))}

@@ -20,6 +20,16 @@ async function openVideoPreview(page: Page) {
   return page.getByRole('dialog', { name: 'Перегляд відео' });
 }
 
+async function openAudioPreviewFromMixedCarousel(page: Page) {
+  const media = page.getByRole('button', { name: /^(Розгорнути|Згорнути) медіа:/ });
+  if ((await media.getAttribute('aria-expanded')) !== 'true') await media.click();
+  await openImagePreview(page);
+  for (let index = 0; index < 6; index += 1) {
+    await page.getByRole('button', { name: 'Наступне' }).click();
+  }
+  return page.getByRole('dialog', { name: 'Перегляд аудіо' });
+}
+
 async function openTextPreview(page: Page) {
   const documents = page.getByRole('button', { name: /^(Розгорнути|Згорнути) документи:/ });
   if ((await documents.getAttribute('aria-expanded')) !== 'true') await documents.click();
@@ -85,6 +95,7 @@ test.describe('@smoke', () => {
           name: `Завантажити вкладення: ${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.video1}`,
         }),
       ).toBeVisible();
+      await expect(page.getByRole('button', { name: /Відкрити аудіо:/ })).toHaveCount(0);
 
       const imageDialog = await openImagePreview(page);
       await expect(imageDialog).toBeVisible();
@@ -568,13 +579,7 @@ test.describe('message card media preview contract', () => {
     for (const host of ['duty', 'analysis'] as const) {
       await openMessageCardPreviewHost(page, host, { enableAudioTranscription: true });
       await page.getByRole('button', { name: /^(Розгорнути|Згорнути) аудіо:/ }).click();
-      await page
-        .getByRole('button', {
-          name: `Відкрити аудіо: ${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.audio}`,
-        })
-        .click();
-
-      const audioDialog = page.getByRole('dialog', { name: 'Перегляд аудіо' });
+      const audioDialog = await openAudioPreviewFromMixedCarousel(page);
       const content = audioDialog.locator('[data-audio-preview-content]');
       const playerFrame = audioDialog.locator('[data-audio-preview-player]');
       const player = playerFrame.locator('custom-audio-player');
@@ -589,7 +594,7 @@ test.describe('message card media preview contract', () => {
         transcription.boundingBox(),
       ]);
       expect(contentBox?.width).toBe(685);
-      expect(playerBox?.width).toBe(464);
+      expect(playerBox?.width).toBe(685);
       expect(playerBox?.height).toBe(40);
       expect(transcriptionBox?.y).toBe((playerBox?.y ?? 0) + (playerBox?.height ?? 0) + 32);
       expect(transcriptionBox?.x).toBe(contentBox?.x);
@@ -659,12 +664,7 @@ test.describe('message card media preview contract', () => {
     await page.setViewportSize({ width: 375, height: 500 });
     await openMessageCardPreviewHost(page, 'duty', { enableAudioTranscription: true });
     await page.getByRole('button', { name: /^(Розгорнути|Згорнути) аудіо:/ }).click();
-    await page
-      .getByRole('button', {
-        name: `Відкрити аудіо: ${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.audio}`,
-      })
-      .click();
-    const narrowDialog = page.getByRole('dialog', { name: 'Перегляд аудіо' });
+    const narrowDialog = await openAudioPreviewFromMixedCarousel(page);
     const narrowPlayer = narrowDialog.locator('custom-audio-player');
     const narrowStage = narrowDialog.locator('[data-attachment-preview-stage="audio"]');
     await narrowPlayer.locator('#layoutToggleBtn').click();
@@ -684,27 +684,19 @@ test.describe('message card media preview contract', () => {
     });
   });
 
-  test('audio preview opens directly from the revealed player', async ({ page }) => {
+  test('audio preview preserves paused autoplay and settings through mixed-carousel navigation', async ({
+    page,
+  }) => {
     await openMessageCardPreviewHost(page, 'duty');
     await page.getByRole('button', { name: /^(Розгорнути|Згорнути) аудіо:/ }).click();
-    await page
-      .getByRole('button', {
-        name: `Відкрити аудіо: ${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.audio}`,
-      })
-      .click();
-    const audioDialog = page.getByRole('dialog', { name: 'Перегляд аудіо' });
+    const audioDialog = await openAudioPreviewFromMixedCarousel(page);
     await expectPreviewCounter(audioDialog, '7 / 7');
     await expect(audioDialog.locator('custom-audio-player')).toHaveCount(1);
     await audioDialog
       .locator('custom-audio-player')
       .evaluate((player: { setAutoplay: (autoplay: boolean) => void }) => player.setAutoplay(true));
     await audioDialog.getByRole('button', { name: 'Закрити' }).click();
-    await page
-      .getByRole('button', {
-        name: `Відкрити аудіо: ${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.audio}`,
-      })
-      .click();
-    const reopenedAudioDialog = page.getByRole('dialog', { name: 'Перегляд аудіо' });
+    const reopenedAudioDialog = await openAudioPreviewFromMixedCarousel(page);
     const audioPlayer = reopenedAudioDialog.locator('custom-audio-player');
     await page.waitForTimeout(500);
     await expect(
