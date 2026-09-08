@@ -13,6 +13,54 @@ use sea_orm::sea_query::*;
 use sea_orm::*;
 use sea_query::Expr as SeaExpr;
 
+pub(crate) struct NetworkRenderAccess {
+    pub(crate) activity_groups: Vec<String>,
+    load_encryption_keys: bool,
+}
+
+pub(crate) async fn load_network_render_access<'a, 'async_trait, C>(
+    txn: &'a C,
+    user_login: &uuid::Uuid,
+) -> Result<NetworkRenderAccess, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let login = crate::users::load_active_login(txn, user_login)
+        .await
+        .c(h!())?;
+    if login.sigint_zone_id.is_some() && login.organism_id.is_some() {
+        let activity_groups =
+            crate::messenger::group::get_identity_sigint_groups(
+                txn, user_login,
+            )
+            .await
+            .context(h!())?;
+        return Ok(NetworkRenderAccess {
+            activity_groups,
+            load_encryption_keys: true,
+        });
+    }
+
+    let roles: Vec<String> = serde_json::from_value(login.roles).c(h!())?;
+    let is_api = crate::users::role_matches(&roles, "Api").context(h!())?
+        || crate::users::role_matches(&roles, "ApiAgent").context(h!())?;
+    if is_api {
+        return Ok(NetworkRenderAccess {
+            activity_groups: Vec::new(),
+            load_encryption_keys: login.organism_id.is_some(),
+        });
+    }
+
+    let activity_groups =
+        crate::messenger::group::get_identity_sigint_groups(txn, user_login)
+            .await
+            .context(h!())?;
+    Ok(NetworkRenderAccess {
+        activity_groups,
+        load_encryption_keys: login.organism_id.is_some(),
+    })
+}
+
 pub async fn render_networks<'a, 'async_trait, C>(
     networks: Vec<sigint_network::Model>,
     txn: &'a C,
@@ -25,22 +73,21 @@ where
         return Ok(vec![]);
     }
 
-    let groups =
-        crate::messenger::group::get_identity_sigint_groups(txn, user_login)
-            .await
-            .context(h!())?;
+    let access = load_network_render_access(txn, user_login)
+        .await
+        .context(h!())?;
     Ok(
-        render_networks_with_groups(networks, txn, user_login, &groups)
+        render_networks_with_access(networks, txn, user_login, &access)
             .await
             .context(h!())?,
     )
 }
 
-pub async fn render_networks_with_groups<'a, 'async_trait, C>(
+pub(crate) async fn render_networks_with_access<'a, 'async_trait, C>(
     networks: Vec<sigint_network::Model>,
     txn: &'a C,
     user_login: &uuid::Uuid,
-    groups: &[String],
+    access: &NetworkRenderAccess,
 ) -> Result<Vec<Network>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
@@ -56,7 +103,7 @@ where
 
     // fetch all related data in bulk
     let network_freqs =
-        get_networks_freqs(txn, &network_ids, user_login, groups)
+        get_networks_freqs(txn, &network_ids, user_login, access)
             .await
             .context(h!())?;
     let units_map =
@@ -152,7 +199,7 @@ async fn get_networks_freqs<'a, 'async_trait, C>(
     txn: &'a C,
     network_ids: &[i64],
     user_login: &uuid::Uuid,
-    groups: &[String],
+    access: &NetworkRenderAccess,
 ) -> Result<NetworkFreqs, AppError>
 where
     C: ConnectionTrait + 'async_trait,
@@ -175,10 +222,13 @@ where
 
     let freq_ids = freqs.iter().map(|x| x.id).collect::<Vec<_>>();
 
-    let mut keys =
+    let mut keys = if access.load_encryption_keys {
         crate::sigint::key::load_freq_keys(txn, user_login, freq_ids)
             .await
-            .c(h!())?;
+            .c(h!())?
+    } else {
+        HashMap::new()
+    };
 
     let mut freqs_by_network_id: HashMap<i64, Vec<NetworkFreq>> =
         HashMap::new();
@@ -205,7 +255,7 @@ where
     }
 
     let last_activity_by_network_id =
-        load_network_last_activity(txn, network_ids, groups)
+        load_network_last_activity(txn, network_ids, &access.activity_groups)
             .await
             .context(h!())?;
 
@@ -233,16 +283,64 @@ where
         last_activity_at: Option<NaiveDateTime>,
     }
 
-    Ok(sigint_network::Entity::find()
+    Ok(signal_message::Entity::find()
+        .join_as(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+            Alias::new("sigint_inbox_item"),
+        )
+        .join_as(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SigintInboxItemNetwork.def(),
+            Alias::new("sigint_inbox_item_network"),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item_network::Relation::SigintNetwork.def(),
+        )
+        .join_as(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+            Alias::new("datasource_group"),
+        )
+        .join_as(
+            JoinType::InnerJoin,
+            datasource_group::Relation::SignalGroup.def(),
+            Alias::new("signal_group"),
+        )
         .select_only()
-        .column_as(sigint_network::Column::Id, "network_id")
         .column_as(
-            crate::sigint::network::sort::network_last_activity_sort_expr(
-                groups,
-            ),
+            sigint_inbox_item_network::Column::SigintNetworkId,
+            "network_id",
+        )
+        .column_as(
+            Expr::cust("MAX(sigint_inbox_item.datetime)"),
             "last_activity_at",
         )
-        .filter(sigint_network::Column::Id.eq_any(network_ids.to_vec()))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::IsArchived.eq(false))
+        .filter(
+            datasource_group::Column::GroupMasterKey.eq_any(groups.to_vec()),
+        )
+        .filter(
+            sigint_inbox_item_network::Column::SigintNetworkId
+                .eq_any(network_ids.to_vec()),
+        )
+        .filter(
+            Expr::col(sigint_network::Column::ActiveFrom)
+                .is_null()
+                .or(Expr::col(sigint_inbox_item::Column::Datetime)
+                    .gte(Expr::col(sigint_network::Column::ActiveFrom))),
+        )
+        .filter(
+            Expr::col(sigint_network::Column::ActiveTo)
+                .is_null()
+                .or(Expr::col(sigint_inbox_item::Column::Datetime)
+                    .lte(Expr::col(sigint_network::Column::ActiveTo))),
+        )
+        .filter(network_activity_has_matching_frequency())
+        .group_by(sigint_inbox_item_network::Column::SigintNetworkId)
         .into_model::<NetworkLastActivity>()
         .all(txn)
         .await
@@ -1096,6 +1194,53 @@ mod tests {
         )
         .await
         .unwrap();
+    }
+
+    // Regression for ECHO-3207: API network reads must not require SIGINT scope.
+    #[tokio::test]
+    #[serial]
+    async fn unscoped_api_renders_network_with_null_activity() {
+        let env = cleanup().await.unwrap();
+        let login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("unscoped-network-api".to_string()),
+                roles: Set(serde_json::to_value(vec![crate::config::ROLE_API])
+                    .unwrap()),
+                sigint_zone_id: Set(None),
+                organism_id: Set(None),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let network = mk_sigint_network(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set("146.5000".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let rendered = render_networks(vec![network], &env.dbx, &login.id)
+            .await
+            .unwrap();
+
+        assert_eq!(rendered.len(), 1);
+        assert_eq!(rendered[0].last_activity_at, None);
+        assert_eq!(rendered[0].freqs.len(), 1);
+        assert!(rendered[0].freqs[0].encryption_keys.is_empty());
     }
 
     // Regression for ECHO-3207: activity must honor group access and frequency ranges.

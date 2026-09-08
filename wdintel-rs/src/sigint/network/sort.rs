@@ -19,40 +19,23 @@ pub(crate) fn network_first_aor_sort_sql() -> &'static str {
         AND area_of_responsibility.deleted = false)"
 }
 
-const NETWORK_LAST_ACTIVITY_SQL: &str = "(SELECT MAX(inbox_item.datetime) \
-      FROM sigint_inbox_item_network network_link \
-      JOIN sigint_inbox_item inbox_item \
-        ON inbox_item.id = network_link.sigint_inbox_item_id \
-      JOIN signal_message \
-        ON signal_message.id = inbox_item.id \
-      JOIN datasource_group \
-        ON datasource_group.id = signal_message.datasource_group_id \
-      JOIN signal_group \
-        ON signal_group.master_key = datasource_group.group_master_key \
-      WHERE network_link.sigint_network_id = sigint_network.id \
-        AND signal_message.deleted = false \
-        AND datasource_group.group_master_key = ANY($1) \
-        AND signal_group.deleted = false \
-        AND signal_group.is_archived = false \
+const NETWORK_LAST_ACTIVITY_SQL: &str = "(SELECT MAX(sigint_network_freq.last_seen_dt) \
+      FROM sigint_network_freq \
+      WHERE sigint_network_freq.network_id = sigint_network.id \
+        AND sigint_network_freq.deleted = false \
+        AND sigint_network_freq.last_seen_dt >= sigint_network_freq.active_from \
+        AND (sigint_network_freq.active_to IS NULL \
+          OR sigint_network_freq.last_seen_dt <= sigint_network_freq.active_to) \
         AND (sigint_network.active_from IS NULL \
-          OR inbox_item.datetime >= sigint_network.active_from) \
+          OR sigint_network_freq.last_seen_dt >= sigint_network.active_from) \
         AND (sigint_network.active_to IS NULL \
-          OR inbox_item.datetime <= sigint_network.active_to) \
-        AND EXISTS ( \
-          SELECT 1 \
-          FROM sigint_network_freq network_freq \
-          WHERE network_freq.network_id = sigint_network.id \
-            AND network_freq.freq = inbox_item.freq \
-            AND network_freq.deleted = false \
-            AND inbox_item.datetime >= network_freq.active_from \
-            AND (network_freq.active_to IS NULL \
-              OR inbox_item.datetime <= network_freq.active_to)))";
+          OR sigint_network_freq.last_seen_dt <= sigint_network.active_to))";
 
-pub(crate) fn network_last_activity_sort_expr(groups: &[String]) -> SimpleExpr {
-    if groups.is_empty() {
-        Expr::cust("NULL::timestamp without time zone")
+fn network_last_activity_sort_expr(has_activity_access: bool) -> SimpleExpr {
+    if has_activity_access {
+        Expr::cust(NETWORK_LAST_ACTIVITY_SQL)
     } else {
-        Expr::cust_with_values(NETWORK_LAST_ACTIVITY_SQL, [groups.to_vec()])
+        Expr::cust("NULL::timestamp without time zone")
     }
 }
 
@@ -86,7 +69,7 @@ fn order_by_expr_nulls_last(
 pub(crate) fn apply_network_sort(
     query: Select<sigint_network::Entity>,
     sort_by: &ListNetworksSortBy,
-    groups: &[String],
+    has_activity_access: bool,
 ) -> Select<sigint_network::Entity> {
     match sort_by {
         ListNetworksSortBy::NameAsc => query
@@ -97,14 +80,14 @@ pub(crate) fn apply_network_sort(
             .order_by_asc(sigint_network::Column::Id),
         ListNetworksSortBy::LastActivityAsc => order_by_expr_nulls_last(
             query,
-            network_last_activity_sort_expr(groups),
+            network_last_activity_sort_expr(has_activity_access),
             false,
         )
         .order_by_asc(sigint_network::Column::Name)
         .order_by_asc(sigint_network::Column::Id),
         ListNetworksSortBy::LastActivityDesc => order_by_expr_nulls_last(
             query,
-            network_last_activity_sort_expr(groups),
+            network_last_activity_sort_expr(has_activity_access),
             true,
         )
         .order_by_asc(sigint_network::Column::Name)
@@ -143,10 +126,10 @@ pub(crate) fn apply_network_sort(
 pub(crate) fn apply_network_sorts(
     query: Select<sigint_network::Entity>,
     sort_by: Option<&Vec<ListNetworksSortBy>>,
-    groups: &[String],
+    has_activity_access: bool,
 ) -> Select<sigint_network::Entity> {
     if let Some(sort_by) = sort_by.and_then(|items| items.first()) {
-        apply_network_sort(query, sort_by, groups)
+        apply_network_sort(query, sort_by, has_activity_access)
     } else {
         query
             .order_by_asc(sigint_network::Column::Name)

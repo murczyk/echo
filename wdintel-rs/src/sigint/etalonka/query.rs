@@ -2673,7 +2673,11 @@ fn build_etalonka_networks_query(
             .filter(sigint_unit::Column::Battalion.eq(filter_unit_battalion));
     }
 
-    network_sort::apply_network_sorts(networks, req.sort_by.as_ref(), groups)
+    network_sort::apply_network_sorts(
+        networks,
+        req.sort_by.as_ref(),
+        !groups.is_empty(),
+    )
 }
 
 pub async fn load_networks(
