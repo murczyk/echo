@@ -123,7 +123,8 @@ pub(super) struct ReviewSession {
 }
 
 impl ReviewSession {
-    pub(super) fn new(units: Vec<ReviewUnit>) -> Self {
+    pub(super) fn new(mut units: Vec<ReviewUnit>) -> Self {
+        units.retain(|unit| !unit.matches.is_empty());
         Self {
             units,
             current: 0,
