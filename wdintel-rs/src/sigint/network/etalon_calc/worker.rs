@@ -1007,6 +1007,13 @@ async fn finish_network_invalidation_tasks(
         .c(h!())?;
     }
 
+    crate::sigint::network::recalculation::enqueue_cached_for_network_invalidations(
+        dbx,
+        &started_tasks,
+    )
+    .await
+    .c(h!())?;
+
     let completed_at = Some(Utc::now().naive_utc());
     mark_tasks_completed(started_tasks, completed_at, dbx)
         .await

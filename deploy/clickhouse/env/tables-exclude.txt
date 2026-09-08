@@ -7,6 +7,8 @@ public.bgtask_res
 public.group_stats_recalculation_task
 public.network_invalidation_task
 public.network_invalidation_worker
+public.network_recalculation_task
+public.network_freq_last_datetime_in_aor
 public.palitra_highlight_worker_job
 public.tag_suggestion_worker_queue
 public.signal_message_queue

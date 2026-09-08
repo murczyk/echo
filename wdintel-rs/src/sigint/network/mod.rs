@@ -44,6 +44,7 @@ pub mod goi;
 pub mod inbox_backfill_tui;
 pub mod merge;
 pub mod oneoff;
+pub(crate) mod recalculation;
 pub mod relations;
 pub mod sort;
 pub mod types;
@@ -1347,6 +1348,11 @@ pub async fn update_network(
         save_network_aors(&txn, aor_ids, network.id)
             .await
             .context(h!())?;
+        recalculation::enqueue_last_datetime_in_aor_for_network(
+            &txn, network.id, user_id,
+        )
+        .await
+        .c(h!())?;
     }
 
     if let Some(description_patches) = &req.descriptions {
@@ -2248,14 +2254,9 @@ async fn refresh_network_last_seen_after_state_change<I>(
 where
     I: IntoIterator<Item = i64>,
 {
-    let network_ids = network_ids.into_iter().collect::<HashSet<_>>();
-    crate::stats::recalculate_last_seen_for_networks_exact(
-        dbx,
-        &network_ids,
-        false,
-    )
-    .await
-    .c(h!())?;
+    recalculation::enqueue_last_seen_for_networks(dbx, network_ids)
+        .await
+        .c(h!())?;
     Ok(())
 }
 
@@ -2326,6 +2327,9 @@ async fn finish_network_freq_mutation(
     )
     .await
     .context(h!())?;
+    recalculation::enqueue_all_for_network_freq(txn, network_freq_id, *user_id)
+        .await
+        .c(h!())?;
 
     Ok(NetworkFreqMutationResult {
         network,
@@ -2396,11 +2400,12 @@ async fn load_network_freq_mutation_response(
     .context(h!())?;
 
     if let Some(freq_row) = freq.as_mut() {
-        let last_datetime_in_aor = load_network_freq_last_datetime_in_aor(
-            &env.dbx, network_id, &groups,
-        )
-        .await
-        .context(h!())?;
+        let last_datetime_in_aor =
+            recalculation::load_cached_last_datetime_in_aor(
+                &env.dbx, network_id, user_id,
+            )
+            .await
+            .context(h!())?;
         freq_row.last_datetime_in_aor = last_datetime_in_aor
             .get(&freq_row.network_freq_id)
             .copied()
@@ -2823,6 +2828,10 @@ pub async fn reactivate_network_freq(
         bl_network_info_batch(vec![req.network_id], &txn, &user_id)
             .await
             .context(h!())?;
+
+    recalculation::enqueue_all_for_network_freq(&txn, network_freq.id, user_id)
+        .await
+        .c(h!())?;
 
     txn.commit().await.context(h!())?;
 
@@ -3453,18 +3462,54 @@ pub async fn delete_network_freq(
     Ok(Json(first_network_detail.clone()))
 }
 
-pub async fn cleanup_networks_worker(dbx: &DatabaseConnection) {
-    debug!("Starting cleanup_networks_worker");
+pub async fn network_maintenance_worker(
+    dbx: &DatabaseConnection,
+    cleanup_networks_enabled: bool,
+) {
+    debug!("Starting network_maintenance_worker");
 
+    let mut last_hourly_maintenance_started_at = None;
+    let mut recalculation_interval =
+        tokio::time::interval(std::time::Duration::from_secs(
+            NETWORK_RECALCULATION_WORKER_INTERVAL_SECS,
+        ));
+    recalculation_interval
+        .set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
-        let _loop_guard = worker_watch::loop_guard("cleanup_networks_worker");
-        if let Err(e) = cleanup_networks_worker_1(dbx).await {
-            error!("error in cleanup_networks_worker_1: {:?}", e);
+        recalculation_interval.tick().await;
+        let _loop_guard =
+            worker_watch::loop_guard("network_maintenance_worker");
+        let hourly_maintenance_due = last_hourly_maintenance_started_at
+            .map(|started_at: std::time::Instant| {
+                started_at.elapsed()
+                    >= std::time::Duration::from_secs(
+                        CLEANUP_NETWORKS_WORKER_SLEEP_DURATION,
+                    )
+            })
+            .unwrap_or(true);
+        if hourly_maintenance_due {
+            last_hourly_maintenance_started_at =
+                Some(std::time::Instant::now());
+            if cleanup_networks_enabled {
+                if let Err(e) = cleanup_networks_worker_1(dbx).await {
+                    error!("error in cleanup_networks_worker_1: {:?}", e);
+                }
+            }
+            match recalculation::evict_expired_cache(dbx).await {
+                Ok(evicted) if evicted > 0 => {
+                    debug!(
+                        "evicted {evicted} network recalculation cache rows"
+                    );
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    error!("error evicting network recalculation cache: {e:?}");
+                }
+            }
         }
-        tokio::time::sleep(std::time::Duration::from_secs(
-            CLEANUP_NETWORKS_WORKER_SLEEP_DURATION,
-        ))
-        .await;
+        if let Err(e) = recalculation::run_pending(dbx).await {
+            error!("error in network recalculation queue worker: {e:?}");
+        }
     }
 }
 
@@ -4396,13 +4441,14 @@ pub async fn network_freqs_list(
     };
 
     if req.include_last_datetime_in_aor.unwrap_or(true) {
-        let last_datetime_in_aor = load_network_freq_last_datetime_in_aor(
-            &env.dbx,
-            req.network_id,
-            &groups,
-        )
-        .await
-        .context(h!())?;
+        let last_datetime_in_aor =
+            recalculation::load_cached_last_datetime_in_aor(
+                &env.dbx,
+                req.network_id,
+                user_id,
+            )
+            .await
+            .context(h!())?;
         for freq in &mut freqs {
             freq.last_datetime_in_aor = last_datetime_in_aor
                 .get(&freq.network_freq_id)
@@ -4414,104 +4460,6 @@ pub async fn network_freqs_list(
     let res = SingleNetworkFreqsListRsp { freqs };
 
     Ok(Json(res))
-}
-
-#[derive(Debug, FromRow)]
-struct NetworkFreqLastDatetimeInAorRow {
-    network_freq_id: i64,
-    last_datetime_in_aor: Option<PrimitiveDateTime>,
-}
-
-async fn load_network_freq_last_datetime_in_aor(
-    dbx: &DatabaseConnection,
-    network_id: i64,
-    groups: &[String],
-) -> Result<HashMap<i64, Option<i64>>, AppError> {
-    if groups.is_empty() {
-        return Ok(HashMap::new());
-    }
-
-    let aor_ids = sigint_network_aor::Entity::find()
-        .filter(sigint_network_aor::Column::NetworkId.eq(network_id))
-        .select_only()
-        .column(sigint_network_aor::Column::AorId)
-        .into_tuple::<i64>()
-        .all(dbx)
-        .await
-        .context(h!())?;
-    if aor_ids.is_empty() {
-        return Ok(HashMap::new());
-    }
-
-    let rows = sqlx::query_as::<_, NetworkFreqLastDatetimeInAorRow>(
-        r#"
-        SELECT
-            nf.id AS network_freq_id,
-            max(ii.datetime) AS last_datetime_in_aor
-        FROM sigint_network_freq nf
-        JOIN sigint_inbox_item_network iin
-            ON iin.sigint_network_id = nf.network_id
-        JOIN sigint_inbox_item ii
-            ON ii.id = iin.sigint_inbox_item_id
-           AND ii.freq = nf.freq
-        JOIN signal_message sm
-            ON sm.id = ii.id
-        JOIN datasource_group dg
-            ON dg.id = sm.datasource_group_id
-        WHERE nf.network_id = $1
-          AND nf.deleted = false
-          AND sm.deleted = false
-          AND ii.datetime IS NOT NULL
-          AND dg.group_master_key = ANY($3)
-          AND COALESCE(ii.datetime, sm.timestamp, sm.created_at) >= nf.active_from
-          AND COALESCE(ii.datetime, sm.timestamp, sm.created_at)
-                <= COALESCE(nf.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
-          AND EXISTS (
-              SELECT 1
-              FROM signal_message_group smg
-              JOIN signal_group_aor sga
-                  ON sga.master_key = smg.group_master_key
-              JOIN area_of_responsibility linked_aor
-                  ON linked_aor.id = sga.aor_id
-              JOIN area_of_responsibility selected_aor
-                  ON selected_aor.id = ANY($2)
-              WHERE smg.signal_message_id = sm.id
-                AND linked_aor.deleted = false
-                AND selected_aor.deleted = false
-                AND (
-                    linked_aor.left_bound BETWEEN selected_aor.left_bound AND selected_aor.right_bound
-                    OR (
-                        linked_aor.left_bound <= selected_aor.left_bound
-                        AND linked_aor.right_bound >= selected_aor.right_bound
-                    )
-                )
-          )
-        GROUP BY nf.id
-        "#,
-    )
-    .bind(network_id)
-    .bind(aor_ids)
-    .bind(groups)
-    .fetch_all(dbx.get_postgres_connection_pool())
-    .await
-    .context(h!())?;
-
-    rows.into_iter()
-        .map(|row| {
-            (
-                row.network_freq_id,
-                row.last_datetime_in_aor
-                    .map(primitive_to_naive_datetime)
-                    .transpose(),
-            )
-        })
-        .map(|(network_freq_id, last_datetime_in_aor)| {
-            Ok((
-                network_freq_id,
-                last_datetime_in_aor?.map(|dt| dt.and_utc().timestamp_millis()),
-            ))
-        })
-        .collect::<Result<HashMap<_, _>, AppError>>()
 }
 
 #[post("/api/sigint/network-freq-callsigns")]
