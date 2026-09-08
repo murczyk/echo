@@ -297,18 +297,28 @@ fn automatic_review(
 fn review_manually(
     reviews: &[tui::OrbitSigintLinkReview],
 ) -> anyhow::Result<ManualReview> {
-    if reviews.is_empty() {
-        return Ok(ManualReview::default());
+    let reviewable = reviews
+        .iter()
+        .filter(|review| !review.candidates.is_empty())
+        .collect::<Vec<_>>();
+    let skipped = reviews.len() - reviewable.len();
+    if reviewable.is_empty() {
+        return Ok(ManualReview {
+            skipped,
+            ..Default::default()
+        });
     }
     let mut terminal = tui::setup_terminal().c(h!())?;
-    let result = review_manually_inner(&mut terminal, reviews);
+    let result = review_manually_inner(&mut terminal, &reviewable);
     tui::restore_terminal(&mut terminal).c(h!())?;
-    result.c(h!())
+    let mut result = result.c(h!())?;
+    result.skipped += skipped;
+    Ok(result)
 }
 
 fn review_manually_inner(
     terminal: &mut tui::OrbitTerminal,
-    reviews: &[tui::OrbitSigintLinkReview],
+    reviews: &[&tui::OrbitSigintLinkReview],
 ) -> anyhow::Result<ManualReview> {
     let mut result = ManualReview::default();
     for (index, review) in reviews.iter().enumerate() {
