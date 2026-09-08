@@ -539,11 +539,9 @@ pub async fn network_group_activity_bl(
     } else {
         Utc::now().naive_utc()
     };
-    let dt_since = dt_till
-        .checked_sub_signed(TimeDelta::days(
-            req.period.unwrap_or_default().lookback_days(),
-        ))
-        .context(h!())?;
+    let (dt_since, dt_till) =
+        network_group_activity_bounds(dt_till, req.period.unwrap_or_default())
+            .context(h!())?;
 
     let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
         &env.dbx,
@@ -645,7 +643,7 @@ async fn load_network_group_activity_postgres(
             datasource_group::Column::GroupMasterKey.eq_any(groups.to_vec()),
         )
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(network_activity_timestamp().lte(dt_till))
+        .filter(network_activity_timestamp().lt(dt_till))
         .filter(network_activity_timestamp().gte(dt_since))
         .filter(
             Expr::col(sigint_network::Column::ActiveFrom)
@@ -710,6 +708,22 @@ fn network_activity_timestamp() -> SimpleExpr {
     Expr::cust(
         "COALESCE(sigint_inbox_item.datetime, signal_message.timestamp, signal_message.created_at)",
     )
+}
+
+fn network_group_activity_bounds(
+    till: NaiveDateTime,
+    period: NetworkGroupActivityPeriod,
+) -> Result<(NaiveDateTime, NaiveDateTime), AppError> {
+    let lookback_days =
+        <u64 as TryFrom<i64>>::try_from(period.lookback_days()).c(h!())?;
+    let till = till.and_utc().with_timezone(&Kyiv);
+    let since = till
+        .checked_sub_days(Days::new(lookback_days))
+        .context(h!())?;
+    Ok((
+        since.with_timezone(&Utc).naive_utc(),
+        till.with_timezone(&Utc).naive_utc(),
+    ))
 }
 
 fn network_activity_has_matching_frequency() -> SimpleExpr {
@@ -1113,6 +1127,31 @@ mod tests {
             .unwrap()
     }
 
+    #[test]
+    fn network_activity_bounds_follow_kyiv_calendar_days() {
+        let till = Kyiv
+            .with_ymd_and_hms(2026, 11, 2, 0, 0, 0)
+            .single()
+            .unwrap()
+            .with_timezone(&Utc)
+            .naive_utc();
+
+        let (since, actual_till) = network_group_activity_bounds(
+            till,
+            NetworkGroupActivityPeriod::Last10Days,
+        )
+        .unwrap();
+
+        let expected_since = Kyiv
+            .with_ymd_and_hms(2026, 10, 23, 0, 0, 0)
+            .single()
+            .unwrap()
+            .with_timezone(&Utc)
+            .naive_utc();
+        assert_eq!(since, expected_since);
+        assert_eq!(actual_till, till);
+    }
+
     async fn seed_network_activity(
         dbx: &DatabaseConnection,
         network_id: i64,
@@ -1285,6 +1324,45 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(last_activity.get(&network.id), Some(&dt(2)));
+
+        let activity = load_network_group_activity_postgres(
+            &env.dbx,
+            &groups,
+            &[network.id],
+            dt(1),
+            dt(7),
+        )
+        .await
+        .unwrap();
+        let message_count: i64 = activity
+            .get(&network.id.to_string())
+            .unwrap()
+            .values()
+            .flat_map(HashMap::values)
+            .sum();
+        assert_eq!(message_count, 1);
+
+        let boundary_freq = "146.6000";
+        mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set(boundary_freq.to_string()),
+                active_from: Set(dt(1)),
+                active_to: Set(Some(dt(7))),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        seed_network_activity(
+            &env.dbx,
+            network.id,
+            allowed_datasource_group.id,
+            boundary_freq,
+            dt(7),
+        )
+        .await;
 
         let activity = load_network_group_activity_postgres(
             &env.dbx,

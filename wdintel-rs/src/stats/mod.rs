@@ -2962,7 +2962,8 @@ pub async fn recalculate_last_seen_for_networks_exact(
            and nf.network_id in ({network_ids_sql}){active_freq_filter}"
     );
 
-    dbx.execute_raw(Statement::from_string(
+    let txn = dbx.begin().await.c(h!())?;
+    txn.execute_raw(Statement::from_string(
         DatabaseBackend::Postgres,
         reset_sql,
     ))
@@ -2998,12 +2999,13 @@ pub async fn recalculate_last_seen_for_networks_exact(
          where nf.id = sub.network_freq_id"
     );
 
-    dbx.execute_raw(Statement::from_string(
+    txn.execute_raw(Statement::from_string(
         DatabaseBackend::Postgres,
         update_sql,
     ))
     .await
     .c(h!())?;
+    txn.commit().await.c(h!())?;
 
     Ok(())
 }

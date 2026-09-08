@@ -56,7 +56,7 @@ WHERE network_link.sigint_network_id = ANY($1)
       inbox_item.datetime,
       signal_message.timestamp,
       signal_message.created_at
-  ) <= $6
+  ) < $6
   AND (
       network.active_from IS NULL
       OR COALESCE(
@@ -815,7 +815,7 @@ async fn load_message_id_bounds_for_period(
             SELECT id AS message_id
             FROM sigint_inbox_item
             WHERE datetime >= $1
-              AND datetime <= $2
+              AND datetime < $2
 
             UNION ALL
 
@@ -826,7 +826,7 @@ async fn load_message_id_bounds_for_period(
             WHERE sigint_inbox_item.datetime IS NULL
               AND signal_message.timestamp IS NOT NULL
               AND signal_message.timestamp >= $1
-              AND signal_message.timestamp <= $2
+              AND signal_message.timestamp < $2
 
             UNION ALL
 
@@ -837,7 +837,7 @@ async fn load_message_id_bounds_for_period(
             WHERE sigint_inbox_item.datetime IS NULL
               AND signal_message.timestamp IS NULL
               AND signal_message.created_at >= $1
-              AND signal_message.created_at <= $2
+              AND signal_message.created_at < $2
         ) activity_messages
         "#,
     )
