@@ -4,17 +4,17 @@ import {
   fetchInboxWindow,
   fetchMessagesByIds,
   fetchMessagesByIdsWithMetadata,
-} from './inbox-messages';
+} from '../inbox-messages';
 import {
   getIntelligenceReports,
   getParentMessages,
-} from '../../routes/shared/intelligence-reports';
+} from '../../../routes/shared/intelligence-reports';
 
 const apiMocks = vi.hoisted(() => ({
   postJson: vi.fn(),
 }));
 
-vi.mock('./client', () => ({
+vi.mock('../client', () => ({
   postJson: apiMocks.postJson,
 }));
 
@@ -233,7 +233,7 @@ describe('fetchInboxItemContext', () => {
       tillTs: 1700001800000,
     });
 
-    const { fetchInboxItemContext } = await import('./inbox-messages');
+    const { fetchInboxItemContext } = await import('../inbox-messages');
     const result = await fetchInboxItemContext({ messageUid: 'uid-123' });
 
     expect(apiMocks.postJson).toHaveBeenCalledWith(

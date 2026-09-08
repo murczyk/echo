@@ -4,7 +4,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useWindowedFeedScroll } from './useWindowedFeedScroll';
+import { useWindowedFeedScroll } from '../useWindowedFeedScroll';
 
 const renderedItemRefs = new Map<number, (node: HTMLDivElement | null) => void>();
 let latestScrollHandle: ReturnType<typeof useWindowedFeedScroll> | null = null;

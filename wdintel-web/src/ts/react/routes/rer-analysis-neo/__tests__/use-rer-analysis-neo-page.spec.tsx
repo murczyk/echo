@@ -5,9 +5,9 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { InboxMessage, InboxWindowRsp, SavedFilter, User } from '../../../../Bindings';
-import type { AnalysisPageViewModel } from './types';
-import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
+import type { InboxMessage, InboxWindowRsp, SavedFilter, User } from '../../../../../Bindings';
+import type { AnalysisPageViewModel } from '../types';
+import { useRerAnalysisNeoPage } from '../use-rer-analysis-neo-page';
 
 const userSettingsMock = vi.hoisted(() => ({
   fetchUserSettings: vi.fn(),
@@ -38,41 +38,41 @@ vi.mock('@mui/material/styles', () => ({
   useTheme: () => ({ breakpoints: { down: (key: string) => `(down:${key})` } }),
 }));
 
-vi.mock('../../services/api/client', () => ({
+vi.mock('../../../services/api/client', () => ({
   isUnauthorizedError: () => false,
 }));
 
-vi.mock('../../services/api/user', () => ({
+vi.mock('../../../services/api/user', () => ({
   fetchCurrentUser: vi.fn().mockResolvedValue({ name: 'tester' } as User),
 }));
 
-vi.mock('../../services/api/user-settings', () => ({
+vi.mock('../../../services/api/user-settings', () => ({
   USER_SETTINGS_UPDATED_EVENT: 'user-settings-updated',
   fetchUserSettings: userSettingsMock.fetchUserSettings,
   saveUserSettings: vi.fn(),
 }));
 
-vi.mock('../../services/api/system-settings', () => ({
+vi.mock('../../../services/api/system-settings', () => ({
   currentSystemSettings: systemSettingsMock.currentSystemSettings,
 }));
 
-vi.mock('../../services/api/inbox-messages', () => ({
+vi.mock('../../../services/api/inbox-messages', () => ({
   fetchInboxWindow: inboxMessagesMock.fetchInboxWindow,
 }));
 
-vi.mock('./use-analysis-data', () => ({
+vi.mock('../use-analysis-data', () => ({
   useAnalysisData: useAnalysisDataMock,
 }));
 
-vi.mock('./use-analysis-saved-filters', () => ({
+vi.mock('../use-analysis-saved-filters', () => ({
   useAnalysisSavedFilters: useAnalysisSavedFiltersMock,
 }));
 
-vi.mock('./use-analysis-report', () => ({
+vi.mock('../use-analysis-report', () => ({
   useAnalysisReport: useAnalysisReportMock,
 }));
 
-vi.mock('./use-analysis-message-editor', () => ({
+vi.mock('../use-analysis-message-editor', () => ({
   useAnalysisMessageEditor: useAnalysisMessageEditorMock,
 }));
 

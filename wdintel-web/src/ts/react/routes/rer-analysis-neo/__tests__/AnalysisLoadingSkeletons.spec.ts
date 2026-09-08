@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   analysisLoadingSkeletonTabsSx,
   getAnalysisLoadingSkeletonCount,
-} from './AnalysisLoadingSkeletons';
+} from '../AnalysisLoadingSkeletons';
 
 describe('AnalysisLoadingSkeletons', () => {
   it('limits narrow loading cards and keeps one horizontal tab row', () => {

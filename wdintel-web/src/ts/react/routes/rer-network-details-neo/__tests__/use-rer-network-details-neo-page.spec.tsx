@@ -5,12 +5,12 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { Network, Unit, User } from '../../../../Bindings';
+import type { Network, Unit, User } from '../../../../../Bindings';
 import {
   getDefaultNetworkPelengDateRange,
   getDefaultNetworkRelationsDateRange,
-} from './use-rer-network-details-neo-page.forms';
-import { EMPTY_STATE } from './use-rer-network-details-neo-page.types';
+} from '../use-rer-network-details-neo-page.forms';
+import { EMPTY_STATE } from '../use-rer-network-details-neo-page.types';
 
 const loadMockState = vi.hoisted(() => ({
   loaded: false,
@@ -29,7 +29,7 @@ const actionMockState = vi.hoisted(() => ({
   setActiveNetworkDetailsTab: vi.fn(),
 }));
 
-vi.mock('./use-rer-network-details-neo-page.load', () => ({
+vi.mock('../use-rer-network-details-neo-page.load', () => ({
   useRerNetworkDetailsNeoPageLoad: (
     _networkId: number,
     setState: (updater: (current: typeof EMPTY_STATE) => typeof EMPTY_STATE) => void,
@@ -128,7 +128,7 @@ vi.mock('./use-rer-network-details-neo-page.load', () => ({
   },
 }));
 
-vi.mock('./use-rer-network-details-neo-page.actions', () => ({
+vi.mock('../use-rer-network-details-neo-page.actions', () => ({
   useRerNetworkDetailsNeoPageActions: ({
     setState,
   }: {
@@ -226,7 +226,7 @@ vi.mock('./use-rer-network-details-neo-page.actions', () => ({
   },
 }));
 
-import { useRerNetworkDetailsNeoPage } from './use-rer-network-details-neo-page';
+import { useRerNetworkDetailsNeoPage } from '../use-rer-network-details-neo-page';
 
 type Page = ReturnType<typeof useRerNetworkDetailsNeoPage>;
 

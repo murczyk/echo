@@ -70,7 +70,7 @@ vi.mock('@mui/material', () => ({
   Typography: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
 
-import { AnalysisGroupsActivityCard } from './AnalysisGroupsActivityCard';
+import { AnalysisGroupsActivityCard } from '../AnalysisGroupsActivityCard';
 
 type Rendered = {
   container: HTMLDivElement;

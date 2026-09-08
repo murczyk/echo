@@ -4,20 +4,20 @@
 import { act, createElement, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useAnalysisMessageList } from './use-analysis-message-list';
-import { emptyQueryState } from './helpers';
+import { useAnalysisMessageList } from '../use-analysis-message-list';
+import { emptyQueryState } from '../helpers';
 import type {
   CallsignInfoRes,
   InboxMessage,
   SignalGroupEntry,
   SignalProfileEntry,
-} from '../../../../Bindings';
+} from '../../../../../Bindings';
 
 const fetchAnalysisCallsignInfosMock = vi.hoisted(() => vi.fn());
 const fetchInboxMessagesMock = vi.hoisted(() => vi.fn());
 const fetchInboxCountMock = vi.hoisted(() => vi.fn());
 
-vi.mock('../../services/api/analysis', () => ({
+vi.mock('../../../services/api/analysis', () => ({
   fetchAnalysisCallsignInfos: fetchAnalysisCallsignInfosMock,
   fetchInboxCount: fetchInboxCountMock,
   fetchInboxMessages: fetchInboxMessagesMock,

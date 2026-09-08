@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { SavedFilter } from '../../../../Bindings';
+import type { SavedFilter } from '../../../../../Bindings';
 import {
   buildAnalysisReq,
   createInitialQueryState,
@@ -19,8 +19,8 @@ import {
   queryStateMatchesSavedFilter,
   pushQueryStateToUrl,
   shouldOpenAnalysisMapFromSearchParams,
-} from './helpers';
-import type { AnalysisQueryState } from './types';
+} from '../helpers';
+import type { AnalysisQueryState } from '../types';
 
 function createQueryState(overrides: Partial<AnalysisQueryState> = {}): AnalysisQueryState {
   return {

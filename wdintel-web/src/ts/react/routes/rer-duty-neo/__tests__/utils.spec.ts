@@ -43,9 +43,9 @@ import {
   toRerDutyStateFromShort,
   toShortQueryState,
   windowInitialMessageItems,
-} from './utils';
-import type { MessageFeedState } from './utils';
-import type { InboxMessage, Network, SignalProfileEntry, Tag, Unit } from '../../../../Bindings';
+} from '../utils';
+import type { MessageFeedState } from '../utils';
+import type { InboxMessage, Network, SignalProfileEntry, Tag, Unit } from '../../../../../Bindings';
 
 function indicatorFeed(overrides: Partial<MessageFeedState>): MessageFeedState {
   return {

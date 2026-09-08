@@ -107,7 +107,7 @@ vi.mock('@mui/icons-material/KeyboardArrowUp', () => ({ default: () => <span /> 
 vi.mock('@mui/icons-material/RefreshOutlined', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/SettingsOutlined', () => ({ default: () => <span /> }));
 
-vi.mock('../../components/PageHeader', () => ({
+vi.mock('../../../components/PageHeader', () => ({
   PageHeader: ({
     middle,
     titleLeadingActions,
@@ -138,7 +138,7 @@ vi.mock('../../components/PageHeader', () => ({
   ),
 }));
 
-vi.mock('../../components/SidePanelToggleButton', () => ({
+vi.mock('../../../components/SidePanelToggleButton', () => ({
   SidePanelToggleButton: ({
     side,
     label,
@@ -154,17 +154,17 @@ vi.mock('../../components/SidePanelToggleButton', () => ({
   ),
 }));
 
-vi.mock('./components/AnalysisHeaderControls', () => ({
+vi.mock('../components/AnalysisHeaderControls', () => ({
   AnalysisHeaderControls: ({ isCompactLayout }: { isCompactLayout?: boolean }) => (
     <span data-testid={isCompactLayout ? 'compact-header-controls' : 'regular-header-controls'} />
   ),
 }));
-vi.mock('./components/AnalysisPaginationControl', () => ({
+vi.mock('../components/AnalysisPaginationControl', () => ({
   AnalysisPaginationControl: () => <span data-testid="pagination" />,
 }));
 
-import { AnalysisPageHeader } from './AnalysisPageHeader';
-import type { AnalysisPageViewModel } from './types';
+import { AnalysisPageHeader } from '../AnalysisPageHeader';
+import type { AnalysisPageViewModel } from '../types';
 
 function buildPage(): AnalysisPageViewModel {
   return {

@@ -81,7 +81,7 @@ vi.mock('@mui/icons-material/ChevronRightOutlined', () => ({ default: () => <spa
 vi.mock('@mui/icons-material/FirstPageOutlined', () => ({ default: () => <span>first</span> }));
 vi.mock('@mui/icons-material/LastPageOutlined', () => ({ default: () => <span>last</span> }));
 
-import { AnalysisPaginationControl } from './AnalysisPaginationControl';
+import { AnalysisPaginationControl } from '../AnalysisPaginationControl';
 
 type Rendered = { container: HTMLDivElement; root: Root };
 

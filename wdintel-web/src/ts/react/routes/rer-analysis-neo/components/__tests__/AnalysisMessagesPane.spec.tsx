@@ -6,13 +6,13 @@ import type { ComponentProps, HTMLAttributes, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTheme } from '@mui/material/styles';
-import { ELLIPSIS } from '../../../utils/misc';
+import { ELLIPSIS } from '../../../../utils/misc';
 
-import type { InboxMessage, SignalGroupEntry } from '../../../../../Bindings';
+import type { InboxMessage, SignalGroupEntry } from '../../../../../../Bindings';
 
 const snackbarMocks = vi.hoisted(() => ({ notify: vi.fn() }));
 
-vi.mock('../../../components/PowerSnackbar', () => ({
+vi.mock('../../../../components/PowerSnackbar', () => ({
   useOptionalPowerSnackbar: () => ({ notify: snackbarMocks.notify }),
 }));
 
@@ -45,7 +45,7 @@ vi.mock('@mui/material', () => ({
   Skeleton: () => <span data-skeleton="true" />,
 }));
 
-vi.mock('../../shared/message-card/MessageCard', () => ({
+vi.mock('../../../shared/message-card/MessageCard', () => ({
   AnalysisMessageCard: (props: {
     id: number;
     onCreateReport: () => void;
@@ -112,7 +112,7 @@ vi.mock('../../shared/message-card/MessageCard', () => ({
   ),
 }));
 
-vi.mock('../../rer-duty-neo/dialogs', () => ({
+vi.mock('../../../rer-duty-neo/dialogs', () => ({
   DeleteConfirmDialog: (props: { open: boolean; onConfirm: () => void; onClose: () => void }) =>
     props.open ? (
       <div data-testid="delete-dialog">
@@ -126,15 +126,15 @@ vi.mock('../../rer-duty-neo/dialogs', () => ({
     ) : null,
 }));
 
-vi.mock('../message-utils', async () => {
-  const actual = await vi.importActual<typeof import('../message-utils')>('../message-utils');
+vi.mock('../../message-utils', async () => {
+  const actual = await vi.importActual<typeof import('../../message-utils')>('../../message-utils');
   return {
     ...actual,
     copyMessageValue: vi.fn().mockResolvedValue(undefined),
   };
 });
 
-import { AnalysisMessagesPane, getAnalysisMessagesScrollSx } from './AnalysisMessagesPane';
+import { AnalysisMessagesPane, getAnalysisMessagesScrollSx } from '../AnalysisMessagesPane';
 
 type Rendered = {
   container: HTMLDivElement;

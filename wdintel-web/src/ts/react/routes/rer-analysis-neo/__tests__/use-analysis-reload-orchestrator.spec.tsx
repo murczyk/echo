@@ -15,10 +15,10 @@ import type {
   SignalProfileEntry,
   Tag,
   Unit,
-} from '../../../../Bindings';
-import { emptyQueryState } from './helpers';
-import { useAnalysisReloadOrchestrator } from './use-analysis-reload-orchestrator';
-import type { UseAnalysisReloadOrchestratorResult } from './use-analysis-reload-orchestrator';
+} from '../../../../../Bindings';
+import { emptyQueryState } from '../helpers';
+import { useAnalysisReloadOrchestrator } from '../use-analysis-reload-orchestrator';
+import type { UseAnalysisReloadOrchestratorResult } from '../use-analysis-reload-orchestrator';
 import type {
   AnalysisAorEntry,
   AnalysisCenterTab,
@@ -27,13 +27,13 @@ import type {
   AnalysisFilterSectionId,
   AnalysisQueryState,
   AnalysisSidebarTab,
-} from './types';
+} from '../types';
 
 const reloadAnalysisDataMock = vi.hoisted(() => ({
   reloadAnalysisData: vi.fn(() => Promise.resolve()),
 }));
 
-vi.mock('./use-analysis-data.reload', () => reloadAnalysisDataMock);
+vi.mock('../use-analysis-data.reload', () => reloadAnalysisDataMock);
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;

@@ -6,8 +6,13 @@ import type { ComponentProps, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { CallsignInfoRes, Network, SummaryTableFreqRow, Unit } from '../../../../../Bindings';
-import { CallsignChipsCell, CompactListCell } from './analysis-summary-table-cells';
+import type {
+  CallsignInfoRes,
+  Network,
+  SummaryTableFreqRow,
+  Unit,
+} from '../../../../../../Bindings';
+import { CallsignChipsCell, CompactListCell } from '../analysis-summary-table-cells';
 
 const capturedRowActionProps: Array<{ label: string; opensModal?: boolean }> = [];
 const capturedTableOptions: Array<Record<string, any>> = [];
@@ -178,7 +183,7 @@ vi.mock('material-react-table', () => ({
   },
 }));
 
-vi.mock('../../../components/PowerButton', () => ({
+vi.mock('../../../../components/PowerButton', () => ({
   Button: (props: { children: ReactNode; onClick?: () => void; disabled?: boolean }) => (
     <button type="button" onClick={props.onClick} disabled={props.disabled}>
       {props.children}
@@ -186,7 +191,7 @@ vi.mock('../../../components/PowerButton', () => ({
   ),
 }));
 
-vi.mock('../../../components/MrtRowActionButton', () => ({
+vi.mock('../../../../components/MrtRowActionButton', () => ({
   MrtRowActions: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   MrtRowActionButton: (props: {
     label: string;
@@ -211,15 +216,15 @@ vi.mock('../../../components/MrtRowActionButton', () => ({
   MRT_ROW_ACTION_MODAL_PROPS: { disableRestoreFocus: true },
 }));
 
-vi.mock('../../../components/TableEmptyState', () => ({
+vi.mock('../../../../components/TableEmptyState', () => ({
   TableEmptyState: ({ message }: { message: string }) => <div>{message}</div>,
 }));
 
-vi.mock('../../../components/PowerChip', () => ({
+vi.mock('../../../../components/PowerChip', () => ({
   PowerChip: (props: { label: ReactNode }) => <span>{props.label}</span>,
 }));
 
-vi.mock('../../../components/mui-customized/table/get-default-table-options', () => ({
+vi.mock('../../../../components/mui-customized/table/get-default-table-options', () => ({
   buildDefaultColumnOrder: ({ dataColumnIds }: { dataColumnIds: string[] }) => dataColumnIds,
   getDefaultMRTOptions: () => ({ displayColumnDefOptions: {} }),
   mrtItemsCell:
@@ -240,7 +245,7 @@ vi.mock('../../../components/mui-customized/table/get-default-table-options', ()
   renderColumnActionsMenuItems: () => [],
 }));
 
-vi.mock('../../../components/TableToolbarControls', () => ({
+vi.mock('../../../../components/TableToolbarControls', () => ({
   TableToolbarControls: (props: {
     trailingActionsBeforeInternal?: ReactNode;
     trailingActions?: ReactNode;
@@ -255,7 +260,7 @@ vi.mock('../../../components/TableToolbarControls', () => ({
 }));
 
 vi.mock(
-  '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions',
+  '../../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions',
   () => ({
     InternalTableActions: ({ children }: { children?: ReactNode }) => (
       <div>
@@ -266,7 +271,7 @@ vi.mock(
   }),
 );
 
-vi.mock('../../../components/mui-customized/table/table-state-provider', () => ({
+vi.mock('../../../../components/mui-customized/table/table-state-provider', () => ({
   TableStateProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
   useTableStateContext: () => ({
     globalFilter: '',
@@ -287,7 +292,7 @@ vi.mock('../../../components/mui-customized/table/table-state-provider', () => (
   }),
 }));
 
-import { AnalysisSummaryTableCard } from './AnalysisSummaryTableCard';
+import { AnalysisSummaryTableCard } from '../AnalysisSummaryTableCard';
 
 type Rendered = {
   container: HTMLDivElement;

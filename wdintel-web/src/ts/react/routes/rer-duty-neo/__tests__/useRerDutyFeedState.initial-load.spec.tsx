@@ -4,8 +4,8 @@
 import React, { act } from 'react';
 import type { Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { InboxMessage, InboxMessagesRsp } from '../../../../Bindings';
-import { minimalInboxMessage } from './inbox-message-mocks';
+import type { InboxMessage, InboxMessagesRsp } from '../../../../../Bindings';
+import { minimalInboxMessage } from '../inbox-message-mocks';
 import {
   createDutyFeedStateFixture,
   getDutyApiMocks,
@@ -13,7 +13,7 @@ import {
   inboxRsp,
   rangeRsp,
   settleReactCommits as flushMicrotasks,
-} from './useRerDutyFeedState.test-utils';
+} from '../useRerDutyFeedState.test-utils';
 import {
   DUTY_FEED_UNREAD_PREFETCH_MIN,
   DUTY_FEED_MESSAGE_WINDOW_LIMIT,
@@ -21,7 +21,7 @@ import {
   feedIndicatorUnreadCount,
   feedLoadedUnreadCount,
   feedPendingNewerUnreadCount,
-} from './utils';
+} from '../utils';
 
 const fixture = createDutyFeedStateFixture();
 const hoisted = getDutyApiMocks();

@@ -77,12 +77,12 @@ vi.mock('@mui/icons-material/Search', () => ({ default: () => <span>search</span
 
 import { vi } from 'vitest';
 
-import type { AnalysisCountItem } from '../types';
+import type { AnalysisCountItem } from '../../types';
 import {
   AnalysisCountBlock,
   analysisCountHeaderSx,
   analysisCountStatusSx,
-} from './AnalysisCountBlock';
+} from '../AnalysisCountBlock';
 
 type Rendered = {
   container: HTMLDivElement;

@@ -5,7 +5,7 @@ import { act, createElement, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { minimalInboxMessage } from './inbox-message-mocks';
+import { minimalInboxMessage } from '../inbox-message-mocks';
 
 const useRerDutyFeedsMock = vi.hoisted(() => vi.fn());
 const notifyMock = vi.hoisted(() => vi.fn());
@@ -23,29 +23,29 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-vi.mock('../../services/api/user-settings', () => ({
+vi.mock('../../../services/api/user-settings', () => ({
   USER_SETTINGS_UPDATED_EVENT: 'user-settings-updated',
   fetchUserSettings: vi.fn().mockResolvedValue({ tagsLayout: 'compact' }),
 }));
-vi.mock('../../services/api/user', () => ({
+vi.mock('../../../services/api/user', () => ({
   fetchCurrentUser: vi.fn().mockResolvedValue(null),
 }));
-vi.mock('../../services/api/system-settings', () => ({
+vi.mock('../../../services/api/system-settings', () => ({
   currentSystemSettings: vi
     .fn()
     .mockResolvedValue({ devicesSectionEnabled: false, enableAudioTranscription: true }),
 }));
-vi.mock('../../services/api/inbox-messages', () => ({
+vi.mock('../../../services/api/inbox-messages', () => ({
   fetchInboxItemContext: fetchInboxItemContextMock,
   fetchMessagesByIds: fetchMessagesByIdsMock,
 }));
-vi.mock('./useRerDutyFeeds', () => ({
+vi.mock('../useRerDutyFeeds', () => ({
   useRerDutyFeeds: useRerDutyFeedsMock,
 }));
-vi.mock('../../components/PowerSnackbar', () => ({
+vi.mock('../../../components/PowerSnackbar', () => ({
   usePowerSnackbar: () => ({ notify: notifyMock }),
 }));
-vi.mock('./RerDutyNeoWorkspace', () => ({
+vi.mock('../RerDutyNeoWorkspace', () => ({
   RerDutyNeoWorkspace: ({
     activeFeedId,
     createMessageFeed,
@@ -122,7 +122,7 @@ vi.mock('./RerDutyNeoWorkspace', () => ({
     </div>
   ),
 }));
-vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
+vi.mock('../../shared/manage-message/ManageMessageDrawer', () => ({
   ManageMessageDrawer: ({
     open,
     onClose,
@@ -200,9 +200,9 @@ vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
       </div>
     ) : null,
 }));
-vi.mock('./DeleteConfirmDialog', () => ({ DeleteConfirmDialog: () => null }));
-vi.mock('./dialogs', () => ({ DeleteConfirmDialog: () => null }));
-vi.mock('../../components/PowerAlert', () => ({
+vi.mock('../DeleteConfirmDialog', () => ({ DeleteConfirmDialog: () => null }));
+vi.mock('../dialogs', () => ({ DeleteConfirmDialog: () => null }));
+vi.mock('../../../components/PowerAlert', () => ({
   PowerAlert: ({
     children,
     autoHideDuration,
@@ -260,7 +260,7 @@ vi.mock('@mui/material', () => ({
   useTheme: () => ({ breakpoints: { down: () => false } }),
 }));
 
-import { RerDutyNeoPage } from './index';
+import { RerDutyNeoPage } from '../index';
 
 function buildFeedsState() {
   const feedFilter = {
