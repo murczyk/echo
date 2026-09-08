@@ -40,6 +40,7 @@ function buildGroupMessagesRequest(masterKey: string): InboxMessagesReq {
   return {
     sinceIdNoninclusive: null,
     beforeIdNoninclusive: null,
+    aroundMessageRef: null,
     sinceDateInclusiveMs: null,
     tillDateInclusiveMs: null,
     onlyShowUnprocessed: null,

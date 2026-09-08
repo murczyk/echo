@@ -13,17 +13,17 @@ export function useRerDutyFeedCrud(
   onFeedRemoved?: (feedId: string) => void,
 ) {
   const applyFilter = useCallback(
-    (feedId: string, f: RerDutyFeedFilterState) => {
+    (feedId: string, f: RerDutyFeedFilterState, forceReload = false) => {
       const currentFeed = messageFeeds.find((feed) => feed.id === feedId);
       if (!currentFeed) return;
-      if (filtersEqual(currentFeed.filter, f)) {
+      if (!forceReload && filtersEqual(currentFeed.filter, f)) {
         persistStateToUrl(messageFeeds);
         return;
       }
       markFeedReloadRequested(feedId);
       setMessageFeeds((prev) => {
         const w = prev.find((feed) => feed.id === feedId);
-        if (!w || filtersEqual(w.filter, f)) return prev;
+        if (!w || (!forceReload && filtersEqual(w.filter, f))) return prev;
         const next = prev.map((feed) =>
           feed.id === feedId
             ? {

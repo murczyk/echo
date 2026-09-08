@@ -6,7 +6,7 @@ import { act, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { emptyQueryState } from './helpers';
+import { emptyQueryState } from '../helpers';
 
 const useRerAnalysisNeoPageMock = vi.hoisted(() => vi.fn());
 const useMediaQueryMock = vi.hoisted(() => vi.fn(() => false));
@@ -145,11 +145,11 @@ vi.mock('@mui/material/styles', () => ({
   useTheme: () => ({ breakpoints: { down: (key: string) => key } }),
 }));
 
-vi.mock('./use-rer-analysis-neo-page', () => ({
+vi.mock('../use-rer-analysis-neo-page', () => ({
   useRerAnalysisNeoPage: useRerAnalysisNeoPageMock,
 }));
 
-vi.mock('../../components/PageHeader', () => ({
+vi.mock('../../../components/PageHeader', () => ({
   PageHeader: ({
     title,
     titleLeadingActions,
@@ -173,7 +173,7 @@ vi.mock('../../components/PageHeader', () => ({
   ),
 }));
 
-vi.mock('../../components/PowerAlert', () => ({
+vi.mock('../../../components/PowerAlert', () => ({
   PowerAlert: ({
     children,
     autoHideDuration,
@@ -191,11 +191,11 @@ vi.mock('../../components/PowerAlert', () => ({
   },
 }));
 
-vi.mock('../../components/PowerChip', () => ({
+vi.mock('../../../components/PowerChip', () => ({
   PowerChip: ({ label }: { label: ReactNode }) => <div>{label}</div>,
 }));
 
-vi.mock('../../components/SidePanelToggleButton', () => ({
+vi.mock('../../../components/SidePanelToggleButton', () => ({
   SidePanelToggleButton: ({ label, onClick }: { label: string; onClick: () => void }) => (
     <button type="button" aria-label={label} onClick={onClick}>
       {label}
@@ -203,36 +203,40 @@ vi.mock('../../components/SidePanelToggleButton', () => ({
   ),
 }));
 
-vi.mock('./components/AnalysisFiltersPanel', () => ({
+vi.mock('../components/AnalysisFiltersPanel', () => ({
   AnalysisFiltersPanel: () => <div data-testid="filters-panel" />,
 }));
 
-vi.mock('./components/AnalysisHeaderControls', () => ({
+vi.mock('../components/AnalysisHeaderControls', () => ({
   AnalysisHeaderControls: () => <div data-testid="header-controls" />,
 }));
 
-vi.mock('./components/AnalysisMapPane', () => ({
+vi.mock('../components/AnalysisMapPane', () => ({
   ANALYSIS_NARROW_MAP_HEIGHT: 'clamp(480px, 70svh, 720px)',
   AnalysisMapPane: () => <div data-testid="map-pane" />,
 }));
 
-vi.mock('./components/AnalysisMessagesPane', () => ({
+vi.mock('../components/AnalysisMessagesPane', () => ({
   AnalysisMessagesPane: () => <div data-testid="messages-pane" />,
 }));
 
-vi.mock('./components/AnalysisReportDialog', () => ({
+vi.mock('../AnalysisLoadingSkeletons', () => ({
+  AnalysisLoadingSkeletons: () => <div data-testid="analysis-loading-skeletons" />,
+}));
+
+vi.mock('../components/AnalysisReportDialog', () => ({
   AnalysisReportDialog: () => <div data-testid="report-dialog" />,
 }));
 
-vi.mock('./components/AnalysisSidebar', () => ({
+vi.mock('../components/AnalysisSidebar', () => ({
   AnalysisSidebar: () => <div data-testid="sidebar" />,
 }));
 
-vi.mock('./components/AnalysisSummaryTableCard', () => ({
+vi.mock('../components/AnalysisSummaryTableCard', () => ({
   AnalysisSummaryTableCard: () => <div data-testid="summary-card" />,
 }));
 
-vi.mock('../shared/manage-message/CreateMessageFab', () => ({
+vi.mock('../../shared/manage-message/CreateMessageFab', () => ({
   CreateMessageFab: ({ onClick }: { onClick?: () => void }) => {
     createMessageFabPropsHistory.push({ onClick });
     return (
@@ -242,11 +246,11 @@ vi.mock('../shared/manage-message/CreateMessageFab', () => ({
     );
   },
 }));
-vi.mock('../../components/PowerSnackbar', () => ({
+vi.mock('../../../components/PowerSnackbar', () => ({
   usePowerSnackbar: () => ({ notify: notifyMock }),
 }));
 
-vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
+vi.mock('../../shared/manage-message/ManageMessageDrawer', () => ({
   ManageMessageDrawer: (props: {
     open: boolean;
     onClose: () => void;
@@ -269,10 +273,6 @@ vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
   },
 }));
 
-vi.mock('./use-min-duration-busy', () => ({
-  useMinDurationBusy: (value: boolean) => value,
-}));
-
 vi.mock('@mui/icons-material/BarChartOutlined', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/ChevronLeftOutlined', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/ChevronRightOutlined', () => ({ default: () => <span /> }));
@@ -287,7 +287,7 @@ vi.mock('@mui/icons-material/MessageOutlined', () => ({ default: () => <span /> 
 vi.mock('@mui/icons-material/PersonAddOutlined', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/TableRowsOutlined', () => ({ default: () => <span /> }));
 
-import { RerAnalysisNeoPage } from './index';
+import { RerAnalysisNeoPage } from '../index';
 
 function buildPage() {
   return {
@@ -344,6 +344,8 @@ function buildPage() {
     messagesPaging: false,
     messagesTotalCount: null,
     messagesTotalLoading: true,
+    directMessageLoading: false,
+    directMessageNavigation: null,
     networkDisplayMap: {},
     networks: [],
     newCallsigns: { notSeen24h: [], notSeen7days: [], notSeen30days: [] },
@@ -352,6 +354,8 @@ function buildPage() {
     newestFirst: true,
     nolimitShown: false,
     pageIndex: 0,
+    messagePageNavigationTarget: null,
+    visibleMessagesPageIndex: 0,
     options: {
       tags: [],
       aors: [],
@@ -432,6 +436,8 @@ function buildPage() {
     reload: vi.fn(),
     setCenterTab: vi.fn(),
     setNewestFirst: vi.fn(),
+    clearMessagePageNavigationTarget: vi.fn(),
+    setVisibleMessagesPageIndex: vi.fn(),
     setReportProgressExpanded: vi.fn(),
     setRightSidebarTab: vi.fn(),
     showFreqOnMap: vi.fn(),
@@ -549,6 +555,70 @@ describe('RerAnalysisNeoPage', () => {
     expect(container.querySelector('[data-testid="analysis-drawer-left"]')).toBeNull();
     expect(rightDrawer?.querySelector('[data-testid="sidebar"]')).not.toBeNull();
     expect(rightDrawer?.getAttribute('data-width')).toBe('"100vw"');
+    expect(container.querySelector('[data-testid="messages-pane"]')).not.toBeNull();
+
+    await act(async () => root.unmount());
+  });
+
+  it('shows skeletons for direct-link and regular message loading', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+    const page = buildPage();
+    page.directMessageLoading = true;
+    page.messagesLoading = true;
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+
+    expect(container.querySelector('[data-testid="analysis-loading-skeletons"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="messages-pane"]')).toBeNull();
+
+    useRerAnalysisNeoPageMock.mockReturnValue({
+      ...page,
+      directMessageLoading: false,
+      messagesLoading: false,
+      messages: [[51, { text: 'filtered message' }]],
+      directMessageNavigation: null,
+    });
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+
+    expect(container.querySelector('[data-testid="analysis-loading-skeletons"]')).toBeNull();
+    expect(container.querySelector('[data-testid="messages-pane"]')).not.toBeNull();
+
+    useRerAnalysisNeoPageMock.mockReturnValue({
+      ...page,
+      directMessageLoading: false,
+      messagesLoading: true,
+    });
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+
+    expect(container.querySelector('[data-testid="analysis-loading-skeletons"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="messages-pane"]')).toBeNull();
+
+    useRerAnalysisNeoPageMock.mockReturnValue({
+      ...page,
+      directMessageLoading: true,
+      messagesLoading: true,
+      messages: [[51, { text: 'target message' }]],
+      directMessageNavigation: {
+        targetMessageId: 51,
+        focusActive: true,
+        contextLoading: true,
+        newestFirst: true,
+        canLoadEarlier: true,
+        canLoadLater: true,
+        loadingEarlier: true,
+        loadingLater: true,
+        onClearFocus: vi.fn(),
+        onLoadEarlier: vi.fn().mockResolvedValue(true),
+        onLoadLater: vi.fn().mockResolvedValue(true),
+      },
+    });
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+
+    expect(container.querySelector('[data-testid="analysis-loading-skeletons"]')).toBeNull();
     expect(container.querySelector('[data-testid="messages-pane"]')).not.toBeNull();
 
     await act(async () => root.unmount());

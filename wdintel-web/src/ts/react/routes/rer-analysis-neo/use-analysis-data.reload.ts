@@ -2,6 +2,8 @@ import type {
   CallsignInfoRes,
   CountStatsRsp,
   InboxMessage,
+  InboxMessagesRsp,
+  InboxWindowRsp,
   Network,
   NewCallsignsRes,
   SignalGroupEntry,
@@ -652,6 +654,22 @@ export async function loadFilterSectionData(
 
 type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 
+function buildFocusedInboxResponse(
+  focusedWindow: InboxWindowRsp | null | undefined,
+): InboxMessagesRsp {
+  return (
+    focusedWindow?.inbox ?? {
+      inboxItems: [],
+      pollCursorId: null,
+      callsigns: [],
+      signalProfiles: {},
+      signalGroups: [],
+      freqPelengsSummary: null,
+      pageLimit: null,
+    }
+  );
+}
+
 export function transformMessagePageResponse<
   T extends { inboxItems: Array<[number, InboxMessage]> },
 >(response: T, cursor: AnalysisMessagePageCursor | undefined): T {
@@ -667,6 +685,8 @@ export function transformMessagePageResponse<
 
 type ReloadParams = {
   clearAnalysisResults: () => void;
+  focusedWindow?: InboxWindowRsp | null;
+  focusedMessageActive?: boolean;
   invalidateCorrelatedFreqsCache: () => void;
   invalidateCallsignGraph: (options?: { clearGraph?: boolean }) => void;
   invalidateMessagePaging: () => void;
@@ -806,17 +826,19 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       );
       countsPromise.catch(() => undefined);
       const messagePageCursor = params.messagePageCursor;
-      const inboxPromise = fetchInboxMessages(
-        {
-          ...messageInboxReq,
-          beforeIdNoninclusive:
-            messagePageCursor?.beforeIdNoninclusive ?? messageInboxReq.beforeIdNoninclusive,
-          sinceIdNoninclusive:
-            messagePageCursor?.sinceIdNoninclusive ?? messageInboxReq.sinceIdNoninclusive,
-          newestFirst: messagePageCursor?.requestNewestFirst ?? params.newestFirst,
-        },
-        params.signal ? { signal: params.signal } : undefined,
-      );
+      const inboxPromise = params.focusedMessageActive
+        ? Promise.resolve(buildFocusedInboxResponse(params.focusedWindow))
+        : fetchInboxMessages(
+            {
+              ...messageInboxReq,
+              beforeIdNoninclusive:
+                messagePageCursor?.beforeIdNoninclusive ?? messageInboxReq.beforeIdNoninclusive,
+              sinceIdNoninclusive:
+                messagePageCursor?.sinceIdNoninclusive ?? messageInboxReq.sinceIdNoninclusive,
+              newestFirst: messagePageCursor?.requestNewestFirst ?? params.newestFirst,
+            },
+            params.signal ? { signal: params.signal } : undefined,
+          );
       const freqsPromise = fetchAnalysisFreqs(
         analysisReq,
         params.signal ? { signal: params.signal } : undefined,
@@ -825,7 +847,10 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
 
       let inboxRsp: Awaited<ReturnType<typeof fetchInboxMessages>>;
       try {
-        inboxRsp = transformMessagePageResponse(await inboxPromise, messagePageCursor);
+        inboxRsp = transformMessagePageResponse(
+          await inboxPromise,
+          params.focusedMessageActive ? undefined : messagePageCursor,
+        );
       } catch (loadError) {
         if (isAbortError(loadError) || params.signal?.aborted) return null;
         throw loadError;
@@ -878,24 +903,26 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
           isPresent(rebuiltMessageInboxReq)
         ) {
           try {
-            const rebuiltInboxRsp = await fetchInboxMessages(
-              {
-                ...rebuiltMessageInboxReq,
-                beforeIdNoninclusive:
-                  messagePageCursor?.beforeIdNoninclusive ??
-                  rebuiltMessageInboxReq.beforeIdNoninclusive,
-                sinceIdNoninclusive:
-                  messagePageCursor?.sinceIdNoninclusive ??
-                  rebuiltMessageInboxReq.sinceIdNoninclusive,
-                newestFirst: messagePageCursor?.requestNewestFirst ?? params.newestFirst,
-              },
-              params.signal ? { signal: params.signal } : undefined,
-            );
+            const rebuiltInboxRsp = params.focusedMessageActive
+              ? buildFocusedInboxResponse(params.focusedWindow)
+              : await fetchInboxMessages(
+                  {
+                    ...rebuiltMessageInboxReq,
+                    beforeIdNoninclusive:
+                      messagePageCursor?.beforeIdNoninclusive ??
+                      rebuiltMessageInboxReq.beforeIdNoninclusive,
+                    sinceIdNoninclusive:
+                      messagePageCursor?.sinceIdNoninclusive ??
+                      rebuiltMessageInboxReq.sinceIdNoninclusive,
+                    newestFirst: messagePageCursor?.requestNewestFirst ?? params.newestFirst,
+                  },
+                  params.signal ? { signal: params.signal } : undefined,
+                );
             if (isStaleReload() || params.signal?.aborted) return null;
 
             const rebuiltMessagePageRsp = transformMessagePageResponse(
               rebuiltInboxRsp,
-              messagePageCursor,
+              params.focusedMessageActive ? undefined : messagePageCursor,
             );
             const rebuiltFreqsRsp = await fetchAnalysisFreqs(
               rebuiltAnalysisReq,

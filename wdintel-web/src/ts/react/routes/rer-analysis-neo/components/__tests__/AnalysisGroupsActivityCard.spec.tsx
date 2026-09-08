@@ -5,7 +5,6 @@ import { act, forwardRef } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ELLIPSIS } from '../../../utils/misc';
 
 vi.mock('@mui/material', () => ({
   Alert: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
@@ -22,7 +21,7 @@ vi.mock('@mui/material', () => ({
       {children}
     </button>
   ),
-  CircularProgress: () => <div>loading</div>,
+  Skeleton: () => <div>loading-skeleton</div>,
   Paper: forwardRef<HTMLElement, { children?: ReactNode }>(({ children }, ref) => (
     <section ref={ref}>{children}</section>
   )),
@@ -71,7 +70,7 @@ vi.mock('@mui/material', () => ({
   Typography: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
 
-import { AnalysisGroupsActivityCard } from './AnalysisGroupsActivityCard';
+import { AnalysisGroupsActivityCard } from '../AnalysisGroupsActivityCard';
 
 type Rendered = {
   container: HTMLDivElement;
@@ -166,7 +165,7 @@ describe('AnalysisGroupsActivityCard', () => {
     expect(view.container.querySelector('dashboard-chart')).toBeNull();
   });
 
-  it('keeps the chart visible while the same frequency and period refresh in background', async () => {
+  it('replaces the chart with a skeleton while refreshing in background', async () => {
     const view = await renderComponent({
       groupsActivity: {
         dataPerDate: {
@@ -182,7 +181,7 @@ describe('AnalysisGroupsActivityCard', () => {
     });
     rendered.push(view);
 
-    expect(view.container.querySelector('dashboard-chart')).not.toBeNull();
-    expect(view.container.textContent).not.toContain(`Завантажую активність по датах${ELLIPSIS}`);
+    expect(view.container.querySelector('dashboard-chart')).toBeNull();
+    expect(view.container.textContent).toContain('loading-skeleton');
   });
 });

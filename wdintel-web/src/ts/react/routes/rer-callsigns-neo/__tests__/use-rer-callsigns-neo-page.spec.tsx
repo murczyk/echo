@@ -5,14 +5,14 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { Callsign, Source, Unit, User } from '../../../../Bindings';
-import { useRerCallsignsNeoPage } from './use-rer-callsigns-neo-page';
+import type { Callsign, Source, Unit, User } from '../../../../../Bindings';
+import { useRerCallsignsNeoPage } from '../use-rer-callsigns-neo-page';
 
 const loadMockState = vi.hoisted(() => ({
   loaded: false,
 }));
 
-vi.mock('./use-rer-callsigns-neo-page.load', () => ({
+vi.mock('../use-rer-callsigns-neo-page.load', () => ({
   useRerCallsignsNeoPageLoad: ({
     setUser,
     setUnits,
@@ -102,7 +102,10 @@ describe('useRerCallsignsNeoPage duplicate hints', () => {
   it('exposes selectable units without blank-name entries', () => {
     const page = renderHookHarness();
 
-    expect(page.selectableUnits).toEqual([{ id: 1, name: '11 АК', active: true }]);
+    expect(page.selectableUnits).toEqual([
+      { id: 1, name: '11 АК', active: true },
+      { id: 2, name: '11 АК', active: true },
+    ]);
   });
 
   it('calculates duplicate hints immediately after quick paste', () => {

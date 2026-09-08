@@ -115,6 +115,7 @@ export type WindowedFeedScrollHandle = {
     intent?: ScrollNavigationIntent,
     navigation?: ExplicitScrollNavigation,
   ) => void;
+  scrollToItem: (id: number, behavior?: ScrollBehavior) => HTMLElement | null;
 };
 
 export type WindowedFeedScrollRefs = {

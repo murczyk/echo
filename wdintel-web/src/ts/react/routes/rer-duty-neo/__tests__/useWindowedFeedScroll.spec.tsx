@@ -4,8 +4,8 @@
 import { act, useRef, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useWindowedFeedScroll } from './useWindowedFeedScroll';
-import { useRerDutyNavigation } from './useRerDutyNavigation';
+import { useWindowedFeedScroll } from '../useWindowedFeedScroll';
+import { useRerDutyNavigation } from '../useRerDutyNavigation';
 
 const renderedItemRefs = new Map<number, (node: HTMLDivElement | null) => void>();
 let latestScrollHandle: ReturnType<typeof useWindowedFeedScroll> | null = null;
@@ -29,6 +29,7 @@ function TestScroller(props: {
   enabled?: boolean;
   isWatchMode?: boolean;
   autoScrollAllowed?: boolean;
+  initialPositioningReady?: boolean;
   unreadPrefetchNeeded?: boolean;
   pendingNewerFlushNeeded?: boolean;
   itemHeightPx?: number;
@@ -51,6 +52,7 @@ function TestScroller(props: {
     enabled: props.enabled ?? true,
     isWatchMode: props.isWatchMode ?? true,
     autoScrollAllowed: props.autoScrollAllowed ?? true,
+    initialPositioningReady: props.initialPositioningReady ?? true,
     unreadPrefetchNeeded: props.unreadPrefetchNeeded,
     pendingNewerFlushNeeded: props.pendingNewerFlushNeeded,
     topLoadBufferPx: 80,
@@ -163,16 +165,17 @@ function rect(top: number, height: number): DOMRect {
 function mockVerticalLayout(
   scroller: HTMLElement,
   layout: { items: Map<number, ItemLayout> },
+  scale = 1,
 ): void {
   const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
-    if (this === scroller) return rect(0, scroller.clientHeight);
+    if (this === scroller) return rect(0, scroller.clientHeight * scale);
     const id = Number.parseInt(
       (this as HTMLElement).dataset.testid?.replace('item-', '') ?? '',
       10,
     );
     const item = layout.items.get(id);
-    if (item) return rect(item.top - scroller.scrollTop, item.height);
+    if (item) return rect((item.top - scroller.scrollTop) * scale, item.height * scale);
     return originalGetBoundingClientRect.call(this);
   });
 }
@@ -1229,6 +1232,143 @@ describe('useWindowedFeedScroll', () => {
     });
 
     expect(scroller.scrollTop).toBe(240);
+  });
+
+  it('scrolls directly to a message without enabling bottom follow', async () => {
+    const ids = [1, 2, 3, 4];
+    await act(async () => {
+      root.render(<TestScroller ids={[]} isWatchMode={false} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setClampedScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 200 });
+    mockVerticalLayout(scroller, { items: createItemLayouts(ids) });
+    await act(async () => {
+      root.render(<TestScroller ids={ids} isWatchMode={false} />);
+    });
+
+    scroller.scrollTop = 0;
+    const targetElement = container.querySelector('[data-testid="item-3"]') as HTMLElement;
+    const target = latestScrollHandle?.scrollToItem(3);
+
+    expect(target).toBe(targetElement);
+    expect(scroller.scrollTop).toBe(75);
+
+    scroller.scrollTop = 125;
+    await act(async () => {
+      await waitForAnimationFrame();
+    });
+    expect(scroller.scrollTop).toBe(75);
+  });
+
+  it('does not center a fully visible tail message', async () => {
+    const ids = [1, 2, 3, 4];
+    const onPhysicalBottomChange = vi.fn();
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={[]}
+          isWatchMode={false}
+          onPhysicalBottomChange={onPhysicalBottomChange}
+        />,
+      );
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const list = container.querySelector('[data-testid="list"]') as HTMLElement;
+    setClampedScrollMetrics(scroller, {
+      scrollTop: 100,
+      clientHeight: 100,
+      scrollHeight: 200,
+    });
+    mockVerticalLayout(scroller, { items: createItemLayouts(ids) });
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={ids}
+          isWatchMode={false}
+          onPhysicalBottomChange={onPhysicalBottomChange}
+        />,
+      );
+    });
+    onPhysicalBottomChange.mockClear();
+
+    const targetElement = container.querySelector('[data-testid="item-4"]') as HTMLElement;
+    const target = latestScrollHandle?.scrollToItem(4);
+
+    expect(target).toBe(targetElement);
+    expect(scroller.scrollTop).toBe(100);
+    expect(list.style.paddingBottom).toBe('');
+    expect(onPhysicalBottomChange).not.toHaveBeenCalled();
+  });
+
+  it('recenters the linked message after a late card resize', async () => {
+    const triggerResize = installResizeObserverMock();
+    const ids = [1, 2, 3, 4];
+    await act(async () => {
+      root.render(<TestScroller ids={[]} isWatchMode={false} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 250 });
+    const layout = { items: createItemLayouts(ids) };
+    mockVerticalLayout(scroller, layout);
+    await act(async () => {
+      root.render(<TestScroller ids={ids} isWatchMode={false} />);
+    });
+    latestScrollHandle?.scrollToItem(3);
+    expect(scroller.scrollTop).toBe(75);
+
+    layout.items = new Map([
+      [1, { top: 0, height: 50 }],
+      [2, { top: 50, height: 100 }],
+      [3, { top: 150, height: 50 }],
+      [4, { top: 200, height: 50 }],
+    ]);
+    act(() => triggerResize(container.querySelector('[data-testid="list"]')!));
+
+    expect(scroller.scrollTop).toBe(125);
+  });
+
+  it('compensates the narrow-screen zoom when centering a message', async () => {
+    const ids = Array.from({ length: 30 }, (_, index) => index + 1);
+    await act(async () => {
+      root.render(<TestScroller ids={[]} isWatchMode={false} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 1500 });
+    mockVerticalLayout(scroller, { items: createItemLayouts(ids) }, 1.125);
+    await act(async () => {
+      root.render(<TestScroller ids={ids} isWatchMode={false} />);
+    });
+
+    latestScrollHandle?.scrollToItem(21);
+
+    expect(scroller.scrollTop).toBe(975);
+  });
+
+  it('keeps a direct message centered when initial positioning becomes ready', async () => {
+    const ids = [1, 2, 3, 4];
+    await act(async () => {
+      root.render(<TestScroller ids={[]} initialPositioningReady={false} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setClampedScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 200 });
+    mockVerticalLayout(scroller, { items: createItemLayouts(ids) });
+    await act(async () => {
+      root.render(<TestScroller ids={ids} initialPositioningReady={false} />);
+    });
+
+    latestScrollHandle?.scrollToItem(3);
+    expect(scroller.scrollTop).toBe(75);
+
+    await act(async () => {
+      root.render(<TestScroller ids={ids} initialPositioningReady />);
+    });
+
+    expect(scroller.scrollTop).toBe(75);
   });
 
   it('#3360 does not pin the initial render while layout height settles with auto-scroll off', async () => {

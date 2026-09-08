@@ -11,6 +11,8 @@ import { useRerDutyFeedState } from './useRerDutyFeedState';
 
 const dutyApiMocks = vi.hoisted(() => ({
   fetchInboxMessages: vi.fn(),
+  fetchMessagesByIds: vi.fn(),
+  fetchMessagesByIdsWithMetadata: vi.fn(),
   fetchInboxCount: vi.fn(),
   rerDutyShortStateCreate: vi.fn(),
   rerDutyShortStateGet: vi.fn(),
@@ -34,6 +36,11 @@ vi.mock('../../services/api/inbox', () => ({
   fetchInboxCount: dutyApiMocks.fetchInboxCount,
   rerDutyShortStateCreate: dutyApiMocks.rerDutyShortStateCreate,
   rerDutyShortStateGet: dutyApiMocks.rerDutyShortStateGet,
+}));
+
+vi.mock('../../services/api/inbox-messages', () => ({
+  fetchMessagesByIds: dutyApiMocks.fetchMessagesByIds,
+  fetchMessagesByIdsWithMetadata: dutyApiMocks.fetchMessagesByIdsWithMetadata,
 }));
 
 vi.mock('../../services/api/system-settings', () => ({
@@ -95,11 +102,13 @@ export function DutyFeedStateHarness(props: {
   apiRef: DutyFeedStateApiRef;
   disableAutoScroll?: boolean;
   freqs?: string[];
+  setProfiles?: Parameters<typeof useRerDutyFeedState>[0]['setProfiles'];
+  setGroupInfos?: Parameters<typeof useRerDutyFeedState>[0]['setGroupInfos'];
 }) {
   const api = useRerDutyFeedState({
     freqs: props.freqs ?? [],
-    setProfiles: vi.fn(),
-    setGroupInfos: vi.fn(),
+    setProfiles: props.setProfiles ?? vi.fn(),
+    setGroupInfos: props.setGroupInfos ?? vi.fn(),
     testEnabled: false,
     testSinceMs: 0,
     testLimit: 1,
@@ -204,6 +213,8 @@ export function createDutyFeedStateFixture() {
     vi.stubGlobal('cancelAnimationFrame', vi.fn());
     vi.clearAllMocks();
     dutyApiMocks.fetchInboxMessages.mockReset();
+    dutyApiMocks.fetchMessagesByIds.mockReset();
+    dutyApiMocks.fetchMessagesByIdsWithMetadata.mockReset();
     dutyApiMocks.fetchInboxCount.mockReset();
     dutyApiMocks.notifyDutyNewMessages.mockReset();
     dutyApiMocks.registerDutyNotificationPreview.mockReset();
@@ -217,6 +228,8 @@ export function createDutyFeedStateFixture() {
     dutyApiMocks.fetchInboxMessages.mockResolvedValue(
       inboxRsp([[1, minimalInboxMessage({ timestamp: 100 })]]),
     );
+    dutyApiMocks.fetchMessagesByIds.mockResolvedValue([]);
+    dutyApiMocks.fetchMessagesByIdsWithMetadata.mockResolvedValue(inboxRsp([]));
     dutyApiMocks.systemSettingsCurrent.mockResolvedValue({
       id: 1,
       rerAnalysisUnitsExactMatchOnlyDefault: false,

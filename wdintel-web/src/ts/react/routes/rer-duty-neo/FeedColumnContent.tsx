@@ -82,6 +82,7 @@ export type FeedColumnContentScrollOptions = {
 
 export type FeedColumnContentHandle = {
   scrollToBottom: (behavior?: ScrollBehavior, options?: FeedColumnContentScrollOptions) => void;
+  scrollToMessage: (id: number, behavior?: ScrollBehavior) => HTMLElement | null;
 };
 
 function useStableCallback<T extends (...args: any[]) => any>(callback: T | undefined): T {
@@ -734,8 +735,14 @@ export const FeedColumnContent = memo(
           }
           scroll.scrollToBottom(behavior, options?.intent, options?.navigation);
         },
+        scrollToMessage: (id: number, behavior: ScrollBehavior = 'auto') => {
+          flushSync(() => {
+            idleOffload.wakeFromOffload();
+          });
+          return scroll.scrollToItem(id, behavior);
+        },
       }),
-      [idleOffload.wakeFromOffload, scroll.scrollToBottom],
+      [idleOffload.wakeFromOffload, scroll.scrollToBottom, scroll.scrollToItem],
     );
 
     if (feed.loading && feed.items.length === 0) {

@@ -16,7 +16,6 @@ import { AnalysisReportDialog } from './components/AnalysisReportDialog';
 import { CreateMessageFab } from '../shared/manage-message/CreateMessageFab';
 import { ManageMessageDrawer } from '../shared/manage-message/ManageMessageDrawer';
 import { getAnalysisCenterTabs } from './types';
-import { useMinDurationBusy } from './use-min-duration-busy';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
 import { AudioTranscriptionPreferencesProvider } from '../shared/message-card/MessageCardAudioTranscription';
 import { PointBlacklistPaletteNamesCacheProvider } from '../shared/message-card/PointBlacklistPaletteNamesCache';
@@ -41,8 +40,19 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   const messagesPanelId = `${centerTabsId}-messages-panel`;
   const summaryPanelId = `${centerTabsId}-summary-panel`;
   const mapPanelId = `${centerTabsId}-map-panel`;
+  const keepDirectMessageVisible =
+    page.directMessageNavigation != null &&
+    page.messages.some(
+      ([messageId]) => messageId === page.directMessageNavigation?.targetMessageId,
+    );
+  const keepMessageViewportVisible = page.messageViewportPreserving && page.messages.length > 0;
   const showLoadingSkeletons =
-    !page.hasLoadedInitialMessages && page.error == null && page.messages.length === 0;
+    page.error == null &&
+    !keepDirectMessageVisible &&
+    !keepMessageViewportVisible &&
+    (page.messagesLoading ||
+      page.directMessageLoading ||
+      (!page.hasLoadedInitialMessages && page.messages.length === 0));
   const leftPanelVisible = page.leftPanelOpen;
   const rightPanelVisible = page.rightPanelOpen;
   const inlineLeftPanelVisible = !isNarrowLayout && leftPanelVisible;
@@ -53,7 +63,6 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   const analysisMapVisible =
     centerTab === 'map' ||
     (page.analysisMapInSidebar && rightPanelVisible && page.rightSidebarTab === 'map');
-  const messagesPaneLoading = useMinDurationBusy(page.messagesLoading, 450);
   const openReport = useCallback(
     (focusTarget: HTMLElement) => {
       reportFocusTargetRef.current = focusTarget;
@@ -156,7 +165,6 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                   isCompactLayout={isAnalysisCompactLayout}
                   isNarrowLayout={isNarrowLayout}
                   rightPanelVisible={inlineRightPanelVisible}
-                  messagesPaneLoading={messagesPaneLoading}
                   messagesPanelId={messagesPanelId}
                   messagesTabId={messagesTabId}
                   summaryPanelId={summaryPanelId}
