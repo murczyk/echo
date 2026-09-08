@@ -2448,10 +2448,25 @@ fn build_group_selected_aor_exists(selected_aors: &[i64]) -> SelectStatement {
     let group_aor_alias = Alias::new("group_aor_filter");
     let linked_aor_alias = Alias::new("group_linked_aor_filter");
     let message_group_alias = Alias::new("message_group_aor_filter");
+    let assigned_group_alias = Alias::new("assigned_group_aor_filter");
     let overlap_exists = build_selected_aor_overlap_exists(
         linked_aor_alias.clone(),
         selected_aors,
     );
+    let assigned_group_exists = Query::select()
+        .expr(Expr::val(1))
+        .from_as(sigint_zone_datasource::Entity, assigned_group_alias.clone())
+        .and_where(
+            Expr::col((
+                assigned_group_alias,
+                sigint_zone_datasource::Column::GroupMasterKey,
+            ))
+            .equals((
+                message_group_alias.clone(),
+                signal_message_group::Column::GroupMasterKey,
+            )),
+        )
+        .to_owned();
 
     Query::select()
         .expr(Expr::val(1))
@@ -2485,6 +2500,7 @@ fn build_group_selected_aor_exists(selected_aors: &[i64]) -> SelectStatement {
             ))
             .equals((signal_message::Entity, signal_message::Column::Id)),
         )
+        .and_where(Expr::exists(assigned_group_exists))
         .and_where(Expr::exists(overlap_exists))
         .to_owned()
 }

@@ -1406,10 +1406,19 @@ async fn resolve_analytics_aor_filter(
             ..Default::default()
         });
     }
+    let assigned_group_keys = SigintZoneDatasource::find()
+        .select_only()
+        .column(sigint_zone_datasource::Column::GroupMasterKey)
+        .distinct()
+        .into_tuple::<String>()
+        .all(source_db)
+        .await
+        .context(h!())?;
     let group_keys = SignalGroupAor::find()
         .select_only()
         .column(signal_group_aor::Column::MasterKey)
         .filter(signal_group_aor::Column::AorId.is_in(linked_aor_ids.clone()))
+        .filter(signal_group_aor::Column::MasterKey.is_in(assigned_group_keys))
         .distinct()
         .into_tuple::<String>()
         .all(source_db)

@@ -945,6 +945,10 @@ INNER JOIN signal_group_aor AS group_aor
   ON group_aor.master_key = message_group.group_master_key
 INNER JOIN area_of_responsibility AS aor
   ON aor.id = group_aor.aor_id
+WHERE message_group.group_master_key IN (
+  SELECT DISTINCT group_master_key
+  FROM sigint_zone_datasource
+)
 UNION ALL
 SELECT
   inbox_network.sigint_inbox_item_id,
@@ -2146,6 +2150,93 @@ async fn rer_analysis_aor_filter_hides_groups_outside_selected_aor() {
             .unwrap(),
         0
     );
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_analysis_aor_filter_ignores_orphan_duplicate_group_links() {
+    let fixture = mk_aor_filter_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+
+    sigint_zone_datasource::Entity::delete_many()
+        .filter(
+            sigint_zone_datasource::Column::GroupMasterKey.eq(fixture
+                .group_x
+                .signal_group
+                .master_key
+                .clone()),
+        )
+        .exec(db)
+        .await
+        .unwrap();
+    let message = mk_analysis_message(
+        db,
+        "orphan-duplicate-group-aor",
+        "901.3",
+        test_dt(2026, 3, 2, 10, 0),
+        &[&fixture.group_y, &fixture.group_x],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+
+    let mut req = analysis_stats_req_for_aor_fixture(&fixture);
+    req.selected_aors = Some(vec![fixture.aor_a.id]);
+    assert_eq!(
+        fetch_selected_count_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        0
+    );
+    let aor_counts =
+        fetch_aor_counts_for_req(&fixture.env, &req).await.unwrap();
+    assert_eq!(
+        fetch_analytics_aor_counts_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        aor_counts
+    );
+    assert!(!aor_counts.contains_key(&fixture.aor_a.id));
+
+    let identity = mk_test_identity().await.unwrap();
+    let login = test_identity_login_id(&fixture.env, &identity).await;
+    let inbox_req = InboxMessagesReq {
+        since_date_inclusive_ms: Some(fixture.since_date_inclusive_ms),
+        till_date_inclusive_ms: Some(fixture.till_date_noninclusive_ms),
+        selected_aors: req.selected_aors,
+        nolimit: Some(true),
+        ..Default::default()
+    };
+    let message_ids =
+        crate::rer_importer::inbox::query::build_filtered_inbox_query(
+            db,
+            &login,
+            &fixture.env,
+            &inbox_req,
+        )
+        .await
+        .unwrap()
+        .select_only()
+        .column(signal_message::Column::Id)
+        .into_tuple::<i64>()
+        .all(db)
+        .await
+        .unwrap();
+    assert!(!message_ids.contains(&message.id));
+
+    let analytics_message_ids =
+        crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
+            &login,
+            &fixture.env,
+            &inbox_req,
+            db,
+            90_000,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!analytics_message_ids.contains(&message.id));
 }
 
 #[tokio::test]

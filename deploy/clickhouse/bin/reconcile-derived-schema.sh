@@ -333,7 +333,7 @@ else
   log "Normalized callsign table is not mirrored yet; retaining the existing callsign view"
 fi
 clickhouse_admin_http "
-  CREATE VIEW IF NOT EXISTS \`$derived_database\`.\`$message_aor_link_view\` AS
+  CREATE OR REPLACE VIEW \`$derived_database\`.\`$message_aor_link_view\` AS
   SELECT
     message_group.signal_message_id AS sigint_inbox_item_id,
     group_aor.aor_id AS aor_id,
@@ -344,6 +344,10 @@ clickhouse_admin_http "
     ON group_aor.master_key = message_group.group_master_key
   INNER JOIN \`$CLICKHOUSE_CURRENT_DB\`.\`area_of_responsibility\` AS aor
     ON aor.id = group_aor.aor_id
+  WHERE message_group.group_master_key IN (
+    SELECT DISTINCT group_master_key
+    FROM \`$CLICKHOUSE_CURRENT_DB\`.\`sigint_zone_datasource\`
+  )
   UNION ALL
   SELECT
     inbox_network.sigint_inbox_item_id AS sigint_inbox_item_id,
