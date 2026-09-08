@@ -412,7 +412,10 @@ describe('useRerDutyFeedState — directional loading and races', () => {
       newer.resolve(rangeRsp(41, 60));
       await act(async () => Promise.all([olderPromise, newerPromise]));
       expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual(
-        Array.from({ length: 40 }, (_, index) => index + 21),
+        Array.from({ length: 40 }, (_, index) => index + 1),
+      );
+      expect(apiRef.current!.messageFeeds[0].pendingNewerItems?.map(([id]) => id)).toEqual(
+        Array.from({ length: 20 }, (_, index) => index + 41),
       );
     });
   });
@@ -436,13 +439,16 @@ describe('useRerDutyFeedState — directional loading and races', () => {
         newer.resolve(rangeRsp(61, 80));
         await flushMicrotasks();
       });
-      expect(hoisted.fetchInboxMessages.mock.calls[2][0].beforeIdNoninclusive).toBe(41);
+      expect(hoisted.fetchInboxMessages.mock.calls[2][0].beforeIdNoninclusive).toBe(21);
       await act(async () => {
         older.resolve(rangeRsp(21, 40));
         await Promise.all([newerPromise, olderPromise]);
       });
       expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual(
         Array.from({ length: 40 }, (_, index) => index + 21),
+      );
+      expect(apiRef.current!.messageFeeds[0].pendingNewerItems?.map(([id]) => id)).toEqual(
+        Array.from({ length: 20 }, (_, index) => index + 61),
       );
     });
   });

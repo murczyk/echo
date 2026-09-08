@@ -219,7 +219,7 @@ update req msg model =
             if e.httpError == Http.BadStatus 401 then
                 let
                     stoppedModel =
-                        { model | eventService = Core.EventService.init }
+                        { model | user = Nothing, userLoaded = False, eventService = Core.EventService.init }
                 in
                 if req.path == Route.Path.Login then
                     ( stoppedModel, E.none )
@@ -230,7 +230,7 @@ update req msg model =
                     )
 
             else
-                ( model, E.none )
+                ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження користувача" e )
 
         GotUser (Ok user) ->
             ( { model
@@ -368,7 +368,11 @@ update req msg model =
 
         SignOut ->
             ( { model | user = Nothing, userLoaded = False, eventService = Core.EventService.init }
-            , E.loadExternalUrl "/api/user/logout"
+            , if model.user == Nothing then
+                E.none
+
+              else
+                E.loadExternalUrl "/api/user/logout"
             )
 
         GotLocation loc ->
@@ -559,7 +563,7 @@ update req msg model =
             ( model, E.none )
 
         EventServiceStartPolling ->
-            if model.eventService.isPolling then
+            if model.eventService.isPolling || not model.userLoaded || model.user == Nothing then
                 ( model, E.none )
 
             else
@@ -606,20 +610,24 @@ update req msg model =
                         |> List.map (\eventMsg -> E.sendCmd <| Task.perform (\_ -> eventMsg) (Task.succeed ()))
                         |> E.batch
             in
-            ( { model
-                | eventService = newEventService
-                , deploymentMaintenance = response.deploymentMaintenance
-              }
-            , E.batch
-                [ processEventsEffect
-                , if List.isEmpty inboxChangedEvents then
-                    E.none
+            if not model.eventService.isPolling then
+                ( model, E.none )
 
-                  else
-                    E.sendCmd <| Ports.shared_dispatchInboxChanged inboxChangedEvents
-                , E.sendCmd <| Task.perform (\_ -> EventServicePollEvents) (Process.sleep 100.0)
-                ]
-            )
+            else
+                ( { model
+                    | eventService = newEventService
+                    , deploymentMaintenance = response.deploymentMaintenance
+                  }
+                , E.batch
+                    [ processEventsEffect
+                    , if List.isEmpty inboxChangedEvents then
+                        E.none
+
+                      else
+                        E.sendCmd <| Ports.shared_dispatchInboxChanged inboxChangedEvents
+                    , E.sendCmd <| Task.perform (\_ -> EventServicePollEvents) (Process.sleep 100.0)
+                    ]
+                )
 
         EventServiceEventsReceived (Err error) ->
             let
@@ -642,13 +650,21 @@ update req msg model =
                         , retryDelay = newRetryDelay
                     }
             in
-            if shouldRetry then
+            if not model.eventService.isPolling then
+                ( model, E.none )
+
+            else if error.httpError == Http.BadStatus 401 then
+                update req SignOut model
+
+            else if shouldRetry then
                 ( { model | eventService = newEventService }
                 , E.sendCmd <| Task.perform (\_ -> EventServiceRetryPolling) (Process.sleep (toFloat newRetryDelay))
                 )
 
             else
-                ( { model | eventService = { newEventService | isPolling = False } }, E.none )
+                ( { model | eventService = { newEventService | isPolling = False } }
+                , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка отримання оновлень" error
+                )
 
         EventServiceRetryPolling ->
             if model.eventService.isPolling then

@@ -386,6 +386,7 @@ export type GeoCoordinates = {
 };
 
 export type InboxMessage = {
+  messageUuid: string | null;
   messageUid: string | null;
   text: string;
   media: Array<MessageMediaInfo>;
@@ -482,6 +483,7 @@ export type TagPresenceFilter = 'WithTags' | 'WithoutTags';
 export type InboxMessagesReq = {
   sinceIdNoninclusive: number | null;
   beforeIdNoninclusive: number | null;
+  aroundMessageRef: string | null;
   sinceDateInclusiveMs: number | null;
   tillDateInclusiveMs: number | null;
   onlyShowUnprocessed: boolean | null;
@@ -1327,10 +1329,20 @@ export type InboxItemContextReq = {
 };
 
 export type InboxItemContextRsp = {
+  message: [number, InboxMessage] | null;
   groupMasterKeys: Array<string>;
   sigintInboxItemIds: Array<number>;
   sinceTs: number | null;
   tillTs: number | null;
+};
+
+export type InboxWindowRsp = {
+  targetMessageId: number;
+  inbox: InboxMessagesRsp;
+  hasMoreBefore: boolean;
+  hasMoreAfter: boolean;
+  messagesBefore: number;
+  messagesAfter: number;
 };
 
 export type InboxByGroupDigestRsp = {

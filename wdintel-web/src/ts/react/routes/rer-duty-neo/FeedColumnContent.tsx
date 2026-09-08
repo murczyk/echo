@@ -43,6 +43,10 @@ import type { MessageEntityFilterKind, TagsLayoutVariant } from './utils';
 import { feedListRenderStateEqual } from './utils';
 import { dutyTopScrollButtonSx } from './top-action-styles';
 import { useWindowedFeedScroll } from './useWindowedFeedScroll';
+import {
+  ScrollNavigationIntent,
+  type ExplicitScrollNavigation,
+} from './windowed-feed-scroll-shared';
 import { useFeedIdleViewportOffload } from './useFeedIdleViewportOffload';
 import { recordDutyScrollDebugTiming, useDutyScrollDebugEnabled } from './duty-scroll-debug';
 import { useFeedColumnFab } from './feedColumnFab';
@@ -72,10 +76,13 @@ function filterOwnMessageComments(
 export type FeedColumnContentScrollOptions = {
   /** Wake idle offload before scrolling (scroll FAB / arrow). Follow/settle omit this. */
   wakeIdleOffload?: boolean;
+  intent?: ScrollNavigationIntent;
+  navigation?: ExplicitScrollNavigation;
 };
 
 export type FeedColumnContentHandle = {
   scrollToBottom: (behavior?: ScrollBehavior, options?: FeedColumnContentScrollOptions) => void;
+  scrollToMessage: (id: number, behavior?: ScrollBehavior) => HTMLElement | null;
 };
 
 function useStableCallback<T extends (...args: any[]) => any>(callback: T | undefined): T {
@@ -122,7 +129,6 @@ type DutyMessageCardItemProps = {
   onMessageBookmark: (msgId: number, currentlyBookmarked: boolean) => void;
   onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;
   onMessageCopy: (text: string, feedbackId: string) => void;
-  onMessageAddFrequencyToFilter: (feedId: string, freq: string) => void;
   onMessageCreateReport: (msgId: number, message: InboxMessage) => void;
   onMessageEditReport: (reportId: number) => void;
   onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
@@ -162,7 +168,6 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
   onMessageBookmark,
   onMessageImportant,
   onMessageCopy,
-  onMessageAddFrequencyToFilter,
   onMessageCreateReport,
   onMessageEditReport,
   onMessageExcludeEntity,
@@ -257,7 +262,6 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
           ? undefined
           : () => onMessageCopy(etalonDisplayModel.copyLocationValue ?? '', `location-${id}`)
       }
-      onAddFrequencyToFilter={(freq) => onMessageAddFrequencyToFilter(feedId, freq)}
       onCreateReport={() => onMessageCreateReport(id, msg)}
       onEditReport={onMessageEditReport}
       onExcludeMessageEntity={(entity, value) => onMessageExcludeEntity(entity, value)}
@@ -302,7 +306,6 @@ type DutyMessageListProps = {
   onMessageBookmark: (msgId: number, currentlyBookmarked: boolean) => void;
   onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;
   onMessageCopy: (text: string, feedbackId: string) => void;
-  onMessageAddFrequencyToFilter: (feedId: string, freq: string) => void;
   onMessageCreateReport: (msgId: number, message: InboxMessage) => void;
   onMessageEditReport: (reportId: number) => void;
   onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
@@ -347,7 +350,6 @@ const DutyMessageList = memo(
     onMessageBookmark,
     onMessageImportant,
     onMessageCopy,
-    onMessageAddFrequencyToFilter,
     onMessageCreateReport,
     onMessageEditReport,
     onMessageExcludeEntity,
@@ -403,7 +405,6 @@ const DutyMessageList = memo(
                   onMessageBookmark={onMessageBookmark}
                   onMessageImportant={onMessageImportant}
                   onMessageCopy={onMessageCopy}
-                  onMessageAddFrequencyToFilter={onMessageAddFrequencyToFilter}
                   onMessageCreateReport={onMessageCreateReport}
                   onMessageEditReport={onMessageEditReport}
                   onMessageExcludeEntity={onMessageExcludeEntity}
@@ -453,7 +454,6 @@ const DutyMessageList = memo(
     prev.onMessageBookmark === next.onMessageBookmark &&
     prev.onMessageImportant === next.onMessageImportant &&
     prev.onMessageCopy === next.onMessageCopy &&
-    prev.onMessageAddFrequencyToFilter === next.onMessageAddFrequencyToFilter &&
     prev.onMessageCreateReport === next.onMessageCreateReport &&
     prev.onMessageEditReport === next.onMessageEditReport &&
     prev.onMessageExcludeEntity === next.onMessageExcludeEntity &&
@@ -492,7 +492,7 @@ const FeedColumnScrollFab = memo(function FeedColumnScrollFab({
   if (
     !hasItems ||
     !isPresent(onArrowClick) ||
-    !(loadingNewer || !isPhysicallyAtBottom || tailAvailability === 'available')
+    !(!isPhysicallyAtBottom || tailAvailability === 'available')
   ) {
     return null;
   }
@@ -610,6 +610,8 @@ export const FeedColumnContent = memo(
       loadingNewer = false,
       physicallyAtBottom = true,
       isWatchMode = false,
+      autoScrollAllowed = false,
+      initialPositioningReady = true,
       unreadPrefetchNeeded = true,
       pendingNewerFlushNeeded = false,
       workspaceFabAvoidance = 'none',
@@ -643,7 +645,6 @@ export const FeedColumnContent = memo(
       onFlushPendingNewer,
       onMessageBookmark,
       onMessageImportant,
-      onMessageAddFrequencyToFilter,
       onMessageCopy,
       onMessageCreateReport,
       onMessageEditReport,
@@ -672,6 +673,8 @@ export const FeedColumnContent = memo(
       itemIds,
       debugFeedId: feed.id,
       isWatchMode,
+      autoScrollAllowed,
+      initialPositioningReady,
       enabled: scrollTrackingEnabled,
       loadingOlder: feed.loadingOlder,
       loadingNewer,
@@ -708,7 +711,6 @@ export const FeedColumnContent = memo(
     const stableOnMessageBookmark = useStableCallback(onMessageBookmark);
     const stableOnMessageImportant = useStableCallback(onMessageImportant);
     const stableOnMessageCopy = useStableCallback(onMessageCopy);
-    const stableOnMessageAddFrequencyToFilter = useStableCallback(onMessageAddFrequencyToFilter);
     const stableOnMessageCreateReport = useStableCallback(onMessageCreateReport);
     const stableOnMessageEditReport = useStableCallback(onMessageEditReport);
     const stableOnMessageExcludeEntity = useStableCallback(onMessageExcludeEntity);
@@ -731,10 +733,16 @@ export const FeedColumnContent = memo(
               idleOffload.wakeFromOffload();
             });
           }
-          scroll.scrollToBottom(behavior);
+          scroll.scrollToBottom(behavior, options?.intent, options?.navigation);
+        },
+        scrollToMessage: (id: number, behavior: ScrollBehavior = 'auto') => {
+          flushSync(() => {
+            idleOffload.wakeFromOffload();
+          });
+          return scroll.scrollToItem(id, behavior);
         },
       }),
-      [idleOffload.wakeFromOffload, scroll.scrollToBottom],
+      [idleOffload.wakeFromOffload, scroll.scrollToBottom, scroll.scrollToItem],
     );
 
     if (feed.loading && feed.items.length === 0) {
@@ -780,7 +788,6 @@ export const FeedColumnContent = memo(
           onMessageBookmark={stableOnMessageBookmark}
           onMessageImportant={stableOnMessageImportant}
           onMessageCopy={stableOnMessageCopy}
-          onMessageAddFrequencyToFilter={stableOnMessageAddFrequencyToFilter}
           onMessageCreateReport={stableOnMessageCreateReport}
           onMessageEditReport={stableOnMessageEditReport}
           onMessageExcludeEntity={stableOnMessageExcludeEntity}
@@ -884,6 +891,8 @@ export const FeedColumnContent = memo(
       prevView.canRemove !== nextView.canRemove ||
       prevView.maxWidth !== nextView.maxWidth ||
       prevView.isWatchMode !== nextView.isWatchMode ||
+      prevView.autoScrollAllowed !== nextView.autoScrollAllowed ||
+      prevView.initialPositioningReady !== nextView.initialPositioningReady ||
       prevView.scrollTrackingEnabled !== nextView.scrollTrackingEnabled ||
       prevView.loadingNewer !== nextView.loadingNewer ||
       prevView.unreadPrefetchNeeded !== nextView.unreadPrefetchNeeded ||
@@ -927,7 +936,6 @@ export const FeedColumnContent = memo(
       prevActions.onRemoveColumn !== nextActions.onRemoveColumn ||
       prevActions.onMessageBookmark !== nextActions.onMessageBookmark ||
       prevActions.onMessageImportant !== nextActions.onMessageImportant ||
-      prevActions.onMessageAddFrequencyToFilter !== nextActions.onMessageAddFrequencyToFilter ||
       prevActions.onMessageCopy !== nextActions.onMessageCopy ||
       prevActions.onMessageCreateReport !== nextActions.onMessageCreateReport ||
       prevActions.onMessageEditReport !== nextActions.onMessageEditReport ||

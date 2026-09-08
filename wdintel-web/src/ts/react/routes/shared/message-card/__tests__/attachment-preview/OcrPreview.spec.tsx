@@ -1,7 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import { createElement, forwardRef, type ElementType, type ReactNode } from 'react';
+import { createElement, forwardRef, useState, type ElementType, type ReactNode } from 'react';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -866,20 +866,27 @@ describe('OcrPreview', () => {
     document.body.appendChild(container);
     const root = createRoot(container);
 
-    await act(async () => {
-      root.render(
+    const items = Array.from({ length: 15 }, (_, index) => ({
+      identity: `image-${index + 1}`,
+      mediaId: `image-${index + 1}`,
+      summary:
+        index >= 3 && index < 8
+          ? { state: 'completed' as const, lastError: null, hasCoordinates: false }
+          : null,
+    }));
+    function ControlledCarousel() {
+      const [selectedIdentity, setSelectedIdentity] = useState('image-4');
+      return (
         <MessageCardMediaSummaryCarousel
-          media={[
-            ...Array.from({ length: 15 }, (_, index) => ({
-              id: `image-${index + 1}`,
-              summary:
-                index >= 3 && index < 8
-                  ? { state: 'completed', lastError: null, hasCoordinates: false }
-                  : null,
-            })),
-          ]}
-        />,
+          items={items}
+          selectedIdentity={selectedIdentity}
+          onSelectedIdentityChange={setSelectedIdentity}
+        />
       );
+    }
+
+    await act(async () => {
+      root.render(<ControlledCarousel />);
       await Promise.resolve();
     });
 
@@ -897,6 +904,7 @@ describe('OcrPreview', () => {
 
     await act(async () => {
       next?.click();
+      root.render(<ControlledCarousel />);
       await Promise.resolve();
     });
 
@@ -917,10 +925,13 @@ describe('OcrPreview', () => {
     await act(async () => {
       root.render(
         <MessageCardMediaSummaryCarousel
-          media={Array.from({ length: 4 }, (_, index) => ({
-            id: `image-${index + 1}`,
+          items={Array.from({ length: 4 }, (_, index) => ({
+            identity: `image-${index + 1}`,
+            mediaId: `image-${index + 1}`,
             summary: null,
           }))}
+          selectedIdentity={null}
+          onSelectedIdentityChange={vi.fn()}
         />,
       );
     });
@@ -948,12 +959,15 @@ describe('OcrPreview', () => {
     await act(async () => {
       root.render(
         <MessageCardMediaSummaryCarousel
-          media={[
+          items={[
             {
-              id: 'image-1',
+              identity: 'image-1',
+              mediaId: 'image-1',
               summary: { state: 'completed', lastError: null, hasCoordinates: false },
             },
           ]}
+          selectedIdentity="image-1"
+          onSelectedIdentityChange={vi.fn()}
         />,
       );
       await Promise.resolve();
@@ -1004,12 +1018,15 @@ describe('OcrPreview', () => {
     await act(async () => {
       root.render(
         <MessageCardMediaSummaryCarousel
-          media={[
+          items={[
             {
-              id: 'image-1',
+              identity: 'image-1',
+              mediaId: 'image-1',
               summary: { state: 'completed', lastError: null, hasCoordinates: false },
             },
           ]}
+          selectedIdentity="image-1"
+          onSelectedIdentityChange={vi.fn()}
         />,
       );
       await Promise.resolve();
@@ -1047,12 +1064,15 @@ describe('OcrPreview', () => {
     await act(async () => {
       root.render(
         <MessageCardMediaSummaryCarousel
-          media={[
+          items={[
             {
-              id: 'image-1',
+              identity: 'image-1',
+              mediaId: 'image-1',
               summary: { state: 'failed', lastError: null, hasCoordinates: false },
             },
           ]}
+          selectedIdentity="image-1"
+          onSelectedIdentityChange={vi.fn()}
         />,
       );
       await Promise.resolve();

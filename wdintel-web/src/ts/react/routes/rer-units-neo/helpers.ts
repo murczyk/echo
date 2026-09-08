@@ -100,13 +100,16 @@ export function buildUnitsListReq({
   const orbitFilter = readUnitOrbitColumnFilter(
     columnFilters.find((filter) => filter.id === 'hasOrbit')?.value,
   );
+  const filterText = globalFilter.trim();
 
   return {
     ...DEFAULT_LIST_UNITS_REQ,
-    sortBy: sortOptions?.[Number(sort?.desc ?? false)] ?? 'UnitNameAsc',
+    sortBy: filterText
+      ? 'NaturalMilitarySortAsc'
+      : (sortOptions?.[Number(sort?.desc ?? false)] ?? 'UnitNameAsc'),
     includeInactive: statusFilter !== 'active',
     filterActive: statusFilter === 'all' ? null : statusFilter === 'active',
-    filterText: globalFilter.trim() || null,
+    filterText: filterText || null,
     filterName: nameFilter.text.trim() || null,
     filterOther: textColumnFilter(columnFilters, 'other'),
     filterTeamOrCrew: textColumnFilter(columnFilters, 'teamOrCrew'),

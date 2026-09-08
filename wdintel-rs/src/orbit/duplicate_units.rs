@@ -110,11 +110,10 @@ pub async fn run(mode: Mode, dry_run: bool) -> anyhow::Result<()> {
 async fn run_with_database(
     db: &sea_orm::DatabaseConnection,
 ) -> anyhow::Result<()> {
-    let (orbit_sync, orbit_units) =
-        persistence::load_latest_synced_source_units_with_sync(db)
+    let (orbit_sync, matcher) =
+        persistence::load_latest_test_link_matcher_with_sync(db)
             .await
             .c(h!())?;
-    let matcher = matching::TestLinkMatcher::from_units(orbit_units);
     let system_login_id = crate::users::system_login_id(db).await.c(h!())?;
     let groups =
         load_duplicate_groups(db, &matcher, system_login_id, false, None)
@@ -147,10 +146,9 @@ async fn run_with_database(
 async fn print_dry_run_report(
     db: &sea_orm::DatabaseConnection,
 ) -> anyhow::Result<()> {
-    let orbit_units = persistence::load_latest_synced_source_units(db)
+    let (_, matcher) = persistence::load_latest_test_link_matcher_with_sync(db)
         .await
         .c(h!())?;
-    let matcher = matching::TestLinkMatcher::from_units(orbit_units);
     let system_login_id = crate::users::system_login_id(db).await.c(h!())?;
     let rows =
         load_duplicate_report_rows(db, &matcher, system_login_id, false, None)
@@ -1016,8 +1014,8 @@ async fn persist_selection_batch(
     }
     let transaction = super::acquire_import_lock(db).await.c(h!())?;
     let login = crate::users::system_login_id(&transaction).await.c(h!())?;
-    let (orbit_sync, orbit_units) =
-        persistence::load_latest_synced_source_units_with_sync(&transaction)
+    let (orbit_sync, matcher) =
+        persistence::load_latest_test_link_matcher_with_sync(&transaction)
             .await
             .c(h!())?;
     let current_selections = selections
@@ -1032,7 +1030,6 @@ async fn persist_selection_batch(
         transaction.commit().await.c(h!())?;
         return Ok(review);
     }
-    let matcher = matching::TestLinkMatcher::from_units(orbit_units);
     let selected_orbit_unit_ids = current_selections
         .iter()
         .map(|selection| selection.orbit_unit_id)

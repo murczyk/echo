@@ -873,6 +873,9 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::inbox::update_inbox_cursor)
             .service(crate::rer_importer::inbox::inbox_item_context)
             .service(crate::rer_importer::inbox::messages_by_id)
+            .service(
+                crate::rer_importer::inbox::messages_by_id_with_metadata,
+            )
             .service(crate::rer_importer::inbox::messages_by_uuid)
             .service(crate::rer_importer::inbox::get_freq_pelengs_summary)
             .service(crate::rer_importer::analysis::stats_deprecated)
@@ -1224,6 +1227,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::freq::list_groups_by_freqs_per_day)
             .service(crate::sigint::freq::latest_frequencies)
             .service(crate::sigint::network::network_list)
+            .service(crate::sigint::network::activity_decision::list_network_activity_decisions)
             .service(crate::sigint::network::find_live_networks)
             .service(crate::sigint::network::network_info_one)
             .service(crate::sigint::network::network_info_batch_id)

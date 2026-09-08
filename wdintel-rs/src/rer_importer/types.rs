@@ -37,6 +37,7 @@ pub struct InboxMessageSummary {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct InboxMessage {
+    pub message_uuid: Option<String>,
     pub message_uid: Option<String>,
     pub text: String,
     pub media: Vec<MessageMediaInfo>,
@@ -168,6 +169,7 @@ fn default_checked() -> bool {
 impl From<InboxInsertPayload> for InboxMessage {
     fn from(payload: InboxInsertPayload) -> Self {
         Self {
+            message_uuid: None,
             message_uid: None,
             text: payload.text,
             media: payload.media,
@@ -436,6 +438,7 @@ pub struct MessageUuidsReq {
 pub struct InboxMessagesReq {
     pub since_id_noninclusive: Option<i64>,
     pub before_id_noninclusive: Option<i64>,
+    pub around_message_ref: Option<String>,
     pub since_date_inclusive_ms: Option<i64>,
     pub till_date_inclusive_ms: Option<i64>,
     pub only_show_unprocessed: Option<bool>,
@@ -521,12 +524,25 @@ pub struct InboxItemContextReq {
     Default,
 )]
 pub struct InboxItemContextRsp {
+    pub message: Option<(i64, InboxMessage)>,
     pub group_master_keys: Vec<String>,
     pub sigint_inbox_item_ids: Vec<i64>,
     #[serde(rename = "sinceTs")]
     pub since_ts: Option<i64>,
     #[serde(rename = "tillTs")]
     pub till_ts: Option<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct InboxWindowRsp {
+    pub target_message_id: i64,
+    pub inbox: InboxMessagesRsp,
+    pub has_more_before: bool,
+    pub has_more_after: bool,
+    pub messages_before: i64,
+    pub messages_after: i64,
 }
 
 #[derive(
@@ -1785,6 +1801,7 @@ mod tests {
             "keyword_tokens".to_string(),
             "message_comments".to_string(),
             "message_uid".to_string(),
+            "message_uuid".to_string(),
             "network_name".to_string(),
             "parent_messages".to_string(),
             "signal_tokens".to_string(),

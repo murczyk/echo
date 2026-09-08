@@ -126,6 +126,12 @@ For the slower loading comparisons, use:
 npm run e2e:perf
 ```
 
+To run only the direct-link group and sender reference tests, use:
+
+```bash
+npm run e2e:analysis-references
+```
+
 Before running Playwright locally for the first time, install the browser once:
 
 ```bash

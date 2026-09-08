@@ -167,3 +167,38 @@ describe('buildCopyTextWithNetworkAndNote', () => {
     );
   });
 });
+
+describe('buildMessageLinkHref', () => {
+  it('builds short duty link with messageUid', async () => {
+    const { buildMessageLinkHref } = await import('../../message-card.utils');
+    expect(buildMessageLinkHref({ messageUid: 'uid-abc-123' }, 'duty')).toBe(
+      '/rer-duty-neo?m=uid-abc-123',
+    );
+  });
+
+  it('prefers the exact numeric id for a duty card without uuid', async () => {
+    const { buildMessageLinkHref } = await import('../../message-card.utils');
+    expect(buildMessageLinkHref({ messageUid: 'shared-uid' }, 'duty', 456)).toBe(
+      '/rer-duty-neo?m=456',
+    );
+  });
+
+  it('prefers the stable message uuid for both links', async () => {
+    const { buildMessageLinkHref } = await import('../../message-card.utils');
+    const message = { messageUuid: '019-stable', messageUid: 'legacy-uid' };
+    expect(buildMessageLinkHref(message, 'duty', 456)).toBe('/rer-duty-neo?m=019-stable');
+    expect(buildMessageLinkHref(message, 'analysis', 456)).toBe('/rer-analysis-neo?m=019-stable');
+  });
+
+  it('builds short analysis link with messageUid', async () => {
+    const { buildMessageLinkHref } = await import('../../message-card.utils');
+    expect(buildMessageLinkHref({ messageUid: 'uid-abc-123' }, 'analysis')).toBe(
+      '/rer-analysis-neo?m=uid-abc-123',
+    );
+  });
+
+  it('falls back to numeric id if messageUid is missing', async () => {
+    const { buildMessageLinkHref } = await import('../../message-card.utils');
+    expect(buildMessageLinkHref({ messageUid: null }, 'duty', 456)).toBe('/rer-duty-neo?m=456');
+  });
+});

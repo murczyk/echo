@@ -502,47 +502,6 @@ describe('useRerDutyFeeds', () => {
     expect(hoisted.fetchAnalysisCallsignInfos).toHaveBeenCalledTimes(1);
   });
 
-  it('adds a frequency to the selected feed filter without duplicating it', async () => {
-    hoisted.messageFeeds = [
-      {
-        id: 'mf-0',
-        items: [
-          [
-            1,
-            {
-              textMarked: [{ CNCallsignC: { text: 'БОРОДА' } }],
-            },
-          ],
-        ],
-        filter: {
-          freqsSelected: ['153.6250'],
-          freqsDenied: ['153.6250', '200.0000'],
-        },
-      },
-    ];
-    await act(async () => {
-      root.render(React.createElement(TestHarness));
-    });
-    await act(async () => {
-      await flushMicrotasks();
-    });
-
-    expect(latest).not.toBeNull();
-    expect(typeof latest?.addFrequencyToFilter).toBe('function');
-
-    await act(async () => {
-      latest!.addFrequencyToFilter('mf-0', '153.6250');
-    });
-
-    expect(hoisted.applyFilterMock).toHaveBeenCalledWith(
-      'mf-0',
-      expect.objectContaining({
-        freqsSelected: ['153.6250'],
-        freqsDenied: ['200.0000'],
-      }),
-    );
-  });
-
   it('retries failed callsign lookups after the backoff expires even when inbox rows already exist', async () => {
     hoisted.initialCallsignInfoMap = {
       борода: { callsign: 'БОРОДА', res: [{ id: 1 }] },

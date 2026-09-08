@@ -3,8 +3,8 @@ import type { Unit } from '../../../../Bindings';
 
 export type UnitSearchMode = 'strict' | 'relaxed';
 
-function isNumericToken(token: string): boolean {
-  return /^\d+$/.test(token);
+function searchTokens(value: string): string[] {
+  return normalizeSearchValue(value).match(/[\p{L}\p{N}]+/gu) ?? [];
 }
 
 export function buildUnitSearchText(unit: Unit): string {
@@ -34,34 +34,8 @@ export function buildUnitSearchText(unit: Unit): string {
 function matchesByTokens(target: string, query: string): boolean {
   if (query.length === 0) return true;
 
-  const targetTokens = normalizeSearchValue(target).split(' ');
-  const queryTokens = normalizeSearchValue(query).split(' ');
-
-  let nextIndex = 0;
-
-  for (const queryToken of queryTokens) {
-    let matchedIndex = -1;
-
-    for (let index = nextIndex; index < targetTokens.length; index += 1) {
-      const targetToken = targetTokens[index];
-      const tokenMatches = isNumericToken(queryToken)
-        ? targetToken === queryToken
-        : targetToken.includes(queryToken);
-
-      if (tokenMatches) {
-        matchedIndex = index;
-        break;
-      }
-    }
-
-    if (matchedIndex === -1) {
-      return false;
-    }
-
-    nextIndex = matchedIndex + 1;
-  }
-
-  return true;
+  const targetTokens = new Set(searchTokens(target));
+  return searchTokens(query).every((queryToken) => targetTokens.has(queryToken));
 }
 
 export function isUnitSearchMatch(value: string, query: string): boolean {

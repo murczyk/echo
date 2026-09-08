@@ -120,20 +120,23 @@ async fn load_review_data<C>(
 where
     C: ConnectionTrait,
 {
-    let (orbit_sync, orbit_units) =
-        persistence::load_latest_synced_source_units_with_sync(db)
-            .await
-            .c(h!())?;
+    let orbit_sync = persistence::load_latest_sync(db)
+        .await
+        .c(h!())?
+        .ok_or_else(|| anyhow::anyhow!("ORBIT data has not been synchronized"))
+        .c(h!())?;
     let linked_orbit_unit_ids = load_linked_orbit_unit_ids(db).await.c(h!())?;
-    let orbit_units = orbit_units
-        .into_iter()
-        .filter(|unit| !linked_orbit_unit_ids.contains(&unit.unit_id))
-        .collect::<Vec<_>>();
+    let matcher = persistence::load_test_link_matcher_excluding(
+        db,
+        &orbit_sync,
+        &linked_orbit_unit_ids,
+    )
+    .await
+    .c(h!())?;
     let sigint_units =
         test_link::load_linkable_sigint_units(db, false, activity_scope)
             .await
             .c(h!())?;
-    let matcher = matching::TestLinkMatcher::from_units(orbit_units);
     let suppressed_links =
         test_link::load_suppressed_links(db).await.c(h!())?;
     let manual_matches = test_link::prepare_review_units(
@@ -294,18 +297,28 @@ fn automatic_review(
 fn review_manually(
     reviews: &[tui::OrbitSigintLinkReview],
 ) -> anyhow::Result<ManualReview> {
-    if reviews.is_empty() {
-        return Ok(ManualReview::default());
+    let reviewable = reviews
+        .iter()
+        .filter(|review| !review.candidates.is_empty())
+        .collect::<Vec<_>>();
+    let skipped = reviews.len() - reviewable.len();
+    if reviewable.is_empty() {
+        return Ok(ManualReview {
+            skipped,
+            ..Default::default()
+        });
     }
     let mut terminal = tui::setup_terminal().c(h!())?;
-    let result = review_manually_inner(&mut terminal, reviews);
+    let result = review_manually_inner(&mut terminal, &reviewable);
     tui::restore_terminal(&mut terminal).c(h!())?;
-    result.c(h!())
+    let mut result = result.c(h!())?;
+    result.skipped += skipped;
+    Ok(result)
 }
 
 fn review_manually_inner(
     terminal: &mut tui::OrbitTerminal,
-    reviews: &[tui::OrbitSigintLinkReview],
+    reviews: &[&tui::OrbitSigintLinkReview],
 ) -> anyhow::Result<ManualReview> {
     let mut result = ManualReview::default();
     for (index, review) in reviews.iter().enumerate() {

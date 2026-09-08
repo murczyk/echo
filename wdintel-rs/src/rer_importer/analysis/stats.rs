@@ -5243,6 +5243,13 @@ fn build_aors_query(
             ))
             .eq(true),
         )
+        .and_where(
+            Expr::col((
+                group_message_alias,
+                signal_message_group::Column::GroupMasterKey,
+            ))
+            .is_in(master_keys),
+        )
         .to_owned();
     if let Some(condition) = selected_aor_overlap_condition(
         group_value_alias.clone(),

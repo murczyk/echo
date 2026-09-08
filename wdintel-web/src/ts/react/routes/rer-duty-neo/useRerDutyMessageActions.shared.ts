@@ -8,6 +8,8 @@ import type {
 } from '../../../../Bindings';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { MessageFeedState } from './utils';
+import type { ExplicitFeedNavigation } from './useRerDutyNavigation';
+import type { ExplicitScrollNavigation } from './windowed-feed-scroll-shared';
 
 export type MessageActionsDeps = {
   messageFeeds: MessageFeedState[];
@@ -17,7 +19,7 @@ export type MessageActionsDeps = {
   loadFeedInitialMessages: (
     feedId: string,
     overrides?: { highlightSignalsEnabled?: boolean },
-  ) => Promise<void>;
+  ) => Promise<{ id: number; timestamp: number | null } | null | void>;
   loadFeedNewerMessages: (
     feedId: string,
     opts?: {
@@ -59,6 +61,23 @@ export type MessageActionsDeps = {
   saveFilterNameByFeedId: Record<string, string>;
   setSaveFilterNameByFeedId: Dispatch<SetStateAction<Record<string, string>>>;
   dutyDisableAutoScroll: boolean;
-  beginFollowTail: (feedId: string) => number;
+  beginExplicitNavigation: (feedId: string) => ExplicitFeedNavigation;
+  isExplicitNavigationCurrent: (operation: ExplicitFeedNavigation) => boolean;
+  registerExplicitLanding: (
+    operation: ExplicitFeedNavigation,
+    target: { id: number; timestamp: number | null },
+    complete: () => void,
+  ) => boolean;
+  registerExplicitLoading: (
+    operation: ExplicitFeedNavigation,
+    releaseLoading: () => void,
+  ) => boolean;
+  cancelExplicitNavigation: (operation: ExplicitFeedNavigation) => boolean;
+  registerExplicitScheduledWork: (operation: ExplicitFeedNavigation, cancel: () => void) => boolean;
+  clearExplicitScheduledWork: (operation: ExplicitFeedNavigation) => void;
+  getExplicitScrollNavigation: (
+    feedId: string,
+    generation: number,
+  ) => ExplicitScrollNavigation | null;
   openPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
 };

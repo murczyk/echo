@@ -8,6 +8,7 @@ type AnalysisNeoMockOptions = {
   inboxDelayMs?: number;
   inboxResponse?: InboxMessagesRspRaw | null;
   signalGroups?: string[];
+  networkInfoResponse?: unknown[];
 };
 
 function jsonBody(body: unknown): string {
@@ -347,7 +348,7 @@ export async function installAnalysisNeoApiMocks(
     }
 
     if (pathname === '/api/sigint/network-info-batch-id') {
-      await fulfillJson(route, []);
+      await fulfillJson(route, options.networkInfoResponse ?? []);
       return;
     }
 

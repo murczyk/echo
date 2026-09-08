@@ -6,10 +6,17 @@ import type { ComponentProps, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { CallsignInfoRes, Network, SummaryTableFreqRow, Unit } from '../../../../../Bindings';
-import { CallsignChipsCell } from './analysis-summary-table-cells';
+import type {
+  CallsignInfoRes,
+  Network,
+  SummaryTableFreqRow,
+  Unit,
+} from '../../../../../../Bindings';
+import { CallsignChipsCell, CompactListCell } from '../analysis-summary-table-cells';
 
 const capturedRowActionProps: Array<{ label: string; opensModal?: boolean }> = [];
+const capturedTableOptions: Array<Record<string, any>> = [];
+const useMediaQueryMock = vi.hoisted(() => vi.fn(() => false));
 
 vi.mock('@mui/icons-material/DownloadOutlined', () => ({ default: () => <span>download</span> }));
 vi.mock('@mui/icons-material/EditOutlined', () => ({ default: () => <span>edit</span> }));
@@ -38,7 +45,6 @@ vi.mock('@mui/material', () => ({
       {props.children}
     </button>
   ),
-  CircularProgress: () => <div>loading</div>,
   ClickAwayListener: ({ children }: { children: ReactNode }) => <>{children}</>,
   Dialog: (props: { children: ReactNode; open: boolean; disableRestoreFocus?: boolean }) =>
     props.open ? (
@@ -85,7 +91,9 @@ vi.mock('@mui/material', () => ({
       {props.children}
     </select>
   ),
-  Skeleton: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  Skeleton: ({ children }: { children?: ReactNode }) => (
+    <div data-testid="loading-skeleton">{children}</div>
+  ),
   Stack: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   TextField: (props: {
     label?: string;
@@ -111,7 +119,7 @@ vi.mock('@mui/material', () => ({
   },
   Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
   Typography: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  useMediaQuery: () => false,
+  useMediaQuery: useMediaQueryMock,
 }));
 
 vi.mock('@mui/material/styles', () => ({
@@ -124,6 +132,7 @@ vi.mock('@mui/material/styles', () => ({
 
 vi.mock('material-react-table', () => ({
   useMaterialReactTable: (options: Record<string, any>) => {
+    capturedTableOptions.push(options);
     return options;
   },
   MaterialReactTable: ({ table }: { table: any }) => {
@@ -174,7 +183,7 @@ vi.mock('material-react-table', () => ({
   },
 }));
 
-vi.mock('../../../components/PowerButton', () => ({
+vi.mock('../../../../components/PowerButton', () => ({
   Button: (props: { children: ReactNode; onClick?: () => void; disabled?: boolean }) => (
     <button type="button" onClick={props.onClick} disabled={props.disabled}>
       {props.children}
@@ -182,7 +191,7 @@ vi.mock('../../../components/PowerButton', () => ({
   ),
 }));
 
-vi.mock('../../../components/MrtRowActionButton', () => ({
+vi.mock('../../../../components/MrtRowActionButton', () => ({
   MrtRowActions: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   MrtRowActionButton: (props: {
     label: string;
@@ -207,19 +216,15 @@ vi.mock('../../../components/MrtRowActionButton', () => ({
   MRT_ROW_ACTION_MODAL_PROPS: { disableRestoreFocus: true },
 }));
 
-vi.mock('../../../components/SectionLoadingOverlay', () => ({
-  SectionLoadingOverlay: (props: { open: boolean }) => (props.open ? <div>overlay</div> : null),
-}));
-
-vi.mock('../../../components/TableEmptyState', () => ({
+vi.mock('../../../../components/TableEmptyState', () => ({
   TableEmptyState: ({ message }: { message: string }) => <div>{message}</div>,
 }));
 
-vi.mock('../../../components/PowerChip', () => ({
+vi.mock('../../../../components/PowerChip', () => ({
   PowerChip: (props: { label: ReactNode }) => <span>{props.label}</span>,
 }));
 
-vi.mock('../../../components/mui-customized/table/get-default-table-options', () => ({
+vi.mock('../../../../components/mui-customized/table/get-default-table-options', () => ({
   buildDefaultColumnOrder: ({ dataColumnIds }: { dataColumnIds: string[] }) => dataColumnIds,
   getDefaultMRTOptions: () => ({ displayColumnDefOptions: {} }),
   mrtItemsCell:
@@ -234,12 +239,13 @@ vi.mock('../../../components/mui-customized/table/get-default-table-options', ()
       items(props).map(renderItem),
   mrtTextCell: ({ displayValue }: { displayValue: (props: any) => ReactNode }) => displayValue,
   useAppMaterialReactTable: (options: Record<string, unknown>) => {
+    capturedTableOptions.push(options);
     return { ...options, options, getState: () => ({ isFullScreen: false }) };
   },
   renderColumnActionsMenuItems: () => [],
 }));
 
-vi.mock('../../../components/TableToolbarControls', () => ({
+vi.mock('../../../../components/TableToolbarControls', () => ({
   TableToolbarControls: (props: {
     trailingActionsBeforeInternal?: ReactNode;
     trailingActions?: ReactNode;
@@ -254,7 +260,7 @@ vi.mock('../../../components/TableToolbarControls', () => ({
 }));
 
 vi.mock(
-  '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions',
+  '../../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions',
   () => ({
     InternalTableActions: ({ children }: { children?: ReactNode }) => (
       <div>
@@ -265,7 +271,7 @@ vi.mock(
   }),
 );
 
-vi.mock('../../../components/mui-customized/table/table-state-provider', () => ({
+vi.mock('../../../../components/mui-customized/table/table-state-provider', () => ({
   TableStateProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
   useTableStateContext: () => ({
     globalFilter: '',
@@ -286,7 +292,7 @@ vi.mock('../../../components/mui-customized/table/table-state-provider', () => (
   }),
 }));
 
-import { AnalysisSummaryTableCard } from './AnalysisSummaryTableCard';
+import { AnalysisSummaryTableCard } from '../AnalysisSummaryTableCard';
 
 type Rendered = {
   container: HTMLDivElement;
@@ -405,7 +411,6 @@ async function changeInput(input: HTMLInputElement, value: string): Promise<void
   });
 }
 
-// @test-scope safeguard: preserves analysis row actions, rename submission, empty/loading boundaries, and overflow disclosure so a user cannot mutate or inspect the wrong frequency data.
 describe('AnalysisSummaryTableCard', () => {
   const rendered: Rendered[] = [];
 
@@ -417,9 +422,26 @@ describe('AnalysisSummaryTableCard', () => {
       item.container.remove();
     }
     capturedRowActionProps.splice(0);
+    capturedTableOptions.splice(0);
+    useMediaQueryMock.mockReturnValue(false);
   });
 
-  it('keeps the first load skeleton free of the reload overlay', async () => {
+  function getPaginationProps(): Record<string, any> {
+    const options = capturedTableOptions.at(-1);
+    if (!options) throw new Error('MRT options were not captured');
+    const paginationProps = options.muiPaginationProps;
+    return typeof paginationProps === 'function'
+      ? paginationProps({ table: options })
+      : paginationProps;
+  }
+
+  async function renderAtWidth(width: number): Promise<Rendered> {
+    useMediaQueryMock.mockReturnValue(width < 600);
+    return renderComponent(buildProps());
+  }
+
+  // @test-scope safeguard: prevents a loading summary from presenting stale rows as current data.
+  it('shows skeletons during loading', async () => {
     const view = await renderComponent(
       buildProps({
         loading: true,
@@ -428,9 +450,11 @@ describe('AnalysisSummaryTableCard', () => {
     );
     rendered.push(view);
 
-    expect(view.container.textContent).not.toContain('overlay');
+    expect(view.container.querySelector('[data-testid="loading-skeleton"]')).not.toBeNull();
+    expect(view.container.querySelector('table')).toBeNull();
   });
 
+  // @test-scope safeguard: prevents an empty loaded summary from exposing non-actionable table controls.
   it('shows a compact empty state without rendering the MRT footer', async () => {
     const view = await renderComponent(
       buildProps({
@@ -444,6 +468,7 @@ describe('AnalysisSummaryTableCard', () => {
     expect(view.container.querySelector('table')).toBeNull();
   });
 
+  // @test-scope safeguard: prevents an empty successful response from remaining indefinitely loading.
   it('treats zero rows as loaded when the optional loaded prop is omitted', async () => {
     const props = buildProps({ rows: [], loading: false });
     delete props.loaded;
@@ -454,6 +479,7 @@ describe('AnalysisSummaryTableCard', () => {
     expect(view.container.querySelector('table')).toBeNull();
   });
 
+  // @test-scope safeguard: prevents summary row actions from targeting the wrong frequency.
   it('routes filter and map row actions to the existing callbacks', async () => {
     const onSelectFreq = vi.fn();
     const onShowFreqOnMap = vi.fn();
@@ -472,6 +498,7 @@ describe('AnalysisSummaryTableCard', () => {
     expect(onShowFreqOnMap).toHaveBeenCalledWith('100.100');
   });
 
+  // @test-scope safeguard: prevents a rename dialog from restoring focus into a hidden table subtree.
   it('marks rename unit as modal and disables restore focus on the dialog', async () => {
     const view = await renderComponent(buildProps());
     rendered.push(view);
@@ -490,6 +517,7 @@ describe('AnalysisSummaryTableCard', () => {
     ).toBe('true');
   });
 
+  // @test-scope safeguard: preserves the unit-rename action and its cancellable dialog flow.
   it('opens and closes the rename dialog from the actions column', async () => {
     const view = await renderComponent(buildProps());
     rendered.push(view);
@@ -502,6 +530,7 @@ describe('AnalysisSummaryTableCard', () => {
     expect(view.container.textContent).not.toContain('Частота 100.100');
   });
 
+  // @test-scope safeguard: prevents a confirmed unit rename from mutating a different frequency or unit.
   it('submits onRenameUnit after confirming the dialog', async () => {
     const onRenameUnit = vi.fn().mockResolvedValue(undefined);
     const view = await renderComponent(buildProps({ onRenameUnit }));
@@ -514,6 +543,7 @@ describe('AnalysisSummaryTableCard', () => {
     expect(onRenameUnit).toHaveBeenCalledWith('100.100', '1 обрмп', '77 обрмп');
   });
 
+  // @test-scope safeguard: preserves the one-unit rename flow without an ambiguous unit selection.
   it('uses a single editable field when only one unit is available', async () => {
     const onRenameUnit = vi.fn().mockResolvedValue(undefined);
     const view = await renderComponent(
@@ -535,6 +565,7 @@ describe('AnalysisSummaryTableCard', () => {
     expect(onRenameUnit).toHaveBeenCalledWith('100.100', '1 обрмп', '77 обрмп');
   });
 
+  // @test-scope safeguard: prevents overflowed callsigns from becoming inaccessible to the user.
   it('keeps complete item values available to the shared overflow primitive', async () => {
     const view = await renderComponent(
       buildProps({
@@ -554,6 +585,7 @@ describe('AnalysisSummaryTableCard', () => {
     expect(view.container.textContent).toContain('GOLF');
   });
 
+  // @test-scope safeguard: prevents analysis results from silently clipping callsigns, units, or locations.
   it('renders analysis item cells without fixed-count clipping', async () => {
     const view = await renderComponent(
       buildProps({
@@ -575,6 +607,7 @@ describe('AnalysisSummaryTableCard', () => {
     expect(row.children[7].textContent).toContain('loc-e');
   });
 
+  // @test-scope safeguard: prevents overflowed callsigns from becoming inaccessible to the user.
   it('renders standalone callsign chip overflow control', async () => {
     const view = await renderStandalone(
       <CallsignChipsCell
@@ -593,6 +626,7 @@ describe('AnalysisSummaryTableCard', () => {
     expect(view.container.textContent).toContain('Ще 4');
   });
 
+  // @test-scope safeguard: prevents hidden callsigns from being exposed before an explicit disclosure action.
   it('mounts genuinely hidden distinct callsigns only while disclosure is open', async () => {
     const view = await renderStandalone(
       <CallsignChipsCell
@@ -617,5 +651,21 @@ describe('AnalysisSummaryTableCard', () => {
     expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('DELTA');
     act(() => trigger?.click());
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  // @test-scope safeguard: prevents overflowed units and locations from becoming inaccessible to the user.
+  it('renders standalone compact list overflow controls', async () => {
+    const view = await renderStandalone(
+      <div>
+        <CompactListCell items={['unit-a', 'unit-b', 'unit-c', 'unit-d']} />
+        <CompactListCell items={['loc-a', 'loc-b', 'loc-c', 'loc-d', 'loc-e']} />
+      </div>,
+    );
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('unit-a');
+    expect(view.container.textContent).toContain('loc-a');
+    expect(view.container.textContent).toContain('Ще 3');
+    expect(view.container.textContent).toContain('Ще 4');
   });
 });

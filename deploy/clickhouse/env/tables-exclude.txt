@@ -38,6 +38,9 @@ public.sigint_unit_change
 public.battle_line_version
 public.battle_line_aor_geometry
 
+# PostgreSQL-only audit history.
+public.sigint_activity_decision_changelog
+
 
 # ORBIT unit catalog remains PostgreSQL-only.
 public.orbit_grouping_of_forces

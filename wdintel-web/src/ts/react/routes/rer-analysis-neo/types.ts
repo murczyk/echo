@@ -24,6 +24,7 @@ import type {
 import type { AnalysisReportState } from './report-helpers';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
+import type { ReportEditLoadState } from '../shared/manage-message/useManageMessageDrawer';
 
 export type AnalysisReportTaskRun = {
   id: number;
@@ -53,6 +54,22 @@ export type AnalysisFilterOption = {
   label: string;
   count: number;
   values?: string[];
+};
+
+export type AnalysisDirectMessageNavigation = {
+  targetMessageId: number;
+  targetMessageIndex: number;
+  totalCount: number;
+  focusActive: boolean;
+  contextLoading?: boolean;
+  newestFirst: boolean;
+  canLoadEarlier: boolean;
+  canLoadLater: boolean;
+  loadingEarlier: boolean;
+  loadingLater: boolean;
+  onClearFocus: () => void;
+  onLoadEarlier: () => Promise<boolean>;
+  onLoadLater: () => Promise<boolean>;
 };
 
 export type AnalysisAorEntry = {
@@ -167,6 +184,7 @@ export type AnalysisPageState = {
   error: string | null;
   editorMessage: { id: number; message: InboxMessage } | null;
   editorEditAsReport: boolean;
+  editTargetLoadState: ReportEditLoadState;
   reportSource: { id: number; message: InboxMessage } | null;
   editorSaveInFlight: boolean;
   currentUser: User | null;
@@ -205,6 +223,8 @@ export type AnalysisPageState = {
   messagesTotalCount: number | null;
   messagesTotalLoading: boolean;
   messages: Array<[number, InboxMessage]>;
+  directMessageLoading: boolean;
+  directMessageNavigation: AnalysisDirectMessageNavigation | null;
   networkDisplayMap: Record<number, string>;
   networks: Network[];
   newCallsigns: NewCallsignsRes;
@@ -212,6 +232,10 @@ export type AnalysisPageState = {
   noMoreToLoad: boolean;
   nolimitShown: boolean;
   pageIndex: number;
+  messagePageNavigationTarget: number | null;
+  messageViewportPreservationKey: number;
+  messageViewportPreserving: boolean;
+  visibleMessagesPageIndex: number;
   newestFirst: boolean;
   unitsExactMatchOnlyDefault: boolean | null;
   supportNonRerInterceptions: boolean;
@@ -221,6 +245,7 @@ export type AnalysisPageState = {
   queryState: AnalysisQueryState;
   tagsLayout: TagsLayoutVariant;
   mediaSummaryEnabled?: boolean;
+  collapseMediaPreviews: boolean;
   messageTextPreviewLines: 20 | 40 | null;
   audioTranscriptionCollapsed: boolean;
   audioTranscriptionEnabled: boolean;
@@ -297,7 +322,8 @@ export type AnalysisPageActions = {
   openReport: () => void;
   openEditor: (messageId: number) => void;
   openReportCreator: (messageId: number) => void;
-  openReportEditor: (messageId: number) => Promise<void>;
+  openReportEditor: (messageId: number) => void;
+  retryEditTargetLoad: () => void;
   refreshMapDateRange: (range: { startDate: number; endDate: number }) => void;
   setShowSettlements: (show: boolean) => Promise<void>;
   reload: (options?: AnalysisReloadOptions) => void;
@@ -306,13 +332,15 @@ export type AnalysisPageActions = {
   setCenterTab: (tab: AnalysisCenterTab) => void;
   setIncludeOnlyNewFreqs: (value: boolean) => void;
   setNewestFirst: (value: boolean) => void;
+  clearMessagePageNavigationTarget: () => void;
+  setMessageViewportCapture: (capture: (() => void) | null) => void;
+  setVisibleMessagesPageIndex: (pageIndex: number) => void;
   setRightSidebarTab: (tab: AnalysisSidebarTab) => void;
   toggleLeftPanel: () => void;
   toggleRightPanel: () => void;
   selectOnlyFreq: (freq: string) => void;
   openPointsOnMap: (etalons: string[], message: InboxMessage) => void;
   setSavedFilterName: (name: string) => void;
-  addFrequencyToFilter: (freq: string) => void;
   showFreqOnMap: (freq: string) => void;
   toggleUnitFromMap: (unitName: string | null) => void;
   updateReport: (patch: Partial<AnalysisReportState>) => void;

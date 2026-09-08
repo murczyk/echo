@@ -71,8 +71,8 @@ vi.mock('@mui/icons-material/ArrowLeft', () => ({
 vi.mock('@mui/icons-material/ArrowRight', () => ({
   default: () => <span data-icon="arrow-right" />,
 }));
-vi.mock('@mui/icons-material/Description', () => ({
-  default: () => <span data-icon="description" />,
+vi.mock('@mui/icons-material/SmartToyOutlined', () => ({
+  default: (props: Record<string, unknown>) => <span data-icon="robot" {...props} />,
 }));
 vi.mock('@mui/icons-material/InfoOutlined', () => ({ default: () => <span data-icon="info" /> }));
 vi.mock('@mui/icons-material/KeyboardArrowDown', () => ({
@@ -163,6 +163,8 @@ describe('MessageCardMediaSummary', () => {
       const expandButton = container?.querySelector<HTMLButtonElement>(
         'button[aria-label="Розгорнути опис"]',
       );
+      expect(container?.querySelector('[data-media-summary-icon="robot"]')).not.toBeNull();
+      expect(container?.querySelector('[data-icon="description"]')).toBeNull();
       expect(expandButton).not.toBeNull();
       expect(expandButton?.disabled).toBe(false);
 
@@ -339,16 +341,20 @@ describe('MessageCardMediaSummary', () => {
     await act(async () => {
       root?.render(
         <MessageCardMediaSummaryCarousel
-          media={[
+          items={[
             {
-              id: 'media-10',
+              identity: 'media-10',
+              mediaId: 'media-10',
               summary: { state: 'completed', lastError: null, hasCoordinates: false },
             },
             {
-              id: 'media-11',
+              identity: 'media-11',
+              mediaId: 'media-11',
               summary: { state: 'completed', lastError: null, hasCoordinates: false },
             },
           ]}
+          selectedIdentity="media-10"
+          onSelectedIdentityChange={vi.fn()}
         />,
       );
     });

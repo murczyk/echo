@@ -13,6 +13,7 @@ export function useWindowedFeedScrollRefs(args: {
   resetKey: string | number | null;
   topStatus: TopStatus;
   isWatchMode: boolean;
+  autoScrollAllowed: boolean;
   loadingNewer: boolean;
   unreadPrefetchNeeded: boolean;
   pendingNewerFlushNeeded: boolean;
@@ -53,6 +54,7 @@ export function useWindowedFeedScrollRefs(args: {
   const previousResetKeyRef = useRef<string | number | null>(args.resetKey);
   const previousTopStatusRef = useRef<TopStatus>(args.topStatus);
   const isWatchModeRef = useRef(args.isWatchMode);
+  const autoScrollAllowedRef = useRef(args.autoScrollAllowed);
   const loadingNewerRef = useRef(args.loadingNewer);
   const unreadPrefetchNeededRef = useRef(args.unreadPrefetchNeeded);
   const pendingNewerFlushNeededRef = useRef(args.pendingNewerFlushNeeded);
@@ -98,6 +100,7 @@ export function useWindowedFeedScrollRefs(args: {
       previousResetKeyRef,
       previousTopStatusRef,
       isWatchModeRef,
+      autoScrollAllowedRef,
       loadingNewerRef,
       unreadPrefetchNeededRef,
       pendingNewerFlushNeededRef,

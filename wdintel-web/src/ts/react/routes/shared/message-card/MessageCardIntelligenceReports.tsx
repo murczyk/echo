@@ -55,6 +55,16 @@ export function getSummaryDisplayText(summary: IntelligenceReportSummary): strin
   return 'Без тексту';
 }
 
+export function hasVisibleMessageCardIntelligenceReports(
+  reports: IntelligenceReportSummary[],
+  parents: IntelligenceReportSummary[],
+): boolean {
+  return (
+    parents.some((parent) => parent.isAccessible && !parent.isDeleted) ||
+    reports.some((report) => !report.isDeleted)
+  );
+}
+
 function MessageSummaryDetails({
   summary,
   editable,
@@ -146,7 +156,8 @@ export function MessageCardIntelligenceReports({
         >
           {(currentParent) => (
             <article
-              className="w-fit max-w-full min-w-0 border-l-4 border-solid border-(--color-divider) py-1 pl-2"
+              className="message-card-intelligence-report"
+              data-message-card-intelligence-report="true"
               aria-label="Оригінальне повідомлення"
               tabIndex={0}
             >
@@ -169,7 +180,8 @@ export function MessageCardIntelligenceReports({
 
               return (
                 <article
-                  className="w-fit max-w-full min-w-0 border-l-4 border-solid border-(--color-divider) py-1 pl-2"
+                  className="message-card-intelligence-report"
+                  data-message-card-intelligence-report="true"
                   tabIndex={!editReport ? 0 : undefined}
                 >
                   {editReport ? (

@@ -9,9 +9,11 @@ describe('isUnitSearchMatch', () => {
     expect(isUnitSearchMatch('2 мсб 27 омсбр', '7 омсбр')).toBe(false);
   });
 
-  it('works in strict mode with text tokens', () => {
+  it('requires every complete word regardless of order in exact mode', () => {
     expect(isUnitSearchMatch('2 мсб 27 омсбр', 'мсб омсбр')).toBe(true);
-    expect(isUnitSearchMatch('2 мсб 27 омсбр', 'омсбр мсб')).toBe(false);
+    expect(isUnitSearchMatch('2 мсб 27 омсбр', 'омсбр мсб')).toBe(true);
+    expect(isUnitSearchMatch('2 мсб 27 омсбр', 'мс омсбр')).toBe(false);
+    expect(isUnitSearchMatch('2-мсб, 27 омсбр', 'мсб 27')).toBe(true);
   });
 });
 

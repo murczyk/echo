@@ -6,8 +6,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { InboxMessage } from '../../../../../../../../../Bindings';
-import { CoordinateAttachmentThumbnail } from '../../../../CoordinateAttachmentThumbnail';
+import type { InboxMessage } from '../../../../../../../Bindings';
 import { MessageCardCoordinateAttachment } from '../../../../MessageCardCoordinateAttachment';
 import {
   CoordinatePreviewLookupError,
@@ -48,7 +47,7 @@ vi.mock('../../../../attachment-preview/MessageCardAttachmentPreviewProvider', (
   },
 }));
 
-vi.mock('../../../../../../../../web-components/analysis-map/tile-layers', () => ({
+vi.mock('../../../../../../web-components/analysis-map/tile-layers', () => ({
   DEFAULT_BASE_LAYER_ID: 'esriWorldImagery',
   getTileLayers: vi.fn(() => ({
     esriWorldImagery: { addTo: vi.fn() },
@@ -103,7 +102,6 @@ function createDeferred<T>() {
   return { promise, resolve, reject };
 }
 
-// @test-scope safeguard: prevents coordinate previews from discarding successful points, showing stale errors, or hiding a recoverable map lookup failure
 describe('MessageCardCoordinateAttachment', () => {
   let container: HTMLElement;
   let root: Root;
@@ -125,6 +123,7 @@ describe('MessageCardCoordinateAttachment', () => {
     vi.unstubAllGlobals();
   });
 
+  // @test-scope regression: https://github.com/echoua/echo/issues/3324
   it('shows a direct preview and opens the coordinate dialog', async () => {
     const msg = { pointTokens: [] } as InboxMessage;
     vi.mocked(resolveMessageCoordinatePreview).mockResolvedValue({
@@ -145,18 +144,20 @@ describe('MessageCardCoordinateAttachment', () => {
       'button[aria-label="Open 50.45044, 30.52355 on map"]',
     ) as HTMLButtonElement | null;
     expect(button).not.toBeNull();
-    expect(button?.getAttribute('style')).toContain('width: 180px');
-    expect(button?.getAttribute('style')).toContain('height: 120px');
+    expect(button?.getAttribute('style')).toContain('width: 100%');
+    expect(button?.getAttribute('style')).toContain('height: 100%');
     expect(button?.getAttribute('style')).toContain('max-width: none');
     expect(button?.getAttribute('style')).toContain('flex-grow: 0');
     expect(button?.getAttribute('style')).toContain('flex-shrink: 0');
-    expect(button?.getAttribute('style')).toContain('flex-basis: 120px');
+    expect(button?.getAttribute('style')).toContain('flex-basis: auto');
     expect(
-      container.querySelector('[data-coordinate-preview-root]')?.getAttribute('style'),
-    ).toContain('width: 180px');
+      container
+        .querySelector('[data-coordinate-preview-root]')
+        ?.classList.contains('message-card-coordinate-preview'),
+    ).toBe(true);
     expect(
       container.querySelector('[data-coordinate-preview-tile]')?.getAttribute('style'),
-    ).toEqual(expect.stringContaining('height: 120px'));
+    ).toEqual(expect.stringContaining('height: 100%'));
     expect(container.textContent).not.toContain('+');
 
     await act(async () => {
@@ -179,7 +180,8 @@ describe('MessageCardCoordinateAttachment', () => {
     expect(dialog?.getAttribute('data-lng')).toBe('30.52355');
   });
 
-  it('shows one unified preview with the pluralized point count', async () => {
+  // @test-scope regression: https://github.com/echoua/echo/issues/3324
+  it('shows one unified preview with the numeric point count', async () => {
     const msg = { pointTokens: [] } as InboxMessage;
     vi.mocked(resolveMessageCoordinatePreview).mockResolvedValue({
       points: [
@@ -206,71 +208,11 @@ describe('MessageCardCoordinateAttachment', () => {
     });
 
     expect(container.querySelectorAll('button[aria-label^="Open "]')).toHaveLength(1);
-    expect(container.textContent).toContain('9 точок');
-    expect(container.textContent).not.toContain('+1');
     expect(container.querySelectorAll('[data-coordinate-preview-count]')).toHaveLength(1);
-    expect(container.querySelector('[data-coordinate-preview-count]')?.textContent).toBe('9 точок');
-    const button = container.querySelector('button[aria-label="Open BRAVO on map"]');
-    expect(button).not.toBeNull();
-    expect(button?.getAttribute('style')).toContain('width: 180px');
-    expect(button?.getAttribute('style')).toContain('height: 120px');
-    expect(button?.getAttribute('style')).toContain('max-width: none');
-    expect(button?.getAttribute('style')).toContain('flex-grow: 0');
-    expect(button?.getAttribute('style')).toContain('flex-shrink: 0');
-    expect(button?.getAttribute('style')).toContain('flex-basis: 120px');
-
-    await act(async () => {
-      button?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-      button?.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    expect(document.body.querySelector('[data-popper-placement="top"]')).not.toBeNull();
-    expect(document.body.textContent).toContain('Відкрити на мапі');
-    expect(container.textContent).not.toContain('+1');
-
-    await act(async () => {
-      button?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    expect(container.querySelector('[role="dialog"]')?.getAttribute('data-index')).toBe('0');
-    expect(container.querySelector('[role="dialog"]')?.getAttribute('data-attachment-count')).toBe(
-      '1',
-    );
+    expect(container.querySelector('[data-coordinate-preview-count]')?.textContent).toBe('9');
   });
 
-  it('updates the thumbnail without recreating the map when a coordinate is removed', async () => {
-    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
-      width: 180,
-      height: 120,
-    } as DOMRect);
-    const leaflet = await import('leaflet');
-    const points = [
-      { source: 'direct' as const, lat: 50.45, lng: 30.52, label: 'BRAVO' },
-      { source: 'direct' as const, lat: 50.46, lng: 30.53, label: 'CHARLIE' },
-    ];
-
-    await act(async () => {
-      root.render(<CoordinateAttachmentThumbnail points={points} onOpen={vi.fn()} />);
-      await new Promise((resolve) => window.requestAnimationFrame(resolve));
-    });
-    expect(leaflet.map).toHaveBeenCalledTimes(1);
-    expect(leaflet.map).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ preferCanvas: false }),
-    );
-
-    await act(async () => {
-      root.render(<CoordinateAttachmentThumbnail points={[points[1]]} onOpen={vi.fn()} />);
-      await Promise.resolve();
-    });
-
-    expect(leaflet.map).toHaveBeenCalledTimes(1);
-    expect(leaflet.circleMarker).toHaveBeenCalledTimes(3);
-    rectSpy.mockRestore();
-  });
-
+  // @test-scope regression: https://github.com/echoua/echo/issues/3324
   it('renders an inline retry error when the resolver rejects for a palette list failure', async () => {
     const msg = { pointTokens: [] } as InboxMessage;
     vi.mocked(resolveMessageCoordinatePreview)
@@ -290,7 +232,9 @@ describe('MessageCardCoordinateAttachment', () => {
     });
 
     expect(container.textContent).toContain('Не вдалося завантажити точку мапи');
-    const retry = container.querySelector('button[aria-label="Повторити"]') as HTMLButtonElement;
+    const retry = container.querySelector(
+      'button[aria-label="Повторити завантаження координат"]',
+    ) as HTMLButtonElement;
     expect(retry).not.toBeNull();
 
     await act(async () => {
@@ -305,6 +249,7 @@ describe('MessageCardCoordinateAttachment', () => {
     expect(container.querySelector('button[aria-label="Open BRAVO on map"]')).not.toBeNull();
   });
 
+  // @test-scope regression: https://github.com/echoua/echo/issues/3324
   it('renders an inline retry error when the resolver rejects for a point lookup failure', async () => {
     const msg = { pointTokens: [] } as InboxMessage;
     vi.mocked(resolveMessageCoordinatePreview)
@@ -325,7 +270,9 @@ describe('MessageCardCoordinateAttachment', () => {
 
     expect(container.textContent).toContain('Не вдалося завантажити точку мапи');
 
-    const retry = container.querySelector('button[aria-label="Повторити"]') as HTMLButtonElement;
+    const retry = container.querySelector(
+      'button[aria-label="Повторити завантаження координат"]',
+    ) as HTMLButtonElement;
     await act(async () => {
       retry.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
@@ -338,10 +285,14 @@ describe('MessageCardCoordinateAttachment', () => {
     expect(container.querySelector('button[aria-label="Open BRAVO on map"]')).not.toBeNull();
   });
 
-  it('shows working previews alongside a compact retry tile for partial lookup errors', async () => {
+  // @test-scope regression: https://github.com/echoua/echo/issues/3324
+  it('ECHO-3324 keeps partial lookup errors inside the valid coordinate tile', async () => {
     const msg = { pointTokens: [] } as InboxMessage;
     vi.mocked(resolveMessageCoordinatePreview).mockResolvedValue({
-      points: [{ source: 'palitra', lat: 50.45, lng: 30.52, label: 'BRAVO' }],
+      points: [
+        { source: 'palitra', lat: 50.45, lng: 30.52, label: 'BRAVO' },
+        { source: 'palitra', lat: 50.46, lng: 30.53, label: 'CHARLIE' },
+      ],
       etalons: ['BRAVO', 'CHARLIE'],
       lookupError: new CoordinatePreviewLookupError(
         'point-search',
@@ -357,11 +308,19 @@ describe('MessageCardCoordinateAttachment', () => {
       await Promise.resolve();
     });
 
-    expect(container.querySelector('button[aria-label="Open BRAVO on map"]')).not.toBeNull();
-    expect(container.textContent).toContain('Не вдалося завантажити точку мапи');
-    expect(container.querySelector('button[aria-label="Повторити"]')).not.toBeNull();
+    const host = container.querySelector('[data-coordinate-preview-root]');
+    const tile = container.querySelector('[data-coordinate-preview-tile]');
+    const overlay = container.querySelector('[data-coordinate-preview-retry-overlay]');
+    expect(host?.contains(tile)).toBe(true);
+    expect(host?.contains(overlay)).toBe(true);
+    expect(container.querySelector('[data-coordinate-preview-count]')?.textContent).toBe('2');
+    expect(overlay?.getAttribute('title')).toBe('point search failed');
+    expect(
+      overlay?.querySelector('button[aria-label="Повторити завантаження координат"]'),
+    ).not.toBeNull();
   });
 
+  // @test-scope regression: https://github.com/echoua/echo/issues/3324
   it('keeps successful document points visible while retrying a failed document request', async () => {
     const retry = createDeferred<{
       points: { source: 'document'; lat: number; lng: number; label: string }[];
@@ -370,7 +329,10 @@ describe('MessageCardCoordinateAttachment', () => {
     }>();
     vi.mocked(resolveMessageCoordinatePreview)
       .mockResolvedValueOnce({
-        points: [{ source: 'document', lat: 47.1, lng: 35.2, label: 'Дамба' }],
+        points: [
+          { source: 'document', lat: 47.1, lng: 35.2, label: 'Дамба' },
+          { source: 'document', lat: 47.2, lng: 35.3, label: 'Міст' },
+        ],
         etalons: [],
         lookupError: new CoordinatePreviewLookupError(
           'document-coordinates',
@@ -385,10 +347,14 @@ describe('MessageCardCoordinateAttachment', () => {
     });
 
     const retryButton = container.querySelector(
-      'button[aria-label="Повторити"]',
+      'button[aria-label="Повторити завантаження координат"]',
     ) as HTMLButtonElement;
-    expect(container.querySelector('button[aria-label="Open Дамба on map"]')).not.toBeNull();
-    expect(container.textContent).toContain('Не вдалося завантажити координати документа');
+    const host = container.querySelector('[data-coordinate-preview-root]');
+    expect(host?.contains(container.querySelector('[data-coordinate-preview-tile]'))).toBe(true);
+    expect(host?.contains(container.querySelector('[data-coordinate-preview-retry-overlay]'))).toBe(
+      true,
+    );
+    expect(container.querySelector('[data-coordinate-preview-count]')?.textContent).toBe('2');
 
     await act(async () => {
       retryButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -400,17 +366,23 @@ describe('MessageCardCoordinateAttachment', () => {
 
     await act(async () => {
       retry.resolve({
-        points: [{ source: 'document', lat: 47.1, lng: 35.2, label: 'Дамба' }],
+        points: [
+          { source: 'document', lat: 47.1, lng: 35.2, label: 'Дамба' },
+          { source: 'document', lat: 47.2, lng: 35.3, label: 'Міст' },
+        ],
         etalons: [],
         lookupError: null,
       });
       await Promise.resolve();
     });
 
-    expect(container.querySelector('button[aria-label="Повторити"]')).toBeNull();
+    expect(
+      container.querySelector('button[aria-label="Повторити завантаження координат"]'),
+    ).toBeNull();
     expect(container.querySelector('button[aria-label="Open Дамба on map"]')).not.toBeNull();
   });
 
+  // @test-scope safeguard: prevents a missing coordinate preview from presenting a false attachment tile.
   it('stays silent for a genuine preview miss', async () => {
     const msg = { pointTokens: [] } as InboxMessage;
     vi.mocked(resolveMessageCoordinatePreview).mockResolvedValue(null);
@@ -426,6 +398,7 @@ describe('MessageCardCoordinateAttachment', () => {
     expect(container.textContent).toBe('');
   });
 
+  // @test-scope safeguard: prevents a stale coordinate lookup failure from replacing the current message preview.
   it('ignores stale async errors after the message changes', async () => {
     const first = createDeferred<never>();
     const second = createDeferred<{
@@ -438,8 +411,8 @@ describe('MessageCardCoordinateAttachment', () => {
       .mockImplementationOnce(() => first.promise)
       .mockImplementationOnce(() => second.promise);
 
-    const firstMsg = { pointTokens: [] } as InboxMessage;
-    const secondMsg = { pointTokens: [] } as InboxMessage;
+    const firstMsg = { pointTokens: [], text: 'first message' } as InboxMessage;
+    const secondMsg = { pointTokens: [], text: 'second message' } as InboxMessage;
 
     await act(async () => {
       root.render(<MessageCardCoordinateAttachment msg={firstMsg} />);

@@ -438,3 +438,92 @@ export function resolveMessageCardEtalonDisplayModel(
     locationDisplayValue: null,
   };
 }
+
+export function buildMessageLinkHref(
+  msg:
+    | Pick<InboxMessage, 'messageUuid' | 'messageUid'>
+    | { messageUuid?: string | null; messageUid?: string | null },
+  feature: 'duty' | 'analysis',
+  id?: number,
+): string {
+  const targetPath = feature === 'duty' ? '/rer-duty-neo' : '/rer-analysis-neo';
+  const uuid = msg.messageUuid?.trim();
+  const uid = msg.messageUid?.trim();
+  const identifier =
+    uuid && uuid !== ''
+      ? uuid
+      : feature === 'duty' && id != null
+        ? String(id)
+        : uid && uid !== ''
+          ? uid
+          : String(id ?? '');
+  const params = new URLSearchParams();
+  if (identifier) {
+    params.set('m', identifier);
+  }
+  const qs = params.toString();
+  return qs ? `${targetPath}?${qs}` : targetPath;
+}
+
+export function buildMessageLinkFullUrl(
+  msg:
+    | Pick<InboxMessage, 'messageUuid' | 'messageUid'>
+    | { messageUuid?: string | null; messageUid?: string | null },
+  feature: 'duty' | 'analysis',
+  id?: number,
+): string {
+  const href = buildMessageLinkHref(msg, feature, id);
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  return `${origin}${href}`;
+}
+
+export function scrollToAndHighlightMessage(
+  targetElement: HTMLElement,
+  options: { scroll?: boolean; persistentHighlight?: boolean } = {},
+): () => void {
+  if (options.scroll !== false) {
+    targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  const cardRoot = (
+    targetElement.matches?.('[data-message-card-root]')
+      ? targetElement
+      : targetElement.querySelector?.('[data-message-card-root], .message-card-root') ||
+        targetElement.firstElementChild ||
+        targetElement
+  ) as HTMLElement;
+
+  const originalOutline = cardRoot.style.outline;
+  const originalOutlineColor = cardRoot.style.outlineColor;
+  const originalOutlineOffset = cardRoot.style.outlineOffset;
+  const originalTransition = cardRoot.style.transition;
+  let fadeTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  let restoreTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  let restored = false;
+
+  const restoreHighlight = () => {
+    if (restored) return;
+    restored = true;
+    if (fadeTimeoutId != null) clearTimeout(fadeTimeoutId);
+    if (restoreTimeoutId != null) clearTimeout(restoreTimeoutId);
+    cardRoot.style.outline = originalOutline;
+    cardRoot.style.outlineColor = originalOutlineColor;
+    cardRoot.style.outlineOffset = originalOutlineOffset;
+    cardRoot.style.transition = originalTransition;
+  };
+
+  cardRoot.style.transition = 'none';
+  cardRoot.style.outline = '2px solid var(--color-primary, #3b82f6)';
+  cardRoot.style.outlineOffset = '-2px';
+
+  if (!options.persistentHighlight) {
+    fadeTimeoutId = setTimeout(() => {
+      cardRoot.style.transition = 'outline-color 0.7s ease-out';
+      cardRoot.style.outlineColor = 'transparent';
+    }, 1000);
+
+    restoreTimeoutId = setTimeout(restoreHighlight, 1800);
+  }
+
+  return restoreHighlight;
+}

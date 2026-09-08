@@ -570,8 +570,8 @@ gateway:
 - `echo_clickhouse_derived.message_callsign` exposes distinct active callsigns
   from `sigint_inbox_item_callsign`. The legacy JSONB columns are no longer
   mirrored or used as a fallback.
-- `echo_clickhouse_derived.message_aor_link` combines group and explicit
-  network AOR links into message ID and AOR-bound rows.
+- `echo_clickhouse_derived.message_aor_link` combines assigned-group and
+  explicit network AOR links into message ID and AOR-bound rows.
 - `echo_clickhouse_derived.message_network_link` exposes current network links
   ordered by message ID for bounded analytical joins.
 

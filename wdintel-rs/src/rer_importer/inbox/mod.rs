@@ -245,55 +245,87 @@ async fn inbox_item_context(
     env: actix_web::web::Data<Env>,
     req: Json<InboxItemContextReq>,
 ) -> Result<Json<InboxItemContextRsp>, AppError> {
-    has_any_role(
-        &env.dbx,
-        &login_id_from_identity(&user)?,
-        vec!["Rer", "ApiAgent"],
-    )
-    .await
-    .c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).context(h!())?;
+    has_any_role(&env.dbx, &login, vec!["Rer", "ApiAgent"])
+        .await
+        .c(h!())?;
     let Some(message_uid) =
         normalized_optional_string(Some(req.message_uid.as_str()))
     else {
         return Ok(Json(InboxItemContextRsp::default()));
     };
 
-    let res = inbox_item_context_bl(&env.dbx, &login, &message_uid).await?;
+    let res = inbox_item_context_bl(&env, &login, &message_uid)
+        .await
+        .context(h!())?;
     Ok(Json(res))
 }
 
 async fn inbox_item_context_bl(
-    dbx: &DatabaseConnection,
+    env: &Env,
     login: &uuid::Uuid,
-    message_uid: &str,
+    message_identifier: &str,
 ) -> Result<InboxItemContextRsp, AppError> {
-    let allowed_groups =
-        crate::messenger::group::get_identity_sigint_groups(dbx, login)
-            .await
-            .c(h!())?;
-    if allowed_groups.is_empty() {
+    let mut rows = load_inbox_item_context_rows(&env.dbx, message_identifier)
+        .await
+        .context(h!())?;
+    if rows.is_empty() {
         return Ok(InboxItemContextRsp::default());
     }
 
-    let mut rows =
-        load_inbox_item_context_rows(dbx, &allowed_groups, message_uid).await?;
+    let candidate_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
+    let organism_logins =
+        crate::users::get_organism_login_ids_by_id(&env.dbx, login)
+            .await
+            .c(h!())?;
+    let access_req = InboxMessagesReq {
+        skip_group_stats: Some(true),
+        ..Default::default()
+    };
+    let mut accessible_messages = messages_by_id_bl(
+        login,
+        &organism_logins,
+        env,
+        &candidate_ids,
+        &access_req,
+    )
+    .await
+    .context(h!())?
+    .into_iter()
+    .collect::<HashMap<_, _>>();
+    rows.retain(|row| accessible_messages.contains_key(&row.id));
     if rows.is_empty() {
         return Ok(InboxItemContextRsp::default());
     }
     rows.sort_by_key(|row| row.id);
 
+    let allowed_groups =
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
+            .await
+            .c(h!())?;
+
     let sigint_inbox_item_ids =
         rows.iter().map(|row| row.id).collect::<Vec<_>>();
-    let group_master_keys = load_inbox_item_context_group_keys(
-        dbx,
-        &allowed_groups,
-        &sigint_inbox_item_ids,
-    )
-    .await?;
+    let message = rows.first().and_then(|row| {
+        accessible_messages
+            .remove(&row.id)
+            .map(|message| (row.id, message))
+    });
+    let group_master_keys = if allowed_groups.is_empty() {
+        vec![]
+    } else {
+        load_inbox_item_context_group_keys(
+            &env.dbx,
+            &allowed_groups,
+            &sigint_inbox_item_ids,
+        )
+        .await
+        .context(h!())?
+    };
 
     Ok(build_inbox_item_context_rsp(
         rows,
+        message,
         group_master_keys,
         sigint_inbox_item_ids,
     ))
@@ -301,32 +333,259 @@ async fn inbox_item_context_bl(
 
 async fn load_inbox_item_context_rows(
     dbx: &DatabaseConnection,
-    allowed_groups: &[String],
-    message_uid: &str,
+    message_identifier: &str,
 ) -> Result<Vec<InboxItemContextRow>, AppError> {
-    Ok(SignalMessage::find()
+    let mut query = SignalMessage::find()
         .join(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
         )
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SignalMessageGroup.def(),
-        )
         .select_only()
-        .distinct()
         .column_as(sigint_inbox_item::Column::Id, "id")
         .column_as(sigint_inbox_item::Column::Datetime, "datetime")
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(signal_message::Column::MessageUid.eq(message_uid))
-        .filter(
-            signal_message_group::Column::GroupMasterKey
-                .eq_any(allowed_groups.to_vec()),
-        )
+        .filter(signal_message::Column::Deleted.eq(false));
+
+    if let Ok(id_uuid) = uuid::Uuid::parse_str(message_identifier) {
+        query = query.filter(
+            Condition::any()
+                .add(signal_message::Column::IdUuid.eq(id_uuid))
+                .add(signal_message::Column::MessageUid.eq(message_identifier)),
+        );
+    } else if let Ok(id) = message_identifier.parse::<i64>() {
+        query = query.filter(signal_message::Column::Id.eq(id));
+    } else {
+        query = query
+            .filter(signal_message::Column::MessageUid.eq(message_identifier));
+    }
+
+    Ok(query
         .into_model::<InboxItemContextRow>()
         .all(dbx)
         .await
         .c(h!())?)
+}
+
+async fn inbox_window_bl(
+    env: &Env,
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
+    is_admin: bool,
+    message_ref: &str,
+    inbox_req: InboxMessagesReq,
+) -> Result<Option<InboxWindowRsp>, AppError> {
+    let rows = load_inbox_item_context_rows(&env.dbx, message_ref)
+        .await
+        .context(h!())?;
+    if rows.is_empty() {
+        return Ok(None);
+    }
+
+    let inbox_req = inbox_window_base_req(inbox_req);
+    let target_req = inbox_window_target_req(&inbox_req);
+    let candidate_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
+    let target_query = build_inbox_query_for_candidate_ids(
+        &env.dbx,
+        login,
+        env,
+        &target_req,
+        &candidate_ids,
+        false,
+    )
+    .await
+    .context(h!())?;
+    let mut target_messages = fetch_inbox_messages_with_query(
+        &env.dbx,
+        login,
+        logins,
+        env,
+        &target_req,
+        &target_query,
+    )
+    .await
+    .context(h!())?
+    .into_iter()
+    .filter(|(_, message)| {
+        inbox_window_target_matches_context_filters(message, &target_req)
+    })
+    .collect::<HashMap<_, _>>();
+    let Some(target_message_id) = rows
+        .iter()
+        .map(|row| row.id)
+        .filter(|id| target_messages.contains_key(id))
+        .min()
+    else {
+        return Ok(None);
+    };
+    let target_message = target_messages.remove(&target_message_id).c(h!())?;
+
+    let before_req = inbox_window_page_req(&inbox_req, target_message_id, true);
+    let after_req = inbox_window_page_req(&inbox_req, target_message_id, false);
+    let (before_messages, after_messages, messages_before, messages_after) =
+        tokio::try_join!(
+            get_inbox_messages(login, logins, env, &before_req),
+            get_inbox_messages(login, logins, env, &after_req),
+            count_inbox_window_messages(env, login, &before_req),
+            count_inbox_window_messages(env, login, &after_req),
+        )
+        .context(h!())?;
+    let has_more_before = messages_before > before_messages.len() as i64;
+    let has_more_after = messages_after > after_messages.len() as i64;
+    let inbox_items = merge_inbox_window_messages(
+        before_messages,
+        (target_message_id, target_message),
+        after_messages,
+    );
+    let callsigns = load_inbox_callsigns(&inbox_items, env).await.c(h!())?;
+    let signal_profiles = load_inbox_signal_profiles(&inbox_items, &env.dbx)
+        .await
+        .c(h!())?;
+    let signal_groups =
+        load_inbox_signal_groups(&inbox_items, env, is_admin, true)
+            .await
+            .c(h!())?;
+
+    Ok(Some(InboxWindowRsp {
+        target_message_id,
+        inbox: InboxMessagesRsp {
+            inbox_items,
+            poll_cursor_id: None,
+            callsigns,
+            signal_profiles,
+            signal_groups,
+            freq_pelengs_summary: None,
+            page_limit: Some(INBOX_MESSAGES_PAGE_LIMIT as i64),
+        },
+        has_more_before,
+        has_more_after,
+        messages_before,
+        messages_after,
+    }))
+}
+
+async fn count_inbox_window_messages(
+    env: &Env,
+    login: &uuid::Uuid,
+    req: &InboxMessagesReq,
+) -> Result<i64, AppError> {
+    let query = build_inbox_digest_query(login, env, req)
+        .await
+        .context(h!())?;
+    let (count, _) = query_inbox_digest(env.dbx.clone(), query)
+        .await
+        .context(h!())?;
+    Ok(count)
+}
+
+fn inbox_window_base_req(mut inbox_req: InboxMessagesReq) -> InboxMessagesReq {
+    inbox_req.since_id_noninclusive = None;
+    inbox_req.before_id_noninclusive = None;
+    inbox_req.around_message_ref = None;
+    inbox_req.since_date_inclusive_ms = None;
+    inbox_req.till_date_inclusive_ms = None;
+    inbox_req.nolimit = None;
+    inbox_req.load_latest = None;
+    inbox_req.calculate_freq_pelengs_summary = None;
+    inbox_req.skip_group_stats = Some(true);
+    inbox_req.page_id = Some("rer-analysis".to_string());
+    inbox_req
+}
+
+fn inbox_window_target_req(inbox_req: &InboxMessagesReq) -> InboxMessagesReq {
+    InboxMessagesReq {
+        load_latest: Some(true),
+        ..inbox_req.clone()
+    }
+}
+
+fn inbox_window_target_matches_context_filters(
+    message: &InboxMessage,
+    req: &InboxMessagesReq,
+) -> bool {
+    inbox_window_target_matches_group(message, &req.selected_groups)
+        && inbox_window_target_matches_frequency(message, &req.selected_freqs)
+        && inbox_window_target_matches_network(
+            message,
+            &req.selected_networks,
+            req.without_network.unwrap_or(false),
+        )
+}
+
+fn inbox_window_target_matches_group(
+    message: &InboxMessage,
+    selected_groups: &Option<Vec<String>>,
+) -> bool {
+    selected_groups
+        .as_ref()
+        .filter(|groups| !groups.is_empty())
+        .is_none_or(|groups| {
+            message
+                .group_master_key
+                .as_ref()
+                .is_some_and(|group| groups.contains(group))
+        })
+}
+
+fn inbox_window_target_matches_frequency(
+    message: &InboxMessage,
+    selected_freqs: &Option<Vec<String>>,
+) -> bool {
+    selected_freqs
+        .as_ref()
+        .filter(|freqs| !freqs.is_empty())
+        .is_none_or(|freqs| {
+            freqs
+                .iter()
+                .any(|freq| message.freq.as_deref().unwrap_or_default() == freq)
+        })
+}
+
+fn inbox_window_target_matches_network(
+    message: &InboxMessage,
+    selected_networks: &Option<Vec<i64>>,
+    without_network: bool,
+) -> bool {
+    let selected_networks = selected_networks
+        .as_ref()
+        .filter(|networks| !networks.is_empty());
+    if without_network {
+        return selected_networks.is_none()
+            && message.network_ids.as_ref().is_none_or(Vec::is_empty);
+    }
+    selected_networks.is_none_or(|selected_networks| {
+        message.network_ids.as_ref().is_some_and(|network_ids| {
+            network_ids
+                .iter()
+                .any(|network_id| selected_networks.contains(network_id))
+        })
+    })
+}
+
+fn inbox_window_page_req(
+    inbox_req: &InboxMessagesReq,
+    target_message_id: i64,
+    before: bool,
+) -> InboxMessagesReq {
+    InboxMessagesReq {
+        before_id_noninclusive: before.then_some(target_message_id),
+        since_id_noninclusive: (!before).then_some(target_message_id),
+        newest_first: Some(before),
+        ..inbox_req.clone()
+    }
+}
+
+fn merge_inbox_window_messages(
+    mut before_messages: Vec<(i64, InboxMessage)>,
+    target_message: (i64, InboxMessage),
+    after_messages: Vec<(i64, InboxMessage)>,
+) -> Vec<(i64, InboxMessage)> {
+    before_messages.reverse();
+    let mut seen = BTreeSet::new();
+    before_messages
+        .into_iter()
+        .chain(std::iter::once(target_message))
+        .chain(after_messages)
+        .filter(|(id, _)| seen.insert(*id))
+        .collect()
 }
 
 async fn load_inbox_item_context_group_keys(
@@ -379,6 +638,7 @@ async fn load_inbox_item_context_group_keys(
 
 fn build_inbox_item_context_rsp(
     rows: Vec<InboxItemContextRow>,
+    message: Option<(i64, InboxMessage)>,
     group_master_keys: Vec<String>,
     sigint_inbox_item_ids: Vec<i64>,
 ) -> InboxItemContextRsp {
@@ -389,6 +649,7 @@ fn build_inbox_item_context_rsp(
     let earliest = datetimes.iter().min();
     let latest = datetimes.iter().max();
     InboxItemContextRsp {
+        message,
         group_master_keys,
         sigint_inbox_item_ids,
         since_ts: earliest.map(|ts| {
@@ -427,6 +688,54 @@ async fn messages_by_id(
         messages_by_id_bl(&login, &logins, &env, &req.message_ids, inbox_req)
             .await?;
     Ok(Json(MessageIdsRsp { messages }))
+}
+
+#[post("/api/rer-importer/messages-by-id-with-metadata")]
+async fn messages_by_id_with_metadata(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<MessageIdsReq>,
+) -> Result<Json<InboxMessagesRsp>, AppError> {
+    let login = login_id_from_identity(&user)?;
+    has_any_role(&env.dbx, &login, vec!["Rer", "ApiAgent"])
+        .await
+        .c(h!())?;
+    let is_admin = has_role(&env.dbx, &login, "Admin").await.is_ok();
+    let logins = crate::users::get_organism_login_ids(&env.dbx, user)
+        .await
+        .context(h!())?;
+    let req = req.into_inner();
+    let default_req = InboxMessagesReq {
+        highlight_points: Some(true),
+        ..Default::default()
+    };
+    let inbox_req = req.inbox_req.as_ref().unwrap_or(&default_req);
+    let messages =
+        messages_by_id_bl(&login, &logins, &env, &req.message_ids, inbox_req)
+            .await
+            .context(h!())?;
+    let callsigns = load_inbox_callsigns(&messages, &env).await.c(h!())?;
+    let signal_profiles = load_inbox_signal_profiles(&messages, &env.dbx)
+        .await
+        .c(h!())?;
+    let signal_groups = load_inbox_signal_groups(
+        &messages,
+        &env,
+        is_admin,
+        inbox_req.skip_group_stats.unwrap_or(false),
+    )
+    .await
+    .c(h!())?;
+
+    Ok(Json(InboxMessagesRsp {
+        inbox_items: messages,
+        poll_cursor_id: None,
+        callsigns,
+        signal_profiles,
+        signal_groups,
+        freq_pelengs_summary: None,
+        page_limit: None,
+    }))
 }
 
 #[post("/api/rer-importer/messages-by-uuid")]
@@ -753,12 +1062,32 @@ pub(crate) async fn messages_by_id_bl(
     Ok(messages)
 }
 
+#[derive(Serialize)]
+struct InboxMessagesApiRsp {
+    #[serde(flatten)]
+    inbox: InboxMessagesRsp,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    around_message_messages_before: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    around_message_messages_after: Option<i64>,
+}
+
+impl InboxMessagesApiRsp {
+    fn regular(inbox: InboxMessagesRsp) -> Self {
+        Self {
+            inbox,
+            around_message_messages_before: None,
+            around_message_messages_after: None,
+        }
+    }
+}
+
 #[post("/api/rer-importer/get-inbox")]
 async fn inbox_messages(
     user: Identity,
     env: actix_web::web::Data<Env>,
     req: Json<InboxMessagesReq>,
-) -> Result<Json<InboxMessagesRsp>, AppError> {
+) -> Result<Json<InboxMessagesApiRsp>, AppError> {
     let user_id = login_id_from_identity(&user)?;
     has_any_role(&env.dbx, &user_id, vec!["Rer", "ApiAgent"])
         .await
@@ -782,23 +1111,31 @@ async fn inbox_messages(
     let logins = crate::users::get_organism_login_ids(&env.dbx, user)
         .await
         .context(h!())?;
+    if let Some(message_ref) = around_message_ref(&req) {
+        let window =
+            inbox_window_bl(&env, &login, &logins, is_admin, &message_ref, req)
+                .await
+                .context(h!())?;
+        let response = match window {
+            Some(window) => InboxMessagesApiRsp {
+                inbox: window.inbox,
+                around_message_messages_before: Some(window.messages_before),
+                around_message_messages_after: Some(window.messages_after),
+            },
+            None => {
+                InboxMessagesApiRsp::regular(empty_inbox_messages_rsp(Some(20)))
+            }
+        };
+        return Ok(Json(response));
+    }
     if inbox_request_is_unbounded(&req) && req.load_latest != Some(true) {
         error!(
             "rejecting unbounded get-inbox request without load_latest; page_id={page_id:?}"
         );
-        return Ok(Json(InboxMessagesRsp {
-            inbox_items: vec![],
-            poll_cursor_id: None,
-            callsigns: vec![],
-            signal_profiles: BTreeMap::new(),
-            signal_groups: vec![],
-            freq_pelengs_summary: None,
-            page_limit: if req.nolimit == Some(true) {
-                None
-            } else {
-                Some(20)
-            },
-        }));
+        let page_limit = (req.nolimit != Some(true)).then_some(20);
+        return Ok(Json(InboxMessagesApiRsp::regular(
+            empty_inbox_messages_rsp(page_limit),
+        )));
     }
     let poll_cursor_id = if inbox_request_is_unbounded_latest(&req) {
         latest_inbox_poll_cursor_id(&env.dbx, &req).await?
@@ -840,7 +1177,7 @@ async fn inbox_messages(
         Some(20)
     };
 
-    Ok(Json(InboxMessagesRsp {
+    Ok(Json(InboxMessagesApiRsp::regular(InboxMessagesRsp {
         inbox_items,
         poll_cursor_id,
         callsigns,
@@ -848,7 +1185,23 @@ async fn inbox_messages(
         signal_groups,
         freq_pelengs_summary,
         page_limit,
-    }))
+    })))
+}
+
+fn around_message_ref(req: &InboxMessagesReq) -> Option<String> {
+    normalized_optional_string(req.around_message_ref.as_deref())
+}
+
+fn empty_inbox_messages_rsp(page_limit: Option<i64>) -> InboxMessagesRsp {
+    InboxMessagesRsp {
+        inbox_items: vec![],
+        poll_cursor_id: None,
+        callsigns: vec![],
+        signal_profiles: BTreeMap::new(),
+        signal_groups: vec![],
+        freq_pelengs_summary: None,
+        page_limit,
+    }
 }
 
 async fn rer_duty_neo_adaptive_lower_bound(
@@ -1663,6 +2016,7 @@ fn generic_submit_item_to_inbox_message(
     let message = InboxMessage {
         parent_messages: vec![],
         intelligence_reports: vec![],
+        message_uuid: None,
         message_uid: None,
         text: full_body,
         media: vec![],
@@ -4336,6 +4690,248 @@ mod tests {
             highlight_points: Some(true),
             ..Default::default()
         }
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn inbox_item_context_includes_owner_message_without_group_row() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let now = Utc::now().naive_utc();
+        let legacy_message_uid = Uuid::new_v4().to_string();
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("owner direct link".to_string())),
+                created_at: Set(now),
+                timestamp: Set(Some(now)),
+                sender: Set(Some(login.id.to_string())),
+                message_uid: Set(Some(legacy_message_uid.clone())),
+                datasource_group_id: Set(None),
+                deleted: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                datetime: Set(Some(now)),
+                reviewed: Set(Some(true)),
+                parsed_unit_v2: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let context =
+            inbox_item_context_bl(&env, &login.id, &legacy_message_uid)
+                .await
+                .unwrap();
+
+        assert_eq!(context.sigint_inbox_item_ids, vec![message.id]);
+        assert_eq!(
+            context.message.as_ref().map(|(id, _)| *id),
+            Some(message.id)
+        );
+        assert_eq!(
+            context
+                .message
+                .as_ref()
+                .map(|(_, message)| message.text.as_str()),
+            Some("owner direct link")
+        );
+        assert!(context.group_master_keys.is_empty());
+        assert_eq!(
+            context.since_ts,
+            Some((now - Duration::minutes(15)).and_utc().timestamp_millis())
+        );
+        assert_eq!(
+            context.till_ts,
+            Some((now + Duration::minutes(15)).and_utc().timestamp_millis())
+        );
+    }
+
+    #[test]
+    fn inbox_window_preserves_filters_for_target_query() {
+        let inbox_req = inbox_window_base_req(InboxMessagesReq {
+            around_message_ref: Some("target".to_string()),
+            selected_groups: Some(vec!["group-1".to_string()]),
+            selected_freqs: Some(vec!["123.45".to_string()]),
+            selected_networks: Some(vec![7]),
+            selected_senders: Some(vec!["sender-1".to_string()]),
+            selected_tags: Some(vec![1]),
+            only_with_media: Some(true),
+            without_network: Some(false),
+            ..Default::default()
+        });
+
+        assert_eq!(
+            inbox_req.selected_groups,
+            Some(vec!["group-1".to_string()])
+        );
+        assert_eq!(inbox_req.selected_freqs, Some(vec!["123.45".to_string()]));
+        assert_eq!(inbox_req.selected_networks, Some(vec![7]));
+        assert_eq!(
+            inbox_req.selected_senders,
+            Some(vec!["sender-1".to_string()])
+        );
+        assert_eq!(inbox_req.selected_tags, Some(vec![1]));
+        assert_eq!(inbox_req.only_with_media, Some(true));
+        assert!(inbox_req.around_message_ref.is_none());
+
+        let target_req = inbox_window_target_req(&inbox_req);
+        assert_eq!(target_req.selected_groups, inbox_req.selected_groups);
+        assert_eq!(target_req.selected_freqs, inbox_req.selected_freqs);
+        assert_eq!(target_req.selected_networks, inbox_req.selected_networks);
+        assert_eq!(target_req.selected_senders, inbox_req.selected_senders);
+        assert_eq!(target_req.selected_tags, inbox_req.selected_tags);
+        assert_eq!(target_req.only_with_media, inbox_req.only_with_media);
+        assert_eq!(target_req.load_latest, Some(true));
+    }
+
+    #[test]
+    fn around_message_ref_enables_bidirectional_mode() {
+        let mut req = InboxMessagesReq {
+            page_id: Some(RER_DUTY_NEO_PAGE_ID.to_string()),
+            ..Default::default()
+        };
+
+        assert!(around_message_ref(&req).is_none());
+
+        req.around_message_ref = Some("target".to_string());
+        assert_eq!(around_message_ref(&req).as_deref(), Some("target"));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn issue_2726_inbox_window_returns_twenty_messages_on_each_side() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let now = Utc::now().naive_utc();
+        let mut target = None;
+
+        for offset in 0..43 {
+            let timestamp = now + Duration::seconds(offset);
+            let message = mk_signal_message(
+                &env.dbx,
+                signal_message::ActiveModel {
+                    body: Set(Some(format!("window-{offset}"))),
+                    created_at: Set(timestamp),
+                    timestamp: Set(Some(timestamp)),
+                    sender: Set(Some(login.id.to_string())),
+                    message_uid: Set(Some(format!(
+                        "window-{}-{offset}",
+                        Uuid::new_v4()
+                    ))),
+                    datasource_group_id: Set(Some(datasource_group.id)),
+                    deleted: Set(false),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            mk_signal_message_group(
+                &env.dbx,
+                signal_message_group::ActiveModel {
+                    signal_message_id: Set(message.id),
+                    group_master_key: Set(Some(
+                        datasource_group.group_master_key.clone(),
+                    )),
+                    sender: Set(message.sender.clone()),
+                    message_uid: Set(message.message_uid.clone()),
+                    datasource_group_id: Set(Some(datasource_group.id)),
+                    created_at: Set(timestamp),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            mk_sigint_inbox_item(
+                &env.dbx,
+                sigint_inbox_item::ActiveModel {
+                    id: Set(message.id),
+                    datetime: Set(Some(timestamp)),
+                    checked: Set(Some(true)),
+                    reviewed: Set(Some(true)),
+                    parsed_unit_v2: Set(false),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            if offset == 21 {
+                target = Some((message.id, message.id_uuid.unwrap()));
+            }
+        }
+
+        let (target_message_id, target_message_uuid) = target.unwrap();
+        let logins =
+            crate::users::get_organism_login_ids_by_id(&env.dbx, &login.id)
+                .await
+                .unwrap();
+        let window = inbox_window_bl(
+            &env,
+            &login.id,
+            &logins,
+            false,
+            &target_message_uuid.to_string(),
+            InboxMessagesReq::default(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(window.target_message_id, target_message_id);
+        assert_eq!(window.inbox.inbox_items.len(), 41);
+        assert_eq!(window.inbox.inbox_items[20].0, target_message_id);
+        assert_eq!(window.inbox.inbox_items[20].1.text, "window-21");
+        assert_eq!(window.messages_before, 21);
+        assert_eq!(window.messages_after, 21);
+        assert!(window.has_more_before);
+        assert!(window.has_more_after);
+        assert!(window
+            .inbox
+            .inbox_items
+            .windows(2)
+            .all(|messages| messages[0].0 < messages[1].0));
+
+        let filtered_window = inbox_window_bl(
+            &env,
+            &login.id,
+            &logins,
+            false,
+            &target_message_uuid.to_string(),
+            InboxMessagesReq {
+                selected_groups: Some(vec!["other-group".to_string()]),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(filtered_window.is_none());
+
+        let sender_filtered_window = inbox_window_bl(
+            &env,
+            &login.id,
+            &logins,
+            false,
+            &target_message_uuid.to_string(),
+            InboxMessagesReq {
+                selected_senders: Some(vec!["other-sender".to_string()]),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(sender_filtered_window.is_none());
     }
 
     fn generic_submit_req() -> InboxSubmitItem {

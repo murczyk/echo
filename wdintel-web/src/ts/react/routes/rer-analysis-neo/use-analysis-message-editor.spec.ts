@@ -35,14 +35,21 @@ vi.mock('../shared/useInboxChangedMessageIds', () => ({
 type Deferred<T> = {
   promise: Promise<T>;
   resolve: (value: T) => void;
+  reject: (reason: unknown) => void;
 };
 
 function deferred<T>(): Deferred<T> {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((res) => {
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
     resolve = res;
+    reject = rej;
   });
-  return { promise, resolve };
+  return {
+    promise,
+    resolve,
+    reject,
+  };
 }
 
 // @test-scope safeguard: prevents concurrent saves for one message from applying in an order different from the user's edits.
@@ -142,6 +149,119 @@ describe('useAnalysisMessageEditor', () => {
     await act(async () => {
       root.unmount();
     });
+  });
+
+  it('opens report-edit loading synchronously and hydrates the editor without reopening', async () => {
+    const request = deferred<Array<[number, InboxMessage]>>();
+    const report = { groupMasterKey: null } as InboxMessage;
+    hoisted.fetchMessagesByIds.mockReturnValueOnce(request.promise);
+
+    act(() => {
+      latest?.openReportEditor(91);
+    });
+
+    expect(latest?.editTargetLoadState).toEqual({ status: 'loading', reportId: 91 });
+    expect(latest?.editorEditAsReport).toBe(true);
+    expect(latest?.editorMessage).toBeNull();
+    expect(latest?.reportSource).toBeNull();
+    expect(hoisted.fetchMessagesByIds).toHaveBeenCalledWith(
+      [91],
+      null,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+
+    await act(async () => {
+      request.resolve([[91, report]]);
+      await request.promise;
+    });
+
+    expect(latest?.editTargetLoadState).toEqual({ status: 'idle' });
+    expect(latest?.editorMessage).toEqual({ id: 91, message: report });
+  });
+
+  it('keeps a failed report editor load open and retryable', async () => {
+    const onError = vi.fn();
+    root.unmount();
+    function ErrorHarness() {
+      latest = useAnalysisMessageEditor({
+        messages: [],
+        onError,
+        onUnauthorized: vi.fn().mockReturnValue(false),
+        onUpdateLocalMessage: vi.fn(),
+      });
+      return null;
+    }
+    root = createRoot(container);
+    await act(async () => root.render(React.createElement(ErrorHarness)));
+    hoisted.fetchMessagesByIds.mockRejectedValueOnce(new Error('failed'));
+
+    act(() => latest?.openReportEditor(91));
+    await act(async () => Promise.resolve());
+
+    expect(latest?.editTargetLoadState).toEqual({
+      status: 'error',
+      reportId: 91,
+      message: 'failed',
+    });
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('aborts loading when the editor closes and ignores the stale result', async () => {
+    const request = deferred<Array<[number, InboxMessage]>>();
+    hoisted.fetchMessagesByIds.mockReturnValueOnce(request.promise);
+    act(() => latest?.openReportEditor(91));
+    const signal = hoisted.fetchMessagesByIds.mock.calls[0]?.[2]?.signal as AbortSignal;
+
+    act(() => latest?.closeEditor());
+    expect(signal.aborted).toBe(true);
+    expect(latest?.editTargetLoadState).toEqual({ status: 'idle' });
+
+    await act(async () => {
+      request.resolve([[91, {} as InboxMessage]]);
+      await request.promise;
+    });
+    expect(latest?.editorMessage).toBeNull();
+  });
+
+  it('aborts a loading report when a regular editor wins the transition', async () => {
+    const request = deferred<Array<[number, InboxMessage]>>();
+    const message = { groupMasterKey: 'group' } as InboxMessage;
+    harnessMessages = [[42, message]];
+    await act(async () => root.render(React.createElement(Harness)));
+    hoisted.fetchMessagesByIds.mockReturnValueOnce(request.promise);
+    act(() => latest?.openReportEditor(91));
+    const signal = hoisted.fetchMessagesByIds.mock.calls[0]?.[2]?.signal as AbortSignal;
+    act(() => latest?.openEditor(42));
+
+    expect(signal.aborted).toBe(true);
+    expect(latest?.editorMessage).toEqual({ id: 42, message });
+    await act(async () => {
+      request.resolve([[91, {} as InboxMessage]]);
+      await request.promise;
+    });
+    expect(latest?.editorMessage).toEqual({ id: 42, message });
+  });
+
+  it('retries a failed report load with a fresh request', async () => {
+    const first = deferred<Array<[number, InboxMessage]>>();
+    const second = deferred<Array<[number, InboxMessage]>>();
+    hoisted.fetchMessagesByIds
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    act(() => latest?.openReportEditor(91));
+    await act(async () => {
+      first.reject(new Error('failed'));
+      await Promise.resolve();
+    });
+    act(() => latest?.retryEditTargetLoad());
+    const firstSignal = hoisted.fetchMessagesByIds.mock.calls[0]?.[2]?.signal as AbortSignal;
+    const secondSignal = hoisted.fetchMessagesByIds.mock.calls[1]?.[2]?.signal as AbortSignal;
+    expect(secondSignal).not.toBe(firstSignal);
+    await act(async () => {
+      second.resolve([[91, {} as InboxMessage]]);
+      await second.promise;
+    });
+    expect(latest?.editorMessage?.id).toBe(91);
   });
 
   it('updates attachments in an open report editor after a remote change', async () => {

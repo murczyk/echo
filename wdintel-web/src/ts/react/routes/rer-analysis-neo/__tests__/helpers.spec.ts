@@ -7,6 +7,7 @@ import {
   createInitialQueryState,
   createResetQueryState,
   buildInboxReq,
+  extendQueryDateRangeForDirectMessage,
   hasMeaningfulFiltersBeyondDateRange,
   hasMeaningfulUiFiltersBeyondDateRange,
   parseQueryStateFromWindow,
@@ -343,6 +344,38 @@ describe('rer-analysis-neo helpers', () => {
 
     expect(state.fromDateTimeStr).toBe('2026-01-16T00:00');
     expect(state.toDateTimeStr).toBe('2026-01-17T00:00');
+  });
+
+  it('extends a direct-link range from the day before the message through today', () => {
+    const state = createQueryState({
+      fromDateTimeStr: '2026-08-28T00:00',
+      toDateTimeStr: '2026-08-29T00:00',
+    });
+
+    const next = extendQueryDateRangeForDirectMessage(
+      state,
+      { date: '2026-08-20', timestamp: null },
+      new Date(Date.UTC(2026, 7, 28, 12)),
+    );
+
+    expect(next.fromDateTimeStr).toBe('2026-08-19T00:00');
+    expect(next.toDateTimeStr).toBe('2026-08-29T00:00');
+  });
+
+  it('keeps earlier bounds and extends a direct-link range forward through today', () => {
+    const state = createQueryState({
+      fromDateTimeStr: '2026-08-18T00:00',
+      toDateTimeStr: '2026-08-21T00:00',
+    });
+
+    const next = extendQueryDateRangeForDirectMessage(
+      state,
+      { date: '2026-08-20', timestamp: null },
+      new Date(Date.UTC(2026, 7, 28, 12)),
+    );
+
+    expect(next.fromDateTimeStr).toBe('2026-08-18T00:00');
+    expect(next.toDateTimeStr).toBe('2026-08-29T00:00');
   });
 
   it('fills missing datetime bounds when only analysis dates are restored', () => {

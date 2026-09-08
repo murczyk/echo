@@ -481,6 +481,39 @@ pub const ANALYSIS_STATS_UNDEFINED_UNIT_ID: i64 = 0;
 pub const ANALYSIS_STATS_UNDEFINED_UNIT_NAME: &str = "Не визначено";
 pub const CLEANUP_NETWORKS_WORKER_SLEEP_DURATION: u64 = 3600;
 pub const CLEANUP_NETWORKS_CUTOFF_TIME_DAYS: i64 = 10;
+pub const SIGINT_NETWORK_ACTIVITY_DECISION_LIST_LIMIT: u64 = 200;
+pub const SIGINT_NETWORK_ACTIVITY_DECISION_WORKER_CLEANUP: &str =
+    "cleanup_networks_worker";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_MANUAL_NETWORK_RESTORED: &str =
+    "manual_network_restored";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_MANUAL_NETWORK_STATUS_UPDATED: &str =
+    "manual_network_status_updated";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_MANUAL_DO_NOT_ARCHIVE_ENABLED: &str =
+    "manual_do_not_archive_enabled";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_MANUAL_FREQUENCY_ADDED: &str =
+    "manual_frequency_added";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_MANUAL_FREQUENCY_UPDATED: &str =
+    "manual_frequency_updated";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_MANUAL_FREQUENCY_REACTIVATED: &str =
+    "manual_frequency_reactivated";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_MANUAL_FREQUENCY_DELETED: &str =
+    "manual_frequency_deleted";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_IMPORT_NETWORK_UPDATED: &str =
+    "import_network_updated";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_IMPORT_FREQUENCY_UPDATED: &str =
+    "import_frequency_updated";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_MERGE_NETWORK_UPDATED: &str =
+    "merge_network_updated";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_MERGE_FREQUENCY_CLOSED: &str =
+    "merge_frequency_closed";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_CLEANUP_FREQUENCY_NO_RECENT_INTERCEPTIONS: &str =
+    "cleanup_frequency_no_recent_interceptions";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_CLEANUP_NETWORK_NO_ACTIVE_FREQUENCIES: &str =
+    "cleanup_network_no_active_frequencies";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_CLEANUP_NETWORK_SYNTHETIC_INACTIVITY: &str =
+    "cleanup_network_synthetic_inactivity";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_RECENT_INTERCEPTIONS_THRESHOLD_MET:
+    &str = "recent_interceptions_threshold_met";
 pub const MAX_AGE_MESSAGES_TO_UPDATE: i64 = 120;
 pub const IMPORT_DIRECTION_FINDING_UUID: &str =
     "22b171e7-1c8a-469c-af68-79d7a06b99f4";
@@ -835,6 +868,7 @@ DELETE FROM echo_gpu_transcription_queue;
 DELETE FROM gpu_config;
 DELETE FROM secret_group_user;
 DELETE FROM palitra_highlight_blacklist;
+DELETE FROM sigint_activity_decision_changelog;
 DELETE FROM sigint_callsign_changelog;
 DELETE FROM sigint_network_aor;
 DELETE FROM sigint_network_callsign_changelog;

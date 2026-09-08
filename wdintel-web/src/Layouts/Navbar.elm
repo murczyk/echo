@@ -1,4 +1,4 @@
-module Layouts.Navbar exposing (Model, Msg, Props, layout)
+module Layouts.Navbar exposing (Model, Msg(..), Props, init, layout, update)
 
 import Auth
 import Bindings as B
@@ -9,6 +9,7 @@ import Effect as E exposing (Effect)
 import Html exposing (..)
 import Html.Attributes exposing (attribute, class, id, property, title)
 import Html.Events exposing (onClick, stopPropagationOn, on)
+import Http
 import Json.Decode
 import Json.Encode as Encode
 import Layout exposing (Layout)
@@ -19,6 +20,7 @@ import Shared.Msg
 import Shared.Components.Toast as Toast
 import Shared.Model
 import Task
+import Utils.Api.ErrorHandling
 import View exposing (View)
 
 
@@ -46,6 +48,7 @@ type alias Model =
     { isNavbarVisible : Bool
     , openDropdown : Maybe String
     , mobileNavOpen : Bool
+    , keepAliveStopped : Bool
     }
 
 
@@ -54,6 +57,7 @@ init _ =
     ( { isNavbarVisible = True
       , openDropdown = Nothing
       , mobileNavOpen = False
+      , keepAliveStopped = False
       }
     , E.batch
         [ E.sendCmd <| Task.perform (\_ -> Slept) (Process.sleep keepAliveInterval)
@@ -116,15 +120,25 @@ update route msg model =
             ( model, E.none )
 
         Slept ->
-            ( model
-            , E.batch
-                [ E.keepAlive KeepAliveDone { pageId = Just (String.dropLeft 1 route.url.path) }
-                , E.sendCmd <| Task.perform (\_ -> Slept) (Process.sleep keepAliveInterval)
-                ]
-            )
+            if model.keepAliveStopped then
+                ( model, E.none )
 
-        KeepAliveDone (Err _) ->
-            ( model, E.none )
+            else
+                ( model
+                , E.batch
+                    [ E.keepAlive KeepAliveDone { pageId = Just (String.dropLeft 1 route.url.path) }
+                    , E.sendCmd <| Task.perform (\_ -> Slept) (Process.sleep keepAliveInterval)
+                    ]
+                )
+
+        KeepAliveDone (Err error) ->
+            if model.keepAliveStopped then
+                ( model, E.none )
+
+            else
+                ( { model | keepAliveStopped = error.httpError == Http.BadStatus 401 }
+                , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка підтримання сесії" error
+                )
 
         KeepAliveDone (Ok _) ->
             ( model, E.none )

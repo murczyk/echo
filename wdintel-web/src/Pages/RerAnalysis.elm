@@ -345,6 +345,7 @@ getInboxReq model =
     in
     { sinceIdNoninclusive = Nothing
     , beforeIdNoninclusive = Nothing
+    , aroundMessageRef = Nothing
     , sinceDateInclusiveMs = Maybe.map Time.posixToMillis model.from.datePosix
     , tillDateInclusiveMs = Maybe.map Time.posixToMillis model.to.datePosix
     , onlyShowUnprocessed = Nothing

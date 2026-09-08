@@ -1,10 +1,10 @@
 import ArrowLeftIcon from '@mui/icons-material/ArrowLeft';
 import ArrowRightIcon from '@mui/icons-material/ArrowRight';
-import DescriptionIcon from '@mui/icons-material/Description';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import {
   Button,
   CircularProgress,
@@ -67,6 +67,7 @@ const SUMMARY_RETRY_ERROR = 'Не вдалося повторно запусти
 export const MEDIA_SUMMARY_CACHE_LIMIT = 50;
 export const MEDIA_SUMMARY_LOCALITY_CACHE_LIMIT = 500;
 const summaryCache = new Map<string, MediaSummaryResult>();
+const summaryPrefetches = new Map<string, Promise<MediaSummaryResult>>();
 const localityCache = new Map<string, CoordinateLocality | null>();
 
 function getLruCacheValue<Value>(cache: Map<string, Value>, key: string): Value | undefined {
@@ -128,6 +129,7 @@ export function clearMediaSummaryCache(
     summaryCache.delete(`${summaryAccess}:${mediaId}`);
   } else {
     summaryCache.clear();
+    summaryPrefetches.clear();
     localityCache.clear();
   }
 }
@@ -698,34 +700,25 @@ export function MessageCardMediaSummary({
 
   if (mediaId == null && pagination == null) return null;
 
-  const borderColorClass = isFailed
-    ? 'border-l-red-500'
-    : isNoResult
-      ? 'border-l-(--color-text-muted)'
-      : 'border-l-(--color-primary)';
-
-  const iconColorClass = isFailed
-    ? 'text-red-500'
-    : isNoResult
-      ? 'text-(--color-text-muted)'
-      : 'text-(--color-primary)';
-
   return (
-    <div
+    <blockquote
       data-media-summary-inline="true"
-      className={`min-w-0 w-[min(580px,100%)] p-1 rounded bg-black/5 dark:bg-white/5 border-l-[3px] ${borderColorClass} flex flex-row items-start gap-1`}
+      className="audio-transcription m-0 mt-0.5 mb-1 flex min-w-0 w-[min(580px,100%)] gap-1 px-2 py-1.5 text-sm leading-5"
     >
-      <DescriptionIcon className={`text-[20px]! shrink-0 mt-0.5 ${iconColorClass}`} />
+      <SmartToyOutlinedIcon
+        data-media-summary-icon="robot"
+        className="audio-transcription-icon shrink-0 mt-0.5"
+      />
 
       <div
         key={mediaId ?? 'summary-text'}
-        className="flex-1 min-w-0 px-1 py-0.5 animate-[media-summary-carousel-in_160ms_ease-out]"
+        className="flex-1 min-w-0 animate-[media-summary-carousel-in_160ms_ease-out]"
       >
         {isFailed ? (
           <div className="flex flex-row items-center gap-1.5 flex-wrap">
             <Typography
               variant="body2"
-              className="text-red-500 font-normal text-sm leading-5 wrap-break-word"
+              className="text-[var(--color-error)] font-normal text-sm leading-5 wrap-break-word"
             >
               {refreshError || 'Не вдалося створити опис'}
             </Typography>
@@ -734,7 +727,7 @@ export function MessageCardMediaSummary({
               aria-label={state === 'failed' ? 'Повторити стислий опис' : 'Оновити стислий опис'}
               disabled={refreshing}
               onClick={() => void (state === 'failed' ? retry() : refresh(false))}
-              className="p-1! text-white! hover:bg-black/10 dark:hover:bg-white/10"
+              className="p-1! text-[var(--color-error)] hover:text-[var(--color-error-hover)] hover:bg-[var(--color-error-light)] dark:hover:bg-[var(--color-error-dark)]"
             >
               <RefreshIcon className="text-lg!" />
             </IconButton>
@@ -827,66 +820,71 @@ export function MessageCardMediaSummary({
           </IconButton>
         ) : null}
       </div>
-    </div>
+    </blockquote>
   );
 }
 
 export function MessageCardMediaSummaryCarousel({
-  media,
-  onIndexChange,
+  items,
+  selectedIdentity,
+  onSelectedIdentityChange,
 }: {
-  media: Array<{
-    id?: string | null;
+  items: Array<{
+    identity: string;
+    mediaId: string | null;
     summary?: MediaSummaryStatus | null;
   }>;
-  onIndexChange?: (index: number) => void;
+  selectedIdentity: string | null;
+  onSelectedIdentityChange: (identity: string) => void;
 }) {
-  const mediaIds = media.map((item, itemIndex) => item.id ?? itemIndex).join('\0');
-  const firstSummaryIndex = media.findIndex((item) => item.id != null && item.summary != null);
-  const [index, setIndex] = useState(() => Math.max(0, firstSummaryIndex));
+  const itemSignature = items
+    .map((item) => `${item.identity}:${item.mediaId ?? ''}:${item.summary?.state ?? ''}`)
+    .join('\0');
+  const initialIdentity = items.find((item) => item.summary != null)?.identity ?? null;
+  const selectedIndex = items.findIndex(
+    (item) => item.identity === (selectedIdentity ?? initialIdentity),
+  );
+  const resolvedIndex = selectedIndex >= 0 ? selectedIndex : 0;
+  const current = items[resolvedIndex];
 
   useEffect(() => {
-    const nextIndex = Math.max(0, firstSummaryIndex);
-    setIndex(nextIndex);
-    onIndexChange?.(nextIndex);
-  }, [firstSummaryIndex, mediaIds, onIndexChange]);
-
-  const resolvedIndex = Math.min(index, media.length - 1);
-  const current = media[resolvedIndex];
-
-  useEffect(() => {
-    media.forEach((item, itemIdx) => {
-      if (itemIdx !== resolvedIndex && item.id != null && item.summary?.state === 'completed') {
-        const key = `messenger:${item.id}`;
-        if (!summaryCache.has(key)) {
-          const promise = getMediaSummary(item.id, undefined, 'messenger');
+    items.forEach((item, itemIdx) => {
+      if (
+        itemIdx !== resolvedIndex &&
+        item.mediaId != null &&
+        item.summary?.state === 'completed'
+      ) {
+        const key = `messenger:${item.mediaId}`;
+        if (!summaryCache.has(key) && !summaryPrefetches.has(key)) {
+          const promise = getMediaSummary(item.mediaId, undefined, 'messenger');
           if (promise != null && typeof promise.then === 'function') {
+            summaryPrefetches.set(key, promise);
             void promise
               .then((res) => {
                 if (res?.state === 'completed' || res?.state === 'failed') {
                   setLruCacheValue(summaryCache, key, res, MEDIA_SUMMARY_CACHE_LIMIT);
                 }
               })
-              .catch(() => {});
+              .catch(() => {})
+              .finally(() => summaryPrefetches.delete(key));
           }
         }
       }
     });
-  }, [media, mediaIds, resolvedIndex]);
-  if (firstSummaryIndex < 0 || current == null) return null;
+  }, [itemSignature, resolvedIndex]);
+  if (current == null || initialIdentity == null) return null;
 
   const selectIndex = (nextIndex: number) => {
-    setIndex(nextIndex);
-    onIndexChange?.(nextIndex);
+    onSelectedIdentityChange(items[nextIndex]!.identity);
   };
 
   const pagination =
-    media.length > 1
+    items.length > 1
       ? {
           index: resolvedIndex,
-          total: media.length,
+          total: items.length,
           onPrev: () => selectIndex(Math.max(0, resolvedIndex - 1)),
-          onNext: () => selectIndex(Math.min(media.length - 1, resolvedIndex + 1)),
+          onNext: () => selectIndex(Math.min(items.length - 1, resolvedIndex + 1)),
         }
       : null;
 
@@ -896,7 +894,7 @@ export function MessageCardMediaSummaryCarousel({
       className="relative mt-2 max-w-full min-w-0 w-[min(580px,100%)]"
     >
       <MessageCardMediaSummary
-        mediaId={current.id}
+        mediaId={current.mediaId}
         status={current.summary}
         pagination={pagination}
       />

@@ -2,6 +2,40 @@ use super::*;
 use crate::functest::tests::*;
 use serial_test::serial;
 
+#[serial]
+#[tokio::test]
+async fn collect_groups_includes_whatsapp_only_group_names() {
+    let env = cleanup().await.unwrap();
+    let jid = "whatsapp-only-saved-filter-group".to_string();
+    let name = "Whatsapp-only saved filter group".to_string();
+
+    whatsapp_group::ActiveModel {
+        jid: Set(jid.clone()),
+        owner_jid: Set(None),
+        name: Set(name.clone()),
+        created_at: Set(Utc::now().naive_utc()),
+        deleted: Set(false),
+    }
+    .insert(&env.dbx)
+    .await
+    .unwrap();
+
+    let groups = collect_groups(
+        vec![jid.clone()],
+        &env,
+        false,
+        CollectGroupsOpts {
+            skip_group_stats: true,
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].master_key, jid);
+    assert_eq!(groups[0].name, name);
+}
+
 /// Test that insert_group_aor doesn't override existing AOR assignments
 #[serial]
 #[tokio::test]

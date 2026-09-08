@@ -18,7 +18,6 @@ type Props = {
   isCompactLayout?: boolean;
   isNarrowLayout: boolean;
   rightPanelVisible: boolean;
-  messagesPaneLoading: boolean;
   messagesPanelId: string;
   messagesTabId: string;
   summaryPanelId: string;
@@ -34,7 +33,6 @@ export function AnalysisCenterPanel({
   isCompactLayout = false,
   isNarrowLayout,
   rightPanelVisible,
-  messagesPaneLoading,
   messagesPanelId,
   messagesTabId,
   summaryPanelId,
@@ -149,6 +147,7 @@ export function AnalysisCenterPanel({
           <AnalysisPaginationControl
             centerTab={centerTab}
             pageIndex={page.pageIndex}
+            rangePageIndex={page.visibleMessagesPageIndex}
             pageSize={ANALYSIS_MESSAGES_PAGE_SIZE}
             messagesCount={page.messages.length}
             totalCount={page.messagesTotalCount}
@@ -156,6 +155,7 @@ export function AnalysisCenterPanel({
             loading={page.messagesLoading}
             noMoreToLoad={page.noMoreToLoad}
             busy={page.messagesPaging || page.messagesLoading}
+            jumpDisabled={page.directMessageNavigation != null}
             onFirstPage={page.loadFirstPage}
             onLastPage={page.loadLastPage}
             onPrevPage={page.loadPrevPage}
@@ -231,13 +231,18 @@ export function AnalysisCenterPanel({
             currentUser={page.currentUser}
             copiedFeedbackId={page.copiedFeedbackId}
             groupInfos={page.groupInfos}
-            loading={messagesPaneLoading}
             paginationLoading={page.messagesPaging}
             botTagAction={page.botTagAction}
             messageComments={page.messageComments}
             messages={page.messages}
             networkDisplayMap={page.networkDisplayMap}
             pageIndex={page.pageIndex}
+            pageNavigationTarget={page.messagePageNavigationTarget}
+            viewportPreservationKey={page.messageViewportPreservationKey}
+            onViewportCaptureChange={page.setMessageViewportCapture}
+            onVisiblePageChange={page.setVisibleMessagesPageIndex}
+            onPageNavigationHandled={page.clearMessagePageNavigationTarget}
+            scrollResetKey={`${page.queryState.fromDateTimeStr}|${page.queryState.toDateTimeStr}`}
             noMoreToLoad={page.noMoreToLoad}
             onDeleteMessage={page.onDeleteMessage}
             onCancelBotTagAction={page.onCancelBotTagAction}
@@ -252,12 +257,12 @@ export function AnalysisCenterPanel({
             onToggleMessageBookmark={page.onToggleMessageBookmark}
             onToggleMessageImportant={page.onToggleMessageImportant}
             onToggleMessageTag={page.onToggleMessageTag}
-            onAddFrequencyToFilter={page.addFrequencyToFilter}
             profiles={page.profiles}
             tagsMap={page.tagsMap}
             tagsOrder={page.tagsOrder}
             tagsLoading={page.filtersLoading && Object.keys(page.tagsMap).length === 0}
             tagsLayout={page.tagsLayout}
+            collapseMediaPreviews={page.collapseMediaPreviews}
             mediaSummaryEnabled={page.mediaSummaryEnabled}
             messageTextPreviewLines={page.messageTextPreviewLines}
             showCallsignAddForm={page.showAnalysisCallsignAddForm}
@@ -265,6 +270,7 @@ export function AnalysisCenterPanel({
             callsignInfoMap={page.summaryCallsignsInfo}
             networks={page.networks}
             unitsMap={page.unitsMap}
+            directMessageNavigation={page.directMessageNavigation}
           />
         </Box>
 

@@ -361,8 +361,7 @@ impl TusHandler {
             .created()
             .or_else(|_| metadata.modified())
             .c(h!())?;
-        let expires: DateTime<Utc> =
-            (created + self.config.completed_expires_in).into();
+        let expires = self.expires_at(created, false);
         Ok(TusUpload {
             file_id,
             login: login.to_string(),
@@ -386,6 +385,7 @@ impl TusHandler {
             );
         }
 
+        let now = Utc::now();
         for pending in [true, false] {
             let Some((file_path, _file_id, upload_length)) = self
                 .parse_request_file_path(login, request_file, pending)
@@ -393,11 +393,20 @@ impl TusHandler {
             else {
                 continue;
             };
-            match tokio::fs::metadata(file_path).await {
+            match tokio::fs::metadata(&file_path).await {
                 Ok(metadata) if metadata.is_file() => {
+                    let expires = self
+                        .expires_at_for_metadata(&metadata, pending)
+                        .context(h!())?;
+                    if expires <= now {
+                        self.remove_expired_upload(&file_path).await;
+                        return Ok(
+                            self.build_status_response(StatusCode::NOT_FOUND)
+                        );
+                    }
                     let mut builder = HttpResponse::NoContent();
                     self.add_head_options_response_headers(&mut builder);
-                    self.add_expires_header(&metadata, &mut builder)?;
+                    self.add_expires_header(expires, &mut builder);
                     builder.insert_header((
                         HEADER_NAME_UPLOAD_OFFSET,
                         metadata.len().to_string(),
@@ -537,9 +546,24 @@ impl TusHandler {
         };
 
         let metadata = file.metadata().await.c(h!())?;
+        let expires = self
+            .expires_at_for_metadata(&metadata, true)
+            .context(h!())?;
+        if expires <= Utc::now() {
+            drop(file);
+            self.remove_expired_upload(&file_path).await;
+            return Ok(self.rejected_chunk_response(
+                StatusCode::NOT_FOUND,
+                "pending_upload_expired",
+                Some(file_id),
+                Some(upload_length),
+                Some(upload_offset),
+                None,
+            ));
+        }
         let mut builder = HttpResponse::NoContent();
         self.add_default_headers(&mut builder);
-        self.add_expires_header(&metadata, &mut builder)?;
+        self.add_expires_header(expires, &mut builder);
         let upload_offset =
             match Self::write(&mut file, upload_offset, upload_length, payload)
                 .await?
@@ -720,7 +744,7 @@ impl TusHandler {
 
         let mut builder = HttpResponse::Created();
         self.add_default_headers(&mut builder);
-        self.add_expires_header(&metadata, &mut builder)?;
+        self.add_expires_header_for_metadata(&metadata, true, &mut builder)?;
         builder.insert_header((
             header::LOCATION,
             format!("{}{}", self.prefix, file_name),
@@ -824,22 +848,54 @@ impl TusHandler {
         PathBuf::from(metadata_path)
     }
 
-    fn add_expires_header(
+    fn expires_at(&self, created: SystemTime, pending: bool) -> DateTime<Utc> {
+        let expires_in = if pending {
+            self.config.pending_expires_in
+        } else {
+            self.config.completed_expires_in
+        };
+        (created + expires_in).into()
+    }
+
+    fn expires_at_for_metadata(
         &self,
         metadata: &std::fs::Metadata,
-        builder: &mut actix_web::HttpResponseBuilder,
-    ) -> Result<SystemTime, AppError> {
+        pending: bool,
+    ) -> Result<DateTime<Utc>, AppError> {
         let created = metadata
             .created()
             .or_else(|_| metadata.modified())
             .c(h!())?;
-        let expires: DateTime<Utc> =
-            (created + self.config.pending_expires_in).into();
+        Ok(self.expires_at(created, pending))
+    }
+
+    async fn remove_expired_upload(&self, file_path: &Path) {
+        let _ = tokio::fs::remove_file(file_path).await;
+        let _ = tokio::fs::remove_file(self.metadata_path(file_path)).await;
+    }
+
+    fn add_expires_header_for_metadata(
+        &self,
+        metadata: &std::fs::Metadata,
+        pending: bool,
+        builder: &mut actix_web::HttpResponseBuilder,
+    ) -> Result<(), AppError> {
+        let expires = self
+            .expires_at_for_metadata(metadata, pending)
+            .context(h!())?;
+        self.add_expires_header(expires, builder);
+        Ok(())
+    }
+
+    fn add_expires_header(
+        &self,
+        expires: DateTime<Utc>,
+        builder: &mut actix_web::HttpResponseBuilder,
+    ) {
         builder.insert_header((
             HEADER_NAME_UPLOAD_EXPIRES,
             expires.format("%a, %d %b %Y %H:%M:%S GMT").to_string(),
         ));
-        Ok(created)
     }
 
     fn build_status_response(&self, status_code: StatusCode) -> HttpResponse {
@@ -951,7 +1007,290 @@ fn login_dir(login: &uuid::Uuid) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use actix_web::FromRequest;
     use futures_util::stream;
+
+    // Regression for ECHO-3324: stale Uppy resume URLs must not revive expired uploads.
+    #[tokio::test]
+    async fn expired_completed_upload_is_unavailable_to_head_and_direct_submit()
+    {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let login = Uuid::new_v4();
+        let mut handler = test_handler(&temp_dir);
+        handler.config.completed_expires_in = Duration::ZERO;
+        let (upload_url, file_path, upload_length) =
+            create_test_completed_upload(&handler, &login).await;
+        let request_file = upload_url.strip_prefix(&handler.prefix).unwrap();
+
+        assert!(tokio::fs::try_exists(&file_path).await.unwrap());
+        let error = handler
+            .resolve_completed_uploads(
+                &login,
+                std::slice::from_ref(&upload_url),
+            )
+            .await
+            .unwrap_err();
+        let AppError::BL { msg } = error else {
+            panic!("expected an unavailable upload validation error");
+        };
+        assert!(msg.contains(&upload_url));
+
+        let response = handler
+            .process_head_request(&login, &tus_headers(), request_file)
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert!(!response.headers().contains_key(HEADER_NAME_UPLOAD_OFFSET));
+        assert!(!response.headers().contains_key(HEADER_NAME_UPLOAD_LENGTH));
+        assert!(!tokio::fs::try_exists(&file_path).await.unwrap());
+        assert!(!tokio::fs::try_exists(handler.metadata_path(&file_path))
+            .await
+            .unwrap());
+        assert_eq!(upload_length, 11);
+    }
+
+    // Regression for ECHO-3324: PATCH must not revive an expired pending upload.
+    #[tokio::test]
+    async fn expired_pending_upload_is_rejected_before_writing() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let login = Uuid::new_v4();
+        let mut handler = test_handler(&temp_dir);
+        handler.config.pending_expires_in = Duration::ZERO;
+        let mut headers = tus_headers();
+        headers
+            .insert(HEADER_NAME_UPLOAD_LENGTH, HeaderValue::from_static("5"));
+        let response = handler
+            .process_post_request(&login, &headers)
+            .await
+            .unwrap();
+        let upload_url = header_value(&response, header::LOCATION);
+        let request_file = upload_url.strip_prefix(&handler.prefix).unwrap();
+        let (file_path, _, _) = handler
+            .parse_request_file_path(&login, request_file, true)
+            .await
+            .unwrap()
+            .unwrap();
+
+        headers.insert(header::CONTENT_TYPE, HEADER_VALUE_CONTENT_TYPE_PATCH);
+        headers
+            .insert(HEADER_NAME_UPLOAD_OFFSET, HeaderValue::from_static("0"));
+        let response = handler
+            .process_patch_request(
+                &login,
+                &headers,
+                request_file,
+                test_payload(b"image"),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert!(!tokio::fs::try_exists(&file_path).await.unwrap());
+        assert!(!tokio::fs::try_exists(handler.metadata_path(&file_path))
+            .await
+            .unwrap());
+    }
+
+    // Regression for ECHO-3324: completed uploads use their own expiration TTL consistently.
+    #[tokio::test]
+    async fn fresh_completed_upload_is_resumable_and_available_to_direct_submit(
+    ) {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let login = Uuid::new_v4();
+        let mut handler = test_handler(&temp_dir);
+        handler.config.pending_expires_in = Duration::from_secs(60);
+        handler.config.completed_expires_in = Duration::from_secs(120);
+        let (upload_url, file_path, upload_length) =
+            create_test_completed_upload(&handler, &login).await;
+        let request_file = upload_url.strip_prefix(&handler.prefix).unwrap();
+        let expires = handler
+            .expires_at_for_metadata(
+                &tokio::fs::metadata(&file_path).await.unwrap(),
+                false,
+            )
+            .unwrap();
+        let uploads = handler
+            .resolve_completed_uploads(
+                &login,
+                std::slice::from_ref(&upload_url),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(uploads.len(), 1);
+        assert_eq!(uploads[0].path, file_path.display().to_string());
+
+        let response = handler
+            .process_head_request(&login, &tus_headers(), request_file)
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        assert_eq!(
+            header_value(&response, HEADER_NAME_UPLOAD_OFFSET),
+            upload_length.to_string()
+        );
+        assert_eq!(
+            header_value(&response, HEADER_NAME_UPLOAD_LENGTH),
+            upload_length.to_string()
+        );
+        assert_eq!(
+            header_value(&response, HEADER_NAME_UPLOAD_EXPIRES),
+            expires.format("%a, %d %b %Y %H:%M:%S GMT").to_string()
+        );
+    }
+
+    // Regression for ECHO-3324: partial uploads stay resumable under the pending TTL.
+    #[tokio::test]
+    async fn fresh_partial_upload_reports_pending_expiration_and_completes() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let login = Uuid::new_v4();
+        let mut handler = test_handler(&temp_dir);
+        handler.config.pending_expires_in = Duration::from_secs(60);
+        handler.config.completed_expires_in = Duration::from_secs(120);
+        let upload_length = 11;
+        let mut headers = tus_headers();
+        headers
+            .insert(HEADER_NAME_UPLOAD_LENGTH, HeaderValue::from_static("11"));
+        let response = handler
+            .process_post_request(&login, &headers)
+            .await
+            .unwrap();
+        let upload_url = header_value(&response, header::LOCATION);
+        let request_file = upload_url.strip_prefix(&handler.prefix).unwrap();
+        let (file_path, _, _) = handler
+            .parse_request_file_path(&login, request_file, true)
+            .await
+            .unwrap()
+            .unwrap();
+        let expires = handler
+            .expires_at_for_metadata(
+                &tokio::fs::metadata(&file_path).await.unwrap(),
+                true,
+            )
+            .unwrap();
+
+        headers.insert(header::CONTENT_TYPE, HEADER_VALUE_CONTENT_TYPE_PATCH);
+        headers
+            .insert(HEADER_NAME_UPLOAD_OFFSET, HeaderValue::from_static("0"));
+        let response = handler
+            .process_patch_request(
+                &login,
+                &headers,
+                request_file,
+                test_payload(b"image"),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        assert_eq!(header_value(&response, HEADER_NAME_UPLOAD_OFFSET), "5");
+
+        let response = handler
+            .process_head_request(&login, &tus_headers(), request_file)
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        assert_eq!(header_value(&response, HEADER_NAME_UPLOAD_OFFSET), "5");
+        assert_eq!(
+            header_value(&response, HEADER_NAME_UPLOAD_LENGTH),
+            upload_length.to_string()
+        );
+        assert_eq!(
+            header_value(&response, HEADER_NAME_UPLOAD_EXPIRES),
+            expires.format("%a, %d %b %Y %H:%M:%S GMT").to_string()
+        );
+
+        headers
+            .insert(HEADER_NAME_UPLOAD_OFFSET, HeaderValue::from_static("5"));
+        let response = handler
+            .process_patch_request(
+                &login,
+                &headers,
+                request_file,
+                test_payload(b" bytes"),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        assert_eq!(
+            header_value(&response, HEADER_NAME_UPLOAD_OFFSET),
+            upload_length.to_string()
+        );
+        let uploads = handler
+            .resolve_completed_uploads(
+                &login,
+                std::slice::from_ref(&upload_url),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            tokio::fs::read(&uploads[0].path).await.unwrap(),
+            b"image bytes"
+        );
+    }
+
+    fn test_handler(temp_dir: &tempfile::TempDir) -> TusHandler {
+        TusHandler::new(
+            temp_dir.path().display().to_string(),
+            "/api/sigint/file-upload/tus",
+        )
+    }
+
+    async fn create_test_completed_upload(
+        handler: &TusHandler,
+        login: &Uuid,
+    ) -> (String, PathBuf, u64) {
+        let result = handler
+            .create_completed_upload(
+                login,
+                TusUploadMetadata::default(),
+                stream::iter([Ok(web::Bytes::from_static(b"image bytes"))]),
+            )
+            .await
+            .unwrap();
+        let CompletedUploadWriteResult::Stored {
+            upload_url, size, ..
+        } = result
+        else {
+            panic!("expected a stored fallback upload");
+        };
+        let request_file = upload_url.strip_prefix(&handler.prefix).unwrap();
+        let (file_path, _, _) = handler
+            .parse_request_file_path(login, request_file, false)
+            .await
+            .unwrap()
+            .unwrap();
+        (upload_url, file_path, size)
+    }
+
+    fn tus_headers() -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(HEADER_NAME_TUS_RESUMABLE, HEADER_VALUE_TUS_RESUMABLE);
+        headers
+    }
+
+    fn header_value(response: &HttpResponse, name: HeaderName) -> String {
+        response
+            .headers()
+            .get(name)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string()
+    }
+
+    fn test_payload(bytes: &'static [u8]) -> web::Payload {
+        let (request, mut payload) = actix_web::test::TestRequest::default()
+            .set_payload(web::Bytes::from_static(bytes))
+            .to_http_parts();
+        web::Payload::from_request(&request, &mut payload)
+            .into_inner()
+            .unwrap()
+    }
 
     #[tokio::test]
     async fn fallback_upload_is_available_through_completed_url() {

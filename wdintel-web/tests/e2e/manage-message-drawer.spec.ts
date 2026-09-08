@@ -84,7 +84,8 @@ async function openLinkedMessageEditDrawer(
   await expect(
     page.getByText((inboxResponse.inbox_items[0]![1] as { text: string }).text),
   ).toBeVisible();
-  await page.getByRole('button', { name: 'Редагувати', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Більше дій', exact: true }).first().click();
+  await page.getByRole('menuitem', { name: 'Редагувати', exact: true }).first().click();
   return { getCopyRequestCount: () => copyRequestCount };
 }
 

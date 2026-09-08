@@ -1,5 +1,6 @@
 export const AUTH_UNAUTHORIZED_EVENT = 'echo:api-unauthorized';
 let unauthorizedRedirectListenerInstalled = false;
+let unauthorizedRedirectStarted = false;
 
 export function buildLoginRedirectUrl(): string | null {
   if (typeof window === 'undefined') return null;
@@ -12,8 +13,10 @@ export function buildLoginRedirectUrl(): string | null {
 }
 
 export function redirectToLogin(): void {
+  if (unauthorizedRedirectStarted) return;
   const loginUrl = buildLoginRedirectUrl();
   if (loginUrl === null) return;
+  unauthorizedRedirectStarted = true;
   window.location.replace(loginUrl);
 }
 

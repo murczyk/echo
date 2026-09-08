@@ -22,12 +22,6 @@ packing exceptions, not unreviewed or newly admitted test debt.
 - `src/ts/react/services/api/ai-agent.spec.ts`
 - `src/ts/react/services/api/palitra.spec.ts`
 
-- `src/ts/react/routes/rer-analysis-neo/components/AnalysisSummaryTableCard.spec.tsx`
-  — its one-to-one relocation caused the table-state-provider hoisted mock to
-  omit `INTERNAL_COLUMN_IDS` for the real nested toolbar. The original-path
-  focused suite passes, so the test remains there without changing its mock or
-  production behavior merely to pack it.
-
 Before any future relocation, compare every relative production import and
 `vi.mock()` target as resolved paths before and after the move. Run the moved
 spec and its leaf-directory cohort. If relocation alone changes module-cache,

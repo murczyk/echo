@@ -123,7 +123,8 @@ pub(super) struct ReviewSession {
 }
 
 impl ReviewSession {
-    pub(super) fn new(units: Vec<ReviewUnit>) -> Self {
+    pub(super) fn new(mut units: Vec<ReviewUnit>) -> Self {
+        units.retain(|unit| !unit.matches.is_empty());
         Self {
             units,
             current: 0,
@@ -306,11 +307,10 @@ pub(super) async fn run_with_database(
     )
     .await
     .c(h!())?;
-    let (orbit_sync, orbit_units) =
-        persistence::load_latest_synced_source_units_with_sync(dbx)
+    let (orbit_sync, matcher) =
+        persistence::load_latest_test_link_matcher_with_sync(dbx)
             .await
             .c(h!())?;
-    let matcher = matching::TestLinkMatcher::from_units(orbit_units);
     let suppressed_links = load_suppressed_links(dbx).await.c(h!())?;
     let review_units =
         prepare_review_units(&units, &matcher, link_mode, &suppressed_links);
@@ -620,12 +620,12 @@ where
     if matcher_cache_is_current(matcher_cache, &orbit_sync) {
         return Ok(());
     }
-    let orbit_units = persistence::load_synced_source_units(dbx, &orbit_sync)
+    let matcher = persistence::load_test_link_matcher(dbx, &orbit_sync)
         .await
         .c(h!())?;
     *matcher_cache = PersistenceMatcherCache {
         orbit_sync,
-        matcher: matching::TestLinkMatcher::from_units(orbit_units),
+        matcher,
     };
     Ok(())
 }
@@ -1121,8 +1121,12 @@ pub(super) fn prepare_review_hierarchy(
     let mut matches = candidates
         .into_iter()
         .map(|(orbit_unit, rating)| {
-            let (orbit_name, distance) =
-                closest_orbit_name(&normalized_sigint_full_name, orbit_unit);
+            let (orbit_name, distance) = matcher
+                .closest_hierarchy_name(
+                    orbit_unit.unit_id,
+                    &normalized_sigint_full_name,
+                )
+                .expect("matched ORBIT unit must have a hierarchy name");
             ReviewMatch {
                 unit_id: orbit_unit.unit_id,
                 rating,
@@ -1165,28 +1169,6 @@ pub(super) fn review_match_for_orbit(
                 .expect("approved ORBIT match must be present")
         }),
     }
-}
-
-fn closest_orbit_name(
-    normalized_sigint_full_name: &str,
-    orbit_unit: &crate::orbit::types::SourceUnit,
-) -> (String, usize) {
-    orbit_unit
-        .operational_unit_name_full
-        .iter()
-        .chain(&orbit_unit.generative_unit_name_full)
-        .filter(|name| !name.trim().is_empty())
-        .map(|name| {
-            (
-                name.clone(),
-                levenshtein::levenshtein(
-                    normalized_sigint_full_name,
-                    &matching::normalize_orbit_hierarchy_name(orbit_unit, name),
-                ),
-            )
-        })
-        .min_by_key(|(_, distance)| *distance)
-        .expect("matched ORBIT unit must have a hierarchy name")
 }
 
 fn sort_review_matches(matches: &mut [ReviewMatch]) {

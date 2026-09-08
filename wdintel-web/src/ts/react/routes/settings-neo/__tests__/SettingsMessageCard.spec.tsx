@@ -9,13 +9,18 @@ import { SettingsMessageCard } from '../SettingsMessageCard';
 
 const mounted: Array<{ container: HTMLDivElement; root: Root }> = [];
 
-function renderCard(messageTextPreviewLines: 20 | 40 | null, mediaSummaryEnabled = true) {
+function renderCard(
+  messageTextPreviewLines: 20 | 40 | null,
+  mediaSummaryEnabled = true,
+  collapseMediaPreviews = true,
+) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
   const onTagsLayoutChange = vi.fn();
   const onMessageTextPreviewLinesChange = vi.fn();
   const onMediaSummaryEnabledChange = vi.fn();
+  const onCollapseMediaPreviewsChange = vi.fn();
 
   act(() => {
     root.render(
@@ -26,6 +31,8 @@ function renderCard(messageTextPreviewLines: 20 | 40 | null, mediaSummaryEnabled
         onMessageTextPreviewLinesChange={onMessageTextPreviewLinesChange}
         mediaSummaryEnabled={mediaSummaryEnabled}
         onMediaSummaryEnabledChange={onMediaSummaryEnabledChange}
+        collapseMediaPreviews={collapseMediaPreviews}
+        onCollapseMediaPreviewsChange={onCollapseMediaPreviewsChange}
         loadInProgress={false}
       />,
     );
@@ -37,6 +44,7 @@ function renderCard(messageTextPreviewLines: 20 | 40 | null, mediaSummaryEnabled
     onTagsLayoutChange,
     onMessageTextPreviewLinesChange,
     onMediaSummaryEnabledChange,
+    onCollapseMediaPreviewsChange,
   };
 }
 
@@ -63,11 +71,44 @@ describe('SettingsMessageCard', () => {
       'Без скорочення',
       'Згортати перегляд довгих повідомлень:',
       'Визначає, коли з’являється кнопка «Показати більше».',
-      'Стислий опис файлів у картках',
+      'Стислий опис файлів',
       'Відображати блок стислого опису для зображень та документів у картках повідомлень стрічки.',
       'Спільні налаштування для Оперативного та Аналізу.',
     ]) {
       expect(container.textContent).toContain(text);
+    }
+  });
+
+  it('keeps the shared message-card settings in their semantic order', () => {
+    const { container } = renderCard(20);
+    const preview = container.querySelector('[data-message-card-mock="true"]');
+    expect(preview).not.toBeNull();
+    const orderedItems = [
+      'Відображення тегів:',
+      'Стислий опис файлів',
+      'Згортати вкладення',
+      'Згортати перегляд довгих повідомлень:',
+      'Спільні налаштування для Оперативного та Аналізу.',
+    ].map((text) =>
+      Array.from(container.querySelectorAll('*')).find((item) => item.textContent === text),
+    );
+    const nodes = [
+      orderedItems[0],
+      orderedItems[1],
+      orderedItems[2],
+      preview,
+      orderedItems[3],
+      orderedItems[4],
+    ];
+
+    for (let index = 0; index < nodes.length - 1; index += 1) {
+      expect(nodes[index]).toBeDefined();
+      expect(
+        Boolean(
+          nodes[index]?.compareDocumentPosition(nodes[index + 1] ?? document.body) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+        ),
+      ).toBe(true);
     }
   });
 
@@ -117,5 +158,23 @@ describe('SettingsMessageCard', () => {
     });
 
     expect(onMediaSummaryEnabledChange).toHaveBeenCalledWith(false);
+  });
+
+  it.each([true, false])('reflects the collapsed-attachment preference %s', (value) => {
+    const { container } = renderCard(20, true, value);
+    const label = Array.from(container.querySelectorAll('label')).find((item) =>
+      item.textContent?.includes('Згортати вкладення'),
+    );
+    expect(label?.querySelector('input[type="checkbox"]')).toHaveProperty('checked', value);
+  });
+
+  it('changes the collapsed-attachment preference', () => {
+    const { container, onCollapseMediaPreviewsChange } = renderCard(20, true, true);
+    const label = Array.from(container.querySelectorAll('label')).find((item) =>
+      item.textContent?.includes('Згортати вкладення'),
+    );
+    const input = label?.querySelector('input[type="checkbox"]');
+    act(() => input?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(onCollapseMediaPreviewsChange).toHaveBeenCalledWith(false);
   });
 });

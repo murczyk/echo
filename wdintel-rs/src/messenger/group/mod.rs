@@ -110,12 +110,14 @@ pub async fn collect_groups(
         BTreeMap::new()
     };
     let group_admin_data = if is_admin {
-        collect_group_admin_data(keys, txn).await.context(h!())?
+        collect_group_admin_data(keys.clone(), txn)
+            .await
+            .context(h!())?
     } else {
         BTreeMap::new()
     };
 
-    let data: Vec<types::SignalGroupEntry> = signal_groups
+    let mut data: Vec<types::SignalGroupEntry> = signal_groups
         .iter()
         .filter_map(|g| {
             let stats = group_stats
@@ -137,6 +139,42 @@ pub async fn collect_groups(
             })
         })
         .collect();
+    let resolved_keys = data
+        .iter()
+        .map(|group| group.master_key.clone())
+        .collect::<BTreeSet<_>>();
+    let unresolved_keys = keys
+        .into_iter()
+        .filter(|key| !resolved_keys.contains(key))
+        .collect::<Vec<_>>();
+    if unresolved_keys.is_empty() {
+        return Ok(data);
+    }
+    let whatsapp_groups = whatsapp_group::Entity::find()
+        .filter(whatsapp_group::Column::Deleted.eq(false))
+        .select_only()
+        .columns([whatsapp_group::Column::Jid, whatsapp_group::Column::Name])
+        .filter(whatsapp_group::Column::Jid.eq_any(unresolved_keys))
+        .into_tuple::<(String, String)>()
+        .all(txn)
+        .await
+        .context(h!())?;
+    data.extend(whatsapp_groups.into_iter().map(|(master_key, name)| {
+        let stats = group_stats.get(&master_key).cloned().unwrap_or_default();
+        let aors = group_aors.get(master_key.as_str()).cloned();
+        let admin_data = group_admin_data.get(master_key.as_str()).cloned();
+        types::SignalGroupEntry {
+            master_key,
+            name,
+            ignore_operativny: false,
+            interseption_kind:
+                crate::sigint::types::InterseptionKind::InterseptionRer,
+            disable_network_assignment: false,
+            group_stats: stats,
+            admin_data,
+            areas_of_responsibility: aors,
+        }
+    }));
     Ok(data)
 }
 

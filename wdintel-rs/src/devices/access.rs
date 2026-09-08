@@ -99,23 +99,13 @@ pub(in crate::devices) async fn resolve_login_by_id(
     dbx: &DatabaseConnection,
     login_id: &Uuid,
 ) -> Result<login::Model, AppError> {
-    let login_validation = crate::users::validate_login_id(dbx, login_id)
+    let login = crate::users::load_active_login(dbx, login_id)
         .await
-        .c(h!())?;
-    if let Some(error) = login_validation.validation_error {
-        return Err(error);
-    }
-    let login = login_validation
-        .login_model
-        .ok_or(AppError::Unauthenticated)
         .c(h!())?;
 
     ensure_devices_section_enabled(dbx).await.c(h!())?;
 
-    login
-        .organism_id
-        .ok_or_else(forbidden_device_operation)
-        .c(h!())?;
+    login.organism_id.ok_or(AppError::Unauthenticated).c(h!())?;
     Ok(login)
 }
 

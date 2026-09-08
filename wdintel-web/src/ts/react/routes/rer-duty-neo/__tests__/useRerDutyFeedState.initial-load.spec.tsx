@@ -104,6 +104,96 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(hoisted.fetchInboxMessages.mock.calls[0][0].reportTagsOnlyThisUnit).toBeNull();
   });
 
+  it('loads a direct-link target with an exact pagination cursor', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    hoisted.fetchInboxMessages.mockClear();
+    hoisted.fetchMessagesByIdsWithMetadata.mockClear();
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(1, 40));
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(42, 81));
+    hoisted.fetchMessagesByIdsWithMetadata.mockResolvedValueOnce(
+      inboxRsp([[41, minimalInboxMessage({ timestamp: 4100, messageUid: 'target-uid' })]]),
+    );
+
+    await act(async () => {
+      apiRef.current!.setFeedInitialTarget('mf-0', {
+        beforeIdNoninclusive: 41,
+        messageIds: [41],
+      });
+      apiRef.current!.applyFilter('mf-0', apiRef.current!.messageFeeds[0].filter, true);
+      await flushMicrotasks();
+    });
+
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledWith(
+      expect.objectContaining({ beforeIdNoninclusive: 41, loadLatest: false }),
+    );
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledWith(
+      expect.objectContaining({ sinceIdNoninclusive: 41, loadLatest: false }),
+    );
+    expect(hoisted.fetchMessagesByIdsWithMetadata).toHaveBeenCalledWith(
+      [41],
+      expect.objectContaining({ beforeIdNoninclusive: 41, loadLatest: false }),
+    );
+    const loadedIds = apiRef.current!.messageFeeds[0].items.map(([id]) => id);
+    expect(loadedIds).toHaveLength(DUTY_FEED_MESSAGE_WINDOW_LIMIT);
+    expect(loadedIds.at(0)).toBe(21);
+    expect(loadedIds.indexOf(41)).toBe(20);
+    expect(loadedIds.at(-1)).toBe(60);
+  });
+
+  it('merges reference metadata loaded exclusively for a direct-link target', async () => {
+    const setProfiles = vi.fn();
+    const setGroupInfos = vi.fn();
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+    await act(async () => {
+      root.render(
+        <TestHarness apiRef={apiRef} setProfiles={setProfiles} setGroupInfos={setGroupInfos} />,
+      );
+      await flushMicrotasks();
+    });
+    hoisted.fetchInboxMessages.mockClear();
+    hoisted.fetchMessagesByIdsWithMetadata.mockClear();
+    hoisted.fetchInboxMessages
+      .mockResolvedValueOnce(rangeRsp(1, 40))
+      .mockResolvedValueOnce(rangeRsp(42, 81));
+    const targetResponse = inboxRsp([
+      [41, minimalInboxMessage({ timestamp: 4100, messageUid: 'target-uid' })],
+    ]);
+    targetResponse.callsigns = [{ callsign: 'TARGET', res: [], networkHints: [] }];
+    targetResponse.signalProfiles = {
+      'target-sender': { givenName: 'Target', familyName: null },
+    };
+    targetResponse.signalGroups = [
+      {
+        masterKey: 'target-group',
+        name: 'Target group',
+        ignoreOperativny: false,
+        interseptionKind: 'rer',
+        disableNetworkAssignment: false,
+        groupStats: { activityLastDay: 0, activityLastWeek: 0 },
+        adminData: null,
+        areasOfResponsibility: null,
+      },
+    ];
+    hoisted.fetchMessagesByIdsWithMetadata.mockResolvedValueOnce(targetResponse);
+
+    await act(async () => {
+      apiRef.current!.setFeedInitialTarget('mf-0', {
+        beforeIdNoninclusive: 41,
+        messageIds: [41],
+      });
+      apiRef.current!.applyFilter('mf-0', apiRef.current!.messageFeeds[0].filter, true);
+      await flushMicrotasks();
+    });
+
+    expect(apiRef.current!.inboxCallsignInfoMap).toHaveProperty('target');
+    const updateProfiles = setProfiles.mock.calls.at(-1)?.[0];
+    const updateGroups = setGroupInfos.mock.calls.at(-1)?.[0];
+    expect(updateProfiles({})).toEqual(targetResponse.signalProfiles);
+    expect(updateGroups({})).toHaveProperty('target-group');
+  });
+
   it('preserves a follow generation until cancellation', async () => {
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
       current: null,
@@ -599,7 +689,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     );
   });
 
-  it('marks previous-window unread as read when newer append start-trims them', async () => {
+  it('#3360 preserves previous-window unread identity through a buffered newer flush', async () => {
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
       inboxRsp(
         Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
@@ -631,6 +721,15 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
       ),
     );
     await act(async () => apiRef.current!.loadFeedNewerMessages('mf-0'));
+    expect(apiRef.current!.messageFeeds[0].pendingNewerItems.map(([id]) => id)).toEqual(
+      Array.from({ length: 20 }, (_, index) => DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1),
+    );
+    await act(async () =>
+      apiRef.current!.flushPendingNewerMessages('mf-0', {
+        urgent: true,
+        allowWindowTrim: true,
+      }),
+    );
     expect(apiRef.current!.messageFeeds[0].windowedUnreadItems.has(1)).toBe(false);
     expect(apiRef.current!.messageFeeds[0].readIds.has(1)).toBe(true);
 
@@ -650,7 +749,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(feedIndicatorUnreadCount(apiRef.current!.messageFeeds[0])).toBe(20);
   });
 
-  it('retains immediately trimmed unread IDs from an oversized newer batch', async () => {
+  it('#3360 retains unread IDs after safely flushing an oversized newer batch', async () => {
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
       inboxRsp(
         Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
@@ -673,6 +772,13 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
       ),
     );
     await act(async () => apiRef.current!.loadFeedNewerMessages('mf-0'));
+    expect(apiRef.current!.messageFeeds[0].pendingNewerItems).toHaveLength(50);
+    await act(async () =>
+      apiRef.current!.flushPendingNewerMessages('mf-0', {
+        urgent: true,
+        allowWindowTrim: true,
+      }),
+    );
     const feed = apiRef.current!.messageFeeds[0];
     expect(feed.items).toHaveLength(DUTY_FEED_MESSAGE_WINDOW_LIMIT);
     expect(feed.windowedUnreadItems).toEqual(
@@ -779,7 +885,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     );
   });
 
-  it('keeps returning seen chunk messages read when scrolling back toward newer messages', async () => {
+  it('#3360 keeps returning seen chunk messages read after flushing buffered newer messages', async () => {
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
       inboxRsp(
         Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
@@ -825,6 +931,13 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     await act(async () => {
       await apiRef.current!.loadFeedNewerMessages('mf-0');
     });
+    expect(apiRef.current!.messageFeeds[0].pendingNewerItems).toHaveLength(20);
+    await act(async () =>
+      apiRef.current!.flushPendingNewerMessages('mf-0', {
+        urgent: true,
+        allowWindowTrim: true,
+      }),
+    );
 
     const feed = apiRef.current!.messageFeeds[0];
     expect(feed.items.map(([id]) => id).slice(-3)).toEqual([58, 59, 60]);

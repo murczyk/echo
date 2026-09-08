@@ -35,7 +35,10 @@ import { DmrSection } from './drawer-sections/DmrSection';
 import { LocationsSection } from './drawer-sections/LocationsSection';
 import { AdvancedFieldsSection } from './drawer-sections/AdvancedFieldsSection';
 import type { MessageFormData } from './manage-message-drawer.schema';
-import type { QuickIntelReportSuggestionState } from './useManageMessageDrawer';
+import type {
+  QuickIntelReportSuggestionState,
+  ReportEditLoadState,
+} from './useManageMessageDrawer';
 
 export type Props = {
   open: boolean;
@@ -52,6 +55,8 @@ export type Props = {
   editTarget?: { id: number; message: InboxMessage } | null;
   reportSource?: { id: number; message: InboxMessage } | null;
   editAsReport?: boolean;
+  editTargetLoadState?: ReportEditLoadState;
+  onRetryEditTargetLoad?: () => void;
   editSaveInFlight?: boolean;
   onSubmitEdit?: (id: number, message: InboxMessage) => void | Promise<void>;
 };
@@ -252,7 +257,8 @@ export function ManageMessageDrawer(props: Props) {
     setShowAdvanced,
     signalGroups,
     groupsLoading,
-    busy: drawerBusy,
+    formDisabled,
+    saving,
     parsing,
     errorMsg,
     setErrorMsg,
@@ -273,7 +279,12 @@ export function ManageMessageDrawer(props: Props) {
     onSubmit,
     recentValues,
   } = drawerState;
-  const busy = drawerBusy || deleteInFlight;
+  const dismissDisabled = saving || deleteInFlight;
+  const busy = formDisabled || deleteInFlight;
+  const reportEditLoading = props.editTargetLoadState?.status === 'loading';
+  const reportEditError = props.editTargetLoadState?.status === 'error';
+  const isReportEditIntent =
+    Boolean(props.editAsReport) && (isEditMode || props.editTargetLoadState?.status !== 'idle');
   const reportDeleteId = isEditMode && isReportMode ? (props.editTarget?.id ?? null) : null;
 
   const handleDeleteConfirm = async () => {
@@ -304,7 +315,7 @@ export function ManageMessageDrawer(props: Props) {
       <Drawer
         anchor="right"
         open={props.open}
-        onClose={busy ? undefined : handleDrawerClose}
+        onClose={dismissDisabled ? undefined : handleDrawerClose}
         sx={{ zIndex: 1200 }}
         ModalProps={{
           closeAfterTransition: true,
@@ -315,16 +326,18 @@ export function ManageMessageDrawer(props: Props) {
         slotProps={{
           paper: {
             sx: {
-              width: isReportMode ? '100vw' : { xs: '100%', sm: 720, md: 1040 },
+              width:
+                isReportEditIntent || isReportMode ? '100vw' : { xs: '100%', sm: 720, md: 1040 },
               maxWidth: '100vw',
               display: 'flex',
+              position: 'relative',
               backgroundColor: 'background.default',
               backgroundImage: 'none',
             },
           },
         }}
       >
-        <div className="flex flex-col h-full flex-1 min-h-0">
+        <div className="relative flex flex-col h-full flex-1 min-h-0">
           <Box
             sx={{
               display: 'flex',
@@ -337,224 +350,237 @@ export function ManageMessageDrawer(props: Props) {
           >
             <Typography variant="h6">
               {isReportMode
-                ? isEditMode
+                ? isReportEditIntent
                   ? 'Редагувати розвіддонесення'
                   : 'Створити розвіддонесення'
                 : isEditMode
                   ? 'Редагувати повідомлення'
                   : 'Створити повідомлення'}
             </Typography>
-            <IconButton onClick={handleDrawerClose} disabled={busy}>
+            <IconButton aria-label="Закрити" onClick={handleDrawerClose} disabled={dismissDisabled}>
               <CloseIcon />
             </IconButton>
           </Box>
 
           <Box sx={{ flex: 1, p: 2.5, overflowY: 'auto' }}>
-            {errorMsg && (
-              <PowerAlert severity="error" onClose={() => setErrorMsg(null)} sx={{ mb: 2 }}>
-                {errorMsg}
-              </PowerAlert>
-            )}
-
-            <FormProvider {...methods}>
-              <PowerForm
-                id="create-message-form"
-                noValidate
-                onSubmit={methods.handleSubmit(onSubmit)}
-                canSubmit={canSubmit && !deleteInFlight}
-                globalSubmitShortcut
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) minmax(0, 1fr)' },
-                  gap: 3,
-                  alignItems: 'start',
-                }}
+            {reportEditLoading ? null : reportEditError ? (
+              <PowerAlert
+                severity="error"
+                action={<Button onClick={props.onRetryEditTargetLoad}>Повторити</Button>}
               >
-                {isReportMode ? (
-                  <ReportTextRow
-                    originalText={originalReportText}
-                    busy={busy}
-                    quickSuggestion={quickSuggestion}
-                    onApplyQuickSuggestion={applyQuickSuggestion}
-                    onSelectAdjacentQuickSuggestion={selectAdjacentQuickSuggestion}
-                    onRetryQuickSuggestion={retryQuickSuggestion}
-                  />
-                ) : null}
+                {props.editTargetLoadState?.status === 'error'
+                  ? props.editTargetLoadState.message
+                  : null}
+              </PowerAlert>
+            ) : (
+              <>
+                {errorMsg && (
+                  <PowerAlert severity="error" onClose={() => setErrorMsg(null)} sx={{ mb: 2 }}>
+                    {errorMsg}
+                  </PowerAlert>
+                )}
 
-                {/* LEFT COLUMN */}
-                <Box component="fieldset" sx={{ minWidth: 0, border: 0, p: 0, m: 0 }}>
-                  {!isReportMode ? (
-                    <>
-                      <Typography component="legend" variant="subtitle2" sx={{ mb: 1 }}>
-                        Вміст повідомлення <span aria-hidden="true">*</span>
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                        Додайте текст повідомлення або принаймні одне вкладення.
-                      </Typography>
-                    </>
-                  ) : null}
-                  <Stack spacing={2.5}>
-                    {!isReportMode ? (
-                      <FormSectionWrapper
-                        title="Джерело"
-                        action={
-                          !isEditMode ? (
-                            <Button
-                              onClick={handleParse}
-                              variant="outlined"
-                              size="small"
-                              startIcon={
-                                parsing ? (
-                                  <CircularProgress size={16} color="inherit" />
-                                ) : (
-                                  <AutoFixHighIcon />
-                                )
-                              }
-                              disabled={busy || parsing}
-                            >
-                              Розпарсити
-                            </Button>
-                          ) : null
-                        }
-                      >
-                        <Controller
-                          name="full_body"
-                          control={methods.control}
-                          render={({ field }) => (
-                            <TextField
-                              {...field}
-                              label="Текст повідомлення"
-                              fullWidth
-                              multiline
-                              rows={12}
-                              disabled={busy}
-                            />
-                          )}
-                        />
-                      </FormSectionWrapper>
+                <FormProvider {...methods}>
+                  <PowerForm
+                    id="create-message-form"
+                    noValidate
+                    onSubmit={methods.handleSubmit(onSubmit)}
+                    canSubmit={canSubmit && !deleteInFlight}
+                    globalSubmitShortcut
+                    sx={{
+                      display: 'grid',
+                      gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) minmax(0, 1fr)' },
+                      gap: 3,
+                      alignItems: 'start',
+                    }}
+                  >
+                    {isReportMode ? (
+                      <ReportTextRow
+                        originalText={originalReportText}
+                        busy={busy}
+                        quickSuggestion={quickSuggestion}
+                        onApplyQuickSuggestion={applyQuickSuggestion}
+                        onSelectAdjacentQuickSuggestion={selectAdjacentQuickSuggestion}
+                        onRetryQuickSuggestion={retryQuickSuggestion}
+                      />
                     ) : null}
 
-                    <AttachmentsSection
-                      uppy={uppy}
-                      uppyFiles={uppyFiles}
-                      fileInputRef={fileInputRef}
-                      handleFileSelect={handleFileSelect}
-                      handleDrop={handleDrop}
-                      handleDropzoneKeyDown={handleDropzoneKeyDown}
-                      busy={busy}
-                      existingMedia={existingMedia}
-                      errorMsg={drawerState.attachmentErrorMsg}
-                      reportTextPreviewEnabled={isReportMode}
-                    />
-                  </Stack>
-                </Box>
+                    {/* LEFT COLUMN */}
+                    <Box component="fieldset" sx={{ minWidth: 0, border: 0, p: 0, m: 0 }}>
+                      {!isReportMode ? (
+                        <>
+                          <Typography component="legend" variant="subtitle2" sx={{ mb: 1 }}>
+                            Вміст повідомлення <span aria-hidden="true">*</span>
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                            Додайте текст повідомлення або принаймні одне вкладення.
+                          </Typography>
+                        </>
+                      ) : null}
+                      <Stack spacing={2.5}>
+                        {!isReportMode ? (
+                          <FormSectionWrapper
+                            title="Джерело"
+                            action={
+                              !isEditMode ? (
+                                <Button
+                                  onClick={handleParse}
+                                  variant="outlined"
+                                  size="small"
+                                  startIcon={
+                                    parsing ? (
+                                      <CircularProgress size={16} color="inherit" />
+                                    ) : (
+                                      <AutoFixHighIcon />
+                                    )
+                                  }
+                                  disabled={busy || parsing}
+                                >
+                                  Розпарсити
+                                </Button>
+                              ) : null
+                            }
+                          >
+                            <Controller
+                              name="full_body"
+                              control={methods.control}
+                              render={({ field }) => (
+                                <TextField
+                                  {...field}
+                                  label="Текст повідомлення"
+                                  fullWidth
+                                  multiline
+                                  rows={12}
+                                  disabled={busy}
+                                />
+                              )}
+                            />
+                          </FormSectionWrapper>
+                        ) : null}
 
-                {/* RIGHT COLUMN */}
-                <Stack spacing={2.5}>
-                  <SystemSection
-                    signalGroups={signalGroups}
-                    groupsLoading={groupsLoading}
-                    busy={busy}
-                    isEditMode={isEditMode}
-                    groupOptional={isReportMode}
-                    groupEditable={isReportMode}
-                    cyberEchoEnabled={props.cyberEchoEnabled}
-                    deviceNameOptions={deviceNameOptions}
-                    deviceNamesLoading={deviceNamesLoading}
-                    setDeviceNameInput={setDeviceNameInput}
-                    recentValues={recentValues}
-                  />
+                        <AttachmentsSection
+                          uppy={uppy}
+                          uppyFiles={uppyFiles}
+                          fileInputRef={fileInputRef}
+                          handleFileSelect={handleFileSelect}
+                          handleDrop={handleDrop}
+                          handleDropzoneKeyDown={handleDropzoneKeyDown}
+                          busy={busy}
+                          existingMedia={existingMedia}
+                          errorMsg={drawerState.attachmentErrorMsg}
+                          reportTextPreviewEnabled={isReportMode}
+                        />
+                      </Stack>
+                    </Box>
 
-                  <MetadataSection
-                    showAdvanced={showAdvanced}
-                    busy={busy}
-                    recentValues={recentValues}
-                    tagOptions={tagOptions}
-                    postOptions={drawerState.postOptions}
-                    postLoading={drawerState.postLoading}
-                    setPostInput={drawerState.setPostInput}
-                    unitOptions={drawerState.unitOptions}
-                    unitLoading={drawerState.unitLoading}
-                    setUnitInput={drawerState.setUnitInput}
-                    unitLocked={drawerState.unitLocked}
-                    callsignOptions={drawerState.callsignOptions}
-                    callsignLoading={drawerState.callsignLoading}
-                    callsignInput={drawerState.callsignInput}
-                    setCallsignInput={drawerState.setCallsignInput}
-                  />
-
-                  <NetworkSection
-                    isEditMode={isEditMode}
-                    busy={busy}
-                    recentValues={recentValues}
-                    networkNameOptions={drawerState.networkNameOptions}
-                    networkNameLoading={drawerState.networkNameLoading}
-                    setNetworkNameInput={drawerState.setNetworkNameInput}
-                    networkUnitNamesById={drawerState.networkUnitNamesById}
-                    selectedNetwork={drawerState.selectedNetwork}
-                    setSelectedNetwork={drawerState.setSelectedNetwork}
-                    freqOptions={drawerState.freqOptions}
-                    freqLoading={drawerState.freqLoading}
-                    setFreqInput={drawerState.setFreqInput}
-                    unitLocked={drawerState.unitLocked}
-                    setUnitLocked={drawerState.setUnitLocked}
-                  />
-
-                  <LocationsSection
-                    busy={busy}
-                    recentValues={recentValues}
-                    open={props.open}
-                    onError={setErrorMsg}
-                  />
-
-                  {!isReportMode ? (
-                    <>
-                      <DmrSection
-                        showAdvanced={showAdvanced}
+                    {/* RIGHT COLUMN */}
+                    <Stack spacing={2.5}>
+                      <SystemSection
+                        signalGroups={signalGroups}
+                        groupsLoading={groupsLoading}
                         busy={busy}
+                        isEditMode={isEditMode}
+                        groupOptional={isReportMode}
+                        groupEditable={isReportMode}
+                        cyberEchoEnabled={props.cyberEchoEnabled}
+                        deviceNameOptions={deviceNameOptions}
+                        deviceNamesLoading={deviceNamesLoading}
+                        setDeviceNameInput={setDeviceNameInput}
                         recentValues={recentValues}
                       />
 
-                      <AdvancedFieldsSection
+                      <MetadataSection
                         showAdvanced={showAdvanced}
                         busy={busy}
                         recentValues={recentValues}
-                        signalNameOptions={drawerState.signalNameOptions}
-                        signalNameLoading={drawerState.signalNameLoading}
-                        setSignalNameInput={drawerState.setSignalNameInput}
+                        tagOptions={tagOptions}
+                        postOptions={drawerState.postOptions}
+                        postLoading={drawerState.postLoading}
+                        setPostInput={drawerState.setPostInput}
+                        unitOptions={drawerState.unitOptions}
+                        unitLoading={drawerState.unitLoading}
+                        setUnitInput={drawerState.setUnitInput}
+                        unitLocked={drawerState.unitLocked}
+                        callsignOptions={drawerState.callsignOptions}
+                        callsignLoading={drawerState.callsignLoading}
+                        callsignInput={drawerState.callsignInput}
+                        setCallsignInput={drawerState.setCallsignInput}
                       />
-                    </>
-                  ) : null}
-                </Stack>
-              </PowerForm>
-            </FormProvider>
 
-            {reportDeleteId != null ? (
-              <Box sx={{ display: { xs: 'flex', md: 'none' }, mt: 3, pt: 1 }}>
-                <Button
-                  onClick={() => setDeleteConfirmOpen(true)}
-                  disabled={busy}
-                  color="error"
-                  variant="outlined"
-                  startIcon={<DeleteOutlineIcon />}
-                  fullWidth
-                >
-                  Видалити
-                </Button>
-              </Box>
-            ) : !isReportMode ? (
-              <Box sx={{ display: { xs: 'flex', md: 'none' }, mt: 3, pt: 1 }}>
-                <Button
-                  onClick={() => setShowAdvanced((prev) => !prev)}
-                  disabled={busy}
-                  color="inherit"
-                  variant="outlined"
-                  fullWidth
-                >
-                  {showAdvanced ? 'Приховати розширені поля' : 'Розширені поля'}
-                </Button>
-              </Box>
-            ) : null}
+                      <NetworkSection
+                        isEditMode={isEditMode}
+                        busy={busy}
+                        recentValues={recentValues}
+                        networkNameOptions={drawerState.networkNameOptions}
+                        networkNameLoading={drawerState.networkNameLoading}
+                        setNetworkNameInput={drawerState.setNetworkNameInput}
+                        networkUnitNamesById={drawerState.networkUnitNamesById}
+                        selectedNetwork={drawerState.selectedNetwork}
+                        setSelectedNetwork={drawerState.setSelectedNetwork}
+                        freqOptions={drawerState.freqOptions}
+                        freqLoading={drawerState.freqLoading}
+                        setFreqInput={drawerState.setFreqInput}
+                        unitLocked={drawerState.unitLocked}
+                        setUnitLocked={drawerState.setUnitLocked}
+                      />
+
+                      <LocationsSection
+                        busy={busy}
+                        recentValues={recentValues}
+                        open={props.open}
+                        onError={setErrorMsg}
+                      />
+
+                      {!isReportMode ? (
+                        <>
+                          <DmrSection
+                            showAdvanced={showAdvanced}
+                            busy={busy}
+                            recentValues={recentValues}
+                          />
+
+                          <AdvancedFieldsSection
+                            showAdvanced={showAdvanced}
+                            busy={busy}
+                            recentValues={recentValues}
+                            signalNameOptions={drawerState.signalNameOptions}
+                            signalNameLoading={drawerState.signalNameLoading}
+                            setSignalNameInput={drawerState.setSignalNameInput}
+                          />
+                        </>
+                      ) : null}
+                    </Stack>
+                  </PowerForm>
+                </FormProvider>
+
+                {reportDeleteId != null ? (
+                  <Box sx={{ display: { xs: 'flex', md: 'none' }, mt: 3, pt: 1 }}>
+                    <Button
+                      onClick={() => setDeleteConfirmOpen(true)}
+                      disabled={busy}
+                      color="error"
+                      variant="outlined"
+                      startIcon={<DeleteOutlineIcon />}
+                      fullWidth
+                    >
+                      Видалити
+                    </Button>
+                  </Box>
+                ) : !isReportMode ? (
+                  <Box sx={{ display: { xs: 'flex', md: 'none' }, mt: 3, pt: 1 }}>
+                    <Button
+                      onClick={() => setShowAdvanced((prev) => !prev)}
+                      disabled={busy}
+                      color="inherit"
+                      variant="outlined"
+                      fullWidth
+                    >
+                      {showAdvanced ? 'Приховати розширені поля' : 'Розширені поля'}
+                    </Button>
+                  </Box>
+                ) : null}
+              </>
+            )}
           </Box>
 
           <Box
@@ -589,7 +615,7 @@ export function ManageMessageDrawer(props: Props) {
               ) : null}
             </Box>
             <Box sx={{ display: 'flex', gap: 2, ml: 'auto' }}>
-              <Button onClick={handleDrawerClose} disabled={busy}>
+              <Button onClick={handleDrawerClose} disabled={dismissDisabled}>
                 Скасувати
               </Button>
               <Button
@@ -597,13 +623,22 @@ export function ManageMessageDrawer(props: Props) {
                 form="create-message-form"
                 variant="contained"
                 color="primary"
-                disabled={!canSubmit || deleteInFlight}
-                startIcon={busy && <CircularProgress size={20} color="inherit" />}
+                disabled={!canSubmit || busy || reportEditLoading || reportEditError}
+                startIcon={saving && <CircularProgress size={20} color="inherit" />}
               >
-                {busy ? 'Збереження...' : isEditMode ? 'Зберегти' : 'Створити'}
+                {saving
+                  ? 'Збереження...'
+                  : isReportEditIntent || isEditMode
+                    ? 'Зберегти'
+                    : 'Створити'}
               </Button>
             </Box>
           </Box>
+          {reportEditLoading ? (
+            <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center">
+              <CircularProgress aria-label="Завантаження розвіддонесення" />
+            </div>
+          ) : null}
         </div>
       </Drawer>
       <ConfirmDangerDialog
@@ -613,7 +648,7 @@ export function ManageMessageDrawer(props: Props) {
         title="Видалити розвіддонесення?"
         description="Цю дію неможливо скасувати."
         submitting={deleteInFlight}
-        disabled={drawerBusy}
+        disabled={saving}
       />
     </>
   );

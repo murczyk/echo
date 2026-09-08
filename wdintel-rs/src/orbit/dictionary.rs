@@ -113,6 +113,34 @@ impl DictionaryMaps {
         id.and_then(|id| self.unit_echelon_values.get(&id)).cloned()
     }
 
+    pub fn unit_echelon_key(&self, id: Option<Uuid>) -> Option<&str> {
+        id.and_then(|id| self.unit_echelon_values.get(&id))
+            .and_then(|value| value.key.as_str())
+    }
+
+    #[cfg(test)]
+    pub fn for_unit_echelons(
+        values: impl IntoIterator<Item = (Uuid, &'static str)>,
+    ) -> Self {
+        Self {
+            grouping_of_forces: HashMap::new(),
+            combat_unit_type: HashMap::new(),
+            unit_echelon: HashMap::new(),
+            unit_echelon_values: values
+                .into_iter()
+                .map(|(id, key)| {
+                    (
+                        id,
+                        DictionaryValue {
+                            key: Value::String(key.to_string()),
+                            name: Value::String(key.to_string()),
+                        },
+                    )
+                })
+                .collect(),
+        }
+    }
+
     pub fn resolve(
         &self,
         kind: DictionaryKind,

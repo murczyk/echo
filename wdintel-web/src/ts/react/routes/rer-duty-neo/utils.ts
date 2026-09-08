@@ -285,6 +285,7 @@ export function buildInboxReq(opts: {
   return {
     sinceIdNoninclusive: opts.sinceIdNoninclusive ?? null,
     beforeIdNoninclusive: opts.beforeIdNoninclusive ?? null,
+    aroundMessageRef: null,
     sinceDateInclusiveMs: opts.sinceDateInclusiveMs ?? null,
     tillDateInclusiveMs: opts.tillDateInclusiveMs ?? null,
     onlyShowUnprocessed: null,
@@ -748,6 +749,26 @@ export function appendWindowedMessageItems(
   return { items: trimmed.items, addedItems, removedItems: trimmed.removedItems };
 }
 
+/**
+ * Returns the largest ordered pending prefix that can enter a bounded window
+ * without evicting a currently visible row. Callers retain the remainder.
+ */
+export function safePendingNewerPrefix(
+  items: MessageItem[],
+  pending: MessageItem[],
+  protectedItemIds: readonly number[],
+): MessageItem[] {
+  if (protectedItemIds.length === 0) return pending;
+  const protectedIds = new Set(protectedItemIds);
+  let safeLength = 0;
+  for (let length = 1; length <= pending.length; length += 1) {
+    const preview = appendWindowedMessageItems(items, pending.slice(0, length));
+    if (preview.removedItems.some(([id]) => protectedIds.has(id))) break;
+    safeLength = length;
+  }
+  return pending.slice(0, safeLength);
+}
+
 export function retainReadIdsForItems(
   readIds: ReadonlySet<number>,
   items: MessageItem[],
@@ -1062,4 +1083,24 @@ export function toQueryState(messageFeeds: MessageFeedState[]): RerDutyState {
   return {
     messageFeeds: messageFeeds.map((f) => [f.id, f.filter]),
   };
+}
+
+export function parseDutyMessageUidFromWindow(): string | null {
+  if (typeof window === 'undefined') return null;
+  const url = new URL(window.location.href);
+  const param =
+    url.searchParams.get('m') || url.searchParams.get('mid') || url.searchParams.get('messageUid');
+  const trimmed = param?.trim();
+  return trimmed && trimmed !== '' ? trimmed : null;
+}
+
+export function resolveDutyTargetMessageIds(
+  identifier: string,
+  contextMessageIds: number[],
+): number[] {
+  if (!/^\d+$/.test(identifier)) return contextMessageIds;
+  const exactId = Number(identifier);
+  return Number.isSafeInteger(exactId) && contextMessageIds.includes(exactId)
+    ? [exactId]
+    : contextMessageIds;
 }

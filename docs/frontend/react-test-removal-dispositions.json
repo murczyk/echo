@@ -22229,6 +22229,20 @@
       "decision": "retained",
       "reason": "Browser-level evidence-preview safeguard; it exercises attachment inspection, download, carousel order, and escape handling.",
       "behaviorReference": "docs/frontend/react-behavior-contracts/message-card.md"
+    },
+    {
+      "id": "ECHO-3324 keeps a contained upload status aligned with the attachment content column",
+      "file": "src/ts/react/components/AttachmentPickerUi.spec.tsx",
+      "decision": "removed",
+      "reason": "Static spacing and typography assertions do not protect an admissible user-visible regression.",
+      "behaviorReference": "docs/frontend/react-behavior-contracts/message-card.md"
+    },
+    {
+      "id": "withDutyFeedRequestDeadline timer fixtures",
+      "file": "src/ts/react/routes/rer-duty-neo/dutyFeedRequestDeadline.spec.ts",
+      "decision": "removed",
+      "reason": "Direct timer and helper sequencing coverage is not an observable operational safeguard.",
+      "behaviorReference": "production/type invariant"
     }
   ]
 }
