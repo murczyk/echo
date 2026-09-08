@@ -1945,7 +1945,7 @@ where
     Ok(())
 }
 
-async fn invalidate_deleted_message_last_seen<C>(
+pub(crate) async fn invalidate_deleted_message_last_seen<C>(
     txn: &C,
     message_id: i64,
 ) -> Result<(), AppError>
