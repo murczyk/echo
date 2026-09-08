@@ -285,7 +285,6 @@ export function AttachmentFileRow({
   const size = formatFileSize(file.size);
   const meta = [ext, size].filter(Boolean).join(' · ');
   const kind = mediaKind(file.type, file.name);
-  const hasThumbnail = kind === 'image' || kind === 'video';
   const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
   const menuOpen = Boolean(menuAnchorEl);
 
@@ -337,7 +336,7 @@ export function AttachmentFileRow({
             overflow: 'hidden',
           }}
         >
-          {previewUrl && hasThumbnail ? (
+          {previewUrl && (kind === 'image' || kind === 'video') ? (
             <LocalMediaPreview
               file={file}
               previewUrl={previewUrl}
