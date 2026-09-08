@@ -21,7 +21,11 @@ SELECT
     (
         EXTRACT(EPOCH FROM DATE_TRUNC(
             'day',
-            inbox_item.datetime AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv'
+            COALESCE(
+                inbox_item.datetime,
+                signal_message.timestamp,
+                signal_message.created_at
+            ) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv'
         )) * 1000
     )::BIGINT AS day,
     COALESCE(signal_group.name, datasource_group.group_master_key) AS group_name,
@@ -43,15 +47,31 @@ WHERE network_link.sigint_network_id = ANY($1)
   AND signal_message.datasource_group_id = ANY($4)
   AND signal_group.deleted = false
   AND signal_group.is_archived = false
-  AND inbox_item.datetime >= $5
-  AND inbox_item.datetime <= $6
+  AND COALESCE(
+      inbox_item.datetime,
+      signal_message.timestamp,
+      signal_message.created_at
+  ) >= $5
+  AND COALESCE(
+      inbox_item.datetime,
+      signal_message.timestamp,
+      signal_message.created_at
+  ) <= $6
   AND (
       network.active_from IS NULL
-      OR inbox_item.datetime >= network.active_from
+      OR COALESCE(
+          inbox_item.datetime,
+          signal_message.timestamp,
+          signal_message.created_at
+      ) >= network.active_from
   )
   AND (
       network.active_to IS NULL
-      OR inbox_item.datetime <= network.active_to
+      OR COALESCE(
+          inbox_item.datetime,
+          signal_message.timestamp,
+          signal_message.created_at
+      ) <= network.active_to
   )
   AND EXISTS (
       SELECT 1
@@ -59,10 +79,18 @@ WHERE network_link.sigint_network_id = ANY($1)
       WHERE network_freq.network_id = network_link.sigint_network_id
         AND network_freq.freq = inbox_item.freq
         AND network_freq.deleted = false
-        AND inbox_item.datetime >= network_freq.active_from
+        AND COALESCE(
+            inbox_item.datetime,
+            signal_message.timestamp,
+            signal_message.created_at
+        ) >= network_freq.active_from
         AND (
             network_freq.active_to IS NULL
-            OR inbox_item.datetime <= network_freq.active_to
+            OR COALESCE(
+                inbox_item.datetime,
+                signal_message.timestamp,
+                signal_message.created_at
+            ) <= network_freq.active_to
         )
   )
 GROUP BY
@@ -782,10 +810,35 @@ async fn load_message_id_bounds_for_period(
 ) -> Result<Option<(i64, i64)>, AppError> {
     let bounds = sqlx::query_as::<_, NetworkMessageIdBounds>(
         r#"
-        SELECT min(id) AS min_id, max(id) AS max_id
-        FROM sigint_inbox_item
-        WHERE datetime >= $1
-          AND datetime <= $2
+        SELECT min(message_id) AS min_id, max(message_id) AS max_id
+        FROM (
+            SELECT id AS message_id
+            FROM sigint_inbox_item
+            WHERE datetime >= $1
+              AND datetime <= $2
+
+            UNION ALL
+
+            SELECT signal_message.id AS message_id
+            FROM signal_message
+            JOIN sigint_inbox_item
+              ON sigint_inbox_item.id = signal_message.id
+            WHERE sigint_inbox_item.datetime IS NULL
+              AND signal_message.timestamp IS NOT NULL
+              AND signal_message.timestamp >= $1
+              AND signal_message.timestamp <= $2
+
+            UNION ALL
+
+            SELECT signal_message.id AS message_id
+            FROM signal_message
+            JOIN sigint_inbox_item
+              ON sigint_inbox_item.id = signal_message.id
+            WHERE sigint_inbox_item.datetime IS NULL
+              AND signal_message.timestamp IS NULL
+              AND signal_message.created_at >= $1
+              AND signal_message.created_at <= $2
+        ) activity_messages
         "#,
     )
     .bind(since)

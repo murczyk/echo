@@ -283,64 +283,16 @@ where
         last_activity_at: Option<NaiveDateTime>,
     }
 
-    Ok(signal_message::Entity::find()
-        .join_as(
-            JoinType::InnerJoin,
-            signal_message::Relation::SigintInboxItem.def(),
-            Alias::new("sigint_inbox_item"),
-        )
-        .join_as(
-            JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SigintInboxItemNetwork.def(),
-            Alias::new("sigint_inbox_item_network"),
-        )
-        .join(
-            JoinType::InnerJoin,
-            sigint_inbox_item_network::Relation::SigintNetwork.def(),
-        )
-        .join_as(
-            JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
-            Alias::new("datasource_group"),
-        )
-        .join_as(
-            JoinType::InnerJoin,
-            datasource_group::Relation::SignalGroup.def(),
-            Alias::new("signal_group"),
-        )
+    Ok(sigint_network::Entity::find()
         .select_only()
+        .column_as(sigint_network::Column::Id, "network_id")
         .column_as(
-            sigint_inbox_item_network::Column::SigintNetworkId,
-            "network_id",
-        )
-        .column_as(
-            Expr::cust("MAX(sigint_inbox_item.datetime)"),
+            crate::sigint::network::sort::network_last_activity_sort_expr(
+                groups,
+            ),
             "last_activity_at",
         )
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(signal_group::Column::Deleted.eq(false))
-        .filter(signal_group::Column::IsArchived.eq(false))
-        .filter(
-            datasource_group::Column::GroupMasterKey.eq_any(groups.to_vec()),
-        )
-        .filter(
-            sigint_inbox_item_network::Column::SigintNetworkId
-                .eq_any(network_ids.to_vec()),
-        )
-        .filter(
-            Expr::col(sigint_network::Column::ActiveFrom)
-                .is_null()
-                .or(Expr::col(sigint_inbox_item::Column::Datetime)
-                    .gte(Expr::col(sigint_network::Column::ActiveFrom))),
-        )
-        .filter(
-            Expr::col(sigint_network::Column::ActiveTo)
-                .is_null()
-                .or(Expr::col(sigint_inbox_item::Column::Datetime)
-                    .lte(Expr::col(sigint_network::Column::ActiveTo))),
-        )
-        .filter(network_activity_has_matching_frequency())
-        .group_by(sigint_inbox_item_network::Column::SigintNetworkId)
+        .filter(sigint_network::Column::Id.eq_any(network_ids.to_vec()))
         .into_model::<NetworkLastActivity>()
         .all(txn)
         .await
@@ -674,7 +626,7 @@ async fn load_network_group_activity_postgres(
         .select_only()
         .column_as(
             Expr::cust(
-                "(EXTRACT(EPOCH FROM DATE_TRUNC('day', sigint_inbox_item.datetime AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')) * 1000)::BIGINT",
+                "(EXTRACT(EPOCH FROM DATE_TRUNC('day', COALESCE(sigint_inbox_item.datetime, signal_message.timestamp, signal_message.created_at) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')) * 1000)::BIGINT",
             ),
             "day",
         )
@@ -693,18 +645,18 @@ async fn load_network_group_activity_postgres(
             datasource_group::Column::GroupMasterKey.eq_any(groups.to_vec()),
         )
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(sigint_inbox_item::Column::Datetime.lte(dt_till))
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+        .filter(network_activity_timestamp().lte(dt_till))
+        .filter(network_activity_timestamp().gte(dt_since))
         .filter(
             Expr::col(sigint_network::Column::ActiveFrom)
                 .is_null()
-                .or(Expr::col(sigint_inbox_item::Column::Datetime)
+                .or(network_activity_timestamp()
                     .gte(Expr::col(sigint_network::Column::ActiveFrom))),
         )
         .filter(
             Expr::col(sigint_network::Column::ActiveTo)
                 .is_null()
-                .or(Expr::col(sigint_inbox_item::Column::Datetime)
+                .or(network_activity_timestamp()
                     .lte(Expr::col(sigint_network::Column::ActiveTo))),
         )
         .filter(network_activity_has_matching_frequency())
@@ -754,6 +706,12 @@ async fn load_network_group_activity_postgres(
     Ok(res)
 }
 
+fn network_activity_timestamp() -> SimpleExpr {
+    Expr::cust(
+        "COALESCE(sigint_inbox_item.datetime, signal_message.timestamp, signal_message.created_at)",
+    )
+}
+
 fn network_activity_has_matching_frequency() -> SimpleExpr {
     Expr::cust(
         r#"EXISTS (
@@ -762,10 +720,10 @@ fn network_activity_has_matching_frequency() -> SimpleExpr {
             WHERE network_freq.network_id = sigint_inbox_item_network.sigint_network_id
               AND network_freq.freq = sigint_inbox_item.freq
               AND network_freq.deleted = false
-              AND sigint_inbox_item.datetime >= network_freq.active_from
+              AND COALESCE(sigint_inbox_item.datetime, signal_message.timestamp, signal_message.created_at) >= network_freq.active_from
               AND (
                   network_freq.active_to IS NULL
-                  OR sigint_inbox_item.datetime <= network_freq.active_to
+                  OR COALESCE(sigint_inbox_item.datetime, signal_message.timestamp, signal_message.created_at) <= network_freq.active_to
               )
         )"#,
     )
@@ -1178,7 +1136,7 @@ mod tests {
             sigint_inbox_item::ActiveModel {
                 id: Set(message.id),
                 freq: Set(Some(freq.to_string())),
-                datetime: Set(Some(timestamp)),
+                datetime: Set(None),
                 ..Default::default()
             },
         )

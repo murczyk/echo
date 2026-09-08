@@ -2673,11 +2673,7 @@ fn build_etalonka_networks_query(
             .filter(sigint_unit::Column::Battalion.eq(filter_unit_battalion));
     }
 
-    network_sort::apply_network_sorts(
-        networks,
-        req.sort_by.as_ref(),
-        !groups.is_empty(),
-    )
+    network_sort::apply_network_sorts(networks, req.sort_by.as_ref(), groups)
 }
 
 pub async fn load_networks(
@@ -3178,7 +3174,7 @@ mod tests {
         )
         .build(DbBackend::Postgres)
         .to_string();
-        assert_primary_sort_before_name(&sql, "MAX(inbox_item.datetime)");
+        assert_primary_sort_before_name(&sql, "SELECT MAX(activity_at)");
     }
 
     #[test]

@@ -87,7 +87,7 @@ pub async fn network_list(
         &req,
         NetworkQueryKind::List,
         text_search_mode,
-        !access.activity_groups.is_empty(),
+        &access.activity_groups,
     )
     .all(&env.dbx)
     .await
@@ -121,7 +121,7 @@ fn build_networks_query(
         req,
         kind,
         NetworkTextSearchMode::Substring,
-        true,
+        &["test-group".to_string()],
     )
 }
 
@@ -129,7 +129,7 @@ fn build_networks_query_with_text_search_mode(
     req: &ListNetworksReq,
     kind: NetworkQueryKind,
     text_search_mode: NetworkTextSearchMode,
-    has_activity_access: bool,
+    activity_groups: &[String],
 ) -> Select<sigint_network::Entity> {
     let mut query = sigint_network::Entity::find();
     query = apply_network_list_filters_with_text_search_mode(
@@ -143,7 +143,7 @@ fn build_networks_query_with_text_search_mode(
         query = sort::apply_network_sorts(
             query,
             req.sort_by.as_ref(),
-            has_activity_access,
+            activity_groups,
         );
 
         let has_filters = req.filter_freq.is_some()
@@ -206,7 +206,7 @@ fn build_networks_counts_query_with_text_search_mode(
         req,
         NetworkQueryKind::Counts,
         text_search_mode,
-        false,
+        &[],
     )
     .select_only()
     .column_as(
@@ -5689,11 +5689,13 @@ mod tests {
             .build(DbBackend::Postgres)
             .to_string();
 
-        assert!(sql.contains("MAX(sigint_network_freq.last_seen_dt)"));
+        assert!(sql.contains("SELECT MAX(activity_at)"));
         assert!(sql.contains(
-            "sigint_network_freq.last_seen_dt <= sigint_network.active_to"
+            "datasource_group.group_master_key = ANY(ARRAY ['test-group'])"
         ));
-        assert!(!sql.contains("sigint_inbox_item_network"));
+        assert!(sql.contains("ORDER BY inbox_item.datetime DESC LIMIT 1"));
+        assert!(sql.contains("ORDER BY signal_message.timestamp DESC LIMIT 1"));
+        assert!(sql.contains("ORDER BY signal_message.created_at DESC LIMIT 1"));
         assert!(sql.contains("DESC"));
         assert!(sql.contains("\"sigint_network\".\"name\" ASC"));
         assert!(sql.contains("\"sigint_network\".\"id\" ASC"));
@@ -5860,7 +5862,7 @@ mod tests {
             &req,
             NetworkQueryKind::List,
             text_search_mode,
-            false,
+            &[],
         )
         .all(&env.dbx)
         .await
@@ -5895,7 +5897,7 @@ mod tests {
             &req,
             NetworkQueryKind::List,
             text_search_mode,
-            false,
+            &[],
         )
         .all(&env.dbx)
         .await
@@ -5942,7 +5944,7 @@ mod tests {
             &req,
             NetworkQueryKind::List,
             text_search_mode,
-            false,
+            &[],
         )
         .all(&env.dbx)
         .await
@@ -5960,7 +5962,7 @@ mod tests {
             &req,
             NetworkQueryKind::List,
             text_search_mode,
-            false,
+            &[],
         )
         .all(&env.dbx)
         .await
@@ -6060,7 +6062,7 @@ mod tests {
             &req,
             NetworkQueryKind::List,
             text_search_mode,
-            false,
+            &[],
         )
         .all(&env.dbx)
         .await
@@ -6104,7 +6106,7 @@ mod tests {
             &req,
             NetworkQueryKind::List,
             text_search_mode,
-            false,
+            &[],
         )
         .all(&env.dbx)
         .await
@@ -6140,7 +6142,7 @@ mod tests {
             &req,
             NetworkQueryKind::List,
             text_search_mode,
-            false,
+            &[],
         )
         .all(&env.dbx)
         .await
