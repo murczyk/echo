@@ -1892,44 +1892,91 @@ async fn delete_message(
         .await
         .c(h!())?;
     let is_intelligence_report = !intelligence_report_parent_ids.is_empty();
-    let result = match signal_message::Entity::find_by_id(req.id)
+    soft_delete_message(&txn, req.id).await.context(h!())?;
+    txn.commit().await.c(h!())?;
+    if is_intelligence_report {
+        let mut redis = env.redis.clone();
+        let mut changed_message_ids = intelligence_report_parent_ids;
+        if !changed_message_ids.contains(&req.id) {
+            changed_message_ids.push(req.id);
+        }
+        if let Err(error) = crate::inbox::fanout_intelligence_report_changes(
+            &mut redis,
+            changed_message_ids,
+        )
+        .await
+        {
+            error!("failed to fan out intelligence report deletion: {error:?}");
+        }
+    } else {
+        fanout_inbox_changed(&env, vec![req.id]).await;
+    }
+    Ok(Json(()))
+}
+
+async fn soft_delete_message<C>(
+    txn: &C,
+    message_id: i64,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let signal_message = signal_message::Entity::find_by_id(message_id)
         .filter(signal_message::Column::Deleted.eq(false))
-        .one(&txn)
+        .one(txn)
         .await
         .context(h!())?
-    {
-        None => Err(AppError::NotFound),
-        Some(signal_message) => {
-            let mut signal_message = signal_message.into_active_model();
-            signal_message.deleted = Set(true);
-            signal_message.update(&txn).await.context(h!())?;
-            Ok(Json(()))
-        }
-    };
-    txn.commit().await.c(h!())?;
-    if result.is_ok() {
-        if is_intelligence_report {
-            let mut redis = env.redis.clone();
-            let mut changed_message_ids = intelligence_report_parent_ids;
-            if !changed_message_ids.contains(&req.id) {
-                changed_message_ids.push(req.id);
-            }
-            if let Err(error) =
-                crate::inbox::fanout_intelligence_report_changes(
-                    &mut redis,
-                    changed_message_ids,
-                )
-                .await
-            {
-                error!(
-                    "failed to fan out intelligence report deletion: {error:?}"
-                );
-            }
-        } else {
-            fanout_inbox_changed(&env, vec![req.id]).await;
-        }
-    }
-    result
+        .ok_or(AppError::NotFound)
+        .context(h!())?;
+    crate::stats::enqueue_group_stats_recalculation_for_message(
+        txn,
+        message_id,
+        format!("deleted inbox message {message_id}"),
+    )
+    .await
+    .context(h!())?;
+    invalidate_deleted_message_last_seen(txn, message_id)
+        .await
+        .context(h!())?;
+
+    let mut signal_message = signal_message.into_active_model();
+    signal_message.deleted = Set(true);
+    signal_message.update(txn).await.context(h!())?;
+    Ok(())
+}
+
+async fn invalidate_deleted_message_last_seen<C>(
+    txn: &C,
+    message_id: i64,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    txn.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        r#"
+            update sigint_network_freq as network_freq
+            set last_seen_dt = null
+            from sigint_inbox_item as inbox_item
+            join signal_message
+              on signal_message.id = inbox_item.id
+            join sigint_inbox_item_network as network_link
+              on network_link.sigint_inbox_item_id = inbox_item.id
+            where signal_message.id = $1
+              and network_freq.network_id = network_link.sigint_network_id
+              and network_freq.freq = inbox_item.freq
+              and network_freq.deleted = false
+              and network_freq.last_seen_dt = coalesce(
+                  inbox_item.datetime,
+                  signal_message.timestamp,
+                  signal_message.created_at
+              )
+        "#,
+        [message_id.into()],
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
 }
 
 #[post("/api/rer-importer/inbox/submit")]
@@ -7077,6 +7124,78 @@ mod tests {
         expected_unit_ids.sort_unstable();
 
         assert_eq!(messages[0].1.unit_ids, expected_unit_ids);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn deleting_message_invalidates_network_frequency_last_seen() {
+        let env = cleanup().await.unwrap();
+        let timestamp = Utc::now().naive_utc() - Duration::hours(1);
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                timestamp: Set(Some(timestamp)),
+                created_at: Set(timestamp),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let freq = "146.4500";
+        let inbox_item = mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                freq: Set(Some(freq.to_string())),
+                datetime: Set(Some(timestamp)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let network_freq = mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set(freq.to_string()),
+                active_from: Set(timestamp - Duration::days(1)),
+                last_seen_dt: Set(Some(timestamp)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item_network(
+            &env.dbx,
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(inbox_item.id),
+                sigint_network_id: Set(network.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let txn = env.dbx.begin().await.unwrap();
+        soft_delete_message(&txn, message.id).await.unwrap();
+        txn.commit().await.unwrap();
+
+        let message = signal_message::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let network_freq =
+            sigint_network_freq::Entity::find_by_id(network_freq.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(message.deleted);
+        assert_eq!(network_freq.last_seen_dt, None);
     }
 
     #[serial]

@@ -2251,6 +2251,26 @@ where
     Ok(())
 }
 
+async fn clear_network_last_seen<C>(
+    txn: &C,
+    network_id: i64,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    sigint_network_freq::Entity::update_many()
+        .col_expr(
+            sigint_network_freq::Column::LastSeenDt,
+            Expr::value(Option::<NaiveDateTime>::None),
+        )
+        .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .exec(txn)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
 struct NetworkFreqMutationResult {
     network: sigint_network::Model,
     network_freq_id: i64,
@@ -2910,7 +2930,6 @@ pub async fn update_network_freq(
         (Some(updated_freq_active_from), updated_freq_active_to);
     let mut invalidation_freq = req.freq.clone();
     let mut activate_network = false;
-    let mut activity_range_changed = false;
 
     // Find the frequency for this network
     let network_freq_model =
@@ -2949,7 +2968,7 @@ pub async fn update_network_freq(
         .await
         .context(h!())?;
         let old_network_freq = network_freq_model.clone();
-        activity_range_changed = old_network_freq.active_from
+        let activity_range_changed = old_network_freq.active_from
             != updated_freq_active_from
             || old_network_freq.active_to != updated_freq_active_to;
         let mut network_freq = network_freq_model.into_active_model();
@@ -2958,6 +2977,9 @@ pub async fn update_network_freq(
         network_freq.encryption_id = Set(encryption_id);
         network_freq.active_from = Set(updated_freq_active_from);
         network_freq.active_to = Set(updated_freq_active_to);
+        if activity_range_changed {
+            network_freq.last_seen_dt = Set(None);
+        }
         activate_network = updated_freq_active_to.is_none();
         let network_freq = network_freq.update(&txn).await.context(h!())?;
         record_activity_decision_if_changed(
@@ -3007,6 +3029,13 @@ pub async fn update_network_freq(
     )
     .await
     .context(h!())?;
+    if network_activity_range
+        != (result.network.active_from, result.network.active_to)
+    {
+        clear_network_last_seen(&txn, result.network.id)
+            .await
+            .context(h!())?;
+    }
 
     // Now fetch the updated network with all descriptions, units and freqs to return
     let network_detail =
@@ -3032,18 +3061,6 @@ pub async fn update_network_freq(
     )
     .await
     .c(h!())?;
-    if activity_range_changed
-        || network_activity_range
-            != (result.network.active_from, result.network.active_to)
-    {
-        refresh_network_last_seen_after_state_change(
-            &env.dbx,
-            [result.network.id],
-        )
-        .await
-        .c(h!())?;
-    }
-
     Ok(Json(network_detail[0].clone()))
 }
 
@@ -3078,7 +3095,6 @@ pub async fn update_network_freq_v2(
         (Some(updated_freq_active_from), updated_freq_active_to);
     let mut invalidation_freq = req.freq.clone();
     let mut activate_network = false;
-    let mut activity_range_changed = false;
 
     let network_freq_model =
         sigint_network_freq::Entity::find_by_id(req.network_freq_id)
@@ -3117,7 +3133,7 @@ pub async fn update_network_freq_v2(
         .context(h!())?;
 
         let old_network_freq = network_freq_model.clone();
-        activity_range_changed = old_network_freq.active_from
+        let activity_range_changed = old_network_freq.active_from
             != updated_freq_active_from
             || old_network_freq.active_to != updated_freq_active_to;
         let kind = kind_from_modulation(&req.modulation);
@@ -3126,6 +3142,9 @@ pub async fn update_network_freq_v2(
         network_freq.modulation_id = Set(None);
         network_freq.active_from = Set(updated_freq_active_from);
         network_freq.active_to = Set(updated_freq_active_to);
+        if activity_range_changed {
+            network_freq.last_seen_dt = Set(None);
+        }
         activate_network = updated_freq_active_to.is_none();
         network_freq.encryption_id = Set(normalized_encryption_id);
         network_freq.modulation = Set(req.modulation.clone());
@@ -3177,6 +3196,13 @@ pub async fn update_network_freq_v2(
     )
     .await
     .context(h!())?;
+    if network_activity_range
+        != (result.network.active_from, result.network.active_to)
+    {
+        clear_network_last_seen(&txn, result.network.id)
+            .await
+            .context(h!())?;
+    }
 
     let network = bl_network_info_batch(vec![req.network_id], &txn, &user_id)
         .await
@@ -3196,18 +3222,6 @@ pub async fn update_network_freq_v2(
     )
     .await
     .c(h!())?;
-    if activity_range_changed
-        || network_activity_range
-            != (result.network.active_from, result.network.active_to)
-    {
-        refresh_network_last_seen_after_state_change(
-            &env.dbx,
-            [result.network.id],
-        )
-        .await
-        .c(h!())?;
-    }
-
     let response = load_network_freq_mutation_response(
         &env,
         &user,
@@ -4068,7 +4082,6 @@ where
                 FROM sigint_network_freq network_freq
                 WHERE network_freq.network_id = sigint_inbox_item_network.sigint_network_id
                   AND network_freq.freq = sigint_inbox_item.freq
-                  AND network_freq.deleted = false
                   AND COALESCE(sigint_inbox_item.datetime, signal_message.timestamp, signal_message.created_at) >= network_freq.active_from
                   AND (
                       network_freq.active_to IS NULL
