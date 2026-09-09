@@ -23,6 +23,7 @@ mod duplicate_units;
 mod echelon_number_fix;
 mod generated_unit_names;
 mod hierarchy;
+mod inactive_junk_units;
 mod matching;
 mod persistence;
 mod snapshot;
@@ -512,6 +513,9 @@ async fn run_selected_action(mode: Mode) -> anyhow::Result<()> {
         }
         Some(tui::StartAction::ReviewGeneratedUnitNames) => {
             generated_unit_names::run(mode).await.c(h!())
+        }
+        Some(tui::StartAction::DeleteInactiveJunkUnits) => {
+            inactive_junk_units::run(mode).await.c(h!())
         }
         Some(tui::StartAction::Reimport) => run_reimport(mode).await.c(h!()),
         None => Ok(()),

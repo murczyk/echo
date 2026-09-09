@@ -67,7 +67,7 @@ pub enum Relation {
         from = "Column::UnitId",
         to = "super::sigint_unit::Column::Id",
         on_update = "NoAction",
-        on_delete = "NoAction"
+        on_delete = "SetNull"
     )]
     SigintUnit,
     #[sea_orm(

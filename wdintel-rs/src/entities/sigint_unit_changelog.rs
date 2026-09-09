@@ -38,7 +38,7 @@ pub enum Relation {
         from = "Column::SigintUnitId",
         to = "super::sigint_unit::Column::Id",
         on_update = "NoAction",
-        on_delete = "NoAction"
+        on_delete = "Cascade"
     )]
     SigintUnit,
 }

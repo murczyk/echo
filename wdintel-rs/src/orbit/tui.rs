@@ -80,6 +80,7 @@ pub enum StartAction {
     ResolveUnparsedUnits,
     FixUnitNames,
     ReviewGeneratedUnitNames,
+    DeleteInactiveJunkUnits,
     Reimport,
 }
 
@@ -358,6 +359,24 @@ pub fn confirm_reimport() -> Result<bool, AppError> {
     );
     restore_terminal(&mut terminal).c(h!())?;
     Ok(is_reimport_confirmed(result?.as_deref()))
+}
+
+pub fn confirm_delete_inactive_junk_units(
+    candidate_count: i64,
+) -> Result<bool, AppError> {
+    let mut terminal = setup_terminal().c(h!())?;
+    let result = run_text_prompt(
+        &mut terminal,
+        &format!(
+            "Type DELETE to permanently delete {candidate_count} inactive junk SIGINT units (Esc: cancel)"
+        ),
+    );
+    restore_terminal(&mut terminal).c(h!())?;
+    Ok(is_delete_inactive_junk_units_confirmed(result?.as_deref()))
+}
+
+fn is_delete_inactive_junk_units_confirmed(input: Option<&str>) -> bool {
+    input == Some("DELETE")
 }
 
 fn is_reimport_confirmed(input: Option<&str>) -> bool {
@@ -819,6 +838,7 @@ fn run_start_menu(
         StartAction::ResolveUnparsedUnits,
         StartAction::FixUnitNames,
         StartAction::ReviewGeneratedUnitNames,
+        StartAction::DeleteInactiveJunkUnits,
         StartAction::Reimport,
     ];
     let mut selected = 0;
@@ -1870,6 +1890,7 @@ fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
         "Resolve unparsed unit labels through ORBIT links",
         "Remove invalid army/corps and higher echelons from SIGINT unit names",
         "Review SIGINT unit names generated from echelons",
+        "Delete inactive junk units",
         "Erase and reimport all ORBIT data",
     ];
     let items = options.into_iter().map(ListItem::new);
@@ -2130,6 +2151,13 @@ fn centered_area(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inactive_junk_unit_deletion_requires_exact_confirmation() {
+        assert!(is_delete_inactive_junk_units_confirmed(Some("DELETE")));
+        assert!(!is_delete_inactive_junk_units_confirmed(Some("delete")));
+        assert!(!is_delete_inactive_junk_units_confirmed(None));
+    }
 
     #[test]
     fn test_link_match_lines_show_identity_and_generative_hierarchy() {
