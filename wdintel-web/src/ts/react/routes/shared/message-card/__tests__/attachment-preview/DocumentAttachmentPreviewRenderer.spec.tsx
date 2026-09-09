@@ -500,18 +500,15 @@ describe('DocumentAttachmentPreviewRenderer', () => {
       root.render(<TestDocumentPreviewDialog {...commonProps} currentIndex={0} />);
     });
 
-    await act(async () => {
-      document.body
-        .querySelector('button[aria-label="Писати розвіддонесення"]')
-        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-
     const textarea = document.body.querySelector(
       'textarea[aria-label="Текст розвіддонесення"]',
     ) as HTMLTextAreaElement | null;
 
     expect(document.body.querySelector('[data-attachment-preview-report-pane]')).not.toBeNull();
     expect(textarea?.value).toBe('Чернетка донесення');
+    expect(
+      document.body.querySelector('button[aria-label="Сховати розвіддонесення"]'),
+    ).not.toBeNull();
 
     await act(async () => {
       root.render(<TestDocumentPreviewDialog {...commonProps} currentIndex={1} />);
