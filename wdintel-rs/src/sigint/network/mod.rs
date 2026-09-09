@@ -1205,18 +1205,17 @@ pub async fn create_network(
             .context(h!())?;
     }
 
-    txn.commit().await.context(h!())?;
-
-    fanout_network_changed(&env).await?;
-
     etalon_calc::invalidate_network_inbox(
         network.clone(),
         vec![],
-        &env.dbx,
+        &txn,
         format!("created network {}", network.id),
     )
     .await
     .c(h!())?;
+    txn.commit().await.context(h!())?;
+
+    fanout_network_changed(&env).await.context(h!())?;
     if has_unit_mask {
         crate::sigint::unit_tag::enqueue_recent_non_rer_unit_tag_recalculation(
             &env.dbx,
@@ -1487,7 +1486,7 @@ pub async fn delete_network(
         .c(h!())?;
     txn.commit().await.context(h!())?;
 
-    fanout_network_changed(&env).await?;
+    fanout_network_changed(&env).await.context(h!())?;
 
     let res = render_networks(vec![network], &env.dbx, &user_id)
         .await
@@ -2242,7 +2241,7 @@ pub async fn update_freq_networks(
 async fn refresh_network_last_seen_after_state_change<I>(
     dbx: &DatabaseTransaction,
     network_ids: I,
-) -> Result<(), AppError>
+) -> anyhow::Result<()>
 where
     I: IntoIterator<Item = i64>,
 {
@@ -2279,7 +2278,7 @@ async fn enqueue_updated_network_followup(
     refresh_aor_cache: bool,
     refresh_last_seen: bool,
     context_msg: String,
-) -> Result<(), AppError> {
+) -> anyhow::Result<()> {
     if refresh_aor_cache {
         recalculation::enqueue_last_datetime_in_aor_for_network(
             txn, network.id, login_id,
@@ -2320,7 +2319,7 @@ async fn enqueue_network_freq_mutation_followup(
     since_ts: Option<NaiveDateTime>,
     till_ts: Option<NaiveDateTime>,
     context_msg: String,
-) -> Result<(), AppError> {
+) -> anyhow::Result<()> {
     recalculation::enqueue_all_for_network_freq(txn, network_freq_id, login_id)
         .await
         .c(h!())?;
@@ -3490,20 +3489,17 @@ pub async fn delete_network_freq(
         }
     }
 
-    txn.commit().await.context(h!())?;
-
     if let Some((network, frequencies, context_msg)) = network_invalidation {
-        if let Err(e) = etalon_calc::invalidate_network_inbox(
+        etalon_calc::invalidate_network_inbox(
             network,
             frequencies,
-            &env.dbx,
+            &txn,
             context_msg,
         )
         .await
-        {
-            error!("invalidate_network_inbox failed: {:#?}", e);
-        }
+        .c(h!())?;
     }
+    txn.commit().await.context(h!())?;
 
     let network_details = network_detail.clone().context(h!())?;
     let first_network_detail = network_details.first().context(h!())?;
@@ -3516,7 +3512,7 @@ pub async fn network_maintenance_worker(
 ) {
     debug!("Starting network_maintenance_worker");
 
-    let mut last_hourly_maintenance_started_at = None;
+    let mut last_hourly_maintenance_finished_at = None;
     let mut recalculation_interval =
         tokio::time::interval(std::time::Duration::from_secs(
             NETWORK_RECALCULATION_WORKER_INTERVAL_SECS,
@@ -3530,7 +3526,7 @@ pub async fn network_maintenance_worker(
         if let Err(error) = network_maintenance_worker_iteration(
             dbx,
             cleanup_networks_enabled,
-            &mut last_hourly_maintenance_started_at,
+            &mut last_hourly_maintenance_finished_at,
         )
         .await
         {
@@ -3542,27 +3538,44 @@ pub async fn network_maintenance_worker(
 async fn network_maintenance_worker_iteration(
     dbx: &DatabaseConnection,
     cleanup_networks_enabled: bool,
-    last_hourly_maintenance_started_at: &mut Option<std::time::Instant>,
+    last_hourly_maintenance_finished_at: &mut Option<std::time::Instant>,
 ) -> anyhow::Result<()> {
-    let hourly_maintenance_due = last_hourly_maintenance_started_at
-        .map(|started_at| {
-            started_at.elapsed()
+    let recalculation_result = recalculation::run_pending(dbx).await.c(h!());
+    let hourly_maintenance_due = last_hourly_maintenance_finished_at
+        .map(|finished_at| {
+            finished_at.elapsed()
                 >= std::time::Duration::from_secs(
                     CLEANUP_NETWORKS_WORKER_SLEEP_DURATION,
                 )
         })
         .unwrap_or(true);
-    if hourly_maintenance_due {
-        *last_hourly_maintenance_started_at = Some(std::time::Instant::now());
-        if cleanup_networks_enabled {
-            cleanup_networks_worker_1(dbx).await.c(h!())?;
-        }
-        let evicted = recalculation::evict_expired_cache(dbx).await.c(h!())?;
-        if evicted > 0 {
-            debug!("evicted {evicted} network recalculation cache rows");
-        }
+    let hourly_maintenance_result = if hourly_maintenance_due {
+        let result =
+            run_hourly_network_maintenance(dbx, cleanup_networks_enabled).await;
+        *last_hourly_maintenance_finished_at = Some(std::time::Instant::now());
+        result
+    } else {
+        Ok(())
+    };
+    recalculation_result.context(h!())?;
+    hourly_maintenance_result.c(h!())?;
+    Ok(())
+}
+
+async fn run_hourly_network_maintenance(
+    dbx: &DatabaseConnection,
+    cleanup_networks_enabled: bool,
+) -> anyhow::Result<()> {
+    let cleanup_result = if cleanup_networks_enabled {
+        cleanup_networks_worker_1(dbx).await.c(h!())
+    } else {
+        Ok(())
+    };
+    let evicted = recalculation::evict_expired_cache(dbx).await.c(h!())?;
+    if evicted > 0 {
+        debug!("evicted {evicted} network recalculation cache rows");
     }
-    recalculation::run_pending(dbx).await.c(h!())?;
+    cleanup_result.context(h!())?;
     Ok(())
 }
 

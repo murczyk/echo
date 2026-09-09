@@ -2857,6 +2857,7 @@ async fn update_network_freq_last_seen(
                 set last_seen_dt = $2
                 where nf.id = $1
                   and nf.deleted = false
+                  and nf.network_id = $6
                   and nf.active_from = $3
                   and nf.active_to is not distinct from $4
                   and (nf.last_seen_dt is null or nf.last_seen_dt < $2)
@@ -2867,10 +2868,17 @@ async fn update_network_freq_last_seen(
                       join sigint_inbox_item_network iin
                         on iin.sigint_inbox_item_id = ii.id
                        and iin.sigint_network_id = $6
+                      join sigint_network network
+                        on network.id = iin.sigint_network_id
                       where ii.id = $5
                         and ii.freq = nf.freq
                         and sm.deleted = false
+                        and network.deleted = false
                         and coalesce(ii.datetime, sm.timestamp, sm.created_at) = $2
+                        and coalesce(ii.datetime, sm.timestamp, sm.created_at)
+                              >= coalesce(network.active_from, '-infinity'::timestamp)
+                        and coalesce(ii.datetime, sm.timestamp, sm.created_at)
+                              <= coalesce(network.active_to, current_timestamp at time zone 'utc')
                   )
             "#,
             vec![
@@ -3616,7 +3624,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn last_seen_update_revalidates_its_source_assignment() {
+    async fn last_seen_update_revalidates_its_current_source() {
         // Regression: https://github.com/echoua/echo/issues/3440
         let env = cleanup().await.unwrap();
         let timestamp = Utc::now().naive_utc() - Duration::minutes(5);
@@ -3689,6 +3697,38 @@ mod tests {
                 .unwrap();
         assert_eq!(network_freq.last_seen_dt, Some(timestamp));
 
+        let mut network = network.into_active_model();
+        network.deleted = Set(true);
+        let network = network.update(&env.dbx).await.unwrap();
+        let mut network_freq = network_freq.into_active_model();
+        network_freq.last_seen_dt = Set(None);
+        network_freq.update(&env.dbx).await.unwrap();
+        update_network_freq_last_seen(&env.dbx, &rows, None)
+            .await
+            .unwrap();
+        assert_eq!(
+            sigint_network_freq::Entity::find_by_id(network_freq_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .last_seen_dt,
+            None
+        );
+
+        let mut network = network.into_active_model();
+        network.deleted = Set(false);
+        network.update(&env.dbx).await.unwrap();
+        update_network_freq_last_seen(&env.dbx, &rows, None)
+            .await
+            .unwrap();
+        let network_freq =
+            sigint_network_freq::Entity::find_by_id(network_freq_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(network_freq.last_seen_dt, Some(timestamp));
         assignment.delete(&env.dbx).await.unwrap();
         let mut network_freq = network_freq.into_active_model();
         network_freq.last_seen_dt = Set(None);

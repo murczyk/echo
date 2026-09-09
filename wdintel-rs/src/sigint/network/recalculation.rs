@@ -13,11 +13,10 @@ use crate::entities::{
     network_recalculation_task, sigint_network, sigint_network_aor,
     sigint_network_freq,
 };
-use crate::error::AppError;
 use crate::h;
 use crate::types::{info, ShortContext};
 use chrono::{Duration, NaiveDateTime, Utc};
-use sea_orm::sea_query::{LockType, OnConflict, UnionType};
+use sea_orm::sea_query::{Expr, LockType, OnConflict, UnionType};
 use sea_orm::*;
 use std::collections::{HashMap, HashSet};
 use time::PrimitiveDateTime;
@@ -27,7 +26,7 @@ pub(super) async fn load_cached_last_datetime_in_aor(
     network_id: i64,
     login_id: uuid::Uuid,
     group_master_keys: &[String],
-) -> Result<HashMap<i64, Option<i64>>, AppError> {
+) -> anyhow::Result<HashMap<i64, Option<i64>>> {
     let group_master_keys =
         normalize_group_master_keys(group_master_keys.to_vec());
     let cached = network_freq_last_datetime_in_aor::Model::find_by_statement(
@@ -217,6 +216,8 @@ where
     let network_freq_ids = sigint_network_freq::Entity::find()
         .filter(sigint_network_freq::Column::NetworkId.is_in(network_ids))
         .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .order_by_asc(sigint_network_freq::Column::Id)
+        .lock(LockType::NoKeyUpdate)
         .select_only()
         .column(sigint_network_freq::Column::Id)
         .into_tuple::<i64>()
@@ -224,6 +225,19 @@ where
         .await
         .c(h!())?;
     lock_network_freq_recalculations(db, &network_freq_ids)
+        .await
+        .c(h!())?;
+    sigint_network_freq::Entity::update_many()
+        .col_expr(
+            sigint_network_freq::Column::LastSeenDt,
+            Expr::value(Option::<NaiveDateTime>::None),
+        )
+        .filter(
+            sigint_network_freq::Column::Id
+                .is_in(network_freq_ids.iter().copied()),
+        )
+        .filter(sigint_network_freq::Column::LastSeenDt.is_not_null())
+        .exec(db)
         .await
         .c(h!())?;
     enqueue_tasks(
@@ -763,6 +777,7 @@ async fn recalculate_last_seen(
             where iin.sigint_network_id = nf.network_id
               and ii.freq = nf.freq
               and sm.deleted = false
+              and network.deleted = false
               and coalesce(ii.datetime, sm.timestamp, sm.created_at) >= nf.active_from
               and coalesce(ii.datetime, sm.timestamp, sm.created_at)
                     <= coalesce(nf.active_to, current_timestamp at time zone 'utc')
@@ -1309,6 +1324,45 @@ mod tests {
             network,
             network_freq,
         }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn network_state_change_clears_last_seen_before_queued_refresh() {
+        // Regression: https://github.com/echoua/echo/issues/3440
+        let env = cleanup().await.unwrap();
+        let fixture = setup_queue_fixture(&env.dbx).await;
+        let txn = env.dbx.begin().await.unwrap();
+
+        enqueue_last_seen_for_networks(&txn, [fixture.network.id])
+            .await
+            .unwrap();
+
+        assert_eq!(
+            sigint_network_freq::Entity::find_by_id(fixture.network_freq.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap()
+                .last_seen_dt,
+            None
+        );
+        assert_eq!(
+            network_recalculation_task::Entity::find()
+                .filter(
+                    network_recalculation_task::Column::TaskKind
+                        .eq(NetworkRecalculationTaskKind::NetworkFreqLastSeen),
+                )
+                .filter(
+                    network_recalculation_task::Column::NetworkFreqId
+                        .eq(fixture.network_freq.id),
+                )
+                .count(&txn)
+                .await
+                .unwrap(),
+            1
+        );
+        txn.commit().await.unwrap();
     }
 
     async fn start_deduplicated_task(

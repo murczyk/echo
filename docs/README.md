@@ -113,7 +113,8 @@ request, so work queued during the calculation remains pending. The worker
 starts up to 100 pending recalculations per pass and stops starting new work
 after 50 seconds. It queues a final reconciliation after inbox-network
 invalidations update message assignments; broad group/AOR invalidations fan
-out only to frequencies processed during that pass.
+out to frequencies processed during that pass, and AOR invalidations also
+include non-deleted frequencies on networks currently linked to that AOR.
 The per-login AOR cache is scoped to the login's current visible group keys,
 expires after 10 minutes, and is not served while inbox-network invalidation or
 recalculation is pending. Expired entries are evicted hourly alongside the
