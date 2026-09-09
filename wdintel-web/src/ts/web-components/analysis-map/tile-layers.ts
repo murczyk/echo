@@ -4,6 +4,8 @@ import { BaseLayerId } from '../../maps/base-layers';
 export type TileLayers = Record<BaseLayerId, L.Layer>;
 
 export function getTileLayers(options?: L.TileLayerOptions): TileLayers {
+  const deltaMaxZoom = (options?.maxZoom ?? 17) + (L.Browser.retina ? 1 : 0);
+
   const openStreetMap = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 17,
     attribution:
@@ -20,16 +22,18 @@ export function getTileLayers(options?: L.TileLayerOptions): TileLayers {
   const deltaImagery = L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     {
-      maxZoom: 17,
       ...options,
+      maxZoom: deltaMaxZoom,
+      detectRetina: true,
       zIndex: 0,
     },
   );
   const deltaReference = L.tileLayer(
     'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
     {
-      maxZoom: 17,
       ...options,
+      maxZoom: deltaMaxZoom,
+      detectRetina: true,
       zIndex: 1,
     },
   );
