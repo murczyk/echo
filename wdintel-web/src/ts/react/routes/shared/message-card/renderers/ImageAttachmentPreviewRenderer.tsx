@@ -75,6 +75,19 @@ type StageSize = {
   height: number;
 };
 
+type TouchPoint = Point;
+
+type TouchGesture =
+  | { mode: 'idle' | 'swipe-candidate' }
+  | { mode: 'pan'; pointerId: number; start: TouchPoint; origin: Point }
+  | {
+      mode: 'pinch';
+      startZoom: number;
+      startPan: Point;
+      startDistance: number;
+      startMidpoint: TouchPoint;
+    };
+
 function ImagePreview({
   image,
   href,
@@ -221,6 +234,7 @@ function getFittedImageSize(imageSize: StageSize | null, stage: HTMLDivElement):
     return { width: stage.clientWidth, height: stage.clientHeight };
   }
   const fitScale = Math.min(
+    1,
     stage.clientWidth / imageSize.width,
     stage.clientHeight / imageSize.height,
   );
@@ -289,11 +303,16 @@ export function ImageAttachmentPreviewRenderer({
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const stageRef = useRef<HTMLDivElement | null>(null);
+  const imageElementRef = useRef<HTMLImageElement | null>(null);
   const copyRequestKeyRef = useRef<string | null>(null);
   const currentHrefRef = useRef(currentHref);
   const zoomRef = useRef(zoom);
   const panRef = useRef(pan);
   const dragRef = useRef<DragState | null>(null);
+  const touchPointsRef = useRef(new Map<number, TouchPoint>());
+  const touchGestureRef = useRef<TouchGesture>({ mode: 'idle' });
+  const releasedPointerIdsRef = useRef(new Set<number>());
+  const cleaningGestureRef = useRef(false);
   const pointerListenersRef = useRef<{
     move: (event: PointerEvent) => void;
     end: (event: PointerEvent) => void;
@@ -320,9 +339,30 @@ export function ImageAttachmentPreviewRenderer({
     pointerListenersRef.current = null;
   }, []);
 
-  const resetImageState = useCallback(() => {
-    removePointerListeners();
+  const cleanupImageGesture = useCallback(() => {
+    if (cleaningGestureRef.current) return;
+    cleaningGestureRef.current = true;
+    const stage = stageRef.current;
+    for (const pointerId of touchPointsRef.current.keys()) {
+      try {
+        if (stage?.hasPointerCapture(pointerId)) {
+          releasedPointerIdsRef.current.add(pointerId);
+          stage.releasePointerCapture(pointerId);
+        }
+      } catch {
+        // Capture ownership can already be gone after an interrupted gesture.
+      }
+    }
+    touchPointsRef.current.clear();
+    touchGestureRef.current = { mode: 'idle' };
     dragRef.current = null;
+    removePointerListeners();
+    stage?.dispatchEvent(new CustomEvent('attachment-preview-gesture-end', { bubbles: true }));
+    cleaningGestureRef.current = false;
+  }, [removePointerListeners]);
+
+  const resetImageState = useCallback(() => {
+    cleanupImageGesture();
     setZoom(ZOOM_MIN);
     zoomRef.current = ZOOM_MIN;
     setPan({ x: 0, y: 0 });
@@ -338,7 +378,7 @@ export function ImageAttachmentPreviewRenderer({
     setSummaryVisible(false);
     setSummaryStatus(currentImage.summary ?? null);
     copyRequestKeyRef.current = null;
-  }, [currentImage.summary, removePointerListeners]);
+  }, [cleanupImageGesture, currentImage.summary]);
 
   const resetPreviewState = useCallback(() => {
     resetImageState();
@@ -361,7 +401,6 @@ export function ImageAttachmentPreviewRenderer({
         drag.stageWidth,
         drag.stageHeight,
         zoomRef.current,
-        ZOOM_MAX,
       );
       panRef.current = nextPan;
       setPan(nextPan);
@@ -391,10 +430,14 @@ export function ImageAttachmentPreviewRenderer({
     onClose();
   };
 
-  const setStageNode = useCallback((node: HTMLDivElement | null) => {
-    stageRef.current = node;
-    setStageEl(node);
-  }, []);
+  const setStageNode = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (stageRef.current !== null && stageRef.current !== node) cleanupImageGesture();
+      stageRef.current = node;
+      setStageEl(node);
+    },
+    [cleanupImageGesture],
+  );
 
   useEffect(() => {
     currentHrefRef.current = currentHref;
@@ -436,7 +479,6 @@ export function ImageAttachmentPreviewRenderer({
             stage.clientWidth,
             stage.clientHeight,
             clampedZoom,
-            ZOOM_MAX,
           );
     panRef.current = nextPan;
     setPan(nextPan);
@@ -453,106 +495,43 @@ export function ImageAttachmentPreviewRenderer({
   useEffect(() => {
     if (stageEl === null) return;
 
-    let touchStartDist = 0;
-    let touchStartZoom = ZOOM_MIN;
-
     const handleStageWheelNative = (event: WheelEvent) => {
       if (isInteractivePreviewTarget(event.target)) return;
       event.preventDefault();
       const rect = stageEl.getBoundingClientRect();
+      const imageRect = imageElementRef.current?.getBoundingClientRect();
+      const overImage =
+        imageRect != null &&
+        event.clientX >= imageRect.left &&
+        event.clientX <= imageRect.right &&
+        event.clientY >= imageRect.top &&
+        event.clientY <= imageRect.bottom;
       setPreviewZoom(
         getNextWheelZoom(zoomRef.current, event.deltaY, event.deltaMode, rect.height),
-        {
-          x: event.clientX - (rect.left + rect.width / 2),
-          y: event.clientY - (rect.top + rect.height / 2),
-        },
+        overImage
+          ? {
+              x: event.clientX - (rect.left + rect.width / 2),
+              y: event.clientY - (rect.top + rect.height / 2),
+            }
+          : { x: 0, y: 0 },
       );
     };
 
-    const handleTouchStart = (event: TouchEvent) => {
-      if (event.touches.length === 2) {
-        const t1 = event.touches[0];
-        const t2 = event.touches[1];
-        if (!t1 || !t2) return;
-        touchStartDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-        touchStartZoom = zoomRef.current;
-      }
-    };
-
-    const handleTouchMove = (event: TouchEvent) => {
-      if (event.touches.length === 2 && touchStartDist > 0) {
-        event.preventDefault();
-        const t1 = event.touches[0];
-        const t2 = event.touches[1];
-        if (!t1 || !t2) return;
-        const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-        const rect = stageEl.getBoundingClientRect();
-        const centerPoint = {
-          x: (t1.clientX + t2.clientX) / 2 - (rect.left + rect.width / 2),
-          y: (t1.clientY + t2.clientY) / 2 - (rect.top + rect.height / 2),
-        };
-        const nextZoom = touchStartZoom * (dist / touchStartDist);
-        setPreviewZoom(nextZoom, centerPoint);
-      }
-    };
-
-    const handleTouchEnd = () => {
-      touchStartDist = 0;
-    };
-
-    let gestureStartZoom = ZOOM_MIN;
-
-    const handleGestureStart = (event: Event) => {
-      event.preventDefault();
-      gestureStartZoom = zoomRef.current;
-    };
-
-    const handleGestureChange = (event: Event) => {
-      event.preventDefault();
-      const gestureEvent = event as unknown as {
-        scale: number;
-        clientX?: number;
-        clientY?: number;
-      };
-      if (typeof gestureEvent.scale === 'number') {
-        const rect = stageEl.getBoundingClientRect();
-        const centerPoint = {
-          x: (gestureEvent.clientX ?? rect.left + rect.width / 2) - (rect.left + rect.width / 2),
-          y: (gestureEvent.clientY ?? rect.top + rect.height / 2) - (rect.top + rect.height / 2),
-        };
-        const nextZoom = gestureStartZoom * gestureEvent.scale;
-        setPreviewZoom(nextZoom, centerPoint);
-      }
-    };
-
-    const handleGestureEnd = (event: Event) => {
-      event.preventDefault();
-    };
-
     stageEl.addEventListener('wheel', handleStageWheelNative, { passive: false });
-    stageEl.addEventListener('gesturestart', handleGestureStart, { passive: false });
-    stageEl.addEventListener('gesturechange', handleGestureChange, { passive: false });
-    stageEl.addEventListener('gestureend', handleGestureEnd, { passive: false });
-    stageEl.addEventListener('touchstart', handleTouchStart, { passive: true });
-    stageEl.addEventListener('touchmove', handleTouchMove, { passive: false });
-    stageEl.addEventListener('touchend', handleTouchEnd, { passive: true });
-    stageEl.addEventListener('touchcancel', handleTouchEnd, { passive: true });
 
     return () => {
       stageEl.removeEventListener('wheel', handleStageWheelNative);
-      stageEl.removeEventListener('gesturestart', handleGestureStart);
-      stageEl.removeEventListener('gesturechange', handleGestureChange);
-      stageEl.removeEventListener('gestureend', handleGestureEnd);
-      stageEl.removeEventListener('touchstart', handleTouchStart);
-      stageEl.removeEventListener('touchmove', handleTouchMove);
-      stageEl.removeEventListener('touchend', handleTouchEnd);
-      stageEl.removeEventListener('touchcancel', handleTouchEnd);
     };
   }, [imageSize, stageEl]);
 
-  useEffect(() => removePointerListeners, [removePointerListeners]);
+  useEffect(() => cleanupImageGesture, [cleanupImageGesture]);
+
+  useEffect(() => {
+    if (editor.isLocked) cleanupImageGesture();
+  }, [cleanupImageGesture, editor.isLocked]);
 
   const handleImageLoad = (image: HTMLImageElement) => {
+    imageElementRef.current = image;
     setImageSize({ width: image.naturalWidth, height: image.naturalHeight });
     setFailedHref(null);
     setLoadedImage(image);
@@ -560,6 +539,7 @@ export function ImageAttachmentPreviewRenderer({
   };
 
   const handleImageError = () => {
+    imageElementRef.current = null;
     setFailedHref(currentHref);
     setLoadedImage(null);
   };
@@ -598,26 +578,143 @@ export function ImageAttachmentPreviewRenderer({
     [onReportVisibleChange],
   );
 
-  const handleDoubleClick = (event: SyntheticEvent<HTMLDivElement>) => {
-    const mouseEvent = event as unknown as MouseEvent;
-    if (isInteractivePreviewTarget(mouseEvent.target)) return;
-    const stage = stageRef.current;
-    if (!stage) return;
-    const rect = stage.getBoundingClientRect();
-    const cursorPoint = {
-      x: mouseEvent.clientX - (rect.left + rect.width / 2),
-      y: mouseEvent.clientY - (rect.top + rect.height / 2),
-    };
+  const getPrimaryPointerRegion = (event: PointerEvent) => {
+    if (isInteractivePreviewTarget(event.target)) return 'protected' as const;
+    const imageElement = imageElementRef.current;
+    if (imageElement === null || failedHref === currentHref) return 'background' as const;
+    const rect = imageElement.getBoundingClientRect();
+    return event.clientX >= rect.left &&
+      event.clientX <= rect.right &&
+      event.clientY >= rect.top &&
+      event.clientY <= rect.bottom
+      ? ('content' as const)
+      : ('background' as const);
+  };
 
+  const handlePrimaryClick = (
+    event: MouseEvent,
+    region: 'background' | 'content' | 'protected',
+  ) => {
+    if (editor.isLocked) return;
+    if (region === 'protected') return;
+    if (region === 'background') {
+      closeDialog();
+      return;
+    }
     if (zoomRef.current > ZOOM_MIN) {
-      setPreviewZoom(ZOOM_MIN, cursorPoint);
+      setPreviewZoom(ZOOM_MIN);
     } else {
-      setPreviewZoom(200, cursorPoint);
+      setZoom(200);
+      zoomRef.current = 200;
+      setPan({ x: 0, y: 0 });
+      panRef.current = { x: 0, y: 0 };
     }
   };
 
+  const getStagePoint = (event: ReactPointerEvent<HTMLDivElement>): TouchPoint => {
+    const rect = stageRef.current?.getBoundingClientRect();
+    return {
+      x: event.clientX - ((rect?.left ?? 0) + (rect?.width ?? 0) / 2),
+      y: event.clientY - ((rect?.top ?? 0) + (rect?.height ?? 0) / 2),
+    };
+  };
+
+  const clampPreviewPan = (point: Point, nextZoom = zoomRef.current) => {
+    const stage = stageRef.current;
+    if (stage === null) return point;
+    const baseSize = getFittedImageSize(imageSize, stage);
+    return clampPan(
+      point,
+      baseSize.width,
+      baseSize.height,
+      stage.clientWidth,
+      stage.clientHeight,
+      nextZoom,
+    );
+  };
+
+  const setPreviewTransform = (nextZoom: number, nextPan: Point) => {
+    const clampedZoom = clamp(nextZoom, ZOOM_MIN, ZOOM_MAX);
+    const clampedPan =
+      clampedZoom === ZOOM_MIN ? { x: 0, y: 0 } : clampPreviewPan(nextPan, clampedZoom);
+    zoomRef.current = clampedZoom;
+    panRef.current = clampedPan;
+    setZoom(clampedZoom);
+    setPan(clampedPan);
+  };
+
+  useEffect(() => {
+    if (stageEl === null || imageSize === null) return;
+    const clampAfterLayoutChange = () => {
+      if (zoomRef.current <= ZOOM_MIN) return;
+      setPreviewTransform(zoomRef.current, panRef.current);
+    };
+    const observer =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(clampAfterLayoutChange);
+    observer?.observe(stageEl);
+    window.addEventListener('resize', clampAfterLayoutChange);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', clampAfterLayoutChange);
+    };
+  }, [imageSize, stageEl]);
+
+  const beginPinch = () => {
+    const [first, second] = Array.from(touchPointsRef.current.values());
+    if (first == null || second == null) return;
+    const midpoint = { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 };
+    touchGestureRef.current = {
+      mode: 'pinch',
+      startZoom: zoomRef.current,
+      startPan: panRef.current,
+      startDistance: Math.hypot(first.x - second.x, first.y - second.y),
+      startMidpoint: midpoint,
+    };
+    dragRef.current = null;
+    removePointerListeners();
+    stageRef.current?.dispatchEvent(new CustomEvent('attachment-preview-pinch', { bubbles: true }));
+  };
+
+  const updateTouchGesture = () => {
+    const gesture = touchGestureRef.current;
+    if (gesture.mode !== 'pinch') return;
+    const [first, second] = Array.from(touchPointsRef.current.values());
+    if (first == null || second == null || gesture.startDistance <= 0) return;
+    const midpoint = { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 };
+    const nextZoom = clamp(
+      gesture.startZoom *
+        (Math.hypot(first.x - second.x, first.y - second.y) / gesture.startDistance),
+      ZOOM_MIN,
+      ZOOM_MAX,
+    );
+    const ratio = nextZoom / gesture.startZoom;
+    setPreviewTransform(nextZoom, {
+      x: midpoint.x - ratio * (gesture.startMidpoint.x - gesture.startPan.x),
+      y: midpoint.y - ratio * (gesture.startMidpoint.y - gesture.startPan.y),
+    });
+  };
+
   const startPan = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (editor.isLocked) return;
     if (isInteractivePreviewTarget(event.target)) return;
+    if (event.pointerType === 'touch') {
+      releasedPointerIdsRef.current.delete(event.pointerId);
+      touchPointsRef.current.set(event.pointerId, getStagePoint(event));
+      if (touchPointsRef.current.size === 2) {
+        beginPinch();
+      } else if (zoomRef.current > ZOOM_MIN) {
+        touchGestureRef.current = {
+          mode: 'pan',
+          pointerId: event.pointerId,
+          start: getStagePoint(event),
+          origin: panRef.current,
+        };
+      } else {
+        touchGestureRef.current = { mode: 'swipe-candidate' };
+      }
+      (event.currentTarget as HTMLDivElement).setPointerCapture(event.pointerId);
+      return;
+    }
     if (zoom === ZOOM_MIN) return;
     const stage = stageRef.current;
     if (stage === null) return;
@@ -636,16 +733,73 @@ export function ImageAttachmentPreviewRenderer({
     (event.currentTarget as HTMLDivElement).setPointerCapture(event.pointerId);
   };
 
+  const movePan = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== 'touch') return;
+    if (editor.isLocked) return;
+    if (!touchPointsRef.current.has(event.pointerId)) return;
+    event.preventDefault();
+    const point = getStagePoint(event);
+    touchPointsRef.current.set(event.pointerId, point);
+    const gesture = touchGestureRef.current;
+    if (gesture.mode === 'pinch') {
+      updateTouchGesture();
+      return;
+    }
+    if (gesture.mode === 'pan' && gesture.pointerId === event.pointerId) {
+      setPreviewTransform(zoomRef.current, {
+        x: gesture.origin.x + point.x - gesture.start.x,
+        y: gesture.origin.y + point.y - gesture.start.y,
+      });
+    }
+  };
+
   const stopPan = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === 'touch') {
+      touchPointsRef.current.delete(event.pointerId);
+      const remaining = Array.from(touchPointsRef.current.entries());
+      if (remaining.length === 1) {
+        const [pointerId, point] = remaining[0]!;
+        touchGestureRef.current = {
+          mode: 'pan',
+          pointerId,
+          start: point,
+          origin: panRef.current,
+        };
+      } else if (remaining.length === 0) {
+        touchGestureRef.current = { mode: 'idle' };
+        stageRef.current?.dispatchEvent(
+          new CustomEvent('attachment-preview-gesture-end', { bubbles: true }),
+        );
+      }
+      try {
+        releasedPointerIdsRef.current.add(event.pointerId);
+        (event.currentTarget as HTMLDivElement).releasePointerCapture(event.pointerId);
+      } catch {
+        // Pointer capture may already have been released by the browser.
+      }
+      return;
+    }
     const drag = dragRef.current;
     if (drag === null || drag.pointerId !== event.pointerId) return;
     dragRef.current = null;
     removePointerListeners();
     try {
+      releasedPointerIdsRef.current.add(event.pointerId);
       (event.currentTarget as HTMLDivElement).releasePointerCapture(event.pointerId);
     } catch {
       // Ignore pointer-capture teardown failures.
     }
+  };
+
+  const cancelPan = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== 'touch' && event.pointerType !== 'mouse') return;
+    cleanupImageGesture();
+  };
+
+  const lostPointerCapture = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (releasedPointerIdsRef.current.delete(event.pointerId)) return;
+    if (cleaningGestureRef.current) return;
+    cancelPan(event);
   };
 
   if (editor.session !== null) {
@@ -671,9 +825,14 @@ export function ImageAttachmentPreviewRenderer({
       kind="image"
       cursor={zoom > ZOOM_MIN ? 'grab' : 'default'}
       onPointerDown={startPan}
+      onPointerMove={movePan}
       onPointerUp={stopPan}
-      onPointerLeave={stopPan}
-      onDoubleClick={handleDoubleClick}
+      onPointerCancel={cancelPan}
+      onLostPointerCapture={lostPointerCapture}
+      onPrimaryClick={handlePrimaryClick}
+      getPrimaryPointerRegion={getPrimaryPointerRegion}
+      activationEnabled={!editor.isLocked}
+      activationKey={currentPreviewKey}
     >
       <ImagePreview
         image={currentImage}

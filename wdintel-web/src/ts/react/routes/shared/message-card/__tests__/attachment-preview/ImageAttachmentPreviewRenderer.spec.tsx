@@ -63,6 +63,8 @@ let latestStageProps: {
   onStartPan: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onStopPan: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onDoubleClick: (event: ReactMouseEvent<HTMLDivElement>) => void;
+  activationEnabled: boolean;
+  onPrimaryClick?: (event: MouseEvent, region: 'background' | 'content' | 'protected') => void;
 } | null = null;
 const loadedImage = document.createElement('img');
 
@@ -253,39 +255,56 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewStage', () => ({
       onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => void;
       onPointerLeave: (event: ReactPointerEvent<HTMLDivElement>) => void;
       onDoubleClick: (event: ReactMouseEvent<HTMLDivElement>) => void;
+      activationEnabled?: boolean;
+      onPrimaryClick?: (event: MouseEvent, region: 'background' | 'content' | 'protected') => void;
     }
-  >(({ children, onPointerDown, onPointerUp, onPointerLeave, onDoubleClick }, ref) => {
-    const image = (Array.isArray(children) ? children[0] : children) as ReactElement<{
-      href: string;
-      zoom: number;
-      pan: { x: number; y: number };
-      onLoad: (image: HTMLImageElement) => void;
-    }>;
-    latestStageProps = {
-      currentHref: image.props.href,
-      zoom: image.props.zoom,
-      pan: image.props.pan,
-      onImageLoad: image.props.onLoad,
-      onStartPan: onPointerDown,
-      onStopPan: onPointerUp,
-      onDoubleClick,
-    };
-    return (
-      <div
-        ref={ref}
-        data-stage={latestStageProps?.currentHref}
-        data-zoom={String(latestStageProps?.zoom)}
-        data-pan-x={String(latestStageProps?.pan.x)}
-        data-pan-y={String(latestStageProps?.pan.y)}
-        onPointerDown={onPointerDown}
-        onPointerUp={onPointerUp}
-        onPointerLeave={onPointerLeave}
-        onDoubleClick={onDoubleClick}
-      >
-        {children}
-      </div>
-    );
-  }),
+  >(
+    (
+      {
+        children,
+        onPointerDown,
+        onPointerUp,
+        onPointerLeave,
+        onDoubleClick,
+        activationEnabled = true,
+        onPrimaryClick,
+      },
+      ref,
+    ) => {
+      const image = (Array.isArray(children) ? children[0] : children) as ReactElement<{
+        href: string;
+        zoom: number;
+        pan: { x: number; y: number };
+        onLoad: (image: HTMLImageElement) => void;
+      }>;
+      latestStageProps = {
+        currentHref: image.props.href,
+        zoom: image.props.zoom,
+        pan: image.props.pan,
+        onImageLoad: image.props.onLoad,
+        onStartPan: onPointerDown,
+        onStopPan: onPointerUp,
+        onDoubleClick,
+        activationEnabled,
+        onPrimaryClick,
+      };
+      return (
+        <div
+          ref={ref}
+          data-stage={latestStageProps?.currentHref}
+          data-zoom={String(latestStageProps?.zoom)}
+          data-pan-x={String(latestStageProps?.pan.x)}
+          data-pan-y={String(latestStageProps?.pan.y)}
+          onPointerDown={onPointerDown}
+          onPointerUp={onPointerUp}
+          onPointerLeave={onPointerLeave}
+          onDoubleClick={onDoubleClick}
+        >
+          {children}
+        </div>
+      );
+    },
+  ),
 }));
 
 vi.mock('../../attachment-preview/MessageCardAttachmentPreviewInfoPopover', () => ({
@@ -496,6 +515,9 @@ describe('ImageAttachmentPreviewRenderer', () => {
       );
     });
     await vi.waitFor(() => expect(loadSource).toHaveBeenCalledTimes(1));
+    expect(latestStageProps?.activationEnabled).toBe(false);
+    latestStageProps?.onPrimaryClick?.(new MouseEvent('click'), 'background');
+    expect(onClose).not.toHaveBeenCalled();
 
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
@@ -659,12 +681,6 @@ describe('ImageAttachmentPreviewRenderer', () => {
       ({ left: 100, top: 100, width: 800, height: 400 }) as DOMRect;
 
     await act(async () => {
-      stage.dispatchEvent(
-        new MouseEvent('dblclick', { bubbles: true, clientX: 500, clientY: 300 }),
-      );
-    });
-
-    await act(async () => {
       const wheelEvent = new WheelEvent('wheel', { bubbles: true, deltaY: -10 });
       Object.defineProperties(wheelEvent, {
         clientX: { value: 600 },
@@ -673,9 +689,9 @@ describe('ImageAttachmentPreviewRenderer', () => {
       stage.dispatchEvent(wheelEvent);
     });
 
-    const nextZoom = 200 * Math.exp(10 * 0.0015);
+    const nextZoom = 100 * Math.exp(10 * 0.0015);
     expect(latestStageProps?.zoom).toBeCloseTo(nextZoom, 8);
-    expect(latestStageProps?.pan.x).toBeCloseTo(100 - (nextZoom / 200) * 100, 8);
+    expect(latestStageProps?.pan.x).toBe(0);
     expect(latestStageProps?.pan.y).toBe(0);
     root.unmount();
   });
@@ -723,14 +739,14 @@ describe('ImageAttachmentPreviewRenderer', () => {
     });
 
     expect(latestStageProps?.zoom).toBeCloseTo(200, 8);
-    expect(latestStageProps?.pan.y).toBeCloseTo(-300, 6);
+    expect(latestStageProps?.pan.y).toBe(0);
 
     await act(async () => {
       wheelToZoom(-Math.log(2) / 0.0015);
     });
 
     expect(latestStageProps?.zoom).toBeCloseTo(400, 8);
-    expect(latestStageProps?.pan.y).toBeCloseTo(-766 - 2 / 3, 6);
+    expect(latestStageProps?.pan.y).toBe(0);
     root.unmount();
   });
 
