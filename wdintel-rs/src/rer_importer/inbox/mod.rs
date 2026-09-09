@@ -7244,7 +7244,7 @@ mod tests {
 
     #[serial]
     #[tokio::test]
-    async fn test_messages_by_id_deduplicates_flat_tags_after_filtering() {
+    async fn test_messages_by_id_deduplicates_flat_tags() {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let tag = find_test_bpla_tag(&env.dbx).await.unwrap();
@@ -7263,10 +7263,56 @@ mod tests {
         )
         .await
         .unwrap();
-        let second_tag = mk_tag(
+        // ECHO-3073: keep attribution details without duplicate flat tag IDs.
+        let message = seed_message_with_tags(
+            &env,
+            &datasource_group,
+            &tag,
+            &[login.clone(), peer_login],
+        )
+        .await
+        .unwrap();
+        let logins =
+            crate::users::get_organism_login_ids_by_id(&env.dbx, &login.id)
+                .await
+                .unwrap();
+
+        let messages = messages_by_id_bl(
+            &login.id,
+            &logins,
+            &env,
+            &[message.id],
+            &messages_by_id_default_req(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].1.tags, Some(vec![tag.id]));
+        let inbox_tags = messages[0]
+            .1
+            .inbox_tags
+            .as_ref()
+            .expect("inbox tags must be present");
+        assert_eq!(inbox_tags.len(), 2);
+        assert!(inbox_tags.iter().all(|entry| entry.tag_id == tag.id));
+        assert!(inbox_tags
+            .iter()
+            .all(|entry| entry.organism_id == login.organism_id));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_messages_by_id_deduplicates_flat_tags_after_filtering() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let tag = find_test_bpla_tag(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let shared_tag = mk_tag(
             &env.dbx,
             tag::ActiveModel {
-                label: Set(format!("second-tag-{}", Uuid::new_v4())),
+                label: Set(format!("shared-tag-{}", Uuid::new_v4())),
                 ..Default::default()
             },
         )
@@ -7290,19 +7336,30 @@ mod tests {
         )
         .await
         .unwrap();
+        let threshold_tag = mk_tag(
+            &env.dbx,
+            tag::ActiveModel {
+                label: Set(format!("threshold-tag-{}", Uuid::new_v4())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
 
         let message = seed_message_with_tags(
             &env,
             &datasource_group,
             &tag,
-            &[login.clone(), peer_login.clone()],
+            std::slice::from_ref(&login),
         )
         .await
         .unwrap();
         for (tag_id, confidence, tag_model) in [
-            (second_tag.id, 1.0, None),
+            (shared_tag.id, 1.0, None),
+            (shared_tag.id, 1.0, Some("test-model")),
             (model_only_tag.id, 1.0, Some("test-model")),
             (low_confidence_tag.id, 0.6, None),
+            (threshold_tag.id, TAG_MINIMUM_CONFIDENCE, None),
         ] {
             sigint_inbox_item_tag::ActiveModel {
                 sigint_inbox_item_id: Set(message.id),
@@ -7338,10 +7395,15 @@ mod tests {
             .as_ref()
             .expect("flat tags must be present");
         assert_eq!(flat_tags.iter().unique().count(), flat_tags.len());
-        assert!(flat_tags.contains(&tag.id));
-        assert!(flat_tags.contains(&second_tag.id));
-        assert!(flat_tags.contains(&model_only_tag.id));
-        assert!(!flat_tags.contains(&low_confidence_tag.id));
+        assert_eq!(
+            flat_tags.iter().copied().collect::<BTreeSet<_>>(),
+            BTreeSet::from([
+                tag.id,
+                shared_tag.id,
+                model_only_tag.id,
+                threshold_tag.id,
+            ])
+        );
         let inbox_tags = messages[0]
             .1
             .inbox_tags
@@ -7350,15 +7412,13 @@ mod tests {
         assert_eq!(
             inbox_tags
                 .iter()
-                .filter(|entry| entry.tag_id == tag.id)
+                .filter(|entry| entry.tag_id == shared_tag.id)
                 .count(),
             2
         );
-        let tag_entry = inbox_tags
+        assert!(!inbox_tags
             .iter()
-            .find(|t| t.login.as_deref() == Some(login.login.as_str()))
-            .expect("tag by login must be present");
-        assert_eq!(tag_entry.organism_id, login.organism_id);
+            .any(|entry| entry.tag_id == low_confidence_tag.id));
 
         // ECHO-3073: retain manual attribution records while hiding model rows.
         let without_model_tags = messages_by_id_bl(
@@ -7378,7 +7438,7 @@ mod tests {
         assert_eq!(filtered_tags.iter().unique().count(), filtered_tags.len());
         assert_eq!(
             filtered_tags.iter().copied().collect::<BTreeSet<_>>(),
-            BTreeSet::from([tag.id, second_tag.id])
+            BTreeSet::from([tag.id, shared_tag.id, threshold_tag.id])
         );
         let filtered_inbox_tags = filtered.inbox_tags.as_ref().unwrap();
         assert_eq!(filtered_inbox_tags.len(), 3);
