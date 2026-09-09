@@ -1944,6 +1944,13 @@ pub async fn submit_upsert_inbox_item(
             message, existing
         );
     }
+    if existing_message {
+        crate::rer_importer::inbox::invalidate_message_network_frequency_last_seen(
+            txn, id,
+        )
+        .await
+        .c(h!())?;
+    }
 
     let submitted_coords =
         parse_submitted_coords(message.coords.as_deref()).await;

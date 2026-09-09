@@ -1952,6 +1952,19 @@ pub(crate) async fn invalidate_message_network_frequency_last_seen<C>(
 where
     C: ConnectionTrait,
 {
+    invalidate_messages_network_frequency_last_seen(txn, &[message_id]).await
+}
+
+pub(crate) async fn invalidate_messages_network_frequency_last_seen<C>(
+    txn: &C,
+    message_ids: &[i64],
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    if message_ids.is_empty() {
+        return Ok(());
+    }
     txn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
@@ -1962,7 +1975,7 @@ where
               on signal_message.id = inbox_item.id
             join sigint_inbox_item_network as network_link
               on network_link.sigint_inbox_item_id = inbox_item.id
-            where signal_message.id = $1
+            where signal_message.id = any($1::bigint[])
               and network_freq.network_id = network_link.sigint_network_id
               and network_freq.freq = inbox_item.freq
               and network_freq.deleted = false
@@ -1972,7 +1985,7 @@ where
                   signal_message.created_at
               )
         "#,
-        [message_id.into()],
+        [message_ids.to_vec().into()],
     ))
     .await
     .c(h!())?;
@@ -5510,6 +5523,98 @@ mod tests {
                 .unwrap();
             assert_eq!(inbox_item.datetime, Some(expected));
         }
+    }
+
+    // Regression for ECHO-3207: edits invalidate pre-update network activity.
+    #[serial]
+    #[tokio::test]
+    async fn test_submit_upsert_invalidates_old_frequency_last_seen() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let timestamp = Utc::now().naive_utc() - Duration::hours(1);
+        let old_freq = "146.4500";
+        let new_freq = "147.4500";
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                timestamp: Set(Some(timestamp)),
+                created_at: Set(timestamp),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inbox_item = mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                freq: Set(Some(old_freq.to_string())),
+                datetime: Set(Some(timestamp)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let network_freq = mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set(old_freq.to_string()),
+                active_from: Set(timestamp - Duration::days(1)),
+                last_seen_dt: Set(Some(timestamp)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item_network(
+            &env.dbx,
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(inbox_item.id),
+                sigint_network_id: Set(network.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let logins = vec![login.id];
+        let txn = env.dbx.begin().await.unwrap();
+
+        submit_upsert_inbox_item(
+            env.settlements.clone(),
+            &txn,
+            message.id,
+            &InboxMessage::from(InboxInsertPayload {
+                text: "frequency edit".to_string(),
+                freq: Some(new_freq.to_string()),
+                ..Default::default()
+            }),
+            &login.id,
+            &logins,
+            InboxLocationSubmitMode::PreserveTyped,
+            true,
+            false,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let network_freq =
+            sigint_network_freq::Entity::find_by_id(network_freq.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(inbox_item.freq.as_deref(), Some(new_freq));
+        assert_eq!(network_freq.last_seen_dt, None);
     }
 
     #[serial]
