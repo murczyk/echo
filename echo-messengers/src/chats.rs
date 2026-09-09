@@ -1,9 +1,10 @@
 use crate::config::{
     Config, CHAT_ATTACHMENTS_TOTAL_MAX_BYTES, CHAT_ATTACHMENT_MAX_BYTES,
-    CHAT_ATTACHMENT_MAX_COUNT, CHAT_LIST_PAGE_SIZE, CHAT_MESSAGE_PAGE_SIZE,
-    CHAT_UNREAD_KEY_TTL_DAYS, CHAT_WEBHOOK_BATCH_SIZE,
-    CHAT_WEBHOOK_CLEANUP_BATCH_SIZE, CHAT_WEBHOOK_HISTORY_RETENTION_DAYS,
-    CHAT_WEBHOOK_MAX_ATTEMPTS, CHAT_WEBHOOK_REQUEST_TIMEOUT_SECS,
+    CHAT_ATTACHMENT_MAX_COUNT, CHAT_CENTRAL_BASELINE_MIGRATION,
+    CHAT_LIST_PAGE_SIZE, CHAT_MESSAGE_PAGE_SIZE, CHAT_UNREAD_KEY_TTL_DAYS,
+    CHAT_WEBHOOK_BATCH_SIZE, CHAT_WEBHOOK_CLEANUP_BATCH_SIZE,
+    CHAT_WEBHOOK_HISTORY_RETENTION_DAYS, CHAT_WEBHOOK_MAX_ATTEMPTS,
+    CHAT_WEBHOOK_REQUEST_TIMEOUT_SECS,
 };
 use crate::error::{
     bad_request, conflict, not_found, service_unavailable, ShortContext,
@@ -38,10 +39,6 @@ const ACCOUNT_COLORS: [&str; 12] = [
     "#14b8a6", "#ec4899", "#6366f1", "#84cc16", "#06b6d4", "#fb7185",
 ];
 const CHAT_ADMIN_MIGRATION: &str = "m20260828_150352_echo_chat_admin";
-// Applied only by the central wdintel-rs migrator. GOI nodes share their
-// database with goi-echo-worker, whose own `seaql_migrations` table never
-// contains it, and where the chat admin schema is owned by ensure_schema.
-const CENTRAL_BASELINE_MIGRATION: &str = "m20220101_000001_create_table";
 
 pub async fn ensure_schema(db: &DatabaseConnection) -> anyhow::Result<()> {
     if central_chat_admin_migration_pending(db).await.c(h!())? {
@@ -63,7 +60,7 @@ async fn central_chat_admin_migration_pending(
     if !table_exists(db, "seaql_migrations").await.c(h!())? {
         return Ok(false);
     }
-    if !migration_applied(db, CENTRAL_BASELINE_MIGRATION)
+    if !migration_applied(db, CHAT_CENTRAL_BASELINE_MIGRATION)
         .await
         .c(h!())?
     {

@@ -52,6 +52,11 @@ pub const CHAT_LIST_PAGE_SIZE: i64 = 100;
 pub const CHAT_ATTACHMENT_MAX_BYTES: usize = 25 * 1024 * 1024;
 pub const CHAT_ATTACHMENT_MAX_COUNT: usize = 10;
 pub const CHAT_ATTACHMENTS_TOTAL_MAX_BYTES: usize = 100 * 1024 * 1024;
+// Applied only by the central wdintel-rs migrator. GOI nodes share their
+// database with goi-echo-worker, whose own `seaql_migrations` table never
+// contains it, and where the chat admin schema is owned by ensure_schema.
+pub const CHAT_CENTRAL_BASELINE_MIGRATION: &str =
+    "m20220101_000001_create_table";
 const DEFAULT_PG_HOST: &str = "localhost";
 const DEFAULT_PG_PORT: u16 = 5432;
 const DEFAULT_PG_USER: &str = "wd";
