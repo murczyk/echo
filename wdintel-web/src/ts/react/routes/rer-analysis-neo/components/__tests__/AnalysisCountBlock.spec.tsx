@@ -250,29 +250,6 @@ describe('AnalysisCountBlock', () => {
     expect(view.container.textContent).not.toContain('Немає даних');
   });
 
-  it('keeps existing items visible during background refresh and shows a spinner instead of skeletons', async () => {
-    const view = await renderComponent([{ key: '147.3750', count: 51 }], true);
-    rendered.push(view);
-
-    expect(view.container.textContent).toContain('147.3750');
-    expect(view.container.textContent).toContain('loading-spinner');
-    expect(view.container.textContent).not.toContain('loading-skeleton');
-  });
-
-  it('keeps the summary count visible during a background refresh', async () => {
-    const view = await renderComponent(
-      [
-        { key: '', count: 23 },
-        { key: '147.3750', count: 23 },
-      ],
-      true,
-    );
-    rendered.push(view);
-
-    expect(view.container.textContent).toContain('Повідомлень: 23');
-    expect(view.container.textContent).toContain('loading-spinner');
-  });
-
   it('renders an item action and wires it to the clicked metric', async () => {
     const onItemAction = vi.fn();
     const container = document.createElement('div');

@@ -27,6 +27,14 @@ See `.github/skills/test-scope-policy/SKILL.md` and
 `docs/frontend/react-behavior-contracts/README.md` for the contributor decision
 tree and migration rules.
 
+React Vitest specs under `src/ts/react` belong in the nearest production-owned
+`__tests__` directory, with exactly one `__tests__` path segment. Do not accept
+recovery, characterization, nested-test, or temporary holding paths. The five
+legacy exceptions are defined only in
+`wdintel-web/scripts/react-test-packing-exceptions.mjs`; new exceptions are
+prohibited. Use descriptive names for collisions and preserve resolved imports
+and `vi.mock` targets when relocating tests. Playwright remains in `tests/e2e`.
+
 ## Query performance
 
 Review database access using [QUERY_PERF.md](QUERY_PERF.md). Require

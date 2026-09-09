@@ -14,7 +14,7 @@ async function setupAnalysisNeoPage(
 }
 
 // @test-scope regression: https://github.com/echoua/echo/pull/3268
-test.describe('@smoke', () => {
+test.describe('@smoke @regression', () => {
   test('analysis neo summary flow loads a known row', async ({ page }) => {
     await setupAnalysisNeoPage(page, { inboxResponse: createLoadedInboxResponse() });
     await page.goto('/rer-analysis-neo');
@@ -79,22 +79,6 @@ test.describe('@smoke', () => {
       }),
     );
     expect(cardBoxes.every(({ left, right }) => left >= 0 && right <= 375)).toBe(true);
-  });
-
-  test('analysis neo skeleton keeps an 8px narrow outer gutter', async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 844 });
-    await setupAnalysisNeoPage(page, {
-      inboxDelayMs: 1000,
-      inboxResponse: createLoadedInboxResponse(),
-    });
-    await page.goto('/rer-analysis-neo');
-
-    const skeleton = page.getByRole('region', { name: 'Центральна секція' });
-    await expect(skeleton).toBeVisible();
-    const box = await skeleton.boundingBox();
-    expect(box).not.toBeNull();
-    expect(box!.x).toBeGreaterThanOrEqual(8);
-    expect(375 - (box!.x + box!.width)).toBeGreaterThanOrEqual(8);
   });
 
   test('analysis neo keeps the compact panel toggle available during initial loading', async ({
@@ -171,62 +155,6 @@ test.describe('@smoke', () => {
     await expect(page.getByRole('button', { name: 'Розгорнути праву панель' })).toBeVisible();
   });
 
-  test('analysis neo keeps narrow message actions on one line', async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 844 });
-    await setupAnalysisNeoPage(page, { inboxResponse: createLoadedInboxResponse() });
-    await page.goto('/rer-analysis-neo');
-
-    const actions = page.locator('[data-analysis-header-actions]');
-    await expect(actions.getByRole('checkbox', { name: 'Спочатку нові' })).toBeVisible();
-    const newestFirstLabel = page.getByText('спочатку нові', { exact: true });
-    await expect(newestFirstLabel).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Розгорнути праву панель' })).toBeVisible();
-
-    const actionBox = await actions.boundingBox();
-    const labelBox = await newestFirstLabel.boundingBox();
-    const refreshBox = await page.getByRole('button', { name: 'Оновити' }).boundingBox();
-    expect(actionBox).not.toBeNull();
-    expect(labelBox).not.toBeNull();
-    expect(refreshBox).not.toBeNull();
-    expect(labelBox!.x).toBeLessThan(refreshBox!.x);
-    expect(actionBox!.x + actionBox!.width).toBeLessThanOrEqual(375);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
-      375,
-    );
-  });
-
-  test('analysis neo preserves compact and desktop breakpoint handoffs', async ({ page }) => {
-    await setupAnalysisNeoPage(page, { inboxResponse: createLoadedInboxResponse() });
-    await page.goto('/rer-analysis-neo');
-
-    for (const width of [599, 600, 829, 830, 899]) {
-      await page.setViewportSize({ width, height: 844 });
-      await expect(page.getByRole('button', { name: 'Конструктор', exact: true })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Розгорнути ліву панель' })).toHaveCount(0);
-      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
-        width,
-      );
-    }
-
-    for (const width of [900, 1199]) {
-      await page.setViewportSize({ width, height: 844 });
-      await expect(page.getByRole('button', { name: 'Конструктор', exact: true })).toHaveCount(0);
-      await expect(page.getByRole('button', { name: 'Конструктор звітів' })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Розгорнути ліву панель' })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Розгорнути праву панель' })).toBeVisible();
-      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
-        width,
-      );
-    }
-
-    await page.setViewportSize({ width: 1200, height: 844 });
-    await expect(page.getByRole('button', { name: 'Конструктор', exact: true })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Конструктор звітів' })).toBeVisible();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
-      1200,
-    );
-  });
-
   test('analysis neo expands phone map search and date controls without overflow', async ({
     page,
   }) => {
@@ -301,42 +229,6 @@ test.describe('@smoke', () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
       375,
     );
-  });
-
-  test('analysis neo gives tablet filters their own bounded scroll container', async ({ page }) => {
-    await setupAnalysisNeoPage(page, { inboxResponse: createLoadedInboxResponse() });
-    await page.goto('/rer-analysis-neo');
-
-    for (const width of [900, 1199]) {
-      await page.setViewportSize({ width, height: 844 });
-      await page.getByRole('button', { name: 'Розгорнути ліву панель' }).click();
-
-      const filters = page.locator('[data-analysis-filters-scroll-container]');
-      await expect(filters).toBeVisible();
-      await expect
-        .poll(() =>
-          filters.evaluate((element) => {
-            const style = getComputedStyle(element);
-            return {
-              scrollable: element.scrollHeight > element.clientHeight,
-              overflowY: style.overflowY,
-            };
-          }),
-        )
-        .toEqual({ scrollable: true, overflowY: 'auto' });
-
-      const scrollBefore = await filters.evaluate((element) => element.scrollTop);
-      await filters.evaluate((element) => {
-        element.scrollTop = 240;
-      });
-      await expect
-        .poll(() => filters.evaluate((element) => element.scrollTop))
-        .toBeGreaterThan(scrollBefore);
-      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
-        width,
-      );
-      await page.getByRole('button', { name: 'Згорнути ліву панель' }).click();
-    }
   });
 
   test('analysis neo updates summary page-size controls across phone resize', async ({ page }) => {

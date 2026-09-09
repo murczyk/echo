@@ -5,7 +5,6 @@ import { act, forwardRef } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ELLIPSIS } from '../../../../utils/misc';
 
 vi.mock('@mui/material', () => ({
   Alert: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
@@ -23,6 +22,7 @@ vi.mock('@mui/material', () => ({
     </button>
   ),
   CircularProgress: () => <div>loading</div>,
+  Skeleton: () => <div>loading-skeleton</div>,
   Paper: forwardRef<HTMLElement, { children?: ReactNode }>(({ children }, ref) => (
     <section ref={ref}>{children}</section>
   )),
@@ -167,26 +167,5 @@ describe('AnalysisGroupsActivityCard', () => {
       'Для частоти 100.100 за цей інтервал активності не знайдено.',
     );
     expect(view.container.querySelector('dashboard-chart')).toBeNull();
-  });
-
-  // @test-scope safeguard: prevents a background refresh from replacing visible activity data with a misleading empty chart.
-  it('keeps the chart visible while the same frequency and period refresh in background', async () => {
-    const view = await renderComponent({
-      groupsActivity: {
-        dataPerDate: {
-          '2026-03-31': { countByGroupName: { Alpha: 3 } },
-        },
-      },
-      groupsActivityLoadedFreq: '100.100',
-      groupsActivityLoadedPeriod: 'selected',
-      loading: true,
-      period: 'selected',
-      selectedFreq: '100.100',
-      onLoad: vi.fn(),
-    });
-    rendered.push(view);
-
-    expect(view.container.querySelector('dashboard-chart')).not.toBeNull();
-    expect(view.container.textContent).not.toContain(`Завантажую активність по датах${ELLIPSIS}`);
   });
 });

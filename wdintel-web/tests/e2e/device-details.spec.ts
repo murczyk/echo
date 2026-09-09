@@ -92,6 +92,7 @@ function systemSettings() {
     enable_audio_transcription: false,
     show_classic_duty: false,
     show_classic_analysis: false,
+    show_peleng_distance_to_battleline: false,
     hide_orbit_data: false,
   };
 }

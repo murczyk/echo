@@ -7,6 +7,18 @@ description: Decide whether to add, retain, replace, or remove automated tests u
 
 Read the **Test scope** section of `CODE_REVIEW.md` before adding or expanding the default test suite.
 
+## React Vitest placement
+
+Place every new `*.spec.*` or `*.test.*` under `src/ts/react` in the nearest
+production-owned `__tests__` directory. A React Vitest path has exactly one
+`__tests__` segment: never use recovery, characterization, nested test, or
+temporary holding directories. The five legacy paths in
+`wdintel-web/scripts/react-test-packing-exceptions.mjs` are the only documented
+exceptions; do not add another. Resolve collisions with a descriptive filename
+inside the correct directory, and preserve resolved production imports and
+`vi.mock` targets during relocation. Playwright belongs in `tests/e2e` and is
+not subject to this React placement rule.
+
 ## Admission gate
 
 Use a co-located annotation for every retained default-suite test:

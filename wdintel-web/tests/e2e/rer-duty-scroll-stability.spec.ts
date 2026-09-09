@@ -79,7 +79,7 @@ async function readBottomDistance(scroller: Locator) {
 }
 
 // @test-scope regression: https://github.com/echoua/echo/pull/3268
-test('follows only while the bottom arrow is hidden and preserves the reading anchor @smoke', async ({
+test('follows only while the bottom arrow is hidden and preserves the reading anchor @smoke @regression', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -163,7 +163,7 @@ test('follows only while the bottom arrow is hidden and preserves the reading an
 });
 
 // @test-scope regression: https://github.com/echoua/echo/issues/3360
-test('keeps an OFF reading anchor stable while a long snackbar error is shown @smoke', async ({
+test('keeps an OFF reading anchor stable while a long snackbar error is shown @smoke @regression', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -215,7 +215,9 @@ test('keeps an OFF reading anchor stable while a long snackbar error is shown @s
 });
 
 // @test-scope regression: https://github.com/echoua/echo/issues/3400
-test('keeps an unbroken snackbar error within the narrow viewport', async ({ page }) => {
+test('keeps an unbroken snackbar error within the narrow viewport @regression', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const longError = 'unbroken-server-error-'.repeat(80);
   await installRerDutyShortStateMocks(page, {

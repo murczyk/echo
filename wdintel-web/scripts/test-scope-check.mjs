@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import ts from 'typescript';
+import { reactTestPackingExceptions } from './react-test-packing-exceptions.mjs';
 
 const webRoot = new URL('..', import.meta.url).pathname;
 const repoRoot = new URL('../..', import.meta.url).pathname;
@@ -254,7 +255,22 @@ const invalidAnnotations = [];
 const testRoots = [join(webRoot, 'src', 'ts', 'react'), join(webRoot, 'tests', 'e2e')];
 const testFiles = testRoots.flatMap((root) => (existsSync(root) ? walk(root) : []));
 const unclassified = [];
+const placementProblems = [];
 for (const file of testFiles) {
+  const path = relative(webRoot, file);
+  if (path.startsWith('src/ts/react/')) {
+    const testDirectoryCount = path.split('/').filter((segment) => segment === '__tests__').length;
+    if (path.includes('/recovery/') || path.includes('/characterization/'))
+      placementProblems.push(`${path} uses a prohibited recovery or characterization directory.`);
+    else if (testDirectoryCount !== 1 && !reactTestPackingExceptions.has(path))
+      placementProblems.push(
+        `${path} must be in the nearest production-owned __tests__ directory (found ${testDirectoryCount}).`,
+      );
+    else if (testDirectoryCount === 0 && !reactTestPackingExceptions.has(path))
+      placementProblems.push(
+        `${path} is unpacked; place it in the nearest production-owned __tests__ directory.`,
+      );
+  }
   if (file.includes('/characterization/')) continue;
   const text = readFileSync(file, 'utf8');
   const sourceFile = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
@@ -278,6 +294,7 @@ for (const file of testFiles) {
   }
 }
 invalidAnnotations.push(...referencedTestPathProblems());
+invalidAnnotations.push(...placementProblems);
 const testOnlyExports = testOnlyProductionExports(testFiles);
 
 const sortedUnclassified = [...new Set(unclassified)].sort();

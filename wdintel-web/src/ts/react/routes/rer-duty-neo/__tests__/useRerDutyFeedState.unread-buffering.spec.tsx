@@ -546,7 +546,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
     });
 
     const feedAfterAppend = apiRef.current!.messageFeeds[0];
-    expect(feedAfterAppend.items.at(-1)?.[0]).toBe(80);
+    expect(feedAfterAppend.items.at(-1)?.[0]).toBe(60);
     expect(feedAfterAppend.unreadCount).toBe(25);
 
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
@@ -557,7 +557,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
     });
 
     expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(3);
-    expect(apiRef.current!.messageFeeds[0].items.at(-1)?.[0]).toBe(81);
+    expect(apiRef.current!.messageFeeds[0].items.at(-1)?.[0]).toBe(60);
   });
 
   it('completes the down-arrow path when newer loading returns no rows', async () => {
@@ -1307,7 +1307,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       expect(feed.unreadCount).toBeGreaterThan(0);
     });
 
-    it('does not mark-all-read when user prefs disable auto-scroll even if watch mode and at bottom', async () => {
+    it('does not poll or mark-all-read when user prefs disable auto-scroll', async () => {
       const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
         current: null,
       };
@@ -1337,7 +1337,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       });
 
       const feed = apiRef.current!.messageFeeds[0];
-      expect(feed.items.map(([id]) => id).sort()).toEqual([1, 2]);
+      expect(feed.items.map(([id]) => id).sort()).toEqual([1]);
       expect(feed.readIds.has(2)).toBe(false);
       expect(feed.unreadCount).toBeGreaterThan(0);
     });

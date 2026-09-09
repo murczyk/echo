@@ -152,7 +152,7 @@ async function summaryCell(table: Locator, column: string) {
 }
 
 // @test-scope regression: https://github.com/echoua/echo/pull/3268
-test.describe('Analysis Neo MRT overflow @smoke', () => {
+test.describe('Analysis Neo MRT overflow @smoke @regression', () => {
   test('shows scalar ellipsis and full text only while the column overflows', async ({ page }) => {
     const problems = recordBrowserProblems(page);
     const table = await openSummary(page);

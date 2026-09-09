@@ -59,6 +59,7 @@ describe('api client 401 handling', () => {
   });
 });
 
+// @test-scope parser: HTTP error-body normalization fixtures at the shared API boundary.
 describe('HTTP error messages', () => {
   beforeEach(() => vi.restoreAllMocks());
 

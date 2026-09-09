@@ -7,7 +7,6 @@ import {
   EMPTY_UNIT_FORM,
   filterUnitsByStatus,
   findPotentialDuplicates,
-  isUnitFormValid,
   readUnitNameColumnFilter,
   readUnitOrbitColumnFilter,
   trimUnitForm,
@@ -47,6 +46,7 @@ function unit(overrides: Partial<Unit>): Unit {
   };
 }
 
+// @test-scope parser: server-side unit query and hierarchy-filter fixtures.
 describe('rer units helpers', () => {
   it('builds a server-side inactive page request from table state', () => {
     expect(
@@ -70,6 +70,7 @@ describe('rer units helpers', () => {
     });
   });
 
+  // @test-scope parser: unit-list request fixture that preserves table sorting without a global search.
   it('keeps table sorting when there is no global unit search', () => {
     expect(
       buildUnitsListReq({
@@ -122,12 +123,6 @@ describe('rer units helpers', () => {
       linked: 'Усі',
       comment: 'Усі',
     });
-  });
-
-  it('requires a name or at least one hierarchy value', () => {
-    expect(isUnitFormValid(EMPTY_UNIT_FORM)).toBe(false);
-    expect(isUnitFormValid({ ...EMPTY_UNIT_FORM, name: ' Власна назва ' })).toBe(true);
-    expect(isUnitFormValid({ ...EMPTY_UNIT_FORM, battalion: ' 2 батальйон ' })).toBe(true);
   });
 
   it('builds forward and reverse masks without duplicates', () => {

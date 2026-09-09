@@ -41,7 +41,7 @@ async function saveMinimalReplacement(
 }
 
 // @test-scope regression: https://github.com/echoua/echo/issues/3099
-test.describe('image editor drawer integration #3099', () => {
+test.describe('image editor drawer integration @regression', () => {
   for (const host of ['duty', 'analysis'] as const satisfies ImageEditorDrawerHost[]) {
     test(`${host} opens from preview and saves one pending replacement`, async ({ page }) => {
       const submitted = await observeImageEditorSubmission(page);

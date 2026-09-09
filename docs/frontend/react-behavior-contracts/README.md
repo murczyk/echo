@@ -24,7 +24,10 @@ Each entry identifies its production boundary, observable outcome, persistence r
 
 ## Migration status
 
-The complete React suite is not yet classified. The checked-in legacy-debt baseline and known environmental failures are recorded in [the cleanup baseline](../react-test-cleanup-baseline.md). The scope gate already rejects newly unclassified tests while each subsystem batch shrinks that baseline; `npm run test:ts` remains the complete migration suite.
+The React suite is classified and the legacy-debt baseline is empty. New tests
+remain subject to the admission gate: they must carry a truthful parser,
+concrete safeguard, or Echo issue/PR regression annotation. `npm run test:ts`
+remains the complete migration suite.
 
 ## Entry template
 

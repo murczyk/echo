@@ -93,6 +93,8 @@ function renderHook(
     const [summaryCallsignsInfo, setSummaryCallsignsInfo] = useState<
       Record<string, CallsignInfoRes>
     >(initialSummaryCallsignsInfo);
+    const [, setGroupInfos] = useState({});
+    const [, setProfiles] = useState({});
     harness.summaryCallsignsInfo = summaryCallsignsInfo;
     harness.latest = useAnalysisMessageList({
       deferInitialLoad,
@@ -102,6 +104,8 @@ function renderHook(
       onUnauthorized: harness.onUnauthorized,
       optionsFreqValues: [],
       queryState: currentQueryState,
+      setGroupInfos,
+      setProfiles,
       setSummaryCallsignsInfo,
     });
     return null;

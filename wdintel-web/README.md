@@ -35,15 +35,16 @@ elm-spa watch  # runs build as you code (without the server)
 
 ```bash
 npm run test:ts                 # complete React Vitest migration suite
-npm run test:ts:scope-check     # annotations and checked-in legacy debt
-npm run test:ts:gate            # scope check plus Vitest
+npm run test:ts:scope-check     # annotations and empty legacy-debt baseline
+npm run test:ts:ledger-check    # final placement and ledger integrity
+npm run test:ts:gate            # admission checks plus Vitest
 npm run test:ts:all             # same complete migration suite
 ```
 
 Default React tests must carry a co-located `@test-scope` annotation for
 operational parser coverage, a concrete safeguard, or an Echo-linked
-regression. Existing debt is recorded in `test-scope-baseline.json`; new
-unclassified tests fail the scope check immediately.
+regression. The legacy-debt baseline is empty; new unclassified tests fail the
+scope check immediately.
 
 Browser commands are intentionally separate:
 

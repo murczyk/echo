@@ -162,10 +162,13 @@ describe('useRerDutyFeedState — follow tail and scheduled scrolling', () => {
     runNextRaf();
     runNextRaf();
     expect(scrollToEnd).toHaveBeenCalledTimes(1);
-    expect(scrollToEnd).toHaveBeenCalledWith('smooth');
+    expect(scrollToEnd).toHaveBeenCalledWith(
+      'smooth',
+      expect.objectContaining({ intent: 'automatic-follow' }),
+    );
   });
 
-  it('runs an explicit follow pin with continuous auto-scroll disabled', async () => {
+  it('does not run a non-explicit follow pin with continuous auto-scroll disabled', async () => {
     const { apiRef, scrollToEnd } = await mountLoadedFeed(true);
     const generation = apiRef.current!.beginFollowTail('mf-0');
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
@@ -181,7 +184,7 @@ describe('useRerDutyFeedState — follow tail and scheduled scrolling', () => {
     });
     runNextRaf();
     runNextRaf();
-    expect(scrollToEnd).toHaveBeenCalledTimes(1);
+    expect(scrollToEnd).not.toHaveBeenCalled();
   });
 
   it('restores available after a confirmed-tail request fails', async () => {

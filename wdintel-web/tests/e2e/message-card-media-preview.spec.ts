@@ -79,7 +79,7 @@ async function verifyEscapeClose(page: Page, dialog: Locator, reopen: () => Prom
 }
 
 // @test-scope regression: https://github.com/echoua/echo/pull/3268
-test.describe('@smoke', () => {
+test.describe('@smoke @regression', () => {
   for (const host of ['duty', 'analysis'] as const) {
     // @test-scope regression: https://github.com/echoua/echo/issues/3405
     test(`${host} message card preview smoke covers the shared contract`, async ({ page }) => {
@@ -287,7 +287,7 @@ test.describe('message card media preview contract', () => {
   });
 
   // @test-scope regression: https://github.com/echoua/echo/issues/3405
-  test('audio preview matches the reference layout and remains usable at narrow widths', async ({
+  test('audio preview matches the reference layout and remains usable at narrow widths @regression', async ({
     page,
   }, testInfo) => {
     await page.setViewportSize({ width: 1440, height: 1024 });
@@ -401,7 +401,7 @@ test.describe('message card media preview contract', () => {
   });
 
   // @test-scope regression: https://github.com/echoua/echo/issues/3405
-  test('audio preview preserves paused autoplay and settings through mixed-carousel navigation', async ({
+  test('audio preview preserves paused autoplay and settings through mixed-carousel navigation @regression', async ({
     page,
   }) => {
     await openMessageCardPreviewHost(page, 'duty');

@@ -49,9 +49,31 @@ until those failures are made reproducible and resolved.
 
 No browser or Vitest test is removed solely because of this baseline. Replacement coverage is not treated as valid until the Playwright workflow is enabled and stable in CI.
 
-## Admission-gate inventory
+## Final checkpoint — 2026-09-09
 
-`node scripts/test-scope-check.mjs` now scans only `src/ts/react` and `tests/e2e`. The checked-in `test-scope-baseline.json` records 2,170 exact legacy test identities. This is the explicit migration backlog: the gate passes for that baseline, rejects new unclassified tests, and permits only explicit baseline updates that shrink it.
+- Scope debt: zero new debt and zero legacy debt.
+- Vitest gate passed 315 files and 2,622 tests; `just build-front` passed.
+  Local unavailable-API warnings remain expected Happy DOM noise when a test
+  intentionally reaches the absent development API.
+- A fresh one-worker, no-retry smoke run passed all 30 browser tests. Static
+  layout checks were removed; fixture responses now cover the required system
+  settings and short-state feature configuration.
+- Linked browser regressions are selected with `@regression`.
+
+### Playwright classification evidence
+
+- Smoke completed 30/30 tests with one worker and no retries.
+- Regression had one `image-editor-drawer` Duty case fail once, then pass both
+  alone and in the complete regression run.
+- The complete suite completed 44/48 tests. Its four failures are confined to
+  `@perf`: Analysis delayed shell measured about 3289 ms against a 3000 ms
+  limit, while the Classic Callsigns, Palitra, and Messenger headings were not
+  found.
+
+## Historical admission-gate inventory
+
+The following checkpoints are historical. The current checked-in
+`test-scope-baseline.json` is empty; the gate rejects newly unclassified tests.
 
 The gate was verified with an uncommitted temporary rename of a legacy
 `PowerSnackbar` test: it reported the renamed identity as new debt and the

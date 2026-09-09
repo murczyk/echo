@@ -5,10 +5,10 @@
 Its reference inventory is `main` at `009062bd10c51ca280689165dcd0dd96b69fd1b9`:
 
 - 2,752 original test identities;
-- 1,533 identities in the recovered worktree;
-- 1,346 retained identities relocated into `__tests__/`;
-- 1,221 genuinely removed identities, initially recorded as `unresolved`;
-- 3 incoming identities, which require an explicit admission decision.
+- 2,353 retained AST identities in the final React tree;
+- 1,444 relocation records with existing final targets;
+- 555 genuinely removed identities with explicit dispositions;
+- 5 incoming identities with an explicit admission decision.
 
 An empty test-scope baseline is not evidence that a removal is valid. A removal becomes complete only when its ledger record has an admitted disposition and, where the test protected visible behavior, a linked behavior contract or stronger retained test.
 
@@ -16,10 +16,9 @@ Playwright remains under `wdintel-web/tests/e2e`; its audit and execution status
 
 ## Safe packing policy
 
-The mixed layout is intentional while this recovery is in progress. The
-baseline remains at 1,964 identities; relocation does not by itself resolve or
-admit a test. At the current checkpoint, 216 React specs are already under a
-nearest `__tests__/` directory and 148 remain at their original paths.
+Canonical packing is complete. Recovery directories have been eliminated; all
+retained React specs are in their nearest `__tests__/` directory except the
+five occupied-target exceptions. Relocation alone does not admit a test.
 
 Only a one-to-one relocation is permitted:
 `dir/Foo.spec.ts` to `dir/__tests__/Foo.spec.ts`. Each leaf directory is

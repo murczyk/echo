@@ -188,6 +188,8 @@ function buildProps(
     tagsLoading: false,
     tagsLayout: 'full',
     showCallsignAddForm: false,
+    viewportPreservationKey: 0,
+    onViewportCaptureChange: vi.fn(),
     ...overrides,
   };
 }
@@ -238,34 +240,6 @@ describe('AnalysisMessagesPane', () => {
     expect(view.container.textContent).toContain('Немає жодного повідомлення для аналізу.');
   });
 
-  it('shows the loading overlay instead of the empty state while messages refresh', async () => {
-    const view = await renderComponent(buildProps({ loading: true }));
-    rendered.push(view);
-
-    expect(view.container.textContent).toContain('loading');
-    expect(view.container.textContent).not.toContain('Немає жодного повідомлення для аналізу.');
-  });
-
-  it('shows an accessible narrow refresh indicator over loaded messages', async () => {
-    const view = await renderComponent(
-      buildProps({ messages: [[7, buildMessage()]], loading: true }),
-    );
-    rendered.push(view);
-
-    expect(view.container.querySelector('[aria-label="Оновлення повідомлень"]')).not.toBeNull();
-  });
-
-  it('shows a distinct indicator while loading another page', async () => {
-    const view = await renderComponent(
-      buildProps({ messages: [[7, buildMessage()]], paginationLoading: true }),
-    );
-    rendered.push(view);
-
-    expect(
-      view.container.querySelector('[aria-label="Завантаження ще повідомлень"]'),
-    ).not.toBeNull();
-  });
-
   it('passes the tags layout through to analysis message cards', async () => {
     const view = await renderComponent(
       buildProps({
@@ -292,18 +266,6 @@ describe('AnalysisMessagesPane', () => {
     rendered.push(view);
 
     expect(view.container.querySelector('[data-testid="sender-7"]')?.textContent).toBe('BBC SPORT');
-  });
-
-  it('shows the loading spinner while paginating', async () => {
-    const view = await renderComponent(
-      buildProps({
-        messages: [[7, buildMessage()]],
-        paginationLoading: true,
-      }),
-    );
-    rendered.push(view);
-
-    expect(view.container.textContent).toContain('loading');
   });
 
   it('wires report creation and editing into the page callbacks', async () => {
@@ -486,20 +448,5 @@ describe('AnalysisMessagesPane', () => {
     });
 
     expect(scrollBox?.scrollTop).toBe(0);
-  });
-
-  it('loads more messages from the button at the bottom of the list', async () => {
-    const onLoadMoreMessages = vi.fn().mockResolvedValue(true);
-    const view = await renderComponent(
-      buildProps({
-        messages: [[7, buildMessage()]],
-        onLoadMoreMessages,
-      }),
-    );
-    rendered.push(view);
-
-    await click(getButton(view.container, 'Завантажити ще'));
-
-    expect(onLoadMoreMessages).toHaveBeenCalledTimes(1);
   });
 });

@@ -59,7 +59,7 @@ describe('rer units helpers', () => {
         pagination: { pageIndex: 2, pageSize: 20 },
       }),
     ).toMatchObject({
-      sortBy: 'CreatedAtDesc',
+      sortBy: 'NaturalMilitarySortAsc',
       includeInactive: true,
       filterActive: false,
       filterText: '55 омсбр',

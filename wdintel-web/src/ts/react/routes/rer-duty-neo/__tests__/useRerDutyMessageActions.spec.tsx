@@ -41,6 +41,14 @@ const hoisted = vi.hoisted(() => ({
   setWatchModeByFeedId: vi.fn(),
   setLoadingNewerFeedIds: vi.fn(),
   beginFollowTail: vi.fn(() => 17),
+  beginExplicitNavigation: vi.fn((feedId: string) => ({ feedId, generation: 17 })),
+  isExplicitNavigationCurrent: vi.fn(() => true),
+  registerExplicitLanding: vi.fn(() => true),
+  registerExplicitLoading: vi.fn(() => true),
+  cancelExplicitNavigation: vi.fn(() => true),
+  registerExplicitScheduledWork: vi.fn(() => true),
+  clearExplicitScheduledWork: vi.fn(),
+  getExplicitScrollNavigation: vi.fn(() => ({ onUnavailable: vi.fn() })),
   addPalitraHighlightBlacklistEntry: vi.fn(),
 }));
 
@@ -216,6 +224,14 @@ function TestHarness(props: {
     setSaveFilterNameByFeedId,
     dutyDisableAutoScroll: false,
     beginFollowTail: hoisted.beginFollowTail,
+    beginExplicitNavigation: hoisted.beginExplicitNavigation,
+    isExplicitNavigationCurrent: hoisted.isExplicitNavigationCurrent,
+    registerExplicitLanding: hoisted.registerExplicitLanding,
+    registerExplicitLoading: hoisted.registerExplicitLoading,
+    cancelExplicitNavigation: hoisted.cancelExplicitNavigation,
+    registerExplicitScheduledWork: hoisted.registerExplicitScheduledWork,
+    clearExplicitScheduledWork: hoisted.clearExplicitScheduledWork,
+    getExplicitScrollNavigation: hoisted.getExplicitScrollNavigation,
   });
   props.apiRef.current = {
     ...actions,
@@ -273,6 +289,15 @@ describe('useRerDutyMessageActions', () => {
     hoisted.showArrowResult.mockReset();
     hoisted.beginFollowTail.mockReset();
     hoisted.beginFollowTail.mockReturnValue(17);
+    hoisted.beginExplicitNavigation.mockReset();
+    hoisted.beginExplicitNavigation.mockImplementation((feedId) => ({ feedId, generation: 17 }));
+    hoisted.isExplicitNavigationCurrent.mockReset().mockReturnValue(true);
+    hoisted.registerExplicitLanding.mockReset().mockReturnValue(true);
+    hoisted.registerExplicitLoading.mockReset().mockReturnValue(true);
+    hoisted.cancelExplicitNavigation.mockReset().mockReturnValue(true);
+    hoisted.registerExplicitScheduledWork.mockReset().mockReturnValue(true);
+    hoisted.clearExplicitScheduledWork.mockReset();
+    hoisted.getExplicitScrollNavigation.mockReset().mockReturnValue({ onUnavailable: vi.fn() });
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -322,15 +347,13 @@ describe('useRerDutyMessageActions', () => {
     expect(hoisted.requestValidatedInboxCount).toHaveBeenCalledTimes(1);
     expect(hoisted.requestValidatedInboxCount).toHaveBeenCalledWith('mf-0');
     expect(hoisted.fetchInboxCount).not.toHaveBeenCalled();
-    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenCalledWith('smooth', {
-      wakeIdleOffload: true,
-    });
+    expect(hoisted.registerExplicitLanding).toHaveBeenCalledTimes(1);
     expect(hoisted.loadFeedNewerMessages).toHaveBeenCalledTimes(1);
     expect(hoisted.loadFeedNewerMessages).toHaveBeenCalledWith(
       'mf-0',
       expect.objectContaining({ scrollToEndAfterLoad: true }),
     );
-    expect(hoisted.catchUpFeedUnreadToTail).toHaveBeenCalledWith('mf-0');
+    expect(hoisted.catchUpFeedUnreadToTail).not.toHaveBeenCalled();
   });
 
   it('does not clear unread state when arrow newer load fails', async () => {
@@ -413,7 +436,7 @@ describe('useRerDutyMessageActions', () => {
     expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual([42, 3, 8]);
   });
 
-  it('scrolls immediately while arrow count validation is pending', async () => {
+  it('waits for a confirmed landing while arrow count validation is pending', async () => {
     const count = deferred<{
       feedId: string;
       quantity: number;
@@ -436,8 +459,8 @@ describe('useRerDutyMessageActions', () => {
     });
 
     const click = apiRef.current!.handleArrowClick('mf-0');
-    expect(scrollToEnd).toHaveBeenCalledWith('smooth', { wakeIdleOffload: true });
-    expect(hoisted.beginFollowTail).toHaveBeenCalledWith('mf-0');
+    expect(scrollToEnd).not.toHaveBeenCalled();
+    expect(hoisted.beginExplicitNavigation).toHaveBeenCalledWith('mf-0');
     expect(hoisted.loadFeedNewerMessages).not.toHaveBeenCalled();
 
     await act(async () => {
@@ -448,10 +471,10 @@ describe('useRerDutyMessageActions', () => {
       'mf-0',
       expect.objectContaining({ scrollToEndAfterLoad: true, followGeneration: 17 }),
     );
-    expect(scrollToEnd).toHaveBeenCalledTimes(1);
+    expect(scrollToEnd).not.toHaveBeenCalled();
   });
 
-  it('scrolls to the existing bottom once for a valid zero-count arrow result', async () => {
+  it('registers a confirmed landing for a valid zero-count arrow result', async () => {
     hoisted.requestValidatedInboxCount.mockResolvedValueOnce({
       feedId: 'mf-0',
       quantity: 0,
@@ -483,12 +506,10 @@ describe('useRerDutyMessageActions', () => {
       await apiRef.current!.handleArrowClick('mf-0');
     });
 
-    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenCalledTimes(1);
-    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenNthCalledWith(1, 'smooth', {
-      wakeIdleOffload: true,
-    });
-    expect(hoisted.showArrowResult).toHaveBeenCalledWith('mf-0', 'Немає нових повідомлень');
-    expect(hoisted.catchUpFeedUnreadToTail).toHaveBeenCalledWith('mf-0');
+    expect(columnRefsRef.current['mf-0']?.scrollToEnd).not.toHaveBeenCalled();
+    expect(hoisted.registerExplicitLanding).toHaveBeenCalledTimes(1);
+    expect(hoisted.showArrowResult).not.toHaveBeenCalled();
+    expect(hoisted.catchUpFeedUnreadToTail).not.toHaveBeenCalled();
     expect(hoisted.loadFeedNewerMessages).not.toHaveBeenCalled();
   });
 
@@ -522,10 +543,7 @@ describe('useRerDutyMessageActions', () => {
 
     expect(hoisted.requestValidatedInboxCount).toHaveBeenCalledTimes(1);
     expect(hoisted.fetchInboxCount).not.toHaveBeenCalled();
-    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenCalledTimes(1);
-    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenNthCalledWith(1, 'smooth', {
-      wakeIdleOffload: true,
-    });
+    expect(columnRefsRef.current['mf-0']?.scrollToEnd).not.toHaveBeenCalled();
     expect(hoisted.showArrowResult).toHaveBeenCalledWith(
       'mf-0',
       'Оновлення триває, спробуйте ще раз',
@@ -562,10 +580,7 @@ describe('useRerDutyMessageActions', () => {
     });
 
     expect(hoisted.requestValidatedInboxCount).toHaveBeenCalledTimes(1);
-    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenCalledTimes(1);
-    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenNthCalledWith(1, 'smooth', {
-      wakeIdleOffload: true,
-    });
+    expect(columnRefsRef.current['mf-0']?.scrollToEnd).not.toHaveBeenCalled();
     expect(hoisted.showArrowResult).toHaveBeenCalledWith(
       'mf-0',
       'Не вдалося перевірити нові повідомлення',
