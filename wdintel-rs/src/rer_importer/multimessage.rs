@@ -39,6 +39,13 @@ where
         return Ok(models);
     }
     let id = message.id;
+    crate::rer_importer::inbox::prepare_message_network_activity_change(
+        txn,
+        id,
+        &format!("split oversized inbox message {id}"),
+    )
+    .await
+    .c(h!())?;
     let mut model = message.clone().into_active_model();
     model.deleted = Set(true);
     model.update(txn).await.c(h!())?;
@@ -116,6 +123,10 @@ fn is_header(lnow: DateTime<Tz>, row: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::functest::tests::{
+        cleanup_locked, mk_sigint_inbox_item, mk_sigint_inbox_item_network,
+        mk_sigint_network, mk_sigint_network_freq, mk_signal_message,
+    };
     use chrono::TimeZone;
 
     fn fixed_now(tz: Tz) -> DateTime<Tz> {
@@ -175,5 +186,84 @@ mod tests {
         assert!(!should_try_split_message(text));
         let messages = slice_message(lnow, text);
         assert_eq!(messages.len(), 2);
+    }
+
+    #[serial_test::serial]
+    #[tokio::test]
+    async fn splitting_message_invalidates_network_frequency_last_seen() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let timestamp = chrono::Utc::now().naive_utc();
+        let freq = "146.4500";
+        let message = mk_signal_message(
+            &txn,
+            signal_message::ActiveModel {
+                timestamp: Set(Some(timestamp)),
+                created_at: Set(timestamp),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item(
+            &txn,
+            crate::entities::sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                freq: Set(Some(freq.to_string())),
+                datetime: Set(Some(timestamp)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let network =
+            mk_sigint_network(&txn, Default::default()).await.unwrap();
+        let network_freq = mk_sigint_network_freq(
+            &txn,
+            crate::entities::sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set(freq.to_string()),
+                active_from: Set(timestamp - chrono::Duration::days(1)),
+                last_seen_dt: Set(Some(timestamp)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item_network(
+            &txn,
+            crate::entities::sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(message.id),
+                sigint_network_id: Set(network.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let body =
+            std::fs::read_to_string("data/test_multi_message.txt").unwrap();
+
+        let spawned = spawn_multiple_messages(&txn, &message, &body)
+            .await
+            .unwrap();
+
+        assert!(!spawned.is_empty());
+        let message = signal_message::Entity::find_by_id(message.id)
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        let network_freq =
+            crate::entities::sigint_network_freq::Entity::find_by_id(
+                network_freq.id,
+            )
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(message.deleted);
+        assert_eq!(network_freq.last_seen_dt, None);
+
+        txn.rollback().await.unwrap();
     }
 }

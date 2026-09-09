@@ -254,6 +254,15 @@ where
         datetime::from_date_time_text(date_v.as_deref(), time_v.as_deref())
             .c(h!())?;
 
+    if existing_inbox_item {
+        crate::rer_importer::inbox::prepare_message_network_activity_change(
+            txn,
+            message_id,
+            &format!("reprocessed inbox message {message_id}"),
+        )
+        .await
+        .c(h!())?;
+    }
     let result = sigint_inbox_item::ActiveModel {
         id: Set(message.id),
         id_uuid: Set(message.id_uuid),

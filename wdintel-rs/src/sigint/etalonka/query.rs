@@ -2554,6 +2554,7 @@ fn build_etalonka_networks_query(
     id_filter: Option<&Vec<i64>>,
     deleted_only: Option<bool>,
     text_search_mode: NetworkTextSearchMode,
+    groups: &[String],
 ) -> Select<sigint_network::Entity> {
     let filter_unit = req.filter_unit.clone();
     let filter_unit_army_region = req.filter_unit_army_region.clone();
@@ -2672,12 +2673,13 @@ fn build_etalonka_networks_query(
             .filter(sigint_unit::Column::Battalion.eq(filter_unit_battalion));
     }
 
-    network_sort::apply_network_sorts(networks, req.sort_by.as_ref())
+    network_sort::apply_network_sorts(networks, req.sort_by.as_ref(), groups)
 }
 
 pub async fn load_networks(
     db: &DatabaseConnection,
     req: &EtalonkaJimForksReq,
+    groups: &[String],
 ) -> Result<
     BTreeMap<NetworkEtalonkaUnitKey, Vec<NetworkEtalonkaResult>>,
     AppError,
@@ -2690,6 +2692,7 @@ pub async fn load_networks(
         None,
         None,
         text_search_mode,
+        groups,
     );
     let networks = networks
         .clone()
@@ -2723,6 +2726,7 @@ pub async fn load_networks(
 pub async fn load_networks_by_id(
     db: &DatabaseConnection,
     req: &EtalonkaNetworkBatchReq,
+    groups: &[String],
 ) -> Result<
     BTreeMap<NetworkEtalonkaUnitKey, Vec<NetworkEtalonkaResult>>,
     AppError,
@@ -2755,6 +2759,7 @@ pub async fn load_networks_by_id(
         Some(&req.network_ids),
         None,
         NetworkTextSearchMode::Substring,
+        groups,
     );
     let networks = networks
         .clone()
@@ -2924,7 +2929,7 @@ mod tests {
             ),
         };
 
-        let networks = load_networks(&env.dbx, &req).await.unwrap();
+        let networks = load_networks(&env.dbx, &req, &[]).await.unwrap();
         let ids = networks
             .values()
             .flatten()
@@ -3073,12 +3078,14 @@ mod tests {
 
     #[test]
     fn etalonka_network_sorting_uses_requested_sort_variants() {
+        let groups = vec!["test-group".to_string()];
         let no_id_sql = build_etalonka_networks_query(
             &empty_list_networks_req(),
             JoinType::InnerJoin,
             None,
             None,
             NetworkTextSearchMode::Substring,
+            &groups,
         )
         .build(DbBackend::Postgres)
         .to_string();
@@ -3090,6 +3097,7 @@ mod tests {
             Some(&empty_ids),
             None,
             NetworkTextSearchMode::Substring,
+            &groups,
         )
         .build(DbBackend::Postgres)
         .to_string();
@@ -3108,6 +3116,7 @@ mod tests {
             None,
             None,
             NetworkTextSearchMode::Substring,
+            &groups,
         )
         .build(DbBackend::Postgres)
         .to_string();
@@ -3127,6 +3136,7 @@ mod tests {
             None,
             None,
             NetworkTextSearchMode::Substring,
+            &groups,
         )
         .build(DbBackend::Postgres)
         .to_string();
@@ -3143,6 +3153,7 @@ mod tests {
             None,
             None,
             NetworkTextSearchMode::Substring,
+            &groups,
         )
         .build(DbBackend::Postgres)
         .to_string();
@@ -3159,13 +3170,11 @@ mod tests {
             None,
             None,
             NetworkTextSearchMode::Substring,
+            &groups,
         )
         .build(DbBackend::Postgres)
         .to_string();
-        assert_primary_sort_before_name(
-            &sql,
-            "\"sigint_network\".\"updated_at\" DESC",
-        );
+        assert_primary_sort_before_name(&sql, "SELECT MAX(activity_at)");
     }
 
     #[test]

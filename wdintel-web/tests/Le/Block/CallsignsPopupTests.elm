@@ -64,6 +64,7 @@ createNetwork id freqs unitIds =
     , operationMode = Nothing
     , operationType = Nothing
     , operationPeriod = Nothing
+    , lastActivityAt = Nothing
     , lastUpdatedAt = 0
     , lastUpdatedBy = Nothing
     , activeFrom = Nothing

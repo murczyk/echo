@@ -10003,6 +10003,7 @@ type alias Network =
     , operationMode : Maybe (String)
     , operationType : Maybe (String)
     , operationPeriod : Maybe (String)
+    , lastActivityAt : Maybe (Int)
     , lastUpdatedAt : Int
     , lastUpdatedBy : Maybe (String)
     , activeFrom : Maybe (Int)
@@ -10031,6 +10032,7 @@ networkEncoder struct =
         , ( "operation_mode", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.operationMode )
         , ( "operation_type", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.operationType )
         , ( "operation_period", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.operationPeriod )
+        , ( "last_activity_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastActivityAt )
         , ( "last_updated_at", (Json.Encode.int) struct.lastUpdatedAt )
         , ( "last_updated_by", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastUpdatedBy )
         , ( "active_from", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.activeFrom )
@@ -20734,6 +20736,7 @@ networkDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_mode" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_type" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_period" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_activity_at" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_updated_at" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_updated_by" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_from" (Json.Decode.nullable (Json.Decode.int))))

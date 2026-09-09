@@ -344,6 +344,12 @@ where
     if sigint_inbox_item_ids.is_empty() {
         return Ok(result);
     }
+    crate::rer_importer::inbox::invalidate_messages_network_frequency_last_seen(
+        dbx,
+        &sigint_inbox_item_ids,
+    )
+    .await
+    .c(h!())?;
     delete_sigint_inbox_item_networks(&sigint_inbox_item_ids, dbx)
         .await
         .c(h!())?;
@@ -800,5 +806,84 @@ mod tests {
                 .unwrap(),
             1
         );
+    }
+
+    // Regression for ECHO-3207: recalculation invalidates removed-link activity.
+    #[serial]
+    #[tokio::test]
+    async fn recalculation_invalidates_removed_network_frequency_last_seen() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let timestamp = Utc::now().naive_utc() - Duration::hours(1);
+        let freq = "146.4500";
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                timestamp: Set(Some(timestamp)),
+                created_at: Set(timestamp),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inbox_item = mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                freq: Set(Some(freq.to_string())),
+                datetime: Set(Some(timestamp)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let network_freq = mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set(freq.to_string()),
+                active_from: Set(timestamp - Duration::days(1)),
+                last_seen_dt: Set(Some(timestamp)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item_network(
+            &env.dbx,
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(inbox_item.id),
+                sigint_network_id: Set(network.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        calculate_sigint_inbox_item_networks(
+            vec![inbox_item.clone()],
+            &env.dbx,
+        )
+        .await
+        .unwrap();
+
+        let network_freq =
+            sigint_network_freq::Entity::find_by_id(network_freq.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        let link_count = sigint_inbox_item_network::Entity::find()
+            .filter(
+                sigint_inbox_item_network::Column::SigintInboxItemId
+                    .eq(inbox_item.id),
+            )
+            .count(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(network_freq.last_seen_dt, None);
+        assert_eq!(link_count, 0);
     }
 }

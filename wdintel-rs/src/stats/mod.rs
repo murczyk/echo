@@ -337,15 +337,15 @@ where
             r#"
                 select
                     min(smg.group_master_key) as master_key,
-                    min(coalesce(sii.datetime, sm.created_at)) as since_ts,
-                    max(coalesce(sii.datetime, sm.created_at)) as till_ts
+                    min(coalesce(sii.datetime, sm.timestamp, sm.created_at)) as since_ts,
+                    max(coalesce(sii.datetime, sm.timestamp, sm.created_at)) as till_ts
                 from signal_message_group smg
                 inner join signal_message sm on sm.id = smg.signal_message_id
                 inner join sigint_inbox_item sii on sii.id = sm.id
                 where smg.signal_message_id = any($1::bigint[])
                   and smg.group_master_key is not null
                   and sm.deleted = false
-                  and coalesce(sii.datetime, sm.created_at) >= $2
+                  and coalesce(sii.datetime, sm.timestamp, sm.created_at) >= $2
             "#,
             vec![message_ids.to_vec().into(), min_since_ts.into()],
         ),
@@ -403,14 +403,14 @@ where
 {
     let sql = r#"
         select
-            min(coalesce(sii.datetime, sm.created_at)) as since_ts,
-            max(coalesce(sii.datetime, sm.created_at)) as till_ts
+            min(coalesce(sii.datetime, sm.timestamp, sm.created_at)) as since_ts,
+            max(coalesce(sii.datetime, sm.timestamp, sm.created_at)) as till_ts
         from signal_message sm
         inner join sigint_inbox_item sii on sii.id = sm.id
         inner join signal_message_group smg on smg.signal_message_id = sm.id
         where sm.deleted = false
           and smg.group_master_key = $1
-          and coalesce(sii.datetime, sm.created_at) >= $2
+          and coalesce(sii.datetime, sm.timestamp, sm.created_at) >= $2
     "#;
     let window = GroupStatsActivityWindow::find_by_statement(
         Statement::from_sql_and_values(
@@ -2880,6 +2880,8 @@ struct NetworkFreqRangeRow {
     freq: String,
     active_from: NaiveDateTime,
     active_to: Option<NaiveDateTime>,
+    network_active_from: Option<NaiveDateTime>,
+    network_active_to: Option<NaiveDateTime>,
 }
 
 async fn load_network_freq_ranges(
@@ -2887,12 +2889,18 @@ async fn load_network_freq_ranges(
     network_ids: Option<&HashSet<i64>>,
 ) -> Result<HashMap<(i64, String), Vec<NetworkFreqRangeRow>>, AppError> {
     let mut query = sigint_network_freq::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_network_freq::Relation::SigintNetwork.def(),
+        )
         .select_only()
         .column(sigint_network_freq::Column::Id)
         .column(sigint_network_freq::Column::NetworkId)
         .column(sigint_network_freq::Column::Freq)
         .column(sigint_network_freq::Column::ActiveFrom)
         .column(sigint_network_freq::Column::ActiveTo)
+        .column_as(sigint_network::Column::ActiveFrom, "network_active_from")
+        .column_as(sigint_network::Column::ActiveTo, "network_active_to")
         .filter(sigint_network_freq::Column::Deleted.eq(false));
     if let Some(network_ids) = network_ids {
         query = query.filter(
@@ -2920,7 +2928,10 @@ fn is_network_freq_active_at(
     freq: &NetworkFreqRangeRow,
     ts: NaiveDateTime,
 ) -> bool {
-    freq.active_from <= ts && freq.active_to.map(|dt| dt >= ts).unwrap_or(true)
+    freq.active_from <= ts
+        && freq.active_to.map(|dt| dt >= ts).unwrap_or(true)
+        && freq.network_active_from.map(|dt| dt <= ts).unwrap_or(true)
+        && freq.network_active_to.map(|dt| dt >= ts).unwrap_or(true)
 }
 
 pub async fn recalculate_last_seen_for_networks_exact(
@@ -2951,7 +2962,8 @@ pub async fn recalculate_last_seen_for_networks_exact(
            and nf.network_id in ({network_ids_sql}){active_freq_filter}"
     );
 
-    dbx.execute_raw(Statement::from_string(
+    let txn = dbx.begin().await.c(h!())?;
+    txn.execute_raw(Statement::from_string(
         DatabaseBackend::Postgres,
         reset_sql,
     ))
@@ -2966,6 +2978,8 @@ pub async fn recalculate_last_seen_for_networks_exact(
                  nf_inner.id as network_freq_id,
                  max(coalesce(sii.datetime, sm.timestamp, sm.created_at)) as last_seen_dt
              from sigint_network_freq as nf_inner
+             join sigint_network as network_inner
+                 on network_inner.id = nf_inner.network_id
              join sigint_inbox_item_network as siin
                  on siin.sigint_network_id = nf_inner.network_id
              join sigint_inbox_item as sii
@@ -2978,17 +2992,20 @@ pub async fn recalculate_last_seen_for_networks_exact(
                and sii.freq = nf_inner.freq
                and coalesce(sii.datetime, sm.timestamp, sm.created_at) >= nf_inner.active_from
                and coalesce(sii.datetime, sm.timestamp, sm.created_at) <= coalesce(nf_inner.active_to, current_timestamp at time zone 'utc')
+               and coalesce(sii.datetime, sm.timestamp, sm.created_at) >= coalesce(network_inner.active_from, '-infinity'::timestamp)
+               and coalesce(sii.datetime, sm.timestamp, sm.created_at) <= coalesce(network_inner.active_to, current_timestamp at time zone 'utc')
              group by nf_inner.id
          ) as sub
          where nf.id = sub.network_freq_id"
     );
 
-    dbx.execute_raw(Statement::from_string(
+    txn.execute_raw(Statement::from_string(
         DatabaseBackend::Postgres,
         update_sql,
     ))
     .await
     .c(h!())?;
+    txn.commit().await.c(h!())?;
 
     Ok(())
 }
@@ -3535,6 +3552,23 @@ fn batch_key_to_group_keys(batch_key: String) -> Vec<String> {
 mod tests {
     use super::*;
     use clap::{CommandFactory, Parser};
+
+    // Regression for ECHO-3207: cached activity follows both activity ranges.
+    #[test]
+    fn network_frequency_activity_checks_network_range() {
+        let freq = NetworkFreqRangeRow {
+            id: 1,
+            network_id: 1,
+            freq: "146.5000".to_string(),
+            active_from: ndt(2026, 9, 2, 0, 0),
+            active_to: Some(ndt(2026, 9, 8, 0, 0)),
+            network_active_from: Some(ndt(2026, 9, 1, 0, 0)),
+            network_active_to: Some(ndt(2026, 9, 7, 0, 0)),
+        };
+
+        assert!(is_network_freq_active_at(&freq, ndt(2026, 9, 6, 0, 0)));
+        assert!(!is_network_freq_active_at(&freq, ndt(2026, 9, 7, 12, 0)));
+    }
 
     #[test]
     fn historic_stats_help_lists_all_statistics_families() {
@@ -4395,6 +4429,99 @@ mod tests {
             task.till_ts,
             start_of_day(get_local_date(message_ts) + Duration::days(1))
                 .unwrap()
+        );
+
+        txn.rollback().await.unwrap();
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_group_stats_recalculation_uses_message_timestamp_fallback() {
+        let env = cleanup().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let created_at = Utc::now().naive_utc() - Duration::days(1);
+        let message_timestamp = created_at - Duration::days(2);
+        let group = mk_group_with_stats_message(
+            &txn,
+            "stats-recalc-timestamp-fallback",
+            created_at,
+        )
+        .await;
+        let message_id = signal_message_group::Entity::find()
+            .filter(
+                signal_message_group::Column::GroupMasterKey
+                    .eq(group.master_key.clone()),
+            )
+            .select_only()
+            .column(signal_message_group::Column::SignalMessageId)
+            .into_tuple::<i64>()
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        signal_message::Entity::update_many()
+            .col_expr(
+                signal_message::Column::Timestamp,
+                Expr::value(Some(message_timestamp)),
+            )
+            .filter(signal_message::Column::Id.eq(message_id))
+            .exec(&txn)
+            .await
+            .unwrap();
+        sigint_inbox_item::Entity::update_many()
+            .col_expr(
+                sigint_inbox_item::Column::Date,
+                Expr::value(None::<String>),
+            )
+            .col_expr(
+                sigint_inbox_item::Column::Time,
+                Expr::value(None::<String>),
+            )
+            .col_expr(
+                sigint_inbox_item::Column::Datetime,
+                Expr::value(None::<NaiveDateTime>),
+            )
+            .filter(sigint_inbox_item::Column::Id.eq(message_id))
+            .exec(&txn)
+            .await
+            .unwrap();
+
+        assert!(enqueue_group_stats_recalculation_for_message(
+            &txn,
+            message_id,
+            "test timestamp fallback".to_string(),
+        )
+        .await
+        .unwrap());
+        let task = group_stats_recalculation_task::Entity::find()
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            task.since_ts,
+            start_of_day(get_local_date(message_timestamp)).unwrap()
+        );
+        group_stats_recalculation_task::Entity::delete_many()
+            .exec(&txn)
+            .await
+            .unwrap();
+
+        assert!(enqueue_group_stats_recalculation_for_group_history(
+            &txn,
+            &group.master_key,
+            "test group timestamp fallback".to_string(),
+        )
+        .await
+        .unwrap());
+        let task = group_stats_recalculation_task::Entity::find()
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            task.since_ts,
+            start_of_day(get_local_date(message_timestamp)).unwrap()
         );
 
         txn.rollback().await.unwrap();

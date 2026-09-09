@@ -3,6 +3,7 @@ import dayjs from 'dayjs';
 import type { SelectedSidebarUnitFilter } from '../rer-callsigns-neo/types';
 import type { ActivityByNetworkId } from './use-rer-networks-neo-page.types';
 import { hasRole } from '../../utils/roles';
+import { APP_TIME_ZONE } from '../../utils/misc';
 
 export function formatErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -14,7 +15,7 @@ export function isAbortError(error: unknown): boolean {
 }
 
 export function getActivityRequestUpperBoundMs(): number {
-  return dayjs().startOf('day').add(1, 'day').valueOf();
+  return dayjs().tz(APP_TIME_ZONE).add(1, 'day').startOf('day').valueOf();
 }
 
 export function normalizeActivityMap(

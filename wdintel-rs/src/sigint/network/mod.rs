@@ -77,6 +77,9 @@ pub async fn network_list(
     )
     .await?;
     let user_id = login_id_from_identity(&user)?;
+    let access = load_network_render_access(&env.dbx, &user_id)
+        .await
+        .context(h!())?;
 
     let text_search_mode =
         resolve_network_text_search_mode(&env.dbx, &req).await?;
@@ -84,14 +87,16 @@ pub async fn network_list(
         &req,
         NetworkQueryKind::List,
         text_search_mode,
+        &access.activity_groups,
     )
     .all(&env.dbx)
     .await
     .context(h!())?;
 
-    let res = render_networks(networks, &env.dbx, &user_id)
-        .await
-        .context(h!())?;
+    let res =
+        render_networks_with_access(networks, &env.dbx, &user_id, &access)
+            .await
+            .context(h!())?;
 
     let status_counts = load_network_status_counts(&env.dbx, &req).await?;
 
@@ -116,6 +121,7 @@ fn build_networks_query(
         req,
         kind,
         NetworkTextSearchMode::Substring,
+        &["test-group".to_string()],
     )
 }
 
@@ -123,6 +129,7 @@ fn build_networks_query_with_text_search_mode(
     req: &ListNetworksReq,
     kind: NetworkQueryKind,
     text_search_mode: NetworkTextSearchMode,
+    activity_groups: &[String],
 ) -> Select<sigint_network::Entity> {
     let mut query = sigint_network::Entity::find();
     query = apply_network_list_filters_with_text_search_mode(
@@ -133,7 +140,11 @@ fn build_networks_query_with_text_search_mode(
     );
 
     if matches!(kind, NetworkQueryKind::List) {
-        query = sort::apply_network_sorts(query, req.sort_by.as_ref());
+        query = sort::apply_network_sorts(
+            query,
+            req.sort_by.as_ref(),
+            activity_groups,
+        );
 
         let has_filters = req.filter_freq.is_some()
             || req.filter_text.is_some()
@@ -195,6 +206,7 @@ fn build_networks_counts_query_with_text_search_mode(
         req,
         NetworkQueryKind::Counts,
         text_search_mode,
+        &[],
     )
     .select_only()
     .column_as(
@@ -1360,6 +1372,8 @@ pub async fn update_network(
         }
     }
 
+    let activity_range_changed = old_network.active_from != network.active_from
+        || old_network.active_to != network.active_to;
     txn.commit().await.context(h!())?;
 
     etalon_calc::invalidate_network_inbox(
@@ -1370,7 +1384,10 @@ pub async fn update_network(
     )
     .await
     .c(h!())?;
-    if is_restore_network || should_reactivate_for_do_not_archive {
+    if activity_range_changed
+        || is_restore_network
+        || should_reactivate_for_do_not_archive
+    {
         refresh_network_last_seen_after_state_change(&env.dbx, [network.id])
             .await
             .c(h!())?;
@@ -2234,6 +2251,26 @@ where
     Ok(())
 }
 
+async fn clear_network_last_seen<C>(
+    txn: &C,
+    network_id: i64,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    sigint_network_freq::Entity::update_many()
+        .col_expr(
+            sigint_network_freq::Column::LastSeenDt,
+            Expr::value(Option::<NaiveDateTime>::None),
+        )
+        .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .exec(txn)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
 struct NetworkFreqMutationResult {
     network: sigint_network::Model,
     network_freq_id: i64,
@@ -2880,6 +2917,7 @@ pub async fn update_network_freq(
     let network = lock_network_activity_target(&txn, req.network_id)
         .await
         .context(h!())?;
+    let network_activity_range = (network.active_from, network.active_to);
     let updated_freq_active_from =
         update_network_freq_active_from(req.active_from)?;
     let updated_freq_active_to =
@@ -2930,12 +2968,18 @@ pub async fn update_network_freq(
         .await
         .context(h!())?;
         let old_network_freq = network_freq_model.clone();
+        let activity_range_changed = old_network_freq.active_from
+            != updated_freq_active_from
+            || old_network_freq.active_to != updated_freq_active_to;
         let mut network_freq = network_freq_model.into_active_model();
         network_freq.modulation = Set(req.modulation.clone());
         network_freq.kind = Set(kind_from_modulation(&req.modulation));
         network_freq.encryption_id = Set(encryption_id);
         network_freq.active_from = Set(updated_freq_active_from);
         network_freq.active_to = Set(updated_freq_active_to);
+        if activity_range_changed {
+            network_freq.last_seen_dt = Set(None);
+        }
         activate_network = updated_freq_active_to.is_none();
         let network_freq = network_freq.update(&txn).await.context(h!())?;
         record_activity_decision_if_changed(
@@ -2985,6 +3029,13 @@ pub async fn update_network_freq(
     )
     .await
     .context(h!())?;
+    if network_activity_range
+        != (result.network.active_from, result.network.active_to)
+    {
+        clear_network_last_seen(&txn, result.network.id)
+            .await
+            .context(h!())?;
+    }
 
     // Now fetch the updated network with all descriptions, units and freqs to return
     let network_detail =
@@ -3010,7 +3061,6 @@ pub async fn update_network_freq(
     )
     .await
     .c(h!())?;
-
     Ok(Json(network_detail[0].clone()))
 }
 
@@ -3032,6 +3082,7 @@ pub async fn update_network_freq_v2(
     let network = lock_network_activity_target(&txn, req.network_id)
         .await
         .context(h!())?;
+    let network_activity_range = (network.active_from, network.active_to);
     let updated_freq_active_from =
         update_network_freq_active_from(req.active_from)?;
     let updated_freq_active_to =
@@ -3082,12 +3133,18 @@ pub async fn update_network_freq_v2(
         .context(h!())?;
 
         let old_network_freq = network_freq_model.clone();
+        let activity_range_changed = old_network_freq.active_from
+            != updated_freq_active_from
+            || old_network_freq.active_to != updated_freq_active_to;
         let kind = kind_from_modulation(&req.modulation);
         let mut network_freq = network_freq_model.into_active_model();
         network_freq.kind = Set(kind);
         network_freq.modulation_id = Set(None);
         network_freq.active_from = Set(updated_freq_active_from);
         network_freq.active_to = Set(updated_freq_active_to);
+        if activity_range_changed {
+            network_freq.last_seen_dt = Set(None);
+        }
         activate_network = updated_freq_active_to.is_none();
         network_freq.encryption_id = Set(normalized_encryption_id);
         network_freq.modulation = Set(req.modulation.clone());
@@ -3139,6 +3196,13 @@ pub async fn update_network_freq_v2(
     )
     .await
     .context(h!())?;
+    if network_activity_range
+        != (result.network.active_from, result.network.active_to)
+    {
+        clear_network_last_seen(&txn, result.network.id)
+            .await
+            .context(h!())?;
+    }
 
     let network = bl_network_info_batch(vec![req.network_id], &txn, &user_id)
         .await
@@ -3158,7 +3222,6 @@ pub async fn update_network_freq_v2(
     )
     .await
     .c(h!())?;
-
     let response = load_network_freq_mutation_response(
         &env,
         &user,
@@ -3453,37 +3516,81 @@ async fn cleanup_networks_worker_1(
                             sigint_inbox_item::Column::Id,
                         )),
                     )
+                    .join(
+                        JoinType::InnerJoin,
+                        signal_message::Entity,
+                        Expr::col((
+                            sigint_inbox_item::Entity,
+                            sigint_inbox_item::Column::Id,
+                        ))
+                        .equals((
+                            signal_message::Entity,
+                            signal_message::Column::Id,
+                        )),
+                    )
                     .and_where(
                         Expr::col((
                             sigint_inbox_item_network::Entity,
                             sigint_inbox_item_network::Column::SigintNetworkId,
                         ))
-                        .equals(sigint_network_freq::Column::NetworkId),
+                        .equals((
+                            sigint_network_freq::Entity,
+                            sigint_network_freq::Column::NetworkId,
+                        )),
                     )
                     .and_where(
                         Expr::col((
                             sigint_inbox_item::Entity,
                             sigint_inbox_item::Column::Freq,
                         ))
-                        .equals(sigint_network_freq::Column::Freq),
+                        .equals((
+                            sigint_network_freq::Entity,
+                            sigint_network_freq::Column::Freq,
+                        )),
+                    )
+                    .cond_where(cleanup_activity_since(
+                        cleanup_time.naive_utc(),
+                    ))
+                    .and_where(
+                        signal_message::Column::Deleted.eq(false),
+                    )
+                    .and_where(
+                        cleanup_activity_timestamp().gte(Expr::col((
+                            sigint_network_freq::Entity,
+                            sigint_network_freq::Column::ActiveFrom,
+                        ))),
                     )
                     .and_where(
                         Expr::col((
-                            sigint_inbox_item::Entity,
-                            sigint_inbox_item::Column::Datetime,
+                            sigint_network::Entity,
+                            sigint_network::Column::ActiveFrom,
                         ))
-                        .gte(cleanup_time),
+                        .is_null()
+                        .or(cleanup_activity_timestamp().gte(Expr::col((
+                            sigint_network::Entity,
+                            sigint_network::Column::ActiveFrom,
+                        )))),
                     )
                     .and_where(
                         Expr::col((
-                            sigint_inbox_item::Entity,
-                            sigint_inbox_item::Column::Freq,
+                            sigint_network::Entity,
+                            sigint_network::Column::ActiveTo,
                         ))
-                        .is_not_null(),
+                        .is_null()
+                        .or(cleanup_activity_timestamp().lte(Expr::col((
+                            sigint_network::Entity,
+                            sigint_network::Column::ActiveTo,
+                        )))),
                     )
                     .to_owned(),
             )
             .not(),
+        )
+        .filter(
+            sigint_network_freq::Column::LastSeenDt
+                .is_null()
+                .or(sigint_network_freq::Column::LastSeenDt
+                    .lt(cleanup_time)),
         )
         .filter(sigint_network_freq::Column::ActiveTo.is_null())
         .filter(sigint_network_freq::Column::Deleted.eq(false))
@@ -3628,6 +3735,29 @@ async fn cleanup_networks_worker_1(
     }
     debug!("cleanup_networks_worker completed");
     Ok(())
+}
+
+fn cleanup_activity_timestamp() -> SimpleExpr {
+    Expr::cust(
+        "COALESCE(sigint_inbox_item.datetime, signal_message.timestamp, signal_message.created_at)",
+    )
+}
+
+fn cleanup_activity_since(since: NaiveDateTime) -> Condition {
+    Condition::any()
+        .add(sigint_inbox_item::Column::Datetime.gte(since))
+        .add(
+            Condition::all()
+                .add(sigint_inbox_item::Column::Datetime.is_null())
+                .add(signal_message::Column::Timestamp.is_not_null())
+                .add(signal_message::Column::Timestamp.gte(since)),
+        )
+        .add(
+            Condition::all()
+                .add(sigint_inbox_item::Column::Datetime.is_null())
+                .add(signal_message::Column::Timestamp.is_null())
+                .add(signal_message::Column::CreatedAt.gte(since)),
+        )
 }
 
 async fn cleanup_candidate_network_activity(
@@ -3917,25 +4047,56 @@ async fn calc_network_synthetic_active_to<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let last_dt: Option<NaiveDateTime> =
-        sigint_inbox_item_network::Entity::find()
-            .join(
-                JoinType::InnerJoin,
-                sigint_inbox_item_network::Relation::SigintInboxItem.def(),
-            )
-            .filter(
-                sigint_inbox_item_network::Column::SigintNetworkId
-                    .eq(network_id),
-            )
-            .filter(sigint_inbox_item::Column::Datetime.is_not_null())
-            .select_only()
-            .column(sigint_inbox_item::Column::Datetime)
-            .order_by_desc(sigint_inbox_item::Column::Datetime)
-            .into_tuple::<Option<NaiveDateTime>>()
-            .one(dbx)
-            .await
-            .context(h!())?
-            .flatten();
+    let last_dt = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SigintInboxItemNetwork.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item_network::Relation::SigintNetwork.def(),
+        )
+        .filter(
+            sigint_inbox_item_network::Column::SigintNetworkId.eq(network_id),
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(
+            Expr::col(sigint_network::Column::ActiveFrom)
+                .is_null()
+                .or(cleanup_activity_timestamp()
+                    .gte(Expr::col(sigint_network::Column::ActiveFrom))),
+        )
+        .filter(
+            Expr::col(sigint_network::Column::ActiveTo)
+                .is_null()
+                .or(cleanup_activity_timestamp()
+                    .lte(Expr::col(sigint_network::Column::ActiveTo))),
+        )
+        .filter(Expr::cust(
+            r#"EXISTS (
+                SELECT 1
+                FROM sigint_network_freq network_freq
+                WHERE network_freq.network_id = sigint_inbox_item_network.sigint_network_id
+                  AND network_freq.freq = sigint_inbox_item.freq
+                  AND network_freq.deleted = false
+                  AND COALESCE(sigint_inbox_item.datetime, signal_message.timestamp, signal_message.created_at) >= network_freq.active_from
+                  AND (
+                      network_freq.active_to IS NULL
+                      OR COALESCE(sigint_inbox_item.datetime, signal_message.timestamp, signal_message.created_at) <= network_freq.active_to
+                  )
+            )"#,
+        ))
+        .select_only()
+        .expr(cleanup_activity_timestamp())
+        .order_by_desc(cleanup_activity_timestamp())
+        .into_tuple::<NaiveDateTime>()
+        .one(dbx)
+        .await
+        .context(h!())?;
 
     Ok(last_dt.map(|dt| dt + delta))
 }
@@ -5307,9 +5468,10 @@ pub async fn network_search(
 mod tests {
     use super::*;
     use crate::functest::tests::{
-        cleanup, mk_sigint_inbox_item, mk_sigint_inbox_item_network,
-        mk_sigint_network, mk_sigint_network_freq, mk_sigint_network_unit,
-        mk_sigint_unit,
+        cleanup, find_test_datasource_group, mk_sigint_inbox_item,
+        mk_sigint_inbox_item_network, mk_sigint_network,
+        mk_sigint_network_freq, mk_sigint_network_unit, mk_sigint_unit,
+        mk_signal_message,
     };
     use crate::sigint::network::filter::tokenize_search_text;
     use chrono::NaiveDate;
@@ -5669,7 +5831,14 @@ mod tests {
             .build(DbBackend::Postgres)
             .to_string();
 
-        assert!(sql.contains("\"sigint_network\".\"updated_at\" DESC"));
+        assert!(sql.contains("SELECT MAX(activity_at)"));
+        assert!(sql.contains(
+            "datasource_group.group_master_key = ANY(ARRAY ['test-group'])"
+        ));
+        assert!(sql.contains("ORDER BY inbox_item.datetime DESC LIMIT 1"));
+        assert!(sql.contains("ORDER BY signal_message.timestamp DESC LIMIT 1"));
+        assert!(sql.contains("ORDER BY signal_message.created_at DESC LIMIT 1"));
+        assert!(sql.contains("DESC"));
         assert!(sql.contains("\"sigint_network\".\"name\" ASC"));
         assert!(sql.contains("\"sigint_network\".\"id\" ASC"));
     }
@@ -5835,6 +6004,7 @@ mod tests {
             &req,
             NetworkQueryKind::List,
             text_search_mode,
+            &[],
         )
         .all(&env.dbx)
         .await
@@ -5869,6 +6039,7 @@ mod tests {
             &req,
             NetworkQueryKind::List,
             text_search_mode,
+            &[],
         )
         .all(&env.dbx)
         .await
@@ -5915,6 +6086,7 @@ mod tests {
             &req,
             NetworkQueryKind::List,
             text_search_mode,
+            &[],
         )
         .all(&env.dbx)
         .await
@@ -5932,6 +6104,7 @@ mod tests {
             &req,
             NetworkQueryKind::List,
             text_search_mode,
+            &[],
         )
         .all(&env.dbx)
         .await
@@ -6031,6 +6204,7 @@ mod tests {
             &req,
             NetworkQueryKind::List,
             text_search_mode,
+            &[],
         )
         .all(&env.dbx)
         .await
@@ -6074,6 +6248,7 @@ mod tests {
             &req,
             NetworkQueryKind::List,
             text_search_mode,
+            &[],
         )
         .all(&env.dbx)
         .await
@@ -6109,6 +6284,7 @@ mod tests {
             &req,
             NetworkQueryKind::List,
             text_search_mode,
+            &[],
         )
         .all(&env.dbx)
         .await
@@ -6399,7 +6575,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn cleanup_labels_synthetic_network_deactivation_separately() {
+    async fn cleanup_ignores_synthetic_activity_from_deleted_frequency() {
         let env = cleanup().await.unwrap();
         let old_dt = cleanup_old_dt();
         let network = mk_sigint_network(
@@ -6463,24 +6639,12 @@ mod tests {
 
         cleanup_networks_worker_1(&env.dbx).await.unwrap();
 
-        let network_decision =
-            sigint_activity_decision_changelog::Entity::find()
-                .filter(
-                    sigint_activity_decision_changelog::Column::NetworkId
-                        .eq(network.id),
-                )
-                .filter(
-                    sigint_activity_decision_changelog::Column::TargetKind
-                        .eq("network"),
-                )
-                .one(&env.dbx)
-                .await
-                .unwrap()
-                .unwrap();
-        assert_eq!(
-            network_decision.reason,
-            SIGINT_NETWORK_ACTIVITY_REASON_CLEANUP_NETWORK_SYNTHETIC_INACTIVITY
-        );
+        let network = sigint_network::Entity::find_by_id(network.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(network.active_to, None);
     }
 
     #[tokio::test]
@@ -6667,6 +6831,153 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(invalidation_task_count, 0);
+    }
+
+    // Regression for ECHO-3207: delayed derived links must not deactivate recently seen frequencies.
+    #[tokio::test]
+    #[serial]
+    async fn cleanup_worker_keeps_recently_seen_frequency_active() {
+        let env = cleanup().await.unwrap();
+        let old_dt = cleanup_old_dt();
+        seed_stale_freq_network(&env.dbx, old_dt, "Cleanup scan trigger").await;
+        let network = mk_sigint_network(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                name: Set("Recently seen network".to_string()),
+                created_at: Set(old_dt),
+                updated_at: Set(old_dt),
+                active_from: Set(Some(old_dt)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let network_freq = mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set("146.5500".to_string()),
+                active_from: Set(old_dt),
+                last_seen_dt: Set(Some(Utc::now().naive_utc())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        cleanup_networks_worker_1(&env.dbx).await.unwrap();
+
+        let network = sigint_network::Entity::find_by_id(network.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let network_freq =
+            sigint_network_freq::Entity::find_by_id(network_freq.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(network.active_to, None);
+        assert_eq!(network_freq.active_to, None);
+    }
+
+    // Regression for ECHO-3207: cleanup uses the canonical timestamp fallback.
+    #[tokio::test]
+    #[serial]
+    async fn cleanup_worker_keeps_frequency_with_recent_message_timestamp() {
+        let env = cleanup().await.unwrap();
+        let old_dt = cleanup_old_dt();
+        seed_stale_freq_network(&env.dbx, old_dt, "Cleanup scan trigger").await;
+        let network = mk_sigint_network(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                name: Set("Fallback timestamp network".to_string()),
+                created_at: Set(old_dt),
+                updated_at: Set(old_dt),
+                active_from: Set(Some(old_dt)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let freq = "146.5750";
+        let network_freq = mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set(freq.to_string()),
+                active_from: Set(old_dt),
+                last_seen_dt: Set(None),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let timestamp = Utc::now().naive_utc().with_nanosecond(0).unwrap()
+            - Duration::hours(1);
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                datasource_group_id: Set(Some(datasource_group.id)),
+                timestamp: Set(Some(timestamp)),
+                created_at: Set(timestamp),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inbox_item = mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                datetime: Set(None),
+                freq: Set(Some(freq.to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item_network(
+            &env.dbx,
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(inbox_item.id),
+                sigint_network_id: Set(network.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let synthetic_active_to = calc_network_synthetic_active_to(
+            &env.dbx,
+            network.id,
+            Duration::days(CLEANUP_NETWORKS_CUTOFF_TIME_DAYS),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            synthetic_active_to,
+            Some(timestamp + Duration::days(CLEANUP_NETWORKS_CUTOFF_TIME_DAYS))
+        );
+
+        cleanup_networks_worker_1(&env.dbx).await.unwrap();
+
+        let network = sigint_network::Entity::find_by_id(network.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let network_freq =
+            sigint_network_freq::Entity::find_by_id(network_freq.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(network.active_to, None);
+        assert_eq!(network_freq.active_to, None);
     }
 
     #[tokio::test]
