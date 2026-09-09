@@ -1344,6 +1344,12 @@ async fn update_source_message_snapshot(
     datasource_group_id: i64,
     attachments_hash: Option<String>,
 ) -> anyhow::Result<signal_message::Model> {
+    crate::rer_importer::inbox::invalidate_message_network_frequency_last_seen(
+        txn,
+        signal_message.id,
+    )
+    .await
+    .context(h!())?;
     let mut signal_message = signal_message.into_active_model();
     signal_message.body = Set(Some(body.to_string()));
     signal_message.sender = Set(snapshot_sender_uuid(snapshot));
@@ -2565,6 +2571,76 @@ mod tests {
         .await
         .unwrap();
         network_freq
+    }
+
+    #[tokio::test]
+    async fn active_edit_invalidates_fallback_timestamp_before_update() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let old_timestamp = Utc::now().naive_utc();
+        let new_timestamp = old_timestamp + chrono::Duration::minutes(1);
+        let datasource_group =
+            mk_datasource_group(&txn, Default::default()).await.unwrap();
+        let signal_message = mk_signal_message(
+            &txn,
+            signal_message::ActiveModel {
+                datasource_group_id: Set(Some(datasource_group.id)),
+                timestamp: Set(Some(old_timestamp)),
+                created_at: Set(old_timestamp),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let network_freq = mk_cached_network_freq_for_message(
+            &txn,
+            signal_message.id,
+            old_timestamp,
+        )
+        .await;
+        let inbox_item =
+            sigint_inbox_item::Entity::find_by_id(signal_message.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        let mut inbox_item = inbox_item.into_active_model();
+        inbox_item.datetime = Set(None);
+        inbox_item.update(&txn).await.unwrap();
+        let snapshot = MessageF1 {
+            id: None,
+            text: String::new(),
+            sender: None,
+            sender_phone_number: None,
+            group_id: Some(datasource_group.group_master_key.clone()),
+            attachments: vec![],
+            message_source: echo_im::types::MessageSource::Signal,
+            timestamp: new_timestamp,
+            internal_id: 0,
+            reply_to: None,
+            deleted: false,
+        };
+
+        update_source_message_snapshot(
+            &txn,
+            signal_message,
+            &snapshot.text,
+            &snapshot,
+            datasource_group.id,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let network_freq =
+            sigint_network_freq::Entity::find_by_id(network_freq.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(network_freq.last_seen_dt, None);
+
+        txn.rollback().await.unwrap();
     }
 
     #[tokio::test]
