@@ -4,11 +4,11 @@ use crate::{h, users};
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 use uuid::Uuid;
 
-const INACTIVE_JUNK_UNIT_IDS_SQL: &str = r#"
+const JUNK_UNIT_IDS_SQL: &str = r#"
 select sigint_unit.id
 from sigint_unit
-where sigint_unit.active = false
-  and sigint_unit.created_by_login_id = $1
+where sigint_unit.created_by_login_id = $1
+  and ($2::boolean is null or sigint_unit.active = $2)
   and not exists (
       select 1
       from sigint_callsign
@@ -27,28 +27,42 @@ where sigint_unit.active = false
 "#;
 
 pub(super) async fn run(mode: Mode) -> anyhow::Result<()> {
+    let Some(activity_scope) = tui::prompt_unit_activity_scope(
+        "Choose junk SIGINT unit cleanup scope (↑/↓, Enter, Esc: quit)",
+    )
+    .c(h!())?
+    else {
+        return Ok(());
+    };
     let db = super::connect_database(mode).await.c(h!())?;
     let system_login_id = users::system_login_id(&db).await.c(h!())?;
-    let candidate_count = count_inactive_junk_units(&db, system_login_id)
-        .await
-        .c(h!())?;
+    let candidate_count =
+        count_junk_units(&db, system_login_id, activity_scope)
+            .await
+            .c(h!())?;
     if candidate_count == 0 {
-        println!("No inactive junk SIGINT units found.");
+        println!("No {} junk SIGINT units found.", activity_scope.label());
         return Ok(());
     }
-    if !tui::confirm_delete_inactive_junk_units(candidate_count).c(h!())? {
+    if !tui::confirm_delete_junk_units(candidate_count, activity_scope)
+        .c(h!())?
+    {
         return Ok(());
     }
-    let deleted_count = delete_inactive_junk_units(&db, system_login_id)
+    let deleted_count = delete_junk_units(&db, system_login_id, activity_scope)
         .await
         .c(h!())?;
-    println!("Deleted {deleted_count} inactive junk SIGINT units.");
+    println!(
+        "Deleted {deleted_count} {} junk SIGINT units.",
+        activity_scope.label()
+    );
     Ok(())
 }
 
-async fn count_inactive_junk_units<C>(
+async fn count_junk_units<C>(
     db: &C,
     system_login_id: Uuid,
+    activity_scope: tui::UnitActivityScope,
 ) -> anyhow::Result<i64>
 where
     C: ConnectionTrait,
@@ -57,9 +71,9 @@ where
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             format!(
-                "select count(*) as candidate_count from ({INACTIVE_JUNK_UNIT_IDS_SQL}) candidates"
+                "select count(*) as candidate_count from ({JUNK_UNIT_IDS_SQL}) candidates"
             ),
-            [system_login_id.into()],
+            [system_login_id.into(), activity_scope.active().into()],
         ))
         .await
         .c(h!())?
@@ -67,9 +81,10 @@ where
     row.try_get("", "candidate_count").c(h!())
 }
 
-async fn delete_inactive_junk_units<C>(
+async fn delete_junk_units<C>(
     db: &C,
     system_login_id: Uuid,
+    activity_scope: tui::UnitActivityScope,
 ) -> anyhow::Result<u64>
 where
     C: ConnectionTrait,
@@ -78,9 +93,9 @@ where
         .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             format!(
-                "delete from sigint_unit where id in ({INACTIVE_JUNK_UNIT_IDS_SQL})"
+                "delete from sigint_unit where id in ({JUNK_UNIT_IDS_SQL})"
             ),
-            [system_login_id.into()],
+            [system_login_id.into(), activity_scope.active().into()],
         ))
         .await
         .c(h!())?
@@ -104,14 +119,15 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn deletes_only_unlinked_inactive_system_units() {
+    async fn deletes_only_unlinked_system_units_in_selected_scope() {
         let env = crate::functest::tests::cleanup().await.unwrap();
         let system_login_id = users::system_login_id(&env.dbx).await.unwrap();
         let user_login_id = crate::users::login_id_by_name(&env.dbx, "Tester")
             .await
             .unwrap();
-        let deletable = make_unit(&env.dbx, system_login_id, false).await;
-        let active = make_unit(&env.dbx, system_login_id, true).await;
+        let deletable_inactive =
+            make_unit(&env.dbx, system_login_id, false).await;
+        let deletable_active = make_unit(&env.dbx, system_login_id, true).await;
         let user_created = make_unit(&env.dbx, user_login_id, false).await;
         let with_callsign = make_unit(&env.dbx, system_login_id, false).await;
         let with_network_callsign =
@@ -127,7 +143,7 @@ mod tests {
             &env.dbx,
             sigint_network_unit::ActiveModel {
                 network_id: Set(network.id),
-                unit_id: Set(deletable.id),
+                unit_id: Set(deletable_inactive.id),
                 ..Default::default()
             },
         )
@@ -139,22 +155,60 @@ mod tests {
         insert_signal(&env.dbx, with_signal.id).await;
 
         assert_eq!(
-            count_inactive_junk_units(&env.dbx, system_login_id)
-                .await
-                .unwrap(),
+            count_junk_units(
+                &env.dbx,
+                system_login_id,
+                tui::UnitActivityScope::Active,
+            )
+            .await
+            .unwrap(),
             1
         );
         assert_eq!(
-            delete_inactive_junk_units(&env.dbx, system_login_id)
-                .await
-                .unwrap(),
+            count_junk_units(
+                &env.dbx,
+                system_login_id,
+                tui::UnitActivityScope::Inactive,
+            )
+            .await
+            .unwrap(),
+            1
+        );
+        assert_eq!(
+            count_junk_units(
+                &env.dbx,
+                system_login_id,
+                tui::UnitActivityScope::Both,
+            )
+            .await
+            .unwrap(),
+            2
+        );
+        assert_eq!(
+            delete_junk_units(
+                &env.dbx,
+                system_login_id,
+                tui::UnitActivityScope::Active,
+            )
+            .await
+            .unwrap(),
+            1
+        );
+        assert_eq!(
+            delete_junk_units(
+                &env.dbx,
+                system_login_id,
+                tui::UnitActivityScope::Inactive,
+            )
+            .await
+            .unwrap(),
             1
         );
 
         let remaining_ids = sigint_unit::Entity::find()
             .filter(sigint_unit::Column::Id.is_in([
-                deletable.id,
-                active.id,
+                deletable_inactive.id,
+                deletable_active.id,
                 user_created.id,
                 with_callsign.id,
                 with_network_callsign.id,
@@ -169,7 +223,6 @@ mod tests {
         assert_eq!(
             remaining_ids,
             BTreeSet::from([
-                active.id,
                 user_created.id,
                 with_callsign.id,
                 with_network_callsign.id,
@@ -177,7 +230,9 @@ mod tests {
             ])
         );
         assert!(sigint_network_unit::Entity::find()
-            .filter(sigint_network_unit::Column::UnitId.eq(deletable.id))
+            .filter(
+                sigint_network_unit::Column::UnitId.eq(deletable_inactive.id),
+            )
             .one(&env.dbx)
             .await
             .unwrap()
