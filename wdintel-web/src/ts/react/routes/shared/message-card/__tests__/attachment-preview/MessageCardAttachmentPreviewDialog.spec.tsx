@@ -4,7 +4,7 @@
 import type { ReactNode } from 'react';
 import { act, useLayoutEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MessageCardAttachmentPreviewDialog } from '../../attachment-preview/MessageCardAttachmentPreviewDialog';
 import type { MessageCardPreviewItem } from '../../attachment-preview/message-card-preview.types';
@@ -16,6 +16,7 @@ vi.mock('@mui/material', () => ({
 
 const imageEditorEscapeHandler = vi.fn(() => false);
 const consumeInitialAction = vi.fn();
+const reportVisibilityStorageKey = 'echo.message-attachment-preview.report-visible';
 
 vi.mock('../../renderers/ImageAttachmentPreviewRenderer', () => ({
   ImageAttachmentPreviewRenderer: ({
@@ -23,6 +24,7 @@ vi.mock('../../renderers/ImageAttachmentPreviewRenderer', () => ({
     onEditModeChange,
     initialAction,
     onInitialActionConsumed,
+    onClose,
     reportVisible,
     onReportVisibleChange,
   }: {
@@ -30,6 +32,7 @@ vi.mock('../../renderers/ImageAttachmentPreviewRenderer', () => ({
     onEditModeChange?: (editing: boolean) => void;
     initialAction?: 'edit-image';
     onInitialActionConsumed?: () => void;
+    onClose: () => void;
     reportVisible: boolean;
     onReportVisibleChange: (visible: boolean) => void;
   }) => {
@@ -49,6 +52,7 @@ vi.mock('../../renderers/ImageAttachmentPreviewRenderer', () => ({
           aria-label="Перемкнути панель розвіддонесення"
           onClick={() => onReportVisibleChange(!reportVisible)}
         />
+        <button aria-label="Закрити перегляд" onClick={onClose} />
         <button aria-label="Почати редагування" onClick={() => onEditModeChange?.(true)} />
         <button aria-label="Завершити редагування" onClick={() => onEditModeChange?.(false)} />
         <input data-image-editor-local-escape onKeyDown={(event) => event.stopPropagation()} />
@@ -87,6 +91,18 @@ describe('MessageCardAttachmentPreviewDialog', () => {
   let root: Root | null = null;
   let container: HTMLDivElement | null = null;
 
+  beforeEach(() => {
+    const storage = new Map<string, string>();
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+        removeItem: (key: string) => storage.delete(key),
+      },
+    });
+  });
+
   afterEach(() => {
     act(() => root?.unmount());
     container?.remove();
@@ -94,6 +110,7 @@ describe('MessageCardAttachmentPreviewDialog', () => {
     container = null;
     imageEditorEscapeHandler.mockClear();
     consumeInitialAction.mockClear();
+    delete (globalThis as { localStorage?: Storage }).localStorage;
   });
 
   it.each(items)('renders the $type attachment renderer directly', async (item) => {
@@ -217,7 +234,7 @@ describe('MessageCardAttachmentPreviewDialog', () => {
     expect(consumeInitialAction).toHaveBeenCalledOnce();
   });
 
-  it('preserves the report panel across attachment types', async () => {
+  it('defaults the report panel to visible and preserves it across attachment types', async () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -230,17 +247,6 @@ describe('MessageCardAttachmentPreviewDialog', () => {
 
     await act(async () =>
       root?.render(<MessageCardAttachmentPreviewDialog item={items[0]!} {...commonProps} />),
-    );
-    expect(
-      container.querySelector('[data-report-visible]')?.getAttribute('data-report-visible'),
-    ).toBe('false');
-
-    await act(async () =>
-      (
-        container?.querySelector(
-          '[aria-label="Перемкнути панель розвіддонесення"]',
-        ) as HTMLButtonElement
-      ).click(),
     );
     expect(
       container.querySelector('[data-report-visible]')?.getAttribute('data-report-visible'),
@@ -280,5 +286,94 @@ describe('MessageCardAttachmentPreviewDialog', () => {
     expect(
       container.querySelector('[data-renderer="document"]')?.getAttribute('data-report-visible'),
     ).toBe('true');
+  });
+
+  it('persists report panel visibility across dialog mounts', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const props = {
+      item: items[0]!,
+      navigation: { index: 0, count: 1, onPrevious: vi.fn(), onNext: vi.fn() },
+      onClose: vi.fn(),
+      reportDraft: { value: 'Чернетка', onChange: vi.fn() },
+    };
+
+    await act(async () => root?.render(<MessageCardAttachmentPreviewDialog {...props} />));
+    await act(async () =>
+      (
+        container?.querySelector(
+          '[aria-label="Перемкнути панель розвіддонесення"]',
+        ) as HTMLButtonElement
+      ).click(),
+    );
+
+    expect(localStorage.getItem(reportVisibilityStorageKey)).toBe('false');
+    act(() => root?.unmount());
+    root = createRoot(container);
+    await act(async () => root?.render(<MessageCardAttachmentPreviewDialog {...props} />));
+    expect(
+      container.querySelector('[data-report-visible]')?.getAttribute('data-report-visible'),
+    ).toBe('false');
+
+    await act(async () =>
+      (
+        container?.querySelector(
+          '[aria-label="Перемкнути панель розвіддонесення"]',
+        ) as HTMLButtonElement
+      ).click(),
+    );
+    expect(localStorage.getItem(reportVisibilityStorageKey)).toBe('true');
+  });
+
+  it('does not change the report preference outside report mode', async () => {
+    localStorage.setItem(reportVisibilityStorageKey, 'true');
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () =>
+      root?.render(
+        <MessageCardAttachmentPreviewDialog
+          item={items[0]!}
+          navigation={{ index: 0, count: 1, onPrevious: vi.fn(), onNext: vi.fn() }}
+          onClose={vi.fn()}
+        />,
+      ),
+    );
+    await act(async () =>
+      (
+        container?.querySelector(
+          '[aria-label="Перемкнути панель розвіддонесення"]',
+        ) as HTMLButtonElement
+      ).click(),
+    );
+
+    expect(localStorage.getItem(reportVisibilityStorageKey)).toBe('true');
+  });
+
+  it('does not overwrite the report panel preference when closing the dialog', async () => {
+    localStorage.setItem(reportVisibilityStorageKey, 'true');
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const onClose = vi.fn();
+
+    await act(async () =>
+      root?.render(
+        <MessageCardAttachmentPreviewDialog
+          item={items[0]!}
+          navigation={{ index: 0, count: 1, onPrevious: vi.fn(), onNext: vi.fn() }}
+          onClose={onClose}
+          reportDraft={{ value: 'Чернетка', onChange: vi.fn() }}
+        />,
+      ),
+    );
+    await act(async () =>
+      (container?.querySelector('[aria-label="Закрити перегляд"]') as HTMLButtonElement).click(),
+    );
+
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(localStorage.getItem(reportVisibilityStorageKey)).toBe('true');
   });
 });

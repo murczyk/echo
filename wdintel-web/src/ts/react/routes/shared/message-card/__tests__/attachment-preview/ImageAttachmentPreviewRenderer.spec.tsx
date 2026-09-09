@@ -394,20 +394,15 @@ describe('ImageAttachmentPreviewRenderer', () => {
       );
     });
 
-    expect(document.body.querySelector('[data-attachment-preview-report-pane]')).toBeNull();
-
-    await act(async () => {
-      document.body
-        .querySelector('button[aria-label="Писати розвіддонесення"]')
-        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-
     const textarea = document.body.querySelector(
       'textarea[aria-label="Текст розвіддонесення"]',
     ) as HTMLTextAreaElement | null;
 
     expect(textarea).not.toBeNull();
     expect(textarea?.value).toBe('Текст із дровера');
+    expect(
+      document.body.querySelector('button[aria-label="Сховати розвіддонесення"]'),
+    ).not.toBeNull();
 
     const pane = document.body.querySelector('[data-attachment-preview-report-pane]');
     expect(pane?.classList.contains('overflow-visible')).toBe(true);

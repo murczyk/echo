@@ -378,18 +378,10 @@ describe('VideoAttachmentPreviewRenderer', () => {
     root.unmount();
   });
 
-  it('keeps the shared report text field closed until requested', async () => {
+  it('shows the shared report text field when opened from report mode', async () => {
     const { root } = renderDialog({
       videos: [{ id: 'video-1', name: 'video.mp4', source: '/video.mp4' }],
       reportDraft: { value: 'Текст із дровера', onChange: vi.fn() },
-    });
-
-    expect(document.body.querySelector('[data-attachment-preview-report-pane]')).toBeNull();
-
-    await act(async () => {
-      document.body
-        .querySelector('button[aria-label="Писати розвіддонесення"]')
-        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
     const textarea = document.body.querySelector(
@@ -399,6 +391,9 @@ describe('VideoAttachmentPreviewRenderer', () => {
     expect(textarea).not.toBeNull();
     expect(textarea?.value).toBe('Текст із дровера');
     expect(textarea?.autofocus).toBe(false);
+    expect(
+      document.body.querySelector('button[aria-label="Сховати розвіддонесення"]'),
+    ).not.toBeNull();
     expect(document.body.querySelector('[data-controls]')).not.toBeNull();
     expect(
       document.body
