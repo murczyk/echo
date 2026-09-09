@@ -51,9 +51,18 @@ impl MigrationTrait for Migration {
                     on network_recalculation_task (started_at)
                     where started_at is not null;
 
+                create index network_recalculation_task_aor_freq_login_idx
+                    on network_recalculation_task (network_freq_id, login_id)
+                    where task_kind = 'network_freq_last_datetime_in_aor';
+
+                create index network_invalidation_task_reconciliation_idx
+                    on network_invalidation_task (sigint_network_id, frequency)
+                    where completed_at is null;
+
                 create table network_freq_last_datetime_in_aor (
                     network_freq_id bigint not null references sigint_network_freq(id) on delete cascade,
                     login_id uuid not null references login(id) on delete cascade,
+                    group_master_keys text[] not null,
                     last_datetime_in_aor timestamp without time zone,
                     calculated_at timestamp without time zone not null,
                     primary key (network_freq_id, login_id)
@@ -76,6 +85,7 @@ impl MigrationTrait for Migration {
             .get_connection()
             .execute_unprepared(
                 r#"
+                drop index if exists network_invalidation_task_reconciliation_idx;
                 drop table if exists network_freq_last_datetime_in_aor;
                 drop table if exists network_recalculation_task;
                 drop type if exists network_recalculation_task_kind;

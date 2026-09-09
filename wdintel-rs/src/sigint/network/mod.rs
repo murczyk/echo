@@ -396,19 +396,18 @@ pub async fn restore_network(
     let res = bl_network_info_batch(vec![network_id], &txn, &user_id)
         .await
         .context(h!())?;
-    txn.commit().await.context(h!())?;
-    let res = res.into_iter().next().context(h!())?;
-    etalon_calc::invalidate_network_inbox(
+    enqueue_updated_network_followup(
+        &txn,
         network,
-        vec![],
-        &env.dbx,
+        user_id,
+        false,
+        true,
         format!("restoring network {network_id}"),
     )
     .await
     .c(h!())?;
-    refresh_network_last_seen_after_state_change(&env.dbx, [network_id])
-        .await
-        .c(h!())?;
+    txn.commit().await.context(h!())?;
+    let res = res.into_iter().next().context(h!())?;
     Ok(Json(res))
 }
 
@@ -1383,32 +1382,19 @@ pub async fn update_network(
 
     let activity_range_changed = old_network.active_from != network.active_from
         || old_network.active_to != network.active_to;
-    txn.commit().await.context(h!())?;
-
-    if req.area_of_responsibility_ids.is_some() {
-        recalculation::enqueue_last_datetime_in_aor_for_network(
-            &env.dbx, network.id, user_id,
-        )
-        .await
-        .c(h!())?;
-    }
-
-    etalon_calc::invalidate_network_inbox(
+    enqueue_updated_network_followup(
+        &txn,
         network.clone(),
-        vec![],
-        &env.dbx,
+        user_id,
+        req.area_of_responsibility_ids.is_some(),
+        activity_range_changed
+            || is_restore_network
+            || should_reactivate_for_do_not_archive,
         format!("updated network {}", network.id),
     )
     .await
     .c(h!())?;
-    if activity_range_changed
-        || is_restore_network
-        || should_reactivate_for_do_not_archive
-    {
-        refresh_network_last_seen_after_state_change(&env.dbx, [network.id])
-            .await
-            .c(h!())?;
-    }
+    txn.commit().await.context(h!())?;
     if unit_mask.is_some() {
         crate::sigint::unit_tag::enqueue_recent_non_rer_unit_tag_recalculation(
             &env.dbx,
@@ -1453,19 +1439,22 @@ pub async fn delete_network(
         .c(h!())?;
     let user_id = login_id_from_identity(&user)?;
     let req: DeleteNetworkReq = req.into_inner();
-    let network = find_network(&env.dbx, req.network_id).await.context(h!())?;
+    let txn = env.dbx.begin().await.context(h!())?;
+    let network = lock_network_activity_target(&txn, req.network_id)
+        .await
+        .context(h!())?;
     let network_json_old = sigint_network::Entity::find_by_id(network.id)
         .into_json()
-        .one(&env.dbx)
+        .one(&txn)
         .await
         .context(h!())?
         .ok_or(AppError::NotFound)?;
     let mut network = network.into_active_model();
     network.deleted = Set(true);
-    let network = network.update(&env.dbx).await.context(h!())?;
+    let network = network.update(&txn).await.context(h!())?;
     let network_json_new = sigint_network::Entity::find_by_id(network.id)
         .into_json()
-        .one(&env.dbx)
+        .one(&txn)
         .await
         .context(h!())?
         .ok_or(AppError::NotFound)?;
@@ -1481,23 +1470,24 @@ pub async fn delete_network(
         sigint_origin_id: NotSet,
         original_id: NotSet,
     }
-    .insert(&env.dbx)
+    .insert(&txn)
     .await
     .context(h!())?;
-
-    fanout_network_changed(&env).await?;
 
     etalon_calc::invalidate_network_inbox(
         network.clone(),
         vec![],
-        &env.dbx,
+        &txn,
         format!("deleted network {}", network.id),
     )
     .await
     .c(h!())?;
-    refresh_network_last_seen_after_state_change(&env.dbx, [network.id])
+    refresh_network_last_seen_after_state_change(&txn, [network.id])
         .await
         .c(h!())?;
+    txn.commit().await.context(h!())?;
+
+    fanout_network_changed(&env).await?;
 
     let res = render_networks(vec![network], &env.dbx, &user_id)
         .await
@@ -2220,30 +2210,29 @@ pub async fn update_freq_networks(
         .context(h!())?,
     );
 
-    txn.commit().await.context(h!())?;
-
     let mut last_seen_refresh_network_ids: HashSet<i64> =
         req_network_ids.into_iter().collect();
     last_seen_refresh_network_ids
         .extend(networks.iter().map(|network| network.id));
 
-    for network in networks {
+    for network in &networks {
         let network_id = network.id;
         etalon_calc::invalidate_network_inbox(
-            network,
+            network.clone(),
             vec![req.freq.clone()],
-            &env.dbx,
+            &txn,
             format!("updated frequencies for network {}", network_id),
         )
         .await
         .c(h!())?;
     }
     refresh_network_last_seen_after_state_change(
-        &env.dbx,
+        &txn,
         last_seen_refresh_network_ids,
     )
     .await
     .c(h!())?;
+    txn.commit().await.context(h!())?;
 
     fanout_network_changed(&env).await?;
 
@@ -2251,7 +2240,7 @@ pub async fn update_freq_networks(
 }
 
 async fn refresh_network_last_seen_after_state_change<I>(
-    dbx: &DatabaseConnection,
+    dbx: &DatabaseTransaction,
     network_ids: I,
 ) -> Result<(), AppError>
 where
@@ -2283,6 +2272,37 @@ where
     Ok(())
 }
 
+async fn enqueue_updated_network_followup(
+    txn: &DatabaseTransaction,
+    network: sigint_network::Model,
+    login_id: uuid::Uuid,
+    refresh_aor_cache: bool,
+    refresh_last_seen: bool,
+    context_msg: String,
+) -> Result<(), AppError> {
+    if refresh_aor_cache {
+        recalculation::enqueue_last_datetime_in_aor_for_network(
+            txn, network.id, login_id,
+        )
+        .await
+        .c(h!())?;
+    }
+    etalon_calc::invalidate_network_inbox(
+        network.clone(),
+        vec![],
+        txn,
+        context_msg,
+    )
+    .await
+    .c(h!())?;
+    if refresh_last_seen {
+        refresh_network_last_seen_after_state_change(txn, [network.id])
+            .await
+            .c(h!())?;
+    }
+    Ok(())
+}
+
 struct NetworkFreqMutationResult {
     network: sigint_network::Model,
     network_freq_id: i64,
@@ -2290,6 +2310,30 @@ struct NetworkFreqMutationResult {
     network_active_to: Option<NaiveDateTime>,
     invalidation_freq: String,
     invalidation_range: (Option<NaiveDateTime>, Option<NaiveDateTime>),
+}
+
+async fn enqueue_network_freq_mutation_followup(
+    txn: &DatabaseTransaction,
+    network_freq_id: i64,
+    login_id: uuid::Uuid,
+    frequency: &str,
+    since_ts: Option<NaiveDateTime>,
+    till_ts: Option<NaiveDateTime>,
+    context_msg: String,
+) -> Result<(), AppError> {
+    recalculation::enqueue_all_for_network_freq(txn, network_freq_id, login_id)
+        .await
+        .c(h!())?;
+    etalon_calc::invalidate_network_inbox_for_freq(
+        frequency,
+        since_ts,
+        till_ts,
+        txn,
+        context_msg,
+    )
+    .await
+    .c(h!())?;
+    Ok(())
 }
 
 async fn finish_network_freq_mutation(
@@ -2401,7 +2445,7 @@ async fn load_network_freq_mutation_response(
     if let Some(freq_row) = freq.as_mut() {
         let last_datetime_in_aor =
             recalculation::load_cached_last_datetime_in_aor(
-                &env.dbx, network_id, user_id,
+                &env.dbx, network_id, user_id, &groups,
             )
             .await
             .context(h!())?;
@@ -2557,25 +2601,18 @@ pub async fn add_network_freq(
             .await
             .context(h!())?;
 
-    txn.commit().await.context(h!())?;
-
-    recalculation::enqueue_all_for_network_freq(
-        &env.dbx,
+    enqueue_network_freq_mutation_followup(
+        &txn,
         result.network_freq_id,
         user_id,
-    )
-    .await
-    .c(h!())?;
-
-    etalon_calc::invalidate_network_inbox_for_freq(
         &result.invalidation_freq,
         result.network_active_from,
         result.network_active_to,
-        &env.dbx,
         format!("added network frequency from web UI: {}", req.freq_rec.freq),
     )
     .await
     .c(h!())?;
+    txn.commit().await.context(h!())?;
 
     fanout_network_changed(&env).await?;
 
@@ -2702,25 +2739,18 @@ pub async fn add_network_freq_v2(
         .await
         .context(h!())?;
 
-    txn.commit().await.context(h!())?;
-
-    recalculation::enqueue_all_for_network_freq(
-        &env.dbx,
+    enqueue_network_freq_mutation_followup(
+        &txn,
         result.network_freq_id,
         user_id,
-    )
-    .await
-    .c(h!())?;
-
-    etalon_calc::invalidate_network_inbox_for_freq(
         &req.freq_rec.freq,
         result.network_active_from,
         result.network_active_to,
-        &env.dbx,
         format!("added network frequency from web UI: {}", req.freq_rec.freq),
     )
     .await
     .c(h!())?;
+    txn.commit().await.context(h!())?;
     fanout_network_changed(&env).await?;
 
     let response = load_network_freq_mutation_response(
@@ -2844,31 +2874,26 @@ pub async fn reactivate_network_freq(
             .await
             .context(h!())?;
 
-    txn.commit().await.context(h!())?;
-
-    recalculation::enqueue_all_for_network_freq(
-        &env.dbx,
-        network_freq.id,
-        user_id,
-    )
-    .await
-    .c(h!())?;
-
     if network_detail.is_empty() {
         return Err(AppError::NotFound);
     }
 
+    recalculation::enqueue_all_for_network_freq(&txn, network_freq.id, user_id)
+        .await
+        .c(h!())?;
+
     etalon_calc::invalidate_network_inbox(
         network.clone(),
         vec![freq.clone()],
-        &env.dbx,
+        &txn,
         format!("reactivated network frequency from web UI: {freq}"),
     )
     .await
     .c(h!())?;
-    refresh_network_last_seen_after_state_change(&env.dbx, [network.id])
+    refresh_network_last_seen_after_state_change(&txn, [network.id])
         .await
         .c(h!())?;
+    txn.commit().await.context(h!())?;
 
     Ok(Json(network_detail[0].clone()))
 }
@@ -3079,25 +3104,17 @@ pub async fn update_network_freq(
             .await
             .context(h!())?;
 
-    txn.commit().await.context(h!())?;
-
-    recalculation::enqueue_all_for_network_freq(
-        &env.dbx,
-        result.network_freq_id,
-        user_id,
-    )
-    .await
-    .c(h!())?;
-
     if network_detail.is_empty() {
         return Err(AppError::NotFound);
     }
 
-    etalon_calc::invalidate_network_inbox_for_freq(
+    enqueue_network_freq_mutation_followup(
+        &txn,
+        result.network_freq_id,
+        user_id,
         &result.invalidation_freq,
         result.invalidation_range.0,
         result.invalidation_range.1,
-        &env.dbx,
         format!(
             "edited network frequency from web UI: {}",
             network_detail[0].name
@@ -3105,6 +3122,8 @@ pub async fn update_network_freq(
     )
     .await
     .c(h!())?;
+    txn.commit().await.context(h!())?;
+
     Ok(Json(network_detail[0].clone()))
 }
 
@@ -3252,21 +3271,13 @@ pub async fn update_network_freq_v2(
         .await
         .context(h!())?;
 
-    txn.commit().await.context(h!())?;
-
-    recalculation::enqueue_all_for_network_freq(
-        &env.dbx,
+    enqueue_network_freq_mutation_followup(
+        &txn,
         result.network_freq_id,
         user_id,
-    )
-    .await
-    .c(h!())?;
-
-    etalon_calc::invalidate_network_inbox_for_freq(
         &result.invalidation_freq,
         result.invalidation_range.0,
         result.invalidation_range.1,
-        &env.dbx,
         format!(
             "edited network frequency from web UI: {}",
             result.network.name
@@ -3274,6 +3285,8 @@ pub async fn update_network_freq_v2(
     )
     .await
     .c(h!())?;
+    txn.commit().await.context(h!())?;
+
     let response = load_network_freq_mutation_response(
         &env,
         &user,
@@ -4486,6 +4499,7 @@ pub async fn network_freqs_list(
                 &env.dbx,
                 req.network_id,
                 user_id,
+                &groups,
             )
             .await
             .context(h!())?;

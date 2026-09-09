@@ -114,9 +114,11 @@ starts up to 100 pending recalculations per pass and stops starting new work
 after 50 seconds. It queues a final reconciliation after inbox-network
 invalidations update message assignments; broad group/AOR invalidations fan
 out only to frequencies processed during that pass.
-The per-login AOR cache expires after 10 minutes; expired entries are evicted
-hourly alongside the pre-existing network cleanup in the same worker. The
-cache and its queue are excluded from the optional analytics replica.
+The per-login AOR cache is scoped to the login's current visible group keys,
+expires after 10 minutes, and is not served while inbox-network invalidation or
+recalculation is pending. Expired entries are evicted hourly alongside the
+pre-existing network cleanup in the same worker. The cache and its queue are
+excluded from the optional analytics replica.
 
 ## Statistics storage
 

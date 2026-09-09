@@ -12,6 +12,7 @@ pub struct Model {
     pub network_freq_id: i64,
     #[sea_orm(primary_key, auto_increment = false)]
     pub login_id: Uuid,
+    pub group_master_keys: Vec<String>,
     pub last_datetime_in_aor: Option<DateTime>,
     pub calculated_at: DateTime,
 }

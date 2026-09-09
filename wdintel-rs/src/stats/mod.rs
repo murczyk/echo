@@ -2799,7 +2799,7 @@ async fn update_network_freq_last_seen(
 ) -> Result<(), AppError> {
     let network_freq_ranges =
         load_network_freq_ranges(dbx, network_ids).await.c(h!())?;
-    let mut last_seen = HashMap::<i64, NaiveDateTime>::new();
+    let mut last_seen = HashMap::<i64, NetworkFreqLastSeenCandidate>::new();
     let mut processed = HashSet::new();
     for row in rows {
         if !processed.insert((row.id, row.network_id)) {
@@ -2819,35 +2819,83 @@ async fn update_network_freq_last_seen(
                 |freq_range| is_network_freq_active_at(freq_range, timestamp),
             )
         {
+            let candidate = NetworkFreqLastSeenCandidate {
+                inbox_item_id: row.id,
+                network_id: row.network_id,
+                last_seen_dt: timestamp,
+                active_from: freq_range.active_from,
+                active_to: freq_range.active_to,
+            };
             last_seen
                 .entry(freq_range.id)
                 .and_modify(|current| {
-                    *current = std::cmp::max(*current, timestamp)
+                    if current.last_seen_dt < timestamp {
+                        *current = candidate;
+                    }
                 })
-                .or_insert(timestamp);
+                .or_insert(candidate);
         }
     }
 
     let txn = dbx.begin().await.c(h!())?;
-    for (network_freq_id, last_seen_dt) in last_seen {
-        sigint_network_freq::Entity::update_many()
-            .col_expr(
-                sigint_network_freq::Column::LastSeenDt,
-                Expr::value(Some(last_seen_dt)),
-            )
-            .filter(sigint_network_freq::Column::Id.eq(network_freq_id))
-            .filter(
-                sigint_network_freq::Column::LastSeenDt
-                    .is_null()
-                    .or(sigint_network_freq::Column::LastSeenDt
-                        .lt(last_seen_dt)),
-            )
-            .exec(&txn)
-            .await
-            .c(h!())?;
+    let mut last_seen = last_seen.into_iter().collect::<Vec<_>>();
+    last_seen.sort_unstable_by_key(|(network_freq_id, _)| *network_freq_id);
+    for (network_freq_id, candidate) in last_seen {
+        if !crate::sigint::network::recalculation::lock_network_freq_recalculation_target(
+            &txn,
+            network_freq_id,
+        )
+        .await
+        .c(h!())?
+        {
+            continue;
+        }
+        txn.execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+                update sigint_network_freq as nf
+                set last_seen_dt = $2
+                where nf.id = $1
+                  and nf.deleted = false
+                  and nf.active_from = $3
+                  and nf.active_to is not distinct from $4
+                  and (nf.last_seen_dt is null or nf.last_seen_dt < $2)
+                  and exists (
+                      select 1
+                      from sigint_inbox_item ii
+                      join signal_message sm on sm.id = ii.id
+                      join sigint_inbox_item_network iin
+                        on iin.sigint_inbox_item_id = ii.id
+                       and iin.sigint_network_id = $6
+                      where ii.id = $5
+                        and ii.freq = nf.freq
+                        and sm.deleted = false
+                        and coalesce(ii.datetime, sm.timestamp, sm.created_at) = $2
+                  )
+            "#,
+            vec![
+                network_freq_id.into(),
+                candidate.last_seen_dt.into(),
+                candidate.active_from.into(),
+                candidate.active_to.into(),
+                candidate.inbox_item_id.into(),
+                candidate.network_id.into(),
+            ],
+        ))
+        .await
+        .c(h!())?;
     }
     txn.commit().await.c(h!())?;
     Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct NetworkFreqLastSeenCandidate {
+    inbox_item_id: i64,
+    network_id: i64,
+    last_seen_dt: NaiveDateTime,
+    active_from: NaiveDateTime,
+    active_to: Option<NaiveDateTime>,
 }
 
 pub async fn recalculate_network_stats(
@@ -3565,6 +3613,99 @@ mod tests {
     use crate::functest::tests::*;
     use sea_orm::ActiveValue::Set;
     use serial_test::serial;
+
+    #[tokio::test]
+    #[serial]
+    async fn last_seen_update_revalidates_its_source_assignment() {
+        // Regression: https://github.com/echoua/echo/issues/3440
+        let env = cleanup().await.unwrap();
+        let timestamp = Utc::now().naive_utc() - Duration::minutes(5);
+        let network = mk_sigint_network(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                name: Set("Last seen source revalidation".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let network_freq = mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set("148.1950".to_string()),
+                active_from: Set(timestamp - Duration::days(1)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let network_freq_id = network_freq.id;
+        let inbox_item = mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                freq: Set(Some(network_freq.freq)),
+                datetime: Set(Some(timestamp)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let timestamp = inbox_item.datetime.unwrap();
+        let assignment = mk_sigint_inbox_item_network(
+            &env.dbx,
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(inbox_item.id),
+                sigint_network_id: Set(network.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let signal_message = signal_message::Entity::find_by_id(inbox_item.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let rows = [NetworkStatsRow {
+            id: inbox_item.id,
+            created_at: signal_message.created_at,
+            timestamp: signal_message.timestamp,
+            datetime: inbox_item.datetime,
+            group_master_key: "group".to_string(),
+            network_id: network.id,
+            freq: inbox_item.freq,
+            callsigns: None,
+        }];
+
+        update_network_freq_last_seen(&env.dbx, &rows, None)
+            .await
+            .unwrap();
+        let network_freq =
+            sigint_network_freq::Entity::find_by_id(network_freq_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(network_freq.last_seen_dt, Some(timestamp));
+
+        assignment.delete(&env.dbx).await.unwrap();
+        let mut network_freq = network_freq.into_active_model();
+        network_freq.last_seen_dt = Set(None);
+        network_freq.update(&env.dbx).await.unwrap();
+        update_network_freq_last_seen(&env.dbx, &rows, None)
+            .await
+            .unwrap();
+        assert_eq!(
+            sigint_network_freq::Entity::find_by_id(network_freq_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .last_seen_dt,
+            None
+        );
+    }
 
     fn analysis_stats_req0() -> AnalysisStatsReq {
         AnalysisStatsReq {
