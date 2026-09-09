@@ -1,9 +1,10 @@
 use crate::config::{
     Config, CHAT_ATTACHMENTS_TOTAL_MAX_BYTES, CHAT_ATTACHMENT_MAX_BYTES,
-    CHAT_ATTACHMENT_MAX_COUNT, CHAT_LIST_PAGE_SIZE, CHAT_MESSAGE_PAGE_SIZE,
-    CHAT_UNREAD_KEY_TTL_DAYS, CHAT_WEBHOOK_BATCH_SIZE,
-    CHAT_WEBHOOK_CLEANUP_BATCH_SIZE, CHAT_WEBHOOK_HISTORY_RETENTION_DAYS,
-    CHAT_WEBHOOK_MAX_ATTEMPTS, CHAT_WEBHOOK_REQUEST_TIMEOUT_SECS,
+    CHAT_ATTACHMENT_MAX_COUNT, CHAT_CENTRAL_BASELINE_MIGRATION,
+    CHAT_LIST_PAGE_SIZE, CHAT_MESSAGE_PAGE_SIZE, CHAT_UNREAD_KEY_TTL_DAYS,
+    CHAT_WEBHOOK_BATCH_SIZE, CHAT_WEBHOOK_CLEANUP_BATCH_SIZE,
+    CHAT_WEBHOOK_HISTORY_RETENTION_DAYS, CHAT_WEBHOOK_MAX_ATTEMPTS,
+    CHAT_WEBHOOK_REQUEST_TIMEOUT_SECS,
 };
 use crate::error::{
     bad_request, conflict, not_found, service_unavailable, ShortContext,
@@ -59,13 +60,26 @@ async fn central_chat_admin_migration_pending(
     if !table_exists(db, "seaql_migrations").await.c(h!())? {
         return Ok(false);
     }
-    Ok(!row_exists(
+    if !migration_applied(db, CHAT_CENTRAL_BASELINE_MIGRATION)
+        .await
+        .c(h!())?
+    {
+        return Ok(false);
+    }
+    Ok(!migration_applied(db, CHAT_ADMIN_MIGRATION).await.c(h!())?)
+}
+
+async fn migration_applied(
+    db: &DatabaseConnection,
+    version: &str,
+) -> anyhow::Result<bool> {
+    row_exists(
         db,
         "select exists (select 1 from seaql_migrations where version = $1) as found",
-        [CHAT_ADMIN_MIGRATION.into()],
+        [version.into()],
     )
     .await
-    .c(h!())?)
+    .c(h!())
 }
 
 async fn table_exists(
