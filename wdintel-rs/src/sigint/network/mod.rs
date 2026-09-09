@@ -4082,6 +4082,7 @@ where
                 FROM sigint_network_freq network_freq
                 WHERE network_freq.network_id = sigint_inbox_item_network.sigint_network_id
                   AND network_freq.freq = sigint_inbox_item.freq
+                  AND network_freq.deleted = false
                   AND COALESCE(sigint_inbox_item.datetime, signal_message.timestamp, signal_message.created_at) >= network_freq.active_from
                   AND (
                       network_freq.active_to IS NULL
@@ -6574,7 +6575,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn cleanup_labels_synthetic_network_deactivation_separately() {
+    async fn cleanup_ignores_synthetic_activity_from_deleted_frequency() {
         let env = cleanup().await.unwrap();
         let old_dt = cleanup_old_dt();
         let network = mk_sigint_network(
@@ -6638,24 +6639,12 @@ mod tests {
 
         cleanup_networks_worker_1(&env.dbx).await.unwrap();
 
-        let network_decision =
-            sigint_activity_decision_changelog::Entity::find()
-                .filter(
-                    sigint_activity_decision_changelog::Column::NetworkId
-                        .eq(network.id),
-                )
-                .filter(
-                    sigint_activity_decision_changelog::Column::TargetKind
-                        .eq("network"),
-                )
-                .one(&env.dbx)
-                .await
-                .unwrap()
-                .unwrap();
-        assert_eq!(
-            network_decision.reason,
-            SIGINT_NETWORK_ACTIVITY_REASON_CLEANUP_NETWORK_SYNTHETIC_INACTIVITY
-        );
+        let network = sigint_network::Entity::find_by_id(network.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(network.active_to, None);
     }
 
     #[tokio::test]
