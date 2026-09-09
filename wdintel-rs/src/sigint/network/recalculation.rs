@@ -16,7 +16,7 @@ use crate::error::AppError;
 use crate::h;
 use crate::types::{info, ShortContext};
 use chrono::{Duration, NaiveDateTime, Utc};
-use sea_orm::sea_query::OnConflict;
+use sea_orm::sea_query::{OnConflict, UnionType};
 use sea_orm::*;
 use std::collections::{HashMap, HashSet};
 use time::PrimitiveDateTime;
@@ -245,7 +245,7 @@ where
     if network_freq_ids.is_empty() {
         return Ok(());
     }
-    let cached_keys = network_freq_last_datetime_in_aor::Entity::find()
+    let mut affected_keys = network_freq_last_datetime_in_aor::Entity::find()
         .filter(
             network_freq_last_datetime_in_aor::Column::NetworkFreqId
                 .is_in(network_freq_ids.iter().copied()),
@@ -254,11 +254,7 @@ where
         .columns([
             network_freq_last_datetime_in_aor::Column::NetworkFreqId,
             network_freq_last_datetime_in_aor::Column::LoginId,
-        ])
-        .into_tuple::<(i64, uuid::Uuid)>()
-        .all(db)
-        .await
-        .c(h!())?;
+        ]);
     let started_keys = network_recalculation_task::Entity::find()
         .filter(
             network_recalculation_task::Column::TaskKind
@@ -266,38 +262,32 @@ where
         )
         .filter(
             network_recalculation_task::Column::NetworkFreqId
-                .is_in(network_freq_ids),
+                .is_in(network_freq_ids.iter().copied()),
         )
         .filter(network_recalculation_task::Column::StartedAt.is_not_null())
         .select_only()
         .columns([
             network_recalculation_task::Column::NetworkFreqId,
             network_recalculation_task::Column::LoginId,
-        ])
+        ]);
+    QueryTrait::query(&mut affected_keys)
+        .union(UnionType::Distinct, started_keys.into_query());
+    let affected_keys = affected_keys
         .into_tuple::<(i64, Option<uuid::Uuid>)>()
         .all(db)
         .await
         .c(h!())?;
     enqueue_tasks(
         db,
-        cached_keys
+        affected_keys
             .into_iter()
             .map(|(network_freq_id, login_id)| {
                 (
                     NetworkRecalculationTaskKind::NetworkFreqLastDatetimeInAor,
                     network_freq_id,
-                    Some(login_id),
+                    login_id,
                 )
-            })
-            .chain(started_keys.into_iter().map(
-                |(network_freq_id, login_id)| {
-                    (
-                        NetworkRecalculationTaskKind::NetworkFreqLastDatetimeInAor,
-                        network_freq_id,
-                        login_id,
-                    )
-                },
-            )),
+            }),
     )
     .await
     .c(h!())?;

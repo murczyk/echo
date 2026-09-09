@@ -1348,11 +1348,6 @@ pub async fn update_network(
         save_network_aors(&txn, aor_ids, network.id)
             .await
             .context(h!())?;
-        recalculation::enqueue_last_datetime_in_aor_for_network(
-            &txn, network.id, user_id,
-        )
-        .await
-        .c(h!())?;
     }
 
     if let Some(description_patches) = &req.descriptions {
@@ -1389,6 +1384,14 @@ pub async fn update_network(
     let activity_range_changed = old_network.active_from != network.active_from
         || old_network.active_to != network.active_to;
     txn.commit().await.context(h!())?;
+
+    if req.area_of_responsibility_ids.is_some() {
+        recalculation::enqueue_last_datetime_in_aor_for_network(
+            &env.dbx, network.id, user_id,
+        )
+        .await
+        .c(h!())?;
+    }
 
     etalon_calc::invalidate_network_inbox(
         network.clone(),
@@ -2327,10 +2330,6 @@ async fn finish_network_freq_mutation(
     )
     .await
     .context(h!())?;
-    recalculation::enqueue_all_for_network_freq(txn, network_freq_id, *user_id)
-        .await
-        .c(h!())?;
-
     Ok(NetworkFreqMutationResult {
         network,
         network_freq_id,
@@ -2560,6 +2559,14 @@ pub async fn add_network_freq(
 
     txn.commit().await.context(h!())?;
 
+    recalculation::enqueue_all_for_network_freq(
+        &env.dbx,
+        result.network_freq_id,
+        user_id,
+    )
+    .await
+    .c(h!())?;
+
     etalon_calc::invalidate_network_inbox_for_freq(
         &result.invalidation_freq,
         result.network_active_from,
@@ -2697,6 +2704,14 @@ pub async fn add_network_freq_v2(
 
     txn.commit().await.context(h!())?;
 
+    recalculation::enqueue_all_for_network_freq(
+        &env.dbx,
+        result.network_freq_id,
+        user_id,
+    )
+    .await
+    .c(h!())?;
+
     etalon_calc::invalidate_network_inbox_for_freq(
         &req.freq_rec.freq,
         result.network_active_from,
@@ -2829,11 +2844,15 @@ pub async fn reactivate_network_freq(
             .await
             .context(h!())?;
 
-    recalculation::enqueue_all_for_network_freq(&txn, network_freq.id, user_id)
-        .await
-        .c(h!())?;
-
     txn.commit().await.context(h!())?;
+
+    recalculation::enqueue_all_for_network_freq(
+        &env.dbx,
+        network_freq.id,
+        user_id,
+    )
+    .await
+    .c(h!())?;
 
     if network_detail.is_empty() {
         return Err(AppError::NotFound);
@@ -3062,6 +3081,14 @@ pub async fn update_network_freq(
 
     txn.commit().await.context(h!())?;
 
+    recalculation::enqueue_all_for_network_freq(
+        &env.dbx,
+        result.network_freq_id,
+        user_id,
+    )
+    .await
+    .c(h!())?;
+
     if network_detail.is_empty() {
         return Err(AppError::NotFound);
     }
@@ -3226,6 +3253,14 @@ pub async fn update_network_freq_v2(
         .context(h!())?;
 
     txn.commit().await.context(h!())?;
+
+    recalculation::enqueue_all_for_network_freq(
+        &env.dbx,
+        result.network_freq_id,
+        user_id,
+    )
+    .await
+    .c(h!())?;
 
     etalon_calc::invalidate_network_inbox_for_freq(
         &result.invalidation_freq,
