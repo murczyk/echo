@@ -1377,6 +1377,7 @@ where
         created_by_login_id: Set(*login),
         comment: Set(req.comment.clone()),
         orbit_note: Set(req.orbit_note.clone()),
+        present_in_orbit: Set(req.present_in_orbit),
         name: Set(unit_name_req(req)),
         deleted: Set(false),
         sigint_origin_id: NotSet,
@@ -1715,6 +1716,9 @@ async fn update_unit_for_login(
     if can_update_orbit_note {
         if let Some(orbit_note) = &req.orbit_note {
             unit.orbit_note = Set(orbit_note.clone());
+        }
+        if let Some(present_in_orbit) = req.present_in_orbit {
+            unit.present_in_orbit = Set(present_in_orbit);
         }
     }
     let unit = unit.update(&transaction).await.context(h!())?;
@@ -2311,6 +2315,7 @@ pub fn render_unit(unit: &sigint_unit::Model) -> Result<Unit, AppError> {
         is_deduplicate_candidate: unit.is_deduplicate_candidate,
         comment: unit.comment.clone(),
         orbit_note: unit.orbit_note.clone(),
+        present_in_orbit: unit.present_in_orbit,
         name: unit.name.clone(),
         created_at: unit.created_at.and_utc().timestamp_millis(),
         created_by_login_id: unit.created_by_login_id.to_string(),
@@ -2361,6 +2366,7 @@ pub(crate) fn redact_unit_orbit_data(unit: &mut Unit) {
     unit.orbit_unit_ids.clear();
     unit.orbit_unit_generative_names.clear();
     unit.orbit_note = None;
+    unit.present_in_orbit = None;
     unit.is_deduplicate_candidate = None;
 }
 
@@ -3076,6 +3082,7 @@ mod tests {
             is_deduplicate_candidate: None,
             comment: "main section".to_string(),
             orbit_note: None,
+            present_in_orbit: None,
             duplicate_unit_ids: Vec::new(),
         }
     }
@@ -5713,6 +5720,7 @@ mod tests {
             &env.dbx,
             sigint_unit::ActiveModel {
                 orbit_note: Set(Some("Orbit note".to_string())),
+                present_in_orbit: Set(Some(true)),
                 ..Default::default()
             },
         )
@@ -5729,6 +5737,37 @@ mod tests {
 
         assert_eq!(unit.comment, "updated");
         assert_eq!(unit.orbit_note.as_deref(), Some("Orbit note"));
+        assert_eq!(unit.present_in_orbit, Some(true));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn unit_update_changes_present_in_orbit() {
+        let env = cleanup().await.unwrap();
+        let login_id = test_login_id(&env).await;
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                present_in_orbit: Set(None),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let mut req = UpdateUnitReq::from(render_unit(&unit).unwrap());
+        req.present_in_orbit = Some(Some(false));
+
+        let unit = update_unit_for_login(&env.dbx, &login_id, &req, true)
+            .await
+            .unwrap();
+        assert_eq!(unit.present_in_orbit, Some(false));
+
+        let mut req = UpdateUnitReq::from(render_unit(&unit).unwrap());
+        req.present_in_orbit = Some(None);
+        let unit = update_unit_for_login(&env.dbx, &login_id, &req, true)
+            .await
+            .unwrap();
+        assert_eq!(unit.present_in_orbit, None);
     }
 
     #[tokio::test]
@@ -5742,6 +5781,7 @@ mod tests {
                 military_district: Set("Західний ВО".to_string()),
                 army_region: Set("ЗС РФ".to_string()),
                 orbit_note: Set(Some("Orbit note".to_string())),
+                present_in_orbit: Set(Some(false)),
                 ..Default::default()
             },
         )
@@ -5766,6 +5806,7 @@ mod tests {
         assert_eq!(unit.military_district, "Західний ВО");
         assert_eq!(unit.army_region, "ЗС РФ");
         assert_eq!(unit.orbit_note.as_deref(), Some("Orbit note"));
+        assert_eq!(unit.present_in_orbit, Some(false));
         assert_eq!(unit.comment, "updated");
     }
 
@@ -5819,6 +5860,7 @@ mod tests {
             army_region: String::new(),
             comment: String::new(),
             orbit_note: Some("Orbit note".to_string()),
+            present_in_orbit: Some(true),
             name: String::new(),
             active: true,
             is_deduplicate_candidate: Some(true),
@@ -5835,6 +5877,7 @@ mod tests {
         assert!(unit.orbit_unit_ids.is_empty());
         assert!(unit.orbit_unit_generative_names.is_empty());
         assert_eq!(unit.orbit_note, None);
+        assert_eq!(unit.present_in_orbit, None);
         assert_eq!(unit.is_deduplicate_candidate, None);
     }
 
