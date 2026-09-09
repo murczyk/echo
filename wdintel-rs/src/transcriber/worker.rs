@@ -429,7 +429,7 @@ async fn cleanup_finished(env: &Env) -> Result<u64> {
 async fn cleanup_orphans(
     env: &Env,
     cursor: &mut Option<QueueSourceCursor>,
-) -> Result<(u64, bool)> {
+) -> Result<u64> {
     let page = echo_gpu_client::scan_source_ids(
         &env.dbx,
         *cursor,
@@ -464,7 +464,7 @@ async fn cleanup_orphans(
         .await
         .context(h!())?;
     *cursor = page.next_cursor;
-    Ok((deleted, cursor.is_none()))
+    Ok(deleted)
 }
 
 pub async fn run_nofail(
@@ -505,10 +505,9 @@ async fn run(
         // Finished queue rows contain the only durable copy of completed
         // transcriptions. Deleting them permanently erases the transcribed
         // data, so age-based cleanup must remain disabled.
-        let (orphans, orphan_scan_complete) =
-            cleanup_orphans(env.as_ref(), &mut orphan_cursor)
-                .await
-                .context(h!())?;
+        let orphans = cleanup_orphans(env.as_ref(), &mut orphan_cursor)
+            .await
+            .context(h!())?;
         if orphans > 0 {
             log::info!(
                 "audio transcription cleanup worker_id={worker_id} orphans={orphans}"
@@ -517,14 +516,6 @@ async fn run(
 
         if cancel_token.is_cancelled() {
             break;
-        }
-        if !orphan_scan_complete {
-            wait_or_cancel(
-                &cancel_token,
-                ECHO_AUDIO_TRANSCRIPTION_ACTIVE_SLEEP_MS,
-            )
-            .await;
-            continue;
         }
         log_queue_status(env.as_ref(), worker_id, &mut last_status_log)
             .await
@@ -1218,7 +1209,12 @@ mod tests {
             .is_some());
 
         let mut cursor = None;
-        while !cleanup_orphans(&env, &mut cursor).await.unwrap().1 {}
+        loop {
+            cleanup_orphans(&env, &mut cursor).await.unwrap();
+            if cursor.is_none() {
+                break;
+            }
+        }
         assert!(echo_gpu_client::lookup(&env.dbx, orphan_id)
             .await
             .unwrap()

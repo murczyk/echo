@@ -27,10 +27,19 @@ import type {
 
 const isDownloadIdle = () => false;
 const allowDownloadStart = () => true;
+const REPORT_VISIBILITY_STORAGE_KEY = 'echo.message-attachment-preview.report-visible';
 const consumeEvent = (event: KeyboardEvent) => {
   event.preventDefault();
   event.stopPropagation();
 };
+
+function getStoredReportVisibility() {
+  try {
+    return localStorage.getItem(REPORT_VISIBILITY_STORAGE_KEY) !== 'false';
+  } catch {
+    return true;
+  }
+}
 
 function getPreviewKind(item: MessageCardPreviewItem) {
   if (item.type === 'document') return item.value.kind;
@@ -64,11 +73,12 @@ export function MessageCardAttachmentPreviewDialog({
 } & Partial<MessageCardDownloadGuardProps>) {
   const previewKind = getPreviewKind(item);
   const dialogLabel = getPreviewDialogLabel(previewKind);
+  const reportTextPreviewEnabled = reportDraft != null;
   const [isEditing, setIsEditing] = useState(false);
   const [pendingInitialAction, setPendingInitialAction] = useState(initialAction);
   const [childOverlayOpen, setChildOverlayOpen] = useState(false);
   const childOverlayOpenRef = useRef(false);
-  const [reportVisible, setReportVisible] = useState(false);
+  const [reportVisible, setReportVisible] = useState(getStoredReportVisibility);
   const [dismissChildOverlay, setDismissChildOverlay] = useState(0);
   const editorEscapeHandlerRef = useRef<ImageEditorEscapeHandler | null>(null);
   const previewConfig = getMessageCardAttachmentPreviewConfig(previewKind);
@@ -80,6 +90,18 @@ export function MessageCardAttachmentPreviewDialog({
     childOverlayOpenRef.current = open;
     setChildOverlayOpen(open);
   }, []);
+  const onReportVisibleChange = useCallback(
+    (visible: boolean) => {
+      setReportVisible(visible);
+      if (!reportTextPreviewEnabled) return;
+      try {
+        localStorage.setItem(REPORT_VISIBILITY_STORAGE_KEY, String(visible));
+      } catch {
+        // Ignore unavailable browser storage.
+      }
+    },
+    [reportTextPreviewEnabled],
+  );
 
   useEffect(() => {
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -129,7 +151,6 @@ export function MessageCardAttachmentPreviewDialog({
 
   const closeDialog = () => {
     blurActiveAttachmentPreviewElement();
-    setReportVisible(false);
     onClose();
   };
   const paperSx: Record<string, unknown> = {
@@ -183,7 +204,7 @@ export function MessageCardAttachmentPreviewDialog({
           dismissChildOverlay={dismissChildOverlay}
           reportDraft={reportDraft}
           reportVisible={reportVisible}
-          onReportVisibleChange={setReportVisible}
+          onReportVisibleChange={onReportVisibleChange}
           {...rendererProps}
         />
       ) : item.type === 'video' ? (
@@ -193,7 +214,7 @@ export function MessageCardAttachmentPreviewDialog({
           dismissChildOverlay={dismissChildOverlay}
           reportDraft={reportDraft}
           reportVisible={reportVisible}
-          onReportVisibleChange={setReportVisible}
+          onReportVisibleChange={onReportVisibleChange}
           {...rendererProps}
         />
       ) : item.type === 'audio' ? (
@@ -203,7 +224,7 @@ export function MessageCardAttachmentPreviewDialog({
           dismissChildOverlay={dismissChildOverlay}
           reportDraft={reportDraft}
           reportVisible={reportVisible}
-          onReportVisibleChange={setReportVisible}
+          onReportVisibleChange={onReportVisibleChange}
           {...rendererProps}
         />
       ) : item.type === 'document' ? (
@@ -211,7 +232,7 @@ export function MessageCardAttachmentPreviewDialog({
           document={item.value}
           reportDraft={reportDraft}
           reportVisible={reportVisible}
-          onReportVisibleChange={setReportVisible}
+          onReportVisibleChange={onReportVisibleChange}
           {...rendererProps}
         />
       ) : (
