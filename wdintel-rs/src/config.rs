@@ -876,6 +876,7 @@ DELETE FROM gpu_config;
 DELETE FROM secret_group_user;
 DELETE FROM palitra_highlight_blacklist;
 DELETE FROM sigint_activity_decision_changelog;
+DELETE FROM network_invalidation_task;
 DELETE FROM network_recalculation_task;
 DELETE FROM network_freq_last_datetime_in_aor;
 DELETE FROM sigint_callsign_changelog;

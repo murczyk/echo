@@ -10,7 +10,8 @@ use crate::config::{
 use crate::entities::sea_orm_active_enums::NetworkRecalculationTaskKind;
 use crate::entities::{
     login, network_freq_last_datetime_in_aor, network_invalidation_task,
-    network_recalculation_task, sigint_network_aor, sigint_network_freq,
+    network_recalculation_task, sigint_network, sigint_network_aor,
+    sigint_network_freq,
 };
 use crate::error::AppError;
 use crate::h;
@@ -344,7 +345,12 @@ pub(crate) async fn enqueue_for_network_invalidations(
     if tasks.is_empty() {
         return Ok(());
     }
-    let Some(condition) = invalidation_condition(tasks, processed_frequencies)
+    let invalidation_frequencies =
+        collect_invalidation_frequencies(db, tasks, processed_frequencies)
+            .await
+            .c(h!())?;
+    let Some(condition) =
+        invalidation_condition(tasks, &invalidation_frequencies)
     else {
         return Ok(());
     };
@@ -358,6 +364,42 @@ pub(crate) async fn enqueue_for_network_invalidations(
         .await
         .c(h!())?;
     Ok(())
+}
+
+async fn collect_invalidation_frequencies(
+    db: &DatabaseConnection,
+    tasks: &[network_invalidation_task::Model],
+    processed_frequencies: &HashSet<String>,
+) -> anyhow::Result<HashSet<String>> {
+    let aor_ids = tasks
+        .iter()
+        .filter_map(|task| task.aor_id)
+        .collect::<HashSet<_>>();
+    let mut frequencies = processed_frequencies.clone();
+    if aor_ids.is_empty() {
+        return Ok(frequencies);
+    }
+    frequencies.extend(
+        sigint_network_freq::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                sigint_network_freq::Relation::SigintNetwork.def(),
+            )
+            .join(
+                JoinType::InnerJoin,
+                sigint_network::Relation::SigintNetworkAor.def(),
+            )
+            .filter(sigint_network_aor::Column::AorId.is_in(aor_ids))
+            .filter(sigint_network_freq::Column::Deleted.eq(false))
+            .select_only()
+            .column(sigint_network_freq::Column::Freq)
+            .distinct()
+            .into_tuple::<String>()
+            .all(db)
+            .await
+            .c(h!())?,
+    );
+    Ok(frequencies)
 }
 
 async fn enqueue_last_seen_for_invalidations(
@@ -1020,6 +1062,7 @@ mod tests {
             (first_network.id, "149.1000"),
             (second_network.id, "148.1000"),
             (second_network.id, "149.1000"),
+            (first_network.id, "150.1000"),
         ] {
             network_freqs.push(
                 mk_sigint_network_freq(
@@ -1157,6 +1200,64 @@ mod tests {
         assert_eq!(tasks.len(), 4);
     }
 
+    async fn assert_aor_invalidation_scope(
+        db: &DatabaseConnection,
+        fixture: &InvalidationFixture,
+    ) {
+        network_recalculation_task::Entity::delete_many()
+            .exec(db)
+            .await
+            .unwrap();
+        let aor_id = crate::entities::area_of_responsibility::Entity::find()
+            .select_only()
+            .column(crate::entities::area_of_responsibility::Column::Id)
+            .into_tuple::<i64>()
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
+        crate::functest::tests::mk_sigint_network_aor(
+            db,
+            sigint_network_aor::ActiveModel {
+                network_id: Set(fixture.first_network.id),
+                aor_id: Set(aor_id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let mut aor_invalidation =
+            invalidation_task(4, fixture.first_network.id, "unused");
+        aor_invalidation.sigint_network_id = None;
+        aor_invalidation.frequency = None;
+        aor_invalidation.aor_id = Some(aor_id);
+        enqueue_for_network_invalidations(
+            db,
+            &[aor_invalidation],
+            &HashSet::new(),
+        )
+        .await
+        .unwrap();
+
+        for task_kind in [
+            NetworkRecalculationTaskKind::NetworkFreqLastSeen,
+            NetworkRecalculationTaskKind::NetworkFreqLastDatetimeInAor,
+        ] {
+            assert!(network_recalculation_task::Entity::find()
+                .filter(
+                    network_recalculation_task::Column::NetworkFreqId
+                        .eq(fixture.network_freqs[4].id),
+                )
+                .filter(
+                    network_recalculation_task::Column::TaskKind.eq(task_kind),
+                )
+                .one(db)
+                .await
+                .unwrap()
+                .is_some());
+        }
+    }
+
     #[tokio::test]
     #[serial]
     async fn invalidation_reconciliation_preserves_compound_scopes() {
@@ -1169,6 +1270,7 @@ mod tests {
         // Regression: https://github.com/echoua/echo/issues/3440
         assert_compound_invalidation_scope(&env.dbx, &fixture).await;
         assert_broad_invalidation_scope(&env.dbx, &fixture).await;
+        assert_aor_invalidation_scope(&env.dbx, &fixture).await;
     }
 
     struct QueueFixture {
