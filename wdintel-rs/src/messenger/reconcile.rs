@@ -156,7 +156,7 @@ pub async fn reconcile_deleted_message(
         let original_message = signal_message.clone();
         pending_dedupe_updates
             .push(DedupeRedisUpdate::clear_signal_message(&original_message));
-        crate::rer_importer::inbox::invalidate_deleted_message_last_seen(
+        crate::rer_importer::inbox::invalidate_message_network_frequency_last_seen(
             txn,
             original_message.id,
         )
@@ -2162,6 +2162,12 @@ async fn reset_machine_derived_inbox_data(
         .exec(txn)
         .await
         .c(h!())?;
+    crate::rer_importer::inbox::invalidate_message_network_frequency_last_seen(
+        txn,
+        signal_message_id,
+    )
+    .await
+    .context(h!())?;
     sigint_inbox_item_network::Entity::delete_many()
         .filter(
             sigint_inbox_item_network::Column::SigintInboxItemId
@@ -5811,15 +5817,12 @@ mod tests {
         let txn = env.dbx.begin().await.unwrap();
         let signal_message =
             mk_signal_message(&txn, Default::default()).await.unwrap();
-        mk_sigint_inbox_item(
+        let network_freq = mk_cached_network_freq_for_message(
             &txn,
-            sigint_inbox_item::ActiveModel {
-                id: Set(signal_message.id),
-                ..Default::default()
-            },
+            signal_message.id,
+            Utc::now().naive_utc(),
         )
-        .await
-        .unwrap();
+        .await;
         let login = mk_login(&txn, Default::default()).await.unwrap();
         if login::Entity::find()
             .filter(login::Column::Login.eq(SYSTEM_LOGIN_NAME))
@@ -5924,6 +5927,13 @@ mod tests {
             .unwrap();
         assert_eq!(tags.len(), 1);
         assert_eq!(tags[0].id, manual_tag.id);
+        let network_freq =
+            sigint_network_freq::Entity::find_by_id(network_freq.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(network_freq.last_seen_dt, None);
 
         txn.commit().await.unwrap();
     }

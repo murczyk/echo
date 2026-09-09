@@ -1935,7 +1935,7 @@ where
     )
     .await
     .context(h!())?;
-    invalidate_deleted_message_last_seen(txn, message_id)
+    invalidate_message_network_frequency_last_seen(txn, message_id)
         .await
         .context(h!())?;
 
@@ -1945,7 +1945,7 @@ where
     Ok(())
 }
 
-pub(crate) async fn invalidate_deleted_message_last_seen<C>(
+pub(crate) async fn invalidate_message_network_frequency_last_seen<C>(
     txn: &C,
     message_id: i64,
 ) -> Result<(), AppError>
