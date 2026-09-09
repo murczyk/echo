@@ -74,9 +74,13 @@ export function mapInboxMessageToForm(
     post: message.post ?? '',
     unit: message.unit ?? '',
     locations: splitLocations(message.location),
-    tags: (message.tags ?? [])
-      .map((id) => tagsMap[id]?.label)
-      .filter((label): label is string => Boolean(label)),
+    tags: Array.from(
+      new Set(
+        (message.tags ?? [])
+          .map((id) => tagsMap[id]?.label)
+          .filter((label): label is string => Boolean(label)),
+      ),
+    ),
   };
 }
 

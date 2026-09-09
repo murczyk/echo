@@ -7244,21 +7244,78 @@ mod tests {
 
     #[serial]
     #[tokio::test]
-    async fn test_messages_by_id_includes_organism_on_tags() {
+    async fn test_messages_by_id_deduplicates_flat_tags_after_filtering() {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let tag = find_test_bpla_tag(&env.dbx).await.unwrap();
         let datasource_group =
             find_test_datasource_group(&env.dbx).await.unwrap();
+        let peer_login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                id: NotSet,
+                login: Set("DuplicateTagPeer".to_string()),
+                organism_id: Set(login.organism_id),
+                sigint_zone_id: Set(login.sigint_zone_id),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let second_tag = mk_tag(
+            &env.dbx,
+            tag::ActiveModel {
+                label: Set(format!("second-tag-{}", Uuid::new_v4())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let model_only_tag = mk_tag(
+            &env.dbx,
+            tag::ActiveModel {
+                label: Set(format!("model-only-tag-{}", Uuid::new_v4())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let low_confidence_tag = mk_tag(
+            &env.dbx,
+            tag::ActiveModel {
+                label: Set(format!("low-confidence-tag-{}", Uuid::new_v4())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
 
         let message = seed_message_with_tags(
             &env,
             &datasource_group,
             &tag,
-            std::slice::from_ref(&login),
+            &[login.clone(), peer_login.clone()],
         )
         .await
         .unwrap();
+        for (tag_id, confidence, model) in [
+            (second_tag.id, 1.0, None),
+            (model_only_tag.id, 1.0, Some("test-model")),
+            (low_confidence_tag.id, 0.6, None),
+        ] {
+            sigint_inbox_item_tag::ActiveModel {
+                sigint_inbox_item_id: Set(message.id),
+                tag_id: Set(tag_id),
+                confidence: Set(confidence),
+                login_id: Set(Some(login.id)),
+                model: Set(model.map(str::to_string)),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
         let logins =
             crate::users::get_organism_login_ids_by_id(&env.dbx, &login.id)
                 .await
@@ -7275,16 +7332,59 @@ mod tests {
         .unwrap();
 
         assert_eq!(messages.len(), 1);
+        let flat_tags = messages[0]
+            .1
+            .tags
+            .as_ref()
+            .expect("flat tags must be present");
+        assert_eq!(flat_tags.iter().unique().count(), flat_tags.len());
+        assert!(flat_tags.contains(&tag.id));
+        assert!(flat_tags.contains(&second_tag.id));
+        assert!(flat_tags.contains(&model_only_tag.id));
+        assert!(!flat_tags.contains(&low_confidence_tag.id));
         let inbox_tags = messages[0]
             .1
             .inbox_tags
             .as_ref()
             .expect("inbox tags must be present");
+        assert_eq!(
+            inbox_tags
+                .iter()
+                .filter(|entry| entry.tag_id == tag.id)
+                .count(),
+            2
+        );
         let tag_entry = inbox_tags
             .iter()
             .find(|t| t.login.as_deref() == Some(login.login.as_str()))
             .expect("tag by login must be present");
         assert_eq!(tag_entry.organism_id, login.organism_id);
+
+        // ECHO-3073: retain manual attribution records while hiding model rows.
+        let without_model_tags = messages_by_id_bl(
+            &login.id,
+            &logins,
+            &env,
+            &[message.id],
+            &InboxMessagesReq {
+                without_model_tags: Some(true),
+                ..messages_by_id_default_req()
+            },
+        )
+        .await
+        .unwrap();
+        let filtered = &without_model_tags[0].1;
+        let filtered_tags = filtered.tags.as_ref().unwrap();
+        assert_eq!(filtered_tags.iter().unique().count(), filtered_tags.len());
+        assert_eq!(
+            filtered_tags.iter().copied().collect::<BTreeSet<_>>(),
+            BTreeSet::from([tag.id, second_tag.id])
+        );
+        let filtered_inbox_tags = filtered.inbox_tags.as_ref().unwrap();
+        assert_eq!(filtered_inbox_tags.len(), 3);
+        assert!(filtered_inbox_tags
+            .iter()
+            .all(|entry| entry.model.is_none()));
     }
 
     #[serial]
