@@ -248,7 +248,7 @@ where
     let cached_keys = network_freq_last_datetime_in_aor::Entity::find()
         .filter(
             network_freq_last_datetime_in_aor::Column::NetworkFreqId
-                .is_in(network_freq_ids),
+                .is_in(network_freq_ids.iter().copied()),
         )
         .select_only()
         .columns([
@@ -259,15 +259,45 @@ where
         .all(db)
         .await
         .c(h!())?;
+    let started_keys = network_recalculation_task::Entity::find()
+        .filter(
+            network_recalculation_task::Column::TaskKind
+                .eq(NetworkRecalculationTaskKind::NetworkFreqLastDatetimeInAor),
+        )
+        .filter(
+            network_recalculation_task::Column::NetworkFreqId
+                .is_in(network_freq_ids),
+        )
+        .filter(network_recalculation_task::Column::StartedAt.is_not_null())
+        .select_only()
+        .columns([
+            network_recalculation_task::Column::NetworkFreqId,
+            network_recalculation_task::Column::LoginId,
+        ])
+        .into_tuple::<(i64, Option<uuid::Uuid>)>()
+        .all(db)
+        .await
+        .c(h!())?;
     enqueue_tasks(
         db,
-        cached_keys.into_iter().map(|(network_freq_id, login_id)| {
-            (
-                NetworkRecalculationTaskKind::NetworkFreqLastDatetimeInAor,
-                network_freq_id,
-                Some(login_id),
-            )
-        }),
+        cached_keys
+            .into_iter()
+            .map(|(network_freq_id, login_id)| {
+                (
+                    NetworkRecalculationTaskKind::NetworkFreqLastDatetimeInAor,
+                    network_freq_id,
+                    Some(login_id),
+                )
+            })
+            .chain(started_keys.into_iter().map(
+                |(network_freq_id, login_id)| {
+                    (
+                        NetworkRecalculationTaskKind::NetworkFreqLastDatetimeInAor,
+                        network_freq_id,
+                        login_id,
+                    )
+                },
+            )),
     )
     .await
     .c(h!())?;
@@ -1053,10 +1083,10 @@ mod tests {
         let mut started_task = started_task.into_active_model();
         started_task.started_at = Set(Some(Utc::now().naive_utc()));
         let started_task = started_task.update(&env.dbx).await.unwrap();
-        enqueue_task(&env.dbx, kind.clone(), network_freq.id, Some(login_id))
+        enqueue_cached_last_datetime_in_aor(&env.dbx, [network_freq.id])
             .await
             .unwrap();
-        enqueue_task(&env.dbx, kind, network_freq.id, Some(login_id))
+        enqueue_cached_last_datetime_in_aor(&env.dbx, [network_freq.id])
             .await
             .unwrap();
         enqueue_task(
