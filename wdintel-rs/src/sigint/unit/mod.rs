@@ -765,6 +765,20 @@ fn unit_exact_match_sql_and_patterns(
     Some((match_sql, patterns))
 }
 
+fn unit_name_prefix_match_sql_and_pattern(
+    value: &str,
+) -> Option<(String, String)> {
+    let tokens = unit_search_tokens(value);
+    if tokens.is_empty() {
+        return None;
+    }
+    let normalized_name_sql = r#"concat(btrim(regexp_replace(lower("sigint_unit"."name"), '[[:punct:][:space:]]+', ' ', 'g')), ' ')"#;
+    Some((
+        format!("{normalized_name_sql} LIKE $1"),
+        format!("{} %", tokens.join(" ")),
+    ))
+}
+
 fn unit_echelon_sort_rank_sql() -> &'static str {
     r#"CASE
         WHEN btrim("sigint_unit"."other") <> '' THEN 13
@@ -813,7 +827,17 @@ fn unit_search_sort_expressions(
     req: &ListUnitsReq,
     can_view_orbit: bool,
 ) -> Vec<SimpleExpr> {
-    let mut expressions = Vec::with_capacity(17);
+    let mut expressions = Vec::with_capacity(18);
+    if let Some((match_sql, pattern)) = req
+        .filter_text
+        .as_deref()
+        .and_then(unit_name_prefix_match_sql_and_pattern)
+    {
+        expressions.push(Expr::cust_with_values(
+            format!("CASE WHEN {match_sql} THEN 0 ELSE 1 END"),
+            [pattern],
+        ));
+    }
     if matches!(req.search_mode, Some(ListUnitsSearchMode::Relaxed)) {
         if let Some((match_sql, patterns)) =
             req.filter_text.as_deref().and_then(|value| {
@@ -852,6 +876,22 @@ fn unit_search_sort_expressions(
     expressions
 }
 
+fn unit_name_prefix_match_rank(
+    unit: &sigint_unit::Model,
+    req: &ListUnitsReq,
+) -> Option<i32> {
+    let search_tokens = unit_search_tokens(req.filter_text.as_deref()?);
+    if search_tokens.is_empty() {
+        return None;
+    }
+    let unit_tokens = unit_search_tokens(&unit.name);
+    Some(if unit_tokens.starts_with(&search_tokens) {
+        0
+    } else {
+        1
+    })
+}
+
 async fn unit_search_cursor_exact_match_rank(
     dbx: &DatabaseConnection,
     req: &ListUnitsReq,
@@ -882,9 +922,13 @@ async fn unit_search_cursor_exact_match_rank(
 
 fn unit_search_cursor_values(
     unit: &sigint_unit::Model,
+    prefix_match_rank: Option<i32>,
     exact_match_rank: Option<i32>,
 ) -> Vec<SimpleExpr> {
-    let mut values = Vec::with_capacity(17);
+    let mut values = Vec::with_capacity(18);
+    if let Some(prefix_match_rank) = prefix_match_rank {
+        values.push(prefix_match_rank.into());
+    }
     if let Some(exact_match_rank) = exact_match_rank {
         values.push(exact_match_rank.into());
     }
@@ -919,6 +963,7 @@ async fn apply_unit_search_cursor(
         return Ok(units);
     };
     let after_unit = find_unit(dbx, after_unit_id).await.c(h!())?;
+    let prefix_match_rank = unit_name_prefix_match_rank(&after_unit, req);
     let exact_match_rank = unit_search_cursor_exact_match_rank(
         dbx,
         req,
@@ -931,6 +976,7 @@ async fn apply_unit_search_cursor(
         Expr::tuple(unit_search_sort_expressions(req, can_view_orbit)).gt(
             SimpleExpr::Tuple(unit_search_cursor_values(
                 &after_unit,
+                prefix_match_rank,
                 exact_match_rank,
             )),
         ),
@@ -3740,6 +3786,46 @@ mod tests {
             vec![suffixed_number.id]
         );
         assert!(!final_page.show_load_more);
+
+        let misleading_division = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("2 мсб 1220 мсп 3 мсд 20 А".to_string()),
+                battalion: Set("2 мсб".to_string()),
+                regiment: Set("1220 мсп".to_string()),
+                division: Set("3 мсд".to_string()),
+                army: Set("20 А".to_string()),
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let matching_prefix = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("3 мсб 1220 мсп 3 мсд 20 А".to_string()),
+                battalion: Set("3 мсб".to_string()),
+                regiment: Set("1220 мсп".to_string()),
+                division: Set("3 мсд".to_string()),
+                army: Set("20 А".to_string()),
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_listed_unit_ids(
+            &env.dbx,
+            ListUnitsReq {
+                sort_by: Some(ListUnitsSortBy::NaturalMilitarySortAsc),
+                filter_text: Some("3 мсб 1220 мсп".to_string()),
+                ..Default::default()
+            },
+            &[matching_prefix.id, misleading_division.id],
+        )
+        .await;
     }
 
     #[tokio::test]
