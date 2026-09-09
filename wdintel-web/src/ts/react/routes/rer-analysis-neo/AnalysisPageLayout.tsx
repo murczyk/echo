@@ -95,6 +95,17 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
         />
       </Box>
 
+      {page.directMessageError ? (
+        <PowerAlert
+          severity="error"
+          role="alert"
+          autoHideDuration={null}
+          dismissible={false}
+          sx={{ mx: { xs: 1, lg: 2 } }}
+        >
+          {page.directMessageError}
+        </PowerAlert>
+      ) : null}
       {page.error ? (
         <PowerAlert severity="error" role="alert" sx={{ mx: { xs: 1, lg: 2 } }}>
           {page.error}

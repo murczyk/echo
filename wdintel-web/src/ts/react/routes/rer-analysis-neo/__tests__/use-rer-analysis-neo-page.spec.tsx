@@ -855,14 +855,25 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.error).toBe('Не вдалося завантажити системні налаштування.');
   });
 
-  it('shows an error when a direct-link message is missing', async () => {
+  it('keeps the direct-link error when the regular message list clears its error', async () => {
     window.history.replaceState({}, '', `${window.location.pathname}?m=missing-uid`);
 
     renderHook();
     await flushEffects();
 
-    expect(latest?.error).toBe('Не вдалося знайти повідомлення за посиланням.');
+    expect(latest?.directMessageError).toBe(
+      'Повідомлення за посиланням не знайдено або воно недоступне.',
+    );
     expect(latest?.directMessageLoading).toBe(false);
+
+    const clearRegularListError = useAnalysisDataMock.mock.calls.at(-1)?.[0].onError;
+    await act(async () => {
+      clearRegularListError('');
+    });
+
+    expect(latest?.directMessageError).toBe(
+      'Повідомлення за посиланням не знайдено або воно недоступне.',
+    );
   });
 
   it('opens the direct-link message window with its references', async () => {
@@ -1264,7 +1275,7 @@ describe('useRerAnalysisNeoPage', () => {
     renderHook();
     await flushEffects();
 
-    expect(latest?.error).toBe('Не вдалося відкрити повідомлення за посиланням: boom');
+    expect(latest?.directMessageError).toBe('Не вдалося відкрити повідомлення за посиланням: boom');
   });
 
   it('exposes the callsign graph load error in the page view model', async () => {

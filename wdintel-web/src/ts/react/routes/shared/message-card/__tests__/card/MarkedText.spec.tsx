@@ -13,8 +13,16 @@ import type {
   ContentNode,
   InboxMessage,
   Network,
+  SignalGroupEntry,
   Unit,
 } from '../../../../../../../Bindings';
+import { minimalInboxMessage } from '../../../../rer-duty-neo/inbox-message-mocks';
+
+const inboxMessageMocks = vi.hoisted(() => ({ fetchInboxItemContext: vi.fn() }));
+
+vi.mock('../../../../../services/api/inbox-messages', () => ({
+  fetchInboxItemContext: inboxMessageMocks.fetchInboxItemContext,
+}));
 
 function decodeMapHrefState(
   href: string | null,
@@ -51,6 +59,7 @@ function TestHost(props: {
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   networks?: Network[];
   unitsMap?: Record<number, Unit>;
+  messageLinkGroupInfos?: Record<string, SignalGroupEntry>;
 }) {
   return (
     <div>
@@ -67,6 +76,7 @@ function TestHost(props: {
         freq: props.message?.freq ?? null,
         networkIds: props.message?.networkIds ?? null,
         searchText: props.searchText ?? null,
+        messageLinkGroupInfos: props.messageLinkGroupInfos,
       })}
     </div>
   );
@@ -223,6 +233,7 @@ describe('MarkedText', () => {
       container.remove();
       document.body.innerHTML = '';
     });
+    inboxMessageMocks.fetchInboxItemContext.mockReset();
   });
 
   it('renders callsigns with the updated accent color and border width', async () => {
@@ -1169,6 +1180,50 @@ describe('MarkedText', () => {
     expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
     expect(container.querySelector('[data-testid="callsign-token"]')?.textContent).toBe('WOLF');
     expect(container.textContent).toContain('Посилання: https://example.com/test).');
+  });
+
+  it('uses message group information in a marked message reference preview', async () => {
+    const url = `${window.location.origin}/rer-analysis-neo?m=linked-message`;
+    inboxMessageMocks.fetchInboxItemContext.mockResolvedValue({
+      message: [
+        77,
+        minimalInboxMessage({
+          text: 'Текст пов’язаного повідомлення',
+          timestamp: null,
+          date: '2026-09-08',
+          time: '14:30',
+          groupMasterKey: 'linked-group',
+        }),
+      ],
+      groupMasterKeys: ['linked-group'],
+      sigintInboxItemIds: [77],
+      sinceTs: null,
+      tillTs: null,
+    });
+
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={[{ CNTextC: { text: url } }]}
+          bodyText={url}
+          messageLinkGroupInfos={{
+            'linked-group': {
+              masterKey: 'linked-group',
+              name: 'Пов’язана група',
+            } as SignalGroupEntry,
+          }}
+        />,
+      );
+    });
+
+    await act(async () => {
+      container.querySelector('a')?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    });
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 750));
+    });
+
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toContain('Пов’язана група');
   });
 
   it('does not linkify non-http protocols', async () => {

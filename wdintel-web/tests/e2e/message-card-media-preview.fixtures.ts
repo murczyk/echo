@@ -345,15 +345,20 @@ async function installMessageCardMediaPreviewHostFixture(
   coordinatePointCount: number,
   messageText: string | undefined,
   enableAudioTranscription: boolean,
+  messageReferenceResponse: unknown | undefined,
+  signalGroups: InboxMessagesRspRaw['signal_groups'] | undefined,
 ): Promise<void> {
-  const inboxResponse = buildMessageCardMediaPreviewInboxResponse({
-    withPolishContent,
-    withPartialCoordinateError,
-    withCompleteCoordinateError,
-    coordinateLabel,
-    coordinatePointCount,
-    messageText,
-  });
+  const inboxResponse = {
+    ...buildMessageCardMediaPreviewInboxResponse({
+      withPolishContent,
+      withPartialCoordinateError,
+      withCompleteCoordinateError,
+      coordinateLabel,
+      coordinatePointCount,
+      messageText,
+    }),
+    signal_groups: signalGroups ?? [],
+  };
 
   const networkInfoResponse = withPolishContent ? MESSAGE_CARD_POLISH_NETWORKS : undefined;
 
@@ -368,6 +373,15 @@ async function installMessageCardMediaPreviewHostFixture(
       inboxResponse,
       networkInfoResponse,
       enableAudioTranscription,
+    });
+  }
+
+  if (messageReferenceResponse !== undefined) {
+    await page.route('**/api/rer-importer/inbox-item-context', async (route) => {
+      await route.fulfill({
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify(messageReferenceResponse),
+      });
     });
   }
 
@@ -413,6 +427,8 @@ export async function openMessageCardPreviewHost(
     messageText,
     enableAudioTranscription = false,
     deferredImageResponse,
+    messageReferenceResponse,
+    signalGroups,
   }: {
     revealAudio?: boolean;
     revealCoordinates?: boolean;
@@ -424,6 +440,8 @@ export async function openMessageCardPreviewHost(
     messageText?: string;
     enableAudioTranscription?: boolean;
     deferredImageResponse?: DeferredMediaResponse;
+    messageReferenceResponse?: unknown;
+    signalGroups?: InboxMessagesRspRaw['signal_groups'];
   } = {},
 ): Promise<void> {
   await installMessageCardMediaPreviewAssetRoutes(page, deferredImageResponse);
@@ -437,6 +455,8 @@ export async function openMessageCardPreviewHost(
     coordinatePointCount,
     messageText,
     enableAudioTranscription,
+    messageReferenceResponse,
+    signalGroups,
   );
   await page.goto(
     host === 'analysis' ? '/rer-analysis-neo' : '/rer-duty-neo',
