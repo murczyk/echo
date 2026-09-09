@@ -38,6 +38,10 @@ const ACCOUNT_COLORS: [&str; 12] = [
     "#14b8a6", "#ec4899", "#6366f1", "#84cc16", "#06b6d4", "#fb7185",
 ];
 const CHAT_ADMIN_MIGRATION: &str = "m20260828_150352_echo_chat_admin";
+// Applied only by the central wdintel-rs migrator. GOI nodes share their
+// database with goi-echo-worker, whose own `seaql_migrations` table never
+// contains it, and where the chat admin schema is owned by ensure_schema.
+const CENTRAL_BASELINE_MIGRATION: &str = "m20220101_000001_create_table";
 
 pub async fn ensure_schema(db: &DatabaseConnection) -> anyhow::Result<()> {
     if central_chat_admin_migration_pending(db).await.c(h!())? {
@@ -59,13 +63,26 @@ async fn central_chat_admin_migration_pending(
     if !table_exists(db, "seaql_migrations").await.c(h!())? {
         return Ok(false);
     }
-    Ok(!row_exists(
+    if !migration_applied(db, CENTRAL_BASELINE_MIGRATION)
+        .await
+        .c(h!())?
+    {
+        return Ok(false);
+    }
+    Ok(!migration_applied(db, CHAT_ADMIN_MIGRATION).await.c(h!())?)
+}
+
+async fn migration_applied(
+    db: &DatabaseConnection,
+    version: &str,
+) -> anyhow::Result<bool> {
+    row_exists(
         db,
         "select exists (select 1 from seaql_migrations where version = $1) as found",
-        [CHAT_ADMIN_MIGRATION.into()],
+        [version.into()],
     )
     .await
-    .c(h!())?)
+    .c(h!())
 }
 
 async fn table_exists(
