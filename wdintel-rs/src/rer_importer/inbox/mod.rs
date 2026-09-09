@@ -7299,7 +7299,7 @@ mod tests {
         )
         .await
         .unwrap();
-        for (tag_id, confidence, model) in [
+        for (tag_id, confidence, tag_model) in [
             (second_tag.id, 1.0, None),
             (model_only_tag.id, 1.0, Some("test-model")),
             (low_confidence_tag.id, 0.6, None),
@@ -7309,7 +7309,7 @@ mod tests {
                 tag_id: Set(tag_id),
                 confidence: Set(confidence),
                 login_id: Set(Some(login.id)),
-                model: Set(model.map(str::to_string)),
+                model: Set(tag_model.map(str::to_string)),
                 ..Default::default()
             }
             .insert(&env.dbx)
