@@ -1298,14 +1298,21 @@ where
             .await
             .c(h!())?;
     } else {
-        let mut message =
-            signal_message::Entity::find_by_id(comment.intel_message_id)
-                .one(db)
-                .await
-                .c(h!())?
-                .ok_or(AppError::NotFound)
-                .c(h!())?
-                .into_active_model();
+        let message_id = comment.intel_message_id;
+        crate::rer_importer::inbox::prepare_message_network_activity_change(
+            db,
+            message_id,
+            &format!("deleted linked message comment {message_id}"),
+        )
+        .await
+        .c(h!())?;
+        let mut message = signal_message::Entity::find_by_id(message_id)
+            .one(db)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)
+            .c(h!())?
+            .into_active_model();
         message.deleted = Set(true);
         message.update(db).await.c(h!())?;
     }
@@ -1945,8 +1952,10 @@ pub async fn submit_upsert_inbox_item(
         );
     }
     if existing_message {
-        crate::rer_importer::inbox::invalidate_message_network_frequency_last_seen(
-            txn, id,
+        crate::rer_importer::inbox::prepare_message_network_activity_change(
+            txn,
+            id,
+            &format!("updated inbox message {id}"),
         )
         .await
         .c(h!())?;

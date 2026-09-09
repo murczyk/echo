@@ -337,15 +337,15 @@ where
             r#"
                 select
                     min(smg.group_master_key) as master_key,
-                    min(coalesce(sii.datetime, sm.created_at)) as since_ts,
-                    max(coalesce(sii.datetime, sm.created_at)) as till_ts
+                    min(coalesce(sii.datetime, sm.timestamp, sm.created_at)) as since_ts,
+                    max(coalesce(sii.datetime, sm.timestamp, sm.created_at)) as till_ts
                 from signal_message_group smg
                 inner join signal_message sm on sm.id = smg.signal_message_id
                 inner join sigint_inbox_item sii on sii.id = sm.id
                 where smg.signal_message_id = any($1::bigint[])
                   and smg.group_master_key is not null
                   and sm.deleted = false
-                  and coalesce(sii.datetime, sm.created_at) >= $2
+                  and coalesce(sii.datetime, sm.timestamp, sm.created_at) >= $2
             "#,
             vec![message_ids.to_vec().into(), min_since_ts.into()],
         ),
@@ -403,14 +403,14 @@ where
 {
     let sql = r#"
         select
-            min(coalesce(sii.datetime, sm.created_at)) as since_ts,
-            max(coalesce(sii.datetime, sm.created_at)) as till_ts
+            min(coalesce(sii.datetime, sm.timestamp, sm.created_at)) as since_ts,
+            max(coalesce(sii.datetime, sm.timestamp, sm.created_at)) as till_ts
         from signal_message sm
         inner join sigint_inbox_item sii on sii.id = sm.id
         inner join signal_message_group smg on smg.signal_message_id = sm.id
         where sm.deleted = false
           and smg.group_master_key = $1
-          and coalesce(sii.datetime, sm.created_at) >= $2
+          and coalesce(sii.datetime, sm.timestamp, sm.created_at) >= $2
     "#;
     let window = GroupStatsActivityWindow::find_by_statement(
         Statement::from_sql_and_values(
@@ -4429,6 +4429,99 @@ mod tests {
             task.till_ts,
             start_of_day(get_local_date(message_ts) + Duration::days(1))
                 .unwrap()
+        );
+
+        txn.rollback().await.unwrap();
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_group_stats_recalculation_uses_message_timestamp_fallback() {
+        let env = cleanup().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let created_at = Utc::now().naive_utc() - Duration::days(1);
+        let message_timestamp = created_at - Duration::days(2);
+        let group = mk_group_with_stats_message(
+            &txn,
+            "stats-recalc-timestamp-fallback",
+            created_at,
+        )
+        .await;
+        let message_id = signal_message_group::Entity::find()
+            .filter(
+                signal_message_group::Column::GroupMasterKey
+                    .eq(group.master_key.clone()),
+            )
+            .select_only()
+            .column(signal_message_group::Column::SignalMessageId)
+            .into_tuple::<i64>()
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        signal_message::Entity::update_many()
+            .col_expr(
+                signal_message::Column::Timestamp,
+                Expr::value(Some(message_timestamp)),
+            )
+            .filter(signal_message::Column::Id.eq(message_id))
+            .exec(&txn)
+            .await
+            .unwrap();
+        sigint_inbox_item::Entity::update_many()
+            .col_expr(
+                sigint_inbox_item::Column::Date,
+                Expr::value(None::<String>),
+            )
+            .col_expr(
+                sigint_inbox_item::Column::Time,
+                Expr::value(None::<String>),
+            )
+            .col_expr(
+                sigint_inbox_item::Column::Datetime,
+                Expr::value(None::<NaiveDateTime>),
+            )
+            .filter(sigint_inbox_item::Column::Id.eq(message_id))
+            .exec(&txn)
+            .await
+            .unwrap();
+
+        assert!(enqueue_group_stats_recalculation_for_message(
+            &txn,
+            message_id,
+            "test timestamp fallback".to_string(),
+        )
+        .await
+        .unwrap());
+        let task = group_stats_recalculation_task::Entity::find()
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            task.since_ts,
+            start_of_day(get_local_date(message_timestamp)).unwrap()
+        );
+        group_stats_recalculation_task::Entity::delete_many()
+            .exec(&txn)
+            .await
+            .unwrap();
+
+        assert!(enqueue_group_stats_recalculation_for_group_history(
+            &txn,
+            &group.master_key,
+            "test group timestamp fallback".to_string(),
+        )
+        .await
+        .unwrap());
+        let task = group_stats_recalculation_task::Entity::find()
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            task.since_ts,
+            start_of_day(get_local_date(message_timestamp)).unwrap()
         );
 
         txn.rollback().await.unwrap();

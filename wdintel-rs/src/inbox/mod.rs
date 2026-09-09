@@ -255,8 +255,10 @@ where
             .c(h!())?;
 
     if existing_inbox_item {
-        crate::rer_importer::inbox::invalidate_message_network_frequency_last_seen(
-            txn, message_id,
+        crate::rer_importer::inbox::prepare_message_network_activity_change(
+            txn,
+            message_id,
+            &format!("reprocessed inbox message {message_id}"),
         )
         .await
         .c(h!())?;

@@ -156,9 +156,13 @@ pub async fn reconcile_deleted_message(
         let original_message = signal_message.clone();
         pending_dedupe_updates
             .push(DedupeRedisUpdate::clear_signal_message(&original_message));
-        crate::rer_importer::inbox::invalidate_message_network_frequency_last_seen(
+        crate::rer_importer::inbox::prepare_message_network_activity_change(
             txn,
             original_message.id,
+            &format!(
+                "deleted reconciled inbox message {}",
+                original_message.id
+            ),
         )
         .await
         .context(h!())?;
@@ -1344,9 +1348,10 @@ async fn update_source_message_snapshot(
     datasource_group_id: i64,
     attachments_hash: Option<String>,
 ) -> anyhow::Result<signal_message::Model> {
-    crate::rer_importer::inbox::invalidate_message_network_frequency_last_seen(
+    crate::rer_importer::inbox::prepare_message_network_activity_change(
         txn,
         signal_message.id,
+        &format!("updated reconciled inbox message {}", signal_message.id),
     )
     .await
     .context(h!())?;
@@ -1439,6 +1444,20 @@ async fn retire_obsolete_linked_messages(
     source_message_id: i64,
     linked_messages: &[signal_message::Model],
 ) -> anyhow::Result<Vec<i64>> {
+    let obsolete_message_ids = linked_messages
+        .iter()
+        .filter(|signal_message| {
+            signal_message.id != source_message_id && !signal_message.deleted
+        })
+        .map(|signal_message| signal_message.id)
+        .collect_vec();
+    crate::rer_importer::inbox::prepare_messages_network_activity_change(
+        txn,
+        &obsolete_message_ids,
+        "retired obsolete reconciled inbox messages",
+    )
+    .await
+    .c(h!())?;
     let mut retired_ids = vec![];
     for signal_message in linked_messages {
         if signal_message.id == source_message_id {
@@ -2681,6 +2700,60 @@ mod tests {
                 .unwrap()
                 .unwrap();
         assert!(signal_message.deleted);
+        assert_eq!(network_freq.last_seen_dt, None);
+
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn retiring_obsolete_message_invalidates_network_frequency_last_seen()
+    {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let timestamp = Utc::now().naive_utc();
+        let source_message =
+            mk_signal_message(&txn, Default::default()).await.unwrap();
+        let obsolete_message = mk_signal_message(
+            &txn,
+            signal_message::ActiveModel {
+                timestamp: Set(Some(timestamp)),
+                created_at: Set(timestamp),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let network_freq = mk_cached_network_freq_for_message(
+            &txn,
+            obsolete_message.id,
+            timestamp,
+        )
+        .await;
+
+        assert_eq!(
+            retire_obsolete_linked_messages(
+                &txn,
+                source_message.id,
+                &[source_message, obsolete_message.clone()],
+            )
+            .await
+            .unwrap(),
+            vec![obsolete_message.id]
+        );
+
+        let obsolete_message =
+            signal_message::Entity::find_by_id(obsolete_message.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        let network_freq =
+            sigint_network_freq::Entity::find_by_id(network_freq.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(obsolete_message.deleted);
         assert_eq!(network_freq.last_seen_dt, None);
 
         txn.rollback().await.unwrap();
