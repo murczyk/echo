@@ -1,12 +1,15 @@
 use super::primitive_to_naive_datetime;
 use crate::config::{
     NETWORK_FREQ_LAST_DATETIME_IN_AOR_CACHE_TTL_MINUTES,
+    NETWORK_RECALCULATION_RUN_BUDGET_SECS,
     NETWORK_RECALCULATION_STATEMENT_TIMEOUT_MS,
+    NETWORK_RECALCULATION_TASKS_PER_RUN,
+    NETWORK_RECALCULATION_TASK_ENQUEUE_CHUNK_SIZE,
     NETWORK_RECALCULATION_TASK_STALE_MINUTES,
 };
 use crate::entities::sea_orm_active_enums::NetworkRecalculationTaskKind;
 use crate::entities::{
-    network_freq_last_datetime_in_aor, network_invalidation_task,
+    login, network_freq_last_datetime_in_aor, network_invalidation_task,
     network_recalculation_task, sigint_network_aor, sigint_network_freq,
 };
 use crate::error::AppError;
@@ -51,24 +54,29 @@ pub(super) async fn load_cached_last_datetime_in_aor(
         .all(db)
         .await
         .c(h!())?;
-    for network_freq_id in network_freq_ids {
-        let should_enqueue = cached_by_freq
-            .get(&network_freq_id)
-            .map(|row| row.calculated_at < stale_before)
-            .unwrap_or(true);
-        if should_enqueue {
-            enqueue_task(
-                db,
-                NetworkRecalculationTaskKind::NetworkFreqLastDatetimeInAor,
-                network_freq_id,
-                Some(login_id),
-            )
-            .await
-            .c(h!())?;
-        }
-    }
+    enqueue_tasks(
+        db,
+        network_freq_ids
+            .into_iter()
+            .filter(|network_freq_id| {
+                cached_by_freq
+                    .get(network_freq_id)
+                    .map(|row| row.calculated_at < stale_before)
+                    .unwrap_or(true)
+            })
+            .map(|network_freq_id| {
+                (
+                    NetworkRecalculationTaskKind::NetworkFreqLastDatetimeInAor,
+                    network_freq_id,
+                    Some(login_id),
+                )
+            }),
+    )
+    .await
+    .c(h!())?;
     Ok(cached_by_freq
         .into_values()
+        .filter(|row| row.calculated_at >= stale_before)
         .map(|row| {
             (
                 row.network_freq_id,
@@ -86,20 +94,29 @@ pub(super) async fn evict_expired_cache(
         - Duration::minutes(
             NETWORK_FREQ_LAST_DATETIME_IN_AOR_CACHE_TTL_MINUTES,
         );
-    let result = db
+    let deleted_frequency_result = db
         .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
                 delete from network_freq_last_datetime_in_aor as cache
                 using sigint_network_freq as freq
                 where freq.id = cache.network_freq_id
-                  and (freq.deleted = true or cache.calculated_at < $1)
+                  and freq.deleted = true
             "#,
-            vec![stale_before.into()],
+            vec![],
         ))
         .await
         .c(h!())?;
-    Ok(result.rows_affected())
+    let expired_result =
+        network_freq_last_datetime_in_aor::Entity::delete_many()
+            .filter(
+                network_freq_last_datetime_in_aor::Column::CalculatedAt
+                    .lt(stale_before),
+            )
+            .exec(db)
+            .await
+            .c(h!())?;
+    Ok(deleted_frequency_result.rows_affected() + expired_result.rows_affected)
 }
 
 pub(super) async fn enqueue_all_for_network_freq<C>(
@@ -110,19 +127,32 @@ pub(super) async fn enqueue_all_for_network_freq<C>(
 where
     C: ConnectionTrait,
 {
-    enqueue_task(
+    let network_freq_exists =
+        sigint_network_freq::Entity::find_by_id(network_freq_id)
+            .select_only()
+            .column(sigint_network_freq::Column::Id)
+            .into_tuple::<i64>()
+            .one(db)
+            .await
+            .c(h!())?
+            .is_some();
+    if !network_freq_exists {
+        return Ok(());
+    }
+    enqueue_tasks(
         db,
-        NetworkRecalculationTaskKind::NetworkFreqLastSeen,
-        network_freq_id,
-        None,
-    )
-    .await
-    .c(h!())?;
-    enqueue_task(
-        db,
-        NetworkRecalculationTaskKind::NetworkFreqLastDatetimeInAor,
-        network_freq_id,
-        Some(login_id),
+        [
+            (
+                NetworkRecalculationTaskKind::NetworkFreqLastSeen,
+                network_freq_id,
+                None,
+            ),
+            (
+                NetworkRecalculationTaskKind::NetworkFreqLastDatetimeInAor,
+                network_freq_id,
+                Some(login_id),
+            ),
+        ],
     )
     .await
     .c(h!())?;
@@ -153,16 +183,18 @@ where
         .all(db)
         .await
         .c(h!())?;
-    for network_freq_id in network_freq_ids {
-        enqueue_task(
-            db,
-            NetworkRecalculationTaskKind::NetworkFreqLastSeen,
-            network_freq_id,
-            None,
-        )
-        .await
-        .c(h!())?;
-    }
+    enqueue_tasks(
+        db,
+        network_freq_ids.into_iter().map(|network_freq_id| {
+            (
+                NetworkRecalculationTaskKind::NetworkFreqLastSeen,
+                network_freq_id,
+                None,
+            )
+        }),
+    )
+    .await
+    .c(h!())?;
     Ok(())
 }
 
@@ -183,16 +215,18 @@ where
         .all(db)
         .await
         .c(h!())?;
-    for network_freq_id in &network_freq_ids {
-        enqueue_task(
-            db,
-            NetworkRecalculationTaskKind::NetworkFreqLastDatetimeInAor,
-            *network_freq_id,
-            Some(login_id),
-        )
-        .await
-        .c(h!())?;
-    }
+    enqueue_tasks(
+        db,
+        network_freq_ids.iter().map(|network_freq_id| {
+            (
+                NetworkRecalculationTaskKind::NetworkFreqLastDatetimeInAor,
+                *network_freq_id,
+                Some(login_id),
+            )
+        }),
+    )
+    .await
+    .c(h!())?;
     enqueue_cached_last_datetime_in_aor(db, network_freq_ids)
         .await
         .c(h!())?;
@@ -225,82 +259,183 @@ where
         .all(db)
         .await
         .c(h!())?;
-    for (network_freq_id, login_id) in cached_keys {
-        enqueue_task(
-            db,
-            NetworkRecalculationTaskKind::NetworkFreqLastDatetimeInAor,
-            network_freq_id,
-            Some(login_id),
-        )
-        .await
-        .c(h!())?;
-    }
+    enqueue_tasks(
+        db,
+        cached_keys.into_iter().map(|(network_freq_id, login_id)| {
+            (
+                NetworkRecalculationTaskKind::NetworkFreqLastDatetimeInAor,
+                network_freq_id,
+                Some(login_id),
+            )
+        }),
+    )
+    .await
+    .c(h!())?;
     Ok(())
 }
 
-pub(crate) async fn enqueue_cached_for_network_invalidations(
+pub(crate) async fn enqueue_for_network_invalidations(
     db: &DatabaseConnection,
     tasks: &[network_invalidation_task::Model],
+    processed_frequencies: &HashSet<String>,
 ) -> anyhow::Result<()> {
-    let mut all_network_freqs = false;
-    let mut network_ids = HashSet::new();
-    let mut frequencies = HashSet::new();
-    for task in tasks {
-        match (task.sigint_network_id, task.frequency.as_ref()) {
-            (None, None) => all_network_freqs = true,
-            (Some(network_id), frequency) => {
-                network_ids.insert(network_id);
-                if let Some(frequency) = frequency {
-                    frequencies.insert(frequency.clone());
-                }
-            }
-            (None, Some(frequency)) => {
-                frequencies.insert(frequency.clone());
-            }
-        }
+    if tasks.is_empty() {
+        return Ok(());
     }
-    let mut query = network_freq_last_datetime_in_aor::Entity::find()
+    let Some(condition) = invalidation_condition(tasks, processed_frequencies)
+    else {
+        return Ok(());
+    };
+    enqueue_last_seen_for_invalidations(db, condition.clone())
+        .await
+        .c(h!())?;
+    enqueue_queued_aor_cache_for_invalidations(db, condition.clone())
+        .await
+        .c(h!())?;
+    enqueue_stored_aor_cache_for_invalidations(db, condition)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+async fn enqueue_last_seen_for_invalidations(
+    db: &DatabaseConnection,
+    condition: Condition,
+) -> anyhow::Result<()> {
+    let network_freq_ids = sigint_network_freq::Entity::find()
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .filter(condition)
+        .select_only()
+        .column(sigint_network_freq::Column::Id)
+        .into_tuple::<i64>()
+        .all(db)
+        .await
+        .c(h!())?;
+    enqueue_tasks(
+        db,
+        network_freq_ids.into_iter().map(|network_freq_id| {
+            (
+                NetworkRecalculationTaskKind::NetworkFreqLastSeen,
+                network_freq_id,
+                None,
+            )
+        }),
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn enqueue_queued_aor_cache_for_invalidations(
+    db: &DatabaseConnection,
+    condition: Condition,
+) -> anyhow::Result<()> {
+    let queued_cache_keys = network_recalculation_task::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            network_recalculation_task::Relation::SigintNetworkFreq.def(),
+        )
+        .filter(
+            network_recalculation_task::Column::TaskKind
+                .eq(NetworkRecalculationTaskKind::NetworkFreqLastDatetimeInAor),
+        )
+        .filter(condition)
+        .select_only()
+        .columns([
+            network_recalculation_task::Column::NetworkFreqId,
+            network_recalculation_task::Column::LoginId,
+        ])
+        .into_tuple::<(i64, Option<uuid::Uuid>)>()
+        .all(db)
+        .await
+        .c(h!())?;
+    enqueue_tasks(
+        db,
+        queued_cache_keys
+            .into_iter()
+            .map(|(network_freq_id, login_id)| {
+                (
+                    NetworkRecalculationTaskKind::NetworkFreqLastDatetimeInAor,
+                    network_freq_id,
+                    login_id,
+                )
+            }),
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn enqueue_stored_aor_cache_for_invalidations(
+    db: &DatabaseConnection,
+    condition: Condition,
+) -> anyhow::Result<()> {
+    let cached_keys = network_freq_last_datetime_in_aor::Entity::find()
         .join(
             JoinType::InnerJoin,
             network_freq_last_datetime_in_aor::Relation::SigintNetworkFreq
                 .def(),
         )
+        .filter(condition)
         .select_only()
         .columns([
             network_freq_last_datetime_in_aor::Column::NetworkFreqId,
             network_freq_last_datetime_in_aor::Column::LoginId,
-        ]);
-    if !all_network_freqs {
-        if network_ids.is_empty() && frequencies.is_empty() {
-            return Ok(());
-        }
-        let mut condition = Condition::any();
-        if !network_ids.is_empty() {
-            condition = condition
-                .add(sigint_network_freq::Column::NetworkId.is_in(network_ids));
-        }
-        if !frequencies.is_empty() {
-            condition = condition
-                .add(sigint_network_freq::Column::Freq.is_in(frequencies));
-        }
-        query = query.filter(condition);
-    }
-    let cached_keys = query
+        ])
         .into_tuple::<(i64, uuid::Uuid)>()
         .all(db)
         .await
         .c(h!())?;
-    for (network_freq_id, login_id) in cached_keys {
-        enqueue_task(
-            db,
-            NetworkRecalculationTaskKind::NetworkFreqLastDatetimeInAor,
-            network_freq_id,
-            Some(login_id),
-        )
-        .await
-        .c(h!())?;
-    }
+    enqueue_tasks(
+        db,
+        cached_keys.into_iter().map(|(network_freq_id, login_id)| {
+            (
+                NetworkRecalculationTaskKind::NetworkFreqLastDatetimeInAor,
+                network_freq_id,
+                Some(login_id),
+            )
+        }),
+    )
+    .await
+    .c(h!())?;
     Ok(())
+}
+
+fn invalidation_condition(
+    tasks: &[network_invalidation_task::Model],
+    processed_frequencies: &HashSet<String>,
+) -> Option<Condition> {
+    let mut condition = Condition::any();
+    let mut has_condition = false;
+    let mut needs_processed_frequencies = false;
+    for task in tasks {
+        let mut task_condition = Condition::all();
+        let mut is_scoped = false;
+        if let Some(network_id) = task.sigint_network_id {
+            task_condition = task_condition
+                .add(sigint_network_freq::Column::NetworkId.eq(network_id));
+            is_scoped = true;
+        }
+        if let Some(frequency) = &task.frequency {
+            task_condition = task_condition
+                .add(sigint_network_freq::Column::Freq.eq(frequency));
+            is_scoped = true;
+        }
+        if is_scoped {
+            condition = condition.add(task_condition);
+            has_condition = true;
+        } else {
+            needs_processed_frequencies = true;
+        }
+    }
+    if needs_processed_frequencies && !processed_frequencies.is_empty() {
+        condition = condition.add(
+            sigint_network_freq::Column::Freq
+                .is_in(processed_frequencies.iter().cloned()),
+        );
+        has_condition = true;
+    }
+    has_condition.then_some(condition)
 }
 
 async fn enqueue_task<C>(
@@ -312,20 +447,38 @@ async fn enqueue_task<C>(
 where
     C: ConnectionTrait,
 {
-    network_recalculation_task::Entity::insert(
-        network_recalculation_task::ActiveModel {
-            id: NotSet,
-            task_kind: Set(task_kind),
-            network_freq_id: Set(network_freq_id),
-            login_id: Set(login_id),
-            started_at: Set(None),
-            created_at: NotSet,
-        },
-    )
-    .on_conflict(OnConflict::new().do_nothing().to_owned())
-    .exec_without_returning(db)
-    .await
-    .c(h!())?;
+    enqueue_tasks(db, [(task_kind, network_freq_id, login_id)])
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+async fn enqueue_tasks<C, I>(db: &C, tasks: I) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+    I: IntoIterator<
+        Item = (NetworkRecalculationTaskKind, i64, Option<uuid::Uuid>),
+    >,
+{
+    let tasks = tasks.into_iter().collect::<Vec<_>>();
+    for tasks in tasks.chunks(NETWORK_RECALCULATION_TASK_ENQUEUE_CHUNK_SIZE) {
+        network_recalculation_task::Entity::insert_many(tasks.iter().map(
+            |(task_kind, network_freq_id, login_id)| {
+                network_recalculation_task::ActiveModel {
+                    id: NotSet,
+                    task_kind: Set(task_kind.clone()),
+                    network_freq_id: Set(*network_freq_id),
+                    login_id: Set(*login_id),
+                    started_at: Set(None),
+                    created_at: NotSet,
+                }
+            },
+        ))
+        .on_conflict(OnConflict::new().do_nothing().to_owned())
+        .exec_without_returning(db)
+        .await
+        .c(h!())?;
+    }
     Ok(())
 }
 
@@ -345,7 +498,19 @@ async fn run_once(db: &DatabaseConnection) -> anyhow::Result<bool> {
 }
 
 pub(super) async fn run_pending(db: &DatabaseConnection) -> anyhow::Result<()> {
-    while run_once(db).await.c(h!())? {}
+    let started_at = std::time::Instant::now();
+    for _ in 0..NETWORK_RECALCULATION_TASKS_PER_RUN {
+        if started_at.elapsed()
+            >= std::time::Duration::from_secs(
+                NETWORK_RECALCULATION_RUN_BUDGET_SECS,
+            )
+        {
+            break;
+        }
+        if !run_once(db).await.c(h!())? {
+            break;
+        }
+    }
     Ok(())
 }
 
@@ -392,6 +557,13 @@ async fn calculate_task(
     ))
     .await
     .c(h!())?;
+    txn.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "select pg_advisory_xact_lock(hashtextextended('network_recalculation:' || $1::text, 0))",
+        vec![task.network_freq_id.into()],
+    ))
+    .await
+    .c(h!())?;
     match task.task_kind {
         NetworkRecalculationTaskKind::NetworkFreqLastSeen => {
             recalculate_last_seen(&txn, task.network_freq_id)
@@ -409,7 +581,7 @@ async fn calculate_task(
             .c(h!())?;
         }
     }
-    delete_matching_tasks(&txn, task).await.c(h!())?;
+    delete_claimed_task(&txn, task.id).await.c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(())
 }
@@ -462,18 +634,37 @@ async fn recalculate_last_datetime_in_aor(
     login_id: uuid::Uuid,
 ) -> anyhow::Result<()> {
     let network_freq = sigint_network_freq::Entity::find_by_id(network_freq_id)
+        .select_only()
+        .columns([
+            sigint_network_freq::Column::NetworkId,
+            sigint_network_freq::Column::Deleted,
+        ])
+        .into_tuple::<(i64, bool)>()
+        .one(txn)
+        .await
+        .c(h!())?;
+    let Some((network_id, network_freq_deleted)) = network_freq else {
+        return Ok(());
+    };
+    if network_freq_deleted {
+        delete_cached_last_datetime_in_aor(txn, network_freq_id, login_id)
+            .await
+            .c(h!())?;
+        return Ok(());
+    }
+    let login_exists = login::Entity::find_by_id(login_id)
+        .filter(login::Column::DeletedPermanently.eq(false))
+        .select_only()
+        .column(login::Column::Id)
+        .into_tuple::<uuid::Uuid>()
         .one(txn)
         .await
         .c(h!())?
-        .c(h!())?;
-    if network_freq.deleted {
-        network_freq_last_datetime_in_aor::Entity::delete_by_id((
-            network_freq_id,
-            login_id,
-        ))
-        .exec(txn)
-        .await
-        .c(h!())?;
+        .is_some();
+    if !login_exists {
+        delete_cached_last_datetime_in_aor(txn, network_freq_id, login_id)
+            .await
+            .c(h!())?;
         return Ok(());
     }
     let groups =
@@ -481,9 +672,7 @@ async fn recalculate_last_datetime_in_aor(
             .await
             .c(h!())?;
     let aor_ids = sigint_network_aor::Entity::find()
-        .filter(
-            sigint_network_aor::Column::NetworkId.eq(network_freq.network_id),
-        )
+        .filter(sigint_network_aor::Column::NetworkId.eq(network_id))
         .select_only()
         .column(sigint_network_aor::Column::AorId)
         .into_tuple::<i64>()
@@ -516,6 +705,21 @@ async fn recalculate_last_datetime_in_aor(
         ])
         .to_owned(),
     )
+    .exec(txn)
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn delete_cached_last_datetime_in_aor(
+    txn: &DatabaseTransaction,
+    network_freq_id: i64,
+    login_id: uuid::Uuid,
+) -> anyhow::Result<()> {
+    network_freq_last_datetime_in_aor::Entity::delete_by_id((
+        network_freq_id,
+        login_id,
+    ))
     .exec(txn)
     .await
     .c(h!())?;
@@ -584,27 +788,14 @@ async fn calculate_last_datetime_in_aor(
         .map_err(Into::into)
 }
 
-async fn delete_matching_tasks(
+async fn delete_claimed_task(
     txn: &DatabaseTransaction,
-    task: &network_recalculation_task::Model,
+    task_id: i64,
 ) -> anyhow::Result<()> {
-    let mut delete = network_recalculation_task::Entity::delete_many()
-        .filter(
-            network_recalculation_task::Column::TaskKind
-                .eq(task.task_kind.clone()),
-        )
-        .filter(
-            network_recalculation_task::Column::NetworkFreqId
-                .eq(task.network_freq_id),
-        );
-    delete = match task.login_id {
-        Some(login_id) => delete
-            .filter(network_recalculation_task::Column::LoginId.eq(login_id)),
-        None => {
-            delete.filter(network_recalculation_task::Column::LoginId.is_null())
-        }
-    };
-    delete.exec(txn).await.c(h!())?;
+    network_recalculation_task::Entity::delete_by_id(task_id)
+        .exec(txn)
+        .await
+        .c(h!())?;
     Ok(())
 }
 
@@ -637,6 +828,180 @@ mod tests {
         cleanup, mk_sigint_network, mk_sigint_network_freq,
     };
     use serial_test::serial;
+
+    fn invalidation_task(
+        id: i64,
+        network_id: i64,
+        frequency: &str,
+    ) -> network_invalidation_task::Model {
+        let now = Utc::now().naive_utc();
+        network_invalidation_task::Model {
+            id,
+            frequency: Some(frequency.to_string()),
+            since_ts: now,
+            till_ts: now,
+            completed_at: None,
+            created_at: now,
+            sigint_network_id: Some(network_id),
+            started_at: Some(now),
+            aor_id: None,
+            group_master_key: None,
+            tag: "network-recalculation-test".to_string(),
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn invalidation_reconciliation_preserves_compound_scopes() {
+        let env = cleanup().await.unwrap();
+        let login_id = crate::users::login_id_by_name(&env.dbx, "Tester")
+            .await
+            .unwrap();
+        let first_network = mk_sigint_network(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                name: Set("First reconciliation network".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let second_network = mk_sigint_network(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                name: Set("Second reconciliation network".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let mut network_freqs = Vec::new();
+        for (network_id, frequency) in [
+            (first_network.id, "148.1000"),
+            (first_network.id, "149.1000"),
+            (second_network.id, "148.1000"),
+            (second_network.id, "149.1000"),
+        ] {
+            network_freqs.push(
+                mk_sigint_network_freq(
+                    &env.dbx,
+                    sigint_network_freq::ActiveModel {
+                        network_id: Set(network_id),
+                        freq: Set(frequency.to_string()),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap(),
+            );
+        }
+        network_freq_last_datetime_in_aor::Entity::insert_many(
+            network_freqs.iter().skip(1).map(|network_freq| {
+                network_freq_last_datetime_in_aor::ActiveModel {
+                    network_freq_id: Set(network_freq.id),
+                    login_id: Set(login_id),
+                    last_datetime_in_aor: Set(None),
+                    calculated_at: Set(Utc::now().naive_utc()),
+                }
+            }),
+        )
+        .exec_without_returning(&env.dbx)
+        .await
+        .unwrap();
+        network_recalculation_task::ActiveModel {
+            id: NotSet,
+            task_kind: Set(
+                NetworkRecalculationTaskKind::NetworkFreqLastDatetimeInAor,
+            ),
+            network_freq_id: Set(network_freqs[0].id),
+            login_id: Set(Some(login_id)),
+            started_at: Set(Some(Utc::now().naive_utc())),
+            created_at: NotSet,
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        enqueue_for_network_invalidations(
+            &env.dbx,
+            &[
+                invalidation_task(1, first_network.id, "148.1000"),
+                invalidation_task(2, second_network.id, "149.1000"),
+            ],
+            &HashSet::new(),
+        )
+        .await
+        .unwrap();
+
+        let tasks = network_recalculation_task::Entity::find()
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        let expected_ids =
+            HashSet::from([network_freqs[0].id, network_freqs[3].id]);
+        let last_seen_ids = tasks
+            .iter()
+            .filter(|task| {
+                task.task_kind
+                    == NetworkRecalculationTaskKind::NetworkFreqLastSeen
+            })
+            .map(|task| task.network_freq_id)
+            .collect::<HashSet<_>>();
+        let cached_aor_ids = tasks
+            .iter()
+            .filter(|task| {
+                task.task_kind
+                    == NetworkRecalculationTaskKind::NetworkFreqLastDatetimeInAor
+            })
+            .map(|task| task.network_freq_id)
+            .collect::<HashSet<_>>();
+        assert_eq!(last_seen_ids, expected_ids);
+        assert_eq!(cached_aor_ids, expected_ids);
+        assert_eq!(
+            tasks
+                .iter()
+                .filter(|task| {
+                    task.task_kind
+                        == NetworkRecalculationTaskKind::NetworkFreqLastDatetimeInAor
+                        && task.network_freq_id == network_freqs[0].id
+                })
+                .count(),
+            2
+        );
+        assert_eq!(tasks.len(), 5);
+
+        network_recalculation_task::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let mut group_invalidation =
+            invalidation_task(3, first_network.id, "unused");
+        group_invalidation.sigint_network_id = None;
+        group_invalidation.frequency = None;
+        group_invalidation.group_master_key =
+            Some("affected-group".to_string());
+        enqueue_for_network_invalidations(
+            &env.dbx,
+            &[group_invalidation],
+            &HashSet::from(["149.1000".to_string()]),
+        )
+        .await
+        .unwrap();
+        let tasks = network_recalculation_task::Entity::find()
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        let expected_ids =
+            HashSet::from([network_freqs[1].id, network_freqs[3].id]);
+        assert_eq!(
+            tasks
+                .iter()
+                .map(|task| task.network_freq_id)
+                .collect::<HashSet<_>>(),
+            expected_ids
+        );
+        assert_eq!(tasks.len(), 4);
+    }
 
     #[tokio::test]
     #[serial]
@@ -710,28 +1075,21 @@ mod tests {
             3
         );
 
-        let txn = env.dbx.begin().await.unwrap();
-        delete_matching_tasks(&txn, &started_task).await.unwrap();
-        txn.commit().await.unwrap();
+        calculate_task(&env.dbx, &started_task).await.unwrap();
         let remaining = network_recalculation_task::Entity::find()
             .all(&env.dbx)
             .await
             .unwrap();
-        assert_eq!(remaining.len(), 1);
-        assert_eq!(
-            remaining[0].task_kind,
-            NetworkRecalculationTaskKind::NetworkFreqLastSeen
-        );
+        assert_eq!(remaining.len(), 2);
+        assert!(remaining.iter().any(|task| {
+            task.task_kind
+                == NetworkRecalculationTaskKind::NetworkFreqLastDatetimeInAor
+        }));
+        assert!(remaining.iter().any(|task| {
+            task.task_kind == NetworkRecalculationTaskKind::NetworkFreqLastSeen
+        }));
 
         assert!(run_once(&env.dbx).await.unwrap());
-        enqueue_task(
-            &env.dbx,
-            NetworkRecalculationTaskKind::NetworkFreqLastDatetimeInAor,
-            network_freq.id,
-            Some(login_id),
-        )
-        .await
-        .unwrap();
         assert!(run_once(&env.dbx).await.unwrap());
         let cached = network_freq_last_datetime_in_aor::Entity::find_by_id((
             network_freq.id,
@@ -748,6 +1106,12 @@ mod tests {
                 NETWORK_FREQ_LAST_DATETIME_IN_AOR_CACHE_TTL_MINUTES + 1,
             ));
         cached.update(&env.dbx).await.unwrap();
+        assert!(load_cached_last_datetime_in_aor(
+            &env.dbx, network.id, login_id,
+        )
+        .await
+        .unwrap()
+        .is_empty());
         assert_eq!(evict_expired_cache(&env.dbx).await.unwrap(), 1);
         assert!(network_freq_last_datetime_in_aor::Entity::find_by_id((
             network_freq.id,

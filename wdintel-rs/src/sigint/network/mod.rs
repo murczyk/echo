@@ -3479,38 +3479,43 @@ pub async fn network_maintenance_worker(
         recalculation_interval.tick().await;
         let _loop_guard =
             worker_watch::loop_guard("network_maintenance_worker");
-        let hourly_maintenance_due = last_hourly_maintenance_started_at
-            .map(|started_at: std::time::Instant| {
-                started_at.elapsed()
-                    >= std::time::Duration::from_secs(
-                        CLEANUP_NETWORKS_WORKER_SLEEP_DURATION,
-                    )
-            })
-            .unwrap_or(true);
-        if hourly_maintenance_due {
-            last_hourly_maintenance_started_at =
-                Some(std::time::Instant::now());
-            if cleanup_networks_enabled {
-                if let Err(e) = cleanup_networks_worker_1(dbx).await {
-                    error!("error in cleanup_networks_worker_1: {:?}", e);
-                }
-            }
-            match recalculation::evict_expired_cache(dbx).await {
-                Ok(evicted) if evicted > 0 => {
-                    debug!(
-                        "evicted {evicted} network recalculation cache rows"
-                    );
-                }
-                Ok(_) => {}
-                Err(e) => {
-                    error!("error evicting network recalculation cache: {e:?}");
-                }
-            }
-        }
-        if let Err(e) = recalculation::run_pending(dbx).await {
-            error!("error in network recalculation queue worker: {e:?}");
+        if let Err(error) = network_maintenance_worker_iteration(
+            dbx,
+            cleanup_networks_enabled,
+            &mut last_hourly_maintenance_started_at,
+        )
+        .await
+        {
+            error!("error in network maintenance worker: {error:?}");
         }
     }
+}
+
+async fn network_maintenance_worker_iteration(
+    dbx: &DatabaseConnection,
+    cleanup_networks_enabled: bool,
+    last_hourly_maintenance_started_at: &mut Option<std::time::Instant>,
+) -> anyhow::Result<()> {
+    let hourly_maintenance_due = last_hourly_maintenance_started_at
+        .map(|started_at| {
+            started_at.elapsed()
+                >= std::time::Duration::from_secs(
+                    CLEANUP_NETWORKS_WORKER_SLEEP_DURATION,
+                )
+        })
+        .unwrap_or(true);
+    if hourly_maintenance_due {
+        *last_hourly_maintenance_started_at = Some(std::time::Instant::now());
+        if cleanup_networks_enabled {
+            cleanup_networks_worker_1(dbx).await.c(h!())?;
+        }
+        let evicted = recalculation::evict_expired_cache(dbx).await.c(h!())?;
+        if evicted > 0 {
+            debug!("evicted {evicted} network recalculation cache rows");
+        }
+    }
+    recalculation::run_pending(dbx).await.c(h!())?;
+    Ok(())
 }
 
 #[derive(Debug, Clone, FromQueryResult)]
