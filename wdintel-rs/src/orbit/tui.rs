@@ -76,6 +76,7 @@ pub enum StartAction {
     LinkOrbitUnitsToSigint,
     FixLinkedUnitEchelonNumbers,
     MarkLinkedSigintUnitsPresentInOrbit,
+    FixMisplacedUnitEchelons,
     MergeUnitDuplicates,
     ReviewSigintDuplicateCandidates,
     ResolveUnparsedUnits,
@@ -213,6 +214,12 @@ pub(super) struct EchelonNumberDiff {
     pub proposed: String,
 }
 
+pub(super) struct EchelonMoveDiff {
+    pub attribute: &'static str,
+    pub current: String,
+    pub proposed: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     Delete,
@@ -289,6 +296,20 @@ pub fn prompt_echelon_number_fix_mode() -> Result<Option<LinkMode>, AppError> {
         [
             "Automatic: replace every mismatched linked SIGINT echelon",
             "Manual: review every mismatched linked SIGINT echelon",
+        ],
+    );
+    restore_terminal(&mut terminal).c(h!())?;
+    result
+}
+
+pub fn prompt_echelon_move_fix_mode() -> Result<Option<LinkMode>, AppError> {
+    let mut terminal = setup_terminal().c(h!())?;
+    let result = run_mode_menu(
+        &mut terminal,
+        "Choose misplaced-echelon fix mode (↑/↓, Enter, Esc: quit)",
+        [
+            "Automatic: move every SIGINT value identified by ORBIT",
+            "Manual: review every SIGINT echelon move",
         ],
     );
     restore_terminal(&mut terminal).c(h!())?;
@@ -753,6 +774,51 @@ pub(super) fn review_echelon_number_changes(
     }
 }
 
+pub(super) fn review_echelon_move_changes(
+    terminal: &mut OrbitTerminal,
+    unit_id: i64,
+    unit_name: &str,
+    pass: &str,
+    changes: &[EchelonMoveDiff],
+    current: usize,
+    total: usize,
+) -> Result<UnitNameReviewDecision, AppError> {
+    let poll = Duration::from_millis(ORBIT_TUI_EVENT_POLL_MS);
+    let mut scroll = 0_u16;
+    loop {
+        terminal
+            .draw(|frame| {
+                draw_echelon_move_changes(
+                    frame, unit_id, unit_name, pass, changes, current, total,
+                    scroll,
+                )
+            })
+            .c(h!())?;
+        if !event::poll(poll).c(h!())? {
+            continue;
+        }
+        let Event::Key(key) = event::read().c(h!())? else {
+            continue;
+        };
+        if let Some(decision) = unit_name_review_decision_for_key(key) {
+            if decision != UnitNameReviewDecision::Quit
+                || confirm_test_link_exit(terminal).c(h!())?
+            {
+                return Ok(decision);
+            }
+            continue;
+        }
+        match key.code {
+            KeyCode::Up => scroll = scroll.saturating_sub(1),
+            KeyCode::Down => scroll = scroll.saturating_add(1),
+            KeyCode::PageUp => scroll = scroll.saturating_sub(10),
+            KeyCode::PageDown => scroll = scroll.saturating_add(10),
+            KeyCode::Home => scroll = 0,
+            _ => {}
+        }
+    }
+}
+
 fn restore_stdout_state() -> io::Result<()> {
     let mut first_error = None;
     record_cleanup_error(&mut first_error, disable_raw_mode());
@@ -845,6 +911,7 @@ fn run_start_menu(
         StartAction::LinkOrbitUnitsToSigint,
         StartAction::FixLinkedUnitEchelonNumbers,
         StartAction::MarkLinkedSigintUnitsPresentInOrbit,
+        StartAction::FixMisplacedUnitEchelons,
         StartAction::MergeUnitDuplicates,
         StartAction::ReviewSigintDuplicateCandidates,
         StartAction::ResolveUnparsedUnits,
@@ -1890,7 +1957,7 @@ fn orbit_sigint_link_decision_for_key(
 }
 
 fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
-    let area = centered_area(frame, 86, 15);
+    let area = centered_area(frame, 86, 16);
     let options = [
         "IMPORT NEW ORBIT DATA REVISION",
         "Sync ORBIT units",
@@ -1898,6 +1965,7 @@ fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
         "Link unlinked ORBIT units to SIGINT units",
         "Replace linked SIGINT echelon values with mismatched ORBIT numbers",
         "Mark linked SIGINT units as present in ORBIT",
+        "Move misplaced brigade, army, and corps SIGINT echelon values",
         "Merge duplicate SIGINT units linked to one ORBIT unit",
         "Review all SIGINT duplicate candidates pair by pair",
         "Resolve unparsed unit labels through ORBIT links",
@@ -2040,6 +2108,63 @@ fn draw_echelon_number_changes(
     frame.render_widget(
         Paragraph::new(
             "Enter/y: replace mismatched echelons | n/0: skip\n↑/↓/PgUp/PgDn: scroll | q/Esc/Ctrl-C: stop",
+        ),
+        sections[2],
+    );
+}
+
+fn draw_echelon_move_changes(
+    frame: &mut Frame<'_>,
+    unit_id: i64,
+    unit_name: &str,
+    pass: &str,
+    changes: &[EchelonMoveDiff],
+    current: usize,
+    total: usize,
+    scroll: u16,
+) {
+    let sections = test_link_sections(frame.size());
+    frame.render_widget(
+        Paragraph::new(format!("Progress: {current} / {total}")),
+        sections[0],
+    );
+    let mut lines = vec![
+        Line::from(format!("Pass: {pass}")),
+        Line::from(format!("SIGINT unit ID: {unit_id}")),
+        Line::from(format!("SIGINT unit name: {unit_name}")),
+        Line::default(),
+    ];
+    for change in changes {
+        let [current_diff, proposed_diff] = word_diff_lines(
+            " CURRENT: ",
+            "PROPOSED: ",
+            &change.current,
+            &change.proposed,
+        );
+        lines.extend([
+            Line::styled(
+                change.attribute,
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            current_diff,
+            proposed_diff,
+            Line::default(),
+        ]);
+    }
+    frame.render_widget(
+        Paragraph::new(Text::from(lines))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Misplaced SIGINT echelon value"),
+            )
+            .scroll((scroll, 0))
+            .wrap(Wrap { trim: false }),
+        sections[1],
+    );
+    frame.render_widget(
+        Paragraph::new(
+            "Enter/y: move echelon value | n/0: skip\n↑/↓/PgUp/PgDn: scroll | q/Esc/Ctrl-C: stop",
         ),
         sections[2],
     );
