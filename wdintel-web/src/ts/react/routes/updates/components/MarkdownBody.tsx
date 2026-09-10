@@ -21,7 +21,7 @@ export function MarkdownBody({ releaseId, markdown }: MarkdownBodyProps) {
         ),
         img: ({ node: _node, ...props }) => (
           <img
-            className="w-full max-w-full rounded border border-[var(--color-border)]"
+            className="block mx-auto h-auto w-auto max-w-full max-h-[70vh] object-contain rounded border border-[var(--color-border)]"
             loading="lazy"
             src={
               typeof props.src === 'string'

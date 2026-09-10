@@ -10,6 +10,7 @@
 
 ## NEXT
 
+- [#3464](https://github.com/echoua/echo/issues/3464) ✅ Автентифікація: додано покрокову інструкцію з налаштування 2FA та покращено відображення зображень в описах релізів.
 - [#3342](https://github.com/echoua/echo/issues/3342) 🐞 Оперативний, Аналіз: покращено масштабування зображень на мобільному в картці повідомлення.
 - [#3368](https://github.com/echoua/echo/issues/3368) 🐞 Оперативний, Аналіз: покращено UX закриття вкладень та додано швидке масштабування зображень при їх попередньому перегляді в картці повідомлення.
 - [#3440](https://github.com/echoua/echo/issues/3440) ✅👷 Мережі: обчислення останнього перехоплення для частот і зон відповідальності перенесено у фонову чергу; стандартні `just deploy` і `just deploy-from-local` синхронізують analytics exclusions автоматично, а при ручному застосуванні міграцій на інстансах із ClickHouse перед `m20260908_131435_network_recalculation_queue` виконати `/opt/echo-peerdb/bin/source-sync-exclusions.sh --yes`, щоб виключити `public.network_recalculation_task` і `public.network_freq_last_datetime_in_aor`, після міграції виконати `/opt/echo-peerdb/bin/source-verify-deploy.sh` та підтвердити відсутність цих таблиць у raw/current/gateway.
