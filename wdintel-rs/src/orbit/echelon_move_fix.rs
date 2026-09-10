@@ -519,24 +519,22 @@ fn proposed_change(
         [] if echelon_move.removes_unknown_value() => None,
         _ => return None,
     };
-    let attributes = destination.map_or_else(
-        || {
+    let attributes = match destination {
+        None => {
             vec![OrbitUnitAttributeChange {
                 attribute: echelon_move.source_attribute(),
                 current: source.to_string(),
                 proposed: String::new(),
             }]
-        },
-        |destination| {
-            move_attributes(
-                unit,
-                source_echelon,
-                destination,
-                source,
-                orbit_values,
-            )
-        },
-    );
+        }
+        Some(destination) => move_attributes(
+            unit,
+            source_echelon,
+            destination,
+            source,
+            orbit_values,
+        )?,
+    };
     Some(EchelonMoveChange {
         unit_name: unit.name.clone(),
         hierarchy_change: OrbitUnitHierarchyChange {
@@ -552,29 +550,99 @@ fn move_attributes(
     destination_echelon: EchoEchelon,
     source: &str,
     orbit_values: &HashMap<EchoEchelon, HashSet<String>>,
-) -> Vec<OrbitUnitAttributeChange> {
+) -> Option<Vec<OrbitUnitAttributeChange>> {
     let destination = echelon_value(unit, destination_echelon);
-    let mut attributes = Vec::with_capacity(2);
-    if destination != source {
-        attributes.push(OrbitUnitAttributeChange {
-            attribute: echelon_attribute(destination_echelon),
-            current: destination.to_string(),
-            proposed: source.to_string(),
-        });
-    }
-    let displaced_destination = if destination != source
+    if destination != source
         && matching_echelons(destination, orbit_values) == [source_echelon]
     {
-        destination.to_string()
-    } else {
-        String::new()
-    };
+        return Some(vec![
+            OrbitUnitAttributeChange {
+                attribute: echelon_attribute(destination_echelon),
+                current: destination.to_string(),
+                proposed: source.to_string(),
+            },
+            OrbitUnitAttributeChange {
+                attribute: echelon_attribute(source_echelon),
+                current: source.to_string(),
+                proposed: destination.to_string(),
+            },
+        ]);
+    }
+    let mut attributes = Vec::with_capacity(ORBIT_ECHELONS.len());
+    let mut visited = HashSet::from([source_echelon]);
+    relocate_value(
+        unit,
+        source_echelon,
+        destination_echelon,
+        source,
+        orbit_values,
+        &mut visited,
+        &mut attributes,
+    )?;
+    if !attributes.iter().any(|attribute| {
+        attribute.attribute == echelon_attribute(source_echelon)
+    }) {
+        attributes.push(OrbitUnitAttributeChange {
+            attribute: echelon_attribute(source_echelon),
+            current: source.to_string(),
+            proposed: String::new(),
+        });
+    }
+    Some(attributes)
+}
+
+fn relocate_value(
+    unit: &EchelonMoveUnit,
+    source_echelon: EchoEchelon,
+    destination_echelon: EchoEchelon,
+    value: &str,
+    orbit_values: &HashMap<EchoEchelon, HashSet<String>>,
+    visited: &mut HashSet<EchoEchelon>,
+    attributes: &mut Vec<OrbitUnitAttributeChange>,
+) -> Option<()> {
+    if destination_echelon == source_echelon {
+        let destination = echelon_value(unit, source_echelon);
+        if destination != value {
+            attributes.push(OrbitUnitAttributeChange {
+                attribute: echelon_attribute(source_echelon),
+                current: destination.to_string(),
+                proposed: value.to_string(),
+            });
+        }
+        return Some(());
+    }
+    if !visited.insert(destination_echelon) {
+        return None;
+    }
+    let destination = echelon_value(unit, destination_echelon);
+    if destination == value {
+        return Some(());
+    }
+    if !destination.is_empty() {
+        match matching_echelons(destination, orbit_values).as_slice() {
+            [] => {}
+            [displaced_echelon]
+                if *displaced_echelon != destination_echelon =>
+            {
+                relocate_value(
+                    unit,
+                    source_echelon,
+                    *displaced_echelon,
+                    destination,
+                    orbit_values,
+                    visited,
+                    attributes,
+                )?;
+            }
+            _ => return None,
+        }
+    }
     attributes.push(OrbitUnitAttributeChange {
-        attribute: echelon_attribute(source_echelon),
-        current: source.to_string(),
-        proposed: displaced_destination,
+        attribute: echelon_attribute(destination_echelon),
+        current: destination.to_string(),
+        proposed: value.to_string(),
     });
-    attributes
+    Some(())
 }
 
 fn echelon_attribute(echelon: EchoEchelon) -> &'static str {
@@ -992,6 +1060,55 @@ mod tests {
                     proposed: "11 АК".to_string(),
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn relocates_non_reciprocal_destination_values() {
+        let mut unit = sigint_unit();
+        unit.corps = "20 ЗВА".to_string();
+        unit.army = "МВО".to_string();
+        let mut values = HashMap::from([
+            (
+                EchoEchelon::Army,
+                HashSet::from([matching::normalize_name("20 ЗВА")]),
+            ),
+            (
+                EchoEchelon::MilitaryDistrict,
+                HashSet::from([matching::normalize_name("МВО")]),
+            ),
+        ]);
+
+        let change = proposed_change(&unit, EchelonMove::CorpsToArmy, &values)
+            .expect("multi-level shift must preserve all values");
+        assert_eq!(
+            change.hierarchy_change.attributes,
+            vec![
+                OrbitUnitAttributeChange {
+                    attribute: "military_district",
+                    current: String::new(),
+                    proposed: "МВО".to_string(),
+                },
+                OrbitUnitAttributeChange {
+                    attribute: "army",
+                    current: "МВО".to_string(),
+                    proposed: "20 ЗВА".to_string(),
+                },
+                OrbitUnitAttributeChange {
+                    attribute: "corps",
+                    current: "20 ЗВА".to_string(),
+                    proposed: String::new(),
+                },
+            ]
+        );
+
+        unit.military_district = "ЗВО".to_string();
+        values
+            .get_mut(&EchoEchelon::MilitaryDistrict)
+            .expect("military district values must exist")
+            .insert(matching::normalize_name("ЗВО"));
+        assert!(
+            proposed_change(&unit, EchelonMove::CorpsToArmy, &values).is_none()
         );
     }
 
