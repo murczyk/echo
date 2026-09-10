@@ -252,12 +252,25 @@ async fn test_bl_szd_group_update_01() {
 
     assert!(res.aor.is_some());
     let signal_group_aors = signal_group_aor::Entity::find()
-        .filter(signal_group_aor::Column::MasterKey.eq(group_master_key))
+        .filter(
+            signal_group_aor::Column::MasterKey.eq(group_master_key.clone()),
+        )
         .all(&txn)
         .await
         .unwrap();
     assert_eq!(signal_group_aors.len(), 1);
     assert_eq!(signal_group_aors[0].aor_id, aor.id);
+    assert_eq!(
+        network_invalidation_task::Entity::find()
+            .filter(
+                network_invalidation_task::Column::GroupMasterKey
+                    .eq(group_master_key),
+            )
+            .count(&txn)
+            .await
+            .unwrap(),
+        1
+    );
 
     txn.rollback().await.unwrap();
 }

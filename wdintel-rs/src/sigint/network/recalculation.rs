@@ -61,7 +61,24 @@ pub(super) async fn load_cached_last_datetime_in_aor(
                         )
                         and (
                             task.group_master_key is null
-                            or task.group_master_key = any(cache.group_master_keys)
+                            or exists (
+                                select 1
+                                from signal_message_group affected_smg
+                                join signal_message affected_sm
+                                  on affected_sm.id = affected_smg.signal_message_id
+                                join sigint_inbox_item affected_ii
+                                  on affected_ii.id = affected_sm.id
+                                join datasource_group affected_dg
+                                  on affected_dg.id = affected_sm.datasource_group_id
+                                where affected_smg.group_master_key = task.group_master_key
+                                  and affected_dg.group_master_key = any(cache.group_master_keys)
+                                  and affected_sm.deleted = false
+                                  and affected_ii.freq = nf.freq
+                                  and affected_ii.datetime between task.since_ts and task.till_ts
+                                  and affected_ii.datetime >= nf.active_from
+                                  and affected_ii.datetime
+                                        <= coalesce(nf.active_to, current_timestamp at time zone 'utc')
+                            )
                         )
                   )
             "#,
@@ -1016,9 +1033,14 @@ async fn requeue_failed_task(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::sigint_network;
+    use crate::entities::{
+        datasource_group, sigint_inbox_item, sigint_network, signal_group,
+        signal_message, signal_message_group,
+    };
     use crate::functest::tests::{
-        cleanup, mk_sigint_network, mk_sigint_network_freq,
+        cleanup, mk_sigint_inbox_item, mk_sigint_network,
+        mk_sigint_network_freq, mk_signal_group, mk_signal_message,
+        mk_signal_message_group,
     };
     use serial_test::serial;
 
@@ -1585,6 +1607,98 @@ mod tests {
         .contains_key(&fixture.network_freq.id));
     }
 
+    async fn assert_secondary_group_invalidation_suppresses_cache(
+        db: &DatabaseConnection,
+        fixture: &QueueFixture,
+        group_master_keys: &[String],
+    ) {
+        let visible_group_master_key = group_master_keys.first().unwrap();
+        let datasource_group = datasource_group::Entity::find()
+            .filter(
+                datasource_group::Column::GroupMasterKey
+                    .eq(visible_group_master_key),
+            )
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
+        let secondary_group = mk_signal_group(
+            db,
+            signal_group::ActiveModel {
+                master_key: Set("secondary-cache-invalidation".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let message = mk_signal_message(
+            db,
+            signal_message::ActiveModel {
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let datetime = Utc::now().naive_utc();
+        mk_sigint_inbox_item(
+            db,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                freq: Set(Some(fixture.network_freq.freq.clone())),
+                datetime: Set(Some(datetime)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_message_group(
+            db,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(message.id),
+                group_master_key: Set(Some(secondary_group.master_key.clone())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let mut invalidation = invalidation_task(
+            1_001,
+            fixture.network.id,
+            &fixture.network_freq.freq,
+        );
+        invalidation.sigint_network_id = None;
+        invalidation.frequency = None;
+        invalidation.group_master_key = Some(secondary_group.master_key);
+        invalidation.since_ts = datetime - Duration::seconds(1);
+        invalidation.till_ts = datetime + Duration::seconds(1);
+        let invalidation =
+            invalidation.into_active_model().insert(db).await.unwrap();
+
+        assert!(load_cached_last_datetime_in_aor(
+            db,
+            fixture.network.id,
+            fixture.login_id,
+            group_master_keys,
+        )
+        .await
+        .unwrap()
+        .is_empty());
+
+        invalidation.delete(db).await.unwrap();
+        assert!(run_once(db).await.unwrap());
+        assert!(load_cached_last_datetime_in_aor(
+            db,
+            fixture.network.id,
+            fixture.login_id,
+            group_master_keys,
+        )
+        .await
+        .unwrap()
+        .contains_key(&fixture.network_freq.id));
+    }
+
     async fn assert_deleted_frequency_cache_is_removed(
         db: &DatabaseConnection,
         fixture: QueueFixture,
@@ -1645,6 +1759,12 @@ mod tests {
             .await;
 
         assert_invalidation_handoff_suppresses_cache(
+            &env.dbx,
+            &fixture,
+            &group_master_keys,
+        )
+        .await;
+        assert_secondary_group_invalidation_suppresses_cache(
             &env.dbx,
             &fixture,
             &group_master_keys,
