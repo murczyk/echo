@@ -1,52 +1,15 @@
 import 'leaflet/dist/leaflet.css';
 
-import { Box, ButtonBase, Skeleton, Tooltip, Typography } from '@mui/material';
-import * as L from 'leaflet';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { ButtonBase, Skeleton, Typography } from '@mui/material';
+import { useEffect, useId, useRef, useState } from 'react';
 
-import { DEFAULT_BASE_LAYER_ID } from '../../../../maps/base-layers';
-import { getTileLayers } from '../../../../web-components/analysis-map/tile-layers';
+import { CoordinateAttachmentHoverPreview } from './CoordinateAttachmentHoverPreview';
+import { CoordinatePreviewMapSurface } from './CoordinatePreviewMapSurface';
 import type { CoordinatePreviewPoint } from './message-coordinate-preview';
 
-const PREVIEW_HEIGHT_PX = 120;
-const PREVIEW_MAX_WIDTH_PX = 180;
 const PREVIEW_ROOT_MARGIN = '160px 0px';
-const PREVIEW_ZOOM = 11;
-const PREVIEW_MAX_ZOOM = 13;
-const PREVIEW_BOUNDS_PADDING: [number, number] = [20, 20];
-
-function plainTextMarkerLabel(label: string): HTMLSpanElement {
-  const element = document.createElement('span');
-  element.textContent = label;
-  return element;
-}
-
-function fitMap(map: L.Map, points: CoordinatePreviewPoint[]): void {
-  const latLngs = points.map(({ lat, lng }): [number, number] => [lat, lng]);
-  if (latLngs.length === 1) {
-    map.setView(latLngs[0], PREVIEW_ZOOM, { animate: false });
-  } else if (latLngs.length > 1) {
-    map.fitBounds(L.latLngBounds(latLngs), {
-      animate: false,
-      maxZoom: PREVIEW_MAX_ZOOM,
-      padding: PREVIEW_BOUNDS_PADDING,
-    });
-  }
-}
-
-function createMarkers(map: L.Map, points: CoordinatePreviewPoint[]): L.CircleMarker[] {
-  return points.map(({ lat, lng, label }) =>
-    L.circleMarker([lat, lng], {
-      radius: 8,
-      color: '#ffffff',
-      weight: 3,
-      fillColor: '#ff4d2d',
-      fillOpacity: 1,
-    })
-      .bindTooltip(plainTextMarkerLabel(label))
-      .addTo(map),
-  );
-}
+const OPEN_DELAY_MS = 600;
+const CLOSE_DELAY_MS = 120;
 
 export function CoordinateAttachmentThumbnail({
   points,
@@ -60,257 +23,181 @@ export function CoordinateAttachmentThumbnail({
   messageCardTile?: boolean;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const mapContainerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<L.Map | null>(null);
-  const markerRefs = useRef<L.CircleMarker[]>([]);
-  const pointsRef = useRef(points);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const openTimerRef = useRef<number | null>(null);
+  const closeTimerRef = useRef<number | null>(null);
+  const pointerInsideRef = useRef(false);
+  const focusInsideRef = useRef(false);
+  const suppressPointerFocusRef = useRef(false);
   const [isNearViewport, setIsNearViewport] = useState(false);
-
-  pointsRef.current = points;
-
+  const [isHoverPreviewOpen, setIsHoverPreviewOpen] = useState(false);
+  const previewId = useId();
+  const point = points[0];
+  const clearTimers = () => {
+    if (openTimerRef.current != null) window.clearTimeout(openTimerRef.current);
+    if (closeTimerRef.current != null) window.clearTimeout(closeTimerRef.current);
+    openTimerRef.current = null;
+    closeTimerRef.current = null;
+  };
+  const closePreview = () => {
+    clearTimers();
+    setIsHoverPreviewOpen(false);
+  };
+  const scheduleClose = () => {
+    if (pointerInsideRef.current || focusInsideRef.current) return;
+    if (closeTimerRef.current != null) window.clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = window.setTimeout(() => {
+      closeTimerRef.current = null;
+      if (!pointerInsideRef.current && !focusInsideRef.current) setIsHoverPreviewOpen(false);
+    }, CLOSE_DELAY_MS);
+  };
+  const openForPointer = (pointerType: string) => {
+    if (pointerType === 'touch') return;
+    if (closeTimerRef.current != null) window.clearTimeout(closeTimerRef.current);
+    if (isHoverPreviewOpen || openTimerRef.current != null) return;
+    openTimerRef.current = window.setTimeout(() => {
+      openTimerRef.current = null;
+      if (pointerInsideRef.current) setIsHoverPreviewOpen(true);
+    }, OPEN_DELAY_MS);
+  };
   useEffect(() => {
     const host = hostRef.current;
-    if (!host || typeof IntersectionObserver === 'undefined') {
+    if (host == null || typeof IntersectionObserver === 'undefined') {
       setIsNearViewport(true);
       return;
     }
-
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setIsNearViewport(true);
-        }
+        if (entries.some((entry) => entry.isIntersecting)) setIsNearViewport(true);
       },
       { rootMargin: PREVIEW_ROOT_MARGIN, threshold: 0.01 },
     );
     observer.observe(host);
     return () => observer.disconnect();
   }, []);
-
-  useLayoutEffect(() => {
-    const container = mapContainerRef.current;
-    if (!isNearViewport || !container || mapRef.current) {
-      return;
-    }
-
-    let cancelled = false;
-    let frameId = 0;
-    let resizeObserver: ResizeObserver | null = null;
-
-    const initMap = () => {
-      if (cancelled || mapRef.current || mapContainerRef.current !== container) {
-        return;
-      }
-
-      const rect = container.getBoundingClientRect();
-      if (rect.width < 48 || rect.height < 48) {
-        frameId = window.requestAnimationFrame(initMap);
-        return;
-      }
-
-      const map = L.map(container, {
-        zoomControl: false,
-        attributionControl: false,
-        dragging: false,
-        scrollWheelZoom: false,
-        doubleClickZoom: false,
-        touchZoom: false,
-        boxZoom: false,
-        keyboard: false,
-        preferCanvas: false,
-        minZoom: 2,
-        maxZoom: 17,
-      });
-
-      const tileLayers = getTileLayers();
-      tileLayers[DEFAULT_BASE_LAYER_ID].addTo(map);
-
-      map.getContainer().style.pointerEvents = 'none';
-      mapRef.current = map;
-      markerRefs.current = createMarkers(map, pointsRef.current);
-      fitMap(map, pointsRef.current);
-
-      window.requestAnimationFrame(() => {
-        if (!cancelled) {
-          map.invalidateSize();
-          fitMap(map, pointsRef.current);
-        }
-      });
-
-      resizeObserver =
-        typeof ResizeObserver === 'undefined'
-          ? null
-          : new ResizeObserver(() => {
-              if (!cancelled) {
-                map.invalidateSize({ animate: false, pan: false });
-                fitMap(map, pointsRef.current);
-              }
-            });
-      resizeObserver?.observe(container);
-    };
-
-    frameId = window.requestAnimationFrame(initMap);
-
-    return () => {
-      cancelled = true;
-      window.cancelAnimationFrame(frameId);
-      resizeObserver?.disconnect();
-      markerRefs.current.forEach((marker) => marker.remove());
-      markerRefs.current = [];
-      mapRef.current?.remove();
-      mapRef.current = null;
-    };
-  }, [isNearViewport]);
-
-  useLayoutEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-
-    markerRefs.current.forEach((marker) => marker.remove());
-    markerRefs.current = createMarkers(map, points);
-    fitMap(map, points);
+  useEffect(() => {
+    closePreview();
   }, [points]);
-
-  const point = points[0];
-  if (point == null) {
-    return null;
-  }
-
-  const widthStyle = fullWidth ? '100%' : messageCardTile ? '100%' : '180px';
-  const heightStyle = fullWidth ? '100%' : messageCardTile ? '100%' : '120px';
-  const flexStyle = fullWidth ? '1 1 auto' : messageCardTile ? '0 0 auto' : '0 0 120px';
-  const maxWidthStyle = fullWidth ? '100%' : 'none';
-
+  useEffect(() => {
+    if (!isHoverPreviewOpen) return;
+    const dismissOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target;
+      if (
+        target instanceof Node &&
+        (hostRef.current?.contains(target) || document.getElementById(previewId)?.contains(target))
+      )
+        return;
+      closePreview();
+    };
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        closePreview();
+      }
+    };
+    const dismiss = () => closePreview();
+    document.addEventListener('pointerdown', dismissOnOutsidePointer, true);
+    document.addEventListener('keydown', dismissOnEscape, true);
+    document.addEventListener('scroll', dismiss, true);
+    document.addEventListener('wheel', dismiss, true);
+    document.addEventListener('touchmove', dismiss, true);
+    return () => {
+      document.removeEventListener('pointerdown', dismissOnOutsidePointer, true);
+      document.removeEventListener('keydown', dismissOnEscape, true);
+      document.removeEventListener('scroll', dismiss, true);
+      document.removeEventListener('wheel', dismiss, true);
+      document.removeEventListener('touchmove', dismiss, true);
+    };
+  }, [isHoverPreviewOpen, previewId]);
+  useEffect(() => clearTimers, []);
+  if (point == null) return null;
+  const tileClassName = `message-card-thumbnail-control${fullWidth ? ' coordinate-thumbnail--full-width' : ''}`;
   return (
-    <Box
+    <div
       ref={hostRef}
       data-coordinate-preview-tile="true"
       data-message-card-tile={messageCardTile ? 'true' : undefined}
+      className={`coordinate-thumbnail${fullWidth ? ' coordinate-thumbnail--full-width' : ''}`}
       style={{
-        flex: flexStyle,
-        width: widthStyle,
-        height: heightStyle,
-        aspectRatio: fullWidth || messageCardTile ? '1 / 1' : undefined,
-        maxWidth: maxWidthStyle,
-      }}
-      sx={{
-        flex: flexStyle,
-        width: fullWidth || messageCardTile ? '100%' : 180,
-        height: fullWidth || messageCardTile ? '100%' : PREVIEW_HEIGHT_PX,
-        aspectRatio: fullWidth || messageCardTile ? '1 / 1' : undefined,
-        maxWidth: maxWidthStyle,
-        alignSelf: 'flex-start',
+        flex: fullWidth ? '1 1 auto' : messageCardTile ? '0 0 auto' : '0 0 120px',
+        width: fullWidth || messageCardTile ? '100%' : '180px',
+        height: fullWidth || messageCardTile ? '100%' : '120px',
+        maxWidth: fullWidth ? '100%' : 'none',
       }}
     >
       {!isNearViewport ? (
-        <Skeleton
-          variant="rounded"
-          className="message-card-thumbnail-control"
-          height={fullWidth || messageCardTile ? '100%' : PREVIEW_HEIGHT_PX}
-          animation="wave"
-          sx={{
-            width: '100%',
-            height: fullWidth || messageCardTile ? '100%' : PREVIEW_HEIGHT_PX,
-            maxWidth: fullWidth ? '100%' : `${PREVIEW_MAX_WIDTH_PX}px`,
-            aspectRatio: fullWidth || messageCardTile ? '1 / 1' : undefined,
-          }}
-        />
+        <Skeleton variant="rounded" className={tileClassName} animation="wave" />
       ) : (
-        <Tooltip title="Відкрити на мапі" placement="top" enterDelay={0} enterNextDelay={0}>
-          <ButtonBase
-            type="button"
-            onClick={onOpen}
-            aria-label={`Open ${point.label} on map`}
-            className="message-card-thumbnail-control"
-            style={{
-              flex: flexStyle,
-              width: widthStyle,
-              height: heightStyle,
-              aspectRatio: fullWidth || messageCardTile ? '1 / 1' : undefined,
-              maxWidth: maxWidthStyle,
-            }}
-            sx={{
-              position: 'relative',
-              isolation: 'isolate',
-              zIndex: 0,
-              flex: flexStyle,
-              width: fullWidth || messageCardTile ? '100%' : 180,
-              maxWidth: maxWidthStyle,
-              height: fullWidth || messageCardTile ? '100%' : PREVIEW_HEIGHT_PX,
-              aspectRatio: fullWidth || messageCardTile ? '1 / 1' : undefined,
-              overflow: 'hidden',
-              borderRadius: 2,
-              border: '1px solid',
-              borderColor: 'divider',
-              bgcolor: 'background.paper',
-              color: 'common.white',
-              textAlign: 'left',
-              display: 'block',
-              '&:focus-visible': {
-                outline: 'none',
-                boxShadow: '0 0 0 3px rgba(25, 118, 210, 0.32)',
-              },
-            }}
-          >
-            <Box
-              ref={mapContainerRef}
-              aria-hidden="true"
-              style={{ zIndex: 0 }}
-              sx={{
-                position: 'absolute',
-                inset: 0,
-                zIndex: 0,
-                '& .leaflet-container': {
-                  width: '100%',
-                  height: '100%',
-                },
-              }}
-            />
-            <Box
-              style={{ zIndex: 1 }}
-              sx={{
-                position: 'absolute',
-                inset: 0,
-                zIndex: 1,
-                background:
-                  'linear-gradient(180deg, rgba(10, 13, 18, 0.08), rgba(10, 13, 18, 0.36) 80%)',
-                pointerEvents: 'none',
-              }}
-            />
-            <Box
-              style={{ zIndex: 2 }}
-              sx={{
-                position: 'absolute',
-                right: 4,
-                top: 4,
-                display: 'flex',
-                alignItems: 'flex-start',
-                justifyContent: 'flex-end',
-                pointerEvents: 'none',
-                zIndex: 2,
-              }}
-            >
-              <Typography
-                variant="caption"
-                data-coordinate-preview-count="true"
-                sx={{
-                  px: 0.75,
-                  py: 0.5,
-                  borderRadius: 1.5,
-                  bgcolor: 'rgba(10, 13, 18, 0.7)',
-                  color: 'common.white',
-                  fontSize: 10,
-                  fontWeight: 400,
-                  lineHeight: 1.2,
-                  backdropFilter: 'blur(6px)',
-                }}
-              >
-                {points.length}
-              </Typography>
-            </Box>
-          </ButtonBase>
-        </Tooltip>
+        <ButtonBase
+          ref={triggerRef}
+          type="button"
+          style={{
+            flex: fullWidth ? '1 1 auto' : messageCardTile ? '0 0 auto' : '0 0 120px',
+            width: fullWidth || messageCardTile ? '100%' : '180px',
+            height: fullWidth || messageCardTile ? '100%' : '120px',
+            maxWidth: fullWidth ? '100%' : 'none',
+          }}
+          onClick={() => {
+            closePreview();
+            onOpen();
+          }}
+          onPointerDown={() => {
+            suppressPointerFocusRef.current = true;
+          }}
+          onPointerEnter={(event) => {
+            pointerInsideRef.current = true;
+            openForPointer(event.pointerType);
+          }}
+          onPointerLeave={() => {
+            pointerInsideRef.current = false;
+            if (openTimerRef.current != null) window.clearTimeout(openTimerRef.current);
+            openTimerRef.current = null;
+            scheduleClose();
+          }}
+          onFocus={() => {
+            if (suppressPointerFocusRef.current) {
+              suppressPointerFocusRef.current = false;
+              return;
+            }
+            focusInsideRef.current = true;
+            if (closeTimerRef.current != null) window.clearTimeout(closeTimerRef.current);
+            setIsHoverPreviewOpen(true);
+          }}
+          onBlur={() => {
+            focusInsideRef.current = false;
+            scheduleClose();
+          }}
+          aria-label={`Open ${point.label} on map`}
+          aria-describedby={isHoverPreviewOpen ? previewId : undefined}
+          className={tileClassName}
+        >
+          <CoordinatePreviewMapSurface
+            points={points}
+            mode="thumbnail"
+            className="coordinate-thumbnail__map"
+          />
+          <span className="coordinate-thumbnail__shade" />
+          <span className="coordinate-thumbnail__count">
+            <Typography variant="caption" data-coordinate-preview-count="true">
+              {points.length}
+            </Typography>
+          </span>
+        </ButtonBase>
       )}
-    </Box>
+      <CoordinateAttachmentHoverPreview
+        anchorEl={triggerRef.current}
+        open={isHoverPreviewOpen}
+        points={points}
+        id={previewId}
+        onEnter={() => {
+          pointerInsideRef.current = true;
+          if (closeTimerRef.current != null) window.clearTimeout(closeTimerRef.current);
+        }}
+        onLeave={() => {
+          pointerInsideRef.current = false;
+          scheduleClose();
+        }}
+      />
+    </div>
   );
 }
