@@ -238,11 +238,14 @@ where
     Ok((group, true))
 }
 
-pub async fn invalidate_network_inbox_for_aor(
-    db: &DatabaseConnection,
+pub async fn invalidate_network_inbox_for_aor<'a, 'async_trait, C>(
+    db: &'a C,
     aor: &area_of_responsibility::Model,
     context_msg: String,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     enqueue_network_invalidation_task(
         db,
         Some(aor.created_at),

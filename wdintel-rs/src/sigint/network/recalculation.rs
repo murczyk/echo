@@ -29,6 +29,40 @@ pub(super) async fn load_cached_last_datetime_in_aor(
 ) -> anyhow::Result<HashMap<i64, Option<i64>>> {
     let group_master_keys =
         normalize_group_master_keys(group_master_keys.to_vec());
+    let stale_before = Utc::now().naive_utc()
+        - Duration::minutes(
+            NETWORK_FREQ_LAST_DATETIME_IN_AOR_CACHE_TTL_MINUTES,
+        );
+    let cached =
+        load_available_last_datetime_in_aor_cache(db, network_id, login_id)
+            .await
+            .c(h!())?;
+    let cached_by_freq = cached
+        .into_iter()
+        .map(|row| (row.network_freq_id, row))
+        .collect::<HashMap<_, _>>();
+    enqueue_last_datetime_in_aor_cache_refreshes(
+        db,
+        network_id,
+        login_id,
+        &group_master_keys,
+        stale_before,
+        &cached_by_freq,
+    )
+    .await
+    .c(h!())?;
+    Ok(render_last_datetime_in_aor_cache(
+        cached_by_freq,
+        &group_master_keys,
+        stale_before,
+    ))
+}
+
+async fn load_available_last_datetime_in_aor_cache(
+    db: &DatabaseConnection,
+    network_id: i64,
+    login_id: uuid::Uuid,
+) -> anyhow::Result<Vec<network_freq_last_datetime_in_aor::Model>> {
     let cached = network_freq_last_datetime_in_aor::Model::find_by_statement(
         Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
@@ -120,14 +154,17 @@ pub(super) async fn load_cached_last_datetime_in_aor(
     .all(db)
     .await
     .c(h!())?;
-    let stale_before = Utc::now().naive_utc()
-        - Duration::minutes(
-            NETWORK_FREQ_LAST_DATETIME_IN_AOR_CACHE_TTL_MINUTES,
-        );
-    let cached_by_freq = cached
-        .into_iter()
-        .map(|row| (row.network_freq_id, row))
-        .collect::<HashMap<_, _>>();
+    Ok(cached)
+}
+
+async fn enqueue_last_datetime_in_aor_cache_refreshes(
+    db: &DatabaseConnection,
+    network_id: i64,
+    login_id: uuid::Uuid,
+    group_master_keys: &[String],
+    stale_before: NaiveDateTime,
+    cached_by_freq: &HashMap<i64, network_freq_last_datetime_in_aor::Model>,
+) -> anyhow::Result<()> {
     let network_freq_ids = sigint_network_freq::Entity::find()
         .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
         .filter(sigint_network_freq::Column::Deleted.eq(false))
@@ -160,7 +197,15 @@ pub(super) async fn load_cached_last_datetime_in_aor(
     )
     .await
     .c(h!())?;
-    Ok(cached_by_freq
+    Ok(())
+}
+
+fn render_last_datetime_in_aor_cache(
+    cached_by_freq: HashMap<i64, network_freq_last_datetime_in_aor::Model>,
+    group_master_keys: &[String],
+    stale_before: NaiveDateTime,
+) -> HashMap<i64, Option<i64>> {
+    cached_by_freq
         .into_values()
         .filter(|row| {
             row.calculated_at >= stale_before
@@ -173,7 +218,7 @@ pub(super) async fn load_cached_last_datetime_in_aor(
                     .map(|datetime| datetime.and_utc().timestamp_millis()),
             )
         })
-        .collect())
+        .collect()
 }
 
 pub(super) async fn evict_expired_cache(
@@ -1388,21 +1433,36 @@ mod tests {
         // Regression: https://github.com/echoua/echo/issues/3440
         let env = cleanup().await.unwrap();
         let fixture = setup_queue_fixture(&env.dbx).await;
+        let sibling_freq = mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(fixture.network.id),
+                freq: Set("149.1950".to_string()),
+                last_seen_dt: Set(Some(
+                    Utc::now().naive_utc() - Duration::days(1),
+                )),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         let txn = env.dbx.begin().await.unwrap();
 
         enqueue_last_seen_for_networks(&txn, [fixture.network.id])
             .await
             .unwrap();
 
-        assert_eq!(
-            sigint_network_freq::Entity::find_by_id(fixture.network_freq.id)
-                .one(&txn)
-                .await
-                .unwrap()
-                .unwrap()
-                .last_seen_dt,
-            None
-        );
+        for network_freq_id in [fixture.network_freq.id, sibling_freq.id] {
+            assert_eq!(
+                sigint_network_freq::Entity::find_by_id(network_freq_id)
+                    .one(&txn)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .last_seen_dt,
+                None
+            );
+        }
         assert_eq!(
             network_recalculation_task::Entity::find()
                 .filter(
@@ -1411,12 +1471,12 @@ mod tests {
                 )
                 .filter(
                     network_recalculation_task::Column::NetworkFreqId
-                        .eq(fixture.network_freq.id),
+                        .is_in([fixture.network_freq.id, sibling_freq.id]),
                 )
                 .count(&txn)
                 .await
                 .unwrap(),
-            1
+            2
         );
         txn.commit().await.unwrap();
     }

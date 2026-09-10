@@ -2251,26 +2251,6 @@ where
     Ok(())
 }
 
-async fn clear_network_last_seen<C>(
-    txn: &C,
-    network_id: i64,
-) -> Result<(), AppError>
-where
-    C: ConnectionTrait,
-{
-    sigint_network_freq::Entity::update_many()
-        .col_expr(
-            sigint_network_freq::Column::LastSeenDt,
-            Expr::value(Option::<NaiveDateTime>::None),
-        )
-        .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
-        .filter(sigint_network_freq::Column::Deleted.eq(false))
-        .exec(txn)
-        .await
-        .c(h!())?;
-    Ok(())
-}
-
 async fn enqueue_updated_network_followup(
     txn: &DatabaseTransaction,
     network: sigint_network::Model,
@@ -2279,6 +2259,11 @@ async fn enqueue_updated_network_followup(
     refresh_last_seen: bool,
     context_msg: String,
 ) -> anyhow::Result<()> {
+    if refresh_last_seen {
+        refresh_network_last_seen_after_state_change(txn, [network.id])
+            .await
+            .c(h!())?;
+    }
     if refresh_aor_cache {
         recalculation::enqueue_last_datetime_in_aor_for_network(
             txn, network.id, login_id,
@@ -2294,17 +2279,13 @@ async fn enqueue_updated_network_followup(
     )
     .await
     .c(h!())?;
-    if refresh_last_seen {
-        refresh_network_last_seen_after_state_change(txn, [network.id])
-            .await
-            .c(h!())?;
-    }
     Ok(())
 }
 
 struct NetworkFreqMutationResult {
     network: sigint_network::Model,
     network_freq_id: i64,
+    network_activity_range_changed: bool,
     network_active_from: Option<NaiveDateTime>,
     network_active_to: Option<NaiveDateTime>,
     invalidation_freq: String,
@@ -2313,13 +2294,20 @@ struct NetworkFreqMutationResult {
 
 async fn enqueue_network_freq_mutation_followup(
     txn: &DatabaseTransaction,
+    network_id: i64,
     network_freq_id: i64,
     login_id: uuid::Uuid,
+    network_activity_range_changed: bool,
     frequency: &str,
     since_ts: Option<NaiveDateTime>,
     till_ts: Option<NaiveDateTime>,
     context_msg: String,
 ) -> anyhow::Result<()> {
+    if network_activity_range_changed {
+        refresh_network_last_seen_after_state_change(txn, [network_id])
+            .await
+            .c(h!())?;
+    }
     recalculation::enqueue_all_for_network_freq(txn, network_freq_id, login_id)
         .await
         .c(h!())?;
@@ -2346,6 +2334,7 @@ async fn finish_network_freq_mutation(
     invalidation_range: (Option<NaiveDateTime>, Option<NaiveDateTime>),
     activity_reason: &str,
 ) -> Result<NetworkFreqMutationResult, AppError> {
+    let old_network_activity_range = (network.active_from, network.active_to);
     let (network_active_from, network_active_to) =
         get_network_activity_range(txn, network_id)
             .await
@@ -2376,6 +2365,8 @@ async fn finish_network_freq_mutation(
     Ok(NetworkFreqMutationResult {
         network,
         network_freq_id,
+        network_activity_range_changed: old_network_activity_range
+            != (network_active_from, network_active_to),
         network_active_from,
         network_active_to,
         invalidation_freq,
@@ -2594,16 +2585,12 @@ pub async fn add_network_freq(
     .await
     .context(h!())?;
 
-    // Now fetch the updated network with all frequencies to return
-    let network_detail =
-        bl_network_info_batch(vec![req.network_id], &txn, &user_id)
-            .await
-            .context(h!())?;
-
     enqueue_network_freq_mutation_followup(
         &txn,
+        req.network_id,
         result.network_freq_id,
         user_id,
+        result.network_activity_range_changed,
         &result.invalidation_freq,
         result.network_active_from,
         result.network_active_to,
@@ -2611,6 +2598,12 @@ pub async fn add_network_freq(
     )
     .await
     .c(h!())?;
+
+    // Now fetch the updated network with all frequencies to return
+    let network_detail =
+        bl_network_info_batch(vec![req.network_id], &txn, &user_id)
+            .await
+            .context(h!())?;
     txn.commit().await.context(h!())?;
 
     fanout_network_changed(&env).await?;
@@ -2734,14 +2727,12 @@ pub async fn add_network_freq_v2(
     .await
     .context(h!())?;
 
-    let network = bl_network_info_batch(vec![req.network_id], &txn, &user_id)
-        .await
-        .context(h!())?;
-
     enqueue_network_freq_mutation_followup(
         &txn,
+        req.network_id,
         result.network_freq_id,
         user_id,
+        result.network_activity_range_changed,
         &req.freq_rec.freq,
         result.network_active_from,
         result.network_active_to,
@@ -2749,6 +2740,9 @@ pub async fn add_network_freq_v2(
     )
     .await
     .c(h!())?;
+    let network = bl_network_info_batch(vec![req.network_id], &txn, &user_id)
+        .await
+        .context(h!())?;
     txn.commit().await.context(h!())?;
     fanout_network_changed(&env).await?;
 
@@ -2868,6 +2862,21 @@ pub async fn reactivate_network_freq(
     .await
     .context(h!())?;
 
+    refresh_network_last_seen_after_state_change(&txn, [network.id])
+        .await
+        .c(h!())?;
+    recalculation::enqueue_all_for_network_freq(&txn, network_freq.id, user_id)
+        .await
+        .c(h!())?;
+    etalon_calc::invalidate_network_inbox(
+        network.clone(),
+        vec![freq.clone()],
+        &txn,
+        format!("reactivated network frequency from web UI: {freq}"),
+    )
+    .await
+    .c(h!())?;
+
     let network_detail =
         bl_network_info_batch(vec![req.network_id], &txn, &user_id)
             .await
@@ -2877,21 +2886,6 @@ pub async fn reactivate_network_freq(
         return Err(AppError::NotFound);
     }
 
-    recalculation::enqueue_all_for_network_freq(&txn, network_freq.id, user_id)
-        .await
-        .c(h!())?;
-
-    etalon_calc::invalidate_network_inbox(
-        network.clone(),
-        vec![freq.clone()],
-        &txn,
-        format!("reactivated network frequency from web UI: {freq}"),
-    )
-    .await
-    .c(h!())?;
-    refresh_network_last_seen_after_state_change(&txn, [network.id])
-        .await
-        .c(h!())?;
     txn.commit().await.context(h!())?;
 
     Ok(Json(network_detail[0].clone()))
@@ -2977,7 +2971,6 @@ pub async fn update_network_freq(
     let network = lock_network_activity_target(&txn, req.network_id)
         .await
         .context(h!())?;
-    let network_activity_range = (network.active_from, network.active_to);
     let updated_freq_active_from =
         update_network_freq_active_from(req.active_from)?;
     let updated_freq_active_to =
@@ -3089,13 +3082,22 @@ pub async fn update_network_freq(
     )
     .await
     .context(h!())?;
-    if network_activity_range
-        != (result.network.active_from, result.network.active_to)
-    {
-        clear_network_last_seen(&txn, result.network.id)
-            .await
-            .context(h!())?;
-    }
+    enqueue_network_freq_mutation_followup(
+        &txn,
+        req.network_id,
+        result.network_freq_id,
+        user_id,
+        result.network_activity_range_changed,
+        &result.invalidation_freq,
+        result.invalidation_range.0,
+        result.invalidation_range.1,
+        format!(
+            "edited network frequency from web UI: {}",
+            result.network.name
+        ),
+    )
+    .await
+    .c(h!())?;
 
     // Now fetch the updated network with all descriptions, units and freqs to return
     let network_detail =
@@ -3106,21 +3108,6 @@ pub async fn update_network_freq(
     if network_detail.is_empty() {
         return Err(AppError::NotFound);
     }
-
-    enqueue_network_freq_mutation_followup(
-        &txn,
-        result.network_freq_id,
-        user_id,
-        &result.invalidation_freq,
-        result.invalidation_range.0,
-        result.invalidation_range.1,
-        format!(
-            "edited network frequency from web UI: {}",
-            network_detail[0].name
-        ),
-    )
-    .await
-    .c(h!())?;
     txn.commit().await.context(h!())?;
 
     Ok(Json(network_detail[0].clone()))
@@ -3144,7 +3131,6 @@ pub async fn update_network_freq_v2(
     let network = lock_network_activity_target(&txn, req.network_id)
         .await
         .context(h!())?;
-    let network_activity_range = (network.active_from, network.active_to);
     let updated_freq_active_from =
         update_network_freq_active_from(req.active_from)?;
     let updated_freq_active_to =
@@ -3258,22 +3244,12 @@ pub async fn update_network_freq_v2(
     )
     .await
     .context(h!())?;
-    if network_activity_range
-        != (result.network.active_from, result.network.active_to)
-    {
-        clear_network_last_seen(&txn, result.network.id)
-            .await
-            .context(h!())?;
-    }
-
-    let network = bl_network_info_batch(vec![req.network_id], &txn, &user_id)
-        .await
-        .context(h!())?;
-
     enqueue_network_freq_mutation_followup(
         &txn,
+        req.network_id,
         result.network_freq_id,
         user_id,
+        result.network_activity_range_changed,
         &result.invalidation_freq,
         result.invalidation_range.0,
         result.invalidation_range.1,
@@ -3284,6 +3260,9 @@ pub async fn update_network_freq_v2(
     )
     .await
     .c(h!())?;
+    let network = bl_network_info_batch(vec![req.network_id], &txn, &user_id)
+        .await
+        .context(h!())?;
     txn.commit().await.context(h!())?;
 
     let response = load_network_freq_mutation_response(
@@ -3450,6 +3429,8 @@ pub async fn delete_network_freq(
 
         if let Some(network_id) = freq_records.first().map(|x| x.network_id) {
             let old_network = network.clone();
+            let old_network_activity_range =
+                (old_network.active_from, old_network.active_to);
             let (network_active_from, network_active_to) =
                 get_network_activity_range(&txn, network_id)
                     .await
@@ -3474,6 +3455,17 @@ pub async fn delete_network_freq(
             )
             .await
             .context(h!())?;
+
+            if old_network_activity_range
+                != (network_active_from, network_active_to)
+            {
+                refresh_network_last_seen_after_state_change(
+                    &txn,
+                    [network_id],
+                )
+                .await
+                .c(h!())?;
+            }
 
             network_detail = Some(
                 bl_network_info_batch(vec![network_id], &txn, &user_id)
