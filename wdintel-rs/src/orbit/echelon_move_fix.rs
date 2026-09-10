@@ -18,17 +18,19 @@ use sea_orm::{
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-const ORBIT_ECHELON_KEYS: [&str; 6] = [
+const ORBIT_ECHELON_KEYS: [&str; 7] = [
     "regiment",
     "brigade",
+    "division",
     "corps",
     "fieldArmy",
     "militaryDistrict",
     "armyRegion",
 ];
-const ORBIT_ECHELONS: [EchoEchelon; 6] = [
+const ORBIT_ECHELONS: [EchoEchelon; 7] = [
     EchoEchelon::Regiment,
     EchoEchelon::Brigade,
+    EchoEchelon::Division,
     EchoEchelon::Corps,
     EchoEchelon::Army,
     EchoEchelon::MilitaryDistrict,
@@ -146,6 +148,7 @@ struct EchelonMoveUnit {
     name: String,
     regiment: String,
     brigade: String,
+    division: String,
     corps: String,
     army: String,
     military_district: String,
@@ -304,6 +307,7 @@ where
             sigint_unit::Column::Name,
             sigint_unit::Column::Regiment,
             sigint_unit::Column::Brigade,
+            sigint_unit::Column::Division,
             sigint_unit::Column::Corps,
             sigint_unit::Column::Army,
             sigint_unit::Column::MilitaryDistrict,
@@ -340,6 +344,7 @@ where
             sigint_unit::Column::Name,
             sigint_unit::Column::Regiment,
             sigint_unit::Column::Brigade,
+            sigint_unit::Column::Division,
             sigint_unit::Column::Corps,
             sigint_unit::Column::Army,
             sigint_unit::Column::MilitaryDistrict,
@@ -568,6 +573,7 @@ fn echelon_attribute(echelon: EchoEchelon) -> &'static str {
     match echelon {
         EchoEchelon::Regiment => "regiment",
         EchoEchelon::Brigade => "brigade",
+        EchoEchelon::Division => "division",
         EchoEchelon::Corps => "corps",
         EchoEchelon::Army => "army",
         EchoEchelon::MilitaryDistrict => "military_district",
@@ -580,6 +586,7 @@ fn echelon_value(unit: &EchelonMoveUnit, echelon: EchoEchelon) -> &str {
     match echelon {
         EchoEchelon::Regiment => &unit.regiment,
         EchoEchelon::Brigade => &unit.brigade,
+        EchoEchelon::Division => &unit.division,
         EchoEchelon::Corps => &unit.corps,
         EchoEchelon::Army => &unit.army,
         EchoEchelon::MilitaryDistrict => &unit.military_district,
@@ -834,6 +841,50 @@ mod tests {
         assert!(proposed_change(&unit, EchelonMove::CorpsToArmy, &values,)
             .is_some());
         assert!(proposed_change(&unit, EchelonMove::Army, &values).is_none());
+    }
+
+    #[test]
+    fn moves_division_values_from_army_and_higher_fields() {
+        for echelon_move in [
+            EchelonMove::Army,
+            EchelonMove::MilitaryDistrict,
+            EchelonMove::ArmyRegion,
+        ] {
+            let mut unit = sigint_unit();
+            match echelon_move {
+                EchelonMove::Army => unit.army = "47 тд".to_string(),
+                EchelonMove::MilitaryDistrict => {
+                    unit.military_district = "47 тд".to_string()
+                }
+                EchelonMove::ArmyRegion => {
+                    unit.army_region = "47 тд".to_string()
+                }
+                _ => unreachable!("test only covers army-and-higher fields"),
+            }
+            let values = HashMap::from([(
+                EchoEchelon::Division,
+                HashSet::from([matching::normalize_name("47 тд")]),
+            )]);
+
+            let change = proposed_change(&unit, echelon_move, &values)
+                .expect("division value must be moved");
+
+            assert_eq!(
+                change.hierarchy_change.attributes,
+                vec![
+                    OrbitUnitAttributeChange {
+                        attribute: "division",
+                        current: String::new(),
+                        proposed: "47 тд".to_string(),
+                    },
+                    OrbitUnitAttributeChange {
+                        attribute: echelon_move.source_attribute(),
+                        current: "47 тд".to_string(),
+                        proposed: String::new(),
+                    },
+                ]
+            );
+        }
     }
 
     #[test]
@@ -1114,6 +1165,7 @@ mod tests {
             name: "test unit".to_string(),
             regiment: String::new(),
             brigade: String::new(),
+            division: String::new(),
             corps: String::new(),
             army: String::new(),
             military_district: String::new(),
