@@ -6,24 +6,31 @@ import { DEFAULT_BASE_LAYER_ID } from '../../../../maps/base-layers';
 import { getTileLayers } from '../../../../web-components/analysis-map/tile-layers';
 import type { CoordinatePreviewPoint } from './message-coordinate-preview';
 
-export type CoordinatePreviewMapMode = 'thumbnail' | 'overview' | 'detail';
-
-type Props = {
+type SharedProps = {
   points: CoordinatePreviewPoint[];
-  mode: CoordinatePreviewMapMode;
-  detailBounds?: L.LatLngBounds | null;
-  onVisibleBoundsChange?: (bounds: L.LatLngBounds) => void;
   className?: string;
 };
+type Props =
+  | (SharedProps & {
+      mode: 'thumbnail';
+      detailViewportBounds?: never;
+      onDetailViewportBoundsChange?: never;
+    })
+  | (SharedProps & {
+      mode: 'overview';
+      detailViewportBounds: L.LatLngBounds | null;
+      onDetailViewportBoundsChange?: never;
+    })
+  | (SharedProps & {
+      mode: 'detail';
+      detailViewportBounds?: never;
+      onDetailViewportBoundsChange: (bounds: L.LatLngBounds) => void;
+    });
 const THUMBNAIL_ZOOM = 11;
 const DETAIL_ZOOM = 16;
 const MAX_FITTED_ZOOM = 13;
 const BOUNDS_PADDING: [number, number] = [28, 28];
-function applyView(
-  map: L.Map,
-  points: CoordinatePreviewPoint[],
-  mode: CoordinatePreviewMapMode,
-): void {
+function applyView(map: L.Map, points: CoordinatePreviewPoint[], mode: Props['mode']): void {
   if (points.length === 0) return;
   if (mode === 'detail' || points.length === 1) {
     map.setView([points[0].lat, points[0].lng], mode === 'detail' ? DETAIL_ZOOM : THUMBNAIL_ZOOM, {
@@ -40,7 +47,7 @@ function applyView(
 function createMarkers(
   map: L.Map,
   points: CoordinatePreviewPoint[],
-  mode: CoordinatePreviewMapMode,
+  mode: Props['mode'],
 ): L.CircleMarker[] {
   const visibleBounds = mode === 'detail' ? map.getBounds() : null;
   return points
@@ -68,20 +75,17 @@ function findTileLayers(layer: L.Layer): L.GridLayer[] {
     ? [layer as L.GridLayer]
     : [];
 }
-export function CoordinatePreviewMapSurface({
-  points,
-  mode,
-  detailBounds = null,
-  onVisibleBoundsChange,
-  className,
-}: Props) {
+export function CoordinatePreviewMapSurface(props: Props) {
+  const { points, mode, className } = props;
+  // The detail map reports its viewport; only the overview map consumes it.
+  const overviewDetailViewportBounds = mode === 'overview' ? props.detailViewportBounds : null;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markerRefs = useRef<L.CircleMarker[]>([]);
   const rectangleRef = useRef<L.Rectangle | null>(null);
-  const propsRef = useRef({ points, mode, detailBounds, onVisibleBoundsChange });
+  const propsRef = useRef({ ...props, overviewDetailViewportBounds });
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading');
-  propsRef.current = { points, mode, detailBounds, onVisibleBoundsChange };
+  propsRef.current = { ...props, overviewDetailViewportBounds };
   const updateMap = () => {
     const map = mapRef.current;
     if (map == null) return;
@@ -91,15 +95,17 @@ export function CoordinatePreviewMapSurface({
     markerRefs.current = createMarkers(map, current.points, current.mode);
     rectangleRef.current?.remove();
     rectangleRef.current =
-      current.mode === 'overview' && current.detailBounds != null
-        ? L.rectangle(current.detailBounds, {
+      current.mode === 'overview' && current.overviewDetailViewportBounds != null
+        ? L.rectangle(current.overviewDetailViewportBounds, {
             color: '#ff4d2d',
             weight: 2,
             fillOpacity: 0.08,
             interactive: false,
           }).addTo(map)
         : null;
-    if (current.mode === 'detail') current.onVisibleBoundsChange?.(map.getBounds());
+    if (current.mode === 'detail') {
+      current.onDetailViewportBoundsChange(map.getBounds());
+    }
   };
   useLayoutEffect(() => {
     const container = containerRef.current;
@@ -155,8 +161,9 @@ export function CoordinatePreviewMapSurface({
         frameId = window.requestAnimationFrame(() => {
           if (cancelled || mapRef.current !== leafletMap) return;
           leafletMap.invalidateSize({ animate: false, pan: false });
-          if (propsRef.current.mode === 'detail')
-            propsRef.current.onVisibleBoundsChange?.(leafletMap.getBounds());
+          if (propsRef.current.mode === 'detail') {
+            propsRef.current.onDetailViewportBoundsChange(leafletMap.getBounds());
+          }
         });
         resizeObserver =
           typeof ResizeObserver === 'undefined'
@@ -195,7 +202,7 @@ export function CoordinatePreviewMapSurface({
       mapRef.current = null;
     };
   }, []);
-  useLayoutEffect(() => updateMap(), [points, mode, detailBounds]);
+  useLayoutEffect(() => updateMap(), [points, mode, overviewDetailViewportBounds]);
   return (
     <div className={className} aria-hidden="true">
       <div ref={containerRef} className="coordinate-preview-map-surface" />

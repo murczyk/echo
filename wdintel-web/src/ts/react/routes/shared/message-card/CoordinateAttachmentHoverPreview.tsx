@@ -21,7 +21,7 @@ export function CoordinateAttachmentHoverPreview({
   onEnter,
   onLeave,
 }: Props) {
-  const [detailBounds, setDetailBounds] = useState<L.LatLngBounds | null>(null);
+  const [detailViewportBounds, setDetailViewportBounds] = useState<L.LatLngBounds | null>(null);
   if (!open || anchorEl == null) return null;
   return (
     <Popper
@@ -56,13 +56,13 @@ export function CoordinateAttachmentHoverPreview({
           <CoordinatePreviewMapSurface
             points={points}
             mode="overview"
-            detailBounds={detailBounds}
+            detailViewportBounds={detailViewportBounds}
             className="coordinate-hover-preview__map-region"
           />
           <CoordinatePreviewMapSurface
             points={points}
             mode="detail"
-            onVisibleBoundsChange={setDetailBounds}
+            onDetailViewportBoundsChange={setDetailViewportBounds}
             className="coordinate-hover-preview__map-region"
           />
         </div>
