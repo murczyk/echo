@@ -895,6 +895,79 @@ test.describe('message card media preview contract', () => {
     }
   });
 
+  test('ECHO-3380 keeps the shared coordinate hover preview tile-driven and non-competing', async ({
+    page,
+  }) => {
+    const transparentPng = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL5WQAAAABJRU5ErkJggg==',
+      'base64',
+    );
+    let imageryLoaded = Promise.resolve();
+    await page.route('**/World_Imagery/MapServer/tile/**', async (route) => {
+      await imageryLoaded;
+      await route.fulfill({ contentType: 'image/png', body: transparentPng });
+    });
+    await page.route('**/Reference/World_Boundaries_and_Places/MapServer/tile/**', (route) =>
+      route.fulfill({ contentType: 'image/png', body: transparentPng }),
+    );
+
+    for (const host of ['duty', 'analysis'] as const) {
+      const isNarrowViewport = host === 'analysis';
+      let resolveCurrentImagery!: () => void;
+      imageryLoaded = new Promise((resolve) => {
+        resolveCurrentImagery = resolve;
+      });
+      await page.setViewportSize(
+        isNarrowViewport ? { width: 360, height: 480 } : { width: 1280, height: 720 },
+      );
+      await openMessageCardPreviewHost(page, host, { revealCoordinates: true });
+      const card = page.locator('.message-card-root').first();
+      const tile = card.locator('[data-coordinate-preview-tile]');
+      const button = tile.getByRole('button', { name: /Open .* on map/ });
+      await button.hover();
+      const preview = page.locator('[data-coordinate-hover-preview]');
+      await expect(preview).toHaveCount(1);
+      await expect(
+        page.locator('.MuiTooltip-tooltip', { hasText: 'Відкрити на мапі' }),
+      ).toHaveCount(0);
+      await expect(preview.locator('.coordinate-hover-preview__map-region')).toHaveCount(2);
+      await expect(preview.locator('.coordinate-preview-map-skeleton').first()).toBeVisible();
+      const [previewBox, viewport] = await Promise.all([
+        preview.boundingBox(),
+        page.evaluate(() => ({ width: innerWidth, height: innerHeight })),
+      ]);
+      expect(previewBox?.x).toBeGreaterThanOrEqual(0);
+      expect((previewBox?.x ?? 0) + (previewBox?.width ?? 0)).toBeLessThanOrEqual(viewport.width);
+      expect(previewBox?.y).toBeGreaterThanOrEqual(0);
+      expect((previewBox?.y ?? 0) + (previewBox?.height ?? 0)).toBeLessThanOrEqual(viewport.height);
+      resolveCurrentImagery();
+      await expect(preview.locator('.coordinate-preview-map-skeleton')).toHaveCount(0);
+
+      const mapRegions = preview.locator('.coordinate-hover-preview__map-region');
+      const [overviewRegion, detailRegion] = await Promise.all([
+        mapRegions.nth(0).boundingBox(),
+        mapRegions.nth(1).boundingBox(),
+      ]);
+      if (isNarrowViewport) {
+        expect(overviewRegion?.y).toBeLessThan(detailRegion?.y ?? 0);
+      } else {
+        expect(overviewRegion?.x).toBeLessThan(detailRegion?.x ?? 0);
+        expect(overviewRegion?.y).toBe(detailRegion?.y);
+      }
+
+      await preview.hover();
+      await expect(preview).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(preview).toHaveCount(0);
+      await button.focus();
+      await expect(preview).toBeVisible();
+      await button.evaluate((element) => element.click());
+      await expect(preview).toHaveCount(0);
+      await expect(page.getByRole('dialog', { name: 'Перегляд координат' })).toBeVisible();
+      await page.getByRole('button', { name: 'Закрити', exact: true }).click();
+    }
+  });
+
   test('image previews preserve carousel order, info, and download', async ({ page }) => {
     await openMessageCardPreviewHost(page, 'duty');
 
