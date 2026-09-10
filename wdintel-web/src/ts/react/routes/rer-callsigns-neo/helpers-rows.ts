@@ -63,9 +63,17 @@ export function mergeUnitStatsWithUnits(
         armyRegion: unit.armyRegion,
         militaryDistrict: unit.militaryDistrict,
         army: unit.army,
+        corps: unit.corps,
         division: unit.division,
+        brigade: unit.brigade,
         regiment: unit.regiment,
         battalion: unit.battalion,
+        company: unit.company,
+        platoon: unit.platoon,
+        squad: unit.squad,
+        section: unit.section,
+        teamOrCrew: unit.teamOrCrew,
+        other: unit.other,
       };
     })
     .filter((row): row is UnitStatView => row !== null)

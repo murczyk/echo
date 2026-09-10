@@ -369,9 +369,18 @@ async fn list_callsigns_impl(
         callsigns = callsigns
             .filter(sigint_unit::Column::Army.eq(filter_unit_army.clone()));
     }
+    if let Some(filter_unit_corps) = &req.filter_unit_corps {
+        callsigns = callsigns
+            .filter(sigint_unit::Column::Corps.eq(filter_unit_corps.clone()));
+    }
     if let Some(filter_unit_division) = &req.filter_unit_division {
         callsigns = callsigns.filter(
             sigint_unit::Column::Division.eq(filter_unit_division.clone()),
+        );
+    }
+    if let Some(filter_unit_brigade) = &req.filter_unit_brigade {
+        callsigns = callsigns.filter(
+            sigint_unit::Column::Brigade.eq(filter_unit_brigade.clone()),
         );
     }
     if let Some(filter_unit_regiment) = &req.filter_unit_regiment {
@@ -383,6 +392,35 @@ async fn list_callsigns_impl(
         callsigns = callsigns.filter(
             sigint_unit::Column::Battalion.eq(filter_unit_battalion.clone()),
         );
+    }
+    if let Some(filter_unit_company) = &req.filter_unit_company {
+        callsigns = callsigns.filter(
+            sigint_unit::Column::Company.eq(filter_unit_company.clone()),
+        );
+    }
+    if let Some(filter_unit_platoon) = &req.filter_unit_platoon {
+        callsigns = callsigns.filter(
+            sigint_unit::Column::Platoon.eq(filter_unit_platoon.clone()),
+        );
+    }
+    if let Some(filter_unit_squad) = &req.filter_unit_squad {
+        callsigns = callsigns
+            .filter(sigint_unit::Column::Squad.eq(filter_unit_squad.clone()));
+    }
+    if let Some(filter_unit_section) = &req.filter_unit_section {
+        callsigns = callsigns.filter(
+            sigint_unit::Column::Section.eq(filter_unit_section.clone()),
+        );
+    }
+    if let Some(filter_unit_team_or_crew) = &req.filter_unit_team_or_crew {
+        callsigns = callsigns.filter(
+            sigint_unit::Column::TeamOrCrew
+                .eq(filter_unit_team_or_crew.clone()),
+        );
+    }
+    if let Some(filter_unit_other) = &req.filter_unit_other {
+        callsigns = callsigns
+            .filter(sigint_unit::Column::Other.eq(filter_unit_other.clone()));
     }
 
     let filter_developing = req
@@ -1379,9 +1417,17 @@ mod tests {
             filter_unit_army_region: None,
             filter_unit_military_district: None,
             filter_unit_army: None,
+            filter_unit_corps: None,
             filter_unit_division: None,
+            filter_unit_brigade: None,
             filter_unit_regiment: None,
             filter_unit_battalion: None,
+            filter_unit_company: None,
+            filter_unit_platoon: None,
+            filter_unit_squad: None,
+            filter_unit_section: None,
+            filter_unit_team_or_crew: None,
+            filter_unit_other: None,
             filter_developing: None,
             since_date_inclusive_ms: None,
             till_date_inclusive_ms: None,

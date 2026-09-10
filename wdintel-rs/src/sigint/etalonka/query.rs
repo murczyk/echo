@@ -2561,17 +2561,33 @@ fn build_etalonka_networks_query(
     let filter_unit_military_district =
         req.filter_unit_military_district.clone();
     let filter_unit_army = req.filter_unit_army.clone();
+    let filter_unit_corps = req.filter_unit_corps.clone();
     let filter_unit_division = req.filter_unit_division.clone();
+    let filter_unit_brigade = req.filter_unit_brigade.clone();
     let filter_unit_regiment = req.filter_unit_regiment.clone();
     let filter_unit_battalion = req.filter_unit_battalion.clone();
+    let filter_unit_company = req.filter_unit_company.clone();
+    let filter_unit_platoon = req.filter_unit_platoon.clone();
+    let filter_unit_squad = req.filter_unit_squad.clone();
+    let filter_unit_section = req.filter_unit_section.clone();
+    let filter_unit_team_or_crew = req.filter_unit_team_or_crew.clone();
+    let filter_unit_other = req.filter_unit_other.clone();
     let mut report_req = req.clone();
     report_req.filter_unit = None;
     report_req.filter_unit_army_region = None;
     report_req.filter_unit_military_district = None;
     report_req.filter_unit_army = None;
+    report_req.filter_unit_corps = None;
     report_req.filter_unit_division = None;
+    report_req.filter_unit_brigade = None;
     report_req.filter_unit_regiment = None;
     report_req.filter_unit_battalion = None;
+    report_req.filter_unit_company = None;
+    report_req.filter_unit_platoon = None;
+    report_req.filter_unit_squad = None;
+    report_req.filter_unit_section = None;
+    report_req.filter_unit_team_or_crew = None;
+    report_req.filter_unit_other = None;
 
     let mut networks = sigint_network::Entity::find()
         .join_as(
@@ -2660,9 +2676,17 @@ fn build_etalonka_networks_query(
         networks =
             networks.filter(sigint_unit::Column::Army.eq(filter_unit_army));
     }
+    if let Some(filter_unit_corps) = filter_unit_corps.as_deref() {
+        networks =
+            networks.filter(sigint_unit::Column::Corps.eq(filter_unit_corps));
+    }
     if let Some(filter_unit_division) = filter_unit_division.as_deref() {
         networks = networks
             .filter(sigint_unit::Column::Division.eq(filter_unit_division));
+    }
+    if let Some(filter_unit_brigade) = filter_unit_brigade.as_deref() {
+        networks = networks
+            .filter(sigint_unit::Column::Brigade.eq(filter_unit_brigade));
     }
     if let Some(filter_unit_regiment) = filter_unit_regiment.as_deref() {
         networks = networks
@@ -2671,6 +2695,32 @@ fn build_etalonka_networks_query(
     if let Some(filter_unit_battalion) = filter_unit_battalion.as_deref() {
         networks = networks
             .filter(sigint_unit::Column::Battalion.eq(filter_unit_battalion));
+    }
+    if let Some(filter_unit_company) = filter_unit_company.as_deref() {
+        networks = networks
+            .filter(sigint_unit::Column::Company.eq(filter_unit_company));
+    }
+    if let Some(filter_unit_platoon) = filter_unit_platoon.as_deref() {
+        networks = networks
+            .filter(sigint_unit::Column::Platoon.eq(filter_unit_platoon));
+    }
+    if let Some(filter_unit_squad) = filter_unit_squad.as_deref() {
+        networks =
+            networks.filter(sigint_unit::Column::Squad.eq(filter_unit_squad));
+    }
+    if let Some(filter_unit_section) = filter_unit_section.as_deref() {
+        networks = networks
+            .filter(sigint_unit::Column::Section.eq(filter_unit_section));
+    }
+    if let Some(filter_unit_team_or_crew) = filter_unit_team_or_crew.as_deref()
+    {
+        networks = networks.filter(
+            sigint_unit::Column::TeamOrCrew.eq(filter_unit_team_or_crew),
+        );
+    }
+    if let Some(filter_unit_other) = filter_unit_other.as_deref() {
+        networks =
+            networks.filter(sigint_unit::Column::Other.eq(filter_unit_other));
     }
 
     network_sort::apply_network_sorts(networks, req.sort_by.as_ref(), groups)
@@ -2737,9 +2787,17 @@ pub async fn load_networks_by_id(
         filter_unit_army_region: None,
         filter_unit_military_district: None,
         filter_unit_army: None,
+        filter_unit_corps: None,
         filter_unit_division: None,
+        filter_unit_brigade: None,
         filter_unit_regiment: None,
         filter_unit_battalion: None,
+        filter_unit_company: None,
+        filter_unit_platoon: None,
+        filter_unit_squad: None,
+        filter_unit_section: None,
+        filter_unit_team_or_crew: None,
+        filter_unit_other: None,
         filter_text: None,
         filter_name: None,
         filter_location: None,
@@ -2806,9 +2864,17 @@ mod tests {
             filter_unit_army_region: None,
             filter_unit_military_district: None,
             filter_unit_army: None,
+            filter_unit_corps: None,
             filter_unit_division: None,
+            filter_unit_brigade: None,
             filter_unit_regiment: None,
             filter_unit_battalion: None,
+            filter_unit_company: None,
+            filter_unit_platoon: None,
+            filter_unit_squad: None,
+            filter_unit_section: None,
+            filter_unit_team_or_crew: None,
+            filter_unit_other: None,
             filter_text: None,
             filter_name: None,
             filter_location: None,

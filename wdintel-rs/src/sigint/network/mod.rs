@@ -155,9 +155,17 @@ fn build_networks_query_with_text_search_mode(
             || req.filter_unit_army_region.is_some()
             || req.filter_unit_military_district.is_some()
             || req.filter_unit_army.is_some()
+            || req.filter_unit_corps.is_some()
             || req.filter_unit_division.is_some()
+            || req.filter_unit_brigade.is_some()
             || req.filter_unit_regiment.is_some()
             || req.filter_unit_battalion.is_some()
+            || req.filter_unit_company.is_some()
+            || req.filter_unit_platoon.is_some()
+            || req.filter_unit_squad.is_some()
+            || req.filter_unit_section.is_some()
+            || req.filter_unit_team_or_crew.is_some()
+            || req.filter_unit_other.is_some()
             || req
                 .aor_ids
                 .as_ref()
@@ -5505,9 +5513,17 @@ mod tests {
             filter_unit_army_region: None,
             filter_unit_military_district: None,
             filter_unit_army: None,
+            filter_unit_corps: None,
             filter_unit_division: None,
+            filter_unit_brigade: None,
             filter_unit_regiment: None,
             filter_unit_battalion: None,
+            filter_unit_company: None,
+            filter_unit_platoon: None,
+            filter_unit_squad: None,
+            filter_unit_section: None,
+            filter_unit_team_or_crew: None,
+            filter_unit_other: None,
             filter_text: None,
             filter_name: None,
             filter_location: None,

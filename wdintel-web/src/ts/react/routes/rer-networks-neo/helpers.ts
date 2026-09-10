@@ -63,9 +63,17 @@ export type NetworkUnitStatView = {
   armyRegion: string;
   militaryDistrict: string;
   army: string;
+  corps: string;
   division: string;
+  brigade: string;
   regiment: string;
   battalion: string;
+  company: string;
+  platoon: string;
+  squad: string;
+  section: string;
+  teamOrCrew: string;
+  other: string;
   count: number;
 };
 
@@ -85,9 +93,17 @@ type NetworkUnitFilterFields = {
   filterUnitArmyRegion: string | null;
   filterUnitMilitaryDistrict: string | null;
   filterUnitArmy: string | null;
+  filterUnitCorps: string | null;
   filterUnitDivision: string | null;
+  filterUnitBrigade: string | null;
   filterUnitRegiment: string | null;
   filterUnitBattalion: string | null;
+  filterUnitCompany: string | null;
+  filterUnitPlatoon: string | null;
+  filterUnitSquad: string | null;
+  filterUnitSection: string | null;
+  filterUnitTeamOrCrew: string | null;
+  filterUnitOther: string | null;
 };
 
 export type NetworkStatusDescriptor = {
@@ -290,9 +306,17 @@ export function mergeNetworkUnitStatsWithUnits(
         armyRegion: unit.armyRegion,
         militaryDistrict: unit.militaryDistrict,
         army: unit.army,
+        corps: unit.corps,
         division: unit.division,
+        brigade: unit.brigade,
         regiment: unit.regiment,
         battalion: unit.battalion,
+        company: unit.company,
+        platoon: unit.platoon,
+        squad: unit.squad,
+        section: unit.section,
+        teamOrCrew: unit.teamOrCrew,
+        other: unit.other,
         count: stat.count,
       };
     })
@@ -385,14 +409,38 @@ export function buildNetworkUnitFilterFields(params: {
       filterUnitArmy: normalizeUnitHierarchyFilterValue(
         params.selectedSidebarUnitFilter.hierarchy.army,
       ),
+      filterUnitCorps: normalizeUnitHierarchyFilterValue(
+        params.selectedSidebarUnitFilter.hierarchy.corps,
+      ),
       filterUnitDivision: normalizeUnitHierarchyFilterValue(
         params.selectedSidebarUnitFilter.hierarchy.division,
+      ),
+      filterUnitBrigade: normalizeUnitHierarchyFilterValue(
+        params.selectedSidebarUnitFilter.hierarchy.brigade,
       ),
       filterUnitRegiment: normalizeUnitHierarchyFilterValue(
         params.selectedSidebarUnitFilter.hierarchy.regiment,
       ),
       filterUnitBattalion: normalizeUnitHierarchyFilterValue(
         params.selectedSidebarUnitFilter.hierarchy.battalion,
+      ),
+      filterUnitCompany: normalizeUnitHierarchyFilterValue(
+        params.selectedSidebarUnitFilter.hierarchy.company,
+      ),
+      filterUnitPlatoon: normalizeUnitHierarchyFilterValue(
+        params.selectedSidebarUnitFilter.hierarchy.platoon,
+      ),
+      filterUnitSquad: normalizeUnitHierarchyFilterValue(
+        params.selectedSidebarUnitFilter.hierarchy.squad,
+      ),
+      filterUnitSection: normalizeUnitHierarchyFilterValue(
+        params.selectedSidebarUnitFilter.hierarchy.section,
+      ),
+      filterUnitTeamOrCrew: normalizeUnitHierarchyFilterValue(
+        params.selectedSidebarUnitFilter.hierarchy.teamOrCrew,
+      ),
+      filterUnitOther: normalizeUnitHierarchyFilterValue(
+        params.selectedSidebarUnitFilter.hierarchy.other,
       ),
     };
   }
@@ -407,9 +455,17 @@ export function buildNetworkUnitFilterFields(params: {
     filterUnitArmyRegion: null,
     filterUnitMilitaryDistrict: null,
     filterUnitArmy: null,
+    filterUnitCorps: null,
     filterUnitDivision: null,
+    filterUnitBrigade: null,
     filterUnitRegiment: null,
     filterUnitBattalion: null,
+    filterUnitCompany: null,
+    filterUnitPlatoon: null,
+    filterUnitSquad: null,
+    filterUnitSection: null,
+    filterUnitTeamOrCrew: null,
+    filterUnitOther: null,
   };
 }
 

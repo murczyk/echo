@@ -21,9 +21,17 @@ function getEtalonkaLaunchWarning(request: ListNetworksReq | null | undefined): 
     request.filterUnitArmyRegion === null &&
     request.filterUnitMilitaryDistrict === null &&
     request.filterUnitArmy === null &&
+    request.filterUnitCorps === null &&
     request.filterUnitDivision === null &&
+    request.filterUnitBrigade === null &&
     request.filterUnitRegiment === null &&
     request.filterUnitBattalion === null &&
+    request.filterUnitCompany === null &&
+    request.filterUnitPlatoon === null &&
+    request.filterUnitSquad === null &&
+    request.filterUnitSection === null &&
+    request.filterUnitTeamOrCrew === null &&
+    request.filterUnitOther === null &&
     request.filterText === null &&
     request.filterName === null &&
     request.filterLocation === null &&

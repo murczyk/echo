@@ -63,17 +63,33 @@ const HIERARCHY_LABELS = [
   'Армійський регіон',
   'Військовий округ',
   'Армія',
+  'Корпус',
   'Дивізія',
+  'Бригада',
   'Полк',
   'Батальйон',
+  'Рота',
+  'Взвод',
+  'Відділення',
+  'Секція',
+  'Команда/Екіпаж',
+  'Інше',
 ] as const;
 const HIERARCHY_KEYS = [
   'armyRegion',
   'militaryDistrict',
   'army',
+  'corps',
   'division',
+  'brigade',
   'regiment',
   'battalion',
+  'company',
+  'platoon',
+  'squad',
+  'section',
+  'teamOrCrew',
+  'other',
 ] as const;
 const SIDEBAR_FILTER_DEBOUNCE_MS = 180;
 
@@ -97,9 +113,17 @@ export function buildUnitTree(stats: UnitStatView[]): TreeNode[] {
       row.armyRegion,
       row.militaryDistrict,
       row.army,
+      row.corps,
       row.division,
+      row.brigade,
       row.regiment,
       row.battalion,
+      row.company,
+      row.platoon,
+      row.squad,
+      row.section,
+      row.teamOrCrew,
+      row.other,
     ];
     const firstVisibleLevel =
       row.armyRegion.trim() !== '' ? 0 : row.militaryDistrict.trim() !== '' ? 1 : 2;
@@ -169,9 +193,17 @@ function createHierarchyFilter(rawPath: string[]): UnitHierarchyFilter {
     armyRegion: rawPath[0] ?? null,
     militaryDistrict: rawPath[1] ?? null,
     army: rawPath[2] ?? null,
-    division: rawPath[3] ?? null,
-    regiment: rawPath[4] ?? null,
-    battalion: rawPath[5] ?? null,
+    corps: rawPath[3] ?? null,
+    division: rawPath[4] ?? null,
+    brigade: rawPath[5] ?? null,
+    regiment: rawPath[6] ?? null,
+    battalion: rawPath[7] ?? null,
+    company: rawPath[8] ?? null,
+    platoon: rawPath[9] ?? null,
+    squad: rawPath[10] ?? null,
+    section: rawPath[11] ?? null,
+    teamOrCrew: rawPath[12] ?? null,
+    other: rawPath[13] ?? null,
   };
 }
 
@@ -187,9 +219,17 @@ function matchesUnitSearch(row: UnitStatView, normalizedQuery: string): boolean 
     row.armyRegion,
     row.militaryDistrict,
     row.army,
+    row.corps,
     row.division,
+    row.brigade,
     row.regiment,
     row.battalion,
+    row.company,
+    row.platoon,
+    row.squad,
+    row.section,
+    row.teamOrCrew,
+    row.other,
   ]
     .join(' ')
     .toLocaleLowerCase();
