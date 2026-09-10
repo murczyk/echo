@@ -46,7 +46,7 @@ import { XlsxDocumentPreview } from './XlsxDocumentPreview';
 
 function DocumentPreview({ document, zoom }: { document: MessageCardDocument; zoom: number }) {
   return (
-    <Box sx={{ flex: '1 1 auto', minHeight: 0, width: '100%' }}>
+    <Box data-document-preview-content sx={{ flex: '1 1 auto', minHeight: 0, width: '100%' }}>
       {document.kind === 'pdf' ? (
         <PdfDocumentPreview
           href={document.href}
@@ -286,6 +286,9 @@ export function DocumentAttachmentPreviewRenderer({
       ref={setStageEl}
       kind="document"
       onDoubleClick={handleStageDoubleClick}
+      onPrimaryClick={(_, region) => {
+        if (region === 'background') onClose();
+      }}
     >
       <DocumentPreview document={currentDocument} zoom={dialogZoom} />
       {canZoom ? (
