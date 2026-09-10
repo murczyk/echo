@@ -2,6 +2,7 @@ use super::{matching, persistence, tui, EchoEchelon};
 use crate::config::{
     ORBIT_AUTOMATIC_PERSIST_BATCH_SIZE,
     ORBIT_ECHELON_MOVE_FIX_MANUAL_PERSIST_BATCH_SIZE,
+    ORBIT_ECHELON_MOVE_FIX_QUERY_BATCH_SIZE,
 };
 use crate::entities::{
     orbit_sync, orbit_unit, orbit_unit_echelon, sigint_unit,
@@ -12,23 +13,42 @@ use crate::sigint::unit::orbit::{
 use crate::types::{Mode, ShortContext};
 use crate::{h, new_pg_pool_from_mode};
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder,
-    QuerySelect,
+    ColumnTrait, ConnectionTrait, EntityTrait, JoinType, QueryFilter,
+    QueryOrder, QuerySelect, RelationTrait,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-const ORBIT_ECHELON_KEYS: [&str; 3] = ["brigade", "fieldArmy", "corps"];
-const ECHELON_MOVES: [EchelonMove; 3] = [
+const ORBIT_ECHELON_KEYS: [&str; 6] = [
+    "regiment",
+    "brigade",
+    "corps",
+    "fieldArmy",
+    "militaryDistrict",
+    "armyRegion",
+];
+const ORBIT_ECHELONS: [EchoEchelon; 6] = [
+    EchoEchelon::Regiment,
+    EchoEchelon::Brigade,
+    EchoEchelon::Corps,
+    EchoEchelon::Army,
+    EchoEchelon::MilitaryDistrict,
+    EchoEchelon::ArmyRegion,
+];
+const ECHELON_MOVES: [EchelonMove; 5] = [
     EchelonMove::RegimentToBrigade,
     EchelonMove::CorpsToArmy,
-    EchelonMove::ArmyToCorps,
+    EchelonMove::Army,
+    EchelonMove::MilitaryDistrict,
+    EchelonMove::ArmyRegion,
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EchelonMove {
     RegimentToBrigade,
     CorpsToArmy,
-    ArmyToCorps,
+    Army,
+    MilitaryDistrict,
+    ArmyRegion,
 }
 
 impl EchelonMove {
@@ -36,31 +56,41 @@ impl EchelonMove {
         match self {
             Self::RegimentToBrigade => "regiment → brigade",
             Self::CorpsToArmy => "corps → army",
-            Self::ArmyToCorps => "army → corps",
+            Self::Army => "army",
+            Self::MilitaryDistrict => "group of armies",
+            Self::ArmyRegion => "army region",
         }
     }
 
-    fn orbit_echelon(self) -> EchoEchelon {
+    fn source_echelon(self) -> EchoEchelon {
         match self {
-            Self::RegimentToBrigade => EchoEchelon::Brigade,
-            Self::CorpsToArmy => EchoEchelon::Army,
-            Self::ArmyToCorps => EchoEchelon::Corps,
+            Self::RegimentToBrigade => EchoEchelon::Regiment,
+            Self::CorpsToArmy => EchoEchelon::Corps,
+            Self::Army => EchoEchelon::Army,
+            Self::MilitaryDistrict => EchoEchelon::MilitaryDistrict,
+            Self::ArmyRegion => EchoEchelon::ArmyRegion,
         }
+    }
+
+    fn accepts_destination(self, destination: EchoEchelon) -> bool {
+        match self {
+            Self::RegimentToBrigade => destination == EchoEchelon::Brigade,
+            Self::CorpsToArmy => destination == EchoEchelon::Army,
+            Self::Army | Self::MilitaryDistrict | Self::ArmyRegion => true,
+        }
+    }
+
+    fn removes_unknown_value(self) -> bool {
+        matches!(self, Self::Army | Self::MilitaryDistrict | Self::ArmyRegion)
     }
 
     fn source_attribute(self) -> &'static str {
         match self {
             Self::RegimentToBrigade => "regiment",
             Self::CorpsToArmy => "corps",
-            Self::ArmyToCorps => "army",
-        }
-    }
-
-    fn destination_attribute(self) -> &'static str {
-        match self {
-            Self::RegimentToBrigade => "brigade",
-            Self::CorpsToArmy => "army",
-            Self::ArmyToCorps => "corps",
+            Self::Army => "army",
+            Self::MilitaryDistrict => "military_district",
+            Self::ArmyRegion => "army_region",
         }
     }
 
@@ -68,23 +98,19 @@ impl EchelonMove {
         match self {
             Self::RegimentToBrigade => sigint_unit::Column::Regiment,
             Self::CorpsToArmy => sigint_unit::Column::Corps,
-            Self::ArmyToCorps => sigint_unit::Column::Army,
+            Self::Army => sigint_unit::Column::Army,
+            Self::MilitaryDistrict => sigint_unit::Column::MilitaryDistrict,
+            Self::ArmyRegion => sigint_unit::Column::ArmyRegion,
         }
     }
 
-    fn source_value(self, unit: &sigint_unit::Model) -> &str {
+    fn source_value(self, unit: &EchelonMoveUnit) -> &str {
         match self {
             Self::RegimentToBrigade => &unit.regiment,
             Self::CorpsToArmy => &unit.corps,
-            Self::ArmyToCorps => &unit.army,
-        }
-    }
-
-    fn destination_value(self, unit: &sigint_unit::Model) -> &str {
-        match self {
-            Self::RegimentToBrigade => &unit.brigade,
-            Self::CorpsToArmy => &unit.army,
-            Self::ArmyToCorps => &unit.corps,
+            Self::Army => &unit.army,
+            Self::MilitaryDistrict => &unit.military_district,
+            Self::ArmyRegion => &unit.army_region,
         }
     }
 }
@@ -112,6 +138,30 @@ struct PersistSummary {
 struct OrbitValueCache {
     orbit_sync: orbit_sync::Model,
     values: HashMap<EchoEchelon, HashSet<String>>,
+}
+
+#[derive(sea_orm::FromQueryResult)]
+struct EchelonMoveUnit {
+    id: i64,
+    name: String,
+    regiment: String,
+    brigade: String,
+    corps: String,
+    army: String,
+    military_district: String,
+    army_region: String,
+}
+
+#[derive(Default, sea_orm::FromQueryResult)]
+struct OrbitEchelonIdentity {
+    unit_name: Option<String>,
+    unit_name_original: Option<String>,
+    unit_name_short: Option<String>,
+    operational_unit_name_full: Option<String>,
+    generative_unit_name_full: Option<String>,
+    unit_number: Option<String>,
+    unit_alternate_names: Option<Vec<String>>,
+    echelon_key: String,
 }
 
 pub(super) async fn run(mode: Mode) -> anyhow::Result<()> {
@@ -161,10 +211,8 @@ async fn run_pass(
     activity_scope: tui::UnitActivityScope,
     orbit_value_cache: &mut Option<OrbitValueCache>,
 ) -> anyhow::Result<bool> {
-    let changes = load_changes(
+    let changes = load_initial_changes(
         db,
-        None,
-        false,
         echelon_move,
         activity_scope,
         orbit_value_cache,
@@ -203,6 +251,77 @@ async fn run_pass(
     Ok(review.stopped)
 }
 
+async fn load_initial_changes(
+    db: &sea_orm::DatabaseConnection,
+    echelon_move: EchelonMove,
+    activity_scope: tui::UnitActivityScope,
+    orbit_value_cache: &mut Option<OrbitValueCache>,
+) -> anyhow::Result<Vec<EchelonMoveChange>> {
+    let transaction = super::acquire_import_lock(db).await.c(h!())?;
+    let mut changes = Vec::new();
+    let mut after_unit_id = None;
+    loop {
+        let units = load_initial_unit_page(
+            &transaction,
+            echelon_move,
+            activity_scope,
+            after_unit_id,
+        )
+        .await
+        .c(h!())?;
+        let Some(last_unit_id) = units.last().map(|unit| unit.id) else {
+            break;
+        };
+        after_unit_id = Some(last_unit_id);
+        refresh_orbit_value_cache(&transaction, orbit_value_cache)
+            .await
+            .c(h!())?;
+        let orbit_values = &orbit_value_cache
+            .as_ref()
+            .expect("ORBIT value cache must be populated")
+            .values;
+        changes.extend(units.into_iter().filter_map(|unit| {
+            proposed_change(&unit, echelon_move, orbit_values)
+        }));
+    }
+    transaction.commit().await.c(h!())?;
+    Ok(changes)
+}
+
+async fn load_initial_unit_page<C>(
+    db: &C,
+    echelon_move: EchelonMove,
+    activity_scope: tui::UnitActivityScope,
+    after_unit_id: Option<i64>,
+) -> anyhow::Result<Vec<EchelonMoveUnit>>
+where
+    C: ConnectionTrait,
+{
+    let mut units = sigint_unit::Entity::find()
+        .select_only()
+        .columns([
+            sigint_unit::Column::Id,
+            sigint_unit::Column::Name,
+            sigint_unit::Column::Regiment,
+            sigint_unit::Column::Brigade,
+            sigint_unit::Column::Corps,
+            sigint_unit::Column::Army,
+            sigint_unit::Column::MilitaryDistrict,
+            sigint_unit::Column::ArmyRegion,
+        ])
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .filter(echelon_move.source_column().ne(""))
+        .order_by_asc(sigint_unit::Column::Id)
+        .limit(ORBIT_ECHELON_MOVE_FIX_QUERY_BATCH_SIZE);
+    if let Some(active) = activity_scope.active() {
+        units = units.filter(sigint_unit::Column::Active.eq(active));
+    }
+    if let Some(after_unit_id) = after_unit_id {
+        units = units.filter(sigint_unit::Column::Id.gt(after_unit_id));
+    }
+    units.into_model::<EchelonMoveUnit>().all(db).await.c(h!())
+}
+
 async fn load_changes<C>(
     db: &C,
     unit_ids: Option<&[i64]>,
@@ -215,6 +334,17 @@ where
     C: ConnectionTrait,
 {
     let mut units = sigint_unit::Entity::find()
+        .select_only()
+        .columns([
+            sigint_unit::Column::Id,
+            sigint_unit::Column::Name,
+            sigint_unit::Column::Regiment,
+            sigint_unit::Column::Brigade,
+            sigint_unit::Column::Corps,
+            sigint_unit::Column::Army,
+            sigint_unit::Column::MilitaryDistrict,
+            sigint_unit::Column::ArmyRegion,
+        ])
         .filter(sigint_unit::Column::Deleted.eq(false))
         .filter(echelon_move.source_column().ne(""))
         .order_by_asc(sigint_unit::Column::Id);
@@ -231,18 +361,21 @@ where
     if lock {
         units = units.lock_exclusive();
     }
-    let units = units.all(db).await.c(h!())?;
+    let units = units
+        .into_model::<EchelonMoveUnit>()
+        .all(db)
+        .await
+        .c(h!())?;
     if units.is_empty() {
         return Ok(Vec::new());
     }
     refresh_orbit_value_cache(db, orbit_value_cache)
         .await
         .c(h!())?;
-    let orbit_values = orbit_value_cache
+    let orbit_values = &orbit_value_cache
         .as_ref()
         .expect("ORBIT value cache must be populated")
-        .values
-        .get(&echelon_move.orbit_echelon());
+        .values;
     Ok(units
         .into_iter()
         .filter_map(|unit| proposed_change(&unit, echelon_move, orbit_values))
@@ -268,19 +401,31 @@ where
         return Ok(());
     }
     let units = orbit_unit::Entity::find()
-        .find_also_related(orbit_unit_echelon::Entity)
+        .select_only()
+        .columns([
+            orbit_unit::Column::UnitName,
+            orbit_unit::Column::UnitNameOriginal,
+            orbit_unit::Column::UnitNameShort,
+            orbit_unit::Column::OperationalUnitNameFull,
+            orbit_unit::Column::GenerativeUnitNameFull,
+            orbit_unit::Column::UnitNumber,
+            orbit_unit::Column::UnitAlternateNames,
+        ])
+        .column_as(orbit_unit_echelon::Column::Key, "echelon_key")
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit::Relation::OrbitUnitEchelon.def(),
+        )
         .filter(orbit_unit::Column::Deleted.eq(false))
         .filter(orbit_unit::Column::UpdatedAt.eq(orbit_sync.synced_at))
         .filter(orbit_unit_echelon::Column::Key.is_in(ORBIT_ECHELON_KEYS))
+        .into_model::<OrbitEchelonIdentity>()
         .all(db)
         .await
         .c(h!())?;
     let mut values = HashMap::<EchoEchelon, HashSet<String>>::new();
-    for (unit, echelon) in units {
-        let Some(echelon) = echelon
-            .as_ref()
-            .and_then(|echelon| super::echo_echelon(&echelon.key))
-        else {
+    for unit in units {
+        let Some(echelon) = super::echo_echelon(&unit.echelon_key) else {
             continue;
         };
         insert_orbit_unit_values(&mut values, echelon, &unit);
@@ -292,8 +437,15 @@ where
 fn insert_orbit_unit_values(
     values: &mut HashMap<EchoEchelon, HashSet<String>>,
     echelon: EchoEchelon,
-    unit: &orbit_unit::Model,
+    unit: &OrbitEchelonIdentity,
 ) {
+    let hierarchy_roots = [
+        unit.operational_unit_name_full.as_deref(),
+        unit.generative_unit_name_full.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .filter_map(|name| name.split(" / ").next());
     let names = unit
         .unit_name_short
         .iter()
@@ -306,7 +458,8 @@ fn insert_orbit_unit_values(
                 .iter()
                 .flatten()
                 .map(String::as_str),
-        );
+        )
+        .chain(hierarchy_roots);
     for name in names {
         let name = matching::normalize_name(name);
         if !name.is_empty() {
@@ -315,40 +468,62 @@ fn insert_orbit_unit_values(
     }
 }
 
+fn matching_echelons(
+    value: &str,
+    orbit_values: &HashMap<EchoEchelon, HashSet<String>>,
+) -> Vec<EchoEchelon> {
+    ORBIT_ECHELONS
+        .into_iter()
+        .filter(|echelon| {
+            let candidate =
+                matching::normalize_sigint_name_for_echelon(*echelon, value);
+            !candidate.is_empty()
+                && orbit_values.get(echelon).is_some_and(|names| {
+                    matching::names_match(*echelon, names, &candidate)
+                })
+        })
+        .collect()
+}
+
 fn proposed_change(
-    unit: &sigint_unit::Model,
+    unit: &EchelonMoveUnit,
     echelon_move: EchelonMove,
-    orbit_values: Option<&HashSet<String>>,
+    orbit_values: &HashMap<EchoEchelon, HashSet<String>>,
 ) -> Option<EchelonMoveChange> {
     let source = echelon_move.source_value(unit);
-    let normalized_source = matching::normalize_sigint_name_for_echelon(
-        echelon_move.orbit_echelon(),
-        source,
-    );
-    let orbit_values = orbit_values?;
-    if normalized_source.is_empty()
-        || !matching::names_match(
-            echelon_move.orbit_echelon(),
-            orbit_values,
-            &normalized_source,
-        )
-    {
+    if source.is_empty() {
         return None;
     }
-    let destination = echelon_move.destination_value(unit);
-    let mut attributes = Vec::with_capacity(2);
-    if destination != source {
-        attributes.push(OrbitUnitAttributeChange {
-            attribute: echelon_move.destination_attribute(),
-            current: destination.to_string(),
-            proposed: source.to_string(),
-        });
+    let source_echelon = echelon_move.source_echelon();
+    let matching_echelons = matching_echelons(source, orbit_values);
+    if matching_echelons.contains(&source_echelon) {
+        return None;
     }
-    attributes.push(OrbitUnitAttributeChange {
-        attribute: echelon_move.source_attribute(),
-        current: source.to_string(),
-        proposed: String::new(),
-    });
+    let destination = match matching_echelons.as_slice() {
+        [destination] if echelon_move.accepts_destination(*destination) => {
+            Some(*destination)
+        }
+        [] if echelon_move.removes_unknown_value() => None,
+        _ => return None,
+    };
+    let attributes = destination.map_or_else(
+        || {
+            vec![OrbitUnitAttributeChange {
+                attribute: echelon_move.source_attribute(),
+                current: source.to_string(),
+                proposed: String::new(),
+            }]
+        },
+        |destination| {
+            move_attributes(
+                unit,
+                source_echelon,
+                destination,
+                source,
+                orbit_values,
+            )
+        },
+    );
     Some(EchelonMoveChange {
         unit_name: unit.name.clone(),
         hierarchy_change: OrbitUnitHierarchyChange {
@@ -356,6 +531,61 @@ fn proposed_change(
             attributes,
         },
     })
+}
+
+fn move_attributes(
+    unit: &EchelonMoveUnit,
+    source_echelon: EchoEchelon,
+    destination_echelon: EchoEchelon,
+    source: &str,
+    orbit_values: &HashMap<EchoEchelon, HashSet<String>>,
+) -> Vec<OrbitUnitAttributeChange> {
+    let destination = echelon_value(unit, destination_echelon);
+    let mut attributes = Vec::with_capacity(2);
+    if destination != source {
+        attributes.push(OrbitUnitAttributeChange {
+            attribute: echelon_attribute(destination_echelon),
+            current: destination.to_string(),
+            proposed: source.to_string(),
+        });
+    }
+    let displaced_destination = if destination != source
+        && matching_echelons(destination, orbit_values) == [source_echelon]
+    {
+        destination.to_string()
+    } else {
+        String::new()
+    };
+    attributes.push(OrbitUnitAttributeChange {
+        attribute: echelon_attribute(source_echelon),
+        current: source.to_string(),
+        proposed: displaced_destination,
+    });
+    attributes
+}
+
+fn echelon_attribute(echelon: EchoEchelon) -> &'static str {
+    match echelon {
+        EchoEchelon::Regiment => "regiment",
+        EchoEchelon::Brigade => "brigade",
+        EchoEchelon::Corps => "corps",
+        EchoEchelon::Army => "army",
+        EchoEchelon::MilitaryDistrict => "military_district",
+        EchoEchelon::ArmyRegion => "army_region",
+        _ => unreachable!("unsupported ORBIT echelon move destination"),
+    }
+}
+
+fn echelon_value(unit: &EchelonMoveUnit, echelon: EchoEchelon) -> &str {
+    match echelon {
+        EchoEchelon::Regiment => &unit.regiment,
+        EchoEchelon::Brigade => &unit.brigade,
+        EchoEchelon::Corps => &unit.corps,
+        EchoEchelon::Army => &unit.army,
+        EchoEchelon::MilitaryDistrict => &unit.military_district,
+        EchoEchelon::ArmyRegion => &unit.army_region,
+        _ => unreachable!("unsupported ORBIT echelon move destination"),
+    }
 }
 
 fn review_manually(
@@ -516,6 +746,7 @@ mod tests {
         let cases = [
             (
                 EchelonMove::RegimentToBrigade,
+                EchoEchelon::Brigade,
                 "53 зрбр",
                 "old brigade",
                 "brigade",
@@ -523,20 +754,30 @@ mod tests {
             ),
             (
                 EchelonMove::CorpsToArmy,
+                EchoEchelon::Army,
                 "20 ЗВА",
                 "old army",
                 "army",
                 "corps",
             ),
             (
-                EchelonMove::ArmyToCorps,
+                EchelonMove::Army,
+                EchoEchelon::Corps,
                 "11 АК",
                 "old corps",
                 "corps",
                 "army",
             ),
         ];
-        for (echelon_move, source, destination, target, cleared) in cases {
+        for (
+            echelon_move,
+            destination_echelon,
+            source,
+            destination,
+            target,
+            cleared,
+        ) in cases
+        {
             let mut unit = sigint_unit();
             match echelon_move {
                 EchelonMove::RegimentToBrigade => {
@@ -547,14 +788,20 @@ mod tests {
                     unit.corps = source.to_string();
                     unit.army = destination.to_string();
                 }
-                EchelonMove::ArmyToCorps => {
+                EchelonMove::Army => {
                     unit.army = source.to_string();
                     unit.corps = destination.to_string();
                 }
+                EchelonMove::MilitaryDistrict | EchelonMove::ArmyRegion => {
+                    unreachable!("test case must have a configured source")
+                }
             }
-            let values = HashSet::from([matching::normalize_name(source)]);
+            let values = HashMap::from([(
+                destination_echelon,
+                HashSet::from([matching::normalize_name(source)]),
+            )]);
 
-            let change = proposed_change(&unit, echelon_move, Some(&values))
+            let change = proposed_change(&unit, echelon_move, &values)
                 .expect("matching ORBIT value must be moved");
 
             assert_eq!(
@@ -579,20 +826,134 @@ mod tests {
     fn uses_standard_orbit_name_normalization() {
         let mut unit = sigint_unit();
         unit.corps = "20 ЗВА".to_string();
-        let values = HashSet::from([matching::normalize_name("20 ОА")]);
+        let values = HashMap::from([(
+            EchoEchelon::Army,
+            HashSet::from([matching::normalize_name("20 ОА")]),
+        )]);
+
+        assert!(proposed_change(&unit, EchelonMove::CorpsToArmy, &values,)
+            .is_some());
+        assert!(proposed_change(&unit, EchelonMove::Army, &values).is_none());
+    }
+
+    #[test]
+    fn moves_or_removes_incorrect_army_and_higher_values() {
+        let mut unit = sigint_unit();
+        unit.army = "МВО".to_string();
+        let values = HashMap::from([(
+            EchoEchelon::MilitaryDistrict,
+            HashSet::from([matching::normalize_name("МВО")]),
+        )]);
+
+        let change = proposed_change(&unit, EchelonMove::Army, &values)
+            .expect("misplaced group of armies must be moved");
+        assert_eq!(
+            change.hierarchy_change.attributes,
+            vec![
+                OrbitUnitAttributeChange {
+                    attribute: "military_district",
+                    current: String::new(),
+                    proposed: "МВО".to_string(),
+                },
+                OrbitUnitAttributeChange {
+                    attribute: "army",
+                    current: "МВО".to_string(),
+                    proposed: String::new(),
+                },
+            ]
+        );
+
+        unit.army = "unknown".to_string();
+        let change = proposed_change(&unit, EchelonMove::Army, &values)
+            .expect("unknown army-and-higher value must be removed");
+        assert_eq!(
+            change.hierarchy_change.attributes,
+            vec![OrbitUnitAttributeChange {
+                attribute: "army",
+                current: "unknown".to_string(),
+                proposed: String::new(),
+            }]
+        );
+
+        unit.army.clear();
+        unit.military_district = "МВО".to_string();
+        assert!(
+            proposed_change(&unit, EchelonMove::MilitaryDistrict, &values,)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn skips_values_ambiguous_between_echelons() {
+        let mut unit = sigint_unit();
+        unit.regiment = "shared".to_string();
+        let shared = HashSet::from([matching::normalize_name("shared")]);
+        let values = HashMap::from([
+            (EchoEchelon::Regiment, shared.clone()),
+            (EchoEchelon::Brigade, shared),
+        ]);
 
         assert!(proposed_change(
             &unit,
-            EchelonMove::CorpsToArmy,
-            Some(&values),
-        )
-        .is_some());
-        assert!(proposed_change(
-            &unit,
-            EchelonMove::ArmyToCorps,
-            Some(&values),
+            EchelonMove::RegimentToBrigade,
+            &values,
         )
         .is_none());
+    }
+
+    #[test]
+    fn swaps_reciprocal_army_and_corps_values() {
+        let mut unit = sigint_unit();
+        unit.corps = "20 ЗВА".to_string();
+        unit.army = "11 АК".to_string();
+        let values = HashMap::from([
+            (
+                EchoEchelon::Army,
+                HashSet::from([matching::normalize_name("20 ЗВА")]),
+            ),
+            (
+                EchoEchelon::Corps,
+                HashSet::from([matching::normalize_name("11 АК")]),
+            ),
+        ]);
+
+        let change = proposed_change(&unit, EchelonMove::CorpsToArmy, &values)
+            .expect("reciprocal values must be swapped");
+        assert_eq!(
+            change.hierarchy_change.attributes,
+            vec![
+                OrbitUnitAttributeChange {
+                    attribute: "army",
+                    current: "11 АК".to_string(),
+                    proposed: "20 ЗВА".to_string(),
+                },
+                OrbitUnitAttributeChange {
+                    attribute: "corps",
+                    current: "20 ЗВА".to_string(),
+                    proposed: "11 АК".to_string(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn includes_required_orbit_hierarchy_root_names() {
+        let orbit_unit = OrbitEchelonIdentity {
+            operational_unit_name_full: Some("МВО / ЗС РФ".to_string()),
+            ..Default::default()
+        };
+        let mut values = HashMap::new();
+
+        insert_orbit_unit_values(
+            &mut values,
+            EchoEchelon::MilitaryDistrict,
+            &orbit_unit,
+        );
+
+        assert_eq!(
+            values[&EchoEchelon::MilitaryDistrict],
+            HashSet::from([matching::normalize_name("МВО")]),
+        );
     }
 
     #[tokio::test]
@@ -614,8 +975,15 @@ mod tests {
             .unwrap()
             .unwrap()
             .id;
+        let company_echelon_id = orbit_unit_echelon::Entity::find()
+            .filter(orbit_unit_echelon::Column::Key.eq("company"))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
         let brigade = format!("{} зрбр", uuid::Uuid::new_v4().simple());
-        orbit_unit::ActiveModel {
+        let orbit_brigade = orbit_unit::ActiveModel {
             unit_id: Set(uuid::Uuid::new_v4()),
             unit_name_short: Set(Some(brigade.clone())),
             unit_echelon_id: Set(Some(brigade_echelon_id)),
@@ -628,14 +996,49 @@ mod tests {
         .insert(&env.dbx)
         .await
         .unwrap();
+        let company = format!("{} рота", uuid::Uuid::new_v4().simple());
+        let orbit_company = orbit_unit::ActiveModel {
+            unit_id: Set(uuid::Uuid::new_v4()),
+            unit_name_short: Set(Some(company.clone())),
+            unit_echelon_id: Set(Some(company_echelon_id)),
+            generative_parent_unit_id: Set(Some(orbit_brigade.unit_id)),
+            deleted: Set(false),
+            created_at: Set(synced_at),
+            updated_at: Set(synced_at),
+            is_snapshot_root: Set(true),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let parent = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                brigade: Set(brigade.clone()),
+                name: Set(format!("parent {brigade}")),
+                active: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         let active = crate::functest::tests::mk_sigint_unit(
             &env.dbx,
             sigint_unit::ActiveModel {
+                company: Set(company),
                 regiment: Set(brigade.clone()),
                 name: Set(format!("active {brigade}")),
                 active: Set(true),
+                is_inconsistent: Set(true),
                 ..Default::default()
             },
+        )
+        .await
+        .unwrap();
+        persistence::replace_sigint_unit_link(
+            &env.dbx,
+            active.id,
+            orbit_company.unit_id,
         )
         .await
         .unwrap();
@@ -692,42 +1095,29 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
+        let parent = sigint_unit::Entity::find_by_id(parent.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(active.regiment, "");
         assert_eq!(active.brigade, brigade);
+        assert!(!active.is_inconsistent);
         assert_eq!(inactive.regiment, brigade);
         assert_eq!(inactive.brigade, "");
+        assert!(parent.active);
     }
 
-    fn sigint_unit() -> sigint_unit::Model {
-        sigint_unit::Model {
+    fn sigint_unit() -> EchelonMoveUnit {
+        EchelonMoveUnit {
             id: 1,
-            company: String::new(),
-            regiment: String::new(),
-            division: String::new(),
-            army: String::new(),
-            active: true,
-            deleted: false,
-            created_at: Default::default(),
-            created_by_login_id: uuid::Uuid::nil(),
             name: "test unit".to_string(),
-            comment: String::new(),
-            battalion: String::new(),
-            search_tsv: None,
-            sigint_origin_id: None,
-            original_id: None,
-            is_deduplicate_candidate: None,
-            orbit_note: None,
-            army_region: String::new(),
-            military_district: String::new(),
-            other: String::new(),
-            team_or_crew: String::new(),
-            section: String::new(),
-            squad: String::new(),
-            platoon: String::new(),
+            regiment: String::new(),
             brigade: String::new(),
             corps: String::new(),
-            is_inconsistent: false,
-            updated_at: Default::default(),
+            army: String::new(),
+            military_district: String::new(),
+            army_region: String::new(),
         }
     }
 }

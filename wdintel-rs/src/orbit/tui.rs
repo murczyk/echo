@@ -308,8 +308,8 @@ pub fn prompt_echelon_move_fix_mode() -> Result<Option<LinkMode>, AppError> {
         &mut terminal,
         "Choose misplaced-echelon fix mode (↑/↓, Enter, Esc: quit)",
         [
-            "Automatic: move every SIGINT value identified by ORBIT",
-            "Manual: review every SIGINT echelon move",
+            "Automatic: fix every SIGINT value classified by ORBIT",
+            "Manual: review every SIGINT echelon correction",
         ],
     );
     restore_terminal(&mut terminal).c(h!())?;
@@ -1965,7 +1965,7 @@ fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
         "Link unlinked ORBIT units to SIGINT units",
         "Replace linked SIGINT echelon values with mismatched ORBIT numbers",
         "Mark linked SIGINT units as present in ORBIT",
-        "Move misplaced brigade, army, and corps SIGINT echelon values",
+        "Fix misplaced and unknown SIGINT echelon values",
         "Merge duplicate SIGINT units linked to one ORBIT unit",
         "Review all SIGINT duplicate candidates pair by pair",
         "Resolve unparsed unit labels through ORBIT links",
@@ -2156,7 +2156,7 @@ fn draw_echelon_move_changes(
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title("Misplaced SIGINT echelon value"),
+                    .title("Misplaced or unknown SIGINT echelon value"),
             )
             .scroll((scroll, 0))
             .wrap(Wrap { trim: false }),
@@ -2164,7 +2164,7 @@ fn draw_echelon_move_changes(
     );
     frame.render_widget(
         Paragraph::new(
-            "Enter/y: move echelon value | n/0: skip\n↑/↓/PgUp/PgDn: scroll | q/Esc/Ctrl-C: stop",
+            "Enter/y: apply echelon correction | n/0: skip\n↑/↓/PgUp/PgDn: scroll | q/Esc/Ctrl-C: stop",
         ),
         sections[2],
     );

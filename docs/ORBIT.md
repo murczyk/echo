@@ -180,15 +180,22 @@ links are skipped. Before update, the link, activity scope, current SIGINT
 values, and current ORBIT hierarchy are reloaded under the advisory lock; stale
 manual proposals are not applied.
 
-### Move misplaced brigade, army, and corps SIGINT echelon values
+### Fix misplaced and unknown SIGINT echelon values
 
-This workflow builds normalized identity-value sets from brigade, army, and
-corps units in the latest synchronized ORBIT revision. It then runs three
-ordered passes: a brigade value stored as a SIGINT regiment is moved to
-brigade, an army value stored as corps is moved to army, and a corps value
-stored as army is moved to corps. Each move clears the source echelon and
-replaces the destination echelon with that source value; the SIGINT unit name
-is not changed by this workflow.
+This workflow builds separate normalized identity-value sets from regiment,
+brigade, corps, army, group-of-armies, and army-region units in the latest
+synchronized ORBIT revision. It first moves brigade values stored as SIGINT
+regiments and army values stored as corps. It then validates each SIGINT army,
+group-of-armies (`military_district`), and army-region field in a separate
+pass. A value found in exactly one other ORBIT echelon is moved there; a value
+absent from every collected ORBIT echelon is removed. Values that match their
+current echelon or are ambiguous between multiple echelons are left unchanged.
+
+Each move clears the source echelon and replaces the destination echelon with
+that source value. When the destination contains the reciprocal misplaced
+value, the two values are swapped atomically. The SIGINT unit name is not
+changed by this workflow. Manual mode presents each incorrect source field in
+its own review dialog.
 
 Automatic and manual modes can target active SIGINT units, inactive SIGINT
 units, or both. Manual mode shows the current and proposed values for both
