@@ -56,6 +56,7 @@ export type FeedStateDeps = {
   pollIntervalSec: number;
   /** When true, duty page must not auto-scroll / follow new messages (user prefs). */
   disableAutoScroll: boolean;
+  messageSortBy?: 'IMSTimestamp' | 'IMSCreatedAt';
   onFeedRemoved?: (feedId: string) => void;
 };
 
@@ -484,13 +485,14 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           : undefined;
       return buildInboxReq({
         ...opts,
+        sortBy: deps.messageSortBy,
         filter: feed.filter,
         expandedFreqsSelected: expandedSelected,
         expandedFreqsDenied: expandedDenied,
         highlightSignals: feed.highlightSignalsEnabled ?? false,
       });
     },
-    [freqs],
+    [deps.messageSortBy, freqs],
   );
   const requestValidatedInboxCount = useCallback(
     (feedId: string) => {

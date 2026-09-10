@@ -42,6 +42,8 @@ messageStub =
     , textMarked = Just [ B.CnTextC { text = "— Кольцо, 22, 22, Штиль 1, Штиль 1." } ]
     , time = Just "11:33"
     , timestamp = Just 1726734960438
+    , createdAt = Nothing
+    , hasDateInHeader = False
     , unit = Just "УКХ р/м йм. 1/2 мсб 1199 мсп"
     , unitIds = []
     , postId = Nothing

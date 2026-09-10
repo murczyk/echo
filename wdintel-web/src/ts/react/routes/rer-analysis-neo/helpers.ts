@@ -442,6 +442,11 @@ export function buildAnalysisReq(
     filterTagsOption: query.filterTagsOption,
     withoutModelTags: query.withoutModelTags,
     reportTagsOnlyThisUnit: query.reportTagsOnlyThisUnit,
+    // Generated TypeScript uses the Rust variant name, while the HTTP contract
+    // intentionally serializes this enum as the stable lowercase wire value.
+    messageTimeBasis: (query.messageTimeBasis === 'creation'
+      ? 'creation'
+      : null) as AnalysisStatsReq['messageTimeBasis'],
   };
 }
 
@@ -506,7 +511,7 @@ export function buildInboxReq(
     metadataHash: req.metadataHash,
     onlyWithMetadata: req.onlyWithMetadata,
     withoutMetadata: req.withoutMetadata,
-    sortBy: null,
+    sortBy: state.messageTimeBasis === 'creation' ? 'IMSCreatedAt' : null,
     reportTagsOnlyThisUnit: req.reportTagsOnlyThisUnit,
     ignoreImportedCoords: null,
     includePelengLocations: req.includePelengLocations,

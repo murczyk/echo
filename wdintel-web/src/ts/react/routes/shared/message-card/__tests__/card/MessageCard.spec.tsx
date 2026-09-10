@@ -1459,6 +1459,41 @@ describe('MessageCard', () => {
     ).toBeNull();
   });
 
+  it('uses creation time and keeps a separately rendered interception header', async () => {
+    const view = await renderCard({
+      messageTimeBasis: 'creation',
+      msg: buildMessage({
+        text: 'Рядок повідомлення',
+        textMarked: [],
+        createdAt: Date.UTC(2026, 7, 15, 8, 55, 41),
+        date: '15.08.2026',
+        time: '08:55:41',
+        hasDateInHeader: false,
+      }),
+    });
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('15.08.2026, 08:55:41');
+    expect(
+      view.container.querySelectorAll('[data-message-card-timestamp-item="true"]')[0]?.textContent,
+    ).toContain('11:55');
+  });
+
+  it('does not add interception metadata when the source header includes a date', async () => {
+    const view = await renderCard({
+      messageTimeBasis: 'creation',
+      msg: buildMessage({
+        text: '15.08.2026, 08:55:41\nРядок повідомлення',
+        textMarked: [],
+        createdAt: Date.UTC(2026, 7, 15, 8, 55, 41),
+        hasDateInHeader: true,
+      }),
+    });
+    rendered.push(view);
+
+    expect(view.container.textContent?.match(/15\.08\.2026, 08:55:41/g)).toHaveLength(1);
+  });
+
   it('resets expanded message text when the preview limit changes', async () => {
     const rows = Array.from({ length: 41 }, (_, index) => `Рядок ${index + 1}`);
     const view = await renderCard({

@@ -257,6 +257,7 @@ vi.mock('../../services/api/user-settings', () => ({
     dutyCollapseMediaPreviews: true,
     mediaSummaryEnabled: false,
     messageTextPreviewLines: 20,
+    messageSortBy: 'interception',
   }),
   saveUserSettings: saveUserDutySettings,
 }));
@@ -384,6 +385,7 @@ describe('SettingsNeoPage', () => {
         expect(saveUserDutySettings).toHaveBeenLastCalledWith({
           tagsLayout: 'compact',
           messageTextPreviewLines: value,
+          messageSortBy: 'interception',
           disableAutoScroll: false,
           analysisMapInSidebar: false,
           dutyAudioTranscriptionCollapsed: false,
@@ -448,6 +450,7 @@ describe('SettingsNeoPage', () => {
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: false,
       messageTextPreviewLines: 20,
+      messageSortBy: 'interception',
     });
 
     await act(async () => {
@@ -492,6 +495,7 @@ describe('SettingsNeoPage', () => {
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: false,
       messageTextPreviewLines: 20,
+      messageSortBy: 'interception',
     });
   });
 
@@ -526,6 +530,7 @@ describe('SettingsNeoPage', () => {
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: false,
       messageTextPreviewLines: 20,
+      messageSortBy: 'interception',
     });
   });
 
@@ -560,6 +565,7 @@ describe('SettingsNeoPage', () => {
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: false,
       messageTextPreviewLines: 20,
+      messageSortBy: 'interception',
     });
 
     saveUserDutySettings.mockClear();
@@ -593,6 +599,7 @@ describe('SettingsNeoPage', () => {
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: false,
       messageTextPreviewLines: 20,
+      messageSortBy: 'interception',
     });
   });
 
@@ -631,6 +638,7 @@ describe('SettingsNeoPage', () => {
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: false,
       messageTextPreviewLines: 20,
+      messageSortBy: 'interception',
     });
 
     const hiddenButton = Array.from(container.querySelectorAll('button')).find(
@@ -655,6 +663,7 @@ describe('SettingsNeoPage', () => {
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: false,
       messageTextPreviewLines: 20,
+      messageSortBy: 'interception',
     });
   });
 
@@ -698,6 +707,7 @@ describe('SettingsNeoPage', () => {
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: true,
       messageTextPreviewLines: 20,
+      messageSortBy: 'interception',
     });
   });
 

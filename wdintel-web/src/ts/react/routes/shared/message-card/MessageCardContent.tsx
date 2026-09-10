@@ -31,9 +31,11 @@ import PhotoOutlinedIcon from '@mui/icons-material/PhotoOutlined';
 import VolumeUpOutlinedIcon from '@mui/icons-material/VolumeUpOutlined';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import dayjs from 'dayjs';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { isPresent } from '../../../utils/misc';
+import { APP_TIME_ZONE, isPresent } from '../../../utils/misc';
+import type { MessageTimeBasis } from '../../../services/api/user-settings';
 import {
   getPointEtalonsFromMessage,
   messageHasPalitraTag,
@@ -286,6 +288,7 @@ export function MessageCardMessageBody({
   collapseMediaPreviews = false,
   mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
   messageTextPreviewLines = 20,
+  messageTimeBasis = 'interception',
   isDownloadStarting,
   onDownloadStart,
 }: {
@@ -318,6 +321,7 @@ export function MessageCardMessageBody({
   collapseMediaPreviews?: boolean;
   mediaSummaryEnabled?: boolean;
   messageTextPreviewLines?: 20 | 40 | null;
+  messageTimeBasis?: MessageTimeBasis;
 } & MessageCardDownloadGuardProps) {
   const nameCache = usePointBlacklistPaletteNamesCache();
   const { notify } = useOptionalPowerSnackbar();
@@ -689,9 +693,19 @@ export function MessageCardMessageBody({
     ? textPrimary.some((node) => isPresent(node))
     : isPresent(textPrimary);
 
-  const hasMessageText = hasTextPrimary || hasMessageTextOverflow;
+  const interceptionHeader =
+    messageTimeBasis === 'creation' && !msg.hasDateInHeader
+      ? [msg.date, msg.time].filter(isPresent).join(', ') ||
+        (isPresent(msg.timestamp)
+          ? dayjs(msg.timestamp).tz(APP_TIME_ZONE).format('DD.MM.YYYY, HH:mm:ss')
+          : 'Дата перехоплення недоступна')
+      : null;
+  const hasMessageText = hasTextPrimary || hasMessageTextOverflow || interceptionHeader !== null;
   const messageTextSection = hasMessageText ? (
     <div className="message-card-main-section message-card-message-text">
+      {interceptionHeader ? (
+        <div className="whitespace-pre-wrap wrap-break-word">{interceptionHeader}</div>
+      ) : null}
       <div
         data-message-card-text-content="true"
         className={

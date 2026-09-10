@@ -1,7 +1,10 @@
 import { Box, FormControlLabel, Stack, Switch, Typography } from '@mui/material';
 
 import { PowerAlert } from '../../components/PowerAlert';
-import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
+import type {
+  MessageTextPreviewLineLimit,
+  MessageTimeBasis,
+} from '../../services/api/user-settings';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 import { SettingsAudioTranscriptionCard } from './SettingsAudioTranscriptionCard';
 import { SettingsMessageCard } from './SettingsMessageCard';
@@ -22,6 +25,9 @@ export type SettingsDutySectionProps = {
   onTagsLayoutChange: (layout: TagsLayoutVariant) => void;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
   onMessageTextPreviewLinesChange: (value: MessageTextPreviewLineLimit) => void;
+  messageSortBy: MessageTimeBasis;
+  onMessageSortByChange: (value: MessageTimeBasis) => void;
+  showMessageSortBy: boolean;
   mediaSummaryEnabled: boolean;
   onMediaSummaryEnabledChange: (value: boolean) => void;
   /** When true, duty feed does not auto-scroll / follow new messages. */
@@ -45,6 +51,9 @@ export function SettingsDutySection({
   onTagsLayoutChange,
   messageTextPreviewLines,
   onMessageTextPreviewLinesChange,
+  messageSortBy,
+  onMessageSortByChange,
+  showMessageSortBy,
   mediaSummaryEnabled,
   onMediaSummaryEnabledChange,
   disableAutoScroll,
@@ -97,6 +106,9 @@ export function SettingsDutySection({
             onTagsLayoutChange={onTagsLayoutChange}
             messageTextPreviewLines={messageTextPreviewLines}
             onMessageTextPreviewLinesChange={onMessageTextPreviewLinesChange}
+            messageSortBy={messageSortBy}
+            onMessageSortByChange={onMessageSortByChange}
+            showMessageSortBy={showMessageSortBy}
             mediaSummaryEnabled={mediaSummaryEnabled}
             onMediaSummaryEnabledChange={onMediaSummaryEnabledChange}
             collapseMediaPreviews={collapseMediaPreviews}

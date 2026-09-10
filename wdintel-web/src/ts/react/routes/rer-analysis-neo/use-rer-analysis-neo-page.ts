@@ -145,6 +145,14 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const [centerTabPending, startCenterTabTransition] = useTransition();
   const setPageError = useCallback((message: string) => setError(message || null), []);
   const dutySettings = useDutySettings();
+  useEffect(() => {
+    if (dutySettings.loadInProgress) return;
+    setQueryState((current) =>
+      current.messageTimeBasis === dutySettings.messageSortBy
+        ? current
+        : { ...current, messageTimeBasis: dutySettings.messageSortBy },
+    );
+  }, [dutySettings.loadInProgress, dutySettings.messageSortBy]);
   const directQueryBoundaryRef = useRef({
     fromDateTimeStr: initialQueryState.fromDateTimeStr,
     toDateTimeStr: initialQueryState.toDateTimeStr,

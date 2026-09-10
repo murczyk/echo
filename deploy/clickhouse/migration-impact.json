@@ -1,5 +1,10 @@
 {
   "migrations": {
+    "echo:m20260910_000000_add_message_sort_by_to_user_settings": {
+      "changes": [
+        { "table": "public.user_settings", "strategy": "replicated_snapshot", "targeted_resnapshot": true }
+      ]
+    },
     "echo:m20260909_145827_network_invalidation_reconciliation_index": {
       "changes": []
     },

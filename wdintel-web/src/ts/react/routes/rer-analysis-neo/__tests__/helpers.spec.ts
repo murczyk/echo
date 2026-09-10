@@ -147,6 +147,13 @@ describe('rer-analysis-neo helpers', () => {
     delete (globalThis as { window?: Window }).window;
   });
 
+  it('sends the creation date basis to analysis and inbox requests', () => {
+    const state = createQueryState({ messageTimeBasis: 'creation' });
+
+    expect(buildAnalysisReq(state)?.messageTimeBasis).toBe('creation');
+    expect(buildInboxReq(state)?.sortBy).toBe('IMSCreatedAt');
+  });
+
   it('keeps the saved filter clean when only the date range differs', () => {
     const savedFilter = createSavedFilter(createQueryState());
     const currentState = createQueryState({

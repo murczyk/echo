@@ -182,13 +182,14 @@ pub fn compare_inbox_report_message_oldest_first(
     right_timestamp: Option<NaiveDateTime>,
     right_id: i64,
 ) -> Ordering {
-    let (left, right) = match req
-        .sort_by
-        .unwrap_or(InboxMessagesSortBy::IMSDatetime)
-    {
-        InboxMessagesSortBy::IMSDatetime => (left_datetime, right_datetime),
-        InboxMessagesSortBy::IMSTimestamp => (left_timestamp, right_timestamp),
-    };
+    let (left, right) =
+        match req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime) {
+            InboxMessagesSortBy::IMSDatetime => (left_datetime, right_datetime),
+            InboxMessagesSortBy::IMSTimestamp
+            | InboxMessagesSortBy::IMSCreatedAt => {
+                (left_timestamp, right_timestamp)
+            }
+        };
     compare_optional_datetime(left, right).then_with(|| left_id.cmp(&right_id))
 }
 
@@ -239,7 +240,8 @@ where
             InboxMessagesSortBy::IMSDatetime => {
                 query.filter(sigint_inbox_item::Column::Datetime.lt(till))
             }
-            InboxMessagesSortBy::IMSTimestamp => {
+            InboxMessagesSortBy::IMSTimestamp
+            | InboxMessagesSortBy::IMSCreatedAt => {
                 query.filter(signal_message::Column::Timestamp.lt(till))
             }
         },

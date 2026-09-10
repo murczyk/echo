@@ -114,6 +114,7 @@ pub async fn collect_babak_report_data(
         selected_aors: inbox_req.selected_aors,
         without_model_tags: inbox_req.without_model_tags,
         report_tags_only_this_unit: inbox_req.report_tags_only_this_unit,
+        message_time_basis: None,
     };
     let new_callsigns_res = bi_new_callsigns_chunked(
         user_login,

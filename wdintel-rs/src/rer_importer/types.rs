@@ -1,5 +1,6 @@
 use crate::location::SettlementDetails;
 use crate::messenger::group::types::SignalGroupEntry;
+use crate::user_settings::MessageTimeBasis;
 use chrono::NaiveDateTime;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::FromQueryResult;
@@ -55,6 +56,10 @@ pub struct InboxMessage {
     pub important: bool,
     pub bookmarked: bool,
     pub timestamp: Option<i64>,
+    #[serde(default)]
+    pub created_at: Option<i64>,
+    #[serde(default)]
+    pub has_date_in_header: bool,
     pub group_master_key: Option<String>,
     pub sender: Option<String>,
     pub extended_form: Option<String>,
@@ -186,6 +191,8 @@ impl From<InboxInsertPayload> for InboxMessage {
             important: payload.important,
             bookmarked: payload.bookmarked,
             timestamp: payload.timestamp,
+            created_at: None,
+            has_date_in_header: false,
             group_master_key: payload.group_master_key,
             sender: payload.sender,
             extended_form: payload.extended_form,
@@ -376,6 +383,7 @@ pub struct FreqDetailedPoint {
 pub enum InboxMessagesSortBy {
     IMSDatetime,
     IMSTimestamp,
+    IMSCreatedAt,
 }
 
 #[derive(
@@ -940,6 +948,8 @@ pub struct AnalysisStatsReq {
     pub filter_tags_option: Option<TagFilterOption>,
     pub without_model_tags: Option<bool>,
     pub report_tags_only_this_unit: Option<bool>,
+    #[serde(default)]
+    pub message_time_basis: Option<MessageTimeBasis>,
 }
 
 #[derive(

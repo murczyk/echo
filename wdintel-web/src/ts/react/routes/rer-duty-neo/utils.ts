@@ -267,6 +267,7 @@ export function buildInboxReq(opts: {
   expandedFreqsDenied?: string[] | null;
   highlightSignals?: boolean | null;
   reportTagsOnlyThisUnit?: boolean | null;
+  sortBy?: 'IMSTimestamp' | 'IMSCreatedAt';
 }): InboxMessagesReq {
   const f = opts.filter;
   const selectedUnitIds = (f.unitsSelected ?? []).flatMap((value) => {
@@ -333,7 +334,7 @@ export function buildInboxReq(opts: {
     metadataHash: null,
     onlyWithMetadata: null,
     withoutMetadata: null,
-    sortBy: 'IMSTimestamp',
+    sortBy: opts.sortBy ?? 'IMSTimestamp',
     reportTagsOnlyThisUnit: opts.reportTagsOnlyThisUnit ?? null,
     ignoreImportedCoords: true,
     includePelengLocations: null,

@@ -1522,6 +1522,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::messenger::types::GroupEntryF1,
             crate::user_settings::types::DutyTagsLayout,
             crate::user_settings::types::MessageTextPreviewLines,
+            crate::user_settings::types::MessageTimeBasis,
             crate::user_settings::types::UserDutySettingsDto,
         ],
         queries: [],

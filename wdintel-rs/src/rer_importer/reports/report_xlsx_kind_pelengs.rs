@@ -419,7 +419,8 @@ async fn get_inbox_messages_report_chunk_postgres(
             InboxMessagesSortBy::IMSDatetime => {
                 q.filter(sigint_inbox_item::Column::Datetime.lt(till))
             }
-            InboxMessagesSortBy::IMSTimestamp => {
+            InboxMessagesSortBy::IMSTimestamp
+            | InboxMessagesSortBy::IMSCreatedAt => {
                 q.filter(signal_message::Column::Timestamp.lt(till))
             }
         };
@@ -581,6 +582,8 @@ async fn get_inbox_messages_report_chunk_postgres(
                     timestamp: m
                         .timestamp
                         .map(|x| x.and_utc().timestamp_millis()),
+                    created_at: None,
+                    has_date_in_header: false,
                     group_master_key: None,
                     sender: m.sender.clone(),
                     extended_form: None,

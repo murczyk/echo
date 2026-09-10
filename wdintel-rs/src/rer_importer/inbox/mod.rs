@@ -1095,6 +1095,9 @@ async fn inbox_messages(
     let is_admin = has_role(&env.dbx, &user_id, "Admin").await.is_ok();
     let page_id = req.page_id.clone();
     let req = req.into_inner();
+    if req.sort_by == Some(InboxMessagesSortBy::IMSCreatedAt) {
+        has_role(&env.dbx, &user_id, "Cyber").await.c(h!())?;
+    }
     if has_role(&env.dbx, &user_id, AI_AGENT_ROLE_API)
         .await
         .is_ok()
@@ -1822,6 +1825,9 @@ async fn inbox_messages_count(
     let user_id = login_id_from_identity(&user)?;
     let page_id = req.page_id.clone();
     let req = req.into_inner();
+    if req.sort_by == Some(InboxMessagesSortBy::IMSCreatedAt) {
+        has_role(&env.dbx, &user_id, "Cyber").await.c(h!())?;
+    }
 
     let payload = serde_json::to_value(&req).context(h!())?;
     record_page_visit(&user_id, &page_id, &env, Some(payload))
@@ -2119,6 +2125,8 @@ fn generic_submit_item_to_inbox_message(
         important: false,
         bookmarked: false,
         timestamp: Some(timestamp.and_utc().timestamp_millis()),
+        created_at: None,
+        has_date_in_header: false,
         group_master_key: None,
         sender: item.sender.clone(),
         extended_form: item.comment.clone(),

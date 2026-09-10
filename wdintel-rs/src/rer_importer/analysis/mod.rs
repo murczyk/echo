@@ -4100,7 +4100,12 @@ fn build_summary_table_filtered_messages_query_with_access(
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
 
-    let q = build_summary_table_base_query(dt_since, dt_till, scope);
+    let q = build_summary_table_base_query(
+        dt_since,
+        dt_till,
+        req.message_time_basis,
+        scope,
+    );
     let q = stats::apply_message_access_filter(
         q,
         &req.selected_groups,
@@ -4150,6 +4155,7 @@ fn build_summary_table_filtered_messages_query_with_access(
 fn build_summary_table_base_query(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
+    message_time_basis: Option<crate::user_settings::MessageTimeBasis>,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Select<signal_message::Entity> {
     let query = signal_message::Entity::find()
@@ -4161,9 +4167,15 @@ fn build_summary_table_base_query(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+        .filter(signal_message::Column::Deleted.eq(false));
+    let query = match message_time_basis {
+        Some(crate::user_settings::MessageTimeBasis::MessageCreation) => query
+            .filter(signal_message::Column::CreatedAt.gte(dt_since))
+            .filter(signal_message::Column::CreatedAt.lt(dt_till)),
+        _ => query
+            .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+            .filter(sigint_inbox_item::Column::Datetime.lt(dt_till)),
+    };
     match scope {
         Some(scope) => query
             .filter(scope.condition((
