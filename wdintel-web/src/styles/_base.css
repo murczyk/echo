@@ -489,9 +489,10 @@ html[data-bs-theme='dark'] .message-card-root {
   line-height: 1.2;
 }
 
+/* Both map scales remain visible simultaneously; this preview intentionally does not scroll. */
 .coordinate-hover-preview {
   width: min(800px, calc(100vw - 16px));
-  max-height: calc(100vh - 16px);
+  height: min(480px, calc(100vh - 16px), calc(60vw - 9.6px));
   overflow: hidden;
   border: 1px solid var(--color-divider);
   background: var(--color-background);
@@ -500,36 +501,18 @@ html[data-bs-theme='dark'] .message-card-root {
 .coordinate-hover-preview__maps {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  max-height: min(480px, calc(100vh - 16px));
+  height: 100%;
 }
 
 .coordinate-hover-preview__map-region {
   position: relative;
   min-width: 0;
-  height: min(480px, calc((100vw - 16px) * 0.3));
-  min-height: 240px;
+  min-height: 0;
+  height: 100%;
 }
 
 .coordinate-hover-preview__map-region + .coordinate-hover-preview__map-region {
   border-left: 1px solid var(--color-divider);
-}
-
-@media (max-width: 560px), (max-height: 520px) {
-  .coordinate-hover-preview__maps {
-    grid-template-columns: minmax(0, 1fr);
-    max-height: calc(100vh - 16px);
-    overflow-y: auto;
-  }
-
-  .coordinate-hover-preview__map-region {
-    height: max(200px, calc((100vh - 16px) / 2));
-    min-height: 200px;
-  }
-
-  .coordinate-hover-preview__map-region + .coordinate-hover-preview__map-region {
-    border-top: 1px solid var(--color-divider);
-    border-left: 0;
-  }
 }
 
 .message-card-coordinate-retry-overlay {

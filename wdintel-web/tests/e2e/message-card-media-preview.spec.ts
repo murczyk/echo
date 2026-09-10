@@ -895,9 +895,10 @@ test.describe('message card media preview contract', () => {
     }
   });
 
-  test('ECHO-3380 keeps the shared coordinate hover preview tile-driven and non-competing', async ({
+  test('ECHO-3380 keeps the coordinate hover preview tile-driven, side by side, and non-scrollable', async ({
     page,
   }) => {
+    test.setTimeout(90_000);
     const transparentPng = Buffer.from(
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL5WQAAAABJRU5ErkJggg==',
       'base64',
@@ -911,60 +912,101 @@ test.describe('message card media preview contract', () => {
       route.fulfill({ contentType: 'image/png', body: transparentPng }),
     );
 
+    const viewports = [
+      { name: 'desktop', size: { width: 1280, height: 720 } },
+      { name: 'constrained', size: { width: 360, height: 480 } },
+      { name: 'short', size: { width: 800, height: 320 } },
+    ];
+
     for (const host of ['duty', 'analysis'] as const) {
-      const isNarrowViewport = host === 'analysis';
       let resolveCurrentImagery!: () => void;
       imageryLoaded = new Promise((resolve) => {
         resolveCurrentImagery = resolve;
       });
-      await page.setViewportSize(
-        isNarrowViewport ? { width: 360, height: 480 } : { width: 1280, height: 720 },
-      );
+      await page.setViewportSize(viewports[0].size);
       await openMessageCardPreviewHost(page, host, { revealCoordinates: true });
       const card = page.locator('.message-card-root').first();
+      const coordinateControl = card.getByRole('button', {
+        name: /^(Розгорнути|Згорнути) координати:/,
+      });
       const tile = card.locator('[data-coordinate-preview-tile]');
       const button = tile.getByRole('button', { name: /Open .* on map/ });
-      await button.hover();
-      const preview = page.locator('[data-coordinate-hover-preview]');
-      await expect(preview).toHaveCount(1);
-      await expect(
-        page.locator('.MuiTooltip-tooltip', { hasText: 'Відкрити на мапі' }),
-      ).toHaveCount(0);
-      await expect(preview.locator('.coordinate-hover-preview__map-region')).toHaveCount(2);
-      await expect(preview.locator('.coordinate-preview-map-skeleton').first()).toBeVisible();
-      const [previewBox, viewport] = await Promise.all([
-        preview.boundingBox(),
-        page.evaluate(() => ({ width: innerWidth, height: innerHeight })),
-      ]);
-      expect(previewBox?.x).toBeGreaterThanOrEqual(0);
-      expect((previewBox?.x ?? 0) + (previewBox?.width ?? 0)).toBeLessThanOrEqual(viewport.width);
-      expect(previewBox?.y).toBeGreaterThanOrEqual(0);
-      expect((previewBox?.y ?? 0) + (previewBox?.height ?? 0)).toBeLessThanOrEqual(viewport.height);
       resolveCurrentImagery();
-      await expect(preview.locator('.coordinate-preview-map-skeleton')).toHaveCount(0);
+      await expect(tile.locator('.coordinate-preview-map-skeleton')).toHaveCount(0);
+      await expect(tile.locator('.leaflet-interactive')).toHaveCount(0);
 
-      const mapRegions = preview.locator('.coordinate-hover-preview__map-region');
-      const [overviewRegion, detailRegion] = await Promise.all([
-        mapRegions.nth(0).boundingBox(),
-        mapRegions.nth(1).boundingBox(),
-      ]);
-      if (isNarrowViewport) {
-        expect(overviewRegion?.y).toBeLessThan(detailRegion?.y ?? 0);
-      } else {
+      for (const { size } of viewports) {
+        await page.setViewportSize(size);
+        await page.waitForTimeout(500);
+        if ((await coordinateControl.getAttribute('aria-expanded')) !== 'true') {
+          await coordinateControl.click();
+        }
+        await expect(tile).toBeVisible();
+        await page.waitForTimeout(300);
+        await button.hover();
+        await page.waitForTimeout(300);
+        await expect(tile.locator('.leaflet-tooltip')).toHaveCount(0);
+        const preview = page.locator('[data-coordinate-hover-preview]');
+        await expect(preview).toHaveCount(1);
+        await expect(
+          page.locator('.MuiTooltip-tooltip', { hasText: 'Відкрити на мапі' }),
+        ).toHaveCount(0);
+        const mapRegions = preview.locator('.coordinate-hover-preview__map-region');
+        await expect(mapRegions).toHaveCount(2);
+        await expect(preview.locator('.leaflet-interactive')).toHaveCount(0);
+        await expect(preview.locator('.leaflet-tooltip')).toHaveCount(0);
+        const [previewBox, viewport, overviewRegion, detailRegion, layout] = await Promise.all([
+          preview.boundingBox(),
+          page.evaluate(() => ({ width: innerWidth, height: innerHeight })),
+          mapRegions.nth(0).boundingBox(),
+          mapRegions.nth(1).boundingBox(),
+          preview.evaluate((element) => {
+            const detail = element.querySelector(
+              '.coordinate-hover-preview__map-region + .coordinate-hover-preview__map-region',
+            );
+            return {
+              overflowY: getComputedStyle(element).overflowY,
+              scrollHeight: element.scrollHeight,
+              clientHeight: element.clientHeight,
+              scrollWidth: element.scrollWidth,
+              clientWidth: element.clientWidth,
+              detailBorderTop: detail == null ? '' : getComputedStyle(detail).borderTopWidth,
+              detailBorderLeft: detail == null ? '' : getComputedStyle(detail).borderLeftWidth,
+            };
+          }),
+        ]);
+        expect(previewBox?.x).toBeGreaterThanOrEqual(8);
+        expect((previewBox?.x ?? 0) + (previewBox?.width ?? 0)).toBeLessThanOrEqual(
+          viewport.width - 8,
+        );
+        expect(previewBox?.y).toBeGreaterThanOrEqual(8);
+        expect((previewBox?.y ?? 0) + (previewBox?.height ?? 0)).toBeLessThanOrEqual(
+          viewport.height - 8,
+        );
         expect(overviewRegion?.x).toBeLessThan(detailRegion?.x ?? 0);
         expect(overviewRegion?.y).toBe(detailRegion?.y);
-      }
+        expect(overviewRegion?.height).toBe(detailRegion?.height);
+        expect(overviewRegion?.width).toBeGreaterThan(0);
+        expect(overviewRegion?.height).toBeGreaterThan(0);
+        expect(detailRegion?.width).toBeGreaterThan(0);
+        expect(detailRegion?.height).toBeGreaterThan(0);
+        expect(layout.scrollHeight).toBeLessThanOrEqual(layout.clientHeight + 1);
+        expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth + 1);
+        expect(['auto', 'scroll']).not.toContain(layout.overflowY);
+        expect(layout.detailBorderTop).toBe('0px');
+        expect(layout.detailBorderLeft).toBe('1px');
 
-      await preview.hover();
-      await expect(preview).toBeVisible();
-      await page.keyboard.press('Escape');
-      await expect(preview).toHaveCount(0);
-      await button.focus();
-      await expect(preview).toBeVisible();
-      await button.evaluate((element) => element.click());
-      await expect(preview).toHaveCount(0);
-      await expect(page.getByRole('dialog', { name: 'Перегляд координат' })).toBeVisible();
-      await page.getByRole('button', { name: 'Закрити', exact: true }).click();
+        await preview.hover();
+        await expect(preview).toBeVisible();
+        await page.keyboard.press('Escape');
+        await expect(preview).toHaveCount(0);
+        await button.focus();
+        await expect(preview).toBeVisible();
+        await button.evaluate((element) => element.click());
+        await expect(preview).toHaveCount(0);
+        await expect(page.getByRole('dialog', { name: 'Перегляд координат' })).toBeVisible();
+        await page.getByRole('button', { name: 'Закрити', exact: true }).click();
+      }
     }
   });
 

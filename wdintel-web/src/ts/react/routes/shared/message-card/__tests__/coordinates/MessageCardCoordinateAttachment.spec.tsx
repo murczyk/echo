@@ -108,9 +108,7 @@ vi.mock('leaflet', () => {
     remove: vi.fn(),
   };
   const marker = {
-    bindTooltip() {
-      return marker;
-    },
+    bindTooltip: vi.fn(() => marker),
     addTo() {
       return marker;
     },
@@ -365,6 +363,11 @@ describe('MessageCardCoordinateAttachment', () => {
 
     expect(leaflet.map).toHaveBeenCalledTimes(1);
     expect(leaflet.circleMarker).toHaveBeenCalledTimes(3);
+    expect(leaflet.circleMarker).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ interactive: false }),
+    );
+    expect(leaflet.circleMarker.mock.results[0]?.value.bindTooltip).not.toHaveBeenCalled();
     rectSpy.mockRestore();
   });
 

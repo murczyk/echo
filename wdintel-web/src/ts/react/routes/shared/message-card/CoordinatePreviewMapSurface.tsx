@@ -19,11 +19,6 @@ const THUMBNAIL_ZOOM = 11;
 const DETAIL_ZOOM = 16;
 const MAX_FITTED_ZOOM = 13;
 const BOUNDS_PADDING: [number, number] = [28, 28];
-function plainTextMarkerLabel(label: string): HTMLSpanElement {
-  const element = document.createElement('span');
-  element.textContent = label;
-  return element;
-}
 function applyView(
   map: L.Map,
   points: CoordinatePreviewPoint[],
@@ -50,16 +45,15 @@ function createMarkers(
   const visibleBounds = mode === 'detail' ? map.getBounds() : null;
   return points
     .filter(({ lat, lng }) => visibleBounds == null || visibleBounds.contains([lat, lng]))
-    .map(({ lat, lng, label }) =>
+    .map(({ lat, lng }) =>
       L.circleMarker([lat, lng], {
         radius: 8,
         color: '#ffffff',
         weight: 3,
         fillColor: '#ff4d2d',
         fillOpacity: 1,
-      })
-        .bindTooltip(plainTextMarkerLabel(label))
-        .addTo(map),
+        interactive: false,
+      }).addTo(map),
     );
 }
 
