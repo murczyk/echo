@@ -164,6 +164,7 @@ struct OrbitEchelonIdentity {
     generative_unit_name_full: Option<String>,
     unit_number: Option<String>,
     unit_alternate_names: Option<Vec<String>>,
+    unit_alternate_numbers: Option<Vec<String>>,
     echelon_key: String,
 }
 
@@ -415,6 +416,7 @@ where
             orbit_unit::Column::GenerativeUnitNameFull,
             orbit_unit::Column::UnitNumber,
             orbit_unit::Column::UnitAlternateNames,
+            orbit_unit::Column::UnitAlternateNumbers,
         ])
         .column_as(orbit_unit_echelon::Column::Key, "echelon_key")
         .join(
@@ -460,6 +462,12 @@ fn insert_orbit_unit_values(
         .map(String::as_str)
         .chain(
             unit.unit_alternate_names
+                .iter()
+                .flatten()
+                .map(String::as_str),
+        )
+        .chain(
+            unit.unit_alternate_numbers
                 .iter()
                 .flatten()
                 .map(String::as_str),
@@ -1157,6 +1165,64 @@ mod tests {
         assert_eq!(inactive.regiment, brigade);
         assert_eq!(inactive.brigade, "");
         assert!(parent.active);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn automatic_fix_keeps_army_matching_alternate_orbit_number() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let synced_at = chrono::Utc::now().naive_utc();
+        persistence::record_sync(
+            &env.dbx,
+            &uuid::Uuid::new_v4().simple().to_string(),
+            synced_at,
+        )
+        .await
+        .unwrap();
+        let army_echelon_id = orbit_unit_echelon::Entity::find()
+            .filter(orbit_unit_echelon::Column::Key.eq("fieldArmy"))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let alternate_number = uuid::Uuid::new_v4().simple().to_string();
+        orbit_unit::ActiveModel {
+            unit_id: Set(uuid::Uuid::new_v4()),
+            unit_alternate_numbers: Set(Some(vec![alternate_number.clone()])),
+            unit_echelon_id: Set(Some(army_echelon_id)),
+            deleted: Set(false),
+            created_at: Set(synced_at),
+            updated_at: Set(synced_at),
+            is_snapshot_root: Set(true),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let sigint_unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                army: Set(alternate_number),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let mut orbit_value_cache = None;
+
+        let changes = load_changes(
+            &env.dbx,
+            Some(&[sigint_unit.id]),
+            false,
+            EchelonMove::Army,
+            tui::UnitActivityScope::Both,
+            &mut orbit_value_cache,
+        )
+        .await
+        .unwrap();
+
+        assert!(changes.is_empty());
     }
 
     fn sigint_unit() -> EchelonMoveUnit {
