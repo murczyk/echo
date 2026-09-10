@@ -38,17 +38,12 @@ pub(super) async fn run(mode: Mode) -> anyhow::Result<()> {
     else {
         return Ok(());
     };
-    let activity_scope = if review_mode == tui::LinkMode::Automatic {
-        let Some(activity_scope) = tui::prompt_unit_activity_scope(
-            "Choose generated-name automatic scope (↑/↓, Enter, Esc: quit)",
-        )
-        .c(h!())?
-        else {
-            return Ok(());
-        };
-        activity_scope
-    } else {
-        tui::UnitActivityScope::Both
+    let Some(activity_scope) = tui::prompt_unit_activity_scope(
+        "Choose generated-name review scope (↑/↓, Enter, Esc: quit)",
+    )
+    .c(h!())?
+    else {
+        return Ok(());
     };
     let db = new_pg_pool_from_mode(mode).await.c(h!())?;
     run_with_database(&db, review_mode, activity_scope)
