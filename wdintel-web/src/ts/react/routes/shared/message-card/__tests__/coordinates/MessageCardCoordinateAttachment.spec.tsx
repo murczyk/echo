@@ -637,8 +637,39 @@ describe('MessageCardCoordinateAttachment', () => {
     expect(onOpen).toHaveBeenCalledOnce();
   });
 
-  it('ECHO-3380 opens the medium preview on focus but not on touch pointer interaction', async () => {
+  it.each(['mouse', 'pen'] as const)(
+    'ECHO-3380 opens the medium preview for a %s pointer when hover none matches',
+    async (pointerType) => {
+      vi.useFakeTimers();
+      vi.stubGlobal(
+        'matchMedia',
+        vi.fn(() => ({ matches: true })),
+      );
+      await act(async () => {
+        root.render(
+          <CoordinateAttachmentThumbnail
+            points={[{ source: 'direct', lat: 50.45, lng: 30.52, label: 'BRAVO' }]}
+            onOpen={vi.fn()}
+          />,
+        );
+      });
+      const trigger = container.querySelector('button[aria-label="Open BRAVO on map"]');
+      const pointerEnter = new Event('pointerover', { bubbles: true });
+      Object.defineProperty(pointerEnter, 'pointerType', { value: pointerType });
+      await act(async () => {
+        trigger?.dispatchEvent(pointerEnter);
+        vi.advanceTimersByTime(600);
+      });
+      expect(document.body.querySelector('[data-coordinate-hover-preview]')).not.toBeNull();
+    },
+  );
+
+  it('ECHO-3380 opens the medium preview on focus but rejects touch pointer interaction', async () => {
     vi.useFakeTimers();
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: true })),
+    );
     await act(async () => {
       root.render(
         <CoordinateAttachmentThumbnail

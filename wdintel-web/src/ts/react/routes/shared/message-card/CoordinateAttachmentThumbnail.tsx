@@ -51,8 +51,8 @@ export function CoordinateAttachmentThumbnail({
       if (!pointerInsideRef.current && !focusInsideRef.current) setIsHoverPreviewOpen(false);
     }, CLOSE_DELAY_MS);
   };
-  const openForPointer = (pointerType?: string) => {
-    if (pointerType === 'touch' || window.matchMedia?.('(hover: none)').matches) return;
+  const openForPointer = (pointerType: string) => {
+    if (pointerType === 'touch') return;
     if (closeTimerRef.current != null) window.clearTimeout(closeTimerRef.current);
     if (isHoverPreviewOpen || openTimerRef.current != null) return;
     openTimerRef.current = window.setTimeout(() => {
