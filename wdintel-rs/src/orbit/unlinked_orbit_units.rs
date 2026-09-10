@@ -54,17 +54,12 @@ pub(super) async fn run(mode: Mode) -> anyhow::Result<()> {
     let Some(link_mode) = tui::prompt_link_mode().c(h!())? else {
         return Ok(());
     };
-    let activity_scope = if link_mode == tui::LinkMode::Automatic {
-        let Some(activity_scope) = tui::prompt_unit_activity_scope(
-            "Choose automatic ORBIT-to-SIGINT linking scope (↑/↓, Enter, Esc: quit)",
-        )
-        .c(h!())?
-        else {
-            return Ok(());
-        };
-        activity_scope
-    } else {
-        tui::UnitActivityScope::Both
+    let Some(activity_scope) = tui::prompt_unit_activity_scope(
+        "Choose ORBIT-to-SIGINT linking scope (↑/↓, Enter, Esc: quit)",
+    )
+    .c(h!())?
+    else {
+        return Ok(());
     };
     let create_missing = if link_mode == tui::LinkMode::Automatic {
         let Some(action) = tui::prompt_missing_sigint_unit_action().c(h!())?

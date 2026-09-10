@@ -276,17 +276,12 @@ pub(super) async fn run(mode: Mode) -> anyhow::Result<()> {
     let Some(link_mode) = tui::prompt_link_mode().c(h!())? else {
         return Ok(());
     };
-    let activity_scope = if link_mode == tui::LinkMode::Automatic {
-        let Some(activity_scope) = tui::prompt_unit_activity_scope(
-            "Choose automatic SIGINT-to-ORBIT linking scope (↑/↓, Enter, Esc: quit)",
-        )
-        .c(h!())?
-        else {
-            return Ok(());
-        };
-        activity_scope
-    } else {
-        tui::UnitActivityScope::Both
+    let Some(activity_scope) = tui::prompt_unit_activity_scope(
+        "Choose SIGINT-to-ORBIT linking scope (↑/↓, Enter, Esc: quit)",
+    )
+    .c(h!())?
+    else {
+        return Ok(());
     };
     let dbx = new_pg_pool_from_mode(mode).await.c(h!())?;
     run_with_database(&dbx, link_mode, activity_scope, false)

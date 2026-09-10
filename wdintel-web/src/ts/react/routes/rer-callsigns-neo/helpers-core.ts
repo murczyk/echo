@@ -102,9 +102,17 @@ export function buildListCallsignsReq(input: BuildReqInput): ListCallsignsReq {
       sidebarUnitHierarchyFilter?.militaryDistrict,
     ),
     filterUnitArmy: normalizeHierarchyFilterValue(sidebarUnitHierarchyFilter?.army),
+    filterUnitCorps: normalizeHierarchyFilterValue(sidebarUnitHierarchyFilter?.corps),
     filterUnitDivision: normalizeHierarchyFilterValue(sidebarUnitHierarchyFilter?.division),
+    filterUnitBrigade: normalizeHierarchyFilterValue(sidebarUnitHierarchyFilter?.brigade),
     filterUnitRegiment: normalizeHierarchyFilterValue(sidebarUnitHierarchyFilter?.regiment),
     filterUnitBattalion: normalizeHierarchyFilterValue(sidebarUnitHierarchyFilter?.battalion),
+    filterUnitCompany: normalizeHierarchyFilterValue(sidebarUnitHierarchyFilter?.company),
+    filterUnitPlatoon: normalizeHierarchyFilterValue(sidebarUnitHierarchyFilter?.platoon),
+    filterUnitSquad: normalizeHierarchyFilterValue(sidebarUnitHierarchyFilter?.squad),
+    filterUnitSection: normalizeHierarchyFilterValue(sidebarUnitHierarchyFilter?.section),
+    filterUnitTeamOrCrew: normalizeHierarchyFilterValue(sidebarUnitHierarchyFilter?.teamOrCrew),
+    filterUnitOther: normalizeHierarchyFilterValue(sidebarUnitHierarchyFilter?.other),
     filterDeveloping: filters.filterDeveloping,
     sinceDateInclusiveMs: filters.isIgnoringDateFilter
       ? null

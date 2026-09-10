@@ -582,10 +582,12 @@ values (
         assert_eq!(existing.battle_line_distance, Some(7));
         assert_eq!(pending.battle_line_distance, None);
         assert_eq!(invalid.battle_line_distance, None);
+        let mut network_invalidation_enqueued = false;
         crate::messenger::bl::upsert_group_area_of_responsibility(
             &txn,
             &group.master_key,
             Some(vec![second_aor.id]),
+            &mut network_invalidation_enqueued,
         )
         .await
         .unwrap();

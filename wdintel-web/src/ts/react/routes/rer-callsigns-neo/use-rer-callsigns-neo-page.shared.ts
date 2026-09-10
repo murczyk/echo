@@ -1,4 +1,4 @@
-import { isNullOrUndefined, isPresent } from '../../utils/misc';
+import { isNullOrUndefined } from '../../utils/misc';
 import type { Callsign } from '../../../../Bindings';
 import type {
   CallsignsFilterState,
@@ -17,15 +17,6 @@ import {
 const EMPTY_HIERARCHY_PARAM = '__EMPTY__';
 
 export const FILTERS_DEBOUNCE_MS = 500;
-export const HIERARCHY_LABELS = {
-  armyRegion: 'Армійський регіон',
-  militaryDistrict: 'Військовий округ',
-  army: 'Армія',
-  division: 'Дивізія',
-  regiment: 'Полк',
-  battalion: 'Батальйон',
-} as const;
-
 export function updateUrlSearchParams(mutator: (params: URLSearchParams) => void) {
   const url = new URL(window.location.href);
   const params = new URLSearchParams(url.search);
@@ -122,9 +113,17 @@ export function readInitialSidebarHierarchyFilterFromUrl(): UnitHierarchyFilter 
     armyRegion: decodeHierarchyParam(params.get('unit_army_region')),
     militaryDistrict: decodeHierarchyParam(params.get('unit_military_district')),
     army: decodeHierarchyParam(params.get('unit_army')),
+    corps: decodeHierarchyParam(params.get('unit_corps')),
     division: decodeHierarchyParam(params.get('unit_division')),
+    brigade: decodeHierarchyParam(params.get('unit_brigade')),
     regiment: decodeHierarchyParam(params.get('unit_regiment')),
     battalion: decodeHierarchyParam(params.get('unit_battalion')),
+    company: decodeHierarchyParam(params.get('unit_company')),
+    platoon: decodeHierarchyParam(params.get('unit_platoon')),
+    squad: decodeHierarchyParam(params.get('unit_squad')),
+    section: decodeHierarchyParam(params.get('unit_section')),
+    teamOrCrew: decodeHierarchyParam(params.get('unit_team_or_crew')),
+    other: decodeHierarchyParam(params.get('unit_other')),
   };
 
   if (Object.values(hierarchy).every((value) => isNullOrUndefined(value))) {
@@ -135,16 +134,10 @@ export function readInitialSidebarHierarchyFilterFromUrl(): UnitHierarchyFilter 
 }
 
 export function getSidebarGroupLabel(hierarchy: UnitHierarchyFilter): string {
-  const lastDefinedEntry = (
-    Object.entries(hierarchy) as Array<[keyof UnitHierarchyFilter, string | null]>
-  )
+  const label = Object.values(hierarchy)
     .reverse()
-    .find(([, value]) => isPresent(value));
-
-  if (!lastDefinedEntry) return 'Підрозділ';
-
-  const [key, value] = lastDefinedEntry;
-  return value === '' ? `Без ${HIERARCHY_LABELS[key].toLowerCase()}` : (value ?? 'Підрозділ');
+    .find((value) => !isNullOrUndefined(value) && value.trim() !== '');
+  return label?.trim() ?? 'Підрозділ';
 }
 
 export function readInitialSidebarFilterFromUrl(): SelectedSidebarUnitFilter | null {
@@ -185,9 +178,17 @@ export function areSidebarFiltersEqual(
       left.hierarchy.armyRegion === right.hierarchy.armyRegion &&
       left.hierarchy.militaryDistrict === right.hierarchy.militaryDistrict &&
       left.hierarchy.army === right.hierarchy.army &&
+      left.hierarchy.corps === right.hierarchy.corps &&
       left.hierarchy.division === right.hierarchy.division &&
+      left.hierarchy.brigade === right.hierarchy.brigade &&
       left.hierarchy.regiment === right.hierarchy.regiment &&
-      left.hierarchy.battalion === right.hierarchy.battalion
+      left.hierarchy.battalion === right.hierarchy.battalion &&
+      left.hierarchy.company === right.hierarchy.company &&
+      left.hierarchy.platoon === right.hierarchy.platoon &&
+      left.hierarchy.squad === right.hierarchy.squad &&
+      left.hierarchy.section === right.hierarchy.section &&
+      left.hierarchy.teamOrCrew === right.hierarchy.teamOrCrew &&
+      left.hierarchy.other === right.hierarchy.other
     );
   }
 
@@ -261,9 +262,23 @@ export function syncCallsignsStateToUrl(
     );
     setHierarchyParam(
       params,
+      'unit_corps',
+      selectedSidebarUnitFilter?.kind === 'group'
+        ? selectedSidebarUnitFilter.hierarchy.corps
+        : null,
+    );
+    setHierarchyParam(
+      params,
       'unit_division',
       selectedSidebarUnitFilter?.kind === 'group'
         ? selectedSidebarUnitFilter.hierarchy.division
+        : null,
+    );
+    setHierarchyParam(
+      params,
+      'unit_brigade',
+      selectedSidebarUnitFilter?.kind === 'group'
+        ? selectedSidebarUnitFilter.hierarchy.brigade
         : null,
     );
     setHierarchyParam(
@@ -278,6 +293,48 @@ export function syncCallsignsStateToUrl(
       'unit_battalion',
       selectedSidebarUnitFilter?.kind === 'group'
         ? selectedSidebarUnitFilter.hierarchy.battalion
+        : null,
+    );
+    setHierarchyParam(
+      params,
+      'unit_company',
+      selectedSidebarUnitFilter?.kind === 'group'
+        ? selectedSidebarUnitFilter.hierarchy.company
+        : null,
+    );
+    setHierarchyParam(
+      params,
+      'unit_platoon',
+      selectedSidebarUnitFilter?.kind === 'group'
+        ? selectedSidebarUnitFilter.hierarchy.platoon
+        : null,
+    );
+    setHierarchyParam(
+      params,
+      'unit_squad',
+      selectedSidebarUnitFilter?.kind === 'group'
+        ? selectedSidebarUnitFilter.hierarchy.squad
+        : null,
+    );
+    setHierarchyParam(
+      params,
+      'unit_section',
+      selectedSidebarUnitFilter?.kind === 'group'
+        ? selectedSidebarUnitFilter.hierarchy.section
+        : null,
+    );
+    setHierarchyParam(
+      params,
+      'unit_team_or_crew',
+      selectedSidebarUnitFilter?.kind === 'group'
+        ? selectedSidebarUnitFilter.hierarchy.teamOrCrew
+        : null,
+    );
+    setHierarchyParam(
+      params,
+      'unit_other',
+      selectedSidebarUnitFilter?.kind === 'group'
+        ? selectedSidebarUnitFilter.hierarchy.other
         : null,
     );
 

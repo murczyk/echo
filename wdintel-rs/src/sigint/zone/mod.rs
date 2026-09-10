@@ -621,6 +621,7 @@ pub async fn my_admin_group_update(
         &txn,
         &req.master_key,
         req.area_of_responsibility_ids,
+        &mut network_invalidation_enqueued,
     )
     .await
     .c(h!())?;

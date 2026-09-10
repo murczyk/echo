@@ -30,6 +30,23 @@ import {
 
 dayjs.extend(utc);
 
+const EMPTY_NETWORK_HIERARCHY_FILTER_FIELDS = {
+  filterUnitArmyRegion: null,
+  filterUnitMilitaryDistrict: null,
+  filterUnitArmy: null,
+  filterUnitCorps: null,
+  filterUnitDivision: null,
+  filterUnitBrigade: null,
+  filterUnitRegiment: null,
+  filterUnitBattalion: null,
+  filterUnitCompany: null,
+  filterUnitPlatoon: null,
+  filterUnitSquad: null,
+  filterUnitSection: null,
+  filterUnitTeamOrCrew: null,
+  filterUnitOther: null,
+} as const;
+
 describe('rer-networks-neo AOR filters', () => {
   it('keeps the no-AOR option first and the all-band option second in the filter menu', () => {
     const options = resolveAorFilterSelectOptions([
@@ -169,12 +186,7 @@ describe('rer-networks-neo AOR filters', () => {
     ).toEqual({
       filterFreq: '128.5',
       filterUnit: '3 АК',
-      filterUnitArmyRegion: null,
-      filterUnitMilitaryDistrict: null,
-      filterUnitArmy: null,
-      filterUnitDivision: null,
-      filterUnitRegiment: null,
-      filterUnitBattalion: null,
+      ...EMPTY_NETWORK_HIERARCHY_FILTER_FIELDS,
       filterText: 'alpha',
       filterName: 'Alpha',
       filterLocation: 'Kyiv',
@@ -215,9 +227,17 @@ describe('rer-networks-neo AOR filters', () => {
         filterUnitArmyRegion: null,
         filterUnitMilitaryDistrict: null,
         filterUnitArmy: null,
+        filterUnitCorps: null,
         filterUnitDivision: null,
+        filterUnitBrigade: null,
         filterUnitRegiment: null,
         filterUnitBattalion: null,
+        filterUnitCompany: null,
+        filterUnitPlatoon: null,
+        filterUnitSquad: null,
+        filterUnitSection: null,
+        filterUnitTeamOrCrew: null,
+        filterUnitOther: null,
       }),
     );
   });
@@ -230,9 +250,17 @@ describe('rer-networks-neo AOR filters', () => {
         armyRegion: 'R',
         militaryDistrict: 'D',
         army: '1',
+        corps: 'C',
         division: '2',
+        brigade: 'BR',
         regiment: '3',
         battalion: '4',
+        company: 'CO',
+        platoon: 'P',
+        squad: 'SQ',
+        section: 'S',
+        teamOrCrew: 'T',
+        other: 'O',
       },
     };
 
@@ -254,9 +282,17 @@ describe('rer-networks-neo AOR filters', () => {
         filterUnitArmyRegion: 'R',
         filterUnitMilitaryDistrict: 'D',
         filterUnitArmy: '1',
+        filterUnitCorps: 'C',
         filterUnitDivision: '2',
+        filterUnitBrigade: 'BR',
         filterUnitRegiment: '3',
         filterUnitBattalion: '4',
+        filterUnitCompany: 'CO',
+        filterUnitPlatoon: 'P',
+        filterUnitSquad: 'SQ',
+        filterUnitSection: 'S',
+        filterUnitTeamOrCrew: 'T',
+        filterUnitOther: 'O',
       }),
     );
   });
@@ -269,9 +305,17 @@ describe('rer-networks-neo AOR filters', () => {
         armyRegion: null,
         militaryDistrict: null,
         army: '',
+        corps: undefined,
         division: null,
+        brigade: undefined,
         regiment: undefined,
         battalion: '4',
+        company: undefined,
+        platoon: undefined,
+        squad: undefined,
+        section: undefined,
+        teamOrCrew: undefined,
+        other: undefined,
       },
     };
 
@@ -329,12 +373,7 @@ describe('rer-networks-neo AOR filters', () => {
     ).toEqual({
       filterFreq: '128.5',
       filterUnit: null,
-      filterUnitArmyRegion: null,
-      filterUnitMilitaryDistrict: null,
-      filterUnitArmy: null,
-      filterUnitDivision: null,
-      filterUnitRegiment: null,
-      filterUnitBattalion: null,
+      ...EMPTY_NETWORK_HIERARCHY_FILTER_FIELDS,
       filterText: null,
       filterName: 'Alpha',
       filterLocation: 'Kyiv',
@@ -368,12 +407,7 @@ describe('rer-networks-neo AOR filters', () => {
     ).toEqual({
       filterFreq: '128.5',
       filterUnit: '3 АК',
-      filterUnitArmyRegion: null,
-      filterUnitMilitaryDistrict: null,
-      filterUnitArmy: null,
-      filterUnitDivision: null,
-      filterUnitRegiment: null,
-      filterUnitBattalion: null,
+      ...EMPTY_NETWORK_HIERARCHY_FILTER_FIELDS,
       filterText: 'alpha',
       filterName: 'Alpha',
       filterLocation: 'Kyiv',
@@ -408,12 +442,7 @@ describe('rer-networks-neo AOR filters', () => {
     ).toEqual({
       filterFreq: '128.5',
       filterUnit: '3 АК',
-      filterUnitArmyRegion: null,
-      filterUnitMilitaryDistrict: null,
-      filterUnitArmy: null,
-      filterUnitDivision: null,
-      filterUnitRegiment: null,
-      filterUnitBattalion: null,
+      ...EMPTY_NETWORK_HIERARCHY_FILTER_FIELDS,
       filterText: 'alpha',
       filterName: 'Alpha',
       filterLocation: 'Kyiv',

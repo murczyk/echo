@@ -44,9 +44,17 @@ export type UnitHierarchyFilter = {
   armyRegion: string | null;
   militaryDistrict: string | null;
   army: string | null;
+  corps: string | null;
   division: string | null;
+  brigade: string | null;
   regiment: string | null;
   battalion: string | null;
+  company: string | null;
+  platoon: string | null;
+  squad: string | null;
+  section: string | null;
+  teamOrCrew: string | null;
+  other: string | null;
 };
 
 export type SelectedSidebarUnitFilter =
@@ -114,9 +122,17 @@ export type UnitStatView = CallsignUnitStatRow & {
   armyRegion: string;
   militaryDistrict: string;
   army: string;
+  corps: string;
   division: string;
+  brigade: string;
   regiment: string;
   battalion: string;
+  company: string;
+  platoon: string;
+  squad: string;
+  section: string;
+  teamOrCrew: string;
+  other: string;
 };
 
 export type BootstrapLookups = {

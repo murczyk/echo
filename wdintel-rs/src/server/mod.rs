@@ -537,11 +537,15 @@ fn spawn_background_workers(
             middleware::activity_details_worker(redis, greptimedb).await;
         });
     }
-    if !config.disable_cleanup_networks_worker.unwrap_or(false) {
-        spawn_named_worker("cleanup_networks_worker", bg_set, async move {
-            crate::sigint::network::cleanup_networks_worker(&dbx4).await;
-        });
-    }
+    let cleanup_networks_enabled =
+        !config.disable_cleanup_networks_worker.unwrap_or(false);
+    spawn_named_worker("network_maintenance_worker", bg_set, async move {
+        crate::sigint::network::network_maintenance_worker(
+            &dbx4,
+            cleanup_networks_enabled,
+        )
+        .await;
+    });
     if config.fill_comp_freq_worker {
         spawn_named_worker("fill_comp_freq_worker", bg_set, async move {
             crate::rer_importer::reports::fill_comp_freq_worker(&dbx6).await;

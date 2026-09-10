@@ -1,7 +1,16 @@
 {
   "migrations": {
+    "echo:m20260909_145827_network_invalidation_reconciliation_index": {
+      "changes": []
+    },
     "echo:m20260909_102202_sigint_unit_cascade_delete": {
       "changes": []
+    },
+    "echo:m20260908_131435_network_recalculation_queue": {
+      "changes": [
+        { "table": "public.network_recalculation_task", "strategy": "excluded" },
+        { "table": "public.network_freq_last_datetime_in_aor", "strategy": "excluded" }
+      ]
     },
     "echo:m20260903_180415_add_failed_unit_label_inbox_uuid": {
       "changes": [

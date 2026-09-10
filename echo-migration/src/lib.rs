@@ -411,7 +411,9 @@ mod m20260902_155137_remove_group_stats_pending_unique;
 mod m20260903_105929_disable_media_summary_for_all_users;
 mod m20260903_155454_create_sigint_activity_decision_changelog;
 mod m20260903_180415_add_failed_unit_label_inbox_uuid;
+mod m20260908_131435_network_recalculation_queue;
 mod m20260909_102202_sigint_unit_cascade_delete;
+mod m20260909_145827_network_invalidation_reconciliation_index;
 
 pub struct Migrator;
 
@@ -976,7 +978,13 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260903_180415_add_failed_unit_label_inbox_uuid::Migration,
             ),
+            Box::new(
+                m20260908_131435_network_recalculation_queue::Migration,
+            ),
             Box::new(m20260909_102202_sigint_unit_cascade_delete::Migration),
+            Box::new(
+                m20260909_145827_network_invalidation_reconciliation_index::Migration,
+            ),
         ]
     }
 }

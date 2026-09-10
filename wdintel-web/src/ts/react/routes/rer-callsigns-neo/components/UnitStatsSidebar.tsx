@@ -43,6 +43,7 @@ type TreeLeafNode = {
   kind: 'leaf';
   id: string;
   unitId: number;
+  label: string;
   unitName: string;
   count: number;
 };
@@ -62,24 +63,45 @@ const HIERARCHY_LABELS = [
   'Армійський регіон',
   'Військовий округ',
   'Армія',
+  'Корпус',
   'Дивізія',
+  'Бригада',
   'Полк',
   'Батальйон',
+  'Рота',
+  'Взвод',
+  'Відділення',
+  'Секція',
+  'Команда/Екіпаж',
+  'Інше',
 ] as const;
 const HIERARCHY_KEYS = [
   'armyRegion',
   'militaryDistrict',
   'army',
+  'corps',
   'division',
+  'brigade',
   'regiment',
   'battalion',
+  'company',
+  'platoon',
+  'squad',
+  'section',
+  'teamOrCrew',
+  'other',
 ] as const;
 const SIDEBAR_FILTER_DEBOUNCE_MS = 180;
 
-function normalizeHierarchyPart(part: string, level: number): string {
-  const value = part.trim();
-  if (value !== '') return value;
-  return `Без ${HIERARCHY_LABELS[level].toLowerCase()}`;
+function collapseTerminalSingleUnitGroups(nodes: TreeNode[]): TreeNode[] {
+  return nodes.map((node) => {
+    if (node.kind === 'leaf') return node;
+    if (node.children.length === 1 && node.children[0].kind === 'leaf') {
+      return { ...node.children[0], label: node.label };
+    }
+
+    return { ...node, children: collapseTerminalSingleUnitGroups(node.children) };
+  });
 }
 
 export function buildUnitTree(stats: UnitStatView[]): TreeNode[] {
@@ -91,9 +113,17 @@ export function buildUnitTree(stats: UnitStatView[]): TreeNode[] {
       row.armyRegion,
       row.militaryDistrict,
       row.army,
+      row.corps,
       row.division,
+      row.brigade,
       row.regiment,
       row.battalion,
+      row.company,
+      row.platoon,
+      row.squad,
+      row.section,
+      row.teamOrCrew,
+      row.other,
     ];
     const firstVisibleLevel =
       row.armyRegion.trim() !== '' ? 0 : row.militaryDistrict.trim() !== '' ? 1 : 2;
@@ -107,10 +137,11 @@ export function buildUnitTree(stats: UnitStatView[]): TreeNode[] {
       if (!hasAnyDeeperPart) return;
 
       const rawValue = part.trim();
-      const label = normalizeHierarchyPart(rawValue, level);
       path = [...path, `${level}:${rawValue === '' ? '__EMPTY__' : rawValue}`];
       rawPath = [...rawPath];
       rawPath[level] = rawValue;
+      if (rawValue === '') return;
+
       const id = `group:${path.join('|')}`;
 
       let group = groups.get(id);
@@ -118,7 +149,7 @@ export function buildUnitTree(stats: UnitStatView[]): TreeNode[] {
         group = {
           kind: 'group',
           id,
-          label,
+          label: rawValue,
           count: 0,
           hierarchy: createHierarchyFilter(rawPath),
           children: [],
@@ -135,12 +166,13 @@ export function buildUnitTree(stats: UnitStatView[]): TreeNode[] {
       kind: 'leaf',
       id: `unit:${row.unitId}`,
       unitId: row.unitId,
+      label: row.unitName,
       unitName: row.unitName,
       count: row.count,
     });
   }
 
-  return root;
+  return collapseTerminalSingleUnitGroups(root);
 }
 
 function collectGroupIds(nodes: TreeNode[]): string[] {
@@ -161,9 +193,17 @@ function createHierarchyFilter(rawPath: string[]): UnitHierarchyFilter {
     armyRegion: rawPath[0] ?? null,
     militaryDistrict: rawPath[1] ?? null,
     army: rawPath[2] ?? null,
-    division: rawPath[3] ?? null,
-    regiment: rawPath[4] ?? null,
-    battalion: rawPath[5] ?? null,
+    corps: rawPath[3] ?? null,
+    division: rawPath[4] ?? null,
+    brigade: rawPath[5] ?? null,
+    regiment: rawPath[6] ?? null,
+    battalion: rawPath[7] ?? null,
+    company: rawPath[8] ?? null,
+    platoon: rawPath[9] ?? null,
+    squad: rawPath[10] ?? null,
+    section: rawPath[11] ?? null,
+    teamOrCrew: rawPath[12] ?? null,
+    other: rawPath[13] ?? null,
   };
 }
 
@@ -179,9 +219,17 @@ function matchesUnitSearch(row: UnitStatView, normalizedQuery: string): boolean 
     row.armyRegion,
     row.militaryDistrict,
     row.army,
+    row.corps,
     row.division,
+    row.brigade,
     row.regiment,
     row.battalion,
+    row.company,
+    row.platoon,
+    row.squad,
+    row.section,
+    row.teamOrCrew,
+    row.other,
   ]
     .join(' ')
     .toLocaleLowerCase();
@@ -272,18 +320,18 @@ function UnitTreeItem({
         onClick={() =>
           onPickUnitFilter({
             kind: 'leaf',
-            label: node.unitName,
+            label: node.label,
             unitName: node.unitName,
             unitId: node.unitId,
           })
         }
         selected={isSelectedLeafNode(node, selectedUnitFilter)}
         sx={{ pl: paddingLeft + 5, pr: 1.5 }}
-        aria-label={`Фільтрувати за підрозділом ${node.unitName}, ${countLabel.toLocaleLowerCase()} ${node.count}`}
+        aria-label={`Фільтрувати за підрозділом ${node.label}, ${countLabel.toLocaleLowerCase()} ${node.count}`}
       >
         <ListItemText
-          primary={node.unitName}
-          primaryTypographyProps={{ noWrap: true, title: node.unitName }}
+          primary={node.label}
+          primaryTypographyProps={{ noWrap: true, title: node.label }}
         />
         <PowerChip
           size="small"
@@ -371,10 +419,10 @@ function formatSelectedFilterLabel(selectedUnitFilter: SelectedSidebarUnitFilter
     return `Підрозділ: ${selectedUnitFilter.label}`;
   }
 
-  const deepestLevelIndex = HIERARCHY_KEYS.reduce<number>(
-    (lastIndex, key, index) => (isPresent(selectedUnitFilter.hierarchy[key]) ? index : lastIndex),
-    -1,
-  );
+  const deepestLevelIndex = HIERARCHY_KEYS.reduce<number>((lastIndex, key, index) => {
+    const value = selectedUnitFilter.hierarchy[key];
+    return isPresent(value) && value.trim() !== '' ? index : lastIndex;
+  }, -1);
   const hierarchyLabel = deepestLevelIndex >= 0 ? HIERARCHY_LABELS[deepestLevelIndex] : 'Підрозділ';
 
   return `${hierarchyLabel}: ${selectedUnitFilter.label}`;
