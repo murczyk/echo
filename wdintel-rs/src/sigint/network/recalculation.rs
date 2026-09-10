@@ -56,6 +56,38 @@ pub(super) async fn load_cached_last_datetime_in_aor(
                             or task.sigint_network_id = nf.network_id
                         )
                         and (
+                            task.aor_id is null
+                            or exists (
+                                select 1
+                                from sigint_network_aor affected_sna
+                                where affected_sna.network_id = nf.network_id
+                                  and affected_sna.aor_id = task.aor_id
+                            )
+                            or exists (
+                                select 1
+                                from signal_group_aor affected_sga
+                                join signal_message_group affected_smg
+                                  on affected_smg.group_master_key = affected_sga.master_key
+                                join signal_message affected_sm
+                                  on affected_sm.id = affected_smg.signal_message_id
+                                join sigint_inbox_item affected_ii
+                                  on affected_ii.id = affected_sm.id
+                                join sigint_inbox_item_network affected_iin
+                                  on affected_iin.sigint_inbox_item_id = affected_ii.id
+                                 and affected_iin.sigint_network_id = nf.network_id
+                                join datasource_group affected_dg
+                                  on affected_dg.id = affected_sm.datasource_group_id
+                                where affected_sga.aor_id = task.aor_id
+                                  and affected_dg.group_master_key = any(cache.group_master_keys)
+                                  and affected_sm.deleted = false
+                                  and affected_ii.freq = nf.freq
+                                  and affected_ii.datetime between task.since_ts and task.till_ts
+                                  and affected_ii.datetime >= nf.active_from
+                                  and affected_ii.datetime
+                                        <= coalesce(nf.active_to, current_timestamp at time zone 'utc')
+                            )
+                        )
+                        and (
                             task.frequency is null
                             or task.frequency = nf.freq
                         )
@@ -1034,12 +1066,14 @@ async fn requeue_failed_task(
 mod tests {
     use super::*;
     use crate::entities::{
-        datasource_group, sigint_inbox_item, sigint_network, signal_group,
-        signal_message, signal_message_group,
+        area_of_responsibility, datasource_group, sigint_inbox_item,
+        sigint_inbox_item_network, sigint_network, signal_group,
+        signal_group_aor, signal_message, signal_message_group,
     };
     use crate::functest::tests::{
-        cleanup, mk_sigint_inbox_item, mk_sigint_network,
-        mk_sigint_network_freq, mk_signal_group, mk_signal_message,
+        cleanup, mk_aor, mk_sigint_inbox_item, mk_sigint_inbox_item_network,
+        mk_sigint_network, mk_sigint_network_aor, mk_sigint_network_freq,
+        mk_signal_group, mk_signal_group_aor, mk_signal_message,
         mk_signal_message_group,
     };
     use serial_test::serial;
@@ -1697,6 +1731,230 @@ mod tests {
         .await
         .unwrap()
         .contains_key(&fixture.network_freq.id));
+    }
+
+    async fn create_cached_network_freq(
+        db: &DatabaseConnection,
+        login_id: uuid::Uuid,
+        group_master_keys: &[String],
+        name: &str,
+        frequency: &str,
+    ) -> (sigint_network::Model, sigint_network_freq::Model) {
+        let network = mk_sigint_network(
+            db,
+            sigint_network::ActiveModel {
+                name: Set(name.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let network_freq = mk_sigint_network_freq(
+            db,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set(frequency.to_string()),
+                active_from: Set(Utc::now().naive_utc() - Duration::minutes(1)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        network_freq_last_datetime_in_aor::ActiveModel {
+            network_freq_id: Set(network_freq.id),
+            login_id: Set(login_id),
+            group_master_keys: Set(group_master_keys.to_vec()),
+            last_datetime_in_aor: Set(None),
+            calculated_at: Set(Utc::now().naive_utc()),
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        (network, network_freq)
+    }
+
+    async fn link_aor_to_contributing_message(
+        db: &DatabaseConnection,
+        aor_id: i64,
+        network_id: i64,
+        datasource_group_id: i64,
+        frequency: &str,
+    ) -> NaiveDateTime {
+        let affected_group = mk_signal_group(
+            db,
+            signal_group::ActiveModel {
+                master_key: Set("aor-cache-invalidation".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_group_aor(
+            db,
+            signal_group_aor::ActiveModel {
+                master_key: Set(affected_group.master_key.clone()),
+                aor_id: Set(aor_id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let message = mk_signal_message(
+            db,
+            signal_message::ActiveModel {
+                datasource_group_id: Set(Some(datasource_group_id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let datetime = Utc::now().naive_utc();
+        mk_sigint_inbox_item(
+            db,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                freq: Set(Some(frequency.to_string())),
+                datetime: Set(Some(datetime)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item_network(
+            db,
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(message.id),
+                sigint_network_id: Set(network_id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_message_group(
+            db,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(message.id),
+                group_master_key: Set(Some(affected_group.master_key)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        datetime
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn aor_invalidation_suppresses_only_affected_cache_rows() {
+        let env = cleanup().await.unwrap();
+        let login_id = crate::users::login_id_by_name(&env.dbx, "Tester")
+            .await
+            .unwrap();
+        let group_master_keys = normalize_group_master_keys(
+            crate::messenger::group::get_identity_sigint_groups(
+                &env.dbx, &login_id,
+            )
+            .await
+            .unwrap(),
+        );
+        let datasource_group = datasource_group::Entity::find()
+            .filter(
+                datasource_group::Column::GroupMasterKey
+                    .eq(group_master_keys.first().unwrap()),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let aor = mk_aor(
+            &env.dbx,
+            area_of_responsibility::ActiveModel {
+                name: Set("Cache invalidation AOR".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let frequency = "148.2950";
+        let (direct_network, direct_freq) = create_cached_network_freq(
+            &env.dbx,
+            login_id,
+            &group_master_keys,
+            "Direct AOR cache invalidation network",
+            frequency,
+        )
+        .await;
+        let (message_network, message_freq) = create_cached_network_freq(
+            &env.dbx,
+            login_id,
+            &group_master_keys,
+            "Message AOR cache invalidation network",
+            frequency,
+        )
+        .await;
+        let (unaffected_network, unaffected_freq) = create_cached_network_freq(
+            &env.dbx,
+            login_id,
+            &group_master_keys,
+            "Unaffected AOR cache invalidation network",
+            frequency,
+        )
+        .await;
+        mk_sigint_network_aor(
+            &env.dbx,
+            sigint_network_aor::ActiveModel {
+                network_id: Set(direct_network.id),
+                aor_id: Set(aor.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let datetime = link_aor_to_contributing_message(
+            &env.dbx,
+            aor.id,
+            message_network.id,
+            datasource_group.id,
+            frequency,
+        )
+        .await;
+        let mut invalidation =
+            invalidation_task(1_002, direct_network.id, frequency);
+        invalidation.sigint_network_id = None;
+        invalidation.frequency = None;
+        invalidation.aor_id = Some(aor.id);
+        invalidation.since_ts = datetime - Duration::seconds(1);
+        invalidation.till_ts = datetime + Duration::seconds(1);
+        invalidation
+            .into_active_model()
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+
+        // Regression: https://github.com/echoua/echo/issues/3440
+        for (network_id, network_freq_id) in [
+            (direct_network.id, direct_freq.id),
+            (message_network.id, message_freq.id),
+        ] {
+            assert!(!load_cached_last_datetime_in_aor(
+                &env.dbx,
+                network_id,
+                login_id,
+                &group_master_keys,
+            )
+            .await
+            .unwrap()
+            .contains_key(&network_freq_id));
+        }
+        assert!(load_cached_last_datetime_in_aor(
+            &env.dbx,
+            unaffected_network.id,
+            login_id,
+            &group_master_keys,
+        )
+        .await
+        .unwrap()
+        .contains_key(&unaffected_freq.id));
     }
 
     async fn assert_deleted_frequency_cache_is_removed(
