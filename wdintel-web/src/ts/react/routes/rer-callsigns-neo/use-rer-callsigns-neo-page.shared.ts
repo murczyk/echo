@@ -1,4 +1,4 @@
-import { isNullOrUndefined, isPresent } from '../../utils/misc';
+import { isNullOrUndefined } from '../../utils/misc';
 import type { Callsign } from '../../../../Bindings';
 import type {
   CallsignsFilterState,
@@ -17,15 +17,6 @@ import {
 const EMPTY_HIERARCHY_PARAM = '__EMPTY__';
 
 export const FILTERS_DEBOUNCE_MS = 500;
-export const HIERARCHY_LABELS = {
-  armyRegion: 'Армійський регіон',
-  militaryDistrict: 'Військовий округ',
-  army: 'Армія',
-  division: 'Дивізія',
-  regiment: 'Полк',
-  battalion: 'Батальйон',
-} as const;
-
 export function updateUrlSearchParams(mutator: (params: URLSearchParams) => void) {
   const url = new URL(window.location.href);
   const params = new URLSearchParams(url.search);
@@ -135,16 +126,10 @@ export function readInitialSidebarHierarchyFilterFromUrl(): UnitHierarchyFilter 
 }
 
 export function getSidebarGroupLabel(hierarchy: UnitHierarchyFilter): string {
-  const lastDefinedEntry = (
-    Object.entries(hierarchy) as Array<[keyof UnitHierarchyFilter, string | null]>
-  )
+  const label = Object.values(hierarchy)
     .reverse()
-    .find(([, value]) => isPresent(value));
-
-  if (!lastDefinedEntry) return 'Підрозділ';
-
-  const [key, value] = lastDefinedEntry;
-  return value === '' ? `Без ${HIERARCHY_LABELS[key].toLowerCase()}` : (value ?? 'Підрозділ');
+    .find((value) => !isNullOrUndefined(value) && value.trim() !== '');
+  return label?.trim() ?? 'Підрозділ';
 }
 
 export function readInitialSidebarFilterFromUrl(): SelectedSidebarUnitFilter | null {

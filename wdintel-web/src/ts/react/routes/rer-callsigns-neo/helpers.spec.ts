@@ -12,6 +12,7 @@ import {
   createDefaultFilters,
   getExportPermission,
   getExportPermissionFromRoles,
+  getSidebarGroupLabel,
   getSortDescriptor,
   getUnitSelectionError,
   normalizeDuplicateLookupValue,
@@ -278,12 +279,101 @@ describe('rer-callsigns helpers', () => {
     });
     expect('children' in tree[0] ? tree[0].children : []).toEqual([
       expect.objectContaining({
-        kind: 'group',
+        kind: 'leaf',
         label: '3 мсд',
+        unitName: '11 АК',
         count: 4,
       }),
     ]);
     expect(JSON.stringify(tree)).not.toContain('#99');
+  });
+
+  it('skips empty hierarchy groups while preserving exact hierarchy paths', () => {
+    const tree = buildUnitTree([
+      {
+        unitId: 1,
+        count: 2,
+        unitName: 'Unit 1',
+        armyRegion: '',
+        militaryDistrict: '',
+        army: 'A',
+        division: '',
+        regiment: 'R',
+        battalion: '',
+      },
+      {
+        unitId: 2,
+        count: 3,
+        unitName: 'Unit 2',
+        armyRegion: '',
+        militaryDistrict: '',
+        army: 'A',
+        division: '',
+        regiment: 'R',
+        battalion: '',
+      },
+    ]);
+
+    expect(tree).toEqual([
+      expect.objectContaining({
+        kind: 'group',
+        label: 'A',
+        children: [
+          expect.objectContaining({
+            kind: 'group',
+            label: 'R',
+            hierarchy: expect.objectContaining({ army: 'A', division: '', regiment: 'R' }),
+          }),
+        ],
+      }),
+    ]);
+    expect(JSON.stringify(tree)).not.toContain('Без ');
+    expect(
+      getSidebarGroupLabel({
+        armyRegion: null,
+        militaryDistrict: null,
+        army: 'A',
+        division: '',
+        regiment: null,
+        battalion: null,
+      }),
+    ).toBe('A');
+  });
+
+  it('uses a terminal singleton hierarchy node as the unit leaf', () => {
+    const tree = buildUnitTree([
+      {
+        unitId: 1,
+        count: 2,
+        unitName: 'R D A',
+        armyRegion: '',
+        militaryDistrict: '',
+        army: 'A',
+        division: 'D',
+        regiment: 'R',
+        battalion: '',
+      },
+    ]);
+
+    expect(tree).toEqual([
+      expect.objectContaining({
+        kind: 'group',
+        label: 'A',
+        children: [
+          expect.objectContaining({
+            kind: 'group',
+            label: 'D',
+            children: [
+              expect.objectContaining({
+                kind: 'leaf',
+                label: 'R',
+                unitName: 'R D A',
+              }),
+            ],
+          }),
+        ],
+      }),
+    ]);
   });
 
   it('separates same-named armies by region and district', () => {

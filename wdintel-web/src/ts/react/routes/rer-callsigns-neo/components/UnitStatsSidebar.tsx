@@ -43,6 +43,7 @@ type TreeLeafNode = {
   kind: 'leaf';
   id: string;
   unitId: number;
+  label: string;
   unitName: string;
   count: number;
 };
@@ -76,10 +77,15 @@ const HIERARCHY_KEYS = [
 ] as const;
 const SIDEBAR_FILTER_DEBOUNCE_MS = 180;
 
-function normalizeHierarchyPart(part: string, level: number): string {
-  const value = part.trim();
-  if (value !== '') return value;
-  return `Без ${HIERARCHY_LABELS[level].toLowerCase()}`;
+function collapseTerminalSingleUnitGroups(nodes: TreeNode[]): TreeNode[] {
+  return nodes.map((node) => {
+    if (node.kind === 'leaf') return node;
+    if (node.children.length === 1 && node.children[0].kind === 'leaf') {
+      return { ...node.children[0], label: node.label };
+    }
+
+    return { ...node, children: collapseTerminalSingleUnitGroups(node.children) };
+  });
 }
 
 export function buildUnitTree(stats: UnitStatView[]): TreeNode[] {
@@ -107,10 +113,11 @@ export function buildUnitTree(stats: UnitStatView[]): TreeNode[] {
       if (!hasAnyDeeperPart) return;
 
       const rawValue = part.trim();
-      const label = normalizeHierarchyPart(rawValue, level);
       path = [...path, `${level}:${rawValue === '' ? '__EMPTY__' : rawValue}`];
       rawPath = [...rawPath];
       rawPath[level] = rawValue;
+      if (rawValue === '') return;
+
       const id = `group:${path.join('|')}`;
 
       let group = groups.get(id);
@@ -118,7 +125,7 @@ export function buildUnitTree(stats: UnitStatView[]): TreeNode[] {
         group = {
           kind: 'group',
           id,
-          label,
+          label: rawValue,
           count: 0,
           hierarchy: createHierarchyFilter(rawPath),
           children: [],
@@ -135,12 +142,13 @@ export function buildUnitTree(stats: UnitStatView[]): TreeNode[] {
       kind: 'leaf',
       id: `unit:${row.unitId}`,
       unitId: row.unitId,
+      label: row.unitName,
       unitName: row.unitName,
       count: row.count,
     });
   }
 
-  return root;
+  return collapseTerminalSingleUnitGroups(root);
 }
 
 function collectGroupIds(nodes: TreeNode[]): string[] {
@@ -272,18 +280,18 @@ function UnitTreeItem({
         onClick={() =>
           onPickUnitFilter({
             kind: 'leaf',
-            label: node.unitName,
+            label: node.label,
             unitName: node.unitName,
             unitId: node.unitId,
           })
         }
         selected={isSelectedLeafNode(node, selectedUnitFilter)}
         sx={{ pl: paddingLeft + 5, pr: 1.5 }}
-        aria-label={`Фільтрувати за підрозділом ${node.unitName}, ${countLabel.toLocaleLowerCase()} ${node.count}`}
+        aria-label={`Фільтрувати за підрозділом ${node.label}, ${countLabel.toLocaleLowerCase()} ${node.count}`}
       >
         <ListItemText
-          primary={node.unitName}
-          primaryTypographyProps={{ noWrap: true, title: node.unitName }}
+          primary={node.label}
+          primaryTypographyProps={{ noWrap: true, title: node.label }}
         />
         <PowerChip
           size="small"
@@ -371,10 +379,10 @@ function formatSelectedFilterLabel(selectedUnitFilter: SelectedSidebarUnitFilter
     return `Підрозділ: ${selectedUnitFilter.label}`;
   }
 
-  const deepestLevelIndex = HIERARCHY_KEYS.reduce<number>(
-    (lastIndex, key, index) => (isPresent(selectedUnitFilter.hierarchy[key]) ? index : lastIndex),
-    -1,
-  );
+  const deepestLevelIndex = HIERARCHY_KEYS.reduce<number>((lastIndex, key, index) => {
+    const value = selectedUnitFilter.hierarchy[key];
+    return isPresent(value) && value.trim() !== '' ? index : lastIndex;
+  }, -1);
   const hierarchyLabel = deepestLevelIndex >= 0 ? HIERARCHY_LABELS[deepestLevelIndex] : 'Підрозділ';
 
   return `${hierarchyLabel}: ${selectedUnitFilter.label}`;
