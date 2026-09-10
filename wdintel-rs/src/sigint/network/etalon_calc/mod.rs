@@ -238,11 +238,14 @@ where
     Ok((group, true))
 }
 
-pub async fn invalidate_network_inbox_for_aor(
-    db: &DatabaseConnection,
+pub async fn invalidate_network_inbox_for_aor<'a, 'async_trait, C>(
+    db: &'a C,
     aor: &area_of_responsibility::Model,
     context_msg: String,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     enqueue_network_invalidation_task(
         db,
         Some(aor.created_at),
@@ -256,13 +259,16 @@ pub async fn invalidate_network_inbox_for_aor(
     .await
 }
 
-pub async fn invalidate_network_inbox_for_freq(
+pub async fn invalidate_network_inbox_for_freq<'a, 'async_trait, C>(
     freq: &str,
     since_ts: Option<NaiveDateTime>,
     till_ts: Option<NaiveDateTime>,
-    db: &DatabaseConnection,
+    db: &'a C,
     context_msg: String,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     enqueue_network_invalidation_task(
         db,
         since_ts,
@@ -276,12 +282,15 @@ pub async fn invalidate_network_inbox_for_freq(
     .await
 }
 
-pub async fn invalidate_network_inbox(
+pub async fn invalidate_network_inbox<'a, 'async_trait, C>(
     network: sigint_network::Model,
     frequencies: Vec<String>,
-    db: &DatabaseConnection,
+    db: &'a C,
     context_msg: String,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let frequencies_desc = if frequencies.is_empty() {
         "all".to_string()
     } else {

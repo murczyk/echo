@@ -260,6 +260,27 @@ pub enum NetworkInvalidationWorkerStatus {
     Serialize,
     Deserialize,
 )]
+#[sea_orm(
+    rs_type = "Enum",
+    db_type = "Enum",
+    enum_name = "network_recalculation_task_kind"
+)]
+pub enum NetworkRecalculationTaskKind {
+    #[sea_orm(string_value = "network_freq_last_seen")]
+    NetworkFreqLastSeen,
+    #[sea_orm(string_value = "network_freq_last_datetime_in_aor")]
+    NetworkFreqLastDatetimeInAor,
+}
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    EnumIter,
+    DeriveActiveEnum,
+    Serialize,
+    Deserialize,
+)]
 #[sea_orm(rs_type = "Enum", db_type = "Enum", enum_name = "settlement_kind")]
 pub enum SettlementKind {
     #[sea_orm(string_value = "City")]
