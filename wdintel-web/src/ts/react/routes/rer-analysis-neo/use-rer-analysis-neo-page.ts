@@ -165,6 +165,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
       freqsSelected: queryState.freqsSelected,
       networksSelected: queryState.networksSelected,
       withoutNetwork: queryState.withoutNetwork,
+      messageTimeBasis: dutySettings.messageSortBy,
     }),
     [
       initialQueryState,
@@ -172,11 +173,12 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
       queryState.groupsSelected,
       queryState.networksSelected,
       queryState.withoutNetwork,
+      dutySettings.messageSortBy,
     ],
   );
 
   useEffect(() => {
-    if (!targetMessageUid || !targetMessageContextActive) return;
+    if (!targetMessageUid || !targetMessageContextActive || dutySettings.loadInProgress) return;
     let cancelled = false;
     const isContextRefresh = targetMessageLoadedRef.current;
     if (isContextRefresh) {
@@ -242,7 +244,13 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     return () => {
       cancelled = true;
     };
-  }, [directMessageWindowQueryState, setPageError, targetMessageContextActive, targetMessageUid]);
+  }, [
+    directMessageWindowQueryState,
+    dutySettings.loadInProgress,
+    setPageError,
+    targetMessageContextActive,
+    targetMessageUid,
+  ]);
 
   const clearTargetMessageFocus = useCallback(() => {
     setTargetMessageFocusActive(false);

@@ -1558,6 +1558,30 @@ describe('MessageCard', () => {
     expect(view.container.textContent).toContain('Дата перехоплення недоступна');
   });
 
+  // https://github.com/echoua/echo/issues/3455
+  it.each([
+    ['time-only metadata', null, '08:55:41', '15.08.2026, 08:55:41'],
+    ['date-only metadata', '15.08.2026', null, '15.08.2026, 11:55:41'],
+    ['no metadata', null, null, '15.08.2026, 11:55:41'],
+    ['complete metadata', '15.08.2026', '08:55:41', '15.08.2026, 08:55:41'],
+  ])('completes %s from the canonical interception timestamp', async (_, date, time, expected) => {
+    const view = await renderCard({
+      messageTimeBasis: 'creation',
+      msg: buildMessage({
+        text: '',
+        textMarked: [],
+        date,
+        time,
+        timestamp: Date.UTC(2026, 7, 15, 8, 55, 41),
+        images: ['https://example.test/files/attachment.png'],
+        hasDateInHeader: false,
+      }),
+    });
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain(expected);
+  });
+
   it('resets expanded message text when the preview limit changes', async () => {
     const rows = Array.from({ length: 41 }, (_, index) => `Рядок ${index + 1}`);
     const view = await renderCard({
@@ -5010,7 +5034,20 @@ describe('MessageCard', () => {
     if (stage == null) throw new Error('preview stage not found');
 
     await act(async () => {
-      stage.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      stage.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, pointerType: 'mouse' }),
+      );
+      stage.dispatchEvent(
+        new PointerEvent('pointerup', { bubbles: true, pointerId: 1, pointerType: 'mouse' }),
+      );
+      stage.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+      stage.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, pointerType: 'mouse' }),
+      );
+      stage.dispatchEvent(
+        new PointerEvent('pointerup', { bubbles: true, pointerId: 1, pointerType: 'mouse' }),
+      );
+      stage.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 }));
     });
 
     expect(image.getAttribute('data-image-preview-zoom')).toBe('200');
@@ -5151,7 +5188,20 @@ describe('MessageCard', () => {
     Object.defineProperty(stage, 'clientHeight', { configurable: true, value: 300 });
 
     await act(async () => {
-      stage.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      stage.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, pointerType: 'mouse' }),
+      );
+      stage.dispatchEvent(
+        new PointerEvent('pointerup', { bubbles: true, pointerId: 1, pointerType: 'mouse' }),
+      );
+      stage.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+      stage.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, pointerType: 'mouse' }),
+      );
+      stage.dispatchEvent(
+        new PointerEvent('pointerup', { bubbles: true, pointerId: 1, pointerType: 'mouse' }),
+      );
+      stage.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 }));
     });
 
     expect(image.getAttribute('data-image-preview-zoom')).toBe('200');

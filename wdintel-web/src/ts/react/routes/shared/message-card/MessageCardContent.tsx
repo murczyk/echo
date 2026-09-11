@@ -98,6 +98,15 @@ function hasMoreThanPreviewLineLimit(messageText: string, limit: number | null):
   return limit !== null && messageText.split(/\r?\n/).length > limit;
 }
 
+function formatInterceptionHeader(message: InboxMessage): string {
+  const timestamp = isPresent(message.timestamp)
+    ? dayjs(message.timestamp).tz(APP_TIME_ZONE)
+    : null;
+  const date = message.date ?? timestamp?.format('DD.MM.YYYY');
+  const time = message.time ?? timestamp?.format('HH:mm:ss');
+  return [date, time].filter(isPresent).join(', ') || 'Дата перехоплення недоступна';
+}
+
 function previewTextRows(messageText: string, limit: number): string {
   return messageText.split(/\r?\n/).slice(0, limit).join('\n');
 }
@@ -694,12 +703,7 @@ export function MessageCardMessageBody({
     : isPresent(textPrimary);
 
   const interceptionHeader =
-    messageTimeBasis === 'creation' && !msg.hasDateInHeader
-      ? [msg.date, msg.time].filter(isPresent).join(', ') ||
-        (isPresent(msg.timestamp)
-          ? dayjs(msg.timestamp).tz(APP_TIME_ZONE).format('DD.MM.YYYY, HH:mm:ss')
-          : 'Дата перехоплення недоступна')
-      : null;
+    messageTimeBasis === 'creation' && !msg.hasDateInHeader ? formatInterceptionHeader(msg) : null;
   const hasMessageText = hasTextPrimary || hasMessageTextOverflow || interceptionHeader !== null;
   const messageTextSection = hasMessageText ? (
     <div className="message-card-main-section message-card-message-text">

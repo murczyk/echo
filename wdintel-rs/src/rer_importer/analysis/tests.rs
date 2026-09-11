@@ -8056,7 +8056,7 @@ fn correlated_and_new_callsign_queries_filter_by_creation_time() {
         "{correlated}"
     );
 
-    let new_callsigns = build_new_callsign_filtered_items_query(
+    let new_callsigns_sql = build_new_callsign_filtered_items_query(
         &uuid::Uuid::nil(),
         &req,
         req.since_date_inclusive_ms,
@@ -8072,13 +8072,16 @@ fn correlated_and_new_callsign_queries_filter_by_creation_time() {
     .build(DbBackend::Postgres)
     .to_string();
     assert!(
-        new_callsigns.contains(r#""signal_message"."created_at""#),
-        "{new_callsigns}"
+        new_callsigns_sql.contains(r#""signal_message"."created_at""#),
+        "{new_callsigns_sql}"
     );
-    assert!(new_callsigns.contains(r#""timestamp""#), "{new_callsigns}");
     assert!(
-        !new_callsigns.contains(r#""sigint_inbox_item"."datetime" >="#),
-        "{new_callsigns}"
+        new_callsigns_sql.contains(r#""timestamp""#),
+        "{new_callsigns_sql}"
+    );
+    assert!(
+        !new_callsigns_sql.contains(r#""sigint_inbox_item"."datetime" >="#),
+        "{new_callsigns_sql}"
     );
 }
 
