@@ -1489,7 +1489,7 @@ fn normalize_army_name(value: &str) -> String {
     }
 }
 
-fn names_match(
+pub(super) fn names_match(
     echelon: EchoEchelon,
     names: &HashSet<String>,
     candidate: &str,
