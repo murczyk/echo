@@ -1,4 +1,4 @@
-import { Box, Dialog } from '@mui/material';
+import { Dialog } from '@mui/material';
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
 
 import { shouldIgnoreArrowNavigation } from '../document-preview-utils';
@@ -212,18 +212,12 @@ export function MessageCardAttachmentPreviewDialog({
         sx: { backgroundColor: 'rgba(0, 0, 0, 0.8)' },
       }}
     >
-      <Box
+      <div
         onPointerMove={(event) =>
           setHoveredStageNavigationSide(getHoveredStageNavigationSide(event))
         }
         onPointerLeave={() => setHoveredStageNavigationSide(null)}
-        sx={{
-          position: 'relative',
-          display: 'flex',
-          flexDirection: 'column',
-          flex: '1 1 0',
-          minHeight: 0,
-        }}
+        className="relative flex min-h-0 flex-1 flex-col"
       >
         {item.type === 'image' ? (
           <ImageAttachmentPreviewRenderer
@@ -279,7 +273,7 @@ export function MessageCardAttachmentPreviewDialog({
           navigation={{ ...navigation, disabled: isEditing || navigation.disabled }}
           visibleSide={hoveredStageNavigationSide}
         />
-      </Box>
+      </div>
     </Dialog>
   );
 }
