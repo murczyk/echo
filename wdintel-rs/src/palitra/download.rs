@@ -131,19 +131,20 @@ async fn collect_delta_split_palitras(
 
     for palitra_read in palitras {
         let mut features = collect_delta_split_features(&palitra_read);
-        if features.is_empty() {
-            if let Some(source_palitra) =
-                source_palitras.get(&palitra_read.palitra.id)
-            {
-                features = collect_stored_source_delta_split_features(
-                    env,
-                    &strongbox_key,
-                    &palitra_read.palitra,
-                    source_palitra,
-                    &mut total_encrypted_bytes,
-                )
-                .await
-                .c(h!())?;
+        if let Some(source_palitra) =
+            source_palitras.get(&palitra_read.palitra.id)
+        {
+            let source_features = collect_stored_source_delta_split_features(
+                env,
+                &strongbox_key,
+                &palitra_read.palitra,
+                source_palitra,
+                &mut total_encrypted_bytes,
+            )
+            .await
+            .c(h!())?;
+            if !source_features.is_empty() {
+                features = source_features;
             }
         }
         result.push(DeltaSplitPalitra {

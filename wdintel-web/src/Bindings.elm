@@ -212,6 +212,7 @@ keyEncoder struct =
 type alias MultiGeometry =
     { points : List (Point)
     , lineStrings : List (LineString)
+    , polygons : List (Polygon)
     }
 
 
@@ -220,6 +221,7 @@ multiGeometryEncoder struct =
     Json.Encode.object
         [ ( "Point", (Json.Encode.list (pointEncoder)) struct.points )
         , ( "LineString", (Json.Encode.list (lineStringEncoder)) struct.lineStrings )
+        , ( "Polygon", (Json.Encode.list (polygonEncoder)) struct.polygons )
         ]
 
 
@@ -14684,6 +14686,7 @@ multiGeometryDecoder =
     Json.Decode.succeed MultiGeometry
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "Point" (Json.Decode.list (pointDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "LineString" (Json.Decode.list (lineStringDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "Polygon" (Json.Decode.list (polygonDecoder))))
 
 
 pairDecoder : Json.Decode.Decoder Pair

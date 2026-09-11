@@ -804,13 +804,16 @@ mod tests {
     #[tokio::test]
     async fn load_coordinates_from_kml_reads_multigeometry_features(
     ) -> anyhow::Result<()> {
-        let tmp_dir = tempdir()?;
+        let tmp_dir = tempdir().c(h!())?;
         let path = tmp_dir.path().join("multi.kml");
         let kml = r#"<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
   <Document>
     <Placemark>
       <name>multi</name>
+      <Point>
+        <coordinates>30.51,50.44,0</coordinates>
+      </Point>
       <MultiGeometry>
         <Point>
           <coordinates>30.52,50.45,0</coordinates>
@@ -835,7 +838,7 @@ mod tests {
 
         let data = load_coordinates_from_kml(path.as_path()).await.c(h!())?;
 
-        assert_eq!(data.points.len(), 5);
+        assert_eq!(data.points.len(), 6);
         assert!(data
             .points
             .iter()
