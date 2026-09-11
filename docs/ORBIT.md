@@ -87,7 +87,7 @@ sudo wdintel-rs --mode=live tui-import-orbit-units
 The synchronization actions download and unpack the newest timestamped
 snapshot and fail if no snapshot exists. Database-mutating import sessions are
 serialized, so a second importer waits until the active import releases its
-PostgreSQL advisory lock. The first screen offers thirteen workflows.
+PostgreSQL advisory lock. The first screen offers fourteen workflows.
 
 ### TUI workflow conventions
 
@@ -182,20 +182,23 @@ manual proposals are not applied.
 
 ### Fix misplaced and unknown SIGINT echelon values
 
-This workflow builds separate normalized identity-value sets from regiment,
-brigade, corps, army, group-of-armies, and army-region units in the latest
-synchronized ORBIT revision. It first moves brigade values stored as SIGINT
-regiments and army values stored as corps. It then validates each SIGINT army,
-group-of-armies (`military_district`), and army-region field in a separate
-pass. A value found in exactly one other ORBIT echelon is moved there; a value
-absent from every collected ORBIT echelon is removed. Values that match their
-current echelon or are ambiguous between multiple echelons are left unchanged.
+This workflow builds separate normalized identity-value sets from every ORBIT
+echelon: other, team/crew, section, squad, platoon, company, battalion,
+regiment, brigade, division, corps, army, group-of-armies, and army-region. It
+first moves brigade values stored as SIGINT regiments and army values stored as
+corps. It then validates each SIGINT army, group-of-armies
+(`military_district`), and army-region field in a separate pass. A value found
+in exactly one other ORBIT echelon is moved there; a value absent from every
+collected ORBIT echelon is removed. Values that match their current echelon or
+are ambiguous between multiple echelons are left unchanged.
 
 Each move clears the source echelon and replaces the destination echelon with
 that source value. When the destination contains the reciprocal misplaced
-value, the two values are swapped atomically. The SIGINT unit name is not
-changed by this workflow. Manual mode presents each incorrect source field in
-its own review dialog.
+value, the two values are swapped atomically. Other occupied destinations are
+updated only when their existing values can be classified and safely
+relocated; unknown or ambiguous values are preserved by skipping the move. The
+SIGINT unit name is not changed by this workflow. Manual mode presents each
+incorrect source field in its own review dialog.
 
 Automatic and manual modes can target active SIGINT units, inactive SIGINT
 units, or both. Manual mode shows the current and proposed values for both

@@ -655,7 +655,6 @@ fn relocate_value(
     }
     if !destination.is_empty() {
         match matching_echelons(destination, orbit_values).as_slice() {
-            [] => {}
             [displaced_echelon]
                 if *displaced_echelon != destination_echelon =>
             {
@@ -878,7 +877,7 @@ mod tests {
                 EchelonMove::RegimentToBrigade,
                 EchoEchelon::Brigade,
                 "53 зрбр",
-                "old brigade",
+                "",
                 "brigade",
                 "regiment",
             ),
@@ -886,7 +885,7 @@ mod tests {
                 EchelonMove::CorpsToArmy,
                 EchoEchelon::Army,
                 "20 ЗВА",
-                "old army",
+                "",
                 "army",
                 "corps",
             ),
@@ -894,7 +893,7 @@ mod tests {
                 EchelonMove::Army,
                 EchoEchelon::Corps,
                 "11 АК",
-                "old corps",
+                "",
                 "corps",
                 "army",
             ),
@@ -1048,6 +1047,19 @@ mod tests {
                 ]
             );
         }
+    }
+
+    #[test]
+    fn skips_move_into_destination_with_unknown_value() {
+        let mut unit = sigint_unit();
+        unit.army = "recognized company".to_string();
+        unit.company = "local alias".to_string();
+        let values = HashMap::from([(
+            EchoEchelon::Company,
+            HashSet::from([matching::normalize_name(&unit.army)]),
+        )]);
+
+        assert!(proposed_change(&unit, EchelonMove::Army, &values).is_none());
     }
 
     #[test]
