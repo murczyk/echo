@@ -87,7 +87,6 @@ function buildFiles(
       loadMoreBranch: vi.fn(),
       refreshExpanded: vi.fn(),
     },
-    sync: { openSyncForEntry: vi.fn() },
   } as unknown as DeviceFilesState;
 }
 
@@ -114,7 +113,7 @@ describe('DeviceFileTree counters', () => {
       root?.render(<DeviceFileTree files={buildFiles({ loading: true })} />);
     });
 
-    expect(container?.textContent).toContain('Файлова система');
+    expect(container?.querySelector('[aria-label="Синхронізовані файлові корені"]')).not.toBeNull();
     expect(container?.querySelector('[aria-label="Завантаження кількості файлів"]')).not.toBeNull();
     expect(
       container?.querySelector('[aria-label^="Вибрати каталог"]')?.getAttribute('aria-label'),
@@ -144,21 +143,24 @@ describe('DeviceFileTree counters', () => {
     expect(retryCounts).toHaveBeenCalledTimes(1);
   });
 
-  it('shows content presence markers instead of file sync actions', () => {
+  it('renders content availability markers for tree files', () => {
+    const availableFile = buildFileEntry(
+      '018f0000-0000-7000-8000-000000000002',
+      'available.log',
+      true,
+    );
+    const missingFile = buildFileEntry(
+      '018f0000-0000-7000-8000-000000000003',
+      'missing.log',
+      false,
+    );
+
     act(() => {
-      root?.render(
-        <DeviceFileTree
-          files={buildFiles({}, [
-            buildFileEntry('018f0000-0000-7000-8000-000000000002', 'available.log', true),
-            buildFileEntry('018f0000-0000-7000-8000-000000000003', 'missing.log', false),
-          ])}
-        />,
-      );
+      root?.render(<DeviceFileTree files={buildFiles({}, [availableFile, missingFile])} />);
     });
 
     expect(container?.querySelector('[aria-label="Контент файлу наявний"]')).not.toBeNull();
     expect(container?.querySelector('[aria-label="Контент файлу відсутній"]')).not.toBeNull();
-    expect(container?.querySelector('[aria-label^="Синхронізувати файл"]')).toBeNull();
   });
 
   it('does not render file metadata beneath the filename', () => {

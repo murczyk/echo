@@ -1,20 +1,17 @@
 import { Box, Paper, Tab, Tabs } from '@mui/material';
 
-import { DeviceFilesPanel } from '../../device-files';
+import { DeviceFileContentPane } from '../../device-files';
 import { DeviceFileJournal } from '../../device-files/components/DeviceFileJournal';
 import type { DeviceAnalyticsTagFilter } from '../../device-files/types';
 import type { DeviceAnalyticsTagsState } from '../../device-files/use-device-analytics-tags';
 import type { DeviceFileJournalState } from '../../device-files/use-device-file-journal';
-import type { DeviceFilesState } from '../../device-files/use-device-files';
 import { DeviceAnalyticsPanel } from './DeviceAnalyticsPanel';
 
 export type DeviceDetailsTab = 'analytical' | 'files' | 'journal';
 
 export function DeviceDetailsTabPanel({
   activeTab,
-  files,
   journal,
-  canSyncFiles,
   deviceId,
   isAdmin,
   tagsState,
@@ -23,9 +20,7 @@ export function DeviceDetailsTabPanel({
   onTabChange,
 }: {
   activeTab: DeviceDetailsTab;
-  files: DeviceFilesState;
   journal: DeviceFileJournalState;
-  canSyncFiles: boolean;
   deviceId: string;
   isAdmin: boolean;
   tagsState: DeviceAnalyticsTagsState;
@@ -103,13 +98,7 @@ export function DeviceDetailsTabPanel({
             aria-labelledby="device-details-files-tab"
             sx={{ height: '100%', minHeight: 0, minWidth: 0 }}
           >
-            <DeviceFilesPanel
-              files={files}
-              canSync={canSyncFiles}
-              tagsState={tagsState}
-              tagFilter={tagFilter}
-              onTagFilterChange={onTagFilterChange}
-            />
+            <DeviceFileContentPane />
           </Box>
         ) : null}
         {activeTab === 'journal' ? (
