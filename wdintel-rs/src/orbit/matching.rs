@@ -1489,7 +1489,7 @@ fn normalize_army_name(value: &str) -> String {
     }
 }
 
-fn names_match(
+pub(super) fn names_match(
     echelon: EchoEchelon,
     names: &HashSet<String>,
     candidate: &str,
@@ -2504,6 +2504,7 @@ mod tests {
             original_id: None,
             is_deduplicate_candidate: None,
             orbit_note: None,
+            present_in_orbit: None,
             is_inconsistent: false,
             updated_at: Default::default(),
         }

@@ -20,12 +20,14 @@ use uuid::Uuid;
 mod dictionary;
 mod duplicate_candidate_review;
 mod duplicate_units;
+mod echelon_move_fix;
 mod echelon_number_fix;
 mod generated_unit_names;
 mod hierarchy;
 mod junk_units;
 mod matching;
 mod persistence;
+mod present_in_orbit;
 mod snapshot;
 mod test_link;
 mod tui;
@@ -498,6 +500,12 @@ async fn run_selected_action(mode: Mode) -> anyhow::Result<()> {
         }
         Some(tui::StartAction::FixLinkedUnitEchelonNumbers) => {
             echelon_number_fix::run(mode).await.c(h!())
+        }
+        Some(tui::StartAction::MarkLinkedSigintUnitsPresentInOrbit) => {
+            present_in_orbit::run(mode).await.c(h!())
+        }
+        Some(tui::StartAction::FixMisplacedUnitEchelons) => {
+            echelon_move_fix::run(mode).await.c(h!())
         }
         Some(tui::StartAction::MergeUnitDuplicates) => {
             duplicate_units::run(mode, false).await.c(h!())

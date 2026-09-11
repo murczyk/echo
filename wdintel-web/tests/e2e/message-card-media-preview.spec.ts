@@ -607,6 +607,10 @@ test.describe('message card media preview contract', () => {
       const dialog = await openImagePreview(page);
       const stage = dialog.locator('[data-image-preview-stage]');
       const image = dialog.locator('[data-image-preview-image]');
+      const stageNavigation = dialog.locator('[data-attachment-preview-stage-nav]');
+      await expect(stageNavigation).toHaveCount(2);
+      await expect(stageNavigation.nth(0)).toBeHidden();
+      await expect(stageNavigation.nth(1)).toBeHidden();
       const box = await stage.boundingBox();
       expect(box).not.toBeNull();
       const x = (box?.x ?? 0) + (box?.width ?? 0) / 2;
@@ -1062,6 +1066,43 @@ test.describe('message card media preview contract', () => {
     await expectPreviewCounter(imageDialog, '1 / 7');
 
     await verifyEscapeClose(page, imageDialog, () => openImagePreview(page));
+  });
+
+  test('ECHO-3460 reveals stage navigation only beside the hovered desktop edge', async ({
+    page,
+  }) => {
+    await openMessageCardPreviewHost(page, 'duty');
+
+    const imageDialog = await openImagePreview(page);
+    const dialog = page.getByRole('dialog', { name: /^Перегляд / });
+    const stage = imageDialog.locator('[data-image-preview-stage]');
+    const previous = dialog.locator('[data-attachment-preview-stage-nav="prev"]');
+    const next = dialog.locator('[data-attachment-preview-stage-nav="next"]');
+    const box = await stage.boundingBox();
+    expect(box).not.toBeNull();
+    const y = (box?.y ?? 0) + (box?.height ?? 0) / 2;
+
+    await page.mouse.move((box?.x ?? 0) + (box?.width ?? 0) / 2, y);
+    await expect(previous).toBeHidden();
+    await expect(next).toBeHidden();
+
+    await page.mouse.move((box?.x ?? 0) + 24, y);
+    await expect(previous).toBeVisible();
+    await expect(next).toBeHidden();
+    await previous.click();
+    await expectPreviewCounter(dialog, '7 / 7');
+    await expect(previous).toBeVisible();
+    await previous.click();
+    await expectPreviewCounter(dialog, '6 / 7');
+
+    await page.mouse.move((box?.x ?? 0) + (box?.width ?? 0) - 24, y);
+    await expect(previous).toBeHidden();
+    await expect(next).toBeVisible();
+    await next.click();
+    await expectPreviewCounter(dialog, '7 / 7');
+    await expect(next).toBeVisible();
+    await next.click();
+    await expectPreviewCounter(dialog, '1 / 7');
   });
 
   test('video previews preserve carousel controls, info, and download', async ({ page }) => {
