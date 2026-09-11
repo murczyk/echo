@@ -18,7 +18,14 @@ use sea_orm::{
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-const ORBIT_ECHELON_KEYS: [&str; 7] = [
+const ORBIT_ECHELON_KEYS: [&str; 14] = [
+    "other",
+    "teamOrCrew",
+    "section",
+    "squad",
+    "platoon",
+    "company",
+    "battalion",
     "regiment",
     "brigade",
     "division",
@@ -27,7 +34,14 @@ const ORBIT_ECHELON_KEYS: [&str; 7] = [
     "militaryDistrict",
     "armyRegion",
 ];
-const ORBIT_ECHELONS: [EchoEchelon; 7] = [
+const ORBIT_ECHELONS: [EchoEchelon; 14] = [
+    EchoEchelon::Other,
+    EchoEchelon::TeamOrCrew,
+    EchoEchelon::Section,
+    EchoEchelon::Squad,
+    EchoEchelon::Platoon,
+    EchoEchelon::Company,
+    EchoEchelon::Battalion,
     EchoEchelon::Regiment,
     EchoEchelon::Brigade,
     EchoEchelon::Division,
@@ -146,6 +160,13 @@ struct OrbitValueCache {
 struct EchelonMoveUnit {
     id: i64,
     name: String,
+    other: String,
+    team_or_crew: String,
+    section: String,
+    squad: String,
+    platoon: String,
+    company: String,
+    battalion: String,
     regiment: String,
     brigade: String,
     division: String,
@@ -306,6 +327,13 @@ where
         .columns([
             sigint_unit::Column::Id,
             sigint_unit::Column::Name,
+            sigint_unit::Column::Other,
+            sigint_unit::Column::TeamOrCrew,
+            sigint_unit::Column::Section,
+            sigint_unit::Column::Squad,
+            sigint_unit::Column::Platoon,
+            sigint_unit::Column::Company,
+            sigint_unit::Column::Battalion,
             sigint_unit::Column::Regiment,
             sigint_unit::Column::Brigade,
             sigint_unit::Column::Division,
@@ -343,6 +371,13 @@ where
         .columns([
             sigint_unit::Column::Id,
             sigint_unit::Column::Name,
+            sigint_unit::Column::Other,
+            sigint_unit::Column::TeamOrCrew,
+            sigint_unit::Column::Section,
+            sigint_unit::Column::Squad,
+            sigint_unit::Column::Platoon,
+            sigint_unit::Column::Company,
+            sigint_unit::Column::Battalion,
             sigint_unit::Column::Regiment,
             sigint_unit::Column::Brigade,
             sigint_unit::Column::Division,
@@ -647,6 +682,13 @@ fn relocate_value(
 
 fn echelon_attribute(echelon: EchoEchelon) -> &'static str {
     match echelon {
+        EchoEchelon::Other => "other",
+        EchoEchelon::TeamOrCrew => "team_or_crew",
+        EchoEchelon::Section => "section",
+        EchoEchelon::Squad => "squad",
+        EchoEchelon::Platoon => "platoon",
+        EchoEchelon::Company => "company",
+        EchoEchelon::Battalion => "battalion",
         EchoEchelon::Regiment => "regiment",
         EchoEchelon::Brigade => "brigade",
         EchoEchelon::Division => "division",
@@ -654,12 +696,18 @@ fn echelon_attribute(echelon: EchoEchelon) -> &'static str {
         EchoEchelon::Army => "army",
         EchoEchelon::MilitaryDistrict => "military_district",
         EchoEchelon::ArmyRegion => "army_region",
-        _ => unreachable!("unsupported ORBIT echelon move destination"),
     }
 }
 
 fn echelon_value(unit: &EchelonMoveUnit, echelon: EchoEchelon) -> &str {
     match echelon {
+        EchoEchelon::Other => &unit.other,
+        EchoEchelon::TeamOrCrew => &unit.team_or_crew,
+        EchoEchelon::Section => &unit.section,
+        EchoEchelon::Squad => &unit.squad,
+        EchoEchelon::Platoon => &unit.platoon,
+        EchoEchelon::Company => &unit.company,
+        EchoEchelon::Battalion => &unit.battalion,
         EchoEchelon::Regiment => &unit.regiment,
         EchoEchelon::Brigade => &unit.brigade,
         EchoEchelon::Division => &unit.division,
@@ -667,7 +715,6 @@ fn echelon_value(unit: &EchelonMoveUnit, echelon: EchoEchelon) -> &str {
         EchoEchelon::Army => &unit.army,
         EchoEchelon::MilitaryDistrict => &unit.military_district,
         EchoEchelon::ArmyRegion => &unit.army_region,
-        _ => unreachable!("unsupported ORBIT echelon move destination"),
     }
 }
 
@@ -956,6 +1003,46 @@ mod tests {
                     OrbitUnitAttributeChange {
                         attribute: echelon_move.source_attribute(),
                         current: "47 тд".to_string(),
+                        proposed: String::new(),
+                    },
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn moves_lower_echelon_values_from_army_and_higher_fields() {
+        let cases = [
+            (EchoEchelon::Other, "other"),
+            (EchoEchelon::TeamOrCrew, "team_or_crew"),
+            (EchoEchelon::Section, "section"),
+            (EchoEchelon::Squad, "squad"),
+            (EchoEchelon::Platoon, "platoon"),
+            (EchoEchelon::Company, "company"),
+            (EchoEchelon::Battalion, "battalion"),
+        ];
+        for (destination_echelon, destination_attribute) in cases {
+            let mut unit = sigint_unit();
+            unit.army = "recognized lower echelon".to_string();
+            let values = HashMap::from([(
+                destination_echelon,
+                HashSet::from([matching::normalize_name(&unit.army)]),
+            )]);
+
+            let change = proposed_change(&unit, EchelonMove::Army, &values)
+                .expect("lower-echelon ORBIT value must be moved");
+
+            assert_eq!(
+                change.hierarchy_change.attributes,
+                vec![
+                    OrbitUnitAttributeChange {
+                        attribute: destination_attribute,
+                        current: String::new(),
+                        proposed: "recognized lower echelon".to_string(),
+                    },
+                    OrbitUnitAttributeChange {
+                        attribute: "army",
+                        current: "recognized lower echelon".to_string(),
                         proposed: String::new(),
                     },
                 ]
@@ -1342,10 +1429,90 @@ mod tests {
         assert!(changes.is_empty());
     }
 
+    #[tokio::test]
+    #[serial]
+    async fn automatic_fix_moves_recognized_lower_orbit_value() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let synced_at = chrono::Utc::now().naive_utc();
+        persistence::record_sync(
+            &env.dbx,
+            &uuid::Uuid::new_v4().simple().to_string(),
+            synced_at,
+        )
+        .await
+        .unwrap();
+        let company_echelon_id = orbit_unit_echelon::Entity::find()
+            .filter(orbit_unit_echelon::Column::Key.eq("company"))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let company = format!("{} company", uuid::Uuid::new_v4().simple());
+        orbit_unit::ActiveModel {
+            unit_id: Set(uuid::Uuid::new_v4()),
+            unit_name_short: Set(Some(company.clone())),
+            unit_echelon_id: Set(Some(company_echelon_id)),
+            deleted: Set(false),
+            created_at: Set(synced_at),
+            updated_at: Set(synced_at),
+            is_snapshot_root: Set(true),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let sigint_unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                army: Set(company.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let mut orbit_value_cache = None;
+
+        let changes = load_changes(
+            &env.dbx,
+            Some(&[sigint_unit.id]),
+            false,
+            EchelonMove::Army,
+            tui::UnitActivityScope::Both,
+            &mut orbit_value_cache,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(changes.len(), 1);
+        assert_eq!(
+            changes[0].hierarchy_change.attributes,
+            vec![
+                OrbitUnitAttributeChange {
+                    attribute: "company",
+                    current: String::new(),
+                    proposed: company.clone(),
+                },
+                OrbitUnitAttributeChange {
+                    attribute: "army",
+                    current: company,
+                    proposed: String::new(),
+                },
+            ]
+        );
+    }
+
     fn sigint_unit() -> EchelonMoveUnit {
         EchelonMoveUnit {
             id: 1,
             name: "test unit".to_string(),
+            other: String::new(),
+            team_or_crew: String::new(),
+            section: String::new(),
+            squad: String::new(),
+            platoon: String::new(),
+            company: String::new(),
+            battalion: String::new(),
             regiment: String::new(),
             brigade: String::new(),
             division: String::new(),
