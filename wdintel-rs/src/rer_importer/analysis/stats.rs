@@ -1059,6 +1059,7 @@ fn apply_group_stats_filters(
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        req.message_time_basis,
         scope,
         units,
     )
@@ -1768,6 +1769,7 @@ fn build_senders_filtered_query(
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        req.message_time_basis,
         scope,
         units,
     )
@@ -1907,6 +1909,7 @@ where
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        req.message_time_basis,
         scope,
         units,
     )
@@ -2221,6 +2224,7 @@ fn build_posts_filtered_query(
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        req.message_time_basis,
         scope,
         units,
     )
@@ -2669,6 +2673,7 @@ fn build_freqs_filtered_query(
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        req.message_time_basis,
         scope,
         units,
     )
@@ -3467,6 +3472,7 @@ fn build_callsigns_filtered_query(
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        req.message_time_basis,
         scope,
         units,
     )?;
@@ -3683,6 +3689,7 @@ pub(super) async fn fetch_tags_raw_with_db(
         &req.units_exact_match_only,
         since,
         till,
+        req.message_time_basis,
         Some(scope),
         units.as_ref(),
     )
@@ -3882,6 +3889,7 @@ fn build_tags_query_parts(
             matching_network_ids_alias,
             dt_since,
             dt_till,
+            req.message_time_basis,
         )?;
         ctes.push(
             CommonTableExpression::new()
@@ -4042,6 +4050,7 @@ fn build_tags_analytics_count_query_with_scope(
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        req.message_time_basis,
         scope,
         units,
     )
@@ -4923,6 +4932,7 @@ fn build_locations_filtered_query_for_login(
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        req.message_time_basis,
         scope,
         units,
     )
@@ -5523,6 +5533,7 @@ fn build_aor_messages_query(
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        req.message_time_basis,
         scope,
         units,
     )
@@ -5922,6 +5933,7 @@ fn build_network_analytics_messages_query(
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        req.message_time_basis,
         scope,
         units,
     )
@@ -6643,6 +6655,7 @@ fn build_networks_query_for_login(
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        req.message_time_basis,
         None,
         None,
     )
@@ -7030,6 +7043,7 @@ async fn fetch_counts_for_login_with_conn(
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        req.message_time_basis,
         scope,
         units,
     )

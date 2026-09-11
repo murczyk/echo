@@ -1249,6 +1249,7 @@ pub(super) fn selected_unit_inbox_item_ids_query(
     matching_network_ids_alias: Alias,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
+    message_time_basis: Option<crate::user_settings::MessageTimeBasis>,
 ) -> Result<SelectStatement, AppError> {
     let selected_units = expand_unit_filter_values(selected_units);
     let selected_units = (!selected_units.ordinary_names.is_empty())
@@ -1259,13 +1260,18 @@ pub(super) fn selected_unit_inbox_item_ids_query(
         matching_network_ids_alias,
         dt_since,
         dt_till,
+        message_time_basis,
     );
     if units_exact_match_only.unwrap_or(false) {
         return Ok(linked_inbox_item_ids);
     }
 
-    let mut inbox_item_ids =
-        select_header_unit_inbox_item_ids(selected_units, dt_since, dt_till);
+    let mut inbox_item_ids = select_header_unit_inbox_item_ids(
+        selected_units,
+        dt_since,
+        dt_till,
+        message_time_basis,
+    );
     inbox_item_ids.union(UnionType::All, linked_inbox_item_ids);
     Ok(inbox_item_ids)
 }
@@ -1276,6 +1282,7 @@ pub(super) fn filter_selected_units_for_period<Q>(
     units_exact_match_only: &Option<bool>,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
+    message_time_basis: Option<crate::user_settings::MessageTimeBasis>,
 ) -> Result<Q, AppError>
 where
     Q: QueryFilter,
@@ -1285,6 +1292,7 @@ where
         units_exact_match_only,
         dt_since,
         dt_till,
+        message_time_basis,
     )?
     else {
         return filter_selected_units(
@@ -1305,6 +1313,7 @@ pub(super) fn filter_selected_units_or_ids_for_period<Q>(
     units_exact_match_only: &Option<bool>,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
+    message_time_basis: Option<crate::user_settings::MessageTimeBasis>,
 ) -> Result<Q, AppError>
 where
     Q: QueryFilter,
@@ -1314,6 +1323,7 @@ where
         units_exact_match_only,
         dt_since,
         dt_till,
+        message_time_basis,
     )
     .context(h!())?
     .map(|matching_ids| {
@@ -1341,6 +1351,7 @@ pub(super) fn filter_denied_units_for_period<Q>(
     units_exact_match_only: &Option<bool>,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
+    message_time_basis: Option<crate::user_settings::MessageTimeBasis>,
 ) -> Result<Q, AppError>
 where
     Q: QueryFilter,
@@ -1350,6 +1361,7 @@ where
         units_exact_match_only,
         dt_since,
         dt_till,
+        message_time_basis,
     )?
     else {
         return filter_denied_units(q, denied_units, units_exact_match_only);
@@ -1364,6 +1376,7 @@ fn unit_match_ids_for_period(
     units_exact_match_only: &Option<bool>,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
+    message_time_basis: Option<crate::user_settings::MessageTimeBasis>,
 ) -> Result<Option<String>, AppError> {
     let matching_network_ids_alias = Alias::new("matching_unit_network_ids");
     let matching_inbox_item_ids_alias =
@@ -1379,6 +1392,7 @@ fn unit_match_ids_for_period(
         matching_network_ids_alias.clone(),
         dt_since,
         dt_till,
+        message_time_basis,
     )?;
     let matching_ids = Query::select()
         .column((
@@ -1413,25 +1427,55 @@ fn select_header_unit_inbox_item_ids(
     selected_units: Vec<String>,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
+    message_time_basis: Option<crate::user_settings::MessageTimeBasis>,
 ) -> SelectStatement {
     let inbox_item_alias = Alias::new("selected_header_unit_inbox_item");
-    Query::select()
+    let mut query = Query::select();
+    query
         .column((inbox_item_alias.clone(), sigint_inbox_item::Column::Id))
-        .from_as(sigint_inbox_item::Entity, inbox_item_alias.clone())
-        .and_where(
+        .from_as(sigint_inbox_item::Entity, inbox_item_alias.clone());
+    if message_time_basis
+        == Some(crate::user_settings::MessageTimeBasis::MessageCreation)
+    {
+        let message_alias = Alias::new("selected_header_unit_signal_message");
+        query.join_as(
+            JoinType::InnerJoin,
+            signal_message::Entity,
+            message_alias.clone(),
+            Expr::col((message_alias.clone(), signal_message::Column::Id))
+                .equals((
+                    inbox_item_alias.clone(),
+                    sigint_inbox_item::Column::Id,
+                )),
+        );
+        query.and_where(
+            Expr::col((
+                message_alias.clone(),
+                signal_message::Column::CreatedAt,
+            ))
+            .gte(dt_since),
+        );
+        query.and_where(
+            Expr::col((message_alias, signal_message::Column::CreatedAt))
+                .lt(dt_till),
+        );
+    } else {
+        query.and_where(
             Expr::col((
                 inbox_item_alias.clone(),
                 sigint_inbox_item::Column::Datetime,
             ))
             .gte(dt_since),
-        )
-        .and_where(
+        );
+        query.and_where(
             Expr::col((
                 inbox_item_alias.clone(),
                 sigint_inbox_item::Column::Datetime,
             ))
             .lt(dt_till),
-        )
+        );
+    }
+    query
         .and_where(
             Expr::col((inbox_item_alias, sigint_inbox_item::Column::UnitV2))
                 .is_in(selected_units),
@@ -1443,12 +1487,14 @@ fn select_linked_unit_inbox_item_ids(
     matching_network_ids_alias: Alias,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
+    message_time_basis: Option<crate::user_settings::MessageTimeBasis>,
 ) -> SelectStatement {
     let inbox_item_alias = Alias::new("selected_linked_unit_inbox_item");
     let inbox_network_alias = Alias::new("selected_linked_unit_inbox_network");
     let network_alias = Alias::new("selected_linked_unit_network");
     let network_freq_alias = Alias::new("selected_linked_unit_network_freq");
-    Query::select()
+    let mut query = Query::select();
+    query
         .column((inbox_item_alias.clone(), sigint_inbox_item::Column::Id))
         .from(matching_network_ids_alias.clone())
         .join_as(
@@ -1508,27 +1554,59 @@ fn select_linked_unit_inbox_item_ids(
             ),
         )
         .cond_where(linked_unit_inbox_item_is_active(
-            inbox_item_alias,
+            inbox_item_alias.clone(),
             network_alias,
             network_freq_alias,
-            dt_since,
-            dt_till,
-        ))
-        .to_owned()
+        ));
+    if message_time_basis
+        == Some(crate::user_settings::MessageTimeBasis::MessageCreation)
+    {
+        let message_alias = Alias::new("selected_linked_unit_signal_message");
+        query.join_as(
+            JoinType::InnerJoin,
+            signal_message::Entity,
+            message_alias.clone(),
+            Expr::col((message_alias.clone(), signal_message::Column::Id))
+                .equals((
+                    inbox_item_alias.clone(),
+                    sigint_inbox_item::Column::Id,
+                )),
+        );
+        query.and_where(
+            Expr::col((
+                message_alias.clone(),
+                signal_message::Column::CreatedAt,
+            ))
+            .gte(dt_since),
+        );
+        query.and_where(
+            Expr::col((message_alias, signal_message::Column::CreatedAt))
+                .lt(dt_till),
+        );
+    } else {
+        query.and_where(
+            Expr::col((
+                inbox_item_alias.clone(),
+                sigint_inbox_item::Column::Datetime,
+            ))
+            .gte(dt_since),
+        );
+        query.and_where(
+            Expr::col((inbox_item_alias, sigint_inbox_item::Column::Datetime))
+                .lt(dt_till),
+        );
+    }
+    query.to_owned()
 }
 
 fn linked_unit_inbox_item_is_active(
     inbox_item_alias: Alias,
     network_alias: Alias,
     network_freq_alias: Alias,
-    dt_since: NaiveDateTime,
-    dt_till: NaiveDateTime,
 ) -> Condition {
     let message_datetime =
         Expr::col((inbox_item_alias, sigint_inbox_item::Column::Datetime));
     Condition::all()
-        .add(message_datetime.clone().gte(dt_since))
-        .add(message_datetime.clone().lt(dt_till))
         .add(
             Expr::col((
                 network_freq_alias.clone(),
@@ -4159,6 +4237,7 @@ fn build_summary_table_filtered_messages_query_with_access(
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        req.message_time_basis,
         scope,
         None,
     )

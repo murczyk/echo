@@ -1785,6 +1785,9 @@ mod tests {
         };
 
         let message = InboxMessage::from(payload.clone());
+        assert_eq!(message.created_at, None);
+        assert_eq!(message.created_at_order, None);
+        assert!(!message.has_date_in_header);
         let payload_json = serde_json::to_value(payload).unwrap();
         let message_json = serde_json::to_value(message).unwrap();
         let payload_fields = payload_json.as_object().unwrap();
@@ -1808,9 +1811,12 @@ mod tests {
             .collect::<BTreeSet<_>>();
         let expected_omitted_keys = BTreeSet::from([
             "callsign_tokens".to_string(),
+            "created_at".to_string(),
+            "created_at_order".to_string(),
             "coords_with_locality".to_string(),
             "device_name".to_string(),
             "intelligence_reports".to_string(),
+            "has_date_in_header".to_string(),
             "keyword_tokens".to_string(),
             "message_comments".to_string(),
             "message_uid".to_string(),

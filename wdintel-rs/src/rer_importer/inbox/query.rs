@@ -771,6 +771,8 @@ fn build_period_unit_filtered_inbox_digest(
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        (req.sort_by == Some(InboxMessagesSortBy::IMSCreatedAt))
+            .then_some(crate::user_settings::MessageTimeBasis::MessageCreation),
     )?;
     let query = filter_denied_units_for_period(
         query,
@@ -778,6 +780,8 @@ fn build_period_unit_filtered_inbox_digest(
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        (req.sort_by == Some(InboxMessagesSortBy::IMSCreatedAt))
+            .then_some(crate::user_settings::MessageTimeBasis::MessageCreation),
     )?
     .select_only()
     .column_as(Expr::cust("COUNT(*)"), "count")

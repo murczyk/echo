@@ -1,5 +1,8 @@
 {
   "migrations": {
+    "echo:m20260911_140000_babak_candidate_stream_index": {
+      "changes": []
+    },
     "echo:m20260911_091429_signal_message_created_at_id_index": {
       "changes": []
     },

@@ -248,8 +248,13 @@ export function createResetQueryState(now: Date = new Date()): AnalysisQueryStat
 }
 
 function messageDateInAppTimeZone(
-  message: Pick<InboxMessage, 'date' | 'timestamp'>,
+  message: Pick<InboxMessage, 'date' | 'timestamp' | 'createdAt'>,
+  messageTimeBasis: AnalysisQueryState['messageTimeBasis'],
 ): string | null {
+  if (messageTimeBasis === 'creation') {
+    if (message.createdAt == null || !Number.isFinite(message.createdAt)) return null;
+    return dayjs(message.createdAt).tz(APP_TIME_ZONE).format('YYYY-MM-DD');
+  }
   if (message.date != null && combineDateTimeToMs(message.date, '00:00', APP_TIME_ZONE) != null) {
     return message.date;
   }
@@ -259,10 +264,10 @@ function messageDateInAppTimeZone(
 
 export function extendQueryDateRangeForDirectMessage(
   state: AnalysisQueryState,
-  message: Pick<InboxMessage, 'date' | 'timestamp'>,
+  message: Pick<InboxMessage, 'date' | 'timestamp' | 'createdAt'>,
   now: Date = new Date(),
 ): AnalysisQueryState {
-  const messageDate = messageDateInAppTimeZone(message);
+  const messageDate = messageDateInAppTimeZone(message, state.messageTimeBasis);
   if (messageDate == null) return state;
 
   const messageDayStartMs = combineDateTimeToMs(messageDate, '00:00', APP_TIME_ZONE);
@@ -530,6 +535,7 @@ export function buildInboxOverallCountReq(state: AnalysisQueryState): InboxMessa
     ...emptyQueryState(),
     fromDateTimeStr: state.fromDateTimeStr,
     toDateTimeStr: state.toDateTimeStr,
+    messageTimeBasis: state.messageTimeBasis,
   });
 }
 

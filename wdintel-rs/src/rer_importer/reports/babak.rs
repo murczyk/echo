@@ -15,6 +15,7 @@ use crate::types::*;
 use crate::utils::*;
 use chrono::prelude::*;
 use docx_rs::*;
+use futures::stream::{self, StreamExt, TryStreamExt};
 use sea_orm::*;
 use sea_query::{Alias, Expr, Order, Query, SimpleExpr};
 use serde::{Deserialize, Serialize};
@@ -151,13 +152,11 @@ fn babak_message_time_basis(
 fn babak_candidate_time_expr(req: &InboxMessagesReq) -> SimpleExpr {
     if babak_uses_creation_time(req) {
         Expr::col((signal_message::Entity, signal_message::Column::CreatedAt))
-            .into()
     } else {
         Expr::col((
             sigint_inbox_item::Entity,
             sigint_inbox_item::Column::Datetime,
         ))
-        .into()
     }
 }
 
@@ -1269,6 +1268,7 @@ async fn load_all_babak_candidate_ids_with_page_size(
 
 struct BabakCandidateAccess {
     sigint_groups: Vec<String>,
+    datasource_group_ids: Vec<i64>,
     login_ids: Vec<uuid::Uuid>,
     analytics_tag_access: Option<stats::AnalyticsTagAccess>,
 }
@@ -1280,12 +1280,26 @@ impl BabakCandidateAccess {
         analytics_supported: bool,
         report_tags_only_this_unit: bool,
     ) -> Result<Self, AppError> {
-        Ok(Self {
-            sigint_groups: crate::messenger::group::get_identity_sigint_groups(
+        let sigint_groups =
+            crate::messenger::group::get_identity_sigint_groups(
                 &env.dbx, login,
             )
             .await
-            .c(h!())?,
+            .c(h!())?;
+        let datasource_group_ids = datasource_group::Entity::find()
+            .select_only()
+            .column(datasource_group::Column::Id)
+            .filter(
+                datasource_group::Column::GroupMasterKey
+                    .is_in(sigint_groups.clone()),
+            )
+            .into_tuple::<i64>()
+            .all(&env.dbx)
+            .await
+            .c(h!())?;
+        Ok(Self {
+            sigint_groups,
+            datasource_group_ids,
             login_ids: crate::users::get_organism_login_ids_by_id(
                 &env.dbx, login,
             )
@@ -1357,14 +1371,82 @@ async fn load_babak_candidate_page(
     period_end: ReportPeriodEnd,
     page_size: u64,
 ) -> Result<Vec<BabakCandidateRow>, AppError> {
+    if babak_candidate_streams_are_eligible(req, scope, access) {
+        let mut candidates = stream::iter(
+            access.datasource_group_ids.iter().copied().map(|group_id| {
+                load_babak_candidate_page_for_groups(
+                    dbx,
+                    login,
+                    req,
+                    access,
+                    scope,
+                    cursor,
+                    period_end,
+                    page_size,
+                    vec![group_id],
+                )
+            }),
+        )
+        .buffer_unordered(RER_BABAK_CANDIDATE_STREAM_CONCURRENCY)
+        .try_collect::<Vec<_>>()
+        .await
+        .context(h!())?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+        candidates.sort_unstable_by_key(|row| (row.datetime, row.id));
+        candidates.truncate(page_size as usize);
+        return Ok(candidates);
+    }
+    load_babak_candidate_page_for_groups(
+        dbx,
+        login,
+        req,
+        access,
+        scope,
+        cursor,
+        period_end,
+        page_size,
+        access.datasource_group_ids.clone(),
+    )
+    .await
+}
+
+fn babak_candidate_streams_are_eligible(
+    req: &InboxMessagesReq,
+    scope: Option<&AnalyticsMessageIdScope>,
+    access: &BabakCandidateAccess,
+) -> bool {
+    if !babak_uses_creation_time(req)
+        || scope.is_some()
+        || access.datasource_group_ids.is_empty()
+        || access.datasource_group_ids.len()
+            > RER_BABAK_CANDIDATE_STREAM_MAX_GROUPS
+    {
+        return false;
+    }
+    let mut unfiltered = InboxMessagesReq::default();
+    unfiltered.since_date_inclusive_ms = req.since_date_inclusive_ms;
+    unfiltered.till_date_inclusive_ms = req.till_date_inclusive_ms;
+    unfiltered.sort_by = req.sort_by;
+    *req == unfiltered
+}
+
+async fn load_babak_candidate_page_for_groups(
+    dbx: &DatabaseConnection,
+    login: &uuid::Uuid,
+    req: &InboxMessagesReq,
+    access: &BabakCandidateAccess,
+    scope: Option<&AnalyticsMessageIdScope>,
+    cursor: Option<(chrono::NaiveDateTime, i64)>,
+    period_end: ReportPeriodEnd,
+    page_size: u64,
+    datasource_group_ids: Vec<i64>,
+) -> Result<Vec<BabakCandidateRow>, AppError> {
     let mut query = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
         )
         .join(
             JoinType::LeftJoin,
@@ -1372,8 +1454,8 @@ async fn load_babak_candidate_page(
         )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(
-            datasource_group::Column::GroupMasterKey
-                .is_in(access.sigint_groups.clone()),
+            signal_message::Column::DatasourceGroupId
+                .is_in(datasource_group_ids),
         );
     if !babak_uses_creation_time(req) {
         query = query.filter(sigint_inbox_item::Column::Datetime.is_not_null());
@@ -1521,16 +1603,15 @@ async fn load_babak_candidate_page(
     }
     if let Some((datetime, id)) = cursor {
         query = query.filter(
-            babak_candidate_time_expr(req).gt(datetime).or(
-                babak_candidate_time_expr(req)
-                    .eq(datetime)
-                    .and(signal_message::Column::Id.gt(id)),
-            ),
+            Expr::tuple([
+                babak_candidate_time_expr(req),
+                signal_message::Column::Id.into_simple_expr(),
+            ])
+            .gt(SimpleExpr::Tuple(vec![datetime.into(), id.into()])),
         );
     }
     Ok(query
         .select_only()
-        .distinct()
         .column(signal_message::Column::Id)
         .expr_as(babak_candidate_time_expr(req), "datetime")
         .order_by(babak_candidate_time_expr(req), Order::Asc)
@@ -1543,7 +1624,7 @@ async fn load_babak_candidate_page(
 }
 
 fn apply_babak_analytics_access_filter(
-    mut query: Select<signal_message::Entity>,
+    query: Select<signal_message::Entity>,
     selected_groups: &Option<Vec<String>>,
     selected_senders: &Option<Vec<String>>,
     allowed_groups: &[String],
@@ -1572,35 +1653,35 @@ fn apply_babak_analytics_access_filter(
     }
 
     let access_alias = Alias::new("babak_message_access");
-    QuerySelect::query(&mut query).join_as(
-        JoinType::InnerJoin,
-        signal_message_group::Entity,
-        access_alias.clone(),
-        Expr::col((
-            access_alias.clone(),
-            signal_message_group::Column::SignalMessageId,
-        ))
-        .equals((signal_message::Entity, signal_message::Column::Id)),
-    );
-    query = query
-        .filter(
+    let mut access_query = Query::select();
+    access_query
+        .expr(Expr::val(1))
+        .from_as(signal_message_group::Entity, access_alias.clone())
+        .and_where(
+            Expr::col((
+                access_alias.clone(),
+                signal_message_group::Column::SignalMessageId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .and_where(
             Expr::col((
                 access_alias.clone(),
                 signal_message_group::Column::GroupMasterKey,
             ))
             .is_in(effective_groups),
         )
-        .filter(scope.condition((
+        .cond_where(scope.condition((
             access_alias.clone(),
             signal_message_group::Column::SignalMessageId,
         )));
     if let Some(selected_senders) = selected_senders {
-        query = query.filter(
+        access_query.and_where(
             preferred_group_sender_expr(Some("babak_message_access"))
                 .is_in(selected_senders.clone()),
         );
     }
-    Ok(query)
+    Ok(query.filter(Expr::exists(access_query)))
 }
 
 fn babak_unit_comment_exists(login_ids: &[uuid::Uuid]) -> SimpleExpr {
@@ -2391,6 +2472,21 @@ mod tests {
         message.id
     }
 
+    async fn set_babak_candidate_freq(
+        db: &DatabaseConnection,
+        message_id: i64,
+        freq: &str,
+    ) {
+        let inbox_item = sigint_inbox_item::Entity::find_by_id(message_id)
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
+        let mut inbox_item = inbox_item.into_active_model();
+        inbox_item.freq = Set(Some(freq.to_string()));
+        inbox_item.update(db).await.unwrap();
+    }
+
     async fn seed_babak_callsign_boundary_message(
         db: &DatabaseConnection,
         datasource_group_id: i64,
@@ -2546,6 +2642,22 @@ mod tests {
         let login = find_test_login(&env.dbx).await.unwrap();
         let datasource_group =
             find_test_datasource_group(&env.dbx).await.unwrap();
+        let second_datasource_group = mk_datasource_group(
+            &env.dbx,
+            datasource_group::ActiveModel {
+                group_master_key: Set(datasource_group
+                    .group_master_key
+                    .clone()),
+                datasource_id: Set(datasource_group.datasource_id),
+                last_sync_at: Set(datasource_group.last_sync_at),
+                created_at: Set(datasource_group.created_at),
+                name: Set("Babak second datasource group".to_string()),
+                deleted: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         let period_start = chrono::NaiveDate::from_ymd_opt(2026, 1, 10)
             .unwrap()
             .and_hms_opt(0, 0, 0)
@@ -2575,11 +2687,35 @@ mod tests {
         .await;
         let tied_creation_second = seed_babak_candidate(
             &env.dbx,
-            datasource_group.id,
+            second_datasource_group.id,
             period_start + chrono::Duration::hours(3),
             None,
         )
         .await;
+        let filtered_out = seed_babak_candidate(
+            &env.dbx,
+            second_datasource_group.id,
+            period_start + chrono::Duration::minutes(30),
+            Some(period_start - chrono::Duration::hours(1)),
+        )
+        .await;
+        set_babak_candidate_freq(&env.dbx, filtered_out, "filtered-out").await;
+        let linked_comment = seed_babak_candidate(
+            &env.dbx,
+            second_datasource_group.id,
+            period_start + chrono::Duration::hours(2),
+            Some(period_start + chrono::Duration::hours(2)),
+        )
+        .await;
+        intel_product::ActiveModel {
+            intel_message_id: Set(linked_comment),
+            source_message_id: Set(creation_inside),
+            relation_kind: Set(intel_product::RELATION_KIND_COMMENT),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
 
         let creation_req = InboxMessagesReq {
             since_date_inclusive_ms: Some(
@@ -2589,12 +2725,49 @@ mod tests {
                 period_end.and_utc().timestamp_millis(),
             ),
             sort_by: Some(InboxMessagesSortBy::IMSCreatedAt),
+            selected_freqs: Some(vec!["selected".to_string()]),
             ..Default::default()
         };
+        for message_id in [
+            creation_inside,
+            interception_inside,
+            tied_creation_first,
+            tied_creation_second,
+            linked_comment,
+        ] {
+            set_babak_candidate_freq(&env.dbx, message_id, "selected").await;
+        }
         let access =
             BabakCandidateAccess::resolve(&env, &login.id, false, false)
                 .await
                 .unwrap();
+        let ordered_creation_req = InboxMessagesReq {
+            since_date_inclusive_ms: creation_req.since_date_inclusive_ms,
+            till_date_inclusive_ms: creation_req.till_date_inclusive_ms,
+            sort_by: Some(InboxMessagesSortBy::IMSCreatedAt),
+            ..Default::default()
+        };
+        let ordered_creation_ids = load_all_babak_candidate_ids_with_page_size(
+            &env.dbx,
+            &login.id,
+            &ordered_creation_req,
+            &access,
+            None,
+            ReportPeriodEnd::Inclusive,
+            None,
+            2,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            ordered_creation_ids,
+            vec![
+                filtered_out,
+                creation_inside,
+                tied_creation_first,
+                tied_creation_second,
+            ]
+        );
         let creation_ids = load_all_babak_candidate_ids_with_page_size(
             &env.dbx,
             &login.id,
@@ -2610,6 +2783,10 @@ mod tests {
         assert_eq!(
             creation_ids,
             vec![creation_inside, tied_creation_first, tied_creation_second,]
+        );
+        assert_eq!(
+            creation_ids.iter().copied().collect::<BTreeSet<_>>().len(),
+            creation_ids.len()
         );
 
         let interception_req = InboxMessagesReq {
