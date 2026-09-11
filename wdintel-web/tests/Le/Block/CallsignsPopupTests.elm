@@ -37,6 +37,7 @@ createUnit id army division regiment battalion company =
     , company = company
     , comment = ""
     , orbitNote = Nothing
+    , presentInOrbit = Nothing
     , name = name
     , active = True
     , isDeduplicateCandidate = Nothing

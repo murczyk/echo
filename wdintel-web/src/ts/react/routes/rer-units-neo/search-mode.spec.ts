@@ -38,6 +38,7 @@ describe('isUnitSearchMatchForUnit', () => {
       armyRegion: '',
       comment: 'додаток',
       orbitNote: null,
+      presentInOrbit: null,
       active: true,
       isDeduplicateCandidate: null,
       createdAt: 0,

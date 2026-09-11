@@ -3000,6 +3000,7 @@ export type Unit = {
   armyRegion: string;
   comment: string;
   orbitNote: string | null;
+  presentInOrbit: boolean | null;
   name: string;
   active: boolean;
   isDeduplicateCandidate: boolean | null;
@@ -3103,6 +3104,7 @@ export type CreateUnitReq = {
   isDeduplicateCandidate: boolean | null;
   comment: string;
   orbitNote: string | null;
+  presentInOrbit: boolean | null;
   duplicateUnitIds: Array<number>;
 };
 

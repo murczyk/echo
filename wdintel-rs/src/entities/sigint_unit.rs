@@ -70,6 +70,7 @@ pub struct Model {
     #[serde(default)]
     pub is_inconsistent: bool,
     pub updated_at: DateTime,
+    pub present_in_orbit: Option<bool>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

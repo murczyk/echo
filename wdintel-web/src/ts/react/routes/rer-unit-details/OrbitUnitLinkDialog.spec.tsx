@@ -69,6 +69,7 @@ const sigintUnit: Unit = {
   armyRegion: '',
   comment: '',
   orbitNote: null,
+  presentInOrbit: null,
   name: '1 рота 2 батальйон 3 бригада',
   active: true,
   isDeduplicateCandidate: null,

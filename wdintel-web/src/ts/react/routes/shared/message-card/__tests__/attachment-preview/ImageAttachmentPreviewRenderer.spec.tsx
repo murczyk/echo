@@ -500,7 +500,10 @@ describe('ImageAttachmentPreviewRenderer', () => {
     await act(async () => {
       root.render(
         <TestImagePreviewDialog
-          imageHrefs={[{ href: 'https://example.test/image.png' } as never]}
+          imageHrefs={[
+            { href: 'https://example.test/image.png' } as never,
+            { href: 'https://example.test/image-2.png' } as never,
+          ]}
           open
           onClose={onClose}
           onIndexChange={vi.fn()}
@@ -516,6 +519,11 @@ describe('ImageAttachmentPreviewRenderer', () => {
     });
     await vi.waitFor(() => expect(loadSource).toHaveBeenCalledTimes(1));
     expect(latestStageProps?.activationEnabled).toBe(false);
+    const stageNavigation = container.querySelectorAll<HTMLButtonElement>(
+      '[data-attachment-preview-stage-nav]',
+    );
+    expect(stageNavigation).toHaveLength(2);
+    expect(Array.from(stageNavigation).every((button) => button.disabled)).toBe(true);
     latestStageProps?.onPrimaryClick?.(new MouseEvent('click'), 'background');
     expect(onClose).not.toHaveBeenCalled();
 

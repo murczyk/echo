@@ -98,6 +98,7 @@ mod tests {
             original_id: None,
             is_deduplicate_candidate: None,
             orbit_note: None,
+            present_in_orbit: None,
             army_region: "ЗС РФ".to_string(),
             military_district: "Західний ВО".to_string(),
             is_inconsistent: false,
