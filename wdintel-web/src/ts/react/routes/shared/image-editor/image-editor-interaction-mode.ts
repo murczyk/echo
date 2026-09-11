@@ -38,6 +38,22 @@ export function applyImageEditorSurfaceCursor(
   if (canvas) canvas.upperCanvasEl.style.cursor = cursor;
 }
 
+export function updateImageEditorBrushStyle({
+  canvas,
+  stroke,
+  strokeWidth,
+  highlightOpacity,
+}: {
+  canvas: import('fabric').Canvas | null;
+  stroke: string;
+  strokeWidth: number;
+  highlightOpacity: number;
+}) {
+  if (!canvas?.isDrawingMode || !canvas.freeDrawingBrush) return;
+  canvas.freeDrawingBrush.color = withHighlightAlpha(stroke, highlightOpacity);
+  canvas.freeDrawingBrush.width = strokeWidth;
+}
+
 export function applyImageEditorInteractionMode({
   canvas,
   tool,

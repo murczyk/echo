@@ -5,11 +5,14 @@ import * as fabric from 'fabric';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createArrow } from './image-editor-arrow';
+import { applyArrowStyle, readImageEditorObjectStyle } from './image-editor-selection-style';
 import {
   cancelImageEditorAttachedArrowGesture,
   imageEditorAttachedArrowGeometry,
   installImageEditorAttachedArrowControl,
+  IMAGE_EDITOR_ATTACHED_ARROW_CONTROL,
   IMAGE_EDITOR_ATTACHED_ARROW_ENDPOINT_CONTROL,
+  removeImageEditorAttachedArrow,
   setImageEditorAttachedArrowTarget,
 } from './image-editor-attached-arrow';
 
@@ -73,6 +76,40 @@ describe('image editor arrow geometry #3099', () => {
   });
 });
 
+describe('standalone arrow style preservation #3448', () => {
+  it('merges color, width, and dash against the rendered shaft rather than Group defaults', () => {
+    const arrow = createArrow({
+      fabric,
+      start: { x: 10, y: 10 },
+      end: { x: 110, y: 10 },
+      stroke: '#ef4444',
+      strokeWidth: 4,
+      dash: false,
+    })!;
+    expect(readImageEditorObjectStyle(arrow, fabric)).toMatchObject({
+      stroke: '#ef4444',
+      strokeWidth: 4,
+      dash: false,
+    });
+    expect(
+      applyArrowStyle({ selected: arrow, fabric, stroke: '#22c55e', strokeWidth: 4, dash: false }),
+    ).toBe(true);
+    expect(readImageEditorObjectStyle(arrow, fabric)).toMatchObject({
+      stroke: '#22c55e',
+      strokeWidth: 4,
+      dash: false,
+    });
+    expect(
+      applyArrowStyle({ selected: arrow, fabric, stroke: '#22c55e', strokeWidth: 8, dash: true }),
+    ).toBe(true);
+    expect(readImageEditorObjectStyle(arrow, fabric)).toMatchObject({
+      stroke: '#22c55e',
+      strokeWidth: 8,
+      dash: true,
+    });
+  });
+});
+
 describe('text callout geometry #3448', () => {
   it('anchors a rotated padded label at its transformed boundary', () => {
     const text = new fabric.IText('Текст', {
@@ -116,6 +153,15 @@ describe('text callout geometry #3448', () => {
     expect(imageEditorAttachedArrowGeometry(text, { x: 100, y: 100 })).toBeNull();
   });
 
+  it('refreshes Fabric control coordinates as a target is committed or removed #3448', () => {
+    const text = new fabric.IText('Текст', { left: 100, top: 100 });
+    const setCoords = vi.spyOn(text, 'setCoords');
+    setImageEditorAttachedArrowTarget(text, { x: 220, y: 100 });
+    expect(setCoords).toHaveBeenCalledOnce();
+    removeImageEditorAttachedArrow({ getObjects: () => [], remove: vi.fn() } as never, text);
+    expect(setCoords).toHaveBeenCalledTimes(2);
+  });
+
   it('restores the previous endpoint when an adjustment is cancelled #3448', () => {
     const text = new fabric.IText('Текст', {
       left: 100,
@@ -144,10 +190,159 @@ describe('text callout geometry #3448', () => {
     control.mouseDownHandler?.(new MouseEvent('mousedown'), transform, 220, 100);
     control.actionHandler?.(new MouseEvent('mousemove'), transform, 260, 100);
 
-    expect(text.get('attachedArrowTargetX')).toBe(260);
+    expect(text.get('attachedArrowTargetX')).toBe(220);
     expect(cancelImageEditorAttachedArrowGesture(canvas)).toBe(true);
     expect(text.get('attachedArrowTargetX')).toBe(220);
     expect(text.get('attachedArrowTargetY')).toBe(100);
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it('updates endpoint-control coordinates immediately after creation #3448', () => {
+    const text = new fabric.IText('Текст', {
+      left: 100,
+      top: 100,
+      originX: 'center',
+      originY: 'center',
+      editorRole: 'text',
+    });
+    const objects: import('fabric').FabricObject[] = [text];
+    const canvas = {
+      getObjects: () => objects,
+      add: (object: import('fabric').FabricObject) => objects.push(object),
+      remove: (object: import('fabric').FabricObject) => {
+        const index = objects.indexOf(object);
+        if (index >= 0) objects.splice(index, 1);
+      },
+      moveObjectTo: () => undefined,
+      requestRenderAll: () => undefined,
+      fire: () => undefined,
+    } as never as import('fabric').Canvas;
+    text.canvas = canvas;
+    const setCoords = vi.spyOn(text, 'setCoords');
+    installImageEditorAttachedArrowControl({ canvas, fabric, text, onComplete: vi.fn() });
+    const control = text.controls[IMAGE_EDITOR_ATTACHED_ARROW_CONTROL]!;
+    const transform = { target: text } as never;
+    control.mouseDownHandler?.(
+      new MouseEvent('mousedown', { clientX: 100, clientY: 100 }),
+      transform,
+      100,
+      100,
+    );
+    control.actionHandler?.(
+      new MouseEvent('mousemove', { clientX: 260, clientY: 100 }),
+      transform,
+      260,
+      100,
+    );
+    control.mouseUpHandler?.(
+      new MouseEvent('mouseup', { clientX: 260, clientY: 100 }),
+      transform,
+      260,
+      100,
+    );
+    expect(text.get('attachedArrowTargetX')).toBe(260);
+    expect(setCoords).toHaveBeenCalled();
+  });
+
+  it('ignores stale control callbacks after cancellation #3448', () => {
+    const text = new fabric.IText('Текст', {
+      left: 100,
+      top: 100,
+      originX: 'center',
+      originY: 'center',
+      editorRole: 'text',
+    });
+    const objects: import('fabric').FabricObject[] = [text];
+    const canvas = {
+      getObjects: () => objects,
+      add: (object: import('fabric').FabricObject) => objects.push(object),
+      remove: (object: import('fabric').FabricObject) => {
+        const index = objects.indexOf(object);
+        if (index >= 0) objects.splice(index, 1);
+      },
+      moveObjectTo: () => undefined,
+      requestRenderAll: () => undefined,
+      fire: () => undefined,
+    } as never as import('fabric').Canvas;
+    text.canvas = canvas;
+    const complete = vi.fn();
+    installImageEditorAttachedArrowControl({ canvas, fabric, text, onComplete: complete });
+    const control = text.controls[IMAGE_EDITOR_ATTACHED_ARROW_CONTROL]!;
+    const transform = { target: text } as never;
+    control.mouseDownHandler?.(
+      new MouseEvent('mousedown', { clientX: 100, clientY: 100 }),
+      transform,
+      100,
+      100,
+    );
+    control.actionHandler?.(
+      new MouseEvent('mousemove', { clientX: 260, clientY: 100 }),
+      transform,
+      260,
+      100,
+    );
+    expect(cancelImageEditorAttachedArrowGesture(canvas)).toBe(true);
+    control.actionHandler?.(
+      new MouseEvent('mousemove', { clientX: 280, clientY: 100 }),
+      transform,
+      280,
+      100,
+    );
+    control.mouseUpHandler?.(
+      new MouseEvent('mouseup', { clientX: 280, clientY: 100 }),
+      transform,
+      280,
+      100,
+    );
+    expect(text.get('attachedArrowTargetX')).toBeUndefined();
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it('uses the final invalid release point and restores the previous endpoint #3448', () => {
+    const text = new fabric.IText('Текст', {
+      left: 100,
+      top: 100,
+      originX: 'center',
+      originY: 'center',
+      editorRole: 'text',
+    });
+    setImageEditorAttachedArrowTarget(text, { x: 220, y: 100 });
+    const objects: import('fabric').FabricObject[] = [text];
+    const canvas = {
+      getObjects: () => objects,
+      add: (object: import('fabric').FabricObject) => objects.push(object),
+      remove: (object: import('fabric').FabricObject) => {
+        const index = objects.indexOf(object);
+        if (index >= 0) objects.splice(index, 1);
+      },
+      moveObjectTo: () => undefined,
+      requestRenderAll: () => undefined,
+      fire: () => undefined,
+    } as never as import('fabric').Canvas;
+    text.canvas = canvas;
+    const complete = vi.fn();
+    installImageEditorAttachedArrowControl({ canvas, fabric, text, onComplete: complete });
+    const control = text.controls[IMAGE_EDITOR_ATTACHED_ARROW_ENDPOINT_CONTROL]!;
+    const transform = { target: text } as never;
+    control.mouseDownHandler?.(
+      new MouseEvent('mousedown', { clientX: 220, clientY: 100 }),
+      transform,
+      220,
+      100,
+    );
+    control.actionHandler?.(
+      new MouseEvent('mousemove', { clientX: 260, clientY: 100 }),
+      transform,
+      260,
+      100,
+    );
+    control.mouseUpHandler?.(
+      new MouseEvent('mouseup', { clientX: 100, clientY: 100 }),
+      transform,
+      100,
+      100,
+    );
+    expect(text.get('attachedArrowTargetX')).toBe(220);
     expect(complete).not.toHaveBeenCalled();
   });
 });

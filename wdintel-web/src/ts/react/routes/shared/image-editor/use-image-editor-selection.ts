@@ -1,4 +1,4 @@
-import { useEffect, useRef, type MutableRefObject } from 'react';
+import { useCallback, useEffect, useRef, type MutableRefObject } from 'react';
 
 import { hasImageEditorAttachedArrow } from './image-editor-attached-arrow';
 import { isImageEditorObjectRole, NON_DELETABLE_ROLES } from './image-editor-object-role';
@@ -65,6 +65,8 @@ export function useImageEditorSelection({
   const callbacksRef = useRef(callbacks);
   callbacksRef.current = callbacks;
   const previousRef = useRef('');
+  const syncRef = useRef<() => void>(() => {});
+  const refreshSelection = useCallback(() => syncRef.current(), []);
   useEffect(() => {
     const canvas = canvasRef.current,
       fabric = fabricRef.current;
@@ -112,14 +114,25 @@ export function useImageEditorSelection({
       callbacksRef.current.onDashChange(style.dash);
       if (style.opacity != null) callbacksRef.current.onHighlightOpacityChange(style.opacity);
     };
+    syncRef.current = sync;
     canvas.on('selection:created', sync);
     canvas.on('selection:updated', sync);
     canvas.on('selection:cleared', sync);
+    (
+      canvas as import('fabric').Canvas & { on: (eventName: string, callback: () => void) => void }
+    ).on('image-editor:attached-arrow-changed', sync);
     sync();
     return () => {
       canvas.off('selection:created', sync);
       canvas.off('selection:updated', sync);
       canvas.off('selection:cleared', sync);
+      (
+        canvas as import('fabric').Canvas & {
+          off: (eventName: string, callback: () => void) => void;
+        }
+      ).off('image-editor:attached-arrow-changed', sync);
+      if (syncRef.current === sync) syncRef.current = () => {};
     };
   }, [canvasReady, canvasRef, fabricRef]);
+  return { refreshSelection };
 }

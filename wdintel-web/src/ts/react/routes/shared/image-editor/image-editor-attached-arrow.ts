@@ -11,9 +11,14 @@ type AnnotatedText = import('fabric').IText & {
   attachedArrowTargetY?: number;
 };
 type AttachedArrowGesture = {
+  id: symbol;
   text: AnnotatedText;
   previous: Point | null;
   fabric: typeof import('fabric');
+  start: Point;
+  latest: Point;
+  startScreen: Point;
+  latestScreen: Point;
 };
 const attachedArrowGestures = new WeakMap<import('fabric').Canvas, AttachedArrowGesture>();
 
@@ -89,9 +94,11 @@ export function removeImageEditorDerivedArrows(canvas: import('fabric').Canvas) 
 export function reconcileImageEditorAttachedArrows({
   canvas,
   fabric,
+  preview,
 }: {
   canvas: import('fabric').Canvas;
   fabric: typeof import('fabric');
+  preview?: { text: AnnotatedText; target: Point | null };
 }) {
   removeImageEditorDerivedArrows(canvas);
   canvas.getObjects().forEach((object) => {
@@ -100,7 +107,7 @@ export function reconcileImageEditorAttachedArrows({
       object.get('editorRole') !== ImageEditorObjectRole.Text
     )
       return;
-    const target = targetFor(object as AnnotatedText);
+    const target = preview?.text === object ? preview.target : targetFor(object as AnnotatedText);
     if (!target) return;
     const geometry = imageEditorAttachedArrowGeometry(object as AnnotatedText, target);
     if (!geometry) return;
@@ -127,12 +134,14 @@ export function reconcileImageEditorAttachedArrows({
 
 export function setImageEditorAttachedArrowTarget(text: AnnotatedText, target: Point) {
   text.set({ [TARGET_X]: target.x, [TARGET_Y]: target.y });
+  text.setCoords();
 }
 export function removeImageEditorAttachedArrow(
   canvas: import('fabric').Canvas,
   text: AnnotatedText,
 ) {
   text.set({ [TARGET_X]: undefined, [TARGET_Y]: undefined });
+  text.setCoords();
   removeImageEditorDerivedArrows(canvas);
 }
 export function translateImageEditorAttachedArrowTarget(text: AnnotatedText, x: number, y: number) {
@@ -173,8 +182,6 @@ function renderEndpointControl(context: CanvasRenderingContext2D, left: number, 
 export function cancelImageEditorAttachedArrowGesture(canvas: import('fabric').Canvas) {
   const gesture = attachedArrowGestures.get(canvas);
   if (!gesture) return false;
-  if (gesture.previous) setImageEditorAttachedArrowTarget(gesture.text, gesture.previous);
-  else removeImageEditorAttachedArrow(canvas, gesture.text);
   attachedArrowGestures.delete(canvas);
   reconcileImageEditorAttachedArrows({ canvas, fabric: gesture.fabric });
   return true;
@@ -185,41 +192,84 @@ export function installImageEditorAttachedArrowControl({
   fabric,
   text,
   onComplete,
+  onChange,
 }: {
   canvas: import('fabric').Canvas;
   fabric: typeof import('fabric');
   text: AnnotatedText;
   onComplete: () => void;
+  onChange?: () => void;
 }) {
   const controls = text.controls as Record<string, import('fabric').Control>;
   if (controls[IMAGE_EDITOR_ATTACHED_ARROW_CONTROL]) return;
-  let changed = false;
-  let previous = targetFor(text);
-  const begin = (owner: AnnotatedText) => {
-    previous = targetFor(owner);
-    changed = false;
-    attachedArrowGestures.set(canvas, { text: owner, previous, fabric });
+  let gestureId: symbol | null = null;
+  const activeGesture = () => {
+    const gesture = attachedArrowGestures.get(canvas);
+    return gesture?.id === gestureId ? gesture : null;
+  };
+  const begin = (event: Event, owner: AnnotatedText) => {
+    const start = { x: owner.left ?? 0, y: owner.top ?? 0 };
+    gestureId = Symbol('attached-arrow-gesture');
+    attachedArrowGestures.set(canvas, {
+      id: gestureId,
+      text: owner,
+      previous: targetFor(owner),
+      fabric,
+      start,
+      latest: start,
+      startScreen: {
+        x: event instanceof MouseEvent ? event.clientX : 0,
+        y: event instanceof MouseEvent ? event.clientY : 0,
+      },
+      latestScreen: {
+        x: event instanceof MouseEvent ? event.clientX : 0,
+        y: event instanceof MouseEvent ? event.clientY : 0,
+      },
+    });
     return true;
   };
-  const update = (owner: AnnotatedText, x: number, y: number) => {
+  const update = (event: Event, owner: AnnotatedText, x: number, y: number) => {
+    const gesture = activeGesture();
+    if (!gesture || gesture.text !== owner) return false;
     const target = { x, y };
-    if (
-      Math.hypot(target.x - (owner.left ?? 0), target.y - (owner.top ?? 0)) < 3 ||
-      !imageEditorAttachedArrowGeometry(owner, target)
-    )
-      return false;
-    setImageEditorAttachedArrowTarget(owner, target);
-    reconcileImageEditorAttachedArrows({ canvas, fabric });
-    changed = true;
-    return true;
+    gesture.latest = target;
+    if (event instanceof MouseEvent) gesture.latestScreen = { x: event.clientX, y: event.clientY };
+    const valid =
+      Math.hypot(target.x - (owner.left ?? 0), target.y - (owner.top ?? 0)) >= 3 &&
+      imageEditorAttachedArrowGeometry(owner, target) != null;
+    reconcileImageEditorAttachedArrows({
+      canvas,
+      fabric,
+      preview: { text: owner, target: valid ? target : null },
+    });
+    return false;
   };
-  const complete = () => {
+  const complete = (event: Event, _transform: import('fabric').Transform, x: number, y: number) => {
+    const gesture = activeGesture();
+    if (!gesture) return false;
+    gesture.latest = { x, y };
+    if (event instanceof MouseEvent) gesture.latestScreen = { x: event.clientX, y: event.clientY };
     attachedArrowGestures.delete(canvas);
-    if (changed) onComplete();
-    else if (previous) setImageEditorAttachedArrowTarget(text, previous);
-    else removeImageEditorAttachedArrow(canvas, text);
+    const moved =
+      Math.hypot(
+        gesture.latestScreen.x - gesture.startScreen.x,
+        gesture.latestScreen.y - gesture.startScreen.y,
+      ) >= 3;
+    const valid =
+      moved &&
+      Math.hypot(
+        gesture.latest.x - (gesture.text.left ?? 0),
+        gesture.latest.y - (gesture.text.top ?? 0),
+      ) >= 3 &&
+      imageEditorAttachedArrowGeometry(gesture.text, gesture.latest) != null;
+    if (valid) setImageEditorAttachedArrowTarget(gesture.text, gesture.latest);
     reconcileImageEditorAttachedArrows({ canvas, fabric });
-    return changed;
+    if (valid) onComplete();
+    (canvas as import('fabric').Canvas & { fire: (eventName: string) => void }).fire(
+      'image-editor:attached-arrow-changed',
+    );
+    onChange?.();
+    return valid;
   };
   text.controls = {
     ...controls,
@@ -232,8 +282,9 @@ export function installImageEditorAttachedArrowControl({
       sizeY: 16,
       actionName: 'attachedArrow',
       render: renderControl,
-      mouseDownHandler: (_event, transform) => begin(transform.target as AnnotatedText),
-      actionHandler: (_event, transform, x, y) => update(transform.target as AnnotatedText, x, y),
+      mouseDownHandler: (event, transform) => begin(event, transform.target as AnnotatedText),
+      actionHandler: (event, transform, x, y) =>
+        update(event, transform.target as AnnotatedText, x, y),
       mouseUpHandler: complete,
     }),
     [IMAGE_EDITOR_ATTACHED_ARROW_ENDPOINT_CONTROL]: new fabric.Control({
@@ -247,8 +298,9 @@ export function installImageEditorAttachedArrowControl({
         const target = targetFor(text) ?? { x: -1000, y: -1000 };
         return new fabric.Point(target.x, target.y);
       },
-      mouseDownHandler: (_event, transform) => begin(transform.target as AnnotatedText),
-      actionHandler: (_event, transform, x, y) => update(transform.target as AnnotatedText, x, y),
+      mouseDownHandler: (event, transform) => begin(event, transform.target as AnnotatedText),
+      actionHandler: (event, transform, x, y) =>
+        update(event, transform.target as AnnotatedText, x, y),
       mouseUpHandler: complete,
     }),
   };
@@ -258,10 +310,12 @@ export function installImageEditorAttachedArrowControls({
   canvas,
   fabric,
   onComplete,
+  onChange,
 }: {
   canvas: import('fabric').Canvas;
   fabric: typeof import('fabric');
   onComplete: () => void;
+  onChange?: () => void;
 }) {
   canvas.getObjects().forEach((object) => {
     if (object instanceof fabric.IText)
@@ -270,6 +324,7 @@ export function installImageEditorAttachedArrowControls({
         fabric,
         text: object as AnnotatedText,
         onComplete,
+        onChange,
       });
   });
   reconcileImageEditorAttachedArrows({ canvas, fabric });

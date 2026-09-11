@@ -29,7 +29,10 @@ import {
   refreshCropMask,
   startCrop,
 } from './image-editor-crop';
-import { applyImageEditorInteractionMode } from './image-editor-interaction-mode';
+import {
+  applyImageEditorInteractionMode,
+  updateImageEditorBrushStyle,
+} from './image-editor-interaction-mode';
 import { replaceConcealmentArea as createConcealmentReplacement } from './image-editor-raster';
 import type { ImageEditorBounds } from './image-editor-pointer';
 import { useImageEditorCanvas } from './use-image-editor-canvas';
@@ -221,7 +224,12 @@ export function ImageEditor({
       });
       const fabric = fabricRef.current;
       if (fabric)
-        installImageEditorAttachedArrowControls({ canvas, fabric, onComplete: saveHistory });
+        installImageEditorAttachedArrowControls({
+          canvas,
+          fabric,
+          onComplete: saveHistory,
+          onChange: refreshSelection,
+        });
       toolRef.current = ImageEditorTool.Select;
       setTool(ImageEditorTool.Select);
       syncDocumentDimensions({ fit: true });
@@ -241,12 +249,14 @@ export function ImageEditor({
   const queuedUndo = useCallback(() => {
     if (!isInteractionLocked()) {
       cancelGestureRef.current();
+      if (canvasRef.current) cancelImageEditorAttachedArrowGesture(canvasRef.current);
       void enqueueRaster(undo);
     }
   }, [enqueueRaster, isInteractionLocked, undo]);
   const queuedRedo = useCallback(() => {
     if (!isInteractionLocked()) {
       cancelGestureRef.current();
+      if (canvasRef.current) cancelImageEditorAttachedArrowGesture(canvasRef.current);
       void enqueueRaster(redo);
     }
   }, [enqueueRaster, isInteractionLocked, redo]);
@@ -254,6 +264,7 @@ export function ImageEditor({
     if (isInteractionLocked()) return;
     void enqueueRaster(async () => {
       cancelGestureRef.current();
+      if (canvasRef.current) cancelImageEditorAttachedArrowGesture(canvasRef.current);
       await resetEdits();
       const canvas = canvasRef.current;
       if (canvas) cancelCrop({ canvas, cropRef });
@@ -324,32 +335,11 @@ export function ImageEditor({
     ? selectedStyle.highlightOpacity
     : highlightOpacity;
 
-  const { applyAnnotationStyle, applySelectionStyle } = useImageEditorSelectionStyle({
+  const { applySelectedStyle } = useImageEditorSelectionStyle({
     canvasRef,
     fabricRef,
-    canvasReady,
-    tool,
-    stroke: displayedStroke,
-    fill: displayedFill,
-    strokeWidth: displayedStrokeWidth,
-    dash: displayedDash,
-    fontSize: displayedFontSize,
-    bold: displayedBold,
-    textBackgroundColor: displayedBackgroundColor,
-    textBackgroundEnabled: displayedBackgroundEnabled,
-    textBackgroundPadding: displayedBackgroundPadding,
-    highlightOpacity: displayedHighlightOpacity,
     scheduleHistory,
   });
-  const applyStyleRef = useRef({ applyAnnotationStyle, applySelectionStyle });
-  applyStyleRef.current = { applyAnnotationStyle, applySelectionStyle };
-  const applyToolbarStyle = useCallback((update: () => void) => {
-    update();
-    requestAnimationFrame(() => {
-      applyStyleRef.current.applySelectionStyle();
-      applyStyleRef.current.applyAnnotationStyle();
-    });
-  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -419,7 +409,17 @@ export function ImageEditor({
       strokeWidth: activeStrokeWidth,
       highlightOpacity,
     });
-  }, [activeStrokeWidth, applying, highlightOpacity, rasterPending, stroke]);
+  }, [applying, rasterPending]);
+
+  useEffect(() => {
+    if (tool !== ImageEditorTool.Brush) return;
+    updateImageEditorBrushStyle({
+      canvas: canvasRef.current,
+      stroke,
+      strokeWidth: brushWidth,
+      highlightOpacity,
+    });
+  }, [brushWidth, highlightOpacity, stroke, tool]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -443,7 +443,7 @@ export function ImageEditor({
     };
   }, [canvasReady, cropMaskColor]);
 
-  useImageEditorSelection({
+  const { refreshSelection } = useImageEditorSelection({
     canvasRef,
     fabricRef,
     canvasReady,
@@ -472,8 +472,9 @@ export function ImageEditor({
     deleteSelectedAnnotations(canvas);
     const fabric = fabricRef.current;
     if (fabric) reconcileImageEditorAttachedArrows({ canvas, fabric });
+    refreshSelection();
     saveHistory();
-  }, [isInteractionLocked, saveHistory]);
+  }, [isInteractionLocked, refreshSelection, saveHistory]);
   const deleteAttachedArrow = useCallback(() => {
     const canvas = canvasRef.current;
     const fabric = fabricRef.current;
@@ -483,7 +484,8 @@ export function ImageEditor({
     reconcileImageEditorAttachedArrows({ canvas, fabric });
     canvas.requestRenderAll();
     saveHistory();
-  }, [isInteractionLocked, saveHistory]);
+    refreshSelection();
+  }, [isInteractionLocked, refreshSelection, saveHistory]);
   const applyCropOperation = useCallback(() => {
     if (isInteractionLocked()) return;
     const canvas = canvasRef.current;
@@ -518,6 +520,7 @@ export function ImageEditor({
     const sourceImage = sourceRef.current;
     if (!canvas || !sourceImage || isInteractionLocked()) return;
     cancelGestureRef.current();
+    cancelImageEditorAttachedArrowGesture(canvas);
     finalizeActiveText();
     if (cropRef.current) {
       setError('Спочатку застосуйте або скасуйте обрізання');
@@ -709,77 +712,80 @@ export function ImageEditor({
     disabled: !canvasReady || loading || applying || rasterPending,
     tool,
     stroke: displayedStroke,
-    onStrokeChange: (value: string) =>
-      applyToolbarStyle(() => {
-        setStroke(value);
-        if (selection) setSelectedStyle((style) => ({ ...style, stroke: value }));
-      }),
+    onStrokeChange: (value: string) => {
+      const result = applySelectedStyle({
+        property: 'stroke',
+        value,
+        highlightOpacity: displayedHighlightOpacity,
+      });
+      if (result === true) setSelectedStyle((style) => ({ ...style, stroke: value }));
+      else if (result === undefined) setStroke(value);
+    },
     fill: displayedFill,
-    onFillChange: (value: string) =>
-      applyToolbarStyle(() => {
-        setFill(value);
-        if (selection) setSelectedStyle((style) => ({ ...style, fill: value }));
-      }),
+    onFillChange: (value: string) => {
+      const result = applySelectedStyle({ property: 'fill', value });
+      if (result === true) setSelectedStyle((style) => ({ ...style, fill: value }));
+      else if (result === undefined) setFill(value);
+    },
     strokeWidth: displayedStrokeWidth,
     onStrokeWidthChange: (value: number) => {
-      applyToolbarStyle(() => {
-        const selected = canvasRef.current?.getActiveObject();
-        const fabric = fabricRef.current;
-        if (fabric && selected && selected instanceof fabric.Path) setBrushWidth(value);
-        else if (tool === ImageEditorTool.Brush) setBrushWidth(value);
-        else setStrokeWidth(value);
-        if (selection) setSelectedStyle((style) => ({ ...style, strokeWidth: value }));
-      });
+      const result = applySelectedStyle({ property: 'strokeWidth', value });
+      if (result === true) {
+        setSelectedStyle((style) => ({ ...style, strokeWidth: value }));
+        return;
+      }
+      if (result === false) return;
+      if (tool === ImageEditorTool.Brush) setBrushWidth(value);
+      else setStrokeWidth(value);
     },
     dash: displayedDash,
-    onDashChange: (value: boolean) =>
-      applyToolbarStyle(() => {
-        setDash(value);
-        if (selection) setSelectedStyle((style) => ({ ...style, dash: value }));
-      }),
+    onDashChange: (value: boolean) => {
+      const result = applySelectedStyle({ property: 'dash', value });
+      if (result === true) setSelectedStyle((style) => ({ ...style, dash: value }));
+      else if (result === undefined) setDash(value);
+    },
     fontSize: displayedFontSize,
-    onFontSizeChange: (value: number) =>
-      applyToolbarStyle(() => {
-        setFontSize(value);
-        if (selection) setSelectedStyle((style) => ({ ...style, fontSize: value }));
-      }),
+    onFontSizeChange: (value: number) => {
+      const result = applySelectedStyle({ property: 'fontSize', value });
+      if (result === true) setSelectedStyle((style) => ({ ...style, fontSize: value }));
+      else if (result === undefined) setFontSize(value);
+    },
     bold: displayedBold,
-    onBoldChange: () =>
-      applyToolbarStyle(() => {
-        setBold((value) => !value);
-        if (selection) setSelectedStyle((style) => ({ ...style, bold: !style.bold }));
-      }),
+    onBoldChange: () => {
+      const value = !displayedBold;
+      const result = applySelectedStyle({ property: 'bold', value });
+      if (result === true) setSelectedStyle((style) => ({ ...style, bold: value }));
+      else if (result === undefined) setBold(value);
+    },
     textBackgroundColor: displayedBackgroundColor,
     onTextBackgroundColorChange: (value: string) => {
-      applyToolbarStyle(() => {
+      const result = applySelectedStyle({ property: 'textBackgroundColor', value });
+      if (result === true) setSelectedStyle((style) => ({ ...style, textBackgroundColor: value }));
+      else if (result === undefined) {
         setTextBackgroundColor(value);
         setTextBackgroundEnabled(true);
-        if (selection)
-          setSelectedStyle((style) => ({
-            ...style,
-            textBackgroundColor: value,
-            textBackgroundEnabled: true,
-          }));
-      });
+      }
     },
     textBackgroundEnabled: displayedBackgroundEnabled,
-    onTextBackgroundEnabledChange: (value: boolean) =>
-      applyToolbarStyle(() => {
-        setTextBackgroundEnabled(value);
-        if (selection) setSelectedStyle((style) => ({ ...style, textBackgroundEnabled: value }));
-      }),
+    onTextBackgroundEnabledChange: (value: boolean) => {
+      const result = applySelectedStyle({ property: 'textBackgroundEnabled', value });
+      if (result === true)
+        setSelectedStyle((style) => ({ ...style, textBackgroundEnabled: value }));
+      else if (result === undefined) setTextBackgroundEnabled(value);
+    },
     textBackgroundPadding: displayedBackgroundPadding,
-    onTextBackgroundPaddingChange: (value: number) =>
-      applyToolbarStyle(() => {
-        setTextBackgroundPadding(value);
-        if (selection) setSelectedStyle((style) => ({ ...style, textBackgroundPadding: value }));
-      }),
+    onTextBackgroundPaddingChange: (value: number) => {
+      const result = applySelectedStyle({ property: 'textBackgroundPadding', value });
+      if (result === true)
+        setSelectedStyle((style) => ({ ...style, textBackgroundPadding: value }));
+      else if (result === undefined) setTextBackgroundPadding(value);
+    },
     highlightOpacity: displayedHighlightOpacity,
-    onHighlightOpacityChange: (value: number) =>
-      applyToolbarStyle(() => {
-        setHighlightOpacity(value);
-        if (selection) setSelectedStyle((style) => ({ ...style, highlightOpacity: value }));
-      }),
+    onHighlightOpacityChange: (value: number) => {
+      const result = applySelectedStyle({ property: 'highlightOpacity', value });
+      if (result === true) setSelectedStyle((style) => ({ ...style, highlightOpacity: value }));
+      else if (result === undefined) setHighlightOpacity(value);
+    },
     concealMode,
     onConcealModeChange: setConcealMode,
     magnification,

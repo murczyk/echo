@@ -94,6 +94,12 @@ export function useImageEditorCanvas({
         canvas.setDimensions({ width: image.width, height: image.height });
         setImageEditorBackground({ canvas, source: image });
         canvasRef.current = canvas;
+        if (import.meta.env.DEV)
+          (
+            canvasElementRef.current as HTMLCanvasElement & {
+              __imageEditorTestCanvas?: import('fabric').Canvas;
+            }
+          ).__imageEditorTestCanvas = canvas;
         sourceRef.current = image;
         const commit = (event?: { target?: import('fabric').FabricObject }) => {
           const role = event?.target?.get('editorRole');
@@ -147,6 +153,12 @@ export function useImageEditorCanvas({
     void init();
     return () => {
       disposed = true;
+      if (canvasElementRef.current)
+        (
+          canvasElementRef.current as HTMLCanvasElement & {
+            __imageEditorTestCanvas?: import('fabric').Canvas;
+          }
+        ).__imageEditorTestCanvas = undefined;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
       canvasRef.current?.dispose();
       canvasRef.current = null;
