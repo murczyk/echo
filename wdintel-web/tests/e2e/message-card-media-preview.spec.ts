@@ -968,9 +968,7 @@ test.describe('message card media preview contract', () => {
         await expect(mapRegions).toHaveCount(2);
         await expect(preview.locator('.leaflet-interactive')).toHaveCount(0);
         await expect(mapRegions.nth(0).locator('.coordinate-preview-mgrs-label')).toHaveCount(0);
-        await expect(mapRegions.nth(1).locator('.coordinate-preview-mgrs-label')).not.toHaveCount(
-          0,
-        );
+        await expect(mapRegions.nth(1).locator('.coordinate-preview-mgrs-label')).toHaveCount(1);
         const [previewBox, viewport, overviewRegion, detailRegion, layout] = await Promise.all([
           preview.boundingBox(),
           page.evaluate(() => ({ width: innerWidth, height: innerHeight })),
