@@ -415,6 +415,7 @@ mod m20260908_131435_network_recalculation_queue;
 mod m20260909_102202_sigint_unit_cascade_delete;
 mod m20260909_145827_network_invalidation_reconciliation_index;
 mod m20260910_000000_add_message_sort_by_to_user_settings;
+mod m20260911_091429_signal_message_created_at_id_index;
 
 pub struct Migrator;
 
@@ -987,6 +988,7 @@ impl MigratorTrait for Migrator {
                 m20260909_145827_network_invalidation_reconciliation_index::Migration,
             ),
             Box::new(m20260910_000000_add_message_sort_by_to_user_settings::Migration),
+            Box::new(m20260911_091429_signal_message_created_at_id_index::Migration),
         ]
     }
 }

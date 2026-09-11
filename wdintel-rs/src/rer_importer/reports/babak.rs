@@ -6,7 +6,7 @@ use crate::rer_importer::report_chunking::{
     inbox_report_chunk_req, inbox_report_period_chunks, ReportPeriodEnd,
 };
 use crate::rer_importer::types::{
-    AnalysisStatsReq, InboxMessagesReq, NewCallsignsRes,
+    AnalysisStatsReq, InboxMessagesReq, InboxMessagesSortBy, NewCallsignsRes,
 };
 use crate::sigint::sender::{
     preferred_group_sender_expr, preferred_message_author_expr,
@@ -16,7 +16,7 @@ use crate::utils::*;
 use chrono::prelude::*;
 use docx_rs::*;
 use sea_orm::*;
-use sea_query::{Alias, Expr, Query, SimpleExpr};
+use sea_query::{Alias, Expr, Order, Query, SimpleExpr};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -62,6 +62,7 @@ pub async fn collect_babak_report_data(
     } else {
         req.report_tags_only_this_unit
     };
+    let message_time_basis = babak_message_time_basis(&inbox_req);
 
     let report_settings =
         crate::system_settings::get_report_generation_settings(&env.dbx)
@@ -114,7 +115,7 @@ pub async fn collect_babak_report_data(
         selected_aors: inbox_req.selected_aors,
         without_model_tags: inbox_req.without_model_tags,
         report_tags_only_this_unit: inbox_req.report_tags_only_this_unit,
-        message_time_basis: None,
+        message_time_basis,
     };
     let new_callsigns_res = bi_new_callsigns_chunked(
         user_login,
@@ -134,6 +135,30 @@ pub async fn collect_babak_report_data(
         date_to: date_to_dt,
         without_comments,
     })
+}
+
+fn babak_uses_creation_time(req: &InboxMessagesReq) -> bool {
+    req.sort_by == Some(InboxMessagesSortBy::IMSCreatedAt)
+}
+
+fn babak_message_time_basis(
+    req: &InboxMessagesReq,
+) -> Option<crate::user_settings::MessageTimeBasis> {
+    babak_uses_creation_time(req)
+        .then_some(crate::user_settings::MessageTimeBasis::MessageCreation)
+}
+
+fn babak_candidate_time_expr(req: &InboxMessagesReq) -> SimpleExpr {
+    if babak_uses_creation_time(req) {
+        Expr::col((signal_message::Entity, signal_message::Column::CreatedAt))
+            .into()
+    } else {
+        Expr::col((
+            sigint_inbox_item::Entity,
+            sigint_inbox_item::Column::Datetime,
+        ))
+        .into()
+    }
 }
 
 pub async fn bl_babak_report(
@@ -1042,8 +1067,10 @@ async fn get_inbox_messages_report_unit(
     include_comments: bool,
     chunking_hours: i64,
 ) -> Result<Vec<StatsPerUnitReport>, AppError> {
-    let analytics_supported =
-        crate::rer_importer::analysis::analytics_inbox_request_supported(req);
+    let analytics_supported = !babak_uses_creation_time(req)
+        && crate::rer_importer::analysis::analytics_inbox_request_supported(
+            req,
+        );
     let access = BabakCandidateAccess::resolve(
         env,
         login,
@@ -1195,11 +1222,34 @@ async fn load_all_babak_candidate_ids(
     period_end: ReportPeriodEnd,
     page_timeout: Option<core::time::Duration>,
 ) -> Result<Vec<i64>, AppError> {
+    load_all_babak_candidate_ids_with_page_size(
+        dbx,
+        login,
+        req,
+        access,
+        scope,
+        period_end,
+        page_timeout,
+        RER_BABAK_CANDIDATE_PAGE_SIZE,
+    )
+    .await
+}
+
+async fn load_all_babak_candidate_ids_with_page_size(
+    dbx: &DatabaseConnection,
+    login: &uuid::Uuid,
+    req: &InboxMessagesReq,
+    access: &BabakCandidateAccess,
+    scope: Option<&AnalyticsMessageIdScope>,
+    period_end: ReportPeriodEnd,
+    page_timeout: Option<core::time::Duration>,
+    page_size: u64,
+) -> Result<Vec<i64>, AppError> {
     let mut result = Vec::new();
     let mut cursor = None;
     loop {
         let load_page = load_babak_candidate_page(
-            dbx, login, req, access, scope, cursor, period_end,
+            dbx, login, req, access, scope, cursor, period_end, page_size,
         );
         let page = match page_timeout {
             Some(timeout) => {
@@ -1207,7 +1257,7 @@ async fn load_all_babak_candidate_ids(
             }
             None => load_page.await?,
         };
-        let page_is_full = page.len() == RER_BABAK_CANDIDATE_PAGE_SIZE as usize;
+        let page_is_full = page.len() == page_size as usize;
         cursor = page.last().map(|row| (row.datetime, row.id));
         result.extend(page.into_iter().map(|row| row.id));
         if !page_is_full {
@@ -1305,6 +1355,7 @@ async fn load_babak_candidate_page(
     scope: Option<&AnalyticsMessageIdScope>,
     cursor: Option<(chrono::NaiveDateTime, i64)>,
     period_end: ReportPeriodEnd,
+    page_size: u64,
 ) -> Result<Vec<BabakCandidateRow>, AppError> {
     let mut query = signal_message::Entity::find()
         .join(
@@ -1323,8 +1374,10 @@ async fn load_babak_candidate_page(
         .filter(
             datasource_group::Column::GroupMasterKey
                 .is_in(access.sigint_groups.clone()),
-        )
-        .filter(sigint_inbox_item::Column::Datetime.is_not_null());
+        );
+    if !babak_uses_creation_time(req) {
+        query = query.filter(sigint_inbox_item::Column::Datetime.is_not_null());
+    }
     let linked_message_ids = intel_product::Entity::find()
         .select_only()
         .column(intel_product::Column::IntelMessageId)
@@ -1433,18 +1486,18 @@ async fn load_babak_candidate_page(
     }
     if let Some(since) = req.since_date_inclusive_ms {
         query = query.filter(
-            sigint_inbox_item::Column::Datetime
+            babak_candidate_time_expr(req)
                 .gte(dt_from_millis(since).context(h!())?),
         );
     }
     if let Some(till) = req.till_date_inclusive_ms {
         query = match period_end {
             ReportPeriodEnd::Inclusive => query.filter(
-                sigint_inbox_item::Column::Datetime
+                babak_candidate_time_expr(req)
                     .lte(dt_from_millis(till).context(h!())?),
             ),
             ReportPeriodEnd::NonInclusive => query.filter(
-                sigint_inbox_item::Column::Datetime
+                babak_candidate_time_expr(req)
                     .lt(dt_from_millis(till).context(h!())?),
             ),
         };
@@ -1468,8 +1521,8 @@ async fn load_babak_candidate_page(
     }
     if let Some((datetime, id)) = cursor {
         query = query.filter(
-            sigint_inbox_item::Column::Datetime.gt(datetime).or(
-                sigint_inbox_item::Column::Datetime
+            babak_candidate_time_expr(req).gt(datetime).or(
+                babak_candidate_time_expr(req)
                     .eq(datetime)
                     .and(signal_message::Column::Id.gt(id)),
             ),
@@ -1479,10 +1532,10 @@ async fn load_babak_candidate_page(
         .select_only()
         .distinct()
         .column(signal_message::Column::Id)
-        .column(sigint_inbox_item::Column::Datetime)
-        .order_by_asc(sigint_inbox_item::Column::Datetime)
+        .expr_as(babak_candidate_time_expr(req), "datetime")
+        .order_by(babak_candidate_time_expr(req), Order::Asc)
         .order_by_asc(signal_message::Column::Id)
-        .limit(RER_BABAK_CANDIDATE_PAGE_SIZE)
+        .limit(page_size)
         .into_model::<BabakCandidateRow>()
         .all(dbx)
         .await
@@ -2092,9 +2145,50 @@ mod tests {
     use chrono::Utc;
     use sea_orm::prelude::Expr;
     use sea_orm::ActiveValue::Set;
+    use sea_query::PostgresQueryBuilder;
     use serde_json::json;
     use serial_test::serial;
     use std::io::Read;
+
+    #[test]
+    fn babak_uses_creation_basis_only_for_creation_sorting() {
+        let creation_req = InboxMessagesReq {
+            sort_by: Some(InboxMessagesSortBy::IMSCreatedAt),
+            ..Default::default()
+        };
+        assert!(babak_uses_creation_time(&creation_req));
+        assert_eq!(
+            babak_message_time_basis(&creation_req),
+            Some(crate::user_settings::MessageTimeBasis::MessageCreation)
+        );
+
+        assert!(!babak_uses_creation_time(&InboxMessagesReq::default()));
+        assert_eq!(
+            babak_message_time_basis(&InboxMessagesReq::default()),
+            None
+        );
+    }
+
+    #[test]
+    fn babak_candidate_time_expression_is_table_qualified() {
+        let creation_req = InboxMessagesReq {
+            sort_by: Some(InboxMessagesSortBy::IMSCreatedAt),
+            ..Default::default()
+        };
+        let interception_req = InboxMessagesReq::default();
+
+        let creation_sql = Query::select()
+            .expr(babak_candidate_time_expr(&creation_req))
+            .from(signal_message::Entity)
+            .to_string(PostgresQueryBuilder);
+        let interception_sql = Query::select()
+            .expr(babak_candidate_time_expr(&interception_req))
+            .from(sigint_inbox_item::Entity)
+            .to_string(PostgresQueryBuilder);
+
+        assert!(creation_sql.contains(r#""signal_message"."created_at""#));
+        assert!(interception_sql.contains(r#""sigint_inbox_item"."datetime""#));
+    }
 
     fn babak_test_row(
         lat: f64,
@@ -2257,6 +2351,287 @@ mod tests {
         Ok(())
     }
 
+    async fn seed_babak_candidate(
+        db: &DatabaseConnection,
+        datasource_group_id: i64,
+        created_at: NaiveDateTime,
+        interception_datetime: Option<NaiveDateTime>,
+    ) -> i64 {
+        let message = mk_signal_message(
+            db,
+            signal_message::ActiveModel {
+                body: Set(Some("Babak candidate".to_string())),
+                created_at: Set(created_at),
+                timestamp: Set(Some(created_at)),
+                datasource_group_id: Set(Some(datasource_group_id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let (date, time) = interception_datetime
+            .map(|datetime| {
+                (
+                    Some(datetime.date().to_string()),
+                    Some(datetime.time().format("%H:%M:%S").to_string()),
+                )
+            })
+            .unwrap_or((None, None));
+        mk_sigint_inbox_item(
+            db,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                date: Set(date),
+                time: Set(time),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        message.id
+    }
+
+    async fn seed_babak_callsign_boundary_message(
+        db: &DatabaseConnection,
+        datasource_group_id: i64,
+        created_at: NaiveDateTime,
+        interception_datetime: NaiveDateTime,
+        callsign: &str,
+        login_id: uuid::Uuid,
+    ) {
+        let message = mk_signal_message(
+            db,
+            signal_message::ActiveModel {
+                body: Set(Some(format!("callsign boundary {callsign}"))),
+                created_at: Set(created_at),
+                timestamp: Set(Some(created_at)),
+                datasource_group_id: Set(Some(datasource_group_id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inbox_item = mk_sigint_inbox_item(
+            db,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                date: Set(Some(interception_datetime.date().to_string())),
+                time: Set(Some(
+                    interception_datetime.time().format("%H:%M:%S").to_string(),
+                )),
+                unit_v2: Set(Some("TestUnit".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        crate::inbox::callsigns::sync(
+            db,
+            inbox_item.id,
+            inbox_item.id_uuid,
+            crate::inbox::callsigns::InboxItemCallsigns {
+                primary: vec![callsign.to_string()],
+                alg2: Vec::new(),
+            },
+            login_id,
+        )
+        .await
+        .unwrap();
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn babak_callsigns_follow_the_selected_time_basis() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        login::ActiveModel {
+            id: Set(login.id),
+            roles: Set(json!(["Rer", "Cyber"])),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let start = chrono::NaiveDate::from_ymd_opt(2026, 1, 10)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let end = start + chrono::Duration::hours(12);
+        for hour in [1, 2] {
+            seed_babak_callsign_boundary_message(
+                &env.dbx,
+                datasource_group.id,
+                start + chrono::Duration::hours(hour),
+                start - chrono::Duration::hours(12 - hour),
+                "ALPHA",
+                login.id,
+            )
+            .await;
+            seed_babak_callsign_boundary_message(
+                &env.dbx,
+                datasource_group.id,
+                start - chrono::Duration::hours(12 - hour),
+                start + chrono::Duration::hours(hour + 4),
+                "BRAVO",
+                login.id,
+            )
+            .await;
+        }
+        set_report_chunking_hours(&env.dbx, 6).await;
+        let base_req = ReportPreviewReq {
+            kind: "babak".to_string(),
+            req: InboxMessagesReq {
+                since_date_inclusive_ms: Some(
+                    start.and_utc().timestamp_millis(),
+                ),
+                till_date_inclusive_ms: Some(end.and_utc().timestamp_millis()),
+                ..Default::default()
+            },
+            report_type: None,
+            report_tags_only_this_unit: Some(false),
+            tag_report_sort_by: None,
+            report_1213_linked_networks_only: None,
+            without_comments: Some(true),
+            babak_new_callsign_min_mentions: Some(2),
+            interception_keep_full_message: None,
+            interception_keep_old_colors: None,
+            digest_omit_exo_id: None,
+            digest_form_1_2_17: None,
+            sposob_unit_name: None,
+        };
+        let interception =
+            bl_babak_report(&login.id, &env, &base_req).await.unwrap();
+        let mut creation_req = base_req.clone();
+        creation_req.req.sort_by = Some(InboxMessagesSortBy::IMSCreatedAt);
+        let creation = bl_babak_report(&login.id, &env, &creation_req)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            creation.units.iter().map(|unit| unit.count).sum::<i64>(),
+            2
+        );
+        assert!(creation
+            .new_callsigns
+            .not_seen_7days
+            .contains(&"ALPHA".to_string()));
+        assert!(!creation
+            .new_callsigns
+            .not_seen_7days
+            .contains(&"BRAVO".to_string()));
+        assert_eq!(
+            interception
+                .units
+                .iter()
+                .map(|unit| unit.count)
+                .sum::<i64>(),
+            2
+        );
+        assert!(interception
+            .new_callsigns
+            .not_seen_7days
+            .contains(&"BRAVO".to_string()));
+        assert!(!interception
+            .new_callsigns
+            .not_seen_7days
+            .contains(&"ALPHA".to_string()));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn babak_creation_candidates_use_creation_time_across_pages() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let period_start = chrono::NaiveDate::from_ymd_opt(2026, 1, 10)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let period_end = period_start + chrono::Duration::hours(24);
+
+        let creation_inside = seed_babak_candidate(
+            &env.dbx,
+            datasource_group.id,
+            period_start + chrono::Duration::hours(1),
+            Some(period_start - chrono::Duration::hours(6)),
+        )
+        .await;
+        let interception_inside = seed_babak_candidate(
+            &env.dbx,
+            datasource_group.id,
+            period_start - chrono::Duration::hours(1),
+            Some(period_start + chrono::Duration::hours(2)),
+        )
+        .await;
+        let tied_creation_first = seed_babak_candidate(
+            &env.dbx,
+            datasource_group.id,
+            period_start + chrono::Duration::hours(3),
+            Some(period_end + chrono::Duration::hours(6)),
+        )
+        .await;
+        let tied_creation_second = seed_babak_candidate(
+            &env.dbx,
+            datasource_group.id,
+            period_start + chrono::Duration::hours(3),
+            None,
+        )
+        .await;
+
+        let creation_req = InboxMessagesReq {
+            since_date_inclusive_ms: Some(
+                period_start.and_utc().timestamp_millis(),
+            ),
+            till_date_inclusive_ms: Some(
+                period_end.and_utc().timestamp_millis(),
+            ),
+            sort_by: Some(InboxMessagesSortBy::IMSCreatedAt),
+            ..Default::default()
+        };
+        let access =
+            BabakCandidateAccess::resolve(&env, &login.id, false, false)
+                .await
+                .unwrap();
+        let creation_ids = load_all_babak_candidate_ids_with_page_size(
+            &env.dbx,
+            &login.id,
+            &creation_req,
+            &access,
+            None,
+            ReportPeriodEnd::Inclusive,
+            None,
+            2,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            creation_ids,
+            vec![creation_inside, tied_creation_first, tied_creation_second,]
+        );
+
+        let interception_req = InboxMessagesReq {
+            since_date_inclusive_ms: creation_req.since_date_inclusive_ms,
+            till_date_inclusive_ms: creation_req.till_date_inclusive_ms,
+            ..Default::default()
+        };
+        let interception_ids = load_all_babak_candidate_ids_with_page_size(
+            &env.dbx,
+            &login.id,
+            &interception_req,
+            &access,
+            None,
+            ReportPeriodEnd::Inclusive,
+            None,
+            2,
+        )
+        .await
+        .unwrap();
+        assert_eq!(interception_ids, vec![interception_inside]);
+    }
+
     #[serial]
     #[tokio::test]
     async fn test_bl_babak_report_returns_unit_stats() {
@@ -2264,6 +2639,14 @@ mod tests {
         let now = Utc::now().naive_utc() - chrono::Duration::hours(20);
 
         let login = find_test_login(&env.dbx).await.unwrap();
+        login::ActiveModel {
+            id: Set(login.id),
+            roles: Set(json!(["Rer", "Cyber"])),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
         let datasource_group =
             find_test_datasource_group(&env.dbx).await.unwrap();
         let bpla_tag = find_test_bpla_tag(&env.dbx).await.unwrap();
@@ -2302,13 +2685,13 @@ mod tests {
         )
         .await
         .unwrap();
-        let second_datetime = now + chrono::Duration::hours(20);
+        let second_created_at = now + chrono::Duration::hours(20);
         let second_message = mk_signal_message(
             &env.dbx,
             signal_message::ActiveModel {
                 body: Set(Some("second test message".to_string())),
-                created_at: Set(second_datetime),
-                timestamp: Set(Some(second_datetime)),
+                created_at: Set(second_created_at),
+                timestamp: Set(Some(second_created_at)),
                 sender: Set(Some("sender".to_string())),
                 message_uid: Set(Some("uid-2".to_string())),
                 datasource_group_id: Set(Some(datasource_group.id)),
@@ -2325,9 +2708,9 @@ mod tests {
                 lat: Set(Some(50.0)),
                 lng: Set(Some(30.0)),
                 tags: Set(Some(json!([bpla_tag.id]))),
-                date: Set(Some(second_datetime.date().to_string())),
+                date: Set(Some(second_created_at.date().to_string())),
                 time: Set(Some(
-                    second_datetime.time().format("%H:%M:%S").to_string(),
+                    second_created_at.time().format("%H:%M:%S").to_string(),
                 )),
                 unit_v2: Set(Some("TestUnit".to_string())),
                 checked: Set(Some(true)),
@@ -2377,7 +2760,7 @@ mod tests {
             login.id,
             second_message.id,
             bpla_tag.id,
-            second_datetime,
+            second_created_at,
             "second comment",
         )
         .await
@@ -2461,6 +2844,39 @@ mod tests {
         let single = bl_babak_report(&login.id, &env, &req).await.unwrap();
         set_report_chunking_hours(&env.dbx, 12).await;
         let res = bl_babak_report(&login.id, &env, &req).await.unwrap();
+        let mut creation_req = req.clone();
+        creation_req.req.since_date_inclusive_ms = Some(
+            (now - chrono::Duration::hours(1))
+                .and_utc()
+                .timestamp_millis(),
+        );
+        creation_req.req.till_date_inclusive_ms = Some(
+            (second_created_at + chrono::Duration::hours(1))
+                .and_utc()
+                .timestamp_millis(),
+        );
+        creation_req.req.sort_by = Some(InboxMessagesSortBy::IMSCreatedAt);
+        let creation_access =
+            BabakCandidateAccess::resolve(&env, &login.id, false, true)
+                .await
+                .unwrap();
+        assert_eq!(
+            load_all_babak_candidate_ids(
+                &env.dbx,
+                &login.id,
+                &creation_req.req,
+                &creation_access,
+                None,
+                ReportPeriodEnd::Inclusive,
+                None,
+            )
+            .await
+            .unwrap(),
+            vec![message.id, second_message.id]
+        );
+        let creation = bl_babak_report(&login.id, &env, &creation_req)
+            .await
+            .unwrap();
 
         assert_eq!(res.units.len(), 1);
         let unit = &res.units[0];
@@ -2488,6 +2904,10 @@ mod tests {
         assert_eq!(unit.others_comments, single_unit.others_comments);
         assert_eq!(unit.losses_comments, single_unit.losses_comments);
         assert_eq!(res.new_callsigns, single.new_callsigns);
+        assert_eq!(creation.units.len(), res.units.len());
+        assert_eq!(creation.units[0].unit, unit.unit);
+        assert_eq!(creation.units[0].count, unit.count);
+        assert_eq!(creation.new_callsigns, res.new_callsigns);
         assert!(
             res.new_callsigns
                 .not_seen_7days
