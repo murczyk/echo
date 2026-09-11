@@ -408,6 +408,7 @@ export type InboxMessage = {
   bookmarked: boolean;
   timestamp: number | null;
   createdAt: number | null;
+  createdAtOrder: number | null;
   hasDateInHeader: boolean;
   groupMasterKey: string | null;
   sender: string | null;
@@ -5662,8 +5663,8 @@ export type MessageTextPreviewLines =
 ;
 
 export type MessageTimeBasis =
-  | 'MessageInterception'
-  | 'MessageCreation'
+  | 'interception'
+  | 'creation'
 ;
 
 export type UserDutySettingsDto = {

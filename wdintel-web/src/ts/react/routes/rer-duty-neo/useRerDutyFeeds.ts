@@ -226,10 +226,8 @@ export function useRerDutyFeeds(
   useEffect(() => {
     if (messageSortByRef.current === dutySettings.messageSortBy) return;
     messageSortByRef.current = dutySettings.messageSortBy;
-    feedState.messageFeeds.forEach((feed) => {
-      void feedState.loadFeedInitialMessages(feed.id);
-    });
-  }, [dutySettings.messageSortBy, feedState.loadFeedInitialMessages, feedState.messageFeeds]);
+    feedState.reloadFeedsPreservingUnread();
+  }, [dutySettings.messageSortBy, feedState.reloadFeedsPreservingUnread]);
 
   useInboxChangedMessageIds({
     onMessageIds: async (messageIds) => {

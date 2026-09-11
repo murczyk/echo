@@ -176,6 +176,7 @@ fn is_header_line_raw(line: &str) -> bool {
         || RE4.is_match(line)
         || RE5.is_match(line)
         || RE6.is_match(line)
+        || RE_DATE_ONLY.is_match(line)
         || RE_UNIT_DIVIDER.is_match(line)
 }
 

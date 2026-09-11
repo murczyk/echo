@@ -59,6 +59,8 @@ pub struct InboxMessage {
     #[serde(default)]
     pub created_at: Option<i64>,
     #[serde(default)]
+    pub created_at_order: Option<i64>,
+    #[serde(default)]
     pub has_date_in_header: bool,
     pub group_master_key: Option<String>,
     pub sender: Option<String>,
@@ -192,6 +194,7 @@ impl From<InboxInsertPayload> for InboxMessage {
             bookmarked: payload.bookmarked,
             timestamp: payload.timestamp,
             created_at: None,
+            created_at_order: None,
             has_date_in_header: false,
             group_master_key: payload.group_master_key,
             sender: payload.sender,

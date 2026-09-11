@@ -14,6 +14,8 @@ import {
   feedNewerSinceId,
   feedPendingNewerItems,
   mergePendingNewerItems,
+  messageOrderCursor,
+  messageOrderTimestamp,
   prependWindowedMessageItems,
   safePendingNewerPrefix,
   shouldBufferNewerMessages,
@@ -66,7 +68,9 @@ function reconcileWindowedUnreadIds(
 ): Map<number, number> {
   const windowedUnreadItems = new Map(feed.windowedUnreadItems);
   windowed.removedItems.forEach(([id, message]) => {
-    if (!feed.readIds.has(id)) windowedUnreadItems.set(id, message.timestamp ?? 0);
+    if (!feed.readIds.has(id)) {
+      windowedUnreadItems.set(id, messageOrderTimestamp(message, feed.messageSortBy) ?? 0);
+    }
   });
   windowed.items.forEach(([id]) => windowedUnreadItems.delete(id));
   if (addedItemsAreRead) {
@@ -267,6 +271,10 @@ export function useRerDutyDirectionalLoads(params: Params) {
             const acceptedWindow = prependWindowedMessageItems(
               latestFeed.items,
               response.inboxItems,
+              undefined,
+              paramsRef.current.buildReqForFeed(latestFeed, {}).sortBy === 'IMSCreatedAt'
+                ? 'IMSCreatedAt'
+                : 'IMSTimestamp',
             );
             // The operation was accepted against `latestFeed`; decide follow-up
             // invalidation from that same snapshot rather than mutating outer state
@@ -278,7 +286,14 @@ export function useRerDutyDirectionalLoads(params: Params) {
             commitFeedWindowUpdate(runParams.setMessageFeeds, (previous) =>
               previous.map((feed) => {
                 if (feed.id !== feedId) return feed;
-                const windowed = prependWindowedMessageItems(feed.items, response.inboxItems);
+                const windowed = prependWindowedMessageItems(
+                  feed.items,
+                  response.inboxItems,
+                  undefined,
+                  paramsRef.current.buildReqForFeed(feed, {}).sortBy === 'IMSCreatedAt'
+                    ? 'IMSCreatedAt'
+                    : 'IMSTimestamp',
+                );
                 // Prepending can evict the newer end of the bounded window. A pending
                 // tail then no longer connects to that window; discard it so the next
                 // newer request starts at the retained tail and refills sequentially.
@@ -478,10 +493,14 @@ export function useRerDutyDirectionalLoads(params: Params) {
           // With automatic scrolling disabled, never accept a background page straight
           // into a bounded window: a response can arrive after the reader moved and trim
           // their anchor. ON keeps the established physical-edge fast path.
-          const backgroundWindow = appendWindowedMessageItems(latestFeed.items, [
-            ...pendingBefore,
-            ...response.inboxItems,
-          ]);
+          const backgroundWindow = appendWindowedMessageItems(
+            latestFeed.items,
+            [...pendingBefore, ...response.inboxItems],
+            undefined,
+            paramsRef.current.buildReqForFeed(latestFeed, {}).sortBy === 'IMSCreatedAt'
+              ? 'IMSCreatedAt'
+              : 'IMSTimestamp',
+          );
           const wouldTrimLoadedItems = backgroundWindow.removedItems.some(([id]) =>
             latestFeed.items.some(([loadedId]) => loadedId === id),
           );
@@ -510,10 +529,11 @@ export function useRerDutyDirectionalLoads(params: Params) {
             addedCount,
             ...(operation.newerOptions.explicitNavigation && response.inboxItems.at(-1)
               ? {
-                  target: {
-                    id: response.inboxItems.at(-1)![0],
-                    timestamp: response.inboxItems.at(-1)![1].timestamp,
-                  },
+                  target: messageOrderCursor(
+                    response.inboxItems.at(-1)![0],
+                    response.inboxItems.at(-1)![1],
+                    latestFeed?.messageSortBy ?? 'IMSTimestamp',
+                  ),
                 }
               : {}),
           };
@@ -525,7 +545,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
           if (markAllRead && newestItem != null) {
             runParams.advanceFeedReadCursor(
               feedId,
-              { id: newestItem[0], timestamp: newestItem[1].timestamp },
+              messageOrderCursor(newestItem[0], newestItem[1], latestFeed!.messageSortBy),
               0,
               runParams.getFeedCountSignature(latestFeed!),
             );
@@ -577,7 +597,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
             if (tailItem != null) {
               runParams.advanceFeedReadCursor(
                 feedId,
-                { id: tailItem[0], timestamp: tailItem[1].timestamp },
+                messageOrderCursor(tailItem[0], tailItem[1], latestFeed.messageSortBy),
                 localUnread,
                 runParams.getFeedCountSignature(latestFeed),
               );

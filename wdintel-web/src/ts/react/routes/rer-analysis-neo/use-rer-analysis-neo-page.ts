@@ -706,14 +706,17 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   );
 
   const resetFilters = useCallback(() => {
-    const nextState = createResetQueryState();
+    const nextState = {
+      ...createResetQueryState(),
+      messageTimeBasis: dutySettings.messageSortBy,
+    };
     savedFilters.applySavedFilter(null);
     data.invalidateFilterSectionLoads();
     setQueryState(nextState);
     setLastResetState(nextState);
     setError(null);
     pushQueryStateToUrl(nextState, newestFirst);
-  }, [data, savedFilters, newestFirst]);
+  }, [data, dutySettings.messageSortBy, savedFilters, newestFirst]);
 
   const setIncludeOnlyNewFreqs = useCallback(
     (value: boolean) => {

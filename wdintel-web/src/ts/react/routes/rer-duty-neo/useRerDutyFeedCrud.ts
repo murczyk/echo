@@ -73,6 +73,7 @@ export function useRerDutyFeedCrud(
     const id = generateMessageFeedId();
     const newFeed: MessageFeedState = {
       id,
+      messageSortBy: 'IMSTimestamp',
       filter: emptyFilter(),
       items: [],
       loading: true,

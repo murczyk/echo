@@ -76,7 +76,11 @@ const MessageCardRoot = styled('div')(({ theme }) => ({
 
 export function formatMessageCardTooltipTime(
   msg: Pick<InboxMessage, 'time' | 'timestamp'>,
+  preferTimestamp = false,
 ): string {
+  if (preferTimestamp && isPresent(msg.timestamp)) {
+    return dayjs(msg.timestamp).tz(APP_TIME_ZONE).format('HH:mm:ss');
+  }
   const time = msg.time;
   if (time === null) return NO_DATA_LABEL;
   const trimmed = time.trim();
@@ -217,8 +221,7 @@ function MessageCardComponent({
   messageTextPreviewLines = 20,
   messageTimeBasis = 'interception',
 }: MessageCardProps) {
-  const displayTimestamp =
-    messageTimeBasis === 'creation' ? (msg.createdAt ?? msg.timestamp) : msg.timestamp;
+  const displayTimestamp = messageTimeBasis === 'creation' ? msg.createdAt : msg.timestamp;
   const [messageRootRef, relativeTimeMs] = useRelativeTimeDisplayMs(
     referenceTimeMs,
     displayTimestamp,
@@ -279,8 +282,12 @@ function MessageCardComponent({
       ? messageRenderDistance(displayTimestamp, relativeTimeMs)
       : null;
   const tooltipTime = useMemo(
-    () => formatMessageCardTooltipTime({ ...msg, timestamp: displayTimestamp }),
-    [displayTimestamp, msg],
+    () =>
+      formatMessageCardTooltipTime(
+        { ...msg, timestamp: displayTimestamp },
+        messageTimeBasis === 'creation',
+      ),
+    [displayTimestamp, messageTimeBasis, msg],
   );
 
   const topRight =

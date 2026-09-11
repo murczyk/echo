@@ -7596,6 +7596,15 @@ fn count_stats_analytics_supports_tag_filters() {
 }
 
 #[test]
+fn creation_time_requests_bypass_interception_scoped_analytics() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.message_time_basis =
+        Some(crate::user_settings::MessageTimeBasis::MessageCreation);
+
+    assert!(!analytics_count_request_supported(&req));
+}
+
+#[test]
 fn count_stats_analytics_supports_callsign_and_search_filters() {
     let mut req = mk_analysis_stats_req(0, 1);
 
@@ -8021,6 +8030,66 @@ fn new_callsign_queries_return_only_aggregates() {
         "{sql}"
     );
     assert!(!sql.contains("EXISTS"), "{sql}");
+}
+
+#[test]
+fn correlated_and_new_callsign_queries_filter_by_creation_time() {
+    let mut req = mk_analysis_stats_req(1_000, 2_000);
+    req.message_time_basis =
+        Some(crate::user_settings::MessageTimeBasis::MessageCreation);
+    let correlated = build_correlated_freq_messages_query(
+        &req,
+        vec!["group-1".to_string()],
+        dt_from_millis(req.since_date_inclusive_ms).unwrap(),
+        dt_from_millis(req.till_date_noninclusive_ms).unwrap(),
+        None,
+    )
+    .unwrap()
+    .build(DbBackend::Postgres)
+    .to_string();
+    assert!(
+        correlated.contains(r#""signal_message"."created_at""#),
+        "{correlated}"
+    );
+    assert!(
+        !correlated.contains(r#""sigint_inbox_item"."datetime" >="#),
+        "{correlated}"
+    );
+
+    let new_callsigns = build_new_callsign_filtered_items_query(
+        &uuid::Uuid::nil(),
+        &req,
+        req.since_date_inclusive_ms,
+        req.till_date_noninclusive_ms,
+        ReportPeriodEnd::NonInclusive,
+        &["group-1".to_string()],
+        false,
+        crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres,
+        None,
+        None,
+    )
+    .unwrap()
+    .build(DbBackend::Postgres)
+    .to_string();
+    assert!(
+        new_callsigns.contains(r#""signal_message"."created_at""#),
+        "{new_callsigns}"
+    );
+    assert!(new_callsigns.contains(r#""timestamp""#), "{new_callsigns}");
+    assert!(
+        !new_callsigns.contains(r#""sigint_inbox_item"."datetime" >="#),
+        "{new_callsigns}"
+    );
+}
+
+#[test]
+fn creation_time_analysis_requests_require_cyber_access() {
+    let mut req = mk_analysis_stats_req(1_000, 2_000);
+    assert!(!analysis_message_time_basis_requires_cyber(&req));
+
+    req.message_time_basis =
+        Some(crate::user_settings::MessageTimeBasis::MessageCreation);
+    assert!(analysis_message_time_basis_requires_cyber(&req));
 }
 
 #[test]

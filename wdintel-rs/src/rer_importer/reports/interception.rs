@@ -810,9 +810,11 @@ async fn build_inbox_messages_report_sql(
             InboxMessagesSortBy::IMSDatetime => {
                 q.filter(sigint_inbox_item::Column::Datetime.lt(till))
             }
-            InboxMessagesSortBy::IMSTimestamp
-            | InboxMessagesSortBy::IMSCreatedAt => {
+            InboxMessagesSortBy::IMSTimestamp => {
                 q.filter(signal_message::Column::Timestamp.lt(till))
+            }
+            InboxMessagesSortBy::IMSCreatedAt => {
+                q.filter(signal_message::Column::CreatedAt.lt(till))
             }
         };
     }

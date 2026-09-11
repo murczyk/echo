@@ -27,6 +27,7 @@ import {
   feedsUnreadDisplayTotal,
   flushPendingNewerItems,
   mergePendingNewerItems,
+  messageOrderCursor,
   shouldBufferNewerMessages,
   getPointEtalonsFromMessage,
   getShortStateIdFromUrl,
@@ -50,6 +51,7 @@ import type { InboxMessage, Network, SignalProfileEntry, Tag, Unit } from '../..
 function indicatorFeed(overrides: Partial<MessageFeedState>): MessageFeedState {
   return {
     id: 'mf-0',
+    messageSortBy: 'IMSTimestamp',
     filter: emptyFilter(),
     items: [],
     loading: false,
@@ -604,6 +606,7 @@ describe('rer-duty utils', () => {
   it('uses the tracked unread count for feed and tab unread totals', () => {
     const feed: MessageFeedState = {
       id: 'mf-1',
+      messageSortBy: 'IMSTimestamp',
       filter: emptyFilter(),
       items: [
         [1, {} as InboxMessage],
@@ -922,6 +925,47 @@ describe('rer-duty utils', () => {
     ] as Array<[number, InboxMessage]>;
 
     expect(windowInitialMessageItems(items, 3).map(([id]) => id)).toEqual([2, 3, 4]);
+  });
+
+  // https://github.com/echoua/echo/issues/3455
+  it('uses creation-time ordering when interception and creation timestamps differ', () => {
+    const items = [
+      [1, { timestamp: 300, createdAt: 100 } as InboxMessage],
+      [2, { timestamp: 100, createdAt: 300 } as InboxMessage],
+      [3, { timestamp: 200, createdAt: 200 } as InboxMessage],
+    ] as Array<[number, InboxMessage]>;
+
+    expect(windowInitialMessageItems(items, 3, 'IMSCreatedAt').map(([id]) => id)).toEqual([
+      1, 3, 2,
+    ]);
+  });
+
+  // https://github.com/echoua/echo/issues/3455
+  it('keeps creation ordering when values share a displayed millisecond', () => {
+    const items = [
+      [1, { createdAt: 100, createdAtOrder: 100_200 } as InboxMessage],
+      [2, { createdAt: 100, createdAtOrder: 100_100 } as InboxMessage],
+    ] as Array<[number, InboxMessage]>;
+
+    expect(windowInitialMessageItems(items, 2, 'IMSCreatedAt').map(([id]) => id)).toEqual([2, 1]);
+  });
+
+  // https://github.com/echoua/echo/issues/3455
+  it('uses the full creation-order timestamp for cursor pagination', () => {
+    const message = {
+      timestamp: 1_700_000_000_000,
+      createdAt: 1_700_000_100_000,
+      createdAtOrder: 1_700_000_100_000_321,
+    } as InboxMessage;
+
+    expect(messageOrderCursor(42, message, 'IMSCreatedAt')).toEqual({
+      id: 42,
+      timestamp: 1_700_000_100_000_321,
+    });
+    expect(messageOrderCursor(42, message, 'IMSTimestamp')).toEqual({
+      id: 42,
+      timestamp: 1_700_000_000_000,
+    });
   });
 
   it('prepends older messages and trims the newest side when the window is full', () => {

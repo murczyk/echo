@@ -5,7 +5,9 @@ use crate::config::{
 use crate::entities::*;
 use crate::error::AppError;
 use crate::types::*;
-use crate::users::{ensure_rer_role, has_any_role, login_id_from_identity};
+use crate::users::{
+    ensure_rer_role, has_any_role, has_role, login_id_from_identity,
+};
 use actix_identity::Identity;
 use actix_web::post;
 use actix_web::web::Json;
@@ -357,6 +359,11 @@ pub async fn report_docx_task_launch(
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let user_login = login_id_from_identity(&user)?;
     let req_inner = req.into_inner();
+    if req_inner.req.sort_by
+        == Some(crate::rer_importer::types::InboxMessagesSortBy::IMSCreatedAt)
+    {
+        has_role(&env.dbx, &user_login, "Cyber").await.c(h!())?;
+    }
     let report_kind = req_inner.kind.clone();
     ensure_report_launch_permissions_with_error_code_header(
         &env.dbx,

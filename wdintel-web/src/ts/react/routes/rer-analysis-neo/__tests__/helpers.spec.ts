@@ -449,6 +449,20 @@ describe('rer-analysis-neo helpers', () => {
     expect(nextState.adjacentFreqsRange).toBe(0);
   });
 
+  // https://github.com/echoua/echo/issues/3455
+  it('keeps the active creation-time preference when applying a saved filter', () => {
+    const savedFilter = createSavedFilter(createQueryState({ freqsSelected: ['123.4'] }));
+    const currentState = createQueryState({
+      messageTimeBasis: 'creation',
+      freqsSelected: ['999.9'],
+    });
+
+    const nextState = queryStateFromSavedFilter(savedFilter, currentState);
+
+    expect(nextState.messageTimeBasis).toBe('creation');
+    expect(nextState.freqsSelected).toEqual(['123.4']);
+  });
+
   it('detects showMap deep link for duty → analysis map tab', () => {
     expect(shouldOpenAnalysisMapFromSearchParams(new URLSearchParams('showMap=true'))).toBe(true);
     expect(shouldOpenAnalysisMapFromSearchParams(new URLSearchParams('showMap=1'))).toBe(false);

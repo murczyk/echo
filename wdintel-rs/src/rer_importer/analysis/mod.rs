@@ -46,6 +46,35 @@ pub mod stats;
 #[cfg(test)]
 mod tests;
 
+async fn ensure_analysis_message_time_basis_access(
+    env: &Env,
+    user: &Identity,
+    req: &AnalysisStatsReq,
+) -> Result<(), AppError> {
+    if analysis_message_time_basis_requires_cyber(req) {
+        has_role(&env.dbx, &login_id_from_identity(user)?, "Cyber")
+            .await
+            .c(h!())?;
+    }
+    Ok(())
+}
+
+async fn ensure_analysis_message_time_basis_access_by_id(
+    env: &Env,
+    user_id: &uuid::Uuid,
+    req: &AnalysisStatsReq,
+) -> Result<(), AppError> {
+    if analysis_message_time_basis_requires_cyber(req) {
+        has_role(&env.dbx, user_id, "Cyber").await.c(h!())?;
+    }
+    Ok(())
+}
+
+fn analysis_message_time_basis_requires_cyber(req: &AnalysisStatsReq) -> bool {
+    req.message_time_basis
+        == Some(crate::user_settings::MessageTimeBasis::MessageCreation)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum AnalyticsMessageIdScope {
     Empty,
@@ -3312,6 +3341,13 @@ pub async fn summary_table_freq(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<SummaryTableFreq>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    if req.message_time_basis
+        == Some(crate::user_settings::MessageTimeBasis::MessageCreation)
+    {
+        has_role(&env.dbx, &login_id_from_identity(&user)?, "Cyber")
+            .await
+            .c(h!())?;
+    }
     Ok(Json(summary_table_freq_1(&user, &env, &req).await.c(h!())?))
 }
 
@@ -4168,14 +4204,13 @@ fn build_summary_table_base_query(
             sigint_inbox_item::Relation::SigintPost.def(),
         )
         .filter(signal_message::Column::Deleted.eq(false));
-    let query = match message_time_basis {
-        Some(crate::user_settings::MessageTimeBasis::MessageCreation) => query
-            .filter(signal_message::Column::CreatedAt.gte(dt_since))
-            .filter(signal_message::Column::CreatedAt.lt(dt_till)),
-        _ => query
-            .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-            .filter(sigint_inbox_item::Column::Datetime.lt(dt_till)),
-    };
+    let query = filter_analysis_message_time_basis(
+        query,
+        message_time_basis,
+        dt_since,
+        dt_till,
+        ReportPeriodEnd::NonInclusive,
+    );
     match scope {
         Some(scope) => query
             .filter(scope.condition((
@@ -4187,6 +4222,35 @@ fn build_summary_table_base_query(
                 signal_message::Column::Id,
             ))),
         None => query,
+    }
+}
+
+fn filter_analysis_message_time_basis(
+    query: Select<signal_message::Entity>,
+    message_time_basis: Option<crate::user_settings::MessageTimeBasis>,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    period_end: ReportPeriodEnd,
+) -> Select<signal_message::Entity> {
+    match (message_time_basis, period_end) {
+        (
+            Some(crate::user_settings::MessageTimeBasis::MessageCreation),
+            ReportPeriodEnd::Inclusive,
+        ) => query
+            .filter(signal_message::Column::CreatedAt.gte(dt_since))
+            .filter(signal_message::Column::CreatedAt.lte(dt_till)),
+        (
+            Some(crate::user_settings::MessageTimeBasis::MessageCreation),
+            ReportPeriodEnd::NonInclusive,
+        ) => query
+            .filter(signal_message::Column::CreatedAt.gte(dt_since))
+            .filter(signal_message::Column::CreatedAt.lt(dt_till)),
+        (_, ReportPeriodEnd::Inclusive) => query
+            .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+            .filter(sigint_inbox_item::Column::Datetime.lte(dt_till)),
+        (_, ReportPeriodEnd::NonInclusive) => query
+            .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+            .filter(sigint_inbox_item::Column::Datetime.lt(dt_till)),
     }
 }
 
@@ -5014,6 +5078,7 @@ async fn launch_analysis_export_task(
     content_type: Option<String>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_analysis_message_time_basis_access(&env, &user, &req).await?;
     let login = login_id_from_identity(&user)?;
     let report_history = crate::report_history::enqueue_report(
         &env.dbx,
@@ -5078,6 +5143,7 @@ async fn correlated_freqs(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<CorrelatedFreqsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_analysis_message_time_basis_access(&env, &user, &req).await?;
     let login = login_id_from_identity(&user)?;
     let req = req.into_inner();
     let empty = CorrelatedFreqsRsp { freqs: vec![] };
@@ -5116,7 +5182,7 @@ async fn correlated_freqs(
     let freqs = with_analytics_read_fallback(
         env.get_ref(),
         "analysis correlated frequencies",
-        true,
+        analytics_count_request_supported(&req),
         |db| async move {
             let scope = stats::resolve_analytics_message_id_scope_for_range(
                 dt_since,
@@ -5253,9 +5319,14 @@ fn build_correlated_freq_messages_query(
         .filter(
             datasource_group::Column::GroupMasterKey.eq_any(accessible_groups),
         )
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+        .filter(signal_message::Column::Deleted.eq(false));
+    let query = filter_analysis_message_time_basis(
+        query,
+        req.message_time_basis,
+        dt_since,
+        dt_till,
+        ReportPeriodEnd::NonInclusive,
+    );
     let query = if let Some(scope) = scope {
         query
             .filter(scope.condition((
@@ -5833,6 +5904,7 @@ pub async fn bi_new_callsigns(
     req: &AnalysisStatsReq,
 ) -> Result<NewCallsignsRes, AppError> {
     ensure_rer_role_by_id(&env.dbx, user_id).await.c(h!())?;
+    ensure_analysis_message_time_basis_access_by_id(env, user_id, req).await?;
     let group_master_keys = get_identity_sigint_groups(&env.dbx, user_id)
         .await
         .c(h!())?;
@@ -5927,6 +5999,7 @@ pub async fn bi_new_callsigns_chunked(
     min_mentions: i64,
 ) -> Result<NewCallsignsRes, AppError> {
     ensure_rer_role_by_id(&env.dbx, user_id).await.c(h!())?;
+    ensure_analysis_message_time_basis_access_by_id(env, user_id, req).await?;
     let group_master_keys = get_identity_sigint_groups(&env.dbx, user_id)
         .await
         .c(h!())?;
@@ -6314,22 +6387,24 @@ fn build_new_callsign_filtered_items_query(
         )
         .select_only()
         .column_as(sigint_inbox_item::Column::Id, "id")
-        .column_as(sigint_inbox_item::Column::Datetime, "timestamp")
         .filter(
             datasource_group::Column::GroupMasterKey
                 .eq_any(group_master_keys.to_vec()),
         )
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(
-            sigint_inbox_item::Column::Datetime.gte(dt_from_millis(since_ms)?),
-        )
-        .filter(match period_end {
-            ReportPeriodEnd::Inclusive => sigint_inbox_item::Column::Datetime
-                .lte(dt_from_millis(till_ms)?),
-            ReportPeriodEnd::NonInclusive => {
-                sigint_inbox_item::Column::Datetime.lt(dt_from_millis(till_ms)?)
-            }
-        });
+        .filter(signal_message::Column::Deleted.eq(false));
+    let query = match req.message_time_basis {
+        Some(crate::user_settings::MessageTimeBasis::MessageCreation) => {
+            query.column_as(signal_message::Column::CreatedAt, "timestamp")
+        }
+        _ => query.column_as(sigint_inbox_item::Column::Datetime, "timestamp"),
+    };
+    let query = filter_analysis_message_time_basis(
+        query,
+        req.message_time_basis,
+        dt_from_millis(since_ms)?,
+        dt_from_millis(till_ms)?,
+        period_end,
+    );
     let query = if let Some(scope) = scope {
         query
             .filter(scope.condition((
@@ -6931,6 +7006,7 @@ pub async fn activity_daily(
 ) -> Result<Json<crate::sigint::freq::types::FreqDailyActivityCount>, AppError>
 {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_analysis_message_time_basis_access(&env, &user, &req).await?;
     let login = login_id_from_identity(&user)?;
     let accessible_groups =
         get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
@@ -7011,6 +7087,7 @@ pub async fn callsign_relations(
     AppError,
 > {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_analysis_message_time_basis_access(&env, &user, &req).await?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
@@ -7193,6 +7270,7 @@ async fn group_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<GroupStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_analysis_message_time_basis_access(&env, &user, &req).await?;
     let is_admin = has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
         .await
         .is_ok();
@@ -7356,6 +7434,7 @@ async fn sender_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<SenderStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_analysis_message_time_basis_access(&env, &user, &req).await?;
     let login = login_id_from_identity(&user)?;
     let master_keys: Vec<String> = get_identity_sigint_groups(&env.dbx, &login)
         .await
@@ -7416,6 +7495,7 @@ async fn post_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<PostStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_analysis_message_time_basis_access(&env, &user, &req).await?;
     let login = login_id_from_identity(&user)?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -7482,6 +7562,7 @@ async fn freq_stats(
         vec!["Rer", "Api"],
     )
     .await?;
+    ensure_analysis_message_time_basis_access(&env, &user, &req).await?;
     let login = login_id_from_identity(&user)?;
 
     let master_keys =
@@ -7538,6 +7619,7 @@ async fn callsign_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<CallsignStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_analysis_message_time_basis_access(&env, &user, &req).await?;
     let login = login_id_from_identity(&user)?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -7599,6 +7681,7 @@ async fn metadata_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<MetadataStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_analysis_message_time_basis_access(&env, &user, &req).await?;
     let login = login_id_from_identity(&user)?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -7660,6 +7743,7 @@ async fn tag_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<TagStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_analysis_message_time_basis_access(&env, &user, &req).await?;
     let login = login_id_from_identity(&user)?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -7724,6 +7808,7 @@ async fn unit_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<UnitStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_analysis_message_time_basis_access(&env, &user, &req).await?;
     let login = login_id_from_identity(&user)?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -7783,6 +7868,7 @@ async fn location_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<LocationStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_analysis_message_time_basis_access(&env, &user, &req).await?;
     let login = login_id_from_identity(&user)?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -7860,6 +7946,7 @@ async fn aor_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<AreaOfResponsibilityStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_analysis_message_time_basis_access(&env, &user, &req).await?;
     let login = login_id_from_identity(&user)?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -7964,6 +8051,7 @@ async fn network_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<NetworkStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_analysis_message_time_basis_access(&env, &user, &req).await?;
     let login = login_id_from_identity(&user)?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -8083,6 +8171,7 @@ async fn count_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<CountStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_analysis_message_time_basis_access(&env, &user, &req).await?;
     let login = login_id_from_identity(&user)?;
 
     let master_keys = get_identity_sigint_groups(&env.dbx, &login)
@@ -8163,8 +8252,12 @@ async fn count_stats(
     Ok(Json(response))
 }
 
-fn analytics_count_request_supported(_req: &AnalysisStatsReq) -> bool {
-    true
+fn analytics_count_request_supported(req: &AnalysisStatsReq) -> bool {
+    // Analytics scopes are materialized from interception-time partitions. Until
+    // their creation-time equivalent is available, route creation-basis requests
+    // through PostgreSQL so every panel describes the same message set.
+    req.message_time_basis
+        != Some(crate::user_settings::MessageTimeBasis::MessageCreation)
 }
 
 fn analytics_summary_table_request_supported(req: &AnalysisStatsReq) -> bool {
@@ -9109,6 +9202,7 @@ async fn group_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_analysis_message_time_basis_access(&env, &user, &req).await?;
     let master_keys_noimport =
         get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
             .await
@@ -9170,6 +9264,7 @@ async fn sender_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_analysis_message_time_basis_access(&env, &user, &req).await?;
     let login = login_id_from_identity(&user)?;
     let master_keys: Vec<String> = get_identity_sigint_groups(&env.dbx, &login)
         .await
@@ -9231,6 +9326,7 @@ async fn post_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_analysis_message_time_basis_access(&env, &user, &req).await?;
     let login = login_id_from_identity(&user)?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -9298,6 +9394,7 @@ async fn freq_stats_count(
         vec!["Rer", "Api"],
     )
     .await?;
+    ensure_analysis_message_time_basis_access(&env, &user, &req).await?;
     let login = login_id_from_identity(&user)?;
 
     let master_keys =
@@ -9361,6 +9458,7 @@ async fn callsign_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_analysis_message_time_basis_access(&env, &user, &req).await?;
     let login = login_id_from_identity(&user)?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -9423,6 +9521,7 @@ async fn tag_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_analysis_message_time_basis_access(&env, &user, &req).await?;
     let login = login_id_from_identity(&user)?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -9487,6 +9586,7 @@ async fn unit_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_analysis_message_time_basis_access(&env, &user, &req).await?;
     let login = login_id_from_identity(&user)?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -9546,6 +9646,7 @@ async fn location_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_analysis_message_time_basis_access(&env, &user, &req).await?;
     let login = login_id_from_identity(&user)?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -9622,6 +9723,7 @@ async fn aor_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_analysis_message_time_basis_access(&env, &user, &req).await?;
     let login = login_id_from_identity(&user)?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -9697,6 +9799,7 @@ async fn network_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_analysis_message_time_basis_access(&env, &user, &req).await?;
     let login = login_id_from_identity(&user)?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)

@@ -1088,6 +1088,7 @@ type alias InboxMessage =
     , bookmarked : Bool
     , timestamp : Maybe (Int)
     , createdAt : Maybe (Int)
+    , createdAtOrder : Maybe (Int)
     , hasDateInHeader : Bool
     , groupMasterKey : Maybe (String)
     , sender : Maybe (String)
@@ -1137,6 +1138,7 @@ inboxMessageEncoder struct =
         , ( "bookmarked", (Json.Encode.bool) struct.bookmarked )
         , ( "timestamp", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.timestamp )
         , ( "created_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.createdAt )
+        , ( "created_at_order", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.createdAtOrder )
         , ( "has_date_in_header", (Json.Encode.bool) struct.hasDateInHeader )
         , ( "group_master_key", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.groupMasterKey )
         , ( "sender", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.sender )
@@ -15098,6 +15100,7 @@ inboxMessageDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "bookmarked" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "timestamp" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at_order" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_date_in_header" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_key" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender" (Json.Decode.nullable (Json.Decode.string))))
@@ -23402,6 +23405,16 @@ messageTextPreviewLinesDecoder =
 type MessageTimeBasis
     = MessageInterception
     | MessageCreation
+
+
+messageTimeBasisEncoder : MessageTimeBasis -> Json.Encode.Value
+messageTimeBasisEncoder value =
+    case value of
+        MessageInterception ->
+            Json.Encode.string "interception"
+
+        MessageCreation ->
+            Json.Encode.string "creation"
 
 
 messageTimeBasisDecoder : Json.Decode.Decoder MessageTimeBasis

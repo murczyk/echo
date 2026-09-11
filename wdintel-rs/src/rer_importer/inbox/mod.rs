@@ -80,6 +80,17 @@ static INBOX_COUNT_SINGLEFLIGHT: Lazy<
     Mutex<HashMap<String, InboxCountSingleflightEntry>>,
 > = Lazy::new(|| Mutex::new(HashMap::new()));
 
+async fn ensure_inbox_message_sort_access(
+    env: &Env,
+    login: &uuid::Uuid,
+    req: &InboxMessagesReq,
+) -> Result<(), AppError> {
+    if req.sort_by == Some(InboxMessagesSortBy::IMSCreatedAt) {
+        has_role(&env.dbx, login, "Cyber").await.c(h!())?;
+    }
+    Ok(())
+}
+
 #[post("/api/rer-importer/get-inbox-map")]
 async fn get_inbox_map(
     user: actix_identity::Identity,
@@ -111,6 +122,7 @@ async fn get_inbox_map_inner(
     let login = user_id;
 
     let mut filter = req.inbox_items_filter.clone();
+    ensure_inbox_message_sort_access(&env, &login, &filter).await?;
     filter.nolimit = Some(true); // fetch all points
     if let Some(map_filter) = req.map_filter.clone() {
         let freq_whitelist = map_filter
@@ -174,6 +186,7 @@ async fn map_settlement_messages(
         .context(h!())?;
     let req = req.into_inner();
     let mut filter = req.inbox_items_filter;
+    ensure_inbox_message_sort_access(&env, &login, &filter).await?;
     filter.nolimit = Some(true);
     let filtered_ids = build_inbox_settlement_ids_query(&login, &env, &filter)
         .await
@@ -684,6 +697,7 @@ async fn messages_by_id(
         ..Default::default()
     };
     let inbox_req = req.inbox_req.as_ref().unwrap_or(&default_req);
+    ensure_inbox_message_sort_access(&env, &login, inbox_req).await?;
     let messages =
         messages_by_id_bl(&login, &logins, &env, &req.message_ids, inbox_req)
             .await?;
@@ -710,6 +724,7 @@ async fn messages_by_id_with_metadata(
         ..Default::default()
     };
     let inbox_req = req.inbox_req.as_ref().unwrap_or(&default_req);
+    ensure_inbox_message_sort_access(&env, &login, inbox_req).await?;
     let messages =
         messages_by_id_bl(&login, &logins, &env, &req.message_ids, inbox_req)
             .await
@@ -765,6 +780,7 @@ async fn messages_by_uuid(
         ..Default::default()
     };
     let inbox_req = req.inbox_req.as_ref().unwrap_or(&default_req);
+    ensure_inbox_message_sort_access(&env, &login, inbox_req).await?;
     let messages =
         messages_by_id_bl(&login, &logins, &env, &message_ids, inbox_req)
             .await
@@ -1095,9 +1111,7 @@ async fn inbox_messages(
     let is_admin = has_role(&env.dbx, &user_id, "Admin").await.is_ok();
     let page_id = req.page_id.clone();
     let req = req.into_inner();
-    if req.sort_by == Some(InboxMessagesSortBy::IMSCreatedAt) {
-        has_role(&env.dbx, &user_id, "Cyber").await.c(h!())?;
-    }
+    ensure_inbox_message_sort_access(&env, &user_id, &req).await?;
     if has_role(&env.dbx, &user_id, AI_AGENT_ROLE_API)
         .await
         .is_ok()
@@ -1825,9 +1839,7 @@ async fn inbox_messages_count(
     let user_id = login_id_from_identity(&user)?;
     let page_id = req.page_id.clone();
     let req = req.into_inner();
-    if req.sort_by == Some(InboxMessagesSortBy::IMSCreatedAt) {
-        has_role(&env.dbx, &user_id, "Cyber").await.c(h!())?;
-    }
+    ensure_inbox_message_sort_access(&env, &user_id, &req).await?;
 
     let payload = serde_json::to_value(&req).context(h!())?;
     record_page_visit(&user_id, &page_id, &env, Some(payload))
@@ -2126,6 +2138,7 @@ fn generic_submit_item_to_inbox_message(
         bookmarked: false,
         timestamp: Some(timestamp.and_utc().timestamp_millis()),
         created_at: None,
+        created_at_order: None,
         has_date_in_header: false,
         group_master_key: None,
         sender: item.sender.clone(),
@@ -4221,10 +4234,10 @@ async fn get_freq_pelengs_summary(
 ) -> Result<Json<FreqPelengsActivityRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
+    let req = req.into_inner();
+    ensure_inbox_message_sort_access(&env, &login, &req).await?;
 
-    let q = build_inbox_query(&login, &env, &req.into_inner())
-        .await
-        .context(h!())?;
+    let q = build_inbox_query(&login, &env, &req).await.context(h!())?;
 
     let q = format!(
         r#"SELECT "freq" as freq, COUNT(*) AS count

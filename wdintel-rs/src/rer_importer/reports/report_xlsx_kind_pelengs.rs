@@ -40,6 +40,7 @@ struct Message {
     pub body: String,
     pub datetime: Option<chrono::NaiveDateTime>,
     pub timestamp: Option<chrono::NaiveDateTime>,
+    pub created_at: chrono::NaiveDateTime,
     pub sender: Option<String>,
     pub date: Option<String>,
     pub time: Option<String>,
@@ -55,6 +56,7 @@ struct CollectedPelengReportMessage {
     message: InboxMessage,
     datetime: Option<NaiveDateTime>,
     timestamp: Option<NaiveDateTime>,
+    created_at: NaiveDateTime,
 }
 
 pub async fn get_inbox_messages_report(
@@ -129,9 +131,11 @@ fn sort_collected_peleng_report_messages(
             req,
             left.datetime,
             left.timestamp,
+            left.created_at,
             left.message_id,
             right.datetime,
             right.timestamp,
+            right.created_at,
             right.message_id,
         )
     });
@@ -278,6 +282,7 @@ async fn get_inbox_messages_report_chunk_postgres(
         .column(signal_message::Column::Body)
         .column(sigint_inbox_item::Column::Datetime)
         .column(signal_message::Column::Timestamp)
+        .column(signal_message::Column::CreatedAt)
         .expr(Expr::cust(format!(
             "{} AS sender",
             preferred_sender_sql_snippet(None)
@@ -419,9 +424,11 @@ async fn get_inbox_messages_report_chunk_postgres(
             InboxMessagesSortBy::IMSDatetime => {
                 q.filter(sigint_inbox_item::Column::Datetime.lt(till))
             }
-            InboxMessagesSortBy::IMSTimestamp
-            | InboxMessagesSortBy::IMSCreatedAt => {
+            InboxMessagesSortBy::IMSTimestamp => {
                 q.filter(signal_message::Column::Timestamp.lt(till))
+            }
+            InboxMessagesSortBy::IMSCreatedAt => {
+                q.filter(signal_message::Column::CreatedAt.lt(till))
             }
         };
     }
@@ -560,6 +567,7 @@ async fn get_inbox_messages_report_chunk_postgres(
                 coords: coords_tuple,
                 datetime: m.datetime,
                 timestamp: m.timestamp,
+                created_at: m.created_at,
                 message: InboxMessage {
                     parent_messages: vec![],
                     intelligence_reports: vec![],
@@ -583,6 +591,7 @@ async fn get_inbox_messages_report_chunk_postgres(
                         .timestamp
                         .map(|x| x.and_utc().timestamp_millis()),
                     created_at: None,
+                    created_at_order: None,
                     has_date_in_header: false,
                     group_master_key: None,
                     sender: m.sender.clone(),
@@ -922,6 +931,7 @@ mod tests {
                 body: "same body".to_string(),
                 datetime: None,
                 timestamp: None,
+                created_at: chrono::NaiveDateTime::default(),
                 sender: None,
                 date: None,
                 time: None,
@@ -935,6 +945,7 @@ mod tests {
                 body: "same body".to_string(),
                 datetime: None,
                 timestamp: None,
+                created_at: chrono::NaiveDateTime::default(),
                 sender: None,
                 date: None,
                 time: None,
@@ -1004,6 +1015,7 @@ mod tests {
                 message: blank_inbox_message(),
                 datetime: Some(datetime(hour)),
                 timestamp: Some(datetime(23 - hour)),
+                created_at: datetime(20 - hour),
             })
             .collect::<Vec<_>>();
 

@@ -279,9 +279,6 @@ export function SettingsMessageCard({
               <ToggleButton value="off">Без скорочення</ToggleButton>
             </ToggleButtonGroup>
           </Box>
-          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-            Визначає, коли з’являється кнопка «Показати більше».
-          </Typography>
         </Stack>
 
         {showMessageSortBy ? (
@@ -317,6 +314,10 @@ export function SettingsMessageCard({
             </Box>
           </Stack>
         ) : null}
+
+        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+          Визначає, коли з’являється кнопка «Показати більше».
+        </Typography>
 
         <Stack direction="row" spacing={1} alignItems="center" sx={{ pt: 0.5 }}>
           <InfoOutlinedIcon sx={{ fontSize: 18, color: 'info.main' }} />

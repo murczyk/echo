@@ -1494,6 +1494,70 @@ describe('MessageCard', () => {
     expect(view.container.textContent?.match(/15\.08\.2026, 08:55:41/g)).toHaveLength(1);
   });
 
+  // https://github.com/echoua/echo/issues/3455
+  it('keeps a date-only source header but prepends metadata for a time-only header', async () => {
+    const dated = await renderCard({
+      messageTimeBasis: 'creation',
+      msg: buildMessage({
+        text: '15.08.2026\nРядок повідомлення',
+        textMarked: [],
+        date: '15.08.2026',
+        time: '08:55:41',
+        hasDateInHeader: true,
+      }),
+    });
+    const timed = await renderCard({
+      messageTimeBasis: 'creation',
+      msg: buildMessage({
+        text: '08:55\nРядок повідомлення',
+        textMarked: [],
+        date: '15.08.2026',
+        time: '08:55:41',
+        hasDateInHeader: false,
+      }),
+    });
+    rendered.push(dated, timed);
+
+    expect(dated.container.textContent).not.toContain('15.08.2026, 08:55:41');
+    expect(timed.container.textContent).toContain('15.08.2026, 08:55:41');
+    expect(timed.container.textContent).toContain('08:55\nРядок повідомлення');
+  });
+
+  // https://github.com/echoua/echo/issues/3455
+  it('adds interception metadata for headerless text even when it mentions a dialogue date', async () => {
+    const view = await renderCard({
+      messageTimeBasis: 'creation',
+      msg: buildMessage({
+        text: 'Зустріч буде 15.08.2026\nРядок повідомлення',
+        textMarked: [],
+        date: '14.08.2026',
+        time: '08:55:41',
+        hasDateInHeader: false,
+      }),
+    });
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('14.08.2026, 08:55:41');
+    expect(view.container.textContent).toContain('Зустріч буде 15.08.2026');
+  });
+
+  // https://github.com/echoua/echo/issues/3455
+  it('keeps a headerless attachment card truthful when interception metadata is absent', async () => {
+    const view = await renderCard({
+      messageTimeBasis: 'creation',
+      msg: buildMessage({
+        text: '',
+        textMarked: [],
+        date: null,
+        time: null,
+        timestamp: null,
+      }),
+    });
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('Дата перехоплення недоступна');
+  });
+
   it('resets expanded message text when the preview limit changes', async () => {
     const rows = Array.from({ length: 41 }, (_, index) => `Рядок ${index + 1}`);
     const view = await renderCard({
@@ -1623,6 +1687,15 @@ describe('MessageCard', () => {
     } as InboxMessage);
     expect(tooltipTime).toMatch(/^\d{2}:\d{2}:\d{2}$/);
     expect(tooltipTime).not.toBe('02:45');
+  });
+
+  // https://github.com/echoua/echo/issues/3455
+  it('uses creation time for the creation-mode hover tooltip', () => {
+    const tooltipTime = formatMessageCardTooltipTime(
+      { time: '02:45:01', timestamp: 1_710_000_000_000 } as InboxMessage,
+      true,
+    );
+    expect(tooltipTime).not.toBe('02:45:01');
   });
 
   it('opens the duty navigation menu and routes the old destinations through it', async () => {

@@ -37,6 +37,7 @@ pub(crate) fn blank_inbox_message() -> InboxMessage {
         bookmarked: false,
         timestamp: None,
         created_at: None,
+        created_at_order: None,
         has_date_in_header: false,
         group_master_key: None,
         sender: None,
