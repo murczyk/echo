@@ -10,8 +10,24 @@ import { MessageCardAttachmentPreviewDialog } from '../../attachment-preview/Mes
 import type { MessageCardPreviewItem } from '../../attachment-preview/message-card-preview.types';
 
 vi.mock('@mui/material', () => ({
+  Box: ({
+    children,
+    sx: _sx,
+    ...props
+  }: {
+    children?: ReactNode;
+    sx?: unknown;
+  } & Record<string, unknown>) => <div {...props}>{children}</div>,
   Dialog: ({ children, open }: { children?: ReactNode; open: boolean }) =>
     open ? <div role="dialog">{children}</div> : null,
+  IconButton: ({
+    children,
+    sx: _sx,
+    ...props
+  }: {
+    children?: ReactNode;
+    sx?: unknown;
+  } & Record<string, unknown>) => <button {...props}>{children}</button>,
 }));
 
 const imageEditorEscapeHandler = vi.fn(() => false);
