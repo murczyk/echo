@@ -92,14 +92,14 @@ pub async fn update_aor(
     crate::battle_line::requeue_settlement_links(&txn)
         .await
         .c(h!())?;
-    txn.commit().await.c(h!())?;
     crate::sigint::network::etalon_calc::invalidate_network_inbox_for_aor(
-        &env.dbx,
+        &txn,
         &aor,
         format!("edit AOR from web UI: {}", aor.name),
     )
     .await
     .c(h!())?;
+    txn.commit().await.c(h!())?;
     Ok(Json(render_aor(aor)))
 }
 
@@ -201,11 +201,10 @@ pub async fn update_aor_battle_line_boundaries(
             .await
             .c(h!())?;
     }
-    txn.commit().await.c(h!())?;
     if battle_line_active {
         for aor in &updated {
             crate::sigint::network::etalon_calc::invalidate_network_inbox_for_aor(
-                &env.dbx,
+                &txn,
                 aor,
                 format!("edit AOR BattleLine boundaries from web UI: {}", aor.name),
             )
@@ -213,6 +212,7 @@ pub async fn update_aor_battle_line_boundaries(
             .c(h!())?;
         }
     }
+    txn.commit().await.c(h!())?;
     Ok(Json(updated.into_iter().map(render_aor).collect()))
 }
 
@@ -242,14 +242,14 @@ pub async fn delete_aor(
     crate::battle_line::requeue_settlement_links(&txn)
         .await
         .c(h!())?;
-    txn.commit().await.c(h!())?;
     crate::sigint::network::etalon_calc::invalidate_network_inbox_for_aor(
-        &env.dbx,
+        &txn,
         &aor,
         format!("delete AOR from web UI: {}", aor.name),
     )
     .await
     .c(h!())?;
+    txn.commit().await.c(h!())?;
     Ok(Json(()))
 }
 

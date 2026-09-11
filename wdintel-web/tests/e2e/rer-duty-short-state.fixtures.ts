@@ -3,9 +3,10 @@ import type { InboxMessagesRspRaw } from '../../src/ts/react/services/api/inbox-
 import { networkSettingsResponse } from './fixture-responses';
 
 type ShortStateFixtureOptions = {
+  enableAudioTranscription?: boolean;
   shortStateId?: string;
   shortState?: unknown;
-  inboxResponse?: InboxMessagesRspRaw | null;
+  inboxResponse?: InboxMessagesRspRaw | null | Promise<InboxMessagesRspRaw | null>;
   inboxResponseForRequest?: (
     requestBody: unknown,
   ) => InboxMessagesRspRaw | Promise<InboxMessagesRspRaw>;
@@ -16,6 +17,13 @@ type ShortStateFixtureOptions = {
         first_element_ts: number | null;
       }>;
   signalGroups?: string[];
+  tagsResponse?: unknown[];
+  networkInfoResponse?: unknown[];
+  disableAutoScroll?: boolean;
+  userSettingsResponse?:
+    | { tagsLayout: string; disableAutoScroll: boolean }
+    | Promise<{ tagsLayout: string; disableAutoScroll: boolean }>;
+  userSettingsFailure?: boolean;
 };
 
 type ShortStateFixtureHandle = {
@@ -50,14 +58,14 @@ function emptyUserResponse() {
   };
 }
 
-function emptyUserSettingsResponse() {
+function emptyUserSettingsResponse(disableAutoScroll = false) {
   return {
     tagsLayout: 'compact',
-    disableAutoScroll: false,
+    disableAutoScroll,
   };
 }
 
-function emptySystemSettingsResponse() {
+function emptySystemSettingsResponse(enableAudioTranscription = false) {
   return {
     id: null,
     rer_analysis_units_exact_match_only_default: false,
@@ -82,7 +90,7 @@ function emptySystemSettingsResponse() {
     goi_association_message_uid_worker_enabled: false,
     report_chunking_hours: 1,
     limit_big_reports: false,
-    enable_audio_transcription: false,
+    enable_audio_transcription: enableAudioTranscription,
     show_classic_duty: false,
     show_classic_analysis: false,
     show_peleng_distance_to_battleline: false,
@@ -202,7 +210,15 @@ export async function installRerDutyShortStateMocks(
     }
 
     if (pathname === '/api/user/settings') {
-      await fulfillJson(route, emptyUserSettingsResponse());
+      if (options.userSettingsFailure) {
+        await route.fulfill({ status: 500, body: 'Settings unavailable' });
+        return;
+      }
+      await fulfillJson(
+        route,
+        await (options.userSettingsResponse ??
+          emptyUserSettingsResponse(options.disableAutoScroll)),
+      );
       return;
     }
 
@@ -212,7 +228,7 @@ export async function installRerDutyShortStateMocks(
     }
 
     if (pathname === '/api/system-settings/current') {
-      await fulfillJson(route, emptySystemSettingsResponse());
+      await fulfillJson(route, emptySystemSettingsResponse(options.enableAudioTranscription));
       resolveSystemSettingsReady();
       return;
     }
@@ -243,7 +259,12 @@ export async function installRerDutyShortStateMocks(
     }
 
     if (pathname === '/api/tags/tags-list') {
-      await fulfillJson(route, emptyDutyTagsResponse());
+      await fulfillJson(route, options.tagsResponse ?? emptyDutyTagsResponse());
+      return;
+    }
+
+    if (pathname === '/api/sigint/network-info-batch-id') {
+      await fulfillJson(route, options.networkInfoResponse ?? []);
       return;
     }
 
@@ -287,7 +308,7 @@ export async function installRerDutyShortStateMocks(
       lastInboxRequest = request.postDataJSON();
       const response = options.inboxResponseForRequest
         ? await options.inboxResponseForRequest(lastInboxRequest)
-        : (options.inboxResponse ?? emptyDutyInboxResponse());
+        : ((await options.inboxResponse) ?? emptyDutyInboxResponse());
       await fulfillJson(route, response);
       return;
     }

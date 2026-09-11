@@ -249,6 +249,8 @@ const pickerValuesByLabel = new Map<string, unknown>();
 let drawerModalProps: { closeAfterTransition?: boolean } | undefined;
 let drawerSlotProps:
   { paper?: { sx?: { width?: string | Record<string, string | number> } } } | undefined;
+type DrawerCloseReason = 'escapeKeyDown' | 'backdropClick';
+let drawerOnClose: ((event: unknown, reason: DrawerCloseReason) => void) | undefined;
 
 function setRecentValues(values: Record<string, unknown>) {
   Object.defineProperty(globalThis, 'localStorage', {
@@ -320,14 +322,17 @@ vi.mock('@mui/material', () => ({
   Drawer: ({
     children,
     open,
+    onClose,
     ModalProps,
     slotProps,
   }: {
     children?: ReactNode;
     open?: boolean;
+    onClose?: (event: unknown, reason: DrawerCloseReason) => void;
     ModalProps?: { closeAfterTransition?: boolean };
     slotProps?: { paper?: { sx?: { width?: string | Record<string, string | number> } } };
   }) => {
+    drawerOnClose = onClose;
     drawerModalProps = ModalProps;
     drawerSlotProps = slotProps;
     return open ? <div role="dialog">{children}</div> : null;
@@ -362,9 +367,13 @@ vi.mock('@mui/material', () => ({
       {children}
     </button>
   ),
-  CircularProgress: ({ 'data-testid': testId = 'spinner' }: { 'data-testid'?: string }) => (
-    <span data-testid={testId} />
-  ),
+  CircularProgress: ({
+    'data-testid': testId = 'spinner',
+    'aria-label': ariaLabel,
+  }: {
+    'data-testid'?: string;
+    'aria-label'?: string;
+  }) => <span data-testid={testId} aria-label={ariaLabel} />,
   LinearProgress: ({
     value,
     'aria-label': ariaLabel,
@@ -550,6 +559,7 @@ describe('ManageMessageDrawer edit mode', () => {
     autocompleteOptionLabelsByLabel.clear();
     pickerValuesByLabel.clear();
     drawerModalProps = undefined;
+    drawerOnClose = undefined;
     directSubmitMocks.submitDirect.mockReset();
     directSubmitMocks.submitDirect.mockResolvedValue({ signal_message_id: 1 });
     directSubmitMocks.editDirectSubmit.mockReset();
@@ -575,6 +585,56 @@ describe('ManageMessageDrawer edit mode', () => {
     referenceDataMocks.getGroupInfosBatch.mockResolvedValue([]);
     setRecentValues({});
     uppyMocks.latest = null;
+  });
+
+  it('shows an inert report-edit loading shell with an enabled dismissal path', async () => {
+    setRecentValues({});
+    const onClose = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={onClose}
+          editAsReport
+          editTargetLoadState={{ status: 'loading', reportId: 91 }}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('Редагувати розвіддонесення');
+    expect(container.textContent).not.toContain('Завантажуємо розвіддонесення');
+    expect(container.querySelector('[aria-label="Завантаження розвіддонесення"]')).not.toBeNull();
+    expect(container.querySelector('form')).toBeNull();
+    const submit = container.querySelector('button[type="submit"]') as HTMLButtonElement;
+    expect(submit.textContent).toBe('Зберегти');
+    expect(submit.disabled).toBe(true);
+    expect(directSubmitMocks.copyDirectSubmit).not.toHaveBeenCalled();
+    expect(aiIntelReportMocks.quickIntelReportSuggestion).not.toHaveBeenCalled();
+    expect(referenceDataMocks.getUserSigintGroups).not.toHaveBeenCalled();
+    expect(drawerOnClose).toBeDefined();
+
+    const closeIcon = container.querySelector('button[aria-label="Закрити"]') as HTMLButtonElement;
+    expect(closeIcon.disabled).toBe(false);
+    act(() => closeIcon.click());
+    expect(onClose).toHaveBeenCalledOnce();
+
+    const cancel = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Скасувати',
+    );
+    expect(cancel).toBeDefined();
+    act(() => cancel?.click());
+    expect(onClose).toHaveBeenCalledTimes(2);
+
+    act(() => drawerOnClose?.({}, 'escapeKeyDown'));
+    expect(onClose).toHaveBeenCalledTimes(3);
+
+    root.unmount();
   });
 
   it('keeps report text empty while copied fields are loading', async () => {
@@ -927,7 +987,10 @@ describe('ManageMessageDrawer edit mode', () => {
       );
     });
 
-    expect(directSubmitMocks.copyDirectSubmit).toHaveBeenCalledWith([42]);
+    expect(directSubmitMocks.copyDirectSubmit).toHaveBeenCalledWith(
+      [42],
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
     expect(container.textContent).toContain('Створити розвіддонесення');
     expect(textFieldPropsByLabel.get('Текст оригінального повідомлення')?.value).toBe(
       'original copied body',
@@ -1032,7 +1095,10 @@ describe('ManageMessageDrawer edit mode', () => {
       );
     });
 
-    expect(directSubmitMocks.copyDirectSubmit).toHaveBeenCalledWith([42]);
+    expect(directSubmitMocks.copyDirectSubmit).toHaveBeenCalledWith(
+      [42],
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
     expect(container.textContent).toContain('Редагувати розвіддонесення');
     expect(textFieldPropsByLabel.get('Текст оригінального повідомлення')?.value).toBe(
       'original copied body',

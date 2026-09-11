@@ -185,6 +185,7 @@ function buildNetwork(id: number): Network {
     operationType: null,
     operationPeriod: null,
     doNotArchive: false,
+    lastActivityAt: null,
     lastUpdatedAt: 0,
     lastUpdatedBy: 'tester',
     activeFrom: null,
@@ -363,7 +364,7 @@ it('renders loaded activity states distinctly', () => {
       }),
     );
   });
-  expect(container.textContent).toContain('Не активна протягом останніх 10 днів');
+  expect(container.textContent).toContain('Немає перехоплень за останні 10 днів');
 
   act(() => {
     root?.render(

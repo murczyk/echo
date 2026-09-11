@@ -13,7 +13,243 @@ async function setupAnalysisNeoPage(
   await installAnalysisNeoApiMocks(page, options);
 }
 
+async function setupDirectLinkAnalysisNeoPage(
+  page: Parameters<typeof installAnalysisNeoApiMocks>[0],
+) {
+  const baseResponse = createLoadedInboxResponse();
+  const [targetMessageId, baseMessage] = baseResponse.inbox_items[0];
+  const targetSenderId = 'analysis-direct-link-sender-id';
+  const targetGroupId = 'analysis-direct-link-group-id';
+  const targetGroupName = 'Група Альфа';
+  const otherGroupId = 'analysis-direct-link-other-group-id';
+  const otherGroupName = 'Група Гамма';
+  const loadedSenderId = 'analysis-loaded-page-sender-id';
+  const loadedGroupId = 'analysis-loaded-page-group-id';
+  const targetMessage = {
+    ...baseMessage,
+    sender: targetSenderId,
+    groupMasterKey: targetGroupId,
+  };
+  const loadedMessage = {
+    ...targetMessage,
+    sender: loadedSenderId,
+    groupMasterKey: loadedGroupId,
+  };
+  const focusedResponse = {
+    ...baseResponse,
+    inbox_items: [
+      ...Array.from({ length: 20 }, (_, index) => [
+        targetMessageId - 20 + index,
+        {
+          ...targetMessage,
+          messageUid: `analysis-direct-link-neighbor-${index}`,
+          text: `Analysis direct-link neighbor fixture message ${index}`,
+        },
+      ]),
+      [targetMessageId, targetMessage],
+    ],
+    signal_profiles: {
+      [targetSenderId]: { given_name: 'Іван', family_name: 'Петренко' },
+    },
+    signal_groups: [{ master_key: targetGroupId, name: targetGroupName }],
+  } as typeof baseResponse;
+  const earlierResponse = {
+    ...focusedResponse,
+    inbox_items: Array.from({ length: 20 }, (_, index) => [
+      targetMessageId - 40 + index,
+      {
+        ...loadedMessage,
+        messageUid: `analysis-direct-link-earlier-${index}`,
+        text: `Analysis direct-link earlier fixture message ${index}`,
+      },
+    ]),
+    signal_profiles: {
+      [loadedSenderId]: { given_name: 'Олена', family_name: 'Коваль' },
+    },
+    signal_groups: [{ master_key: loadedGroupId, name: 'Група Бета' }],
+    page_limit: 21,
+  } as typeof focusedResponse;
+  const filteredMessageText = 'Analysis filtered group fixture message';
+  const filteredResponse = {
+    ...earlierResponse,
+    inbox_items: Array.from({ length: 20 }, (_, index) => [
+      targetMessageId + index + 100,
+      {
+        ...loadedMessage,
+        groupMasterKey: otherGroupId,
+        messageUid: `analysis-direct-link-filtered-${index}`,
+        text: `${filteredMessageText} ${index}`,
+      },
+    ]),
+    signal_groups: [{ master_key: otherGroupId, name: otherGroupName }],
+  } as typeof focusedResponse;
+  await setupAnalysisNeoPage(page, { inboxResponse: earlierResponse });
+  await page.route('**/api/rer-importer/get-inbox', async (route) => {
+    const body = route.request().postDataJSON() as {
+      around_message_ref?: string | null;
+      selected_groups?: string[] | null;
+    };
+    const selectedGroups = body.selected_groups ?? [];
+    const response = body.around_message_ref
+      ? selectedGroups.includes(otherGroupId)
+        ? { ...focusedResponse, inbox_items: [] }
+        : focusedResponse
+      : selectedGroups.includes(otherGroupId)
+        ? filteredResponse
+        : earlierResponse;
+    if (selectedGroups.length > 0 || !body.around_message_ref) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    await route.fulfill({
+      contentType: 'application/json; charset=utf-8',
+      body: JSON.stringify(response),
+    });
+  });
+  await page.route('**/api/rer/analysis/stats/groups', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json; charset=utf-8',
+      body: JSON.stringify({
+        groups: [
+          { master_key: targetGroupId, count: 21 },
+          { master_key: otherGroupId, count: 20 },
+        ],
+        group_names: [
+          { master_key: targetGroupId, name: targetGroupName },
+          { master_key: otherGroupId, name: otherGroupName },
+        ],
+      }),
+    });
+  });
+  await page.goto(`/rer-analysis-neo?m=${targetMessage.messageUid}`);
+
+  return {
+    filteredMessageText,
+    loadedGroupId,
+    loadedMessageId: targetMessageId - 21,
+    loadedSenderId,
+    otherGroupName,
+    targetGroupId,
+    targetGroupName,
+    targetMessageId,
+    targetSenderId,
+  };
+}
+
 test.describe('@smoke', () => {
+  test('@message-references analysis neo resolves group and sender names for a direct-link target', async ({
+    page,
+  }) => {
+    const context = await setupDirectLinkAnalysisNeoPage(page);
+
+    const target = page.locator(`[data-message-id="${context.targetMessageId}"]`);
+    await expect(target).toBeVisible();
+    await expect(target.getByText('Група Альфа', { exact: true })).toBeVisible();
+    await expect(target.getByText('Іван Петренко', { exact: true })).toBeVisible();
+    await expect(target).not.toContainText(context.targetGroupId);
+    await expect(target).not.toContainText(context.targetSenderId);
+  });
+
+  test('@message-references analysis neo resolves group and sender names after loading messages above', async ({
+    page,
+  }) => {
+    const context = await setupDirectLinkAnalysisNeoPage(page);
+    const messageScrollContainer = page
+      .locator('section[aria-labelledby] ul')
+      .first()
+      .locator('..');
+
+    await messageScrollContainer.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await messageScrollContainer.dispatchEvent('scroll');
+
+    const loadedMessage = page.locator(`[data-message-id="${context.loadedMessageId}"]`);
+    await expect(loadedMessage.getByText('Група Бета', { exact: true })).toBeVisible();
+    await expect(loadedMessage.getByText('Олена Коваль', { exact: true })).toBeVisible();
+    await expect(loadedMessage).not.toContainText(context.loadedGroupId);
+    await expect(loadedMessage).not.toContainText(context.loadedSenderId);
+  });
+
+  test('analysis neo keeps a direct-link target fixed when loading messages above', async ({
+    page,
+  }) => {
+    const { targetMessageId } = await setupDirectLinkAnalysisNeoPage(page);
+
+    const target = page.locator(`[data-message-id="${targetMessageId}"]`);
+    await expect(target).toBeVisible();
+    const messageScrollContainer = page
+      .locator('section[aria-labelledby] ul')
+      .first()
+      .locator('..');
+    await messageScrollContainer.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    const targetTopBefore = await target.evaluate((element) => element.getBoundingClientRect().top);
+    await messageScrollContainer.dispatchEvent('scroll');
+    await expect(page.locator('section[aria-labelledby] ul').first().locator('li')).toHaveCount(41);
+    await expect
+      .poll(async () => target.evaluate((element) => element.getBoundingClientRect().top))
+      .toBeCloseTo(targetTopBefore, 0);
+  });
+
+  test('@message-references analysis neo keeps the target visible when a group includes it', async ({
+    page,
+  }) => {
+    const context = await setupDirectLinkAnalysisNeoPage(page);
+    const target = page.locator(`[data-message-id="${context.targetMessageId}"]`);
+
+    await expect(target).toBeVisible();
+    await page.getByRole('button', { name: /^Групи / }).click();
+    await page.getByRole('combobox', { name: 'Групи' }).click();
+    await page.getByRole('option', { name: context.targetGroupName }).click();
+    await page.keyboard.press('Escape');
+
+    await expect(target).toBeVisible();
+    await expect(page.getByTestId('message-loading-skeletons-above')).toBeVisible();
+    await expect(page.getByTestId('message-loading-skeletons-below')).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Центральна секція' })).toHaveCount(0);
+
+    await expect(page.getByTestId('message-loading-skeletons-above')).toHaveCount(0);
+    await expect(page.getByTestId('message-loading-skeletons-below')).toHaveCount(0);
+    await expect(target).toBeVisible();
+  });
+
+  test('@message-references analysis neo resets scroll after a group excludes the direct-link target', async ({
+    page,
+  }) => {
+    const context = await setupDirectLinkAnalysisNeoPage(page);
+    const messageList = page.locator('section[aria-labelledby] ul').first();
+    const messageScrollContainer = messageList.locator('..');
+
+    await expect(page.locator(`[data-message-id="${context.targetMessageId}"]`)).toBeVisible();
+    await expect(messageList.locator('li')).toHaveCount(21);
+    await messageScrollContainer.dispatchEvent('wheel', { deltaY: 500 });
+    await messageScrollContainer.evaluate((element) => {
+      element.scrollTop = Math.min(500, element.scrollHeight - element.clientHeight);
+    });
+    await expect
+      .poll(() => messageScrollContainer.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(0);
+
+    await page.getByRole('button', { name: /^Групи / }).click();
+    await page.getByRole('combobox', { name: 'Групи' }).click();
+    await page.getByRole('option', { name: context.otherGroupName }).click();
+    await page.keyboard.press('Escape');
+
+    const loadingCenter = page.getByRole('region', { name: 'Центральна секція' });
+    await expect(loadingCenter).toBeVisible();
+    await expect(loadingCenter.locator('.MuiSkeleton-root').first()).toBeVisible();
+    await expect(loadingCenter.locator('.MuiCircularProgress-root')).toHaveCount(0);
+    await expect(page.locator(`[data-message-id="${context.targetMessageId}"]`)).toHaveCount(0);
+    await expect(page.getByRole('status', { name: 'Оновлення повідомлень' })).toHaveCount(0);
+    await expect(page.getByText(`${context.filteredMessageText} 0`, { exact: true })).toBeVisible();
+    await expect(page.locator(`[data-message-id="${context.targetMessageId}"]`)).toHaveCount(0);
+    await expect.poll(() => new URL(page.url()).searchParams.has('m')).toBe(false);
+    await expect
+      .poll(() => messageScrollContainer.evaluate((element) => element.scrollTop))
+      .toBe(0);
+  });
+
   test('analysis neo summary flow loads a known row', async ({ page }) => {
     await setupAnalysisNeoPage(page, { inboxResponse: createLoadedInboxResponse() });
     await page.goto('/rer-analysis-neo');
@@ -79,6 +315,184 @@ test.describe('@smoke', () => {
       }),
     );
     expect(cardBoxes.every(({ left, right }) => left >= 0 && right <= 375)).toBe(true);
+  });
+
+  test('analysis neo updates the message range while scrolling loaded pages', async ({ page }) => {
+    const firstPage = createOverflowingInboxResponse();
+    const [, message] = firstPage.inbox_items[0];
+    const secondPage = {
+      ...firstPage,
+      inbox_items: Array.from({ length: 15 }, (_, index) => [
+        121 + index,
+        {
+          ...message,
+          messageUid: `analysis-pagination-e2e-message-${index}`,
+          text: `Analysis pagination fixture message ${index}`,
+        },
+      ]),
+    } as typeof firstPage;
+    await setupAnalysisNeoPage(page, { inboxResponse: firstPage });
+    await page.route('**/api/rer-importer/get-inbox-count', async (route) => {
+      await route.fulfill({
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify({ quantity: 35, first_element_ts: null }),
+      });
+    });
+    await page.route('**/api/rer-importer/get-inbox', async (route) => {
+      const body = route.request().postDataJSON() as {
+        before_id_noninclusive?: number | null;
+      };
+      await route.fulfill({
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify(body.before_id_noninclusive == null ? firstPage : secondPage),
+      });
+    });
+    await page.goto('/rer-analysis-neo');
+
+    const range = page.getByRole('button', {
+      name: 'Перейти до першої або останньої сторінки',
+    });
+    const messageList = page.locator('section[aria-labelledby] ul').first();
+    const messageScrollContainer = messageList.locator('..');
+    await expect(range).toContainText('1-20 з 35');
+
+    await messageScrollContainer.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+      element.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+    await expect(messageList.locator('[data-message-id]')).toHaveCount(35);
+    await messageScrollContainer.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+      element.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+    await expect(range).toContainText('21-35 з 35');
+    await expect.poll(() => new URL(page.url()).searchParams.get('messagesPage')).toBe('2');
+
+    await page.reload();
+    await expect(messageList.locator('[data-message-id]')).toHaveCount(35);
+    await expect(range).toContainText('21-35 з 35');
+    await expect
+      .poll(() =>
+        page.locator('[data-message-id="121"]').evaluate((element) => {
+          const container = element.closest('ul')?.parentElement;
+          if (container == null) return null;
+          return Math.abs(
+            Math.round(
+              element.getBoundingClientRect().top -
+                container.getBoundingClientRect().top -
+                container.clientTop,
+            ),
+          );
+        }),
+      )
+      .toBeLessThanOrEqual(1);
+    await messageScrollContainer.evaluate(
+      (element) =>
+        new Promise<void>((resolve) => {
+          let previousScrollTop = element.scrollTop;
+          let stableFrames = 0;
+          const check = () => {
+            if (Math.abs(element.scrollTop - previousScrollTop) < 0.5) {
+              stableFrames += 1;
+            } else {
+              stableFrames = 0;
+              previousScrollTop = element.scrollTop;
+            }
+            if (stableFrames >= 3) resolve();
+            else requestAnimationFrame(check);
+          };
+          requestAnimationFrame(check);
+        }),
+    );
+
+    await messageScrollContainer.evaluate((element) => {
+      element.scrollTop = 0;
+      element.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+    await expect(range).toContainText('1-20 з 35');
+
+    const nextPage = page.getByRole('button', { name: 'Наступна сторінка' });
+    const prevPage = page.getByRole('button', { name: 'Попередня сторінка' });
+    await expect(nextPage).toBeEnabled();
+    await nextPage.click();
+    await expect(range).toContainText('21-35 з 35');
+    await expect
+      .poll(() => messageScrollContainer.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(0);
+
+    await expect(prevPage).toBeEnabled();
+    await prevPage.click();
+    await expect(range).toContainText('1-20 з 35');
+    await expect
+      .poll(() => messageScrollContainer.evaluate((element) => element.scrollTop))
+      .toBe(0);
+  });
+
+  test('analysis neo keeps the visible message anchored after using refresh', async ({ page }) => {
+    const initialPage = createOverflowingInboxResponse();
+    const refreshedPage = {
+      ...initialPage,
+      inbox_items: initialPage.inbox_items.map(([id, message], index) => [
+        id,
+        index === 0
+          ? {
+              ...message,
+              text: Array.from(
+                { length: 80 },
+                () => 'Refresh expansion changes the height above the visible message.',
+              ).join(' '),
+            }
+          : message,
+      ]),
+    } as typeof initialPage;
+    let refreshed = false;
+    let inboxRequestCount = 0;
+    await setupAnalysisNeoPage(page, { inboxResponse: initialPage });
+    await page.route('**/api/rer-importer/get-inbox', async (route) => {
+      inboxRequestCount += 1;
+      await route.fulfill({
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify(refreshed ? refreshedPage : initialPage),
+      });
+    });
+    await page.goto('/rer-analysis-neo');
+
+    const anchor = page.locator('[data-message-id="105"]');
+    const messageScrollContainer = anchor.locator('xpath=ancestor::ul/parent::*');
+    await expect(anchor).toBeVisible();
+    await anchor.evaluate((element) => {
+      const container = element.closest('ul')?.parentElement;
+      if (container == null) throw new Error('Message scroll container is missing');
+      container.scrollTop +=
+        element.getBoundingClientRect().top - container.getBoundingClientRect().top - 24;
+      container.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+    const offsetBefore = await anchor.evaluate((element) => {
+      const container = element.closest('ul')?.parentElement;
+      if (container == null) throw new Error('Message scroll container is missing');
+      return Math.round(
+        element.getBoundingClientRect().top -
+          container.getBoundingClientRect().top -
+          container.clientTop,
+      );
+    });
+    refreshed = true;
+    await page.getByRole('button', { name: 'Оновити' }).click();
+    await expect.poll(() => inboxRequestCount).toBeGreaterThan(1);
+    await expect(messageScrollContainer).toBeVisible();
+    await expect
+      .poll(() =>
+        anchor.evaluate((element) => {
+          const container = element.closest('ul')?.parentElement;
+          if (container == null) return null;
+          return Math.round(
+            element.getBoundingClientRect().top -
+              container.getBoundingClientRect().top -
+              container.clientTop,
+          );
+        }),
+      )
+      .toBe(offsetBefore);
   });
 
   test('analysis neo skeleton keeps an 8px narrow outer gutter', async ({ page }) => {

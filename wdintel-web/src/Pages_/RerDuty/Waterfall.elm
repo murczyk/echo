@@ -396,6 +396,7 @@ getBasicInboxParams : Model -> B.InboxMessagesReq
 getBasicInboxParams model =
     { sinceIdNoninclusive = Nothing
     , beforeIdNoninclusive = Nothing
+    , aroundMessageRef = Nothing
     , sinceDateInclusiveMs = Nothing
     , tillDateInclusiveMs = Nothing
     , onlyShowUnprocessed = Nothing
@@ -918,6 +919,8 @@ updateFilters msg model =
                     , postsDenied = Just m.postsDeniedSelect.selected
                     , unitsSelected = Nothing
                     , unitsDenied = Nothing
+                    , selectedUnitIds = Nothing
+                    , deniedUnitIds = Nothing
                     , unitsExactMatchOnly = Nothing
                     , lastViewedMessageId = WUtils.lastViewedIdToMaybe m.lastViewedMessageId
                     , highlightKeywordsEnabled = Nothing

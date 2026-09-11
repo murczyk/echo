@@ -817,14 +817,20 @@ deploy _server_pos="" server silent="false":
       trap - EXIT
 
       if [[ $status -ne 0 && $UNMASK_RUNTIME_SERVICES_ON_FAILURE -eq 1 ]]; then
-        echo "Deployment failed; stopping and unmasking runtime services..." >&2
+        echo "Deployment failed; restoring runtime services..." >&2
         if ! ssh "$SERVER" '
           status=0
           sudo systemctl stop wdintel-rs.socket wdintel-rs.service wdintel-rs-report-worker.service wdintel-rs-bgworker.service || status=1
           sudo systemctl unmask --runtime wdintel-rs.socket wdintel-rs.service wdintel-rs-report-worker.service wdintel-rs-bgworker.service || status=1
+          sudo systemctl daemon-reload || status=1
+          for unit in wdintel-rs.socket wdintel-rs-report-worker.service wdintel-rs-bgworker.service; do
+            if systemctl is-enabled --quiet "$unit"; then
+              sudo systemctl start "$unit" || status=1
+            fi
+          done
           exit "$status"
         '; then
-          echo "Failed to stop or unmask runtime services after deployment failure." >&2
+          echo "Failed to restore runtime services after deployment failure." >&2
         fi
       fi
 

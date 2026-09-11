@@ -145,4 +145,33 @@ describe('useAttachmentPreviewSwipe', () => {
     expect(onNext).not.toHaveBeenCalled();
     expect(onPrevious).not.toHaveBeenCalled();
   });
+
+  it('restores fresh swipes after pinch completion while navigation was disabled #3368', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const onNext = vi.fn();
+    const navigation = { count: 3, index: 1, onPrevious: vi.fn(), onNext };
+
+    await act(async () => root?.render(<TestSwipeComponent navigation={navigation} enabled />));
+    const stage = container.querySelector('[data-testid="swipe-stage"]') as HTMLElement;
+    stage.dispatchEvent(new CustomEvent('attachment-preview-pinch', { bubbles: true }));
+    await act(async () =>
+      root?.render(<TestSwipeComponent navigation={navigation} enabled={false} />),
+    );
+    stage.dispatchEvent(new CustomEvent('attachment-preview-gesture-end', { bubbles: true }));
+    await act(async () => root?.render(<TestSwipeComponent navigation={navigation} enabled />));
+
+    stage.dispatchEvent(
+      new TouchEvent('touchstart', {
+        touches: [{ clientX: 200, clientY: 100 } as Touch],
+      }),
+    );
+    stage.dispatchEvent(
+      new TouchEvent('touchend', {
+        changedTouches: [{ clientX: 50, clientY: 100 } as Touch],
+      }),
+    );
+    expect(onNext).toHaveBeenCalledOnce();
+  });
 });

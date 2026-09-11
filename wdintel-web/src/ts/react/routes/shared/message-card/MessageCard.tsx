@@ -2,6 +2,7 @@ import { styled } from '@mui/material/styles';
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
 import { memo, useMemo } from 'react';
+import type { MouseEvent } from 'react';
 import type {
   CallsignInfoRes,
   InboxMessage,
@@ -12,11 +13,12 @@ import type {
   Tag,
   Unit,
 } from '../../../../../Bindings';
-import { MessageCardContent } from './MessageCardContent';
+import { MessageCardContentWithDownloadGuard } from './MessageCardContent';
 import { MessageCardWatermark } from './MessageCardWatermark';
 import type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
 import {
   MessageCardHeader,
+  MessageCardMetadata,
   type MessageCardDisplayMode,
   type MessageCardHeaderProps,
 } from './MessageCardHeader';
@@ -41,6 +43,15 @@ import { resolveMessageCardEtalonDisplayModel } from './message-card.utils';
 import type { AddPointHighlightBlacklistRequest } from './point-highlight-blacklist';
 import type { MessageTextPreviewLineLimit } from '../../../services/api/user-settings';
 import { DEFAULT_MEDIA_SUMMARY_ENABLED } from '../../../hooks/duty-settings-defaults';
+import {
+  canDownloadAllMessageAttachments,
+  guardMessageCardDownloadClick,
+  MESSAGE_CARD_ATTACHMENTS_ARCHIVE_DOWNLOAD_KEY,
+  MESSAGE_CARD_ATTACHMENTS_ARCHIVE_FILE_NAME,
+  MESSAGE_CARD_ATTACHMENTS_ARCHIVE_LABEL,
+  messageCardAttachmentsArchiveHref,
+  useMessageCardDownloadGuard,
+} from './MessageCardMedia';
 
 dayjs.extend(customParseFormat);
 
@@ -119,9 +130,9 @@ export type MessageCardProps = {
   onCopyFreq?: () => void;
   onCopyTextWithNetwork?: () => void;
   onCopyTextWithNetworkAndNote?: () => void;
+  onCopyMessageLink?: () => void;
   onCopyEtalon?: () => void;
   onCopyLocation?: () => void;
-  onAddFrequencyToFilter?: (freq: string) => void;
   onCreateReport?: () => void;
   onEditReport?: (reportId: number) => void;
   onDelete?: () => void;
@@ -180,9 +191,9 @@ function MessageCardComponent({
   onCopyFreq,
   onCopyTextWithNetwork,
   onCopyTextWithNetworkAndNote,
+  onCopyMessageLink,
   onCopyEtalon,
   onCopyLocation,
-  onAddFrequencyToFilter,
   onCreateReport,
   onEditReport,
   onDelete,
@@ -202,6 +213,7 @@ function MessageCardComponent({
   messageTextPreviewLines = 20,
 }: MessageCardProps) {
   const [messageRootRef, relativeTimeMs] = useRelativeTimeDisplayMs(referenceTimeMs, msg.timestamp);
+  const downloadGuard = useMessageCardDownloadGuard();
   const compactLayout = feedCount >= 3;
   const derivedNetworkMap = useMemo(() => {
     if (Object.keys(networkMap).length > 0) return networkMap;
@@ -289,6 +301,27 @@ function MessageCardComponent({
     displayMode === 'analysis' && hasVisibleDmrMetadata(msg) ? (
       <MessageCardDmrMetadataPopover msg={msg} />
     ) : undefined;
+  const canDownloadAllAttachments = canDownloadAllMessageAttachments(msg.media ?? []);
+  const archiveDownloadStarting = downloadGuard.isDownloadStarting(
+    MESSAGE_CARD_ATTACHMENTS_ARCHIVE_DOWNLOAD_KEY,
+  );
+  const attachmentArchiveDownload = canDownloadAllAttachments
+    ? {
+        href: messageCardAttachmentsArchiveHref(id),
+        download: MESSAGE_CARD_ATTACHMENTS_ARCHIVE_FILE_NAME,
+        label: MESSAGE_CARD_ATTACHMENTS_ARCHIVE_LABEL,
+        disabled: archiveDownloadStarting,
+        ariaBusy: archiveDownloadStarting,
+        ariaLabel: archiveDownloadStarting
+          ? 'Завантаження…'
+          : MESSAGE_CARD_ATTACHMENTS_ARCHIVE_LABEL,
+        onClick: (event: MouseEvent<HTMLElement>) =>
+          guardMessageCardDownloadClick(event, MESSAGE_CARD_ATTACHMENTS_ARCHIVE_DOWNLOAD_KEY, {
+            isDownloadStarting: downloadGuard.isDownloadStarting,
+            onDownloadStart: downloadGuard.onDownloadStart,
+          }),
+      }
+    : undefined;
 
   const headerProps: MessageCardHeaderProps = {
     compact: compactLayout,
@@ -296,8 +329,6 @@ function MessageCardComponent({
     id,
     msg,
     copiedFeedbackId,
-    groupName,
-    senderName,
     etalonDisplayModel,
     mapHref,
     analysisHref,
@@ -310,14 +341,14 @@ function MessageCardComponent({
     onCopyFreq,
     onCopyTextWithNetwork,
     onCopyTextWithNetworkAndNote,
+    onCopyMessageLink,
     onCopyEtalon: onCopyEtalonAction,
     onCopyLocation: onCopyLocationAction,
-    onAddFrequencyToFilter,
     onDelete,
     onEditDetails,
     onExcludeMessageEntity,
-    metadataTrigger,
     excludeMenuOptions,
+    attachmentArchiveDownload,
     readOnly,
   };
   const visibleMessageComments = messageComments;
@@ -325,12 +356,14 @@ function MessageCardComponent({
   return (
     <li
       ref={messageRootRef as React.RefObject<HTMLLIElement>}
-      className="list-none flex flex-col px-0 pb-3 mb-0"
+      data-message-id={id}
+      data-message-uid={msg.messageUid ?? undefined}
+      className="message-card-item list-none flex flex-col px-0 pb-[12px] mb-0"
       style={displayMode === 'analysis' ? ANALYSIS_MESSAGE_CARD_VISIBILITY_STYLE : undefined}
     >
       <MessageCardRoot
-        className="message-card-root relative flex flex-col w-full px-[12px] py-[10px] rounded bg-(--color-card) overflow-hidden"
-        style={{ gap: compactLayout ? '10px' : '12px' }}
+        data-message-card-root="true"
+        className="message-card-root relative flex w-full flex-col overflow-hidden"
       >
         {watermarkUserName !== '' && (
           <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
@@ -338,7 +371,16 @@ function MessageCardComponent({
           </div>
         )}
         <MessageCardHeader {...headerProps} />
-        <MessageCardContent
+        <MessageCardContentWithDownloadGuard
+          metadata={
+            <MessageCardMetadata
+              msg={msg}
+              groupName={groupName}
+              senderName={senderName}
+              etalonDisplayModel={etalonDisplayModel}
+              metadataTrigger={metadataTrigger}
+            />
+          }
           messageId={id}
           msg={msg}
           tagsMap={tagsMap}
@@ -366,6 +408,8 @@ function MessageCardComponent({
           collapseMediaPreviews={collapseMediaPreviews ?? false}
           mediaSummaryEnabled={mediaSummaryEnabled}
           messageTextPreviewLines={messageTextPreviewLines}
+          isDownloadStarting={downloadGuard.isDownloadStarting}
+          onDownloadStart={downloadGuard.onDownloadStart}
         />
       </MessageCardRoot>
     </li>

@@ -1631,12 +1631,14 @@ pub(crate) async fn persist_recomputed_inbox_item_callsigns<C>(
 where
     C: ConnectionTrait,
 {
+    let inbox_item_uuid = inbox_item.id_uuid;
     let mut inbox_item = inbox_item.into_active_model();
     inbox_item.callsign_tokens = Set(Some(recomputed.callsign_tokens.clone()));
     inbox_item.update(dbx).await.c(h!())?;
     crate::inbox::callsigns::sync(
         dbx,
         recomputed.inbox_item_id,
+        inbox_item_uuid,
         crate::inbox::callsigns::InboxItemCallsigns {
             primary: recomputed.after.clone(),
             alg2: recomputed.alg2.clone(),
@@ -2071,6 +2073,7 @@ mod tests {
         InboxMessage {
             parent_messages: vec![],
             intelligence_reports: vec![],
+            message_uuid: None,
             message_uid: None,
             text: String::new(),
             media: vec![],

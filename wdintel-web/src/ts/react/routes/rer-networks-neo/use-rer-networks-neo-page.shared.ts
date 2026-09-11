@@ -3,6 +3,7 @@ import dayjs from 'dayjs';
 import type { SelectedSidebarUnitFilter } from '../rer-callsigns-neo/types';
 import type { ActivityByNetworkId } from './use-rer-networks-neo-page.types';
 import { hasRole } from '../../utils/roles';
+import { APP_TIME_ZONE } from '../../utils/misc';
 
 export function formatErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -14,7 +15,7 @@ export function isAbortError(error: unknown): boolean {
 }
 
 export function getActivityRequestUpperBoundMs(): number {
-  return dayjs().startOf('day').add(1, 'day').valueOf();
+  return dayjs().tz(APP_TIME_ZONE).add(1, 'day').startOf('day').valueOf();
 }
 
 export function normalizeActivityMap(
@@ -46,9 +47,17 @@ export function isSameSidebarUnitFilter(
       left.hierarchy.armyRegion === right.hierarchy.armyRegion &&
       left.hierarchy.militaryDistrict === right.hierarchy.militaryDistrict &&
       left.hierarchy.army === right.hierarchy.army &&
+      left.hierarchy.corps === right.hierarchy.corps &&
       left.hierarchy.division === right.hierarchy.division &&
+      left.hierarchy.brigade === right.hierarchy.brigade &&
       left.hierarchy.regiment === right.hierarchy.regiment &&
-      left.hierarchy.battalion === right.hierarchy.battalion
+      left.hierarchy.battalion === right.hierarchy.battalion &&
+      left.hierarchy.company === right.hierarchy.company &&
+      left.hierarchy.platoon === right.hierarchy.platoon &&
+      left.hierarchy.squad === right.hierarchy.squad &&
+      left.hierarchy.section === right.hierarchy.section &&
+      left.hierarchy.teamOrCrew === right.hierarchy.teamOrCrew &&
+      left.hierarchy.other === right.hierarchy.other
     );
   }
 

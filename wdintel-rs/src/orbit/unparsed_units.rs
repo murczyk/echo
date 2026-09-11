@@ -1,5 +1,6 @@
 use super::{matching, persistence, test_link, tui, EchoEchelon};
 use crate::config::{
+    ORBIT_AUTOMATIC_PERSIST_BATCH_SIZE,
     ORBIT_AUTO_LINK_MAX_LEVENSHTEIN_DISTANCE, ORBIT_DRY_RUN_REPORT_TOP_LIMIT,
     ORBIT_TEST_LINK_UNITS_MAX_RATING, ORBIT_UNPARSED_UNITS_PERSIST_BATCH_SIZE,
 };
@@ -15,6 +16,64 @@ use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
 type LinkInventory = BTreeMap<Uuid, BTreeSet<i64>>;
+
+pub(super) struct UnitTextSigintResolver {
+    matcher: matching::TestLinkMatcher,
+    link_inventory: LinkInventory,
+}
+
+impl UnitTextSigintResolver {
+    pub(super) async fn load<C>(db: &C) -> anyhow::Result<Self>
+    where
+        C: ConnectionTrait,
+    {
+        let (_, matcher) =
+            persistence::load_latest_test_link_matcher_with_sync(db)
+                .await
+                .c(h!())?;
+        Ok(Self {
+            matcher,
+            link_inventory: load_link_inventory(db).await.c(h!())?,
+        })
+    }
+
+    pub(super) fn resolve(
+        &self,
+        unit_txt: &str,
+    ) -> anyhow::Result<Option<i64>> {
+        let Some(hierarchy) = parsed_hierarchy(unit_txt) else {
+            return Ok(None);
+        };
+        let hierarchy = hierarchy
+            .iter()
+            .map(|(echelon, name)| (*echelon, name.as_str()))
+            .collect::<Vec<_>>();
+        let Some(review_unit) = test_link::prepare_review_hierarchy(
+            1,
+            unit_txt,
+            test_link::ReviewSubjectKind::UnparsedUnit,
+            &hierarchy,
+            &self.matcher,
+            tui::LinkMode::Automatic,
+            &BTreeSet::new(),
+        ) else {
+            return Ok(None);
+        };
+        let Some((_, orbit_unit_id)) =
+            test_link::automatically_approved_link(&review_unit)
+        else {
+            return Ok(None);
+        };
+        let Some(sigint_unit_ids) = self.link_inventory.get(&orbit_unit_id)
+        else {
+            return Ok(None);
+        };
+        Ok(sigint_unit_ids
+            .first()
+            .copied()
+            .filter(|_| sigint_unit_ids.len() == 1))
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum UnparsedBlocker {
@@ -86,10 +145,9 @@ async fn run_with_database(
         crate::inbox::unresolved_units::load_new_unresolved_unit_labels(db)
             .await
             .c(h!())?;
-    let orbit_units = persistence::load_latest_synced_source_units(db)
+    let (_, matcher) = persistence::load_latest_test_link_matcher_with_sync(db)
         .await
         .c(h!())?;
-    let matcher = matching::TestLinkMatcher::from_units(orbit_units);
     let link_inventory = load_link_inventory(db).await.c(h!())?;
     let review_units =
         prepare_review_units(&labels, &matcher, &link_inventory, link_mode)
@@ -151,10 +209,9 @@ async fn print_dry_run_report(
         crate::inbox::unresolved_units::load_new_unresolved_unit_labels(db)
             .await
             .c(h!())?;
-    let orbit_units = persistence::load_latest_synced_source_units(db)
+    let (_, matcher) = persistence::load_latest_test_link_matcher_with_sync(db)
         .await
         .c(h!())?;
-    let matcher = matching::TestLinkMatcher::from_units(orbit_units);
     let link_inventory = load_link_inventory(db).await.c(h!())?;
     let rows = labels
         .iter()
@@ -495,7 +552,7 @@ async fn persist_selections(
 ) -> anyhow::Result<Vec<LabelLinkAction>> {
     let mut actions = Vec::new();
     let batch_size = match link_mode {
-        tui::LinkMode::Automatic => 1,
+        tui::LinkMode::Automatic => ORBIT_AUTOMATIC_PERSIST_BATCH_SIZE,
         tui::LinkMode::Manual => ORBIT_UNPARSED_UNITS_PERSIST_BATCH_SIZE,
     };
     for selections in selections.chunks(batch_size) {
@@ -518,11 +575,10 @@ async fn persist_selection_batch(
     }
     let transaction = super::acquire_import_lock(db).await.c(h!())?;
     let login = crate::users::system_login_id(&transaction).await.c(h!())?;
-    let orbit_units =
-        persistence::load_latest_synced_source_units(&transaction)
+    let (_, matcher) =
+        persistence::load_latest_test_link_matcher_with_sync(&transaction)
             .await
             .c(h!())?;
-    let matcher = matching::TestLinkMatcher::from_units(orbit_units);
     let mut link_inventory = load_link_inventory(&transaction).await.c(h!())?;
     let mut unique_links = unique_sigint_links(&link_inventory);
     let mut sigint_units =
@@ -761,6 +817,23 @@ mod tests {
     }
 
     #[test]
+    fn unit_text_resolver_preserves_ambiguous_closest_search_matches() {
+        let mut first = source_unit("4 мсб");
+        first.unit_id = Uuid::from_u128(1);
+        let mut second = source_unit("4 мсб");
+        second.unit_id = Uuid::from_u128(2);
+        let resolver = UnitTextSigintResolver {
+            matcher: matching::TestLinkMatcher::from_units(vec![second, first]),
+            link_inventory: BTreeMap::from([
+                (Uuid::from_u128(1), BTreeSet::from([17])),
+                (Uuid::from_u128(2), BTreeSet::from([18])),
+            ]),
+        };
+
+        assert_eq!(resolver.resolve("4 мсб").unwrap(), None);
+    }
+
+    #[test]
     fn manual_review_includes_a_uniquely_matched_unlinked_orbit_root() {
         let orbit_unit = source_unit("4 мсб");
         let orbit_unit_id = orbit_unit.unit_id;
@@ -995,6 +1068,7 @@ mod tests {
         crate::inbox::unit_resolution::upsert_failure(
             db,
             inbox_item.id,
+            inbox_item.id_uuid,
             unit_txt,
         )
         .await

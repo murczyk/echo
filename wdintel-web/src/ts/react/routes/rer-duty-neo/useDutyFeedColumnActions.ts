@@ -46,7 +46,6 @@ export function useDutyFeedColumnActions(
       removeMessageFeed,
       handleMessageBookmark,
       handleMessageImportant,
-      addFrequencyToFilter,
       handleMessageCopy,
       applyFilter,
       handleToggleTag,
@@ -68,13 +67,17 @@ export function useDutyFeedColumnActions(
       onLoadOlder: () => loadFeedOlderMessages(feedId),
       onLoadNewer: () =>
         loadFeedNewerMessages(feedId, { skipIfNewestExhausted: true, showLoading: false }),
-      onFlushPendingNewer: () => flushPendingNewerMessages(feedId, { urgent: true }),
+      onFlushPendingNewer: ({ physicallyAtBottom, visibleAnchorIds }) =>
+        flushPendingNewerMessages(feedId, {
+          urgent: true,
+          allowWindowTrim: physicallyAtBottom,
+          protectedItemIds: visibleAnchorIds,
+        }),
       onRemoveColumn: () => removeMessageFeed(feedId),
       onMessageBookmark: (msgId, currentlyBookmarked) =>
         handleMessageBookmark(feedId, msgId, currentlyBookmarked),
       onMessageImportant: (msgId, currentlyImportant) =>
         handleMessageImportant(feedId, msgId, currentlyImportant),
-      onMessageAddFrequencyToFilter: (_feedId, freq) => addFrequencyToFilter(feedId, freq),
       onMessageCopy: handleMessageCopy,
       onMessageCreateReport: (messageId, message) => {
         deps.openReportComposer({ id: messageId, message });
@@ -93,6 +96,10 @@ export function useDutyFeedColumnActions(
         setWatchModeByFeedId((prev) => ({ ...prev, [feedId]: false }));
       },
       onReachedBottom: ({ hasSeenNotAtBottom }) => {
+        if (dutyDisableAutoScroll) {
+          cancelFollowTail(feedId);
+          return false;
+        }
         const tailAvailability = tailAvailabilityByFeedId[feedId] ?? 'unknown';
         const hasPendingTail =
           feedIndicatorUnreadCount(feed, confirmedTailPreviewByFeedId[feedId], {
@@ -105,13 +112,16 @@ export function useDutyFeedColumnActions(
           tailAvailability === 'loading';
         const preservePendingTail = hasSeenNotAtBottom && hasPendingTail;
         if (preservePendingTail) {
-          cancelFollowTail(feedId);
-          setWatchModeByFeedId((prev) => ({ ...prev, [feedId]: false }));
-          // Flush buffered pages into the window, then keep fetching without auto-follow.
+          // Returning to the physical tail is an intentional user action. Resume the
+          // ON-mode follow generation only after the buffered page is made visible.
           flushPendingNewerMessages(feedId, { urgent: true });
+          const followGeneration = ensureFollowTail(feedId);
+          setWatchModeByFeedId((prev) => ({ ...prev, [feedId]: true }));
           void loadFeedNewerMessages(feedId, {
             skipIfNewestExhausted: true,
             showLoading: false,
+            scrollToEndAfterLoad: true,
+            followGeneration,
           });
         } else {
           flushPendingNewerMessages(feedId, { markAllRead: true, urgent: true });
@@ -159,14 +169,12 @@ export function useDutyFeedColumnActions(
     const stable: FeedColumnModel['actions'] = {
       onLoadOlder: () => latest().onLoadOlder(),
       onLoadNewer: () => latest().onLoadNewer?.(),
-      onFlushPendingNewer: () => latest().onFlushPendingNewer?.(),
+      onFlushPendingNewer: (context) => latest().onFlushPendingNewer?.(context),
       onRemoveColumn: () => latest().onRemoveColumn(),
       onMessageBookmark: (msgId, currentlyBookmarked) =>
         latest().onMessageBookmark(msgId, currentlyBookmarked),
       onMessageImportant: (msgId, currentlyImportant) =>
         latest().onMessageImportant(msgId, currentlyImportant),
-      onMessageAddFrequencyToFilter: (fId, freq) =>
-        latest().onMessageAddFrequencyToFilter(fId, freq),
       onMessageCopy: (text, feedbackId) => latest().onMessageCopy(text, feedbackId),
       onMessageCreateReport: (msgId, message) => latest().onMessageCreateReport(msgId, message),
       onMessageEditReport: (reportId) => latest().onMessageEditReport(reportId),

@@ -10,6 +10,7 @@ use echo_im::types::{MessageAttachmentF1, MessageF1};
 use itertools::Itertools;
 use redis::aio::ConnectionManager;
 use sea_orm::*;
+use std::collections::HashMap;
 use std::path::Path;
 use uuid::Uuid;
 
@@ -155,6 +156,16 @@ pub async fn reconcile_deleted_message(
         let original_message = signal_message.clone();
         pending_dedupe_updates
             .push(DedupeRedisUpdate::clear_signal_message(&original_message));
+        crate::rer_importer::inbox::prepare_message_network_activity_change(
+            txn,
+            original_message.id,
+            &format!(
+                "deleted reconciled inbox message {}",
+                original_message.id
+            ),
+        )
+        .await
+        .context(h!())?;
         let mut signal_message = signal_message.into_active_model();
         signal_message.deleted = Set(true);
         signal_message.update(txn).await.c(h!())?;
@@ -248,6 +259,7 @@ async fn promote_duplicate_trace_for_deleted_original(
     for (group_link, _) in duplicate_traces {
         let mut group_link = group_link.into_active_model();
         group_link.signal_message_id = Set(promoted_message.id);
+        group_link.signal_message_uuid = Set(promoted_message.id_uuid);
         group_link.message_uid = Set(promoted_message.message_uid.clone());
         group_link.update(txn).await.c(h!())?;
     }
@@ -255,6 +267,7 @@ async fn promote_duplicate_trace_for_deleted_original(
         txn,
         original_message.id,
         promoted_message.id,
+        promoted_message.id_uuid,
     )
     .await
     .c(h!())?;
@@ -343,6 +356,21 @@ async fn copy_manual_annotations_from_messages_to_promoted_messages(
     original_message_ids: &[i64],
     promoted_message_ids: &[i64],
 ) -> anyhow::Result<()> {
+    let promoted_message_uuids = signal_message::Entity::find()
+        .select_only()
+        .column(signal_message::Column::Id)
+        .column(signal_message::Column::IdUuid)
+        .filter(
+            signal_message::Column::Id
+                .is_in(promoted_message_ids.iter().copied()),
+        )
+        .into_tuple::<(i64, Option<Uuid>)>()
+        .all(txn)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+
     for original_message_id in original_message_ids.iter().copied().unique() {
         for promoted_message_id in promoted_message_ids.iter().copied().unique()
         {
@@ -353,6 +381,10 @@ async fn copy_manual_annotations_from_messages_to_promoted_messages(
                 txn,
                 original_message_id,
                 promoted_message_id,
+                promoted_message_uuids
+                    .get(&promoted_message_id)
+                    .copied()
+                    .flatten(),
             )
             .await
             .c(h!())?;
@@ -365,15 +397,18 @@ async fn copy_manual_annotations_to_promoted_message(
     txn: &DatabaseTransaction,
     original_message_id: i64,
     promoted_message_id: i64,
+    promoted_message_uuid: Option<Uuid>,
 ) -> anyhow::Result<()> {
     copy_annotation_rows(
         txn,
         original_message_id,
         promoted_message_id,
+        promoted_message_uuid,
         r#"
             insert into sigint_comment (
                 login_id,
                 signal_message_id,
+                signal_message_uuid,
                 comment,
                 created_at,
                 sigint_post_id
@@ -381,6 +416,7 @@ async fn copy_manual_annotations_to_promoted_message(
             select
                 c.login_id,
                 $2,
+                $3,
                 c.comment,
                 c.created_at,
                 c.sigint_post_id
@@ -403,16 +439,19 @@ async fn copy_manual_annotations_to_promoted_message(
         txn,
         original_message_id,
         promoted_message_id,
+        promoted_message_uuid,
         r#"
             insert into sigint_bookmark (
                 login_id,
                 signal_message_id,
+                signal_message_uuid,
                 created_at,
                 deleted
             )
             select
                 b.login_id,
                 $2,
+                $3,
                 b.created_at,
                 b.deleted
             from sigint_bookmark b
@@ -433,16 +472,19 @@ async fn copy_manual_annotations_to_promoted_message(
         txn,
         original_message_id,
         promoted_message_id,
+        promoted_message_uuid,
         r#"
             insert into sigint_important (
                 login_id,
                 signal_message_id,
+                signal_message_uuid,
                 created_at,
                 deleted
             )
             select
                 i.login_id,
                 $2,
+                $3,
                 i.created_at,
                 i.deleted
             from sigint_important i
@@ -464,9 +506,11 @@ async fn copy_manual_annotations_to_promoted_message(
         txn,
         original_message_id,
         promoted_message_id,
+        promoted_message_uuid,
         r#"
             insert into sigint_inbox_item_tag (
                 sigint_inbox_item_id,
+                sigint_inbox_item_uuid,
                 tag_id,
                 confidence,
                 login_id,
@@ -474,6 +518,7 @@ async fn copy_manual_annotations_to_promoted_message(
             )
             select
                 $2,
+                $3,
                 t.tag_id,
                 t.confidence,
                 t.login_id,
@@ -493,7 +538,7 @@ async fn copy_manual_annotations_to_promoted_message(
     )
     .await
     .c(h!())?;
-    copy_annotation_rows(
+    copy_annotation_rows_without_uuid(
         txn,
         original_message_id,
         promoted_message_id,
@@ -513,6 +558,27 @@ async fn copy_manual_annotations_to_promoted_message(
 }
 
 async fn copy_annotation_rows(
+    txn: &DatabaseTransaction,
+    original_message_id: i64,
+    promoted_message_id: i64,
+    promoted_message_uuid: Option<Uuid>,
+    sql: &str,
+) -> anyhow::Result<()> {
+    txn.execute_raw(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        sql,
+        [
+            original_message_id.into(),
+            promoted_message_id.into(),
+            promoted_message_uuid.into(),
+        ],
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn copy_annotation_rows_without_uuid(
     txn: &DatabaseTransaction,
     original_message_id: i64,
     promoted_message_id: i64,
@@ -578,6 +644,7 @@ async fn transfer_media_to_promoted_message(
     txn: &DatabaseTransaction,
     original_message_id: i64,
     promoted_message_id: i64,
+    promoted_message_uuid: Option<Uuid>,
 ) -> anyhow::Result<()> {
     let media_rows = signal_message_media::Entity::find()
         .filter(
@@ -590,6 +657,7 @@ async fn transfer_media_to_promoted_message(
     for media in media_rows {
         let mut media = media.into_active_model();
         media.signal_message_id = Set(promoted_message_id);
+        media.signal_message_uuid = Set(promoted_message_uuid);
         media.update(txn).await.c(h!())?;
     }
     Ok(())
@@ -1010,6 +1078,7 @@ pub async fn reconcile_active_message_with_staged_media(
                 txn,
                 source_message_id,
                 unstage_result.message.id,
+                unstage_result.message.id_uuid,
             )
             .await
             .c(h!())?;
@@ -1279,6 +1348,13 @@ async fn update_source_message_snapshot(
     datasource_group_id: i64,
     attachments_hash: Option<String>,
 ) -> anyhow::Result<signal_message::Model> {
+    crate::rer_importer::inbox::prepare_message_network_activity_change(
+        txn,
+        signal_message.id,
+        &format!("updated reconciled inbox message {}", signal_message.id),
+    )
+    .await
+    .context(h!())?;
     let mut signal_message = signal_message.into_active_model();
     signal_message.body = Set(Some(body.to_string()));
     signal_message.sender = Set(snapshot_sender_uuid(snapshot));
@@ -1368,6 +1444,20 @@ async fn retire_obsolete_linked_messages(
     source_message_id: i64,
     linked_messages: &[signal_message::Model],
 ) -> anyhow::Result<Vec<i64>> {
+    let obsolete_message_ids = linked_messages
+        .iter()
+        .filter(|signal_message| {
+            signal_message.id != source_message_id && !signal_message.deleted
+        })
+        .map(|signal_message| signal_message.id)
+        .collect_vec();
+    crate::rer_importer::inbox::prepare_messages_network_activity_change(
+        txn,
+        &obsolete_message_ids,
+        "retired obsolete reconciled inbox messages",
+    )
+    .await
+    .c(h!())?;
     let mut retired_ids = vec![];
     for signal_message in linked_messages {
         if signal_message.id == source_message_id {
@@ -1875,6 +1965,7 @@ async fn replace_media_if_changed(
     let uploaded_media = crate::messenger::media::persist_staged_media(
         staged_media,
         signal_message.id,
+        signal_message.id_uuid,
         txn,
     )
     .await
@@ -2064,15 +2155,16 @@ async fn reset_machine_derived_inbox_data(
     signal_message_id: i64,
 ) -> anyhow::Result<()> {
     let system_login_id = crate::users::system_login_id(txn).await?;
-    if sigint_inbox_item::Entity::find_by_id(signal_message_id)
-        .one(txn)
-        .await
-        .c(h!())?
-        .is_some()
+    if let Some(inbox_item) =
+        sigint_inbox_item::Entity::find_by_id(signal_message_id)
+            .one(txn)
+            .await
+            .c(h!())?
     {
         crate::inbox::callsigns::sync(
             txn,
             signal_message_id,
+            inbox_item.id_uuid,
             crate::inbox::callsigns::InboxItemCallsigns::default(),
             system_login_id,
         )
@@ -2095,6 +2187,12 @@ async fn reset_machine_derived_inbox_data(
         .exec(txn)
         .await
         .c(h!())?;
+    crate::rer_importer::inbox::invalidate_message_network_frequency_last_seen(
+        txn,
+        signal_message_id,
+    )
+    .await
+    .context(h!())?;
     sigint_inbox_item_network::Entity::delete_many()
         .filter(
             sigint_inbox_item_network::Column::SigintInboxItemId
@@ -2150,8 +2248,9 @@ mod tests {
     use crate::functest::tests::{
         cleanup_locked, mk_datasource, mk_datasource_group, mk_login,
         mk_sigint_bookmark, mk_sigint_comment, mk_sigint_important,
-        mk_sigint_inbox_item, mk_sigint_inbox_item_tag, mk_signal_group,
-        mk_signal_message,
+        mk_sigint_inbox_item, mk_sigint_inbox_item_network,
+        mk_sigint_inbox_item_tag, mk_sigint_network, mk_sigint_network_freq,
+        mk_signal_group, mk_signal_message,
     };
     use sea_orm::{
         ActiveValue::NotSet, ActiveValue::Set, ColumnTrait, EntityTrait,
@@ -2190,6 +2289,14 @@ mod tests {
         signal_message_group::ActiveModel {
             id: NotSet,
             signal_message_id: Set(original_message_id),
+            signal_message_uuid: Set(
+                crate::sigint::message_id::find_signal_message_uuid(
+                    txn,
+                    original_message_id,
+                )
+                .await
+                .unwrap(),
+            ),
             group_master_key: Set(Some(group_id.to_string())),
             sender: Set(trace.sender.clone()),
             login_id: Set(None),
@@ -2269,6 +2376,7 @@ mod tests {
             &txn,
             original.id,
             promoted.id,
+            promoted.id_uuid,
         )
         .await
         .unwrap();
@@ -2383,6 +2491,270 @@ mod tests {
                 .unwrap()
                 .unwrap();
         assert!(deleted_trace.deleted);
+
+        txn.rollback().await.unwrap();
+    }
+
+    async fn mk_linked_message_for_deletion(
+        txn: &DatabaseTransaction,
+        timestamp: NaiveDateTime,
+    ) -> (i64, signal_message::Model, MessageF1) {
+        let group_id = format!("delete-last-seen-{}", Uuid::new_v4());
+        let datasource = mk_datasource(txn, Default::default()).await.unwrap();
+        mk_signal_group(
+            txn,
+            signal_group::ActiveModel {
+                master_key: Set(group_id.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let datasource_group = mk_datasource_group(
+            txn,
+            datasource_group::ActiveModel {
+                group_master_key: Set(group_id.clone()),
+                datasource_id: Set(datasource.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let echo_inbox_message_id = 4546_i32;
+        let signal_message = mk_signal_message(
+            txn,
+            signal_message::ActiveModel {
+                datasource_group_id: Set(Some(datasource_group.id)),
+                timestamp: Set(Some(timestamp)),
+                created_at: Set(timestamp),
+                echo_inbox_message_id: Set(Some(echo_inbox_message_id.into())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let snapshot = MessageF1 {
+            id: Some("external-4546".to_string()),
+            text: String::new(),
+            sender: None,
+            sender_phone_number: None,
+            group_id: Some(group_id),
+            attachments: vec![],
+            message_source: echo_im::types::MessageSource::Signal,
+            timestamp,
+            internal_id: echo_inbox_message_id,
+            reply_to: None,
+            deleted: true,
+        };
+        (datasource.id, signal_message, snapshot)
+    }
+
+    async fn mk_cached_network_freq_for_message(
+        txn: &DatabaseTransaction,
+        signal_message_id: i64,
+        timestamp: NaiveDateTime,
+    ) -> sigint_network_freq::Model {
+        let freq = "146.4500";
+        mk_sigint_inbox_item(
+            txn,
+            sigint_inbox_item::ActiveModel {
+                id: Set(signal_message_id),
+                freq: Set(Some(freq.to_string())),
+                datetime: Set(Some(timestamp)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let network = mk_sigint_network(txn, Default::default()).await.unwrap();
+        let network_freq = mk_sigint_network_freq(
+            txn,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set(freq.to_string()),
+                active_from: Set(timestamp - chrono::Duration::days(1)),
+                last_seen_dt: Set(Some(timestamp)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item_network(
+            txn,
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(signal_message_id),
+                sigint_network_id: Set(network.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        network_freq
+    }
+
+    #[tokio::test]
+    async fn active_edit_invalidates_fallback_timestamp_before_update() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let old_timestamp = Utc::now().naive_utc();
+        let new_timestamp = old_timestamp + chrono::Duration::minutes(1);
+        let datasource_group =
+            mk_datasource_group(&txn, Default::default()).await.unwrap();
+        let signal_message = mk_signal_message(
+            &txn,
+            signal_message::ActiveModel {
+                datasource_group_id: Set(Some(datasource_group.id)),
+                timestamp: Set(Some(old_timestamp)),
+                created_at: Set(old_timestamp),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let network_freq = mk_cached_network_freq_for_message(
+            &txn,
+            signal_message.id,
+            old_timestamp,
+        )
+        .await;
+        let inbox_item =
+            sigint_inbox_item::Entity::find_by_id(signal_message.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        let mut inbox_item = inbox_item.into_active_model();
+        inbox_item.datetime = Set(None);
+        inbox_item.update(&txn).await.unwrap();
+        let snapshot = MessageF1 {
+            id: None,
+            text: String::new(),
+            sender: None,
+            sender_phone_number: None,
+            group_id: Some(datasource_group.group_master_key.clone()),
+            attachments: vec![],
+            message_source: echo_im::types::MessageSource::Signal,
+            timestamp: new_timestamp,
+            internal_id: 0,
+            reply_to: None,
+            deleted: false,
+        };
+
+        update_source_message_snapshot(
+            &txn,
+            signal_message,
+            &snapshot.text,
+            &snapshot,
+            datasource_group.id,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let network_freq =
+            sigint_network_freq::Entity::find_by_id(network_freq.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(network_freq.last_seen_dt, None);
+
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn deleting_linked_message_invalidates_network_frequency_last_seen() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let timestamp = Utc::now().naive_utc();
+        let (datasource_id, signal_message, snapshot) =
+            mk_linked_message_for_deletion(&txn, timestamp).await;
+        let network_freq = mk_cached_network_freq_for_message(
+            &txn,
+            signal_message.id,
+            timestamp,
+        )
+        .await;
+
+        reconcile_deleted_message(
+            &txn,
+            env.settlements.clone(),
+            &env.rq,
+            &env.config,
+            datasource_id,
+            &snapshot,
+        )
+        .await
+        .unwrap();
+
+        let signal_message =
+            signal_message::Entity::find_by_id(signal_message.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        let network_freq =
+            sigint_network_freq::Entity::find_by_id(network_freq.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(signal_message.deleted);
+        assert_eq!(network_freq.last_seen_dt, None);
+
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn retiring_obsolete_message_invalidates_network_frequency_last_seen()
+    {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let timestamp = Utc::now().naive_utc();
+        let source_message =
+            mk_signal_message(&txn, Default::default()).await.unwrap();
+        let obsolete_message = mk_signal_message(
+            &txn,
+            signal_message::ActiveModel {
+                timestamp: Set(Some(timestamp)),
+                created_at: Set(timestamp),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let network_freq = mk_cached_network_freq_for_message(
+            &txn,
+            obsolete_message.id,
+            timestamp,
+        )
+        .await;
+
+        assert_eq!(
+            retire_obsolete_linked_messages(
+                &txn,
+                source_message.id,
+                &[source_message, obsolete_message.clone()],
+            )
+            .await
+            .unwrap(),
+            vec![obsolete_message.id]
+        );
+
+        let obsolete_message =
+            signal_message::Entity::find_by_id(obsolete_message.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        let network_freq =
+            sigint_network_freq::Entity::find_by_id(network_freq.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(obsolete_message.deleted);
+        assert_eq!(network_freq.last_seen_dt, None);
 
         txn.rollback().await.unwrap();
     }
@@ -2638,6 +3010,14 @@ mod tests {
         signal_message_group::ActiveModel {
             id: NotSet,
             signal_message_id: Set(original.id),
+            signal_message_uuid: Set(
+                crate::sigint::message_id::find_signal_message_uuid(
+                    &txn,
+                    original.id,
+                )
+                .await
+                .unwrap(),
+            ),
             group_master_key: Set(Some(group_id.clone())),
             sender: Set(trace.sender.clone()),
             login_id: Set(None),
@@ -2759,6 +3139,7 @@ mod tests {
         signal_message_media::ActiveModel {
             id: Set(media_id),
             signal_message_id: Set(original.id),
+            signal_message_uuid: Set(original.id_uuid),
             content_type: Set("text/plain".to_string()),
             file_ext: Set(Some("txt".to_string())),
             file_name: Set(Some("original.txt".to_string())),
@@ -3981,6 +4362,7 @@ mod tests {
         signal_message_media::ActiveModel {
             id: Set(media_id),
             signal_message_id: Set(source_message.id),
+            signal_message_uuid: Set(source_message.id_uuid),
             content_type: Set("text/plain".to_string()),
             file_ext: Set(Some("txt".to_string())),
             file_name: Set(Some("old.txt".to_string())),
@@ -4095,6 +4477,7 @@ mod tests {
         signal_message_media::ActiveModel {
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(source_message.id),
+            signal_message_uuid: Set(source_message.id_uuid),
             content_type: Set("image/jpeg".to_string()),
             file_ext: Set(Some("jpg".to_string())),
             file_name: Set(Some("a.jpg".to_string())),
@@ -4845,6 +5228,7 @@ mod tests {
         signal_message_media::ActiveModel {
             id: Set(media_id),
             signal_message_id: Set(source_message.id),
+            signal_message_uuid: Set(source_message.id_uuid),
             content_type: Set("text/plain".to_string()),
             file_ext: Set(Some("txt".to_string())),
             file_name: Set(Some("old.txt".to_string())),
@@ -5059,6 +5443,7 @@ mod tests {
         signal_message_media::ActiveModel {
             id: Set(media_id),
             signal_message_id: Set(source_message.id),
+            signal_message_uuid: Set(source_message.id_uuid),
             content_type: Set("text/plain".to_string()),
             file_ext: Set(Some("txt".to_string())),
             file_name: Set(Some("old.txt".to_string())),
@@ -5190,6 +5575,7 @@ mod tests {
         signal_message_media::ActiveModel {
             id: Set(media_id),
             signal_message_id: Set(source_message.id),
+            signal_message_uuid: Set(source_message.id_uuid),
             content_type: Set("text/plain".to_string()),
             file_ext: Set(Some("txt".to_string())),
             file_name: Set(Some("old.txt".to_string())),
@@ -5466,6 +5852,7 @@ mod tests {
         signal_message_group::ActiveModel {
             id: NotSet,
             signal_message_id: Set(original.id),
+            signal_message_uuid: Set(source_message.id_uuid),
             group_master_key: Set(Some(group_id.clone())),
             sender: Set(source_message.sender.clone()),
             login_id: Set(source_message.login_id),
@@ -5579,15 +5966,12 @@ mod tests {
         let txn = env.dbx.begin().await.unwrap();
         let signal_message =
             mk_signal_message(&txn, Default::default()).await.unwrap();
-        mk_sigint_inbox_item(
+        let network_freq = mk_cached_network_freq_for_message(
             &txn,
-            sigint_inbox_item::ActiveModel {
-                id: Set(signal_message.id),
-                ..Default::default()
-            },
+            signal_message.id,
+            Utc::now().naive_utc(),
         )
-        .await
-        .unwrap();
+        .await;
         let login = mk_login(&txn, Default::default()).await.unwrap();
         if login::Entity::find()
             .filter(login::Column::Login.eq(SYSTEM_LOGIN_NAME))
@@ -5612,6 +5996,7 @@ mod tests {
             sigint_important::ActiveModel {
                 id: NotSet,
                 signal_message_id: Set(signal_message.id),
+                signal_message_uuid: NotSet,
                 login_id: Set(None),
                 created_at: NotSet,
                 deleted: Set(false),
@@ -5624,6 +6009,7 @@ mod tests {
             sigint_important::ActiveModel {
                 id: NotSet,
                 signal_message_id: Set(signal_message.id),
+                signal_message_uuid: NotSet,
                 login_id: Set(Some(login.id)),
                 created_at: NotSet,
                 deleted: Set(false),
@@ -5690,6 +6076,13 @@ mod tests {
             .unwrap();
         assert_eq!(tags.len(), 1);
         assert_eq!(tags[0].id, manual_tag.id);
+        let network_freq =
+            sigint_network_freq::Entity::find_by_id(network_freq.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(network_freq.last_seen_dt, None);
 
         txn.commit().await.unwrap();
     }

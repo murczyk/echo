@@ -40,7 +40,7 @@ pub enum Relation {
         from = "Column::SigintNetworkUnitId",
         to = "super::sigint_network_unit::Column::Id",
         on_update = "NoAction",
-        on_delete = "NoAction"
+        on_delete = "Cascade"
     )]
     SigintNetworkUnit,
     #[sea_orm(

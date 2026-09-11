@@ -880,6 +880,7 @@ mod tests {
         sigint_peleng::Model {
             id,
             source_inbox_item_id: 1,
+            source_inbox_item_uuid: Some(uuid::Uuid::now_v7()),
             lat,
             lng,
             settlement: None,

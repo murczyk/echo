@@ -13,8 +13,10 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub intel_message_id: i64,
+    pub intel_message_uuid: Option<Uuid>,
     #[sea_orm(primary_key, auto_increment = false)]
     pub source_message_id: i64,
+    pub source_message_uuid: Option<Uuid>,
     pub relation_kind: IntelProductRelationKind,
     pub created_at: DateTime,
 }

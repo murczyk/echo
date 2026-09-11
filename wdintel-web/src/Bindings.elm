@@ -1070,7 +1070,8 @@ geoCoordinatesEncoder struct =
 
 
 type alias InboxMessage =
-    { messageUid : Maybe (String)
+    { messageUuid : Maybe (String)
+    , messageUid : Maybe (String)
     , text : String
     , media : List (MessageMediaInfo)
     , images : List (String)
@@ -1116,7 +1117,8 @@ type alias InboxMessage =
 inboxMessageEncoder : InboxMessage -> Json.Encode.Value
 inboxMessageEncoder struct =
     Json.Encode.object
-        [ ( "message_uid", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.messageUid )
+        [ ( "message_uuid", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.messageUuid )
+        , ( "message_uid", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.messageUid )
         , ( "text", (Json.Encode.string) struct.text )
         , ( "media", (Json.Encode.list (messageMediaInfoEncoder)) struct.media )
         , ( "images", (Json.Encode.list (Json.Encode.string)) struct.images )
@@ -1303,6 +1305,7 @@ tagPresenceFilterEncoder enum =
 type alias InboxMessagesReq =
     { sinceIdNoninclusive : Maybe (Int)
     , beforeIdNoninclusive : Maybe (Int)
+    , aroundMessageRef : Maybe (String)
     , sinceDateInclusiveMs : Maybe (Int)
     , tillDateInclusiveMs : Maybe (Int)
     , onlyShowUnprocessed : Maybe (Bool)
@@ -1369,6 +1372,7 @@ inboxMessagesReqEncoder struct =
     Json.Encode.object
         [ ( "since_id_noninclusive", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sinceIdNoninclusive )
         , ( "before_id_noninclusive", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.beforeIdNoninclusive )
+        , ( "around_message_ref", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aroundMessageRef )
         , ( "since_date_inclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sinceDateInclusiveMs )
         , ( "till_date_inclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.tillDateInclusiveMs )
         , ( "only_show_unprocessed", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.onlyShowUnprocessed )
@@ -2759,6 +2763,8 @@ type alias RerDutyQueryStateWf =
     , postsDenied : Maybe (List (String))
     , unitsSelected : Maybe (List (String))
     , unitsDenied : Maybe (List (String))
+    , selectedUnitIds : Maybe (List (Int))
+    , deniedUnitIds : Maybe (List (Int))
     , unitsExactMatchOnly : Maybe (Bool)
     , lastViewedMessageId : Maybe (Int)
     , highlightKeywordsEnabled : Maybe (Bool)
@@ -2779,6 +2785,8 @@ rerDutyQueryStateWfEncoder struct =
         , ( "posts_denied", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.postsDenied )
         , ( "units_selected", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.unitsSelected )
         , ( "units_denied", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.unitsDenied )
+        , ( "selected_unit_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedUnitIds )
+        , ( "denied_unit_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.deniedUnitIds )
         , ( "units_exact_match_only", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.unitsExactMatchOnly )
         , ( "last_viewed_message_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastViewedMessageId )
         , ( "highlight_keywords_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.highlightKeywordsEnabled )
@@ -3467,7 +3475,8 @@ inboxItemContextReqEncoder struct =
 
 
 type alias InboxItemContextRsp =
-    { groupMasterKeys : List (String)
+    { message : Maybe (( Int, InboxMessage ))
+    , groupMasterKeys : List (String)
     , sigintInboxItemIds : List (Int)
     , sinceTs : Maybe (Int)
     , tillTs : Maybe (Int)
@@ -3477,10 +3486,33 @@ type alias InboxItemContextRsp =
 inboxItemContextRspEncoder : InboxItemContextRsp -> Json.Encode.Value
 inboxItemContextRspEncoder struct =
     Json.Encode.object
-        [ ( "group_master_keys", (Json.Encode.list (Json.Encode.string)) struct.groupMasterKeys )
+        [ ( "message", (Maybe.withDefault Json.Encode.null << Maybe.map (\( a, b) -> Json.Encode.list identity [ Json.Encode.int a, inboxMessageEncoder b ])) struct.message )
+        , ( "group_master_keys", (Json.Encode.list (Json.Encode.string)) struct.groupMasterKeys )
         , ( "sigint_inbox_item_ids", (Json.Encode.list (Json.Encode.int)) struct.sigintInboxItemIds )
         , ( "sinceTs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sinceTs )
         , ( "tillTs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.tillTs )
+        ]
+
+
+type alias InboxWindowRsp =
+    { targetMessageId : Int
+    , inbox : InboxMessagesRsp
+    , hasMoreBefore : Bool
+    , hasMoreAfter : Bool
+    , messagesBefore : Int
+    , messagesAfter : Int
+    }
+
+
+inboxWindowRspEncoder : InboxWindowRsp -> Json.Encode.Value
+inboxWindowRspEncoder struct =
+    Json.Encode.object
+        [ ( "target_message_id", (Json.Encode.int) struct.targetMessageId )
+        , ( "inbox", (inboxMessagesRspEncoder) struct.inbox )
+        , ( "has_more_before", (Json.Encode.bool) struct.hasMoreBefore )
+        , ( "has_more_after", (Json.Encode.bool) struct.hasMoreAfter )
+        , ( "messages_before", (Json.Encode.int) struct.messagesBefore )
+        , ( "messages_after", (Json.Encode.int) struct.messagesAfter )
         ]
 
 
@@ -4179,6 +4211,36 @@ loginReqEncoder struct =
         ]
 
 
+type LoginRsp
+    = Authenticated
+    | Needs2faSetup { challengeId : String, qrBase64 : String, manualKey : String }
+    | Needs2fa { challengeId : String }
+
+
+loginRspEncoder : LoginRsp -> Json.Encode.Value
+loginRspEncoder enum =
+    case enum of
+        Authenticated ->
+            Json.Encode.string "Authenticated"
+        Needs2faSetup { challengeId, qrBase64, manualKey } ->
+            Json.Encode.object [ ( "Needs2faSetup", Json.Encode.object [ ( "challenge_id", Json.Encode.string challengeId ), ( "qr_base64", Json.Encode.string qrBase64 ), ( "manual_key", Json.Encode.string manualKey ) ] ) ]
+        Needs2fa { challengeId } ->
+            Json.Encode.object [ ( "Needs2fa", Json.Encode.object [ ( "challenge_id", Json.Encode.string challengeId ) ] ) ]
+
+type alias Confirm2faReq =
+    { challengeId : String
+    , token : String
+    }
+
+
+confirm2faReqEncoder : Confirm2faReq -> Json.Encode.Value
+confirm2faReqEncoder struct =
+    Json.Encode.object
+        [ ( "challenge_id", (Json.Encode.string) struct.challengeId )
+        , ( "token", (Json.Encode.string) struct.token )
+        ]
+
+
 type alias User =
     { id : String
     , name : String
@@ -4339,6 +4401,7 @@ type alias Login =
     , deactivationReason : Maybe (DeactivationReasonType)
     , description : Maybe (String)
     , passwordAuthEnabled : Bool
+    , totpEnabled : Bool
     }
 
 
@@ -4360,6 +4423,7 @@ loginEncoder struct =
         , ( "deactivation_reason", (Maybe.withDefault Json.Encode.null << Maybe.map (deactivationReasonTypeEncoder)) struct.deactivationReason )
         , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.description )
         , ( "password_auth_enabled", (Json.Encode.bool) struct.passwordAuthEnabled )
+        , ( "totp_enabled", (Json.Encode.bool) struct.totpEnabled )
         ]
 
 
@@ -4436,6 +4500,7 @@ type alias UpdateLoginReq =
     , deactivationReason : Maybe (DeactivationReasonType)
     , description : Maybe (String)
     , passwordAuthEnabled : Maybe (Bool)
+    , clearTotp : Maybe (Bool)
     }
 
 
@@ -4453,6 +4518,7 @@ updateLoginReqEncoder struct =
         , ( "deactivation_reason", (Maybe.withDefault Json.Encode.null << Maybe.map (deactivationReasonTypeEncoder)) struct.deactivationReason )
         , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.description )
         , ( "password_auth_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.passwordAuthEnabled )
+        , ( "clear_totp", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.clearTotp )
         ]
 
 
@@ -8963,9 +9029,17 @@ type alias ListCallsignsReq =
     , filterUnitArmyRegion : Maybe (String)
     , filterUnitMilitaryDistrict : Maybe (String)
     , filterUnitArmy : Maybe (String)
+    , filterUnitCorps : Maybe (String)
     , filterUnitDivision : Maybe (String)
+    , filterUnitBrigade : Maybe (String)
     , filterUnitRegiment : Maybe (String)
     , filterUnitBattalion : Maybe (String)
+    , filterUnitCompany : Maybe (String)
+    , filterUnitPlatoon : Maybe (String)
+    , filterUnitSquad : Maybe (String)
+    , filterUnitSection : Maybe (String)
+    , filterUnitTeamOrCrew : Maybe (String)
+    , filterUnitOther : Maybe (String)
     , filterDeveloping : Maybe (DevelopingFilter)
     , sinceDateInclusiveMs : Maybe (Int)
     , tillDateInclusiveMs : Maybe (Int)
@@ -8988,9 +9062,17 @@ listCallsignsReqEncoder struct =
         , ( "filter_unit_army_region", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitArmyRegion )
         , ( "filter_unit_military_district", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitMilitaryDistrict )
         , ( "filter_unit_army", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitArmy )
+        , ( "filter_unit_corps", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitCorps )
         , ( "filter_unit_division", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitDivision )
+        , ( "filter_unit_brigade", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitBrigade )
         , ( "filter_unit_regiment", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitRegiment )
         , ( "filter_unit_battalion", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitBattalion )
+        , ( "filter_unit_company", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitCompany )
+        , ( "filter_unit_platoon", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitPlatoon )
+        , ( "filter_unit_squad", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitSquad )
+        , ( "filter_unit_section", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitSection )
+        , ( "filter_unit_team_or_crew", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitTeamOrCrew )
+        , ( "filter_unit_other", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitOther )
         , ( "filter_developing", (Maybe.withDefault Json.Encode.null << Maybe.map (developingFilterEncoder)) struct.filterDeveloping )
         , ( "since_date_inclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sinceDateInclusiveMs )
         , ( "till_date_inclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.tillDateInclusiveMs )
@@ -9937,6 +10019,7 @@ type alias Network =
     , operationMode : Maybe (String)
     , operationType : Maybe (String)
     , operationPeriod : Maybe (String)
+    , lastActivityAt : Maybe (Int)
     , lastUpdatedAt : Int
     , lastUpdatedBy : Maybe (String)
     , activeFrom : Maybe (Int)
@@ -9965,6 +10048,7 @@ networkEncoder struct =
         , ( "operation_mode", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.operationMode )
         , ( "operation_type", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.operationType )
         , ( "operation_period", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.operationPeriod )
+        , ( "last_activity_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastActivityAt )
         , ( "last_updated_at", (Json.Encode.int) struct.lastUpdatedAt )
         , ( "last_updated_by", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastUpdatedBy )
         , ( "active_from", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.activeFrom )
@@ -10631,9 +10715,17 @@ type alias ListNetworksReq =
     , filterUnitArmyRegion : Maybe (String)
     , filterUnitMilitaryDistrict : Maybe (String)
     , filterUnitArmy : Maybe (String)
+    , filterUnitCorps : Maybe (String)
     , filterUnitDivision : Maybe (String)
+    , filterUnitBrigade : Maybe (String)
     , filterUnitRegiment : Maybe (String)
     , filterUnitBattalion : Maybe (String)
+    , filterUnitCompany : Maybe (String)
+    , filterUnitPlatoon : Maybe (String)
+    , filterUnitSquad : Maybe (String)
+    , filterUnitSection : Maybe (String)
+    , filterUnitTeamOrCrew : Maybe (String)
+    , filterUnitOther : Maybe (String)
     , filterText : Maybe (String)
     , filterName : Maybe (String)
     , filterLocation : Maybe (String)
@@ -10657,9 +10749,17 @@ listNetworksReqEncoder struct =
         , ( "filter_unit_army_region", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitArmyRegion )
         , ( "filter_unit_military_district", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitMilitaryDistrict )
         , ( "filter_unit_army", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitArmy )
+        , ( "filter_unit_corps", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitCorps )
         , ( "filter_unit_division", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitDivision )
+        , ( "filter_unit_brigade", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitBrigade )
         , ( "filter_unit_regiment", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitRegiment )
         , ( "filter_unit_battalion", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitBattalion )
+        , ( "filter_unit_company", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitCompany )
+        , ( "filter_unit_platoon", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitPlatoon )
+        , ( "filter_unit_squad", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitSquad )
+        , ( "filter_unit_section", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitSection )
+        , ( "filter_unit_team_or_crew", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitTeamOrCrew )
+        , ( "filter_unit_other", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitOther )
         , ( "filter_text", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterText )
         , ( "filter_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterName )
         , ( "filter_location", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterLocation )
@@ -14971,6 +15071,7 @@ geoCoordinatesDecoder =
 inboxMessageDecoder : Json.Decode.Decoder InboxMessage
 inboxMessageDecoder =
     Json.Decode.succeed InboxMessage
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_uuid" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_uid" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "media" (Json.Decode.list (messageMediaInfoDecoder))))
@@ -15138,6 +15239,7 @@ inboxMessagesReqDecoder =
     Json.Decode.succeed InboxMessagesReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "since_id_noninclusive" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "before_id_noninclusive" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "around_message_ref" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "since_date_inclusive_ms" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_inclusive_ms" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "only_show_unprocessed" (Json.Decode.nullable (Json.Decode.bool))))
@@ -15883,6 +15985,8 @@ rerDutyQueryStateWfDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "posts_denied" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [Json.Decode.field "units_selected" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string))), Json.Decode.succeed Nothing]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [Json.Decode.field "units_denied" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string))), Json.Decode.succeed Nothing]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [Json.Decode.field "selected_unit_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int))), Json.Decode.succeed Nothing]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [Json.Decode.field "denied_unit_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int))), Json.Decode.succeed Nothing]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [Json.Decode.field "units_exact_match_only" (Json.Decode.nullable (Json.Decode.bool)), Json.Decode.succeed Nothing]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_viewed_message_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_keywords_enabled" (Json.Decode.nullable (Json.Decode.bool))))
@@ -15965,6 +16069,17 @@ inboxMessagesRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signal_groups" (Json.Decode.list (signalGroupEntryDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq_pelengs_summary" (Json.Decode.nullable (Json.Decode.list (freqPelengsEntryDecoder)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page_limit" (Json.Decode.nullable (Json.Decode.int))))
+
+
+inboxWindowRspDecoder : Json.Decode.Decoder InboxWindowRsp
+inboxWindowRspDecoder =
+    Json.Decode.succeed InboxWindowRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "target_message_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox" (inboxMessagesRspDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_more_before" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_more_after" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messages_before" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messages_after" (Json.Decode.int)))
 
 
 inboxMapItemDecoder : Json.Decode.Decoder InboxMapItem
@@ -16542,6 +16657,35 @@ loginReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "password" (Json.Decode.string)))
 
 
+loginRspDecoder : Json.Decode.Decoder LoginRsp
+loginRspDecoder =
+        let
+            elmRsConstructNeeds2faSetup challengeId qrBase64 manualKey =
+                        Needs2faSetup { challengeId = challengeId, qrBase64 = qrBase64, manualKey = manualKey }
+            elmRsConstructNeeds2fa challengeId =
+                        Needs2fa { challengeId = challengeId }
+        in
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Authenticated" ->
+                            Json.Decode.succeed Authenticated
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.field "Needs2faSetup" (Json.Decode.succeed elmRsConstructNeeds2faSetup |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "challenge_id" (Json.Decode.string))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "qr_base64" (Json.Decode.string))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "manual_key" (Json.Decode.string))))
+        , Json.Decode.field "Needs2fa" (Json.Decode.succeed elmRsConstructNeeds2fa |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "challenge_id" (Json.Decode.string))))
+        ]
+
+confirm2faReqDecoder : Json.Decode.Decoder Confirm2faReq
+confirm2faReqDecoder =
+    Json.Decode.succeed Confirm2faReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "challenge_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "token" (Json.Decode.string)))
+
+
 userDecoder : Json.Decode.Decoder User
 userDecoder =
     Json.Decode.succeed User
@@ -16632,6 +16776,7 @@ loginDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deactivation_reason" (Json.Decode.nullable (deactivationReasonTypeDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "password_auth_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "totp_enabled" (Json.Decode.bool)))
 
 
 listLoginsSortByDecoder : Json.Decode.Decoder ListLoginsSortBy
@@ -16695,6 +16840,7 @@ updateLoginReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deactivation_reason" (Json.Decode.nullable (deactivationReasonTypeDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "password_auth_enabled" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "clear_totp" (Json.Decode.nullable (Json.Decode.bool))))
 
 
 sigintGroupsReqDecoder : Json.Decode.Decoder SigintGroupsReq
@@ -20088,9 +20234,17 @@ listCallsignsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_army_region" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_military_district" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_army" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_corps" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_division" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_brigade" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_regiment" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_battalion" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_company" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_platoon" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_squad" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_section" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_team_or_crew" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_other" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_developing" (Json.Decode.nullable (developingFilterDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "since_date_inclusive_ms" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_inclusive_ms" (Json.Decode.nullable (Json.Decode.int))))
@@ -20622,6 +20776,7 @@ networkDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_mode" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_type" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_period" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_activity_at" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_updated_at" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_updated_by" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_from" (Json.Decode.nullable (Json.Decode.int))))
@@ -20958,9 +21113,17 @@ listNetworksReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_army_region" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_military_district" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_army" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_corps" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_division" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_brigade" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_regiment" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_battalion" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_company" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_platoon" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_squad" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_section" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_team_or_crew" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_other" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_text" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_location" (Json.Decode.nullable (Json.Decode.string))))

@@ -483,7 +483,7 @@ values (
         .await
         .unwrap();
         let datetime = Utc::now().naive_utc();
-        crate::functest::tests::mk_sigint_inbox_item(
+        let inbox_item = crate::functest::tests::mk_sigint_inbox_item(
             &txn,
             sigint_inbox_item::ActiveModel {
                 id: Set(message.id),
@@ -582,10 +582,12 @@ values (
         assert_eq!(existing.battle_line_distance, Some(7));
         assert_eq!(pending.battle_line_distance, None);
         assert_eq!(invalid.battle_line_distance, None);
+        let mut network_invalidation_enqueued = false;
         crate::messenger::bl::upsert_group_area_of_responsibility(
             &txn,
             &group.master_key,
             Some(vec![second_aor.id]),
+            &mut network_invalidation_enqueued,
         )
         .await
         .unwrap();
@@ -618,6 +620,7 @@ values (
                 capture: "0.75, 1.0".to_string(),
             }],
             message.id,
+            inbox_item.id_uuid,
             datetime,
             None,
             &txn,

@@ -284,7 +284,7 @@ export function AttachmentFileRow({
   const ext = fileExtension(file.name);
   const size = formatFileSize(file.size);
   const meta = [ext, size].filter(Boolean).join(' · ');
-  const isMedia = Boolean(mediaKind(file.type, file.name));
+  const kind = mediaKind(file.type, file.name);
   const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
   const menuOpen = Boolean(menuAnchorEl);
 
@@ -336,7 +336,7 @@ export function AttachmentFileRow({
             overflow: 'hidden',
           }}
         >
-          {previewUrl && isMedia ? (
+          {previewUrl && (kind === 'image' || kind === 'video') ? (
             <LocalMediaPreview
               file={file}
               previewUrl={previewUrl}
@@ -448,7 +448,10 @@ export function AttachmentFileRow({
         ) : null}
       </Box>
       {upload ? (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%', pl: '60px' }}>
+        <Box
+          data-attachment-upload-status-row="true"
+          sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%', pl: '60px', pr: 1 }}
+        >
           <LinearProgress
             variant={upload.percentage === null ? 'indeterminate' : 'determinate'}
             value={upload.percentage ?? undefined}
@@ -459,7 +462,8 @@ export function AttachmentFileRow({
           <Typography
             variant="caption"
             color={upload.color === 'error' ? 'error' : 'text.secondary'}
-            sx={{ flexShrink: 0, minWidth: 138, textAlign: 'right' }}
+            noWrap
+            sx={{ flex: '0 1 138px', minWidth: 0, textAlign: 'right' }}
           >
             {upload.label}
           </Typography>

@@ -1149,6 +1149,7 @@ mod tests {
         signal_message_media::Model {
             id: Uuid::nil(),
             signal_message_id: 1,
+            signal_message_uuid: Some(Uuid::now_v7()),
             content_type: content_type.to_string(),
             file_ext: file_ext.map(str::to_string),
             file_name: file_name.map(str::to_string),
@@ -1207,6 +1208,7 @@ mod tests {
             let media = signal_message_media::ActiveModel {
                 id: Set(Uuid::now_v7()),
                 signal_message_id: Set(message.id),
+                signal_message_uuid: Set(message.id_uuid),
                 content_type: Set("image/png".to_string()),
                 file_ext: Set(Some("png".to_string())),
                 file_name: Set(Some(format!("queue-{index}.png"))),
@@ -1258,6 +1260,7 @@ mod tests {
         let media = signal_message_media::ActiveModel {
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
             content_type: Set("application/pdf".to_string()),
             file_ext: Set(Some("pdf".to_string())),
             file_name: Set(Some("report.pdf".to_string())),

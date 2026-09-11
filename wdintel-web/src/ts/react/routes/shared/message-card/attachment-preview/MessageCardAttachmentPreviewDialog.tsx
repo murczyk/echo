@@ -17,6 +17,7 @@ import { CoordinateAttachmentPreviewRenderer } from '../renderers/CoordinateAtta
 import { DocumentAttachmentPreviewRenderer } from '../renderers/DocumentAttachmentPreviewRenderer';
 import { ImageAttachmentPreviewRenderer } from '../renderers/ImageAttachmentPreviewRenderer';
 import { VideoAttachmentPreviewRenderer } from '../renderers/VideoAttachmentPreviewRenderer';
+import { AudioAttachmentPreviewRenderer } from '../renderers/AudioAttachmentPreviewRenderer';
 import type { AttachmentPreviewReportDraft } from './ReportTextPreview';
 import type {
   ImageEditorEscapeHandler,
@@ -26,10 +27,19 @@ import type {
 
 const isDownloadIdle = () => false;
 const allowDownloadStart = () => true;
+const REPORT_VISIBILITY_STORAGE_KEY = 'echo.message-attachment-preview.report-visible';
 const consumeEvent = (event: KeyboardEvent) => {
   event.preventDefault();
   event.stopPropagation();
 };
+
+function getStoredReportVisibility() {
+  try {
+    return localStorage.getItem(REPORT_VISIBILITY_STORAGE_KEY) !== 'false';
+  } catch {
+    return true;
+  }
+}
 
 function getPreviewKind(item: MessageCardPreviewItem) {
   if (item.type === 'document') return item.value.kind;
@@ -39,6 +49,7 @@ function getPreviewKind(item: MessageCardPreviewItem) {
 function getPreviewDialogLabel(previewKind: string) {
   if (previewKind === 'image') return 'Перегляд зображення';
   if (previewKind === 'video') return 'Перегляд відео';
+  if (previewKind === 'audio') return 'Перегляд аудіо';
   if (previewKind === 'coordinate-map') return 'Перегляд координат';
   return 'Перегляд документа';
 }
@@ -62,10 +73,12 @@ export function MessageCardAttachmentPreviewDialog({
 } & Partial<MessageCardDownloadGuardProps>) {
   const previewKind = getPreviewKind(item);
   const dialogLabel = getPreviewDialogLabel(previewKind);
+  const reportTextPreviewEnabled = reportDraft != null;
   const [isEditing, setIsEditing] = useState(false);
   const [pendingInitialAction, setPendingInitialAction] = useState(initialAction);
   const [childOverlayOpen, setChildOverlayOpen] = useState(false);
-  const [reportVisible, setReportVisible] = useState(false);
+  const childOverlayOpenRef = useRef(false);
+  const [reportVisible, setReportVisible] = useState(getStoredReportVisibility);
   const [dismissChildOverlay, setDismissChildOverlay] = useState(0);
   const editorEscapeHandlerRef = useRef<ImageEditorEscapeHandler | null>(null);
   const previewConfig = getMessageCardAttachmentPreviewConfig(previewKind);
@@ -73,12 +86,30 @@ export function MessageCardAttachmentPreviewDialog({
     editorEscapeHandlerRef.current = handler;
   }, []);
   const consumeInitialAction = useCallback(() => setPendingInitialAction(undefined), []);
+  const onChildOverlayChange = useCallback((open: boolean) => {
+    childOverlayOpenRef.current = open;
+    setChildOverlayOpen(open);
+  }, []);
+  const onReportVisibleChange = useCallback(
+    (visible: boolean) => {
+      setReportVisible(visible);
+      if (!reportTextPreviewEnabled) return;
+      try {
+        localStorage.setItem(REPORT_VISIBILITY_STORAGE_KEY, String(visible));
+      } catch {
+        // Ignore unavailable browser storage.
+      }
+    },
+    [reportTextPreviewEnabled],
+  );
 
   useEffect(() => {
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === 'Escape') {
-        if (childOverlayOpen) {
+        if (childOverlayOpenRef.current) {
           consumeEvent(event);
+          childOverlayOpenRef.current = false;
+          setChildOverlayOpen(false);
           setDismissChildOverlay((value) => value + 1);
           return;
         }
@@ -120,7 +151,6 @@ export function MessageCardAttachmentPreviewDialog({
 
   const closeDialog = () => {
     blurActiveAttachmentPreviewElement();
-    setReportVisible(false);
     onClose();
   };
   const paperSx: Record<string, unknown> = {
@@ -170,21 +200,31 @@ export function MessageCardAttachmentPreviewDialog({
           onInitialActionConsumed={consumeInitialAction}
           onEditModeChange={setIsEditing}
           registerEditorEscapeHandler={registerEditorEscapeHandler}
-          onChildOverlayChange={setChildOverlayOpen}
+          onChildOverlayChange={onChildOverlayChange}
           dismissChildOverlay={dismissChildOverlay}
           reportDraft={reportDraft}
           reportVisible={reportVisible}
-          onReportVisibleChange={setReportVisible}
+          onReportVisibleChange={onReportVisibleChange}
           {...rendererProps}
         />
       ) : item.type === 'video' ? (
         <VideoAttachmentPreviewRenderer
           video={item.value}
-          onChildOverlayChange={setChildOverlayOpen}
+          onChildOverlayChange={onChildOverlayChange}
           dismissChildOverlay={dismissChildOverlay}
           reportDraft={reportDraft}
           reportVisible={reportVisible}
-          onReportVisibleChange={setReportVisible}
+          onReportVisibleChange={onReportVisibleChange}
+          {...rendererProps}
+        />
+      ) : item.type === 'audio' ? (
+        <AudioAttachmentPreviewRenderer
+          audio={item.value}
+          onChildOverlayChange={onChildOverlayChange}
+          dismissChildOverlay={dismissChildOverlay}
+          reportDraft={reportDraft}
+          reportVisible={reportVisible}
+          onReportVisibleChange={onReportVisibleChange}
           {...rendererProps}
         />
       ) : item.type === 'document' ? (
@@ -192,7 +232,7 @@ export function MessageCardAttachmentPreviewDialog({
           document={item.value}
           reportDraft={reportDraft}
           reportVisible={reportVisible}
-          onReportVisibleChange={setReportVisible}
+          onReportVisibleChange={onReportVisibleChange}
           {...rendererProps}
         />
       ) : (

@@ -1,9 +1,12 @@
-import { Box, Button, CircularProgress, Skeleton, Typography } from '@mui/material';
-import { useEffect, useRef, useState } from 'react';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
+import { Button, CircularProgress, Skeleton } from '@mui/material';
+import { useEffect, useId, useRef, useState } from 'react';
 
 import type { InboxMessage, Tag } from '../../../../../Bindings';
 import { useOptionalPowerSnackbar } from '../../../components/PowerSnackbar';
 import {
+  collectCoordinatePreviewEtalons,
   CoordinatePreviewLookupError,
   resolveMessageCoordinatePreview,
   type CoordinatePreviewPoint,
@@ -22,14 +25,27 @@ type Props = {
   onOpen?: (index: number) => void;
 };
 
-const PREVIEW_HEIGHT_PX = 120;
-const PREVIEW_WIDTH_PX = 180;
 const PREVIEW_ROOT_MARGIN = '160px 0px';
 const EMPTY_TAGS_MAP: Record<number, Tag> = {};
 const EMPTY_POINTS: CoordinatePreviewPoint[] = [];
 
+function coordinatePreviewInputKey(message: InboxMessage, tagsMap: Record<number, Tag>): string {
+  return JSON.stringify({
+    coords: message.coords,
+    coordsWithLocality: message.coordsWithLocality,
+    etalons: collectCoordinatePreviewEtalons(message, tagsMap),
+    media: (message.media ?? []).map((media) => ({
+      id: media.id,
+      summary: media.summary,
+    })),
+    text: message.text,
+  });
+}
+
 export function MessageCardCoordinateAttachment({ msg, tagsMap, onPointsChange, onOpen }: Props) {
   const previewTagsMap = tagsMap ?? EMPTY_TAGS_MAP;
+  const previewInputKey = coordinatePreviewInputKey(msg, previewTagsMap);
+  const previewInputRef = useRef({ message: msg, tagsMap: previewTagsMap });
   const hostRef = useRef<HTMLDivElement | null>(null);
   const resolveRequestIdRef = useRef(0);
   const pendingPreviewLoadRef = useRef(false);
@@ -40,6 +56,7 @@ export function MessageCardCoordinateAttachment({ msg, tagsMap, onPointsChange, 
   const { notify } = useOptionalPowerSnackbar();
   const notifyRef = useRef(notify);
   notifyRef.current = notify;
+  previewInputRef.current = { message: msg, tagsMap: previewTagsMap };
 
   useEffect(() => {
     setPreview(undefined);
@@ -47,7 +64,7 @@ export function MessageCardCoordinateAttachment({ msg, tagsMap, onPointsChange, 
     setRetrying(false);
     pendingPreviewLoadRef.current = false;
     resolveRequestIdRef.current += 1;
-  }, [msg, previewTagsMap]);
+  }, [previewInputKey]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -77,7 +94,7 @@ export function MessageCardCoordinateAttachment({ msg, tagsMap, onPointsChange, 
     resolveRequestIdRef.current = requestId;
     pendingPreviewLoadRef.current = true;
 
-    void resolveMessageCoordinatePreview({ message: msg, tagsMap: previewTagsMap })
+    void resolveMessageCoordinatePreview(previewInputRef.current)
       .then((result) => {
         if (resolveRequestIdRef.current !== requestId) {
           return;
@@ -110,7 +127,7 @@ export function MessageCardCoordinateAttachment({ msg, tagsMap, onPointsChange, 
         }));
         setRetrying(false);
       });
-  }, [isNearViewport, msg, preview, previewTagsMap, retrying]);
+  }, [isNearViewport, preview, previewInputKey, retrying]);
 
   const points = preview?.points ?? EMPTY_POINTS;
   const previewAttachments: MessageCardPreviewAttachment[] =
@@ -140,29 +157,23 @@ export function MessageCardCoordinateAttachment({ msg, tagsMap, onPointsChange, 
   };
 
   return (
-    <Box
+    <div
       ref={hostRef}
       data-coordinate-preview-root="true"
-      style={{ width: `${PREVIEW_WIDTH_PX}px` }}
-      sx={{
-        width: PREVIEW_WIDTH_PX,
-        minWidth: PREVIEW_WIDTH_PX,
-        maxWidth: PREVIEW_WIDTH_PX,
-        minHeight: PREVIEW_HEIGHT_PX,
-        alignSelf: 'flex-start',
-      }}
+      className="message-card-coordinate-preview"
     >
       {preview === undefined ? (
         <Skeleton
           variant="rounded"
-          height={PREVIEW_HEIGHT_PX}
+          height="100%"
           animation="wave"
-          sx={{ width: PREVIEW_WIDTH_PX, minWidth: PREVIEW_WIDTH_PX }}
+          sx={{ width: '100%', minWidth: 0, height: '100%' }}
         />
       ) : points.length > 0 ? (
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
+        <>
           <CoordinateAttachmentThumbnail
             points={points}
+            messageCardTile
             onOpen={() => {
               if (onOpen != null) {
                 onOpen(0);
@@ -174,7 +185,7 @@ export function MessageCardCoordinateAttachment({ msg, tagsMap, onPointsChange, 
           {lookupError != null ? (
             <RetryTile compact error={lookupError} retrying={retrying} onRetry={handleRetry} />
           ) : null}
-        </Box>
+        </>
       ) : lookupError != null ? (
         <RetryTile error={lookupError} retrying={retrying} onRetry={handleRetry} />
       ) : null}
@@ -186,7 +197,7 @@ export function MessageCardCoordinateAttachment({ msg, tagsMap, onPointsChange, 
           onClose={() => setDialogIndex(null)}
         />
       ) : null}
-    </Box>
+    </div>
   );
 }
 
@@ -201,76 +212,53 @@ function RetryTile({
   compact?: boolean;
   retrying: boolean;
 }) {
+  const errorDescriptionId = useId();
   const errorLabel =
     error.kind === 'document-coordinates'
       ? 'Не вдалося завантажити координати документа'
       : 'Не вдалося завантажити точку мапи';
   if (compact) {
     return (
-      <Box
-        sx={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 0.5,
-          p: 1.25,
-          borderRadius: 2,
-          border: '1px solid',
-          borderColor: 'divider',
-          bgcolor: 'background.paper',
-        }}
+      <div
+        data-coordinate-preview-retry-overlay="true"
+        className="message-card-coordinate-retry-overlay"
         title={error.cause instanceof Error ? error.cause.message : error.message}
       >
-        <Typography variant="caption" sx={{ fontWeight: 700 }}>
-          {errorLabel}
-        </Typography>
         <Button
           type="button"
-          variant="text"
-          aria-label="Повторити"
+          className="message-card-coordinate-retry-button"
+          aria-label="Повторити завантаження координат"
+          title={errorLabel}
           disabled={retrying}
           onClick={onRetry}
-          sx={{ p: 0 }}
         >
-          {retrying ? <CircularProgress size={14} /> : 'Повторити'}
+          {retrying ? <CircularProgress size={14} /> : <RefreshOutlinedIcon fontSize="small" />}
         </Button>
-      </Box>
+      </div>
     );
   }
 
   return (
-    <Box
-      sx={{
-        width: '100%',
-        minWidth: 0,
-        height: PREVIEW_HEIGHT_PX,
-        borderRadius: 2,
-        border: '1px solid',
-        borderColor: 'divider',
-        bgcolor: 'background.paper',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 1,
-        px: 2,
-        textAlign: 'center',
-        overflow: 'hidden',
-      }}
+    <div
+      data-coordinate-preview-retry-tile="true"
+      className="message-card-coordinate-retry-tile"
       title={error.cause instanceof Error ? error.cause.message : error.message}
     >
-      <Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 600 }}>
-        {errorLabel}
-      </Typography>
+      <ErrorOutlineIcon className="message-card-coordinate-retry-error-icon" aria-hidden />
+      <span id={errorDescriptionId} className="message-card-coordinate-retry-description">
+        {`${errorLabel}. ${error.cause instanceof Error ? error.cause.message : error.message}`}
+      </span>
       <Button
         type="button"
-        variant="text"
-        aria-label="Повторити"
+        className="message-card-coordinate-retry-button"
+        aria-label="Повторити завантаження координат"
+        aria-describedby={errorDescriptionId}
+        title={errorLabel}
         disabled={retrying}
         onClick={onRetry}
-        sx={{ flexShrink: 0 }}
       >
-        {retrying ? <CircularProgress size={14} /> : 'Повторити'}
+        {retrying ? <CircularProgress size={14} /> : <RefreshOutlinedIcon fontSize="small" />}
       </Button>
-    </Box>
+    </div>
   );
 }

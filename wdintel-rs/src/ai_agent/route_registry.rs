@@ -49,6 +49,13 @@ pub const ROUTES: &[ReadOnlyRoute] = &[
     },
     ReadOnlyRoute {
         method: "POST",
+        path: "/api/rer-importer/messages-by-uuid",
+        skill: "messages_by_uuid",
+        label: "Завантаження повідомлень за UUID",
+        request_kind: "messageUuids",
+    },
+    ReadOnlyRoute {
+        method: "POST",
         path: "/api/rer-importer/get-freq-pelengs-summary",
         skill: "direction_findings",
         label: "Аналіз пеленгів",
@@ -153,6 +160,7 @@ mod tests {
                     | "inboxMessages"
                     | "interceptionContext"
                     | "messageIds"
+                    | "messageUuids"
             ));
         }
         let daily_activity = ROUTES
@@ -200,6 +208,11 @@ mod tests {
             .find(|route| route.skill == "messages_by_id")
             .unwrap();
         assert_eq!(messages_by_id.request_kind, "messageIds");
+        let messages_by_uuid = ROUTES
+            .iter()
+            .find(|route| route.skill == "messages_by_uuid")
+            .unwrap();
+        assert_eq!(messages_by_uuid.request_kind, "messageUuids");
     }
 
     #[test]

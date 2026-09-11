@@ -15,9 +15,10 @@ use regex::Regex;
 use sea_orm::*;
 use std::collections::HashSet;
 
-pub async fn enqueue_unit_tag_recalculation_for_inbox_item<C>(
+pub(crate) async fn enqueue_unit_tag_recalculation_for_inbox_item<C>(
     db: &C,
     sigint_inbox_item_id: i64,
+    sigint_inbox_item_uuid: Option<uuid::Uuid>,
 ) -> anyhow::Result<()>
 where
     C: ConnectionTrait,
@@ -26,6 +27,7 @@ where
         sigint_inbox_item_unit_tag_queue::ActiveModel {
             id: NotSet,
             sigint_inbox_item_id: Set(sigint_inbox_item_id),
+            sigint_inbox_item_uuid: Set(sigint_inbox_item_uuid),
             created_at: NotSet,
         },
     )
@@ -65,13 +67,16 @@ where
             signal_group::Column::InterseptionKind.eq(InterseptionKind::Other),
         )
         .select_only()
-        .column(sigint_inbox_item::Column::Id)
-        .into_tuple::<i64>()
+        .columns([
+            sigint_inbox_item::Column::Id,
+            sigint_inbox_item::Column::IdUuid,
+        ])
+        .into_tuple::<(i64, Option<uuid::Uuid>)>()
         .all(db)
         .await
         .c(h!())?;
-    for item_id in item_ids {
-        enqueue_unit_tag_recalculation_for_inbox_item(db, item_id)
+    for (item_id, item_uuid) in item_ids {
+        enqueue_unit_tag_recalculation_for_inbox_item(db, item_id, item_uuid)
             .await
             .c(h!())?;
     }
@@ -100,13 +105,16 @@ where
         .filter(sigint_inbox_item::Column::Datetime.gte(since))
         .filter(signal_message_group::Column::GroupMasterKey.eq(master_key))
         .select_only()
-        .column(sigint_inbox_item::Column::Id)
-        .into_tuple::<i64>()
+        .columns([
+            sigint_inbox_item::Column::Id,
+            sigint_inbox_item::Column::IdUuid,
+        ])
+        .into_tuple::<(i64, Option<uuid::Uuid>)>()
         .all(db)
         .await
         .c(h!())?;
-    for item_id in item_ids {
-        enqueue_unit_tag_recalculation_for_inbox_item(db, item_id)
+    for (item_id, item_uuid) in item_ids {
+        enqueue_unit_tag_recalculation_for_inbox_item(db, item_id, item_uuid)
             .await
             .c(h!())?;
     }
@@ -196,7 +204,7 @@ where
             .c(h!())?;
         return Ok(());
     }
-    let Some((_sigint_inbox_item, device_name)) =
+    let Some((sigint_inbox_item, device_name)) =
         sigint_inbox_item::Entity::find_by_id(sigint_inbox_item_id)
             .find_also_related(device_name::Entity)
             .one(db)
@@ -226,9 +234,14 @@ where
             .and_then(|device_name| device_name.name.as_deref()),
         &body,
     );
-    sync_network_links(db, sigint_inbox_item_id, matched_networks)
-        .await
-        .c(h!())?;
+    sync_network_links(
+        db,
+        sigint_inbox_item_id,
+        sigint_inbox_item.id_uuid,
+        matched_networks,
+    )
+    .await
+    .c(h!())?;
     Ok(())
 }
 
@@ -259,6 +272,7 @@ where
 async fn sync_network_links<C>(
     db: &C,
     sigint_inbox_item_id: i64,
+    sigint_inbox_item_uuid: Option<uuid::Uuid>,
     matched_networks: Vec<sigint_network::Model>,
 ) -> anyhow::Result<()>
 where
@@ -281,6 +295,12 @@ where
         &desired_network_ids,
     );
     if !stale_network_link_ids.is_empty() {
+        crate::rer_importer::inbox::invalidate_message_network_frequency_last_seen(
+            db,
+            sigint_inbox_item_id,
+        )
+        .await
+        .c(h!())?;
         sigint_inbox_item_network::Entity::delete_many()
             .filter(
                 sigint_inbox_item_network::Column::Id
@@ -300,6 +320,7 @@ where
                 sigint_inbox_item_network::ActiveModel {
                     id: NotSet,
                     sigint_inbox_item_id: Set(sigint_inbox_item_id),
+                    sigint_inbox_item_uuid: Set(sigint_inbox_item_uuid),
                     sigint_network_id: Set(network_id),
                     created_at: NotSet,
                 },
@@ -340,6 +361,12 @@ async fn delete_network_links_for_item<C>(
 where
     C: ConnectionTrait,
 {
+    crate::rer_importer::inbox::invalidate_message_network_frequency_last_seen(
+        db,
+        sigint_inbox_item_id,
+    )
+    .await
+    .c(h!())?;
     sigint_inbox_item_network::Entity::delete_many()
         .filter(
             sigint_inbox_item_network::Column::SigintInboxItemId
@@ -675,6 +702,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::functest::tests::{
+        cleanup_locked, mk_sigint_inbox_item, mk_sigint_inbox_item_network,
+        mk_sigint_network, mk_sigint_network_freq,
+    };
+    use serial_test::serial;
 
     #[test]
     fn unit_tag_match_requires_word_boundaries() {
@@ -826,6 +858,76 @@ mod tests {
         );
     }
 
+    // Regression for ECHO-3207: removing a derived link invalidates its activity cache.
+    #[tokio::test]
+    #[serial]
+    async fn stale_network_link_removal_invalidates_frequency_last_seen() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let timestamp = Utc::now().naive_utc();
+        let freq = "146.4500";
+        let inbox_item = mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                freq: Set(Some(freq.to_string())),
+                datetime: Set(Some(timestamp)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let network_freq = mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set(freq.to_string()),
+                active_from: Set(timestamp - Duration::days(1)),
+                last_seen_dt: Set(Some(timestamp)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item_network(
+            &env.dbx,
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(inbox_item.id),
+                sigint_network_id: Set(network.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        sync_network_links(
+            &env.dbx,
+            inbox_item.id,
+            inbox_item.id_uuid,
+            Vec::new(),
+        )
+        .await
+        .unwrap();
+
+        let network_freq =
+            sigint_network_freq::Entity::find_by_id(network_freq.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        let link_count = sigint_inbox_item_network::Entity::find()
+            .filter(
+                sigint_inbox_item_network::Column::SigintInboxItemId
+                    .eq(inbox_item.id),
+            )
+            .count(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(network_freq.last_seen_dt, None);
+        assert_eq!(link_count, 0);
+    }
+
     fn test_network(id: i64, unit_mask: Vec<&str>) -> sigint_network::Model {
         let dt = chrono::NaiveDate::from_ymd_opt(2026, 1, 1)
             .unwrap()
@@ -861,6 +963,7 @@ mod tests {
         sigint_inbox_item_network::Model {
             id,
             sigint_inbox_item_id: 100,
+            sigint_inbox_item_uuid: Some(uuid::Uuid::now_v7()),
             sigint_network_id,
             created_at: chrono::NaiveDate::from_ymd_opt(2026, 1, 1)
                 .unwrap()

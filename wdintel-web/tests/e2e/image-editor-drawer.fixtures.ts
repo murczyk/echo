@@ -263,6 +263,11 @@ async function openDrawerFromMediaMessage(
   await page.goto('/rer-duty-neo');
   await dutyMocks.systemSettingsReady;
   await expect(page.getByText('Помилка завантаження системних налаштувань')).toHaveCount(0);
-  await page.getByRole('button', { name: actionName }).click();
+  if (actionName === 'Редагувати') {
+    await page.getByRole('button', { name: 'Більше дій', exact: true }).click();
+    await page.getByRole('menuitem', { name: actionName, exact: true }).click();
+  } else {
+    await page.getByRole('button', { name: actionName }).click();
+  }
   await expect(page.getByRole('heading', { name: heading })).toBeVisible();
 }

@@ -30,6 +30,7 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
     pub password_auth_enabled: bool,
+    pub totp_epoch: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -72,6 +73,12 @@ pub enum Relation {
     GoiIntegrationAccessLogin,
     #[sea_orm(has_many = "super::log_users_report_generation::Entity")]
     LogUsersReportGeneration,
+    #[sea_orm(has_one = "super::login_totp::Entity")]
+    LoginTotp,
+    #[sea_orm(has_many = "super::network_freq_last_datetime_in_aor::Entity")]
+    NetworkFreqLastDatetimeInAor,
+    #[sea_orm(has_many = "super::network_recalculation_task::Entity")]
+    NetworkRecalculationTask,
     #[sea_orm(
         belongs_to = "super::organism::Entity",
         from = "Column::OrganismId",
@@ -96,6 +103,8 @@ pub enum Relation {
     RestreamSetup,
     #[sea_orm(has_many = "super::secret_group_user::Entity")]
     SecretGroupUser,
+    #[sea_orm(has_many = "super::sigint_activity_decision_changelog::Entity")]
+    SigintActivityDecisionChangelog,
     #[sea_orm(has_many = "super::sigint_bookmark::Entity")]
     SigintBookmark,
     #[sea_orm(has_many = "super::signal_message::Entity")]
@@ -256,6 +265,24 @@ impl Related<super::log_users_report_generation::Entity> for Entity {
     }
 }
 
+impl Related<super::login_totp::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::LoginTotp.def()
+    }
+}
+
+impl Related<super::network_freq_last_datetime_in_aor::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::NetworkFreqLastDatetimeInAor.def()
+    }
+}
+
+impl Related<super::network_recalculation_task::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::NetworkRecalculationTask.def()
+    }
+}
+
 impl Related<super::organism::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Organism.def()
@@ -307,6 +334,12 @@ impl Related<super::restream_setup::Entity> for Entity {
 impl Related<super::secret_group_user::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SecretGroupUser.def()
+    }
+}
+
+impl Related<super::sigint_activity_decision_changelog::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintActivityDecisionChangelog.def()
     }
 }
 

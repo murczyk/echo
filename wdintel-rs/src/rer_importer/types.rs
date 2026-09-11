@@ -7,6 +7,7 @@ use serde::de;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
+use uuid::Uuid;
 
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
@@ -36,6 +37,7 @@ pub struct InboxMessageSummary {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct InboxMessage {
+    pub message_uuid: Option<String>,
     pub message_uid: Option<String>,
     pub text: String,
     pub media: Vec<MessageMediaInfo>,
@@ -167,6 +169,7 @@ fn default_checked() -> bool {
 impl From<InboxInsertPayload> for InboxMessage {
     fn from(payload: InboxInsertPayload) -> Self {
         Self {
+            message_uuid: None,
             message_uid: None,
             text: payload.text,
             media: payload.media,
@@ -415,6 +418,12 @@ pub struct MessageIdsReq {
     pub inbox_req: Option<InboxMessagesReq>,
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct MessageUuidsReq {
+    pub message_uuids: Vec<Uuid>,
+    pub inbox_req: Option<InboxMessagesReq>,
+}
+
 #[derive(
     Elm,
     ElmEncode,
@@ -429,6 +438,7 @@ pub struct MessageIdsReq {
 pub struct InboxMessagesReq {
     pub since_id_noninclusive: Option<i64>,
     pub before_id_noninclusive: Option<i64>,
+    pub around_message_ref: Option<String>,
     pub since_date_inclusive_ms: Option<i64>,
     pub till_date_inclusive_ms: Option<i64>,
     pub only_show_unprocessed: Option<bool>,
@@ -514,12 +524,25 @@ pub struct InboxItemContextReq {
     Default,
 )]
 pub struct InboxItemContextRsp {
+    pub message: Option<(i64, InboxMessage)>,
     pub group_master_keys: Vec<String>,
     pub sigint_inbox_item_ids: Vec<i64>,
     #[serde(rename = "sinceTs")]
     pub since_ts: Option<i64>,
     #[serde(rename = "tillTs")]
     pub till_ts: Option<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct InboxWindowRsp {
+    pub target_message_id: i64,
+    pub inbox: InboxMessagesRsp,
+    pub has_more_before: bool,
+    pub has_more_after: bool,
+    pub messages_before: i64,
+    pub messages_after: i64,
 }
 
 #[derive(
@@ -1483,6 +1506,10 @@ pub struct RerDutyQueryStateWf {
     pub posts_denied: Option<Vec<String>>,
     pub units_selected: Option<Vec<String>>,
     pub units_denied: Option<Vec<String>>,
+    #[serde(default)]
+    pub selected_unit_ids: Option<Vec<i64>>,
+    #[serde(default)]
+    pub denied_unit_ids: Option<Vec<i64>>,
     pub units_exact_match_only: Option<bool>,
     pub last_viewed_message_id: Option<i64>,
     pub highlight_keywords_enabled: Option<bool>,
@@ -1774,6 +1801,7 @@ mod tests {
             "keyword_tokens".to_string(),
             "message_comments".to_string(),
             "message_uid".to_string(),
+            "message_uuid".to_string(),
             "network_name".to_string(),
             "parent_messages".to_string(),
             "signal_tokens".to_string(),

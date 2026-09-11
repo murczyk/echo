@@ -14,6 +14,7 @@ pub struct Model {
     pub created_at: DateTime,
     #[sea_orm(unique_key = "sigint_inbox_item_unit_item_id_unit_id_kind_key")]
     pub item_id: i64,
+    pub item_uuid: Option<Uuid>,
     #[sea_orm(unique_key = "sigint_inbox_item_unit_item_id_unit_id_kind_key")]
     pub unit_id: i64,
     #[sea_orm(unique_key = "sigint_inbox_item_unit_item_id_unit_id_kind_key")]

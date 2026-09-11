@@ -20,6 +20,7 @@ import type { AnalysisCenterTab } from '../types';
 type Props = {
   centerTab: AnalysisCenterTab;
   pageIndex: number;
+  rangePageIndex?: number;
   pageSize: number;
   messagesCount: number;
   totalCount: number | null;
@@ -27,6 +28,7 @@ type Props = {
   loading: boolean;
   noMoreToLoad: boolean;
   busy: boolean;
+  jumpDisabled?: boolean;
   onFirstPage: () => void;
   onLastPage: () => void;
   onPrevPage: () => void;
@@ -150,6 +152,7 @@ function PaginationJumpControl({
 export function AnalysisPaginationControl({
   centerTab,
   pageIndex,
+  rangePageIndex = pageIndex,
   pageSize,
   messagesCount,
   totalCount,
@@ -157,6 +160,7 @@ export function AnalysisPaginationControl({
   loading,
   noMoreToLoad,
   busy,
+  jumpDisabled = false,
   onFirstPage,
   onLastPage,
   onPrevPage,
@@ -164,11 +168,11 @@ export function AnalysisPaginationControl({
 }: Props) {
   const isMessagesTab = centerTab === 'messages';
   const totalUnknown = loading || totalLoading || totalCount === null;
-  const start = pageIndex * pageSize + 1;
+  const start = rangePageIndex * pageSize + 1;
   const end =
     totalCount === null
-      ? pageIndex * pageSize + Math.min(messagesCount, pageSize)
-      : Math.min(pageIndex * pageSize + Math.min(messagesCount, pageSize), totalCount);
+      ? rangePageIndex * pageSize + Math.min(messagesCount, pageSize)
+      : Math.min(rangePageIndex * pageSize + Math.min(messagesCount, pageSize), totalCount);
   let rangeText = '';
   if (totalUnknown) {
     rangeText = '— з —';
@@ -179,16 +183,17 @@ export function AnalysisPaginationControl({
   }
 
   const lastPageIndex = totalUnknown ? null : Math.max(0, Math.ceil(totalCount / pageSize) - 1);
-  const prevDisabled = !isMessagesTab || pageIndex === 0 || busy;
+  const hasLoadedNextPage = rangePageIndex < pageIndex;
+  const prevDisabled = !isMessagesTab || rangePageIndex === 0 || busy;
   const nextDisabled =
     !isMessagesTab ||
-    noMoreToLoad ||
     busy ||
-    (lastPageIndex !== null && pageIndex >= lastPageIndex);
-  const menuDisabled = !isMessagesTab || busy;
-  const firstDisabled = menuDisabled || pageIndex === 0;
+    (!hasLoadedNextPage && noMoreToLoad) ||
+    (lastPageIndex !== null && rangePageIndex >= lastPageIndex);
+  const menuDisabled = !isMessagesTab || busy || jumpDisabled;
+  const firstDisabled = menuDisabled || rangePageIndex === 0;
   const lastDisabled =
-    menuDisabled || lastPageIndex === null || totalCount === 0 || pageIndex === lastPageIndex;
+    menuDisabled || lastPageIndex === null || totalCount === 0 || rangePageIndex === lastPageIndex;
 
   return (
     <Stack direction="row" spacing={0.5} alignItems="center">

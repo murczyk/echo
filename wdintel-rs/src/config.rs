@@ -24,6 +24,10 @@ pub const PGBACKREST_CONF_INCLUDE_DIR: &str = "/etc/pgbackrest/conf.d";
 pub const PGBACKREST_STANZA_CONF_PREFIX: &str = "pgbackrest-";
 pub const PGBACKREST_STANZA_CONF_SUFFIX: &str = ".conf";
 pub const PG_SLOW_STATEMENT_THRESHOLD_MS: u64 = 5_000;
+/// DUTY_FEED_COUNT_DEADLINE_SYNC: the frontend
+/// `DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS` in
+/// `dutyFeedRequestDeadline.ts` must cover this and
+/// `ANALYTICS_QUERY_TIMEOUT_MS_DEFAULT` sequentially, plus transport allowance.
 pub const POSTGRES_RUNTIME_STATEMENT_TIMEOUT_MS_DEFAULT: u64 = 30_000;
 pub const POSTGRES_RUNTIME_REPORT_WORKER_STATEMENT_TIMEOUT_MS_DEFAULT: u64 =
     60_000;
@@ -312,6 +316,8 @@ pub const URL_NEED_VISIT_NOTIFICATION_MINS: i64 = 5;
 pub const IDENTITY_DURATION_HOURS: u64 = 12;
 pub const IDENTITY_SALT: &str = "IUBwdub783736#";
 pub const ROLE_ADMIN: &str = "Admin";
+pub const ROLE_API: &str = "Api";
+pub const ROLE_NO2FA: &str = "No2FA";
 pub const DEVICE_SETTINGS_ID: i16 = 1;
 pub const DEVICE_MATTERMOST_TIMEOUT_SEC: u64 = 5;
 pub const DEVICE_CUSTOM_FIELDS_MAX_COUNT: usize = 50;
@@ -410,6 +416,8 @@ pub const REPORT_HISTORY_RECORD_LIMIT: usize = 1_000_000;
 pub const REPORT_HISTORY_RECORD_LIMIT_ERROR_STATUS: &str =
     "Звіт містить понад 1 млн. записів. Зменшіть період або звузьте фільтри.";
 pub const RER_DUTY_TEST_REPLAY_SOURCE_MAX: i64 = 10_000;
+pub const ANALYTICS_VERIFY_TIMEOUT_MS: u64 = 15_000;
+pub const ANALYTICS_VERIFY_PGOPTIONS: &str = "-c default_transaction_read_only=on -c statement_timeout=15000 -c application_name=echo-analytics-verify";
 pub const RER_DUTY_TEST_REPLAY_INTERVAL_SEC_MAX: i64 = 31_536_000;
 pub const RER_DUTY_TEST_REPLAY_COMMENT: &str = "[duplicate]";
 pub const RER_DUTY_TEST_REPLAY_CLEANUP_BATCH_SIZE: u64 = 500;
@@ -440,6 +448,13 @@ pub const SIGINT_NETWORK_FIND_LIVE_QUERY_LIMIT: u64 = 250;
 pub const SIGINT_UNIT_AUTO_CYBER_NETWORK_NAME: &str = "💻";
 pub const SIGINT_UNIT_LIST_DEFAULT_LIMIT: u64 = 100_000;
 pub const SIGINT_UNIT_LIST_MAX_LIMIT: u64 = 100_000;
+pub const SIGINT_UNIT_NAME_FIRST_INCLUDED_ECHELON_INDEX: usize = 1;
+pub const SIGINT_UNIT_NAME_CORPS_ECHELON_INDEX: usize = 10;
+pub const SIGINT_UNIT_NAME_ARMY_ECHELON_INDEX: usize = 11;
+pub const SIGINT_UNIT_NAME_ARMY_BLACKLIST_TERMS: &[&str] =
+    &["ув(с)", "ув", "тн"];
+pub const SIGINT_UNIT_NAME_CORPS_BLACKLIST_TERMS: &[&str] =
+    SIGINT_UNIT_NAME_ARMY_BLACKLIST_TERMS;
 pub const SIGINT_UNIT_CHANGELOG_LIMIT: u64 = 200;
 pub const SIGINT_UNIT_MERGE_ADVISORY_LOCK_NAMESPACE: &str =
     "sigint-unit-merge:";
@@ -466,6 +481,46 @@ pub const ANALYSIS_STATS_UNDEFINED_UNIT_ID: i64 = 0;
 pub const ANALYSIS_STATS_UNDEFINED_UNIT_NAME: &str = "Не визначено";
 pub const CLEANUP_NETWORKS_WORKER_SLEEP_DURATION: u64 = 3600;
 pub const CLEANUP_NETWORKS_CUTOFF_TIME_DAYS: i64 = 10;
+pub const NETWORK_RECALCULATION_WORKER_INTERVAL_SECS: u64 = 60;
+pub const NETWORK_RECALCULATION_TASK_STALE_MINUTES: i64 = 10;
+pub const NETWORK_RECALCULATION_STATEMENT_TIMEOUT_MS: u64 = 5 * 60 * 1_000;
+pub const NETWORK_RECALCULATION_TASK_ENQUEUE_CHUNK_SIZE: usize = 1_000;
+pub const NETWORK_RECALCULATION_TASKS_PER_RUN: usize = 100;
+pub const NETWORK_RECALCULATION_RUN_BUDGET_SECS: u64 = 50;
+pub const NETWORK_FREQ_LAST_DATETIME_IN_AOR_CACHE_TTL_MINUTES: i64 = 10;
+pub const SIGINT_NETWORK_ACTIVITY_DECISION_LIST_LIMIT: u64 = 200;
+pub const SIGINT_NETWORK_ACTIVITY_DECISION_WORKER_CLEANUP: &str =
+    "cleanup_networks_worker";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_MANUAL_NETWORK_RESTORED: &str =
+    "manual_network_restored";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_MANUAL_NETWORK_STATUS_UPDATED: &str =
+    "manual_network_status_updated";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_MANUAL_DO_NOT_ARCHIVE_ENABLED: &str =
+    "manual_do_not_archive_enabled";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_MANUAL_FREQUENCY_ADDED: &str =
+    "manual_frequency_added";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_MANUAL_FREQUENCY_UPDATED: &str =
+    "manual_frequency_updated";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_MANUAL_FREQUENCY_REACTIVATED: &str =
+    "manual_frequency_reactivated";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_MANUAL_FREQUENCY_DELETED: &str =
+    "manual_frequency_deleted";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_IMPORT_NETWORK_UPDATED: &str =
+    "import_network_updated";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_IMPORT_FREQUENCY_UPDATED: &str =
+    "import_frequency_updated";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_MERGE_NETWORK_UPDATED: &str =
+    "merge_network_updated";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_MERGE_FREQUENCY_CLOSED: &str =
+    "merge_frequency_closed";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_CLEANUP_FREQUENCY_NO_RECENT_INTERCEPTIONS: &str =
+    "cleanup_frequency_no_recent_interceptions";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_CLEANUP_NETWORK_NO_ACTIVE_FREQUENCIES: &str =
+    "cleanup_network_no_active_frequencies";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_CLEANUP_NETWORK_SYNTHETIC_INACTIVITY: &str =
+    "cleanup_network_synthetic_inactivity";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_RECENT_INTERCEPTIONS_THRESHOLD_MET:
+    &str = "recent_interceptions_threshold_met";
 pub const MAX_AGE_MESSAGES_TO_UPDATE: i64 = 120;
 pub const IMPORT_DIRECTION_FINDING_UUID: &str =
     "22b171e7-1c8a-469c-af68-79d7a06b99f4";
@@ -653,8 +708,8 @@ pub const INBOX_COUNT_SINGLEFLIGHT_SUCCESS_TTL_MS: u64 = 5_000;
 pub const INBOX_COUNT_SINGLEFLIGHT_STALE_SECS: u64 = 60;
 pub const INBOX_COUNT_SINGLEFLIGHT_MAX_ENTRIES: usize = 2_048;
 pub const INBOX_MESSAGES_PAGE_LIMIT: usize = 20;
+pub const ANALYTICS_INBOX_CANDIDATE_PAGE_SIZE: usize = 1_000;
 pub const RER_ANALYSIS_ANALYTICS_FRESH_TAIL_MINUTES: i64 = 5;
-pub const RER_ANALYSIS_POSTGRES_RECENT_RANGE_HOURS: i64 = 25;
 pub const RER_DUTY_PAGE_ID: &str = "rer-duty";
 pub const RER_DUTY_NEO_PAGE_ID: &str = "rer-duty-neo";
 pub const RER_DUTY_POSTGRES_FRESH_CURSOR_HOURS: i64 = 1;
@@ -675,6 +730,18 @@ pub const REDIS_CONNECTION_MANAGER_PIPELINE_BUFFER_SIZE: usize = 256;
 pub const REDIS_CONNECTION_MANAGER_RESPONSE_TIMEOUT_SECS: u64 = 5;
 pub const REDIS_MAXLEN: usize = 1000;
 pub const REDIS_SESSIONS_KEY: &str = "echo-sessions";
+pub const TOTP_2FA_CHALLENGE_REDIS_PREFIX: &str = "2fa:challenge:";
+pub const TOTP_2FA_LOGIN_REDIS_PREFIX: &str = "2fa:login:";
+pub const TOTP_2FA_CHALLENGE_TTL_SEC: u64 = 300;
+pub const TOTP_2FA_MAX_ATTEMPTS: u32 = 5;
+pub const TOTP_2FA_ISSUER: &str = "Echo";
+pub const TOTP_2FA_DIGITS: usize = 6;
+pub const TOTP_2FA_SKEW: u8 = 1;
+pub const TOTP_2FA_STEP_SEC: u64 = 30;
+/// How long to remember the last accepted TOTP counter per login.
+/// Covers the skew window plus one extra step so replays cannot slip through.
+pub const TOTP_2FA_USED_STEP_TTL_SEC: u64 =
+    TOTP_2FA_STEP_SEC * (2 * TOTP_2FA_SKEW as u64 + 2);
 pub const DEPLOYMENT_MAINTENANCE_REDIS_KEY: &str =
     "echo:deployment:maintenance";
 pub const DEPLOYMENT_MAINTENANCE_PROTOCOL_VERSION: u8 = 1;
@@ -797,6 +864,7 @@ pub const TAG_MAXIMUM_CONFIDENCE: f64 = 1.0;
 pub const SYSTEM_LOGIN_NAME: &str = "system";
 #[cfg(test)]
 pub const FUNCTEST_CLEANUP_SQL: &str = r#"
+LOCK TABLE signal_message IN SHARE MODE;
 UPDATE ai_intel_report_settings
 SET quick_suggestion_enabled = false,
     quick_ai_engine_id = NULL,
@@ -807,6 +875,10 @@ DELETE FROM echo_gpu_transcription_queue;
 DELETE FROM gpu_config;
 DELETE FROM secret_group_user;
 DELETE FROM palitra_highlight_blacklist;
+DELETE FROM sigint_activity_decision_changelog;
+DELETE FROM network_invalidation_task;
+DELETE FROM network_recalculation_task;
+DELETE FROM network_freq_last_datetime_in_aor;
 DELETE FROM sigint_callsign_changelog;
 DELETE FROM sigint_network_aor;
 DELETE FROM sigint_network_callsign_changelog;
@@ -1038,7 +1110,7 @@ pub const UNIT_FORMATION_EQUIVALENT_NOTIONS: &[(&str, &[&str])] = &[
     ("обреб", &["об реб", "обреб"]),
 ];
 pub const ORBIT_AUTO_LINK_MAX_LEVENSHTEIN_DISTANCE: usize = 10;
-pub const ORBIT_TEST_LINK_UNITS_AUTOMATIC_PERSIST_BATCH_SIZE: usize = 100;
+pub const ORBIT_AUTOMATIC_PERSIST_BATCH_SIZE: usize = 1;
 pub const ORBIT_TEST_LINK_UNITS_MANUAL_PERSIST_BATCH_SIZE: usize = 100;
 pub const ORBIT_TEST_LINK_UNITS_MATCH_PAGE_SIZE: usize = 5;
 pub const ORBIT_TEST_LINK_UNITS_MAX_RATING: u8 = 100;
@@ -1046,6 +1118,8 @@ pub const ORBIT_TEST_LINK_UNITS_NUMBER_MATCH_PENALTY: u8 = 1;
 pub const ORBIT_DUPLICATE_UNITS_PERSIST_BATCH_SIZE: usize = 20;
 pub const ORBIT_UNPARSED_UNITS_PERSIST_BATCH_SIZE: usize = 100;
 pub const ORBIT_UNIT_NAME_CLEANUP_MANUAL_PERSIST_BATCH_SIZE: usize = 100;
+pub const ORBIT_GENERATED_UNIT_NAME_MANUAL_PERSIST_BATCH_SIZE: usize = 100;
+pub const ORBIT_ECHELON_NUMBER_FIX_MANUAL_PERSIST_BATCH_SIZE: usize = 100;
 pub const ORBIT_UNIT_NAME_CLEANUP_ARMY_EXCLUDED_WORDS: &[&str] = &["пкс"];
 pub const ORBIT_UNIT_NAME_CLEANUP_CORPS_EXCLUDED_WORDS: &[&str] = &["пкс"];
 pub const ORBIT_DRY_RUN_REPORT_TOP_LIMIT: usize = 20;
@@ -1066,6 +1140,10 @@ pub const NETWORK_INVALIDATION_TASK_TAG_OLD: &str = "old";
 pub const NETWORK_INVALIDATION_TASK_TAG_RECENT: &str = "recent";
 pub const NETWORK_INVALIDATION_TASK_TAG_UNASSIGNED: &str = "unassigned";
 pub const ANALYTICS_CONNECT_TIMEOUT_MS_DEFAULT: u64 = 5_000;
+/// DUTY_FEED_COUNT_DEADLINE_SYNC: the frontend
+/// `DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS` in
+/// `dutyFeedRequestDeadline.ts` must cover this and
+/// `POSTGRES_RUNTIME_STATEMENT_TIMEOUT_MS_DEFAULT` sequentially, plus transport allowance.
 pub const ANALYTICS_QUERY_TIMEOUT_MS_DEFAULT: u64 = 30_000;
 pub const ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT: u64 = 90_000;
 pub const ANALYTICS_RETRY_COOLDOWN_MS_DEFAULT: u64 = 30_000;
@@ -1095,6 +1173,10 @@ pub struct Config {
     pub pg_dbname: Option<String>,
     pub file_registry: Option<FileRegistryConfig>,
     pub cookie_session_secret: String,
+    /// Base64 32-byte StrongBox key for encrypting TOTP seeds in Redis and
+    /// `login_totp`. Generate with `oneoff-generate-strongbox-key`.
+    #[serde(default)]
+    pub totp_strongbox_key: Option<String>,
     pub storage_dir: String,
     pub signal_api_phone: String,
     pub signal_import_group_name: String,

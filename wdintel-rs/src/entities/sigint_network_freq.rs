@@ -46,6 +46,12 @@ pub enum Relation {
         on_delete = "SetNull"
     )]
     Modulation,
+    #[sea_orm(has_many = "super::network_freq_last_datetime_in_aor::Entity")]
+    NetworkFreqLastDatetimeInAor,
+    #[sea_orm(has_many = "super::network_recalculation_task::Entity")]
+    NetworkRecalculationTask,
+    #[sea_orm(has_many = "super::sigint_activity_decision_changelog::Entity")]
+    SigintActivityDecisionChangelog,
     #[sea_orm(
         belongs_to = "super::sigint_network::Entity",
         from = "Column::NetworkId",
@@ -81,6 +87,24 @@ impl Related<super::encryption::Entity> for Entity {
 impl Related<super::modulation::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Modulation.def()
+    }
+}
+
+impl Related<super::network_freq_last_datetime_in_aor::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::NetworkFreqLastDatetimeInAor.def()
+    }
+}
+
+impl Related<super::network_recalculation_task::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::NetworkRecalculationTask.def()
+    }
+}
+
+impl Related<super::sigint_activity_decision_changelog::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintActivityDecisionChangelog.def()
     }
 }
 

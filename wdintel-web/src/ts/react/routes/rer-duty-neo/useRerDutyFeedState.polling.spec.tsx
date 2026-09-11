@@ -6,6 +6,9 @@ import type { Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InboxMessage, InboxMessagesRsp } from '../../../../Bindings';
 import { minimalInboxMessage } from './inbox-message-mocks';
+import { DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS } from './dutyFeedRequestDeadline';
+import { HttpRequestError } from '../../services/api/client';
+import { AUTH_UNAUTHORIZED_EVENT } from '../../auth-redirect';
 import {
   createDutyFeedStateFixture,
   getDutyApiMocks,
@@ -36,6 +39,82 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
   });
 
   afterEach(fixture.cleanup);
+
+  it('stops timer and recovery polls after the session is rejected', async () => {
+    await mountLoadedFeed();
+    hoisted.fetchInboxCount.mockRejectedValue(new HttpRequestError(401, 'Unauthenticated'));
+    await startPoll();
+    const countCalls = hoisted.fetchInboxCount.mock.calls.length;
+    expect(countCalls).toBeGreaterThan(0);
+
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      window.dispatchEvent(new Event('online'));
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(countCalls);
+  });
+
+  it('ignores late poll responses after another request rejects the session', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    const pendingCount = deferred<{ quantity: number; firstElementTs: null }>();
+    hoisted.fetchInboxCount.mockReturnValueOnce(pendingCount.promise);
+    await startPoll();
+    const unreadCount = apiRef.current!.messageFeeds[0].unreadCount;
+    const countCalls = hoisted.fetchInboxCount.mock.calls.length;
+
+    await act(async () => {
+      window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT));
+      pendingCount.resolve({ quantity: 99, firstElementTs: null });
+      await flushMicrotasks();
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    expect(apiRef.current!.messageFeeds[0].unreadCount).toBe(unreadCount);
+    expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(countCalls);
+  });
+
+  it('#3360 does not rearm a newer-message failure after a successful count poll', async () => {
+    const { apiRef } = await mountLoadedFeed(true);
+    apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = true;
+    apiRef.current!.physicallyAtBottomByFeedIdRef.current['mf-0'] = true;
+    hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
+    hoisted.fetchInboxMessages.mockRejectedValue(new Error('ongoing newer failure'));
+
+    await startPoll();
+    await act(async () => flushMicrotasks());
+    expect(apiRef.current!.errorNotificationVersion).toBe(1);
+
+    await startPoll();
+    await act(async () => flushMicrotasks());
+    expect(apiRef.current!.errorNotificationVersion).toBe(1);
+  });
+
+  it('#3360 starts a new preview failure episode after an accepted preview recovery', async () => {
+    const { apiRef } = await mountLoadedFeed(true);
+    apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = false;
+    hoisted.fetchInboxCount
+      .mockResolvedValueOnce({ quantity: 1, firstElementTs: null })
+      .mockRejectedValueOnce(new Error('preview failed'));
+    await startPoll();
+    await act(async () => flushMicrotasks());
+    expect(apiRef.current!.errorNotificationVersion).toBe(1);
+
+    hoisted.fetchInboxCount
+      .mockResolvedValueOnce({ quantity: 1, firstElementTs: null })
+      .mockResolvedValueOnce({ quantity: 1, firstElementTs: null });
+    await startPoll();
+    await act(async () => flushMicrotasks());
+
+    hoisted.fetchInboxCount
+      .mockResolvedValueOnce({ quantity: 1, firstElementTs: null })
+      .mockRejectedValueOnce(new Error('preview failed'));
+    await startPoll();
+    await act(async () => flushMicrotasks());
+    expect(apiRef.current!.errorNotificationVersion).toBe(2);
+  });
 
   // Regression: https://github.com/echoua/echo/pull/3331
   it('keeps a captured preview current after auto-follow advances the unread cursor', async () => {
@@ -446,7 +525,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     );
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(8999);
+      await vi.advanceTimersByTimeAsync(DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS - 1_001);
       await flushMicrotasks();
     });
     expect(tailSignal?.aborted).toBe(false);
@@ -755,7 +834,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     ).toBe(false);
   });
 
-  it('delivers a still-mounted count result after its aggregation window ends', async () => {
+  it('accepts a count after 25 seconds and its aggregation window ends', async () => {
     await mountLoadedFeed();
     await startPoll();
     hoisted.beginDutyNotificationPollCycle.mockClear();
@@ -768,12 +847,18 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     const pendingCount = deferred<{ quantity: number; firstElementTs: number | null }>(
       'late count',
     );
-    hoisted.fetchInboxCount.mockReturnValueOnce(pendingCount.promise);
+    let countSignal: AbortSignal | undefined;
+    hoisted.fetchInboxCount.mockImplementationOnce((_, options?: { signal?: AbortSignal }) => {
+      countSignal = options?.signal;
+      countSignal?.addEventListener('abort', () => pendingCount.reject(countSignal?.reason));
+      return pendingCount.promise;
+    });
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(26_000);
       await flushMicrotasks();
     });
+    expect(countSignal?.aborted).toBe(false);
     expect(hoisted.endDutyNotificationPollCycle).toHaveBeenCalledWith(cycle);
     expect(hoisted.cancelDutyNotificationPollCycle).not.toHaveBeenCalledWith(cycle);
 
@@ -790,7 +875,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     ).toHaveLength(1);
   });
 
-  it('lets healthy feeds continue while a stalled count request keeps its hard deadline', async () => {
+  it('lets healthy feeds continue while a stalled count request keeps its configured hard deadline', async () => {
     window.history.replaceState(
       {},
       '',
@@ -887,7 +972,22 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     );
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(9000);
+      await vi.advanceTimersByTimeAsync(9_000);
+      await flushMicrotasks();
+    });
+
+    expect(stalledSignal?.aborted).toBe(false);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS - 10_000 - 1);
+      await flushMicrotasks();
+    });
+
+    expect(stalledSignal?.aborted).toBe(false);
+    expect(feedBCountRequests).toBe(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
       await flushMicrotasks();
     });
 

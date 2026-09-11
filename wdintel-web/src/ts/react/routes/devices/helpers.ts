@@ -33,9 +33,17 @@ export type DeviceUnitStatView = {
   armyRegion: string;
   militaryDistrict: string;
   army: string;
+  corps: string;
   division: string;
+  brigade: string;
   regiment: string;
   battalion: string;
+  company: string;
+  platoon: string;
+  squad: string;
+  section: string;
+  teamOrCrew: string;
+  other: string;
   count: number;
 };
 
@@ -53,9 +61,17 @@ const DEVICE_UNIT_HIERARCHY_KEYS = [
   'armyRegion',
   'militaryDistrict',
   'army',
+  'corps',
   'division',
+  'brigade',
   'regiment',
   'battalion',
+  'company',
+  'platoon',
+  'squad',
+  'section',
+  'teamOrCrew',
+  'other',
 ] as const;
 
 export function createDefaultDevicesFilterState(): DevicesFilterState {
@@ -119,7 +135,8 @@ function isSelectedSidebarUnitFilter(value: unknown): value is SelectedSidebarUn
   }
   const hierarchy = filter.hierarchy as Record<string, unknown>;
   return DEVICE_UNIT_HIERARCHY_KEYS.every(
-    (key) => hierarchy[key] === null || typeof hierarchy[key] === 'string',
+    (key) =>
+      hierarchy[key] === undefined || hierarchy[key] === null || typeof hierarchy[key] === 'string',
   );
 }
 
@@ -238,9 +255,17 @@ export function mergeDeviceUnitStatsWithUnits(
         armyRegion: unit?.armyRegion ?? '',
         militaryDistrict: unit?.militaryDistrict ?? '',
         army: unit?.army ?? '',
+        corps: unit?.corps ?? '',
         division: unit?.division ?? '',
+        brigade: unit?.brigade ?? '',
         regiment: unit?.regiment ?? '',
         battalion: unit?.battalion ?? '',
+        company: unit?.company ?? '',
+        platoon: unit?.platoon ?? '',
+        squad: unit?.squad ?? '',
+        section: unit?.section ?? '',
+        teamOrCrew: unit?.teamOrCrew ?? '',
+        other: unit?.other ?? '',
         count: stat.count,
       };
     })
@@ -252,7 +277,7 @@ export function mergeDeviceUnitStatsWithUnits(
 
 function matchesDeviceUnitHierarchy(unit: Unit, hierarchy: UnitHierarchyFilter): boolean {
   return DEVICE_UNIT_HIERARCHY_KEYS.every((key) => {
-    const expected = hierarchy[key];
+    const expected = hierarchy[key] ?? null;
     return expected === null || unit[key] === expected;
   });
 }
@@ -288,7 +313,9 @@ export function isSameDeviceSidebarUnitFilter(
     return left.unitName === right.unitName;
   }
   if (left.kind === 'group' && right.kind === 'group') {
-    return DEVICE_UNIT_HIERARCHY_KEYS.every((key) => left.hierarchy[key] === right.hierarchy[key]);
+    return DEVICE_UNIT_HIERARCHY_KEYS.every(
+      (key) => (left.hierarchy[key] ?? null) === (right.hierarchy[key] ?? null),
+    );
   }
   return false;
 }

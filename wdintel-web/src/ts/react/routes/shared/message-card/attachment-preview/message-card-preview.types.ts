@@ -3,6 +3,16 @@ import type { MessageCardImage } from '../message-card-image-utils';
 import type { VideoPreviewSource } from '../message-card-video-utils';
 import type { CoordinatePreviewPoint } from '../message-coordinate-preview';
 
+export type AudioPreviewSource = {
+  id: string;
+  source: string;
+  fileName: string;
+  contentType?: string | null;
+  sizeBytes?: number | null;
+  transcription?: string | null;
+  mediaId?: string | null;
+};
+
 export type MessageCardPreviewNavigation = {
   index: number;
   count: number;
@@ -24,5 +34,6 @@ export type AttachmentPreviewDownloadItem = {
 export type MessageCardPreviewItem =
   | { type: 'image'; value: MessageCardImage }
   | { type: 'video'; value: VideoPreviewSource }
+  | { type: 'audio'; value: AudioPreviewSource }
   | { type: 'document'; value: MessageCardDocument }
   | { type: 'coordinate'; points: CoordinatePreviewPoint[] };

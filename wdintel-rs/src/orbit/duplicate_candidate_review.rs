@@ -221,6 +221,18 @@ where
         .iter()
         .map(|link| link.orbit_unit_id)
         .collect::<BTreeSet<_>>();
+    load_orbit_hierarchies_for_unit_ids(db, &orbit_unit_ids)
+        .await
+        .c(h!())
+}
+
+pub(super) async fn load_orbit_hierarchies_for_unit_ids<C>(
+    db: &C,
+    orbit_unit_ids: &BTreeSet<Uuid>,
+) -> anyhow::Result<BTreeMap<Uuid, [String; 14]>>
+where
+    C: ConnectionTrait,
+{
     if orbit_unit_ids.is_empty() {
         return Ok(BTreeMap::new());
     }
@@ -270,7 +282,7 @@ where
         .map(|unit| (unit.unit_id, unit))
         .collect::<BTreeMap<_, _>>();
     let mut orbit_hierarchies = BTreeMap::new();
-    for orbit_unit_id in orbit_unit_ids {
+    for orbit_unit_id in orbit_unit_ids.iter().copied() {
         if let Some(hierarchy) =
             orbit_hierarchy_for_propagation(orbit_unit_id, &hierarchy_units)
                 .c(h!())?
@@ -579,8 +591,10 @@ fn project_selection(
     let unit_to_delete =
         units.get(&selection.unit_to_delete_id).cloned().c(h!())?;
     let survivor = units.get_mut(&selection.survivor_id).c(h!())?;
-    *survivor =
-        crate::sigint::unit::project_merged_unit(survivor, &unit_to_delete);
+    *survivor = crate::sigint::unit::project_merged_unit_preserving_name(
+        survivor,
+        &unit_to_delete,
+    );
     project_orbit_links(links_by_unit_id, selection);
     let active_orbit_unit_ids = links_by_unit_id
         .get(&selection.survivor_id)
@@ -743,7 +757,7 @@ where
     {
         return Ok(false);
     }
-    crate::sigint::unit::merge_units_in_transaction(
+    crate::sigint::unit::merge_units_in_transaction_preserving_name(
         login,
         db,
         selection.unit_to_delete_id,

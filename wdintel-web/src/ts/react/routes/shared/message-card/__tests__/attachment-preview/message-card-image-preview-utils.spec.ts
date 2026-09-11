@@ -27,7 +27,7 @@ describe('message-card-image-preview-utils', () => {
   });
 
   it('clamps pan against fitted image dimensions', () => {
-    expect(clampPan({ x: 500, y: 500 }, 800, 400, 800, 600, 200)).toEqual({ x: 500, y: 300 });
-    expect(clampPan({ x: 100, y: 100 }, 300, 400, 800, 600, 150)).toEqual({ x: 50, y: 100 });
+    expect(clampPan({ x: 500, y: 500 }, 800, 400, 800, 600, 200)).toEqual({ x: 400, y: 100 });
+    expect(clampPan({ x: 100, y: 100 }, 300, 400, 800, 600, 150)).toEqual({ x: 0, y: 0 });
   });
 });

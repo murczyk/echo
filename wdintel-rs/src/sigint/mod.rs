@@ -37,6 +37,8 @@ pub mod file_upload;
 pub mod freq;
 pub(crate) mod import;
 pub(crate) mod key;
+pub mod message_id;
+pub mod message_uuid_oneoff;
 pub mod network;
 pub mod oneoff;
 pub mod parser;
@@ -192,6 +194,7 @@ pub async fn oneoff_reprocess_coords(
             crate::rer_importer::coordinates::body_noheader_for_reprocess_coords(
                 body,
             )?;
+        let inbox_item_uuid = inbox_item.id_uuid;
         let mut inbox_item: sigint_inbox_item::ActiveModel = inbox_item.into();
         let coords_vec =
             crate::rer_importer::coordinates::extract_inbox_coords(
@@ -214,6 +217,7 @@ pub async fn oneoff_reprocess_coords(
         crate::location::peleng::insert_pelengs(
             coords_vec.clone(),
             item_id,
+            inbox_item_uuid,
             ts,
             crate::rer_importer::pelengation_object::extract(body),
             &dbx,
@@ -725,6 +729,7 @@ pub async fn save_attachment_restapi(
     s3: &Option<opendal::Operator>,
     attachment: &restapi::Attachment,
     m_db_message_id: Option<i64>,
+    m_db_message_uuid: Option<Uuid>,
 ) -> Result<(), AppError> {
     if let Some(db_message_id) = m_db_message_id {
         if let Some(ref attachment_id) = attachment.id {
@@ -748,6 +753,7 @@ pub async fn save_attachment_restapi(
             let upload_result = media::store_media_attachments(
                 &uploads,
                 db_message_id,
+                m_db_message_uuid,
                 config,
                 s3,
                 &txn,
@@ -959,6 +965,10 @@ async fn xlsx_import_process_one(
 
     let message = signal_message::ActiveModel {
         id: NotSet,
+        id_uuid: Set(Some(crate::sigint::message_id::signal_message_uuid(
+            Some(timestamp),
+            timestamp,
+        ))),
         body: Set(Some(body.clone())),
         created_at: NotSet,
         datasource_group_id: Set(Some(datasource_group_id)),
@@ -981,6 +991,7 @@ async fn xlsx_import_process_one(
     signal_message_group::ActiveModel {
         id: NotSet,
         signal_message_id: Set(message.id),
+        signal_message_uuid: Set(message.id_uuid),
         group_master_key: Set(Some(group_id.clone())),
         sender: Set(message.sender.clone()),
         login_id: Set(message.login_id),

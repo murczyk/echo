@@ -6,6 +6,8 @@ import { submitAnalysisInboxMessages } from '../../services/api/analysis';
 import { fetchMessagesByIds } from '../../services/api/inbox-messages';
 import { useInboxChangedMessageIds } from '../shared/useInboxChangedMessageIds';
 import { isIntelligenceReport } from '../shared/intelligence-reports';
+import { isAbortError } from '../../services/api/client';
+import type { ReportEditLoadState } from '../shared/manage-message/useManageMessageDrawer';
 
 type Props = {
   messages: Array<[number, InboxMessage]>;
@@ -21,11 +23,13 @@ type Result = {
   editorMessage: { id: number; message: InboxMessage } | null;
   editorEditAsReport: boolean;
   reportSource: { id: number; message: InboxMessage } | null;
+  editTargetLoadState: ReportEditLoadState;
   editorSaveInFlight: boolean;
   closeEditor: () => void;
   openEditor: (messageId: number) => void;
   openReportCreator: (messageId: number) => void;
-  openReportEditor: (messageId: number) => Promise<void>;
+  openReportEditor: (messageId: number) => void;
+  retryEditTargetLoad: () => void;
   saveEditor: (message: InboxMessage) => Promise<void>;
   saveMessageUpdate: (
     messageId: number,
@@ -87,6 +91,9 @@ export function useAnalysisMessageEditor({
     null,
   );
   const [editorEditAsReport, setEditorEditAsReport] = useState(false);
+  const [editTargetLoadState, setEditTargetLoadState] = useState<ReportEditLoadState>({
+    status: 'idle',
+  });
   const [reportSource, setReportSource] = useState<{ id: number; message: InboxMessage } | null>(
     null,
   );
@@ -94,6 +101,12 @@ export function useAnalysisMessageEditor({
   const messagesRef = useRef(messages);
   const messageDraftsRef = useRef(buildMessageDraftMap(messages));
   const saveQueueRef = useRef(new Map<number, Promise<void>>());
+  const reportLoadControllerRef = useRef<AbortController | null>(null);
+  const cancelReportEditLoad = useCallback(() => {
+    reportLoadControllerRef.current?.abort();
+    reportLoadControllerRef.current = null;
+    setEditTargetLoadState({ status: 'idle' });
+  }, []);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -126,44 +139,69 @@ export function useAnalysisMessageEditor({
     (messageId: number) => {
       const entry = messages.find(([id]) => id === messageId) ?? null;
       if (isNullOrUndefined(entry)) return;
+      cancelReportEditLoad();
       setReportSource(null);
       setEditorEditAsReport(isIntelligenceReport(entry[1]));
       setEditorMessage({ id: entry[0], message: entry[1] });
     },
-    [messages],
+    [cancelReportEditLoad, messages],
   );
 
   const closeEditor = useCallback(() => {
+    cancelReportEditLoad();
     setEditorMessage(null);
     setEditorEditAsReport(false);
     setReportSource(null);
-  }, []);
+  }, [cancelReportEditLoad]);
+
+  useEffect(() => () => cancelReportEditLoad(), [cancelReportEditLoad]);
 
   const openReportCreator = useCallback(
     (messageId: number) => {
       const entry = messages.find(([id]) => id === messageId) ?? null;
       if (isNullOrUndefined(entry)) return;
+      cancelReportEditLoad();
       setEditorMessage(null);
       setEditorEditAsReport(false);
       setReportSource({ id: entry[0], message: entry[1] });
     },
-    [messages],
+    [cancelReportEditLoad, messages],
   );
 
   const openReportEditor = useCallback(
-    async (messageId: number) => {
-      try {
-        const [entry] = await fetchMessagesByIds([messageId]);
-        if (isNullOrUndefined(entry)) throw new Error('Розвіддонесення не знайдено.');
-        setReportSource(null);
-        setEditorEditAsReport(true);
-        setEditorMessage({ id: entry[0], message: entry[1] });
-      } catch (error) {
-        if (!onUnauthorized(error)) onError(toErrorMessage(error));
-      }
+    (messageId: number) => {
+      cancelReportEditLoad();
+      const controller = new AbortController();
+      reportLoadControllerRef.current = controller;
+      setReportSource(null);
+      setEditorMessage(null);
+      setEditorEditAsReport(true);
+      setEditTargetLoadState({ status: 'loading', reportId: messageId });
+      void fetchMessagesByIds([messageId], null, { signal: controller.signal })
+        .then(([entry]) => {
+          if (controller.signal.aborted || reportLoadControllerRef.current !== controller) return;
+          if (isNullOrUndefined(entry)) throw new Error('Розвіддонесення не знайдено.');
+          reportLoadControllerRef.current = null;
+          setEditTargetLoadState({ status: 'idle' });
+          setEditorMessage({ id: entry[0], message: entry[1] });
+        })
+        .catch((error) => {
+          if (controller.signal.aborted || isAbortError(error)) return;
+          if (reportLoadControllerRef.current !== controller) return;
+          reportLoadControllerRef.current = null;
+          setEditTargetLoadState({
+            status: 'error',
+            reportId: messageId,
+            message: toErrorMessage(error),
+          });
+        });
     },
-    [onError, onUnauthorized],
+    [cancelReportEditLoad],
   );
+
+  const retryEditTargetLoad = useCallback(() => {
+    if (editTargetLoadState.status !== 'idle') openReportEditor(editTargetLoadState.reportId);
+  }, [editTargetLoadState, openReportEditor]);
 
   const saveMessageUpdate = useCallback(
     async (messageId: number, updater: (message: InboxMessage) => InboxMessage) => {
@@ -208,11 +246,13 @@ export function useAnalysisMessageEditor({
     editorMessage,
     editorEditAsReport,
     reportSource,
+    editTargetLoadState,
     editorSaveInFlight,
     closeEditor,
     openEditor,
     openReportCreator,
     openReportEditor,
+    retryEditTargetLoad,
     saveEditor,
     saveMessageUpdate,
   };

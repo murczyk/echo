@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type {
   InboxMessage,
+  InboxWindowRsp,
   Network,
   NewCallsignsRes,
   SignalGroupEntry,
@@ -30,6 +31,8 @@ type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 type Params = {
   centerTab: AnalysisCenterTab;
   deferInitialLoad: boolean;
+  focusedWindow?: InboxWindowRsp | null;
+  focusedMessageActive?: boolean;
   leftPanelOpen?: boolean;
   newestFirst: boolean;
   onError: (message: string) => void;
@@ -115,6 +118,8 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     centerTab,
     clearAnalysisResults,
     deferInitialLoad,
+    focusedWindow = null,
+    focusedMessageActive = false,
     getLoadedFilterSections,
     getCurrentMessagePageCursor,
     getReloadFilterSections,
@@ -179,6 +184,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
   } = params;
   const reloadRequestRef = useRef(0);
   const lastReloadTriggerKeyRef = useRef<string | null>(null);
+  const lastReloadFocusedWindowRef = useRef<InboxWindowRsp | null>(null);
   const invalidatedReloadTriggerKeyRef = useRef<string | null>(null);
   const summaryReloadPendingKeyRef = useRef<string | null>(null);
   const summaryDebouncePendingKeyRef = useRef<string | null>(null);
@@ -200,6 +206,8 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       try {
         await reloadAnalysisData({
           clearAnalysisResults,
+          focusedWindow,
+          focusedMessageActive,
           invalidateCallsignGraph,
           invalidateCorrelatedFreqsCache,
           invalidateMessagePaging: preserveMessagePage
@@ -270,6 +278,8 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     [
       centerTab,
       clearAnalysisResults,
+      focusedWindow,
+      focusedMessageActive,
       getLoadedFilterSections,
       getCurrentMessagePageCursor,
       getReloadFilterSections,
@@ -335,13 +345,17 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
 
   useEffect(() => {
     if (deferInitialLoad) return;
+    const focusedWindowChanged =
+      focusedMessageActive && lastReloadFocusedWindowRef.current !== focusedWindow;
     if (
       lastReloadTriggerKeyRef.current === reloadTriggerKey &&
-      invalidatedReloadTriggerKeyRef.current !== reloadTriggerKey
+      invalidatedReloadTriggerKeyRef.current !== reloadTriggerKey &&
+      !focusedWindowChanged
     )
       return;
     const runReload = () => {
       lastReloadTriggerKeyRef.current = reloadTriggerKey;
+      lastReloadFocusedWindowRef.current = focusedWindow;
       if (invalidatedReloadTriggerKeyRef.current === reloadTriggerKey) {
         invalidatedReloadTriggerKeyRef.current = null;
       }
@@ -365,7 +379,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
         });
     };
 
-    if (lastReloadTriggerKeyRef.current === null) {
+    if (lastReloadTriggerKeyRef.current === null || focusedWindowChanged) {
       runReload();
       return;
     }

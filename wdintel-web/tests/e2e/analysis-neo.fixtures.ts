@@ -3,11 +3,13 @@ import type { InboxMessagesRspRaw } from '../../src/ts/react/services/api/inbox-
 import { networkSettingsResponse } from './fixture-responses';
 
 type AnalysisNeoMockOptions = {
+  enableAudioTranscription?: boolean;
   summaryDelayMs?: number;
   sidebarDelayMs?: number;
   inboxDelayMs?: number;
   inboxResponse?: InboxMessagesRspRaw | null;
   signalGroups?: string[];
+  networkInfoResponse?: unknown[];
 };
 
 function jsonBody(body: unknown): string {
@@ -230,6 +232,13 @@ export async function installAnalysisNeoApiMocks(
     const url = new URL(request.url());
     const { pathname } = url;
 
+    if (pathname === '/api/system-settings/current') {
+      await fulfillJson(route, {
+        enable_audio_transcription: options.enableAudioTranscription ?? false,
+      });
+      return;
+    }
+
     if (pathname === '/api/user/settings') {
       await fulfillJson(route, emptyUserSettingsResponse());
       return;
@@ -347,7 +356,7 @@ export async function installAnalysisNeoApiMocks(
     }
 
     if (pathname === '/api/sigint/network-info-batch-id') {
-      await fulfillJson(route, []);
+      await fulfillJson(route, options.networkInfoResponse ?? []);
       return;
     }
 

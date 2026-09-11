@@ -645,10 +645,13 @@ pub async fn oneoff_etalonka_report_networks_from_rer_analysis(
 
     pb.set_message("building report");
     let report_req = build_etalonka_report_request(network_ids);
-    let networks_data =
-        crate::sigint::etalonka::query::load_networks_by_id(&db, &report_req)
-            .await
-            .c(h!())?;
+    let networks_data = crate::sigint::etalonka::query::load_networks_by_id(
+        &db,
+        &report_req,
+        &groups,
+    )
+    .await
+    .c(h!())?;
     let trace_id = uuid::Uuid::new_v4();
     let etalonka_progress = crate::sigint::etalonka::EtalonkaProgress::new(
         &multi,

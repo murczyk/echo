@@ -50,6 +50,8 @@ pub enum Relation {
     Login,
     #[sea_orm(has_many = "super::network_invalidation_task::Entity")]
     NetworkInvalidationTask,
+    #[sea_orm(has_many = "super::sigint_activity_decision_changelog::Entity")]
+    SigintActivityDecisionChangelog,
     #[sea_orm(has_many = "super::sigint_inbox_item_network::Entity")]
     SigintInboxItemNetwork,
     #[sea_orm(has_many = "super::sigint_network_aor::Entity")]
@@ -87,6 +89,12 @@ impl Related<super::login::Entity> for Entity {
 impl Related<super::network_invalidation_task::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::NetworkInvalidationTask.def()
+    }
+}
+
+impl Related<super::sigint_activity_decision_changelog::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintActivityDecisionChangelog.def()
     }
 }
 

@@ -138,7 +138,7 @@ pub async fn bl_etalonka_report_networks_data(
         crate::messenger::group::get_identity_sigint_groups(dbx, user_login)
             .await
             .c(h!())?;
-    let networks_data = load_networks(dbx, req).await.context(h!())?;
+    let networks_data = load_networks(dbx, req, &groups).await.context(h!())?;
 
     Ok(collect_etalonka_data(
         dbx,
@@ -162,7 +162,8 @@ pub async fn bl_etalonka_report_networks_batch_id_data(
         crate::messenger::group::get_identity_sigint_groups(dbx, user_login)
             .await
             .c(h!())?;
-    let networks_data = load_networks_by_id(dbx, req).await.context(h!())?;
+    let networks_data =
+        load_networks_by_id(dbx, req, &groups).await.context(h!())?;
 
     Ok(collect_etalonka_data(
         dbx,
@@ -625,6 +626,17 @@ async fn collect_etalonka_entry(
         sort_by: None,
         period: None,
     };
+    let current_net_callsigns = if options.is_extended_report {
+        bl_get_network_callsigns_list_without_activity(
+            &list_network_callsigns_req,
+            user_id,
+            dbx,
+        )
+        .await
+        .context(h!())?
+    } else {
+        Vec::new()
+    };
     for (index, filter) in options.filters.iter().enumerate() {
         if options.filters.len() > 1 {
             info!(
@@ -642,6 +654,7 @@ async fn collect_etalonka_entry(
             groups,
             user_id,
             &list_network_callsigns_req,
+            &current_net_callsigns,
             all_known_callsigns,
             options.is_extended_report,
             filter,
@@ -672,6 +685,7 @@ async fn load_etalonka_entry_chunk(
     groups: &Vec<String>,
     user_id: &uuid::Uuid,
     req: &ListNetworkCallsignsReq,
+    current_net_callsigns: &[NetworkCallsign],
     all_known_callsigns: &BTreeMap<String, Vec<KnownCallsignRes>>,
     is_extended_report: bool,
     filter: &NetworkFreqFilter,
@@ -681,9 +695,15 @@ async fn load_etalonka_entry_chunk(
 > {
     let net_callsigns = async {
         if is_extended_report {
-            bl_get_network_callsigns_list_for_period(req, user_id, dbx, filter)
-                .await
-                .context(h!())
+            load_network_callsigns_for_report_chunk(
+                dbx,
+                groups,
+                req.network_id,
+                current_net_callsigns,
+                filter,
+            )
+            .await
+            .context(h!())
         } else {
             bl_get_network_callsigns_list(req, user_id, dbx)
                 .await
@@ -700,7 +720,7 @@ async fn load_etalonka_entry_chunk(
                 true,
                 None,
                 Some(filter),
-                true,
+                false,
             )
             .await
             .context(h!())
@@ -714,7 +734,70 @@ async fn load_etalonka_entry_chunk(
             .context(h!())
     };
 
-    Ok(tokio::try_join!(net_callsigns, callsigns, freqs).context(h!())?)
+    let (net_callsigns, callsigns, freqs) =
+        tokio::try_join!(net_callsigns, callsigns, freqs).context(h!())?;
+    let callsigns = if is_extended_report {
+        exclude_current_network_callsigns(callsigns, current_net_callsigns)
+    } else {
+        callsigns
+    };
+    Ok((net_callsigns, callsigns, freqs))
+}
+
+async fn load_network_callsigns_for_report_chunk(
+    dbx: &DatabaseConnection,
+    groups: &Vec<String>,
+    network_id: i64,
+    current_net_callsigns: &[NetworkCallsign],
+    filter: &NetworkFreqFilter,
+) -> Result<Vec<NetworkCallsign>, AppError> {
+    let callsigns = uniq_via_btreeset(
+        &current_net_callsigns
+            .iter()
+            .map(|callsign| callsign.callsign.clone())
+            .collect::<Vec<_>>(),
+    );
+    let activity_info = get_callsigns_activity_info(
+        dbx,
+        groups.clone(),
+        network_id,
+        &callsigns,
+        Some(filter),
+    )
+    .await
+    .context(h!())?;
+
+    Ok(current_net_callsigns
+        .iter()
+        .cloned()
+        .map(|mut callsign| {
+            let callsign_activity = activity_info.get(&callsign.callsign);
+            callsign.message_count =
+                callsign_activity.map_or(0, |activity| activity.message_count);
+            callsign.last_datetime =
+                callsign_activity.and_then(|activity| activity.last_datetime);
+            callsign.freqs =
+                callsign_activity.and_then(|activity| activity.freqs.clone());
+            callsign
+        })
+        .collect())
+}
+
+fn exclude_current_network_callsigns(
+    callsigns: Vec<CallsignRes>,
+    current_net_callsigns: &[NetworkCallsign],
+) -> Vec<CallsignRes> {
+    let current_callsigns = current_net_callsigns
+        .iter()
+        .map(|callsign| callsign.callsign.trim().to_lowercase())
+        .collect::<HashSet<_>>();
+    callsigns
+        .into_iter()
+        .filter(|callsign| {
+            !current_callsigns
+                .contains(&callsign.callsign.trim().to_lowercase())
+        })
+        .collect()
 }
 
 fn finalize_etalonka_entry(entry: &mut EtalonkaEntry) {
@@ -2655,6 +2738,7 @@ mod tests {
         crate::inbox::callsigns::sync(
             dbx,
             inbox_item.id,
+            inbox_item.id_uuid,
             crate::inbox::callsigns::InboxItemCallsigns {
                 primary: callsigns
                     .iter()
@@ -2683,6 +2767,7 @@ mod tests {
         sigint_inbox_item_network::ActiveModel {
             id: NotSet,
             sigint_inbox_item_id: Set(inbox_item.id),
+            sigint_inbox_item_uuid: Set(inbox_item.id_uuid),
             sigint_network_id: Set(network_id),
             created_at: NotSet,
         }
@@ -2935,6 +3020,40 @@ mod tests {
         .await
         .unwrap();
 
+        let main_callsign = sigint_callsign::ActiveModel {
+            callsign: Set("Main".to_string()),
+            position: Set("main position".to_string()),
+            comment: Set("main comment".to_string()),
+            full_name: Set("Головна Станція".to_string()),
+            unit_id: Set(unit.id),
+            deleted: Set(false),
+            created_at: Set(now - chrono::Duration::days(1)),
+            source_id: Set(None),
+            developing: Set(false),
+            radio_freq: Set(freq.clone()),
+            sigint_origin_id: Set(None),
+            original_id: Set(None),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let main_network_callsign = sigint_network_callsign::ActiveModel {
+            sigint_network_id: Set(network.id),
+            sigint_callsign: Set(main_callsign.callsign.clone()),
+            sigint_callsign_id: Set(Some(main_callsign.id)),
+            deleted: Set(false),
+            created_at: Set(now - chrono::Duration::hours(3)),
+            developing: Set(false),
+            unit_developing: Set(false),
+            main_radio_station: Set(true),
+            command_control: Set(false),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
         let deleted_catalog_callsign = sigint_callsign::ActiveModel {
             callsign: Set("DeletedLinked".to_string()),
             position: Set(String::new()),
@@ -3125,7 +3244,7 @@ mod tests {
             &freq,
             historical_activity_at + chrono::Duration::hours(6),
             "uid-boundary",
-            &["Alpha", "Beta", "Boundary"],
+            &["Alpha", "Beta", "Boundary", "Main"],
         )
         .await;
         insert_network_activity(
@@ -3154,6 +3273,9 @@ mod tests {
 
         let ts = now.and_utc().timestamp_millis();
         let historical_ts = historical_activity_at.and_utc().timestamp_millis();
+        let boundary_ts = (historical_activity_at + chrono::Duration::hours(6))
+            .and_utc()
+            .timestamp_millis();
 
         let mut req = EtalonkaJimForksReq {
             req: ListNetworksReq {
@@ -3162,9 +3284,17 @@ mod tests {
                 filter_unit_army_region: None,
                 filter_unit_military_district: None,
                 filter_unit_army: None,
+                filter_unit_corps: None,
                 filter_unit_division: None,
+                filter_unit_brigade: None,
                 filter_unit_regiment: None,
                 filter_unit_battalion: None,
+                filter_unit_company: None,
+                filter_unit_platoon: None,
+                filter_unit_squad: None,
+                filter_unit_section: None,
+                filter_unit_team_or_crew: None,
+                filter_unit_other: None,
                 filter_text: None,
                 filter_name: None,
                 filter_location: None,
@@ -3236,6 +3366,20 @@ mod tests {
             .unwrap()
             .contains(&format!("р/м {}", network.name)));
 
+        // Regression: https://github.com/echoua/echo/issues/3398
+        let main_callsign = entry
+            .net_callsigns
+            .iter()
+            .find(|callsign| callsign.id == main_network_callsign.id)
+            .expect("expected current main radio station");
+        assert!(main_callsign.main_radio_station);
+        assert_eq!(main_callsign.message_count, 1);
+        assert_eq!(main_callsign.last_datetime, Some(boundary_ts));
+        assert!(!entry
+            .callsigns_detailed
+            .iter()
+            .any(|callsign| callsign.callsign == "Main"));
+
         let linked_callsign = entry
             .net_callsigns
             .iter()
@@ -3243,86 +3387,68 @@ mod tests {
             .expect("expected active linked callsign Beta");
         assert_eq!(linked_callsign.message_count, 2);
         assert_eq!(linked_callsign.last_datetime, Some(ts));
-        let historical_callsign = entry
+        assert!(!entry
             .net_callsigns
             .iter()
-            .find(|callsign| callsign.callsign == "Historical")
-            .expect("expected historically active linked callsign");
-        assert!(!historical_callsign.active);
-        assert_eq!(historical_callsign.message_count, 1);
-        let historical_relinked = entry
+            .any(|callsign| callsign.callsign == "Historical"));
+        assert!(!entry
             .net_callsigns
             .iter()
-            .find(|callsign| callsign.id == historical_relinked_callsign.id)
-            .expect("expected historical relinked callsign");
-        assert!(!historical_relinked.active);
-        assert_eq!(historical_relinked.message_count, 1);
-        assert_eq!(historical_relinked.last_datetime, Some(historical_ts));
+            .any(|callsign| callsign.id == historical_relinked_callsign.id));
         let current_relinked = entry
             .net_callsigns
             .iter()
             .find(|callsign| callsign.id == current_relinked_callsign.id)
             .expect("expected current relinked callsign");
         assert!(current_relinked.active);
-        assert_eq!(current_relinked.message_count, 1);
+        assert_eq!(current_relinked.message_count, 2);
         assert_eq!(current_relinked.last_datetime, Some(ts));
         let moved = entry
             .net_callsigns
             .iter()
             .find(|callsign| callsign.id == moved_callsign.id)
             .expect("expected moved callsign");
-        assert_eq!(moved.message_count, 1);
+        assert_eq!(moved.message_count, 2);
         assert_eq!(moved.last_datetime, Some(ts));
-        assert_eq!(moved.created_at, moved_at.and_utc().timestamp_millis());
-        let moved_unassigned = entry
+        assert_eq!(
+            moved.created_at,
+            (now - chrono::Duration::days(1))
+                .and_utc()
+                .timestamp_millis()
+        );
+        assert!(!entry
             .callsigns_detailed
             .iter()
-            .find(|callsign| callsign.callsign == "Moved")
-            .expect("expected pre-assignment moved callsign activity");
-        assert_eq!(moved_unassigned.message_count, 1);
-        assert_eq!(moved_unassigned.last_datetime, Some(historical_ts));
-        let moved_away = entry
+            .any(|callsign| callsign.callsign == "Moved"));
+        assert!(!entry
             .net_callsigns
             .iter()
-            .find(|callsign| callsign.id == moved_away_callsign.id)
-            .expect("expected historically assigned moved-away callsign");
-        assert_eq!(moved_away.network_id, network.id);
-        assert!(!moved_away.active);
-        assert_eq!(moved_away.message_count, 1);
-        assert_eq!(moved_away.last_datetime, Some(historical_ts));
+            .any(|callsign| callsign.id == moved_away_callsign.id));
         let moved_away_unassigned = entry
             .callsigns_detailed
             .iter()
             .find(|callsign| callsign.callsign == "MovedAway")
-            .expect("expected post-assignment moved-away callsign activity");
-        assert_eq!(moved_away_unassigned.message_count, 1);
+            .expect("expected currently unassigned moved-away callsign");
+        assert_eq!(moved_away_unassigned.message_count, 2);
         assert_eq!(moved_away_unassigned.last_datetime, Some(ts));
-        let mut returning = entry
+        let returning = entry
             .net_callsigns
             .iter()
             .filter(|callsign| callsign.id == returning_callsign.id)
             .collect::<Vec<_>>();
-        returning.sort_by_key(|callsign| callsign.created_at);
-        assert_eq!(returning.len(), 2);
-        assert_eq!(returning[0].message_count, 1);
-        assert_eq!(returning[0].last_datetime, Some(historical_ts));
+        assert_eq!(returning.len(), 1);
+        assert_eq!(returning[0].message_count, 2);
+        assert_eq!(returning[0].last_datetime, Some(ts));
         assert_eq!(
             returning[0].created_at,
             returning_created_at.and_utc().timestamp_millis()
         );
-        assert!(!returning[0].active);
-        assert_eq!(returning[1].message_count, 1);
-        assert_eq!(returning[1].last_datetime, Some(ts));
-        assert_eq!(
-            returning[1].created_at,
-            returning_relinked_at.and_utc().timestamp_millis()
-        );
-        assert!(returning[1].active);
-        assert!(entry
+        assert!(returning[0].active);
+        assert!(!entry
             .net_callsigns
             .iter()
             .any(|callsign| callsign.id == deleted_linked_callsign.id));
-        assert!(!entry
+        assert!(entry
             .callsigns_detailed
             .iter()
             .any(|callsign| callsign.callsign == "DeletedLinked"));
@@ -3335,26 +3461,34 @@ mod tests {
         assert!(overlapping.iter().all(|callsign| {
             callsign.message_count == 1 && callsign.last_datetime == Some(ts)
         }));
-        assert!(!entry
+        let stale = entry
             .net_callsigns
             .iter()
-            .any(|callsign| callsign.callsign == "Stale"));
+            .find(|callsign| callsign.callsign == "Stale")
+            .expect("expected current inactive callsign");
+        assert_eq!(stale.message_count, 0);
         assert!(!entry
             .net_callsigns
             .iter()
             .any(|callsign| callsign.callsign == "Expired"));
-        assert!(!entry
+        let late = entry
             .net_callsigns
+            .iter()
+            .find(|callsign| callsign.callsign == "Late")
+            .expect("expected current callsign linked after its activity");
+        assert_eq!(late.message_count, 1);
+        assert!(!entry
+            .callsigns_detailed
             .iter()
             .any(|callsign| callsign.callsign == "Late"));
         assert!(entry
             .callsigns_detailed
             .iter()
-            .any(|callsign| callsign.callsign == "Late"));
-        assert!(!entry
+            .any(|callsign| callsign.callsign == "Historical"));
+        assert!(entry
             .callsigns_detailed
             .iter()
-            .any(|callsign| callsign.callsign == "Historical"));
+            .any(|callsign| callsign.callsign == "Expired"));
         assert!(entry.callsigns_detailed.iter().any(|callsign| {
             callsign.callsign == "Boundary" && callsign.message_count == 1
         }));

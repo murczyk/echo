@@ -218,6 +218,10 @@ pub async fn rer_delta_kmz_import_go(
 
         let message = signal_message::ActiveModel {
             id: NotSet,
+            id_uuid: Set(Some(crate::sigint::message_id::signal_message_uuid(
+                Some(timestamp),
+                timestamp,
+            ))),
             body: Set(Some(body.clone())),
             created_at: NotSet,
             timestamp: Set(Some(timestamp)),
@@ -240,6 +244,7 @@ pub async fn rer_delta_kmz_import_go(
         signal_message_group::ActiveModel {
             id: NotSet,
             signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
             group_master_key: Set(Some(master_key.clone())),
             sender: Set(message.sender.clone()),
             login_id: Set(message.login_id),

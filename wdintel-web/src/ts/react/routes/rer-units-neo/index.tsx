@@ -45,7 +45,7 @@ const DEFAULT_COLUMN_VISIBILITY = {
   company: true,
   battalion: true,
   regiment: true,
-  brigade: false,
+  brigade: true,
   division: true,
   corps: false,
   army: true,
@@ -140,7 +140,7 @@ function SearchModeSettingsButton({
           selected={searchMode === 'strict'}
           onClick={() => changeMode('strict')}
         >
-          <ListItemText>Строгий пошук</ListItemText>
+          <ListItemText>Точний пошук</ListItemText>
         </MenuItem>
         <MenuItem
           role="menuitemradio"

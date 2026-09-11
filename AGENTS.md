@@ -8,6 +8,10 @@
 - keep front-end code formatted with Prettier via `cd wdintel-web && npm run format:staged`
   after editing TS/TSX/JS/CSS/JSON files; use `npm run format:all`
   only when intentionally formatting the whole front-end tree
+- Do not introduce unrelated formatter-only diffs: never run `rustfmt` /
+  Prettier / similar on whole files just because they were touched; match
+  existing style and keep the narrowest edit. If a format pass rewrites
+  unrelated layout, revert the noise and keep only substantive changes.
 - keep `cargo clippy` clean
 - run `cargo check` for rust check
 - run `just build-front` to build front-end code

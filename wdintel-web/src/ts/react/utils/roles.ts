@@ -13,7 +13,8 @@ export type UserRole =
   | 'Cyber'
   | 'DeviceSource'
   | 'AdvancedReports'
-  | 'NoAutoLogout';
+  | 'NoAutoLogout'
+  | 'No2FA';
 
 export function hasRole(roles: readonly string[] | null | undefined, role: UserRole): boolean {
   const has = (target: UserRole) => Boolean(roles?.includes(target));
@@ -49,6 +50,8 @@ export function hasRole(roles: readonly string[] | null | undefined, role: UserR
       return has('Admin') || has('AdvancedReports');
     case 'NoAutoLogout':
       return has('NoAutoLogout');
+    case 'No2FA':
+      return has('No2FA');
   }
 }
 

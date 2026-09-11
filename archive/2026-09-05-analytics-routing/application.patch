@@ -1,0 +1,3085 @@
+diff --git a/deploy/clickhouse/README.md b/deploy/clickhouse/README.md
+index ec80dde94..56898e4eb 100644
+--- a/deploy/clickhouse/README.md
++++ b/deploy/clickhouse/README.md
+@@ -607,10 +607,9 @@ decoding and PostgreSQL query semantics consistent with the source database.
+ 
+ The analysis result, facet, and dedicated facet-count endpoints use this path:
+ 
+-- `/api/rer-importer/get-inbox` for closed RER analysis ranges, historical
+-  Duty context, and the historical portion of long live ranges;
+-- `/api/rer-importer/get-inbox-count` except recent Duty polling described
+-  below;
++- `/api/rer-importer/get-inbox` for bounded ranges and initial/latest pages;
++- `/api/rer-importer/get-inbox-count`;
++- the deprecated combined `/api/rer/analysis/stats` endpoint;
+ - `/api/rer/analysis/stats/count`
+ - `/api/rer/analysis/stats/{groups,senders,posts,freqs,callsigns,tags,units,locations,aors,networks,metadata}`
+ - `/api/rer/analysis/stats/{groups,senders,posts,freqs,callsigns,tags,units,locations,aors,networks}/count`
+@@ -626,6 +625,15 @@ PostgreSQL snapshot remain on PostgreSQL. An analytical operation is retried
+ from the beginning on PostgreSQL, so a failed attempt cannot mix partial
+ analytical and PostgreSQL result sets.
+ 
++Unit labels and explicit unit IDs retain their selected/denied, undefined,
++deleted-unit, and legacy saved-filter semantics. Unit and media filters use
++bounded existence queries so duplicate links and attachments do not multiply
++messages. Bounded unlimited inbox requests and report candidates use keyset
++pages; existing report caps and unbounded-request rejection remain in place.
++Read-only group activity enrichment uses the shared analytics service. Redis
++hits are retained, while timeline and statistics cache misses read raw inputs
++through analytics before primary-side cache maintenance.
++
+ Existing five-minute aggregate generation remains intact. Count dimension totals use scalar
+ `COUNT(DISTINCT ...)` queries so the gateway receives aggregates rather than
+ message-ID sets. Selected-callsign filters use pushed-down JSONB top-level
+@@ -636,23 +644,17 @@ translate. Serialized `tsvector` matching, String-backed JSON/JSONB body
+ extraction, and Cyrillic `ILIKE` execute in ClickHouse; unsupported request
+ shapes retain their existing PostgreSQL routing or whole-operation fallback.
+ 
+-`/api/rer-importer/get-inbox` uses a stricter live-data policy than the
+-eventually consistent endpoints below. RER analysis ranges shorter than 25
+-hours and ending within `max(2 * freshness_max_age_ms, 5 minutes)` of the
+-current time read from source PostgreSQL. Longer live ranges merge the
+-ClickHouse candidate page with a source PostgreSQL candidate page restricted
+-to that fresh overlap, then deduplicate, hydrate, revalidate, order, and limit
+-the merged IDs on source PostgreSQL.
+-
+-Both RER Duty pages route initial/latest requests and requests whose cursor was
+-created in source PostgreSQL within the last hour directly to source
+-PostgreSQL, before any analytics health check or gateway query. Cursor age uses
+-`signal_message.created_at`, not the interception timestamp. Recent date-only
+-polls follow the same rule. Historical `before_id_noninclusive` context remains
+-eligible for ClickHouse. Open-ended message and count requests after an older
+-cursor split or merge the historical ClickHouse range with a primary
+-PostgreSQL fresh tail. Any analytics, tail, or revalidation failure retries the
+-complete request on PostgreSQL. Other callers retain their existing routing.
++`/api/rer-importer/get-inbox` merges analytics candidates with a source
++PostgreSQL tail covering `max(2 * freshness_max_age_ms, 5 minutes)`, including
++recent analysis ranges, Duty polling, and initial/latest requests. The tail
++uses `signal_message.created_at`, so backdated arrivals are included. Its
++boundary is captured before the analytics scan. Candidates are deduplicated,
++hydrated in bounded batches, revalidated, and ordered on source PostgreSQL.
++Any analytics, tail, or revalidation failure retries the complete request on
++PostgreSQL. Counts split historical and fresh records at the same created-at
++boundary to avoid overlap. Routing logs identify the operation, selected
++connection, fallback reason, outcome, and elapsed time; primary authorization,
++hydration, transaction-dependent work, and writes remain intentional.
+ 
+ ## WAL retention and recovery
+ 
+diff --git a/wdintel-rs/src/config.rs b/wdintel-rs/src/config.rs
+index e46951313..622841ab2 100644
+--- a/wdintel-rs/src/config.rs
++++ b/wdintel-rs/src/config.rs
+@@ -662,8 +662,8 @@ pub const INBOX_COUNT_SINGLEFLIGHT_SUCCESS_TTL_MS: u64 = 5_000;
+ pub const INBOX_COUNT_SINGLEFLIGHT_STALE_SECS: u64 = 60;
+ pub const INBOX_COUNT_SINGLEFLIGHT_MAX_ENTRIES: usize = 2_048;
+ pub const INBOX_MESSAGES_PAGE_LIMIT: usize = 20;
++pub const ANALYTICS_INBOX_CANDIDATE_PAGE_SIZE: usize = 1_000;
+ pub const RER_ANALYSIS_ANALYTICS_FRESH_TAIL_MINUTES: i64 = 5;
+-pub const RER_ANALYSIS_POSTGRES_RECENT_RANGE_HOURS: i64 = 25;
+ pub const RER_DUTY_PAGE_ID: &str = "rer-duty";
+ pub const RER_DUTY_NEO_PAGE_ID: &str = "rer-duty-neo";
+ pub const RER_DUTY_POSTGRES_FRESH_CURSOR_HOURS: i64 = 1;
+diff --git a/wdintel-rs/src/messenger/group/handlers.rs b/wdintel-rs/src/messenger/group/handlers.rs
+index 36b495a34..06f5bda89 100644
+--- a/wdintel-rs/src/messenger/group/handlers.rs
++++ b/wdintel-rs/src/messenger/group/handlers.rs
+@@ -1,7 +1,7 @@
+ use super::types::*;
+ use crate::entities::*;
+ use crate::messenger::group::{
+-    collect_group_admin_data, collect_group_stats, set_signal_group_archived,
++    collect_group_admin_data, set_signal_group_archived,
+ };
+ use crate::sigint::aor::bl::collect_group_aors;
+ use crate::types::*;
+@@ -12,8 +12,8 @@ use chrono::{Duration, Utc};
+ use echo_migration::JoinType;
+ use itertools::Itertools;
+ use sea_orm::{
+-    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect,
+-    RelationTrait, TransactionTrait,
++    ColumnTrait, EntityTrait, QueryFilter, QuerySelect, RelationTrait,
++    TransactionTrait,
+ };
+ use std::collections::{HashMap, HashSet};
+ 
+@@ -33,7 +33,7 @@ pub async fn orphan_signal_groups(
+         .context(h!())?;
+ 
+     Ok(Json(
+-        collect_orphan_signal_groups(&env.dbx, false)
++        collect_orphan_signal_groups(&env, false)
+             .await
+             .context(h!())?,
+     ))
+@@ -49,19 +49,17 @@ pub async fn archived_signal_groups(
+         .context(h!())?;
+ 
+     Ok(Json(
+-        collect_orphan_signal_groups(&env.dbx, true)
++        collect_orphan_signal_groups(&env, true)
+             .await
+             .context(h!())?,
+     ))
+ }
+ 
+-async fn collect_orphan_signal_groups<'a, 'async_trait, C>(
+-    dbx: &'a C,
++async fn collect_orphan_signal_groups(
++    env: &Env,
+     is_archived: bool,
+-) -> Result<Vec<OrphanSignalGroupEntry>, AppError>
+-where
+-    C: ConnectionTrait + 'async_trait,
+-{
++) -> Result<Vec<OrphanSignalGroupEntry>, AppError> {
++    let dbx = &env.dbx;
+     // Отримати всі master_key, які вже прив'язані
+     let assigned_keys = sigint_zone_datasource::Entity::find()
+         .select_only()
+@@ -104,7 +102,10 @@ where
+         .collect::<HashSet<_>>()
+         .into_iter()
+         .collect::<Vec<_>>();
+-    let stats = collect_group_stats(keys.clone(), dbx).await.context(h!())?;
++    let stats =
++        crate::rer_importer::analysis::read_group_activity(env, keys.clone())
++            .await
++            .context(h!())?;
+     let group_aors =
+         collect_group_aors(keys.clone(), dbx).await.context(h!())?;
+     let group_admin_data =
+@@ -197,33 +198,14 @@ pub async fn group_stats_timeline(
+     let dt_till = Utc::now().naive_utc();
+     let dt_since = dt_till - Duration::hours(period_hours);
+ 
+-    let analytics_master_keys = master_keys.clone();
+-    let postgres_master_keys = master_keys.clone();
+-    let postgres_env = env.clone();
+-    let mut data = crate::rer_importer::analysis::with_analytics_read_fallback(
+-        env.get_ref(),
+-        "group stats timeline",
+-        true,
+-        |db| async move {
+-            Ok(crate::stats::read_group_stats_timeline_raw(
+-                &db,
+-                analytics_master_keys,
+-                dt_since,
+-                dt_till,
+-            )
+-            .await?)
+-        },
+-        |_db| async move {
+-            Ok(crate::stats::read_group_stats_timeline_cached(
+-                &postgres_env,
+-                postgres_master_keys,
+-                dt_since,
+-                dt_till,
+-            )
+-            .await?)
+-        },
++    let mut data = crate::stats::read_group_stats_timeline_cached(
++        &env,
++        master_keys.clone(),
++        dt_since,
++        dt_till,
+     )
+-    .await?;
++    .await
++    .context(h!())?;
+ 
+     let mut data_by_key = data
+         .drain(..)
+diff --git a/wdintel-rs/src/messenger/group/mod.rs b/wdintel-rs/src/messenger/group/mod.rs
+index d3fdc741d..e5c077950 100644
+--- a/wdintel-rs/src/messenger/group/mod.rs
++++ b/wdintel-rs/src/messenger/group/mod.rs
+@@ -84,10 +84,11 @@ where
+ 
+ pub async fn collect_groups(
+     keys: Vec<String>,
+-    txn: &DatabaseConnection,
++    env: &Env,
+     is_admin: bool,
+     opts: CollectGroupsOpts,
+ ) -> Result<Vec<types::SignalGroupEntry>, AppError> {
++    let txn = &env.dbx;
+     let signal_groups = signal_group::Entity::find()
+         .filter(signal_group::Column::Deleted.eq(false))
+         .filter(signal_group::Column::IsArchived.eq(false))
+@@ -98,7 +99,9 @@ pub async fn collect_groups(
+     let group_stats = if opts.skip_group_stats {
+         BTreeMap::new()
+     } else {
+-        collect_group_stats(keys.clone(), txn).await.context(h!())?
++        crate::rer_importer::analysis::read_group_activity(env, keys.clone())
++            .await
++            .context(h!())?
+     };
+ 
+     let group_aors = if is_admin {
+@@ -139,7 +142,7 @@ pub async fn collect_groups(
+ 
+ pub async fn collect_groups_f2(
+     keys: Vec<String>,
+-    txn: &DatabaseConnection,
++    env: &Env,
+ ) -> Result<Vec<types::SignalGroupEntryF2>, AppError> {
+     #[derive(FromQueryResult, Eq, PartialEq, Hash)]
+     struct GroupRow {
+@@ -147,6 +150,7 @@ pub async fn collect_groups_f2(
+         pub master_key: String,
+         pub kind: String,
+     }
++    let txn = &env.dbx;
+     let signal_groups = signal_group::Entity::find()
+         .join(
+             JoinType::InnerJoin,
+@@ -171,7 +175,9 @@ pub async fn collect_groups_f2(
+         .into_iter()
+         .collect::<HashSet<_>>();
+     let group_stats =
+-        collect_group_stats(keys.clone(), txn).await.context(h!())?;
++        crate::rer_importer::analysis::read_group_activity(env, keys.clone())
++            .await
++            .context(h!())?;
+     let data: Vec<types::SignalGroupEntryF2> = signal_groups
+         .into_iter()
+         .map(|group| {
+diff --git a/wdintel-rs/src/rer_importer/analysis/analytics_unit.rs b/wdintel-rs/src/rer_importer/analysis/analytics_unit.rs
+index 9a8bc2ede..93ada6366 100644
+--- a/wdintel-rs/src/rer_importer/analysis/analytics_unit.rs
++++ b/wdintel-rs/src/rer_importer/analysis/analytics_unit.rs
+@@ -269,9 +269,15 @@ where
+ {
+     if let Some(scope) = scope {
+         if selected_units.as_ref().is_none_or(Vec::is_empty) {
+-            return Ok(super::filter_selected_unit_ids(
+-                query,
+-                selected_unit_ids,
++            return Ok(query.apply_if(
++                selected_unit_ids.as_ref().filter(|ids| !ids.is_empty()),
++                |query, ids| {
++                    query.filter(super::message_has_linked_unit_ids_with_scope(
++                        ids,
++                        false,
++                        Some(scope),
++                    ))
++                },
+             ));
+         } else {
+             let resolved = resolved
+@@ -330,14 +336,12 @@ pub(in crate::rer_importer) fn apply_resolved_analytics_unit_filters_with_ids<
+ where
+     E: EntityTrait,
+ {
+-    let selected_link = join_analytics_unit_link_if_needed(
+-        &mut query,
++    let selected_link = analytics_unit_link_match(
+         "analytics_selected_unit",
+         &resolved.selected.linked_network_ids,
+         scope,
+     );
+-    let denied_link = join_analytics_unit_link_if_needed(
+-        &mut query,
++    let denied_link = analytics_unit_link_match(
+         "analytics_denied_unit",
+         &resolved.denied.linked_network_ids,
+         scope,
+@@ -345,8 +349,7 @@ where
+     let any_link = if resolved.selected.includes_undefined
+         || resolved.denied.includes_undefined
+     {
+-        join_analytics_unit_link_if_needed(
+-            &mut query,
++        analytics_unit_link_match(
+             "analytics_any_unit",
+             &resolved.all_unit_network_ids,
+             scope,
+@@ -366,7 +369,13 @@ where
+     let selected_unit_ids = selected_unit_ids
+         .as_ref()
+         .filter(|unit_ids| !unit_ids.is_empty())
+-        .map(|unit_ids| super::message_has_linked_unit_ids(unit_ids, false));
++        .map(|unit_ids| {
++            super::message_has_linked_unit_ids_with_scope(
++                unit_ids,
++                false,
++                Some(scope),
++            )
++        });
+     match (selected_units, selected_unit_ids) {
+         (None, None) => {}
+         (None, Some(condition)) | (Some(condition), None) => {
+@@ -392,14 +401,11 @@ where
+ 
+ fn analytics_unit_filter_match(
+     unit_filter: &ResolvedAnalyticsUnitFilter,
+-    linked_frequency_alias: Option<&Alias>,
+-    any_frequency_alias: Option<&Alias>,
++    linked_frequency_match: Option<&SimpleExpr>,
++    any_frequency_match: Option<&SimpleExpr>,
+     exact_match_only: bool,
+ ) -> SimpleExpr {
+-    let linked_match = linked_frequency_alias.map(|alias| {
+-        Expr::col((alias.clone(), sigint_network_freq::Column::Id))
+-            .is_not_null()
+-    });
++    let linked_match = linked_frequency_match.cloned();
+     let ordinary_match = (!unit_filter.ordinary_names.is_empty()).then(|| {
+         let linked_match = linked_match.unwrap_or_else(|| Expr::value(false));
+         if exact_match_only {
+@@ -411,11 +417,9 @@ fn analytics_unit_filter_match(
+     });
+     let undefined_match = unit_filter.includes_undefined.then(|| {
+         analytics_header_unit_is_undefined().and(
+-            any_frequency_alias
+-                .map(|alias| {
+-                    Expr::col((alias.clone(), sigint_network_freq::Column::Id))
+-                        .is_null()
+-                })
++            any_frequency_match
++                .cloned()
++                .map(SimpleExpr::not)
+                 .unwrap_or_else(|| Expr::value(true)),
+         )
+     });
+@@ -442,15 +446,11 @@ fn analytics_header_unit_is_undefined() -> SimpleExpr {
+     header.clone().is_null().or(header.eq(""))
+ }
+ 
+-fn join_analytics_unit_link_if_needed<E>(
+-    query: &mut Select<E>,
++fn analytics_unit_link_match(
+     prefix: &str,
+     network_ids: &[i64],
+     scope: &AnalyticsMessageIdScope,
+-) -> Option<Alias>
+-where
+-    E: EntityTrait,
+-{
++) -> Option<SimpleExpr> {
+     if network_ids.is_empty() {
+         return None;
+     }
+@@ -458,41 +458,42 @@ where
+     let network_alias = Alias::new(format!("{prefix}_network"));
+     let frequency_alias = Alias::new(format!("{prefix}_frequency"));
+     let message_datetime = Expr::col(sigint_inbox_item::Column::Datetime);
+-    QueryTrait::query(query)
+-        .join_as(
+-            JoinType::LeftJoin,
++    let mut query = sea_query::Query::select();
++    query
++        .expr(Expr::value(1))
++        .from_as(
+             (
+                 Alias::new("echo_clickhouse_derived"),
+                 Alias::new("message_network_link"),
+             ),
+             link_alias.clone(),
+-            analytics_unit_link_join_condition(
+-                link_alias.clone(),
+-                network_ids,
+-                scope,
+-            ),
+         )
+         .join_as(
+-            JoinType::LeftJoin,
++            JoinType::InnerJoin,
+             sigint_network::Entity,
+             network_alias.clone(),
+             analytics_unit_network_join_condition(
+                 network_alias.clone(),
+-                link_alias,
++                link_alias.clone(),
+                 message_datetime.clone(),
+             ),
+         )
+         .join_as(
+-            JoinType::LeftJoin,
++            JoinType::InnerJoin,
+             sigint_network_freq::Entity,
+             frequency_alias.clone(),
+             analytics_unit_frequency_join_condition(
+-                frequency_alias.clone(),
++                frequency_alias,
+                 network_alias,
+                 message_datetime,
+             ),
+-        );
+-    Some(frequency_alias)
++        )
++        .cond_where(analytics_unit_link_join_condition(
++            link_alias,
++            network_ids,
++            scope,
++        ));
++    Some(Expr::exists(query))
+ }
+ 
+ fn analytics_unit_link_join_condition(
+diff --git a/wdintel-rs/src/rer_importer/analysis/mod.rs b/wdintel-rs/src/rer_importer/analysis/mod.rs
+index fbab0cc4e..5e852cd69 100644
+--- a/wdintel-rs/src/rer_importer/analysis/mod.rs
++++ b/wdintel-rs/src/rer_importer/analysis/mod.rs
+@@ -891,6 +891,14 @@ where
+ fn message_has_linked_unit_ids(
+     unit_ids: &[i64],
+     force_correlation: bool,
++) -> SimpleExpr {
++    message_has_linked_unit_ids_with_scope(unit_ids, force_correlation, None)
++}
++
++pub(in crate::rer_importer) fn message_has_linked_unit_ids_with_scope(
++    unit_ids: &[i64],
++    force_correlation: bool,
++    scope: Option<&AnalyticsMessageIdScope>,
+ ) -> SimpleExpr {
+     let link_alias = Alias::new("selected_unit_link");
+     let unit_alias = Alias::new("selected_unit_by_id");
+@@ -915,12 +923,23 @@ fn message_has_linked_unit_ids(
+             .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+         )
+         .and_where(
+-            Expr::col((link_alias, sigint_inbox_item_unit::Column::UnitId))
+-                .is_in(unit_ids.to_vec()),
++            Expr::col((
++                link_alias.clone(),
++                sigint_inbox_item_unit::Column::UnitId,
++            ))
++            .is_in(unit_ids.to_vec()),
+         )
+         .and_where(
+             Expr::col((unit_alias, sigint_unit::Column::Deleted)).eq(false),
+         );
++    if let Some(scope) = scope {
++        query.and_where(
++            scope.condition((
++                link_alias,
++                sigint_inbox_item_unit::Column::ItemId,
++            )),
++        );
++    }
+     if force_correlation {
+         query.offset(0);
+     }
+@@ -7235,7 +7254,7 @@ async fn group_stats(
+     };
+     let group_names = collect_group_names(
+         &groups,
+-        &env.dbx,
++        &env,
+         is_admin,
+         analytics_group_stats.as_ref(),
+     )
+@@ -7453,6 +7472,7 @@ async fn freq_stats(
+         .as_ref()
+         .map(AnalyticsConfig::freshness_max_age_ms)
+         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
++    let analytics_source_db = env.dbx.clone();
+     let freqs = with_analytics_read_fallback(
+         env.get_ref(),
+         "analysis stats freqs",
+@@ -7462,6 +7482,7 @@ async fn freq_stats(
+                 analytics_req,
+                 analytics_user,
+                 &db,
++                &analytics_source_db,
+                 analytics_master_keys,
+                 analytics_freshness_max_age_ms,
+             )
+@@ -7506,6 +7527,7 @@ async fn callsign_stats(
+         .as_ref()
+         .map(AnalyticsConfig::freshness_max_age_ms)
+         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
++    let analytics_source_db = env.dbx.clone();
+     let callsigns = with_analytics_read_fallback(
+         env.get_ref(),
+         "analysis stats callsigns",
+@@ -7521,6 +7543,7 @@ async fn callsign_stats(
+                 analytics_req,
+                 analytics_user,
+                 &db,
++                &analytics_source_db,
+                 analytics_master_keys,
+                 &message_id_scope,
+             )
+@@ -7565,6 +7588,7 @@ async fn metadata_stats(
+         .as_ref()
+         .map(AnalyticsConfig::freshness_max_age_ms)
+         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
++    let analytics_source_db = env.dbx.clone();
+     let metadata = with_analytics_read_fallback(
+         env.get_ref(),
+         "analysis stats metadata",
+@@ -7580,6 +7604,7 @@ async fn metadata_stats(
+                 analytics_req,
+                 analytics_user,
+                 &db,
++                &analytics_source_db,
+                 analytics_master_keys,
+                 &message_id_scope,
+             )
+@@ -7626,6 +7651,7 @@ async fn tag_stats(
+         .as_ref()
+         .map(AnalyticsConfig::freshness_max_age_ms)
+         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
++    let analytics_source_db = env.dbx.clone();
+     let tags = with_analytics_read_fallback(
+         env.get_ref(),
+         "analysis stats tags",
+@@ -7641,6 +7667,7 @@ async fn tag_stats(
+                 analytics_req,
+                 analytics_user,
+                 &db,
++                &analytics_source_db,
+                 analytics_master_keys,
+                 analytics_tag_access.as_ref().c(h!())?,
+                 &message_id_scope,
+@@ -8092,6 +8119,10 @@ async fn count_stats(
+         .map(AnalyticsConfig::retry_cooldown_ms)
+         .unwrap_or(ANALYTICS_RETRY_COOLDOWN_MS_DEFAULT);
+     let postgres_query = query_count_stats_postgres(&req, &user, &env, access);
++    if analytics_query.is_none() {
++        info!(target: "analytics_route", "operation=\"analysis stats count\" route=postgres reason={}",
++            if analytics.is_none() { "unconfigured" } else { "circuit_open" });
++    }
+     let response = with_count_stats_analytics_fallback(
+         analytics_query,
+         core::time::Duration::from_millis(timeout_ms),
+@@ -8104,8 +8135,8 @@ async fn count_stats(
+     Ok(Json(response))
+ }
+ 
+-fn analytics_count_request_supported(req: &AnalysisStatsReq) -> bool {
+-    !analysis_request_has_unit_filters(req)
++fn analytics_count_request_supported(_req: &AnalysisStatsReq) -> bool {
++    true
+ }
+ 
+ fn analytics_summary_table_request_supported(req: &AnalysisStatsReq) -> bool {
+@@ -8141,34 +8172,14 @@ async fn resolve_analytics_tag_access_if_enabled(
+ pub(crate) fn analytics_inbox_request_supported(
+     req: &InboxMessagesReq,
+ ) -> bool {
+-    analytics_inbox_filter_supported(req)
+-        && !crate::rer_importer::inbox::query::inbox_request_is_unbounded(req)
++    !crate::rer_importer::inbox::query::inbox_request_is_unbounded(req)
++        || (req.load_latest == Some(true) && req.nolimit != Some(true))
+ }
+ 
+ pub(crate) fn analytics_inbox_candidates_supported(
+     req: &InboxMessagesReq,
+ ) -> bool {
+-    analytics_inbox_request_supported(req) && req.nolimit != Some(true)
+-}
+-
+-fn analytics_inbox_filter_supported(req: &InboxMessagesReq) -> bool {
+-    req.only_with_media != Some(true) && !inbox_request_has_unit_filters(req)
+-}
+-
+-fn analysis_request_has_unit_filters(req: &AnalysisStatsReq) -> bool {
+-    option_vec_has_values(&req.selected_units)
+-        || option_vec_has_values(&req.selected_unit_ids)
+-}
+-
+-fn inbox_request_has_unit_filters(req: &InboxMessagesReq) -> bool {
+-    option_vec_has_values(&req.selected_units)
+-        || option_vec_has_values(&req.denied_units)
+-        || option_vec_has_values(&req.selected_unit_ids)
+-        || option_vec_has_values(&req.denied_unit_ids)
+-}
+-
+-fn option_vec_has_values<T>(values: &Option<Vec<T>>) -> bool {
+-    values.as_ref().is_some_and(|values| !values.is_empty())
++    analytics_inbox_request_supported(req)
+ }
+ 
+ #[derive(Clone)]
+@@ -8255,6 +8266,7 @@ where
+     let _retry_cancellation_guard = retry_attempt
+         .as_ref()
+         .map(AnalyticsRetryAttempt::cancellation_guard);
++    let mut reason = "analytics_skipped";
+     if let Some(analytics_query) = analytics_query {
+         let started = std::time::Instant::now();
+         match tokio::time::timeout(timeout, analytics_query).await {
+@@ -8262,30 +8274,37 @@ where
+                 if let Some(retry_attempt) = retry_attempt {
+                     retry_attempt.record_success();
+                 }
+-                trace!(
+-                    "analysis stats count used analytics in {:?}",
++                info!(target: "analytics_route", "operation=\"analysis stats count\" route=analytics outcome=success elapsed_ms={}", started.elapsed().as_millis());
++                return Ok(response);
++            }
++            Ok(Err(err)) => {
++                reason = "analytics_error";
++                warn!(
++                    "analysis stats count analytics query failed after {:?}, retrying via PostgreSQL: {:?}",
++                    started.elapsed(),
++                    err
++                );
++            }
++            Err(_) => {
++                reason = "analytics_timeout";
++                warn!(
++                    "analysis stats count analytics query timed out after {:?}, retrying via PostgreSQL",
+                     started.elapsed()
+                 );
+-                return Ok(response);
+             }
+-            Ok(Err(err)) => warn!(
+-                "analysis stats count analytics query failed after {:?}, retrying via PostgreSQL: {:?}",
+-                started.elapsed(),
+-                err
+-            ),
+-            Err(_) => warn!(
+-                "analysis stats count analytics query timed out after {:?}, retrying via PostgreSQL",
+-                started.elapsed()
+-            ),
+         }
+         if let Some(retry_attempt) = retry_attempt {
+             retry_attempt.record_failure(retry_cooldown);
+         }
+     }
+ 
+-    postgres_query.await.map_err(|error| {
++    let started = std::time::Instant::now();
++    let response = postgres_query.await.map_err(|error| {
+         map_postgres_runtime_timeout(error, "analysis stats count")
+-    })
++    });
++    info!(target: "analytics_route", "operation=\"analysis stats count\" route=postgres reason={reason} outcome={} elapsed_ms={}",
++        if response.is_ok() { "success" } else { "error" }, started.elapsed().as_millis());
++    response
+ }
+ 
+ pub(crate) async fn with_analytics_read_fallback<T, A, AFut, P, PFut>(
+@@ -8369,6 +8388,13 @@ where
+                 .map(|retry_attempt| (analytics, retry_attempt))
+         });
+ 
++    let mut reason = if !analytics_supported {
++        "query_policy"
++    } else if env.analytics.is_none() {
++        "unconfigured"
++    } else {
++        "circuit_open"
++    };
+     if let Some((analytics, retry_attempt)) = analytics_attempt {
+         let _retry_cancellation_guard = retry_attempt.cancellation_guard();
+         let started = std::time::Instant::now();
+@@ -8396,18 +8422,21 @@ where
+         match response {
+             Some(Ok(response)) => {
+                 retry_attempt.record_success();
+-                trace!("{operation} used analytics in {:?}", started.elapsed());
++                info!(target: "analytics_route", "operation={operation:?} route=analytics outcome=success elapsed_ms={}", started.elapsed().as_millis());
+                 return Ok(response);
+             }
+-            Some(Err(err)) => warn!(
+-                "{operation} analytics query failed after {:?}, retrying via PostgreSQL: {:?}",
+-                started.elapsed(),
+-                err
+-            ),
+-            None => warn!(
+-                "{operation} analytics query timed out after {:?}, retrying via PostgreSQL",
+-                started.elapsed()
+-            ),
++            Some(Err(err)) => {
++                reason = "analytics_error";
++                warn!(
++                    "{operation} analytics query failed; retrying via PostgreSQL: {err:?}"
++                );
++            }
++            None => {
++                reason = "analytics_timeout";
++                warn!(
++                    "{operation} analytics query timed out; retrying via PostgreSQL"
++                );
++            }
+         }
+         let retry_cooldown = core::time::Duration::from_millis(
+             analytics_config
+@@ -8424,9 +8453,10 @@ where
+     let started = std::time::Instant::now();
+     let response = postgres_query(env.replica())
+         .await
+-        .map_err(|error| map_postgres_runtime_timeout(error, operation))?;
+-    trace!("{operation} used PostgreSQL in {:?}", started.elapsed());
+-    Ok(response)
++        .map_err(|error| map_postgres_runtime_timeout(error, operation));
++    info!(target: "analytics_route", "operation={operation:?} route=postgres reason={reason} outcome={} elapsed_ms={}",
++        if response.is_ok() { "success" } else { "error" }, started.elapsed().as_millis());
++    response
+ }
+ 
+ pub(crate) fn map_postgres_runtime_timeout(
+@@ -9709,39 +9739,203 @@ async fn stats_deprecated(
+     let master_keys = get_identity_sigint_groups(&env.dbx, &login)
+         .await
+         .context(h!())?;
+-    let master_keys_noimport = master_keys.clone();
++    let freshness = env
++        .config
++        .analytics
++        .as_ref()
++        .map(AnalyticsConfig::freshness_max_age_ms)
++        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
++    let response = with_analytics_read_fallback(
++        env.get_ref(),
++        "analysis combined stats",
++        analytics_stats_request_supported(&req, &env),
++        |db| {
++            query_combined_stats_analytics(
++                &req,
++                &user,
++                &env,
++                db,
++                master_keys.clone(),
++                freshness,
++            )
++        },
++        |_| {
++            query_combined_stats_postgres(
++                &req,
++                &user,
++                &env,
++                master_keys.clone(),
++            )
++        },
++    )
++    .await
++    .context(h!())?;
++    debug!("[stats] get stats: {:?}", instant.elapsed());
++    Ok(Json(response))
++}
+ 
+-    let groups = stats::fetch_groups(&req, &user, &env, master_keys_noimport)
++async fn query_combined_stats_postgres(
++    req: &Json<AnalysisStatsReq>,
++    user: &Identity,
++    env: &actix_web::web::Data<Env>,
++    master_keys: Vec<String>,
++) -> Result<AnalysisStatsRsp, AppError> {
++    let groups = stats::fetch_groups(req, user, env, master_keys.clone())
+         .await
+         .context(h!())?;
+-    let senders = stats::fetch_senders(&req, &user, &env, master_keys.clone())
++    let senders = stats::fetch_senders(req, user, env, master_keys.clone())
+         .await
+         .context(h!())?;
+-    let posts = stats::fetch_posts(&req, &user, &env, master_keys.clone())
++    let posts = stats::fetch_posts(req, user, env, master_keys.clone())
+         .await
+         .context(h!())?;
+-    let freqs = stats::fetch_freqs(&req, &user, &env, master_keys.clone())
++    let freqs = stats::fetch_freqs(req, user, env, master_keys.clone())
+         .await
+         .context(h!())?;
+-    let callsigns =
+-        stats::fetch_callsigns(&req, &user, &env, master_keys.clone())
+-            .await
+-            .context(h!())?;
+-    let tags = stats::fetch_tags(&req, &user, &env, master_keys.clone())
++    let callsigns = stats::fetch_callsigns(req, user, env, master_keys.clone())
++        .await
++        .context(h!())?;
++    let tags = stats::fetch_tags(req, user, env, master_keys.clone())
+         .await
+         .context(h!())?;
+-    let units = stats::fetch_units(&req, &user, &env, master_keys.clone())
++    let units = stats::fetch_units(req, user, env, master_keys.clone())
+         .await
+         .context(h!())?;
+-    let locations = fetch_locations(&user, &env, &req, master_keys.clone())
++    let locations = fetch_locations(user, env, req, master_keys.clone())
+         .await
+         .c(h!())?;
+-    let count = stats::fetch_counts(&req, &user, &env, master_keys.clone())
++    let count = stats::fetch_counts(req, user, env, master_keys.clone())
+         .await
+         .context(h!())?;
+-    debug!("[stats] get stats: {:?}", instant.elapsed());
++    Ok(AnalysisStatsRsp {
++        groups,
++        senders,
++        posts,
++        freqs,
++        callsigns,
++        units,
++        locations,
++        tags,
++        count_overall: count.0,
++        count_selected: count.1,
++    })
++}
+ 
+-    Ok(Json(AnalysisStatsRsp {
++async fn query_combined_stats_analytics(
++    req: &Json<AnalysisStatsReq>,
++    user: &Identity,
++    env: &Env,
++    db: DatabaseConnection,
++    master_keys: Vec<String>,
++    freshness: u64,
++) -> Result<AnalysisStatsRsp, AppError> {
++    let login = login_id_from_identity(user).context(h!())?;
++    let scope =
++        stats::resolve_analytics_message_id_scope(&req.0, &db, freshness)
++            .await
++            .context(h!())?;
++    let access = stats::resolve_analytics_tag_access(
++        &env.dbx,
++        &login,
++        req.report_tags_only_this_unit.unwrap_or(false),
++    )
++    .await
++    .context(h!())?;
++    let groups = stats::fetch_groups_raw_with_db(
++        req,
++        user,
++        &db,
++        &env.dbx,
++        master_keys.clone(),
++        Some(&scope),
++        None,
++    )
++    .await
++    .context(h!())?;
++    let senders = stats::fetch_senders_raw_with_db(
++        req,
++        user,
++        env,
++        &db,
++        master_keys.clone(),
++        freshness,
++    )
++    .await
++    .context(h!())?;
++    let posts = stats::fetch_posts_raw_with_db(
++        req,
++        user,
++        &db,
++        &env.dbx,
++        master_keys.clone(),
++        &scope,
++    )
++    .await
++    .context(h!())?;
++    let freqs = stats::fetch_freqs_raw_with_db(
++        req,
++        user,
++        &db,
++        &env.dbx,
++        master_keys.clone(),
++        freshness,
++    )
++    .await
++    .context(h!())?;
++    let callsigns = stats::fetch_callsigns_raw_with_db(
++        req,
++        user,
++        &db,
++        &env.dbx,
++        master_keys.clone(),
++        &scope,
++    )
++    .await
++    .context(h!())?;
++    let tags = stats::fetch_tags_raw_with_db(
++        req,
++        user,
++        &db,
++        &env.dbx,
++        master_keys.clone(),
++        &access,
++        &scope,
++    )
++    .await
++    .context(h!())?;
++    let units = stats::fetch_units_raw_with_db(
++        req,
++        user,
++        &db,
++        master_keys.clone(),
++        &scope,
++    )
++    .await
++    .context(h!())?;
++    let locations = merge_locations(
++        stats::fetch_locations_raw_with_db(
++            req,
++            user,
++            &db,
++            &env.dbx,
++            master_keys.clone(),
++            &scope,
++        )
++        .await
++        .context(h!())?,
++    );
++    let count = stats::fetch_counts_raw_with_db(
++        req,
++        user,
++        env,
++        &db,
++        master_keys,
++        Some(&scope),
++        None,
++    )
++    .await
++    .context(h!())?;
++    Ok(AnalysisStatsRsp {
+         groups,
+         senders,
+         posts,
+@@ -9752,7 +9946,7 @@ async fn stats_deprecated(
+         tags,
+         count_overall: count.0,
+         count_selected: count.1,
+-    }))
++    })
+ }
+ 
+ async fn collect_sender_names(
+@@ -9777,12 +9971,35 @@ async fn collect_sender_names(
+         })
+         .collect())
+ }
++pub(crate) async fn read_group_activity(
++    env: &Env,
++    keys: Vec<String>,
++) -> Result<BTreeMap<String, SignalGroupStats>, AppError> {
++    let analytics_keys = keys.clone();
++    with_analytics_read_fallback(
++        env,
++        "group activity enrichment",
++        true,
++        |db| async move {
++            stats::fetch_group_activity_stats_with_db(&db, analytics_keys)
++                .await
++                .context(h!())
++                .map_err(AppError::from)
++        },
++        |db| async move { collect_group_stats(keys, &db).await },
++    )
++    .await
++    .context(h!())
++    .map_err(AppError::from)
++}
++
+ async fn collect_group_names(
+     groups: &Vec<AnalysisStatsGroup>,
+-    txn: &DatabaseConnection,
++    env: &Env,
+     is_admin: bool,
+     analytics_group_stats: Option<&BTreeMap<String, SignalGroupStats>>,
+ ) -> anyhow::Result<Vec<SignalGroupEntry>> {
++    let txn = &env.dbx;
+     let mut result = vec![];
+     let group_keys = groups.iter().map(|x| x.master_key.clone()).collect_vec();
+     let signal_groups = signal_group::Entity::find()
+@@ -9814,7 +10031,7 @@ async fn collect_group_names(
+         .collect();
+     let stats = match analytics_group_stats {
+         Some(analytics_group_stats) => analytics_group_stats.clone(),
+-        None => collect_group_stats(keys.clone(), txn).await.context(h!())?,
++        None => read_group_activity(env, keys.clone()).await.context(h!())?,
+     };
+ 
+     let group_aors = if is_admin {
+diff --git a/wdintel-rs/src/rer_importer/analysis/stats.rs b/wdintel-rs/src/rer_importer/analysis/stats.rs
+index 32b682d23..ed5e078b1 100644
+--- a/wdintel-rs/src/rer_importer/analysis/stats.rs
++++ b/wdintel-rs/src/rer_importer/analysis/stats.rs
+@@ -2286,20 +2286,29 @@ pub async fn fetch_freqs_for_login(
+                     &env.dbx,
+                     master_keys,
+                     None,
++                    None,
+                 )
+             },
+         )
+         .await;
+     }
+ 
+-    fetch_freqs_for_login_with_db(req, login_str, &env.dbx, master_keys, None)
+-        .await
++    fetch_freqs_for_login_with_db(
++        req,
++        login_str,
++        &env.dbx,
++        master_keys,
++        None,
++        None,
++    )
++    .await
+ }
+ 
+ pub(super) async fn fetch_freqs_raw_with_db(
+     req: &Json<AnalysisStatsReq>,
+     user: &Identity,
+     db: &DatabaseConnection,
++    source_db: &DatabaseConnection,
+     master_keys: Vec<String>,
+     freshness_max_age_ms: u64,
+ ) -> Result<Vec<AnalysisStatsFreq>, AppError> {
+@@ -2310,12 +2319,21 @@ pub(super) async fn fetch_freqs_raw_with_db(
+     if scopes.current.is_empty() {
+         return Ok(Vec::new());
+     }
++    let units = resolve_analysis_unit_filters_for_analytics(
++        source_db,
++        &req.selected_units,
++        req.units_exact_match_only,
++        Some(&scopes.current),
++    )
++    .await
++    .context(h!())?;
+     fetch_freqs_for_login_with_db(
+         &req.0,
+         &login_value,
+         db,
+         master_keys,
+         Some(&scopes),
++        units.as_ref(),
+     )
+     .await
+ }
+@@ -2326,6 +2344,7 @@ async fn fetch_freqs_for_login_with_db(
+     db: &DatabaseConnection,
+     master_keys: Vec<String>,
+     analytics_scopes: Option<&AnalyticsFrequencyScopes>,
++    units: Option<&ResolvedAnalyticsUnitFilters>,
+ ) -> Result<Vec<AnalysisStatsFreq>, AppError> {
+     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+     let dt_till =
+@@ -2337,13 +2356,14 @@ async fn fetch_freqs_for_login_with_db(
+         freq: String,
+         count: i64,
+     }
+-    let freqs_res = build_freqs_query(
++    let freqs_res = build_freqs_query_with_units(
+         req,
+         login_str,
+         dt_since,
+         dt_till,
+         master_keys,
+         analytics_scopes.map(|scopes| &scopes.current),
++        units,
+     )?;
+     // debug!(
+     //     "> freqs_res: {}",
+@@ -2532,6 +2552,7 @@ pub(super) async fn count_freqs_with_db(
+     .await
+ }
+ 
++#[cfg(test)]
+ pub(super) fn build_freqs_query(
+     req: &AnalysisStatsReq,
+     login_str: &uuid::Uuid,
+@@ -2540,7 +2561,7 @@ pub(super) fn build_freqs_query(
+     master_keys: Vec<String>,
+     scope: Option<&AnalyticsMessageIdScope>,
+ ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+-    Ok(build_freqs_filtered_query(
++    build_freqs_query_with_units(
+         req,
+         login_str,
+         dt_since,
+@@ -2548,6 +2569,26 @@ pub(super) fn build_freqs_query(
+         master_keys,
+         scope,
+         None,
++    )
++}
++
++fn build_freqs_query_with_units(
++    req: &AnalysisStatsReq,
++    login_str: &uuid::Uuid,
++    dt_since: NaiveDateTime,
++    dt_till: NaiveDateTime,
++    master_keys: Vec<String>,
++    scope: Option<&AnalyticsMessageIdScope>,
++    units: Option<&ResolvedAnalyticsUnitFilters>,
++) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
++    Ok(build_freqs_filtered_query(
++        req,
++        login_str,
++        dt_since,
++        dt_till,
++        master_keys,
++        scope,
++        units,
+     )?
+     .select_only()
+     .column_as(
+@@ -2721,6 +2762,7 @@ pub(super) async fn fetch_callsigns_raw_with_db(
+     req: &Json<AnalysisStatsReq>,
+     user: &Identity,
+     db: &DatabaseConnection,
++    source_db: &DatabaseConnection,
+     master_keys: Vec<String>,
+     scope: &AnalyticsMessageIdScope,
+ ) -> Result<Vec<AnalysisStatsCallsign>, AppError> {
+@@ -2731,6 +2773,14 @@ pub(super) async fn fetch_callsigns_raw_with_db(
+     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+     let dt_till =
+         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
++    let units = resolve_analysis_unit_filters_for_analytics(
++        source_db,
++        &req.selected_units,
++        req.units_exact_match_only,
++        Some(scope),
++    )
++    .await
++    .context(h!())?;
+     let callsigns_res = build_callsigns_filtered_query(
+         &req.0,
+         &login_value,
+@@ -2738,7 +2788,7 @@ pub(super) async fn fetch_callsigns_raw_with_db(
+         dt_till,
+         master_keys,
+         Some(scope),
+-        None,
++        units.as_ref(),
+     )?;
+     let (mut callsigns_res, callsign_alias) =
+         join_analytics_callsign_relation(callsigns_res, Some(scope));
+@@ -2913,6 +2963,7 @@ pub(super) async fn fetch_metadata_stats_raw_with_db(
+     req: &Json<AnalysisStatsReq>,
+     user: &Identity,
+     db: &DatabaseConnection,
++    source_db: &DatabaseConnection,
+     master_keys: Vec<String>,
+     scope: &AnalyticsMessageIdScope,
+ ) -> Result<MetadataStatsRsp, AppError> {
+@@ -2920,8 +2971,23 @@ pub(super) async fn fetch_metadata_stats_raw_with_db(
+         return Ok(empty_metadata_stats());
+     }
+     let login = login_id_from_identity(user)?;
+-    fetch_metadata_stats_with_db(&req.0, &login, db, master_keys, Some(scope))
+-        .await
++    let units = resolve_analysis_unit_filters_for_analytics(
++        source_db,
++        &req.selected_units,
++        req.units_exact_match_only,
++        Some(scope),
++    )
++    .await
++    .context(h!())?;
++    fetch_metadata_stats_with_units(
++        &req.0,
++        &login,
++        db,
++        master_keys,
++        Some(scope),
++        units.as_ref(),
++    )
++    .await
+ }
+ 
+ fn empty_metadata_stats() -> MetadataStatsRsp {
+@@ -2939,18 +3005,33 @@ pub(super) async fn fetch_metadata_stats_with_db(
+     db: &DatabaseConnection,
+     master_keys: Vec<String>,
+     scope: Option<&AnalyticsMessageIdScope>,
++) -> Result<MetadataStatsRsp, AppError> {
++    fetch_metadata_stats_with_units(req, login, db, master_keys, scope, None)
++        .await
++        .context(h!())
++        .map_err(AppError::from)
++}
++
++async fn fetch_metadata_stats_with_units(
++    req: &AnalysisStatsReq,
++    login: &uuid::Uuid,
++    db: &DatabaseConnection,
++    master_keys: Vec<String>,
++    scope: Option<&AnalyticsMessageIdScope>,
++    units: Option<&ResolvedAnalyticsUnitFilters>,
+ ) -> Result<MetadataStatsRsp, AppError> {
+     let req = Json(req.clone());
+     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+     let dt_till =
+         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+-    let messages_q = build_metadata_messages_query(
++    let messages_q = build_metadata_messages_query_with_units(
+         &req,
+         login,
+         dt_since,
+         dt_till,
+         master_keys,
+         scope,
++        units,
+     )
+     .context(h!())?;
+ 
+@@ -3001,6 +3082,7 @@ pub(super) async fn fetch_metadata_stats_with_db(
+     })
+ }
+ 
++#[cfg(test)]
+ fn build_metadata_messages_query(
+     req: &Json<AnalysisStatsReq>,
+     login_str: &uuid::Uuid,
+@@ -3008,6 +3090,26 @@ fn build_metadata_messages_query(
+     dt_till: NaiveDateTime,
+     master_keys: Vec<String>,
+     scope: Option<&AnalyticsMessageIdScope>,
++) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
++    build_metadata_messages_query_with_units(
++        req,
++        login_str,
++        dt_since,
++        dt_till,
++        master_keys,
++        scope,
++        None,
++    )
++}
++
++fn build_metadata_messages_query_with_units(
++    req: &Json<AnalysisStatsReq>,
++    login_str: &uuid::Uuid,
++    dt_since: NaiveDateTime,
++    dt_till: NaiveDateTime,
++    master_keys: Vec<String>,
++    scope: Option<&AnalyticsMessageIdScope>,
++    units: Option<&ResolvedAnalyticsUnitFilters>,
+ ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+     let messages_q = build_join_for_sigint_inbox_item()
+         .filter(signal_message::Column::Deleted.eq(false))
+@@ -3022,7 +3124,7 @@ fn build_metadata_messages_query(
+         login_str,
+         master_keys,
+         scope,
+-        None,
++        units,
+         false,
+     )
+ }
+@@ -3516,6 +3618,7 @@ pub(super) async fn fetch_tags_raw_with_db(
+     req: &Json<AnalysisStatsReq>,
+     user: &Identity,
+     db: &DatabaseConnection,
++    source_db: &DatabaseConnection,
+     master_keys: Vec<String>,
+     tag_access: &AnalyticsTagAccess,
+     scope: &AnalyticsMessageIdScope,
+@@ -3523,16 +3626,60 @@ pub(super) async fn fetch_tags_raw_with_db(
+     if scope.is_empty() {
+         return Ok(Vec::new());
+     }
+-    let login_value = login_id_from_identity(user)?;
+-    fetch_tags_for_login_with_db(
+-        &req.0,
+-        &login_value,
+-        db,
++    let login = login_id_from_identity(user).context(h!())?;
++    let units = resolve_analysis_unit_filters_for_analytics(
++        source_db,
++        &req.selected_units,
++        req.units_exact_match_only,
++        Some(scope),
++    )
++    .await
++    .context(h!())?;
++    let since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
++    let till = dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
++    let mut without_units = req.0.clone();
++    without_units.selected_units = None;
++    without_units.selected_unit_ids = None;
++    let query = build_tags_analytics_filtered_query_with_scope(
++        &without_units,
++        &login,
++        &tag_access.accessible_tag_ids,
++        &tag_access.unit_login_ids,
++        since,
++        till,
+         master_keys,
+-        Some(tag_access),
+         Some(scope),
+     )
++    .context(h!())?;
++    let rows = apply_analysis_unit_filters(
++        query,
++        &req.selected_units,
++        &req.selected_unit_ids,
++        &req.units_exact_match_only,
++        since,
++        till,
++        Some(scope),
++        units.as_ref(),
++    )
++    .context(h!())?
++    .select_only()
++    .column(sigint_inbox_item_tag::Column::TagId)
++    .column_as(
++        Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
++        "count",
++    )
++    .group_by(sigint_inbox_item_tag::Column::TagId)
++    .into_model::<TagsRes>()
++    .all(db)
+     .await
++    .context(h!())?;
++    Ok(rows
++        .into_iter()
++        .map(|row| AnalysisStatsTag {
++            tag_id: row.tag_id,
++            count: row.count,
++        })
++        .collect())
+ }
+ 
+ pub async fn count_tags(
+diff --git a/wdintel-rs/src/rer_importer/analysis/tests.rs b/wdintel-rs/src/rer_importer/analysis/tests.rs
+index e7b95c5f5..2892e5533 100644
+--- a/wdintel-rs/src/rer_importer/analysis/tests.rs
++++ b/wdintel-rs/src/rer_importer/analysis/tests.rs
+@@ -2065,10 +2065,9 @@ async fn collect_group_names_prefers_signal_group_over_whatsapp_name() {
+             count: 1,
+         },
+     ];
+-    let group_names =
+-        collect_group_names(&groups, &fixture.env.dbx, false, None)
+-            .await
+-            .unwrap();
++    let group_names = collect_group_names(&groups, &fixture.env, false, None)
++        .await
++        .unwrap();
+ 
+     let alpha_names = group_names
+         .iter()
+@@ -4615,6 +4614,68 @@ async fn rer_analysis_units_exact_and_undefined_filters_work() {
+     assert!(item_ids.contains(&msg_etalon.id));
+     assert!(item_ids.contains(&msg_unknown.id));
+     assert!(!item_ids.contains(&msg_header_only.id));
++
++    db.execute_unprepared(
++        "CREATE SCHEMA IF NOT EXISTS echo_clickhouse_derived; \
++         CREATE OR REPLACE VIEW echo_clickhouse_derived.message_network_link AS \
++         SELECT sigint_inbox_item_id, sigint_network_id FROM sigint_inbox_item_network",
++    ).await.unwrap();
++    for (selected, denied, ids, exact) in [
++        (Some("Header Unit"), None, None, false),
++        (Some("Header Unit"), None, None, true),
++        (Some("Etalon Unit"), None, None, true),
++        (Some("Не визначено"), None, None, false),
++        (
++            Some("Не визначено"),
++            None,
++            Some(vec![etalon_unit.id]),
++            false,
++        ),
++        (None, Some("Etalon Unit"), None, false),
++        (None, Some("Не визначено"), None, false),
++    ] {
++        let req = InboxMessagesReq {
++            selected_units: selected.map(|value| vec![value.to_string()]),
++            denied_units: denied.map(|value| vec![value.to_string()]),
++            selected_unit_ids: ids,
++            units_exact_match_only: Some(exact),
++            ..inbox_req.clone()
++        };
++        let expected =
++            crate::rer_importer::inbox::query::build_filtered_inbox_query(
++                db,
++                &login_id,
++                &fixture.env,
++                &req,
++            )
++            .await
++            .unwrap()
++            .select_only()
++            .column(signal_message::Column::Id)
++            .into_tuple::<i64>()
++            .all(db)
++            .await
++            .unwrap()
++            .into_iter()
++            .collect::<BTreeSet<_>>();
++        let actual =
++            crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
++                &login_id,
++                &fixture.env,
++                &req,
++                db,
++                90_000,
++            )
++            .await
++            .unwrap()
++            .unwrap()
++            .into_iter()
++            .collect::<BTreeSet<_>>();
++        assert_eq!(
++            actual, expected,
++            "selected={selected:?} denied={denied:?} exact={exact}"
++        );
++    }
+ }
+ 
+ #[tokio::test]
+@@ -6800,6 +6861,22 @@ async fn group_stats_raw_timeline_matches_message_activity() {
+         vec![2, 2]
+     );
+     assert!(timelines[&fixture.secret_empty.signal_group.master_key].is_empty());
++    let cached = crate::stats::read_group_stats_timeline_cached(
++        &Data::from(fixture.env.clone()),
++        vec![fixture.beta.signal_group.master_key.clone()],
++        dt_since,
++        dt_till,
++    )
++    .await
++    .unwrap();
++    assert_eq!(
++        cached[0]
++            .points
++            .iter()
++            .map(|point| point.count)
++            .collect::<Vec<_>>(),
++        vec![2, 2]
++    );
+ }
+ 
+ #[tokio::test]
+@@ -7407,18 +7484,18 @@ fn count_stats_analytics_supports_callsign_and_search_filters() {
+ }
+ 
+ #[test]
+-fn count_stats_analytics_rejects_unit_filters() {
++fn count_stats_analytics_supports_unit_filters() {
+     let mut req = mk_analysis_stats_req(0, 1);
+     req.selected_units = Some(vec!["unit".to_string()]);
+-    assert!(!analytics_count_request_supported(&req));
++    assert!(analytics_count_request_supported(&req));
+ }
+ 
+ #[test]
+-fn summary_table_analytics_rejects_unit_filters_and_supports_search() {
++fn summary_table_analytics_supports_unit_filters_and_supports_search() {
+     let mut req = mk_analysis_stats_req(0, 1);
+     req.selected_units = Some(vec!["unit".to_string()]);
+-    assert!(!analytics_summary_table_request_supported(&req));
+-    assert!(!analytics_count_request_supported(&req));
++    assert!(analytics_summary_table_request_supported(&req));
++    assert!(analytics_count_request_supported(&req));
+ 
+     req.selected_units = None;
+     req.search = Some("message".to_string());
+@@ -7445,25 +7522,26 @@ fn analytical_inbox_reads_support_callsign_and_search_filters() {
+     assert!(analytics_inbox_request_supported(&req));
+ 
+     req.only_with_media = Some(true);
+-    assert!(!analytics_inbox_request_supported(&req));
++    assert!(analytics_inbox_request_supported(&req));
+ }
+ 
+ #[test]
+-fn analytical_inbox_reads_reject_unit_filters() {
++fn analytical_inbox_reads_support_unit_filters() {
+     let mut req = InboxMessagesReq {
+         since_date_inclusive_ms: Some(1),
+         ..Default::default()
+     };
+     req.selected_units = Some(vec!["unit".to_string()]);
+-    assert!(!analytics_inbox_request_supported(&req));
++    assert!(analytics_inbox_request_supported(&req));
+ 
+     req.selected_units = None;
+     req.denied_units = Some(vec!["unit".to_string()]);
+-    assert!(!analytics_inbox_request_supported(&req));
++    assert!(analytics_inbox_request_supported(&req));
+ }
+ 
+ #[test]
+-fn analytical_inbox_candidates_reject_unbounded_media_and_nolimit() {
++fn analytical_inbox_candidates_reject_unbounded_and_support_bounded_media_and_nolimit(
++) {
+     let mut req = InboxMessagesReq::default();
+     assert!(!analytics_inbox_candidates_supported(&req));
+ 
+@@ -7471,7 +7549,7 @@ fn analytical_inbox_candidates_reject_unbounded_media_and_nolimit() {
+     assert!(analytics_inbox_candidates_supported(&req));
+ 
+     req.only_with_media = Some(true);
+-    assert!(!analytics_inbox_candidates_supported(&req));
++    assert!(analytics_inbox_candidates_supported(&req));
+ 
+     req.only_with_media = None;
+     req.search = Some("message".to_string());
+@@ -7479,18 +7557,21 @@ fn analytical_inbox_candidates_reject_unbounded_media_and_nolimit() {
+ 
+     req.search = None;
+     req.nolimit = Some(true);
++    assert!(analytics_inbox_candidates_supported(&req));
++    req.since_date_inclusive_ms = None;
++    req.load_latest = Some(true);
+     assert!(!analytics_inbox_candidates_supported(&req));
+ }
+ 
+ #[test]
+-fn analytical_inbox_candidates_reject_unbounded_initial_duty_unit_filters() {
++fn analytical_inbox_candidates_support_latest_initial_duty_unit_filters() {
+     let req = InboxMessagesReq {
+         page_id: Some("rer-duty-neo".to_string()),
+         load_latest: Some(true),
+         selected_units: Some(vec!["unit".to_string()]),
+         ..Default::default()
+     };
+-    assert!(!analytics_inbox_candidates_supported(&req));
++    assert!(analytics_inbox_candidates_supported(&req));
+ }
+ 
+ #[tokio::test]
+@@ -7856,3 +7937,207 @@ fn new_callsign_thresholds_keep_existing_boundary_semantics() {
+     );
+     assert_eq!(result.not_seen_30days, vec!["exact-30d", "never"]);
+ }
++
++#[tokio::test]
++#[serial]
++async fn analytics_candidates_preserve_unit_media_permissions_and_paging() {
++    let fixture = mk_rer_analysis_fixture().await.unwrap();
++    let db = &fixture.env.dbx;
++    let login = crate::users::login_id_by_name(db, "Tester").await.unwrap();
++    let mut units = Vec::new();
++    for deleted in [false, true] {
++        units.push(
++            mk_sigint_unit(
++                db,
++                sigint_unit::ActiveModel {
++                    name: Set("Analytics candidate unit".to_string()),
++                    created_by_login_id: Set(login),
++                    deleted: Set(deleted),
++                    ..Default::default()
++                },
++            )
++            .await
++            .unwrap(),
++        );
++    }
++    let date = test_dt(2026, 3, 2, 10, 0);
++    let count = ANALYTICS_INBOX_CANDIDATE_PAGE_SIZE + 3;
++    let messages =
++        signal_message::Entity::insert_many((0..count).map(|index| {
++            signal_message::ActiveModel {
++                body: Set(Some(format!("analytics candidate {index}"))),
++                created_at: Set(date),
++                timestamp: Set(Some(date)),
++                datasource_group_id: Set(Some(
++                    fixture.alpha.datasource_group.id,
++                )),
++                message_uid: Set(Some(format!("analytics-candidate-{index}"))),
++                ..Default::default()
++            }
++        }))
++        .exec_with_returning(db)
++        .await
++        .unwrap();
++    sigint_inbox_item::Entity::insert_many(messages.iter().map(|message| {
++        sigint_inbox_item::ActiveModel {
++            id: Set(message.id),
++            date: Set(Some("2026-03-02".to_string())),
++            time: Set(Some("10:00:00".to_string())),
++            datetime: Set(Some(date)),
++            freq: Set(Some("944.99".to_string())),
++            ..Default::default()
++        }
++    }))
++    .exec(db)
++    .await
++    .unwrap();
++    signal_message_group::Entity::insert_many(messages.iter().enumerate().map(
++        |(index, message)| {
++            let group = if index == count - 1 {
++                &fixture.secret_hidden
++            } else {
++                &fixture.alpha
++            };
++            signal_message_group::ActiveModel {
++                signal_message_id: Set(message.id),
++                group_master_key: Set(Some(
++                    group.signal_group.master_key.clone(),
++                )),
++                datasource_group_id: Set(Some(group.datasource_group.id)),
++                created_at: Set(date),
++                ..Default::default()
++            }
++        },
++    ))
++    .exec(db)
++    .await
++    .unwrap();
++    sigint_inbox_item_unit::Entity::insert_many(
++        messages.iter().enumerate().map(|(index, message)| {
++            sigint_inbox_item_unit::ActiveModel {
++                item_id: Set(message.id),
++                unit_id: Set(units[usize::from(index == count - 2)].id),
++                kind: Set(SigintInboxItemUnitKind::Parsed),
++                ..Default::default()
++            }
++        }),
++    )
++    .exec(db)
++    .await
++    .unwrap();
++    signal_message_media::Entity::insert_many(messages.iter().flat_map(
++        |message| {
++            (0..2).map(move |_| signal_message_media::ActiveModel {
++                id: Set(uuid::Uuid::new_v4()),
++                signal_message_id: Set(message.id),
++                content_type: Set("image/png".to_string()),
++                size_bytes: Set(1),
++                created_at: Set(date),
++                is_encrypted: Set(false),
++                ..Default::default()
++            })
++        },
++    ))
++    .exec(db)
++    .await
++    .unwrap();
++    let mut req = InboxMessagesReq {
++        since_date_inclusive_ms: Some(
++            test_dt(2026, 3, 1, 0, 0).and_utc().timestamp_millis(),
++        ),
++        till_date_inclusive_ms: Some(
++            test_dt(2026, 3, 3, 0, 0).and_utc().timestamp_millis(),
++        ),
++        selected_unit_ids: Some(units.iter().map(|unit| unit.id).collect()),
++        only_with_media: Some(true),
++        nolimit: Some(true),
++        ..Default::default()
++    };
++    let expected = messages[..count - 2]
++        .iter()
++        .map(|message| message.id)
++        .collect::<Vec<_>>();
++    let candidates =
++        crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
++            &login,
++            &fixture.env,
++            &req,
++            db,
++            90_000,
++        )
++        .await
++        .unwrap()
++        .unwrap();
++    assert_eq!(candidates, expected);
++    let digest =
++        crate::rer_importer::inbox::query::build_analytics_inbox_digest_query(
++            &login,
++            &fixture.env,
++            &req,
++            db,
++            90_000,
++        )
++        .await
++        .unwrap()
++        .unwrap();
++    let quantity: i64 = db
++        .query_one_raw(Statement::from_string(DbBackend::Postgres, digest))
++        .await
++        .unwrap()
++        .unwrap()
++        .try_get("", "count")
++        .unwrap();
++    assert_eq!(quantity, expected.len() as i64);
++    req.nolimit = Some(false);
++    req.since_id_noninclusive = Some(expected[9]);
++    let candidates =
++        crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
++            &login,
++            &fixture.env,
++            &req,
++            db,
++            90_000,
++        )
++        .await
++        .unwrap()
++        .unwrap();
++    assert_eq!(candidates, expected[10..10 + INBOX_MESSAGES_PAGE_LIMIT]);
++    req.since_id_noninclusive = None;
++    req.since_date_inclusive_ms = None;
++    req.till_date_inclusive_ms = None;
++    req.load_latest = Some(true);
++    let candidates =
++        crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
++            &login,
++            &fixture.env,
++            &req,
++            db,
++            90_000,
++        )
++        .await
++        .unwrap()
++        .unwrap();
++    assert_eq!(
++        candidates,
++        expected
++            .iter()
++            .rev()
++            .take(INBOX_MESSAGES_PAGE_LIMIT)
++            .copied()
++            .collect::<Vec<_>>()
++    );
++    req.denied_unit_ids = Some(vec![units[0].id]);
++    assert!(
++        crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
++            &login,
++            &fixture.env,
++            &req,
++            db,
++            90_000,
++        )
++        .await
++        .unwrap()
++        .unwrap()
++        .is_empty()
++    );
++}
+diff --git a/wdintel-rs/src/rer_importer/inbox/bl.rs b/wdintel-rs/src/rer_importer/inbox/bl.rs
+index ce8924881..e663a32ab 100644
+--- a/wdintel-rs/src/rer_importer/inbox/bl.rs
++++ b/wdintel-rs/src/rer_importer/inbox/bl.rs
+@@ -1811,7 +1811,7 @@ pub async fn load_inbox_signal_profiles(
+ 
+ pub async fn load_inbox_signal_groups(
+     inbox_items: &Vec<(i64, InboxMessage)>,
+-    txn: &DatabaseConnection,
++    env: &Env,
+     is_admin: bool,
+     skip_group_stats: bool,
+ ) -> Result<Vec<SignalGroupEntry>, AppError> {
+@@ -1823,7 +1823,7 @@ pub async fn load_inbox_signal_groups(
+         .collect_vec();
+     let data = collect_groups(
+         callsigns,
+-        txn,
++        env,
+         is_admin,
+         CollectGroupsOpts { skip_group_stats },
+     )
+diff --git a/wdintel-rs/src/rer_importer/inbox/mod.rs b/wdintel-rs/src/rer_importer/inbox/mod.rs
+index 53ff596a6..a1745d8c1 100644
+--- a/wdintel-rs/src/rer_importer/inbox/mod.rs
++++ b/wdintel-rs/src/rer_importer/inbox/mod.rs
+@@ -45,7 +45,6 @@ type InboxDigest = (i64, Option<NaiveDateTime>);
+ #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+ enum RerAnalysisInboxRoute {
+     Default,
+-    PostgresRecent,
+     AnalyticsHybrid,
+ }
+ 
+@@ -817,7 +816,7 @@ async fn inbox_messages(
+         .c(h!())?;
+     let signal_groups = load_inbox_signal_groups(
+         &inbox_items,
+-        &env.dbx,
++        &env,
+         is_admin,
+         skip_group_stats,
+     )
+@@ -1129,21 +1128,6 @@ async fn query_inbox_digest(
+     Ok((query_res.try_get("", "count")?, first_element_ts))
+ }
+ 
+-async fn query_inbox_candidate_ids(
+-    db: DatabaseConnection,
+-    query: String,
+-) -> Result<Vec<i64>, AppError> {
+-    let rows = db
+-        .query_all_raw(Statement::from_string(DatabaseBackend::Postgres, query))
+-        .await
+-        .context(h!())?;
+-    let mut ids = Vec::with_capacity(rows.len());
+-    for row in rows {
+-        ids.push(row.try_get("", "id")?);
+-    }
+-    Ok(ids)
+-}
+-
+ async fn query_inbox_digest_singleflight<F, Fut>(
+     key: String,
+     query: F,
+@@ -1498,8 +1482,8 @@ async fn inbox_messages_count(
+             first_element_ts: None,
+         }));
+     }
+-    let duty_uses_source_postgres =
+-        duty_inbox_request_uses_source_postgres(&env.dbx, &req).await;
++    let duty_uses_source_postgres = env.analytics.is_none()
++        && duty_inbox_request_uses_source_postgres(&env.dbx, &req).await;
+     let q = if duty_uses_source_postgres {
+         build_correlated_inbox_digest_query(&login, &env, &req)
+             .await
+@@ -3043,27 +3027,9 @@ async fn get_inbox_messages_with_analytics_candidates(
+     env: &Env,
+     req: &InboxMessagesReq,
+ ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+-    if duty_inbox_request_uses_source_postgres(&env.dbx, req).await {
+-        let internal_lower_bound =
+-            rer_duty_neo_adaptive_lower_bound(login, env, req).await;
+-        return get_inbox_messages_with_internal_lower_bound(
+-            login,
+-            logins,
+-            env,
+-            req,
+-            internal_lower_bound,
+-        )
+-        .await;
+-    }
+     let now = Utc::now().naive_utc();
+     let freshness_max_age_ms = analytics_freshness_max_age_ms(env);
+     match rer_analysis_inbox_route(req, now, freshness_max_age_ms) {
+-        RerAnalysisInboxRoute::PostgresRecent => {
+-            return load_recent_rer_analysis_inbox_from_postgres(
+-                login, logins, env, req,
+-            )
+-            .await;
+-        }
+         RerAnalysisInboxRoute::AnalyticsHybrid => {
+             if analytics_inbox_candidates_supported(req) {
+                 if let Some(messages) =
+@@ -3121,11 +3087,7 @@ async fn get_inbox_messages_with_analytics_candidates(
+ }
+ 
+ fn rer_duty_fresh_tail_request_supported(req: &InboxMessagesReq) -> bool {
+-    inbox_request_is_for_rer_duty(req)
+-        && req.since_id_noninclusive.is_some()
+-        && req.before_id_noninclusive.is_none()
+-        && req.till_date_inclusive_ms.is_none()
+-        && analytics_inbox_request_supported(req)
++    analytics_inbox_request_supported(req)
+ }
+ 
+ fn rer_duty_fresh_tail_candidates_supported(req: &InboxMessagesReq) -> bool {
+@@ -3160,33 +3122,7 @@ fn rer_analysis_inbox_route(
+     if since > now || till < since || till < fresh_tail_lower_bound {
+         return RerAnalysisInboxRoute::Default;
+     }
+-    if till - since < Duration::hours(RER_ANALYSIS_POSTGRES_RECENT_RANGE_HOURS)
+-    {
+-        RerAnalysisInboxRoute::PostgresRecent
+-    } else {
+-        RerAnalysisInboxRoute::AnalyticsHybrid
+-    }
+-}
+-
+-async fn load_recent_rer_analysis_inbox_from_postgres(
+-    login: &uuid::Uuid,
+-    logins: &Vec<uuid::Uuid>,
+-    env: &Env,
+-    req: &InboxMessagesReq,
+-) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+-    let started = Instant::now();
+-    let messages = get_inbox_messages_with_internal_lower_bound(
+-        login, logins, env, req, None,
+-    )
+-    .await
+-    .context(h!())?;
+-    info!(
+-        target: "rer_analysis_inbox_route",
+-        "rer_analysis_inbox_route route=postgres_recent result_count={} elapsed_ms={}",
+-        messages.len(),
+-        started.elapsed().as_millis(),
+-    );
+-    Ok(messages)
++    RerAnalysisInboxRoute::AnalyticsHybrid
+ }
+ 
+ async fn try_load_rer_analysis_inbox_hybrid(
+@@ -3326,6 +3262,11 @@ async fn load_hybrid_inbox_candidate_ids(
+     minimum_tail_minutes: i64,
+     empty_scope_policy: AnalyticsEmptyScopePolicy,
+ ) -> Result<Option<HybridInboxCandidateIds>, AppError> {
++    let created_at_lower_bound = analytics_fresh_tail_lower_bound(
++        Utc::now().naive_utc(),
++        analytics_freshness_max_age_ms(env),
++        minimum_tail_minutes,
++    );
+     let analytics_ids =
+         match load_analytics_inbox_candidate_ids(login, env, req)
+             .await
+@@ -3346,7 +3287,7 @@ async fn load_hybrid_inbox_candidate_ids(
+         login,
+         env,
+         req,
+-        minimum_tail_minutes,
++        created_at_lower_bound,
+     )
+     .await
+     .context(h!())?;
+@@ -3365,15 +3306,9 @@ async fn load_postgres_fresh_tail_candidate_ids(
+     login: &uuid::Uuid,
+     env: &Env,
+     req: &InboxMessagesReq,
+-    minimum_tail_minutes: i64,
++    created_at_lower_bound: NaiveDateTime,
+ ) -> Result<Vec<i64>, AppError> {
+-    let freshness_max_age_ms = analytics_freshness_max_age_ms(env);
+-    let created_at_lower_bound = analytics_fresh_tail_lower_bound(
+-        Utc::now().naive_utc(),
+-        freshness_max_age_ms,
+-        minimum_tail_minutes,
+-    );
+-    let query = build_postgres_fresh_tail_inbox_candidates_query(
++    let ids = load_postgres_fresh_tail_inbox_candidates(
+         &env.dbx,
+         login,
+         env,
+@@ -3382,9 +3317,7 @@ async fn load_postgres_fresh_tail_candidate_ids(
+     )
+     .await
+     .context(h!())?;
+-    Ok(query_inbox_candidate_ids(env.dbx.clone(), query)
+-        .await
+-        .context(h!())?)
++    Ok(ids)
+ }
+ 
+ fn analytics_fresh_tail_lower_bound(
+@@ -3430,7 +3363,7 @@ async fn load_analytics_inbox_candidate_ids(
+         "inbox message candidates",
+         analytics_inbox_candidates_supported(req),
+         |db| async move {
+-            let query = build_analytics_inbox_candidates_query(
++            let candidates = load_analytics_inbox_candidates(
+                 &login_value,
+                 &analytics_env,
+                 &analytics_req,
+@@ -3439,10 +3372,8 @@ async fn load_analytics_inbox_candidate_ids(
+             )
+             .await
+             .context(h!())?;
+-            match query {
+-                Some(query) => query_inbox_candidate_ids(db, query)
+-                    .await
+-                    .map(AnalyticsInboxCandidateIds::Available),
++            match candidates {
++                Some(ids) => Ok(AnalyticsInboxCandidateIds::Available(ids)),
+                 None => Ok(AnalyticsInboxCandidateIds::EmptyScope),
+             }
+         },
+@@ -3501,33 +3432,63 @@ async fn hydrate_hybrid_inbox_candidates(
+     req: &InboxMessagesReq,
+     candidate_ids: &[i64],
+ ) -> Result<Option<Vec<(i64, InboxMessage)>>, AppError> {
+-    if candidate_ids.is_empty() {
+-        return Ok(Some(Vec::new()));
+-    }
+-    let query = build_inbox_query_for_candidate_ids(
+-        &env.dbx,
++    match hydrate_hybrid_inbox_candidates_inner(
+         login,
++        logins,
+         env,
+         req,
+         candidate_ids,
+-        false,
+-    )
+-    .await
+-    .context(h!())?;
+-    let mut messages = fetch_inbox_messages_with_query(
+-        &env.dbx, login, logins, env, req, &query,
+     )
+     .await
+-    .context(h!())?;
++    {
++        Ok(messages) => Ok(messages),
++        Err(error) => {
++            warn!(target: "analytics_route", "operation=inbox_hydration route=postgres reason=revalidation_error error={error:?}");
++            Ok(None)
++        }
++    }
++}
++
++async fn hydrate_hybrid_inbox_candidates_inner(
++    login: &uuid::Uuid,
++    logins: &Vec<uuid::Uuid>,
++    env: &Env,
++    req: &InboxMessagesReq,
++    candidate_ids: &[i64],
++) -> Result<Option<Vec<(i64, InboxMessage)>>, AppError> {
++    if candidate_ids.is_empty() {
++        return Ok(Some(Vec::new()));
++    }
++    let mut messages = Vec::with_capacity(candidate_ids.len());
++    for ids in candidate_ids.chunks(ANALYTICS_INBOX_CANDIDATE_PAGE_SIZE) {
++        let query = build_inbox_query_for_candidate_ids(
++            &env.dbx, login, env, req, ids, false,
++        )
++        .await
++        .context(h!())?;
++        messages.extend(
++            fetch_inbox_messages_with_query(
++                &env.dbx, login, logins, env, req, &query,
++            )
++            .await
++            .context(h!())?,
++        );
++    }
+     if !analytics_candidate_revalidation_is_complete(&messages, candidate_ids) {
+         return Ok(None);
+     }
++    let ordered_ids = order_inbox_candidate_ids(&env.dbx, req, candidate_ids)
++        .await
++        .context(h!())?;
++    if !restore_analytics_candidate_order(&mut messages, &ordered_ids) {
++        return Ok(None);
++    }
+     retain_hybrid_inbox_page(&mut messages, req);
+     Ok(Some(messages))
+ }
+ 
+ fn retain_hybrid_inbox_page<T>(rows: &mut Vec<T>, req: &InboxMessagesReq) {
+-    if rows.len() <= INBOX_MESSAGES_PAGE_LIMIT {
++    if req.nolimit == Some(true) || rows.len() <= INBOX_MESSAGES_PAGE_LIMIT {
+         return;
+     }
+     if inbox_results_reverse_query_order(req) {
+@@ -3541,12 +3502,10 @@ fn analytics_candidate_revalidation_is_complete<T>(
+     rows: &[(i64, T)],
+     candidate_ids: &[i64],
+ ) -> bool {
++    let row_ids = rows.iter().map(|(id, _)| *id).collect::<BTreeSet<_>>();
+     rows.len() == candidate_ids.len()
+-        && rows.iter().map(|(id, _)| id).collect::<BTreeSet<_>>().len()
+-            == candidate_ids.len()
+-        && candidate_ids
+-            .iter()
+-            .all(|id| rows.iter().any(|(row_id, _)| row_id == id))
++        && row_ids.len() == candidate_ids.len()
++        && candidate_ids.iter().all(|id| row_ids.contains(id))
+ }
+ 
+ fn restore_analytics_candidate_order<T>(
+@@ -3995,11 +3954,11 @@ mod tests {
+             ..req.clone()
+         }));
+ 
+-        assert!(!rer_duty_fresh_tail_request_supported(&InboxMessagesReq {
++        assert!(rer_duty_fresh_tail_request_supported(&InboxMessagesReq {
+             page_id: Some("rer-analysis".to_string()),
+             ..req.clone()
+         }));
+-        assert!(!rer_duty_fresh_tail_request_supported(&InboxMessagesReq {
++        assert!(rer_duty_fresh_tail_request_supported(&InboxMessagesReq {
+             before_id_noninclusive: Some(43),
+             ..req.clone()
+         }));
+@@ -4016,7 +3975,7 @@ mod tests {
+             )
+         );
+         assert!(analytics_inbox_candidates_supported(&historical_context));
+-        assert!(!rer_duty_fresh_tail_candidates_supported(
++        assert!(rer_duty_fresh_tail_candidates_supported(
+             &InboxMessagesReq {
+                 nolimit: Some(true),
+                 ..req
+@@ -4081,7 +4040,7 @@ mod tests {
+         );
+         assert_eq!(
+             rer_analysis_inbox_route(&recent, now, 90_000),
+-            RerAnalysisInboxRoute::PostgresRecent
++            RerAnalysisInboxRoute::AnalyticsHybrid
+         );
+ 
+         let exact_threshold = rer_analysis_req(now - Duration::hours(25), now);
+@@ -4119,7 +4078,7 @@ mod tests {
+         );
+         assert_eq!(
+             rer_analysis_inbox_route(&within_eight_minutes, now, 240_000),
+-            RerAnalysisInboxRoute::PostgresRecent
++            RerAnalysisInboxRoute::AnalyticsHybrid
+         );
+ 
+         let outside_eight_minutes = rer_analysis_req(
+@@ -5733,6 +5692,105 @@ mod tests {
+         Ok(message)
+     }
+ 
++    #[serial]
++    #[tokio::test]
++    async fn hybrid_inbox_revalidates_backdated_arrivals_and_lagged_deletions()
++    {
++        let env = cleanup().await.unwrap();
++        let login = find_test_login(&env.dbx).await.unwrap();
++        let group = find_test_datasource_group(&env.dbx).await.unwrap();
++        let first = seed_message_with_media(
++            &env,
++            &group,
++            Some("image/png"),
++            "hybrid-first",
++        )
++        .await
++        .unwrap();
++        let second =
++            seed_message_with_media(&env, &group, None, "hybrid-second")
++                .await
++                .unwrap();
++        let historical =
++            seed_message_with_media(&env, &group, None, "hybrid-historical")
++                .await
++                .unwrap();
++        let now = Utc::now().naive_utc();
++        let event_time = now - Duration::days(30);
++        let ids = vec![first.id, second.id, historical.id];
++        sigint_inbox_item::Entity::update_many()
++            .col_expr(
++                sigint_inbox_item::Column::Datetime,
++                Expr::value(event_time),
++            )
++            .filter(sigint_inbox_item::Column::Id.is_in(ids.clone()))
++            .exec(&env.dbx)
++            .await
++            .unwrap();
++        signal_message::Entity::update_many()
++            .col_expr(
++                signal_message::Column::CreatedAt,
++                Expr::value(now - Duration::hours(1)),
++            )
++            .filter(signal_message::Column::Id.eq(historical.id))
++            .exec(&env.dbx)
++            .await
++            .unwrap();
++        let req = InboxMessagesReq {
++            since_date_inclusive_ms: Some(
++                (event_time - Duration::seconds(1))
++                    .and_utc()
++                    .timestamp_millis(),
++            ),
++            till_date_inclusive_ms: Some(
++                (event_time + Duration::seconds(1))
++                    .and_utc()
++                    .timestamp_millis(),
++            ),
++            nolimit: Some(true),
++            ..Default::default()
++        };
++        let tail = load_postgres_fresh_tail_inbox_candidates(
++            &env.dbx,
++            &login.id,
++            &env,
++            &req,
++            now - Duration::minutes(5),
++        )
++        .await
++        .unwrap();
++        assert_eq!(tail, vec![first.id, second.id]);
++        let candidates =
++            merge_inbox_candidate_ids(vec![historical.id, first.id], tail);
++        let rows = hydrate_hybrid_inbox_candidates(
++            &login.id,
++            &vec![login.id],
++            &env,
++            &req,
++            &candidates,
++        )
++        .await
++        .unwrap()
++        .unwrap();
++        assert_eq!(rows.iter().map(|(id, _)| *id).collect::<Vec<_>>(), ids);
++        signal_message::Entity::update_many()
++            .col_expr(signal_message::Column::Deleted, Expr::value(true))
++            .filter(signal_message::Column::Id.eq(first.id))
++            .exec(&env.dbx)
++            .await
++            .unwrap();
++        assert!(hydrate_hybrid_inbox_candidates(
++            &login.id,
++            &vec![login.id],
++            &env,
++            &req,
++            &candidates,
++        )
++        .await
++        .unwrap()
++        .is_none());
++    }
++
+     #[serial]
+     #[tokio::test]
+     async fn test_get_inbox_messages_filters_only_with_media() {
+diff --git a/wdintel-rs/src/rer_importer/inbox/query.rs b/wdintel-rs/src/rer_importer/inbox/query.rs
+index 1141bd8ef..43d8a7287 100644
+--- a/wdintel-rs/src/rer_importer/inbox/query.rs
++++ b/wdintel-rs/src/rer_importer/inbox/query.rs
+@@ -1,6 +1,6 @@
+ use crate::config::{
+-    INBOX_COUNT_INDEXED_MAX_DAYS, INBOX_MESSAGES_PAGE_LIMIT,
+-    TAG_MINIMUM_CONFIDENCE,
++    ANALYTICS_INBOX_CANDIDATE_PAGE_SIZE, INBOX_COUNT_INDEXED_MAX_DAYS,
++    INBOX_MESSAGES_PAGE_LIMIT, TAG_MINIMUM_CONFIDENCE,
+ };
+ use crate::entities::{prelude::*, *};
+ use crate::error::AppError;
+@@ -44,8 +44,10 @@ fn inbox_items_cte_cursor_expr(req_sort_by: InboxMessagesSortBy) -> SimpleExpr {
+     }
+ }
+ 
+-fn message_has_media_exists() -> SimpleExpr {
+-    let media_query = Query::select()
++fn message_has_media_exists(
++    scope: Option<&AnalyticsMessageIdScope>,
++) -> SimpleExpr {
++    let mut media_query = Query::select()
+         .expr(Expr::value(1))
+         .from(signal_message_media::Entity)
+         .and_where(
+@@ -56,7 +58,12 @@ fn message_has_media_exists() -> SimpleExpr {
+             .equals((signal_message::Entity, signal_message::Column::Id)),
+         )
+         .to_owned();
+-
++    if let Some(scope) = scope {
++        media_query.and_where(scope.condition((
++            signal_message_media::Entity,
++            signal_message_media::Column::SignalMessageId,
++        )));
++    }
+     Expr::exists(media_query)
+ }
+ 
+@@ -669,9 +676,15 @@ where
+         )?,
+     };
+     let q = match unit_lookup_strategy {
+-        InboxUnitLookupStrategy::Default => {
+-            filter_denied_unit_ids(q, &req.denied_unit_ids)
+-        }
++        InboxUnitLookupStrategy::Default => q.apply_if(
++            req.denied_unit_ids.as_ref().filter(|ids| !ids.is_empty()),
++            |query, ids| {
++                query.filter(
++                    message_has_linked_unit_ids_with_scope(ids, false, scope)
++                        .not(),
++                )
++            },
++        ),
+         InboxUnitLookupStrategy::Correlated => {
+             filter_denied_unit_ids_correlated(q, &req.denied_unit_ids)
+         }
+@@ -707,7 +720,7 @@ where
+     )?;
+     q = filter_selected_metadata_for_inbox_messages(q, req)?;
+     if req.only_with_media == Some(true) {
+-        q = q.filter(message_has_media_exists());
++        q = q.filter(message_has_media_exists(scope));
+     }
+     if let Some(internal_lower_bound) = internal_lower_bound {
+         q = q.filter(inbox_date_gte_expr(
+@@ -1017,13 +1030,13 @@ async fn build_analytics_inbox_digest_query_with_created_at_upper_bound(
+     Ok(Some(render_inbox_digest_query(q)))
+ }
+ 
+-pub(crate) async fn build_analytics_inbox_candidates_query(
++pub(crate) async fn load_analytics_inbox_candidates(
+     login: &uuid::Uuid,
+     env: &Env,
+     req: &InboxMessagesReq,
+     db: &DatabaseConnection,
+     freshness_max_age_ms: u64,
+-) -> Result<Option<String>, AppError> {
++) -> Result<Option<Vec<i64>>, AppError> {
+     let Some((query, _)) = build_analytics_filtered_inbox_query(
+         login,
+         env,
+@@ -1031,13 +1044,16 @@ pub(crate) async fn build_analytics_inbox_candidates_query(
+         db,
+         freshness_max_age_ms,
+     )
+-    .await?
++    .await
++    .context(h!())?
+     else {
+         return Ok(None);
+     };
+-    Ok(Some(render_inbox_digest_query(
+-        finish_inbox_candidates_query(query, req),
+-    )))
++    Ok(Some(
++        scan_inbox_candidate_pages(db, query, req)
++            .await
++            .context(h!())?,
++    ))
+ }
+ 
+ pub(crate) async fn scan_analytics_inbox_candidate_ids(
+@@ -1075,24 +1091,144 @@ pub(crate) async fn scan_analytics_inbox_candidate_ids(
+         };
+     }
+     query = extra(query);
+-    // Analytics unit/group LEFT JOINs can duplicate rows; GROUP BY id, not DISTINCT.
+-    let mut query = query
++    let query = query
+         .select_only()
+         .column_as(signal_message::Column::Id, "id")
+-        .group_by(signal_message::Column::Id);
+-    if let Some(max_ids) = max_ids {
+-        query = query.limit(max_ids);
+-    }
++        .group_by(signal_message::Column::Id)
++        .order_by_asc(signal_message::Column::Id);
+     #[derive(FromQueryResult)]
+     struct AnalyticsInboxIdRow {
+         id: i64,
+     }
+-    let rows = query
+-        .into_model::<AnalyticsInboxIdRow>()
+-        .all(analytics_db)
+-        .await
+-        .context(h!())?;
+-    Ok(Some(rows.into_iter().map(|row| row.id).collect()))
++    let mut ids = Vec::new();
++    loop {
++        let remaining =
++            max_ids.unwrap_or(u64::MAX).saturating_sub(ids.len() as u64);
++        if remaining == 0 {
++            break;
++        }
++        let limit = std::cmp::min(
++            remaining,
++            ANALYTICS_INBOX_CANDIDATE_PAGE_SIZE as u64,
++        );
++        let mut page = query.clone().limit(limit);
++        if let Some(id) = ids.last().copied() {
++            page = page
++                .filter(signal_message::Column::Id.gt(id))
++                .filter(sigint_inbox_item::Column::Id.gt(id));
++        }
++        let rows = page
++            .into_model::<AnalyticsInboxIdRow>()
++            .all(analytics_db)
++            .await
++            .context(h!())?;
++        let exhausted = rows.len() < limit as usize;
++        ids.extend(rows.into_iter().map(|row| row.id));
++        if exhausted {
++            break;
++        }
++    }
++    Ok(Some(ids))
++}
++
++#[derive(FromQueryResult)]
++struct InboxCandidate {
++    id: i64,
++    ordering_value: Option<NaiveDateTime>,
++}
++
++pub(crate) async fn order_inbox_candidate_ids(
++    db: &DatabaseConnection,
++    req: &InboxMessagesReq,
++    ids: &[i64],
++) -> Result<Vec<i64>, AppError> {
++    let mut candidates = Vec::with_capacity(ids.len());
++    for ids in ids.chunks(ANALYTICS_INBOX_CANDIDATE_PAGE_SIZE) {
++        candidates.extend(
++            signal_message::Entity::find()
++                .join(
++                    JoinType::InnerJoin,
++                    signal_message::Relation::SigintInboxItem.def(),
++                )
++                .select_only()
++                .column_as(signal_message::Column::Id, "id")
++                .column_as(analytics_inbox_ordering_expr(req), "ordering_value")
++                .filter(signal_message::Column::Id.is_in(ids.to_vec()))
++                .into_model::<InboxCandidate>()
++                .all(db)
++                .await
++                .context(h!())?,
++        );
++    }
++    candidates.sort_by_key(|row| {
++        (row.ordering_value.is_none(), row.ordering_value, row.id)
++    });
++    if analytics_inbox_order_is_descending(req)
++        != inbox_results_reverse_query_order(req)
++    {
++        candidates.reverse();
++    }
++    Ok(candidates.into_iter().map(|row| row.id).collect())
++}
++
++async fn scan_inbox_candidate_pages(
++    db: &DatabaseConnection,
++    query: Select<signal_message::Entity>,
++    req: &InboxMessagesReq,
++) -> Result<Vec<i64>, AppError> {
++    let mut ids = Vec::new();
++    let mut cursor = None;
++    loop {
++        let mut page = query.clone();
++        if let Some(cursor) = cursor {
++            page = page.filter(inbox_candidate_seek_condition(req, cursor));
++        }
++        let rows = finish_inbox_candidates_query(page, req)
++            .into_model::<InboxCandidate>()
++            .all(db)
++            .await
++            .context(h!())?;
++        let exhausted = rows.len() < inbox_candidate_page_size(req);
++        cursor = rows.last().map(|row| (row.ordering_value, row.id));
++        ids.extend(rows.into_iter().map(|row| row.id));
++        if req.nolimit != Some(true) || exhausted {
++            break;
++        }
++    }
++    Ok(ids)
++}
++
++fn inbox_candidate_seek_condition(
++    req: &InboxMessagesReq,
++    (value, id): (Option<NaiveDateTime>, i64),
++) -> SimpleExpr {
++    let ordering = analytics_inbox_ordering_expr(req);
++    let message_id =
++        Expr::col((signal_message::Entity, signal_message::Column::Id));
++    match (analytics_inbox_order_is_descending(req), value) {
++        (true, Some(value)) => ordering
++            .clone()
++            .lt(value)
++            .or(ordering.eq(value).and(message_id.lt(id))),
++        (true, None) => ordering
++            .clone()
++            .is_not_null()
++            .or(ordering.is_null().and(message_id.lt(id))),
++        (false, Some(value)) => ordering
++            .clone()
++            .gt(value)
++            .or(ordering.clone().eq(value).and(message_id.gt(id)))
++            .or(ordering.is_null()),
++        (false, None) => ordering.is_null().and(message_id.gt(id)),
++    }
++}
++
++fn inbox_candidate_page_size(req: &InboxMessagesReq) -> usize {
++    if req.nolimit == Some(true) {
++        ANALYTICS_INBOX_CANDIDATE_PAGE_SIZE
++    } else {
++        INBOX_MESSAGES_PAGE_LIMIT
++    }
+ }
+ 
+ fn finish_inbox_candidates_query(
+@@ -1128,7 +1264,7 @@ fn finish_inbox_candidates_query(
+                 signal_message::Column::Id,
+             )))
+     };
+-    query.limit(INBOX_MESSAGES_PAGE_LIMIT as u64)
++    query.limit(inbox_candidate_page_size(req) as u64)
+ }
+ 
+ fn analytics_inbox_ordering_expr(req: &InboxMessagesReq) -> SimpleExpr {
+@@ -1664,13 +1800,13 @@ where
+     finish_inbox_query(dbx, login, req, q, true).await
+ }
+ 
+-pub(crate) async fn build_postgres_fresh_tail_inbox_candidates_query(
++pub(crate) async fn load_postgres_fresh_tail_inbox_candidates(
+     dbx: &DatabaseConnection,
+     login: &uuid::Uuid,
+     env: &Env,
+     req: &InboxMessagesReq,
+     created_at_lower_bound: NaiveDateTime,
+-) -> Result<String, AppError> {
++) -> Result<Vec<i64>, AppError> {
+     let query = build_filtered_inbox_query_with_scope(
+         dbx,
+         login,
+@@ -1684,9 +1820,9 @@ pub(crate) async fn build_postgres_fresh_tail_inbox_candidates_query(
+     .await
+     .context(h!())?
+     .filter(signal_message::Column::CreatedAt.gte(created_at_lower_bound));
+-    Ok(render_inbox_digest_query(finish_inbox_candidates_query(
+-        query, req,
+-    )))
++    Ok(scan_inbox_candidate_pages(dbx, query, req)
++        .await
++        .context(h!())?)
+ }
+ 
+ pub(crate) async fn build_inbox_query_for_candidate_ids(
+diff --git a/wdintel-rs/src/rer_importer/mod.rs b/wdintel-rs/src/rer_importer/mod.rs
+index 596bb5ee2..3c36cd260 100644
+--- a/wdintel-rs/src/rer_importer/mod.rs
++++ b/wdintel-rs/src/rer_importer/mod.rs
+@@ -1052,7 +1052,7 @@ pub async fn signal_group_info_batch(
+         req.groups.iter().map(|b| b.master_key.clone()).collect();
+     let data = crate::messenger::group::collect_groups(
+         keys,
+-        &env.dbx,
++        &env,
+         is_admin,
+         crate::messenger::group::CollectGroupsOpts {
+             skip_group_stats: req.skip_group_stats.unwrap_or(false),
+@@ -1089,7 +1089,7 @@ pub async fn signal_groups(
+         .c(h!())?;
+     let data = crate::messenger::group::collect_groups(
+         keys,
+-        &env.dbx,
++        &env,
+         is_admin,
+         crate::messenger::group::CollectGroupsOpts {
+             skip_group_stats: false,
+diff --git a/wdintel-rs/src/stats/mod.rs b/wdintel-rs/src/stats/mod.rs
+index 2fa012760..3f4912007 100644
+--- a/wdintel-rs/src/stats/mod.rs
++++ b/wdintel-rs/src/stats/mod.rs
+@@ -999,6 +999,17 @@ pub async fn read_group_stats_timeline_cached(
+         .into_iter()
+         .map(|b| (b.id, batch_key_to_group_keys(b.group_master_keys)))
+         .collect::<HashMap<i64, Vec<_>>>();
++    let cached_keys = batches_map.values().flatten().collect::<HashSet<_>>();
++    if master_keys.iter().any(|key| !cached_keys.contains(key)) {
++        return read_group_stats_timeline_with_analytics(
++            env,
++            master_keys,
++            dt_since,
++            dt_till,
++        )
++        .await
++        .context(h!());
++    }
+ 
+     let mut grouped_points = master_keys
+         .iter()
+@@ -1014,15 +1025,16 @@ pub async fn read_group_stats_timeline_cached(
+             Ok(buckets) => buckets,
+             Err(error) => {
+                 warn!(
+-                    "Redis group timeline missed a bucket; using raw PostgreSQL query: {error:#}"
++                    "Redis group timeline missed a bucket; using raw query: {error:#}"
+                 );
+-                return read_group_stats_timeline_raw(
+-                    &env.dbx,
++                return read_group_stats_timeline_with_analytics(
++                    env,
+                     master_keys,
+                     dt_since,
+                     dt_till,
+                 )
+-                .await;
++                .await
++                .context(h!());
+             }
+         };
+         for (timestamp, bucket) in timestamps.into_iter().zip(buckets) {
+@@ -1069,6 +1081,42 @@ struct GroupStatsTimelineRawRow {
+     count: i64,
+ }
+ 
++async fn read_group_stats_timeline_with_analytics(
++    env: &Env,
++    master_keys: Vec<String>,
++    dt_since: NaiveDateTime,
++    dt_till: NaiveDateTime,
++) -> anyhow::Result<Vec<SignalGroupStatsTimelineEntry>> {
++    let analytics_keys = master_keys.clone();
++    crate::rer_importer::analysis::with_analytics_read_fallback(
++        env,
++        "group timeline raw miss",
++        true,
++        |db| async move {
++            Ok(read_group_stats_timeline_raw(
++                &db,
++                analytics_keys,
++                dt_since,
++                dt_till,
++            )
++            .await
++            .context(h!())?)
++        },
++        |db| async move {
++            Ok(read_group_stats_timeline_raw(
++                &db,
++                master_keys,
++                dt_since,
++                dt_till,
++            )
++            .await
++            .context(h!())?)
++        },
++    )
++    .await
++    .context(h!())
++}
++
+ pub async fn read_group_stats_timeline_raw(
+     dbx: &DatabaseConnection,
+     master_keys: Vec<String>,
+@@ -1179,7 +1227,7 @@ async fn load_redis_group_counts(
+         Ok(result) => Ok(result),
+         Err(error) => {
+             warn!(
+-                "Redis group stats read missed a bucket; rebuilding from PostgreSQL: {error:#}"
++                "Redis group stats read missed a bucket; rebuilding: {error:#}"
+             );
+             repair_redis_general_stats(env, intervals_5min, days).await?;
+             load_redis_group_counts_once(env, intervals_5min, days).await
+@@ -1225,7 +1273,7 @@ async fn load_redis_detail_buckets(
+         Ok(result) => Ok(result),
+         Err(error) => {
+             warn!(
+-                "Redis detail stats read missed a bucket; rebuilding from PostgreSQL: {error:#}"
++                "Redis detail stats read missed a bucket; rebuilding: {error:#}"
+             );
+             repair_redis_general_stats(env, intervals_5min, days).await?;
+             load_redis_detail_buckets_once(env, intervals_5min, days).await
+@@ -1326,15 +1374,21 @@ async fn repair_redis_five_minute_buckets(
+         for (since, till) in
+             consecutive_five_minute_ranges(&missing_owned_timestamps)
+         {
+-            write_redis_5min_range(
+-                &env.dbx,
+-                stats_redis,
++            let buckets = calculate_redis_5min_range_for_env(
++                env,
+                 since,
+                 till,
+                 batches_map,
+             )
+             .await
+-            .c(h!())?;
++            .context(h!())?;
++            write_redis_5min_buckets(
++                stats_redis,
++                &buckets,
++                StatsSelection::ALL,
++            )
++            .await
++            .context(h!())?;
+         }
+         Ok(())
+     }
+@@ -1408,12 +1462,16 @@ async fn repair_redis_general_day(
+         }
+         let since = start_of_day(date).c(h!())?;
+         let till = start_of_day(date + Duration::days(1)).c(h!())?;
++        let buckets =
++            calculate_redis_5min_range_for_env(env, since, till, batches_map)
++                .await
++                .context(h!())?;
+         write_redis_general_days(
+             &env.dbx,
+             stats_redis,
+             since,
+             till,
+-            None,
++            Some(&buckets),
+             batches_map,
+             StatsSelection::ALL,
+         )
+@@ -1580,7 +1638,7 @@ pub async fn read_redis_network_days(
+         Ok(buckets) => buckets,
+         Err(error) => {
+             warn!(
+-                "Redis network stats read missed a bucket; rebuilding from PostgreSQL: {error:#}"
++                "Redis network stats read missed a bucket; rebuilding: {error:#}"
+             );
+             let missing_dates = stats_redis
+                 .missing_network_days(&dates, network_ids)
+@@ -1639,16 +1697,36 @@ async fn repair_redis_network_day(
+         {
+             return Ok(());
+         }
+-        recalculate_network_stats_redis(
+-            &env.dbx,
+-            stats_redis,
+-            start_of_day(date).c(h!())?,
+-            start_of_day(date + Duration::days(1)).c(h!())?,
+-            None,
+-            batches_map,
+-        )
+-        .await
+-        .c(h!())
++        let since = start_of_day(date).context(h!())?;
++        let till = start_of_day(date + Duration::days(1)).context(h!())?;
++        let rows =
++                crate::rer_importer::analysis::with_analytics_read_fallback(
++                    env,
++                    "Redis network stats raw miss",
++                    true,
++                    |db| async move {
++                        load_network_stats(&db, since, till, None).await
++                    },
++                    |db| async move {
++                        load_network_stats(&db, since, till, None).await
++                    },
++                )
++                .await
++                .context(h!())?;
++        update_network_freq_last_seen(&env.dbx, &rows, None)
++            .await
++            .context(h!())?;
++        let mut buckets =
++            redis::build_network_days(&env.dbx, &rows, batches_map)
++                .await
++                .context(h!())?;
++        stats_redis
++            .replace_network_day(
++                date,
++                &buckets.remove(&date).unwrap_or_default(),
++            )
++            .await
++            .context(h!())
+     }
+     .await;
+     let release_result = repair_lock.release().await;
+@@ -2380,35 +2458,40 @@ async fn recalculate_group_stats_redis(
+     Ok(())
+ }
+ 
+-async fn write_redis_5min_range(
++async fn calculate_redis_5min_range(
+     dbx: &DatabaseConnection,
+-    stats_redis: &redis::GroupStatsRedis,
+     since_ts: NaiveDateTime,
+     till_ts: NaiveDateTime,
+     batches_map: &mut HashMap<String, i64>,
+-) -> Result<(), AppError> {
+-    if till_ts <= since_ts {
+-        return Ok(());
+-    }
+-    let buckets = calculate_redis_5min_range(
++    selection: StatsSelection,
++) -> Result<BTreeMap<NaiveDateTime, redis::FiveMinuteBucket>, AppError> {
++    let (generic_stats, network_stats, network_aors) =
++        load_redis_stats_inputs(dbx, since_ts, till_ts, selection)
++            .await
++            .context(h!())?;
++    let buckets = redis::build_5min_buckets(
+         dbx,
++        &generic_stats,
++        &network_stats,
++        &network_aors,
+         since_ts,
+         till_ts,
+         batches_map,
+-        StatsSelection::ALL,
+     )
+     .await
+     .c(h!())?;
+-    write_redis_5min_buckets(stats_redis, &buckets, StatsSelection::ALL).await
++    Ok(buckets)
+ }
+ 
+-async fn calculate_redis_5min_range(
++async fn load_redis_stats_inputs(
+     dbx: &DatabaseConnection,
+     since_ts: NaiveDateTime,
+     till_ts: NaiveDateTime,
+-    batches_map: &mut HashMap<String, i64>,
+     selection: StatsSelection,
+-) -> Result<BTreeMap<NaiveDateTime, redis::FiveMinuteBucket>, AppError> {
++) -> Result<
++    (Vec<StatsRow>, Vec<NetworkStatsRow>, HashMap<i64, Vec<i64>>),
++    AppError,
++> {
+     let generic_stats = load_generic_stats_selected(
+         dbx,
+         since_ts,
+@@ -2433,18 +2516,36 @@ async fn calculate_redis_5min_range(
+     } else {
+         (Vec::new(), HashMap::new())
+     };
+-    let buckets = redis::build_5min_buckets(
+-        dbx,
+-        &generic_stats,
+-        &network_stats,
+-        &network_aors,
+-        since_ts,
+-        till_ts,
+-        batches_map,
++    Ok((generic_stats, network_stats, network_aors))
++}
++
++async fn calculate_redis_5min_range_for_env(
++    env: &Env,
++    since: NaiveDateTime,
++    till: NaiveDateTime,
++    batches: &mut HashMap<String, i64>,
++) -> Result<BTreeMap<NaiveDateTime, redis::FiveMinuteBucket>, AppError> {
++    let (rows, networks, aors) =
++        crate::rer_importer::analysis::with_analytics_read_fallback(
++            env,
++            "Redis stats raw miss",
++            true,
++            |db| async move {
++                load_redis_stats_inputs(&db, since, till, StatsSelection::ALL)
++                    .await
++            },
++            |db| async move {
++                load_redis_stats_inputs(&db, since, till, StatsSelection::ALL)
++                    .await
++            },
++        )
++        .await
++        .context(h!())?;
++    Ok(redis::build_5min_buckets(
++        &env.dbx, &rows, &networks, &aors, since, till, batches,
+     )
+     .await
+-    .c(h!())?;
+-    Ok(buckets)
++    .context(h!())?)
+ }
+ 
+ async fn write_redis_5min_buckets(
+diff --git a/wdintel-rs/src/users/mod.rs b/wdintel-rs/src/users/mod.rs
+index 210015c4f..dce2d56ce 100644
+--- a/wdintel-rs/src/users/mod.rs
++++ b/wdintel-rs/src/users/mod.rs
+@@ -1515,7 +1515,7 @@ pub async fn user_sigint_groups_detailed(
+             .c(h!())?;
+         keys = recent_keys.into_iter().flatten().collect();
+     }
+-    let groups = crate::messenger::group::collect_groups_f2(keys, &env.dbx)
++    let groups = crate::messenger::group::collect_groups_f2(keys, &env)
+         .await
+         .c(h!())?;
+     Ok(Json(groups))
+diff --git a/scripts/analytics/compare_reads.py b/scripts/analytics/compare_reads.py
+new file mode 100644
+index 000000000..7d0e908a1
+--- /dev/null
++++ b/scripts/analytics/compare_reads.py
+@@ -0,0 +1,106 @@
++#!/usr/bin/env python3
++"""Bounded, read-only PostgreSQL/gateway comparisons; writes evidence locally."""
++import argparse
++import datetime
++import json
++from pathlib import Path
++import shlex
++import subprocess
++import time
++
++
++def query(host, database, sql, tag=None):
++    settings = "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY; SET LOCAL statement_timeout='15s';"
++    if tag:
++        settings += "SET LOCAL pg_clickhouse.session_settings = 'join_use_nulls 1, group_by_use_nulls 1, final 1, log_comment " + tag + "';"
++    command = "sudo -n -u postgres psql -X -qAt -v ON_ERROR_STOP=1 -d " + shlex.quote(database)
++    started = time.monotonic()
++    result = subprocess.run(
++        ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", host, command],
++        input=settings + sql + ";ROLLBACK;", text=True, capture_output=True, timeout=50,
++    )
++    return {"ok": result.returncode == 0, "seconds": time.monotonic() - started,
++            "output": result.stdout.strip(), "error": result.stderr.strip()}
++
++
++def json_query(host, database, sql):
++    result = query(host, database, sql)
++    if not result["ok"]:
++        raise RuntimeError(result["error"])
++    return json.loads(result["output"])
++
++
++def fingerprint_sql(low, high):
++    tables = {
++        "messages": ("signal_message", "id", "id, deleted, timestamp, created_at"),
++        "inbox": ("sigint_inbox_item", "id", "id, datetime, freq, unit_v2"),
++        "links": ("sigint_inbox_item_unit", "item_id", "item_id, unit_id, kind"),
++        "media": ("signal_message_media", "signal_message_id", "id, signal_message_id"),
++        "groups": ("signal_message_group", "signal_message_id", "signal_message_id, group_master_key"),
++    }
++    parts = []
++    for name, (table, key, columns) in tables.items():
++        parts.append(f"SELECT '{name}' AS input, count(*) AS rows, md5(coalesce(string_agg(row_to_json(t)::text, E'\\n' ORDER BY row_to_json(t)::text), '')) AS fingerprint FROM (SELECT {columns} FROM {table} WHERE {key} BETWEEN {low} AND {high}) t")
++    parts.append(f"SELECT 'units', count(*), md5(coalesce(string_agg(row_to_json(t)::text, E'\\n' ORDER BY row_to_json(t)::text), '')) FROM (SELECT id, deleted FROM sigint_unit WHERE id IN (SELECT unit_id FROM sigint_inbox_item_unit WHERE item_id BETWEEN {low} AND {high})) t")
++    parts.append(f"SELECT 'group_catalog', count(*), md5(coalesce(string_agg(row_to_json(t)::text, E'\\n' ORDER BY row_to_json(t)::text), '')) FROM (SELECT master_key, deleted FROM signal_group WHERE master_key IN (SELECT group_master_key FROM signal_message_group WHERE signal_message_id BETWEEN {low} AND {high})) t")
++    return "SELECT json_agg(t) FROM (" + " UNION ALL ".join(parts) + ") t"
++
++
++def comparisons(low, high, unit_id):
++    base = f"FROM signal_message m JOIN sigint_inbox_item i ON i.id=m.id WHERE m.id BETWEEN {low} AND {high} AND i.id BETWEEN {low} AND {high} AND NOT m.deleted"
++    unit = f"EXISTS (SELECT 1 FROM sigint_inbox_item_unit l JOIN sigint_unit u ON u.id=l.unit_id WHERE l.item_id=i.id AND l.unit_id={unit_id} AND NOT u.deleted{{bound}})"
++    media = "EXISTS (SELECT 1 FROM signal_message_media a WHERE a.signal_message_id=m.id{bound})"
++    for bounded in [False, True]:
++        unit_filter = unit.format(bound=f" AND l.item_id BETWEEN {low} AND {high}" if bounded else "")
++        media_filter = media.format(bound=f" AND a.signal_message_id BETWEEN {low} AND {high}" if bounded else "")
++        suffix = "revised" if bounded else "original"
++        yield "unit_count", suffix, "SELECT count(*) " + base + " AND " + unit_filter
++        yield "unit_exclusion", suffix, "SELECT count(*) " + base + " AND NOT " + unit_filter
++        yield "media_count", suffix, "SELECT count(*) " + base + " AND " + media_filter
++        yield "unit_media_count", suffix, "SELECT count(*) " + base + " AND " + unit_filter + " AND " + media_filter
++        yield "frequency_facet", suffix, "SELECT i.freq,count(*) " + base + " AND " + unit_filter + " GROUP BY i.freq ORDER BY i.freq"
++        yield "candidates", suffix, "SELECT m.id,i.datetime " + base + " AND " + media_filter + " ORDER BY i.datetime DESC,m.id DESC LIMIT 20"
++        group_bound = f" AND g.signal_message_id BETWEEN {low} AND {high}" if bounded else ""
++        yield "group_activity", suffix, f"SELECT g.group_master_key,count(*) FILTER(WHERE m.timestamp >= TIMESTAMP '2026-09-03') AS recent_count,count(*) AS total_count FROM signal_message_group g JOIN signal_message m ON m.id=g.signal_message_id JOIN sigint_inbox_item i ON i.id=m.id JOIN signal_group sg ON sg.master_key=g.group_master_key WHERE m.id BETWEEN {low} AND {high} AND i.id BETWEEN {low} AND {high} AND NOT sg.deleted{group_bound} GROUP BY g.group_master_key ORDER BY g.group_master_key"
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--source", required=True)
++    parser.add_argument("--gateway", required=True)
++    parser.add_argument("--low", type=int, required=True)
++    parser.add_argument("--high", type=int, required=True)
++    parser.add_argument("--out", type=Path, required=True)
++    parser.add_argument("--repeats", type=int, default=1, choices=range(1, 4))
++    parser.add_argument("--only", action="append", help="compare only the named query")
++    args = parser.parse_args()
++    if args.high < args.low or args.high - args.low > 10_000:
++        parser.error("the sample must cover at most 10,001 message IDs")
++    if not args.source.endswith("-dev") and args.repeats != 1:
++        parser.error("production comparisons allow one execution only")
++    args.out.mkdir(parents=True, exist_ok=True)
++    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
++    tag = "echo_analytics_verify_" + stamp
++    unit_id = json_query(args.source, "wd", f"SELECT to_json(coalesce((SELECT unit_id FROM sigint_inbox_item_unit WHERE item_id BETWEEN {args.low} AND {args.high} GROUP BY unit_id ORDER BY count(*) DESC,unit_id LIMIT 1),0))")
++    evidence = {"captured_at": stamp, "source": args.source, "gateway": args.gateway,
++                "low": args.low, "high": args.high, "unit_id": unit_id, "log_comment": tag, "runs": []}
++    fingerprints = fingerprint_sql(args.low, args.high)
++    for role, host, database in [("source", args.source, "wd"), ("gateway", args.gateway, "echo_analytics_gateway")]:
++        evidence[role + "_version"] = query(host, database, "SELECT version()")
++        evidence[role + "_fingerprints_before"] = query(host, database, fingerprints)
++        for name, variant, sql in comparisons(args.low, args.high, unit_id):
++            if args.only and name not in args.only:
++                continue
++            run = {"role": role, "name": name, "variant": variant, "sql": sql}
++            run["explain"] = query(host, database, "EXPLAIN (VERBOSE,COSTS OFF,FORMAT JSON) " + sql, tag if role == "gateway" else None)
++            run["results"] = query(host, database, "SELECT coalesce(json_agg(t),'[]'::json) FROM (" + sql + ") t", tag if role == "gateway" else None)
++            run["statistics"] = [query(host, database, "EXPLAIN (ANALYZE,BUFFERS,TIMING OFF,SUMMARY ON,VERBOSE,FORMAT JSON) " + sql, tag if role == "gateway" else None) for _ in range(args.repeats)]
++            evidence["runs"].append(run)
++            (args.out / "comparison.json").write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n")
++        evidence[role + "_fingerprints_after"] = query(host, database, fingerprints)
++    (args.out / "comparison.json").write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n")
++    print(args.out / "comparison.json", flush=True)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/scripts/analytics/replay_sample.py b/scripts/analytics/replay_sample.py
+new file mode 100644
+index 000000000..7191336e0
+--- /dev/null
++++ b/scripts/analytics/replay_sample.py
+@@ -0,0 +1,116 @@
++#!/usr/bin/env python3
++"""Replay a bounded dev sample in an isolated PostgreSQL/ClickHouse installation."""
++import argparse
++from collections import Counter
++import hashlib
++import json
++from pathlib import Path
++import shutil
++import subprocess
++
++from compare_reads import comparisons, json_query
++
++
++def postgres(sql):
++    result = subprocess.run(
++        ["psql", "-X", "-qAt", "-h", "/tmp", "-p", "55432", "-d", "postgres",
++         "-v", "ON_ERROR_STOP=1"], input="SET statement_timeout='15s';" + sql,
++        text=True, capture_output=True, timeout=30,
++    )
++    return {"ok": result.returncode == 0, "output": result.stdout.strip(), "error": result.stderr.strip()}
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--source", required=True)
++    parser.add_argument("--low", required=True, type=int)
++    parser.add_argument("--high", required=True, type=int)
++    parser.add_argument("--runtime", required=True, type=Path)
++    parser.add_argument("--baseline", required=True, type=Path)
++    parser.add_argument("--revised", required=True, type=Path)
++    parser.add_argument("--clickhouse", required=True, type=Path)
++    parser.add_argument("--out", required=True, type=Path)
++    args = parser.parse_args()
++    if not args.source.endswith("-dev") or not 0 <= args.high - args.low <= 10_000:
++        parser.error("use a dev source and at most 10,001 message IDs")
++    args.out.mkdir(parents=True, exist_ok=True)
++    tables = {
++        "signal_message": ("id", "id Int64, deleted Bool, timestamp Nullable(DateTime64(6)), created_at DateTime64(6)"),
++        "sigint_inbox_item": ("id", "id Int64, datetime Nullable(DateTime64(6)), freq Nullable(String), unit_v2 Nullable(String)"),
++        "sigint_inbox_item_unit": ("item_id", "item_id Int64, unit_id Int64, kind String"),
++        "signal_message_media": ("signal_message_id", "id UUID, signal_message_id Int64"),
++        "signal_message_group": ("signal_message_id", "signal_message_id Int64, group_master_key Nullable(String)"),
++        "sigint_unit": ("", "id Int64, deleted Bool"),
++        "signal_group": ("", "master_key String, deleted Bool"),
++    }
++    sample = {}
++    for table, (key, definition) in tables.items():
++        columns = ",".join(column.split()[0] for column in definition.split(", "))
++        predicate = f"{key} BETWEEN {args.low} AND {args.high}"
++        if table == "sigint_unit":
++            predicate = f"id IN (SELECT unit_id FROM sigint_inbox_item_unit WHERE item_id BETWEEN {args.low} AND {args.high})"
++        if table == "signal_group":
++            predicate = f"master_key IN (SELECT group_master_key FROM signal_message_group WHERE signal_message_id BETWEEN {args.low} AND {args.high})"
++        sample[table] = json_query(args.source, "wd", f"SELECT coalesce(json_agg(t),'[]'::json) FROM (SELECT {columns} FROM {table} WHERE {predicate}) t")
++    (args.out / "sample.json").write_text(json.dumps(sample, ensure_ascii=False) + "\n")
++
++    def clickhouse(sql, data=None):
++        return subprocess.run([str(args.clickhouse), "client", "--host", "127.0.0.1", "--max_execution_time", "15", "--query", sql],
++                              input=data, text=True, capture_output=True, check=True, timeout=30).stdout
++
++    clickhouse("DROP DATABASE IF EXISTS echo_analytics_sample")
++    clickhouse("CREATE DATABASE echo_analytics_sample")
++    for table, (_, definition) in tables.items():
++        clickhouse(f"CREATE TABLE echo_analytics_sample.{table} ({definition}) ENGINE=MergeTree ORDER BY tuple()")
++        if sample[table]:
++            clickhouse(f"INSERT INTO echo_analytics_sample.{table} SETTINGS date_time_input_format='best_effort' FORMAT JSONEachRow",
++                       "\n".join(json.dumps(row, ensure_ascii=False) for row in sample[table]))
++    setup = postgres("""
++        CREATE EXTENSION IF NOT EXISTS pg_clickhouse;
++        DROP SCHEMA IF EXISTS analytics_sample_remote CASCADE;
++        DROP SCHEMA IF EXISTS analytics_sample_local CASCADE;
++        DROP SERVER IF EXISTS analytics_sample CASCADE;
++        CREATE SERVER analytics_sample FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'echo_analytics_sample',driver 'binary');
++        CREATE USER MAPPING FOR CURRENT_USER SERVER analytics_sample;
++        CREATE SCHEMA analytics_sample_remote;
++        IMPORT FOREIGN SCHEMA echo_analytics_sample FROM SERVER analytics_sample INTO analytics_sample_remote;
++        CREATE SCHEMA analytics_sample_local;
++    """ + "".join(f"CREATE TABLE analytics_sample_local.{table} AS TABLE analytics_sample_remote.{table};" for table in tables))
++    if not setup["ok"]:
++        raise RuntimeError(setup["error"])
++    media_ids = {row["signal_message_id"] for row in sample["signal_message_media"]}
++    counts = Counter(row["unit_id"] for row in sample["sigint_inbox_item_unit"] if row["item_id"] in media_ids)
++    unit_id = counts.most_common(1)[0][0]
++    evidence = {"source": args.source, "low": args.low, "high": args.high, "unit_id": unit_id,
++                "sample_sha256": hashlib.sha256((args.out / "sample.json").read_bytes()).hexdigest(),
++                "rows": {name: len(rows) for name, rows in sample.items()}, "runs": []}
++    library = args.runtime / "pg/lib/postgresql/18/lib/pg_clickhouse.so"
++    try:
++        for version, build in [("baseline", args.baseline), ("revised", args.revised)]:
++            replacement = library.with_name("pg_clickhouse-next.so")
++            shutil.copyfile(build, replacement)
++            replacement.replace(library)
++            for driver in ["binary", "http"]:
++                postgres(f"ALTER SERVER analytics_sample OPTIONS(SET driver '{driver}');")
++                for name, variant, sql in comparisons(args.low, args.high, unit_id):
++                    tag = f"sample_{version}_{driver}_{name}_{variant}"
++                    settings = f"SET search_path=analytics_sample_remote,public; SET pg_clickhouse.session_settings='join_use_nulls 1,group_by_use_nulls 1,final 1,log_comment {tag}';"
++                    wrapped = "SELECT coalesce(json_agg(t),'[]'::json) FROM (" + sql + ") t;"
++                    expected = postgres("SET search_path=analytics_sample_local,public;" + wrapped)
++                    actual = postgres(settings + wrapped)
++                    plans = [postgres(settings + "EXPLAIN (ANALYZE,BUFFERS,VERBOSE,FORMAT JSON) " + sql) for _ in range(3)]
++                    evidence["runs"].append({"version": version, "driver": driver, "name": name, "variant": variant,
++                                             "sql": sql, "log_comment": tag, "expected": expected, "actual": actual, "plans": plans})
++                    (args.out / "comparison.json").write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n")
++    finally:
++        replacement = library.with_name("pg_clickhouse-next.so")
++        shutil.copyfile(args.revised, replacement)
++        replacement.replace(library)
++    clickhouse("SYSTEM FLUSH LOGS")
++    logs = clickhouse("SELECT log_comment, query_id, query_duration_ms, read_rows, result_rows, exception_code, query FROM system.query_log WHERE startsWith(log_comment,'sample_') AND type IN ('QueryFinish','ExceptionWhileProcessing') ORDER BY event_time_microseconds FORMAT JSONEachRow")
++    (args.out / "clickhouse.jsonl").write_text(logs)
++    print(args.out / "comparison.json")
++
++
++if __name__ == "__main__":
++    main()

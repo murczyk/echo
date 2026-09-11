@@ -7,19 +7,25 @@ import {
   setDutyNeoDocumentTitleUnreadCount,
   startDutyNeoDocumentTitleTracking,
 } from './notifications';
-import { feedIndicatorUnreadCount } from './utils';
+import {
+  feedIndicatorUnreadCount,
+  parseDutyMessageUidFromWindow,
+  resolveDutyTargetMessageIds,
+} from './utils';
 import { useRerDutyFeeds } from './useRerDutyFeeds';
 import { useRerDutyPageSettings } from './useRerDutyPageSettings';
 import { useDutyFeedColumnModel } from './useDutyFeedColumnModel';
-import { PowerAlert } from '../../components/PowerAlert';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { RerDutyNeoWorkspace } from './RerDutyNeoWorkspace';
 import type { InboxMessage } from '../../../../Bindings';
 import { ManageMessageDrawer } from '../shared/manage-message/ManageMessageDrawer';
+import type { ReportEditLoadState } from '../shared/manage-message/useManageMessageDrawer';
 import { AudioTranscriptionPreferencesProvider } from '../shared/message-card/MessageCardAudioTranscription';
-import { fetchMessagesByIds } from '../../services/api/inbox-messages';
+import { fetchInboxItemContext, fetchMessagesByIds } from '../../services/api/inbox-messages';
+import { isAbortError } from '../../services/api/client';
 import { isIntelligenceReport } from '../shared/intelligence-reports';
 import { PointBlacklistPaletteNamesCacheProvider } from '../shared/message-card/PointBlacklistPaletteNamesCache';
+import { scrollToAndHighlightMessage } from '../shared/message-card/message-card.utils';
 
 export type RerDutyNeoPageProps = {
   /** Auth user display name from the host page (avoids duplicate /api/user request). */
@@ -41,6 +47,15 @@ export function RerDutyNeoPage({
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<{ id: number; message: InboxMessage } | null>(null);
   const [editAsReport, setEditAsReport] = useState(false);
+  const [editTargetLoadState, setEditTargetLoadState] = useState<ReportEditLoadState>({
+    status: 'idle',
+  });
+  const reportLoadControllerRef = useRef<AbortController | null>(null);
+  const cancelReportEditLoad = useCallback(() => {
+    reportLoadControllerRef.current?.abort();
+    reportLoadControllerRef.current = null;
+    setEditTargetLoadState({ status: 'idle' });
+  }, []);
   const [reportSource, setReportSource] = useState<{ id: number; message: InboxMessage } | null>(
     null,
   );
@@ -56,42 +71,63 @@ export function RerDutyNeoPage({
     messageTextPreviewLines,
   } = useRerDutyPageSettings();
   const openReportEditor = useCallback(
-    async (reportId: number) => {
-      try {
-        const [report] = await fetchMessagesByIds([reportId]);
-        if (!report) throw new Error('Розвіддонесення не знайдено.');
-        setCreateMessageOpen(false);
-        setReportSource(null);
-        setEditAsReport(true);
-        setEditTarget({ id: report[0], message: report[1] });
-      } catch (loadError) {
-        notify({
-          message:
-            loadError instanceof Error ? loadError.message : 'Не вдалося відкрити розвіддонесення.',
-          severity: 'error',
+    (reportId: number) => {
+      cancelReportEditLoad();
+      const controller = new AbortController();
+      reportLoadControllerRef.current = controller;
+      setCreateMessageOpen(false);
+      setReportSource(null);
+      setEditTarget(null);
+      setEditAsReport(true);
+      setEditTargetLoadState({ status: 'loading', reportId });
+      void fetchMessagesByIds([reportId], null, { signal: controller.signal })
+        .then(([report]) => {
+          if (controller.signal.aborted || reportLoadControllerRef.current !== controller) return;
+          if (!report) throw new Error('Розвіддонесення не знайдено.');
+          reportLoadControllerRef.current = null;
+          setEditTargetLoadState({ status: 'idle' });
+          setEditTarget({ id: report[0], message: report[1] });
+        })
+        .catch((error) => {
+          if (controller.signal.aborted || isAbortError(error)) return;
+          if (reportLoadControllerRef.current !== controller) return;
+          reportLoadControllerRef.current = null;
+          setEditTargetLoadState({
+            status: 'error',
+            reportId,
+            message:
+              error instanceof Error ? error.message : 'Не вдалося відкрити розвіддонесення.',
+          });
         });
-      }
     },
-    [notify],
+    [cancelReportEditLoad],
   );
-  const openMessageEditor = useCallback((target: { id: number; message: InboxMessage }) => {
-    setCreateMessageOpen(false);
-    setReportSource(null);
-    setEditAsReport(isIntelligenceReport(target.message));
-    setEditTarget(target);
-  }, []);
-  const openReportComposer = useCallback((source: { id: number; message: InboxMessage }) => {
-    setCreateMessageOpen(false);
-    setEditAsReport(false);
-    setEditTarget(null);
-    setReportSource(source);
-  }, []);
+  const openMessageEditor = useCallback(
+    (target: { id: number; message: InboxMessage }) => {
+      cancelReportEditLoad();
+      setCreateMessageOpen(false);
+      setReportSource(null);
+      setEditAsReport(isIntelligenceReport(target.message));
+      setEditTarget(target);
+    },
+    [cancelReportEditLoad],
+  );
+  const openReportComposer = useCallback(
+    (source: { id: number; message: InboxMessage }) => {
+      cancelReportEditLoad();
+      setCreateMessageOpen(false);
+      setEditAsReport(false);
+      setEditTarget(null);
+      setReportSource(source);
+    },
+    [cancelReportEditLoad],
+  );
   const previousFeedCountRef = useRef(0);
   const feeds = useRerDutyFeeds(authUserName, currentUser?.organismId ?? null);
   const {
     messageFeeds,
     error,
-    clearDutyError,
+    errorNotificationVersion,
     columnRefsRef,
     nearBottomByFeedIdRef,
     confirmedTailPreviewByFeedId,
@@ -105,7 +141,138 @@ export function RerDutyNeoPage({
     setDeleteConfirmId,
     setDeleteConfirmFeedId,
     deleteConfirmId,
+    applyFilter,
+    setFeedInitialTarget,
+    setWatchModeByFeedId,
+    cancelFollowTail,
   } = feeds;
+  const notifiedDutyErrorRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!error) {
+      notifiedDutyErrorRef.current = null;
+      return;
+    }
+    const notificationKey = `${errorNotificationVersion}:${error}`;
+    if (notifiedDutyErrorRef.current === notificationKey) return;
+    notifiedDutyErrorRef.current = notificationKey;
+    notify({ message: error, severity: 'error' });
+  }, [error, errorNotificationVersion, notify]);
+
+  const [targetMessageUid] = useState(parseDutyMessageUidFromWindow);
+  const [targetMessageIds, setTargetMessageIds] = useState<number[]>([]);
+  const [targetNavigationState, setTargetNavigationState] = useState<
+    'idle' | 'loading-context' | 'reloading-feed' | 'done'
+  >(targetMessageUid ? 'loading-context' : 'idle');
+  const messageFeedsRef = useRef(messageFeeds);
+  const applyFilterRef = useRef(applyFilter);
+  const notifyRef = useRef(notify);
+  messageFeedsRef.current = messageFeeds;
+  applyFilterRef.current = applyFilter;
+  notifyRef.current = notify;
+  const targetFeedId = messageFeeds[0]?.id ?? null;
+  const targetReloadObservedRef = useRef(false);
+  const hasScrolledTargetRef = useRef(false);
+
+  useEffect(() => {
+    if (!targetMessageUid || !targetFeedId) return;
+    let cancelled = false;
+    setTargetNavigationState('loading-context');
+    targetReloadObservedRef.current = false;
+    hasScrolledTargetRef.current = false;
+    setActiveFeedId(targetFeedId);
+    setWatchModeByFeedId((prev) => ({ ...prev, [targetFeedId]: false }));
+    cancelFollowTail(targetFeedId);
+
+    void fetchInboxItemContext({ messageUid: targetMessageUid })
+      .then((res) => {
+        if (cancelled) return;
+        const messageIds = resolveDutyTargetMessageIds(
+          targetMessageUid,
+          res.sigintInboxItemIds ?? [],
+        );
+        const currentFeed = messageFeedsRef.current.find((feed) => feed.id === targetFeedId);
+        if (!currentFeed || messageIds.length === 0) {
+          setTargetNavigationState('done');
+          notifyRef.current({
+            message: 'Не вдалося знайти повідомлення за посиланням.',
+            severity: 'error',
+          });
+          return;
+        }
+        setTargetMessageIds(messageIds);
+        setFeedInitialTarget(targetFeedId, {
+          beforeIdNoninclusive: messageIds[0],
+          messageIds,
+        });
+        const nextFilter = {
+          ...currentFeed.filter,
+          groupsSelected:
+            res.groupMasterKeys.length > 0
+              ? res.groupMasterKeys
+              : currentFeed.filter.groupsSelected,
+        };
+        setTargetNavigationState('reloading-feed');
+        applyFilterRef.current(targetFeedId, nextFilter, true);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setTargetNavigationState('done');
+        console.error('Failed to load duty inbox item context:', err);
+        notifyRef.current({
+          message: 'Не вдалося відкрити повідомлення за посиланням.',
+          severity: 'error',
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    targetMessageUid,
+    targetFeedId,
+    setFeedInitialTarget,
+    setWatchModeByFeedId,
+    cancelFollowTail,
+  ]);
+
+  useEffect(() => {
+    if (
+      !targetMessageUid ||
+      !targetFeedId ||
+      targetNavigationState !== 'reloading-feed' ||
+      hasScrolledTargetRef.current ||
+      targetMessageIds.length === 0
+    ) {
+      return;
+    }
+    const targetFeed = messageFeeds.find((feed) => feed.id === targetFeedId);
+    if (!targetFeed) return;
+    if (targetFeed.loading) {
+      targetReloadObservedRef.current = true;
+      return;
+    }
+    if (!targetReloadObservedRef.current) return;
+
+    for (const messageId of targetMessageIds) {
+      const targetEl = columnRefsRef.current[targetFeedId]?.scrollToMessage?.(messageId, 'auto');
+      if (!targetEl) continue;
+      hasScrolledTargetRef.current = true;
+      setTargetNavigationState('done');
+      scrollToAndHighlightMessage(targetEl, { scroll: false });
+      return;
+    }
+    setTargetNavigationState('done');
+    notifyRef.current({
+      message: 'Повідомлення за посиланням відсутнє у стрічці.',
+      severity: 'error',
+    });
+  }, [
+    columnRefsRef,
+    messageFeeds,
+    targetFeedId,
+    targetMessageIds,
+    targetMessageUid,
+    targetNavigationState,
+  ]);
 
   const buildFeedColumnModel = useDutyFeedColumnModel({
     feeds,
@@ -136,17 +303,21 @@ export function RerDutyNeoPage({
   }, [activeFeedIdSafe, flushPendingNewerMessages]);
   const [hasCompletedInitialLoad, setHasCompletedInitialLoad] = useState(false);
   const openCreateMessageComposer = useCallback(() => {
+    cancelReportEditLoad();
     setEditTarget(null);
     setEditAsReport(false);
     setReportSource(null);
     setCreateMessageOpen(true);
-  }, []);
+  }, [cancelReportEditLoad]);
   const closeMessageEditor = useCallback(() => {
+    cancelReportEditLoad();
     setCreateMessageOpen(false);
     setEditTarget(null);
     setEditAsReport(false);
     setReportSource(null);
-  }, []);
+  }, [cancelReportEditLoad]);
+
+  useEffect(() => () => cancelReportEditLoad(), [cancelReportEditLoad]);
   const handleCreatedMessage = useCallback(() => {
     setCreateMessageOpen(false);
     // Do not reloadFeeds(): that re-pins the scroller to the bottom.
@@ -178,13 +349,16 @@ export function RerDutyNeoPage({
     setActiveFeedId((current) => {
       const currentExists = isPresent(current) && messageFeeds.some((feed) => feed.id === current);
       if (messageFeeds.length > previousFeedCountRef.current) {
+        if (targetMessageUid && previousFeedCountRef.current === 0) {
+          return messageFeeds[0].id;
+        }
         return messageFeeds[messageFeeds.length - 1].id;
       }
       if (currentExists) return current;
       return messageFeeds[0].id;
     });
     previousFeedCountRef.current = messageFeeds.length;
-  }, [messageFeeds]);
+  }, [messageFeeds, targetMessageUid]);
 
   const dutyTabUnreadTotal = useMemo(
     () =>
@@ -229,18 +403,6 @@ export function RerDutyNeoPage({
     >
       <Box className="flex items-center justify-between flex-wrap gap-2 mb-2 shrink-0" />
 
-      {error ? (
-        <PowerAlert
-          severity="error"
-          className="mb-2 shrink-0"
-          onClose={() => clearDutyError()}
-          role="alert"
-          autoHideDuration={10000}
-        >
-          {error}
-        </PowerAlert>
-      ) : null}
-
       <PointBlacklistPaletteNamesCacheProvider>
         <AudioTranscriptionPreferencesProvider
           collapsedByDefault={audioTranscriptionCollapsed}
@@ -262,11 +424,20 @@ export function RerDutyNeoPage({
       </PointBlacklistPaletteNamesCacheProvider>
 
       <ManageMessageDrawer
-        open={createMessageOpen || isPresent(editTarget) || isPresent(reportSource)}
+        open={
+          createMessageOpen ||
+          isPresent(editTarget) ||
+          isPresent(reportSource) ||
+          editTargetLoadState.status !== 'idle'
+        }
         cyberEchoEnabled={cyberEchoEnabled}
         currentUser={currentUser}
         editTarget={editTarget}
         editAsReport={editAsReport}
+        editTargetLoadState={editTargetLoadState}
+        onRetryEditTargetLoad={() => {
+          if (editTargetLoadState.status !== 'idle') openReportEditor(editTargetLoadState.reportId);
+        }}
         reportSource={reportSource}
         onClose={closeMessageEditor}
         onSubmitEdit={

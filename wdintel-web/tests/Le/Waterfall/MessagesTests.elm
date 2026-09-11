@@ -47,6 +47,7 @@ messageStub =
     , postId = Nothing
     , networkIds = Nothing
     , inboxTags = Nothing
+    , messageUuid = Nothing
     , messageUid = Nothing
     , metadata = []
     , parentMessages = []

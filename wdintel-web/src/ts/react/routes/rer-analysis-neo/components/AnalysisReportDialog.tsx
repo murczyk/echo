@@ -10,7 +10,6 @@ import {
   Box,
   Button,
   Checkbox,
-  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -21,6 +20,7 @@ import {
   LinearProgress,
   MenuItem,
   Select,
+  Skeleton,
   Stack,
   Tab,
   Tabs,
@@ -1085,7 +1085,7 @@ export function AnalysisReportDialog({
                                     ) : status === 'cancelled' ? (
                                       <HighlightOffIcon color="warning" fontSize="small" />
                                     ) : status === 'running' ? (
-                                      <CircularProgress size={14} />
+                                      <Skeleton variant="circular" width={14} height={14} />
                                     ) : (
                                       <Typography variant="caption" color="text.disabled">
                                         ○

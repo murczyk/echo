@@ -7,10 +7,10 @@ import {
   Button,
   ButtonBase,
   Chip,
-  CircularProgress,
   Collapse,
   IconButton,
   Paper,
+  Skeleton,
   Stack,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
@@ -278,7 +278,7 @@ export function AnalysisCallsignFrequencySearch({
             variant="contained"
             disabled={!canSearch || loading}
             onClick={() => void search()}
-            startIcon={loading ? <CircularProgress color="inherit" size={16} /> : undefined}
+            startIcon={loading ? <Skeleton variant="circular" width={16} height={16} /> : undefined}
           >
             Знайти
           </Button>

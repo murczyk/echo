@@ -113,6 +113,7 @@ pub async fn bl_szd_group_update(
         txn,
         &szd.group_master_key,
         aor_ids,
+        &mut network_invalidation_enqueued,
     )
     .await
     .c(h!())?;

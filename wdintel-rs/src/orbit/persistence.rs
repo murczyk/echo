@@ -249,6 +249,56 @@ where
     Ok((sync, units))
 }
 
+pub async fn load_latest_test_link_matcher_with_sync<C>(
+    db: &C,
+) -> anyhow::Result<(orbit_sync::Model, super::matching::TestLinkMatcher)>
+where
+    C: ConnectionTrait,
+{
+    let sync = load_latest_sync(db)
+        .await
+        .c(h!())?
+        .ok_or_else(|| anyhow::anyhow!("ORBIT data has not been synchronized"))
+        .c(h!())?;
+    let matcher = load_test_link_matcher(db, &sync).await.c(h!())?;
+    Ok((sync, matcher))
+}
+
+pub async fn load_test_link_matcher<C>(
+    db: &C,
+    sync: &orbit_sync::Model,
+) -> anyhow::Result<super::matching::TestLinkMatcher>
+where
+    C: ConnectionTrait,
+{
+    load_test_link_matcher_excluding(db, sync, &BTreeSet::new())
+        .await
+        .c(h!())
+}
+
+pub async fn load_test_link_matcher_excluding<C>(
+    db: &C,
+    sync: &orbit_sync::Model,
+    excluded_root_ids: &BTreeSet<Uuid>,
+) -> anyhow::Result<super::matching::TestLinkMatcher>
+where
+    C: ConnectionTrait,
+{
+    let units = orbit_unit::Entity::find()
+        .filter(orbit_unit::Column::Deleted.eq(false))
+        .filter(orbit_unit::Column::UpdatedAt.eq(sync.synced_at))
+        .all(db)
+        .await
+        .c(h!())?;
+    let dictionaries = DictionaryMaps::load(db).await.c(h!())?;
+    super::matching::TestLinkMatcher::from_models(
+        units,
+        &dictionaries,
+        excluded_root_ids,
+    )
+    .c(h!())
+}
+
 pub(super) async fn load_synced_source_units<C>(
     db: &C,
     sync: &orbit_sync::Model,

@@ -6,10 +6,20 @@ export type MessageCardTagRow = {
   isOrganismTag: boolean;
   isSet: boolean;
   tip: string | null;
-  showBadge: boolean;
-  humanContribsLen: number;
-  botContribsLen: number;
+  provenance: MessageCardTagProvenance;
 };
+
+export type MessageCardTagProvenance = 'none' | 'human' | 'robot' | 'mixed';
+
+function resolveTagProvenance(
+  humanContribsLen: number,
+  botContribsLen: number,
+): MessageCardTagProvenance {
+  if (humanContribsLen > 0 && botContribsLen > 0) return 'mixed';
+  if (humanContribsLen > 0) return 'human';
+  if (botContribsLen > 0) return 'robot';
+  return 'none';
+}
 
 function getFallbackTagOrder(tagsMap: Record<number, Tag>): number[] {
   return Object.keys(tagsMap)
@@ -104,9 +114,7 @@ export function buildMessageCardTagRows(
       isOrganismTag: tag?.ownerOrganismId != null,
       isSet,
       tip,
-      showBadge: isSet && (humanContribs.length > 0 || botContribs.length > 0),
-      humanContribsLen: humanContribs.length,
-      botContribsLen: botContribs.length,
+      provenance: isSet ? resolveTagProvenance(humanContribs.length, botContribs.length) : 'none',
     };
   });
 }

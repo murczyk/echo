@@ -11,8 +11,7 @@ import {
 
 // MESSAGE_ATTACHMENT_LIMIT_SYNC: keep this client upload limit synchronized
 // Keep synchronized with `SIGINT_MESSAGE_MAX_ATTACHMENTS` and
-// `RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES` in `wdintel-rs/src/config.rs`, and
-// `RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES` in MessageCardMedia.tsx.
+// `RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES` in `wdintel-rs/src/config.rs`.
 export const MAX_MESSAGE_ATTACHMENTS = 20;
 
 const EXTENSION_BY_MIME: Record<string, string> = {
@@ -125,8 +124,8 @@ export function useMessageUppy(busy: boolean, occupiedAttachmentCount = 0) {
       if (file) forgetMessageUploadFailure(uppy, file.id);
       updateFiles();
     };
-    const handleFileRemoved = (file: UppyFile<any, any>) => {
-      forgetMessageUploadFailure(uppy, file.id);
+    const handleFileRemoved = (file: UppyFile<any, any> | undefined) => {
+      if (file) forgetMessageUploadFailure(uppy, file.id);
       updateFilesAndClearError();
     };
 

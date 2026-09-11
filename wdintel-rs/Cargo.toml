@@ -73,6 +73,7 @@ indicatif = "0.18.4"
 iggy = "=0.10.3-edge.3"
 redis = { version = "1.0.5", features = ["tokio-comp", "connection-manager"] }
 rust-argon2 = "^3.0.0"
+totp-rs = { version = "5.7", features = ["otpauth", "qr", "gen_secret"] }
 bytes = "1.11.1"
 docx-rs = "^0.4.19"
 async-recursion = "^1.1.1"
@@ -173,6 +174,7 @@ systemd-units = [
 	{ unit-name = "echo-whatsapp-bot@" },
 ]
 depends = ""
+replaces = "echo-docs"
 assets = [
 	[ "target/release/wdintel-rs", "usr/bin/", "755", ],
 	[ "version.txt", "usr/share/echo/", "755", ],
@@ -190,8 +192,7 @@ assets = [
 	[ "../wdintel-web/dist/d3-force-3.0.0/*", "usr/share/echo/d3-force-3.0.0/", "755", ],
 	[ "../wdintel-web/dist/assets/*", "usr/share/echo/assets/", "755", ],
 	[ "../wdintel-web/dist/data/*", "usr/share/echo/data/", "755", ],
-	[ "../wdintel-web/dist/releases/**/*.md", "usr/share/echo/releases/", "755", ],
-	[ "../wdintel-web/dist/releases/*.json", "usr/share/echo/releases/", "755", ],
+	[ "../wdintel-web/dist/releases/**/*", "usr/share/echo/releases/", "755", ],
 	[ "../wdintel-web/dist/*", "usr/share/echo/dist/", "755", ],
 	[ "../wdintel-web/dist/img/*", "usr/share/echo/img/", "755", ],
 	[ "../wdintel-web/dist/img/google_earth_icons/*", "usr/share/echo/img/google_earth_icons/", "755", ],

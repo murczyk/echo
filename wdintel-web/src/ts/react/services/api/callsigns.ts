@@ -140,9 +140,17 @@ type ListCallsignsReqBody = {
   filter_unit_army_region: ListCallsignsReq['filterUnitArmyRegion'];
   filter_unit_military_district: ListCallsignsReq['filterUnitMilitaryDistrict'];
   filter_unit_army: ListCallsignsReq['filterUnitArmy'];
+  filter_unit_corps: ListCallsignsReq['filterUnitCorps'];
   filter_unit_division: ListCallsignsReq['filterUnitDivision'];
+  filter_unit_brigade: ListCallsignsReq['filterUnitBrigade'];
   filter_unit_regiment: ListCallsignsReq['filterUnitRegiment'];
   filter_unit_battalion: ListCallsignsReq['filterUnitBattalion'];
+  filter_unit_company: ListCallsignsReq['filterUnitCompany'];
+  filter_unit_platoon: ListCallsignsReq['filterUnitPlatoon'];
+  filter_unit_squad: ListCallsignsReq['filterUnitSquad'];
+  filter_unit_section: ListCallsignsReq['filterUnitSection'];
+  filter_unit_team_or_crew: ListCallsignsReq['filterUnitTeamOrCrew'];
+  filter_unit_other: ListCallsignsReq['filterUnitOther'];
   filter_developing: ListCallsignsReq['filterDeveloping'];
   since_date_inclusive_ms: ListCallsignsReq['sinceDateInclusiveMs'];
   till_date_inclusive_ms: ListCallsignsReq['tillDateInclusiveMs'];
@@ -374,9 +382,17 @@ function toListCallsignsReqBody(req: ListCallsignsReq): ListCallsignsReqBody {
     filter_unit_army_region: req.filterUnitArmyRegion,
     filter_unit_military_district: req.filterUnitMilitaryDistrict,
     filter_unit_army: req.filterUnitArmy,
+    filter_unit_corps: req.filterUnitCorps,
     filter_unit_division: req.filterUnitDivision,
+    filter_unit_brigade: req.filterUnitBrigade,
     filter_unit_regiment: req.filterUnitRegiment,
     filter_unit_battalion: req.filterUnitBattalion,
+    filter_unit_company: req.filterUnitCompany,
+    filter_unit_platoon: req.filterUnitPlatoon,
+    filter_unit_squad: req.filterUnitSquad,
+    filter_unit_section: req.filterUnitSection,
+    filter_unit_team_or_crew: req.filterUnitTeamOrCrew,
+    filter_unit_other: req.filterUnitOther,
     filter_developing: req.filterDeveloping,
     since_date_inclusive_ms: req.sinceDateInclusiveMs,
     till_date_inclusive_ms: req.tillDateInclusiveMs,

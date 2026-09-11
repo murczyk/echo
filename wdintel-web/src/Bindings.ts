@@ -386,6 +386,7 @@ export type GeoCoordinates = {
 };
 
 export type InboxMessage = {
+  messageUuid: string | null;
   messageUid: string | null;
   text: string;
   media: Array<MessageMediaInfo>;
@@ -482,6 +483,7 @@ export type TagPresenceFilter = 'WithTags' | 'WithoutTags';
 export type InboxMessagesReq = {
   sinceIdNoninclusive: number | null;
   beforeIdNoninclusive: number | null;
+  aroundMessageRef: string | null;
   sinceDateInclusiveMs: number | null;
   tillDateInclusiveMs: number | null;
   onlyShowUnprocessed: boolean | null;
@@ -1062,6 +1064,8 @@ export type RerDutyQueryStateWf = {
   postsDenied: Array<string> | null;
   unitsSelected: Array<string> | null;
   unitsDenied: Array<string> | null;
+  selectedUnitIds: Array<number> | null;
+  deniedUnitIds: Array<number> | null;
   unitsExactMatchOnly: boolean | null;
   lastViewedMessageId: number | null;
   highlightKeywordsEnabled: boolean | null;
@@ -1325,10 +1329,20 @@ export type InboxItemContextReq = {
 };
 
 export type InboxItemContextRsp = {
+  message: [number, InboxMessage] | null;
   groupMasterKeys: Array<string>;
   sigintInboxItemIds: Array<number>;
   sinceTs: number | null;
   tillTs: number | null;
+};
+
+export type InboxWindowRsp = {
+  targetMessageId: number;
+  inbox: InboxMessagesRsp;
+  hasMoreBefore: boolean;
+  hasMoreAfter: boolean;
+  messagesBefore: number;
+  messagesAfter: number;
 };
 
 export type InboxByGroupDigestRsp = {
@@ -1587,6 +1601,17 @@ export type LoginReq = {
   password: string;
 };
 
+export type LoginRsp =
+  | 'Authenticated'
+  | { Needs2faSetup: { challengeId: string; qrBase64: string; manualKey: string } }
+  | { Needs2fa: { challengeId: string } }
+;
+
+export type Confirm2faReq = {
+  challengeId: string;
+  token: string;
+};
+
 export type User = {
   id: string;
   name: string;
@@ -1659,6 +1684,7 @@ export type Login = {
   deactivationReason: DeactivationReasonType | null;
   description: string | null;
   passwordAuthEnabled: boolean;
+  totpEnabled: boolean;
 };
 
 export type ListLoginsSortBy = 'LoginCreatedAtDesc' | 'LoginCreatedAtAsc';
@@ -1693,6 +1719,7 @@ export type UpdateLoginReq = {
   deactivationReason: DeactivationReasonType | null;
   description: string | null;
   passwordAuthEnabled: boolean | null;
+  clearTotp: boolean | null;
 };
 
 export type SigintGroupsReq = {
@@ -3387,9 +3414,17 @@ export type ListCallsignsReq = {
   filterUnitArmyRegion: string | null;
   filterUnitMilitaryDistrict: string | null;
   filterUnitArmy: string | null;
+  filterUnitCorps: string | null;
   filterUnitDivision: string | null;
+  filterUnitBrigade: string | null;
   filterUnitRegiment: string | null;
   filterUnitBattalion: string | null;
+  filterUnitCompany: string | null;
+  filterUnitPlatoon: string | null;
+  filterUnitSquad: string | null;
+  filterUnitSection: string | null;
+  filterUnitTeamOrCrew: string | null;
+  filterUnitOther: string | null;
   filterDeveloping: DevelopingFilter | null;
   sinceDateInclusiveMs: number | null;
   tillDateInclusiveMs: number | null;
@@ -3766,6 +3801,7 @@ export type Network = {
   operationMode: string | null;
   operationType: string | null;
   operationPeriod: string | null;
+  lastActivityAt: number | null;
   lastUpdatedAt: number;
   lastUpdatedBy: string | null;
   activeFrom: number | null;
@@ -4025,9 +4061,17 @@ export type ListNetworksReq = {
   filterUnitArmyRegion: string | null;
   filterUnitMilitaryDistrict: string | null;
   filterUnitArmy: string | null;
+  filterUnitCorps: string | null;
   filterUnitDivision: string | null;
+  filterUnitBrigade: string | null;
   filterUnitRegiment: string | null;
   filterUnitBattalion: string | null;
+  filterUnitCompany: string | null;
+  filterUnitPlatoon: string | null;
+  filterUnitSquad: string | null;
+  filterUnitSection: string | null;
+  filterUnitTeamOrCrew: string | null;
+  filterUnitOther: string | null;
   filterText: string | null;
   filterName: string | null;
   filterLocation: string | null;

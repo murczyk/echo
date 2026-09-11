@@ -323,6 +323,7 @@ async fn complete_job(
         merge_current_and_ai_settlements(current.clone(), ai_settlements);
     let changed = settlements != current;
     if changed {
+        let inbox_item_uuid = inbox_item.id_uuid;
         let location_v2 =
             crate::location::utils::format_locations_list(settlements);
         let mut inbox_item = inbox_item.into_active_model();
@@ -331,6 +332,7 @@ async fn complete_job(
         crate::battle_line::settlement_queue::reconcile_item_locations(
             &transaction,
             sigint_inbox_item_id,
+            inbox_item_uuid,
             Some(&location_v2),
         )
         .await

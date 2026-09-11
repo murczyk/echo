@@ -48,6 +48,7 @@ network =
     , operationMode = Nothing
     , operationType = Nothing
     , operationPeriod = Nothing
+    , lastActivityAt = Nothing
     , lastUpdatedAt = 0
     , lastUpdatedBy = Nothing
     , activeFrom = Nothing
@@ -73,7 +74,8 @@ headers =
 
 message : Maybe (List B.ContentNode) -> List String -> Maybe (List Int) -> B.InboxMessage
 message textMarked callsigns networkIds =
-    { messageUid = Nothing
+    { messageUuid = Nothing
+    , messageUid = Nothing
     , text = "wolf"
     , media = []
     , images = []

@@ -22,14 +22,13 @@ import { inboxMessageWithMockImages } from '../../../../rer-duty-neo/inbox-messa
 import { emptyFilter } from '../../../../rer-duty-neo/utils';
 import { formatMessageCardTooltipTime, MessageCard } from '../../MessageCard';
 import { MessageCardContent } from '../../MessageCardContent';
-import { MessageCardHeader } from '../../MessageCardHeader';
+import { MessageCardHeader, MessageCardMetadata } from '../../MessageCardHeader';
 import {
   canDownloadAllMessageAttachments,
   isAudioMediaAttachment,
   isVideoMediaAttachment,
+  MESSAGE_CARD_ATTACHMENTS_ARCHIVE_LABEL,
   MESSAGE_CARD_DOWNLOAD_START_COOLDOWN_MS,
-  RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES,
-  RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES,
 } from '../../MessageCardMedia';
 import { AudioTranscriptionPreferencesProvider } from '../../MessageCardAudioTranscription';
 import {
@@ -46,6 +45,12 @@ const latestMenuProps: Array<{
   anchorPosition?: { top: number; left: number } | null;
   open?: boolean;
   id?: string;
+}> = [];
+const latestPopoverProps: Array<{
+  anchorEl?: HTMLElement | null;
+  anchorOrigin?: unknown;
+  transformOrigin?: unknown;
+  onClose?: () => void;
 }> = [];
 const latestDocumentDialogProps: Array<{
   currentIndex?: number;
@@ -368,8 +373,16 @@ vi.mock('@mui/material', () => ({
     children,
     open,
     ...props
-  }: { children?: ReactNode; open?: boolean } & Record<string, unknown>) =>
-    open ? <div {...omitMuiLayoutProps(props)}>{children}</div> : null,
+  }: { children?: ReactNode; open?: boolean } & Record<string, unknown>) => {
+    if (!open) return null;
+    latestPopoverProps.push({
+      anchorEl: (props.anchorEl as HTMLElement | null | undefined) ?? null,
+      anchorOrigin: props.anchorOrigin,
+      transformOrigin: props.transformOrigin,
+      onClose: props.onClose as (() => void) | undefined,
+    });
+    return <div {...omitMuiLayoutProps(props)}>{children}</div>;
+  },
   Menu: ({
     children,
     open,
@@ -673,7 +686,6 @@ async function renderCard(
     onCopyFreq: vi.fn(),
     onCopyEtalon: vi.fn(),
     onCopyLocation: vi.fn(),
-    onAddFrequencyToFilter: vi.fn(),
     onCreateReport: vi.fn(),
     onExcludeMessageEntity: vi.fn(),
     onToggleTag: vi.fn(),
@@ -701,10 +713,17 @@ async function renderHeader(
   document.body.appendChild(container);
   const root = createRoot(container);
   const msg = overrides.msg ?? buildMessage();
+  const metadataOverrides = overrides as Partial<{
+    groupName: string | null;
+    senderName: string | null;
+  }>;
   const etalonDisplayModel = resolveMessageCardEtalonDisplayModel(msg, {
     featureStrictNetworks: false,
-    networkDisplayMap: { 7: 'р/м Alpha' },
-    networkMap: { 7: { id: 7, name: 'Alpha', unitIds: [], location: null } as Network },
+    networkDisplayMap: { 7: 'р/м Alpha', 8: 'р/м Bravo' },
+    networkMap: {
+      7: { id: 7, name: 'Alpha', unitIds: [1], location: null } as Network,
+      8: { id: 8, name: 'Bravo', unitIds: [], location: null } as Network,
+    },
     networks: undefined,
   });
   const props: ComponentProps<typeof MessageCardHeader> = {
@@ -728,7 +747,6 @@ async function renderHeader(
     onCopyFreq: vi.fn(),
     onCopyEtalon: vi.fn(),
     onCopyLocation: vi.fn(),
-    onAddFrequencyToFilter: vi.fn(),
     onDelete: vi.fn(),
     onEditDetails: vi.fn(),
     onExcludeMessageEntity: vi.fn(),
@@ -736,7 +754,17 @@ async function renderHeader(
   };
 
   await act(async () => {
-    root.render(<MessageCardHeader {...props} />);
+    root.render(
+      <div data-message-header-grid="true">
+        <MessageCardHeader {...props} />
+        <MessageCardMetadata
+          msg={msg}
+          groupName={metadataOverrides.groupName ?? "Куп'янськ пеленг"}
+          senderName={metadataOverrides.senderName ?? 'Dow_Jones_2'}
+          etalonDisplayModel={props.etalonDisplayModel}
+        />
+      </div>,
+    );
   });
 
   return { container, root, headerProps: props };
@@ -764,6 +792,23 @@ function getButton(container: HTMLElement, label: string): HTMLButtonElement {
   return button;
 }
 
+async function openOverflowMenu(container: HTMLElement): Promise<void> {
+  const overflowButton = container.querySelector('button[aria-label="Більше дій"]');
+  if (!(overflowButton instanceof HTMLButtonElement)) {
+    throw new Error('overflow button not found');
+  }
+  await click(overflowButton);
+}
+
+function queryArchiveDownloadLink(
+  container: HTMLElement,
+  messageId = 42,
+): HTMLAnchorElement | null {
+  return container.querySelector(
+    `a[href="/api/rer-importer/messages/${messageId}/attachments.zip"]`,
+  );
+}
+
 function getTagButtonLabels(container: HTMLElement): string[] {
   const tagLabels = new Set([
     'переміщення',
@@ -779,12 +824,12 @@ function getTagButtonLabels(container: HTMLElement): string[] {
     .filter((label) => tagLabels.has(label));
 }
 
-function getHeaderBody2ElementByText(container: HTMLElement, text: string): HTMLElement {
+function getMetadataBody2ElementByText(container: HTMLElement, text: string): HTMLElement {
   const element = Array.from(container.querySelectorAll('[data-message-card-text="body2"]')).find(
     (node) => node.textContent?.trim() === text,
   );
   if (!(element instanceof HTMLElement)) {
-    throw new Error(`Header body2 element not found for text: ${text}`);
+    throw new Error(`Metadata body2 element not found for text: ${text}`);
   }
   return element;
 }
@@ -848,6 +893,7 @@ describe('MessageCard', () => {
     resizeObserverCallbacks.splice(0);
     resizeObserverTargets.clear();
     latestMenuProps.splice(0);
+    latestPopoverProps.splice(0);
     latestDocumentDialogProps.splice(0);
     if (typeof window.localStorage?.clear === 'function') {
       window.localStorage.clear();
@@ -966,6 +1012,58 @@ describe('MessageCard', () => {
     });
   });
 
+  it('ECHO-3324 renders resolved networks as independent metadata items without changing fallback metadata', async () => {
+    const networkView = await renderHeader({
+      msg: buildMessage({ networkIds: [7, 8], location: 'ЛИМАН' }),
+    });
+    rendered.push(networkView);
+
+    const networkItems = Array.from(
+      networkView.container.querySelectorAll<HTMLElement>(
+        '[data-message-card-network-item="true"]',
+      ),
+    );
+    expect(networkItems).toHaveLength(2);
+    expect(networkItems.map((item) => item.dataset.networkId)).toEqual(['7', '8']);
+    expect(networkItems.map((item) => item.textContent)).toEqual([
+      expect.stringContaining('р/м Alpha'),
+      expect.stringContaining('р/м Bravo'),
+    ]);
+    expect(
+      networkItems.map(
+        (item) => item.querySelectorAll('[data-message-card-metadata-icon-kind="network"]').length,
+      ),
+    ).toEqual([1, 1]);
+    expect(
+      networkItems.map(
+        (item) => item.querySelectorAll('svg[data-testid="PeopleOutlineOutlinedIcon"]').length,
+      ),
+    ).toEqual([1, 1]);
+    expect(
+      networkItems.map(
+        (item) => item.querySelectorAll('svg[data-testid="GraphicEqOutlinedIcon"]').length,
+      ),
+    ).toEqual([0, 0]);
+    expect(
+      networkView.container.querySelector(
+        '[data-message-card-metadata-icon-kind="group"] svg[data-testid="GraphicEqOutlinedIcon"]',
+      ),
+    ).not.toBeNull();
+    expect(networkItems[0].textContent).not.toContain('в дорозвідці');
+    expect(networkItems[1].textContent).toContain('в дорозвідці');
+    expect(networkView.container.textContent).toContain('Лиман');
+
+    const fallbackView = await renderHeader({
+      msg: buildMessage({ networkIds: [], unit: '1-й танк', location: 'ЛИМАН' }),
+    });
+    rendered.push(fallbackView);
+    expect(
+      fallbackView.container.querySelectorAll('[data-message-card-network-item="true"]'),
+    ).toHaveLength(0);
+    expect(fallbackView.container.textContent).toContain('1-й танк');
+    expect(fallbackView.container.textContent).toContain('Лиман');
+  });
+
   it('renders compact divider layout content for narrow multi-feed columns', async () => {
     const view = await renderCard();
     rendered.push(view);
@@ -1064,7 +1162,7 @@ describe('MessageCard', () => {
     expect(headerSource).toContain(
       'isPresent(overflowMenuAnchorPosition) && canShowOverflowMenu ?',
     );
-    expect(headerSource).toContain('isPresent(copyMenuAnchorPosition) ?');
+    expect(headerSource).toContain('isPresent(copyMenuAnchorPosition) && canShowPrimaryActions ?');
     expect(headerSource).toContain(
       'isPresent(navigationMenuAnchorPosition) && canShowNavigationMenu ?',
     );
@@ -1093,10 +1191,10 @@ describe('MessageCard', () => {
       });
       rendered.push(view);
 
-      const headerText = view.container.querySelector(
+      const metadataText = view.container.querySelector(
         '[data-message-header-grid="true"]',
       )?.textContent;
-      if (headerText == null) throw new Error('header text not found');
+      if (metadataText == null) throw new Error('metadata text not found');
 
       const expectedValues = [
         '02:45',
@@ -1104,31 +1202,25 @@ describe('MessageCard', () => {
         '153.6250',
         'Група A',
         'Відправник B',
-        '12.34568, -98.76543',
         'Радіостанція',
         'Харків',
       ] as const;
       for (const value of expectedValues) {
-        const textElement = getHeaderBody2ElementByText(view.container, value);
+        const textElement = getMetadataBody2ElementByText(view.container, value);
         expect(textElement.getAttribute('data-message-card-text')).toBe('body2');
-        expect(headerText).toContain(value);
+        expect(metadataText).toContain(value);
       }
       expect(view.container.querySelector('[title="Пристрій"]')).not.toBeNull();
 
-      expect(headerText.indexOf('Група A')).toBeLessThan(headerText.indexOf('Відправник B'));
-      expect(headerText.indexOf('Відправник B')).toBeLessThan(headerText.indexOf('153.6250'));
-      expect(headerText.indexOf('153.6250')).toBeLessThan(headerText.indexOf('Радіостанція'));
-      expect(headerText.indexOf('Радіостанція')).toBeLessThan(
-        headerText.indexOf('12.34568, -98.76543'),
-      );
-      expect(headerText.indexOf('12.34568, -98.76543')).toBeLessThan(
-        headerText.indexOf('1-й танк'),
-      );
-      expect(headerText.indexOf('1-й танк')).toBeLessThan(headerText.indexOf('Харків'));
+      expect(metadataText.indexOf('Група A')).toBeLessThan(metadataText.indexOf('Відправник B'));
+      expect(metadataText.indexOf('Відправник B')).toBeLessThan(metadataText.indexOf('153.6250'));
+      expect(metadataText.indexOf('153.6250')).toBeLessThan(metadataText.indexOf('Радіостанція'));
+      expect(metadataText.indexOf('Радіостанція')).toBeLessThan(metadataText.indexOf('1-й танк'));
+      expect(metadataText.indexOf('1-й танк')).toBeLessThan(metadataText.indexOf('Харків'));
     },
   );
 
-  it('shows the WGS coordinates in the header without locality', async () => {
+  it('keeps coordinates out of the header metadata', async () => {
     const view = await renderHeader({
       displayMode: 'duty',
       msg: buildMessage({
@@ -1151,7 +1243,7 @@ describe('MessageCard', () => {
     rendered.push(view);
 
     const text = view.container.querySelector('[data-message-header-grid="true"]')?.textContent;
-    expect(text).toContain('49.1, 37.2');
+    expect(text).not.toContain('49.1, 37.2');
     expect(text).not.toContain('Степногірськ');
   });
 
@@ -1266,7 +1358,7 @@ describe('MessageCard', () => {
     expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
   });
 
-  it('folds marked message text after twenty source rows', async () => {
+  it('ECHO-3324 folds marked message text after twenty source rows', async () => {
     const rows = Array.from({ length: 21 }, (_, index) => `Рядок ${index + 1}`);
     const textMarked: ContentNode[] = rows.flatMap((row, index) => [
       index === 0
@@ -1280,6 +1372,8 @@ describe('MessageCard', () => {
     rendered.push(view);
 
     const messageText = view.container.querySelector('.text-marked');
+    const textContent = view.container.querySelector('[data-message-card-text-content="true"]');
+    const toggleRow = view.container.querySelector('.message-card-text-toggle-row');
     expect(messageText?.textContent).toContain('Рядок 1');
     expect(messageText?.textContent).toContain('Рядок 20');
     expect(messageText?.textContent).not.toContain('Рядок 21');
@@ -1288,8 +1382,11 @@ describe('MessageCard', () => {
       'button[aria-label="Показати текст повідомлення"]',
     );
     if (showMoreButton == null) throw new Error('Show more button not found');
+    expect(textContent?.contains(showMoreButton)).toBe(false);
+    expect(toggleRow?.contains(showMoreButton)).toBe(true);
     expect(showMoreButton.getAttribute('aria-expanded')).toBe('false');
 
+    showMoreButton.focus();
     await click(showMoreButton);
 
     expect(messageText?.textContent).toContain('Рядок 21');
@@ -1297,11 +1394,15 @@ describe('MessageCard', () => {
       'button[aria-label="Згорнути текст повідомлення"]',
     );
     if (collapseButton == null) throw new Error('Collapse button not found');
+    expect(view.container.querySelector('.message-card-text-toggle-row')).not.toBeNull();
     expect(collapseButton.getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(collapseButton);
 
     await click(collapseButton);
 
     expect(messageText?.textContent).not.toContain('Рядок 21');
+    expect(collapseButton.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(collapseButton);
   });
 
   it('does not fold message text with twenty source rows', async () => {
@@ -1640,13 +1741,9 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    expect(
-      view.container.querySelector('[data-message-header-grid="true"]')?.textContent,
-    ).toContain('Харків');
+    expect(view.container.querySelector('.message-card-main')?.textContent).toContain('Харків');
     expect(view.container.textContent).toContain('р/м Alpha');
-    expect(
-      view.container.querySelector('svg[data-testid="PeopleOutlineOutlinedIcon"]'),
-    ).not.toBeNull();
+    expect(view.container.querySelector('svg[data-testid="GraphicEqOutlinedIcon"]')).not.toBeNull();
     expect(view.container.querySelector('[aria-label^="Локація:"]')).toBeNull();
     const copyButton = view.container.querySelector(`button[aria-label="${COPY_TITLE}"]`);
     if (!(copyButton instanceof HTMLButtonElement)) throw new Error('copy button not found');
@@ -1661,13 +1758,9 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    expect(
-      view.container.querySelector('[data-message-header-grid="true"]')?.textContent,
-    ).toContain('Харків');
+    expect(view.container.querySelector('.message-card-main')?.textContent).toContain('Харків');
     expect(view.container.textContent).toContain('р/м Alpha');
-    expect(
-      view.container.querySelector('svg[data-testid="PeopleOutlineOutlinedIcon"]'),
-    ).not.toBeNull();
+    expect(view.container.querySelector('svg[data-testid="GraphicEqOutlinedIcon"]')).not.toBeNull();
     expect(view.container.querySelector('[aria-label^="Локація:"]')).toBeNull();
   });
 
@@ -1695,9 +1788,9 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    expect(
-      view.container.querySelector('[data-message-header-grid="true"]')?.textContent,
-    ).not.toContain('Не встановлена');
+    expect(view.container.querySelector('.message-card-main')?.textContent).not.toContain(
+      'Не встановлена',
+    );
     expect(view.container.textContent).toContain('—');
     expect(
       view.container.querySelector('svg[data-testid="PeopleOutlineOutlinedIcon"]'),
@@ -1783,9 +1876,9 @@ describe('MessageCard', () => {
       'Позначити як важливе',
       'Додати в закладки',
       COPY_TITLE,
-      'Редагувати',
       NAVIGATE_TITLE,
       EXCLUDE_TITLE,
+      'Більше дій',
     ]);
   });
 
@@ -1808,7 +1901,6 @@ describe('MessageCard', () => {
       'Позначити як важливе',
       'Додати в закладки',
       COPY_TITLE,
-      'Редагувати',
       NAVIGATE_TITLE,
       'Більше дій',
     ]);
@@ -1894,7 +1986,7 @@ describe('MessageCard', () => {
     expect(toolbar.getAttribute('role')).toBeNull();
   });
 
-  it('recalculates toolbar fit when the available action count changes', async () => {
+  it('ECHO-3324 recalculates toolbar stacking when the available action count changes', async () => {
     vi.stubGlobal('ResizeObserver', ResizeObserverMock as unknown as typeof ResizeObserver);
     Object.defineProperty(window, 'ResizeObserver', {
       configurable: true,
@@ -1936,9 +2028,34 @@ describe('MessageCard', () => {
     await act(async () => {
       view.root.render(<MessageCardHeader {...view.headerProps!} onEditDetails={vi.fn()} />);
     });
-    expect(
-      view.container.querySelector('[aria-label="Дії повідомлення"]')?.getAttribute('role'),
-    ).toBe('group');
+    const updatedHeaderRow = view.container.querySelector<HTMLElement>(
+      '[data-message-card-header-row="true"]',
+    );
+    const updatedLeft = view.container.querySelector<HTMLElement>(
+      '[data-message-card-header-left="true"]',
+    );
+    const updatedRight = view.container.querySelector<HTMLElement>(
+      '[data-message-card-header-right="true"]',
+    );
+    if (
+      !(updatedHeaderRow instanceof HTMLElement) ||
+      !(updatedLeft instanceof HTMLElement) ||
+      !(updatedRight instanceof HTMLElement)
+    ) {
+      throw new Error('updated toolbar measurements not found');
+    }
+    setClientWidth(updatedHeaderRow, 220);
+    setScrollWidth(updatedLeft, 0);
+    setScrollWidth(updatedRight, 0);
+    await act(async () => {
+      resizeObserverCallbacks.forEach((callback) => callback());
+    });
+    const updatedToolbar = view.container.querySelector<HTMLElement>(
+      '[aria-label="Дії повідомлення"]',
+    );
+    if (!(updatedToolbar instanceof HTMLElement)) throw new Error('updated toolbar not found');
+    expect(updatedToolbar.getAttribute('role')).toBeNull();
+    expect(updatedToolbar.classList).not.toContain('message-card-action-group--stacked');
   });
 
   it.each([
@@ -2125,15 +2242,35 @@ describe('MessageCard', () => {
     expect(document.activeElement).not.toBe(reportButton);
   });
 
-  it('shows the edit action in the toolbar and only delete in the overflow menu', async () => {
+  it('orders edit, archive download, and delete in the overflow menu', async () => {
     const view = await renderCard({
       displayMode: 'analysis',
       onEditDetails: vi.fn(),
       onDelete: vi.fn(),
+      msg: {
+        ...buildMessage(),
+        media: [
+          {
+            id: 'first',
+            href: '/api/messenger/media/first',
+            contentType: 'text/plain',
+            fileName: 'first.txt',
+            sizeBytes: 1,
+          },
+          {
+            id: 'second',
+            href: '/api/messenger/media/second',
+            contentType: 'text/plain',
+            fileName: 'second.txt',
+            sizeBytes: 1,
+          },
+        ] as InboxMessage['media'],
+      },
     });
     rendered.push(view);
 
-    expect(view.container.querySelector('button[aria-label="Редагувати"]')).not.toBeNull();
+    expect(view.container.querySelector('button[aria-label="Редагувати"]')).toBeNull();
+    expect(queryArchiveDownloadLink(view.container)).toBeNull();
 
     const overflowButton = view.container.querySelector('button[aria-label="Більше дій"]');
     if (!(overflowButton instanceof HTMLButtonElement))
@@ -2145,7 +2282,20 @@ describe('MessageCard', () => {
     expect(view.container.querySelector(`[id="${overflowMenuId}"]`)).not.toBeNull();
 
     expect(view.container.textContent).not.toContain('Редагувати додаткові поля та позивні');
-    expect(view.container.textContent).toContain('Видалити');
+    const menuItems = Array.from(
+      view.container.querySelectorAll(
+        `[id="${overflowMenuId}"] button, [id="${overflowMenuId}"] a`,
+      ),
+    );
+    expect(menuItems.map((item) => item.textContent?.trim())).toEqual([
+      'Редагувати',
+      'Завантажити все',
+      'Видалити',
+    ]);
+    const archiveLink = queryArchiveDownloadLink(view.container);
+    expect(archiveLink?.tagName).toBe('A');
+    expect(archiveLink?.getAttribute('href')).toBe('/api/rer-importer/messages/42/attachments.zip');
+    expect(archiveLink?.getAttribute('download')).toBe('attachments.zip');
   });
 
   it('anchors the overflow menu by position instead of a button element', async () => {
@@ -2202,31 +2352,6 @@ describe('MessageCard', () => {
     expect(activeView.container.querySelector('svg[data-testid="BookmarkIcon"]')).not.toBeNull();
   });
 
-  it('renders the frequency filter button when frequency is present and calls the handler', async () => {
-    const onAddFrequencyToFilter = vi.fn();
-    const view = await renderCard({
-      onAddFrequencyToFilter,
-    });
-    rendered.push(view);
-
-    const filterButton = view.container.querySelector('button[aria-label="В фільтр"]');
-    if (!(filterButton instanceof HTMLButtonElement))
-      throw new Error('frequency filter button not found');
-    await click(filterButton);
-
-    expect(onAddFrequencyToFilter).toHaveBeenCalledWith('153.6250');
-  });
-
-  it('hides the frequency filter button when frequency is missing or blank', async () => {
-    const view = await renderCard({
-      msg: buildMessage({ freq: '   ' }),
-      onAddFrequencyToFilter: vi.fn(),
-    });
-    rendered.push(view);
-
-    expect(view.container.querySelector('button[aria-label="В фільтр"]')).toBeNull();
-  });
-
   it('uses the selected important and bookmark labels in the toolbar', async () => {
     const view = await renderCard({
       msg: buildMessage({ important: true, bookmarked: true }),
@@ -2271,14 +2396,26 @@ describe('MessageCard', () => {
     await click(bookmarkButton);
     expect(onBookmark).toHaveBeenCalledTimes(1);
 
-    const editButton = view.container.querySelector('button[aria-label="Редагувати"]');
-    if (!(editButton instanceof HTMLButtonElement)) throw new Error('edit button not found');
-    await click(editButton);
-    expect(onEditDetails).toHaveBeenCalledTimes(1);
+    vi.useFakeTimers();
+    try {
+      await click(overflowButton);
+      await click(getButton(view.container, 'Редагувати'));
+      expect(view.container.querySelector('[aria-label="Додаткові дії повідомлення"]')).toBeNull();
+      expect(onEditDetails).toHaveBeenCalledTimes(1);
 
-    await click(overflowButton);
-    await click(getButton(view.container, 'Видалити'));
-    expect(onDelete).toHaveBeenCalledTimes(1);
+      await click(overflowButton);
+      await click(getButton(view.container, 'Видалити'));
+      expect(onDelete).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('renders overflow for an edit-only card', async () => {
+    const view = await renderCard({ onEditDetails: vi.fn(), onDelete: undefined });
+    rendered.push(view);
+
+    expect(view.container.querySelector('button[aria-label="Більше дій"]')).not.toBeNull();
   });
 
   it('omits edit and delete from the overflow menu when handlers are absent', async () => {
@@ -2590,7 +2727,7 @@ describe('MessageCard', () => {
     expect(view.container.textContent).toContain('GHOST');
   });
 
-  it('shows human and bot contribution badges and renders the bot-error prompt', async () => {
+  it('ECHO-3324 cancels the Popover anchored to the matching mixed-provenance tag', async () => {
     const onToggleTag = vi.fn();
     const onMarkBotTagWrong = vi.fn();
     const onCancelBotTagAction = vi.fn();
@@ -2608,8 +2745,8 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    expect(view.container.querySelector('[title="Боти"]')?.textContent).toContain('1');
-    expect(view.container.querySelector('[title="Користувачі"]')?.textContent).toContain('1');
+    expect(view.container.querySelector('.message-card-tag-provenance--mixed')).not.toBeNull();
+    expect(view.container.querySelector('[data-message-card-tag-id="3"] sup')).toBeNull();
     const tagButton = getButton(view.container, 'переміщення');
     const tipId = tagButton.getAttribute('aria-describedby');
     expect(tipId).toMatch(/^message-card-tag-3-tip-/);
@@ -2619,15 +2756,81 @@ describe('MessageCard', () => {
     expect(tipId != null ? document.getElementById(tipId)?.textContent : null).toContain(
       'Боти: bot (92%)',
     );
-    expect(view.container.textContent).toContain('бот помилився');
-    expect(view.container.textContent).toContain('закрити');
+    const popover = latestPopoverProps.at(-1);
+    expect(popover?.anchorEl).toBe(tagButton);
+    expect(popover?.anchorOrigin).toEqual({ vertical: 'bottom', horizontal: 'left' });
+    expect(popover?.transformOrigin).toEqual({ vertical: 'top', horizontal: 'left' });
+    const promptButtons = Array.from(view.container.querySelectorAll('[role="dialog"] button'));
+    expect(promptButtons.map((button) => button.textContent)).toEqual([
+      'СКАСУВАТИ',
+      'БОТ ПОМИЛИВСЯ',
+    ]);
 
-    await click(getButton(view.container, 'бот помилився'));
-    await click(getButton(view.container, 'закрити'));
+    await click(getButton(view.container, 'СКАСУВАТИ'));
 
-    expect(onMarkBotTagWrong).toHaveBeenCalledWith(42, 3);
     expect(onCancelBotTagAction).toHaveBeenCalledTimes(1);
+    expect(onMarkBotTagWrong).not.toHaveBeenCalled();
     expect(onToggleTag).not.toHaveBeenCalled();
+  });
+
+  it('ECHO-3324 confirms the matching bot action exactly once', async () => {
+    const onMarkBotTagWrong = vi.fn();
+    const onCancelBotTagAction = vi.fn();
+    const view = await renderCard({
+      botTagAction: { messageId: 42, tagId: 3 },
+      onMarkBotTagWrong,
+      onCancelBotTagAction,
+    });
+    rendered.push(view);
+
+    const promptButtons = Array.from(view.container.querySelectorAll('[role="dialog"] button'));
+    expect(promptButtons.map((button) => button.textContent)).toEqual([
+      'СКАСУВАТИ',
+      'БОТ ПОМИЛИВСЯ',
+    ]);
+    await click(getButton(view.container, 'БОТ ПОМИЛИВСЯ'));
+    expect(onMarkBotTagWrong).toHaveBeenCalledTimes(1);
+    expect(onMarkBotTagWrong).toHaveBeenCalledWith(42, 3);
+    expect(onCancelBotTagAction).not.toHaveBeenCalled();
+  });
+
+  it('ECHO-3324 retains the active tag anchor through unrelated card rerenders', async () => {
+    const onCancelBotTagAction = vi.fn();
+    const view = await renderCard({
+      botTagAction: { messageId: 42, tagId: 3 },
+      onCancelBotTagAction,
+      onMarkBotTagWrong: vi.fn(),
+    });
+    rendered.push(view);
+    const initialAnchor = latestPopoverProps.at(-1)?.anchorEl;
+
+    await act(async () => {
+      view.root.render(
+        <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
+          <MessageCard {...view.props} messageTextPreviewLines={40} />
+        </AudioTranscriptionPreferencesProvider>,
+      );
+    });
+
+    expect(latestPopoverProps.at(-1)?.anchorEl).toBe(initialAnchor);
+    expect(onCancelBotTagAction).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['read-only card', { readOnly: true }],
+    ['different message', { botTagAction: { messageId: 43, tagId: 3 } }],
+    ['missing tag', { botTagAction: { messageId: 42, tagId: 99 } }],
+  ] as const)('ECHO-3324 does not show a bot Popover for a %s', async (_, overrides) => {
+    const view = await renderCard({
+      botTagAction: { messageId: 42, tagId: 3 },
+      onCancelBotTagAction: vi.fn(),
+      onMarkBotTagWrong: vi.fn(),
+      ...overrides,
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('[role="dialog"]')).toBeNull();
+    expect(latestPopoverProps).toHaveLength(0);
   });
 
   it('keeps contribution description ids unique across mounted cards with the same tag', async () => {
@@ -2696,12 +2899,188 @@ describe('MessageCard', () => {
     expect(players).toHaveLength(2);
     const audioHost = view.container.querySelector('[data-audio-player-host]');
     expect(audioHost?.tagName).toBe('DIV');
-    expect(audioHost?.className).toBe(
-      'relative z-0 flex w-full min-h-12 min-w-0 max-w-[460px] items-stretch overflow-hidden pb-1',
-    );
-    expect(audioHost?.getAttribute('data-audio-player-min-height-px')).toBe('48');
+    expect(audioHost?.classList).toContain('message-card-audio-host');
+    expect(audioHost?.getAttribute('data-audio-player-min-height-px')).toBe('40');
     expect(audioHost?.getAttribute('data-audio-player-top-padding-px')).toBe('0');
     expect(audioHost?.getAttribute('data-audio-player-z-index')).toBe('0');
+  });
+
+  it('renders combined attachments without controls when previews are not collapsed', async () => {
+    const view = await renderCard({
+      msg: buildMessage({
+        images: ['https://example.test/files/image.png'],
+        media: [
+          {
+            id: 'video',
+            href: 'https://example.test/files/video.mp4',
+            contentType: 'video/mp4',
+          },
+          {
+            id: 'audio',
+            href: 'https://example.test/files/audio.mp3',
+            contentType: 'audio/mpeg',
+          },
+        ] as InboxMessage['media'],
+        coordsWithLocality: [
+          { coords: { lat: 49.1, lon: 37.2 }, locality: null },
+          { coords: { lat: 49.2, lon: 37.3 }, locality: null },
+        ],
+      }),
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('.message-card-attachment-counters')).toBeNull();
+    expect(
+      view.container.querySelectorAll('[data-picture-thumb-layout], [data-video-thumb-state]'),
+    ).toHaveLength(2);
+  });
+
+  it('omits attachment summaries and text dividers when the message has no body or attachments', async () => {
+    const view = await renderCard({
+      msg: buildMessage({
+        text: null,
+        textMarked: null,
+        images: [],
+        media: [],
+        coords: null,
+        extendedForm: null,
+      }),
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('.message-card-attachment-counters')).toBeNull();
+    expect(view.container.querySelector('.message-card-main .message-card-divider')).toBeNull();
+  });
+
+  it.each([
+    { displayMode: 'duty' as const, collapseMediaPreviews: true, attachmentState: 'collapsed' },
+    { displayMode: 'duty' as const, collapseMediaPreviews: false, attachmentState: 'expanded' },
+    { displayMode: 'analysis' as const, collapseMediaPreviews: true, attachmentState: 'collapsed' },
+    {
+      displayMode: 'analysis' as const,
+      collapseMediaPreviews: false,
+      attachmentState: 'expanded',
+    },
+  ])(
+    'ECHO-3324 preserves raw coordinate fallback in $displayMode with $attachmentState attachments',
+    async ({ displayMode, collapseMediaPreviews }) => {
+      const rawCoordinates = '  somewhere near the ridge\nwith no map point  ';
+      const trimmedCoordinates = 'somewhere near the ridge\nwith no map point';
+      const fallback = await renderCard({
+        displayMode,
+        collapseMediaPreviews,
+        msg: buildMessage({ coords: rawCoordinates }),
+      });
+      rendered.push(fallback);
+
+      const fallbackRow = fallback.container.querySelector('[data-message-card-raw-coordinates]');
+      expect(fallbackRow?.textContent).toContain('Координати:');
+      expect(fallbackRow?.textContent).toContain(trimmedCoordinates);
+      expect(
+        fallback.container.querySelector('[data-message-card-header-row="true"]')?.textContent,
+      ).not.toContain(trimmedCoordinates);
+      expect(fallback.container.querySelector('[data-attachment-kind="coordinates"]')).toBeNull();
+      expect(fallback.container.querySelector('[data-coordinate-preview-root]')).toBeNull();
+
+      const preview = await renderCard({
+        displayMode,
+        collapseMediaPreviews,
+        msg: buildMessage({ coords: '49.1, 37.2' }),
+      });
+      rendered.push(preview);
+
+      expect(preview.container.querySelector('[data-message-card-raw-coordinates]')).toBeNull();
+      if (collapseMediaPreviews) {
+        const coordinateControl = preview.container.querySelector(
+          '[data-attachment-kind="coordinates"]',
+        );
+        if (!(coordinateControl instanceof HTMLButtonElement)) {
+          throw new Error('coordinate control not found');
+        }
+        await click(coordinateControl);
+      } else {
+        expect(preview.container.querySelector('.message-card-attachment-counters')).toBeNull();
+      }
+      expect(preview.container.querySelector('[data-coordinate-preview-root]')).not.toBeNull();
+    },
+  );
+
+  it('only reserves a wide sidebar when tags or reports are visible', async () => {
+    const withoutSidebar = await renderCard({
+      tagsMap: {},
+      msg: buildMessage({ tags: [], inboxTags: [], parentMessages: [], intelligenceReports: [] }),
+    });
+    rendered.push(withoutSidebar);
+    expect(withoutSidebar.container.querySelector('.message-card-sidebar')).toBeNull();
+    expect(
+      withoutSidebar.container
+        .querySelector('.message-card-content-layout')
+        ?.classList.contains('message-card-content-layout--with-sidebar'),
+    ).toBe(false);
+
+    const withSidebar = await renderCard();
+    rendered.push(withSidebar);
+    expect(withSidebar.container.querySelector('.message-card-sidebar')).not.toBeNull();
+    expect(
+      withSidebar.container
+        .querySelector('.message-card-content-layout')
+        ?.classList.contains('message-card-content-layout--with-sidebar'),
+    ).toBe(true);
+  });
+
+  it.each([
+    ['metadata only', buildMessage({ text: null, extendedForm: null }), 0],
+    ['metadata and text', buildMessage({ extendedForm: null }), 1],
+    [
+      'metadata and attachment without text',
+      buildMessage({ text: null, extendedForm: null, images: ['https://example.test/image.png'] }),
+      1,
+    ],
+    [
+      'metadata, text, and attachment',
+      buildMessage({ extendedForm: null, images: ['https://example.test/image.png'] }),
+      2,
+    ],
+    ['metadata and empty body', buildMessage({ text: '', extendedForm: null }), 0],
+  ])(
+    'ECHO-3324 renders %s with the expected content-aware dividers',
+    async (_, msg, dividerCount) => {
+      const view = await renderCard({ msg });
+      rendered.push(view);
+      expect(
+        view.container.querySelectorAll('.message-card-main .message-card-divider'),
+      ).toHaveLength(dividerCount);
+    },
+  );
+
+  it('ECHO-3324 includes raw coordinates and visible sidebars in divider boundaries without trailing dividers', async () => {
+    const withRawCoordinates = await renderCard({
+      msg: buildMessage({ text: null, extendedForm: null, coords: 'somewhere near the ridge' }),
+    });
+    rendered.push(withRawCoordinates);
+    expect(
+      withRawCoordinates.container.querySelectorAll('.message-card-main .message-card-divider'),
+    ).toHaveLength(1);
+    expect(
+      withRawCoordinates.container.querySelector('.message-card-main-sidebar-divider'),
+    ).not.toBeNull();
+
+    const withoutSidebar = await renderCard({
+      tagsMap: {},
+      msg: buildMessage({
+        text: null,
+        extendedForm: null,
+        tags: [],
+        inboxTags: [],
+        parentMessages: [],
+        intelligenceReports: [],
+      }),
+    });
+    rendered.push(withoutSidebar);
+    expect(withoutSidebar.container.querySelector('.message-card-main-sidebar-divider')).toBeNull();
+    expect(
+      withoutSidebar.container.querySelector('.message-card-main .message-card-divider'),
+    ).toBeNull();
   });
 
   it('does not treat video/mpeg attachments as audio', async () => {
@@ -2723,6 +3102,12 @@ describe('MessageCard', () => {
 
     expect(view.container.querySelector('custom-audio-player')).toBeNull();
     expect(view.container.querySelector('button')).not.toBeNull();
+    const thumbnailDownload = view.container.querySelector(
+      'a[aria-label="Завантажити вкладення: demo.mpeg"]',
+    );
+    expect(thumbnailDownload).not.toBeNull();
+    expect(thumbnailDownload?.getAttribute('href')).toBe('https://example.test/files/demo.mpeg');
+    expect(thumbnailDownload?.getAttribute('download')).toBe('demo.mpeg');
   });
 
   it('treats application/mp4 attachments as video', () => {
@@ -2861,9 +3246,9 @@ describe('MessageCard', () => {
     expect(downloadLink?.getAttribute('data-mui-sx')).toContain('action.hover');
     expect(downloadLink?.getAttribute('data-mui-sx')).toContain('"fontSize":14');
     expect(downloadLink?.textContent).toBe('');
-    const audioRow = downloadLink?.closest('.audio-player-row');
+    const audioRow = player?.closest('.audio-player-row');
     expect(audioRow?.classList).toContain('items-stretch');
-    expect(downloadLink?.parentElement?.classList).toContain('self-stretch');
+    expect(downloadLink?.closest('.audio-player-row')).toBe(audioRow);
     expect(downloadLink?.parentElement?.classList).toContain('items-center');
   });
 
@@ -2961,6 +3346,10 @@ describe('MessageCard', () => {
     expect(transcriptions[0]?.tagName).toBe('BLOCKQUOTE');
     expect(transcriptions[0]?.classList).toContain('audio-transcription');
     expect(transcriptions[0]?.textContent).toBe('Перший рядок.\nДругий рядок.');
+    expect(
+      transcriptions[0]?.querySelector('[data-audio-transcription-icon="robot"]'),
+    ).not.toBeNull();
+    expect(transcriptions[0]?.querySelector('[data-audio-transcription-arrow]')).toBeNull();
     expect(view.container.querySelector('button[aria-label="Транскрибувати аудіо"]')).toBeNull();
   });
 
@@ -3052,19 +3441,40 @@ describe('MessageCard', () => {
 
     const transcription = view.container.querySelector('[data-audio-transcription]') as HTMLElement;
     expect(transcription.classList).toContain('audio-transcription--clamped');
-    expect(transcription.textContent).toContain('ПОКАЗАТИ БІЛЬШЕ');
+    expect(transcription.querySelector('[data-audio-transcription-icon="robot"]')).not.toBeNull();
+    expect(transcription.querySelector('[data-audio-transcription-arrow="down"]')).not.toBeNull();
+    expect(transcription.querySelector('[data-audio-transcription-arrow="up"]')).toBeNull();
+    expect(transcription.textContent).not.toContain('ПОКАЗАТИ БІЛЬШЕ');
     expect(transcription.getAttribute('aria-expanded')).toBe('false');
+
+    await act(async () => {
+      transcription.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+
+    expect(transcription.getAttribute('aria-expanded')).toBe('true');
+    expect(transcription.querySelector('[data-audio-transcription-arrow="up"]')).not.toBeNull();
+
+    await act(async () => {
+      transcription.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    });
+
+    expect(transcription.getAttribute('aria-expanded')).toBe('false');
+    expect(transcription.querySelector('[data-audio-transcription-arrow="down"]')).not.toBeNull();
 
     await click(transcription);
 
     expect(transcription.classList).not.toContain('audio-transcription--clamped');
+    expect(transcription.querySelector('[data-audio-transcription-arrow="down"]')).toBeNull();
+    expect(transcription.querySelector('[data-audio-transcription-arrow="up"]')).not.toBeNull();
     expect(transcription.textContent).not.toContain('ПОКАЗАТИ БІЛЬШЕ');
     expect(transcription.getAttribute('aria-expanded')).toBe('true');
 
     await click(transcription);
 
     expect(transcription.classList).toContain('audio-transcription--clamped');
-    expect(transcription.textContent).toContain('ПОКАЗАТИ БІЛЬШЕ');
+    expect(transcription.querySelector('[data-audio-transcription-arrow="down"]')).not.toBeNull();
+    expect(transcription.querySelector('[data-audio-transcription-arrow="up"]')).toBeNull();
+    expect(transcription.textContent).not.toContain('ПОКАЗАТИ БІЛЬШЕ');
     expect(transcription.getAttribute('aria-expanded')).toBe('false');
   });
 
@@ -3216,7 +3626,10 @@ describe('MessageCard', () => {
       },
     });
     rendered.push(singleAttachment);
-    expect(singleAttachment.container.textContent).not.toContain('Завантажити все');
+    expect(singleAttachment.container.textContent).not.toContain(
+      MESSAGE_CARD_ATTACHMENTS_ARCHIVE_LABEL,
+    );
+    expect(singleAttachment.container.querySelector('button[aria-label="Більше дій"]')).toBeNull();
 
     const multipleAttachments = await renderCard({
       msg: {
@@ -3241,22 +3654,17 @@ describe('MessageCard', () => {
     });
     rendered.push(multipleAttachments);
 
-    const archiveLink = multipleAttachments.container.querySelector(
-      'a[aria-label="Завантажити все"]',
-    );
+    expect(queryArchiveDownloadLink(multipleAttachments.container)).toBeNull();
+    await openOverflowMenu(multipleAttachments.container);
+    const archiveLink = queryArchiveDownloadLink(multipleAttachments.container);
     expect(archiveLink).not.toBeNull();
     expect(archiveLink?.tagName).toBe('A');
     expect(archiveLink?.getAttribute('href')).toBe('/api/rer-importer/messages/42/attachments.zip');
     expect(archiveLink?.getAttribute('download')).toBe('attachments.zip');
+    expect(archiveLink?.getAttribute('aria-label')).toBe(MESSAGE_CARD_ATTACHMENTS_ARCHIVE_LABEL);
+    expect(archiveLink?.textContent).toContain(MESSAGE_CARD_ATTACHMENTS_ARCHIVE_LABEL);
     expect(archiveLink?.querySelector('[data-testid="DownloadIcon"]')).not.toBeNull();
     expect(archiveLink?.querySelector('[data-testid="DownloadOutlinedIcon"]')).toBeNull();
-    expect(archiveLink?.getAttribute('data-mui-size')).toBe('small');
-    expect(archiveLink?.getAttribute('data-mui-variant')).toBe('outlined');
-    expect(archiveLink?.getAttribute('data-mui-sx')).toContain('text.primary');
-    expect(archiveLink?.getAttribute('data-mui-sx')).toContain('divider');
-    expect(archiveLink?.getAttribute('data-mui-sx')).toContain('action.hover');
-    expect(archiveLink?.parentElement?.parentElement?.className).toContain('mt-1');
-    expect(archiveLink?.parentElement?.parentElement?.className).toContain('items-start');
   });
 
   it('guards each download key independently for its own cooldown', async () => {
@@ -3286,9 +3694,11 @@ describe('MessageCard', () => {
       });
       rendered.push(firstCard);
 
-      const archive = firstCard.container.querySelector('a[aria-label="Завантажити все"]');
-      const downloadLinks = Array.from(firstCard.container.querySelectorAll('a[download]'));
-      const individualLinks = downloadLinks.filter((link) => link !== archive);
+      await openOverflowMenu(firstCard.container);
+      let archive = queryArchiveDownloadLink(firstCard.container);
+      const individualLinks = Array.from(
+        firstCard.container.querySelectorAll('a[download]'),
+      ).filter((link) => link !== archive);
       const firstIndividual = individualLinks[0];
       const secondIndividual = individualLinks[1];
       expect(archive).not.toBeNull();
@@ -3323,6 +3733,9 @@ describe('MessageCard', () => {
       });
       const archiveClick = await dispatchCancelableClick(archive as HTMLElement);
       expect(archiveClick.defaultPrevented).toBe(false);
+      expect(queryArchiveDownloadLink(firstCard.container)).toBeNull();
+      await openOverflowMenu(firstCard.container);
+      archive = queryArchiveDownloadLink(firstCard.container);
       expect(archive?.getAttribute('aria-label')).toBe('Завантаження…');
       expect(firstIndividual?.getAttribute('disabled')).not.toBeNull();
       expect(secondIndividual?.getAttribute('disabled')).not.toBeNull();
@@ -3343,7 +3756,7 @@ describe('MessageCard', () => {
       await act(async () => {
         vi.advanceTimersByTime(1_000);
       });
-      expect(archive?.getAttribute('aria-label')).toBe('Завантажити все');
+      expect(archive?.getAttribute('aria-label')).toBe(MESSAGE_CARD_ATTACHMENTS_ARCHIVE_LABEL);
       expect(archive?.getAttribute('disabled')).toBeNull();
     } finally {
       fetchMock.mockRestore();
@@ -3352,12 +3765,11 @@ describe('MessageCard', () => {
   });
 
   it.each([
-    ['exactly at the limit', [RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES, 0], true],
-    ['over the limit', [RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES, 1], false],
-    ['missing metadata', [undefined, 1], false],
-    ['negative metadata', [-1, 1], false],
-    ['non-finite metadata', [Number.NaN, 1], false],
-  ])('validates archive visibility for %s metadata', async (_, sizes, expected) => {
+    ['known metadata', [1024, 2048]],
+    ['missing metadata', [undefined, 1]],
+    ['negative metadata', [-1, 1]],
+    ['non-finite metadata', [Number.NaN, 1]],
+  ])('shows archive action for multiple attachments with %s', async (_, sizes) => {
     const attachments = sizes.map((sizeBytes, index) => ({
       id: `size-${index}`,
       href: `/api/messenger/media/size-${index}`,
@@ -3366,12 +3778,13 @@ describe('MessageCard', () => {
       ...(sizeBytes === undefined ? {} : { sizeBytes }),
     })) as InboxMessage['media'];
 
-    expect(canDownloadAllMessageAttachments(attachments)).toBe(expected);
+    expect(canDownloadAllMessageAttachments(attachments)).toBe(true);
     const view = await renderCard({
       msg: { ...buildMessage(), media: attachments },
     });
     rendered.push(view);
-    expect(view.container.querySelector('a[aria-label="Завантажити все"]') !== null).toBe(expected);
+    await openOverflowMenu(view.container);
+    expect(queryArchiveDownloadLink(view.container)).not.toBeNull();
   });
 
   it('keeps individual downloads visible when archive metadata is unavailable', async () => {
@@ -3396,14 +3809,14 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    expect(view.container.querySelector('a[aria-label="Завантажити все"]')).toBeNull();
+    expect(queryArchiveDownloadLink(view.container)).toBeNull();
     expect(view.container.querySelectorAll('a[download]')).toHaveLength(2);
+    await openOverflowMenu(view.container);
+    expect(queryArchiveDownloadLink(view.container)).not.toBeNull();
+    expect(view.container.querySelectorAll('a[download]')).toHaveLength(3);
   });
 
-  it.each([
-    [RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES, true],
-    [RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES + 1, false],
-  ])('applies the archive file-count limit at %s attachments', async (count, expected) => {
+  it.each([2, 20])('shows archive action for %s attachments', async (count) => {
     const media = Array.from({ length: count }, (_, index) => ({
       id: `count-${index}`,
       href: `/api/messenger/media/count-${index}`,
@@ -3414,8 +3827,79 @@ describe('MessageCard', () => {
     const view = await renderCard({ msg: { ...buildMessage(), media } });
     rendered.push(view);
 
-    expect(view.container.querySelector('a[aria-label="Завантажити все"]') !== null).toBe(expected);
-    expect(view.container.querySelectorAll('a[download]')).toHaveLength(count + (expected ? 1 : 0));
+    await openOverflowMenu(view.container);
+    expect(queryArchiveDownloadLink(view.container)).not.toBeNull();
+    expect(view.container.querySelectorAll('a[download]')).toHaveLength(count + 1);
+  });
+
+  it('hides archive action when attachment count exceeds backend limit', async () => {
+    const media = Array.from({ length: 21 }, (_, index) => ({
+      id: `count-${index}`,
+      href: `/api/messenger/media/count-${index}`,
+      contentType: 'text/plain',
+      fileName: `count-${index}.txt`,
+      sizeBytes: 1,
+    })) as InboxMessage['media'];
+
+    expect(canDownloadAllMessageAttachments(media)).toBe(false);
+    const view = await renderCard({ msg: { ...buildMessage(), media } });
+    rendered.push(view);
+
+    expect(view.container.querySelector('button[aria-label="Більше дій"]')).toBeNull();
+    expect(queryArchiveDownloadLink(view.container)).toBeNull();
+    expect(view.container.querySelectorAll('a[download]')).toHaveLength(21);
+  });
+
+  it('hides archive action when known attachment sizes exceed backend limit', async () => {
+    const media = [
+      {
+        id: 'large-first',
+        href: '/api/messenger/media/large-first',
+        contentType: 'video/mp4',
+        fileName: 'large-first.mp4',
+        sizeBytes: 200 * 1024 * 1024,
+      },
+      {
+        id: 'large-second',
+        href: '/api/messenger/media/large-second',
+        contentType: 'video/mp4',
+        fileName: 'large-second.mp4',
+        sizeBytes: 1,
+      },
+    ] as InboxMessage['media'];
+
+    expect(canDownloadAllMessageAttachments(media)).toBe(false);
+    const view = await renderCard({ msg: { ...buildMessage(), media } });
+    rendered.push(view);
+
+    expect(view.container.querySelector('button[aria-label="Більше дій"]')).toBeNull();
+    expect(queryArchiveDownloadLink(view.container)).toBeNull();
+    expect(view.container.querySelectorAll('a[download]')).toHaveLength(2);
+  });
+
+  it('keeps archive action available for read-only cards', async () => {
+    const media = [
+      {
+        id: 'readonly-first',
+        href: '/api/messenger/media/readonly-first',
+        contentType: 'text/plain',
+        fileName: 'readonly-first.txt',
+        sizeBytes: 1,
+      },
+      {
+        id: 'readonly-second',
+        href: '/api/messenger/media/readonly-second',
+        contentType: 'text/plain',
+        fileName: 'readonly-second.txt',
+        sizeBytes: 1,
+      },
+    ] as InboxMessage['media'];
+    const view = await renderCard({ readOnly: true, msg: { ...buildMessage(), media } });
+    rendered.push(view);
+
+    expect(view.container.querySelector('button[aria-label="Позначити як важливе"]')).toBeNull();
+    await openOverflowMenu(view.container);
+    expect(queryArchiveDownloadLink(view.container)).not.toBeNull();
   });
 
   it.each([
@@ -3423,39 +3907,40 @@ describe('MessageCard', () => {
     ['audio', 'audio/mpeg', 'audio.mp3'],
     ['video', 'video/mp4', 'video.mp4'],
     ['document', 'text/plain', 'document.txt'],
-  ])('places the archive action below the %s attachment area', async (_, contentType, fileName) => {
-    const view = await renderCard({
-      msg: {
-        ...buildMessage(),
-        media: [
-          {
-            id: `${fileName}-1`,
-            href: `/media/${fileName}-1`,
-            contentType,
-            fileName,
-            sizeBytes: 1,
-          },
-          {
-            id: `${fileName}-2`,
-            href: `/media/${fileName}-2`,
-            contentType,
-            fileName,
-            sizeBytes: 1,
-          },
-        ] as InboxMessage['media'],
-      },
-    });
-    rendered.push(view);
+  ])(
+    'places the archive action in the overflow menu for %s attachments',
+    async (_, contentType, fileName) => {
+      const view = await renderCard({
+        msg: {
+          ...buildMessage(),
+          media: [
+            {
+              id: `${fileName}-1`,
+              href: `/media/${fileName}-1`,
+              contentType,
+              fileName,
+              sizeBytes: 1,
+            },
+            {
+              id: `${fileName}-2`,
+              href: `/media/${fileName}-2`,
+              contentType,
+              fileName,
+              sizeBytes: 1,
+            },
+          ] as InboxMessage['media'],
+        },
+      });
+      rendered.push(view);
 
-    const archiveLink = view.container.querySelector('a[aria-label="Завантажити все"]');
-    expect(archiveLink).not.toBeNull();
-    const attachmentArea = archiveLink?.parentElement?.parentElement;
-    expect(attachmentArea?.tagName).toBe('DIV');
-    expect(attachmentArea?.className).toContain('mt-1');
-    expect(attachmentArea?.className).toContain('items-start');
-    expect(attachmentArea?.children).toHaveLength(1);
-    expect(archiveLink?.querySelector('[data-testid="DownloadIcon"]')).not.toBeNull();
-  });
+      expect(queryArchiveDownloadLink(view.container)).toBeNull();
+      await openOverflowMenu(view.container);
+      const archiveLink = queryArchiveDownloadLink(view.container);
+      expect(archiveLink).not.toBeNull();
+      expect(archiveLink?.getAttribute('aria-label')).toBe(MESSAGE_CARD_ATTACHMENTS_ARCHIVE_LABEL);
+      expect(archiveLink?.querySelector('[data-testid="DownloadIcon"]')).not.toBeNull();
+    },
+  );
 
   it('renders document attachments with preview and download affordances', async () => {
     const view = await renderCard({
@@ -3588,7 +4073,7 @@ describe('MessageCard', () => {
     expect(latestDocumentDialogProps.at(-1)?.document?.kind).toBe('md');
   });
 
-  it('shows selected tags first and can reveal the rest on demand', async () => {
+  it('ECHO-3324 keeps compact tag order and moves collapse after the expanded tag flow', async () => {
     const rectSpy = vi
       .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
       .mockImplementation(function (this: HTMLElement) {
@@ -3612,7 +4097,6 @@ describe('MessageCard', () => {
       const view = await renderCard({ tagsLayout: 'compact' });
       rendered.push(view);
 
-      // Compact layout: selected (inbox) tag first, then the rest; row packs until width + «розгорнути» reserve.
       expect(view.container.textContent).toContain('переміщення');
       expect(view.container.textContent).toContain('розгорнути');
       expect(view.container.textContent).not.toContain('іфо');
@@ -3627,6 +4111,13 @@ describe('MessageCard', () => {
       expect(view.container.textContent).toContain('палітра');
       expect(view.container.textContent).toContain('іфо');
       expect(view.container.textContent).toContain('розвідка');
+      const collapseButton = getButton(view.container, 'згорнути');
+      expect(collapseButton.parentElement?.lastElementChild).toBe(collapseButton);
+
+      await click(collapseButton);
+
+      expect(view.container.textContent).toContain('розгорнути');
+      expect(view.container.textContent).not.toContain('іфо');
     } finally {
       rectSpy.mockRestore();
     }
@@ -3797,7 +4288,7 @@ describe('MessageCard', () => {
     }
   });
 
-  it('repacks compact first row when tag metadata changes while expanded', async () => {
+  it('ECHO-3324 repacks the compact first row when tag metadata changes while expanded', async () => {
     const getCompactFirstRowLabels = (container: HTMLElement) => {
       const grid = container.querySelector('.grid');
       const row = grid?.firstElementChild;
@@ -3867,8 +4358,12 @@ describe('MessageCard', () => {
         );
       });
 
+      expect(view.container.textContent).toContain('широкий рух');
       expect(view.container.textContent).toContain('згорнути');
+      await click(getButton(view.container, 'згорнути'));
+      expect(view.container.textContent).toContain('розгорнути');
       expect(getCompactFirstRowLabels(view.container)).toEqual(['широкий рух']);
+      expect(view.container.textContent).not.toContain('іфо');
     } finally {
       rectSpy.mockRestore();
     }
@@ -3958,6 +4453,11 @@ describe('MessageCard', () => {
       expect(thumb?.getAttribute('data-picture-thumb-state')).toBe('loaded');
       expect(thumb?.getAttribute('data-picture-thumb-layout')).toBe('multi');
     });
+    const downloadLinks = view.container.querySelectorAll(
+      'a[aria-label^="Завантажити вкладення:"]',
+    );
+    expect(downloadLinks).toHaveLength(2);
+    expect(view.container.querySelector('a[download="attachment.jpg"]')).not.toBeNull();
   });
 
   it('keeps the image thumbnail footprint visible when the image fails to load', async () => {

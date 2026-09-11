@@ -46,6 +46,29 @@ pub struct LoginReq {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub enum LoginRsp {
+    Authenticated,
+    Needs2faSetup {
+        challenge_id: String,
+        qr_base64: String,
+        manual_key: String,
+    },
+    Needs2fa {
+        challenge_id: String,
+    },
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct Confirm2faReq {
+    pub challenge_id: String,
+    pub token: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct SettingsSaveReq {
     pub sigint_zone_id: Option<i64>,
 }
@@ -76,6 +99,7 @@ pub struct Login {
     pub deactivation_reason: Option<DeactivationReasonType>,
     pub description: Option<String>,
     pub password_auth_enabled: bool,
+    pub totp_enabled: bool,
 }
 
 #[derive(
@@ -139,6 +163,7 @@ pub struct UpdateLoginReq {
     pub deactivation_reason: Option<DeactivationReasonType>,
     pub description: Option<String>,
     pub password_auth_enabled: Option<bool>,
+    pub clear_totp: Option<bool>,
 }
 
 #[derive(

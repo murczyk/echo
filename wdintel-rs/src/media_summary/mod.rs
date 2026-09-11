@@ -588,6 +588,7 @@ mod tests {
         let media = signal_message_media::ActiveModel {
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
             content_type: Set("image/png".to_string()),
             file_ext: Set(Some("png".to_string())),
             file_name: Set(Some("scan.png".to_string())),

@@ -50,6 +50,17 @@ fn systemd_listener() -> Result<Option<TcpListener>, AppError> {
 }
 
 pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
+    Ok(new_env_with_initialization(mode, true).await.c(h!())?)
+}
+
+pub(crate) async fn new_readonly_env(mode: Mode) -> Result<Arc<Env>, AppError> {
+    Ok(new_env_with_initialization(mode, false).await.c(h!())?)
+}
+
+async fn new_env_with_initialization(
+    mode: Mode,
+    initialize: bool,
+) -> Result<Arc<Env>, AppError> {
     let config = read_config(mode).c(h!())?;
     let metrics = crate::telemetry::Metrics::from_config(&config);
     let redis = new_redis(&config).await.c(h!())?;
@@ -76,12 +87,14 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     };
     let mil_geo = MilGeo::new(&mk_conn_string(&config)[..]);
     let dbx = crate::new_pg_pool_from_config(&config).await.c(h!())?;
-    crate::ai_agent::dispatcher::import_legacy_config(
-        &dbx,
-        config.ai_agent_dispatcher.as_ref(),
-    )
-    .await
-    .c(h!())?;
+    if initialize {
+        crate::ai_agent::dispatcher::import_legacy_config(
+            &dbx,
+            config.ai_agent_dispatcher.as_ref(),
+        )
+        .await
+        .c(h!())?;
+    }
     let echo_gpu_client = Arc::new(
         echo_gpu_client::EchoGpuClient::new(
             dbx.clone(),
@@ -199,6 +212,9 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         replicas,
         analytics,
         tag_keyword_regex_cache: Arc::new(RwLock::new(Default::default())),
+        orbit_matcher_cache: Arc::new(tokio::sync::RwLock::new(
+            Default::default(),
+        )),
         session_activity_tx,
         session_activity_rx: Arc::new(tokio::sync::Mutex::new(
             session_activity_rx,
@@ -211,12 +227,21 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         )),
         palitra_worker_context: Arc::new(Default::default()),
     };
-    crate::location::aor_config::init_aor_location_config(
-        &dbx,
-        settlements.clone(),
-    )
-    .await
-    .c(h!())?;
+    if initialize {
+        crate::location::aor_config::init_aor_location_config(
+            &dbx,
+            settlements.clone(),
+        )
+        .await
+        .c(h!())?;
+    } else {
+        crate::location::aor_config::refresh_settlements_aor_map(
+            &dbx,
+            settlements.clone(),
+        )
+        .await
+        .c(h!())?;
+    }
     Ok(Arc::new(env))
 }
 
@@ -512,11 +537,15 @@ fn spawn_background_workers(
             middleware::activity_details_worker(redis, greptimedb).await;
         });
     }
-    if !config.disable_cleanup_networks_worker.unwrap_or(false) {
-        spawn_named_worker("cleanup_networks_worker", bg_set, async move {
-            crate::sigint::network::cleanup_networks_worker(&dbx4).await;
-        });
-    }
+    let cleanup_networks_enabled =
+        !config.disable_cleanup_networks_worker.unwrap_or(false);
+    spawn_named_worker("network_maintenance_worker", bg_set, async move {
+        crate::sigint::network::network_maintenance_worker(
+            &dbx4,
+            cleanup_networks_enabled,
+        )
+        .await;
+    });
     if config.fill_comp_freq_worker {
         spawn_named_worker("fill_comp_freq_worker", bg_set, async move {
             crate::rer_importer::reports::fill_comp_freq_worker(&dbx6).await;
@@ -848,6 +877,10 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::inbox::update_inbox_cursor)
             .service(crate::rer_importer::inbox::inbox_item_context)
             .service(crate::rer_importer::inbox::messages_by_id)
+            .service(
+                crate::rer_importer::inbox::messages_by_id_with_metadata,
+            )
+            .service(crate::rer_importer::inbox::messages_by_uuid)
             .service(crate::rer_importer::inbox::get_freq_pelengs_summary)
             .service(crate::rer_importer::analysis::stats_deprecated)
             .service(crate::rer_importer::analysis::aor_stats)
@@ -1008,6 +1041,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::messenger::restapi_errors::signal_restapi_error_latest)
             .service(crate::messenger::restapi_errors::signal_restapi_error_counts)
             .service(crate::users::user_login)
+            .service(crate::users::user_confirm_2fa)
             .service(crate::users::user_test_api_login)
             .service(crate::users::api_user)
             .service(crate::users::api_user_info)
@@ -1197,6 +1231,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::freq::list_groups_by_freqs_per_day)
             .service(crate::sigint::freq::latest_frequencies)
             .service(crate::sigint::network::network_list)
+            .service(crate::sigint::network::activity_decision::list_network_activity_decisions)
             .service(crate::sigint::network::find_live_networks)
             .service(crate::sigint::network::network_info_one)
             .service(crate::sigint::network::network_info_batch_id)

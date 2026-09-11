@@ -51,7 +51,26 @@ vi.mock('@mui/material', () => ({
       </button>
     );
   }),
+  CircularProgress: (props: Record<string, unknown>) => <span {...props}>loading</span>,
+  IconButton: ({
+    children,
+    component,
+    href,
+    target,
+    rel,
+    ...props
+  }: {
+    children?: ReactNode;
+    component?: ElementType;
+    href?: string;
+    target?: string;
+    rel?: string;
+  } & Record<string, unknown>) => {
+    const Component = component ?? 'button';
+    return createElement(Component, { href, target, rel, ...props }, children);
+  },
   Skeleton: () => <span data-skeleton />,
+  Tooltip: ({ children }: { children?: ReactNode }) => <>{children}</>,
   Typography: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
 }));
 
@@ -85,12 +104,21 @@ async function renderThumb(attachment: MessageMediaInfo) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
+  const onOpen = vi.fn();
 
   await act(async () => {
-    root.render(<MessageCardVideoThumb attachment={attachment} index={0} onOpen={vi.fn()} />);
+    root.render(
+      <MessageCardVideoThumb
+        attachment={attachment}
+        index={0}
+        onOpen={onOpen}
+        isDownloadStarting={() => false}
+        onDownloadStart={() => true}
+      />,
+    );
   });
 
-  return { container, root };
+  return { container, root, onOpen };
 }
 
 describe('MessageCardVideoThumb', () => {
@@ -283,11 +311,17 @@ describe('MessageCardVideoThumb', () => {
         'x-messenger-media-thumbnail-status': 'failed',
       }),
     );
-    const { container, root } = await renderThumb(buildAttachment());
+    const { container, root, onOpen } = await renderThumb(buildAttachment());
 
     expect(container.querySelector('[data-video-thumb-state="failed"]')).not.toBeNull();
     expect(container.querySelector('[data-skeleton]')).toBeNull();
     expect(container.querySelector('[data-play-icon]')).not.toBeNull();
+    const fallbackButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Відкрити відео"]',
+    );
+    expect(fallbackButton?.disabled).toBe(false);
+    fallbackButton?.click();
+    expect(onOpen).toHaveBeenCalledWith(0);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(10 * 60 * 1_000);
     });

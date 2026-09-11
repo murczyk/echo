@@ -156,9 +156,7 @@ describe('buildMessageCardTagRows', () => {
     expect(rows[0]).toMatchObject({
       tagId: 99,
       isSet: true,
-      showBadge: true,
-      humanContribsLen: 1,
-      botContribsLen: 1,
+      provenance: 'mixed',
     });
     expect(rows[0]?.tip).toBe('Користувачі: delta1\nБоти: classifier-v2 (72%)');
   });
@@ -176,6 +174,28 @@ describe('buildMessageCardTagRows', () => {
     );
 
     expect(rows[0]?.tip).toBe('Користувачі: (ваш вибір)');
+  });
+
+  it('ECHO-3324 marks bot-only selected tags with robot provenance', () => {
+    const rows = buildMessageCardTagRows(
+      buildMessage({
+        tags: [99],
+        inboxTags: [
+          {
+            id: 1,
+            tagId: 99,
+            confidence: 0.86,
+            login: null,
+            model: 'classifier-v2',
+            organismId: null,
+          },
+        ],
+      }),
+      tagsMap,
+      [99],
+    );
+
+    expect(rows[0]).toMatchObject({ tagId: 99, isSet: true, provenance: 'robot' });
   });
 
   it('shows only human tag contributions from the selected organism', () => {
@@ -196,14 +216,12 @@ describe('buildMessageCardTagRows', () => {
     expect(rows[0]).toMatchObject({
       tagId: 99,
       isSet: true,
-      humanContribsLen: 1,
-      botContribsLen: 0,
+      provenance: 'human',
     });
     expect(rows[1]).toMatchObject({
       tagId: 2,
       isSet: false,
-      humanContribsLen: 0,
-      botContribsLen: 0,
+      provenance: 'none',
     });
   });
 });

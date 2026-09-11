@@ -40,7 +40,14 @@ const hoisted = vi.hoisted(() => ({
   showArrowResult: vi.fn(),
   setWatchModeByFeedId: vi.fn(),
   setLoadingNewerFeedIds: vi.fn(),
-  beginFollowTail: vi.fn(() => 17),
+  beginExplicitNavigation: vi.fn(() => ({ feedId: 'mf-0', generation: 17 })),
+  isExplicitNavigationCurrent: vi.fn(() => true),
+  registerExplicitLanding: vi.fn(),
+  getExplicitScrollNavigation: vi.fn(),
+  registerExplicitLoading: vi.fn(() => true),
+  cancelExplicitNavigation: vi.fn(() => true),
+  registerExplicitScheduledWork: vi.fn(() => true),
+  clearExplicitScheduledWork: vi.fn(),
   addPalitraHighlightBlacklistEntry: vi.fn(),
 }));
 
@@ -215,7 +222,14 @@ function TestHarness(props: {
     saveFilterNameByFeedId,
     setSaveFilterNameByFeedId,
     dutyDisableAutoScroll: false,
-    beginFollowTail: hoisted.beginFollowTail,
+    beginExplicitNavigation: hoisted.beginExplicitNavigation,
+    isExplicitNavigationCurrent: hoisted.isExplicitNavigationCurrent,
+    registerExplicitLanding: hoisted.registerExplicitLanding,
+    getExplicitScrollNavigation: hoisted.getExplicitScrollNavigation,
+    registerExplicitLoading: hoisted.registerExplicitLoading,
+    cancelExplicitNavigation: hoisted.cancelExplicitNavigation,
+    registerExplicitScheduledWork: hoisted.registerExplicitScheduledWork,
+    clearExplicitScheduledWork: hoisted.clearExplicitScheduledWork,
   });
   props.apiRef.current = {
     ...actions,
@@ -251,6 +265,8 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+let explicitLanding: (() => void) | null = null;
+
 describe('useRerDutyMessageActions', () => {
   let container: HTMLElement;
   let root: Root;
@@ -270,8 +286,32 @@ describe('useRerDutyMessageActions', () => {
     hoisted.loadFeedNewerMessages.mockResolvedValue({ ok: true, addedCount: 0 });
     hoisted.loadFeedInitialMessages.mockResolvedValue(undefined);
     hoisted.showArrowResult.mockReset();
-    hoisted.beginFollowTail.mockReset();
-    hoisted.beginFollowTail.mockReturnValue(17);
+    explicitLanding = null;
+    hoisted.beginExplicitNavigation.mockReset();
+    hoisted.beginExplicitNavigation.mockReturnValue({ feedId: 'mf-0', generation: 17 });
+    hoisted.isExplicitNavigationCurrent.mockReset();
+    hoisted.isExplicitNavigationCurrent.mockReturnValue(true);
+    hoisted.registerExplicitLanding.mockReset();
+    hoisted.registerExplicitLanding.mockImplementation((_operation, _target, complete) => {
+      explicitLanding = complete;
+      return true;
+    });
+    hoisted.getExplicitScrollNavigation.mockReset();
+    hoisted.getExplicitScrollNavigation.mockImplementation(() => ({
+      feedId: 'mf-0',
+      generation: 17,
+      targetId: 10,
+      isCurrent: () => true,
+      onLanded: () => explicitLanding?.(),
+      onUnavailable: vi.fn(),
+    }));
+    hoisted.registerExplicitLoading.mockReset();
+    hoisted.registerExplicitLoading.mockReturnValue(true);
+    hoisted.cancelExplicitNavigation.mockReset();
+    hoisted.cancelExplicitNavigation.mockReturnValue(true);
+    hoisted.registerExplicitScheduledWork.mockReset();
+    hoisted.registerExplicitScheduledWork.mockReturnValue(true);
+    hoisted.clearExplicitScheduledWork.mockReset();
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -316,20 +356,26 @@ describe('useRerDutyMessageActions', () => {
 
     await act(async () => {
       await apiRef.current!.handleArrowClick('mf-0');
+      await vi.advanceTimersByTimeAsync(20);
     });
 
     expect(hoisted.requestValidatedInboxCount).toHaveBeenCalledTimes(1);
     expect(hoisted.requestValidatedInboxCount).toHaveBeenCalledWith('mf-0');
     expect(hoisted.fetchInboxCount).not.toHaveBeenCalled();
-    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenCalledWith('smooth', {
-      wakeIdleOffload: true,
-    });
+    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenCalledTimes(1);
     expect(hoisted.loadFeedNewerMessages).toHaveBeenCalledTimes(1);
     expect(hoisted.loadFeedNewerMessages).toHaveBeenCalledWith(
       'mf-0',
       expect.objectContaining({ scrollToEndAfterLoad: true }),
     );
-    expect(hoisted.catchUpFeedUnreadToTail).toHaveBeenCalledWith('mf-0');
+    expect(hoisted.catchUpFeedUnreadToTail).not.toHaveBeenCalled();
+    (
+      hoisted.getExplicitScrollNavigation.mock.results.at(-1)?.value as { onLanded: () => void }
+    ).onLanded();
+    expect(hoisted.catchUpFeedUnreadToTail).toHaveBeenCalledWith('mf-0', {
+      id: 10,
+      timestamp: null,
+    });
   });
 
   it('does not clear unread state when arrow newer load fails', async () => {
@@ -412,7 +458,7 @@ describe('useRerDutyMessageActions', () => {
     expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual([42, 3, 8]);
   });
 
-  it('scrolls immediately while arrow count validation is pending', async () => {
+  it('does not scroll before arrow count validation establishes a target', async () => {
     const count = deferred<{
       feedId: string;
       quantity: number;
@@ -435,13 +481,14 @@ describe('useRerDutyMessageActions', () => {
     });
 
     const click = apiRef.current!.handleArrowClick('mf-0');
-    expect(scrollToEnd).toHaveBeenCalledWith('smooth', { wakeIdleOffload: true });
-    expect(hoisted.beginFollowTail).toHaveBeenCalledWith('mf-0');
+    expect(scrollToEnd).not.toHaveBeenCalled();
+    expect(hoisted.beginExplicitNavigation).toHaveBeenCalledWith('mf-0');
     expect(hoisted.loadFeedNewerMessages).not.toHaveBeenCalled();
 
     await act(async () => {
       count.resolve({ feedId: 'mf-0', quantity: 1, cursorId: 10, hasItems: true });
       await click;
+      await vi.advanceTimersByTimeAsync(20);
     });
     expect(hoisted.loadFeedNewerMessages).toHaveBeenCalledWith(
       'mf-0',
@@ -450,7 +497,7 @@ describe('useRerDutyMessageActions', () => {
     expect(scrollToEnd).toHaveBeenCalledTimes(1);
   });
 
-  it('scrolls to the existing bottom once for a valid zero-count arrow result', async () => {
+  it('#3360 uses exactly one explicit landing for a zero-count arrow operation', async () => {
     hoisted.requestValidatedInboxCount.mockResolvedValueOnce({
       feedId: 'mf-0',
       quantity: 0,
@@ -480,14 +527,20 @@ describe('useRerDutyMessageActions', () => {
 
     await act(async () => {
       await apiRef.current!.handleArrowClick('mf-0');
+      await vi.advanceTimersByTimeAsync(20);
     });
 
     expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenCalledTimes(1);
-    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenNthCalledWith(1, 'smooth', {
-      wakeIdleOffload: true,
-    });
+    expect(hoisted.catchUpFeedUnreadToTail).not.toHaveBeenCalled();
+    (
+      hoisted.getExplicitScrollNavigation.mock.results.at(-1)?.value as { onLanded: () => void }
+    ).onLanded();
+    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenCalledTimes(1);
     expect(hoisted.showArrowResult).toHaveBeenCalledWith('mf-0', 'Немає нових повідомлень');
-    expect(hoisted.catchUpFeedUnreadToTail).toHaveBeenCalledWith('mf-0');
+    expect(hoisted.catchUpFeedUnreadToTail).toHaveBeenCalledWith('mf-0', {
+      id: 10,
+      timestamp: null,
+    });
     expect(hoisted.loadFeedNewerMessages).not.toHaveBeenCalled();
   });
 
@@ -521,10 +574,7 @@ describe('useRerDutyMessageActions', () => {
 
     expect(hoisted.requestValidatedInboxCount).toHaveBeenCalledTimes(1);
     expect(hoisted.fetchInboxCount).not.toHaveBeenCalled();
-    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenCalledTimes(1);
-    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenNthCalledWith(1, 'smooth', {
-      wakeIdleOffload: true,
-    });
+    expect(columnRefsRef.current['mf-0']?.scrollToEnd).not.toHaveBeenCalled();
     expect(hoisted.showArrowResult).toHaveBeenCalledWith(
       'mf-0',
       'Оновлення триває, спробуйте ще раз',
@@ -561,10 +611,7 @@ describe('useRerDutyMessageActions', () => {
     });
 
     expect(hoisted.requestValidatedInboxCount).toHaveBeenCalledTimes(1);
-    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenCalledTimes(1);
-    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenNthCalledWith(1, 'smooth', {
-      wakeIdleOffload: true,
-    });
+    expect(columnRefsRef.current['mf-0']?.scrollToEnd).not.toHaveBeenCalled();
     expect(hoisted.showArrowResult).toHaveBeenCalledWith(
       'mf-0',
       'Не вдалося перевірити нові повідомлення',

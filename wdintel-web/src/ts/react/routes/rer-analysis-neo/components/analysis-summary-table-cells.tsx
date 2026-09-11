@@ -112,7 +112,12 @@ export const callsignOverflowRenderer = {
 
 export function SummaryTableLoadingState() {
   return (
-    <Stack spacing={1.25} sx={{ px: 1.5, py: 1.5, minHeight: 0, flex: 1, overflow: 'hidden' }}>
+    <Stack
+      role="status"
+      aria-label="Завантаження таблиці частот"
+      spacing={1.25}
+      sx={{ px: 1.5, py: 1.5, minHeight: 0, flex: 1, overflow: 'hidden' }}
+    >
       <Stack spacing={1} sx={{ flex: 1, minHeight: 0 }}>
         {Array.from({ length: 8 }).map((_, index) => (
           <Skeleton key={index} variant="rounded" height={60} />

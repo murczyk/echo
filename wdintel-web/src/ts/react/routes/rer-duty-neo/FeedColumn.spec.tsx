@@ -210,7 +210,6 @@ function buildProps(): FeedColumnProps {
         onRemoveColumn: vi.fn(),
         onMessageBookmark: vi.fn(),
         onMessageImportant: vi.fn(),
-        onMessageAddFrequencyToFilter: vi.fn(),
         onMessageCopy: vi.fn(),
         onMessageCreateReport: vi.fn(),
         onMessageEditReport: vi.fn(),

@@ -76,7 +76,7 @@ export function NetworkActivityCell({
     return <ActivityBars bars={activityBars} />;
   }
 
-  return <Box sx={{ color: 'text.secondary' }}>Не активна протягом останніх 10 днів</Box>;
+  return <Box sx={{ color: 'text.secondary' }}>Немає перехоплень за останні 10 днів</Box>;
 }
 
 export function NetworkCell({ network }: { network: NetworkRowView }) {

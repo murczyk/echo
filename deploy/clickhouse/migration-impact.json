@@ -1,10 +1,74 @@
 {
   "migrations": {
+    "echo:m20260909_145827_network_invalidation_reconciliation_index": {
+      "changes": []
+    },
+    "echo:m20260909_102202_sigint_unit_cascade_delete": {
+      "changes": []
+    },
+    "echo:m20260908_131435_network_recalculation_queue": {
+      "changes": [
+        { "table": "public.network_recalculation_task", "strategy": "excluded" },
+        { "table": "public.network_freq_last_datetime_in_aor", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20260903_180415_add_failed_unit_label_inbox_uuid": {
+      "changes": [
+        {
+          "table": "public.sigint_inbox_item_failed_unit_label",
+          "strategy": "excluded"
+        }
+      ]
+    },
+    "echo:m20260903_155454_create_sigint_activity_decision_changelog": {
+      "changes": [
+        {
+          "table": "public.sigint_activity_decision_changelog",
+          "strategy": "excluded"
+        }
+      ]
+    },
+    "echo:m20260903_105929_disable_media_summary_for_all_users": {
+      "changes": []
+    },
     "echo:m20260902_131822_signal_message_group_access_index": {
       "changes": []
     },
+    "echo:m20260826_143520_signal_message_uuid_v7": {
+      "changes": [
+        { "table": "public.signal_message", "strategy": "mirror_resync" },
+        { "table": "public.sigint_inbox_item", "strategy": "mirror_resync" },
+        { "table": "public.sigint_search", "strategy": "mirror_resync" },
+        { "table": "public.signal_message_group", "strategy": "mirror_resync" },
+        { "table": "public.signal_message_media", "strategy": "mirror_resync" },
+        { "table": "public.sigint_bookmark", "strategy": "mirror_resync" },
+        { "table": "public.sigint_important", "strategy": "mirror_resync" },
+        { "table": "public.sigint_comment", "strategy": "mirror_resync" },
+        { "table": "public.intel_product", "strategy": "mirror_resync" },
+        { "table": "public.ai_callsign_worker_job", "strategy": "excluded" },
+        { "table": "public.sigint_inbox_item_callsign", "strategy": "mirror_resync" },
+        { "table": "public.sigint_inbox_item_metadata", "strategy": "mirror_resync" },
+        { "table": "public.sigint_inbox_item_network", "strategy": "mirror_resync" },
+        { "table": "public.sigint_inbox_item_point_token", "strategy": "mirror_resync" },
+        { "table": "public.sigint_inbox_item_settlement", "strategy": "mirror_resync" },
+        { "table": "public.sigint_inbox_item_tag", "strategy": "mirror_resync" },
+        { "table": "public.sigint_inbox_item_unit", "strategy": "mirror_resync" },
+        { "table": "public.sigint_inbox_item_unit_tag_queue", "strategy": "mirror_resync" },
+        { "table": "public.sigint_inbox_tag_model_error", "strategy": "mirror_resync" },
+        { "table": "public.sigint_peleng", "strategy": "mirror_resync" }
+      ]
+    },
     "echo:m20260901_130526_add_callsign_changelog_created_at_index": {
       "changes": []
+    },
+    "echo:m20260830_185225_add_login_totp_epoch": {
+      "changes": [
+        {
+          "table": "public.login",
+          "strategy": "replicated_snapshot",
+          "targeted_resnapshot": true
+        }
+      ]
     },
     "echo:m20260828_150352_echo_chat_admin": {
       "changes": [
@@ -20,6 +84,11 @@
         { "table": "public.ai_settlement_test_message", "strategy": "excluded" },
         { "table": "public.ai_settlement_parse_result", "strategy": "excluded" },
         { "table": "public.ai_settlement_worker_job", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20260827_180023_add_login_totp_secret": {
+      "changes": [
+        { "table": "public.login_totp", "strategy": "excluded" }
       ]
     },
     "echo:m20260826_083256_sigint_peleng_battle_line_distance": {

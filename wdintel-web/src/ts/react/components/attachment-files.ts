@@ -24,7 +24,7 @@ export function attachmentIcon(name: string, mimeType: string | undefined): SvgI
   return InsertDriveFileOutlinedIcon;
 }
 
-export type MediaKind = 'image' | 'video';
+export type MediaKind = 'image' | 'video' | 'audio';
 
 const IMAGE_EXTENSIONS = new Set([
   'png',
@@ -57,15 +57,29 @@ const VIDEO_EXTENSIONS = new Set([
   'vob',
   'asf',
 ]);
+const AUDIO_EXTENSIONS = new Set([
+  'mp3',
+  'mpeg',
+  'mpga',
+  'wav',
+  'ogg',
+  'oga',
+  'opus',
+  'm4a',
+  'aac',
+  'flac',
+]);
 
 export function mediaKind(mimeType: string | undefined, fileName?: string): MediaKind | null {
   const type = (mimeType ?? '').toLowerCase();
   if (type.startsWith('image/')) return 'image';
   if (type.startsWith('video/')) return 'video';
+  if (type.startsWith('audio/')) return 'audio';
   if (fileName) {
     const ext = fileExtension(fileName).toLowerCase();
     if (IMAGE_EXTENSIONS.has(ext)) return 'image';
     if (VIDEO_EXTENSIONS.has(ext)) return 'video';
+    if (AUDIO_EXTENSIONS.has(ext)) return 'audio';
   }
   return null;
 }

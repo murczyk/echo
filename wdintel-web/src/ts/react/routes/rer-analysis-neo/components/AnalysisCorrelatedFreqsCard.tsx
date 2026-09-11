@@ -1,7 +1,7 @@
 import {
   Button,
-  CircularProgress,
   Paper,
+  Skeleton,
   Stack,
   Table,
   TableBody,
@@ -14,7 +14,6 @@ import { useId } from 'react';
 import type { CorrelatedFreq } from '../../../../../Bindings';
 import { PowerChip } from '../../../components/PowerChip';
 import { CompactText, CompactTitle } from '../../../components/CompactTypography';
-import { ELLIPSIS } from '../../../utils/misc';
 
 type Props = {
   correlatedFreqs: CorrelatedFreq[];
@@ -45,11 +44,10 @@ export function AnalysisCorrelatedFreqsCard({
           Оберіть частоту вище, щоб завантажити суміжні частоти.
         </CompactText>
       ) : loading ? (
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ minHeight: 80 }}>
-          <CircularProgress size={18} />
-          <CompactText color="text.secondary">
-            {`Завантажую суміжні частоти${ELLIPSIS}`}
-          </CompactText>
+        <Stack role="status" aria-label="Завантаження суміжних частот" spacing={1}>
+          {Array.from({ length: 3 }).map((_, index) => (
+            <Skeleton key={index} variant="rounded" height={36} />
+          ))}
         </Stack>
       ) : !loaded ? (
         <Stack spacing={1} alignItems="flex-start">

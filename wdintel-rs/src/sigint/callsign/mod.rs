@@ -348,7 +348,7 @@ async fn list_callsigns_impl(
         if !filter_unit.is_empty() {
             callsigns = callsigns.filter(Expr::cust_with_values(
                 "lower(sigint_unit.name collate \"ru-x-icu\") ilike $1",
-                vec![format!("%{}%", filter_unit.to_lowercase())],
+                vec![format!("{}%", filter_unit.to_lowercase())],
             ));
         }
     }
@@ -369,9 +369,18 @@ async fn list_callsigns_impl(
         callsigns = callsigns
             .filter(sigint_unit::Column::Army.eq(filter_unit_army.clone()));
     }
+    if let Some(filter_unit_corps) = &req.filter_unit_corps {
+        callsigns = callsigns
+            .filter(sigint_unit::Column::Corps.eq(filter_unit_corps.clone()));
+    }
     if let Some(filter_unit_division) = &req.filter_unit_division {
         callsigns = callsigns.filter(
             sigint_unit::Column::Division.eq(filter_unit_division.clone()),
+        );
+    }
+    if let Some(filter_unit_brigade) = &req.filter_unit_brigade {
+        callsigns = callsigns.filter(
+            sigint_unit::Column::Brigade.eq(filter_unit_brigade.clone()),
         );
     }
     if let Some(filter_unit_regiment) = &req.filter_unit_regiment {
@@ -383,6 +392,35 @@ async fn list_callsigns_impl(
         callsigns = callsigns.filter(
             sigint_unit::Column::Battalion.eq(filter_unit_battalion.clone()),
         );
+    }
+    if let Some(filter_unit_company) = &req.filter_unit_company {
+        callsigns = callsigns.filter(
+            sigint_unit::Column::Company.eq(filter_unit_company.clone()),
+        );
+    }
+    if let Some(filter_unit_platoon) = &req.filter_unit_platoon {
+        callsigns = callsigns.filter(
+            sigint_unit::Column::Platoon.eq(filter_unit_platoon.clone()),
+        );
+    }
+    if let Some(filter_unit_squad) = &req.filter_unit_squad {
+        callsigns = callsigns
+            .filter(sigint_unit::Column::Squad.eq(filter_unit_squad.clone()));
+    }
+    if let Some(filter_unit_section) = &req.filter_unit_section {
+        callsigns = callsigns.filter(
+            sigint_unit::Column::Section.eq(filter_unit_section.clone()),
+        );
+    }
+    if let Some(filter_unit_team_or_crew) = &req.filter_unit_team_or_crew {
+        callsigns = callsigns.filter(
+            sigint_unit::Column::TeamOrCrew
+                .eq(filter_unit_team_or_crew.clone()),
+        );
+    }
+    if let Some(filter_unit_other) = &req.filter_unit_other {
+        callsigns = callsigns
+            .filter(sigint_unit::Column::Other.eq(filter_unit_other.clone()));
     }
 
     let filter_developing = req
@@ -1379,9 +1417,17 @@ mod tests {
             filter_unit_army_region: None,
             filter_unit_military_district: None,
             filter_unit_army: None,
+            filter_unit_corps: None,
             filter_unit_division: None,
+            filter_unit_brigade: None,
             filter_unit_regiment: None,
             filter_unit_battalion: None,
+            filter_unit_company: None,
+            filter_unit_platoon: None,
+            filter_unit_squad: None,
+            filter_unit_section: None,
+            filter_unit_team_or_crew: None,
+            filter_unit_other: None,
             filter_developing: None,
             since_date_inclusive_ms: None,
             till_date_inclusive_ms: None,
@@ -1761,6 +1807,33 @@ mod tests {
         req.filter_unit_military_district = Some("D1".to_string());
         req.filter_unit_army = Some("A".to_string());
         req.filter_unit_division = Some("3".to_string());
+
+        let callsigns = list_callsigns_impl(&env.dbx, &req).await.unwrap();
+
+        assert_eq!(callsigns.len(), 1);
+        assert_eq!(callsigns[0].callsign, "alpha");
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_list_callsigns_unit_filter_prefix_with_hierarchy_echo_3387() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let now = Utc::now().naive_utc();
+        let matching_unit =
+            insert_test_unit(&env.dbx, &login.id, "мсб 15 тп 69 мсд 6 А").await;
+        let infix_unit =
+            insert_test_unit(&env.dbx, &login.id, "1 мсб 15 тп 69 мсд 6 А")
+                .await;
+
+        insert_test_callsign(&env.dbx, matching_unit.id, "alpha", now, "")
+            .await;
+        insert_test_callsign(&env.dbx, infix_unit.id, "bravo", now, "").await;
+
+        let mut req =
+            list_req(None, Some(100), ListCallsignsSortBy::CallsignAsc);
+        req.filter_unit = Some("мсб".to_string());
+        req.filter_unit_regiment = Some("R".to_string());
 
         let callsigns = list_callsigns_impl(&env.dbx, &req).await.unwrap();
 
