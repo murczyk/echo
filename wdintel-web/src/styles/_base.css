@@ -437,6 +437,10 @@ html[data-bs-theme='dark'] .message-card-root {
   height: 100%;
 }
 
+.coordinate-thumbnail__map {
+  z-index: 1;
+}
+
 .coordinate-preview-map-surface .leaflet-container {
   width: 100%;
   height: 100%;

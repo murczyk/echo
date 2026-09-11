@@ -846,7 +846,7 @@ test.describe('message card media preview contract', () => {
         await expect(coordinateTile).toBeVisible();
         await expect(count).toHaveText('9');
         expect(await count.textContent()).toBe('9');
-        const [tileBox, countBox, countMetrics] = await Promise.all([
+        const [tileBox, countBox, countMetrics, coordinateStacking] = await Promise.all([
           coordinateTile.boundingBox(),
           count.boundingBox(),
           count.evaluate((element) => {
@@ -858,6 +858,16 @@ test.describe('message card media preview contract', () => {
               clientWidth: element.clientWidth,
               scrollHeight: element.scrollHeight,
               lineHeight: Number.parseFloat(styles.lineHeight),
+            };
+          }),
+          coordinateTile.evaluate((element) => {
+            const map = element.querySelector<HTMLElement>('.coordinate-thumbnail__map');
+            const shade = element.querySelector<HTMLElement>('.coordinate-thumbnail__shade');
+            const count = element.querySelector<HTMLElement>('.coordinate-thumbnail__count');
+            return {
+              map: map == null ? null : Number.parseInt(getComputedStyle(map).zIndex, 10),
+              shade: shade == null ? null : Number.parseInt(getComputedStyle(shade).zIndex, 10),
+              count: count == null ? null : Number.parseInt(getComputedStyle(count).zIndex, 10),
             };
           }),
         ]);
@@ -883,6 +893,8 @@ test.describe('message card media preview contract', () => {
         expect((countBox?.y ?? 0) + (countBox?.height ?? 0)).toBeLessThan(
           (tileBox?.y ?? 0) + (tileBox?.height ?? 0) / 2,
         );
+        expect(coordinateStacking).toEqual({ map: 1, shade: 2, count: 3 });
+        await expect(coordinateTile.locator('.coordinate-preview-mgrs-label')).not.toHaveCount(0);
       }
 
       await coordinateButton.click();
