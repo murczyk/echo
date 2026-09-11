@@ -283,17 +283,72 @@ where
         last_activity_at: Option<NaiveDateTime>,
     }
 
-    Ok(sigint_network::Entity::find()
-        .select_only()
-        .column_as(sigint_network::Column::Id, "network_id")
-        .column_as(
-            crate::sigint::network::sort::network_last_activity_sort_expr(
-                groups,
-            ),
-            "last_activity_at",
-        )
-        .filter(sigint_network::Column::Id.eq_any(network_ids.to_vec()))
-        .into_model::<NetworkLastActivity>()
+    let sql = r#"
+        select
+            network_link.sigint_network_id as network_id,
+            max(coalesce(
+                inbox_item.datetime,
+                signal_message.timestamp,
+                signal_message.created_at
+            )) as last_activity_at
+        from sigint_inbox_item_network network_link
+        join sigint_network
+          on sigint_network.id = network_link.sigint_network_id
+        join sigint_inbox_item inbox_item
+          on inbox_item.id = network_link.sigint_inbox_item_id
+        join signal_message
+          on signal_message.id = inbox_item.id
+        join datasource_group
+          on datasource_group.id = signal_message.datasource_group_id
+        join signal_group
+          on signal_group.master_key = datasource_group.group_master_key
+        join sigint_network_freq network_freq
+          on network_freq.network_id = sigint_network.id
+         and network_freq.freq = inbox_item.freq
+         and network_freq.deleted = false
+        where network_link.sigint_network_id = any($1::bigint[])
+          and datasource_group.group_master_key = any($2::text[])
+          and signal_message.deleted = false
+          and signal_group.deleted = false
+          and signal_group.is_archived = false
+          and (
+              sigint_network.active_from is null
+              or coalesce(
+                  inbox_item.datetime,
+                  signal_message.timestamp,
+                  signal_message.created_at
+              ) >= sigint_network.active_from
+          )
+          and (
+              sigint_network.active_to is null
+              or coalesce(
+                  inbox_item.datetime,
+                  signal_message.timestamp,
+                  signal_message.created_at
+              ) <= sigint_network.active_to
+          )
+          and coalesce(
+              inbox_item.datetime,
+              signal_message.timestamp,
+              signal_message.created_at
+          ) >= network_freq.active_from
+          and (
+              network_freq.active_to is null
+              or coalesce(
+                  inbox_item.datetime,
+                  signal_message.timestamp,
+                  signal_message.created_at
+              ) <= network_freq.active_to
+          )
+        group by network_link.sigint_network_id
+    "#;
+
+    Ok(
+        NetworkLastActivity::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            sql,
+            vec![network_ids.to_vec().into(), groups.to_vec().into()],
+        ))
         .all(txn)
         .await
         .context(h!())?
@@ -302,7 +357,8 @@ where
             row.last_activity_at
                 .map(|last_activity_at| (row.network_id, last_activity_at))
         })
-        .collect())
+        .collect(),
+    )
 }
 
 pub async fn get_networks_units<'a, 'async_trait, C>(
