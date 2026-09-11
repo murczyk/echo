@@ -1,18 +1,11 @@
+import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import SearchIcon from '@mui/icons-material/Search';
-import {
-  Box,
-  FormControlLabel,
-  FormGroup,
-  Stack,
-  Switch,
-  TextField,
-  Typography,
-} from '@mui/material';
+import { Collapse, FormControlLabel, FormGroup, Switch, TextField } from '@mui/material';
+import { useState } from 'react';
 import dayjs from 'dayjs';
 
 import { PowerButton } from '../../../components/PowerButton';
 import { PowerDateTimePicker } from '../../../components/PowerDateTimePicker';
-import { DeviceAnalyticsTagFilterControls } from './DeviceAnalyticsTagFilterControls';
 import { createDefaultFileSearchDraft } from '../helpers';
 import type {
   DeviceAnalyticsTagFilter,
@@ -20,19 +13,24 @@ import type {
   DeviceFileSearchValidationErrors,
 } from '../types';
 import type { DeviceAnalyticsTagsState } from '../use-device-analytics-tags';
+import { DeviceAnalyticsTagFilterControls } from './DeviceAnalyticsTagFilterControls';
+
+const ADVANCED_FILTERS_ID = 'device-file-search-advanced-filters';
 
 type Props = {
   draft: DeviceFileSearchDraft;
   validationErrors: DeviceFileSearchValidationErrors;
   scopeSelected: boolean;
   scopeLabel: string | null;
+  rootScopeLabel: string | null;
   searching: boolean;
-  searchMode: boolean;
+  searchActive: boolean;
   tagsState: DeviceAnalyticsTagsState;
   tagFilter: DeviceAnalyticsTagFilter;
   onChange: (draft: DeviceFileSearchDraft) => void;
   onSearch: () => void;
-  onBackToBrowse: () => void;
+  onHideResults: () => void;
+  onResetScopeToRoot: () => void;
   onTagFilterChange: (filter: DeviceAnalyticsTagFilter) => void;
 };
 
@@ -41,149 +39,171 @@ export function DeviceFileSearchControls({
   validationErrors,
   scopeSelected,
   scopeLabel,
+  rootScopeLabel,
   searching,
-  searchMode,
+  searchActive,
   tagsState,
   tagFilter,
   onChange,
   onSearch,
-  onBackToBrowse,
+  onHideResults,
+  onResetScopeToRoot,
   onTagFilterChange,
 }: Props) {
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
+
   return (
-    <Box component="section" aria-label="Пошук файлів">
-      <Stack spacing={1.5}>
-        <Typography variant="body2" color="text.secondary">
-          {scopeLabel === null ? (
-            'Оберіть каталог у файловому дереві.'
-          ) : (
-            <>
-              Область пошуку:{' '}
-              <Box component="span" sx={{ color: 'text.primary', overflowWrap: 'anywhere' }}>
-                {scopeLabel}
-              </Box>
-            </>
-          )}
-        </Typography>
-        <DeviceAnalyticsTagFilterControls
-          tagsState={tagsState}
-          filter={tagFilter}
-          onChange={onTagFilterChange}
-        />
-        <Stack
-          direction={{ xs: 'column', md: 'row' }}
-          spacing={1.5}
-          alignItems={{ md: 'flex-start' }}
-        >
-          <TextField
-            label="Назва містить"
-            value={draft.nameQuery}
-            onChange={(event) => onChange({ ...draft, nameQuery: event.target.value })}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') onSearch();
-            }}
-            error={Boolean(validationErrors.nameQuery)}
-            helperText={validationErrors.nameQuery ?? 'Літеральний пошук від 3 символів'}
-            fullWidth
-            size="small"
-          />
-          <TextField
-            label="MIME-типи"
-            value={draft.mimeTypes}
-            onChange={(event) => onChange({ ...draft, mimeTypes: event.target.value })}
-            helperText="Через кому"
-            fullWidth
-            size="small"
-          />
-          <TextField
-            label="Розширення"
-            value={draft.extensions}
-            onChange={(event) => onChange({ ...draft, extensions: event.target.value })}
-            helperText="Через кому"
-            fullWidth
-            size="small"
-          />
-        </Stack>
-
-        <Stack direction={{ xs: 'column', lg: 'row' }} spacing={1.5} alignItems={{ lg: 'center' }}>
-          <FormGroup row sx={{ flexWrap: 'nowrap' }}>
-            {(['directory', 'file'] as const).map((kind) => (
-              <FormControlLabel
-                key={kind}
-                control={
-                  <Switch
-                    size="small"
-                    checked={draft.kinds.includes(kind)}
-                    onChange={(_, checked) =>
-                      onChange({
-                        ...draft,
-                        kinds: checked
-                          ? [...draft.kinds, kind]
-                          : draft.kinds.filter((item) => item !== kind),
-                      })
-                    }
-                  />
-                }
-                label={kind === 'directory' ? 'Каталоги' : 'Файли'}
-              />
-            ))}
-          </FormGroup>
-          <PowerDateTimePicker
-            label="Змінено від"
-            value={draft.modifiedFrom === null ? null : dayjs(draft.modifiedFrom)}
-            allowEmpty
-            onChange={(value) =>
-              onChange({
-                ...draft,
-                modifiedFrom: value?.isValid() ? value.toISOString() : null,
-              })
-            }
-            slotProps={{ textField: { size: 'small', fullWidth: true } }}
-          />
-          <PowerDateTimePicker
-            label="Змінено до"
-            value={draft.modifiedTo === null ? null : dayjs(draft.modifiedTo)}
-            allowEmpty
-            onChange={(value) =>
-              onChange({
-                ...draft,
-                modifiedTo: value?.isValid() ? value.toISOString() : null,
-              })
-            }
-            slotProps={{ textField: { size: 'small', fullWidth: true } }}
-          />
-        </Stack>
-
-        {validationErrors.modifiedRange ? (
-          <Typography variant="caption" color="error">
-            {validationErrors.modifiedRange}
-          </Typography>
-        ) : null}
-
-        <Stack direction="row" spacing={1} justifyContent="flex-end" flexWrap="wrap" useFlexGap>
-          <PowerButton
-            size="small"
-            onClick={() => onChange(createDefaultFileSearchDraft())}
-            disabled={searching}
-          >
-            Очистити
-          </PowerButton>
-          {searchMode ? (
-            <PowerButton size="small" onClick={onBackToBrowse} disabled={searching}>
-              Сховати результати
+    <section aria-label="Пошук файлів" className="min-w-0">
+      <form
+        className="min-w-0 space-y-echo-md"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSearch();
+        }}
+      >
+        <div className="flex min-w-0 flex-col items-start gap-echo-xs">
+          <p className="m-0 min-w-0 text-echo-sm text-echo-text-muted">
+            {scopeLabel === null ? (
+              'Оберіть каталог у файловому дереві.'
+            ) : (
+              <>
+                Область пошуку:{' '}
+                <span className="text-echo-text [overflow-wrap:anywhere]">{scopeLabel}</span>
+              </>
+            )}
+          </p>
+          {rootScopeLabel !== null ? (
+            <PowerButton type="button" size="small" onClick={onResetScopeToRoot}>
+              Шукати від кореня {rootScopeLabel}
             </PowerButton>
           ) : null}
+        </div>
+
+        <TextField
+          label="Назва містить"
+          value={draft.nameQuery}
+          onChange={(event) => onChange({ ...draft, nameQuery: event.target.value })}
+          error={Boolean(validationErrors.nameQuery)}
+          helperText={validationErrors.nameQuery ?? 'Літеральний пошук від 3 символів'}
+          fullWidth
+          size="small"
+        />
+
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-echo-sm">
           <PowerButton
+            type="button"
             size="small"
-            variant="contained"
-            startIcon={<SearchIcon />}
-            onClick={onSearch}
-            disabled={!scopeSelected || searching}
+            startIcon={<FilterAltIcon />}
+            aria-expanded={advancedFiltersOpen}
+            aria-controls={ADVANCED_FILTERS_ID}
+            onClick={() => setAdvancedFiltersOpen((current) => !current)}
           >
-            Знайти
+            {advancedFiltersOpen ? 'Сховати додаткові фільтри' : 'Показати додаткові фільтри'}
           </PowerButton>
-        </Stack>
-      </Stack>
-    </Box>
+          <div className="flex min-w-0 flex-wrap justify-end gap-echo-sm">
+            <PowerButton
+              type="button"
+              size="small"
+              onClick={() => onChange(createDefaultFileSearchDraft())}
+              disabled={searching}
+            >
+              Очистити
+            </PowerButton>
+            {searchActive ? (
+              <PowerButton type="button" size="small" onClick={onHideResults} disabled={searching}>
+                Сховати результати
+              </PowerButton>
+            ) : null}
+            <PowerButton
+              type="submit"
+              size="small"
+              variant="contained"
+              startIcon={<SearchIcon />}
+              disabled={!scopeSelected || searching}
+            >
+              Знайти
+            </PowerButton>
+          </div>
+        </div>
+
+        <Collapse id={ADVANCED_FILTERS_ID} in={advancedFiltersOpen} timeout="auto">
+          <div className="min-w-0 space-y-echo-md pt-echo-sm">
+            <DeviceAnalyticsTagFilterControls
+              compact
+              tagsState={tagsState}
+              filter={tagFilter}
+              onChange={onTagFilterChange}
+            />
+            <TextField
+              label="MIME-типи"
+              value={draft.mimeTypes}
+              onChange={(event) => onChange({ ...draft, mimeTypes: event.target.value })}
+              helperText="Через кому"
+              fullWidth
+              size="small"
+            />
+            <TextField
+              label="Розширення"
+              value={draft.extensions}
+              onChange={(event) => onChange({ ...draft, extensions: event.target.value })}
+              helperText="Через кому"
+              fullWidth
+              size="small"
+            />
+            <FormGroup row aria-label="Тип запису">
+              {(['directory', 'file'] as const).map((kind) => (
+                <FormControlLabel
+                  key={kind}
+                  control={
+                    <Switch
+                      size="small"
+                      checked={draft.kinds.includes(kind)}
+                      onChange={(_, checked) =>
+                        onChange({
+                          ...draft,
+                          kinds: checked
+                            ? [...draft.kinds, kind]
+                            : draft.kinds.filter((item) => item !== kind),
+                        })
+                      }
+                    />
+                  }
+                  label={kind === 'directory' ? 'Каталоги' : 'Файли'}
+                />
+              ))}
+            </FormGroup>
+            <PowerDateTimePicker
+              label="Змінено від"
+              value={draft.modifiedFrom === null ? null : dayjs(draft.modifiedFrom)}
+              allowEmpty
+              onChange={(value) =>
+                onChange({
+                  ...draft,
+                  modifiedFrom: value?.isValid() ? value.toISOString() : null,
+                })
+              }
+              slotProps={{ textField: { size: 'small', fullWidth: true } }}
+            />
+            <PowerDateTimePicker
+              label="Змінено до"
+              value={draft.modifiedTo === null ? null : dayjs(draft.modifiedTo)}
+              allowEmpty
+              onChange={(value) =>
+                onChange({
+                  ...draft,
+                  modifiedTo: value?.isValid() ? value.toISOString() : null,
+                })
+              }
+              slotProps={{ textField: { size: 'small', fullWidth: true } }}
+            />
+            {validationErrors.modifiedRange ? (
+              <p className="m-0 text-echo-xs text-echo-error" role="alert">
+                {validationErrors.modifiedRange}
+              </p>
+            ) : null}
+          </div>
+        </Collapse>
+      </form>
+    </section>
   );
 }

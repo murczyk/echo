@@ -3,7 +3,6 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
-import RefreshIcon from '@mui/icons-material/Refresh';
 import {
   Box,
   CircularProgress,
@@ -12,7 +11,6 @@ import {
   ListItemButton,
   ListItemIcon,
   ListItemText,
-  Paper,
   Stack,
   Tooltip,
   Typography,
@@ -107,7 +105,7 @@ function DeviceFileRow({ entry, depth }: { entry: DeviceFileTreeEntry; depth: nu
         }
         sx={{ minWidth: 0, my: 0 }}
       />
-      <Box sx={{ ml: 1, display: 'inline-flex' }}>
+      <Box sx={{ ml: 1, display: 'inline-flex', alignItems: 'center' }}>
         <DeviceFileContentMarker hasContent={entry.hasContent} />
       </Box>
     </Box>
@@ -288,111 +286,36 @@ function rootToNode(root: DeviceFileRoot): DirectoryNode {
 
 export function DeviceFileTree({ files }: { files: DeviceFilesState }) {
   return (
-    <Paper
-      component="aside"
-      variant="outlined"
-      data-testid="device-files-tree-panel"
-      aria-labelledby="device-files-tree-title"
-      sx={{
-        height: '100%',
-        minHeight: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-      }}
+    <div
+      className="min-w-0 py-echo-xs"
+      data-testid="device-files-tree"
+      aria-busy={files.tree.refreshing}
     >
-      <Stack
-        direction="row"
-        spacing={1}
-        alignItems="center"
-        justifyContent="space-between"
-        sx={{ px: 1.5, py: 1, borderBottom: 1, borderColor: 'divider' }}
-      >
-        <Typography id="device-files-tree-title" variant="subtitle1" fontWeight={600}>
-          Файлова система
-        </Typography>
-        <Stack direction="row" spacing={1} alignItems="center">
-          {files.counts.loading ? (
-            <CircularProgress size={16} aria-label="Завантаження кількості файлів" />
-          ) : null}
-          <Tooltip title="Оновити файлове дерево">
-            <span>
-              <PowerIconButton
-                size="small"
-                aria-label="Оновити файлове дерево"
-                disabled={files.rootsLoading || files.rootsRefreshing || files.tree.refreshing}
-                onClick={() => void files.refreshVisible()}
-              >
-                <RefreshIcon fontSize="small" />
-              </PowerIconButton>
-            </span>
-          </Tooltip>
-        </Stack>
-      </Stack>
-
-      <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', py: 0.5 }} aria-busy={files.rootsLoading}>
-        {files.rootsError ? (
-          <Box sx={{ p: 1 }}>
-            <PowerAlert
-              severity="error"
-              autoHideDuration={null}
-              action={
-                <PowerButton size="small" onClick={() => void files.reloadRoots()}>
-                  Повторити
-                </PowerButton>
-              }
-            >
-              {files.rootsError.message}
-            </PowerAlert>
-          </Box>
-        ) : null}
-        {files.counts.error ? (
-          <Box sx={{ px: 1, pb: 1 }}>
-            <PowerAlert
-              severity="warning"
-              autoHideDuration={null}
-              action={
-                <PowerButton size="small" onClick={files.counts.retry}>
-                  Повторити
-                </PowerButton>
-              }
-            >
-              {files.counts.error.message}
-            </PowerAlert>
-          </Box>
-        ) : null}
-        {files.scopeNotice ? (
-          <Box sx={{ px: 1, pb: 1 }}>
-            <PowerAlert severity="warning" autoHideDuration={null}>
-              {files.scopeNotice}
-            </PowerAlert>
-          </Box>
-        ) : null}
-        {files.rootsLoading ? (
-          <Box sx={{ minHeight: 120, display: 'grid', placeItems: 'center' }}>
-            <CircularProgress size={28} aria-label="Завантаження файлового дерева" />
-          </Box>
-        ) : files.roots.length === 0 && files.rootsError === null ? (
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ px: 2, py: 3, textAlign: 'center' }}
+      {files.counts.loading ? (
+        <div className="flex justify-end px-echo-sm pb-echo-sm">
+          <CircularProgress size={16} aria-label="Завантаження кількості файлів" />
+        </div>
+      ) : null}
+      {files.counts.error ? (
+        <div className="px-echo-sm pb-echo-sm">
+          <PowerAlert
+            severity="warning"
+            autoHideDuration={null}
+            action={
+              <PowerButton size="small" onClick={files.counts.retry}>
+                Повторити
+              </PowerButton>
+            }
           >
-            Для пристрою ще немає синхронізованих файлів.
-          </Typography>
-        ) : (
-          <List component="ul" dense disablePadding aria-label="Синхронізовані файлові корені">
-            {files.roots.map((root) => (
-              <DeviceFileDirectory
-                key={root.entryId}
-                node={rootToNode(root)}
-                depth={0}
-                files={files}
-              />
-            ))}
-          </List>
-        )}
-      </Box>
-    </Paper>
+            {files.counts.error.message}
+          </PowerAlert>
+        </div>
+      ) : null}
+      <List component="ul" dense disablePadding aria-label="Синхронізовані файлові корені">
+        {files.roots.map((root) => (
+          <DeviceFileDirectory key={root.entryId} node={rootToNode(root)} depth={0} files={files} />
+        ))}
+      </List>
+    </div>
   );
 }

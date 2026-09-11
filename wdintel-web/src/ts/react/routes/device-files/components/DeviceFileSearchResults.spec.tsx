@@ -6,7 +6,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { DeviceFileTreeEntry } from '../../../../../Bindings';
-import { DeviceFileEntries } from './DeviceFileEntries';
+import { DeviceFileSearchResults } from './DeviceFileSearchResults';
 
 const ROOT_ID = '018f0000-0000-7000-8000-000000000001';
 const DIRECTORY_ID = '018f0000-0000-7000-8000-000000000002';
@@ -48,32 +48,24 @@ afterEach(() => {
   container = null;
 });
 
-describe('DeviceFileEntries', () => {
+describe('DeviceFileSearchResults', () => {
   it('renders duplicate paths as separate ID-keyed rows and navigates by entry ID', () => {
     const onOpenDirectory = vi.fn();
-    const onSyncFile = vi.fn();
     const directory = buildEntry(DIRECTORY_ID, 'directory');
     const firstFile = buildEntry('018f0000-0000-7000-8000-000000000010', 'file');
     const secondFile = buildEntry('018f0000-0000-7000-8000-000000000011', 'file');
 
     act(() => {
       root?.render(
-        <DeviceFileEntries
-          breadcrumbs={[
-            { entryId: ROOT_ID, name: 'C:\\' },
-            { entryId: DIRECTORY_ID, name: 'nested' },
-          ]}
+        <DeviceFileSearchResults
           entries={[directory, firstFile, secondFile]}
-          mode="browse"
           loading={false}
           refreshing={false}
           loadingMore={false}
           nextCursor={null}
           error={null}
           loadMoreError={null}
-          canSync
           onOpenDirectory={onOpenDirectory}
-          onSyncFile={onSyncFile}
           onRetry={vi.fn()}
           onLoadMore={vi.fn()}
         />,
@@ -82,42 +74,27 @@ describe('DeviceFileEntries', () => {
 
     expect(container?.querySelectorAll('[data-entry-id]')).toHaveLength(3);
     expect(container?.textContent?.match(/C:\\duplicate\.log/g)).toHaveLength(2);
+    expect(container?.querySelector('[aria-label="Контент файлу відсутній"]')).not.toBeNull();
 
     const directoryButton = Array.from(container?.querySelectorAll('button') ?? []).find(
       (button) => button.textContent === 'nested',
     );
     act(() => directoryButton?.click());
     expect(onOpenDirectory).toHaveBeenCalledWith(DIRECTORY_ID);
-
-    const rootBreadcrumb = Array.from(container?.querySelectorAll('button') ?? []).find(
-      (button) => button.textContent === 'C:\\',
-    );
-    act(() => rootBreadcrumb?.click());
-    expect(onOpenDirectory).toHaveBeenCalledWith(ROOT_ID);
-
-    const syncButton = container?.querySelector(
-      'button[aria-label="Синхронізувати метадані duplicate.log"]',
-    );
-    act(() => syncButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
-    expect(onSyncFile).toHaveBeenCalledWith(firstFile);
   });
 
   it('renders a local empty search state without a retry action', () => {
     act(() => {
       root?.render(
-        <DeviceFileEntries
-          breadcrumbs={[]}
+        <DeviceFileSearchResults
           entries={[]}
-          mode="search"
           loading={false}
           refreshing={false}
           loadingMore={false}
           nextCursor={null}
           error={null}
           loadMoreError={null}
-          canSync={false}
           onOpenDirectory={vi.fn()}
-          onSyncFile={vi.fn()}
           onRetry={vi.fn()}
           onLoadMore={vi.fn()}
         />,
