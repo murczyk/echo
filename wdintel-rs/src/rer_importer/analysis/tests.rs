@@ -8561,6 +8561,53 @@ async fn echo_3461_activity_daily_requires_device_filter_access() {
     let fixture = mk_rer_analysis_fixture().await.unwrap();
     let test_identity = mk_test_identity().await.unwrap();
     let login_id = test_identity_login_id(&fixture.env, &test_identity).await;
+    let destructive_device_name = "ECHO-3461 destructive device".to_string();
+    let destructive_device = device_name::ActiveModel {
+        name: Set(Some(destructive_device_name.clone())),
+        login_id: Set(login_id),
+        created_at: Set(chrono::Utc::now().naive_utc()),
+        ..Default::default()
+    }
+    .insert(&fixture.env.dbx)
+    .await
+    .unwrap();
+    let destructive_datetime = dt_from_millis(fixture.since_date_inclusive_ms)
+        .unwrap()
+        + chrono::Duration::minutes(1);
+    assert!(
+        destructive_datetime
+            >= dt_from_millis(fixture.since_date_inclusive_ms).unwrap()
+    );
+    assert!(
+        destructive_datetime
+            < dt_from_millis(fixture.till_date_noninclusive_ms).unwrap()
+    );
+    let destructive_message = mk_analysis_message(
+        &fixture.env.dbx,
+        "echo-3461-destructive-unit-edit",
+        "3461.9",
+        destructive_datetime,
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    let destructive_inbox =
+        sigint_inbox_item::Entity::find_by_id(destructive_message.id)
+            .one(&fixture.env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+    let mut destructive_inbox = destructive_inbox.into_active_model();
+    destructive_inbox.device_name_id = Set(Some(destructive_device.id));
+    destructive_inbox.datetime = Set(Some(destructive_datetime));
+    destructive_inbox.unit = Set(Some("ECHO-3461 original unit".to_string()));
+    destructive_inbox.unit_v2 =
+        Set(Some("ECHO-3461 original unit".to_string()));
+    destructive_inbox.parsed_unit_v2 = Set(false);
+    let destructive_inbox =
+        destructive_inbox.update(&fixture.env.dbx).await.unwrap();
     let redis_session_store = RedisSessionStore::new(
         crate::redis_conn_string(&fixture.env.config).unwrap(),
     )
@@ -8581,7 +8628,8 @@ async fn echo_3461_activity_daily_requires_device_filter_access() {
                 "/test/activity-daily-login/{login}",
                 web::post().to(activity_daily_test_login),
             )
-            .service(activity_daily),
+            .service(activity_daily)
+            .service(edit_freq_unit_name),
     )
     .await;
     let login_response = actix_test::call_service(
@@ -8613,6 +8661,17 @@ async fn echo_3461_activity_daily_requires_device_filter_access() {
                 .to_request(),
         )
     };
+    let edit_request = || EditFreqUnitNameReq {
+        analysis_stats_req: request(Some(
+            vec![destructive_device_name.clone()],
+        )),
+        freq: "3461.9".to_string(),
+        unit: "ECHO-3461 original unit".to_string(),
+        unit_new: "ECHO-3461 updated unit".to_string(),
+        search: None,
+        filter_tags_option: None,
+        report_tags_only_this_unit: None,
+    };
     set_devices_section_enabled(&fixture.env.dbx, true).await;
     set_login_roles(&fixture.env.dbx, login_id, serde_json::json!(["Rer"]))
         .await;
@@ -8622,7 +8681,65 @@ async fn echo_3461_activity_daily_requires_device_filter_access() {
             .status(),
         StatusCode::FORBIDDEN
     );
+    assert_eq!(
+        actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/rer/analysis/freq-edit-unit-name")
+                .cookie(session_cookie.clone())
+                .set_json(edit_request())
+                .to_request(),
+        )
+        .await
+        .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        sigint_inbox_item::Entity::find_by_id(destructive_message.id)
+            .one(&fixture.env.dbx)
+            .await
+            .unwrap()
+            .unwrap(),
+        destructive_inbox
+    );
     assert_ne!(call(request(None)).await.status(), StatusCode::FORBIDDEN);
+
+    set_login_roles(
+        &fixture.env.dbx,
+        login_id,
+        serde_json::json!(["Rer", ROLE_CYBER]),
+    )
+    .await;
+    assert!(actix_test::call_service(
+        &app,
+        actix_test::TestRequest::post()
+            .uri("/api/rer/analysis/freq-edit-unit-name")
+            .cookie(session_cookie.clone())
+            .set_json(edit_request())
+            .to_request(),
+    )
+    .await
+    .status()
+    .is_success());
+    let destructive_inbox =
+        sigint_inbox_item::Entity::find_by_id(destructive_message.id)
+            .one(&fixture.env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+    assert_eq!(
+        destructive_inbox.unit,
+        Some("ECHO-3461 updated unit".to_string())
+    );
+    assert_eq!(
+        destructive_inbox.unit_v2,
+        Some("ECHO-3461 updated unit".to_string())
+    );
+    assert!(destructive_inbox.parsed_unit_v2);
+    assert_eq!(
+        destructive_inbox.device_name_id,
+        Some(destructive_device.id)
+    );
 
     set_login_roles(
         &fixture.env.dbx,

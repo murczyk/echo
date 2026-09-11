@@ -5525,6 +5525,13 @@ pub async fn edit_freq_unit_name(
 ) -> Result<Json<()>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
+    require_analysis_device_filter_access(
+        &env.dbx,
+        &login,
+        &req.analysis_stats_req,
+    )
+    .await
+    .c(h!())?;
     let reqan = req.analysis_stats_req.clone();
     let dt_since = dt_from_millis(reqan.since_date_inclusive_ms)?;
     let dt_till = dt_from_millis(reqan.till_date_noninclusive_ms)?;
