@@ -180,30 +180,30 @@ pub async fn load_coordinates_from_kml(
             }
             Node::Placemark(p) => {
                 let m_color = get_placemark_color(&p, &style_indexes);
-                let label = p.name.or(p.description);
-                let point = p.point.and_then(|p| p.coordinates);
-                m_add_coordinates(
-                    &mut values,
-                    label.clone(),
-                    point,
-                    m_color.clone(),
-                );
+                let label = p.name.clone().or_else(|| p.description.clone());
 
-                let polygon_point = p
-                    .polygon
-                    .and_then(|p| p.outer_boundary_is)
-                    .and_then(|o| o.linear_ring)
-                    .and_then(|l| l.coordinates)
-                    .and_then(|l| l.body);
-                m_add_coordinates(
-                    &mut values,
-                    label.clone(),
-                    polygon_point,
-                    m_color.clone(),
-                );
+                for point in placemark_point_coordinates(&p) {
+                    m_add_coordinates(
+                        &mut values,
+                        label.clone(),
+                        Some(point),
+                        m_color.clone(),
+                    );
+                }
 
-                let mut geometry_line_strings =
-                    p.multi_geometry.map(|p| p.line_strings).unwrap_or(vec![]);
+                for polygon_point in placemark_polygon_coordinates(&p) {
+                    m_add_coordinates(
+                        &mut values,
+                        label.clone(),
+                        Some(polygon_point),
+                        m_color.clone(),
+                    );
+                }
+
+                let mut geometry_line_strings = p
+                    .multi_geometry
+                    .map(|multi_geometry| multi_geometry.line_strings)
+                    .unwrap_or_default();
                 if let Some(line_string) = p.line_string {
                     geometry_line_strings.push(line_string);
                 }
@@ -241,6 +241,49 @@ pub async fn load_coordinates_from_kml(
         line_strings,
         s3_id: None,
     })
+}
+
+fn placemark_point_coordinates(placemark: &Placemark) -> Vec<String> {
+    let mut coordinates = Vec::new();
+    if let Some(point) = &placemark.point {
+        if let Some(point_coordinates) = &point.coordinates {
+            coordinates.push(point_coordinates.clone());
+        }
+    }
+    if let Some(multi_geometry) = &placemark.multi_geometry {
+        for point in &multi_geometry.points {
+            if let Some(point_coordinates) = &point.coordinates {
+                coordinates.push(point_coordinates.clone());
+            }
+        }
+    }
+    coordinates
+}
+
+fn placemark_polygon_coordinates(placemark: &Placemark) -> Vec<String> {
+    let mut coordinates = Vec::new();
+    if let Some(polygon) = &placemark.polygon {
+        if let Some(polygon_coordinates) = polygon_coordinates(polygon) {
+            coordinates.push(polygon_coordinates.to_string());
+        }
+    }
+    if let Some(multi_geometry) = &placemark.multi_geometry {
+        for polygon in &multi_geometry.polygons {
+            if let Some(polygon_coordinates) = polygon_coordinates(polygon) {
+                coordinates.push(polygon_coordinates.to_string());
+            }
+        }
+    }
+    coordinates
+}
+
+fn polygon_coordinates(polygon: &Polygon) -> Option<&str> {
+    polygon
+        .outer_boundary_is
+        .as_ref()
+        .and_then(|outer_boundary| outer_boundary.linear_ring.as_ref())
+        .and_then(|linear_ring| linear_ring.coordinates.as_ref())
+        .and_then(|coordinates| coordinates.body.as_deref())
 }
 
 fn get_placemark_color(
@@ -531,24 +574,11 @@ fn collect_color_from_placemark(
 }
 
 fn placemark_has_supported_geometry(placemark: &Placemark) -> bool {
-    let has_point_coordinates = placemark
-        .point
-        .as_ref()
-        .and_then(|point| point.coordinates.as_ref())
-        .is_some();
-    if has_point_coordinates {
+    if !placemark_point_coordinates(placemark).is_empty() {
         return true;
     }
 
-    let has_polygon_coordinates = placemark
-        .polygon
-        .as_ref()
-        .and_then(|polygon| polygon.outer_boundary_is.as_ref())
-        .and_then(|outer_boundary| outer_boundary.linear_ring.as_ref())
-        .and_then(|linear_ring| linear_ring.coordinates.as_ref())
-        .and_then(|coordinates| coordinates.body.as_ref())
-        .is_some();
-    if has_polygon_coordinates {
+    if !placemark_polygon_coordinates(placemark).is_empty() {
         return true;
     }
 
@@ -769,5 +799,47 @@ mod tests {
         assert!(parse_coordinates_from_file("broken.kml", data)
             .await
             .is_err());
+    }
+
+    #[tokio::test]
+    async fn load_coordinates_from_kml_reads_multigeometry_features(
+    ) -> anyhow::Result<()> {
+        let tmp_dir = tempdir()?;
+        let path = tmp_dir.path().join("multi.kml");
+        let kml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <Placemark>
+      <name>multi</name>
+      <MultiGeometry>
+        <Point>
+          <coordinates>30.52,50.45,0</coordinates>
+        </Point>
+        <Polygon>
+          <outerBoundaryIs>
+            <LinearRing>
+              <coordinates>
+                30.00,50.00,0
+                30.10,50.00,0
+                30.10,50.10,0
+                30.00,50.00,0
+              </coordinates>
+            </LinearRing>
+          </outerBoundaryIs>
+        </Polygon>
+      </MultiGeometry>
+    </Placemark>
+  </Document>
+</kml>"#;
+        fs::write(path.as_path(), kml).await.c(h!())?;
+
+        let data = load_coordinates_from_kml(path.as_path()).await.c(h!())?;
+
+        assert_eq!(data.points.len(), 5);
+        assert!(data
+            .points
+            .iter()
+            .all(|point| point.label.as_deref() == Some("multi")));
+        Ok(())
     }
 }

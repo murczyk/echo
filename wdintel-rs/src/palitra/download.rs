@@ -1,4 +1,5 @@
 use crate::error::AppError;
+use crate::entities::palitra as palitra_entity;
 use crate::h;
 use crate::kml::types as kml_types;
 use crate::palitra::bl;
@@ -12,15 +13,17 @@ use actix_web::HttpResponse;
 use anyhow::Context;
 use chrono::Utc;
 use itertools::Itertools;
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::Deserialize;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{BufWriter, Cursor, Seek, Write};
+use std::path::Path;
 use tokio_util::io::ReaderStream;
 use zip::write::FileOptions;
 
 use super::{
-    ensure_unique_zip_entry_name, normalize_color_hex_or_fallback,
-    palitra_goi_remote_file_name,
+    download_stored_palitra_bytes, ensure_unique_zip_entry_name,
+    normalize_color_hex_or_fallback, palitra_goi_remote_file_name,
 };
 
 type ZipFileOptions = FileOptions<'static, zip::write::ExtendedFileOptions>;

@@ -328,6 +328,7 @@ fn cleaned_kml(features: &[ImportedGeometryFeature]) -> Kml {
                 multi_geometry: Some(MultiGeometry {
                     points: vec![],
                     line_strings,
+                    polygons: vec![],
                 }),
                 polygon: None,
                 extended_data: None,
