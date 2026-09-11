@@ -1099,6 +1099,7 @@ where
             orbit_note: NotSet,
             is_inconsistent: NotSet,
             updated_at: Set(rec.updated_at),
+            present_in_orbit: NotSet,
         };
 
         let new_rec = if new_record {

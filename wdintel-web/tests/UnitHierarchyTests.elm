@@ -25,6 +25,7 @@ createUnit id army militaryDistrict armyRegion name active =
     , armyRegion = armyRegion
     , comment = ""
     , orbitNote = Nothing
+    , presentInOrbit = Nothing
     , name = name
     , active = active
     , isDeduplicateCandidate = Nothing

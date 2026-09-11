@@ -1265,6 +1265,7 @@ mod tests {
             original_id: None,
             is_deduplicate_candidate: None,
             orbit_note: None,
+            present_in_orbit: None,
             is_inconsistent: false,
             updated_at: Default::default(),
         }

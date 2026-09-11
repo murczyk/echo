@@ -1068,6 +1068,7 @@ mod tests {
             original_id: None,
             is_deduplicate_candidate: None,
             orbit_note: None,
+            present_in_orbit: None,
             army_region: army_region.to_string(),
             military_district: military_district.to_string(),
             other: String::new(),

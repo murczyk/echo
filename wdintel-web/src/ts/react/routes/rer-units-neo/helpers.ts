@@ -156,6 +156,7 @@ export const EMPTY_UNIT_FORM: UnitForm = {
   isDeduplicateCandidate: null,
   comment: '',
   orbitNote: null,
+  presentInOrbit: null,
   duplicateUnitIds: [],
 };
 
@@ -180,6 +181,7 @@ export function unitToForm(unit: Unit): UnitForm {
     isDeduplicateCandidate: unit.isDeduplicateCandidate,
     comment: unit.comment ?? '',
     orbitNote: unit.orbitNote,
+    presentInOrbit: unit.presentInOrbit,
     duplicateUnitIds: [],
   };
 }
@@ -205,6 +207,7 @@ export function trimUnitForm(form: UnitForm): UnitForm {
     isDeduplicateCandidate: form.isDeduplicateCandidate,
     comment: (form.comment ?? '').trim(),
     orbitNote: form.orbitNote?.trim() || null,
+    presentInOrbit: form.presentInOrbit,
     duplicateUnitIds: form.duplicateUnitIds,
   };
 }

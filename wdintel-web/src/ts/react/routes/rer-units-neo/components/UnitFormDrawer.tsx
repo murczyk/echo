@@ -300,16 +300,19 @@ function UnitDetailsFields({
 }) {
   if (editSection === 'orbit') {
     return (
-      <TextField
-        label="Примітка Orbit"
-        placeholder="Причина відсутності прив’язки до Orbit"
-        value={form.orbitNote ?? ''}
-        onChange={(event) => onChange({ ...form, orbitNote: event.target.value || null })}
-        disabled={disabled}
-        multiline
-        minRows={3}
-        fullWidth
-      />
+      <Stack spacing={2}>
+        <PresentInOrbitField form={form} disabled={disabled} onChange={onChange} />
+        <TextField
+          label="Примітка Orbit"
+          placeholder="Причина відсутності прив’язки до Orbit"
+          value={form.orbitNote ?? ''}
+          onChange={(event) => onChange({ ...form, orbitNote: event.target.value || null })}
+          disabled={disabled}
+          multiline
+          minRows={3}
+          fullWidth
+        />
+      </Stack>
     );
   }
 
@@ -379,29 +382,62 @@ function UnitDetailsFields({
           </>
         ) : null}
         {editing && editSection === 'all' ? (
-          <TextField
-            select
-            label="Можливо дублікат"
-            value={
-              form.isDeduplicateCandidate === null ? 'unset' : String(form.isDeduplicateCandidate)
-            }
-            onChange={(event) =>
-              onChange({
-                ...form,
-                isDeduplicateCandidate:
-                  event.target.value === 'unset' ? null : event.target.value === 'true',
-              })
-            }
-            disabled={disabled}
-            fullWidth
-          >
-            <MenuItem value="unset">Не визначено</MenuItem>
-            <MenuItem value="true">Так</MenuItem>
-            <MenuItem value="false">Ні</MenuItem>
-          </TextField>
+          <>
+            <PresentInOrbitField form={form} disabled={disabled} onChange={onChange} />
+            <TextField
+              select
+              label="Можливо дублікат"
+              value={
+                form.isDeduplicateCandidate === null ? 'unset' : String(form.isDeduplicateCandidate)
+              }
+              onChange={(event) =>
+                onChange({
+                  ...form,
+                  isDeduplicateCandidate:
+                    event.target.value === 'unset' ? null : event.target.value === 'true',
+                })
+              }
+              disabled={disabled}
+              fullWidth
+            >
+              <MenuItem value="unset">Не визначено</MenuItem>
+              <MenuItem value="true">Так</MenuItem>
+              <MenuItem value="false">Ні</MenuItem>
+            </TextField>
+          </>
         ) : null}
       </div>
     </>
+  );
+}
+
+function PresentInOrbitField({
+  form,
+  disabled,
+  onChange,
+}: {
+  form: UnitForm;
+  disabled: boolean;
+  onChange: (value: UnitForm) => void;
+}) {
+  return (
+    <TextField
+      select
+      label="Присутній в Orbit"
+      value={form.presentInOrbit === null ? 'unset' : String(form.presentInOrbit)}
+      onChange={(event) =>
+        onChange({
+          ...form,
+          presentInOrbit: event.target.value === 'unset' ? null : event.target.value === 'true',
+        })
+      }
+      disabled={disabled}
+      fullWidth
+    >
+      <MenuItem value="unset">Немає інформації</MenuItem>
+      <MenuItem value="true">Так</MenuItem>
+      <MenuItem value="false">Ні</MenuItem>
+    </TextField>
   );
 }
 
