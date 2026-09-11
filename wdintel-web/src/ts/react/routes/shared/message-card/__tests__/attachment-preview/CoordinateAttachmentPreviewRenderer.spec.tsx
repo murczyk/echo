@@ -50,13 +50,25 @@ const leafletMock = vi.hoisted(() => {
     invalidateSize: vi.fn(),
     remove: vi.fn(),
   };
-  const marker = {
-    addTo: vi.fn(() => marker),
-    bindTooltip: vi.fn(() => marker),
-    on: vi.fn(() => marker),
-    setLatLng: vi.fn(() => marker),
-    setStyle: vi.fn(() => marker),
-    remove: vi.fn(),
+  const markers: Array<{
+    addTo: ReturnType<typeof vi.fn>;
+    bindTooltip: ReturnType<typeof vi.fn>;
+    on: ReturnType<typeof vi.fn>;
+    setLatLng: ReturnType<typeof vi.fn>;
+    setStyle: ReturnType<typeof vi.fn>;
+    remove: ReturnType<typeof vi.fn>;
+  }> = [];
+  const createMarker = () => {
+    const marker = {
+      addTo: vi.fn(() => marker),
+      bindTooltip: vi.fn(() => marker),
+      on: vi.fn(() => marker),
+      setLatLng: vi.fn(() => marker),
+      setStyle: vi.fn(() => marker),
+      remove: vi.fn(),
+    };
+    markers.push(marker);
+    return marker;
   };
   const zoomControl = {
     addTo: vi.fn(() => zoomControl),
@@ -65,7 +77,8 @@ const leafletMock = vi.hoisted(() => {
   return {
     map: vi.fn(() => map),
     latLngBounds: vi.fn((latLngs) => latLngs),
-    circleMarker: vi.fn(() => marker),
+    circleMarker: vi.fn(createMarker),
+    markers,
     control: {
       zoom: vi.fn(() => zoomControl),
     },
@@ -375,6 +388,7 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    leafletMock.markers.splice(0);
     shellProps.splice(0);
     resizeObserverInstances.splice(0);
     hostRect = { width: 0, height: 0 };
@@ -443,13 +457,17 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     expect(document.body.querySelector('img')).toBeNull();
     expect(document.body.querySelector('script')).toBeNull();
     expect(document.body.querySelector('svg[onload]')).toBeNull();
+    expect(document.body.querySelector('[data-coordinate-palitra-identity="true"]')).toBeNull();
 
     hostRect = { width: 800, height: 600 };
     await act(async () => {
       resizeObserverInstances.at(-1)?.trigger();
       await Promise.resolve();
     });
-    expect(leafletMock.circleMarker().bindTooltip).not.toHaveBeenCalled();
+    expect(leafletMock.markers[0]?.bindTooltip).toHaveBeenCalledWith(
+      expect.any(HTMLElement),
+      expect.objectContaining({ className: 'coordinate-preview-mgrs-label', permanent: true }),
+    );
   });
 
   it('opens a readable light-theme card only after selection and dismisses it', async () => {
@@ -667,15 +685,31 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
         [50.45044, 30.52355],
         [50.5, 30.6],
       ],
-      expect.objectContaining({ maxZoom: 13, padding: [40, 40] }),
+      expect.objectContaining({ maxZoom: 13, padding: [80, 80] }),
     );
     expect(leaflet.circleMarker).toHaveBeenCalledWith(
       [50.45044, 30.52355],
       expect.objectContaining({ interactive: true, bubblingMouseEvents: false }),
     );
     expect(leaflet.circleMarker).toHaveBeenCalledTimes(2);
+    expect(leafletMock.markers).toHaveLength(2);
+    for (const marker of leafletMock.markers) {
+      expect(marker.bindTooltip).toHaveBeenCalledTimes(1);
+      const [label, options] = marker.bindTooltip.mock.calls[0] ?? [];
+      expect((label as HTMLElement).textContent).toMatch(/^\d{1,2}[A-Z] [A-Z]{2}/);
+      expect(options).toMatchObject({
+        permanent: true,
+        interactive: false,
+        direction: 'top',
+        offset: [0, -8],
+        className: 'coordinate-preview-mgrs-label',
+      });
+      expect(marker.on.mock.calls.some(([event]) => event === 'click')).toBe(true);
+    }
     expect(leaflet.map().invalidateSize).toHaveBeenCalledTimes(1);
-    expect(leaflet.circleMarker().setLatLng).not.toHaveBeenCalled();
+    expect(leafletMock.markers.every((marker) => marker.setLatLng.mock.calls.length === 0)).toBe(
+      true,
+    );
 
     const setViewCallsBeforeLayerSwitch = leaflet.map().setView.mock.calls.length;
     const invalidateCallsBeforeLayerSwitch = leaflet.map().invalidateSize.mock.calls.length;
@@ -729,7 +763,7 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     expect(document.body.querySelector('[data-coordinate-point-counter]')?.textContent).toContain(
       '2 / 2',
     );
-    expect(leaflet.circleMarker().setStyle).toHaveBeenCalled();
+    expect(leafletMock.markers.some((marker) => marker.setStyle.mock.calls.length > 0)).toBe(true);
 
     await act(async () => {
       resizeObserverInstances.at(-1)?.trigger();
@@ -779,7 +813,7 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
       setView: ReturnType<typeof vi.fn>;
       invalidateSize: ReturnType<typeof vi.fn>;
     };
-    const markerInstance = leaflet.circleMarker.mock.results[0]?.value as {
+    const markerInstance = leafletMock.markers[0] as {
       on: ReturnType<typeof vi.fn>;
       setLatLng: ReturnType<typeof vi.fn>;
       setStyle: ReturnType<typeof vi.fn>;
@@ -809,7 +843,8 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     expect(mapInstance.setView).toHaveBeenLastCalledWith([50.45044, 30.52355], 13);
     expect(markerInstance.setStyle).toHaveBeenCalled();
 
-    const selectSecondMarker = markerInstance.on.mock.calls[1]?.[1] as (() => void) | undefined;
+    const selectSecondMarker = leafletMock.markers[1]?.on.mock.calls[0]?.[1] as
+      (() => void) | undefined;
     expect(selectSecondMarker).toBeTypeOf('function');
     await act(async () => {
       selectSecondMarker?.();
@@ -819,6 +854,71 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     expect(mapInstance.setView).toHaveBeenLastCalledWith([50.5, 30.6], 13);
     expect(document.body.querySelector('[data-coordinate-point-counter]')?.textContent).toContain(
       '2 / 2',
+    );
+  });
+
+  it('shows the selected Palitra identity as safe, wrapped text without removing MGRS labels', async () => {
+    const points = [
+      {
+        lat: 50.45044,
+        lng: 30.52355,
+        label: '<img src=x onerror=alert(1)>',
+        source: 'palitra' as const,
+      },
+      { lat: 50.5, lng: 30.6, label: 'Другий еталон', source: 'palitra' as const },
+    ];
+    await act(async () => {
+      root.render(
+        <TestCoordinatePreviewDialog
+          open
+          points={points}
+          onClose={vi.fn()}
+          onIndexChange={vi.fn()}
+        />,
+      );
+      await Promise.resolve();
+    });
+    hostRect = { width: 800, height: 600 };
+    await act(async () => {
+      resizeObserverInstances.at(-1)?.trigger();
+      await Promise.resolve();
+    });
+
+    const panel = document.body.querySelector('[data-coordinate-panel="true"]') as HTMLElement;
+    expect(panel.style.display).toBe('none');
+    expect(leafletMock.markers.every((marker) => marker.bindTooltip.mock.calls.length === 1)).toBe(
+      true,
+    );
+
+    const firstMarkerClick = leafletMock.markers[0]?.on.mock.calls[0]?.[1] as
+      (() => void) | undefined;
+    await act(async () => {
+      firstMarkerClick?.();
+      await Promise.resolve();
+    });
+    const identity = document.body.querySelector(
+      '[data-coordinate-palitra-identity="true"]',
+    ) as HTMLElement;
+    expect(identity.textContent).toBe(points[0].label);
+    expect(identity.style.maxWidth).toBe('100%');
+    expect(identity.style.overflowWrap).toBe('anywhere');
+    expect(identity.querySelector('img, script, svg[onload]')).toBeNull();
+
+    const secondMarkerClick = leafletMock.markers[1]?.on.mock.calls[0]?.[1] as
+      (() => void) | undefined;
+    await act(async () => {
+      secondMarkerClick?.();
+      await Promise.resolve();
+    });
+    expect(identity.textContent).toBe(points[1].label);
+    await act(async () => {
+      document.body
+        .querySelector('button[aria-label="Закрити картку координати"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(leafletMock.markers.every((marker) => marker.bindTooltip.mock.calls.length === 1)).toBe(
+      true,
     );
   });
 

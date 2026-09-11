@@ -29,7 +29,7 @@ import type { MessageCardPreviewNavigation } from '../attachment-preview/message
 type MapInitState = 'loading' | 'ready' | 'error';
 const PREVIEW_ZOOM = 13;
 const PREVIEW_MAX_ZOOM = 13;
-const PREVIEW_BOUNDS_PADDING: [number, number] = [40, 40];
+const PREVIEW_BOUNDS_PADDING: [number, number] = [80, 80];
 const MAP_INIT_TIMEOUT_MS = 2000;
 const MAP_HOST_MIN_SIZE_PX = 48;
 const COORDINATE_ROW_HEIGHT = 24;
@@ -91,6 +91,20 @@ function DocumentPointContext({ point }: { point: CoordinatePreviewPoint }) {
         </Box>
       ) : null}
     </Box>
+  );
+}
+
+function PalitraPointContext({ point }: { point: CoordinatePreviewPoint }) {
+  if (point.source !== 'palitra') return null;
+  return (
+    <Typography
+      variant="subtitle2"
+      data-coordinate-palitra-identity="true"
+      sx={{ maxWidth: '100%', overflowWrap: 'anywhere', color: 'text.primary' }}
+      style={{ maxWidth: '100%', overflowWrap: 'anywhere' }}
+    >
+      {point.label}
+    </Typography>
   );
 }
 
@@ -369,7 +383,21 @@ function CoordinateMapPreview({
           fillOpacity: 1,
           interactive: true,
           bubblingMouseEvents: false,
-        }).addTo(map);
+        });
+        const mgrsText = getCoordinateMgrsText({ lat, lng });
+        if (mgrsText != null) {
+          const label = document.createElement('span');
+          label.textContent = mgrsText;
+          marker.bindTooltip(label, {
+            permanent: true,
+            direction: 'top',
+            offset: [0, -8],
+            opacity: 1,
+            className: 'coordinate-preview-mgrs-label',
+            interactive: false,
+          });
+        }
+        marker.addTo(map);
         marker.on('click', () => {
           map.setView([lat, lng], map.getZoom());
           setIsPanelOpen(true);
@@ -559,6 +587,7 @@ function CoordinateMapPreview({
     >
       <Box
         ref={setMapHostEl}
+        className="coordinate-fullscreen-map"
         data-coordinate-marker-count={mapInitState === 'ready' ? points.length : 0}
         sx={{
           position: 'absolute',
@@ -720,6 +749,7 @@ function CoordinateMapPreview({
               <CloseIcon sx={{ fontSize: 16 }} />
             </IconButton>
           </div>
+          <PalitraPointContext point={point} />
           <DocumentPointContext point={point} />
           <div role="table" className="w-full">
             {(isExpanded ? coordinateRows : coordinateRows.slice(0, 2)).map((row) => (

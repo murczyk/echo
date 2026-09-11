@@ -446,7 +446,8 @@ html[data-bs-theme='dark'] .message-card-root {
   height: 100%;
 }
 
-.coordinate-preview-map-surface .leaflet-tooltip.coordinate-preview-mgrs-label {
+.coordinate-preview-map-surface .leaflet-tooltip.coordinate-preview-mgrs-label,
+.coordinate-fullscreen-map .leaflet-tooltip.coordinate-preview-mgrs-label {
   z-index: 3;
   padding: 3px 5px;
   border: 0;
@@ -461,7 +462,8 @@ html[data-bs-theme='dark'] .message-card-root {
   white-space: nowrap;
 }
 
-.coordinate-preview-map-surface .leaflet-tooltip.coordinate-preview-mgrs-label::before {
+.coordinate-preview-map-surface .leaflet-tooltip.coordinate-preview-mgrs-label::before,
+.coordinate-fullscreen-map .leaflet-tooltip.coordinate-preview-mgrs-label::before {
   border-top-color: color-mix(in srgb, var(--color-background) 88%, transparent);
 }
 

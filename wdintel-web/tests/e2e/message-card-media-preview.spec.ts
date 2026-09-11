@@ -1018,9 +1018,88 @@ test.describe('message card media preview contract', () => {
         await expect(preview).toBeVisible();
         await button.evaluate((element) => element.click());
         await expect(preview).toHaveCount(0);
-        await expect(page.getByRole('dialog', { name: 'Перегляд координат' })).toBeVisible();
+        const dialog = page.getByRole('dialog', { name: 'Перегляд координат' });
+        await expect(dialog).toBeVisible();
+        const fullscreenMap = dialog.locator('.coordinate-fullscreen-map');
+        await expect(fullscreenMap).toHaveCount(1);
+        const fullscreenLabels = fullscreenMap.locator('.coordinate-preview-mgrs-label');
+        await expect(fullscreenLabels).toHaveCount(1);
+        const [mapBox, labelBox] = await Promise.all([
+          fullscreenMap.boundingBox(),
+          fullscreenLabels.first().boundingBox(),
+        ]);
+        expect(labelBox?.x).toBeGreaterThanOrEqual(mapBox?.x ?? 0);
+        expect((labelBox?.x ?? 0) + (labelBox?.width ?? 0)).toBeLessThanOrEqual(
+          (mapBox?.x ?? 0) + (mapBox?.width ?? 0),
+        );
         await page.getByRole('button', { name: 'Закрити', exact: true }).click();
       }
+    }
+  });
+
+  test('resolves a Palitra coordinate into the fullscreen MGRS map in both hosts', async ({
+    page,
+  }) => {
+    for (const host of ['duty', 'analysis'] as const) {
+      const listRequest = page.waitForRequest(
+        (request) =>
+          new URL(request.url()).pathname === '/api/palitra/v2/list-map' &&
+          request.method() === 'POST',
+      );
+      const pointSearchRequest = page.waitForRequest(
+        (request) =>
+          new URL(request.url()).pathname === '/api/palitra/points/search' &&
+          request.method() === 'POST',
+      );
+      await openMessageCardPreviewHost(page, host, {
+        revealCoordinates: true,
+        palitraEtalon: 'E2E-ПАЛІТРА',
+      });
+      const [listRequestResult, pointSearchRequestResult] = await Promise.all([
+        listRequest,
+        pointSearchRequest,
+      ]);
+      expect(listRequestResult).toBeTruthy();
+      expect(JSON.parse(pointSearchRequestResult.postData() ?? '{}')).toMatchObject({
+        palitra_ids: [1],
+        point_labels: ['E2E-ПАЛІТРА'],
+      });
+      const tile = page
+        .locator('.message-card-root')
+        .first()
+        .locator('[data-coordinate-preview-tile]');
+      await tile.getByRole('button', { name: /Open .* on map/ }).click();
+      const dialog = page.getByRole('dialog', { name: 'Перегляд координат' });
+      const fullscreenMap = dialog.locator('.coordinate-fullscreen-map');
+      await expect(fullscreenMap).toHaveCount(1);
+      await expect(fullscreenMap).toHaveAttribute('data-coordinate-marker-count', '1');
+      const fullscreenLabels = fullscreenMap.locator('.coordinate-preview-mgrs-label');
+      await expect(fullscreenLabels).toHaveCount(1);
+      await expect(fullscreenLabels).toHaveText(/\d{1,2}[C-X] [A-Z]{2} \d+ \d+/);
+      const [mapBox, labelBox] = await Promise.all([
+        fullscreenMap.boundingBox(),
+        fullscreenLabels.boundingBox(),
+      ]);
+      expect(labelBox?.x).toBeGreaterThanOrEqual((mapBox?.x ?? 0) - 1);
+      expect((labelBox?.x ?? 0) + (labelBox?.width ?? 0)).toBeLessThanOrEqual(
+        (mapBox?.x ?? 0) + (mapBox?.width ?? 0) + 1,
+      );
+      expect(labelBox?.y).toBeGreaterThanOrEqual((mapBox?.y ?? 0) - 1);
+      expect((labelBox?.y ?? 0) + (labelBox?.height ?? 0)).toBeLessThanOrEqual(
+        (mapBox?.y ?? 0) + (mapBox?.height ?? 0) + 1,
+      );
+      await page.mouse.click(
+        (mapBox?.x ?? 0) + (mapBox?.width ?? 0) / 2,
+        (mapBox?.y ?? 0) + (mapBox?.height ?? 0) / 2,
+      );
+      await expect(dialog.locator('[data-coordinate-panel="true"]')).toBeVisible();
+      await expect(dialog.locator('[data-coordinate-palitra-identity="true"]')).toHaveText(
+        'E2E-ПАЛІТРА',
+      );
+      await dialog.getByRole('button', { name: 'Закрити картку координати' }).click();
+      await expect(dialog.locator('[data-coordinate-panel="true"]')).toBeHidden();
+      await expect(fullscreenLabels).toHaveCount(1);
+      await dialog.getByRole('button', { name: 'Закрити', exact: true }).click();
     }
   });
 
