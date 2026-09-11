@@ -35,6 +35,7 @@ const duplicate = {
   armyRegion: '',
   comment: '',
   orbitNote: null,
+  presentInOrbit: null,
   isDeduplicateCandidate: true,
   createdAt: 0,
   createdByLoginId: '',
@@ -51,7 +52,11 @@ function findButton(label: string): HTMLButtonElement {
   return button;
 }
 
-async function renderDialog(onSubmit: (value: UnitFormSubmit) => void): Promise<Root> {
+async function renderDialog(
+  onSubmit: (value: UnitFormSubmit) => void,
+  unit: Unit | null = null,
+  editSection?: 'all' | 'unit' | 'orbit',
+): Promise<Root> {
   vi.mocked(getUnitsPage).mockResolvedValue({
     showLoadMore: false,
     totalCount: 0,
@@ -65,7 +70,7 @@ async function renderDialog(onSubmit: (value: UnitFormSubmit) => void): Promise<
     root.render(
       <UnitFormDrawer
         open
-        unit={null}
+        unit={unit}
         devicesSectionEnabled={false}
         submitting={false}
         error={null}
@@ -78,6 +83,7 @@ async function renderDialog(onSubmit: (value: UnitFormSubmit) => void): Promise<
         onSubmit={onSubmit}
         onLinkOrbitUnit={vi.fn()}
         onUnlinkOrbitUnit={vi.fn()}
+        editSection={editSection}
       />,
     );
   });
@@ -90,6 +96,16 @@ afterEach(() => {
 });
 
 describe('UnitFormDrawer', () => {
+  it.each([undefined, 'orbit'] as const)(
+    'shows ORBIT presence in the %s edit flow',
+    async (editSection) => {
+      const root = await renderDialog(vi.fn(), duplicate, editSection);
+
+      expect(document.body.textContent).toContain('Присутній в Orbit');
+      act(() => root.unmount());
+    },
+  );
+
   it('waits for duplicate selection before creating an ORBIT-linked unit', async () => {
     vi.mocked(getCreateUnitDuplicateCandidates).mockResolvedValue([duplicate]);
     const onSubmit = vi.fn();

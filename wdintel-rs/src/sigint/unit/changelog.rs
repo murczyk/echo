@@ -35,6 +35,7 @@ const UNIT_FIELDS: &[&str] = &[
     "active",
     "comment",
     "orbit_note",
+    "present_in_orbit",
     "is_deduplicate_candidate",
     "is_inconsistent",
     "deleted",
@@ -207,7 +208,10 @@ fn unit_changes(
 
 fn unit_field_visible(field: &str, can_view_orbit: bool) -> bool {
     can_view_orbit
-        || !matches!(field, "orbit_note" | "is_deduplicate_candidate")
+        || !matches!(
+            field,
+            "orbit_note" | "present_in_orbit" | "is_deduplicate_candidate"
+        )
 }
 
 fn json_field<'a>(

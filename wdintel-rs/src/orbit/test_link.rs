@@ -1947,6 +1947,7 @@ mod tests {
             original_id: None,
             is_deduplicate_candidate: None,
             orbit_note: None,
+            present_in_orbit: None,
             army_region: String::new(),
             military_district: String::new(),
             other: String::new(),

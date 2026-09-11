@@ -11,10 +11,12 @@ export function DeviceAnalyticsTagFilterControls({
   tagsState,
   filter,
   onChange,
+  compact = false,
 }: {
   tagsState: DeviceAnalyticsTagsState;
   filter: DeviceAnalyticsTagFilter;
   onChange: (filter: DeviceAnalyticsTagFilter) => void;
+  compact?: boolean;
 }) {
   const selectedTags = filter.tagIds
     .map((tagId) => tagsState.tags.find((tag) => tag.id === tagId))
@@ -40,15 +42,16 @@ export function DeviceAnalyticsTagFilterControls({
         </PowerAlert>
       ) : null}
       <Stack
-        direction={{ xs: 'column', md: 'row' }}
+        direction={compact ? 'column' : { xs: 'column', md: 'row' }}
         spacing={1.5}
-        alignItems={{ md: 'flex-start' }}
+        alignItems={compact ? 'stretch' : { md: 'flex-start' }}
       >
         <PowerAutocomplete<AnalyticsTag>
           options={tagsState.tags}
           value={selectedTags}
           loading={tagsState.loading}
           disabled={filter.untagged || tagsState.error !== null}
+          fullWidth={compact}
           getOptionLabel={(tag) => tag.name}
           isOptionEqualToValue={(option, value) => option.id === value.id}
           onChange={(_, tags) =>
@@ -62,7 +65,7 @@ export function DeviceAnalyticsTagFilterControls({
               size="small"
             />
           )}
-          sx={{ minWidth: { md: 320 }, flex: 1 }}
+          sx={compact ? { minWidth: 0 } : { minWidth: { md: 320 }, flex: 1 }}
         />
         <TextField
           select
@@ -70,8 +73,9 @@ export function DeviceAnalyticsTagFilterControls({
           size="small"
           value={filter.tagMatch}
           disabled={filter.untagged || filter.tagIds.length < 2}
+          fullWidth={compact}
           onChange={(event) => onChange({ ...filter, tagMatch: event.target.value as TagMatch })}
-          sx={{ minWidth: 150 }}
+          sx={compact ? undefined : { minWidth: 150 }}
           SelectProps={{ native: true }}
         >
           <option value="any">Будь-який</option>

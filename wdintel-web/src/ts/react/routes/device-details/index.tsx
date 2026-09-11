@@ -13,11 +13,10 @@ import { SidePanelToggleButton } from '../../components/SidePanelToggleButton';
 import { navigateWithinSpa } from '../../utils/browser';
 import { hasRole } from '../../utils/roles';
 import { DeviceUpsertDrawer } from '../devices/components/DeviceUpsertDrawer';
-import { DeviceFileTree } from '../device-files/components/DeviceFileTree';
+import { DeviceFilesSidebar, useDeviceFiles } from '../device-files';
 import type { DeviceAnalyticsTagFilter } from '../device-files/types';
 import { useDeviceAnalyticsTags } from '../device-files/use-device-analytics-tags';
 import { useDeviceFileJournal } from '../device-files/use-device-file-journal';
-import { useDeviceFiles } from '../device-files/use-device-files';
 import { DeviceDetailsLeftPanel } from './components/DeviceDetailsLeftPanel';
 import { DeviceDetailsTabPanel, type DeviceDetailsTab } from './components/DeviceDetailsTabPanel';
 import { formatDeviceLifecycleLabel } from './helpers';
@@ -87,6 +86,7 @@ export function DeviceDetailsPage({
   const page = useDeviceDetailsPage({ deviceId, authUserRoles });
   const theme = useTheme();
   const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
+  const echoLgMediaQuery = `@media (min-width: ${theme.echo.breakpoint.lg})`;
   const [activeTab, setActiveTab] = useState<DeviceDetailsTab>('analytical');
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [tagFilter, setTagFilter] = useState<DeviceAnalyticsTagFilter>({
@@ -95,7 +95,6 @@ export function DeviceDetailsPage({
     untagged: false,
   });
   const device = page.device;
-  const canSyncFiles = page.permissions.canSyncFiles && device !== null && !device.archived;
   const tagsState = useDeviceAnalyticsTags({
     deviceId,
     enabled: page.permissions.canRead && device !== null,
@@ -103,7 +102,6 @@ export function DeviceDetailsPage({
   const files = useDeviceFiles({
     deviceId,
     enabled: activeTab === 'files' && page.permissions.canRead && device !== null,
-    canSync: canSyncFiles,
     tagFilter,
   });
   const journal = useDeviceFileJournal({
@@ -203,13 +201,17 @@ export function DeviceDetailsPage({
           flex: 1,
           minHeight: 0,
           display: 'grid',
-          gridTemplateColumns: {
-            xs: 'minmax(0, 1fr)',
-            lg: leftPanelVisible ? 'minmax(360px, 420px) minmax(0, 1fr)' : 'minmax(0, 1fr)',
+          gridTemplateColumns: 'minmax(0, 1fr)',
+          gridTemplateRows: 'auto minmax(420px, 1fr)',
+          overflow: 'auto',
+          [echoLgMediaQuery]: {
+            gridTemplateColumns: leftPanelVisible
+              ? 'minmax(360px, 420px) minmax(0, 1fr)'
+              : 'minmax(0, 1fr)',
+            gridTemplateRows: 'minmax(0, 1fr)',
+            overflow: 'hidden',
           },
-          gridTemplateRows: { xs: 'auto minmax(420px, 1fr)', lg: 'minmax(0, 1fr)' },
           gap: 2,
-          overflow: { xs: 'auto', lg: 'hidden' },
         }}
       >
         {page.loading && device === null ? (
@@ -220,21 +222,27 @@ export function DeviceDetailsPage({
           ) : null
         ) : device ? (
           <>
-            {leftPanelVisible ? (
+            {activeTab === 'files' ? (
+              <div
+                hidden={!leftPanelVisible}
+                className="min-w-0 echo-lg:min-h-0 echo-lg:overflow-hidden"
+              >
+                <DeviceFilesSidebar
+                  files={files}
+                  tagsState={tagsState}
+                  tagFilter={tagFilter}
+                  onTagFilterChange={setTagFilter}
+                />
+              </div>
+            ) : leftPanelVisible ? (
               <Box sx={{ minHeight: 0, overflow: 'hidden' }}>
-                {activeTab === 'files' ? (
-                  <DeviceFileTree files={files} />
-                ) : (
-                  <DeviceDetailsLeftPanel device={device} loading={page.loading} />
-                )}
+                <DeviceDetailsLeftPanel device={device} loading={page.loading} />
               </Box>
             ) : null}
             <Box sx={{ minHeight: 0, minWidth: 0, display: 'flex', overflow: 'hidden' }}>
               <DeviceDetailsTabPanel
                 activeTab={activeTab}
                 journal={journal}
-                files={files}
-                canSyncFiles={canSyncFiles}
                 deviceId={deviceId}
                 isAdmin={hasRole(authUserRoles, 'Admin')}
                 tagsState={tagsState}

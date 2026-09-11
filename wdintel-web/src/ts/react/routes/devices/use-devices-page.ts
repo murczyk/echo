@@ -67,7 +67,6 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
       canRead: capabilities.canRead,
       canCreate: capabilities.canCreate,
       canEdit: capabilities.canWriteSourceData || capabilities.canWriteAnalyticalData,
-      canSyncFiles: capabilities.canWriteSourceData,
       fieldPermissions: {
         sourceData: capabilities.canWriteSourceData,
         analyticalData: capabilities.canWriteAnalyticalData,

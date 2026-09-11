@@ -7,7 +7,6 @@ import type {
   CreateDeviceReq,
   DeviceDetailReq,
   DeviceDetails,
-  DeviceFile,
   DeviceSettingsItem,
   DeviceSettingsReq,
   DeviceAnalyticsFilesReq,
@@ -18,9 +17,6 @@ import type {
   DeviceUnitStat,
   JournalDeviceFilesReq,
   JournalDeviceFilesRsp,
-  FileSyncErrorCode,
-  FileSyncFieldError,
-  FileSyncOperation,
   ListDeviceFileRootsReq,
   ListDeviceFileRootsRsp,
   ListDevicesReq,
@@ -28,7 +24,6 @@ import type {
   ListUnitsRsp,
   SearchDeviceFilesReq,
   SearchDeviceFilesRsp,
-  SyncDeviceFilesReq,
   ReanalyzeAllRsp,
   ReanalyzeDeviceReq,
   ReanalyzeDeviceRsp,
@@ -38,7 +33,6 @@ import type {
   ListAnalysisRunsRsp,
   ListAnalysisRunFilesReq,
   ListAnalysisRunFilesRsp,
-  SyncDeviceFilesRsp,
   Unit,
   UpdateDeviceReq,
 } from '../../../../Bindings';
@@ -64,23 +58,6 @@ export type DeviceUpdatePatchInput = {
 export type DeviceSettingsInput = Partial<DeviceSettingsReq>;
 
 type DeviceUpdatePatchReq = DeviceUpdatePatchInput;
-
-type CamelFileSyncResult =
-  | {
-      status: 'accepted';
-      index: number;
-      operation: FileSyncOperation;
-      fileId: string;
-      revision: number;
-      file: DeviceFile;
-    }
-  | {
-      status: 'rejected';
-      index: number;
-      code: FileSyncErrorCode;
-      message: string;
-      fieldErrors: FileSyncFieldError[];
-    };
 
 export function toDeviceUpdatePatchReq(input: DeviceUpdatePatchInput): DeviceUpdatePatchReq {
   const req: DeviceUpdatePatchReq = { deviceId: input.deviceId };
@@ -120,24 +97,6 @@ function normalizeDeviceDetails(data: unknown): DeviceDetails {
   return {
     ...details,
     customFields,
-  };
-}
-
-function normalizeSyncResponse(data: unknown): SyncDeviceFilesRsp {
-  const response = transformSnakeToCamel<{
-    sync: SyncDeviceFilesRsp['sync'];
-    results: CamelFileSyncResult[];
-  }>(data);
-  return {
-    sync: response.sync,
-    results: response.results.map((result) => {
-      if (result.status === 'accepted') {
-        const { status: _, ...accepted } = result;
-        return { Accepted: accepted };
-      }
-      const { status: _, ...rejected } = result;
-      return { Rejected: rejected };
-    }),
   };
 }
 
@@ -252,18 +211,6 @@ export async function journalDeviceFiles(
 ): Promise<JournalDeviceFilesRsp> {
   const data = await postJson('/api/device/files/journal', transformCamelToSnake(req), options);
   return transformSnakeToCamel<JournalDeviceFilesRsp>(data);
-}
-
-export async function syncDeviceFiles(
-  req: SyncDeviceFilesReq,
-  options?: RequestOptions,
-): Promise<SyncDeviceFilesRsp> {
-  const data = await postJson(
-    '/api/device/files/sync',
-    transformCamelToSnake<JsonBody>(req),
-    options,
-  );
-  return normalizeSyncResponse(data);
 }
 
 export async function listAnalyticsTags(

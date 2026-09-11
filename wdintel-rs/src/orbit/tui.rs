@@ -75,6 +75,7 @@ pub enum StartAction {
     LinkSigintUnitsToOrbit,
     LinkOrbitUnitsToSigint,
     FixLinkedUnitEchelonNumbers,
+    MarkLinkedSigintUnitsPresentInOrbit,
     MergeUnitDuplicates,
     ReviewSigintDuplicateCandidates,
     ResolveUnparsedUnits,
@@ -843,6 +844,7 @@ fn run_start_menu(
         StartAction::LinkSigintUnitsToOrbit,
         StartAction::LinkOrbitUnitsToSigint,
         StartAction::FixLinkedUnitEchelonNumbers,
+        StartAction::MarkLinkedSigintUnitsPresentInOrbit,
         StartAction::MergeUnitDuplicates,
         StartAction::ReviewSigintDuplicateCandidates,
         StartAction::ResolveUnparsedUnits,
@@ -1888,13 +1890,14 @@ fn orbit_sigint_link_decision_for_key(
 }
 
 fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
-    let area = centered_area(frame, 86, 14);
+    let area = centered_area(frame, 86, 15);
     let options = [
         "IMPORT NEW ORBIT DATA REVISION",
         "Sync ORBIT units",
         "Link unlinked SIGINT units to ORBIT units",
         "Link unlinked ORBIT units to SIGINT units",
         "Replace linked SIGINT echelon values with mismatched ORBIT numbers",
+        "Mark linked SIGINT units as present in ORBIT",
         "Merge duplicate SIGINT units linked to one ORBIT unit",
         "Review all SIGINT duplicate candidates pair by pair",
         "Resolve unparsed unit labels through ORBIT links",

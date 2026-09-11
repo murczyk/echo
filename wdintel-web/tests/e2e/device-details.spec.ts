@@ -8,6 +8,8 @@ const USERS_ID = '018f0000-0000-7000-8000-000000000004';
 const NOW = '2026-07-24T08:00:00Z';
 const JOURNAL_FILE_ID = '018f0000-0000-7000-8000-000000000005';
 const ANALYTICS_TAG_ID = '018f0000-0000-7000-8000-000000000006';
+const SEARCH_FILE_ONE_ID = '018f0000-0000-7000-8000-000000000012';
+const SEARCH_FILE_TWO_ID = '018f0000-0000-7000-8000-000000000013';
 
 function fulfillJson(route: Route, body: unknown) {
   return route.fulfill({
@@ -92,6 +94,7 @@ function systemSettings() {
     enable_audio_transcription: false,
     show_classic_duty: false,
     show_classic_analysis: false,
+    show_peleng_distance_to_battleline: false,
     hide_orbit_data: false,
   };
 }
@@ -102,6 +105,8 @@ type ApiTracker = {
   journalRequestCount: number;
   rootsRequestCount: number;
   subtreeCountRequestCount: number;
+  searchRequests: Array<Record<string, unknown>>;
+  deviceArchived: boolean;
   submittedCreateName: string | undefined;
   releaseSubtreeCounts: () => void;
 };
@@ -117,6 +122,8 @@ async function installMocks(page: Page): Promise<ApiTracker> {
     journalRequestCount: 0,
     rootsRequestCount: 0,
     subtreeCountRequestCount: 0,
+    searchRequests: [],
+    deviceArchived: false,
     submittedCreateName: undefined,
     releaseSubtreeCounts,
   };
@@ -215,10 +222,10 @@ async function installMocks(page: Page): Promise<ApiTracker> {
         external_url: 'https://example.test/device-alpha',
         custom_fields: { inventory_id: 'node-1' },
         created_by: 'operator',
-        archived: false,
+        archived: tracker.deviceArchived,
         created_at: NOW,
         updated_at: NOW,
-        archived_at: null,
+        archived_at: tracker.deviceArchived ? NOW : null,
       });
       return;
     }
@@ -316,7 +323,49 @@ async function installMocks(page: Page): Promise<ApiTracker> {
       return;
     }
     if (pathname === '/api/device/files/search') {
-      await fulfillJson(route, { entries: [], next_cursor: null });
+      const request = route.request().postDataJSON() as Record<string, unknown>;
+      tracker.searchRequests.push(request);
+      const nameQuery = request.name_query;
+      const cursor = request.cursor;
+      const entries =
+        nameQuery === 'duplicate'
+          ? cursor === null
+            ? [
+                entry({
+                  entryId: SEARCH_FILE_ONE_ID,
+                  parentEntryId: POSIX_ROOT_ID,
+                  kind: 'file',
+                  name: 'duplicate.log',
+                  pathSyntax: 'posix',
+                  absolutePath: '/shared/duplicate.log',
+                }),
+              ]
+            : cursor === 'search-page-2'
+              ? [
+                  entry({
+                    entryId: SEARCH_FILE_TWO_ID,
+                    parentEntryId: POSIX_ROOT_ID,
+                    kind: 'file',
+                    name: 'duplicate.log',
+                    pathSyntax: 'posix',
+                    absolutePath: '/shared/duplicate.log',
+                  }),
+                ]
+              : []
+          : nameQuery === null && request.scope_entry_id === POSIX_ROOT_ID
+            ? [
+                entry({
+                  entryId: DOCUMENTS_ID,
+                  parentEntryId: POSIX_ROOT_ID,
+                  kind: 'directory',
+                  name: 'documents',
+                }),
+              ]
+            : [];
+      await fulfillJson(route, {
+        entries,
+        next_cursor: nameQuery === 'duplicate' && cursor === null ? 'search-page-2' : null,
+      });
       return;
     }
     if (pathname === '/api/device/files/journal') {
@@ -343,7 +392,7 @@ async function installMocks(page: Page): Promise<ApiTracker> {
   return tracker;
 }
 
-test('@smoke device details uses tabs, a synchronization journal, a collapsible network-width sidebar, and an all-roots file tree', async ({
+test('@smoke device details uses tabs, an IDE-style Files sidebar, and a synchronization journal', async ({
   page,
 }) => {
   const browserFailures: string[] = [];
@@ -418,85 +467,185 @@ test('@smoke device details uses tabs, a synchronization journal, a collapsible 
   expect(tracker.rootsRequestCount).toBe(0);
 
   await page.getByRole('tab', { name: 'Файли' }).click();
-  const fileTree = page.getByTestId('device-files-tree-panel');
+  const filesSidebar = page.getByTestId('device-files-sidebar');
+  const fileTree = filesSidebar.getByTestId('device-files-tree');
+  const contentPane = page.getByTestId('device-file-content-pane');
+  await expect(filesSidebar).toBeVisible();
   await expect(fileTree).toBeVisible();
+  await expect(contentPane).toBeVisible();
+  await expect(contentPane.getByRole('heading', { name: 'Вміст файлу' })).toBeVisible();
+  await expect(contentPane).toContainText(
+    'Тут відображатиметься вміст вибраного файлу, коли перегляд контенту стане доступним.',
+  );
+  await expect(contentPane.getByRole('button')).toHaveCount(0);
+  await expect(contentPane.getByRole('textbox')).toHaveCount(0);
   await expect.poll(() => tracker.rootsRequestCount).toBe(1);
-  await expect(page.getByLabel('Вибрати каталог / як область пошуку')).toBeVisible();
-  await expect(page.getByLabel('Вибрати каталог C:\\ як область пошуку')).toBeVisible();
-  await expect(page.getByText('root.log', { exact: true })).toBeVisible();
+
+  const explorerModeButton = filesSidebar.getByRole('button', {
+    name: 'Показати файлове дерево',
+  });
+  const searchModeButton = filesSidebar.getByRole('button', { name: 'Показати пошук файлів' });
+  await expect(explorerModeButton).toHaveAttribute('aria-pressed', 'true');
+  await expect(explorerModeButton).toHaveAttribute('aria-controls', 'device-files-explorer-panel');
+  await expect(searchModeButton).toHaveAttribute('aria-pressed', 'false');
+  await expect(searchModeButton).toHaveAttribute('aria-controls', 'device-files-search-panel');
+  await expect(filesSidebar.getByLabel('Назва містить')).toBeHidden();
+
+  await expect(filesSidebar.getByLabel('Вибрати каталог / як область пошуку')).toBeVisible();
+  await expect(filesSidebar.getByLabel('Вибрати каталог C:\\ як область пошуку')).toBeVisible();
+  await expect(fileTree.getByText('root.log', { exact: true })).toBeVisible();
   const rootFileRow = fileTree.getByRole('listitem').filter({ hasText: /^root\.log$/ });
   await expect(rootFileRow.getByText('.log', { exact: true })).toHaveCount(0);
   await expect(rootFileRow).not.toContainText('text/plain');
-  await expect(page.getByLabel('Вибрати каталог Users як область пошуку')).toBeVisible();
-  await expect(page.getByLabel('Завантаження кількості файлів')).toBeVisible();
+  await expect(filesSidebar.getByLabel('Вибрати каталог Users як область пошуку')).toBeVisible();
+  await expect(filesSidebar.getByLabel('Завантаження кількості файлів')).toBeVisible();
   await expect.poll(() => tracker.subtreeCountRequestCount).toBe(1);
   await expect(
-    page.getByLabel(
+    filesSidebar.getByLabel(
       'Вибрати каталог / як область пошуку; Файлів у каталозі та вкладених каталогах: 2',
       { exact: true },
     ),
   ).toHaveCount(0);
   tracker.releaseSubtreeCounts();
-  await expect(page.getByLabel('Завантаження кількості файлів')).toBeHidden();
+  await expect(filesSidebar.getByLabel('Завантаження кількості файлів')).toBeHidden();
   await expect(
-    page.getByLabel(
+    filesSidebar.getByLabel(
       'Вибрати каталог / як область пошуку; Файлів у каталозі та вкладених каталогах: 2',
       { exact: true },
     ),
   ).toBeVisible();
   await expect(
-    page.getByLabel(
+    filesSidebar.getByLabel(
       'Вибрати каталог C:\\ як область пошуку; Файлів у каталозі та вкладених каталогах: 0',
       { exact: true },
     ),
   ).toBeVisible();
   await expect(
-    page.getByLabel(
+    filesSidebar.getByLabel(
       'Вибрати каталог Users як область пошуку; Файлів у каталозі та вкладених каталогах: 0',
       { exact: true },
     ),
   ).toBeVisible();
-  await expect(page.getByLabel('Назва містить')).toBeVisible();
-  await expect(page.getByLabel('MIME-типи')).toBeVisible();
-  await expect(page.getByLabel('Розширення')).toBeVisible();
 
-  const rootLabelBox = await page.getByLabel('Вибрати каталог / як область пошуку').boundingBox();
-  const documentsLabel = page.getByLabel('Вибрати каталог documents як область пошуку');
+  const rootLabelBox = await filesSidebar
+    .getByLabel('Вибрати каталог / як область пошуку')
+    .boundingBox();
+  const documentsLabel = filesSidebar.getByLabel('Вибрати каталог documents як область пошуку');
   const documentsLabelBox = await documentsLabel.boundingBox();
   expect(documentsLabelBox?.x).toBeGreaterThan(rootLabelBox?.x ?? 0);
+  await documentsLabel.click();
 
-  await page.getByLabel('Розгорнути каталог documents').click();
-  await expect(page.getByText('report.txt', { exact: true })).toBeVisible();
-  await expect(
-    page.getByLabel(
-      'Вибрати каталог documents як область пошуку; Файлів у каталозі та вкладених каталогах: 1',
-      { exact: true },
-    ),
-  ).toBeVisible();
+  await searchModeButton.click();
+  await expect(explorerModeButton).toHaveAttribute('aria-pressed', 'false');
+  await expect(searchModeButton).toHaveAttribute('aria-pressed', 'true');
+  await expect(fileTree).toBeHidden();
+  const resetToRootButton = filesSidebar.getByRole('button', { name: 'Шукати від кореня /' });
+  await expect(resetToRootButton).toBeVisible();
+  await resetToRootButton.click();
+  await expect(resetToRootButton).toBeHidden();
+
+  const advancedFiltersButton = filesSidebar.locator(
+    'button[aria-controls="device-file-search-advanced-filters"]',
+  );
+  await advancedFiltersButton.focus();
+  await page.keyboard.press('Enter');
+  await expect(advancedFiltersButton).toHaveAttribute('aria-expanded', 'true');
+  await expect(filesSidebar.getByLabel('MIME-типи')).toBeVisible();
+  await expect(filesSidebar.getByLabel('Розширення')).toBeVisible();
+  await filesSidebar.getByLabel('MIME-типи').fill('text/plain');
+  await filesSidebar.getByLabel('Розширення').fill('log');
+  await filesSidebar.getByRole('checkbox', { name: 'Файли' }).check();
+  const nameInput = filesSidebar.getByLabel('Назва містить');
+  await nameInput.fill('duplicate');
+  await filesSidebar.getByRole('button', { name: 'Знайти', exact: true }).click();
+
+  await expect.poll(() => tracker.searchRequests.length).toBe(1);
+  expect(tracker.searchRequests[0]).toEqual({
+    device_id: DEVICE_ID,
+    scope_entry_id: POSIX_ROOT_ID,
+    name_query: 'duplicate',
+    kinds: ['file'],
+    mime_types: ['text/plain'],
+    extensions: ['log'],
+    file_metadata_modified_from: null,
+    file_metadata_modified_to: null,
+    limit: 100,
+    cursor: null,
+    tag_ids: null,
+    tag_match: null,
+    untagged: null,
+  });
+  await expect(filesSidebar.getByText('duplicate.log', { exact: true })).toHaveCount(1);
+  await expect(filesSidebar.getByText('/shared/duplicate.log', { exact: true })).toHaveCount(1);
+  await filesSidebar.getByRole('button', { name: 'Завантажити ще' }).click();
+  await expect.poll(() => tracker.searchRequests.length).toBe(2);
+  expect(tracker.searchRequests[1]).toMatchObject({ cursor: 'search-page-2' });
+  await expect(filesSidebar.getByText('duplicate.log', { exact: true })).toHaveCount(2);
+  await expect(filesSidebar.getByText('/shared/duplicate.log', { exact: true })).toHaveCount(2);
 
   const mainPanel = page.getByTestId('device-details-tab-panel');
   const mainBeforeCollapse = await mainPanel.boundingBox();
   await page.getByRole('button', { name: 'Згорнути ліву панель' }).click();
-  await expect(fileTree).toBeHidden();
-  await expect(page.getByRole('button', { name: 'Розгорнути ліву панель' })).toBeVisible();
+  await expect(filesSidebar).toBeHidden();
+  await expect(page.getByRole('complementary', { name: 'Файли' })).toHaveCount(0);
+  const hiddenSearchButtonFocused = await filesSidebar
+    .locator('button[aria-label="Показати пошук файлів"]')
+    .evaluate((button) => {
+      (button as HTMLButtonElement).focus();
+      return document.activeElement === button;
+    });
+  expect(hiddenSearchButtonFocused).toBe(false);
   const mainAfterCollapse = await mainPanel.boundingBox();
   expect(mainAfterCollapse?.width).toBeGreaterThan(mainBeforeCollapse?.width ?? 0);
 
-  await page.setViewportSize({ width: 768, height: 900 });
-  await expect(page.getByRole('button', { name: 'Розгорнути ліву панель' })).toBeVisible();
-  await expect(fileTree).toBeHidden();
   await page.getByRole('button', { name: 'Розгорнути ліву панель' }).click();
-  await expect(fileTree).toBeVisible();
-  const tabletTreeBox = await fileTree.boundingBox();
+  await expect(filesSidebar).toBeVisible();
+  await expect(searchModeButton).toHaveAttribute('aria-pressed', 'true');
+  await expect(nameInput).toHaveValue('duplicate');
+  await expect(advancedFiltersButton).toHaveAttribute('aria-expanded', 'true');
+  await expect(filesSidebar.getByText('duplicate.log', { exact: true })).toHaveCount(2);
+
+  await page.setViewportSize({ width: 900, height: 900 });
+  const tabletSidebarBox = await filesSidebar.boundingBox();
   const tabletMainBox = await mainPanel.boundingBox();
-  expect(tabletMainBox?.y).toBeGreaterThan(tabletTreeBox?.y ?? 0);
+  expect(tabletMainBox?.y).toBeGreaterThanOrEqual(
+    (tabletSidebarBox?.y ?? 0) + (tabletSidebarBox?.height ?? 0),
+  );
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByRole('button', { name: 'Розгорнути ліву панель' })).toBeHidden();
-  await expect(fileTree).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Згорнути ліву панель' })).toBeHidden();
+  await expect(filesSidebar).toBeVisible();
+  expect(await filesSidebar.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+    true,
+  );
+
+  await filesSidebar.getByRole('button', { name: 'Очистити' }).click();
+  await expect(nameInput).toHaveValue('');
+  await filesSidebar.getByRole('button', { name: 'Знайти', exact: true }).click();
+  const directoryResult = filesSidebar.getByRole('button', { name: 'documents', exact: true });
+  await expect(directoryResult).toBeVisible();
+  await directoryResult.click();
+  await expect(filesSidebar.getByText('duplicate.log', { exact: true })).toHaveCount(0);
+  await expect(resetToRootButton).toBeVisible();
+  await expect(filesSidebar).toContainText('Налаштуйте область і фільтри та виконайте пошук.');
+  await resetToRootButton.click();
+  await nameInput.fill('empty');
+  await nameInput.press('Enter');
+  await expect(filesSidebar).toContainText('За заданими фільтрами нічого не знайдено.');
+  await filesSidebar.getByRole('button', { name: 'Сховати результати' }).click();
+  await expect(filesSidebar).toContainText('Налаштуйте область і фільтри та виконайте пошук.');
+
   await page.getByRole('tab', { name: 'Журнал' }).click();
   await expect(journalTable).toBeVisible();
   await expect(metadataPanel).toBeVisible();
+
+  tracker.deviceArchived = true;
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('tab', { name: 'Файли' })).toBeVisible();
+  await page.getByRole('tab', { name: 'Файли' }).click();
+  const archivedFilesSidebar = page.getByTestId('device-files-sidebar');
+  await expect(archivedFilesSidebar.getByText('root.log', { exact: true })).toBeVisible();
   expect(browserFailures).toEqual([]);
 });
 
