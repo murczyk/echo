@@ -40,7 +40,7 @@ async function saveMinimalReplacement(
   await confirmation.getByRole('button', { name: 'Замінити', exact: true }).click();
 }
 
-test.describe('image editor drawer integration #3099', () => {
+test.describe('image editor drawer integration #3448', () => {
   for (const host of ['duty', 'analysis'] as const satisfies ImageEditorDrawerHost[]) {
     test(`${host} opens from preview and saves one pending replacement`, async ({ page }) => {
       const submitted = await observeImageEditorSubmission(page);
@@ -112,5 +112,62 @@ test.describe('image editor drawer integration #3099', () => {
         editor.locator('footer').getByRole('button', { name: 'Зберегти', exact: true }),
       ).toBeVisible();
     }
+  });
+
+  test('opens and dismisses shortcut help from mobile overflow #3448', async ({ page }) => {
+    const { editor } = await openPendingImageEditor(page, 'duty');
+    await page.setViewportSize({ width: 360, height: 800 });
+    const more = editor.getByRole('button', { name: 'Ще' });
+    await expect(more).toBeEnabled();
+    await more.click();
+    await page.getByRole('menuitem', { name: 'Гарячі клавіші' }).click();
+    const help = page.getByRole('heading', { name: 'Гарячі клавіші' });
+    await expect(help).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(help).toBeHidden();
+    await expect(editor).toBeVisible();
+  });
+
+  test('finishes text editing on an empty-canvas click without creating a second label #3448', async ({
+    page,
+  }) => {
+    const { editor } = await openPendingImageEditor(page, 'duty');
+    await editor.getByRole('button', { name: 'Текст' }).click();
+    const surface = editor.locator('canvas').last();
+    const box = await surface.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.click(box!.x + box!.width * 0.25, box!.y + box!.height * 0.25);
+    await expect(editor.locator('textarea')).toBeFocused();
+    await page.keyboard.type('Позначка');
+    await page.mouse.click(box!.x + box!.width * 0.8, box!.y + box!.height * 0.8);
+    await expect(editor.getByRole('button', { name: 'Вибрати об’єкт' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    const deleteSelected = editor.getByRole('button', { name: 'Видалити вибране' }).first();
+    await expect(deleteSelected).toBeEnabled();
+    await page.keyboard.press('Delete');
+    await expect(deleteSelected).toBeDisabled();
+  });
+
+  test('hands a text-frame drag from editing to Fabric movement #3448', async ({ page }) => {
+    const { editor } = await openPendingImageEditor(page, 'duty');
+    await editor.getByRole('button', { name: 'Текст' }).click();
+    const surface = editor.locator('canvas').last();
+    const box = await surface.boundingBox();
+    expect(box).not.toBeNull();
+    const origin = { x: box!.x + box!.width * 0.3, y: box!.y + box!.height * 0.3 };
+    await page.mouse.click(origin.x, origin.y);
+    await expect(editor.locator('textarea')).toBeFocused();
+    await page.keyboard.type('Рух');
+    await page.mouse.move(origin.x - 4, origin.y + 8);
+    await page.mouse.down();
+    await page.mouse.move(origin.x + 36, origin.y + 28);
+    await page.mouse.up();
+    await expect(editor.getByRole('button', { name: 'Вибрати об’єкт' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(editor.getByRole('button', { name: 'Видалити вибране' }).first()).toBeEnabled();
   });
 });

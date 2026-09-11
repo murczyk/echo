@@ -79,11 +79,17 @@ export function ImageEditorWorkspace({
     const up = (event: KeyboardEvent) => {
       if (event.code === 'Space') spaceDownRef.current = false;
     };
+    const blur = () => {
+      spaceDownRef.current = false;
+    };
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
+    window.addEventListener('blur', blur);
     return () => {
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);
+      window.removeEventListener('blur', blur);
+      spaceDownRef.current = false;
     };
   }, []);
   useEffect(() => {

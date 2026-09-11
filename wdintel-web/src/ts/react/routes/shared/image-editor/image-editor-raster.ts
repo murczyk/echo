@@ -3,6 +3,8 @@ import { ConcealMode, ImageEditorObjectRole } from './image-editor.types';
 type FabricModule = typeof import('fabric');
 type RasterSource = { element: CanvasImageSource; width: number; height: number };
 const MAX_CONCEALMENT_RASTER_PIXELS = 16 * 1024 * 1024;
+const BLUR_RADIUS = 36;
+const BLUR_BLEED = BLUR_RADIUS * 2;
 
 function nativeBounds({
   sourceImage,
@@ -38,7 +40,7 @@ async function blurredPatch({
   patch.height = bounds.height;
   const context = patch.getContext('2d');
   if (!context) throw new Error('Не вдалося розмити виділену область');
-  const bleed = 16;
+  const bleed = BLUR_BLEED;
   const imageWidth = source.width;
   const imageHeight = source.height;
   const expandedLeft = Math.max(0, bounds.left - bleed);
@@ -52,7 +54,7 @@ async function blurredPatch({
   expanded.height = expandedHeight;
   const expandedContext = expanded.getContext('2d');
   if (!expandedContext) throw new Error('Не вдалося розмити виділену область');
-  expandedContext.filter = 'blur(18px)';
+  expandedContext.filter = `blur(${BLUR_RADIUS}px)`;
   expandedContext.drawImage(
     source.element,
     expandedLeft,
@@ -154,7 +156,7 @@ export async function replaceConcealmentArea({
     canvas.requestRenderAll();
     return true;
   }
-  const bleed = mode === ConcealMode.Blur ? 16 : 0;
+  const bleed = mode === ConcealMode.Blur ? BLUR_BLEED : 0;
   const region = {
     left: Math.max(0, bounds.left - bleed),
     top: Math.max(0, bounds.top - bleed),

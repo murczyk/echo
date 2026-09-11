@@ -8,9 +8,9 @@ import CropIcon from '@mui/icons-material/Crop';
 import DeleteIcon from '@mui/icons-material/Delete';
 import FitScreenIcon from '@mui/icons-material/FitScreen';
 import HighlightAltIcon from '@mui/icons-material/HighlightAlt';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import PanToolIcon from '@mui/icons-material/PanTool';
-import BorderColorIcon from '@mui/icons-material/BorderColor';
 import RectangleOutlinedIcon from '@mui/icons-material/RectangleOutlined';
 import RedoIcon from '@mui/icons-material/Redo';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
@@ -19,7 +19,15 @@ import TextFieldsIcon from '@mui/icons-material/TextFields';
 import UndoIcon from '@mui/icons-material/Undo';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
-import { ListItemIcon, ListSubheader, MenuItem, useMediaQuery } from '@mui/material';
+import {
+  IconButton,
+  ListItemIcon,
+  ListSubheader,
+  MenuItem,
+  Popover,
+  Tooltip,
+  useMediaQuery,
+} from '@mui/material';
 import { useEffect, useState, type ReactNode } from 'react';
 
 import { PowerMenu } from '../../../components/PowerMenu';
@@ -27,6 +35,11 @@ import { ImageEditorIconButton } from './ImageEditorIconButton';
 import { ImageEditorDiagonalLineIcon } from './ImageEditorIcons';
 import { ImageEditorViewControls } from './ImageEditorViewControls';
 import { ImageEditorTool } from './image-editor.types';
+import {
+  IMAGE_EDITOR_TOOL_SHORTCUTS,
+  imageEditorPrimaryModifierLabel,
+  imageEditorToolShortcutLabel,
+} from './image-editor-shortcuts';
 
 function ToolGroup({ children }: { children: ReactNode }) {
   return <div className="flex shrink-0 items-center gap-1">{children}</div>;
@@ -66,7 +79,6 @@ const TOOLS: Record<ImageEditorTool, { label: string; icon: ReactNode; iconSize?
   [ImageEditorTool.Line]: { label: 'Лінія', icon: <ImageEditorDiagonalLineIcon /> },
   [ImageEditorTool.Arrow]: { label: 'Стрілка', icon: <ArrowForwardIcon /> },
   [ImageEditorTool.Brush]: { label: 'Пензель', icon: <BrushIcon /> },
-  [ImageEditorTool.Highlight]: { label: 'Маркер', icon: <BorderColorIcon /> },
   [ImageEditorTool.Conceal]: { label: 'Розмиття', icon: <BlurOnIcon /> },
   [ImageEditorTool.Magnifier]: { label: 'Лупа', icon: <SearchIcon /> },
 };
@@ -93,8 +105,12 @@ export function ImageEditorToolRail(props: Props) {
   const desktop = useMediaQuery('(min-width: 1280px)', { noSsr: true });
   const tablet = useMediaQuery('(min-width: 768px)', { noSsr: true });
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const [helpAnchor, setHelpAnchor] = useState<HTMLElement | null>(null);
   useEffect(() => {
-    if (props.dismissMenu) setAnchor(null);
+    if (props.dismissMenu) {
+      setAnchor(null);
+      setHelpAnchor(null);
+    }
   }, [props.dismissMenu]);
   const closeMenu = () => {
     setAnchor(null);
@@ -102,10 +118,12 @@ export function ImageEditorToolRail(props: Props) {
   };
   const toolButton = (value: ImageEditorTool) => {
     const { label, icon, iconSize } = TOOLS[value];
+    const shortcut = imageEditorToolShortcutLabel(value);
     return (
       <ImageEditorIconButton
         key={value}
         label={label}
+        tooltipLabel={shortcut ? `${label} (${shortcut})` : label}
         icon={icon}
         onClick={() => props.onToolChange(value)}
         disabled={props.disabled}
@@ -124,6 +142,7 @@ export function ImageEditorToolRail(props: Props) {
   };
   const menuTool = (value: ImageEditorTool) => {
     const { label, icon } = TOOLS[value];
+    const shortcut = imageEditorToolShortcutLabel(value);
     return (
       <MenuItem
         key={value}
@@ -133,12 +152,87 @@ export function ImageEditorToolRail(props: Props) {
       >
         <ListItemIcon>{icon}</ListItemIcon>
         {label}
+        {shortcut ? ` (${shortcut})` : ''}
       </MenuItem>
     );
   };
   const visibleTools = tablet ? TABLET_VISIBLE_TOOLS : MOBILE_VISIBLE_TOOLS;
   const overflowTools = TOOL_ORDER.filter((value) => !visibleTools.includes(value));
   const moreIsActive = !desktop && overflowTools.includes(props.tool);
+  const helpButton = (
+    <Tooltip title="Гарячі клавіші">
+      <span>
+        <IconButton
+          aria-label="Гарячі клавіші"
+          aria-expanded={Boolean(helpAnchor)}
+          aria-haspopup="dialog"
+          onClick={(event) => {
+            setHelpAnchor(event.currentTarget);
+            props.onMenuOpenChange(true);
+          }}
+          disabled={props.disabled}
+          className="size-10 shrink-0 rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-echo-focus"
+        >
+          <HelpOutlineIcon />
+        </IconButton>
+      </span>
+    </Tooltip>
+  );
+  const helpPopover = (
+    <Popover
+      open={Boolean(helpAnchor)}
+      anchorEl={helpAnchor}
+      onClose={() => {
+        setHelpAnchor(null);
+        props.onMenuOpenChange(false);
+      }}
+      anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+    >
+      <section className="max-w-sm p-echo-md" aria-label="Гарячі клавіші">
+        <h2 className="mb-echo-sm text-echo-md font-semibold">Гарячі клавіші</h2>
+        <p className="mb-echo-sm text-echo-sm">
+          Літерні клавіші не працюють під час введення тексту.
+        </p>
+        <ul className="m-0 list-none p-0 text-echo-sm">
+          {IMAGE_EDITOR_TOOL_SHORTCUTS.map((shortcut) => (
+            <li key={shortcut.tool} className="flex justify-between gap-echo-lg py-1">
+              <span>{TOOLS[shortcut.tool].label}</span>
+              <kbd>
+                {shortcut.key} / {shortcut.ukrainianKey}
+              </kbd>
+            </li>
+          ))}
+          <li className="flex justify-between gap-echo-lg py-1">
+            <span>Скасувати / повторити</span>
+            <kbd>
+              {imageEditorPrimaryModifierLabel()}+Z / {imageEditorPrimaryModifierLabel()}+Shift+Z /{' '}
+              {imageEditorPrimaryModifierLabel()}+Y
+            </kbd>
+          </li>
+          <li className="flex justify-between gap-echo-lg py-1">
+            <span>Видалити вибране</span>
+            <kbd>Delete / Backspace</kbd>
+          </li>
+          <li className="flex justify-between gap-echo-lg py-1">
+            <span>Застосувати обрізання</span>
+            <kbd>Enter</kbd>
+          </li>
+          <li className="flex justify-between gap-echo-lg py-1">
+            <span>Скасувати дію</span>
+            <kbd>Escape</kbd>
+          </li>
+          <li className="flex justify-between gap-echo-lg py-1">
+            <span>Тимчасове переміщення полотна</span>
+            <kbd>Space + drag / middle button</kbd>
+          </li>
+          <li className="flex justify-between gap-echo-lg py-1">
+            <span>Масштаб</span>
+            <kbd>Wheel</kbd>
+          </li>
+        </ul>
+      </section>
+    </Popover>
+  );
   return (
     <nav
       aria-label="Інструменти редактора"
@@ -157,7 +251,6 @@ export function ImageEditorToolRail(props: Props) {
               {toolButton(ImageEditorTool.Text)} {toolButton(ImageEditorTool.Rectangle)}
               {toolButton(ImageEditorTool.Ellipse)} {toolButton(ImageEditorTool.Line)}
               {toolButton(ImageEditorTool.Arrow)} {toolButton(ImageEditorTool.Brush)}
-              {toolButton(ImageEditorTool.Highlight)}
             </ToolGroup>
             <GroupSeparator />
             <ToolGroup>
@@ -166,6 +259,7 @@ export function ImageEditorToolRail(props: Props) {
             </ToolGroup>
             <div className="min-w-0 flex-1" />
             <ToolGroup>
+              {helpButton}
               <ImageEditorIconButton
                 label="Видалити вибране"
                 icon={<DeleteIcon />}
@@ -305,9 +399,24 @@ export function ImageEditorToolRail(props: Props) {
               </ListItemIcon>
               Центрувати
             </MenuItem>
+            <MenuItem
+              disabled={props.disabled}
+              onClick={(event) => {
+                const moreButton = anchor;
+                closeMenu();
+                setHelpAnchor(moreButton);
+                props.onMenuOpenChange(true);
+              }}
+            >
+              <ListItemIcon>
+                <HelpOutlineIcon />
+              </ListItemIcon>
+              Гарячі клавіші
+            </MenuItem>
           </PowerMenu>
         </>
       )}
+      {helpPopover}
     </nav>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, type MutableRefObject } from 'react';
+import { useCallback, type MutableRefObject } from 'react';
 
 import {
   applyArrowStyle,
@@ -12,6 +12,7 @@ import {
   STYLEABLE_ANNOTATION_ROLES,
 } from './image-editor-object-role';
 import { ImageEditorObjectRole, type ImageEditorTool } from './image-editor.types';
+import { reconcileImageEditorAttachedArrows } from './image-editor-attached-arrow';
 
 export function useImageEditorSelectionStyle({
   canvasRef,
@@ -46,11 +47,13 @@ export function useImageEditorSelectionStyle({
   highlightOpacity: number;
   scheduleHistory: () => void;
 }) {
-  useEffect(() => {
+  const applySelectionStyle = useCallback(() => {
     const canvas = canvasRef.current;
     const fabric = fabricRef.current;
     const selected = canvas?.getActiveObject();
-    if (!canvas || !fabric || !(selected instanceof fabric.IText)) return;
+    if (!canvas || !fabric || !(selected instanceof fabric.IText)) {
+      return;
+    }
     const text = selected as typeof selected & {
       annotationBackgroundColor?: string;
       annotationBackgroundEnabled?: boolean;
@@ -74,6 +77,7 @@ export function useImageEditorSelectionStyle({
       annotationBackgroundEnabled: textBackgroundEnabled,
       annotationBackgroundPadding: textBackgroundPadding,
     } as never);
+    reconcileImageEditorAttachedArrows({ canvas, fabric });
     canvas.requestRenderAll();
     scheduleHistory();
   }, [
@@ -89,17 +93,19 @@ export function useImageEditorSelectionStyle({
     textBackgroundPadding,
   ]);
 
-  useEffect(() => {
+  const applyAnnotationStyle = useCallback(() => {
     const canvas = canvasRef.current;
     const fabric = fabricRef.current;
     const selected = canvas?.getActiveObject();
-    if (!canvas || !fabric || !selected || selected instanceof fabric.IText) return;
+    if (!canvas || !fabric || !selected || selected instanceof fabric.IText) {
+      return;
+    }
     const role = editorObjectRole(selected, fabric);
     if (!role || !STYLEABLE_ANNOTATION_ROLES.has(role)) return;
     const isShape = SHAPE_ROLES.has(role);
     const supportsDash = DASH_SUPPORTING_ROLES.has(role);
     const selectedStroke =
-      role === ImageEditorObjectRole.Highlight
+      role === ImageEditorObjectRole.Highlight || role === ImageEditorObjectRole.Brush
         ? withHighlightAlpha(stroke, highlightOpacity)
         : normalizeEditorColor(stroke);
     if (role === ImageEditorObjectRole.Arrow) {
@@ -136,4 +142,5 @@ export function useImageEditorSelectionStyle({
     stroke,
     strokeWidth,
   ]);
+  return { applyAnnotationStyle, applySelectionStyle };
 }

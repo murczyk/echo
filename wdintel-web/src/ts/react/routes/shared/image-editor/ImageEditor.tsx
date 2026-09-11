@@ -9,6 +9,14 @@ import { ImageEditorSaveDialogs } from './ImageEditorSaveDialogs';
 import { ImageEditorWorkspace } from './ImageEditorWorkspace';
 import { deleteSelectedAnnotations } from './image-editor-actions';
 import {
+  installImageEditorAttachedArrowControls,
+  removeImageEditorAttachedArrow,
+  reconcileImageEditorAttachedArrows,
+  cancelImageEditorAttachedArrowGesture,
+} from './image-editor-attached-arrow';
+import { imageEditorToolFromKeyboardEvent } from './image-editor-shortcuts';
+import { loadImageEditorFonts } from './image-editor-font';
+import {
   exportEditedImage,
   imageEditorOutputExtension,
   imageEditorOutputMimeType,
@@ -46,6 +54,8 @@ import type {
 } from './image-editor.types';
 type FabricModule = typeof import('fabric');
 
+let activeImageEditor: symbol | null = null;
+
 export function ImageEditor({
   source,
   onCancel,
@@ -61,6 +71,7 @@ export function ImageEditor({
 }) {
   const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
   const workspaceRef = useRef<HTMLDivElement | null>(null);
+  const editorIdRef = useRef(Symbol('image-editor'));
   const fabricRef = useRef<FabricModule | null>(null);
   const canvasRef = useRef<import('fabric').Canvas | null>(null);
   const sourceRef = useRef<import('fabric').FabricImage | null>(null);
@@ -70,9 +81,13 @@ export function ImageEditor({
   const saveReplacementButtonRef = useRef<HTMLButtonElement | null>(null);
   const cancelGestureRef = useRef<() => boolean>(() => false);
   const [tool, setTool] = useState<ImageEditorTool>(ImageEditorTool.Select);
+  const [selection, setSelection] = useState<ImageEditorSelectionDescriptor>();
   const [stroke, setStroke] = useState('#ef4444');
   const [fill, setFill] = useState('transparent');
   const [strokeWidth, setStrokeWidth] = useState(4);
+  const [brushWidth, setBrushWidth] = useState(7);
+  const activeStrokeWidth =
+    tool === ImageEditorTool.Brush || selection?.kind === 'brush' ? brushWidth : strokeWidth;
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
@@ -83,15 +98,26 @@ export function ImageEditor({
   const [magnification, setMagnification] = useState(2);
   const [fontSize, setFontSize] = useState(36);
   const [bold, setBold] = useState(false);
-  const [textBackgroundColor, setTextBackgroundColor] = useState('#000000');
-  const [textBackgroundEnabled, setTextBackgroundEnabled] = useState(false);
+  const [textBackgroundColor, setTextBackgroundColor] = useState('#ffffff');
+  const [textBackgroundEnabled, setTextBackgroundEnabled] = useState(true);
   const [textBackgroundPadding, setTextBackgroundPadding] = useState(6);
-  const [highlightOpacity, setHighlightOpacity] = useState(0.4);
+  const [highlightOpacity, setHighlightOpacity] = useState(1);
+  const [selectedStyle, setSelectedStyle] = useState({
+    stroke: '#ef4444',
+    fill: 'transparent',
+    strokeWidth: 4,
+    dash: false,
+    fontSize: 36,
+    bold: false,
+    textBackgroundColor: '#ffffff',
+    textBackgroundEnabled: true,
+    textBackgroundPadding: 6,
+    highlightOpacity: 1,
+  });
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [dismissMenu, setDismissMenu] = useState(0);
   const [canDeleteSelected, setCanDeleteSelected] = useState(false);
-  const [selection, setSelection] = useState<ImageEditorSelectionDescriptor>();
   const outputExtension = imageEditorOutputExtension(imageEditorOutputMimeType(source));
   const saveDialogs = useImageEditorSaveDialogState({
     sourceFileName: source.fileName,
@@ -105,6 +131,12 @@ export function ImageEditor({
     fill: alpha(theme.palette.primary.main, 0.16),
   };
   const toolRef = useRef(tool);
+  useEffect(() => {
+    activeImageEditor = editorIdRef.current;
+    return () => {
+      if (activeImageEditor === editorIdRef.current) activeImageEditor = null;
+    };
+  }, []);
   const {
     enqueue: enqueueRaster,
     flush: flushRaster,
@@ -116,28 +148,42 @@ export function ImageEditor({
     toolRef.current = tool;
   }, [tool]);
   const changeTool = useCallback(
-    (nextTool: ImageEditorTool) => {
+    (nextTool: ImageEditorTool, preserveSelection = false) => {
       if (isInteractionLocked()) return;
+      const arrowGestureCancelled = canvasRef.current
+        ? cancelImageEditorAttachedArrowGesture(canvasRef.current)
+        : false;
       cancelGestureRef.current();
       const canvas = canvasRef.current;
       toolRef.current = nextTool;
       if (canvas && nextTool !== ImageEditorTool.Crop && cropRef.current)
         cancelCrop({ canvas, cropRef });
+      const active = preserveSelection ? canvas?.getActiveObject() : null;
       if (canvas)
         applyImageEditorInteractionMode({
           canvas,
           tool: nextTool,
           fabric: fabricRef.current,
           stroke,
-          strokeWidth,
+          strokeWidth: activeStrokeWidth,
           highlightOpacity,
         });
+      if (canvas && active) {
+        canvas.setActiveObject(active);
+        requestAnimationFrame(() => {
+          if (canvasRef.current === canvas && active.canvas === canvas) {
+            canvas.setActiveObject(active);
+            canvas.requestRenderAll();
+          }
+        });
+      }
       const fabric = fabricRef.current;
       if (canvas && fabric && nextTool === ImageEditorTool.Crop)
         startCrop({ canvas, fabric, cropRef, stroke: cropStroke, maskColor: cropMaskColor });
       setTool(nextTool);
+      if (arrowGestureCancelled) canvas?.requestRenderAll();
     },
-    [cropMaskColor, cropStroke, highlightOpacity, isInteractionLocked, stroke, strokeWidth],
+    [activeStrokeWidth, cropMaskColor, cropStroke, highlightOpacity, isInteractionLocked, stroke],
   );
   const {
     actualSize,
@@ -173,6 +219,9 @@ export function ImageEditor({
         snapshot,
         hiddenTextareaContainer: hiddenTextareaContainerRef.current,
       });
+      const fabric = fabricRef.current;
+      if (fabric)
+        installImageEditorAttachedArrowControls({ canvas, fabric, onComplete: saveHistory });
       toolRef.current = ImageEditorTool.Select;
       setTool(ImageEditorTool.Select);
       syncDocumentDimensions({ fit: true });
@@ -181,7 +230,7 @@ export function ImageEditor({
         tool: ImageEditorTool.Select,
         fabric: fabricRef.current,
         stroke,
-        strokeWidth,
+        strokeWidth: activeStrokeWidth,
         highlightOpacity,
       });
     },
@@ -253,23 +302,54 @@ export function ImageEditor({
     [enqueueRaster, saveHistory],
   );
 
-  useImageEditorSelectionStyle({
+  const showingSelectionStyle = selection != null;
+  const displayedStroke = showingSelectionStyle ? selectedStyle.stroke : stroke;
+  const displayedFill = showingSelectionStyle ? selectedStyle.fill : fill;
+  const displayedStrokeWidth = showingSelectionStyle
+    ? selectedStyle.strokeWidth
+    : activeStrokeWidth;
+  const displayedDash = showingSelectionStyle ? selectedStyle.dash : dash;
+  const displayedFontSize = showingSelectionStyle ? selectedStyle.fontSize : fontSize;
+  const displayedBold = showingSelectionStyle ? selectedStyle.bold : bold;
+  const displayedBackgroundColor = showingSelectionStyle
+    ? selectedStyle.textBackgroundColor
+    : textBackgroundColor;
+  const displayedBackgroundEnabled = showingSelectionStyle
+    ? selectedStyle.textBackgroundEnabled
+    : textBackgroundEnabled;
+  const displayedBackgroundPadding = showingSelectionStyle
+    ? selectedStyle.textBackgroundPadding
+    : textBackgroundPadding;
+  const displayedHighlightOpacity = showingSelectionStyle
+    ? selectedStyle.highlightOpacity
+    : highlightOpacity;
+
+  const { applyAnnotationStyle, applySelectionStyle } = useImageEditorSelectionStyle({
     canvasRef,
     fabricRef,
     canvasReady,
     tool,
-    stroke,
-    fill,
-    strokeWidth,
-    dash,
-    fontSize,
-    bold,
-    textBackgroundColor,
-    textBackgroundEnabled,
-    textBackgroundPadding,
-    highlightOpacity,
+    stroke: displayedStroke,
+    fill: displayedFill,
+    strokeWidth: displayedStrokeWidth,
+    dash: displayedDash,
+    fontSize: displayedFontSize,
+    bold: displayedBold,
+    textBackgroundColor: displayedBackgroundColor,
+    textBackgroundEnabled: displayedBackgroundEnabled,
+    textBackgroundPadding: displayedBackgroundPadding,
+    highlightOpacity: displayedHighlightOpacity,
     scheduleHistory,
   });
+  const applyStyleRef = useRef({ applyAnnotationStyle, applySelectionStyle });
+  applyStyleRef.current = { applyAnnotationStyle, applySelectionStyle };
+  const applyToolbarStyle = useCallback((update: () => void) => {
+    update();
+    requestAnimationFrame(() => {
+      applyStyleRef.current.applySelectionStyle();
+      applyStyleRef.current.applyAnnotationStyle();
+    });
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -279,7 +359,7 @@ export function ImageEditor({
       tool: toolRef.current,
       fabric: fabricRef.current,
       stroke,
-      strokeWidth,
+      strokeWidth: activeStrokeWidth,
       highlightOpacity,
     });
   }, [canvasReady]);
@@ -292,7 +372,7 @@ export function ImageEditor({
     toolRef,
     stroke,
     fill,
-    strokeWidth,
+    strokeWidth: activeStrokeWidth,
     dash,
     fontSize,
     bold,
@@ -307,6 +387,7 @@ export function ImageEditor({
     cancelGestureRef,
     setError,
     hiddenTextareaContainer: hiddenTextareaContainerRef,
+    onTextClickAway: () => changeTool(ImageEditorTool.Select, true),
   });
 
   useEffect(
@@ -335,10 +416,10 @@ export function ImageEditor({
       tool: toolRef.current,
       fabric: fabricRef.current,
       stroke,
-      strokeWidth,
+      strokeWidth: activeStrokeWidth,
       highlightOpacity,
     });
-  }, [applying, highlightOpacity, rasterPending, stroke, strokeWidth]);
+  }, [activeStrokeWidth, applying, highlightOpacity, rasterPending, stroke]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -367,16 +448,20 @@ export function ImageEditor({
     fabricRef,
     canvasReady,
     onCanDeleteChange: setCanDeleteSelected,
-    onStrokeChange: setStroke,
-    onFillChange: setFill,
-    onStrokeWidthChange: setStrokeWidth,
-    onDashChange: setDash,
-    onFontSizeChange: setFontSize,
-    onBoldChange: setBold,
-    onTextBackgroundColorChange: setTextBackgroundColor,
-    onTextBackgroundEnabledChange: setTextBackgroundEnabled,
-    onTextBackgroundPaddingChange: setTextBackgroundPadding,
-    onHighlightOpacityChange: setHighlightOpacity,
+    onStrokeChange: (stroke) => setSelectedStyle((style) => ({ ...style, stroke })),
+    onFillChange: (fill) => setSelectedStyle((style) => ({ ...style, fill })),
+    onStrokeWidthChange: (strokeWidth) => setSelectedStyle((style) => ({ ...style, strokeWidth })),
+    onDashChange: (dash) => setSelectedStyle((style) => ({ ...style, dash })),
+    onFontSizeChange: (fontSize) => setSelectedStyle((style) => ({ ...style, fontSize })),
+    onBoldChange: (bold) => setSelectedStyle((style) => ({ ...style, bold })),
+    onTextBackgroundColorChange: (textBackgroundColor) =>
+      setSelectedStyle((style) => ({ ...style, textBackgroundColor })),
+    onTextBackgroundEnabledChange: (textBackgroundEnabled) =>
+      setSelectedStyle((style) => ({ ...style, textBackgroundEnabled })),
+    onTextBackgroundPaddingChange: (textBackgroundPadding) =>
+      setSelectedStyle((style) => ({ ...style, textBackgroundPadding })),
+    onHighlightOpacityChange: (highlightOpacity) =>
+      setSelectedStyle((style) => ({ ...style, highlightOpacity })),
     onSelectionChange: setSelection,
   });
 
@@ -385,6 +470,18 @@ export function ImageEditor({
     const canvas = canvasRef.current;
     if (!canvas) return;
     deleteSelectedAnnotations(canvas);
+    const fabric = fabricRef.current;
+    if (fabric) reconcileImageEditorAttachedArrows({ canvas, fabric });
+    saveHistory();
+  }, [isInteractionLocked, saveHistory]);
+  const deleteAttachedArrow = useCallback(() => {
+    const canvas = canvasRef.current;
+    const fabric = fabricRef.current;
+    const selected = canvas?.getActiveObject();
+    if (!canvas || !fabric || !(selected instanceof fabric.IText) || isInteractionLocked()) return;
+    removeImageEditorAttachedArrow(canvas, selected);
+    reconcileImageEditorAttachedArrows({ canvas, fabric });
+    canvas.requestRenderAll();
     saveHistory();
   }, [isInteractionLocked, saveHistory]);
   const applyCropOperation = useCallback(() => {
@@ -393,6 +490,8 @@ export function ImageEditor({
     const sourceImage = sourceRef.current;
     if (!canvas || !sourceImage) return;
     if (applyCrop({ canvas, sourceImage, cropRef })) {
+      const fabric = fabricRef.current;
+      if (fabric) reconcileImageEditorAttachedArrows({ canvas, fabric });
       saveHistory();
       syncDocumentDimensions({ fit: true });
       changeTool(ImageEditorTool.Select);
@@ -405,11 +504,21 @@ export function ImageEditor({
     cancelCrop({ canvas, cropRef });
     changeTool(ImageEditorTool.Select);
   }, [changeTool, isInteractionLocked]);
+  const finalizeActiveText = useCallback(() => {
+    const canvas = canvasRef.current;
+    const active = canvas?.getActiveObject() as import('fabric').IText | undefined;
+    if (!canvas || !active?.isEditing) return false;
+    active.exitEditing();
+    canvas.requestRenderAll();
+    flushScheduledHistory();
+    return Boolean(active.text?.trim());
+  }, [flushScheduledHistory]);
   const save = async (destination: ImageEditorSaveDestination, basename?: string) => {
     const canvas = canvasRef.current;
     const sourceImage = sourceRef.current;
     if (!canvas || !sourceImage || isInteractionLocked()) return;
     cancelGestureRef.current();
+    finalizeActiveText();
     if (cropRef.current) {
       setError('Спочатку застосуйте або скасуйте обрізання');
       return;
@@ -421,6 +530,9 @@ export function ImageEditor({
     setError(null);
     try {
       await flushRaster();
+      await loadImageEditorFonts();
+      const fabric = fabricRef.current;
+      if (fabric) reconcileImageEditorAttachedArrows({ canvas, fabric });
       const file = await exportEditedImage({
         canvas,
         source,
@@ -449,9 +561,10 @@ export function ImageEditor({
   }, [save, saveDialogs]);
   const requestCancel = useCallback(() => {
     if (isInteractionLocked()) return;
-    if (hasEdits) setConfirmCancel(true);
+    const finalizedText = finalizeActiveText();
+    if (hasEdits || finalizedText) setConfirmCancel(true);
     else onCancel();
-  }, [hasEdits, isInteractionLocked, onCancel]);
+  }, [finalizeActiveText, hasEdits, isInteractionLocked, onCancel]);
   const handleEditorEscape = useCallback(
     (event: KeyboardEvent) => {
       const target = event.target;
@@ -486,6 +599,7 @@ export function ImageEditor({
         cancelCropOperation();
         return true;
       }
+      if (canvas && cancelImageEditorAttachedArrowGesture(canvas)) return true;
       if (cancelGestureRef.current()) return true;
       requestCancel();
       return true;
@@ -503,17 +617,33 @@ export function ImageEditor({
   );
   const onKeyDown = useCallback(
     (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
+      const target = event.target instanceof Element ? event.target : null;
+      const targetIsInsideEditor = Boolean(target?.closest('[data-image-editor-root]'));
+      const isNativeControl = Boolean(
+        target?.closest(
+          'button, input, textarea, select, option, [contenteditable="true"], [role="slider"]',
+        ),
+      );
+      if (!targetIsInsideEditor && activeImageEditor !== editorIdRef.current) return;
       if (event.key === 'Escape' && !registerEscapeHandler && handleEditorEscape(event)) {
         event.preventDefault();
         event.stopPropagation();
         return;
       }
       const typing =
-        target?.matches('input, textarea, select, [contenteditable="true"]') ||
+        event.isComposing ||
+        isNativeControl ||
         (canvasRef.current?.getActiveObject() as import('fabric').IText | undefined)?.isEditing ===
           true;
-      if (typing || isInteractionLocked()) return;
+      if (typing || isInteractionLocked() || saveDialogs.activeDialog || confirmCancel || menuOpen)
+        return;
+      const shortcutTool = imageEditorToolFromKeyboardEvent(event);
+      if (shortcutTool) {
+        event.preventDefault();
+        event.stopPropagation();
+        changeTool(shortcutTool);
+        return;
+      }
       if (event.key === 'Enter' && tool === ImageEditorTool.Crop && cropRef.current) {
         event.preventDefault();
         applyCropOperation();
@@ -534,12 +664,15 @@ export function ImageEditor({
     [
       applyCropOperation,
       cancelCropOperation,
+      changeTool,
+      confirmCancel,
       deleteSelected,
       handleEditorEscape,
       isInteractionLocked,
       queuedRedo,
       queuedUndo,
       registerEscapeHandler,
+      saveDialogs.activeDialog,
       tool,
     ],
   );
@@ -575,29 +708,78 @@ export function ImageEditor({
   const contextualToolbarProps = {
     disabled: !canvasReady || loading || applying || rasterPending,
     tool,
-    stroke,
-    onStrokeChange: setStroke,
-    fill,
-    onFillChange: setFill,
-    strokeWidth,
-    onStrokeWidthChange: setStrokeWidth,
-    dash,
-    onDashChange: setDash,
-    fontSize,
-    onFontSizeChange: setFontSize,
-    bold,
-    onBoldChange: () => setBold((value) => !value),
-    textBackgroundColor,
-    onTextBackgroundColorChange: (value: string) => {
-      setTextBackgroundColor(value);
-      setTextBackgroundEnabled(true);
+    stroke: displayedStroke,
+    onStrokeChange: (value: string) =>
+      applyToolbarStyle(() => {
+        setStroke(value);
+        if (selection) setSelectedStyle((style) => ({ ...style, stroke: value }));
+      }),
+    fill: displayedFill,
+    onFillChange: (value: string) =>
+      applyToolbarStyle(() => {
+        setFill(value);
+        if (selection) setSelectedStyle((style) => ({ ...style, fill: value }));
+      }),
+    strokeWidth: displayedStrokeWidth,
+    onStrokeWidthChange: (value: number) => {
+      applyToolbarStyle(() => {
+        const selected = canvasRef.current?.getActiveObject();
+        const fabric = fabricRef.current;
+        if (fabric && selected && selected instanceof fabric.Path) setBrushWidth(value);
+        else if (tool === ImageEditorTool.Brush) setBrushWidth(value);
+        else setStrokeWidth(value);
+        if (selection) setSelectedStyle((style) => ({ ...style, strokeWidth: value }));
+      });
     },
-    textBackgroundEnabled,
-    onTextBackgroundEnabledChange: setTextBackgroundEnabled,
-    textBackgroundPadding,
-    onTextBackgroundPaddingChange: setTextBackgroundPadding,
-    highlightOpacity,
-    onHighlightOpacityChange: setHighlightOpacity,
+    dash: displayedDash,
+    onDashChange: (value: boolean) =>
+      applyToolbarStyle(() => {
+        setDash(value);
+        if (selection) setSelectedStyle((style) => ({ ...style, dash: value }));
+      }),
+    fontSize: displayedFontSize,
+    onFontSizeChange: (value: number) =>
+      applyToolbarStyle(() => {
+        setFontSize(value);
+        if (selection) setSelectedStyle((style) => ({ ...style, fontSize: value }));
+      }),
+    bold: displayedBold,
+    onBoldChange: () =>
+      applyToolbarStyle(() => {
+        setBold((value) => !value);
+        if (selection) setSelectedStyle((style) => ({ ...style, bold: !style.bold }));
+      }),
+    textBackgroundColor: displayedBackgroundColor,
+    onTextBackgroundColorChange: (value: string) => {
+      applyToolbarStyle(() => {
+        setTextBackgroundColor(value);
+        setTextBackgroundEnabled(true);
+        if (selection)
+          setSelectedStyle((style) => ({
+            ...style,
+            textBackgroundColor: value,
+            textBackgroundEnabled: true,
+          }));
+      });
+    },
+    textBackgroundEnabled: displayedBackgroundEnabled,
+    onTextBackgroundEnabledChange: (value: boolean) =>
+      applyToolbarStyle(() => {
+        setTextBackgroundEnabled(value);
+        if (selection) setSelectedStyle((style) => ({ ...style, textBackgroundEnabled: value }));
+      }),
+    textBackgroundPadding: displayedBackgroundPadding,
+    onTextBackgroundPaddingChange: (value: number) =>
+      applyToolbarStyle(() => {
+        setTextBackgroundPadding(value);
+        if (selection) setSelectedStyle((style) => ({ ...style, textBackgroundPadding: value }));
+      }),
+    highlightOpacity: displayedHighlightOpacity,
+    onHighlightOpacityChange: (value: number) =>
+      applyToolbarStyle(() => {
+        setHighlightOpacity(value);
+        if (selection) setSelectedStyle((style) => ({ ...style, highlightOpacity: value }));
+      }),
     concealMode,
     onConcealModeChange: setConcealMode,
     magnification,
@@ -606,9 +788,17 @@ export function ImageEditor({
     cropActive: tool === ImageEditorTool.Crop && Boolean(cropRef.current),
     onApplyCrop: applyCropOperation,
     onCancelCrop: cancelCropOperation,
+    onDeleteAttachedArrow: deleteAttachedArrow,
   };
   return (
-    <section className="flex min-h-0 flex-1 flex-col" aria-label="Редактор зображення">
+    <section
+      data-image-editor-root
+      className="flex min-h-0 flex-1 flex-col"
+      aria-label="Редактор зображення"
+      onPointerDownCapture={() => {
+        activeImageEditor = editorIdRef.current;
+      }}
+    >
       <ImageEditorToolbar {...primaryToolbarProps} />
       {error ? (
         <Alert severity="error" className="m-2">

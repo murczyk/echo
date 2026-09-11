@@ -1,4 +1,10 @@
-import { Alert } from '@mui/material';
+import {
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+} from '@mui/material';
 
 import { PowerButton } from '../../../components/PowerButton';
 
@@ -10,21 +16,21 @@ export function ImageEditorDiscardAlert({
   onDiscard: () => void;
 }) {
   return (
-    <Alert
-      severity="warning"
-      className="m-2"
-      action={
-        <span className="flex gap-1">
-          <PowerButton type="button" color="inherit" size="small" onClick={onContinue}>
-            Продовжити
-          </PowerButton>
-          <PowerButton type="button" color="inherit" size="small" onClick={onDiscard}>
-            Відкинути
-          </PowerButton>
-        </span>
-      }
-    >
-      Є незастосовані зміни.
-    </Alert>
+    <Dialog open onClose={onContinue} fullWidth maxWidth="xs">
+      <DialogTitle>Відкинути зміни зображення?</DialogTitle>
+      <DialogContent>
+        <DialogContentText>
+          Незбережені зміни буде втрачено. Початкове зображення залишиться без змін.
+        </DialogContentText>
+      </DialogContent>
+      <DialogActions>
+        <PowerButton type="button" autoFocus onClick={onContinue}>
+          Продовжити редагування
+        </PowerButton>
+        <PowerButton type="button" color="error" variant="contained" onClick={onDiscard}>
+          Відкинути зміни
+        </PowerButton>
+      </DialogActions>
+    </Dialog>
   );
 }

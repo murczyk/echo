@@ -1,6 +1,7 @@
 import { useEffect, useRef, type MutableRefObject } from 'react';
 
 import { addTextAnnotation } from './image-editor-actions';
+import { installImageEditorAttachedArrowControl } from './image-editor-attached-arrow';
 import { createArrow } from './image-editor-arrow';
 import { imageEditorBounds, imageEditorPointer, minimumGestureSize } from './image-editor-pointer';
 import type { ImageEditorBounds } from './image-editor-pointer';
@@ -96,6 +97,7 @@ export function useImageEditorDrawingGestures({
   cancelGestureRef,
   setError,
   hiddenTextareaContainer,
+  onTextClickAway,
 }: {
   canvasRef: MutableRefObject<import('fabric').Canvas | null>;
   fabricRef: MutableRefObject<typeof import('fabric') | null>;
@@ -119,6 +121,7 @@ export function useImageEditorDrawingGestures({
   cancelGestureRef: MutableRefObject<() => boolean>;
   setError: (error: string) => void;
   hiddenTextareaContainer: MutableRefObject<HTMLElement | null>;
+  onTextClickAway: () => void;
 }) {
   const configRef = useRef<Config>({
     tool,
@@ -139,6 +142,7 @@ export function useImageEditorDrawingGestures({
     saveHistory,
     replaceConcealmentArea,
     setError,
+    onTextClickAway,
   });
   configRef.current = {
     tool,
@@ -154,7 +158,13 @@ export function useImageEditorDrawingGestures({
     concealMode,
     concealmentMarquee,
   };
-  operationsRef.current = { isInteractionLocked, saveHistory, replaceConcealmentArea, setError };
+  operationsRef.current = {
+    isInteractionLocked,
+    saveHistory,
+    replaceConcealmentArea,
+    setError,
+    onTextClickAway,
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -163,6 +173,7 @@ export function useImageEditorDrawingGestures({
     let session: Session = { kind: ImageEditorGestureSessionKind.Idle };
     let textFrame: number | null = null;
     let finalBounds: ImageEditorBounds | null = null;
+    let editingTransitionHandled = false;
     const reset = () => {
       const consumed = session.kind !== ImageEditorGestureSessionKind.Idle || textFrame != null;
       const cancelled = cancelGestureSession(session);
@@ -181,7 +192,28 @@ export function useImageEditorDrawingGestures({
         ? null
         : imageEditorPointer(canvas, source as { clientX: number; clientY: number });
     };
-    const down = (event: { e?: unknown }) => {
+    const beforeDown = (event: { e?: unknown; target?: import('fabric').FabricObject }) => {
+      editingTransitionHandled = false;
+      const point = pointer(event);
+      const activeText = canvas.getActiveObject?.() as import('fabric').IText | undefined;
+      if (!point || !activeText?.isEditing) return;
+      if (event.target === activeText) {
+        const bounds = activeText.getBoundingRect();
+        const edge = Math.min(
+          Math.abs(point.x - bounds.left),
+          Math.abs(point.x - (bounds.left + bounds.width)),
+          Math.abs(point.y - bounds.top),
+          Math.abs(point.y - (bounds.top + bounds.height)),
+        );
+        if (edge > 12) return;
+      }
+      activeText.exitEditing();
+      if (!event.target) canvas.setActiveObject(activeText);
+      operationsRef.current.onTextClickAway();
+      editingTransitionHandled = true;
+      canvas.requestRenderAll();
+    };
+    const down = (event: { e?: unknown; target?: import('fabric').FabricObject }) => {
       const config = configRef.current;
       if (
         session.kind !== ImageEditorGestureSessionKind.Idle ||
@@ -190,7 +222,9 @@ export function useImageEditorDrawingGestures({
         return;
       const point = pointer(event);
       if (!point) return;
+      if (editingTransitionHandled) return;
       if (config.tool === ImageEditorTool.Text) {
+        if (event.target instanceof fabric.IText) return;
         session = { kind: ImageEditorGestureSessionKind.Text, point, config };
         return;
       }
@@ -297,6 +331,7 @@ export function useImageEditorDrawingGestures({
           top: completed.point.y,
           hiddenTextareaContainer: hiddenTextareaContainer.current,
         });
+        installImageEditorAttachedArrowControl({ canvas, fabric, text, onComplete: saveHistory });
         textFrame = requestAnimationFrame(() => {
           textFrame = null;
           if (operationsRef.current.isInteractionLocked()) return canvas.remove(text);
@@ -360,12 +395,14 @@ export function useImageEditorDrawingGestures({
         canvas.requestRenderAll();
       }
     };
+    canvas.on('mouse:down:before', beforeDown);
     canvas.on('mouse:down', down);
     canvas.on('mouse:move', move);
     canvas.on('mouse:up', up);
     return () => {
       reset();
       cancelGestureRef.current = () => false;
+      canvas.off('mouse:down:before', beforeDown);
       canvas.off('mouse:down', down);
       canvas.off('mouse:move', move);
       canvas.off('mouse:up', up);

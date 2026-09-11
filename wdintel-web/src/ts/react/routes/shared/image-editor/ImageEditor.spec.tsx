@@ -449,13 +449,13 @@ describe('ImageEditor initialization', () => {
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
-    expect(container.textContent).toContain('Є незастосовані зміни');
+    expect(document.body.textContent).toContain('Відкинути зміни зображення?');
     expect(onCancel).not.toHaveBeenCalled();
 
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
-    expect(container.textContent).not.toContain('Є незастосовані зміни');
+    expect(document.body.textContent).not.toContain('Відкинути зміни зображення?');
     expect(onCancel).not.toHaveBeenCalled();
     act(() => root.unmount());
   });

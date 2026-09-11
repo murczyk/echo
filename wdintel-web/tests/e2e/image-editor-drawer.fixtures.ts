@@ -213,7 +213,10 @@ export async function openEditReportDrawer(page: Page): Promise<void> {
       groupMasterKey: report.groupMasterKey,
     },
   ];
-  await installMessageCardMediaPreviewAssetRoutes(page);
+  await installMessageCardMediaPreviewAssetRoutes(page, undefined, {
+    body: IMAGE_EDITOR_DRAWER_PNG.buffer,
+    contentType: IMAGE_EDITOR_DRAWER_PNG.mimeType,
+  });
   const dutyMocks = await installRerDutyShortStateMocks(page, {
     inboxResponse,
     signalGroups: ['e2e-group'],
@@ -248,7 +251,10 @@ async function openDrawerFromMediaMessage(
     },
   ];
   (message as any).images = [];
-  await installMessageCardMediaPreviewAssetRoutes(page);
+  await installMessageCardMediaPreviewAssetRoutes(page, undefined, {
+    body: IMAGE_EDITOR_DRAWER_PNG.buffer,
+    contentType: IMAGE_EDITOR_DRAWER_PNG.mimeType,
+  });
   const dutyMocks = await installRerDutyShortStateMocks(page, { inboxResponse });
   if (actionName === 'Створити розвіддонесення') {
     await page.route('**/api/1.1/messages/copy', (route) =>

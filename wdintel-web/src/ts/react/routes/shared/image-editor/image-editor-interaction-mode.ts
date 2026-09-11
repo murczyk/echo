@@ -9,7 +9,6 @@ const CREATION_TOOLS = new Set<ImageEditorTool>([
   ImageEditorTool.Line,
   ImageEditorTool.Arrow,
   ImageEditorTool.Brush,
-  ImageEditorTool.Highlight,
   ImageEditorTool.Conceal,
   ImageEditorTool.Magnifier,
 ]);
@@ -24,7 +23,6 @@ const CURSOR_BY_TOOL = {
   [ImageEditorTool.Line]: 'crosshair',
   [ImageEditorTool.Arrow]: 'crosshair',
   [ImageEditorTool.Brush]: 'crosshair',
-  [ImageEditorTool.Highlight]: 'crosshair',
   [ImageEditorTool.Conceal]: 'crosshair',
   [ImageEditorTool.Magnifier]: 'zoom-in',
 } satisfies Record<ImageEditorTool, CSSStyleDeclaration['cursor']>;
@@ -56,6 +54,7 @@ export function applyImageEditorInteractionMode({
   highlightOpacity?: number;
 }) {
   const selecting = tool === ImageEditorTool.Select || tool === ImageEditorTool.Crop;
+  const textSelecting = tool === ImageEditorTool.Text;
   const creationTool = CREATION_TOOLS.has(tool);
   const activeObject = canvas.getActiveObject();
   const preserveTextEditing =
@@ -69,13 +68,12 @@ export function applyImageEditorInteractionMode({
   )
     activeObject.exitEditing();
   if (!preserveTextEditing) canvas.discardActiveObject();
-  canvas.selection = selecting;
-  canvas.skipTargetFind = !selecting;
-  canvas.isDrawingMode = tool === ImageEditorTool.Brush || tool === ImageEditorTool.Highlight;
+  canvas.selection = selecting || textSelecting;
+  canvas.skipTargetFind = !(selecting || textSelecting);
+  canvas.isDrawingMode = tool === ImageEditorTool.Brush;
   if (canvas.isDrawingMode && fabric && stroke != null && strokeWidth != null) {
     const brush = new fabric.PencilBrush(canvas);
-    brush.color =
-      tool === ImageEditorTool.Highlight ? withHighlightAlpha(stroke, highlightOpacity) : stroke;
+    brush.color = withHighlightAlpha(stroke, highlightOpacity);
     brush.width = strokeWidth;
     canvas.freeDrawingBrush = brush;
   }
@@ -83,10 +81,18 @@ export function applyImageEditorInteractionMode({
   canvas.freeDrawingCursor = imageEditorCursor(tool);
   canvas.getObjects().forEach((object) => {
     const role = object.get('editorRole');
-    if (role === ImageEditorObjectRole.Concealment || role === ImageEditorObjectRole.CropMask)
+    if (
+      role === ImageEditorObjectRole.Concealment ||
+      role === ImageEditorObjectRole.CropMask ||
+      role === ImageEditorObjectRole.DerivedArrow
+    ) {
+      object.set({ selectable: false, evented: false });
       return;
+    }
     const editable =
-      (tool === ImageEditorTool.Select && role !== ImageEditorObjectRole.Crop) ||
+      ((tool === ImageEditorTool.Select || tool === ImageEditorTool.Text) &&
+        role !== ImageEditorObjectRole.Crop &&
+        (tool !== ImageEditorTool.Text || role === ImageEditorObjectRole.Text)) ||
       (tool === ImageEditorTool.Crop && role === ImageEditorObjectRole.Crop);
     object.set({ selectable: editable, evented: editable });
   });
