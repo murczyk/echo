@@ -51,7 +51,7 @@ function createMarkers(
   mode: Props['mode'],
 ): L.CircleMarker[] {
   const visibleBounds = mode === 'detail' ? map.getBounds() : null;
-  const shouldShowMgrsLabel = mode === 'overview' || mode === 'detail';
+  const shouldShowMgrsLabel = mode === 'detail';
   return points
     .filter(({ lat, lng }) => visibleBounds == null || visibleBounds.contains([lat, lng]))
     .map(({ lat, lng }) => {
@@ -63,8 +63,11 @@ function createMarkers(
         fillOpacity: 1,
         interactive: false,
       });
-      const mgrsText = getCoordinateMgrsText({ lat, lng });
-      if (shouldShowMgrsLabel && mgrsText != null) {
+      if (shouldShowMgrsLabel) {
+        const mgrsText = getCoordinateMgrsText({ lat, lng });
+        if (mgrsText == null) {
+          return marker.addTo(map);
+        }
         const label = document.createElement('span');
         label.textContent = mgrsText;
         marker.bindTooltip(label, {

@@ -391,6 +391,7 @@ describe('MessageCardCoordinateAttachment', () => {
     });
 
     expect(leaflet.circleMarker).toHaveBeenCalledTimes(1);
+    expect(mgrsTextSpy).not.toHaveBeenCalled();
     expect(leaflet.circleMarker.mock.results[0]?.value.bindTooltip).not.toHaveBeenCalled();
     mgrsTextSpy.mockRestore();
     rectSpy.mockRestore();
