@@ -7,6 +7,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { InboxMessage, Tag } from '../../../../../../../Bindings';
+import * as coordinateFormat from '../../../../../../maps/coordinate-format';
 import { getTileLayers } from '../../../../../../web-components/analysis-map/tile-layers';
 import { CoordinateAttachmentThumbnail } from '../../CoordinateAttachmentThumbnail';
 import { CoordinatePreviewMapSurface } from '../../CoordinatePreviewMapSurface';
@@ -367,7 +368,41 @@ describe('MessageCardCoordinateAttachment', () => {
       expect.anything(),
       expect.objectContaining({ interactive: false }),
     );
+    const [label, options] =
+      leaflet.circleMarker.mock.results[0]?.value.bindTooltip.mock.calls[0] ?? [];
+    expect(label).toBeInstanceOf(HTMLElement);
+    expect((label as HTMLElement).textContent).toMatch(/\d{1,2}[A-Z] [A-Z]{2}/);
+    expect(options).toMatchObject({
+      className: 'coordinate-preview-mgrs-label',
+      permanent: true,
+      direction: 'top',
+      interactive: false,
+      opacity: 1,
+    });
+    rectSpy.mockRestore();
+  });
+
+  it('keeps a thumbnail point when MGRS conversion is unavailable', async () => {
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      width: 180,
+      height: 120,
+    } as DOMRect);
+    const mgrsTextSpy = vi.spyOn(coordinateFormat, 'getCoordinateMgrsText').mockReturnValue(null);
+    const leaflet = await import('leaflet');
+
+    await act(async () => {
+      root.render(
+        <CoordinatePreviewMapSurface
+          points={[{ source: 'direct', lat: 50.45, lng: 30.52, label: 'BRAVO' }]}
+          mode="thumbnail"
+        />,
+      );
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+    });
+
+    expect(leaflet.circleMarker).toHaveBeenCalledTimes(1);
     expect(leaflet.circleMarker.mock.results[0]?.value.bindTooltip).not.toHaveBeenCalled();
+    mgrsTextSpy.mockRestore();
     rectSpy.mockRestore();
   });
 

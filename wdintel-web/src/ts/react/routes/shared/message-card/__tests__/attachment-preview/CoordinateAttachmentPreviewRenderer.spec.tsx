@@ -76,6 +76,16 @@ const clipboardMock = vi.hoisted(() => ({
   copyTextToClipboard: vi.fn(),
 }));
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
+}
+
 class ResizeObserverMock {
   observe = vi.fn();
   disconnect = vi.fn();
@@ -439,9 +449,7 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
       resizeObserverInstances.at(-1)?.trigger();
       await Promise.resolve();
     });
-    const markerLabel = leafletMock.circleMarker().bindTooltip.mock.calls[0]?.[0] as HTMLElement;
-    expect(markerLabel.textContent).toBe(title);
-    expect(markerLabel.querySelector('img')).toBeNull();
+    expect(leafletMock.circleMarker().bindTooltip).not.toHaveBeenCalled();
   });
 
   it('opens a readable light-theme card only after selection and dismisses it', async () => {
@@ -562,6 +570,7 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     expect(document.body.querySelector('button[aria-label="Delta"]')).not.toBeNull();
     expect(document.body.querySelector('button[aria-label="Google"]')).not.toBeNull();
     expect(document.body.querySelector('button[aria-label="OpenStreetMap"]')).not.toBeNull();
+    expect(document.body.querySelector('button[aria-label="Копіювати WGS84"]')).not.toBeNull();
     expect(document.body.querySelector('button[aria-label="Копіювати MGRS"]')).not.toBeNull();
     expect(document.body.querySelectorAll('[data-mgrs-text]').length).toBe(1);
     const panel = document.body.querySelector(
@@ -575,6 +584,9 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     expect(panel?.style.padding).toBe('12px');
     expect(document.body.textContent).toContain('WGS84');
     expect(document.body.textContent).toContain('MGRS');
+    expect(document.body.querySelector('[data-coordinate-panel-heading="true"]')?.textContent).toBe(
+      'Координати',
+    );
     const wgsLabel = document.body.querySelector(
       '[data-coordinate-label="wgs84"]',
     ) as HTMLElement | null;
@@ -595,8 +607,8 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     expect(mgrsLabel?.style.lineHeight).toBe('1');
     expect(wgsValue?.style.fontVariantNumeric).toBe('tabular-nums');
     expect(mgrsValue?.style.fontVariantNumeric).toBe('tabular-nums');
-    expect(document.body.querySelector('[data-coordinate-row="ск-42"]')).toBeNull();
-    expect(document.body.querySelector('[data-coordinate-row="уск-2000"]')).toBeNull();
+    expect(document.body.querySelector('[data-coordinate-row="sk42"]')).toBeNull();
+    expect(document.body.querySelector('[data-coordinate-row="usk2000"]')).toBeNull();
     expect(document.body.querySelector('[data-coordinate-row="utm"]')).toBeNull();
 
     const expandButton = document.body.querySelector(
@@ -609,9 +621,20 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
       await Promise.resolve();
     });
 
-    expect(document.body.querySelector('[data-coordinate-row="ск-42"]')).not.toBeNull();
-    expect(document.body.querySelector('[data-coordinate-row="уск-2000"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-coordinate-row="sk42"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-coordinate-row="usk2000"]')).not.toBeNull();
     expect(document.body.querySelector('[data-coordinate-row="utm"]')).not.toBeNull();
+    expect(document.body.querySelectorAll('[data-copy-status="idle"]')).toHaveLength(6);
+
+    const table = document.body.querySelector('[role="table"]');
+    expect(table?.querySelectorAll('[role="row"]')).toHaveLength(6);
+    for (const [row, label] of Array.from(table?.querySelectorAll('[role="row"]') ?? []).map(
+      (row, index) => [row, ['WGS84', 'MGRS', 'DMS', 'СК-42', 'УСК-2000', 'UTM'][index]] as const,
+    )) {
+      expect(row.querySelector('[role="rowheader"]')?.textContent).toBe(label);
+      expect(row.querySelectorAll('[role="cell"]')).toHaveLength(2);
+      expect(row.querySelector(`button[aria-label="Копіювати ${label}"]`)).not.toBeNull();
+    }
 
     const wgsRow = document.body.querySelector(
       '[data-coordinate-row="wgs84"]',
@@ -627,25 +650,15 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     expect(mgrsRow?.style.height).toBe('24px');
     expect(wgsLabel?.style.width).toBe('80px');
     expect(mgrsLabel?.style.width).toBe('80px');
-    const mgrsContent = document.body.querySelector(
-      '[data-coordinate-row="mgrs-content"]',
-    ) as HTMLElement | null;
-    expect(mgrsContent).not.toBeNull();
-    expect(mgrsContent?.style.display).toBe('grid');
-    expect(mgrsContent?.style.alignItems).toBe('center');
-    expect(mgrsContent?.style.height).toBe('24px');
-    expect(mgrsContent?.style.width).toBe('100%');
-    expect(mgrsContent?.style.gridTemplateColumns).toBe('minmax(0, 1fr) 20px');
-    expect(mgrsContent?.querySelector('[data-mgrs-text]')).not.toBeNull();
-    const copyButton = mgrsContent?.querySelector(
+    expect(mgrsRow?.querySelector('[data-mgrs-text]')).not.toBeNull();
+    const copyButton = mgrsRow?.querySelector(
       'button[aria-label="Копіювати MGRS"]',
     ) as HTMLButtonElement | null;
     expect(copyButton).not.toBeNull();
-    expect(copyButton?.style.width).toBe('20px');
-    expect(copyButton?.style.height).toBe('20px');
+    expect(document.body.querySelectorAll('[data-copy-status="idle"]')).toHaveLength(6);
     expect(wgsValue?.style.flex).toBe('1 1 auto');
     expect(wgsValue?.style.minWidth).toBe('0');
-    expect(mgrsValue?.style.width).toBe('auto');
+    expect(mgrsValue?.getAttribute('title')).toBe(mgrsValue?.textContent);
 
     const leaflet = await import('leaflet');
     expect(leaflet.map).toHaveBeenCalledTimes(1);
@@ -1188,6 +1201,156 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     expect(copyButton?.getAttribute('title')).toBe('Копіювати MGRS');
     expect(document.body.textContent).not.toContain('Скопійовано');
     expect(document.body.textContent).not.toContain('Не вдалося скопіювати');
+  });
+
+  it('copies each expanded coordinate row using its displayed value', async () => {
+    clipboardMock.copyTextToClipboard.mockResolvedValue(undefined);
+
+    await act(async () => {
+      root.render(
+        <TestCoordinatePreviewDialog
+          open
+          points={[{ lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355', source: 'direct' }]}
+          onClose={vi.fn()}
+          onIndexChange={vi.fn()}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    hostRect = { width: 800, height: 600 };
+    await act(async () => {
+      resizeObserverInstances.at(-1)?.trigger();
+      await Promise.resolve();
+    });
+
+    const expandButton = document.body.querySelector(
+      'button[aria-label="Показати інші формати"]',
+    ) as HTMLButtonElement | null;
+    await act(async () => {
+      expandButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    for (const [format, rowId] of [
+      ['WGS84', 'wgs84'],
+      ['MGRS', 'mgrs'],
+      ['DMS', 'dms'],
+      ['СК-42', 'sk42'],
+      ['УСК-2000', 'usk2000'],
+      ['UTM', 'utm'],
+    ]) {
+      const row = document.body.querySelector(
+        `[data-coordinate-row="${rowId}"]`,
+      ) as HTMLElement | null;
+      const value = row?.querySelectorAll('[role="cell"]')[0]?.textContent;
+      const copyButton = row?.querySelector(
+        `button[aria-label="Копіювати ${format}"]`,
+      ) as HTMLButtonElement | null;
+
+      expect(value).toBeTruthy();
+      expect(copyButton).not.toBeNull();
+      await act(async () => {
+        copyButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await Promise.resolve();
+      });
+      expect(clipboardMock.copyTextToClipboard).toHaveBeenLastCalledWith(value);
+    }
+
+    expect(clipboardMock.copyTextToClipboard).toHaveBeenCalledTimes(6);
+    expect(document.body.querySelector('[data-coordinate-row="sk42"]')?.textContent).not.toContain(
+      'СК-42:',
+    );
+    expect(
+      document.body.querySelector('[data-coordinate-row="usk2000"]')?.textContent,
+    ).not.toContain('УСК-2000:');
+  });
+
+  it('ignores a resolved copy operation after selecting another point', async () => {
+    vi.useFakeTimers();
+    const copy = createDeferred<void>();
+    clipboardMock.copyTextToClipboard.mockReturnValue(copy.promise);
+
+    await act(async () => {
+      root.render(
+        <TestCoordinatePreviewDialog
+          open
+          points={[
+            { lat: 50.45044, lng: 30.52355, label: 'A', source: 'direct' },
+            { lat: 50.5, lng: 30.6, label: 'B', source: 'direct' },
+          ]}
+          onClose={vi.fn()}
+          onIndexChange={vi.fn()}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    hostRect = { width: 800, height: 600 };
+    await act(async () => {
+      resizeObserverInstances.at(-1)?.trigger();
+      await Promise.resolve();
+    });
+
+    const copyButton = document.body.querySelector(
+      'button[aria-label="Копіювати MGRS"]',
+    ) as HTMLButtonElement;
+    await act(async () => {
+      copyButton.click();
+      await Promise.resolve();
+    });
+    expect(copyButton.getAttribute('data-copy-status')).toBe('copying');
+
+    const marker = leafletMock.circleMarker.mock.results[1]?.value;
+    const secondMarkerClick = marker.on.mock.calls
+      .filter(([event]) => event === 'click')
+      .at(-1)?.[1] as (() => void) | undefined;
+    await act(async () => {
+      secondMarkerClick?.();
+      await Promise.resolve();
+    });
+    expect(document.body.querySelectorAll('[data-copy-status="idle"]')).toHaveLength(2);
+
+    await act(async () => {
+      copy.resolve();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(1200);
+    });
+    expect(document.body.querySelectorAll('[data-copy-status="idle"]')).toHaveLength(2);
+    expect(document.body.querySelector('[data-copy-status="copied"]')).toBeNull();
+  });
+
+  it('ignores a rejected copy operation after unmount', async () => {
+    const copy = createDeferred<void>();
+    clipboardMock.copyTextToClipboard.mockReturnValue(copy.promise);
+
+    await act(async () => {
+      root.render(
+        <TestCoordinatePreviewDialog
+          open
+          points={[{ lat: 50.45044, lng: 30.52355, label: 'A', source: 'direct' }]}
+          onClose={vi.fn()}
+          onIndexChange={vi.fn()}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    hostRect = { width: 800, height: 600 };
+    await act(async () => {
+      resizeObserverInstances.at(-1)?.trigger();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      (
+        document.body.querySelector('button[aria-label="Копіювати MGRS"]') as HTMLButtonElement
+      ).click();
+      await Promise.resolve();
+      root.unmount();
+      copy.reject(new Error('clipboard denied'));
+      await Promise.resolve();
+    });
+    expect(document.body.querySelector('[data-copy-status="error"]')).toBeNull();
   });
 
   it('shows failure feedback briefly when MGRS copying fails', async () => {

@@ -3,6 +3,7 @@ import * as L from 'leaflet';
 import { useLayoutEffect, useRef, useState } from 'react';
 
 import { DEFAULT_BASE_LAYER_ID } from '../../../../maps/base-layers';
+import { getCoordinateMgrsText } from '../../../../maps/coordinate-format';
 import { getTileLayers } from '../../../../web-components/analysis-map/tile-layers';
 import type { CoordinatePreviewPoint } from './message-coordinate-preview';
 
@@ -52,16 +53,30 @@ function createMarkers(
   const visibleBounds = mode === 'detail' ? map.getBounds() : null;
   return points
     .filter(({ lat, lng }) => visibleBounds == null || visibleBounds.contains([lat, lng]))
-    .map(({ lat, lng }) =>
-      L.circleMarker([lat, lng], {
+    .map(({ lat, lng }) => {
+      const marker = L.circleMarker([lat, lng], {
         radius: 8,
         color: '#ffffff',
         weight: 3,
         fillColor: '#ff4d2d',
         fillOpacity: 1,
         interactive: false,
-      }).addTo(map),
-    );
+      });
+      const mgrsText = getCoordinateMgrsText({ lat, lng });
+      if (mgrsText != null) {
+        const label = document.createElement('span');
+        label.textContent = mgrsText;
+        marker.bindTooltip(label, {
+          permanent: true,
+          direction: 'top',
+          offset: [0, -8],
+          opacity: 1,
+          className: 'coordinate-preview-mgrs-label',
+          interactive: false,
+        });
+      }
+      return marker.addTo(map);
+    });
 }
 
 function findTileLayers(layer: L.Layer): L.GridLayer[] {

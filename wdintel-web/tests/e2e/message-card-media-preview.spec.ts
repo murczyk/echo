@@ -845,10 +845,7 @@ test.describe('message card media preview contract', () => {
         await coordinateControl.click();
         await expect(coordinateTile).toBeVisible();
         await expect(count).toHaveText('9');
-        expect(await coordinateTile.textContent()).toBe('9');
-        expect(await coordinateTile.textContent()).not.toContain(coordinateLabel);
-        expect(await coordinateTile.textContent()).not.toContain('50.45044, 30.52355');
-        expect(await coordinateTile.textContent()).not.toMatch(/точка|точки|точок|…|\.\.\./i);
+        expect(await count.textContent()).toBe('9');
         const [tileBox, countBox, countMetrics] = await Promise.all([
           coordinateTile.boundingBox(),
           count.boundingBox(),
@@ -945,7 +942,7 @@ test.describe('message card media preview contract', () => {
         await page.waitForTimeout(300);
         await button.hover();
         await page.waitForTimeout(300);
-        await expect(tile.locator('.leaflet-tooltip')).toHaveCount(0);
+        await expect(tile.locator('.coordinate-preview-mgrs-label')).not.toHaveCount(0);
         const preview = page.locator('[data-coordinate-hover-preview]');
         await expect(preview).toHaveCount(1);
         await expect(
@@ -954,7 +951,12 @@ test.describe('message card media preview contract', () => {
         const mapRegions = preview.locator('.coordinate-hover-preview__map-region');
         await expect(mapRegions).toHaveCount(2);
         await expect(preview.locator('.leaflet-interactive')).toHaveCount(0);
-        await expect(preview.locator('.leaflet-tooltip')).toHaveCount(0);
+        await expect(mapRegions.nth(0).locator('.coordinate-preview-mgrs-label')).not.toHaveCount(
+          0,
+        );
+        await expect(mapRegions.nth(1).locator('.coordinate-preview-mgrs-label')).not.toHaveCount(
+          0,
+        );
         const [previewBox, viewport, overviewRegion, detailRegion, layout] = await Promise.all([
           preview.boundingBox(),
           page.evaluate(() => ({ width: innerWidth, height: innerHeight })),
