@@ -55,7 +55,7 @@ fn has_device_filters(req: &InboxMessagesReq) -> bool {
     .any(|names| !names.is_empty())
 }
 
-async fn require_device_filters(
+pub(crate) async fn require_device_filters(
     dbx: &DatabaseConnection,
     login_id: &Uuid,
     req: &InboxMessagesReq,
