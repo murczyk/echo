@@ -77,6 +77,47 @@ $$;
 create trigger orbit_unit_sigint_unit_sync_present_in_orbit
 after insert or update or delete on orbit_unit_sigint_unit
 for each row execute function sync_sigint_unit_present_in_orbit();
+
+create function sync_sigint_unit_present_in_orbit_from_orbit_unit()
+returns trigger
+language plpgsql
+as $$
+begin
+    if new.deleted is not distinct from old.deleted then
+        return new;
+    end if;
+
+    with presence as (
+        select distinct
+            changed_link.sigint_unit_id,
+            exists (
+                select 1
+                from orbit_unit_sigint_unit link
+                join orbit_unit
+                  on orbit_unit.unit_id = link.orbit_unit_id
+                where link.sigint_unit_id = changed_link.sigint_unit_id
+                  and link.is_suppressed = false
+                  and orbit_unit.deleted = false
+            ) as present_in_orbit
+        from orbit_unit_sigint_unit changed_link
+        where changed_link.orbit_unit_id = new.unit_id
+          and changed_link.is_suppressed = false
+    )
+    update sigint_unit
+    set present_in_orbit = presence.present_in_orbit
+    from presence
+    where sigint_unit.id = presence.sigint_unit_id
+      and sigint_unit.present_in_orbit
+          is distinct from presence.present_in_orbit;
+
+    return new;
+end;
+$$;
+
+create trigger orbit_unit_sync_sigint_unit_present_in_orbit
+after update of deleted on orbit_unit
+for each row execute function
+    sync_sigint_unit_present_in_orbit_from_orbit_unit();
                 "#,
             )
             .await
@@ -89,8 +130,12 @@ for each row execute function sync_sigint_unit_present_in_orbit();
             .get_connection()
             .execute_unprepared(
                 r#"
+drop trigger if exists orbit_unit_sync_sigint_unit_present_in_orbit
+    on orbit_unit;
 drop trigger if exists orbit_unit_sigint_unit_sync_present_in_orbit
     on orbit_unit_sigint_unit;
+drop function if exists
+    sync_sigint_unit_present_in_orbit_from_orbit_unit();
 drop function if exists sync_sigint_unit_present_in_orbit();
 alter table sigint_unit drop column if exists present_in_orbit;
                 "#,

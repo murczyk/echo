@@ -1315,6 +1315,7 @@ async fn clear_create_unit_orbit_note_if_hidden(
     let can_view_orbit = orbit::can_view_orbit_data(dbx, login).await?;
     if !can_view_orbit {
         req.orbit_note = None;
+        req.present_in_orbit = None;
         req.duplicate_unit_ids.clear();
     }
     Ok(can_view_orbit)
@@ -4371,6 +4372,7 @@ mod tests {
         let login_id = test_login_id(&env).await;
         let mut req = auto_req(true, vec![], vec![]);
         req.unit.orbit_note = Some("Hidden note".to_string());
+        req.unit.present_in_orbit = Some(true);
         req.unit.duplicate_unit_ids = vec![duplicate.id];
 
         let rsp = create_unit_with_auto_network_for_login(&login_id, &env, req)
@@ -4383,6 +4385,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(unit.orbit_note, None);
+        assert_eq!(unit.present_in_orbit, None);
         assert!(
             !sigint_unit::Entity::find_by_id(duplicate.id)
                 .one(&env.dbx)

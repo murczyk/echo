@@ -3442,6 +3442,59 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn orbit_unit_deleted_state_synchronizes_presence() {
+        // Regression: https://github.com/echoua/echo/issues/3113
+        let env = cleanup().await.unwrap();
+        orbit_unit::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let first = insert_orbit_unit(&env.dbx, "First", None, None).await;
+        let second = insert_orbit_unit(&env.dbx, "Second", None, None).await;
+        let sigint_unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        link_orbit_unit(&env.dbx, first.unit_id, sigint_unit.id).await;
+        link_orbit_unit(&env.dbx, second.unit_id, sigint_unit.id).await;
+
+        let mut first = first.into_active_model();
+        first.deleted = Set(true);
+        let first = first.update(&env.dbx).await.unwrap();
+        let sigint_unit = sigint_unit::Entity::find_by_id(sigint_unit.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(sigint_unit.present_in_orbit, Some(true));
+
+        let mut second = second.into_active_model();
+        second.deleted = Set(true);
+        second.update(&env.dbx).await.unwrap();
+        let sigint_unit = sigint_unit::Entity::find_by_id(sigint_unit.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(sigint_unit.present_in_orbit, Some(false));
+
+        let mut first = first.into_active_model();
+        first.deleted = Set(false);
+        first.update(&env.dbx).await.unwrap();
+        let sigint_unit = sigint_unit::Entity::find_by_id(sigint_unit.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(sigint_unit.present_in_orbit, Some(true));
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn rer_role_and_admin_can_view_orbit_data() {
         let env = cleanup().await.unwrap();
         let admin_login =
