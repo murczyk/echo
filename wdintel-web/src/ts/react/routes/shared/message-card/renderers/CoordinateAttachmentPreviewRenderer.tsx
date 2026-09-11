@@ -14,7 +14,10 @@ import { copyTextToClipboard } from '../../../../../copy-to-clipboard';
 import { renderWgsFloat } from '../../../importer-beta/coordinates';
 import { BaseLayerId, DEFAULT_BASE_LAYER_ID } from '../../../../../maps/base-layers';
 import { getTileLayers } from '../../../../../web-components/analysis-map/tile-layers';
-import { getCoordinateMgrsText, getCoordinateText } from '../../../../../maps/coordinate-format';
+import {
+  getCoordinateMgrsText,
+  getCoordinateTextIfAvailable,
+} from '../../../../../maps/coordinate-format';
 import { formatCoordinateLocality } from '../../../../../maps/coordinate-locality';
 import { CoordinateMapPreviewControls } from '../CoordinateMapPreviewControls';
 import { MessageCardAttachmentPreviewHeader } from '../attachment-preview/MessageCardAttachmentPreviewHeader';
@@ -440,16 +443,16 @@ function CoordinateMapPreview({
   }
   const mgrsText = getCoordinateMgrsText({ lat: point.lat, lng: point.lng });
   const wgs84Text = `${renderWgsFloat(point.lat)}, ${renderWgsFloat(point.lng)}`;
-  const dmsText = getCoordinateText('dms', point);
-  const sk42Text = getCoordinateText('sk42', point);
-  const usk2000Text = getCoordinateText('usk2000', point);
-  const utmText = getCoordinateText('utm', point);
+  const dmsText = getCoordinateTextIfAvailable('dms', point);
+  const sk42Text = getCoordinateTextIfAvailable('sk42', point);
+  const usk2000Text = getCoordinateTextIfAvailable('usk2000', point);
+  const utmText = getCoordinateTextIfAvailable('utm', point);
   const coordinateRows: CoordinateRow[] = [
     { id: 'wgs84', label: 'WGS84', value: wgs84Text },
     { id: 'mgrs', label: 'MGRS', value: mgrsText },
     { id: 'dms', label: 'DMS', value: dmsText },
-    { id: 'sk42', label: 'СК-42', value: sk42Text.replace('СК-42: ', '') },
-    { id: 'usk2000', label: 'УСК-2000', value: usk2000Text.replace('УСК-2000: ', '') },
+    { id: 'sk42', label: 'СК-42', value: sk42Text?.replace('СК-42: ', '') ?? null },
+    { id: 'usk2000', label: 'УСК-2000', value: usk2000Text?.replace('УСК-2000: ', '') ?? null },
     { id: 'utm', label: 'UTM', value: utmText },
   ];
   const localityText = formatCoordinateLocality(point.locality ?? null);
@@ -797,7 +800,7 @@ function CoordinateValueRow({
   labelSx?: object;
   valueSx?: object;
 }) {
-  const displayValue = value == null ? 'MGRS недоступні' : value.replace(`${label}: `, '');
+  const displayValue = value == null ? 'Недоступно' : value.replace(`${label}: `, '');
   const copyButtonTitle =
     status === 'copied'
       ? 'Скопійовано'

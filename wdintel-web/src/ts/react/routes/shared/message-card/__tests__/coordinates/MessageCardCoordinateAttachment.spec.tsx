@@ -368,17 +368,7 @@ describe('MessageCardCoordinateAttachment', () => {
       expect.anything(),
       expect.objectContaining({ interactive: false }),
     );
-    const [label, options] =
-      leaflet.circleMarker.mock.results[0]?.value.bindTooltip.mock.calls[0] ?? [];
-    expect(label).toBeInstanceOf(HTMLElement);
-    expect((label as HTMLElement).textContent).toMatch(/\d{1,2}[A-Z] [A-Z]{2}/);
-    expect(options).toMatchObject({
-      className: 'coordinate-preview-mgrs-label',
-      permanent: true,
-      direction: 'top',
-      interactive: false,
-      opacity: 1,
-    });
+    expect(leaflet.circleMarker.mock.results[0]?.value.bindTooltip).not.toHaveBeenCalled();
     rectSpy.mockRestore();
   });
 

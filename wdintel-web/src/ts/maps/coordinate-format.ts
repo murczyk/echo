@@ -22,6 +22,14 @@ export function getCoordinateText(
   coords: Wgs84Coords,
   mgrsCoords?: string | null,
 ): string {
+  return getCoordinateTextIfAvailable(format, coords, mgrsCoords) ?? formatWgs84(coords);
+}
+
+export function getCoordinateTextIfAvailable(
+  format: CoordFormat,
+  coords: Wgs84Coords,
+  mgrsCoords?: string | null,
+): string | null {
   if (format === 'wgs') {
     return formatWgs84(coords);
   }
@@ -32,26 +40,26 @@ export function getCoordinateText(
 
   if (format === 'sk42') {
     const converted = tdWgs84ToSk42({ x: coords.lng, y: coords.lat });
-    return converted ? formatGrid('СК-42', converted.y, converted.x) : formatWgs84(coords);
+    return converted ? formatGrid('СК-42', converted.y, converted.x) : null;
   }
 
   if (format === 'usk2000') {
     const converted = tdWgs84ToUsk2000({ x: coords.lng, y: coords.lat });
-    return converted ? formatGrid('УСК-2000', converted.y, converted.x) : formatWgs84(coords);
+    return converted ? formatGrid('УСК-2000', converted.y, converted.x) : null;
   }
 
   if (format === 'utm') {
     const converted = wgs84ToUtm(coords);
     return converted
       ? `${converted.zone}${converted.band} ${String(Math.round(converted.easting)).padStart(6, '0')} ${String(Math.round(converted.northing)).padStart(7, '0')}`
-      : formatWgs84(coords);
+      : null;
   }
 
   if (mgrsCoords) {
     return formatMgrs(mgrsCoords);
   }
 
-  return getCoordinateMgrsText(coords) ?? formatWgs84(coords);
+  return getCoordinateMgrsText(coords, mgrsCoords);
 }
 
 export function getCoordinateMgrsText(

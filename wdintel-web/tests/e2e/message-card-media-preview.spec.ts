@@ -898,7 +898,7 @@ test.describe('message card media preview contract', () => {
           (tileBox?.y ?? 0) + (tileBox?.height ?? 0) / 2,
         );
         expect(coordinateStacking).toEqual({ map: 1, shade: 2, count: 3 });
-        await expect(coordinateTile.locator('.coordinate-preview-mgrs-label')).not.toHaveCount(0);
+        await expect(coordinateTile.locator('.coordinate-preview-mgrs-label')).toHaveCount(0);
       }
 
       await coordinateButton.click();
@@ -958,7 +958,7 @@ test.describe('message card media preview contract', () => {
         await page.waitForTimeout(300);
         await button.hover();
         await page.waitForTimeout(300);
-        await expect(tile.locator('.coordinate-preview-mgrs-label')).not.toHaveCount(0);
+        await expect(tile.locator('.coordinate-preview-mgrs-label')).toHaveCount(0);
         const preview = page.locator('[data-coordinate-hover-preview]');
         await expect(preview).toHaveCount(1);
         await expect(

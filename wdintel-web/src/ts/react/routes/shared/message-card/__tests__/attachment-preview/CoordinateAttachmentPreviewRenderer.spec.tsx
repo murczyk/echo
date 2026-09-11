@@ -1266,6 +1266,42 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     ).not.toContain('УСК-2000:');
   });
 
+  it('disables unavailable projected coordinate formats without copying WGS84 fallbacks', async () => {
+    await act(async () => {
+      root.render(
+        <TestCoordinatePreviewDialog
+          open
+          points={[{ lat: 50, lng: 60, label: 'unsupported', source: 'direct' }]}
+          onClose={vi.fn()}
+          onIndexChange={vi.fn()}
+        />,
+      );
+      await Promise.resolve();
+    });
+    hostRect = { width: 800, height: 600 };
+    await act(async () => {
+      resizeObserverInstances.at(-1)?.trigger();
+      await Promise.resolve();
+      document.body
+        .querySelector('button[aria-label="Показати інші формати"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    const sk42Row = document.body.querySelector('[data-coordinate-row="sk42"]');
+    const sk42Copy = sk42Row?.querySelector(
+      'button[aria-label="Копіювати СК-42"]',
+    ) as HTMLButtonElement;
+    expect(sk42Row?.textContent).toContain('Недоступно');
+    expect(sk42Row?.textContent).not.toContain('50.00000, 60.00000');
+    expect(sk42Copy.disabled).toBe(true);
+    sk42Copy.click();
+    expect(clipboardMock.copyTextToClipboard).not.toHaveBeenCalled();
+    expect(
+      document.body.querySelector('button[aria-label="Копіювати UTM"]')?.hasAttribute('disabled'),
+    ).toBe(false);
+  });
+
   it('ignores a resolved copy operation after selecting another point', async () => {
     vi.useFakeTimers();
     const copy = createDeferred<void>();
