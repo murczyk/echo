@@ -12,10 +12,12 @@ import {
   type MessageTextPreviewLineLimit,
 } from '../../services/api/user-settings';
 import { DEFAULT_DUTY_TAGS_LAYOUT, type TagsLayoutVariant } from './utils';
+import { canUseMessageDevices } from '../../utils/roles';
 
 export type RerDutyPageSettings = {
   currentUser: User | null;
   cyberEchoEnabled: boolean;
+  deviceAccess: { resolved: boolean; allowed: boolean };
   tagsLayout: TagsLayoutVariant;
   audioTranscriptionCollapsed: boolean;
   audioTranscriptionEnabled: boolean;
@@ -27,7 +29,9 @@ export type RerDutyPageSettings = {
 /** User preferences, system settings, and the auth user behind the Duty page chrome. */
 export function useRerDutyPageSettings(): RerDutyPageSettings {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [cyberEchoEnabled, setCyberEchoEnabled] = useState(false);
+  const [currentUserLoaded, setCurrentUserLoaded] = useState(false);
+  const [devicesSectionEnabled, setDevicesSectionEnabled] = useState(false);
+  const [devicesSettingsLoaded, setDevicesSettingsLoaded] = useState(false);
   const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
   const [audioTranscriptionCollapsed, setAudioTranscriptionCollapsed] = useState(false);
   const [audioTranscriptionEnabled, setAudioTranscriptionEnabled] = useState(false);
@@ -110,13 +114,16 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
     void currentSystemSettings()
       .then((settings) => {
         if (abortController.signal.aborted) return;
-        setCyberEchoEnabled(settings.devicesSectionEnabled);
+        setDevicesSectionEnabled(settings.devicesSectionEnabled);
         setAudioTranscriptionEnabled(settings.enableAudioTranscription ?? false);
       })
       .catch(() => {
         if (abortController.signal.aborted) return;
-        setCyberEchoEnabled(false);
+        setDevicesSectionEnabled(false);
         setAudioTranscriptionEnabled(false);
+      })
+      .finally(() => {
+        if (!abortController.signal.aborted) setDevicesSettingsLoaded(true);
       });
 
     return () => {
@@ -135,6 +142,9 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
       .catch(() => {
         if (abortController.signal.aborted) return;
         setCurrentUser(null);
+      })
+      .finally(() => {
+        if (!abortController.signal.aborted) setCurrentUserLoaded(true);
       });
 
     return () => {
@@ -144,7 +154,11 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
 
   return {
     currentUser,
-    cyberEchoEnabled,
+    cyberEchoEnabled: canUseMessageDevices(currentUser?.roles, devicesSectionEnabled),
+    deviceAccess: {
+      resolved: currentUserLoaded && devicesSettingsLoaded,
+      allowed: canUseMessageDevices(currentUser?.roles, devicesSectionEnabled),
+    },
     tagsLayout,
     audioTranscriptionCollapsed,
     audioTranscriptionEnabled,

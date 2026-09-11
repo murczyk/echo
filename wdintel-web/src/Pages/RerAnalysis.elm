@@ -366,6 +366,7 @@ getInboxReq model =
     , selectedUnits = emptyToNothing selectedLegacyUnits
     , selectedUnitIds = emptyToNothing selectedUnitIds
     , selectedDeviceNames = Nothing
+    , deniedDeviceNames = Nothing
     , deniedUnits = Nothing
     , deniedUnitIds = Nothing
     , selectedLocations = emptyToNothing model.locationsSelected

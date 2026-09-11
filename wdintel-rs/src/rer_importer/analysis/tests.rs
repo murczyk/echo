@@ -1,14 +1,25 @@
-use crate::config::SYSTEM_LOGIN_NAME;
+use crate::config::{IDENTITY_DURATION_HOURS, ROLE_ADMIN, SYSTEM_LOGIN_NAME};
+use crate::devices::ROLE_CYBER;
 use crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind;
+use crate::entities::{login, system_settings};
 use crate::functest::tests::*;
 use crate::h;
 use crate::rer_importer::analysis::*;
 use crate::rer_importer::*;
 use crate::{new_pg_runtime_pool_from_config, PgRuntimePoolRole};
+use actix_identity::{Identity, IdentityMiddleware};
+use actix_session::storage::RedisSessionStore;
+use actix_session::SessionMiddleware;
+use actix_web::cookie::{Cookie, Key};
 use actix_web::web::{Data, Json};
+use actix_web::{
+    http::StatusCode, test as actix_test, web, App, HttpMessage, HttpRequest,
+    HttpResponse,
+};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
-    DbBackend, EntityTrait, FromQueryResult, QueryFilter, Statement,
+    DbBackend, EntityTrait, FromQueryResult, IntoActiveModel, QueryFilter,
+    Statement,
 };
 use serial_test::serial;
 
@@ -49,6 +60,48 @@ struct AorFilterFixture {
     till_date_noninclusive_ms: i64,
 }
 
+async fn activity_daily_test_login(
+    request: HttpRequest,
+    login: web::Path<String>,
+) -> HttpResponse {
+    Identity::login(&request.extensions(), login.into_inner()).unwrap();
+    HttpResponse::NoContent().finish()
+}
+
+async fn set_login_roles(
+    db: &DatabaseConnection,
+    login_id: uuid::Uuid,
+    roles: serde_json::Value,
+) {
+    let login = login::Entity::find_by_id(login_id)
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut login = login.into_active_model();
+    login.roles = Set(roles);
+    login.update(db).await.unwrap();
+}
+
+async fn set_devices_section_enabled(db: &DatabaseConnection, enabled: bool) {
+    match system_settings::Entity::find().one(db).await.unwrap() {
+        Some(settings) => {
+            let mut settings = settings.into_active_model();
+            settings.devices_section_enabled = Set(enabled);
+            settings.update(db).await.unwrap();
+        }
+        None => {
+            system_settings::ActiveModel {
+                devices_section_enabled: Set(enabled),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .unwrap();
+        }
+    }
+}
+
 async fn test_identity_login_id(
     env: &Env,
     test_identity: &TestIdentity,
@@ -76,6 +129,41 @@ async fn fetch_correlated_inbox_count(
         .unwrap()
         .try_get("", "count")
         .unwrap()
+}
+
+async fn assign_message_device_name(
+    db: &DatabaseConnection,
+    message_id: i64,
+    device_name_id: Option<i64>,
+    datetime: NaiveDateTime,
+) {
+    let inbox_item = sigint_inbox_item::Entity::find_by_id(message_id)
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut inbox_item = inbox_item.into_active_model();
+    inbox_item.device_name_id = Set(device_name_id);
+    inbox_item.datetime = Set(Some(datetime));
+    inbox_item.update(db).await.unwrap();
+}
+
+async fn inbox_map_item_ids(
+    env: &Env,
+    login: &uuid::Uuid,
+    req: &InboxMessagesReq,
+) -> Vec<i64> {
+    let query =
+        crate::rer_importer::inbox::query::build_inbox_query(login, env, req)
+            .await
+            .unwrap();
+    env.dbx
+        .query_all_raw(Statement::from_string(DbBackend::Postgres, query))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| row.try_get("", "id").unwrap())
+        .collect()
 }
 
 fn test_dt(
@@ -107,6 +195,8 @@ fn short_state_filter(
         units_denied: None,
         selected_unit_ids: None,
         denied_unit_ids: None,
+        selected_device_names: None,
+        denied_device_names: None,
         units_exact_match_only: None,
         last_viewed_message_id: None,
         highlight_keywords_enabled: None,
@@ -8310,4 +8400,267 @@ async fn analytics_candidates_preserve_unit_media_permissions_and_paging() {
         .unwrap()
         .is_empty()
     );
+}
+
+#[tokio::test]
+#[serial]
+async fn echo_3461_inbox_device_filters_include_exclude_and_keep_nulls() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let test_identity = mk_test_identity().await.unwrap();
+    let login_id = test_identity_login_id(&fixture.env, &test_identity).await;
+    let alpha = device_name::ActiveModel {
+        name: Set(Some("ECHO-3461 Alpha".to_string())),
+        login_id: Set(login_id),
+        created_at: Set(chrono::Utc::now().naive_utc()),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    let beta = device_name::ActiveModel {
+        name: Set(Some("ECHO-3461 Beta".to_string())),
+        login_id: Set(login_id),
+        created_at: Set(chrono::Utc::now().naive_utc()),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    let alpha_message = mk_analysis_message(
+        db,
+        "echo-3461-alpha",
+        "3461.1",
+        test_dt(2026, 3, 1, 8, 1),
+        &[&fixture.alpha],
+        &[],
+        true,
+    )
+    .await
+    .unwrap();
+    let beta_message = mk_analysis_message(
+        db,
+        "echo-3461-beta",
+        "3461.2",
+        test_dt(2026, 3, 1, 8, 2),
+        &[&fixture.alpha],
+        &[],
+        true,
+    )
+    .await
+    .unwrap();
+    let null_message = mk_analysis_message(
+        db,
+        "echo-3461-null",
+        "3461.3",
+        test_dt(2026, 3, 1, 8, 3),
+        &[&fixture.alpha],
+        &[],
+        true,
+    )
+    .await
+    .unwrap();
+    assign_message_device_name(
+        db,
+        alpha_message.id,
+        Some(alpha.id),
+        test_dt(2026, 3, 1, 8, 1),
+    )
+    .await;
+    assign_message_device_name(
+        db,
+        beta_message.id,
+        Some(beta.id),
+        test_dt(2026, 3, 1, 8, 2),
+    )
+    .await;
+    assign_message_device_name(
+        db,
+        null_message.id,
+        None,
+        test_dt(2026, 3, 1, 8, 3),
+    )
+    .await;
+
+    let base_req = InboxMessagesReq {
+        since_date_inclusive_ms: Some(fixture.since_date_inclusive_ms),
+        till_date_inclusive_ms: Some(fixture.till_date_noninclusive_ms),
+        nolimit: Some(true),
+        ..Default::default()
+    };
+    let unfiltered =
+        inbox_map_item_ids(&fixture.env, &login_id, &base_req).await;
+    let empty_lists = inbox_map_item_ids(
+        &fixture.env,
+        &login_id,
+        &InboxMessagesReq {
+            selected_device_names: Some(vec![]),
+            denied_device_names: Some(vec![]),
+            ..base_req.clone()
+        },
+    )
+    .await;
+    assert_eq!(empty_lists, unfiltered);
+
+    let included = inbox_map_item_ids(
+        &fixture.env,
+        &login_id,
+        &InboxMessagesReq {
+            selected_device_names: Some(vec![alpha.name.clone().unwrap()]),
+            ..base_req.clone()
+        },
+    )
+    .await;
+    assert_eq!(included, vec![alpha_message.id]);
+
+    let denied_alpha = inbox_map_item_ids(
+        &fixture.env,
+        &login_id,
+        &InboxMessagesReq {
+            denied_device_names: Some(vec![alpha.name.clone().unwrap()]),
+            ..base_req.clone()
+        },
+    )
+    .await;
+    assert!(!denied_alpha.contains(&alpha_message.id));
+    assert!(denied_alpha.contains(&beta_message.id));
+    assert!(denied_alpha.contains(&null_message.id));
+
+    let denied_both = inbox_map_item_ids(
+        &fixture.env,
+        &login_id,
+        &InboxMessagesReq {
+            denied_device_names: Some(vec![
+                alpha.name.clone().unwrap(),
+                beta.name.clone().unwrap(),
+            ]),
+            ..base_req.clone()
+        },
+    )
+    .await;
+    assert!(!denied_both.contains(&alpha_message.id));
+    assert!(!denied_both.contains(&beta_message.id));
+    assert!(denied_both.contains(&null_message.id));
+
+    let include_and_exclude = inbox_map_item_ids(
+        &fixture.env,
+        &login_id,
+        &InboxMessagesReq {
+            selected_device_names: Some(vec![alpha.name.unwrap()]),
+            denied_device_names: Some(vec![beta.name.unwrap()]),
+            ..base_req
+        },
+    )
+    .await;
+    assert_eq!(include_and_exclude, vec![alpha_message.id]);
+}
+
+#[actix_web::test]
+#[serial]
+async fn echo_3461_activity_daily_requires_device_filter_access() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let test_identity = mk_test_identity().await.unwrap();
+    let login_id = test_identity_login_id(&fixture.env, &test_identity).await;
+    let redis_session_store = RedisSessionStore::new(
+        crate::redis_conn_string(&fixture.env.config).unwrap(),
+    )
+    .await
+    .unwrap();
+    let app = actix_test::init_service(
+        App::new()
+            .app_data(Data::from(fixture.env.clone()))
+            .wrap(
+                IdentityMiddleware::builder()
+                    .visit_deadline(Some(std::time::Duration::from_secs(
+                        IDENTITY_DURATION_HOURS * 60 * 60,
+                    )))
+                    .build(),
+            )
+            .wrap(SessionMiddleware::new(redis_session_store, Key::generate()))
+            .route(
+                "/test/activity-daily-login/{login}",
+                web::post().to(activity_daily_test_login),
+            )
+            .service(activity_daily),
+    )
+    .await;
+    let login_response = actix_test::call_service(
+        &app,
+        actix_test::TestRequest::post()
+            .uri(&format!("/test/activity-daily-login/{login_id}"))
+            .to_request(),
+    )
+    .await;
+    let session_cookie: Cookie<'static> = login_response
+        .response()
+        .cookies()
+        .next()
+        .unwrap()
+        .into_owned();
+
+    let request = |selected_device_names: Option<Vec<String>>| {
+        let mut req = analysis_stats_req0(&fixture);
+        req.selected_device_names = selected_device_names;
+        req
+    };
+    let call = |req: AnalysisStatsReq| {
+        actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/rer/analysis/activity-daily")
+                .cookie(session_cookie.clone())
+                .set_json(req)
+                .to_request(),
+        )
+    };
+    set_devices_section_enabled(&fixture.env.dbx, true).await;
+    set_login_roles(&fixture.env.dbx, login_id, serde_json::json!(["Rer"]))
+        .await;
+    assert_eq!(
+        call(request(Some(vec!["ECHO-3461 Alpha".to_string()])))
+            .await
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_ne!(call(request(None)).await.status(), StatusCode::FORBIDDEN);
+
+    set_login_roles(
+        &fixture.env.dbx,
+        login_id,
+        serde_json::json!(["Rer", "DeviceSource"]),
+    )
+    .await;
+    assert_eq!(
+        call(request(Some(vec!["ECHO-3461 Alpha".to_string()])))
+            .await
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+
+    for roles in [
+        serde_json::json!(["Rer", ROLE_CYBER]),
+        serde_json::json!([ROLE_ADMIN]),
+    ] {
+        set_login_roles(&fixture.env.dbx, login_id, roles).await;
+        assert_ne!(
+            call(request(Some(vec!["ECHO-3461 Alpha".to_string()])))
+                .await
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    set_devices_section_enabled(&fixture.env.dbx, false).await;
+    for roles in [
+        serde_json::json!(["Rer", ROLE_CYBER]),
+        serde_json::json!([ROLE_ADMIN]),
+    ] {
+        set_login_roles(&fixture.env.dbx, login_id, roles).await;
+        assert_eq!(
+            call(request(Some(vec!["ECHO-3461 Alpha".to_string()])))
+                .await
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+    }
 }

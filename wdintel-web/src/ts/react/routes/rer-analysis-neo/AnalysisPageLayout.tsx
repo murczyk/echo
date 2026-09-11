@@ -19,6 +19,7 @@ import { getAnalysisCenterTabs } from './types';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
 import { AudioTranscriptionPreferencesProvider } from '../shared/message-card/MessageCardAudioTranscription';
 import { PointBlacklistPaletteNamesCacheProvider } from '../shared/message-card/PointBlacklistPaletteNamesCache';
+import { MessageDeviceAccessProvider } from '../shared/message-card/MessageDeviceAccess';
 
 export type RerAnalysisNeoPageProps = {
   authUserName?: string | null;
@@ -151,29 +152,31 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
             />
           ) : null}
           <PointBlacklistPaletteNamesCacheProvider>
-            {showLoadingSkeletons ? (
-              <AnalysisLoadingSkeletons rightPanelVisible={inlineRightPanelVisible} />
-            ) : (
-              <AudioTranscriptionPreferencesProvider
-                collapsedByDefault={page.audioTranscriptionCollapsed}
-                enabled={page.audioTranscriptionEnabled}
-              >
-                <AnalysisCenterPanel
-                  page={page}
-                  centerTab={centerTab}
-                  centerTabs={centerTabs}
-                  isCompactLayout={isAnalysisCompactLayout}
-                  isNarrowLayout={isNarrowLayout}
-                  rightPanelVisible={inlineRightPanelVisible}
-                  messagesPanelId={messagesPanelId}
-                  messagesTabId={messagesTabId}
-                  summaryPanelId={summaryPanelId}
-                  summaryTabId={summaryTabId}
-                  mapPanelId={mapPanelId}
-                  mapTabId={mapTabId}
-                />
-              </AudioTranscriptionPreferencesProvider>
-            )}
+            <MessageDeviceAccessProvider allowed={page.cyberEchoEnabled}>
+              {showLoadingSkeletons ? (
+                <AnalysisLoadingSkeletons rightPanelVisible={inlineRightPanelVisible} />
+              ) : (
+                <AudioTranscriptionPreferencesProvider
+                  collapsedByDefault={page.audioTranscriptionCollapsed}
+                  enabled={page.audioTranscriptionEnabled}
+                >
+                  <AnalysisCenterPanel
+                    page={page}
+                    centerTab={centerTab}
+                    centerTabs={centerTabs}
+                    isCompactLayout={isAnalysisCompactLayout}
+                    isNarrowLayout={isNarrowLayout}
+                    rightPanelVisible={inlineRightPanelVisible}
+                    messagesPanelId={messagesPanelId}
+                    messagesTabId={messagesTabId}
+                    summaryPanelId={summaryPanelId}
+                    summaryTabId={summaryTabId}
+                    mapPanelId={mapPanelId}
+                    mapTabId={mapTabId}
+                  />
+                </AudioTranscriptionPreferencesProvider>
+              )}
+            </MessageDeviceAccessProvider>
           </PointBlacklistPaletteNamesCacheProvider>
           {!showLoadingSkeletons && inlineRightPanelVisible ? (
             <AnalysisRightPanel

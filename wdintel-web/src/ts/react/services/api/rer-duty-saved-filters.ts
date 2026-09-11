@@ -47,6 +47,8 @@ function rerDutyQueryStateWfToSnake(
     units_denied: deniedUnits.legacyValues,
     selected_unit_ids: selectedUnits.unitIds,
     denied_unit_ids: deniedUnits.unitIds,
+    selected_device_names: w.selectedDeviceNames,
+    denied_device_names: w.deniedDeviceNames,
     units_exact_match_only: w.unitsExactMatchOnly,
     last_viewed_message_id: w.lastViewedMessageId,
   };

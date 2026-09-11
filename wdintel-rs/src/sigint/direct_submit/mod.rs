@@ -26,16 +26,25 @@ pub async fn copy_message(
         .map_err(|err| DirectSubmitApiError::new(err, action))?;
     let login = login_id_from_identity(&user)
         .map_err(|err| DirectSubmitApiError::new(err, action))?;
-    Ok(web::Json(
-        bl::copy_signal_messages(
-            &login,
-            &env,
-            payload.into_inner().message_ids,
-        )
-        .await
-        .c(h!())
-        .map_err(|err| DirectSubmitApiError::new(err, action))?,
-    ))
+    let can_use_message_devices =
+        crate::devices::access::require_message_devices(&env.dbx, &login)
+            .await
+            .c(h!())
+            .is_ok();
+    let mut response = bl::copy_signal_messages(
+        &login,
+        &env,
+        payload.into_inner().message_ids,
+    )
+    .await
+    .c(h!())
+    .map_err(|err| DirectSubmitApiError::new(err, action))?;
+    if !can_use_message_devices {
+        for payload in &mut response.payloads {
+            payload.device_name_id = Some(None);
+        }
+    }
+    Ok(web::Json(response))
 }
 
 #[post("/api/1.1/submit-direct")]
@@ -51,6 +60,12 @@ pub async fn submit_direct(
         .map_err(|err| DirectSubmitApiError::new(err, action))?;
     let login = login_id_from_identity(&user)
         .map_err(|err| DirectSubmitApiError::new(err, action))?;
+    if payload.device_name_id.is_some() {
+        crate::devices::access::require_message_devices(&env.dbx, &login)
+            .await
+            .c(h!())
+            .map_err(|err| DirectSubmitApiError::new(err, action))?;
+    }
     Ok(web::Json(
         bl::submit_signal_message(&login, &env, payload.into_inner())
             .await
@@ -73,6 +88,12 @@ pub async fn edit_message(
         .map_err(|err| DirectSubmitApiError::new(err, action))?;
     let login = login_id_from_identity(&user)
         .map_err(|err| DirectSubmitApiError::new(err, action))?;
+    if payload.device_name_id.is_some() {
+        crate::devices::access::require_message_devices(&env.dbx, &login)
+            .await
+            .c(h!())
+            .map_err(|err| DirectSubmitApiError::new(err, action))?;
+    }
     Ok(web::Json(
         bl::edit_signal_message(
             &login,

@@ -4,7 +4,7 @@ use self::types::{
 };
 use crate::error::AppError;
 use crate::types::*;
-use crate::users::{has_any_role, login_id_from_identity};
+use crate::users::{ensure_rer_role, login_id_from_identity};
 use actix_web::post;
 use actix_web::web::Json;
 
@@ -18,10 +18,11 @@ pub async fn device_name_create(
     env: actix_web::web::Data<Env>,
     req: Json<CreateDeviceNameReq>,
 ) -> Result<Json<CreateDeviceNameRsp>, AppError> {
-    has_any_role(&env.dbx, &login_id_from_identity(&user)?, vec!["Rer"])
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
+    crate::devices::access::require_message_devices(&env.dbx, &login)
         .await
         .c(h!())?;
-    let login = login_id_from_identity(&user)?;
 
     let rsp = bl::create_device_name(&env.dbx, login, req.into_inner())
         .await
@@ -36,7 +37,9 @@ pub async fn device_name_search(
     env: actix_web::web::Data<Env>,
     req: Json<DeviceNameSearchReq>,
 ) -> Result<Json<DeviceNameSearchRsp>, AppError> {
-    has_any_role(&env.dbx, &login_id_from_identity(&user)?, vec!["Rer"])
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
+    crate::devices::access::require_message_devices(&env.dbx, &login)
         .await
         .c(h!())?;
 

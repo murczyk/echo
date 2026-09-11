@@ -461,6 +461,8 @@ pub struct InboxMessagesReq {
     pub selected_locations: Option<Vec<String>>,
     #[serde(default)]
     pub selected_device_names: Option<Vec<String>>,
+    #[serde(default)]
+    pub denied_device_names: Option<Vec<String>>,
     pub nolimit: Option<bool>,
     pub or_with_extended_form: Option<bool>,
     pub load_latest: Option<bool>,
@@ -1510,6 +1512,10 @@ pub struct RerDutyQueryStateWf {
     pub selected_unit_ids: Option<Vec<i64>>,
     #[serde(default)]
     pub denied_unit_ids: Option<Vec<i64>>,
+    #[serde(default)]
+    pub selected_device_names: Option<Vec<String>>,
+    #[serde(default)]
+    pub denied_device_names: Option<Vec<String>>,
     pub units_exact_match_only: Option<bool>,
     pub last_viewed_message_id: Option<i64>,
     pub highlight_keywords_enabled: Option<bool>,

@@ -45,6 +45,29 @@ use submit_bl::*;
 
 type InboxDigest = (i64, Option<NaiveDateTime>);
 
+fn has_device_filters(req: &InboxMessagesReq) -> bool {
+    [
+        req.selected_device_names.as_ref(),
+        req.denied_device_names.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|names| !names.is_empty())
+}
+
+async fn require_device_filters(
+    dbx: &DatabaseConnection,
+    login_id: &Uuid,
+    req: &InboxMessagesReq,
+) -> Result<(), AppError> {
+    if has_device_filters(req) {
+        crate::devices::access::require_message_devices(dbx, login_id)
+            .await
+            .c(h!())?;
+    }
+    Ok(())
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RerAnalysisInboxRoute {
     Default,
@@ -1095,6 +1118,9 @@ async fn inbox_messages(
     let is_admin = has_role(&env.dbx, &user_id, "Admin").await.is_ok();
     let page_id = req.page_id.clone();
     let req = req.into_inner();
+    require_device_filters(&env.dbx, &user_id, &req)
+        .await
+        .c(h!())?;
     if has_role(&env.dbx, &user_id, AI_AGENT_ROLE_API)
         .await
         .is_ok()
@@ -1822,6 +1848,9 @@ async fn inbox_messages_count(
     let user_id = login_id_from_identity(&user)?;
     let page_id = req.page_id.clone();
     let req = req.into_inner();
+    require_device_filters(&env.dbx, &user_id, &req)
+        .await
+        .c(h!())?;
 
     let payload = serde_json::to_value(&req).context(h!())?;
     record_page_visit(&user_id, &page_id, &env, Some(payload))

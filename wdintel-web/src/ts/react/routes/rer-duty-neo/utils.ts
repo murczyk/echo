@@ -183,6 +183,8 @@ export function emptyFilter(): RerDutyFeedFilterState {
     postsDenied: null,
     unitsSelected: null,
     unitsDenied: null,
+    selectedDeviceNames: null,
+    deniedDeviceNames: null,
     selectedUnitIds: null,
     deniedUnitIds: null,
     unitsExactMatchOnly: false,
@@ -225,6 +227,8 @@ export function filtersEqual(a: RerDutyFeedFilterState, b: RerDutyFeedFilterStat
     optArrEqual(a.postsDenied, b.postsDenied) &&
     optArrEqual(a.unitsSelected, b.unitsSelected) &&
     optArrEqual(a.unitsDenied, b.unitsDenied) &&
+    optArrEqual(a.selectedDeviceNames, b.selectedDeviceNames) &&
+    optArrEqual(a.deniedDeviceNames, b.deniedDeviceNames) &&
     (a.unitsExactMatchOnly ?? false) === (b.unitsExactMatchOnly ?? false) &&
     a.highlightKeywordSetId === b.highlightKeywordSetId
   );
@@ -301,7 +305,8 @@ export function buildInboxReq(opts: {
     selectedCallsigns: null,
     selectedUnits: emptyArrToNull(selectedLegacyUnits),
     selectedUnitIds: emptyArrToNull(selectedUnitIds),
-    selectedDeviceNames: null,
+    selectedDeviceNames: emptyArrToNull(f.selectedDeviceNames),
+    deniedDeviceNames: emptyArrToNull(f.deniedDeviceNames),
     deniedUnits: emptyArrToNull(deniedLegacyUnits),
     deniedUnitIds: emptyArrToNull(deniedUnitIds),
     selectedLocations: null,

@@ -1798,6 +1798,52 @@ where
     ))
 }
 
+pub fn filter_denied_device_names<Q>(
+    q: Q,
+    denied_device_names: &Option<Vec<String>>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    let Some(denied_device_names) = denied_device_names
+        .as_ref()
+        .filter(|names| !names.is_empty())
+    else {
+        return Ok(q);
+    };
+
+    let device_name_ids = device_name::Entity::find()
+        .select_only()
+        .column(device_name::Column::Id)
+        .filter(device_name::Column::Name.is_in(denied_device_names.clone()))
+        .into_query();
+    Ok(q.filter(
+        sigint_inbox_item::Column::DeviceNameId
+            .is_null()
+            .or(sigint_inbox_item::Column::DeviceNameId
+                .not_in_subquery(device_name_ids)),
+    ))
+}
+
+fn analysis_req_has_device_names(req: &AnalysisStatsReq) -> bool {
+    req.selected_device_names
+        .as_ref()
+        .is_some_and(|names| !names.is_empty())
+}
+
+async fn require_analysis_device_filter_access(
+    dbx: &DatabaseConnection,
+    login: &Uuid,
+    req: &AnalysisStatsReq,
+) -> Result<(), AppError> {
+    if analysis_req_has_device_names(req) {
+        crate::devices::access::require_message_devices(dbx, login)
+            .await
+            .c(h!())?;
+    }
+    Ok(())
+}
+
 fn get_related_tag_items_filter(
     unique_tags: BTreeSet<i64>,
     tag_filter_option: TagFilterOption,
@@ -2912,6 +2958,32 @@ fn rer_duty_short_state_hash_key(hash: &str) -> String {
     format!("{RER_DUTY_SHORT_STATE_REDIS_HASH_KEY_PREFIX}{hash}")
 }
 
+fn rer_duty_filter_has_device_names(filter: &RerDutyQueryStateWf) -> bool {
+    [
+        filter.selected_device_names.as_ref(),
+        filter.denied_device_names.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|names| !names.is_empty())
+}
+
+fn rer_duty_state_has_device_names(state: &RerDutyQueryState) -> bool {
+    state
+        .waterfalls
+        .as_ref()
+        .into_iter()
+        .flatten()
+        .any(|(_, filter)| rer_duty_filter_has_device_names(filter))
+}
+
+fn redact_rer_duty_state_device_names(state: &mut RerDutyQueryState) {
+    for (_, filter) in state.waterfalls.as_mut().into_iter().flatten() {
+        filter.selected_device_names = None;
+        filter.denied_device_names = None;
+    }
+}
+
 async fn rer_duty_short_state_create_or_reuse(
     redis: &mut redis::aio::ConnectionManager,
     state: RerDutyQueryState,
@@ -2977,6 +3049,11 @@ pub async fn rer_duty_filters_create(
 ) -> Result<Json<RerDutyShortStateCreateRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
+    if rer_duty_state_has_device_names(&req.state) {
+        crate::devices::access::require_message_devices(&env.dbx, &login)
+            .await
+            .c(h!())?;
+    }
     let mut redis = env.redis.clone();
     let (id, reused) =
         rer_duty_short_state_create_or_reuse(&mut redis, req.state.clone())
@@ -2999,7 +3076,7 @@ pub async fn rer_duty_filters_get(
     let login = login_id_from_identity(&user)?;
     let req = req.into_inner();
     let mut redis = env.redis.clone();
-    let payload =
+    let mut payload =
         match rer_duty_short_state_get_and_refresh(&mut redis, &req.id).await {
             Ok(payload) => payload,
             Err(AppError::NotFound) => {
@@ -3011,6 +3088,12 @@ pub async fn rer_duty_filters_get(
             }
             Err(err) => return Err(err),
         };
+    if crate::devices::access::require_message_devices(&env.dbx, &login)
+        .await
+        .is_err()
+    {
+        redact_rer_duty_state_device_names(&mut payload.state);
+    }
     info!("rer duty short-state loaded id={} login={login}", req.id);
     Ok(Json(payload))
 }
@@ -3325,6 +3408,9 @@ pub async fn summary_table_freq_1(
             .await
             .c(h!())?;
     let login = login_id_from_identity(user)?;
+    require_analysis_device_filter_access(&env.dbx, &login, req)
+        .await
+        .c(h!())?;
     summary_table_freq_by_login(&login, env, req, &master_keys).await
 }
 
@@ -5003,6 +5089,9 @@ async fn launch_analysis_export_task(
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let report_history = crate::report_history::enqueue_report(
         &env.dbx,
         &login,
@@ -5067,6 +5156,9 @@ async fn correlated_freqs(
 ) -> Result<Json<CorrelatedFreqsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let req = req.into_inner();
     let empty = CorrelatedFreqsRsp { freqs: vec![] };
     let Some(selected_freqs) = req.selected_freqs.as_ref() else {
@@ -5624,15 +5716,31 @@ pub async fn saved_filters_list(
 ) -> Result<Json<Vec<SavedFilter>>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
 
-    Ok(Json(
-        select_saved_filter_list(
-            sea_orm_active_enums::SigintSavedFilterTypeEnum::Analysis,
-            login_id_from_identity(&user)?,
-            &env.dbx,
-        )
-        .await
-        .c(h!())?,
-    ))
+    let login = login_id_from_identity(&user)?;
+    let can_use_message_devices =
+        crate::devices::access::require_message_devices(&env.dbx, &login)
+            .await
+            .is_ok();
+    let mut filters: Vec<SavedFilter> = select_saved_filter_list(
+        sea_orm_active_enums::SigintSavedFilterTypeEnum::Analysis,
+        login,
+        &env.dbx,
+    )
+    .await
+    .c(h!())?;
+    if !can_use_message_devices {
+        for filter in &mut filters {
+            filter.req.selected_device_names = None;
+        }
+    }
+    Ok(Json(filters))
+}
+
+fn redact_saved_duty_filter_device_names(filters: &mut [SavedFilterDuty]) {
+    for filter in filters {
+        filter.req.selected_device_names = None;
+        filter.req.denied_device_names = None;
+    }
 }
 
 #[post("/api/rer/duty/saved-filters")]
@@ -5642,15 +5750,22 @@ pub async fn saved_filters_duty_list(
 ) -> Result<Json<Vec<SavedFilterDuty>>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
 
-    Ok(Json(
-        select_saved_filter_list(
-            sea_orm_active_enums::SigintSavedFilterTypeEnum::Duty,
-            login_id_from_identity(&user)?,
-            &env.dbx,
-        )
-        .await
-        .c(h!())?,
-    ))
+    let login = login_id_from_identity(&user)?;
+    let can_use_message_devices =
+        crate::devices::access::require_message_devices(&env.dbx, &login)
+            .await
+            .is_ok();
+    let mut filters: Vec<SavedFilterDuty> = select_saved_filter_list(
+        sea_orm_active_enums::SigintSavedFilterTypeEnum::Duty,
+        login,
+        &env.dbx,
+    )
+    .await
+    .c(h!())?;
+    if !can_use_message_devices {
+        redact_saved_duty_filter_device_names(&mut filters);
+    }
+    Ok(Json(filters))
 }
 
 fn filter_type_form_path(
@@ -5672,18 +5787,30 @@ pub async fn saved_filter_upsert(
     req: Json<SavedFilterUpsertReq>,
 ) -> Result<Json<Vec<SavedFilter>>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-
-    Ok(Json(
-        saved_filter_upsert_1(
-            sea_orm_active_enums::SigintSavedFilterTypeEnum::Analysis,
-            login_id_from_identity(&user)?,
-            &env.dbx,
-            req.name.clone(),
-            serde_json::to_value(req.req.clone()).context(h!())?,
-        )
+    let login = login_id_from_identity(&user)?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req.req)
         .await
-        .c(h!())?,
-    ))
+        .c(h!())?;
+    let can_use_message_devices =
+        crate::devices::access::require_message_devices(&env.dbx, &login)
+            .await
+            .is_ok();
+    let mut filters: Vec<SavedFilter> = saved_filter_upsert_1(
+        sea_orm_active_enums::SigintSavedFilterTypeEnum::Analysis,
+        login,
+        &env.dbx,
+        req.name.clone(),
+        serde_json::to_value(req.req.clone()).context(h!())?,
+    )
+    .await
+    .c(h!())?;
+    if !can_use_message_devices {
+        for filter in &mut filters {
+            filter.req.selected_device_names = None;
+        }
+    }
+
+    Ok(Json(filters))
 }
 
 #[post("/api/rer/duty/saved-filter-upsert")]
@@ -5693,18 +5820,30 @@ pub async fn saved_filter_duty_upsert(
     req: Json<SavedFilterDutyUpsertReq>,
 ) -> Result<Json<Vec<SavedFilterDuty>>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
+    if rer_duty_filter_has_device_names(&req.req) {
+        crate::devices::access::require_message_devices(&env.dbx, &login)
+            .await
+            .c(h!())?;
+    }
 
-    Ok(Json(
-        saved_filter_upsert_1(
-            sea_orm_active_enums::SigintSavedFilterTypeEnum::Duty,
-            login_id_from_identity(&user)?,
-            &env.dbx,
-            req.name.clone(),
-            serde_json::to_value(req.req.clone()).context(h!())?,
-        )
-        .await
-        .c(h!())?,
-    ))
+    let can_use_message_devices =
+        crate::devices::access::require_message_devices(&env.dbx, &login)
+            .await
+            .is_ok();
+    let mut filters: Vec<SavedFilterDuty> = saved_filter_upsert_1(
+        sea_orm_active_enums::SigintSavedFilterTypeEnum::Duty,
+        login,
+        &env.dbx,
+        req.name.clone(),
+        serde_json::to_value(req.req.clone()).context(h!())?,
+    )
+    .await
+    .c(h!())?;
+    if !can_use_message_devices {
+        redact_saved_duty_filter_device_names(&mut filters);
+    }
+    Ok(Json(filters))
 }
 
 async fn saved_filter_upsert_1<T>(
@@ -5808,6 +5947,9 @@ pub async fn new_callsigns(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<NewCallsignsRes>, AppError> {
     let user_id = &login_id_from_identity(&user)?;
+    require_analysis_device_filter_access(&env.dbx, user_id, &req)
+        .await
+        .c(h!())?;
     let res = bi_new_callsigns(user_id, &env, &req.into_inner())
         .await
         .context(h!())?;
@@ -6920,6 +7062,9 @@ pub async fn activity_daily(
 {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let accessible_groups =
         get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
             .await
@@ -6999,6 +7144,10 @@ pub async fn callsign_relations(
     AppError,
 > {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
@@ -7097,6 +7246,13 @@ pub async fn callsign_frequency_matches(
     req: Json<AnalysisCallsignFrequencyMatchesReq>,
 ) -> Result<Json<AnalysisCallsignFrequencyMatchesRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    require_analysis_device_filter_access(
+        &env.dbx,
+        &login_id_from_identity(&user)?,
+        &req.req,
+    )
+    .await
+    .c(h!())?;
     let selected_callsign_count = req
         .callsigns
         .iter()
@@ -7185,6 +7341,9 @@ async fn group_stats(
         .await
         .is_ok();
     let login = login_id_from_identity(&user)?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys_noimport =
         get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
             .await
@@ -7345,6 +7504,9 @@ async fn sender_stats(
 ) -> Result<Json<SenderStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys: Vec<String> = get_identity_sigint_groups(&env.dbx, &login)
         .await
         .context(h!())?;
@@ -7405,6 +7567,9 @@ async fn post_stats(
 ) -> Result<Json<PostStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -7471,6 +7636,9 @@ async fn freq_stats(
     )
     .await?;
     let login = login_id_from_identity(&user)?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
 
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -7527,6 +7695,9 @@ async fn callsign_stats(
 ) -> Result<Json<CallsignStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -7588,6 +7759,9 @@ async fn metadata_stats(
 ) -> Result<Json<MetadataStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -7649,6 +7823,9 @@ async fn tag_stats(
 ) -> Result<Json<TagStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -7713,6 +7890,9 @@ async fn unit_stats(
 ) -> Result<Json<UnitStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -7772,6 +7952,9 @@ async fn location_stats(
 ) -> Result<Json<LocationStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -7849,6 +8032,9 @@ async fn aor_stats(
 ) -> Result<Json<AreaOfResponsibilityStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -7953,6 +8139,9 @@ async fn network_stats(
 ) -> Result<Json<NetworkStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -8072,6 +8261,9 @@ async fn count_stats(
 ) -> Result<Json<CountStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
 
     let master_keys = get_identity_sigint_groups(&env.dbx, &login)
         .await
@@ -9097,6 +9289,13 @@ async fn group_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    require_analysis_device_filter_access(
+        &env.dbx,
+        &login_id_from_identity(&user)?,
+        &req,
+    )
+    .await
+    .c(h!())?;
     let master_keys_noimport =
         get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
             .await
@@ -9158,6 +9357,13 @@ async fn sender_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    require_analysis_device_filter_access(
+        &env.dbx,
+        &login_id_from_identity(&user)?,
+        &req,
+    )
+    .await
+    .c(h!())?;
     let login = login_id_from_identity(&user)?;
     let master_keys: Vec<String> = get_identity_sigint_groups(&env.dbx, &login)
         .await
@@ -9219,6 +9425,13 @@ async fn post_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    require_analysis_device_filter_access(
+        &env.dbx,
+        &login_id_from_identity(&user)?,
+        &req,
+    )
+    .await
+    .c(h!())?;
     let login = login_id_from_identity(&user)?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -9287,6 +9500,9 @@ async fn freq_stats_count(
     )
     .await?;
     let login = login_id_from_identity(&user)?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
 
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -9349,6 +9565,13 @@ async fn callsign_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    require_analysis_device_filter_access(
+        &env.dbx,
+        &login_id_from_identity(&user)?,
+        &req,
+    )
+    .await
+    .c(h!())?;
     let login = login_id_from_identity(&user)?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -9411,6 +9634,13 @@ async fn tag_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    require_analysis_device_filter_access(
+        &env.dbx,
+        &login_id_from_identity(&user)?,
+        &req,
+    )
+    .await
+    .c(h!())?;
     let login = login_id_from_identity(&user)?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -9475,6 +9705,13 @@ async fn unit_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    require_analysis_device_filter_access(
+        &env.dbx,
+        &login_id_from_identity(&user)?,
+        &req,
+    )
+    .await
+    .c(h!())?;
     let login = login_id_from_identity(&user)?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -9534,6 +9771,13 @@ async fn location_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    require_analysis_device_filter_access(
+        &env.dbx,
+        &login_id_from_identity(&user)?,
+        &req,
+    )
+    .await
+    .c(h!())?;
     let login = login_id_from_identity(&user)?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -9610,6 +9854,13 @@ async fn aor_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    require_analysis_device_filter_access(
+        &env.dbx,
+        &login_id_from_identity(&user)?,
+        &req,
+    )
+    .await
+    .c(h!())?;
     let login = login_id_from_identity(&user)?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -9685,6 +9936,13 @@ async fn network_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    require_analysis_device_filter_access(
+        &env.dbx,
+        &login_id_from_identity(&user)?,
+        &req,
+    )
+    .await
+    .c(h!())?;
     let login = login_id_from_identity(&user)?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -9753,6 +10011,9 @@ async fn stats_deprecated(
 ) -> Result<Json<AnalysisStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
 
     let instant = std::time::Instant::now();
 

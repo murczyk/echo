@@ -30,7 +30,9 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 fn configure_routes(cfg: &mut ServiceConfig) {
-    cfg.service(super::devices::list)
+    cfg.service(crate::sigint::device_name::device_name_search)
+        .service(crate::sigint::device_name::device_name_create)
+        .service(super::devices::list)
         .service(super::devices::unit_stats)
         .service(super::devices::aors)
         .service(super::devices::units)
@@ -297,6 +299,12 @@ async fn target_api_smoke_covers_all_routes() {
         aor["id"].as_i64() == Some(lookup_aor.id)
             && aor["name"].as_str() == Some(lookup_aor.name.as_str())
     }));
+
+    let response = post_json!(
+        "/api/sigint/device-name/create",
+        json!({"name": "ECHO-3461 denied source device"})
+    );
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
     let response = test::call_service(
         &app,
@@ -640,7 +648,26 @@ async fn target_api_smoke_covers_all_routes() {
 
     let mut login = login.into_active_model();
     login.roles = Set(json!([ROLE_CYBER]));
+    let login = login.update(&env.dbx).await.unwrap();
+    let response = post_json!(
+        "/api/sigint/device-name/create",
+        json!({"name": "ECHO-3461 denied cyber-only device"})
+    );
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    let mut login = login.into_active_model();
+    login.roles = Set(json!(["Rer", ROLE_CYBER]));
     login.update(&env.dbx).await.unwrap();
+    let response = post_json!(
+        "/api/sigint/device-name/create",
+        json!({"name": "ECHO-3461 allowed device"})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = post_json!(
+        "/api/sigint/device-name/search",
+        json!({"search": "ECHO-3461 allowed"})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
     let response = post_json!(
         "/api/device/update",
         json!({
@@ -1679,7 +1706,7 @@ mod access_tests {
     fn access_maps_each_exact_device_role() {
         let cases = [
             (ROLE_CYBER, (true, true, true, false)),
-            (ROLE_DEVICE_SOURCE, (true, true, true, true)),
+            (ROLE_DEVICE_SOURCE, (false, true, true, true)),
             (ROLE_ADMIN, (true, true, true, true)),
         ];
 
@@ -1697,7 +1724,7 @@ mod access_tests {
             ),
             (
                 vec![ROLE_DEVICE_SOURCE, "Unrelated"],
-                (true, true, true, true),
+                (false, true, true, true),
             ),
             (vec![ROLE_CYBER, "Unrelated"], (true, true, true, false)),
         ];
@@ -1803,8 +1830,9 @@ mod access_tests {
         let login_id = login.id;
 
         let source = resolve_login_by_id(&env.dbx, &login_id).await.unwrap();
-        assert_eq!(capabilities(&source.roles), (true, true, true, true));
+        assert_eq!(capabilities(&source.roles), (false, true, true, true));
         assert_eq!(organism_id(&source).unwrap(), organism.id);
+        assert!(require_message_devices(&env.dbx, &login_id).await.is_err());
 
         let mut login = login.into_active_model();
         login.roles = Set(json!([ROLE_CYBER]));
@@ -1812,6 +1840,12 @@ mod access_tests {
 
         let cyber = resolve_login_by_id(&env.dbx, &login_id).await.unwrap();
         assert_eq!(capabilities(&cyber.roles), (true, true, true, false));
+        require_message_devices(&env.dbx, &login_id).await.unwrap();
+
+        let mut login = login.into_active_model();
+        login.roles = Set(json!([ROLE_ADMIN]));
+        let login = login.update(&env.dbx).await.unwrap();
+        require_message_devices(&env.dbx, &login_id).await.unwrap();
 
         let mut login = login.into_active_model();
         login.organism_id = Set(None);
@@ -1849,6 +1883,7 @@ mod access_tests {
             AppError::Forbidden(message)
                 if message == "devices_section_enabled is disabled"
         ));
+        assert!(require_message_devices(&env.dbx, &login_id).await.is_err());
     }
 }
 

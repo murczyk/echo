@@ -377,6 +377,17 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.rightSidebarTab).toBe('stats');
   });
 
+  it('ECHO-3461 strips unauthorized device filters before analysis data receives them', async () => {
+    renderHook();
+    await flushEffects();
+
+    act(() => latest?.updateQueryState({ deviceNamesSelected: ['device-1'] }));
+    await flushEffects();
+
+    expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].queryState.deviceNamesSelected).toEqual([]);
+    expect(latest?.queryState.deviceNamesSelected).toEqual([]);
+  });
+
   it('closes and reopens the narrow right panel without losing its selected tab', async () => {
     mediaQueryMock.useMediaQuery.mockReturnValue(true);
     renderHook();

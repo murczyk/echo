@@ -5,6 +5,7 @@ import { isNullOrUndefined } from '../../utils/misc';
 
 import { fetchCurrentUser } from '../../services/api/user';
 import { currentSystemSettings } from '../../services/api/system-settings';
+import { canUseMessageDevices } from '../../utils/roles';
 import {
   normalizeUnknownUnitFilterValue,
   normalizeUnknownUnitSelections,
@@ -73,12 +74,13 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const [initialQueryState] = useState<AnalysisQueryState>(initState);
   const [queryState, setQueryState] = useState<AnalysisQueryState>(initialQueryState);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentUserLoaded, setCurrentUserLoaded] = useState(false);
   const [systemSettingsLoaded, setSystemSettingsLoaded] = useState(false);
   const [unitsExactMatchOnlyDefault, setUnitsExactMatchOnlyDefault] = useState<boolean | null>(
     null,
   );
   const [supportNonRerInterceptions, setSupportNonRerInterceptions] = useState(false);
-  const [cyberEchoEnabled, setCyberEchoEnabled] = useState(false);
+  const [devicesSectionEnabled, setDevicesSectionEnabled] = useState(false);
   const [audioTranscriptionEnabled, setAudioTranscriptionEnabled] = useState(false);
   const [showPelengDistanceToBattleline, setShowPelengDistanceToBattleline] = useState(false);
   const [lastResetState, setLastResetState] = useState<AnalysisQueryState>(() =>
@@ -270,11 +272,17 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const handleUnauthorized = useCallback((errorValue: unknown) => {
     return false;
   }, []);
+  const canUseDevices = canUseMessageDevices(currentUser?.roles, devicesSectionEnabled);
+  const effectiveQueryState =
+    canUseDevices || queryState.deviceNamesSelected.length === 0
+      ? queryState
+      : { ...queryState, deviceNamesSelected: [] };
 
   const data = useAnalysisData({
     authUserName,
     currentUser,
-    deferInitialLoad: !systemSettingsLoaded || targetMessageContextResponsePending,
+    deferInitialLoad:
+      !systemSettingsLoaded || !currentUserLoaded || targetMessageContextResponsePending,
     focusedWindow: targetMessageWindow,
     focusedMessageActive: targetMessageContextActive,
     leftPanelOpen,
@@ -286,7 +294,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     rightSidebarVisible: rightPanelOpen,
     rightSidebarTab,
     shouldLoadNewCallsigns: rightPanelOpen && rightSidebarTab === 'newCallsigns',
-    queryState,
+    queryState: effectiveQueryState,
   });
   const reload = useCallback(
     (options: Parameters<typeof data.reload>[0] = {}) => {
@@ -492,15 +500,15 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     [data.options.newFreqs],
   );
   const analysisReq = useMemo(
-    () => buildAnalysisReq(queryState, dataFreqValues),
-    [dataFreqValues, queryState],
+    () => buildAnalysisReq(effectiveQueryState, dataFreqValues),
+    [dataFreqValues, effectiveQueryState],
   );
 
   const savedFilters = useAnalysisSavedFilters({
     allFrequencies: dataFreqValues,
     onError: setPageError,
     onUnauthorized: handleUnauthorized,
-    queryState,
+    queryState: effectiveQueryState,
     setQueryState,
   });
 
@@ -585,7 +593,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
         if (abortController.signal.aborted) return;
         setUnitsExactMatchOnlyDefault(settings.rerAnalysisUnitsExactMatchOnlyDefault);
         setSupportNonRerInterceptions(settings.supportNonRerInterceptions);
-        setCyberEchoEnabled(settings.devicesSectionEnabled);
+        setDevicesSectionEnabled(settings.devicesSectionEnabled);
         setAudioTranscriptionEnabled(settings.enableAudioTranscription ?? false);
         setShowPelengDistanceToBattleline(settings.showPelengDistanceToBattleline);
       })
@@ -614,12 +622,22 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
       .catch((error) => {
         if (abortController.signal.aborted) return;
         setCurrentUser(null);
+      })
+      .finally(() => {
+        if (!abortController.signal.aborted) setCurrentUserLoaded(true);
       });
 
     return () => {
       abortController.abort();
     };
   }, []);
+
+  useEffect(() => {
+    if (!systemSettingsLoaded || !currentUserLoaded || canUseDevices) return;
+    setQueryState((current) =>
+      current.deviceNamesSelected.length === 0 ? current : { ...current, deviceNamesSelected: [] },
+    );
+  }, [canUseDevices, currentUserLoaded, queryState.deviceNamesSelected, systemSettingsLoaded]);
 
   useEffect(() => {
     if (rightPanelOpen && isNullOrUndefined(rightSidebarTab)) {
@@ -669,8 +687,8 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
 
   useEffect(() => {
     if (!systemSettingsLoaded) return;
-    pushQueryStateToUrl(queryState, newestFirst, { leftPanelOpen, rightPanelOpen });
-  }, [leftPanelOpen, newestFirst, queryState, rightPanelOpen, systemSettingsLoaded]);
+    pushQueryStateToUrl(effectiveQueryState, newestFirst, { leftPanelOpen, rightPanelOpen });
+  }, [effectiveQueryState, leftPanelOpen, newestFirst, rightPanelOpen, systemSettingsLoaded]);
 
   const toggleUnitFromMap = useCallback(
     (unitName: string | null) => {
@@ -1109,7 +1127,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     toggleReportTaskRunLogs: report.toggleReportTaskRunLogs,
     unitsExactMatchOnlyDefault,
     supportNonRerInterceptions,
-    cyberEchoEnabled,
+    cyberEchoEnabled: canUseDevices,
     updateReport: report.updateReport,
     updateExisting: savedFilters.updateExisting,
     updateQueryState,

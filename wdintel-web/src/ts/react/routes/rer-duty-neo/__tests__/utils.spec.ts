@@ -195,6 +195,8 @@ describe('rer-duty utils', () => {
       freqsDenied: ['200.0'],
       postsSelected: ['post-a'],
       postsDenied: ['post-b'],
+      selectedDeviceNames: ['device-a'],
+      deniedDeviceNames: ['device-b'],
       lastViewedMessageId: 42,
     };
 
@@ -208,6 +210,8 @@ describe('rer-duty utils', () => {
         freqsDenied: ['200.0'],
         postsSelected: ['post-a'],
         postsDenied: ['post-b'],
+        selectedDeviceNames: ['device-a'],
+        deniedDeviceNames: ['device-b'],
         lastViewedMessageId: 42,
       }),
     ).toEqual(expected);
@@ -222,6 +226,8 @@ describe('rer-duty utils', () => {
         freqs_denied: ['200.0'],
         posts_selected: ['post-a'],
         posts_denied: ['post-b'],
+        selected_device_names: ['device-a'],
+        denied_device_names: ['device-b'],
         last_viewed_message_id: 42,
       }),
     ).toEqual(expected);
@@ -456,7 +462,13 @@ describe('rer-duty utils', () => {
 
   it('builds inbox requests with expanded frequencies and shared defaults', () => {
     const req = buildInboxReq({
-      filter: { ...emptyFilter(), groupsSelected: ['g1'], freqsSelected: ['100.0'] },
+      filter: {
+        ...emptyFilter(),
+        groupsSelected: ['g1'],
+        freqsSelected: ['100.0'],
+        selectedDeviceNames: ['device-a'],
+        deniedDeviceNames: ['device-b'],
+      },
       expandedFreqsSelected: ['100.0', '100.1'],
       expandedFreqsDenied: ['200.0'],
       highlightSignals: true,
@@ -467,6 +479,8 @@ describe('rer-duty utils', () => {
     expect(req.selectedGroups).toEqual(['g1']);
     expect(req.selectedFreqs).toEqual(['100.0', '100.1']);
     expect(req.deniedFreqs).toEqual(['200.0']);
+    expect(req.selectedDeviceNames).toEqual(['device-a']);
+    expect(req.deniedDeviceNames).toEqual(['device-b']);
     expect(req.highlightSignals).toBe(true);
     expect(req.highlightCallsigns).toBe(true);
     expect(req.pageId).toBe(PAGE_ID);

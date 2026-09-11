@@ -140,6 +140,7 @@ function mergePostsFromMessages(
 export function useRerDutyFeeds(
   authUserName: string | null,
   currentUserOrganismId: number | null = null,
+  deviceAccess: { resolved: boolean; allowed: boolean } = { resolved: false, allowed: false },
 ) {
   const [keywordSets, setKeywordSets] = useState<OrganismKeywordSetDto[]>([]);
   const reloadKeywordSets = useCallback(async () => {
@@ -169,6 +170,7 @@ export function useRerDutyFeeds(
     setGroupInfos: filterOpts.setGroupInfos,
     pollIntervalSec,
     disableAutoScroll: dutyDisableAutoScroll,
+    deviceAccess,
     onFeedRemoved: filterOpts.pruneSavedFilterUiState,
   });
   const setFeedError = feedState.setError;

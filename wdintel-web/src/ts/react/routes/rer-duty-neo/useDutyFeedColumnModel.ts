@@ -14,6 +14,7 @@ export type DutyFeedColumnModelDeps = {
   narrowScreen: boolean;
   authUserName: string | null;
   currentUser: User | null;
+  canUseMessageDevices: boolean;
   tagsLayout: TagsLayoutVariant;
   collapseMediaPreviews: boolean;
   mediaSummaryEnabled: boolean;
@@ -114,6 +115,8 @@ function buildFeedFilterPanel(
       postsDenied: feed.filter.postsDenied ?? [],
       unitsSelected: feed.filter.unitsSelected ?? [],
       unitsDenied: feed.filter.unitsDenied ?? [],
+      selectedDeviceNames: feed.filter.selectedDeviceNames ?? [],
+      deniedDeviceNames: feed.filter.deniedDeviceNames ?? [],
     },
     sources: {
       groupsList,
@@ -134,6 +137,20 @@ function buildFeedFilterPanel(
       groupCatalogLoading,
       groupCatalogError,
     },
+    devices: deps.canUseMessageDevices
+      ? {
+          onSelectedChange: (v: string[]) =>
+            applyFilter(feed.id, { ...feed.filter, selectedDeviceNames: v.length ? v : null }),
+          onDeniedChange: (v: string[]) =>
+            applyFilter(feed.id, { ...feed.filter, deniedDeviceNames: v.length ? v : null }),
+          onModeTransfer: ({ includeValues, excludeValues }) =>
+            applyFilter(feed.id, {
+              ...feed.filter,
+              selectedDeviceNames: includeValues.length ? includeValues : null,
+              deniedDeviceNames: excludeValues.length ? excludeValues : null,
+            }),
+        }
+      : undefined,
     savedFilters: {
       savedFilters,
       selectedSavedId: selectedSavedIdByFeedId[feed.id] ?? null,

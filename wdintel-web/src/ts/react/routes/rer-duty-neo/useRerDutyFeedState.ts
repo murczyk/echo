@@ -14,6 +14,7 @@ import {
   feedNewerSinceId,
   findAllAdjacentFreqs,
   parseStateFromUrl,
+  pushStateToUrl,
 } from './utils';
 import type { MessageCursor, MessageFeedState } from './utils';
 import { useRerDutyFeedCrud } from './useRerDutyFeedCrud';
@@ -56,6 +57,7 @@ export type FeedStateDeps = {
   pollIntervalSec: number;
   /** When true, duty page must not auto-scroll / follow new messages (user prefs). */
   disableAutoScroll: boolean;
+  deviceAccess: { resolved: boolean; allowed: boolean };
   onFeedRemoved?: (feedId: string) => void;
 };
 
@@ -71,6 +73,7 @@ function getDutyPollIntervalMs(pollIntervalSec: number): number {
 }
 
 export function useRerDutyFeedState(deps: FeedStateDeps) {
+  const deviceAccess = deps.deviceAccess;
   const { freqs, setProfiles, setGroupInfos } = deps;
   const [messageFeeds, setMessageFeeds] = useState<MessageFeedState[]>(() => {
     const state = parseStateFromUrl();
@@ -482,16 +485,49 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
               ...findAllAdjacentFreqs(freqs, feed.filter.freqsDenied ?? [], range),
             ]
           : undefined;
+      const filter = deviceAccess.allowed
+        ? feed.filter
+        : {
+            ...feed.filter,
+            selectedDeviceNames: null,
+            deniedDeviceNames: null,
+          };
       return buildInboxReq({
         ...opts,
-        filter: feed.filter,
+        filter,
         expandedFreqsSelected: expandedSelected,
         expandedFreqsDenied: expandedDenied,
         highlightSignals: feed.highlightSignalsEnabled ?? false,
       });
     },
-    [freqs],
+    [deviceAccess.allowed, freqs],
   );
+
+  useEffect(() => {
+    if (!deviceAccess.resolved || deviceAccess.allowed) return;
+    setMessageFeeds((current) => {
+      let changed = false;
+      const next = current.map((feed) => {
+        if (feed.filter.selectedDeviceNames == null && feed.filter.deniedDeviceNames == null) {
+          return feed;
+        }
+        changed = true;
+        return {
+          ...feed,
+          filter: {
+            ...feed.filter,
+            selectedDeviceNames: null,
+            deniedDeviceNames: null,
+          },
+        };
+      });
+      if (changed) {
+        pushStateToUrl({ messageFeeds: next.map((feed) => [feed.id, feed.filter]) });
+        return next;
+      }
+      return current;
+    });
+  }, [deviceAccess.allowed, deviceAccess.resolved]);
   const requestValidatedInboxCount = useCallback(
     (feedId: string) => {
       const existingPromise = countRequestPromiseByFeedIdRef.current[feedId];
@@ -1037,10 +1073,11 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     editReloadFeedIdsRef,
     loadGenerationByFeedIdRef,
     loadFeedInitialMessages,
+    deviceAccessResolved: deviceAccess.resolved,
   });
 
   useRerDutyPollingLifecycle({
-    ready: shortStateReady,
+    ready: shortStateReady && deviceAccess.resolved,
     hasShortState: Boolean(shortStateIdRef.current),
     pollIntervalMs,
     poll: pollCountThenLoadNewerIfNeeded,

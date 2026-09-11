@@ -475,6 +475,7 @@ export function buildInboxReq(
     selectedUnits: req.selectedUnits,
     selectedUnitIds: req.selectedUnitIds,
     selectedDeviceNames: req.selectedDeviceNames,
+    deniedDeviceNames: null,
     deniedUnits: null,
     deniedUnitIds: null,
     selectedLocations: req.selectedLocations,

@@ -32,6 +32,7 @@ export type FeedFilterSelectionSectionProps<T> = {
   closeText?: string;
   keepOpenOnSelect?: boolean;
   preserveInputOnSelect?: boolean;
+  onInputChange?: (value: string) => void;
   bulkPaste?: boolean;
   bulkPasteOptions?: readonly T[];
   bulkPasteSeparators?: string[];
@@ -71,6 +72,7 @@ export function FeedFilterSelectionSection<T>({
   closeText = 'Закрити',
   keepOpenOnSelect,
   preserveInputOnSelect,
+  onInputChange,
   bulkPaste = false,
   bulkPasteOptions,
   bulkPasteSeparators,
@@ -215,6 +217,7 @@ export function FeedFilterSelectionSection<T>({
                   }
 
                   setInputValue(nextValue);
+                  onInputChange?.(nextValue);
                 }
               : undefined
           }

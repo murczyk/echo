@@ -114,6 +114,7 @@ export function DutyFeedStateHarness(props: {
     testLimit: 1,
     pollIntervalSec: 1,
     disableAutoScroll: props.disableAutoScroll ?? false,
+    deviceAccess: { resolved: true, allowed: true },
   });
   props.apiRef.current = new Proxy(api, {
     get(target, property, receiver) {
