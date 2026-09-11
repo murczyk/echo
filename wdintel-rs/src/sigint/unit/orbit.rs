@@ -1228,6 +1228,7 @@ fn sigint_unit_for_orbit_matching(req: &CreateUnitReq) -> sigint_unit::Model {
         orbit_note: req.orbit_note.clone(),
         is_inconsistent: false,
         updated_at: chrono::Utc::now().naive_utc(),
+        present_in_orbit: req.present_in_orbit,
     }
 }
 
@@ -2137,6 +2138,7 @@ where
         is_deduplicate_candidate: None,
         comment: String::new(),
         orbit_note: None,
+        present_in_orbit: Some(true),
         duplicate_unit_ids: Vec::new(),
     };
     if super::generated_unit_name_req(&unit_req).is_empty() {
@@ -2602,6 +2604,7 @@ mod tests {
             is_deduplicate_candidate: None,
             comment: String::new(),
             orbit_note: None,
+            present_in_orbit: None,
             duplicate_unit_ids: Vec::new(),
         };
 
@@ -3364,6 +3367,14 @@ mod tests {
         link_orbit_unit(&env.dbx, first.unit_id, sigint_unit.id).await;
         link_orbit_unit(&env.dbx, second.unit_id, sigint_unit.id).await;
 
+        let linked_sigint_unit =
+            sigint_unit::Entity::find_by_id(sigint_unit.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(linked_sigint_unit.present_in_orbit, Some(true));
+
         let outcome = reconcile_sigint_unit_orbit(
             &env.dbx,
             &login.id,
@@ -3404,6 +3415,7 @@ mod tests {
             .unwrap();
         assert!(!sigint_unit.is_inconsistent);
         assert_eq!(sigint_unit.brigade, "Second ORBIT unit");
+        assert_eq!(sigint_unit.present_in_orbit, Some(true));
         assert_eq!(
             unit_orbit_details(&env.dbx, sigint_unit.id)
                 .await
@@ -3411,6 +3423,74 @@ mod tests {
                 .len(),
             1
         );
+
+        crate::orbit::unlink_sigint_unit_with_lock(
+            &env.dbx,
+            &login.id,
+            sigint_unit.id,
+            second.unit_id,
+        )
+        .await
+        .unwrap();
+        let sigint_unit = sigint_unit::Entity::find_by_id(sigint_unit.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(sigint_unit.present_in_orbit, Some(false));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn orbit_unit_deleted_state_synchronizes_presence() {
+        // Regression: https://github.com/echoua/echo/issues/3113
+        let env = cleanup().await.unwrap();
+        orbit_unit::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let first = insert_orbit_unit(&env.dbx, "First", None, None).await;
+        let second = insert_orbit_unit(&env.dbx, "Second", None, None).await;
+        let sigint_unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        link_orbit_unit(&env.dbx, first.unit_id, sigint_unit.id).await;
+        link_orbit_unit(&env.dbx, second.unit_id, sigint_unit.id).await;
+
+        let mut first = first.into_active_model();
+        first.deleted = Set(true);
+        let first = first.update(&env.dbx).await.unwrap();
+        let sigint_unit = sigint_unit::Entity::find_by_id(sigint_unit.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(sigint_unit.present_in_orbit, Some(true));
+
+        let mut second = second.into_active_model();
+        second.deleted = Set(true);
+        second.update(&env.dbx).await.unwrap();
+        let sigint_unit = sigint_unit::Entity::find_by_id(sigint_unit.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(sigint_unit.present_in_orbit, Some(false));
+
+        let mut first = first.into_active_model();
+        first.deleted = Set(false);
+        first.update(&env.dbx).await.unwrap();
+        let sigint_unit = sigint_unit::Entity::find_by_id(sigint_unit.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(sigint_unit.present_in_orbit, Some(true));
     }
 
     #[tokio::test]

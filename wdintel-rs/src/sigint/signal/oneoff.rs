@@ -318,6 +318,7 @@ mod tests {
             original_id: Default::default(),
             is_deduplicate_candidate: Default::default(),
             orbit_note: Default::default(),
+            present_in_orbit: None,
             is_inconsistent: false,
             updated_at: Default::default(),
         }];
@@ -368,6 +369,7 @@ mod tests {
             original_id: Default::default(),
             is_deduplicate_candidate: Default::default(),
             orbit_note: Default::default(),
+            present_in_orbit: None,
             is_inconsistent: false,
             updated_at: Default::default(),
         }];
