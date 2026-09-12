@@ -183,6 +183,7 @@ type GroupEditState = {
   isSecret: boolean;
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
+  isAviationGroup: boolean;
   selectedUsers: string[];
   selectedUserDetails: SignalGroupLogin[];
   selectedOrganismIds: number[];
@@ -200,6 +201,7 @@ type OrphanEditState = {
   groupName: string;
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
+  isAviationGroup: boolean;
   shortNote: string;
   longNote: string;
   selectedAorIds: number[];
@@ -311,6 +313,7 @@ function buildGroupCardData(props: {
 const DEFAULT_ORPHAN_COLUMNS_VISIBILITY = {
   group: true,
   datasource: true,
+  is_airplane: true,
   activityDay: true,
   activityWeek: true,
   activityTimeline: false,
@@ -324,6 +327,7 @@ const DEFAULT_ORPHAN_COLUMN_ORDER = [
   'mrt-row-actions',
   'group',
   'datasource',
+  'is_airplane',
   'activityDay',
   'activityWeek',
   'activityTimeline',
@@ -335,6 +339,7 @@ const DEFAULT_ORPHAN_COLUMN_ORDER = [
 const DEFAULT_ZONE_COLUMNS_VISIBILITY = {
   group: true,
   datasource: true,
+  is_airplane: true,
   activityDay: true,
   activityWeek: true,
   activityTimeline: false,
@@ -372,6 +377,7 @@ const DEFAULT_ZONE_COLUMN_ORDER = [
   'mrt-row-actions',
   'group',
   'datasource',
+  'is_airplane',
   'activityDay',
   'activityWeek',
   'activityTimeline',
@@ -689,6 +695,7 @@ function buildOrphanLoadingRows(): OrphanSignalGroupEntry[] {
     ignoreOperativny: false,
     interseptionKind: 'rer',
     disableNetworkAssignment: false,
+    isAviationGroup: false,
     isArchived: false,
     groupStats: {
       activityLastDay: 0,
@@ -711,6 +718,7 @@ function buildZoneLoadingRows(): ZoneGroupRow[] {
       isGroupSecret: false,
       interseptionKind: 'rer',
       disableNetworkAssignment: false,
+      isAviationGroup: false,
       allowedUsers: [],
       allowedUserDetails: [],
       allowedOrganismIds: [],
@@ -825,6 +833,14 @@ function OrphanGroupsTable(props: {
           renderDatasourceCell(row.original?.datasourceId ?? null, props.datasourceById),
         ),
         size: 180,
+      },
+      {
+        header: 'Авіаційна',
+        id: 'is_airplane',
+        accessorFn: (row) => row?.isAviationGroup ?? false,
+        meta: { overflowMode: 'none' },
+        Cell: ({ row }) => (row.original?.isAviationGroup ? 'Так' : 'Ні'),
+        size: 110,
       },
       {
         header: 'Активність (день)',
@@ -1184,6 +1200,14 @@ function ZoneGroupsTable(props: {
           renderDatasourceCell(row.original?.datasourceId ?? null, props.datasourceById),
         ),
         size: 200,
+      },
+      {
+        header: 'Авіаційна',
+        id: 'is_airplane',
+        accessorFn: (row) => row?.group?.isAviationGroup ?? false,
+        meta: { overflowMode: 'none' },
+        Cell: ({ row }) => (row.original?.group?.isAviationGroup ? 'Так' : 'Ні'),
+        size: 110,
       },
       {
         header: 'Активність (день)',
@@ -1960,6 +1984,7 @@ function AdminDirectionsNeoPageBody() {
             ignoreOperativny: group.ignoreOperativny,
             interseptionKind: group.interseptionKind,
             disableNetworkAssignment: group.disableNetworkAssignment,
+            isAviationGroup: group.isAviationGroup,
             groupStats: group.groupStats,
             adminData: group.groupAdminData,
             areasOfResponsibility: group.areasOfResponsibility,
@@ -1991,6 +2016,7 @@ function AdminDirectionsNeoPageBody() {
       isSecret: group.isGroupSecret,
       interseptionKind: group.interseptionKind,
       disableNetworkAssignment: group.disableNetworkAssignment,
+      isAviationGroup: group.isAviationGroup,
       selectedUsers: group.allowedUsers,
       selectedUserDetails: group.allowedUserDetails,
       selectedOrganismIds: group.allowedOrganismIds,
@@ -2011,6 +2037,7 @@ function AdminDirectionsNeoPageBody() {
       groupName,
       interseptionKind: group.interseptionKind,
       disableNetworkAssignment: group.disableNetworkAssignment,
+      isAviationGroup: group.isAviationGroup,
       shortNote: group.groupAdminData?.shortNote ?? '',
       longNote: group.groupAdminData?.longNote ?? '',
       selectedAorIds: (group.areasOfResponsibility ?? []).map((aor) => aor.id),
@@ -2123,6 +2150,7 @@ function AdminDirectionsNeoPageBody() {
       isSecret: editDialog.isSecret,
       interseptionKind: supportNonRerInterceptions ? editDialog.interseptionKind : null,
       disableNetworkAssignment: editDialog.disableNetworkAssignment,
+      isAviationGroup: editDialog.isAviationGroup,
       userLogins: selectedUsers,
       organismIds: selectedOrganismIds,
       adminLogins: editDialog.selectedAdmins,
@@ -2173,6 +2201,7 @@ function AdminDirectionsNeoPageBody() {
           orphanEditDialog.selectedAorIds.length > 0 ? orphanEditDialog.selectedAorIds : null,
         interseptionKind: supportNonRerInterceptions ? orphanEditDialog.interseptionKind : null,
         disableNetworkAssignment: orphanEditDialog.disableNetworkAssignment,
+        isAviationGroup: orphanEditDialog.isAviationGroup,
       });
 
       setOrphanGroups((prev) =>
@@ -2190,6 +2219,7 @@ function AdminDirectionsNeoPageBody() {
             areasOfResponsibility: updated.areasOfResponsibility ?? null,
             interseptionKind: orphanEditDialog.interseptionKind,
             disableNetworkAssignment: orphanEditDialog.disableNetworkAssignment,
+            isAviationGroup: orphanEditDialog.isAviationGroup,
           };
         }),
       );
@@ -2208,6 +2238,7 @@ function AdminDirectionsNeoPageBody() {
             areasOfResponsibility: updated.areasOfResponsibility ?? null,
             interseptionKind: orphanEditDialog.interseptionKind,
             disableNetworkAssignment: orphanEditDialog.disableNetworkAssignment,
+            isAviationGroup: orphanEditDialog.isAviationGroup,
           };
         }),
       );
@@ -2295,6 +2326,7 @@ function AdminDirectionsNeoPageBody() {
               ignoreOperativny: false,
               interseptionKind: assignDialog.interseptionKind,
               disableNetworkAssignment: assignDialog.disableNetworkAssignment,
+              isAviationGroup: assignDialog.group.isAviationGroup,
               groupStats: assignDialog.group.groupStats,
               adminData: assignDialog.group.groupAdminData,
               areasOfResponsibility: assignDialog.group.areasOfResponsibility,
@@ -2509,6 +2541,18 @@ function AdminDirectionsNeoPageBody() {
             }
             label={<DisableNetworkAssignmentLabel />}
           />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={editDialog?.isAviationGroup ?? false}
+                onChange={(event) =>
+                  editDialog &&
+                  setEditDialog({ ...editDialog, isAviationGroup: event.target.checked })
+                }
+              />
+            }
+            label="Авіаційна група"
+          />
           {editDialog?.isSecret ? (
             <LoginAutocomplete
               label="Користувачі"
@@ -2665,6 +2709,21 @@ function AdminDirectionsNeoPageBody() {
               />
             }
             label={<DisableNetworkAssignmentLabel />}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={orphanEditDialog?.isAviationGroup ?? false}
+                onChange={(event) =>
+                  orphanEditDialog &&
+                  setOrphanEditDialog({
+                    ...orphanEditDialog,
+                    isAviationGroup: event.target.checked,
+                  })
+                }
+              />
+            }
+            label="Авіаційна група"
           />
           <Autocomplete
             multiple
