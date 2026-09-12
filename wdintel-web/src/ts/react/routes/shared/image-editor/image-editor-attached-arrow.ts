@@ -15,12 +15,25 @@ type AttachedArrowGesture = {
   text: AnnotatedText;
   previous: Point | null;
   fabric: typeof import('fabric');
-  start: Point;
   latest: Point;
   startScreen: Point;
   latestScreen: Point;
 };
 const attachedArrowGestures = new WeakMap<import('fabric').Canvas, AttachedArrowGesture>();
+
+function imageEditorPointerEventScreenPoint(event: import('fabric').TPointerEvent): Point | null {
+  if (typeof TouchEvent !== 'undefined' && event instanceof TouchEvent) {
+    const touch = event.changedTouches[0] ?? event.touches[0];
+    return touch && Number.isFinite(touch.clientX) && Number.isFinite(touch.clientY)
+      ? { x: touch.clientX, y: touch.clientY }
+      : null;
+  }
+  return event instanceof MouseEvent &&
+    Number.isFinite(event.clientX) &&
+    Number.isFinite(event.clientY)
+    ? { x: event.clientX, y: event.clientY }
+    : null;
+}
 
 function targetFor(text: AnnotatedText): Point | null {
   const x = Number(text.get(TARGET_X));
@@ -207,33 +220,34 @@ export function installImageEditorAttachedArrowControl({
     const gesture = attachedArrowGestures.get(canvas);
     return gesture?.id === gestureId ? gesture : null;
   };
-  const begin = (event: Event, owner: AnnotatedText) => {
-    const start = { x: owner.left ?? 0, y: owner.top ?? 0 };
+  const begin = (event: import('fabric').TPointerEvent, owner: AnnotatedText) => {
+    const screenPoint = imageEditorPointerEventScreenPoint(event);
+    if (!screenPoint) return false;
+    const latest = { x: owner.left ?? 0, y: owner.top ?? 0 };
     gestureId = Symbol('attached-arrow-gesture');
     attachedArrowGestures.set(canvas, {
       id: gestureId,
       text: owner,
       previous: targetFor(owner),
       fabric,
-      start,
-      latest: start,
-      startScreen: {
-        x: event instanceof MouseEvent ? event.clientX : 0,
-        y: event instanceof MouseEvent ? event.clientY : 0,
-      },
-      latestScreen: {
-        x: event instanceof MouseEvent ? event.clientX : 0,
-        y: event instanceof MouseEvent ? event.clientY : 0,
-      },
+      latest,
+      startScreen: screenPoint,
+      latestScreen: screenPoint,
     });
     return true;
   };
-  const update = (event: Event, owner: AnnotatedText, x: number, y: number) => {
+  const update = (
+    event: import('fabric').TPointerEvent,
+    owner: AnnotatedText,
+    x: number,
+    y: number,
+  ) => {
     const gesture = activeGesture();
     if (!gesture || gesture.text !== owner) return false;
     const target = { x, y };
     gesture.latest = target;
-    if (event instanceof MouseEvent) gesture.latestScreen = { x: event.clientX, y: event.clientY };
+    const screenPoint = imageEditorPointerEventScreenPoint(event);
+    if (screenPoint) gesture.latestScreen = screenPoint;
     const valid =
       Math.hypot(target.x - (owner.left ?? 0), target.y - (owner.top ?? 0)) >= 3 &&
       imageEditorAttachedArrowGeometry(owner, target) != null;
@@ -244,12 +258,26 @@ export function installImageEditorAttachedArrowControl({
     });
     return false;
   };
-  const complete = (event: Event, _transform: import('fabric').Transform, x: number, y: number) => {
+  const complete = (
+    event: import('fabric').TPointerEvent,
+    _transform: import('fabric').Transform,
+    x: number,
+    y: number,
+  ) => {
     const gesture = activeGesture();
     if (!gesture) return false;
-    gesture.latest = { x, y };
-    if (event instanceof MouseEvent) gesture.latestScreen = { x: event.clientX, y: event.clientY };
+    const screenPoint = imageEditorPointerEventScreenPoint(event);
     attachedArrowGestures.delete(canvas);
+    if (!screenPoint) {
+      reconcileImageEditorAttachedArrows({ canvas, fabric });
+      (canvas as import('fabric').Canvas & { fire: (eventName: string) => void }).fire(
+        'image-editor:attached-arrow-changed',
+      );
+      onChange?.();
+      return false;
+    }
+    gesture.latest = { x, y };
+    gesture.latestScreen = screenPoint;
     const moved =
       Math.hypot(
         gesture.latestScreen.x - gesture.startScreen.x,

@@ -40,6 +40,49 @@ function renderedEndpoints(arrow: import('fabric').Group) {
   return { start, end };
 }
 
+function touchEvent(type: string, changed: { x: number; y: number } | null) {
+  const event = new TouchEvent(type);
+  const contact = changed ? [{ clientX: changed.x, clientY: changed.y }] : [];
+  Object.defineProperties(event, {
+    changedTouches: { value: contact },
+    touches: { value: type === 'touchend' ? [] : contact },
+  });
+  return event;
+}
+
+function attachedArrowHarness(target?: { x: number; y: number }) {
+  const text = new fabric.IText('Текст', {
+    left: 100,
+    top: 100,
+    originX: 'center',
+    originY: 'center',
+    editorRole: 'text',
+  });
+  if (target) setImageEditorAttachedArrowTarget(text, target);
+  const objects: import('fabric').FabricObject[] = [text];
+  const canvas = {
+    getObjects: () => objects,
+    add: (object: import('fabric').FabricObject) => objects.push(object),
+    remove: (object: import('fabric').FabricObject) => {
+      const index = objects.indexOf(object);
+      if (index >= 0) objects.splice(index, 1);
+    },
+    moveObjectTo: () => undefined,
+    requestRenderAll: () => undefined,
+    fire: () => undefined,
+  } as never as import('fabric').Canvas;
+  text.canvas = canvas;
+  const complete = vi.fn();
+  installImageEditorAttachedArrowControl({ canvas, fabric, text, onComplete: complete });
+  return {
+    complete,
+    create: text.controls[IMAGE_EDITOR_ATTACHED_ARROW_CONTROL]!,
+    endpoint: text.controls[IMAGE_EDITOR_ATTACHED_ARROW_ENDPOINT_CONTROL]!,
+    text,
+    transform: { target: text } as never,
+  };
+}
+
 describe('image editor arrow geometry #3099', () => {
   it.each([
     [
@@ -344,5 +387,96 @@ describe('text callout geometry #3448', () => {
     );
     expect(text.get('attachedArrowTargetX')).toBe(220);
     expect(complete).not.toHaveBeenCalled();
+  });
+
+  it('creates an attached arrow from a touch gesture #3448', () => {
+    const harness = attachedArrowHarness();
+    harness.create.mouseDownHandler?.(
+      touchEvent('touchstart', { x: 100, y: 100 }),
+      harness.transform,
+      100,
+      100,
+    );
+    harness.create.actionHandler?.(
+      touchEvent('touchmove', { x: 260, y: 100 }),
+      harness.transform,
+      260,
+      100,
+    );
+    harness.create.mouseUpHandler?.(
+      touchEvent('touchend', { x: 260, y: 100 }),
+      harness.transform,
+      260,
+      100,
+    );
+    expect(harness.text.get('attachedArrowTargetX')).toBe(260);
+    expect(harness.text.get('attachedArrowTargetY')).toBe(100);
+    expect(harness.complete).toHaveBeenCalledOnce();
+  });
+
+  it('repositions an attached endpoint from a touch gesture #3448', () => {
+    const harness = attachedArrowHarness({ x: 220, y: 100 });
+    harness.endpoint.mouseDownHandler?.(
+      touchEvent('touchstart', { x: 220, y: 100 }),
+      harness.transform,
+      220,
+      100,
+    );
+    harness.endpoint.actionHandler?.(
+      touchEvent('touchmove', { x: 260, y: 100 }),
+      harness.transform,
+      260,
+      100,
+    );
+    harness.endpoint.mouseUpHandler?.(
+      touchEvent('touchend', { x: 260, y: 100 }),
+      harness.transform,
+      260,
+      100,
+    );
+    expect(harness.text.get('attachedArrowTargetX')).toBe(260);
+    expect(harness.complete).toHaveBeenCalledOnce();
+  });
+
+  it('rejects a touch tap without movement #3448', () => {
+    const harness = attachedArrowHarness();
+    harness.create.mouseDownHandler?.(
+      touchEvent('touchstart', { x: 100, y: 100 }),
+      harness.transform,
+      100,
+      100,
+    );
+    harness.create.mouseUpHandler?.(
+      touchEvent('touchend', { x: 100, y: 100 }),
+      harness.transform,
+      100,
+      100,
+    );
+    expect(harness.text.get('attachedArrowTargetX')).toBeUndefined();
+    expect(harness.complete).not.toHaveBeenCalled();
+  });
+
+  it('uses an invalid final touch release rather than the previous move #3448', () => {
+    const harness = attachedArrowHarness({ x: 220, y: 100 });
+    harness.endpoint.mouseDownHandler?.(
+      touchEvent('touchstart', { x: 220, y: 100 }),
+      harness.transform,
+      220,
+      100,
+    );
+    harness.endpoint.actionHandler?.(
+      touchEvent('touchmove', { x: 260, y: 100 }),
+      harness.transform,
+      260,
+      100,
+    );
+    harness.endpoint.mouseUpHandler?.(
+      touchEvent('touchend', { x: 100, y: 100 }),
+      harness.transform,
+      100,
+      100,
+    );
+    expect(harness.text.get('attachedArrowTargetX')).toBe(220);
+    expect(harness.complete).not.toHaveBeenCalled();
   });
 });
