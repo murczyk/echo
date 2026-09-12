@@ -111,7 +111,11 @@ export function useImageEditorSelectionStyle({
             change.value,
           );
         if (change.property === 'fill') properties.fill = change.value;
-        if (change.property === 'strokeWidth') properties.strokeWidth = change.value;
+        if (change.property === 'strokeWidth') {
+          properties.strokeWidth = change.value;
+          if (supportsDash && (selected.strokeDashArray?.length ?? 0) > 0)
+            properties.strokeDashArray = [change.value * 2, change.value * 2];
+        }
         if (change.property === 'dash')
           properties.strokeDashArray = change.value
             ? [Number(selected.strokeWidth ?? 4) * 2, Number(selected.strokeWidth ?? 4) * 2]
