@@ -1066,14 +1066,14 @@ async fn get_inbox_messages_report_unit(
     include_comments: bool,
     chunking_hours: i64,
 ) -> Result<Vec<StatsPerUnitReport>, AppError> {
-    let analytics_supported = !babak_uses_creation_time(req)
+    let use_interception_time_analytics_scope = !babak_uses_creation_time(req)
         && crate::rer_importer::analysis::analytics_inbox_request_supported(
             req,
         );
     let access = BabakCandidateAccess::resolve(
         env,
         login,
-        analytics_supported,
+        use_interception_time_analytics_scope,
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .await
@@ -1094,7 +1094,7 @@ async fn get_inbox_messages_report_unit(
         let scope = resolve_babak_candidate_scope(
             env,
             &chunk_req,
-            analytics_supported,
+            use_interception_time_analytics_scope,
             chunk.end,
         )
         .await
@@ -1277,7 +1277,7 @@ impl BabakCandidateAccess {
     async fn resolve(
         env: &Env,
         login: &uuid::Uuid,
-        analytics_supported: bool,
+        use_interception_time_analytics_scope: bool,
         report_tags_only_this_unit: bool,
     ) -> Result<Self, AppError> {
         let sigint_groups =
@@ -1306,7 +1306,7 @@ impl BabakCandidateAccess {
             .await
             .context(h!())?,
             analytics_tag_access: if env.analytics.is_some()
-                && analytics_supported
+                && use_interception_time_analytics_scope
             {
                 Some(
                     stats::resolve_analytics_tag_access(
@@ -1326,10 +1326,16 @@ impl BabakCandidateAccess {
 async fn resolve_babak_candidate_scope(
     env: &Env,
     req: &InboxMessagesReq,
-    analytics_supported: bool,
+    use_interception_time_analytics_scope: bool,
     period_end: ReportPeriodEnd,
 ) -> Result<Option<AnalyticsMessageIdScope>, AppError> {
-    if env.analytics.is_none() || !analytics_supported {
+    // Analytics message scopes are derived from interception-time partitions.
+    // Creation-time reports must use PostgreSQL so delayed messages are scoped
+    // by signal_message.created_at.
+    if babak_uses_creation_time(req) {
+        return Ok(None);
+    }
+    if env.analytics.is_none() || !use_interception_time_analytics_scope {
         return Ok(None);
     }
     let (Some(since), Some(till)) =
@@ -1425,10 +1431,12 @@ fn babak_candidate_streams_are_eligible(
     {
         return false;
     }
-    let mut unfiltered = InboxMessagesReq::default();
-    unfiltered.since_date_inclusive_ms = req.since_date_inclusive_ms;
-    unfiltered.till_date_inclusive_ms = req.till_date_inclusive_ms;
-    unfiltered.sort_by = req.sort_by;
+    let unfiltered = InboxMessagesReq {
+        since_date_inclusive_ms: req.since_date_inclusive_ms,
+        till_date_inclusive_ms: req.till_date_inclusive_ms,
+        sort_by: req.sort_by,
+        ..Default::default()
+    };
     *req == unfiltered
 }
 

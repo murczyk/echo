@@ -92,6 +92,7 @@ message textMarked callsigns networkIds =
     , bookmarked = False
     , timestamp = Nothing
     , createdAt = Nothing
+    , createdAtOrder = Nothing
     , hasDateInHeader = False
     , groupMasterKey = Nothing
     , sender = Nothing

@@ -1,5 +1,11 @@
 use sea_orm_migration::prelude::*;
 
+macro_rules! h {
+    () => {
+        concat!("at ", file!(), " line ", line!(), " column ", column!())
+    };
+}
+
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
@@ -15,7 +21,8 @@ create index concurrently signal_message_babak_candidate_stream_idx
     where deleted = false;
                 "#,
             )
-            .await?;
+            .await
+            .map_err(|error| DbErr::Migration(format!("{}: {error}", h!())))?;
         Ok(())
     }
 
@@ -27,7 +34,8 @@ create index concurrently signal_message_babak_candidate_stream_idx
 drop index concurrently if exists signal_message_babak_candidate_stream_idx;
                 "#,
             )
-            .await?;
+            .await
+            .map_err(|error| DbErr::Migration(format!("{}: {error}", h!())))?;
         Ok(())
     }
 
