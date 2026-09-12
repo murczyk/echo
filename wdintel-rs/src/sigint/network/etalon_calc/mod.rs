@@ -194,20 +194,19 @@ async fn load_group_first_inbox_item_datetime<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    Ok(sigint_inbox_item::Entity::find()
+    Ok(signal_message_group::Entity::find()
         .join(
             JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SignalMessage.def(),
+            signal_message_group::Relation::SignalMessage.def(),
         )
         .join(
             JoinType::InnerJoin,
-            signal_message::Relation::SignalMessageGroup.def(),
+            signal_message::Relation::SigintInboxItem.def(),
         )
         .filter(sigint_inbox_item::Column::Datetime.is_not_null())
         .filter(signal_message_group::Column::GroupMasterKey.eq(master_key))
         .select_only()
-        .column(sigint_inbox_item::Column::Datetime)
-        .order_by_asc(sigint_inbox_item::Column::Datetime)
+        .column_as(sigint_inbox_item::Column::Datetime.min(), "first_datetime")
         .into_tuple::<Option<NaiveDateTime>>()
         .one(db)
         .await
