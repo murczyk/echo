@@ -570,6 +570,7 @@ submitUnitEdit req model =
                         , isDeduplicateCandidate = req.isDeduplicateCandidate
                         , comment = req.comment
                         , orbitNote = req.orbitNote
+                        , presentInOrbit = req.presentInOrbit
                     }
             in
             ( { model | unitUpdating = True }
@@ -1256,6 +1257,9 @@ changelogFieldLabel field =
         "orbit_note" ->
             "Примітка Orbit"
 
+        "present_in_orbit" ->
+            "Присутній в Orbit"
+
         "is_deduplicate_candidate" ->
             "Можливо дублікат"
 
@@ -1799,7 +1803,7 @@ orbitDataActions state canEditNote orbitUnit =
                         , onClick (OpenUnitEditDialog OrbitData)
                         ]
                         [ i [ class "bi bi-pencil" ] []
-                        , text "Редагувати примітку Orbit"
+                        , text "Редагувати дані Orbit"
                         ]
                     ]
 

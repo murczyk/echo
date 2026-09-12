@@ -69,6 +69,7 @@ export type Key = {
 export type MultiGeometry = {
   points: Array<Point>;
   lineStrings: Array<LineString>;
+  polygons: Array<Polygon>;
 };
 
 export type Pair = {
@@ -2937,6 +2938,7 @@ export type Unit = {
   armyRegion: string;
   comment: string;
   orbitNote: string | null;
+  presentInOrbit: boolean | null;
   name: string;
   active: boolean;
   isDeduplicateCandidate: boolean | null;
@@ -3040,6 +3042,7 @@ export type CreateUnitReq = {
   isDeduplicateCandidate: boolean | null;
   comment: string;
   orbitNote: string | null;
+  presentInOrbit: boolean | null;
   duplicateUnitIds: Array<number>;
 };
 

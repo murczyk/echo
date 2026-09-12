@@ -37,6 +37,8 @@ import type {
 } from './types';
 
 type SetState<T> = Dispatch<SetStateAction<T>>;
+const DELTA_SPLIT_NO_GEOMETRY_ERROR = 'Palitra has no geometry to split for Delta';
+
 type Props = {
   user: User | null;
   myScope: MyScope | null;
@@ -106,6 +108,32 @@ type Props = {
   setBulkDownloadInFlight: SetState<boolean>;
   reloadPalitras: () => Promise<void>;
 };
+
+type PalitraDownloadResult = {
+  blob: Blob;
+  splitForDelta: boolean;
+};
+
+function isDeltaSplitNoGeometryError(error: unknown): boolean {
+  return formatErrorMessage(error).includes(DELTA_SPLIT_NO_GEOMETRY_ERROR);
+}
+
+async function downloadPalitraWithDeltaFallback(
+  palitraId: number,
+  splitForDelta: boolean,
+): Promise<PalitraDownloadResult> {
+  try {
+    const blob = await downloadPalitras([palitraId], { splitForDelta });
+    return { blob, splitForDelta };
+  } catch (downloadError) {
+    if (!splitForDelta || !isDeltaSplitNoGeometryError(downloadError)) {
+      throw downloadError;
+    }
+
+    const blob = await downloadPalitras([palitraId]);
+    return { blob, splitForDelta: false };
+  }
+}
 
 export function createPalitraPageActionHandlers(props: Props) {
   function clearCreateFlow(clearError: boolean) {
@@ -441,12 +469,13 @@ export function createPalitraPageActionHandlers(props: Props) {
     props.setStatus(null);
 
     try {
-      const blob = await downloadPalitras([palitra.id], {
-        splitForDelta: props.downloadSplitForDelta,
-      });
+      const { blob, splitForDelta } = await downloadPalitraWithDeltaFallback(
+        palitra.id,
+        props.downloadSplitForDelta,
+      );
       downloadBlob(
         blob,
-        'palitra-' + String(palitra.id) + (props.downloadSplitForDelta ? '-delta' : '') + '.zip',
+        'palitra-' + String(palitra.id) + (splitForDelta ? '-delta' : '') + '.zip',
       );
       props.setDownloadDialogOpen(false);
     } catch (downloadError) {

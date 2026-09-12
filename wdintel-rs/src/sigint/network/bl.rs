@@ -18,6 +18,25 @@ pub(crate) struct NetworkRenderAccess {
     load_encryption_keys: bool,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct NetworkRenderOptions {
+    pub(crate) include_last_activity: bool,
+}
+
+impl NetworkRenderOptions {
+    pub(crate) fn full() -> Self {
+        Self {
+            include_last_activity: true,
+        }
+    }
+
+    pub(crate) fn lookup() -> Self {
+        Self {
+            include_last_activity: false,
+        }
+    }
+}
+
 pub(crate) async fn load_network_render_access<'a, 'async_trait, C>(
     txn: &'a C,
     user_login: &uuid::Uuid,
@@ -92,6 +111,26 @@ pub(crate) async fn render_networks_with_access<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
+    render_networks_with_options(
+        networks,
+        txn,
+        user_login,
+        access,
+        NetworkRenderOptions::full(),
+    )
+    .await
+}
+
+pub(crate) async fn render_networks_with_options<'a, 'async_trait, C>(
+    networks: Vec<sigint_network::Model>,
+    txn: &'a C,
+    user_login: &uuid::Uuid,
+    access: &NetworkRenderAccess,
+    options: NetworkRenderOptions,
+) -> Result<Vec<Network>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let instant = std::time::Instant::now();
 
     if networks.is_empty() {
@@ -103,7 +142,7 @@ where
 
     // fetch all related data in bulk
     let network_freqs =
-        get_networks_freqs(txn, &network_ids, user_login, access)
+        get_networks_freqs(txn, &network_ids, user_login, access, options)
             .await
             .context(h!())?;
     let units_map =
@@ -200,6 +239,7 @@ async fn get_networks_freqs<'a, 'async_trait, C>(
     network_ids: &[i64],
     user_login: &uuid::Uuid,
     access: &NetworkRenderAccess,
+    options: NetworkRenderOptions,
 ) -> Result<NetworkFreqs, AppError>
 where
     C: ConnectionTrait + 'async_trait,
@@ -254,10 +294,13 @@ where
             });
     }
 
-    let last_activity_by_network_id =
+    let last_activity_by_network_id = if options.include_last_activity {
         load_network_last_activity(txn, network_ids, &access.activity_groups)
             .await
-            .context(h!())?;
+            .context(h!())?
+    } else {
+        HashMap::new()
+    };
 
     Ok(NetworkFreqs {
         freqs_by_network_id,
@@ -283,17 +326,72 @@ where
         last_activity_at: Option<NaiveDateTime>,
     }
 
-    Ok(sigint_network::Entity::find()
-        .select_only()
-        .column_as(sigint_network::Column::Id, "network_id")
-        .column_as(
-            crate::sigint::network::sort::network_last_activity_sort_expr(
-                groups,
-            ),
-            "last_activity_at",
-        )
-        .filter(sigint_network::Column::Id.eq_any(network_ids.to_vec()))
-        .into_model::<NetworkLastActivity>()
+    let sql = r#"
+        select
+            network_link.sigint_network_id as network_id,
+            max(coalesce(
+                inbox_item.datetime,
+                signal_message.timestamp,
+                signal_message.created_at
+            )) as last_activity_at
+        from sigint_inbox_item_network network_link
+        join sigint_network
+          on sigint_network.id = network_link.sigint_network_id
+        join sigint_inbox_item inbox_item
+          on inbox_item.id = network_link.sigint_inbox_item_id
+        join signal_message
+          on signal_message.id = inbox_item.id
+        join datasource_group
+          on datasource_group.id = signal_message.datasource_group_id
+        join signal_group
+          on signal_group.master_key = datasource_group.group_master_key
+        join sigint_network_freq network_freq
+          on network_freq.network_id = sigint_network.id
+         and network_freq.freq = inbox_item.freq
+         and network_freq.deleted = false
+        where network_link.sigint_network_id = any($1::bigint[])
+          and datasource_group.group_master_key = any($2::text[])
+          and signal_message.deleted = false
+          and signal_group.deleted = false
+          and signal_group.is_archived = false
+          and (
+              sigint_network.active_from is null
+              or coalesce(
+                  inbox_item.datetime,
+                  signal_message.timestamp,
+                  signal_message.created_at
+              ) >= sigint_network.active_from
+          )
+          and (
+              sigint_network.active_to is null
+              or coalesce(
+                  inbox_item.datetime,
+                  signal_message.timestamp,
+                  signal_message.created_at
+              ) <= sigint_network.active_to
+          )
+          and coalesce(
+              inbox_item.datetime,
+              signal_message.timestamp,
+              signal_message.created_at
+          ) >= network_freq.active_from
+          and (
+              network_freq.active_to is null
+              or coalesce(
+                  inbox_item.datetime,
+                  signal_message.timestamp,
+                  signal_message.created_at
+              ) <= network_freq.active_to
+          )
+        group by network_link.sigint_network_id
+    "#;
+
+    Ok(
+        NetworkLastActivity::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            sql,
+            vec![network_ids.to_vec().into(), groups.to_vec().into()],
+        ))
         .all(txn)
         .await
         .context(h!())?
@@ -302,7 +400,8 @@ where
             row.last_activity_at
                 .map(|last_activity_at| (row.network_id, last_activity_at))
         })
-        .collect())
+        .collect(),
+    )
 }
 
 pub async fn get_networks_units<'a, 'async_trait, C>(

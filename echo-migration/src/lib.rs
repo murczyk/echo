@@ -413,6 +413,7 @@ mod m20260903_155454_create_sigint_activity_decision_changelog;
 mod m20260903_180415_add_failed_unit_label_inbox_uuid;
 mod m20260908_131435_network_recalculation_queue;
 mod m20260909_102202_sigint_unit_cascade_delete;
+mod m20260909_143915_sigint_unit_present_in_orbit;
 mod m20260909_145827_network_invalidation_reconciliation_index;
 
 pub struct Migrator;
@@ -982,6 +983,9 @@ impl MigratorTrait for Migrator {
                 m20260908_131435_network_recalculation_queue::Migration,
             ),
             Box::new(m20260909_102202_sigint_unit_cascade_delete::Migration),
+            Box::new(
+                m20260909_143915_sigint_unit_present_in_orbit::Migration,
+            ),
             Box::new(
                 m20260909_145827_network_invalidation_reconciliation_index::Migration,
             ),
