@@ -849,11 +849,8 @@ test.describe('message card media preview contract', () => {
         await coordinateControl.click();
         await expect(coordinateTile).toBeVisible();
         await expect(count).toHaveText('9');
-        expect(await coordinateTile.textContent()).toBe('9');
-        expect(await coordinateTile.textContent()).not.toContain(coordinateLabel);
-        expect(await coordinateTile.textContent()).not.toContain('50.45044, 30.52355');
-        expect(await coordinateTile.textContent()).not.toMatch(/точка|точки|точок|…|\.\.\./i);
-        const [tileBox, countBox, countMetrics] = await Promise.all([
+        expect(await count.textContent()).toBe('9');
+        const [tileBox, countBox, countMetrics, coordinateStacking] = await Promise.all([
           coordinateTile.boundingBox(),
           count.boundingBox(),
           count.evaluate((element) => {
@@ -865,6 +862,16 @@ test.describe('message card media preview contract', () => {
               clientWidth: element.clientWidth,
               scrollHeight: element.scrollHeight,
               lineHeight: Number.parseFloat(styles.lineHeight),
+            };
+          }),
+          coordinateTile.evaluate((element) => {
+            const map = element.querySelector<HTMLElement>('.coordinate-thumbnail__map');
+            const shade = element.querySelector<HTMLElement>('.coordinate-thumbnail__shade');
+            const count = element.querySelector<HTMLElement>('.coordinate-thumbnail__count');
+            return {
+              map: map == null ? null : Number.parseInt(getComputedStyle(map).zIndex, 10),
+              shade: shade == null ? null : Number.parseInt(getComputedStyle(shade).zIndex, 10),
+              count: count == null ? null : Number.parseInt(getComputedStyle(count).zIndex, 10),
             };
           }),
         ]);
@@ -890,6 +897,8 @@ test.describe('message card media preview contract', () => {
         expect((countBox?.y ?? 0) + (countBox?.height ?? 0)).toBeLessThan(
           (tileBox?.y ?? 0) + (tileBox?.height ?? 0) / 2,
         );
+        expect(coordinateStacking).toEqual({ map: 1, shade: 2, count: 3 });
+        await expect(coordinateTile.locator('.coordinate-preview-mgrs-label')).toHaveCount(0);
       }
 
       await coordinateButton.click();
@@ -949,7 +958,7 @@ test.describe('message card media preview contract', () => {
         await page.waitForTimeout(300);
         await button.hover();
         await page.waitForTimeout(300);
-        await expect(tile.locator('.leaflet-tooltip')).toHaveCount(0);
+        await expect(tile.locator('.coordinate-preview-mgrs-label')).toHaveCount(0);
         const preview = page.locator('[data-coordinate-hover-preview]');
         await expect(preview).toHaveCount(1);
         await expect(
@@ -958,7 +967,8 @@ test.describe('message card media preview contract', () => {
         const mapRegions = preview.locator('.coordinate-hover-preview__map-region');
         await expect(mapRegions).toHaveCount(2);
         await expect(preview.locator('.leaflet-interactive')).toHaveCount(0);
-        await expect(preview.locator('.leaflet-tooltip')).toHaveCount(0);
+        await expect(mapRegions.nth(0).locator('.coordinate-preview-mgrs-label')).toHaveCount(0);
+        await expect(mapRegions.nth(1).locator('.coordinate-preview-mgrs-label')).toHaveCount(1);
         const [previewBox, viewport, overviewRegion, detailRegion, layout] = await Promise.all([
           preview.boundingBox(),
           page.evaluate(() => ({ width: innerWidth, height: innerHeight })),
@@ -1008,9 +1018,88 @@ test.describe('message card media preview contract', () => {
         await expect(preview).toBeVisible();
         await button.evaluate((element) => element.click());
         await expect(preview).toHaveCount(0);
-        await expect(page.getByRole('dialog', { name: 'Перегляд координат' })).toBeVisible();
+        const dialog = page.getByRole('dialog', { name: 'Перегляд координат' });
+        await expect(dialog).toBeVisible();
+        const fullscreenMap = dialog.locator('.coordinate-fullscreen-map');
+        await expect(fullscreenMap).toHaveCount(1);
+        const fullscreenLabels = fullscreenMap.locator('.coordinate-preview-mgrs-label');
+        await expect(fullscreenLabels).toHaveCount(1);
+        const [mapBox, labelBox] = await Promise.all([
+          fullscreenMap.boundingBox(),
+          fullscreenLabels.first().boundingBox(),
+        ]);
+        expect(labelBox?.x).toBeGreaterThanOrEqual(mapBox?.x ?? 0);
+        expect((labelBox?.x ?? 0) + (labelBox?.width ?? 0)).toBeLessThanOrEqual(
+          (mapBox?.x ?? 0) + (mapBox?.width ?? 0),
+        );
         await page.getByRole('button', { name: 'Закрити', exact: true }).click();
       }
+    }
+  });
+
+  test('resolves a Palitra coordinate into the fullscreen MGRS map in both hosts', async ({
+    page,
+  }) => {
+    for (const host of ['duty', 'analysis'] as const) {
+      const listRequest = page.waitForRequest(
+        (request) =>
+          new URL(request.url()).pathname === '/api/palitra/v2/list-map' &&
+          request.method() === 'POST',
+      );
+      const pointSearchRequest = page.waitForRequest(
+        (request) =>
+          new URL(request.url()).pathname === '/api/palitra/points/search' &&
+          request.method() === 'POST',
+      );
+      await openMessageCardPreviewHost(page, host, {
+        revealCoordinates: true,
+        palitraEtalon: 'E2E-ПАЛІТРА',
+      });
+      const [listRequestResult, pointSearchRequestResult] = await Promise.all([
+        listRequest,
+        pointSearchRequest,
+      ]);
+      expect(listRequestResult).toBeTruthy();
+      expect(JSON.parse(pointSearchRequestResult.postData() ?? '{}')).toMatchObject({
+        palitra_ids: [1],
+        point_labels: ['E2E-ПАЛІТРА'],
+      });
+      const tile = page
+        .locator('.message-card-root')
+        .first()
+        .locator('[data-coordinate-preview-tile]');
+      await tile.getByRole('button', { name: /Open .* on map/ }).click();
+      const dialog = page.getByRole('dialog', { name: 'Перегляд координат' });
+      const fullscreenMap = dialog.locator('.coordinate-fullscreen-map');
+      await expect(fullscreenMap).toHaveCount(1);
+      await expect(fullscreenMap).toHaveAttribute('data-coordinate-marker-count', '1');
+      const fullscreenLabels = fullscreenMap.locator('.coordinate-preview-mgrs-label');
+      await expect(fullscreenLabels).toHaveCount(1);
+      await expect(fullscreenLabels).toHaveText(/\d{1,2}[C-X] [A-Z]{2} \d+ \d+/);
+      const [mapBox, labelBox] = await Promise.all([
+        fullscreenMap.boundingBox(),
+        fullscreenLabels.boundingBox(),
+      ]);
+      expect(labelBox?.x).toBeGreaterThanOrEqual((mapBox?.x ?? 0) - 1);
+      expect((labelBox?.x ?? 0) + (labelBox?.width ?? 0)).toBeLessThanOrEqual(
+        (mapBox?.x ?? 0) + (mapBox?.width ?? 0) + 1,
+      );
+      expect(labelBox?.y).toBeGreaterThanOrEqual((mapBox?.y ?? 0) - 1);
+      expect((labelBox?.y ?? 0) + (labelBox?.height ?? 0)).toBeLessThanOrEqual(
+        (mapBox?.y ?? 0) + (mapBox?.height ?? 0) + 1,
+      );
+      await page.mouse.click(
+        (mapBox?.x ?? 0) + (mapBox?.width ?? 0) / 2,
+        (mapBox?.y ?? 0) + (mapBox?.height ?? 0) / 2,
+      );
+      await expect(dialog.locator('[data-coordinate-panel="true"]')).toBeVisible();
+      await expect(dialog.locator('[data-coordinate-palitra-identity="true"]')).toHaveText(
+        'E2E-ПАЛІТРА',
+      );
+      await dialog.getByRole('button', { name: 'Закрити картку координати' }).click();
+      await expect(dialog.locator('[data-coordinate-panel="true"]')).toBeHidden();
+      await expect(fullscreenLabels).toHaveCount(1);
+      await dialog.getByRole('button', { name: 'Закрити', exact: true }).click();
     }
   });
 
