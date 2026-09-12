@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { SavedFilter } from '../../../../../Bindings';
 import {
   buildAnalysisReq,
+  buildSavedFilterReq,
   createInitialQueryState,
   createResetQueryState,
   buildInboxReq,
@@ -508,6 +509,24 @@ describe('rer-analysis-neo helpers', () => {
 
     expect(nextState.messageTimeBasis).toBe('creation');
     expect(nextState.freqsSelected).toEqual(['123.4']);
+  });
+
+  // https://github.com/echoua/echo/issues/3455
+  it('ignores the active time preference when matching saved filters', () => {
+    const interception = createQueryState({ messageTimeBasis: 'interception' });
+    const creation = createQueryState({ messageTimeBasis: 'creation' });
+    const savedFilter = createSavedFilter(interception);
+
+    expect(queryStateComparisonKey(creation)).toBe(queryStateComparisonKey(interception));
+    expect(queryStateMatchesSavedFilter(creation, savedFilter)).toBe(true);
+  });
+
+  // https://github.com/echoua/echo/issues/3455
+  it('does not persist the active time preference in saved-filter requests', () => {
+    const req = buildSavedFilterReq(createQueryState({ messageTimeBasis: 'creation' }));
+
+    expect(req).not.toBeNull();
+    expect(req?.messageTimeBasis).toBeNull();
   });
 
   it('detects showMap deep link for duty → analysis map tab', () => {

@@ -757,7 +757,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
       const incoming =
         options?.allowWindowTrim === true && protectedItemIds.length === 0
           ? pending
-          : safePendingNewerPrefix(feed.items, pending, protectedItemIds);
+          : safePendingNewerPrefix(feed.items, pending, protectedItemIds, feed.messageSortBy);
       if (incoming.length === 0 && options?.markAllRead !== true) return;
       const previousTailId = feed.items.at(-1)?.[0] ?? null;
       const newTailId = incoming.at(-1)?.[0] ?? null;

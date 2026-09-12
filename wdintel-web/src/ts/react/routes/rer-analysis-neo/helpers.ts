@@ -455,6 +455,14 @@ export function buildAnalysisReq(
   };
 }
 
+export function buildSavedFilterReq(
+  state: AnalysisQueryState,
+  allFrequencies: string[] = [],
+): AnalysisStatsReq | null {
+  const req = buildAnalysisReq(state, allFrequencies);
+  return isNullOrUndefined(req) ? null : { ...req, messageTimeBasis: null };
+}
+
 export function buildInboxReq(
   state: AnalysisQueryState,
   allFrequencies: string[] = [],
@@ -703,6 +711,7 @@ function analysisReqComparisonKey(
   const {
     sinceDateInclusiveMs: _sinceDateInclusiveMs,
     tillDateNoninclusiveMs: _tillDateNoninclusiveMs,
+    messageTimeBasis: _messageTimeBasis,
     ...rest
   } = normalized;
   return JSON.stringify(rest);

@@ -784,12 +784,18 @@ export function safePendingNewerPrefix(
   items: MessageItem[],
   pending: MessageItem[],
   protectedItemIds: readonly number[],
+  messageSortBy: 'IMSTimestamp' | 'IMSCreatedAt' = 'IMSTimestamp',
 ): MessageItem[] {
   if (protectedItemIds.length === 0) return pending;
   const protectedIds = new Set(protectedItemIds);
   let safeLength = 0;
   for (let length = 1; length <= pending.length; length += 1) {
-    const preview = appendWindowedMessageItems(items, pending.slice(0, length));
+    const preview = appendWindowedMessageItems(
+      items,
+      pending.slice(0, length),
+      undefined,
+      messageSortBy,
+    );
     if (preview.removedItems.some(([id]) => protectedIds.has(id))) break;
     safeLength = length;
   }

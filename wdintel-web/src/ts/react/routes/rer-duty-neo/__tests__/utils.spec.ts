@@ -36,6 +36,7 @@ import {
   normalizeFeed,
   prependWindowedMessageItems,
   retainReadIdsForItems,
+  safePendingNewerPrefix,
   uniquePointEtalonsForMapSearch,
   parseStateFromUrl,
   pushShortStateToUrl,
@@ -996,6 +997,24 @@ describe('rer-duty utils', () => {
     expect(result.items.map(([id]) => id)).toEqual([2, 3, 4, 5]);
     expect(result.addedItems.map(([id]) => id)).toEqual([4, 5]);
     expect(result.removedItems.map(([id]) => id)).toEqual([1]);
+  });
+
+  // https://github.com/echoua/echo/issues/3455
+  it('protects pending prefixes using creation ordering when enabled', () => {
+    const items = Array.from({ length: 40 }, (_, index) => {
+      const id = index + 1;
+      return [
+        id,
+        {
+          timestamp: id === 1 ? 2000 : id + 2000,
+          createdAt: id === 1 ? 1000 : id + 1000,
+        } as InboxMessage,
+      ] as [number, InboxMessage];
+    });
+    const pending = [[1001, { timestamp: 1000, createdAt: 3000 } as InboxMessage]];
+
+    expect(safePendingNewerPrefix(items, pending, [1])).toEqual(pending);
+    expect(safePendingNewerPrefix(items, pending, [1], 'IMSCreatedAt')).toEqual([]);
   });
 
   it('retains read ids only for messages still inside the fixed window', () => {

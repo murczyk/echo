@@ -52,9 +52,13 @@ async fn ensure_analysis_message_time_basis_access(
     req: &AnalysisStatsReq,
 ) -> Result<(), AppError> {
     if analysis_message_time_basis_requires_cyber(req) {
-        has_role(&env.dbx, &login_id_from_identity(user)?, "Cyber")
-            .await
-            .c(h!())?;
+        has_role(
+            &env.dbx,
+            &login_id_from_identity(user).context(h!())?,
+            "Cyber",
+        )
+        .await
+        .c(h!())?;
     }
     Ok(())
 }
