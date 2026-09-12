@@ -1411,6 +1411,11 @@ describe('useRerNetworksNeoPage', () => {
     await renderHook();
     await flushEffects();
     expect(latest?.rows[0]?.lastActivityLabel).toBe('Завантаження…');
+    expect(apiMock.getNetworkLastActivity).toHaveBeenCalledWith(
+      { networkIds: firstPage.map((network) => network.id) },
+      expect.any(Object),
+    );
+    expect(apiMock.getNetworkLastActivity).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       await latest?.loadMoreNetworks();
@@ -1430,6 +1435,7 @@ describe('useRerNetworksNeoPage', () => {
         dayjs(firstActivityAt).format('DD.MM.YY HH:mm'),
       ),
     );
+    expect(apiMock.getNetworkLastActivity).toHaveBeenCalledTimes(2);
   });
 
   it('settles first-page activity after pagination starts', async () => {

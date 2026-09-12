@@ -77,8 +77,6 @@ type LoadArgs = {
   setBootstrapLoaded: Dispatch<SetStateAction<boolean>>;
 };
 
-const NETWORK_LAST_ACTIVITY_BATCH_SIZE = 10;
-
 export function createRerNetworksNeoLoadActions(args: LoadArgs) {
   const listIncludesLastActivity = (sortBy: NetworksQuerySnapshot['sorting']) =>
     sortBy[0]?.id === 'lastActivity';
@@ -87,50 +85,47 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
   };
 
   const loadLastActivity = (networkIds: number[], activityGeneration: number) => {
+    const controller = new AbortController();
+    args.activityAbortControllersRef.current.add(controller);
+
     void (async () => {
-      for (let offset = 0; offset < networkIds.length; offset += NETWORK_LAST_ACTIVITY_BATCH_SIZE) {
+      try {
+        const activity = await getNetworkLastActivity(
+          { networkIds },
+          { signal: controller.signal },
+        );
         if (args.activityQueryGenerationRef.current !== activityGeneration) return;
-        const batchIds = networkIds.slice(offset, offset + NETWORK_LAST_ACTIVITY_BATCH_SIZE);
-        const controller = new AbortController();
-        args.activityAbortControllersRef.current.add(controller);
-        try {
-          const activity = await getNetworkLastActivity(
-            { networkIds: batchIds },
-            { signal: controller.signal },
-          );
-          if (args.activityQueryGenerationRef.current !== activityGeneration) return;
-          const activityById = new Map(activity.map((row) => [row.networkId, row.lastActivityAt]));
-          args.setNetworks((current) =>
-            current.map((network) =>
-              activityById.has(network.id)
-                ? { ...network, lastActivityAt: activityById.get(network.id) ?? null }
-                : network,
-            ),
-          );
-          args.setLastActivityLoadStateByNetworkId((current) => {
-            const next = new Map(current);
-            for (const networkId of batchIds) next.set(networkId, 'loaded');
-            return next;
-          });
-        } catch (error) {
-          if (controller.signal.aborted || isAbortError(error)) return;
-          if (isUnauthorizedError(error)) {
-            redirectToLogin();
-            return;
-          }
-          if (args.activityQueryGenerationRef.current !== activityGeneration) return;
-          args.setLastActivityLoadStateByNetworkId((current) => {
-            const next = new Map(current);
-            for (const networkId of batchIds) next.set(networkId, 'error');
-            return next;
-          });
-          args.setStatus({
-            kind: 'error',
-            text: `Помилка завантаження останньої активності: ${formatErrorMessage(error)}`,
-          });
-        } finally {
-          args.activityAbortControllersRef.current.delete(controller);
+        const activityById = new Map(activity.map((row) => [row.networkId, row.lastActivityAt]));
+        args.setNetworks((current) =>
+          current.map((network) =>
+            activityById.has(network.id)
+              ? { ...network, lastActivityAt: activityById.get(network.id) ?? null }
+              : network,
+          ),
+        );
+        args.setLastActivityLoadStateByNetworkId((current) => {
+          const next = new Map(current);
+          for (const networkId of networkIds) next.set(networkId, 'loaded');
+          return next;
+        });
+      } catch (error) {
+        if (controller.signal.aborted || isAbortError(error)) return;
+        if (isUnauthorizedError(error)) {
+          redirectToLogin();
+          return;
         }
+        if (args.activityQueryGenerationRef.current !== activityGeneration) return;
+        args.setLastActivityLoadStateByNetworkId((current) => {
+          const next = new Map(current);
+          for (const networkId of networkIds) next.set(networkId, 'error');
+          return next;
+        });
+        args.setStatus({
+          kind: 'error',
+          text: `Помилка завантаження останньої активності: ${formatErrorMessage(error)}`,
+        });
+      } finally {
+        args.activityAbortControllersRef.current.delete(controller);
       }
     })();
   };
