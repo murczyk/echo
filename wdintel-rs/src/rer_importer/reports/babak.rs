@@ -1360,6 +1360,10 @@ async fn load_babak_candidate_page(
     query = filter_denied_senders(query, &req.denied_senders)?;
     query = filter_selected_freqs(query, &req.selected_freqs)?;
     query = filter_selected_posts(query, &req.selected_posts)?;
+    query = filter_selected_device_names(query, &req.selected_device_names)
+        .c(h!())?;
+    query =
+        filter_denied_device_names(query, &req.denied_device_names).c(h!())?;
     query = filter_denied_freqs(query, &req.denied_freqs)?;
     query = filter_selected_callsigns(query, &req.selected_callsigns)?;
     query = match scope {
@@ -2408,7 +2412,13 @@ mod tests {
             collect_babak_report_data(&login.id, &env, &report_preview_req)
                 .await
                 .unwrap();
-        assert_eq!(res.units.iter().map(|row| row.count).sum::<i64>(), 4);
+        assert_eq!(
+            res.units
+                .iter()
+                .find(|row| row.unit.as_deref() == Some("ECHO-3461 test unit"))
+                .map(|row| row.count),
+            Some(4)
+        );
         set_report_chunking_hours(&env.dbx, 24).await;
         let chunked_res =
             collect_babak_report_data(&login.id, &env, &report_preview_req)

@@ -99,4 +99,16 @@ describe('FeedFilterDeviceNamesSection', () => {
       excludeValues: [],
     });
   });
+
+  it('ECHO-3461 searches with an empty query after receiving cleared input', async () => {
+    await render();
+    const props = sectionSpy.mock.calls.at(-1)?.[0] as {
+      onInputChange: (value: string) => void;
+    };
+    await act(async () => props.onInputChange('device'));
+    await act(async () => vi.advanceTimersByTimeAsync(250));
+    await act(async () => props.onInputChange(''));
+    await act(async () => vi.advanceTimersByTimeAsync(250));
+    expect(searchDeviceNames).toHaveBeenLastCalledWith('', expect.any(Object));
+  });
 });

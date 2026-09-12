@@ -11,6 +11,7 @@ use crate::event_stream::fanout_mult;
 use crate::event_stream::types::{EventMsg, EventType};
 use crate::rer_importer::analysis::{
     analytics_inbox_candidates_supported, analytics_inbox_request_supported,
+    filter_denied_device_names, filter_selected_device_names,
     map_postgres_runtime_timeout, with_analytics_read_fallback,
 };
 use crate::rer_importer::inbox::bl::*;
@@ -991,6 +992,11 @@ pub(crate) async fn messages_by_id_bl(
                 .add(owner_access),
         )
         .filter(signal_message::Column::Id.eq_any(message_ids.to_vec()));
+    messages =
+        filter_selected_device_names(messages, &req.selected_device_names)
+            .c(h!())?;
+    messages = filter_denied_device_names(messages, &req.denied_device_names)
+        .c(h!())?;
     let owner_organism_id =
         crate::tags::query::current_user_organism_id(&env.dbx, login)
             .await

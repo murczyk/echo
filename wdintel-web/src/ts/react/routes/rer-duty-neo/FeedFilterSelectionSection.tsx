@@ -146,6 +146,13 @@ export function FeedFilterSelectionSection<T>({
   );
   const [inputValue, setInputValue] = useState('');
   const applyResetAfterSelectionRef = useRef(false);
+  const lastNotifiedInputValueRef = useRef<string | undefined>(undefined);
+  const updateInputValue = (nextValue: string) => {
+    setInputValue(nextValue);
+    if (lastNotifiedInputValueRef.current === nextValue) return;
+    lastNotifiedInputValueRef.current = nextValue;
+    onInputChange?.(nextValue);
+  };
   const filterOptions = useMemo(() => {
     if (rankedFilterOptions == null) return undefined;
     if (!shouldPreserveInput) return rankedFilterOptions;
@@ -183,7 +190,7 @@ export function FeedFilterSelectionSection<T>({
           onChange={(_, nextValue, reason) => {
             applyResetAfterSelectionRef.current = reason === 'selectOption';
             if (reason === 'selectOption' && shouldKeepOpen && !shouldPreserveInput) {
-              setInputValue('');
+              updateInputValue('');
             }
             onValueChange(nextValue);
           }}
@@ -210,21 +217,20 @@ export function FeedFilterSelectionSection<T>({
                     if (applyResetAfterSelectionRef.current) {
                       applyResetAfterSelectionRef.current = false;
                       if (!shouldPreserveInput) {
-                        setInputValue(nextValue);
+                        updateInputValue(nextValue);
                       }
                     }
                     return;
                   }
 
-                  setInputValue(nextValue);
-                  onInputChange?.(nextValue);
+                  updateInputValue(nextValue);
                 }
               : undefined
           }
           disableCloseOnSelect={shouldKeepOpen}
           onClose={() => {
             if (shouldKeepOpen) {
-              setInputValue('');
+              updateInputValue('');
             }
           }}
           loading={loading}

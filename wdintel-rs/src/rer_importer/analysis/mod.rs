@@ -3048,7 +3048,7 @@ pub async fn rer_duty_filters_create(
     req: Json<RerDutyShortStateCreateReq>,
 ) -> Result<Json<RerDutyShortStateCreateRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     if rer_duty_state_has_device_names(&req.state) {
         crate::devices::access::require_message_devices(&env.dbx, &login)
             .await
@@ -3073,7 +3073,7 @@ pub async fn rer_duty_filters_get(
     req: Json<RerDutyShortStateGetReq>,
 ) -> Result<Json<RerDutyShortStateGetRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     let req = req.into_inner();
     let mut redis = env.redis.clone();
     let mut payload =
@@ -3407,7 +3407,7 @@ pub async fn summary_table_freq_1(
         get_identity_sigint_groups_noimport(&env.dbx, user, &env.config)
             .await
             .c(h!())?;
-    let login = login_id_from_identity(user)?;
+    let login = login_id_from_identity(user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, req)
         .await
         .c(h!())?;
@@ -5088,7 +5088,7 @@ async fn launch_analysis_export_task(
     content_type: Option<String>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;
@@ -5155,7 +5155,7 @@ async fn correlated_freqs(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<CorrelatedFreqsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;
@@ -5524,7 +5524,7 @@ pub async fn edit_freq_unit_name(
     req: Json<EditFreqUnitNameReq>,
 ) -> Result<Json<()>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(
         &env.dbx,
         &login,
@@ -5598,7 +5598,7 @@ pub async fn edit_freq_unit_name(
         &None,
         &req.filter_tags_option,
         &reqan.without_model_tags,
-        &login_id_from_identity(&user)?,
+        &login,
         req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     let rows_res = filter_selected_networks(
@@ -5723,7 +5723,7 @@ pub async fn saved_filters_list(
 ) -> Result<Json<Vec<SavedFilter>>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
 
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     let can_use_message_devices =
         crate::devices::access::require_message_devices(&env.dbx, &login)
             .await
@@ -5757,7 +5757,7 @@ pub async fn saved_filters_duty_list(
 ) -> Result<Json<Vec<SavedFilterDuty>>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
 
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     let can_use_message_devices =
         crate::devices::access::require_message_devices(&env.dbx, &login)
             .await
@@ -5794,7 +5794,7 @@ pub async fn saved_filter_upsert(
     req: Json<SavedFilterUpsertReq>,
 ) -> Result<Json<Vec<SavedFilter>>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req.req)
         .await
         .c(h!())?;
@@ -5827,7 +5827,7 @@ pub async fn saved_filter_duty_upsert(
     req: Json<SavedFilterDutyUpsertReq>,
 ) -> Result<Json<Vec<SavedFilterDuty>>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     if rer_duty_filter_has_device_names(&req.req) {
         crate::devices::access::require_message_devices(&env.dbx, &login)
             .await
@@ -5953,11 +5953,11 @@ pub async fn new_callsigns(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<NewCallsignsRes>, AppError> {
-    let user_id = &login_id_from_identity(&user)?;
-    require_analysis_device_filter_access(&env.dbx, user_id, &req)
+    let user_id = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &user_id, &req)
         .await
         .c(h!())?;
-    let res = bi_new_callsigns(user_id, &env, &req.into_inner())
+    let res = bi_new_callsigns(&user_id, &env, &req.into_inner())
         .await
         .context(h!())?;
 
@@ -6736,7 +6736,7 @@ pub async fn batch_message_comments(
     req: Json<BatchMessageCommentsReq>,
 ) -> Result<Json<MessageComments>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     let message_ids: Vec<i64> =
         req.messages.iter().map(|m| m.message_id).collect();
     let comments = batch_message_comments_bl(&env.dbx, &login, &message_ids)
@@ -6992,7 +6992,7 @@ pub async fn message_comments(
     req: Json<MessageCommentsReq>,
 ) -> Result<Json<Vec<MessageComment>>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     let accessible_message_ids =
         accessible_message_ids(&env.dbx, &login, &[req.message_id])
             .await
@@ -7048,7 +7048,7 @@ pub async fn message_draft_events(
     req: Json<DraftCommentEventsReq>,
 ) -> Result<HttpResponse, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
 
     let server_ts_ms = chrono::Utc::now().timestamp_millis();
     for event in req.events.iter() {
@@ -7085,7 +7085,7 @@ pub async fn activity_daily(
 ) -> Result<Json<crate::sigint::freq::types::FreqDailyActivityCount>, AppError>
 {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;
@@ -7168,7 +7168,7 @@ pub async fn callsign_relations(
     AppError,
 > {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;
@@ -7270,13 +7270,10 @@ pub async fn callsign_frequency_matches(
     req: Json<AnalysisCallsignFrequencyMatchesReq>,
 ) -> Result<Json<AnalysisCallsignFrequencyMatchesRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    require_analysis_device_filter_access(
-        &env.dbx,
-        &login_id_from_identity(&user)?,
-        &req.req,
-    )
-    .await
-    .c(h!())?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req.req)
+        .await
+        .c(h!())?;
     let selected_callsign_count = req
         .callsigns
         .iter()
@@ -7361,10 +7358,8 @@ async fn group_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<GroupStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let is_admin = has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
-        .await
-        .is_ok();
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    let is_admin = has_role(&env.dbx, &login, "Admin").await.is_ok();
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;
@@ -7527,7 +7522,7 @@ async fn sender_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<SenderStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;
@@ -7590,7 +7585,7 @@ async fn post_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<PostStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;
@@ -7653,13 +7648,10 @@ async fn freq_stats(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<FreqStatsRsp>, AppError> {
-    has_any_role(
-        &env.dbx,
-        &login_id_from_identity(&user)?,
-        vec!["Rer", "Api"],
-    )
-    .await?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    has_any_role(&env.dbx, &login, vec!["Rer", "Api"])
+        .await
+        .c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;
@@ -7718,7 +7710,7 @@ async fn callsign_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<CallsignStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;
@@ -7782,7 +7774,7 @@ async fn metadata_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<MetadataStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;
@@ -7846,7 +7838,7 @@ async fn tag_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<TagStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;
@@ -7913,7 +7905,7 @@ async fn unit_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<UnitStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;
@@ -7975,7 +7967,7 @@ async fn location_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<LocationStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;
@@ -8055,7 +8047,7 @@ async fn aor_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<AreaOfResponsibilityStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;
@@ -8162,7 +8154,7 @@ async fn network_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<NetworkStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;
@@ -8284,7 +8276,7 @@ async fn count_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<CountStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;
@@ -9313,13 +9305,10 @@ async fn group_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    require_analysis_device_filter_access(
-        &env.dbx,
-        &login_id_from_identity(&user)?,
-        &req,
-    )
-    .await
-    .c(h!())?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys_noimport =
         get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
             .await
@@ -9381,14 +9370,10 @@ async fn sender_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    require_analysis_device_filter_access(
-        &env.dbx,
-        &login_id_from_identity(&user)?,
-        &req,
-    )
-    .await
-    .c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys: Vec<String> = get_identity_sigint_groups(&env.dbx, &login)
         .await
         .context(h!())?;
@@ -9449,14 +9434,10 @@ async fn post_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    require_analysis_device_filter_access(
-        &env.dbx,
-        &login_id_from_identity(&user)?,
-        &req,
-    )
-    .await
-    .c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -9517,13 +9498,10 @@ async fn freq_stats_count(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
-    has_any_role(
-        &env.dbx,
-        &login_id_from_identity(&user)?,
-        vec!["Rer", "Api"],
-    )
-    .await?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    has_any_role(&env.dbx, &login, vec!["Rer", "Api"])
+        .await
+        .c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;
@@ -9589,14 +9567,10 @@ async fn callsign_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    require_analysis_device_filter_access(
-        &env.dbx,
-        &login_id_from_identity(&user)?,
-        &req,
-    )
-    .await
-    .c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -9658,14 +9632,10 @@ async fn tag_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    require_analysis_device_filter_access(
-        &env.dbx,
-        &login_id_from_identity(&user)?,
-        &req,
-    )
-    .await
-    .c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -9729,14 +9699,10 @@ async fn unit_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    require_analysis_device_filter_access(
-        &env.dbx,
-        &login_id_from_identity(&user)?,
-        &req,
-    )
-    .await
-    .c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -9795,14 +9761,10 @@ async fn location_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    require_analysis_device_filter_access(
-        &env.dbx,
-        &login_id_from_identity(&user)?,
-        &req,
-    )
-    .await
-    .c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -9878,14 +9840,10 @@ async fn aor_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    require_analysis_device_filter_access(
-        &env.dbx,
-        &login_id_from_identity(&user)?,
-        &req,
-    )
-    .await
-    .c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -9960,14 +9918,10 @@ async fn network_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    require_analysis_device_filter_access(
-        &env.dbx,
-        &login_id_from_identity(&user)?,
-        &req,
-    )
-    .await
-    .c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -10034,7 +9988,7 @@ async fn stats_deprecated(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<AnalysisStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;

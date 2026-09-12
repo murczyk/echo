@@ -19,7 +19,7 @@ pub async fn device_name_create(
     req: Json<CreateDeviceNameReq>,
 ) -> Result<Json<CreateDeviceNameRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     crate::devices::access::require_message_devices(&env.dbx, &login)
         .await
         .c(h!())?;
@@ -38,7 +38,7 @@ pub async fn device_name_search(
     req: Json<DeviceNameSearchReq>,
 ) -> Result<Json<DeviceNameSearchRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     crate::devices::access::require_message_devices(&env.dbx, &login)
         .await
         .c(h!())?;

@@ -81,7 +81,6 @@ hasRole role user =
 canReadDevices : User -> Bool
 canReadDevices user =
     hasRole "Cyber" user
-        || hasRole "DeviceSource" user
 
 
 serverModeIs : String -> Maybe B.ServerInfo -> Bool
