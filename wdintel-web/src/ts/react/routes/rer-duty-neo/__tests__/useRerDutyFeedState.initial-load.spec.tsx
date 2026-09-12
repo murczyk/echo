@@ -561,6 +561,53 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(interceptionFeed.unresolvedUnreadIds).toEqual(new Set<number>([99]));
   });
 
+  it('preserves buffered unread messages when reloading for a sort-mode change', async () => {
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () =>
+      root.render(<TestHarness apiRef={apiRef} messageSortBy="IMSTimestamp" />),
+    );
+    await act(async () => flushMicrotasks());
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) => ({
+          ...feed,
+          items: [[2, minimalInboxMessage({ timestamp: 2_000, createdAt: 1_000 })]],
+          pendingNewerItems: [[3, minimalInboxMessage({ timestamp: 1_000, createdAt: 2_000 })]],
+          unreadCount: 2,
+        })),
+      );
+    });
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp([
+        [2, minimalInboxMessage({ timestamp: 2_000, createdAt: 1_000, createdAtOrder: 1_000_000 })],
+        [3, minimalInboxMessage({ timestamp: 1_000, createdAt: 2_000, createdAtOrder: 2_000_000 })],
+      ]),
+    );
+
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} messageSortBy="IMSCreatedAt" />);
+    });
+    await act(async () => apiRef.current?.reloadFeedsPreservingUnread());
+    await act(async () => flushMicrotasks());
+
+    const feed = apiRef.current!.messageFeeds[0];
+    expect(feed.messageSortBy).toBe('IMSCreatedAt');
+    expect(feed.items.map(([id]) => id)).toEqual([2, 3]);
+    expect(feed.pendingNewerItems).toEqual([]);
+    expect(feed.windowedUnreadItems).toEqual(
+      new Map([
+        [2, 1_000_000],
+        [3, 2_000_000],
+      ]),
+    );
+    expect(feed.unresolvedUnreadIds).toEqual(new Set<number>());
+    expect(feed.unresolvedUnreadCount).toBe(0);
+    expect(feed.unreadCount).toBe(2);
+  });
+
   it('uses creation-order cursors for an initial saved creation preference', async () => {
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
       inboxRsp([

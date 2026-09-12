@@ -97,6 +97,7 @@ function preserveUnreadState(
     ...feed.windowedUnreadItems.keys(),
     ...(feed.unresolvedUnreadIds ?? []),
     ...feed.items.filter(([id]) => !feed.readIds.has(id)).map(([id]) => id),
+    ...(feed.pendingNewerItems ?? []).filter(([id]) => !feed.readIds.has(id)).map(([id]) => id),
   ]);
   const unresolvedUnreadIds = new Set([...knownUnreadIds].filter((id) => !itemIds.has(id)));
   const unresolvedUnreadCount = Math.max(

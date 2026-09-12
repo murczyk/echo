@@ -5643,11 +5643,16 @@ pub async fn edit_freq_unit_name(
             datasource_group::Column::GroupMasterKey
                 .eq_any(sigint_groups.clone()),
         )
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        .filter(sigint_inbox_item::Column::Freq.eq(req.freq.clone()))
-        .filter(sigint_inbox_item::Column::UnitV2.eq(req.unit.clone()));
+        .filter(signal_message::Column::Deleted.eq(false));
+    let rows_res = filter_analysis_message_time_basis(
+        rows_res,
+        reqan.message_time_basis,
+        dt_since,
+        dt_till,
+        ReportPeriodEnd::NonInclusive,
+    )
+    .filter(sigint_inbox_item::Column::Freq.eq(req.freq.clone()))
+    .filter(sigint_inbox_item::Column::UnitV2.eq(req.unit.clone()));
     let rows_res = filter_selected_freqs(rows_res, &reqan.selected_freqs)?;
     let rows_res = filter_selected_posts(rows_res, &reqan.selected_posts)?;
     let rows_res = filter_selected_groups_and_senders_with_access(
