@@ -7293,6 +7293,9 @@ pub async fn callsign_frequency_matches(
     req: Json<AnalysisCallsignFrequencyMatchesReq>,
 ) -> Result<Json<AnalysisCallsignFrequencyMatchesRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_analysis_message_time_basis_access(&env, &user, &req.req)
+        .await
+        .context(h!())?;
     let selected_callsign_count = req
         .callsigns
         .iter()
