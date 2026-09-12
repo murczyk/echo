@@ -52,6 +52,76 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(apiRef.current?.messageFeeds[0]?.loading).toBe(false);
   });
 
+  it.each([
+    { status: 'loading' } as const,
+    { status: 'error', message: 'access lookup failed' } as const,
+  ])(
+    'preserves device filters without an unfiltered initial request while access is $status',
+    async (deviceAccess) => {
+      window.history.replaceState(
+        {},
+        '',
+        `/?state=${encodeURIComponent(JSON.stringify({ messageFeeds: [['mf-0', { ...emptyFilter(), selectedDeviceNames: ['selected'], deniedDeviceNames: ['denied'] }]] }))}`,
+      );
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+        current: null,
+      };
+      await act(async () => {
+        root.render(<TestHarness apiRef={apiRef} deviceAccess={deviceAccess} />);
+        await flushMicrotasks();
+      });
+      expect(apiRef.current?.messageFeeds[0]?.filter).toMatchObject({
+        selectedDeviceNames: ['selected'],
+        deniedDeviceNames: ['denied'],
+      });
+      expect(window.location.search).toContain('selected');
+      expect(hoisted.fetchInboxMessages).not.toHaveBeenCalled();
+    },
+  );
+
+  it('uses device filters after confirmed authorization and removes them only after confirmed denial', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      `/?state=${encodeURIComponent(JSON.stringify({ messageFeeds: [['mf-0', { ...emptyFilter(), selectedDeviceNames: ['selected'], deniedDeviceNames: ['denied'] }]] }))}`,
+    );
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} deviceAccess={{ status: 'allowed' }} />);
+      await flushMicrotasks();
+    });
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(1);
+    expect(hoisted.fetchInboxMessages).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ selectedDeviceNames: ['selected'], deniedDeviceNames: ['denied'] }),
+    );
+    expect(apiRef.current?.messageFeeds[0]?.filter).toMatchObject({
+      selectedDeviceNames: ['selected'],
+      deniedDeviceNames: ['denied'],
+    });
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} deviceAccess={{ status: 'denied' }} />);
+      await flushMicrotasks();
+    });
+    expect(apiRef.current?.messageFeeds[0]?.filter.selectedDeviceNames).toBeNull();
+    const state = JSON.parse(
+      decodeURIComponent(new URL(window.location.href).searchParams.get('state') ?? ''),
+    );
+    expect(state.messageFeeds[0][1]).toMatchObject({
+      selectedDeviceNames: null,
+      deniedDeviceNames: null,
+    });
+    hoisted.fetchInboxMessages.mockClear();
+    await act(async () => {
+      await apiRef.current!.loadFeedInitialMessages('mf-0');
+    });
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledWith(
+      expect.objectContaining({ selectedDeviceNames: null, deniedDeviceNames: null }),
+    );
+  });
+
   it('notifies once when the first count after a successful load finds new mail', async () => {
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
       inboxRsp([[7, minimalInboxMessage({ timestamp: 700 })]], 7),

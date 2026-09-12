@@ -17,7 +17,7 @@ import { canUseMessageDevices } from '../../utils/roles';
 export type RerDutyPageSettings = {
   currentUser: User | null;
   cyberEchoEnabled: boolean;
-  deviceAccess: { resolved: boolean; allowed: boolean };
+  deviceAccess: DeviceAccess;
   tagsLayout: TagsLayoutVariant;
   audioTranscriptionCollapsed: boolean;
   audioTranscriptionEnabled: boolean;
@@ -26,12 +26,23 @@ export type RerDutyPageSettings = {
   messageTextPreviewLines: MessageTextPreviewLineLimit;
 };
 
+export type DeviceAccess =
+  | { status: 'loading' }
+  | { status: 'allowed' }
+  | { status: 'denied' }
+  | { status: 'error'; message: string };
+
 /** User preferences, system settings, and the auth user behind the Duty page chrome. */
 export function useRerDutyPageSettings(): RerDutyPageSettings {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [currentUserLoaded, setCurrentUserLoaded] = useState(false);
+  const [currentUserStatus, setCurrentUserStatus] = useState<'loading' | 'success' | 'error'>(
+    'loading',
+  );
   const [devicesSectionEnabled, setDevicesSectionEnabled] = useState(false);
-  const [devicesSettingsLoaded, setDevicesSettingsLoaded] = useState(false);
+  const [devicesSettingsStatus, setDevicesSettingsStatus] = useState<
+    'loading' | 'success' | 'error'
+  >('loading');
+  const [deviceAccessError, setDeviceAccessError] = useState<string | null>(null);
   const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
   const [audioTranscriptionCollapsed, setAudioTranscriptionCollapsed] = useState(false);
   const [audioTranscriptionEnabled, setAudioTranscriptionEnabled] = useState(false);
@@ -116,14 +127,14 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         if (abortController.signal.aborted) return;
         setDevicesSectionEnabled(settings.devicesSectionEnabled);
         setAudioTranscriptionEnabled(settings.enableAudioTranscription ?? false);
+        setDevicesSettingsStatus('success');
       })
-      .catch(() => {
+      .catch((error) => {
         if (abortController.signal.aborted) return;
         setDevicesSectionEnabled(false);
         setAudioTranscriptionEnabled(false);
-      })
-      .finally(() => {
-        if (!abortController.signal.aborted) setDevicesSettingsLoaded(true);
+        setDevicesSettingsStatus('error');
+        setDeviceAccessError(error instanceof Error ? error.message : String(error));
       });
 
     return () => {
@@ -138,13 +149,13 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
       .then((user) => {
         if (abortController.signal.aborted) return;
         setCurrentUser(user);
+        setCurrentUserStatus('success');
       })
-      .catch(() => {
+      .catch((error) => {
         if (abortController.signal.aborted) return;
         setCurrentUser(null);
-      })
-      .finally(() => {
-        if (!abortController.signal.aborted) setCurrentUserLoaded(true);
+        setCurrentUserStatus('error');
+        setDeviceAccessError(error instanceof Error ? error.message : String(error));
       });
 
     return () => {
@@ -152,13 +163,21 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
     };
   }, []);
 
+  const deviceAccess: DeviceAccess =
+    currentUserStatus === 'error' || devicesSettingsStatus === 'error'
+      ? {
+          status: 'error',
+          message: deviceAccessError ?? 'Не вдалося перевірити доступ до пристроїв.',
+        }
+      : currentUserStatus === 'loading' || devicesSettingsStatus === 'loading'
+        ? { status: 'loading' }
+        : canUseMessageDevices(currentUser?.roles, devicesSectionEnabled)
+          ? { status: 'allowed' }
+          : { status: 'denied' };
   return {
     currentUser,
     cyberEchoEnabled: canUseMessageDevices(currentUser?.roles, devicesSectionEnabled),
-    deviceAccess: {
-      resolved: currentUserLoaded && devicesSettingsLoaded,
-      allowed: canUseMessageDevices(currentUser?.roles, devicesSectionEnabled),
-    },
+    deviceAccess,
     tagsLayout,
     audioTranscriptionCollapsed,
     audioTranscriptionEnabled,

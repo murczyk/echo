@@ -15,6 +15,7 @@ const userSettingsMock = vi.hoisted(() => ({
 const systemSettingsMock = vi.hoisted(() => ({
   currentSystemSettings: vi.fn(),
 }));
+const currentUserMock = vi.hoisted(() => ({ fetchCurrentUser: vi.fn() }));
 const inboxMessagesMock = vi.hoisted(() => ({
   fetchInboxWindow: vi.fn(),
 }));
@@ -29,6 +30,15 @@ const mediaQueryMock = vi.hoisted(() => ({
 
 let analysisFreqValues = ['111.1'];
 let currentAnalysisData: ReturnType<typeof buildAnalysisData> | null = null;
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
 
 vi.mock('@mui/material', () => ({
   useMediaQuery: mediaQueryMock.useMediaQuery,
@@ -43,7 +53,7 @@ vi.mock('../../../services/api/client', () => ({
 }));
 
 vi.mock('../../../services/api/user', () => ({
-  fetchCurrentUser: vi.fn().mockResolvedValue({ name: 'tester' } as User),
+  fetchCurrentUser: currentUserMock.fetchCurrentUser,
 }));
 
 vi.mock('../../../services/api/user-settings', () => ({
@@ -317,6 +327,8 @@ describe('useRerAnalysisNeoPage', () => {
       rerShortUrlEnabled: false,
       enableAudioTranscription: true,
     });
+    currentUserMock.fetchCurrentUser.mockReset();
+    currentUserMock.fetchCurrentUser.mockResolvedValue({ name: 'tester' } as User);
     inboxMessagesMock.fetchInboxWindow.mockReset();
     inboxMessagesMock.fetchInboxWindow.mockResolvedValue(null);
 
@@ -386,6 +398,90 @@ describe('useRerAnalysisNeoPage', () => {
 
     expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].queryState.deviceNamesSelected).toEqual([]);
     expect(latest?.queryState.deviceNamesSelected).toEqual([]);
+  });
+
+  it('ECHO-3461 preserves a device-filtered URL and defers loading while access is pending or fails', async () => {
+    const settingsRequest =
+      deferred<Awaited<ReturnType<typeof systemSettingsMock.currentSystemSettings>>>();
+    systemSettingsMock.currentSystemSettings.mockReturnValueOnce(settingsRequest.promise);
+    window.history.replaceState({}, '', `${window.location.pathname}?deviceNames=device-1`);
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.queryState.deviceNamesSelected).toEqual(['device-1']);
+    expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      queryState: { deviceNamesSelected: ['device-1'] },
+      deferInitialLoad: true,
+    });
+    expect(window.location.search).toContain('device-1');
+
+    await act(async () => {
+      settingsRequest.reject(new Error('settings failed'));
+      await Promise.resolve();
+    });
+    await flushEffects();
+    expect(latest?.queryState.deviceNamesSelected).toEqual(['device-1']);
+    expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      queryState: { deviceNamesSelected: ['device-1'] },
+      deferInitialLoad: true,
+    });
+    expect(latest?.error).not.toBeNull();
+    expect(window.location.search).toContain('device-1');
+  });
+
+  it('ECHO-3461 preserves device filters when the current-user lookup fails', async () => {
+    currentUserMock.fetchCurrentUser.mockRejectedValueOnce(new Error('user failed'));
+    window.history.replaceState({}, '', `${window.location.pathname}?deviceNames=device-1`);
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.queryState.deviceNamesSelected).toEqual(['device-1']);
+    expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      queryState: { deviceNamesSelected: ['device-1'] },
+      deferInitialLoad: true,
+    });
+    expect(latest?.error).not.toBeNull();
+    expect(window.location.search).toContain('device-1');
+  });
+
+  it('ECHO-3461 defers a filtered query while the current-user lookup is pending', async () => {
+    let resolveUser: (user: User) => void = () => {};
+    currentUserMock.fetchCurrentUser.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveUser = resolve;
+        }),
+    );
+    systemSettingsMock.currentSystemSettings.mockResolvedValueOnce({
+      id: 7,
+      rerAnalysisUnitsExactMatchOnlyDefault: false,
+      rerDutyTestEnabled: false,
+      rerDutyInsertHistoricalInterceptions: false,
+      rerDutyTestSinceMs: 0,
+      rerDutyTestLimit: 1,
+      rerDutyPollIntervalSec: 1,
+      rerShortUrlEnabled: false,
+      enableAudioTranscription: true,
+      devicesSectionEnabled: true,
+    });
+    window.history.replaceState({}, '', `${window.location.pathname}?deviceNames=device-1`);
+    renderHook();
+    await flushEffects();
+    expect(latest?.queryState.deviceNamesSelected).toEqual(['device-1']);
+    expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      queryState: { deviceNamesSelected: ['device-1'] },
+      deferInitialLoad: true,
+    });
+    expect(window.location.search).toContain('device-1');
+    await act(async () => {
+      resolveUser({ roles: ['Cyber'] } as User);
+      await Promise.resolve();
+    });
+    await flushEffects();
+    expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      deferInitialLoad: false,
+      queryState: { deviceNamesSelected: ['device-1'] },
+    });
   });
 
   it('closes and reopens the narrow right panel without losing its selected tab', async () => {

@@ -16,6 +16,7 @@ import { collectUniqueCallsignsFromMessages, MAX_MESSAGE_FEEDS, stableStringify 
 import { useDutySettings } from '../../hooks/use-duty-settings';
 import { useInboxChangedMessageIds } from '../shared/useInboxChangedMessageIds';
 import { hasResolvedDutyCallsignInfo } from './useRerDutyCallsignInfo';
+import type { DeviceAccess } from './useRerDutyPageSettings';
 
 const CALLSIGN_LOOKUP_RETRY_BACKOFF_MS = 30_000;
 
@@ -140,7 +141,7 @@ function mergePostsFromMessages(
 export function useRerDutyFeeds(
   authUserName: string | null,
   currentUserOrganismId: number | null = null,
-  deviceAccess: { resolved: boolean; allowed: boolean } = { resolved: false, allowed: false },
+  deviceAccess: DeviceAccess = { status: 'loading' },
 ) {
   const [keywordSets, setKeywordSets] = useState<OrganismKeywordSetDto[]>([]);
   const reloadKeywordSets = useCallback(async () => {
@@ -174,6 +175,9 @@ export function useRerDutyFeeds(
     onFeedRemoved: filterOpts.pruneSavedFilterUiState,
   });
   const setFeedError = feedState.setError;
+  useEffect(() => {
+    if (deviceAccess.status === 'error') setFeedError(deviceAccess.message);
+  }, [deviceAccess, setFeedError]);
   useEffect(() => {
     let cancelled = false;
     fetchOrganismKeywordSets()

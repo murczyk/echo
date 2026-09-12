@@ -8,6 +8,7 @@ import { expect, vi } from 'vitest';
 import type { InboxMessage, InboxMessagesRsp } from '../../../../Bindings';
 import { minimalInboxMessage } from './inbox-message-mocks';
 import { useRerDutyFeedState } from './useRerDutyFeedState';
+import type { DeviceAccess } from './useRerDutyPageSettings';
 
 const dutyApiMocks = vi.hoisted(() => ({
   fetchInboxMessages: vi.fn(),
@@ -104,6 +105,7 @@ export function DutyFeedStateHarness(props: {
   freqs?: string[];
   setProfiles?: Parameters<typeof useRerDutyFeedState>[0]['setProfiles'];
   setGroupInfos?: Parameters<typeof useRerDutyFeedState>[0]['setGroupInfos'];
+  deviceAccess?: DeviceAccess;
 }) {
   const api = useRerDutyFeedState({
     freqs: props.freqs ?? [],
@@ -114,7 +116,7 @@ export function DutyFeedStateHarness(props: {
     testLimit: 1,
     pollIntervalSec: 1,
     disableAutoScroll: props.disableAutoScroll ?? false,
-    deviceAccess: { resolved: true, allowed: true },
+    deviceAccess: props.deviceAccess ?? { status: 'allowed' },
   });
   props.apiRef.current = new Proxy(api, {
     get(target, property, receiver) {
