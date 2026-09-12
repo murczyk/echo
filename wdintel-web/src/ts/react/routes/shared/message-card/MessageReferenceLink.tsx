@@ -30,11 +30,18 @@ const MESSAGE_REFERENCE_ERROR_RESOLUTION_TTL_MS = 1_000;
 const MESSAGE_REFERENCE_PROGRESS_DELAY_MS = 200;
 const MESSAGE_REFERENCE_REQUEST_TIMEOUT_MS = 10_000;
 
+enum MessageReferenceResolutionKind {
+  Available = 'available',
+  Unavailable = 'unavailable',
+  Error = 'error',
+  Abandoned = 'abandoned',
+}
+
 type MessageReferenceResolution =
-  | { kind: 'available' }
-  | { kind: 'unavailable' }
-  | { kind: 'error'; error: unknown }
-  | { kind: 'abandoned' };
+  | { kind: MessageReferenceResolutionKind.Available }
+  | { kind: MessageReferenceResolutionKind.Unavailable }
+  | { kind: MessageReferenceResolutionKind.Error; error: unknown }
+  | { kind: MessageReferenceResolutionKind.Abandoned };
 
 type CachedMessageReferenceResolution = {
   resolution: MessageReferenceResolution;
@@ -127,34 +134,41 @@ export function MessageReferenceLink({
       { signal: abortController.signal },
     )
       .then((response): MessageReferenceResolution => {
-        if (requestGenerationRef.current !== requestGeneration) return { kind: 'abandoned' };
+        if (requestGenerationRef.current !== requestGeneration) {
+          return { kind: MessageReferenceResolutionKind.Abandoned };
+        }
         if (response.message == null) {
           setUnavailable(true);
-          return { kind: 'unavailable' };
+          return { kind: MessageReferenceResolutionKind.Unavailable };
         }
         setUnavailable(false);
         setSummary(summarizeIntelligenceMessage(response.message[0], response.message[1]));
-        return { kind: 'available' };
+        return { kind: MessageReferenceResolutionKind.Available };
       })
       .catch((error): MessageReferenceResolution => {
-        if (requestGenerationRef.current !== requestGeneration) return { kind: 'abandoned' };
+        if (requestGenerationRef.current !== requestGeneration) {
+          return { kind: MessageReferenceResolutionKind.Abandoned };
+        }
         setUnavailable(false);
         return {
-          kind: 'error',
+          kind: MessageReferenceResolutionKind.Error,
           error: didTimeOut
             ? new Error('Перевірка доступності повідомлення тривала надто довго.')
             : error,
         };
       })
       .then((result): MessageReferenceResolution => {
-        if (result.kind === 'abandoned' || requestGenerationRef.current !== requestGeneration) {
-          return { kind: 'abandoned' };
+        if (
+          result.kind === MessageReferenceResolutionKind.Abandoned ||
+          requestGenerationRef.current !== requestGeneration
+        ) {
+          return { kind: MessageReferenceResolutionKind.Abandoned };
         }
         cachedResolutionRef.current = {
           resolution: result,
           expiresAt:
             Date.now() +
-            (result.kind === 'error'
+            (result.kind === MessageReferenceResolutionKind.Error
               ? MESSAGE_REFERENCE_ERROR_RESOLUTION_TTL_MS
               : MESSAGE_REFERENCE_RESOLUTION_TTL_MS),
         };
@@ -175,7 +189,7 @@ export function MessageReferenceLink({
 
   const loadSummary = async () => {
     const resolution = await resolveMessageReference();
-    if (resolution.kind === 'error' && !clickCheckPendingRef.current) {
+    if (resolution.kind === MessageReferenceResolutionKind.Error && !clickCheckPendingRef.current) {
       notify({
         severity: 'error',
         message:
@@ -184,7 +198,10 @@ export function MessageReferenceLink({
             : 'Не вдалося завантажити попередній перегляд повідомлення.',
       });
     }
-    return resolution.kind !== 'error' && resolution.kind !== 'abandoned';
+    return (
+      resolution.kind !== MessageReferenceResolutionKind.Error &&
+      resolution.kind !== MessageReferenceResolutionKind.Abandoned
+    );
   };
 
   const openMessageReferenceWindow = () => {
@@ -199,7 +216,7 @@ export function MessageReferenceLink({
       event.preventDefault();
       return;
     }
-    if (getCachedResolution()?.kind === 'available') return;
+    if (getCachedResolution()?.kind === MessageReferenceResolutionKind.Available) return;
     event.preventDefault();
     const requestGeneration = requestGenerationRef.current;
     clickCheckPendingRef.current = true;
@@ -210,17 +227,20 @@ export function MessageReferenceLink({
 
     try {
       const resolution = await resolveMessageReference();
-      if (resolution.kind === 'abandoned' || requestGenerationRef.current !== requestGeneration) {
+      if (
+        resolution.kind === MessageReferenceResolutionKind.Abandoned ||
+        requestGenerationRef.current !== requestGeneration
+      ) {
         return;
       }
-      if (resolution.kind === 'unavailable') {
+      if (resolution.kind === MessageReferenceResolutionKind.Unavailable) {
         notify({
           severity: 'warning',
           message: 'Повідомлення видалено або у вас немає до нього доступу.',
         });
         return;
       }
-      if (resolution.kind === 'error') {
+      if (resolution.kind === MessageReferenceResolutionKind.Error) {
         notify({
           severity: 'error',
           message: 'Не вдалося перевірити доступність повідомлення. Спробуйте ще раз.',

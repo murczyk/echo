@@ -482,7 +482,7 @@ describe('RerAnalysisNeoPage', () => {
     }
   });
 
-  it('keeps the unavailable direct-link alert visible', async () => {
+  it('shows an unavailable direct-link error in the snackbar once', async () => {
     const page = buildPage();
     page.directMessageError = 'Повідомлення за посиланням не знайдено або воно недоступне.';
     useRerAnalysisNeoPageMock.mockReturnValue(page);
@@ -493,16 +493,15 @@ describe('RerAnalysisNeoPage', () => {
 
     await act(async () => root.render(<RerAnalysisNeoPage />));
 
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      'Повідомлення за посиланням не знайдено або воно недоступне.',
-    );
-    expect(container.querySelector('button[aria-label="Закрити"]')).toBeNull();
+    expect(notifyMock).toHaveBeenCalledWith({
+      severity: 'error',
+      message: 'Повідомлення за посиланням не знайдено або воно недоступне.',
+    });
+    expect(container.querySelector('[role="alert"]')).toBeNull();
 
-    await act(async () => vi.advanceTimersByTime(9000));
+    await act(async () => root.render(<RerAnalysisNeoPage />));
 
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      'Повідомлення за посиланням не знайдено або воно недоступне.',
-    );
+    expect(notifyMock).toHaveBeenCalledTimes(1);
     root.unmount();
   });
 

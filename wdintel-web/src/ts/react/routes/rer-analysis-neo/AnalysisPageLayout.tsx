@@ -1,5 +1,5 @@
 import { Box } from '@mui/material';
-import { useCallback, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
@@ -31,6 +31,10 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   const reportFocusTargetRef = useRef<HTMLElement | null>(null);
   const reportFallbackFocusRef = useRef<HTMLDivElement | null>(null);
   const { notify } = usePowerSnackbar();
+  useEffect(() => {
+    if (!page.directMessageError) return;
+    notify({ severity: 'error', message: page.directMessageError });
+  }, [notify, page.directMessageError]);
   const isAnalysisCompactLayout = useMediaQuery(theme.breakpoints.down('md'));
   const isNarrowLayout = useMediaQuery(theme.breakpoints.down('lg'));
   const centerTabsId = useId().replace(/:/g, '-');
@@ -95,17 +99,6 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
         />
       </Box>
 
-      {page.directMessageError ? (
-        <PowerAlert
-          severity="error"
-          role="alert"
-          autoHideDuration={null}
-          dismissible={false}
-          sx={{ mx: { xs: 1, lg: 2 } }}
-        >
-          {page.directMessageError}
-        </PowerAlert>
-      ) : null}
       {page.error ? (
         <PowerAlert severity="error" role="alert" sx={{ mx: { xs: 1, lg: 2 } }}>
           {page.error}
