@@ -83,6 +83,7 @@ type GroupUpdateReqBody = {
   area_of_responsibility_ids: number[] | null;
   interseption_kind: InterseptionKind | null;
   disable_network_assignment: boolean | null;
+  is_aviation_group: boolean | null;
 };
 
 type AccountStatsTimelinePointLike = {
@@ -284,6 +285,7 @@ function toGroupUpdateReqBody(req: GroupUpdateReq): GroupUpdateReqBody {
     area_of_responsibility_ids: req.areaOfResponsibilityIds ?? null,
     interseption_kind: req.interseptionKind ?? null,
     disable_network_assignment: req.disableNetworkAssignment ?? null,
+    is_aviation_group: req.isAviationGroup ?? null,
   };
 }
 

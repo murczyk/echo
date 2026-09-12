@@ -1,5 +1,14 @@
 {
   "migrations": {
+    "echo:m20260912_084600_signal_group_aviation": {
+      "changes": [
+        {
+          "table": "public.signal_group",
+          "strategy": "replicated_snapshot",
+          "targeted_resnapshot": true
+        }
+      ]
+    },
     "echo:m20260909_145827_network_invalidation_reconciliation_index": {
       "changes": []
     },
