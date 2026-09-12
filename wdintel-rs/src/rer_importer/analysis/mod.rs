@@ -63,7 +63,7 @@ async fn ensure_analysis_message_time_basis_access(
     Ok(())
 }
 
-async fn ensure_analysis_message_time_basis_access_by_id(
+pub(crate) async fn ensure_analysis_message_time_basis_access_by_id(
     env: &Env,
     user_id: &uuid::Uuid,
     req: &AnalysisStatsReq,
