@@ -12,6 +12,8 @@ import type {
   ListNetworksRsp,
   ListKeysReq,
   Network,
+  NetworkLastActivityReq,
+  NetworkLastActivityRow,
   NetworkGroupsActivityOneReq,
   ListNetworkPointsReq,
   ListNetworkPointsRsp,
@@ -54,6 +56,18 @@ export async function listNetworks(
     options,
   );
   return transformSnakeToCamel<ListNetworksRsp>(data);
+}
+
+export async function getNetworkLastActivity(
+  req: NetworkLastActivityReq,
+  options?: RequestOptions,
+): Promise<NetworkLastActivityRow[]> {
+  const data = await postJson<NetworkLastActivityRow[]>(
+    '/api/sigint/network-last-activity',
+    transformCamelToSnake(req),
+    options,
+  );
+  return transformSnakeToCamel<NetworkLastActivityRow[]>(data);
 }
 
 /** Fetch all networks. Uses a filter so the backend returns full list without default limit. */

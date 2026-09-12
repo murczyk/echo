@@ -195,6 +195,7 @@ export function buildNetworkRowView(
   aorsById: Map<number, AreaOfResponsibility>,
   activityByNetworkId: Map<number, Record<string, Record<string, number>>>,
   activityLoadStateByNetworkId: ActivityLoadStateByNetworkId = new Map(),
+  lastActivityLoadStateByNetworkId: ActivityLoadStateByNetworkId = new Map(),
 ): NetworkRowView {
   const status = getNetworkStatusDescriptor(network);
   const unitLabels = (network.unitIds ?? [])
@@ -209,10 +210,19 @@ export function buildNetworkRowView(
   const inactiveFrequencies = network.freqs
     .filter((freq) => freq.deleted || freq.activeTo !== null)
     .filter((freq) => freq.freq.trim() !== '');
-  const lastActivityLabel = formatDateTime(network.lastActivityAt);
-  const lastActivityDetail = isPresent(network.lastActivityAt)
-    ? 'Останнє перехоплення'
-    : 'Немає перехоплень';
+  const lastActivityLoadState = lastActivityLoadStateByNetworkId.get(network.id);
+  const lastActivityLabel =
+    lastActivityLoadState === 'loading'
+      ? 'Завантаження…'
+      : lastActivityLoadState === 'error'
+        ? 'Не вдалося завантажити'
+        : formatDateTime(network.lastActivityAt);
+  const lastActivityDetail =
+    lastActivityLoadState === 'loading' || lastActivityLoadState === 'error'
+      ? ''
+      : isPresent(network.lastActivityAt)
+        ? 'Останнє перехоплення'
+        : 'Немає перехоплень';
 
   return {
     id: network.id,
@@ -230,7 +240,9 @@ export function buildNetworkRowView(
     activityLoadState: activityLoadStateByNetworkId.get(network.id) ?? 'loading',
     lastActivityLabel,
     lastActivityDetail,
-    lastActivityTooltip: `${lastActivityDetail}: ${lastActivityLabel}`,
+    lastActivityTooltip: lastActivityDetail
+      ? `${lastActivityDetail}: ${lastActivityLabel}`
+      : lastActivityLabel,
     createdAtLabel: formatDate(network.createdAt),
   };
 }
