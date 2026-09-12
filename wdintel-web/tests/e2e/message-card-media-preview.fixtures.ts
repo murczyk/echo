@@ -392,6 +392,7 @@ async function installMessageCardMediaPreviewHostFixture(
   enableAudioTranscription: boolean,
   withCompletedOcrAndSummary: boolean,
   messageReferenceResponse: unknown | undefined,
+  messageReferenceDelayMs: number,
   signalGroups: InboxMessagesRspRaw['signal_groups'] | undefined,
 ): Promise<void> {
   const inboxResponse = {
@@ -426,6 +427,9 @@ async function installMessageCardMediaPreviewHostFixture(
 
   if (messageReferenceResponse !== undefined) {
     await page.route('**/api/rer-importer/inbox-item-context', async (route) => {
+      if (messageReferenceDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, messageReferenceDelayMs));
+      }
       await route.fulfill({
         contentType: 'application/json; charset=utf-8',
         body: JSON.stringify(messageReferenceResponse),
@@ -530,6 +534,7 @@ export async function openMessageCardPreviewHost(
     withCompletedOcrAndSummary = false,
     deferredImageResponse,
     messageReferenceResponse,
+    messageReferenceDelayMs = 0,
     signalGroups,
   }: {
     revealAudio?: boolean;
@@ -545,6 +550,7 @@ export async function openMessageCardPreviewHost(
     withCompletedOcrAndSummary?: boolean;
     deferredImageResponse?: DeferredMediaResponse;
     messageReferenceResponse?: unknown;
+    messageReferenceDelayMs?: number;
     signalGroups?: InboxMessagesRspRaw['signal_groups'];
   } = {},
 ): Promise<void> {
@@ -562,6 +568,7 @@ export async function openMessageCardPreviewHost(
     enableAudioTranscription,
     withCompletedOcrAndSummary,
     messageReferenceResponse,
+    messageReferenceDelayMs,
     signalGroups,
   );
   await page.goto(

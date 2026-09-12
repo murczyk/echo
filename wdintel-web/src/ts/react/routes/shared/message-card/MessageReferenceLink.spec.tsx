@@ -29,11 +29,28 @@ const groupInfos = {
   } as SignalGroupEntry,
 };
 
+function availableMessageResponse() {
+  return {
+    message: [
+      77,
+      minimalInboxMessage({
+        text: 'Текст пов’язаного повідомлення',
+        groupMasterKey: 'linked-group',
+      }),
+    ] as const,
+    groupMasterKeys: ['linked-group'],
+    sigintInboxItemIds: [77],
+    sinceTs: null,
+    tillTs: null,
+  };
+}
+
 describe('MessageReferenceLink', () => {
   let root: Root | null = null;
   let container: HTMLDivElement | null = null;
 
   afterEach(() => {
+    vi.useRealTimers();
     if (root) act(() => root?.unmount());
     root = null;
     container?.remove();
@@ -232,7 +249,121 @@ describe('MessageReferenceLink', () => {
     expect(openedWindow.opener).toBeNull();
   });
 
-  it('warns when the browser blocks an available message reference', async () => {
+  it('shows delayed progress and ignores repeated clicks while checking availability', async () => {
+    vi.useFakeTimers();
+    let resolveRequest!: (value: ReturnType<typeof availableMessageResponse>) => void;
+    mocks.fetchInboxItemContext.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRequest = resolve;
+      }),
+    );
+    const openedWindow = { opener: window } as Window;
+    const openWindow = vi.spyOn(window, 'open').mockReturnValue(openedWindow);
+    const link = await renderLink();
+
+    await click(link);
+    await click(link);
+
+    expect(link?.getAttribute('aria-busy')).toBe('true');
+    expect(link?.querySelector('[role="progressbar"]')).toBeNull();
+
+    await act(async () => vi.advanceTimersByTime(200));
+
+    expect(link?.querySelector('[role="progressbar"]')?.getAttribute('aria-label')).toBe(
+      'Перевіряємо доступність повідомлення',
+    );
+
+    await act(async () => {
+      resolveRequest(availableMessageResponse());
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(link?.getAttribute('aria-busy')).toBe('false');
+    expect(link?.querySelector('[role="progressbar"]')).toBeNull();
+    expect(openWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops a message availability check that exceeds the timeout', async () => {
+    vi.useFakeTimers();
+    mocks.fetchInboxItemContext.mockImplementation(
+      (_request, options) =>
+        new Promise((_resolve, reject) => {
+          options?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('The operation was aborted.', 'AbortError'));
+          });
+        }),
+    );
+    const link = await renderLink();
+
+    await click(link);
+    await act(async () => vi.advanceTimersByTime(10_000));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(link?.getAttribute('aria-busy')).toBe('false');
+    expect(link?.querySelector('[role="progressbar"]')).toBeNull();
+    expect(mocks.notify).toHaveBeenCalledWith({
+      severity: 'error',
+      message: 'Не вдалося перевірити доступність повідомлення. Спробуйте ще раз.',
+    });
+  });
+
+  it('aborts and ignores a pending availability check when unmounted', async () => {
+    let requestSignal: AbortSignal | undefined;
+    mocks.fetchInboxItemContext.mockImplementation(
+      (_request, options) =>
+        new Promise((_resolve, reject) => {
+          requestSignal = options?.signal;
+          requestSignal?.addEventListener('abort', () => {
+            reject(new DOMException('The operation was aborted.', 'AbortError'));
+          });
+        }),
+    );
+    const openWindow = vi.spyOn(window, 'open');
+
+    await click(await renderLink());
+    expect(requestSignal?.aborted).toBe(false);
+
+    await act(async () => root?.unmount());
+    root = null;
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(requestSignal?.aborted).toBe(true);
+    expect(openWindow).not.toHaveBeenCalled();
+    expect(mocks.notify).not.toHaveBeenCalled();
+  });
+
+  it('shows one error when preview and click share a failed availability check', async () => {
+    let rejectRequest!: (error: Error) => void;
+    mocks.fetchInboxItemContext.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectRequest = reject;
+      }),
+    );
+    const link = await renderLink();
+
+    await hover(link);
+    await click(link);
+    await act(async () => {
+      rejectRequest(new Error('Помилка завантаження'));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.notify).toHaveBeenCalledTimes(1);
+    expect(mocks.notify).toHaveBeenCalledWith({
+      severity: 'error',
+      message: 'Не вдалося перевірити доступність повідомлення. Спробуйте ще раз.',
+    });
+  });
+
+  it('offers a retry action when the browser blocks an available message reference', async () => {
     mocks.fetchInboxItemContext.mockResolvedValue({
       message: [
         77,
@@ -246,15 +377,27 @@ describe('MessageReferenceLink', () => {
       sinceTs: null,
       tillTs: null,
     });
-    vi.spyOn(window, 'open').mockReturnValue(null);
+    const openedWindow = { opener: window } as Window;
+    const openWindow = vi
+      .spyOn(window, 'open')
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce(openedWindow);
 
     await click(await renderLink());
 
-    expect(mocks.notify).toHaveBeenCalledWith({
-      severity: 'warning',
-      message:
-        'Не вдалося відкрити повідомлення у новій вкладці. Перевірте налаштування браузера та спробуйте ще раз.',
+    const notification = mocks.notify.mock.calls.at(-1)?.[0];
+    expect(notification?.severity).toBe('warning');
+    await act(async () => {
+      root?.render(notification?.message);
     });
+
+    expect(container?.textContent).toContain('Не вдалося автоматично відкрити повідомлення.');
+    const openButton = container?.querySelector('button');
+    expect(openButton?.textContent).toBe('Відкрити');
+    await act(async () => openButton?.click());
+
+    expect(openWindow).toHaveBeenCalledTimes(2);
+    expect(openedWindow.opener).toBeNull();
   });
 
   it('starts checking availability when the pointer reaches the reference', async () => {

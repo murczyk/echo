@@ -88,6 +88,68 @@ test.describe('@smoke @message-references message-card references', () => {
       await linkedMessagePage.close();
     });
 
+    test(`${host} shows progress and recovers when an uncached popup is blocked`, async ({
+      page,
+      baseURL,
+    }) => {
+      const href = new URL('/rer-analysis-neo?m=e2e-linked-message', baseURL).href;
+      await openMessageCardPreviewHost(page, host, {
+        messageText: `Пов’язане ${href}`,
+        messageReferenceDelayMs: 700,
+        messageReferenceResponse: {
+          message: [
+            77,
+            {
+              message_uid: 'e2e-linked-message',
+              text: 'Текст пов’язаного повідомлення',
+              media: [],
+              images: [],
+              date: '2026-09-08',
+              time: '14:30',
+              timestamp: null,
+              group_master_key: 'linked-group',
+            },
+          ],
+          group_master_keys: ['linked-group'],
+          sigint_inbox_item_ids: [77],
+          since_ts: null,
+          till_ts: null,
+        },
+      });
+      await page.evaluate(() => {
+        const openWindow = window.open.bind(window);
+        let blockNextPopup = true;
+        window.open = (url, target, features) => {
+          if (blockNextPopup) {
+            blockNextPopup = false;
+            return null;
+          }
+          return openWindow(url, target, features);
+        };
+      });
+
+      const link = page.getByRole('link', { name: 'повідомлення', exact: true });
+      await link.click();
+
+      await expect(link).toHaveAttribute('aria-busy', 'true');
+      await expect(
+        link.getByRole('progressbar', { name: 'Перевіряємо доступність повідомлення' }),
+      ).toBeVisible();
+
+      const notification = page
+        .getByRole('alert')
+        .filter({ hasText: 'Не вдалося автоматично відкрити повідомлення.' });
+      await expect(notification).toBeVisible();
+      const [linkedMessagePage] = await Promise.all([
+        page.waitForEvent('popup'),
+        notification.getByRole('button', { name: 'Відкрити', exact: true }).click(),
+      ]);
+
+      await linkedMessagePage.waitForURL(href);
+      expect(linkedMessagePage.url()).toBe(href);
+      await linkedMessagePage.close();
+    });
+
     test(`${host} keeps an unavailable linked message on the current page`, async ({
       page,
       baseURL,

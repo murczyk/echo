@@ -27,9 +27,14 @@ const EMPTY_SUMMARY: IntelligenceReportSummary = {
 };
 const MESSAGE_REFERENCE_RESOLUTION_TTL_MS = 5_000;
 const MESSAGE_REFERENCE_ERROR_RESOLUTION_TTL_MS = 1_000;
+const MESSAGE_REFERENCE_PROGRESS_DELAY_MS = 200;
+const MESSAGE_REFERENCE_REQUEST_TIMEOUT_MS = 10_000;
 
 type MessageReferenceResolution =
-  { kind: 'available' } | { kind: 'unavailable' } | { kind: 'error'; error: unknown };
+  | { kind: 'available' }
+  | { kind: 'unavailable' }
+  | { kind: 'error'; error: unknown }
+  | { kind: 'abandoned' };
 
 type CachedMessageReferenceResolution = {
   resolution: MessageReferenceResolution;
@@ -54,15 +59,45 @@ export function MessageReferenceLink({
 }) {
   const [summary, setSummary] = useState<IntelligenceReportSummary>(EMPTY_SUMMARY);
   const [unavailable, setUnavailable] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [showCheckingIndicator, setShowCheckingIndicator] = useState(false);
   const pendingResolutionRef = useRef<Promise<MessageReferenceResolution> | null>(null);
   const cachedResolutionRef = useRef<CachedMessageReferenceResolution | null>(null);
+  const clickCheckPendingRef = useRef(false);
+  const checkingIndicatorTimeoutRef = useRef<number | null>(null);
+  const activeRequestAbortControllerRef = useRef<AbortController | null>(null);
+  const requestGenerationRef = useRef(0);
   const { notify } = useOptionalPowerSnackbar();
 
   useEffect(() => {
+    const requestGeneration = ++requestGenerationRef.current;
+    activeRequestAbortControllerRef.current?.abort();
+    activeRequestAbortControllerRef.current = null;
     setSummary(EMPTY_SUMMARY);
     setUnavailable(false);
+    setChecking(false);
+    setShowCheckingIndicator(false);
     pendingResolutionRef.current = null;
     cachedResolutionRef.current = null;
+    clickCheckPendingRef.current = false;
+    if (checkingIndicatorTimeoutRef.current !== null) {
+      window.clearTimeout(checkingIndicatorTimeoutRef.current);
+      checkingIndicatorTimeoutRef.current = null;
+    }
+
+    return () => {
+      if (requestGenerationRef.current === requestGeneration) {
+        requestGenerationRef.current += 1;
+      }
+      activeRequestAbortControllerRef.current?.abort();
+      activeRequestAbortControllerRef.current = null;
+      pendingResolutionRef.current = null;
+      clickCheckPendingRef.current = false;
+      if (checkingIndicatorTimeoutRef.current !== null) {
+        window.clearTimeout(checkingIndicatorTimeoutRef.current);
+        checkingIndicatorTimeoutRef.current = null;
+      }
+    };
   }, [messageIdentifier]);
 
   const getCachedResolution = () => {
@@ -79,8 +114,20 @@ export function MessageReferenceLink({
     if (cachedResolution) return Promise.resolve(cachedResolution);
     if (pendingResolutionRef.current) return pendingResolutionRef.current;
 
-    const resolution = fetchInboxItemContext({ messageUid: messageIdentifier })
+    const abortController = new AbortController();
+    const requestGeneration = requestGenerationRef.current;
+    activeRequestAbortControllerRef.current = abortController;
+    let didTimeOut = false;
+    const requestTimeout = window.setTimeout(() => {
+      didTimeOut = true;
+      abortController.abort();
+    }, MESSAGE_REFERENCE_REQUEST_TIMEOUT_MS);
+    const resolution = fetchInboxItemContext(
+      { messageUid: messageIdentifier },
+      { signal: abortController.signal },
+    )
       .then((response): MessageReferenceResolution => {
+        if (requestGenerationRef.current !== requestGeneration) return { kind: 'abandoned' };
         if (response.message == null) {
           setUnavailable(true);
           return { kind: 'unavailable' };
@@ -90,10 +137,19 @@ export function MessageReferenceLink({
         return { kind: 'available' };
       })
       .catch((error): MessageReferenceResolution => {
+        if (requestGenerationRef.current !== requestGeneration) return { kind: 'abandoned' };
         setUnavailable(false);
-        return { kind: 'error', error };
+        return {
+          kind: 'error',
+          error: didTimeOut
+            ? new Error('Перевірка доступності повідомлення тривала надто довго.')
+            : error,
+        };
       })
-      .then((result) => {
+      .then((result): MessageReferenceResolution => {
+        if (result.kind === 'abandoned' || requestGenerationRef.current !== requestGeneration) {
+          return { kind: 'abandoned' };
+        }
         cachedResolutionRef.current = {
           resolution: result,
           expiresAt:
@@ -103,6 +159,12 @@ export function MessageReferenceLink({
               : MESSAGE_REFERENCE_RESOLUTION_TTL_MS),
         };
         return result;
+      })
+      .finally(() => {
+        window.clearTimeout(requestTimeout);
+        if (activeRequestAbortControllerRef.current === abortController) {
+          activeRequestAbortControllerRef.current = null;
+        }
       });
     pendingResolutionRef.current = resolution;
     void resolution.then(() => {
@@ -113,7 +175,7 @@ export function MessageReferenceLink({
 
   const loadSummary = async () => {
     const resolution = await resolveMessageReference();
-    if (resolution.kind === 'error') {
+    if (resolution.kind === 'error' && !clickCheckPendingRef.current) {
       notify({
         severity: 'error',
         message:
@@ -122,38 +184,84 @@ export function MessageReferenceLink({
             : 'Не вдалося завантажити попередній перегляд повідомлення.',
       });
     }
-    return resolution.kind !== 'error';
+    return resolution.kind !== 'error' && resolution.kind !== 'abandoned';
+  };
+
+  const openMessageReferenceWindow = () => {
+    const openedWindow = window.open(href, '_blank');
+    if (!openedWindow) return false;
+    openedWindow.opener = null;
+    return true;
   };
 
   const openMessageReference = async (event: MouseEvent<HTMLAnchorElement>) => {
+    if (clickCheckPendingRef.current) {
+      event.preventDefault();
+      return;
+    }
     if (getCachedResolution()?.kind === 'available') return;
     event.preventDefault();
-    const resolution = await resolveMessageReference();
-    if (resolution.kind === 'unavailable') {
+    const requestGeneration = requestGenerationRef.current;
+    clickCheckPendingRef.current = true;
+    setChecking(true);
+    checkingIndicatorTimeoutRef.current = window.setTimeout(() => {
+      if (requestGenerationRef.current === requestGeneration) setShowCheckingIndicator(true);
+    }, MESSAGE_REFERENCE_PROGRESS_DELAY_MS);
+
+    try {
+      const resolution = await resolveMessageReference();
+      if (resolution.kind === 'abandoned' || requestGenerationRef.current !== requestGeneration) {
+        return;
+      }
+      if (resolution.kind === 'unavailable') {
+        notify({
+          severity: 'warning',
+          message: 'Повідомлення видалено або у вас немає до нього доступу.',
+        });
+        return;
+      }
+      if (resolution.kind === 'error') {
+        notify({
+          severity: 'error',
+          message: 'Не вдалося перевірити доступність повідомлення. Спробуйте ще раз.',
+        });
+        return;
+      }
+
+      if (openMessageReferenceWindow()) return;
       notify({
         severity: 'warning',
-        message: 'Повідомлення видалено або у вас немає до нього доступу.',
+        message: (
+          <>
+            Не вдалося автоматично відкрити повідомлення.
+            <button
+              type="button"
+              className="ml-2 cursor-pointer border-0 bg-transparent p-0 font-semibold text-inherit underline"
+              onClick={() => {
+                if (openMessageReferenceWindow()) return;
+                notify({
+                  severity: 'warning',
+                  message:
+                    'Не вдалося відкрити повідомлення. Перевірте налаштування браузера та спробуйте ще раз.',
+                });
+              }}
+            >
+              Відкрити
+            </button>
+          </>
+        ),
       });
-      return;
+    } finally {
+      if (requestGenerationRef.current === requestGeneration) {
+        clickCheckPendingRef.current = false;
+        setChecking(false);
+        setShowCheckingIndicator(false);
+        if (checkingIndicatorTimeoutRef.current !== null) {
+          window.clearTimeout(checkingIndicatorTimeoutRef.current);
+          checkingIndicatorTimeoutRef.current = null;
+        }
+      }
     }
-    if (resolution.kind === 'error') {
-      notify({
-        severity: 'error',
-        message: 'Не вдалося перевірити доступність повідомлення. Спробуйте ще раз.',
-      });
-      return;
-    }
-
-    const openedWindow = window.open(href, '_blank');
-    if (openedWindow) {
-      openedWindow.opener = null;
-      return;
-    }
-    notify({
-      severity: 'warning',
-      message:
-        'Не вдалося відкрити повідомлення у новій вкладці. Перевірте налаштування браузера та спробуйте ще раз.',
-    });
   };
 
   const groupName = summary.groupMasterKey
@@ -173,6 +281,8 @@ export function MessageReferenceLink({
         href={href}
         target="_blank"
         rel="noopener noreferrer"
+        aria-label="повідомлення"
+        aria-busy={checking}
         onMouseEnter={() => void resolveMessageReference()}
         onFocus={() => void resolveMessageReference()}
         onClick={openMessageReference}
@@ -186,6 +296,13 @@ export function MessageReferenceLink({
         }}
       >
         повідомлення
+        {showCheckingIndicator ? (
+          <span
+            role="progressbar"
+            aria-label="Перевіряємо доступність повідомлення"
+            className="ml-1 inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-r-transparent align-[-0.125em]"
+          />
+        ) : null}
       </a>
     </MessageSummaryPreview>
   );
