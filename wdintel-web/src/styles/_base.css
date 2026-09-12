@@ -437,9 +437,34 @@ html[data-bs-theme='dark'] .message-card-root {
   height: 100%;
 }
 
+.coordinate-thumbnail__map {
+  z-index: 1;
+}
+
 .coordinate-preview-map-surface .leaflet-container {
   width: 100%;
   height: 100%;
+}
+
+.coordinate-preview-map-surface .leaflet-tooltip.coordinate-preview-mgrs-label,
+.coordinate-fullscreen-map .leaflet-tooltip.coordinate-preview-mgrs-label {
+  z-index: 3;
+  padding: 3px 5px;
+  border: 0;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--color-background) 88%, transparent);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--color-text) 30%, transparent);
+  color: var(--color-text);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.1;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.coordinate-preview-map-surface .leaflet-tooltip.coordinate-preview-mgrs-label::before,
+.coordinate-fullscreen-map .leaflet-tooltip.coordinate-preview-mgrs-label::before {
+  border-top-color: color-mix(in srgb, var(--color-background) 88%, transparent);
 }
 
 .coordinate-preview-map-skeleton {

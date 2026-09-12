@@ -8,12 +8,16 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import * as L from 'leaflet';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { SyntheticEvent } from 'react';
 
 import { copyTextToClipboard } from '../../../../../copy-to-clipboard';
 import { renderWgsFloat } from '../../../importer-beta/coordinates';
 import { BaseLayerId, DEFAULT_BASE_LAYER_ID } from '../../../../../maps/base-layers';
 import { getTileLayers } from '../../../../../web-components/analysis-map/tile-layers';
-import { getCoordinateMgrsText, getCoordinateText } from '../../../../../maps/coordinate-format';
+import {
+  getCoordinateMgrsText,
+  getCoordinateTextIfAvailable,
+} from '../../../../../maps/coordinate-format';
 import { formatCoordinateLocality } from '../../../../../maps/coordinate-locality';
 import { CoordinateMapPreviewControls } from '../CoordinateMapPreviewControls';
 import { MessageCardAttachmentPreviewHeader } from '../attachment-preview/MessageCardAttachmentPreviewHeader';
@@ -25,7 +29,7 @@ import type { MessageCardPreviewNavigation } from '../attachment-preview/message
 type MapInitState = 'loading' | 'ready' | 'error';
 const PREVIEW_ZOOM = 13;
 const PREVIEW_MAX_ZOOM = 13;
-const PREVIEW_BOUNDS_PADDING: [number, number] = [40, 40];
+const PREVIEW_BOUNDS_PADDING: [number, number] = [80, 80];
 const MAP_INIT_TIMEOUT_MS = 2000;
 const MAP_HOST_MIN_SIZE_PX = 48;
 const COORDINATE_ROW_HEIGHT = 24;
@@ -33,13 +37,24 @@ const COORDINATE_ROW_GAP = 6;
 const COORDINATE_LABEL_WIDTH = 80;
 const COORDINATE_PANEL_WIDTH = 300;
 const COORDINATE_COPY_SIZE = 20;
-const COORDINATE_COPY_GAP = 4;
+const COPY_RESET_MS = 1200;
 
-function plainTextMarkerLabel(label: string): HTMLSpanElement {
-  const element = document.createElement('span');
-  element.textContent = label;
-  return element;
-}
+type CoordinateFormat = 'wgs84' | 'mgrs' | 'dms' | 'sk42' | 'usk2000' | 'utm';
+type CopyStatus = 'idle' | 'copying' | 'copied' | 'error';
+type CoordinateRow = {
+  id: CoordinateFormat;
+  label: string;
+  value: string | null;
+};
+
+const INITIAL_COPY_STATUSES: Record<CoordinateFormat, CopyStatus> = {
+  wgs84: 'idle',
+  mgrs: 'idle',
+  dms: 'idle',
+  sk42: 'idle',
+  usk2000: 'idle',
+  utm: 'idle',
+};
 
 function DocumentPointContext({ point }: { point: CoordinatePreviewPoint }) {
   if (point.source !== 'document') return null;
@@ -76,6 +91,20 @@ function DocumentPointContext({ point }: { point: CoordinatePreviewPoint }) {
         </Box>
       ) : null}
     </Box>
+  );
+}
+
+function PalitraPointContext({ point }: { point: CoordinatePreviewPoint }) {
+  if (point.source !== 'palitra') return null;
+  return (
+    <Typography
+      variant="subtitle2"
+      data-coordinate-palitra-identity="true"
+      sx={{ maxWidth: '100%', overflowWrap: 'anywhere', color: 'text.primary' }}
+      style={{ maxWidth: '100%', overflowWrap: 'anywhere' }}
+    >
+      {point.label}
+    </Typography>
   );
 }
 
@@ -166,9 +195,12 @@ function CoordinateMapPreview({
   const initFrameRef = useRef<number | null>(null);
   const invalidateFrameRef = useRef<number | null>(null);
   const initTimeoutRef = useRef<number | null>(null);
-  const copyResetTimeoutRef = useRef<number | null>(null);
+  const copyResetTimeoutsRef = useRef<Partial<Record<CoordinateFormat, number>>>({});
+  const copyGenerationRef = useRef(0);
+  const copyRequestIdsRef = useRef<Partial<Record<CoordinateFormat, number>>>({});
   const [mapInitState, setMapInitState] = useState<MapInitState>('loading');
-  const [copyStatus, setCopyStatus] = useState<'idle' | 'copying' | 'copied' | 'error'>('idle');
+  const [copyStatuses, setCopyStatuses] =
+    useState<Record<CoordinateFormat, CopyStatus>>(INITIAL_COPY_STATUSES);
   const [retryToken, setRetryToken] = useState(0);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
@@ -190,7 +222,11 @@ function CoordinateMapPreview({
   }, [onActiveIndexChange]);
 
   useEffect(() => {
-    setCopyStatus('idle');
+    copyGenerationRef.current += 1;
+    Object.values(copyResetTimeoutsRef.current).forEach((timeout) => window.clearTimeout(timeout));
+    copyResetTimeoutsRef.current = {};
+    copyRequestIdsRef.current = {};
+    setCopyStatuses(INITIAL_COPY_STATUSES);
     if (previousActiveIndexRef.current !== activeIndex) {
       setIsPanelOpen(true);
       previousActiveIndexRef.current = activeIndex;
@@ -338,7 +374,7 @@ function CoordinateMapPreview({
       const baseLayer = tileLayers[baseLayerIdRef.current];
       baseLayer.addTo(map);
 
-      const markers = visiblePoints.map(({ lat, lng, label }, index) => {
+      const markers = visiblePoints.map(({ lat, lng }, index) => {
         const marker = L.circleMarker([lat, lng], {
           radius: index === activeIndexRef.current ? 10 : 8,
           color: '#ffffff',
@@ -347,9 +383,21 @@ function CoordinateMapPreview({
           fillOpacity: 1,
           interactive: true,
           bubblingMouseEvents: false,
-        })
-          .bindTooltip(plainTextMarkerLabel(label))
-          .addTo(map);
+        });
+        const mgrsText = getCoordinateMgrsText({ lat, lng });
+        if (mgrsText != null) {
+          const label = document.createElement('span');
+          label.textContent = mgrsText;
+          marker.bindTooltip(label, {
+            permanent: true,
+            direction: 'top',
+            offset: [0, -8],
+            opacity: 1,
+            className: 'coordinate-preview-mgrs-label',
+            interactive: false,
+          });
+        }
+        marker.addTo(map);
         marker.on('click', () => {
           map.setView([lat, lng], map.getZoom());
           setIsPanelOpen(true);
@@ -423,46 +471,72 @@ function CoordinateMapPreview({
   }
   const mgrsText = getCoordinateMgrsText({ lat: point.lat, lng: point.lng });
   const wgs84Text = `${renderWgsFloat(point.lat)}, ${renderWgsFloat(point.lng)}`;
-  const dmsText = getCoordinateText('dms', point);
-  const sk42Text = getCoordinateText('sk42', point);
-  const usk2000Text = getCoordinateText('usk2000', point);
-  const utmText = getCoordinateText('utm', point);
+  const dmsText = getCoordinateTextIfAvailable('dms', point);
+  const sk42Text = getCoordinateTextIfAvailable('sk42', point);
+  const usk2000Text = getCoordinateTextIfAvailable('usk2000', point);
+  const utmText = getCoordinateTextIfAvailable('utm', point);
+  const coordinateRows: CoordinateRow[] = [
+    { id: 'wgs84', label: 'WGS84', value: wgs84Text },
+    { id: 'mgrs', label: 'MGRS', value: mgrsText },
+    { id: 'dms', label: 'DMS', value: dmsText },
+    { id: 'sk42', label: 'СК-42', value: sk42Text },
+    { id: 'usk2000', label: 'УСК-2000', value: usk2000Text },
+    { id: 'utm', label: 'UTM', value: utmText },
+  ];
   const localityText = formatCoordinateLocality(point.locality ?? null);
-  const handleCopyMgrs = useCallback(() => {
-    if (mgrsText == null) {
+  const handleCopy = useCallback((format: CoordinateFormat, value: string | null) => {
+    if (value == null) {
       return;
     }
 
-    setCopyStatus('copying');
-    void copyTextToClipboard(mgrsText)
-      .then(() => {
-        setCopyStatus('copied');
-        if (copyResetTimeoutRef.current !== null) {
-          window.clearTimeout(copyResetTimeoutRef.current);
+    const generation = copyGenerationRef.current;
+    const requestId = (copyRequestIdsRef.current[format] ?? 0) + 1;
+    copyRequestIdsRef.current[format] = requestId;
+    const isCurrentRequest = () =>
+      copyGenerationRef.current === generation && copyRequestIdsRef.current[format] === requestId;
+    const scheduleReset = () => {
+      if (!isCurrentRequest()) {
+        return;
+      }
+      const existingTimeout = copyResetTimeoutsRef.current[format];
+      if (existingTimeout != null) {
+        window.clearTimeout(existingTimeout);
+      }
+      copyResetTimeoutsRef.current[format] = window.setTimeout(() => {
+        if (!isCurrentRequest()) {
+          return;
         }
-        copyResetTimeoutRef.current = window.setTimeout(() => {
-          setCopyStatus('idle');
-          copyResetTimeoutRef.current = null;
-        }, 1200);
+        setCopyStatuses((statuses) => ({ ...statuses, [format]: 'idle' }));
+        delete copyResetTimeoutsRef.current[format];
+      }, COPY_RESET_MS);
+    };
+
+    setCopyStatuses((statuses) => ({ ...statuses, [format]: 'copying' }));
+    void copyTextToClipboard(value)
+      .then(() => {
+        if (!isCurrentRequest()) {
+          return;
+        }
+        setCopyStatuses((statuses) => ({ ...statuses, [format]: 'copied' }));
+        scheduleReset();
       })
       .catch(() => {
-        setCopyStatus('error');
-        if (copyResetTimeoutRef.current !== null) {
-          window.clearTimeout(copyResetTimeoutRef.current);
+        if (!isCurrentRequest()) {
+          return;
         }
-        copyResetTimeoutRef.current = window.setTimeout(() => {
-          setCopyStatus('idle');
-          copyResetTimeoutRef.current = null;
-        }, 1200);
+        setCopyStatuses((statuses) => ({ ...statuses, [format]: 'error' }));
+        scheduleReset();
       });
-  }, [mgrsText]);
+  }, []);
 
   useEffect(() => {
     return () => {
-      if (copyResetTimeoutRef.current !== null) {
-        window.clearTimeout(copyResetTimeoutRef.current);
-        copyResetTimeoutRef.current = null;
-      }
+      copyGenerationRef.current += 1;
+      Object.values(copyResetTimeoutsRef.current).forEach((timeout) =>
+        window.clearTimeout(timeout),
+      );
+      copyResetTimeoutsRef.current = {};
+      copyRequestIdsRef.current = {};
     };
   }, []);
 
@@ -495,22 +569,7 @@ function CoordinateMapPreview({
     whiteSpace: 'nowrap',
     minWidth: 0,
   } as const;
-  const copyButtonTitle =
-    copyStatus === 'copied'
-      ? 'Скопійовано'
-      : copyStatus === 'error'
-        ? 'Не вдалося скопіювати'
-        : 'Копіювати MGRS';
-  const copyButtonIcon =
-    copyStatus === 'copied' ? (
-      <CheckIcon sx={{ fontSize: 13 }} />
-    ) : copyStatus === 'error' ? (
-      <ErrorOutlineIcon sx={{ fontSize: 13 }} />
-    ) : (
-      <ContentCopyIcon sx={{ fontSize: 13 }} />
-    );
-
-  const stopDragPropagation = (event: React.SyntheticEvent) => {
+  const stopDragPropagation = (event: SyntheticEvent) => {
     event.stopPropagation();
   };
 
@@ -528,6 +587,7 @@ function CoordinateMapPreview({
     >
       <Box
         ref={setMapHostEl}
+        className="coordinate-fullscreen-map"
         data-coordinate-marker-count={mapInitState === 'ready' ? points.length : 0}
         sx={{
           position: 'absolute',
@@ -664,194 +724,47 @@ function CoordinateMapPreview({
           onClick={stopDragPropagation}
           onDoubleClick={stopDragPropagation}
         >
-          <IconButton
-            aria-label="Закрити картку координати"
-            title="Закрити"
-            size="small"
-            onClick={() => setIsPanelOpen(false)}
-            sx={{
-              alignSelf: 'flex-end',
-              width: 24,
-              height: 24,
-              color: 'text.secondary',
-              bgcolor: 'transparent',
-              '&:hover': {
-                color: 'text.primary',
-                bgcolor: 'action.hover',
-              },
-            }}
-          >
-            <CloseIcon sx={{ fontSize: 16 }} />
-          </IconButton>
-          <DocumentPointContext point={point} />
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              height: COORDINATE_ROW_HEIGHT,
-              minHeight: COORDINATE_ROW_HEIGHT,
-              maxWidth: '100%',
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              height: `${COORDINATE_ROW_HEIGHT}px`,
-              minHeight: `${COORDINATE_ROW_HEIGHT}px`,
-              maxWidth: '100%',
-            }}
-            data-coordinate-row="wgs84"
-          >
+          <div className="flex w-full items-center justify-between">
             <Typography
-              variant="caption"
-              sx={coordinateLabelSx}
-              style={{
-                flex: `0 0 ${COORDINATE_LABEL_WIDTH}px`,
-                width: `${COORDINATE_LABEL_WIDTH}px`,
-              }}
-              data-coordinate-label="wgs84"
+              component="h3"
+              variant="subtitle2"
+              data-coordinate-panel-heading="true"
+              sx={{ color: panelTextColor }}
             >
-              WGS84
+              Координати
             </Typography>
-            <Typography
-              variant="caption"
-              sx={coordinateValueSx}
-              style={{ flex: '1 1 auto', minWidth: 0 }}
-              data-wgs84-text={wgs84Text}
-              title={wgs84Text}
-            >
-              {wgs84Text}
-            </Typography>
-          </Box>
-
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              height: COORDINATE_ROW_HEIGHT,
-              minHeight: COORDINATE_ROW_HEIGHT,
-              maxWidth: '100%',
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              height: `${COORDINATE_ROW_HEIGHT}px`,
-              minHeight: `${COORDINATE_ROW_HEIGHT}px`,
-              maxWidth: '100%',
-            }}
-            data-coordinate-row="mgrs"
-          >
-            <Typography
-              variant="caption"
-              sx={coordinateLabelSx}
-              style={{
-                flex: `0 0 ${COORDINATE_LABEL_WIDTH}px`,
-                width: `${COORDINATE_LABEL_WIDTH}px`,
-              }}
-              data-coordinate-label="mgrs"
-            >
-              MGRS
-            </Typography>
-            <Box
+            <IconButton
+              aria-label="Закрити картку координати"
+              title="Закрити"
+              size="small"
+              onClick={() => setIsPanelOpen(false)}
               sx={{
-                display: 'grid',
-                gridTemplateColumns: `minmax(0, 1fr) ${COORDINATE_COPY_SIZE}px`,
-                alignItems: 'center',
-                columnGap: `${COORDINATE_COPY_GAP}px`,
-                height: COORDINATE_ROW_HEIGHT,
-                width: '100%',
-                minWidth: 0,
+                width: 24,
+                height: 24,
+                color: 'text.secondary',
+                bgcolor: 'transparent',
+                '&:hover': { color: 'text.primary', bgcolor: 'action.hover' },
               }}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: `minmax(0, 1fr) ${COORDINATE_COPY_SIZE}px`,
-                alignItems: 'center',
-                columnGap: `${COORDINATE_COPY_GAP}px`,
-                height: `${COORDINATE_ROW_HEIGHT}px`,
-                width: '100%',
-                minWidth: 0,
-              }}
-              data-coordinate-row="mgrs-content"
             >
-              <Typography
-                variant="caption"
-                sx={coordinateValueSx}
-                style={{ minWidth: 0, width: 'auto', flex: '1 1 auto' }}
-                data-mgrs-text={mgrsText ?? 'MGRS недоступні'}
-                title={mgrsText ?? 'MGRS недоступні'}
-              >
-                {mgrsText ?? 'MGRS недоступні'}
-              </Typography>
-              <IconButton
-                aria-label="Копіювати MGRS"
-                title={copyButtonTitle}
-                data-copy-status={copyStatus}
-                size="small"
-                onClick={handleCopyMgrs}
-                disabled={mgrsText == null}
-                sx={{
-                  pointerEvents: 'auto',
-                  width: COORDINATE_COPY_SIZE,
-                  height: COORDINATE_COPY_SIZE,
-                  borderRadius: 1,
-                  color:
-                    copyStatus === 'copied'
-                      ? 'success.main'
-                      : copyStatus === 'error'
-                        ? 'error.main'
-                        : 'text.secondary',
-                  bgcolor: 'transparent',
-                  border: 1,
-                  borderColor: 'transparent',
-                  '&:hover': {
-                    bgcolor: 'action.hover',
-                    color: 'text.primary',
-                  },
-                  '&.Mui-disabled': {
-                    color: 'action.disabled',
-                  },
-                  '&.Mui-focusVisible': {
-                    outline: 'none',
-                    boxShadow: 'none',
-                  },
-                }}
-                style={{
-                  width: `${COORDINATE_COPY_SIZE}px`,
-                  height: `${COORDINATE_COPY_SIZE}px`,
-                }}
-              >
-                {copyButtonIcon}
-              </IconButton>
-            </Box>
-          </Box>
-
-          {isExpanded ? (
-            <>
+              <CloseIcon sx={{ fontSize: 16 }} />
+            </IconButton>
+          </div>
+          <PalitraPointContext point={point} />
+          <DocumentPointContext point={point} />
+          <div role="table" className="w-full">
+            {(isExpanded ? coordinateRows : coordinateRows.slice(0, 2)).map((row) => (
               <CoordinateValueRow
-                label="DMS"
-                value={dmsText}
+                key={row.id}
+                format={row.id}
+                label={row.label}
+                value={row.value}
+                status={copyStatuses[row.id]}
+                onCopy={handleCopy}
                 labelSx={coordinateLabelSx}
                 valueSx={coordinateValueSx}
               />
-              <CoordinateValueRow
-                label="СК-42"
-                value={sk42Text}
-                labelSx={coordinateLabelSx}
-                valueSx={coordinateValueSx}
-              />
-              <CoordinateValueRow
-                label="УСК-2000"
-                value={usk2000Text}
-                labelSx={coordinateLabelSx}
-                valueSx={coordinateValueSx}
-              />
-              <CoordinateValueRow
-                label="UTM"
-                value={utmText}
-                labelSx={coordinateLabelSx}
-                valueSx={coordinateValueSx}
-              />
-            </>
-          ) : null}
+            ))}
+          </div>
 
           <Button
             size="small"
@@ -901,19 +814,40 @@ function CoordinateMapPreview({
 }
 
 function CoordinateValueRow({
+  format,
   label,
   value,
+  status,
+  onCopy,
   labelSx,
   valueSx,
 }: {
+  format: CoordinateFormat;
   label: string;
-  value: string;
+  value: string | null;
+  status: CopyStatus;
+  onCopy: (format: CoordinateFormat, value: string | null) => void;
   labelSx?: object;
   valueSx?: object;
 }) {
-  const displayValue = value.replace(new RegExp(`^${label}:\\s*`), '');
+  const displayValue = value == null ? 'Недоступно' : value.replace(`${label}: `, '');
+  const copyButtonTitle =
+    status === 'copied'
+      ? 'Скопійовано'
+      : status === 'error'
+        ? 'Не вдалося скопіювати'
+        : `Копіювати ${label}`;
+  const copyButtonIcon =
+    status === 'copied' ? (
+      <CheckIcon sx={{ fontSize: 13 }} />
+    ) : status === 'error' ? (
+      <ErrorOutlineIcon sx={{ fontSize: 13 }} />
+    ) : (
+      <ContentCopyIcon sx={{ fontSize: 13 }} />
+    );
   return (
     <Box
+      role="row"
       sx={{
         display: 'flex',
         alignItems: 'center',
@@ -921,9 +855,17 @@ function CoordinateValueRow({
         minHeight: COORDINATE_ROW_HEIGHT,
         maxWidth: '100%',
       }}
-      data-coordinate-row={label.toLowerCase()}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        height: `${COORDINATE_ROW_HEIGHT}px`,
+        minHeight: `${COORDINATE_ROW_HEIGHT}px`,
+        maxWidth: '100%',
+      }}
+      data-coordinate-row={format}
     >
       <Typography
+        role="rowheader"
         variant="caption"
         sx={{
           flex: `0 0 ${COORDINATE_LABEL_WIDTH}px`,
@@ -934,11 +876,12 @@ function CoordinateValueRow({
           flex: `0 0 ${COORDINATE_LABEL_WIDTH}px`,
           width: `${COORDINATE_LABEL_WIDTH}px`,
         }}
-        data-coordinate-label={label.toLowerCase()}
+        data-coordinate-label={format}
       >
         {label}
       </Typography>
       <Typography
+        role="cell"
         variant="caption"
         sx={{
           minWidth: 0,
@@ -949,9 +892,40 @@ function CoordinateValueRow({
           ...valueSx,
         }}
         title={displayValue}
+        data-wgs84-text={format === 'wgs84' ? displayValue : undefined}
+        data-mgrs-text={format === 'mgrs' ? displayValue : undefined}
+        style={{ flex: '1 1 auto', minWidth: 0 }}
       >
         {displayValue}
       </Typography>
+      <span role="cell" style={{ flex: `0 0 ${COORDINATE_COPY_SIZE}px`, marginLeft: '4px' }}>
+        <IconButton
+          aria-label={copyButtonTitle}
+          title={copyButtonTitle}
+          data-copy-status={status}
+          size="small"
+          disabled={value == null || status === 'copying'}
+          onClick={(event) => {
+            event.stopPropagation();
+            onCopy(format, value);
+          }}
+          sx={{
+            width: COORDINATE_COPY_SIZE,
+            height: COORDINATE_COPY_SIZE,
+            borderRadius: 1,
+            color:
+              status === 'copied'
+                ? 'success.main'
+                : status === 'error'
+                  ? 'error.main'
+                  : 'text.secondary',
+            '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
+          }}
+          style={{ backgroundColor: 'transparent' }}
+        >
+          {copyButtonIcon}
+        </IconButton>
+      </span>
     </Box>
   );
 }

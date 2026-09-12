@@ -69,6 +69,7 @@ export type Key = {
 export type MultiGeometry = {
   points: Array<Point>;
   lineStrings: Array<LineString>;
+  polygons: Array<Polygon>;
 };
 
 export type Pair = {
