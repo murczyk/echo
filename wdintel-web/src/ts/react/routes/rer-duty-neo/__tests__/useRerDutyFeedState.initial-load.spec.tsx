@@ -404,12 +404,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(editedFeed.readIds).toEqual(new Set([1, 2]));
     expect(editedFeed.unreadCount).toBe(1);
     expect(untouchedFeed.readIds).toEqual(new Set([10]));
-    expect(untouchedFeed.windowedUnreadItems).toEqual(
-      new Map([
-        [11, 1100],
-        [12, 1200],
-      ]),
-    );
+    expect(untouchedFeed.windowedUnreadItems).toEqual(new Map());
     expect(untouchedFeed.unresolvedUnreadIds).toEqual(new Set([99]));
     expect(untouchedFeed.unreadCount).toBe(4);
   });
@@ -538,7 +533,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(feed.messageSortBy).toBe('IMSCreatedAt');
     expect(feed.items.map(([id]) => id)).toEqual([2, 1]);
     expect(feed.readIds).toEqual(new Set<number>([1]));
-    expect(feed.windowedUnreadItems).toEqual(new Map([[2, 1_000_000]]));
+    expect(feed.windowedUnreadItems).toEqual(new Map());
     expect(feed.unresolvedUnreadIds).toEqual(new Set<number>([99]));
     expect(feed.unreadCount).toBe(2);
 
@@ -557,7 +552,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     const interceptionFeed = apiRef.current!.messageFeeds[0];
     expect(interceptionFeed.messageSortBy).toBe('IMSTimestamp');
     expect(interceptionFeed.items.map(([id]) => id)).toEqual([2, 1]);
-    expect(interceptionFeed.windowedUnreadItems).toEqual(new Map([[2, 100]]));
+    expect(interceptionFeed.windowedUnreadItems).toEqual(new Map());
     expect(interceptionFeed.unresolvedUnreadIds).toEqual(new Set<number>([99]));
   });
 
@@ -597,12 +592,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(feed.messageSortBy).toBe('IMSCreatedAt');
     expect(feed.items.map(([id]) => id)).toEqual([2, 3]);
     expect(feed.pendingNewerItems).toEqual([]);
-    expect(feed.windowedUnreadItems).toEqual(
-      new Map([
-        [2, 1_000_000],
-        [3, 2_000_000],
-      ]),
-    );
+    expect(feed.windowedUnreadItems).toEqual(new Map());
     expect(feed.unresolvedUnreadIds).toEqual(new Set<number>());
     expect(feed.unresolvedUnreadCount).toBe(0);
     expect(feed.unreadCount).toBe(2);

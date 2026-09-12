@@ -3423,13 +3423,9 @@ pub async fn summary_table_freq(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<SummaryTableFreq>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    if req.message_time_basis
-        == Some(crate::user_settings::MessageTimeBasis::MessageCreation)
-    {
-        has_role(&env.dbx, &login_id_from_identity(&user)?, "Cyber")
-            .await
-            .c(h!())?;
-    }
+    ensure_analysis_message_time_basis_access(&env, &user, &req)
+        .await
+        .context(h!())?;
     Ok(Json(summary_table_freq_1(&user, &env, &req).await.c(h!())?))
 }
 

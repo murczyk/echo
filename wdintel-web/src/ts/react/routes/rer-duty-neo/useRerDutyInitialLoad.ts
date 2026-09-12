@@ -14,7 +14,6 @@ import { fetchMessagesByIdsWithMetadata } from '../../services/api/inbox-message
 import {
   DUTY_FEED_MESSAGE_WINDOW_LIMIT,
   messageOrderCursor,
-  messageOrderTimestamp,
   windowInitialMessageItems,
 } from './utils';
 import type { MessageFeedState } from './utils';
@@ -82,7 +81,6 @@ type Params = {
 function preserveUnreadState(
   feed: MessageFeedState,
   items: Array<[number, InboxMessage]>,
-  messageSortBy: 'IMSTimestamp' | 'IMSCreatedAt',
 ): Pick<
   MessageFeedState,
   | 'readIds'
@@ -104,19 +102,14 @@ function preserveUnreadState(
     feed.unresolvedUnreadCount ?? 0,
     feed.unreadCount - knownUnreadIds.size,
   );
+  const loadedUnreadCount = items.filter(([id]) => !readIds.has(id)).length;
   const windowedUnreadItems = new Map<number, number>();
-  items.forEach(([id, message]) => {
-    const orderTimestamp = messageOrderTimestamp(message, messageSortBy);
-    if (!readIds.has(id) && orderTimestamp != null) {
-      windowedUnreadItems.set(id, orderTimestamp);
-    }
-  });
   return {
     readIds,
     windowedUnreadItems,
     unresolvedUnreadIds,
     unresolvedUnreadCount,
-    unreadCount: windowedUnreadItems.size + unresolvedUnreadIds.size + unresolvedUnreadCount,
+    unreadCount: loadedUnreadCount + unresolvedUnreadIds.size + unresolvedUnreadCount,
   };
 }
 
@@ -250,7 +243,7 @@ export function useRerDutyInitialLoad(params: Params) {
                   referenceTimeMs: Date.now(),
                   pendingNewerItems: [],
                   ...(preserveUnread && previousFeed
-                    ? preserveUnreadState(previousFeed, items, messageSortBy)
+                    ? preserveUnreadState(previousFeed, items)
                     : {
                         readIds: new Set<number>(items.map(([id]) => id)),
                         windowedUnreadItems: new Map<number, number>(),

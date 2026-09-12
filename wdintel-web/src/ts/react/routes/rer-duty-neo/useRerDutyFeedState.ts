@@ -421,8 +421,24 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           windowedUnreadItems.forEach((timestamp, id) => {
             if (throughTarget(id, timestamp)) windowedUnreadItems.delete(id);
           });
-          const unresolvedUnreadIds = new Set(candidate.unresolvedUnreadIds);
-          readIds.forEach((id) => unresolvedUnreadIds.delete(id));
+          const loadedTail = candidate.items.at(-1);
+          const reachedLoadedTail =
+            loadedTail != null &&
+            (candidate.pendingNewerItems?.length ?? 0) === 0 &&
+            compareMessageTuple(
+              {
+                id: loadedTail[0],
+                timestamp: messageOrderTimestamp(loadedTail[1], candidate.messageSortBy) ?? null,
+              },
+              target,
+            ) === 0;
+          const unresolvedUnreadIds = reachedLoadedTail
+            ? new Set<number>()
+            : new Set(candidate.unresolvedUnreadIds);
+          if (!reachedLoadedTail) readIds.forEach((id) => unresolvedUnreadIds.delete(id));
+          const unresolvedUnreadCount = reachedLoadedTail
+            ? 0
+            : (candidate.unresolvedUnreadCount ?? 0);
           const loadedIds = new Set(candidate.items.map(([id]) => id));
           const loadedUnreadIds = new Set(
             candidate.items.filter(([id]) => !readIds.has(id)).map(([id]) => id),
@@ -441,9 +457,16 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
             [...unresolvedUnreadIds].filter(
               (id) => !loadedUnreadIds.has(id) && !pendingUnreadIds.has(id),
             ).length +
-            (candidate.unresolvedUnreadCount ?? 0) +
+            unresolvedUnreadCount +
             pendingUnreadIds.size;
-          return { ...candidate, readIds, windowedUnreadItems, unresolvedUnreadIds, unreadCount };
+          return {
+            ...candidate,
+            readIds,
+            windowedUnreadItems,
+            unresolvedUnreadIds,
+            unresolvedUnreadCount,
+            unreadCount,
+          };
         }),
       );
     },

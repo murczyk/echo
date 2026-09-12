@@ -169,6 +169,19 @@ async fn ensure_report_launch_permissions(
     Ok(())
 }
 
+async fn ensure_report_creation_time_access(
+    dbx: &DatabaseConnection,
+    user_login: &uuid::Uuid,
+    req: &types::ReportPreviewReq,
+) -> Result<(), AppError> {
+    if req.req.sort_by
+        == Some(crate::rer_importer::types::InboxMessagesSortBy::IMSCreatedAt)
+    {
+        has_role(dbx, user_login, "Cyber").await.c(h!())?;
+    }
+    Ok(())
+}
+
 pub(crate) async fn report_docx_generate_file(
     user_login: uuid::Uuid,
     env: &Env,
@@ -179,6 +192,9 @@ pub(crate) async fn report_docx_generate_file(
     cleanup_old_reports_nofail(&env.dbx, &env.config).await;
     req.req.nolimit = Some(true);
     ensure_report_launch_permissions(&env.dbx, &user_login, &req.kind)
+        .await
+        .c(h!())?;
+    ensure_report_creation_time_access(&env.dbx, &user_login, &req)
         .await
         .c(h!())?;
     if req.kind == kinds::RER_REPORT || req.kind == kinds::SPOSOB {
@@ -359,11 +375,9 @@ pub async fn report_docx_task_launch(
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let user_login = login_id_from_identity(&user)?;
     let req_inner = req.into_inner();
-    if req_inner.req.sort_by
-        == Some(crate::rer_importer::types::InboxMessagesSortBy::IMSCreatedAt)
-    {
-        has_role(&env.dbx, &user_login, "Cyber").await.c(h!())?;
-    }
+    ensure_report_creation_time_access(&env.dbx, &user_login, &req_inner)
+        .await
+        .c(h!())?;
     let report_kind = req_inner.kind.clone();
     ensure_report_launch_permissions_with_error_code_header(
         &env.dbx,

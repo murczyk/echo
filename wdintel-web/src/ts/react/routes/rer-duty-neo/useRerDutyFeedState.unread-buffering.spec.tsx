@@ -205,7 +205,9 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
         feeds.map((feed) => ({
           ...feed,
           pendingNewerItems: rangeRsp(21, 21).inboxItems,
-          unreadCount: 20,
+          unresolvedUnreadIds: new Set<number>([99]),
+          unresolvedUnreadCount: 2,
+          unreadCount: 23,
         })),
       );
       await flushMicrotasks();
@@ -221,7 +223,9 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
     expect(feed.readIds.has(20)).toBe(true);
     expect(feed.readIds.has(21)).toBe(false);
     expect(feed.pendingNewerItems.map(([id]) => id)).toEqual([21]);
-    expect(feed.unreadCount).toBe(1);
+    expect(feed.unresolvedUnreadIds).toEqual(new Set<number>([99]));
+    expect(feed.unresolvedUnreadCount).toBe(2);
+    expect(feed.unreadCount).toBe(4);
   });
 
   it('#3360 makes an explicit target unavailable when its column disappears before deferred landing', async () => {
