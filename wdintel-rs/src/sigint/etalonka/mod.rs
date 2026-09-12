@@ -138,7 +138,7 @@ pub async fn bl_etalonka_report_networks_data(
         crate::messenger::group::get_identity_sigint_groups(dbx, user_login)
             .await
             .c(h!())?;
-    let networks_data = load_networks(dbx, req).await.context(h!())?;
+    let networks_data = load_networks(dbx, req, &groups).await.context(h!())?;
 
     Ok(collect_etalonka_data(
         dbx,
@@ -162,7 +162,8 @@ pub async fn bl_etalonka_report_networks_batch_id_data(
         crate::messenger::group::get_identity_sigint_groups(dbx, user_login)
             .await
             .c(h!())?;
-    let networks_data = load_networks_by_id(dbx, req).await.context(h!())?;
+    let networks_data =
+        load_networks_by_id(dbx, req, &groups).await.context(h!())?;
 
     Ok(collect_etalonka_data(
         dbx,
@@ -3283,9 +3284,17 @@ mod tests {
                 filter_unit_army_region: None,
                 filter_unit_military_district: None,
                 filter_unit_army: None,
+                filter_unit_corps: None,
                 filter_unit_division: None,
+                filter_unit_brigade: None,
                 filter_unit_regiment: None,
                 filter_unit_battalion: None,
+                filter_unit_company: None,
+                filter_unit_platoon: None,
+                filter_unit_squad: None,
+                filter_unit_section: None,
+                filter_unit_team_or_crew: None,
+                filter_unit_other: None,
                 filter_text: None,
                 filter_name: None,
                 filter_location: None,

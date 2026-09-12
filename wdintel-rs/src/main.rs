@@ -430,6 +430,13 @@ pub struct OneoffReprocessInboxPostsPs {
     pub dry_run: bool,
 }
 
+#[derive(clap::Args, Debug)]
+pub struct OneoffMigrateSavedFilterUnitIdsPs {
+    /// Apply all proposed migrations without interactive review.
+    #[arg(long, action)]
+    pub auto_apply: bool,
+}
+
 #[derive(clap::Parser, Debug)]
 pub struct OneoffRadioPerDayPerAbonentPs {
     pub input: String,
@@ -1131,7 +1138,7 @@ enum Cmd {
     OneoffAuditMissingEchoImMessages(OneoffAuditMissingEchoImMessagesPs),
     OneoffReprocessInboxPosts(OneoffReprocessInboxPostsPs),
     /// Review and migrate saved unit filters from labels to unit IDs.
-    OneoffMigrateSavedFilterUnitIds,
+    OneoffMigrateSavedFilterUnitIds(OneoffMigrateSavedFilterUnitIdsPs),
     OneoffRestartEcho(OneoffRestartEchoPs),
     OneoffKillOldQueries(OneoffKillOldQueriesPs),
     OneoffRefreshAiModels,
@@ -1952,8 +1959,8 @@ async fn async_main(
         Cmd::OneoffReprocessInboxPosts(ps) => {
             rer_importer::oneoff_reprocess_inbox_posts(mode, &ps).await
         }
-        Cmd::OneoffMigrateSavedFilterUnitIds => {
-            rer_importer::saved_filter_unit_ids::run(mode).await
+        Cmd::OneoffMigrateSavedFilterUnitIds(ps) => {
+            rer_importer::saved_filter_unit_ids::run(mode, ps.auto_apply).await
         }
         Cmd::NetworkInvalidationTui => {
            sigint::network::etalon_calc::tui::run_network_invalidation_tui(mode).await

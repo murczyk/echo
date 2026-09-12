@@ -54,6 +54,7 @@ function createSyntheticUnsetUnit(): Unit {
     armyRegion: '',
     comment: '',
     orbitNote: null,
+    presentInOrbit: null,
     active: true,
     isDeduplicateCandidate: null,
     createdAt: 0,

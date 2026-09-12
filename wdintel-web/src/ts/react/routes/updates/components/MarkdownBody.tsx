@@ -19,9 +19,15 @@ export function MarkdownBody({ releaseId, markdown }: MarkdownBodyProps) {
         p: ({ node: _node, ...props }) => (
           <p className="text-sm leading-relaxed text-[var(--color-text)]" {...props} />
         ),
+        ol: ({ node: _node, ...props }) => (
+          <ol
+            className="list-decimal list-outside space-y-echo-sm pl-echo-xl text-sm leading-relaxed text-[var(--color-text)]"
+            {...props}
+          />
+        ),
         img: ({ node: _node, ...props }) => (
           <img
-            className="w-full max-w-full rounded border border-[var(--color-border)]"
+            className="block mx-auto h-auto w-auto max-w-full max-h-[70vh] object-contain rounded border border-[var(--color-border)]"
             loading="lazy"
             src={
               typeof props.src === 'string'

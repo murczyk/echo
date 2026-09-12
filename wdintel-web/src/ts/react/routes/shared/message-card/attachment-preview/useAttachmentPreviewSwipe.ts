@@ -11,11 +11,18 @@ export function useAttachmentPreviewSwipe({
   enabled?: boolean;
 }) {
   const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
+  const pinchRef = useRef(false);
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
 
   useEffect(() => {
-    if (!stageEl || !navigation || !enabled || navigation.count <= 1) return;
+    if (!stageEl || !navigation || navigation.count <= 1) return;
 
     const handleTouchStart = (event: TouchEvent) => {
+      if (pinchRef.current || !enabledRef.current) {
+        touchStartRef.current = null;
+        return;
+      }
       if (event.touches.length !== 1) {
         touchStartRef.current = null;
         return;
@@ -41,6 +48,10 @@ export function useAttachmentPreviewSwipe({
     };
 
     const handleTouchEnd = (event: TouchEvent) => {
+      if (pinchRef.current || !enabledRef.current) {
+        touchStartRef.current = null;
+        return;
+      }
       const touchStart = touchStartRef.current;
       touchStartRef.current = null;
 
@@ -68,12 +79,31 @@ export function useAttachmentPreviewSwipe({
       }
     };
 
+    const handlePinch = () => {
+      pinchRef.current = true;
+      touchStartRef.current = null;
+    };
+
+    const handleGestureEnd = () => {
+      pinchRef.current = false;
+    };
+
     stageEl.addEventListener('touchstart', handleTouchStart, { passive: true });
     stageEl.addEventListener('touchend', handleTouchEnd, { passive: true });
+    stageEl.addEventListener('attachment-preview-pinch', handlePinch);
+    stageEl.addEventListener('attachment-preview-gesture-end', handleGestureEnd);
 
     return () => {
+      touchStartRef.current = null;
+      pinchRef.current = false;
       stageEl.removeEventListener('touchstart', handleTouchStart);
       stageEl.removeEventListener('touchend', handleTouchEnd);
+      stageEl.removeEventListener('attachment-preview-pinch', handlePinch);
+      stageEl.removeEventListener('attachment-preview-gesture-end', handleGestureEnd);
     };
-  }, [stageEl, navigation, enabled]);
+  }, [stageEl, navigation]);
+
+  useEffect(() => {
+    if (!enabled) touchStartRef.current = null;
+  }, [enabled]);
 }

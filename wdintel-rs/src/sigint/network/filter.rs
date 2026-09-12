@@ -422,9 +422,17 @@ fn network_unit_hierarchy_filter(
     let has_unit_hierarchy_filter = req.filter_unit_army_region.is_some()
         || req.filter_unit_military_district.is_some()
         || req.filter_unit_army.is_some()
+        || req.filter_unit_corps.is_some()
         || req.filter_unit_division.is_some()
+        || req.filter_unit_brigade.is_some()
         || req.filter_unit_regiment.is_some()
-        || req.filter_unit_battalion.is_some();
+        || req.filter_unit_battalion.is_some()
+        || req.filter_unit_company.is_some()
+        || req.filter_unit_platoon.is_some()
+        || req.filter_unit_squad.is_some()
+        || req.filter_unit_section.is_some()
+        || req.filter_unit_team_or_crew.is_some()
+        || req.filter_unit_other.is_some();
     if !has_unit_hierarchy_filter {
         return query;
     }
@@ -462,9 +470,17 @@ fn network_unit_hierarchy_filter(
         unit_exists =
             unit_exists.filter(sigint_unit::Column::Army.eq(filter_unit_army));
     }
+    if let Some(filter_unit_corps) = req.filter_unit_corps.as_deref() {
+        unit_exists = unit_exists
+            .filter(sigint_unit::Column::Corps.eq(filter_unit_corps));
+    }
     if let Some(filter_unit_division) = req.filter_unit_division.as_deref() {
         unit_exists = unit_exists
             .filter(sigint_unit::Column::Division.eq(filter_unit_division));
+    }
+    if let Some(filter_unit_brigade) = req.filter_unit_brigade.as_deref() {
+        unit_exists = unit_exists
+            .filter(sigint_unit::Column::Brigade.eq(filter_unit_brigade));
     }
     if let Some(filter_unit_regiment) = req.filter_unit_regiment.as_deref() {
         unit_exists = unit_exists
@@ -473,6 +489,33 @@ fn network_unit_hierarchy_filter(
     if let Some(filter_unit_battalion) = req.filter_unit_battalion.as_deref() {
         unit_exists = unit_exists
             .filter(sigint_unit::Column::Battalion.eq(filter_unit_battalion));
+    }
+    if let Some(filter_unit_company) = req.filter_unit_company.as_deref() {
+        unit_exists = unit_exists
+            .filter(sigint_unit::Column::Company.eq(filter_unit_company));
+    }
+    if let Some(filter_unit_platoon) = req.filter_unit_platoon.as_deref() {
+        unit_exists = unit_exists
+            .filter(sigint_unit::Column::Platoon.eq(filter_unit_platoon));
+    }
+    if let Some(filter_unit_squad) = req.filter_unit_squad.as_deref() {
+        unit_exists = unit_exists
+            .filter(sigint_unit::Column::Squad.eq(filter_unit_squad));
+    }
+    if let Some(filter_unit_section) = req.filter_unit_section.as_deref() {
+        unit_exists = unit_exists
+            .filter(sigint_unit::Column::Section.eq(filter_unit_section));
+    }
+    if let Some(filter_unit_team_or_crew) =
+        req.filter_unit_team_or_crew.as_deref()
+    {
+        unit_exists = unit_exists.filter(
+            sigint_unit::Column::TeamOrCrew.eq(filter_unit_team_or_crew),
+        );
+    }
+    if let Some(filter_unit_other) = req.filter_unit_other.as_deref() {
+        unit_exists = unit_exists
+            .filter(sigint_unit::Column::Other.eq(filter_unit_other));
     }
 
     query.filter(Expr::exists(unit_exists.into_query()))

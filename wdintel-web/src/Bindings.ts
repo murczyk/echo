@@ -69,6 +69,7 @@ export type Key = {
 export type MultiGeometry = {
   points: Array<Point>;
   lineStrings: Array<LineString>;
+  polygons: Array<Polygon>;
 };
 
 export type Pair = {
@@ -2937,6 +2938,7 @@ export type Unit = {
   armyRegion: string;
   comment: string;
   orbitNote: string | null;
+  presentInOrbit: boolean | null;
   name: string;
   active: boolean;
   isDeduplicateCandidate: boolean | null;
@@ -3040,6 +3042,7 @@ export type CreateUnitReq = {
   isDeduplicateCandidate: boolean | null;
   comment: string;
   orbitNote: string | null;
+  presentInOrbit: boolean | null;
   duplicateUnitIds: Array<number>;
 };
 
@@ -3414,9 +3417,17 @@ export type ListCallsignsReq = {
   filterUnitArmyRegion: string | null;
   filterUnitMilitaryDistrict: string | null;
   filterUnitArmy: string | null;
+  filterUnitCorps: string | null;
   filterUnitDivision: string | null;
+  filterUnitBrigade: string | null;
   filterUnitRegiment: string | null;
   filterUnitBattalion: string | null;
+  filterUnitCompany: string | null;
+  filterUnitPlatoon: string | null;
+  filterUnitSquad: string | null;
+  filterUnitSection: string | null;
+  filterUnitTeamOrCrew: string | null;
+  filterUnitOther: string | null;
   filterDeveloping: DevelopingFilter | null;
   sinceDateInclusiveMs: number | null;
   tillDateInclusiveMs: number | null;
@@ -3793,6 +3804,7 @@ export type Network = {
   operationMode: string | null;
   operationType: string | null;
   operationPeriod: string | null;
+  lastActivityAt: number | null;
   lastUpdatedAt: number;
   lastUpdatedBy: string | null;
   activeFrom: number | null;
@@ -4052,9 +4064,17 @@ export type ListNetworksReq = {
   filterUnitArmyRegion: string | null;
   filterUnitMilitaryDistrict: string | null;
   filterUnitArmy: string | null;
+  filterUnitCorps: string | null;
   filterUnitDivision: string | null;
+  filterUnitBrigade: string | null;
   filterUnitRegiment: string | null;
   filterUnitBattalion: string | null;
+  filterUnitCompany: string | null;
+  filterUnitPlatoon: string | null;
+  filterUnitSquad: string | null;
+  filterUnitSection: string | null;
+  filterUnitTeamOrCrew: string | null;
+  filterUnitOther: string | null;
   filterText: string | null;
   filterName: string | null;
   filterLocation: string | null;

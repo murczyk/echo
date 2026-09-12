@@ -59,11 +59,11 @@ enum ReviewDecision {
     Quit,
 }
 
-pub async fn run(mode: Mode) -> Result<(), AppError> {
-    Ok(run_inner(mode).await.c(h!())?)
+pub async fn run(mode: Mode, auto_apply: bool) -> Result<(), AppError> {
+    Ok(run_inner(mode, auto_apply).await.c(h!())?)
 }
 
-async fn run_inner(mode: Mode) -> anyhow::Result<()> {
+async fn run_inner(mode: Mode, auto_apply: bool) -> anyhow::Result<()> {
     let dbx = new_pg_pool_from_mode(mode).await.c(h!())?;
     let unit_name_resolver = UnitNameResolver::load(&dbx).await.c(h!())?;
     let orbit_text_resolver =
@@ -112,7 +112,12 @@ async fn run_inner(mode: Mode) -> anyhow::Result<()> {
         }
 
         reviewed += 1;
-        match review_decision().context(h!())? {
+        let review_decision = if auto_apply {
+            ReviewDecision::Apply
+        } else {
+            review_decision().context(h!())?
+        };
+        match review_decision {
             ReviewDecision::Apply => {
                 match apply_plan(&dbx, saved_filter.id, &plan)
                     .await

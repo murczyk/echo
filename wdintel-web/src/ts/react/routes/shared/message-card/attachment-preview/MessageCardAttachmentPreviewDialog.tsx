@@ -1,5 +1,5 @@
 import { Dialog } from '@mui/material';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
 
 import { shouldIgnoreArrowNavigation } from '../document-preview-utils';
 import type { MessageCardDownloadGuardProps } from '../MessageCardMedia';
@@ -24,13 +24,40 @@ import type {
   ImageEditingCapability,
   RegisterImageEditorEscapeHandler,
 } from '../../image-editor/image-editor.types';
+import {
+  AttachmentPreviewStageCarouselNav,
+  type AttachmentPreviewStageNavigationSide,
+} from './AttachmentPreviewStageCarouselNav';
 
 const isDownloadIdle = () => false;
 const allowDownloadStart = () => true;
+const REPORT_VISIBILITY_STORAGE_KEY = 'echo.message-attachment-preview.report-visible';
+const ATTACHMENT_PREVIEW_HEADER_HEIGHT_PX = 52;
+const ATTACHMENT_PREVIEW_STAGE_NAVIGATION_ZONE_RATIO = 0.25;
 const consumeEvent = (event: KeyboardEvent) => {
   event.preventDefault();
   event.stopPropagation();
 };
+
+function getHoveredStageNavigationSide(
+  event: PointerEvent<HTMLDivElement>,
+): AttachmentPreviewStageNavigationSide {
+  if (event.pointerType === 'touch') return null;
+  const { left, top, width } = event.currentTarget.getBoundingClientRect();
+  if (event.clientY < top + ATTACHMENT_PREVIEW_HEADER_HEIGHT_PX) return null;
+  const pointerX = event.clientX - left;
+  if (pointerX <= width * ATTACHMENT_PREVIEW_STAGE_NAVIGATION_ZONE_RATIO) return 'prev';
+  if (pointerX >= width * (1 - ATTACHMENT_PREVIEW_STAGE_NAVIGATION_ZONE_RATIO)) return 'next';
+  return null;
+}
+
+function getStoredReportVisibility() {
+  try {
+    return localStorage.getItem(REPORT_VISIBILITY_STORAGE_KEY) !== 'false';
+  } catch {
+    return true;
+  }
+}
 
 function getPreviewKind(item: MessageCardPreviewItem) {
   if (item.type === 'document') return item.value.kind;
@@ -64,11 +91,14 @@ export function MessageCardAttachmentPreviewDialog({
 } & Partial<MessageCardDownloadGuardProps>) {
   const previewKind = getPreviewKind(item);
   const dialogLabel = getPreviewDialogLabel(previewKind);
+  const reportTextPreviewEnabled = reportDraft != null;
   const [isEditing, setIsEditing] = useState(false);
   const [pendingInitialAction, setPendingInitialAction] = useState(initialAction);
   const [childOverlayOpen, setChildOverlayOpen] = useState(false);
   const childOverlayOpenRef = useRef(false);
-  const [reportVisible, setReportVisible] = useState(false);
+  const [reportVisible, setReportVisible] = useState(getStoredReportVisibility);
+  const [hoveredStageNavigationSide, setHoveredStageNavigationSide] =
+    useState<AttachmentPreviewStageNavigationSide>(null);
   const [dismissChildOverlay, setDismissChildOverlay] = useState(0);
   const editorEscapeHandlerRef = useRef<ImageEditorEscapeHandler | null>(null);
   const previewConfig = getMessageCardAttachmentPreviewConfig(previewKind);
@@ -80,6 +110,18 @@ export function MessageCardAttachmentPreviewDialog({
     childOverlayOpenRef.current = open;
     setChildOverlayOpen(open);
   }, []);
+  const onReportVisibleChange = useCallback(
+    (visible: boolean) => {
+      setReportVisible(visible);
+      if (!reportTextPreviewEnabled) return;
+      try {
+        localStorage.setItem(REPORT_VISIBILITY_STORAGE_KEY, String(visible));
+      } catch {
+        // Ignore unavailable browser storage.
+      }
+    },
+    [reportTextPreviewEnabled],
+  );
 
   useEffect(() => {
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -129,7 +171,6 @@ export function MessageCardAttachmentPreviewDialog({
 
   const closeDialog = () => {
     blurActiveAttachmentPreviewElement();
-    setReportVisible(false);
     onClose();
   };
   const paperSx: Record<string, unknown> = {
@@ -171,56 +212,68 @@ export function MessageCardAttachmentPreviewDialog({
         sx: { backgroundColor: 'rgba(0, 0, 0, 0.8)' },
       }}
     >
-      {item.type === 'image' ? (
-        <ImageAttachmentPreviewRenderer
-          image={item.value}
-          imageEditing={imageEditing}
-          initialAction={pendingInitialAction}
-          onInitialActionConsumed={consumeInitialAction}
-          onEditModeChange={setIsEditing}
-          registerEditorEscapeHandler={registerEditorEscapeHandler}
-          onChildOverlayChange={onChildOverlayChange}
-          dismissChildOverlay={dismissChildOverlay}
-          reportDraft={reportDraft}
-          reportVisible={reportVisible}
-          onReportVisibleChange={setReportVisible}
-          {...rendererProps}
+      <div
+        onPointerMove={(event) =>
+          setHoveredStageNavigationSide(getHoveredStageNavigationSide(event))
+        }
+        onPointerLeave={() => setHoveredStageNavigationSide(null)}
+        className="relative flex min-h-0 flex-1 flex-col"
+      >
+        {item.type === 'image' ? (
+          <ImageAttachmentPreviewRenderer
+            image={item.value}
+            imageEditing={imageEditing}
+            initialAction={pendingInitialAction}
+            onInitialActionConsumed={consumeInitialAction}
+            onEditModeChange={setIsEditing}
+            registerEditorEscapeHandler={registerEditorEscapeHandler}
+            onChildOverlayChange={onChildOverlayChange}
+            dismissChildOverlay={dismissChildOverlay}
+            reportDraft={reportDraft}
+            reportVisible={reportVisible}
+            onReportVisibleChange={onReportVisibleChange}
+            {...rendererProps}
+          />
+        ) : item.type === 'video' ? (
+          <VideoAttachmentPreviewRenderer
+            video={item.value}
+            onChildOverlayChange={onChildOverlayChange}
+            dismissChildOverlay={dismissChildOverlay}
+            reportDraft={reportDraft}
+            reportVisible={reportVisible}
+            onReportVisibleChange={onReportVisibleChange}
+            {...rendererProps}
+          />
+        ) : item.type === 'audio' ? (
+          <AudioAttachmentPreviewRenderer
+            audio={item.value}
+            onChildOverlayChange={onChildOverlayChange}
+            dismissChildOverlay={dismissChildOverlay}
+            reportDraft={reportDraft}
+            reportVisible={reportVisible}
+            onReportVisibleChange={onReportVisibleChange}
+            {...rendererProps}
+          />
+        ) : item.type === 'document' ? (
+          <DocumentAttachmentPreviewRenderer
+            document={item.value}
+            reportDraft={reportDraft}
+            reportVisible={reportVisible}
+            onReportVisibleChange={onReportVisibleChange}
+            {...rendererProps}
+          />
+        ) : (
+          <CoordinateAttachmentPreviewRenderer
+            points={item.points}
+            navigation={navigation}
+            onClose={closeDialog}
+          />
+        )}
+        <AttachmentPreviewStageCarouselNav
+          navigation={{ ...navigation, disabled: isEditing || navigation.disabled }}
+          visibleSide={hoveredStageNavigationSide}
         />
-      ) : item.type === 'video' ? (
-        <VideoAttachmentPreviewRenderer
-          video={item.value}
-          onChildOverlayChange={onChildOverlayChange}
-          dismissChildOverlay={dismissChildOverlay}
-          reportDraft={reportDraft}
-          reportVisible={reportVisible}
-          onReportVisibleChange={setReportVisible}
-          {...rendererProps}
-        />
-      ) : item.type === 'audio' ? (
-        <AudioAttachmentPreviewRenderer
-          audio={item.value}
-          onChildOverlayChange={onChildOverlayChange}
-          dismissChildOverlay={dismissChildOverlay}
-          reportDraft={reportDraft}
-          reportVisible={reportVisible}
-          onReportVisibleChange={setReportVisible}
-          {...rendererProps}
-        />
-      ) : item.type === 'document' ? (
-        <DocumentAttachmentPreviewRenderer
-          document={item.value}
-          reportDraft={reportDraft}
-          reportVisible={reportVisible}
-          onReportVisibleChange={setReportVisible}
-          {...rendererProps}
-        />
-      ) : (
-        <CoordinateAttachmentPreviewRenderer
-          points={item.points}
-          navigation={navigation}
-          onClose={closeDialog}
-        />
-      )}
+      </div>
     </Dialog>
   );
 }

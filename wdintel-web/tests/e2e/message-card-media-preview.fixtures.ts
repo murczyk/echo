@@ -25,6 +25,12 @@ const MESSAGE_CARD_POLISH_NETWORKS = [
 
 const TRANSPARENT_PNG_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4////fwAJ+wP7bq8W2QAAAABJRU5ErkJggg==';
+const LARGE_IMAGE_SVG = `
+  <svg xmlns="http://www.w3.org/2000/svg" width="900" height="1600" viewBox="0 0 900 1600">
+    <rect width="900" height="1600" fill="#1b365d"/>
+    <circle cx="640" cy="300" r="180" fill="#f5a623"/>
+    <text x="80" y="1200" fill="white" font-size="80">E2E attachment</text>
+  </svg>`;
 
 export type DeferredMediaResponse = {
   waitForRequest: () => Promise<void>;
@@ -104,6 +110,7 @@ function buildMessageCardMediaPreviewMessage({
   coordinateLabel,
   coordinatePointCount = 1,
   messageText,
+  withCompletedOcrAndSummary = false,
 }: {
   withPolishContent?: boolean;
   withPartialCoordinateError?: boolean;
@@ -111,6 +118,7 @@ function buildMessageCardMediaPreviewMessage({
   coordinateLabel?: string;
   coordinatePointCount?: number;
   messageText?: string;
+  withCompletedOcrAndSummary?: boolean;
 } = {}): Record<string, unknown> {
   const image1 = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1}`;
   const image2 = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image2}`;
@@ -125,6 +133,31 @@ function buildMessageCardMediaPreviewMessage({
     messageUid: 'e2e-message-card-preview',
     text: messageText ?? 'E2E message-card media preview fixture',
     media: [
+      ...(withCompletedOcrAndSummary
+        ? [
+            {
+              id: 'e2e-image-1',
+              content_type: 'image/svg+xml',
+              file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1,
+              size_bytes: 1_024,
+              href: image1,
+              ocr: {
+                state: 'completed',
+                qualityStatus: 'accepted',
+                processedPages: 1,
+                totalPages: 1,
+                lastError: null,
+                queueSize: null,
+                attempts: 1,
+                statusLog: [],
+                aiEngineId: null,
+                aiEngineName: null,
+                modelName: null,
+              },
+              summary: { state: 'completed', lastError: null, hasCoordinates: false },
+            },
+          ]
+        : []),
       {
         id: 'e2e-video-1',
         content_type: 'video/mp4',
@@ -238,6 +271,7 @@ export function buildMessageCardMediaPreviewInboxResponse({
   coordinateLabel,
   coordinatePointCount = 1,
   messageText,
+  withCompletedOcrAndSummary = false,
 }: {
   withPolishContent?: boolean;
   withPartialCoordinateError?: boolean;
@@ -245,6 +279,7 @@ export function buildMessageCardMediaPreviewInboxResponse({
   coordinateLabel?: string;
   coordinatePointCount?: number;
   messageText?: string;
+  withCompletedOcrAndSummary?: boolean;
 } = {}): InboxMessagesRspRaw {
   return {
     inbox_items: [
@@ -257,6 +292,7 @@ export function buildMessageCardMediaPreviewInboxResponse({
           coordinateLabel,
           coordinatePointCount,
           messageText,
+          withCompletedOcrAndSummary,
         }) as never,
       ],
     ],
@@ -292,12 +328,12 @@ export async function installMessageCardMediaPreviewAssetRoutes(
         );
         return;
       }
-      await fulfillAsset(route, Buffer.from(TRANSPARENT_PNG_BASE64, 'base64'), 'image/png');
+      await fulfillAsset(route, LARGE_IMAGE_SVG, 'image/svg+xml');
       return;
     }
 
     if (fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image2) {
-      await fulfillAsset(route, Buffer.from(TRANSPARENT_PNG_BASE64, 'base64'), 'image/png');
+      await fulfillAsset(route, LARGE_IMAGE_SVG, 'image/svg+xml');
       return;
     }
 
@@ -345,6 +381,7 @@ async function installMessageCardMediaPreviewHostFixture(
   coordinatePointCount: number,
   messageText: string | undefined,
   enableAudioTranscription: boolean,
+  withCompletedOcrAndSummary: boolean,
   messageReferenceResponse: unknown | undefined,
   signalGroups: InboxMessagesRspRaw['signal_groups'] | undefined,
 ): Promise<void> {
@@ -356,6 +393,7 @@ async function installMessageCardMediaPreviewHostFixture(
       coordinateLabel,
       coordinatePointCount,
       messageText,
+      withCompletedOcrAndSummary,
     }),
     signal_groups: signalGroups ?? [],
   };
@@ -411,6 +449,35 @@ async function installMessageCardMediaPreviewHostFixture(
       },
     );
   }
+
+  if (withCompletedOcrAndSummary) {
+    await page.route('**/api/messenger/media/e2e-image-1/ocr?*', async (route) => {
+      await route.fulfill({
+        contentType: 'text/html; charset=utf-8',
+        body: '<!doctype html><html><body style="height:1600px"><p>E2E OCR text</p><p>OCR scroll content</p></body></html>',
+      });
+    });
+    await page.route('**/api/messenger/media/e2e-image-1/summary', async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          state: 'completed',
+          summary: [
+            'E2E completed media summary',
+            'E2E summary detail 1',
+            'E2E summary detail 2',
+            'E2E summary detail 3',
+            'E2E summary detail 4',
+          ].join('\n'),
+          coordinates: [],
+          lastError: null,
+          sourceKind: 'ocr',
+          sourceCharCount: 42,
+          aiEngineName: 'E2E',
+        }),
+      });
+    });
+  }
 }
 
 export async function openMessageCardPreviewHost(
@@ -426,6 +493,7 @@ export async function openMessageCardPreviewHost(
     coordinatePointCount = 1,
     messageText,
     enableAudioTranscription = false,
+    withCompletedOcrAndSummary = false,
     deferredImageResponse,
     messageReferenceResponse,
     signalGroups,
@@ -439,6 +507,7 @@ export async function openMessageCardPreviewHost(
     coordinatePointCount?: number;
     messageText?: string;
     enableAudioTranscription?: boolean;
+    withCompletedOcrAndSummary?: boolean;
     deferredImageResponse?: DeferredMediaResponse;
     messageReferenceResponse?: unknown;
     signalGroups?: InboxMessagesRspRaw['signal_groups'];
@@ -455,6 +524,7 @@ export async function openMessageCardPreviewHost(
     coordinatePointCount,
     messageText,
     enableAudioTranscription,
+    withCompletedOcrAndSummary,
     messageReferenceResponse,
     signalGroups,
   );

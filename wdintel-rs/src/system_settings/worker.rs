@@ -290,6 +290,13 @@ async fn cleanup_replayed_messages(
             changed_message_ids: vec![],
         });
     }
+    crate::rer_importer::inbox::prepare_messages_network_activity_change(
+        &txn,
+        &replayed_message_ids,
+        "deleted replayed inbox messages",
+    )
+    .await
+    .c(h!())?;
     signal_message::Entity::update_many()
         .col_expr(signal_message::Column::Deleted, Expr::value(true))
         .filter(signal_message::Column::Id.is_in(replayed_message_ids.clone()))

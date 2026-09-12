@@ -104,6 +104,23 @@ location extraction. The worker preserves every existing `location_v2` value,
 appends only missing settlements, and reconciles the settlement-link queue in
 the same transaction. It is disabled by default.
 
+The network maintenance worker owns the PostgreSQL-only
+`network_recalculation_task` queue. It calculates frequency `last_seen_dt` and
+the per-login last interception in a network AOR outside API requests. Pending
+work is deduplicated per frequency, calculation kind, and login where the
+result depends on data visibility. Successful work clears only its claimed
+request, so work queued during the calculation remains pending. The worker
+starts up to 100 pending recalculations per pass and stops starting new work
+after 50 seconds. It queues a final reconciliation after inbox-network
+invalidations update message assignments; broad group/AOR invalidations fan
+out to frequencies processed during that pass, and AOR invalidations also
+include non-deleted frequencies on networks currently linked to that AOR.
+The per-login AOR cache is scoped to the login's current visible group keys,
+expires after 10 minutes, and is not served while inbox-network invalidation or
+recalculation is pending. Expired entries are evicted hourly alongside the
+pre-existing network cleanup in the same worker. The cache and its queue are
+excluded from the optional analytics replica.
+
 ## Statistics storage
 
 `wdintel-rs-bgworker` derives recent and daily group statistics from
