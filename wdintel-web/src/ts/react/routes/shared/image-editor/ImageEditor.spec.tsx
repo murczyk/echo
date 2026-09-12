@@ -374,6 +374,43 @@ describe('ImageEditor initialization', () => {
     act(() => root.unmount());
   });
 
+  it('keeps editor cancellation behind text-editing Escape handling #3448', async () => {
+    const onCancel = vi.fn();
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    document.body.appendChild(container);
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe = vi.fn();
+        disconnect = vi.fn();
+      },
+    );
+    const activeText = { isEditing: true, exitEditing: vi.fn() };
+    mocks.canvas?.getActiveObject.mockReturnValue(activeText);
+
+    await act(async () => {
+      root.render(
+        <ImageEditor
+          source={{ blob: new Blob(['source']), fileName: 'photo.jpg', mimeType: 'image/jpeg' }}
+          onCancel={onCancel}
+          onSaveReplacement={vi.fn()}
+          onSaveAsNew={vi.fn()}
+        />,
+      );
+    });
+    await vi.waitFor(() => expect(mocks.canvas).toBeDefined());
+    mocks.canvas?.getActiveObject.mockReturnValue(activeText);
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+
+    expect(activeText.exitEditing).toHaveBeenCalledOnce();
+    expect(onCancel).not.toHaveBeenCalled();
+    act(() => root.unmount());
+  });
+
   it('cancels crop before cancelling the editor', async () => {
     const onCancel = vi.fn();
     const container = document.createElement('div');
