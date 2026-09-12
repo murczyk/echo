@@ -137,24 +137,31 @@ pub async fn network_last_activity(
         .copied()
         .filter(|network_id| seen.insert(*network_id))
         .collect::<Vec<_>>();
-    let last_activity = load_network_last_activity(
+    let last_activity = recalculation::load_cached_network_last_activity(
         &env.dbx,
         &network_ids,
+        user_id,
         &access.activity_groups,
     )
     .await
     .context(h!())?;
-    Ok(Json(
-        req.network_ids
-            .iter()
-            .map(|network_id| NetworkLastActivityRow {
-                network_id: *network_id,
-                last_activity_at: last_activity
-                    .get(network_id)
-                    .map(|timestamp| timestamp.and_utc().timestamp_millis()),
-            })
-            .collect(),
-    ))
+    Ok(Json(network_last_activity_rows(
+        &req.network_ids,
+        &last_activity,
+    )))
+}
+
+fn network_last_activity_rows(
+    network_ids: &[i64],
+    last_activity: &HashMap<i64, Option<i64>>,
+) -> Vec<NetworkLastActivityRow> {
+    network_ids
+        .iter()
+        .map(|network_id| NetworkLastActivityRow {
+            network_id: *network_id,
+            last_activity_at: last_activity.get(network_id).copied().flatten(),
+        })
+        .collect()
 }
 
 fn network_list_render_options(req: &ListNetworksReq) -> NetworkRenderOptions {
