@@ -236,6 +236,7 @@ test.describe('image editor drawer integration #3448', () => {
     await page.getByRole('menuitem', { name: 'Гарячі клавіші' }).click();
     const help = page.getByRole('heading', { name: 'Гарячі клавіші' });
     await expect(help).toBeVisible();
+    await expect(page.getByText('B / И', { exact: true })).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(help).toBeHidden();
     await expect(editor).toBeVisible();

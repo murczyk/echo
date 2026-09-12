@@ -16,7 +16,7 @@ export const IMAGE_EDITOR_TOOL_SHORTCUTS: readonly ImageEditorToolShortcut[] = [
   { tool: ImageEditorTool.Ellipse, code: 'KeyO', key: 'O', ukrainianKey: 'Щ' },
   { tool: ImageEditorTool.Line, code: 'KeyL', key: 'L', ukrainianKey: 'Д' },
   { tool: ImageEditorTool.Arrow, code: 'KeyA', key: 'A', ukrainianKey: 'Ф' },
-  { tool: ImageEditorTool.Brush, code: 'KeyB', key: 'B', ukrainianKey: 'І' },
+  { tool: ImageEditorTool.Brush, code: 'KeyB', key: 'B', ukrainianKey: 'И' },
   { tool: ImageEditorTool.Conceal, code: 'KeyU', key: 'U', ukrainianKey: 'Г' },
   { tool: ImageEditorTool.Magnifier, code: 'KeyM', key: 'M', ukrainianKey: 'Ь' },
 ];

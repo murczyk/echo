@@ -1,26 +1,14 @@
 import { useEffect, useRef, type MutableRefObject } from 'react';
 
 import { addTextAnnotation } from './image-editor-actions';
-import {
-  installImageEditorAttachedArrowControl,
-  reconcileImageEditorAttachedArrows,
-} from './image-editor-attached-arrow';
+import { installImageEditorAttachedArrowControl } from './image-editor-attached-arrow';
 import { createArrow } from './image-editor-arrow';
+import { createImageEditorTextFrameGestureController } from './image-editor-text-frame-gesture';
 import { imageEditorBounds, imageEditorPointer, minimumGestureSize } from './image-editor-pointer';
 import type { ImageEditorBounds } from './image-editor-pointer';
 import { ConcealMode, ImageEditorObjectRole, ImageEditorTool } from './image-editor.types';
 
 type Point = { x: number; y: number };
-type TextMoveSnapshot = {
-  left: number;
-  top: number;
-  scaleX: number;
-  scaleY: number;
-  width: number;
-  height: number;
-  angle: number;
-  text: string;
-};
 enum ImageEditorGestureSessionKind {
   Idle = 'idle',
   Text = 'text',
@@ -69,84 +57,12 @@ type Session =
   | { kind: ImageEditorGestureSessionKind.Idle }
   | { kind: ImageEditorGestureSessionKind.Text; point: Point; config: Config }
   | {
-      kind: 'textMove';
-      text: import('fabric').IText;
-      start: Point;
-      initial: TextMoveSnapshot;
-    }
-  | {
       kind: ImageEditorGestureSessionKind.Shape;
       tool: ImageEditorGestureTool;
       start: Point;
       object: import('fabric').FabricObject;
       config: Config;
     };
-
-function textMoveSnapshot(text: import('fabric').IText): TextMoveSnapshot {
-  return {
-    left: text.left ?? 0,
-    top: text.top ?? 0,
-    scaleX: text.scaleX ?? 1,
-    scaleY: text.scaleY ?? 1,
-    width: text.width ?? 0,
-    height: text.height ?? 0,
-    angle: text.angle ?? 0,
-    text: text.text ?? '',
-  };
-}
-
-function restoreTextMoveSnapshot(text: import('fabric').IText, initial: TextMoveSnapshot) {
-  text.set(initial);
-  text.setCoords();
-}
-
-function distanceToSegment(point: Point, start: Point, end: Point) {
-  const x = end.x - start.x;
-  const y = end.y - start.y;
-  const lengthSquared = x * x + y * y;
-  if (!lengthSquared) return Math.hypot(point.x - start.x, point.y - start.y);
-  const ratio = Math.max(
-    0,
-    Math.min(1, ((point.x - start.x) * x + (point.y - start.y) * y) / lengthSquared),
-  );
-  return Math.hypot(point.x - (start.x + x * ratio), point.y - (start.y + y * ratio));
-}
-
-function textFrameHitTest(
-  canvas: import('fabric').Canvas,
-  text: import('fabric').IText,
-  event: PointerEvent,
-) {
-  const padding = text.get('annotationBackgroundEnabled')
-    ? Number(text.get('annotationBackgroundPadding') ?? 0)
-    : 0;
-  const width = (text.width ?? 0) + padding * 2;
-  const height = (text.height ?? 0) + padding * 2;
-  const matrix = text.calcTransformMatrix();
-  const viewport = canvas.viewportTransform ?? [1, 0, 0, 1, 0, 0];
-  const rect = canvas.upperCanvasEl.getBoundingClientRect();
-  if (!rect.width || !rect.height) return false;
-  const screenPoint = (x: number, y: number) => {
-    const sceneX = matrix[0] * x + matrix[2] * y + matrix[4];
-    const sceneY = matrix[1] * x + matrix[3] * y + matrix[5];
-    const viewportX = viewport[0] * sceneX + viewport[2] * sceneY + viewport[4];
-    const viewportY = viewport[1] * sceneX + viewport[3] * sceneY + viewport[5];
-    return {
-      x: rect.left + (viewportX * rect.width) / canvas.width,
-      y: rect.top + (viewportY * rect.height) / canvas.height,
-    };
-  };
-  const corners = [
-    screenPoint(-width / 2, -height / 2),
-    screenPoint(width / 2, -height / 2),
-    screenPoint(width / 2, height / 2),
-    screenPoint(-width / 2, height / 2),
-  ];
-  const pointer = { x: event.clientX, y: event.clientY };
-  return corners.some(
-    (corner, index) => distanceToSegment(pointer, corner, corners[(index + 1) % 4]!) <= 10,
-  );
-}
 
 function finalizeGestureSession(session: Session) {
   return { completed: session, next: { kind: ImageEditorGestureSessionKind.Idle } as Session };
@@ -255,17 +171,25 @@ export function useImageEditorDrawingGestures({
     const canvas = canvasRef.current;
     const fabric = fabricRef.current;
     if (!canvasReady || !canvas || !fabric) return;
-    const canvasElement = canvas.upperCanvasEl;
+    const textFrameController = createImageEditorTextFrameGestureController({
+      canvas,
+      fabric,
+      isInteractionLocked: () => operationsRef.current.isInteractionLocked(),
+      onTextClickAway: () => operationsRef.current.onTextClickAway(),
+      saveHistory: () => operationsRef.current.saveHistory(),
+    });
     let tearingDown = false;
     let session: Session = { kind: ImageEditorGestureSessionKind.Idle };
     let textFrame: number | null = null;
     let finalBounds: ImageEditorBounds | null = null;
     let editingTransitionHandled = false;
-    let releaseTextFramePointer = () => {};
     const reset = () => {
-      const consumed = session.kind !== ImageEditorGestureSessionKind.Idle || textFrame != null;
+      const textFrameConsumed = textFrameController.cancel();
+      const consumed =
+        session.kind !== ImageEditorGestureSessionKind.Idle ||
+        textFrame != null ||
+        textFrameConsumed;
       const cancelled = cancelGestureSession(session);
-      releaseTextFramePointer();
       if (tearingDown) {
         session = cancelled.next;
         if (textFrame != null) cancelAnimationFrame(textFrame);
@@ -273,11 +197,6 @@ export function useImageEditorDrawingGestures({
         return consumed;
       }
       if (cancelled.transient) canvas.remove(cancelled.transient);
-      if (session.kind === 'textMove') {
-        restoreTextMoveSnapshot(session.text, session.initial);
-        reconcileImageEditorAttachedArrows({ canvas, fabric });
-        canvas.setActiveObject(session.text);
-      }
       canvas.skipTargetFind = false;
       session = cancelled.next;
       finalBounds = null;
@@ -292,85 +211,6 @@ export function useImageEditorDrawingGestures({
       return source?.clientX == null || source.clientY == null
         ? null
         : imageEditorPointer(canvas, source as { clientX: number; clientY: number });
-    };
-    const moveTextFrame = (point: Point) => {
-      if (session.kind !== 'textMove') return;
-      session.text.set({
-        left: session.initial.left + point.x - session.start.x,
-        top: session.initial.top + point.y - session.start.y,
-      });
-      session.text.setCoords();
-      reconcileImageEditorAttachedArrows({ canvas, fabric });
-    };
-    const completeTextFrameMove = () => {
-      if (session.kind !== 'textMove') return false;
-      const completed = session;
-      session = { kind: ImageEditorGestureSessionKind.Idle };
-      canvas.skipTargetFind = false;
-      if (operationsRef.current.isInteractionLocked()) {
-        restoreTextMoveSnapshot(completed.text, completed.initial);
-        reconcileImageEditorAttachedArrows({ canvas, fabric });
-        return true;
-      }
-      const moved = Math.hypot(
-        (completed.text.left ?? 0) - completed.initial.left,
-        (completed.text.top ?? 0) - completed.initial.top,
-      );
-      if (moved < minimumGestureSize(canvas)) {
-        restoreTextMoveSnapshot(completed.text, completed.initial);
-        reconcileImageEditorAttachedArrows({ canvas, fabric });
-      } else {
-        reconcileImageEditorAttachedArrows({ canvas, fabric });
-        operationsRef.current.saveHistory();
-      }
-      canvas.setActiveObject(completed.text);
-      canvas.requestRenderAll();
-      return true;
-    };
-    const textFramePointerDown = (event: PointerEvent) => {
-      const activeText = canvas.getActiveObject() as import('fabric').IText | undefined;
-      const start = imageEditorPointer(canvas, event);
-      if (!start || !activeText?.isEditing || !textFrameHitTest(canvas, activeText, event)) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      const initial = textMoveSnapshot(activeText);
-      activeText.exitEditing();
-      operationsRef.current.onTextClickAway();
-      canvas.setActiveObject(activeText);
-      session = { kind: 'textMove', text: activeText, start, initial };
-      const onMove = (moveEvent: PointerEvent) => {
-        if (moveEvent.pointerId !== event.pointerId) return;
-        moveEvent.preventDefault();
-        moveEvent.stopImmediatePropagation();
-        const point = imageEditorPointer(canvas, moveEvent);
-        if (point) moveTextFrame(point);
-      };
-      const onEnd = (endEvent: PointerEvent) => {
-        if (endEvent.pointerId !== event.pointerId) return;
-        endEvent.preventDefault();
-        endEvent.stopImmediatePropagation();
-        releaseTextFramePointer();
-        completeTextFrameMove();
-      };
-      const onCancel = (cancelEvent: PointerEvent) => {
-        if (cancelEvent.pointerId !== event.pointerId) return;
-        cancelEvent.preventDefault();
-        cancelEvent.stopImmediatePropagation();
-        releaseTextFramePointer();
-        reset();
-      };
-      releaseTextFramePointer = () => {
-        canvasElement.removeEventListener('pointermove', onMove, true);
-        canvasElement.removeEventListener('pointerup', onEnd, true);
-        canvasElement.removeEventListener('pointercancel', onCancel, true);
-        if (canvasElement.hasPointerCapture(event.pointerId))
-          canvasElement.releasePointerCapture(event.pointerId);
-        releaseTextFramePointer = () => {};
-      };
-      canvasElement.addEventListener('pointermove', onMove, true);
-      canvasElement.addEventListener('pointerup', onEnd, true);
-      canvasElement.addEventListener('pointercancel', onCancel, true);
-      canvasElement.setPointerCapture(event.pointerId);
     };
     const beforeDown = (event: { e?: unknown; target?: import('fabric').FabricObject }) => {
       editingTransitionHandled = false;
@@ -471,12 +311,6 @@ export function useImageEditorDrawingGestures({
     };
     const move = (event: { e?: unknown }) => {
       if (operationsRef.current.isInteractionLocked()) return reset();
-      if (session.kind === 'textMove') {
-        const point = pointer(event);
-        if (!point) return;
-        moveTextFrame(point);
-        return;
-      }
       if (session.kind !== ImageEditorGestureSessionKind.Shape) return;
       const point = pointer(event);
       if (!point) return;
@@ -496,7 +330,6 @@ export function useImageEditorDrawingGestures({
       canvas.requestRenderAll();
     };
     const up = (event: { e?: unknown }) => {
-      if (completeTextFrameMove()) return;
       const finalized = finalizeGestureSession(session);
       const completed = finalized.completed;
       session = finalized.next;
@@ -504,10 +337,6 @@ export function useImageEditorDrawingGestures({
       canvas.skipTargetFind = false;
       if (operationsRef.current.isInteractionLocked()) {
         if (completed.kind === ImageEditorGestureSessionKind.Shape) canvas.remove(completed.object);
-        if (completed.kind === 'textMove') {
-          restoreTextMoveSnapshot(completed.text, completed.initial);
-          reconcileImageEditorAttachedArrows({ canvas, fabric });
-        }
         return;
       }
       if (completed.kind === ImageEditorGestureSessionKind.Text) {
@@ -589,20 +418,14 @@ export function useImageEditorDrawingGestures({
         canvas.requestRenderAll();
       }
     };
-    const supportsTextFramePointer =
-      typeof canvasElement.addEventListener === 'function' &&
-      typeof canvasElement.removeEventListener === 'function';
-    if (supportsTextFramePointer)
-      canvasElement.addEventListener('pointerdown', textFramePointerDown, true);
     canvas.on('mouse:down:before', beforeDown);
     canvas.on('mouse:down', down);
     canvas.on('mouse:move', move);
     canvas.on('mouse:up', up);
     return () => {
       tearingDown = true;
+      textFrameController.dispose();
       reset();
-      if (supportsTextFramePointer)
-        canvasElement.removeEventListener('pointerdown', textFramePointerDown, true);
       cancelGestureRef.current = () => false;
       canvas.off('mouse:down:before', beforeDown);
       canvas.off('mouse:down', down);
