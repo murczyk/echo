@@ -10127,6 +10127,32 @@ listNetworksRspEncoder struct =
         ]
 
 
+type alias NetworkLastActivityReq =
+    { networkIds : List (Int)
+    }
+
+
+networkLastActivityReqEncoder : NetworkLastActivityReq -> Json.Encode.Value
+networkLastActivityReqEncoder struct =
+    Json.Encode.object
+        [ ( "network_ids", (Json.Encode.list (Json.Encode.int)) struct.networkIds )
+        ]
+
+
+type alias NetworkLastActivityRow =
+    { networkId : Int
+    , lastActivityAt : Maybe (Int)
+    }
+
+
+networkLastActivityRowEncoder : NetworkLastActivityRow -> Json.Encode.Value
+networkLastActivityRowEncoder struct =
+    Json.Encode.object
+        [ ( "network_id", (Json.Encode.int) struct.networkId )
+        , ( "last_activity_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastActivityAt )
+        ]
+
+
 type alias UpdateFreqNetworksReq =
     { freq : String
     , networks : List (UpdFreqNetwork)
@@ -20866,6 +20892,19 @@ listNetworksRspDecoder =
     Json.Decode.succeed ListNetworksRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "list" (Json.Decode.list (networkDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status_counts" (listNetworksStatusCountsRspDecoder)))
+
+
+networkLastActivityReqDecoder : Json.Decode.Decoder NetworkLastActivityReq
+networkLastActivityReqDecoder =
+    Json.Decode.succeed NetworkLastActivityReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_ids" (Json.Decode.list (Json.Decode.int))))
+
+
+networkLastActivityRowDecoder : Json.Decode.Decoder NetworkLastActivityRow
+networkLastActivityRowDecoder =
+    Json.Decode.succeed NetworkLastActivityRow
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_activity_at" (Json.Decode.nullable (Json.Decode.int))))
 
 
 updateFreqNetworksReqDecoder : Json.Decode.Decoder UpdateFreqNetworksReq

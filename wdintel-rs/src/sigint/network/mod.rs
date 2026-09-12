@@ -112,6 +112,51 @@ pub async fn network_list(
     }))
 }
 
+#[post("/api/sigint/network-last-activity")]
+pub async fn network_last_activity(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<NetworkLastActivityReq>,
+) -> Result<Json<Vec<NetworkLastActivityRow>>, AppError> {
+    let user_id = login_id_from_identity(&user).context(h!())?;
+    has_any_role(&env.dbx, &user_id, vec!["Rer", "Api", "ApiAgent"])
+        .await
+        .context(h!())?;
+    if req.network_ids.len() > NETWORK_LAST_ACTIVITY_BATCH_MAX_NETWORKS {
+        return Err(AppError::BL {
+            msg: "Too many network IDs".to_string(),
+        });
+    }
+    let access = load_network_render_access(&env.dbx, &user_id)
+        .await
+        .context(h!())?;
+    let mut seen = HashSet::new();
+    let network_ids = req
+        .network_ids
+        .iter()
+        .copied()
+        .filter(|network_id| seen.insert(*network_id))
+        .collect::<Vec<_>>();
+    let last_activity = load_network_last_activity(
+        &env.dbx,
+        &network_ids,
+        &access.activity_groups,
+    )
+    .await
+    .context(h!())?;
+    Ok(Json(
+        req.network_ids
+            .iter()
+            .map(|network_id| NetworkLastActivityRow {
+                network_id: *network_id,
+                last_activity_at: last_activity
+                    .get(network_id)
+                    .map(|timestamp| timestamp.and_utc().timestamp_millis()),
+            })
+            .collect(),
+    ))
+}
+
 fn network_list_render_options(req: &ListNetworksReq) -> NetworkRenderOptions {
     let include_last_activity = req.sort_by.as_ref().is_some_and(|sorts| {
         sorts.iter().any(|sort| {

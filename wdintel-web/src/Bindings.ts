@@ -3833,6 +3833,15 @@ export type ListNetworksRsp = {
   statusCounts: ListNetworksStatusCountsRsp;
 };
 
+export type NetworkLastActivityReq = {
+  networkIds: Array<number>;
+};
+
+export type NetworkLastActivityRow = {
+  networkId: number;
+  lastActivityAt: number | null;
+};
+
 export type UpdateFreqNetworksReq = {
   freq: string;
   networks: Array<UpdFreqNetwork>;
