@@ -356,6 +356,7 @@ vi.mock('../../../../../../copy-to-clipboard', () => clipboardMock);
 
 import { MessageCardAttachmentPreviewProvider } from '../../attachment-preview/MessageCardAttachmentPreviewProvider';
 import type { CoordinatePreviewPoint } from '../../message-coordinate-preview';
+import { parseCoordinateBlock } from '../../../../../../maps/coordinate-parser';
 
 function TestCoordinatePreviewDialog({
   open,
@@ -1303,7 +1304,7 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     expect(document.body.textContent).not.toContain('Не вдалося скопіювати');
   });
 
-  it('copies each expanded coordinate row using its displayed value', async () => {
+  it('copies canonical coordinate values while keeping projection rows concise', async () => {
     clipboardMock.copyTextToClipboard.mockResolvedValue(undefined);
 
     await act(async () => {
@@ -1336,8 +1337,6 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
       ['WGS84', 'wgs84'],
       ['MGRS', 'mgrs'],
       ['DMS', 'dms'],
-      ['СК-42', 'sk42'],
-      ['УСК-2000', 'usk2000'],
       ['UTM', 'utm'],
     ]) {
       const row = document.body.querySelector(
@@ -1357,13 +1356,37 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
       expect(clipboardMock.copyTextToClipboard).toHaveBeenLastCalledWith(value);
     }
 
+    const selectedPoint = { lat: 50.45044, lng: 30.52355 };
+    for (const [format, rowId, prefix] of [
+      ['СК-42', 'sk42', 'СК-42:'],
+      ['УСК-2000', 'usk2000', 'УСК-2000:'],
+    ] as const) {
+      const row = document.body.querySelector(
+        `[data-coordinate-row="${rowId}"]`,
+      ) as HTMLElement | null;
+      const displayValue = row?.querySelectorAll('[role="cell"]')[0]?.textContent;
+      const copyButton = row?.querySelector(
+        `button[aria-label="Копіювати ${format}"]`,
+      ) as HTMLButtonElement | null;
+
+      expect(displayValue).toBeTruthy();
+      expect(displayValue).not.toContain(prefix);
+      await act(async () => {
+        copyButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await Promise.resolve();
+      });
+
+      const copiedValue = clipboardMock.copyTextToClipboard.mock.calls.at(-1)?.[0];
+      expect(copiedValue).toMatch(new RegExp(`^${prefix}`));
+      expect(copiedValue).not.toBe(displayValue);
+      const parsed = parseCoordinateBlock(copiedValue as string);
+      expect(parsed).toHaveLength(1);
+      expect(parsed[0]?.format).toBe(rowId);
+      expect(parsed[0]?.lat).toBeCloseTo(selectedPoint.lat, 3);
+      expect(parsed[0]?.lng).toBeCloseTo(selectedPoint.lng, 3);
+    }
+
     expect(clipboardMock.copyTextToClipboard).toHaveBeenCalledTimes(6);
-    expect(document.body.querySelector('[data-coordinate-row="sk42"]')?.textContent).not.toContain(
-      'СК-42:',
-    );
-    expect(
-      document.body.querySelector('[data-coordinate-row="usk2000"]')?.textContent,
-    ).not.toContain('УСК-2000:');
   });
 
   it('disables unavailable projected coordinate formats without copying WGS84 fallbacks', async () => {

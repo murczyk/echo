@@ -479,8 +479,8 @@ function CoordinateMapPreview({
     { id: 'wgs84', label: 'WGS84', value: wgs84Text },
     { id: 'mgrs', label: 'MGRS', value: mgrsText },
     { id: 'dms', label: 'DMS', value: dmsText },
-    { id: 'sk42', label: 'СК-42', value: sk42Text?.replace('СК-42: ', '') ?? null },
-    { id: 'usk2000', label: 'УСК-2000', value: usk2000Text?.replace('УСК-2000: ', '') ?? null },
+    { id: 'sk42', label: 'СК-42', value: sk42Text },
+    { id: 'usk2000', label: 'УСК-2000', value: usk2000Text },
     { id: 'utm', label: 'UTM', value: utmText },
   ];
   const localityText = formatCoordinateLocality(point.locality ?? null);
@@ -907,7 +907,7 @@ function CoordinateValueRow({
           disabled={value == null || status === 'copying'}
           onClick={(event) => {
             event.stopPropagation();
-            onCopy(format, value == null ? null : displayValue);
+            onCopy(format, value);
           }}
           sx={{
             width: COORDINATE_COPY_SIZE,
