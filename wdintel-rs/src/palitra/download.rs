@@ -1,3 +1,4 @@
+use crate::entities::palitra as palitra_entity;
 use crate::error::AppError;
 use crate::h;
 use crate::kml::types as kml_types;
@@ -12,15 +13,17 @@ use actix_web::HttpResponse;
 use anyhow::Context;
 use chrono::Utc;
 use itertools::Itertools;
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::Deserialize;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{BufWriter, Cursor, Seek, Write};
+use std::path::Path;
 use tokio_util::io::ReaderStream;
 use zip::write::FileOptions;
 
 use super::{
-    ensure_unique_zip_entry_name, normalize_color_hex_or_fallback,
-    palitra_goi_remote_file_name,
+    download_stored_palitra_bytes, ensure_unique_zip_entry_name,
+    normalize_color_hex_or_fallback, palitra_goi_remote_file_name,
 };
 
 type ZipFileOptions = FileOptions<'static, zip::write::ExtendedFileOptions>;
@@ -32,6 +35,11 @@ enum DeltaSplitFeature {
         coords: Vec<Coords>,
         color: Option<String>,
     },
+}
+
+struct DeltaSplitPalitra {
+    palitra: Palitra,
+    features: Vec<DeltaSplitFeature>,
 }
 
 impl DeltaSplitFeature {
@@ -83,6 +91,8 @@ pub async fn download_palitras_delta_split(
         bl::collect_downloadable_palitra_details(login, palitra_ids, &env.dbx)
             .await
             .c(h!())?;
+    let palitras =
+        collect_delta_split_palitras(&env, palitras).await.c(h!())?;
     let zip_file = build_delta_split_archive(palitras).c(h!())?;
     let zip_size = zip_file.metadata().c(h!())?.len();
     let stream = ReaderStream::new(tokio::fs::File::from_std(zip_file));
@@ -99,8 +109,137 @@ pub async fn download_palitras_delta_split(
         .streaming(stream))
 }
 
-fn build_delta_split_archive(
+async fn collect_delta_split_palitras(
+    env: &Data<Env>,
     palitras: Vec<PalitraReadV2>,
+) -> anyhow::Result<Vec<DeltaSplitPalitra>> {
+    let palitra_ids = palitras
+        .iter()
+        .map(|palitra_read| palitra_read.palitra.id)
+        .collect_vec();
+    let source_palitras = collect_source_palitras(&env.dbx, palitra_ids)
+        .await
+        .c(h!())?;
+    let strongbox_key = env
+        .config
+        .s3_config
+        .as_ref()
+        .map(|config| config.strongbox_key.clone())
+        .unwrap_or_default();
+    let mut total_encrypted_bytes = 0u64;
+    let mut result = Vec::with_capacity(palitras.len());
+
+    for palitra_read in palitras {
+        let mut features = collect_delta_split_features(&palitra_read);
+        if let Some(source_palitra) =
+            source_palitras.get(&palitra_read.palitra.id)
+        {
+            let source_features = collect_stored_source_delta_split_features(
+                env,
+                &strongbox_key,
+                &palitra_read.palitra,
+                source_palitra,
+                &mut total_encrypted_bytes,
+            )
+            .await
+            .c(h!())?;
+            if !source_features.is_empty() {
+                features = source_features;
+            }
+        }
+        result.push(DeltaSplitPalitra {
+            palitra: palitra_read.palitra,
+            features,
+        });
+    }
+    Ok(result)
+}
+
+async fn collect_source_palitras(
+    dbx: &DatabaseConnection,
+    palitra_ids: Vec<i64>,
+) -> anyhow::Result<HashMap<i64, palitra_entity::Model>> {
+    Ok(palitra_entity::Entity::find()
+        .filter(palitra_entity::Column::Id.is_in(palitra_ids))
+        .filter(palitra_entity::Column::Deleted.eq(false))
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|palitra| (palitra.id, palitra))
+        .collect())
+}
+
+async fn collect_stored_source_delta_split_features(
+    env: &Data<Env>,
+    strongbox_key: &str,
+    palitra: &Palitra,
+    source_palitra: &palitra_entity::Model,
+    total_encrypted_bytes: &mut u64,
+) -> anyhow::Result<Vec<DeltaSplitFeature>> {
+    let Some(bytes) = download_stored_palitra_bytes(
+        env,
+        strongbox_key,
+        source_palitra,
+        total_encrypted_bytes,
+    )
+    .await
+    .c(h!())?
+    else {
+        return Ok(vec![]);
+    };
+    let file_name = stored_source_file_name(palitra, source_palitra);
+    let upload = super::kmz::parse_coordinates_from_file(&file_name, &bytes)
+        .await
+        .c(h!())?;
+    Ok(collect_delta_split_features_from_upload(upload))
+}
+
+fn stored_source_file_name(
+    palitra: &Palitra,
+    source_palitra: &palitra_entity::Model,
+) -> String {
+    palitra
+        .source_file_name
+        .as_deref()
+        .or(source_palitra.source_file_name_legacy.as_deref())
+        .map(super::kmz::sanitize_upload_filename)
+        .unwrap_or_else(|| {
+            let extension = palitra
+                .source_format
+                .as_deref()
+                .or_else(|| {
+                    source_palitra
+                        .s3_id
+                        .as_deref()
+                        .and_then(|s3_id| Path::new(s3_id).extension())
+                        .and_then(|extension| extension.to_str())
+                })
+                .filter(|extension| !extension.is_empty())
+                .unwrap_or("kmz");
+            format!("palitra_{}.{}", palitra.id, extension)
+        })
+}
+
+fn collect_delta_split_features_from_upload(
+    upload: super::kmz::PalitraKmzData,
+) -> Vec<DeltaSplitFeature> {
+    let mut features = upload
+        .points
+        .into_iter()
+        .map(DeltaSplitFeature::Point)
+        .collect_vec();
+    for line_string in upload.line_strings {
+        features.extend(split_delta_line_string(
+            &line_string.coords,
+            line_string.color,
+        ));
+    }
+    features
+}
+
+fn build_delta_split_archive(
+    palitras: Vec<DeltaSplitPalitra>,
 ) -> Result<std::fs::File, AppError> {
     let zip_file = tempfile::tempfile().c(h!())?;
     let mut zip = zip::ZipWriter::new(BufWriter::new(zip_file));
@@ -120,18 +259,18 @@ fn delta_split_zip_options() -> ZipFileOptions {
 fn write_delta_split_palitras(
     zip: &mut zip::ZipWriter<BufWriter<std::fs::File>>,
     options: &ZipFileOptions,
-    palitras: Vec<PalitraReadV2>,
+    palitras: Vec<DeltaSplitPalitra>,
 ) -> Result<(), AppError> {
     let mut used_file_names = HashSet::new();
     let mut total_bytes = 0u64;
 
-    for palitra_read in palitras {
+    for palitra in palitras {
         write_delta_split_palitra(
             zip,
             options,
             &mut used_file_names,
             &mut total_bytes,
-            palitra_read,
+            palitra,
         )?;
     }
     Ok(())
@@ -142,11 +281,16 @@ fn write_delta_split_palitra(
     options: &ZipFileOptions,
     used_file_names: &mut HashSet<String>,
     total_bytes: &mut u64,
-    palitra_read: PalitraReadV2,
+    palitra: DeltaSplitPalitra,
 ) -> Result<(), AppError> {
-    let chunks = collect_delta_split_chunks(&palitra_read);
+    let chunks = chunk_delta_split_features(palitra.features);
     if chunks.is_empty() {
-        return Ok(());
+        return Err(AppError::BL {
+            msg: format!(
+                "Palitra has no geometry to split for Delta: palitra_id={}",
+                palitra.palitra.id
+            ),
+        });
     }
     let total_chunks = chunks.len();
 
@@ -156,7 +300,7 @@ fn write_delta_split_palitra(
             options,
             used_file_names,
             total_bytes,
-            &palitra_read.palitra,
+            &palitra.palitra,
             chunk_index,
             total_chunks,
             chunk.as_slice(),
@@ -165,6 +309,7 @@ fn write_delta_split_palitra(
     Ok(())
 }
 
+#[cfg(test)]
 fn collect_delta_split_chunks(
     palitra_read: &PalitraReadV2,
 ) -> Vec<Vec<DeltaSplitFeature>> {
@@ -549,6 +694,7 @@ fn normalized_hex_color_body(color_hex: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::palitra::kmz::{PalitraKmzData, PalitraLineString};
     use crate::palitra::types::{Geometry, PalitraGeometryDetails};
     use std::io::Read;
 
@@ -619,6 +765,50 @@ mod tests {
         assert_eq!(hex_color_to_kml_color("#aabbcc"), "ffccbbaa");
         assert_eq!(hex_color_to_kml_color("not-a-color"), "ff060606");
         assert_eq!(hex_color_to_kml_color("#abc"), "ff060606");
+    }
+
+    #[test]
+    fn empty_delta_split_palitra_is_rejected() {
+        let error = build_delta_split_archive(vec![DeltaSplitPalitra {
+            palitra: test_palitra("empty"),
+            features: vec![],
+        }])
+        .unwrap_err();
+
+        let AppError::BL { msg } = error else {
+            panic!("expected business-logic error");
+        };
+        assert!(msg.contains("palitra_id=42"));
+    }
+
+    #[test]
+    fn stored_source_features_create_delta_chunks() {
+        let features =
+            collect_delta_split_features_from_upload(PalitraKmzData {
+                points: vec![PalitraPoint {
+                    coords: test_coords(50.45, 30.52),
+                    label: Some("Alpha".to_string()),
+                    color: Some("#112233".to_string()),
+                }],
+                line_strings: vec![PalitraLineString {
+                    coords: vec![
+                        test_coords(50.46, 30.53),
+                        test_coords(50.47, 30.54),
+                    ],
+                    color: Some("#445566".to_string()),
+                }],
+                s3_id: None,
+            });
+        let chunks = chunk_delta_split_features(features);
+
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(
+            chunks[0]
+                .iter()
+                .map(DeltaSplitFeature::point_count)
+                .sum::<usize>(),
+            3
+        );
     }
 
     #[test]

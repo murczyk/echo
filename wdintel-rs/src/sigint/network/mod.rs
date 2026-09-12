@@ -94,10 +94,15 @@ pub async fn network_list(
     .await
     .context(h!())?;
 
-    let res =
-        render_networks_with_access(networks, &env.dbx, &user_id, &access)
-            .await
-            .context(h!())?;
+    let res = render_networks_with_options(
+        networks,
+        &env.dbx,
+        &user_id,
+        &access,
+        network_list_render_options(&req),
+    )
+    .await
+    .context(h!())?;
 
     let status_counts = load_network_status_counts(&env.dbx, &req).await?;
 
@@ -105,6 +110,21 @@ pub async fn network_list(
         list: res,
         status_counts,
     }))
+}
+
+fn network_list_render_options(req: &ListNetworksReq) -> NetworkRenderOptions {
+    let include_last_activity = req.sort_by.as_ref().is_some_and(|sorts| {
+        sorts.iter().any(|sort| {
+            matches!(
+                sort,
+                ListNetworksSortBy::LastActivityAsc
+                    | ListNetworksSortBy::LastActivityDesc
+            )
+        })
+    });
+    NetworkRenderOptions {
+        include_last_activity,
+    }
 }
 
 #[derive(Copy, Clone, Eq, PartialEq)]
@@ -537,9 +557,23 @@ pub async fn network_info_batch_id(
     .await?;
     let user_id = login_id_from_identity(&user)?;
     let txn = env.dbx.begin().await.context(h!())?;
-    let res = bl_network_info_batch(req.clone(), &txn, &user_id)
+    let networks = sigint_network::Entity::find()
+        .filter(sigint_network::Column::Id.eq_any(req.clone()))
+        .all(&txn)
         .await
         .context(h!())?;
+    let access = load_network_render_access(&txn, &user_id)
+        .await
+        .context(h!())?;
+    let res = render_networks_with_options(
+        networks,
+        &txn,
+        &user_id,
+        &access,
+        NetworkRenderOptions::lookup(),
+    )
+    .await
+    .context(h!())?;
     txn.commit().await.context(h!())?;
     Ok(Json(res))
 }

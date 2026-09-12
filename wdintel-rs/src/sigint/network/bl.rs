@@ -18,6 +18,25 @@ pub(crate) struct NetworkRenderAccess {
     load_encryption_keys: bool,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct NetworkRenderOptions {
+    pub(crate) include_last_activity: bool,
+}
+
+impl NetworkRenderOptions {
+    pub(crate) fn full() -> Self {
+        Self {
+            include_last_activity: true,
+        }
+    }
+
+    pub(crate) fn lookup() -> Self {
+        Self {
+            include_last_activity: false,
+        }
+    }
+}
+
 pub(crate) async fn load_network_render_access<'a, 'async_trait, C>(
     txn: &'a C,
     user_login: &uuid::Uuid,
@@ -92,6 +111,26 @@ pub(crate) async fn render_networks_with_access<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
+    render_networks_with_options(
+        networks,
+        txn,
+        user_login,
+        access,
+        NetworkRenderOptions::full(),
+    )
+    .await
+}
+
+pub(crate) async fn render_networks_with_options<'a, 'async_trait, C>(
+    networks: Vec<sigint_network::Model>,
+    txn: &'a C,
+    user_login: &uuid::Uuid,
+    access: &NetworkRenderAccess,
+    options: NetworkRenderOptions,
+) -> Result<Vec<Network>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let instant = std::time::Instant::now();
 
     if networks.is_empty() {
@@ -103,7 +142,7 @@ where
 
     // fetch all related data in bulk
     let network_freqs =
-        get_networks_freqs(txn, &network_ids, user_login, access)
+        get_networks_freqs(txn, &network_ids, user_login, access, options)
             .await
             .context(h!())?;
     let units_map =
@@ -200,6 +239,7 @@ async fn get_networks_freqs<'a, 'async_trait, C>(
     network_ids: &[i64],
     user_login: &uuid::Uuid,
     access: &NetworkRenderAccess,
+    options: NetworkRenderOptions,
 ) -> Result<NetworkFreqs, AppError>
 where
     C: ConnectionTrait + 'async_trait,
@@ -254,10 +294,13 @@ where
             });
     }
 
-    let last_activity_by_network_id =
+    let last_activity_by_network_id = if options.include_last_activity {
         load_network_last_activity(txn, network_ids, &access.activity_groups)
             .await
-            .context(h!())?;
+            .context(h!())?
+    } else {
+        HashMap::new()
+    };
 
     Ok(NetworkFreqs {
         freqs_by_network_id,

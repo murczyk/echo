@@ -6,7 +6,11 @@ vi.mock('mgrs', async (importOriginal) => {
   return { ...actual, forward: vi.fn(actual.forward) };
 });
 
-import { getCoordinateMgrsText, getCoordinateText } from './coordinate-format';
+import {
+  getCoordinateMgrsText,
+  getCoordinateText,
+  getCoordinateTextIfAvailable,
+} from './coordinate-format';
 import { parseCoordinateInput } from './coordinate-search';
 
 const COORDS = { lat: 47.068996, lng: 33.639173 };
@@ -43,5 +47,15 @@ describe('getCoordinateText', () => {
 
     expect(parsed?.lat).toBeCloseTo(COORDS.lat, 4);
     expect(parsed?.lng).toBeCloseTo(COORDS.lng, 4);
+  });
+
+  it('preserves unavailable projected conversion state while the legacy formatter falls back', () => {
+    const unsupported = { lat: 50, lng: 60 };
+
+    expect(getCoordinateTextIfAvailable('sk42', unsupported)).toBeNull();
+    expect(getCoordinateTextIfAvailable('usk2000', unsupported)).toBeNull();
+    expect(getCoordinateTextIfAvailable('utm', { lat: 85, lng: 30 })).toBeNull();
+    expect(getCoordinateText('sk42', unsupported)).toBe('50.00000, 60.00000');
+    expect(getCoordinateTextIfAvailable('sk42', COORDS)).toMatch(/^СК-42: X=/);
   });
 });

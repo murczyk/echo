@@ -95,6 +95,8 @@ pub struct MultiGeometry {
     pub points: Vec<Point>,
     #[serde(rename = "LineString", default)]
     pub line_strings: Vec<LineString>,
+    #[serde(rename = "Polygon", default)]
+    pub polygons: Vec<Polygon>,
 }
 
 #[derive(
