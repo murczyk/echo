@@ -308,7 +308,7 @@ where
     })
 }
 
-async fn load_network_last_activity<'a, 'async_trait, C>(
+pub(crate) async fn load_network_last_activity<'a, 'async_trait, C>(
     txn: &'a C,
     network_ids: &[i64],
     groups: &[String],
@@ -1257,7 +1257,7 @@ mod tests {
         datasource_group_id: i64,
         freq: &str,
         timestamp: NaiveDateTime,
-    ) {
+    ) -> i64 {
         let message = mk_signal_message(
             dbx,
             signal_message::ActiveModel {
@@ -1290,6 +1290,7 @@ mod tests {
         )
         .await
         .unwrap();
+        message.id
     }
 
     // Regression for ECHO-3207: API network reads must not require SIGINT scope.
@@ -1479,5 +1480,56 @@ mod tests {
             .flat_map(HashMap::values)
             .sum();
         assert_eq!(message_count, 1);
+
+        let second_network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(second_network.id),
+                freq: Set(freq.to_string()),
+                active_from: Set(dt(1)),
+                last_seen_dt: Set(Some(dt(3))),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        seed_network_activity(
+            &env.dbx,
+            second_network.id,
+            allowed_datasource_group.id,
+            freq,
+            dt(1),
+        )
+        .await;
+        let deleted_message_id = seed_network_activity(
+            &env.dbx,
+            second_network.id,
+            allowed_datasource_group.id,
+            freq,
+            dt(3),
+        )
+        .await;
+        let deleted_message =
+            signal_message::Entity::find_by_id(deleted_message_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        let mut deleted_message = deleted_message.into_active_model();
+        deleted_message.deleted = Set(true);
+        deleted_message.update(&env.dbx).await.unwrap();
+
+        let last_activity = load_network_last_activity(
+            &env.dbx,
+            &[network.id, second_network.id],
+            &groups,
+        )
+        .await
+        .unwrap();
+        assert_eq!(last_activity.get(&network.id), Some(&dt(7)));
+        assert_eq!(last_activity.get(&second_network.id), Some(&dt(1)));
     }
 }

@@ -65,6 +65,8 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
   const [activityByNetworkId, setActivityByNetworkId] = useState<ActivityByNetworkId>(new Map());
   const [activityLoadStateByNetworkId, setActivityLoadStateByNetworkId] =
     useState<ActivityLoadStateByNetworkId>(new Map());
+  const [lastActivityLoadStateByNetworkId, setLastActivityLoadStateByNetworkId] =
+    useState<ActivityLoadStateByNetworkId>(new Map());
   const [filters, setFilters] = useState<NetworksFilterState>(() =>
     createDefaultNetworksFilterState(),
   );
@@ -177,9 +179,17 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
           aorsById,
           activityByNetworkId,
           activityLoadStateByNetworkId,
+          lastActivityLoadStateByNetworkId,
         ),
       ),
-    [activityByNetworkId, activityLoadStateByNetworkId, aorsById, networks, unitsById],
+    [
+      activityByNetworkId,
+      activityLoadStateByNetworkId,
+      lastActivityLoadStateByNetworkId,
+      aorsById,
+      networks,
+      unitsById,
+    ],
   );
   const aorOptions = useMemo(() => sortNetworkAorsForDisplay(aors), [aors]);
   const querySnapshot = useMemo<NetworksQuerySnapshot>(
@@ -268,6 +278,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
         setNetworks,
         setActivityByNetworkId,
         setActivityLoadStateByNetworkId,
+        setLastActivityLoadStateByNetworkId,
         setBootstrapLoaded,
       }),
     [],

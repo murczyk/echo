@@ -20,6 +20,7 @@ const apiMock = vi.hoisted(() => ({
   deleteNetwork: vi.fn(),
   downloadNetworkEtalonkaReportTaskResult: vi.fn(),
   getNetworksGroupsActivity: vi.fn(),
+  getNetworkLastActivity: vi.fn(),
   getNetworkUnitStats: vi.fn(),
   getEncryptions: vi.fn(),
   currentSystemSettings: vi.fn(),
@@ -104,6 +105,7 @@ vi.mock('../../services/api/networks', () => ({
   deleteNetwork: apiMock.deleteNetwork,
   downloadNetworkEtalonkaReportTaskResult: apiMock.downloadNetworkEtalonkaReportTaskResult,
   getNetworksGroupsActivity: apiMock.getNetworksGroupsActivity,
+  getNetworkLastActivity: apiMock.getNetworkLastActivity,
   getNetworkUnitStats: apiMock.getNetworkUnitStats,
   listNetworks: apiMock.listNetworks,
   launchNetworkEtalonkaBatchReportTask: apiMock.launchNetworkEtalonkaBatchReportTask,
@@ -251,6 +253,7 @@ describe('useRerNetworksNeoPage', () => {
     reportHistoryMock.fetchReportHistoryStatus.mockReset();
     reportHistoryMock.fetchReportHistoryTaskStatus.mockReset();
     apiMock.getNetworksGroupsActivity.mockReset();
+    apiMock.getNetworkLastActivity.mockReset();
     apiMock.getNetworkUnitStats.mockReset();
     apiMock.getEncryptions.mockReset();
     apiMock.currentSystemSettings.mockReset();
@@ -269,6 +272,7 @@ describe('useRerNetworksNeoPage', () => {
     apiMock.getNetworkUnitStats.mockResolvedValue([]);
     apiMock.listPosts.mockResolvedValue([]);
     apiMock.getNetworksGroupsActivity.mockResolvedValue({});
+    apiMock.getNetworkLastActivity.mockResolvedValue([]);
     apiMock.getEncryptions.mockResolvedValue([{ id: 11, name: 'FM' } as never]);
     apiMock.currentSystemSettings.mockResolvedValue({
       id: 1,
@@ -1346,6 +1350,92 @@ describe('useRerNetworksNeoPage', () => {
       expect.any(Object),
     );
     expect(latest?.rows[0]?.activityBars.some((bar) => bar.value === 3)).toBe(true);
+  });
+
+  it('loads last interception dates after the network list without showing a false empty state', async () => {
+    const activity = deferred<Array<{ networkId: number; lastActivityAt: number | null }>>();
+    apiMock.getNetworkLastActivity.mockImplementationOnce(() => activity.promise);
+
+    await renderHook();
+    await flushEffects();
+
+    expect(apiMock.getNetworkLastActivity).toHaveBeenCalledWith(
+      { networkIds: [1, 2] },
+      expect.any(Object),
+    );
+    expect(latest?.rows[0]?.lastActivityLabel).toBe('Завантаження…');
+
+    const lastActivityAt = Date.UTC(2026, 8, 12, 10, 15);
+    await act(async () => {
+      activity.resolve([
+        { networkId: 1, lastActivityAt },
+        { networkId: 2, lastActivityAt: null },
+      ]);
+      await activity.promise;
+    });
+    await flushEffects();
+
+    expect(latest?.rows[0]?.lastActivityLabel).toBe(dayjs(lastActivityAt).format('DD.MM.YY HH:mm'));
+    expect(latest?.rows[1]?.lastActivityDetail).toBe('Немає перехоплень');
+  });
+
+  it('shows a last-activity loading error instead of reporting no interceptions', async () => {
+    apiMock.getNetworkLastActivity.mockRejectedValueOnce(new Error('activity unavailable'));
+
+    await renderHook();
+    await vi.waitFor(() =>
+      expect(latest?.rows[0]?.lastActivityLabel).toBe('Не вдалося завантажити'),
+    );
+
+    expect(latest?.status?.text).toContain('Помилка завантаження останньої активності');
+  });
+
+  it('settles first-page last activity after pagination starts', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => buildNetwork(index + 1));
+    const firstPageActivity =
+      deferred<Array<{ networkId: number; lastActivityAt: number | null }>>();
+    const firstActivityAt = Date.UTC(2026, 8, 11, 10, 15);
+    const secondActivityAt = Date.UTC(2026, 8, 12, 10, 15);
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: firstPage,
+      statusCounts: { active: 100, inactive: 0, archived: 0 },
+    });
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(101)],
+      statusCounts: { active: 101, inactive: 0, archived: 0 },
+    });
+    apiMock.getNetworkLastActivity
+      .mockImplementationOnce(() => firstPageActivity.promise)
+      .mockResolvedValueOnce([{ networkId: 101, lastActivityAt: secondActivityAt }]);
+
+    await renderHook();
+    await flushEffects();
+    expect(latest?.rows[0]?.lastActivityLabel).toBe('Завантаження…');
+    expect(apiMock.getNetworkLastActivity).toHaveBeenCalledWith(
+      { networkIds: firstPage.map((network) => network.id) },
+      expect.any(Object),
+    );
+    expect(apiMock.getNetworkLastActivity).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await latest?.loadMoreNetworks();
+    });
+    await vi.waitFor(() =>
+      expect(latest?.rows.find((row) => row.id === 101)?.lastActivityLabel).toBe(
+        dayjs(secondActivityAt).format('DD.MM.YY HH:mm'),
+      ),
+    );
+
+    await act(async () => {
+      firstPageActivity.resolve([{ networkId: 1, lastActivityAt: firstActivityAt }]);
+      await firstPageActivity.promise;
+    });
+    await vi.waitFor(() =>
+      expect(latest?.rows[0]?.lastActivityLabel).toBe(
+        dayjs(firstActivityAt).format('DD.MM.YY HH:mm'),
+      ),
+    );
+    expect(apiMock.getNetworkLastActivity).toHaveBeenCalledTimes(2);
   });
 
   it('settles first-page activity after pagination starts', async () => {
