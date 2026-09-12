@@ -874,6 +874,13 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.directMessageError).toBe(
       'Повідомлення за посиланням не знайдено або воно недоступне.',
     );
+
+    await act(async () => latest?.resetFilters());
+
+    expect(latest?.directMessageError).toBe(
+      'Повідомлення за посиланням не знайдено або воно недоступне.',
+    );
+    expect(new URL(window.location.href).searchParams.get('m')).toBe('missing-uid');
   });
 
   it('opens the direct-link message window with its references', async () => {

@@ -708,7 +708,6 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     setQueryState(nextState);
     setLastResetState(nextState);
     setError(null);
-    setDirectMessageError(null);
     pushQueryStateToUrl(nextState, newestFirst);
   }, [data, savedFilters, newestFirst]);
 

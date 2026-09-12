@@ -79,6 +79,16 @@ describe('MessageReferenceLink', () => {
     return event;
   }
 
+  async function auxiliaryClick(link: Element | null, button = 1) {
+    const event = new MouseEvent('auxclick', { bubbles: true, cancelable: true, button });
+    await act(async () => {
+      link?.dispatchEvent(event);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    return event;
+  }
+
   it('shows the linked message in the intelligence-report preview', async () => {
     mocks.fetchInboxItemContext.mockResolvedValue({
       message: [
@@ -165,6 +175,34 @@ describe('MessageReferenceLink', () => {
       severity: 'warning',
       message: 'Повідомлення видалено або у вас немає до нього доступу.',
     });
+  });
+
+  it('keeps an unavailable message reference on the current page after an auxiliary click', async () => {
+    mocks.fetchInboxItemContext.mockResolvedValue({
+      message: null,
+      groupMasterKeys: [],
+      sigintInboxItemIds: [],
+      sinceTs: null,
+      tillTs: null,
+    });
+    const openWindow = vi.spyOn(window, 'open');
+
+    const clickEvent = await auxiliaryClick(await renderLink());
+
+    expect(clickEvent.defaultPrevented).toBe(true);
+    expect(openWindow).not.toHaveBeenCalled();
+    expect(mocks.notify).toHaveBeenCalledWith({
+      severity: 'warning',
+      message: 'Повідомлення видалено або у вас немає до нього доступу.',
+    });
+  });
+
+  it('does not treat right-click as message navigation', async () => {
+    const clickEvent = await auxiliaryClick(await renderLink(), 2);
+
+    expect(clickEvent.defaultPrevented).toBe(false);
+    expect(mocks.fetchInboxItemContext).not.toHaveBeenCalled();
+    expect(mocks.notify).not.toHaveBeenCalled();
   });
 
   it('opens an available message reference after checking it', async () => {
@@ -271,14 +309,14 @@ describe('MessageReferenceLink', () => {
     });
   });
 
-  it('shows an error toast and an unavailable preview when loading fails', async () => {
+  it('shows an error toast without opening a preview when loading fails', async () => {
     mocks.fetchInboxItemContext.mockRejectedValue(new Error('Помилка завантаження'));
 
     const link = await renderLink();
     await hover(link);
 
     expect(mocks.fetchInboxItemContext).toHaveBeenCalledTimes(1);
-    expect(document.querySelector('[role="tooltip"]')?.textContent).toContain('Прев’ю недоступне');
+    expect(document.querySelector('[role="tooltip"]')).toBeNull();
     expect(mocks.notify).toHaveBeenCalledWith({
       severity: 'error',
       message: 'Помилка завантаження',

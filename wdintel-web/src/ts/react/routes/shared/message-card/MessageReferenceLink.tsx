@@ -90,7 +90,7 @@ export function MessageReferenceLink({
         return { kind: 'available' };
       })
       .catch((error): MessageReferenceResolution => {
-        setUnavailable(true);
+        setUnavailable(false);
         return { kind: 'error', error };
       })
       .then((result) => {
@@ -122,7 +122,7 @@ export function MessageReferenceLink({
             : 'Не вдалося завантажити попередній перегляд повідомлення.',
       });
     }
-    return true;
+    return resolution.kind !== 'error';
   };
 
   const openMessageReference = async (event: MouseEvent<HTMLAnchorElement>) => {
@@ -176,6 +176,9 @@ export function MessageReferenceLink({
         onMouseEnter={() => void resolveMessageReference()}
         onFocus={() => void resolveMessageReference()}
         onClick={openMessageReference}
+        onAuxClick={(event) => {
+          if (event.button === 1) void openMessageReference(event);
+        }}
         style={{
           color: 'var(--color-action)',
           fontWeight: 600,
