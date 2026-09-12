@@ -27,14 +27,10 @@ export function imageEditorToolShortcut(tool: ImageEditorTool) {
 
 export function imageEditorToolShortcutLabel(tool: ImageEditorTool) {
   const shortcut = imageEditorToolShortcut(tool);
-  return shortcut ? `${shortcut.key} (${shortcut.ukrainianKey})` : null;
+  return shortcut ? `${shortcut.key} / ${shortcut.ukrainianKey}` : null;
 }
 
 export function imageEditorToolFromKeyboardEvent(event: KeyboardEvent) {
   if (event.ctrlKey || event.metaKey || event.altKey || event.repeat) return undefined;
   return IMAGE_EDITOR_TOOL_SHORTCUTS.find((shortcut) => shortcut.code === event.code)?.tool;
-}
-
-export function imageEditorPrimaryModifierLabel() {
-  return navigator.platform.toLowerCase().includes('mac') ? '⌘' : 'Ctrl';
 }

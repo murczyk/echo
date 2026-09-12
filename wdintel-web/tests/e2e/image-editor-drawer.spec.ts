@@ -227,16 +227,58 @@ test.describe('image editor drawer integration #3448', () => {
     }
   });
 
-  test('opens and dismisses shortcut help from mobile overflow #3448', async ({ page }) => {
+  test('presents shortcut help across desktop and mobile controls #3448', async ({ page }) => {
     const { editor } = await openPendingImageEditor(page, 'duty');
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await editor.getByRole('button', { name: 'Гарячі клавіші' }).click();
+    const help = page.getByRole('heading', { name: 'Гарячі клавіші' });
+    await expect(help).toBeVisible();
+    const panel = help.locator('xpath=..');
+    await expect(
+      panel.getByText('Під час введення тексту швидкий вибір інструментів вимкнено.'),
+    ).toBeVisible();
+    await expect(panel.getByText('B / И', { exact: true })).toBeVisible();
+    await expect(panel.getByText('⌘Z / Ctrl+Z', { exact: true })).toBeVisible();
+    const redo = panel.getByText('⌘⇧Z / Ctrl+Shift+Z / Ctrl+Y', { exact: true });
+    await expect(redo).toBeVisible();
+    await expect(panel.getByText('Скасувати', { exact: true })).toHaveCount(1);
+    await expect(panel.getByText('Повторити', { exact: true })).toHaveCount(1);
+    await page.keyboard.press('Escape');
+    await expect(help).toBeHidden();
+    await editor.getByRole('button', { name: 'Прямокутник' }).hover();
+    await expect(page.getByText('Прямокутник · R / К', { exact: true })).toBeVisible();
+
+    await page.setViewportSize({ width: 768, height: 900 });
+    await editor.getByRole('button', { name: 'Ще' }).click();
+    await page.getByRole('menuitem', { name: 'Гарячі клавіші' }).click();
+    await expect(redo).toBeVisible();
+    await expect(
+      panel.getByText('Space + перетягування / середня кнопка', { exact: true }),
+    ).toBeVisible();
+    const wrappedShortcuts = await panel.locator('kbd').evaluateAll((elements) =>
+      elements.flatMap((element) => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        return range.getClientRects().length === 1 ? [] : [element.textContent];
+      }),
+    );
+    expect(wrappedShortcuts).toEqual([]);
+    await page.keyboard.press('Escape');
+    await expect(help).toBeHidden();
+
     await page.setViewportSize({ width: 360, height: 800 });
     const more = editor.getByRole('button', { name: 'Ще' });
     await expect(more).toBeEnabled();
     await more.click();
     await page.getByRole('menuitem', { name: 'Гарячі клавіші' }).click();
-    const help = page.getByRole('heading', { name: 'Гарячі клавіші' });
     await expect(help).toBeVisible();
-    await expect(page.getByText('B / И', { exact: true })).toBeVisible();
+    const bounds = await panel.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(Math.ceil(bounds!.x + bounds!.width)).toBeLessThanOrEqual(361);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      360,
+    );
     await page.keyboard.press('Escape');
     await expect(help).toBeHidden();
     await expect(editor).toBeVisible();

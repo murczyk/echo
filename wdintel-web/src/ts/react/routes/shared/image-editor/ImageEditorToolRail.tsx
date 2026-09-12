@@ -37,7 +37,6 @@ import { ImageEditorViewControls } from './ImageEditorViewControls';
 import { ImageEditorTool } from './image-editor.types';
 import {
   IMAGE_EDITOR_TOOL_SHORTCUTS,
-  imageEditorPrimaryModifierLabel,
   imageEditorToolShortcutLabel,
 } from './image-editor-shortcuts';
 
@@ -47,6 +46,28 @@ function ToolGroup({ children }: { children: ReactNode }) {
 
 function GroupSeparator() {
   return <span aria-hidden="true" className="mx-1 h-6 w-px shrink-0 bg-echo-border" />;
+}
+
+function ShortcutGroup({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: Array<{ label: string; shortcut: string }>;
+}) {
+  return (
+    <section className="mb-echo-sm last:mb-0" aria-label={title}>
+      <h3 className="mb-1 text-echo-sm font-semibold">{title}</h3>
+      <ul className="m-0 list-none p-0 text-echo-sm">
+        {rows.map((row) => (
+          <li key={row.label} className="grid grid-cols-[minmax(0,1fr)_auto] gap-echo-lg py-1">
+            <span>{row.label}</span>
+            <kbd className="md:whitespace-nowrap">{row.shortcut}</kbd>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 
 type Props = {
@@ -123,7 +144,7 @@ export function ImageEditorToolRail(props: Props) {
       <ImageEditorIconButton
         key={value}
         label={label}
-        tooltipLabel={shortcut ? `${label} (${shortcut})` : label}
+        tooltipLabel={shortcut ? `${label} · ${shortcut}` : label}
         icon={icon}
         onClick={() => props.onToolChange(value)}
         disabled={props.disabled}
@@ -151,8 +172,8 @@ export function ImageEditorToolRail(props: Props) {
         onClick={() => selectTool(value)}
       >
         <ListItemIcon>{icon}</ListItemIcon>
-        {label}
-        {shortcut ? ` (${shortcut})` : ''}
+        <span className="min-w-0 flex-1">{label}</span>
+        {shortcut ? <kbd className="ml-echo-sm whitespace-nowrap">{shortcut}</kbd> : null}
       </MenuItem>
     );
   };
@@ -188,48 +209,38 @@ export function ImageEditorToolRail(props: Props) {
       }}
       anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
     >
-      <section className="max-w-sm p-echo-md" aria-label="Гарячі клавіші">
-        <h2 className="mb-echo-sm text-echo-md font-semibold">Гарячі клавіші</h2>
+      <section
+        className="max-h-[calc(100vh-1rem)] w-[min(44rem,calc(100vw-1rem))] overflow-y-auto p-echo-md"
+        aria-label="Гарячі клавіші"
+      >
+        <h2 className="mb-echo-sm text-echo-lg font-semibold">Гарячі клавіші</h2>
         <p className="mb-echo-sm text-echo-sm">
-          Літерні клавіші не працюють під час введення тексту.
+          Під час введення тексту швидкий вибір інструментів вимкнено.
         </p>
-        <ul className="m-0 list-none p-0 text-echo-sm">
-          {IMAGE_EDITOR_TOOL_SHORTCUTS.map((shortcut) => (
-            <li key={shortcut.tool} className="flex justify-between gap-echo-lg py-1">
-              <span>{TOOLS[shortcut.tool].label}</span>
-              <kbd>
-                {shortcut.key} / {shortcut.ukrainianKey}
-              </kbd>
-            </li>
-          ))}
-          <li className="flex justify-between gap-echo-lg py-1">
-            <span>Скасувати / повторити</span>
-            <kbd>
-              {imageEditorPrimaryModifierLabel()}+Z / {imageEditorPrimaryModifierLabel()}+Shift+Z /{' '}
-              {imageEditorPrimaryModifierLabel()}+Y
-            </kbd>
-          </li>
-          <li className="flex justify-between gap-echo-lg py-1">
-            <span>Видалити вибране</span>
-            <kbd>Delete / Backspace</kbd>
-          </li>
-          <li className="flex justify-between gap-echo-lg py-1">
-            <span>Застосувати обрізання</span>
-            <kbd>Enter</kbd>
-          </li>
-          <li className="flex justify-between gap-echo-lg py-1">
-            <span>Скасувати дію</span>
-            <kbd>Escape</kbd>
-          </li>
-          <li className="flex justify-between gap-echo-lg py-1">
-            <span>Тимчасове переміщення полотна</span>
-            <kbd>Space + drag / middle button</kbd>
-          </li>
-          <li className="flex justify-between gap-echo-lg py-1">
-            <span>Масштаб</span>
-            <kbd>Wheel</kbd>
-          </li>
-        </ul>
+        <ShortcutGroup
+          title="Інструменти"
+          rows={IMAGE_EDITOR_TOOL_SHORTCUTS.map((shortcut) => ({
+            label: TOOLS[shortcut.tool].label,
+            shortcut: `${shortcut.key} / ${shortcut.ukrainianKey}`,
+          }))}
+        />
+        <ShortcutGroup
+          title="Редагування"
+          rows={[
+            { label: 'Скасувати', shortcut: '⌘Z / Ctrl+Z' },
+            { label: 'Повторити', shortcut: '⌘⇧Z / Ctrl+Shift+Z / Ctrl+Y' },
+            { label: 'Видалити вибране', shortcut: 'Delete / Backspace' },
+            { label: 'Застосувати обрізання', shortcut: 'Enter' },
+            { label: 'Скасувати дію', shortcut: 'Esc' },
+          ]}
+        />
+        <ShortcutGroup
+          title="Полотно"
+          rows={[
+            { label: 'Тимчасово перемістити', shortcut: 'Space + перетягування / середня кнопка' },
+            { label: 'Масштаб', shortcut: 'Wheel' },
+          ]}
+        />
       </section>
     </Popover>
   );
