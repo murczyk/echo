@@ -1153,6 +1153,24 @@ mod tests {
     const TEST_LOGIN: &str = "Tester";
     const TEST_SIGNAL_GROUP_KEY: &str = "vukho-test-master-key";
 
+    async fn enable_devices_section(db: &DatabaseConnection) {
+        if let Some(settings) =
+            system_settings::Entity::find().one(db).await.unwrap()
+        {
+            let mut settings = settings.into_active_model();
+            settings.devices_section_enabled = Set(true);
+            settings.update(db).await.unwrap();
+        } else {
+            system_settings::ActiveModel {
+                devices_section_enabled: Set(true),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .unwrap();
+        }
+    }
+
     fn direct_submit_payload(text: &str) -> DirectSubmitPayload {
         DirectSubmitPayload {
             full_body: None,
@@ -1320,14 +1338,7 @@ mod tests {
         let mut login = login.into_active_model();
         login.roles = Set(serde_json::json!(["Rer", "Cyber"]));
         login.update(&env.dbx).await.unwrap();
-        let settings = system_settings::Entity::find()
-            .one(&env.dbx)
-            .await
-            .unwrap()
-            .unwrap();
-        let mut settings = settings.into_active_model();
-        settings.devices_section_enabled = Set(true);
-        settings.update(&env.dbx).await.unwrap();
+        enable_devices_section(&env.dbx).await;
         let device_name_id =
             device_name::Entity::insert(device_name::ActiveModel {
                 name: Set(Some("edit-test-device".to_string())),

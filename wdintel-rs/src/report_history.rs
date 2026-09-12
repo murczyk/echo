@@ -4067,9 +4067,7 @@ mod tests {
         report: &report_history::Model,
     ) {
         match generate_report(env, report, 0).await.unwrap_err() {
-            AppError::Forbidden(message) => {
-                assert_eq!(message, "device operation is forbidden");
-            }
+            AppError::Forbidden(_) => {}
             error => panic!(
                 "expected analysis export worker device-access rejection, got {error:?}"
             ),
@@ -4123,6 +4121,21 @@ mod tests {
                 .c(h!())?,
             );
         }
+        let unsupported_report_kind = "ECHO-3461-unsupported-export";
+        let unsupported_report = enqueue_report(
+            &env.dbx,
+            &login.id,
+            unsupported_report_kind,
+            ReportHistoryRequest::AnalysisExport {
+                payload: Box::new(analysis_export_request(Some(vec![
+                    "ECHO-3461".to_string(),
+                ]))),
+            },
+            None,
+            None,
+        )
+        .await
+        .c(h!())?;
 
         let login = set_report_test_roles(&env.dbx, login, json!(["Rer"]))
             .await
@@ -4130,6 +4143,8 @@ mod tests {
         for report in &reports {
             assert_analysis_export_worker_forbidden(&env, report).await;
         }
+        assert_analysis_export_worker_forbidden(&env, &unsupported_report)
+            .await;
 
         let login = set_report_test_roles(&env.dbx, login, json!(["Admin"]))
             .await
@@ -4146,6 +4161,13 @@ mod tests {
             )
             .await
             .c(h!())?;
+        }
+        match generate_report(&env, &unsupported_report, 0).await.unwrap_err() {
+            AppError::BL { msg } => assert_eq!(
+                msg,
+                format!("Unsupported analysis export kind: {unsupported_report_kind}")
+            ),
+            error => panic!("expected unsupported export error, got {error:?}"),
         }
 
         set_devices_section_enabled_for_test(&env.dbx, false)

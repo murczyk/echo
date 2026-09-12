@@ -912,7 +912,7 @@ async fn manual_run_is_bounded_and_publishes_write_once_history() {
     let first_run_page = bl::list_analysis_runs(
         &env.dbx,
         env.file_registry_db().unwrap(),
-        &owner,
+        &reader,
         device_id,
         Some(1),
         None,
@@ -924,7 +924,7 @@ async fn manual_run_is_bounded_and_publishes_write_once_history() {
     let second_run_page = bl::list_analysis_runs(
         &env.dbx,
         env.file_registry_db().unwrap(),
-        &owner,
+        &reader,
         device_id,
         Some(1),
         first_run_page.next_cursor,

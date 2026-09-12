@@ -6023,6 +6023,7 @@ pub async fn bi_new_callsigns(
             load_new_callsigns_with_db(
                 analytics_user_id,
                 analytics_req,
+                &None,
                 analytics_groups,
                 &db,
                 crate::inbox::callsigns::EffectiveCallsignSqlSource::Analytics,
@@ -6038,6 +6039,7 @@ pub async fn bi_new_callsigns(
             load_new_callsigns_with_db(
                 postgres_user_id,
                 postgres_req,
+                &None,
                 postgres_groups,
                 &db,
                 crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres,
@@ -6059,6 +6061,7 @@ pub async fn bi_new_callsigns_chunked(
     user_id: &uuid::Uuid,
     env: &Env,
     req: &AnalysisStatsReq,
+    denied_device_names: &Option<Vec<String>>,
     chunking_hours: i64,
     final_end: ReportPeriodEnd,
     min_mentions: i64,
@@ -6090,6 +6093,7 @@ pub async fn bi_new_callsigns_chunked(
                 chunk.till_ms,
                 chunk.end,
                 &group_master_keys,
+                denied_device_names,
                 true,
                 &env.dbx,
             )
@@ -6134,6 +6138,7 @@ pub async fn bi_new_callsigns_chunked(
             chunk.till_ms,
             chunk.end,
             &group_master_keys,
+            denied_device_names,
             false,
             &env.dbx,
             crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres,
@@ -6176,6 +6181,7 @@ fn new_callsign_periods(
 async fn load_new_callsigns_with_db(
     user_id: &uuid::Uuid,
     req: &AnalysisStatsReq,
+    denied_device_names: &Option<Vec<String>>,
     group_master_keys: Vec<String>,
     db: &DatabaseConnection,
     callsign_source: crate::inbox::callsigns::EffectiveCallsignSqlSource,
@@ -6189,6 +6195,7 @@ async fn load_new_callsigns_with_db(
         req.till_date_noninclusive_ms,
         ReportPeriodEnd::NonInclusive,
         &group_master_keys,
+        denied_device_names,
         true,
         db,
         callsign_source,
@@ -6214,6 +6221,7 @@ async fn load_new_callsigns_with_db(
         req.since_date_inclusive_ms,
         ReportPeriodEnd::NonInclusive,
         &group_master_keys,
+        denied_device_names,
         false,
         db,
         callsign_source,
@@ -6253,6 +6261,7 @@ async fn load_new_callsigns_in_range_with_db(
     till_ms: i64,
     period_end: ReportPeriodEnd,
     group_master_keys: &[String],
+    denied_device_names: &Option<Vec<String>>,
     include_aor_filter: bool,
     db: &DatabaseConnection,
     callsign_source: crate::inbox::callsigns::EffectiveCallsignSqlSource,
@@ -6266,6 +6275,7 @@ async fn load_new_callsigns_in_range_with_db(
         till_ms,
         period_end,
         group_master_keys,
+        denied_device_names,
         include_aor_filter,
         callsign_source,
         analytics_tag_access,
@@ -6317,6 +6327,7 @@ async fn load_new_callsign_counts_in_range_with_db(
     till_ms: i64,
     period_end: ReportPeriodEnd,
     group_master_keys: &[String],
+    denied_device_names: &Option<Vec<String>>,
     include_aor_filter: bool,
     db: &DatabaseConnection,
 ) -> Result<BTreeMap<String, i64>, AppError> {
@@ -6327,6 +6338,7 @@ async fn load_new_callsign_counts_in_range_with_db(
         till_ms,
         period_end,
         group_master_keys,
+        denied_device_names,
         include_aor_filter,
         crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres,
         None,
@@ -6352,6 +6364,7 @@ async fn load_new_callsign_last_seen_with_db(
     till_ms: i64,
     period_end: ReportPeriodEnd,
     group_master_keys: &[String],
+    denied_device_names: &Option<Vec<String>>,
     include_aor_filter: bool,
     db: &DatabaseConnection,
     callsign_source: crate::inbox::callsigns::EffectiveCallsignSqlSource,
@@ -6365,6 +6378,7 @@ async fn load_new_callsign_last_seen_with_db(
         till_ms,
         period_end,
         group_master_keys,
+        denied_device_names,
         include_aor_filter,
         callsign_source,
         analytics_tag_access,
@@ -6429,6 +6443,7 @@ fn build_new_callsign_filtered_items_query(
     till_ms: i64,
     period_end: ReportPeriodEnd,
     group_master_keys: &[String],
+    denied_device_names: &Option<Vec<String>>,
     include_aor_filter: bool,
     callsign_source: crate::inbox::callsigns::EffectiveCallsignSqlSource,
     analytics_tag_access: Option<&stats::AnalyticsTagAccess>,
@@ -6501,8 +6516,10 @@ fn build_new_callsign_filtered_items_query(
         scope,
     )?;
     let query = filter_search(query, &req.search)?;
+    let query = filter_selected_device_names(query, &req.selected_device_names)
+        .c(h!())?;
     let query =
-        filter_selected_device_names(query, &req.selected_device_names)?;
+        filter_denied_device_names(query, denied_device_names).c(h!())?;
     let query = match callsign_source {
         crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres => {
             filter_selected_tags(

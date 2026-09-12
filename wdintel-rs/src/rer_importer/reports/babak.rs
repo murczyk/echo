@@ -119,6 +119,7 @@ pub async fn collect_babak_report_data(
         user_login,
         env,
         &new_callsing_req,
+        &inbox_req.denied_device_names,
         report_settings.chunking_hours,
         ReportPeriodEnd::Inclusive,
         new_callsign_min_mentions,
@@ -2254,6 +2255,186 @@ mod tests {
         )
         .await?;
         Ok(())
+    }
+
+    async fn seed_new_callsign_observation(
+        env: &Env,
+        login: &login::Model,
+        datasource_group: &datasource_group::Model,
+        device_name_id: i64,
+        callsign: &str,
+        timestamp: NaiveDateTime,
+    ) {
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some(callsign.to_string())),
+                created_at: Set(timestamp),
+                timestamp: Set(Some(timestamp)),
+                sender: Set(Some(login.id.to_string())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                deleted: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_message_group(
+            &env.dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(message.id),
+                group_master_key: Set(Some(
+                    datasource_group.group_master_key.clone(),
+                )),
+                sender: Set(message.sender.clone()),
+                message_uid: Set(message.message_uid.clone()),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                created_at: Set(timestamp),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inbox_item = mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                device_name_id: Set(Some(device_name_id)),
+                datetime: Set(Some(timestamp)),
+                unit_v2: Set(Some("ECHO-3461 test unit".to_string())),
+                checked: Set(Some(true)),
+                reviewed: Set(Some(true)),
+                parsed_unit_v2: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        crate::inbox::callsigns::sync(
+            &env.dbx,
+            inbox_item.id,
+            inbox_item.id_uuid,
+            crate::inbox::callsigns::InboxItemCallsigns {
+                primary: vec![callsign.to_string()],
+                alg2: Vec::new(),
+            },
+            login.id,
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn babak_new_callsigns_exclude_denied_device_observations() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let mut login_act = login.into_active_model();
+        login_act.roles = Set(json!(["Rer", "Cyber"]));
+        let login = login_act.update(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let allowed = device_name::ActiveModel {
+            name: Set(Some("ECHO-3461 Babak allowed".to_string())),
+            login_id: Set(login.id),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let denied = device_name::ActiveModel {
+            name: Set(Some("ECHO-3461 Babak denied".to_string())),
+            login_id: Set(login.id),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let current = chrono::NaiveDate::from_ymd_opt(2026, 2, 1)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
+        let historical = current - chrono::Duration::days(8);
+        for (callsign, device_name_id, timestamp) in [
+            ("AllowedOnly", allowed.id, current),
+            ("DeniedOnly", denied.id, current),
+            ("Shared", allowed.id, current),
+            ("Shared", denied.id, current),
+            ("DeniedHistory", allowed.id, current),
+            ("DeniedHistory", denied.id, historical),
+            ("AllowedHistory", allowed.id, current),
+            ("AllowedHistory", allowed.id, historical),
+        ] {
+            seed_new_callsign_observation(
+                &env,
+                &login,
+                &datasource_group,
+                device_name_id,
+                callsign,
+                timestamp,
+            )
+            .await;
+        }
+        let denied_names = Some(vec!["ECHO-3461 Babak denied".to_string()]);
+        let report_preview_req = ReportPreviewReq {
+            kind: "babak".to_string(),
+            req: InboxMessagesReq {
+                since_date_inclusive_ms: Some(
+                    current.and_utc().timestamp_millis(),
+                ),
+                till_date_inclusive_ms: Some(
+                    (current + chrono::Duration::hours(1))
+                        .and_utc()
+                        .timestamp_millis(),
+                ),
+                denied_device_names: denied_names.clone(),
+                nolimit: Some(true),
+                ..Default::default()
+            },
+            report_type: None,
+            report_tags_only_this_unit: Some(false),
+            tag_report_sort_by: None,
+            report_1213_linked_networks_only: None,
+            without_comments: Some(true),
+            babak_new_callsign_min_mentions: Some(1),
+            interception_keep_full_message: None,
+            interception_keep_old_colors: None,
+            digest_omit_exo_id: None,
+            digest_form_1_2_17: None,
+            sposob_unit_name: None,
+        };
+        set_report_chunking_hours(&env.dbx, 12).await;
+        let res =
+            collect_babak_report_data(&login.id, &env, &report_preview_req)
+                .await
+                .unwrap();
+        assert_eq!(res.units.iter().map(|row| row.count).sum::<i64>(), 4);
+        set_report_chunking_hours(&env.dbx, 24).await;
+        let chunked_res =
+            collect_babak_report_data(&login.id, &env, &report_preview_req)
+                .await
+                .unwrap();
+        assert_eq!(res.new_callsigns, chunked_res.new_callsigns);
+        let callsign_result = res.new_callsigns;
+        for callsigns in [
+            &callsign_result.not_seen_24h,
+            &callsign_result.not_seen_7days,
+            &callsign_result.not_seen_30days,
+        ] {
+            assert!(callsigns.contains(&"AllowedOnly".to_string()));
+            assert!(callsigns.contains(&"Shared".to_string()));
+            assert!(callsigns.contains(&"DeniedHistory".to_string()));
+            assert!(!callsigns.contains(&"DeniedOnly".to_string()));
+        }
+        assert!(callsign_result
+            .not_seen_24h
+            .contains(&"AllowedHistory".to_string()));
+        assert!(callsign_result
+            .not_seen_7days
+            .contains(&"AllowedHistory".to_string()));
+        assert!(!callsign_result
+            .not_seen_30days
+            .contains(&"AllowedHistory".to_string()));
     }
 
     #[serial]
