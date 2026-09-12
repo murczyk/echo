@@ -1831,7 +1831,7 @@ fn analysis_req_has_device_names(req: &AnalysisStatsReq) -> bool {
         .is_some_and(|names| !names.is_empty())
 }
 
-async fn require_analysis_device_filter_access(
+pub(crate) async fn require_analysis_device_filter_access(
     dbx: &DatabaseConnection,
     login: &Uuid,
     req: &AnalysisStatsReq,

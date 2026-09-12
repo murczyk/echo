@@ -8,7 +8,7 @@ use super::types::{
 };
 use super::{bl, query, queue, worker};
 use crate::devices::files::types::RawSyncDeviceFileItem;
-use crate::devices::{access, ROLE_DEVICE_SOURCE};
+use crate::devices::{access, ROLE_CYBER, ROLE_DEVICE_SOURCE};
 use crate::entities::{device, login, organism};
 use crate::file_registry::entities::{
     device_file_tag, file_analysis_definition, file_analysis_run,
@@ -847,10 +847,11 @@ async fn manual_run_is_bounded_and_publishes_write_once_history() {
         .await
         .unwrap()
         .unwrap();
+    let reader = access::login_with_roles(&owner, &[ROLE_CYBER]);
     let run_response = bl::get_analysis_run(
         &env.dbx,
         env.file_registry_db().unwrap(),
-        &owner,
+        &reader,
         run.id,
     )
     .await
@@ -868,7 +869,7 @@ async fn manual_run_is_bounded_and_publishes_write_once_history() {
     let first_file_page = bl::list_analysis_run_files(
         &env.dbx,
         env.file_registry_db().unwrap(),
-        &owner,
+        &reader,
         run.id,
         Some(2),
         None,
@@ -879,7 +880,7 @@ async fn manual_run_is_bounded_and_publishes_write_once_history() {
     let second_file_page = bl::list_analysis_run_files(
         &env.dbx,
         env.file_registry_db().unwrap(),
-        &owner,
+        &reader,
         run.id,
         Some(2),
         first_file_page.next_cursor,

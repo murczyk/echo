@@ -137,7 +137,7 @@ fn assert_forbidden(error: AppError) {
 async fn batch_hydration_preserves_input_order_and_current_references() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
-    let actor = login_with_roles(&source_login, &[ROLE_DEVICE_SOURCE]);
+    let reader = login_with_roles(&source_login, &[ROLE_CYBER]);
     let first_aor = mk_aor(
         &env.dbx,
         area_of_responsibility::ActiveModel {
@@ -235,7 +235,7 @@ async fn batch_hydration_preserves_input_order_and_current_references() {
 
     let state = read(
         &main_db,
-        &actor,
+        &reader,
         first_device.id,
         DeviceReadScope::ActiveOnly,
     )
@@ -606,6 +606,7 @@ async fn invalid_references_roll_back_mixed_patches_and_reject_deleted_rows() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
     let source = login_with_roles(&source_login, &[ROLE_DEVICE_SOURCE]);
+    let reader = login_with_roles(&source_login, &[ROLE_CYBER]);
     let main_db = env.dbx.clone();
     let created = create(
         &main_db,
@@ -646,7 +647,7 @@ async fn invalid_references_roll_back_mixed_patches_and_reject_deleted_rows() {
     setup.unit_id = DevicePatchField::Value(Some(active_unit.id));
     update(&main_db, &source, setup).await.unwrap();
     let before =
-        read(&main_db, &source, created.id, DeviceReadScope::ActiveOnly)
+        read(&main_db, &reader, created.id, DeviceReadScope::ActiveOnly)
             .await
             .unwrap();
     let links_before = current_aor_links(&env.dbx, created.id).await;
@@ -666,7 +667,7 @@ async fn invalid_references_roll_back_mixed_patches_and_reject_deleted_rows() {
         "Смугу не знайдено",
     );
     let after =
-        read(&main_db, &source, created.id, DeviceReadScope::ActiveOnly)
+        read(&main_db, &reader, created.id, DeviceReadScope::ActiveOnly)
             .await
             .unwrap();
     assert_eq!(after, before);
@@ -1818,15 +1819,20 @@ mod query_tests {
         );
 
         let main_db = env.dbx.clone();
-        assert_archived_device_error(
+        assert_device_operation_forbidden(
             find_active_visible_device(&main_db, &source, archived.id)
                 .await
                 .unwrap_err(),
         );
 
         let transaction = env.dbx.begin().await.unwrap();
+        assert_archived_device_error(
+            lock_active_device_for_update(&transaction, &source, archived.id)
+                .await
+                .unwrap_err(),
+        );
         assert_eq!(
-            lock_active_visible_device(&transaction, &source, active.id,)
+            lock_active_device_for_update(&transaction, &source, active.id,)
                 .await
                 .unwrap()
                 .id,

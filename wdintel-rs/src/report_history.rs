@@ -3433,6 +3433,13 @@ async fn generate_report(
             })
         }
         ReportHistoryRequest::AnalysisExport { payload } => {
+            require_analysis_export_worker_access(
+                &env.dbx,
+                &report_history.requested_by_login_id,
+                &payload,
+            )
+            .await
+            .c(h!())?;
             let (file_name, content_type, bytes) = match report_history.report_kind.as_str() {
                 KIND_SUMMARY_TABLE => (
                     report_history
@@ -3598,6 +3605,21 @@ async fn generate_report(
             })
         }
     }
+}
+
+async fn require_analysis_export_worker_access(
+    dbx: &DatabaseConnection,
+    requested_by_login_id: &Uuid,
+    payload: &AnalysisStatsReq,
+) -> Result<(), AppError> {
+    crate::rer_importer::analysis::require_analysis_device_filter_access(
+        dbx,
+        requested_by_login_id,
+        payload,
+    )
+    .await
+    .c(h!())?;
+    Ok(())
 }
 
 async fn upload_report_bytes(
@@ -3959,13 +3981,188 @@ fn append_log_entry(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::{bgtask_res, login};
+    use crate::entities::{bgtask_res, login, system_settings};
     use crate::functest::tests::{cleanup, mk_login};
     use chrono::Timelike;
     use sea_orm::ActiveValue::{NotSet, Set};
     use sea_orm::{EntityTrait, QueryTrait};
     use serde_json::json;
     use serial_test::serial;
+
+    fn analysis_export_request(
+        selected_device_names: Option<Vec<String>>,
+    ) -> AnalysisStatsReq {
+        AnalysisStatsReq {
+            since_date_inclusive_ms: 0,
+            till_date_noninclusive_ms: 1,
+            selected_groups: None,
+            selected_senders: None,
+            selected_freqs: None,
+            selected_posts: None,
+            selected_callsigns: None,
+            selected_units: None,
+            selected_unit_ids: None,
+            selected_locations: None,
+            selected_device_names,
+            selected_aors: None,
+            or_with_extended_form: None,
+            or_bookmarked: None,
+            or_important: None,
+            or_with_coords: None,
+            or_without_coords: None,
+            search: None,
+            selected_tags: None,
+            denied_tags: None,
+            tag_presence: None,
+            selected_networks: None,
+            without_network: None,
+            metadata_cc: None,
+            metadata_sender: None,
+            metadata_receiver: None,
+            metadata_hash: None,
+            only_with_metadata: None,
+            without_metadata: None,
+            include_peleng_locations: None,
+            units_exact_match_only: None,
+            filter_tags_option: None,
+            without_model_tags: None,
+            report_tags_only_this_unit: None,
+        }
+    }
+
+    async fn set_devices_section_enabled_for_test(
+        dbx: &DatabaseConnection,
+        enabled: bool,
+    ) -> Result<(), AppError> {
+        let settings =
+            system_settings::Entity::find().one(dbx).await.c(h!())?;
+        if let Some(settings) = settings {
+            let mut settings = settings.into_active_model();
+            settings.devices_section_enabled = Set(enabled);
+            settings.update(dbx).await.c(h!())?;
+        } else {
+            system_settings::ActiveModel {
+                devices_section_enabled: Set(enabled),
+                ..Default::default()
+            }
+            .insert(dbx)
+            .await
+            .c(h!())?;
+        }
+        Ok(())
+    }
+
+    async fn set_report_test_roles(
+        dbx: &DatabaseConnection,
+        login: login::Model,
+        roles: serde_json::Value,
+    ) -> Result<login::Model, AppError> {
+        let mut login = login.into_active_model();
+        login.roles = Set(roles);
+        Ok(login.update(dbx).await.c(h!())?)
+    }
+
+    async fn assert_analysis_export_worker_forbidden(
+        env: &Env,
+        report: &report_history::Model,
+    ) {
+        match generate_report(env, report, 0).await.unwrap_err() {
+            AppError::Forbidden(message) => {
+                assert_eq!(message, "device operation is forbidden");
+            }
+            error => panic!(
+                "expected analysis export worker device-access rejection, got {error:?}"
+            ),
+        }
+    }
+
+    // Regression: https://github.com/echoua/echo/issues/3461
+    #[tokio::test]
+    #[serial]
+    async fn analysis_export_workers_revalidate_device_filter_access(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await.c(h!())?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+        set_devices_section_enabled_for_test(&env.dbx, true)
+            .await
+            .c(h!())?;
+        let login = create_report_history_test_login(
+            &env.dbx,
+            "report-history-device-export-access",
+        )
+        .await
+        .c(h!())?;
+        let login = set_report_test_roles(&env.dbx, login, json!(["Cyber"]))
+            .await
+            .c(h!())?;
+
+        let mut reports = Vec::new();
+        for report_kind in [KIND_SUMMARY_TABLE, KIND_KMZ, KIND_GEOJSON] {
+            let request =
+                analysis_export_request(Some(vec!["ECHO-3461".to_string()]));
+            require_analysis_export_worker_access(
+                &env.dbx, &login.id, &request,
+            )
+            .await
+            .c(h!())?;
+            reports.push(
+                enqueue_report(
+                    &env.dbx,
+                    &login.id,
+                    report_kind,
+                    ReportHistoryRequest::AnalysisExport {
+                        payload: Box::new(request),
+                    },
+                    None,
+                    None,
+                )
+                .await
+                .c(h!())?,
+            );
+        }
+
+        let login = set_report_test_roles(&env.dbx, login, json!(["Rer"]))
+            .await
+            .c(h!())?;
+        for report in &reports {
+            assert_analysis_export_worker_forbidden(&env, report).await;
+        }
+
+        let login = set_report_test_roles(&env.dbx, login, json!(["Admin"]))
+            .await
+            .c(h!())?;
+        for report in &reports {
+            let request: ReportHistoryRequest =
+                serde_json::from_value(report.request.clone()).c(h!())?;
+            let ReportHistoryRequest::AnalysisExport { payload } = request
+            else {
+                unreachable!("analysis export report");
+            };
+            require_analysis_export_worker_access(
+                &env.dbx, &login.id, &payload,
+            )
+            .await
+            .c(h!())?;
+        }
+
+        set_devices_section_enabled_for_test(&env.dbx, false)
+            .await
+            .c(h!())?;
+        for report in &reports {
+            assert_analysis_export_worker_forbidden(&env, report).await;
+        }
+        require_analysis_export_worker_access(
+            &env.dbx,
+            &login.id,
+            &analysis_export_request(None),
+        )
+        .await
+        .c(h!())?;
+        Ok(())
+    }
 
     #[test]
     fn admin_started_at_sort_keeps_unlaunched_reports_last() {

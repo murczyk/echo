@@ -360,10 +360,7 @@ async fn target_api_smoke_covers_all_routes() {
     assert_eq!(updated["name"], "API renamed");
 
     let response = post_json!("/api/device/list", json!({}));
-    assert_eq!(response.status(), StatusCode::OK);
-    let list: Value = test::read_body_json(response).await;
-    assert_eq!(list["total"], 1);
-    assert_eq!(list["list"][0]["id"], device_id);
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
     let response = test::call_service(
         &app,
@@ -373,19 +370,11 @@ async fn target_api_smoke_covers_all_routes() {
             .to_request(),
     )
     .await;
-    assert_eq!(response.status(), StatusCode::OK);
-    let stats: Value = test::read_body_json(response).await;
-    assert_eq!(stats, json!({"units": []}));
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
     let response =
         post_json!("/api/device/detail", json!({"device_id": device_id}));
-    assert_eq!(response.status(), StatusCode::OK);
-    let detail: Value = test::read_body_json(response).await;
-    assert_eq!(detail["name"], "API renamed");
-
-    let response =
-        post_json!("/api/device/detail", json!({"device_id": other_device.id}));
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
     let response = post_json!(
         "/api/device/files/sync",
@@ -441,6 +430,39 @@ async fn target_api_smoke_covers_all_routes() {
         .as_str()
         .unwrap()
         .to_string();
+
+    let response =
+        post_json!("/api/device/files/roots", json!({"device_id": device_id}));
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    let mut login = login.into_active_model();
+    login.roles = Set(json!([ROLE_CYBER, ROLE_DEVICE_SOURCE]));
+    let login = login.update(&env.dbx).await.unwrap();
+
+    let response = post_json!("/api/device/list", json!({}));
+    assert_eq!(response.status(), StatusCode::OK);
+    let list: Value = test::read_body_json(response).await;
+    assert_eq!(list["total"], 1);
+    assert_eq!(list["list"][0]["id"], device_id);
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/api/device/unit-stats")
+            .cookie(session_cookie.clone())
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let stats: Value = test::read_body_json(response).await;
+    assert_eq!(stats, json!({"units": []}));
+    let response =
+        post_json!("/api/device/detail", json!({"device_id": device_id}));
+    assert_eq!(response.status(), StatusCode::OK);
+    let detail: Value = test::read_body_json(response).await;
+    assert_eq!(detail["name"], "API renamed");
+    let response =
+        post_json!("/api/device/detail", json!({"device_id": other_device.id}));
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 
     let response =
         post_json!("/api/device/files/roots", json!({"device_id": device_id}));
