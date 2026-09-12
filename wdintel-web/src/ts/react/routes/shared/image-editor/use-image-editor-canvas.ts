@@ -73,6 +73,7 @@ export function useImageEditorCanvas({
         fabricRef.current = fabric;
         registerPaddedTextAnnotation(fabric);
         await loadImageEditorFonts();
+        if (disposed || !canvasElementRef.current) return;
         objectUrl = URL.createObjectURL(source.blob);
         const image = await fabric.FabricImage.fromURL(objectUrl);
         if (disposed) return;
@@ -144,6 +145,7 @@ export function useImageEditorCanvas({
           URL.revokeObjectURL(objectUrl);
           objectUrl = null;
         }
+        if (disposed) return;
         setError(
           cause instanceof Error ? cause.message : 'Не вдалося відкрити зображення для редагування',
         );
