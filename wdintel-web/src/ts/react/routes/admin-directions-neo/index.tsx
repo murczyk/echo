@@ -2165,16 +2165,33 @@ function AdminDirectionsNeoPageBody() {
       const updatedGroup = await updateZoneDatasourceGroup(req);
       setZoneGroups((prev) => {
         const next = new Map(prev);
-        const key = buildGroupKey(editDialog.zoneId, editDialog.datasourceId);
-        const groups = next.get(key) ?? [];
-        next.set(
-          key,
-          groups.map((item) =>
-            item.sigintZoneDatasourceId === updatedGroup.sigintZoneDatasourceId
-              ? updatedGroup
-              : item,
-          ),
-        );
+        for (const [key, groups] of prev) {
+          next.set(
+            key,
+            groups.map((item) =>
+              item.groupMasterKey === updatedGroup.groupMasterKey
+                ? { ...updatedGroup, sigintZoneDatasourceId: item.sigintZoneDatasourceId }
+                : item,
+            ),
+          );
+        }
+        return next;
+      });
+      setGroupInfos((prev) => {
+        const info = prev.get(updatedGroup.groupMasterKey);
+        if (!info) return prev;
+        const next = new Map(prev);
+        next.set(updatedGroup.groupMasterKey, {
+          ...info,
+          interseptionKind: updatedGroup.interseptionKind,
+          disableNetworkAssignment: updatedGroup.disableNetworkAssignment,
+          isAviationGroup: updatedGroup.isAviationGroup,
+          adminData:
+            updatedGroup.shortNote || updatedGroup.longNote
+              ? { shortNote: updatedGroup.shortNote, longNote: updatedGroup.longNote }
+              : null,
+          areasOfResponsibility: updatedGroup.areasOfResponsibility,
+        });
         return next;
       });
       setEditDialog(null);

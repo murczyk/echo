@@ -62,7 +62,9 @@ pub async fn find_known_callsigns(
     rq: &reqwest::Client,
     body: &str,
 ) -> Result<Vec<CNCallsign>, AppError> {
-    find_known_callsigns_for_group(rq, body, false).await
+    Ok(find_known_callsigns_for_group(rq, body, false)
+        .await
+        .c(h!())?)
 }
 
 pub async fn find_known_callsigns_for_group(
