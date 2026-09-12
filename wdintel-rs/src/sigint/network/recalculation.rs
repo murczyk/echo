@@ -27,63 +27,6 @@ pub(super) async fn load_cached_last_datetime_in_aor(
     login_id: uuid::Uuid,
     group_master_keys: &[String],
 ) -> anyhow::Result<HashMap<i64, Option<i64>>> {
-    Ok(load_cached_last_datetime_in_aor_batch(
-        db,
-        &[network_id],
-        login_id,
-        group_master_keys,
-    )
-    .await
-    .c(h!())?
-    .into_iter()
-    .map(|(network_freq_id, (_, datetime))| (network_freq_id, datetime))
-    .collect())
-}
-
-pub(super) async fn load_cached_network_last_activity(
-    db: &DatabaseConnection,
-    network_ids: &[i64],
-    login_id: uuid::Uuid,
-    group_master_keys: &[String],
-) -> anyhow::Result<HashMap<i64, Option<i64>>> {
-    if network_ids.is_empty() || group_master_keys.is_empty() {
-        return Ok(HashMap::new());
-    }
-    let cached = load_cached_last_datetime_in_aor_batch(
-        db,
-        network_ids,
-        login_id,
-        group_master_keys,
-    )
-    .await
-    .c(h!())?;
-    let mut last_activity = HashMap::new();
-    for (_, (network_id, datetime)) in cached {
-        last_activity
-            .entry(network_id)
-            .and_modify(|last: &mut Option<i64>| {
-                *last = std::cmp::max(*last, datetime);
-            })
-            .or_insert(datetime);
-    }
-    Ok(last_activity)
-}
-
-async fn load_cached_last_datetime_in_aor_batch(
-    db: &DatabaseConnection,
-    network_ids: &[i64],
-    login_id: uuid::Uuid,
-    group_master_keys: &[String],
-) -> anyhow::Result<HashMap<i64, (i64, Option<i64>)>> {
-    if network_ids.is_empty() {
-        return Ok(HashMap::new());
-    }
-    let network_ids = network_ids
-        .iter()
-        .copied()
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
     let group_master_keys =
         normalize_group_master_keys(group_master_keys.to_vec());
     let stale_before = Utc::now().naive_utc()
@@ -91,26 +34,16 @@ async fn load_cached_last_datetime_in_aor_batch(
             NETWORK_FREQ_LAST_DATETIME_IN_AOR_CACHE_TTL_MINUTES,
         );
     let cached =
-        load_available_last_datetime_in_aor_cache(db, &network_ids, login_id)
+        load_available_last_datetime_in_aor_cache(db, network_id, login_id)
             .await
             .c(h!())?;
     let cached_by_freq = cached
         .into_iter()
         .map(|row| (row.network_freq_id, row))
         .collect::<HashMap<_, _>>();
-    let network_freqs = sigint_network_freq::Entity::find()
-        .filter(sigint_network_freq::Column::NetworkId.is_in(network_ids))
-        .filter(sigint_network_freq::Column::Deleted.eq(false))
-        .select_only()
-        .column(sigint_network_freq::Column::Id)
-        .column(sigint_network_freq::Column::NetworkId)
-        .into_tuple::<(i64, i64)>()
-        .all(db)
-        .await
-        .c(h!())?;
     enqueue_last_datetime_in_aor_cache_refreshes(
         db,
-        &network_freqs,
+        network_id,
         login_id,
         &group_master_keys,
         stale_before,
@@ -118,24 +51,16 @@ async fn load_cached_last_datetime_in_aor_batch(
     )
     .await
     .c(h!())?;
-    let mut cached = render_last_datetime_in_aor_cache(
+    Ok(render_last_datetime_in_aor_cache(
         cached_by_freq,
         &group_master_keys,
         stale_before,
-    );
-    Ok(network_freqs
-        .into_iter()
-        .filter_map(|(network_freq_id, network_id)| {
-            cached
-                .remove(&network_freq_id)
-                .map(|datetime| (network_freq_id, (network_id, datetime)))
-        })
-        .collect())
+    ))
 }
 
 async fn load_available_last_datetime_in_aor_cache(
     db: &DatabaseConnection,
-    network_ids: &[i64],
+    network_id: i64,
     login_id: uuid::Uuid,
 ) -> anyhow::Result<Vec<network_freq_last_datetime_in_aor::Model>> {
     let cached = network_freq_last_datetime_in_aor::Model::find_by_statement(
@@ -146,7 +71,7 @@ async fn load_available_last_datetime_in_aor_cache(
                 from network_freq_last_datetime_in_aor cache
                 join sigint_network_freq nf
                   on nf.id = cache.network_freq_id
-                where nf.network_id = any($1::bigint[])
+                where nf.network_id = $1
                   and nf.deleted = false
                   and cache.login_id = $2
                   and not exists (
@@ -223,7 +148,7 @@ async fn load_available_last_datetime_in_aor_cache(
                         )
                   )
             "#,
-            vec![network_ids.to_vec().into(), login_id.into()],
+            vec![network_id.into(), login_id.into()],
         ),
     )
     .all(db)
@@ -234,17 +159,25 @@ async fn load_available_last_datetime_in_aor_cache(
 
 async fn enqueue_last_datetime_in_aor_cache_refreshes(
     db: &DatabaseConnection,
-    network_freqs: &[(i64, i64)],
+    network_id: i64,
     login_id: uuid::Uuid,
     group_master_keys: &[String],
     stale_before: NaiveDateTime,
     cached_by_freq: &HashMap<i64, network_freq_last_datetime_in_aor::Model>,
 ) -> anyhow::Result<()> {
+    let network_freq_ids = sigint_network_freq::Entity::find()
+        .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .select_only()
+        .column(sigint_network_freq::Column::Id)
+        .into_tuple::<i64>()
+        .all(db)
+        .await
+        .c(h!())?;
     enqueue_tasks(
         db,
-        network_freqs
-            .iter()
-            .map(|(network_freq_id, _)| *network_freq_id)
+        network_freq_ids
+            .into_iter()
             .filter(|network_freq_id| {
                 cached_by_freq
                     .get(network_freq_id)
@@ -1492,108 +1425,6 @@ mod tests {
             network,
             network_freq,
         }
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn cached_network_last_activity_rolls_up_and_queues_missing_frequencies(
-    ) {
-        let env = cleanup().await.unwrap();
-        let fixture = setup_queue_fixture(&env.dbx).await;
-        let newer_freq = mk_sigint_network_freq(
-            &env.dbx,
-            sigint_network_freq::ActiveModel {
-                network_id: Set(fixture.network.id),
-                freq: Set("149.1950".to_string()),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        let missing_freq = mk_sigint_network_freq(
-            &env.dbx,
-            sigint_network_freq::ActiveModel {
-                network_id: Set(fixture.network.id),
-                freq: Set("150.1950".to_string()),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        let empty_network = mk_sigint_network(&env.dbx, Default::default())
-            .await
-            .unwrap();
-        let empty_freq = mk_sigint_network_freq(
-            &env.dbx,
-            sigint_network_freq::ActiveModel {
-                network_id: Set(empty_network.id),
-                freq: Set("151.1950".to_string()),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        let now = Utc::now().naive_utc();
-        let group_master_keys = vec!["test-group".to_string()];
-        network_freq_last_datetime_in_aor::Entity::insert_many(
-            [
-                (fixture.network_freq.id, Some(now - Duration::hours(2))),
-                (newer_freq.id, Some(now - Duration::hours(1))),
-                (empty_freq.id, None),
-            ]
-            .into_iter()
-            .map(|(network_freq_id, datetime)| {
-                network_freq_last_datetime_in_aor::ActiveModel {
-                    network_freq_id: Set(network_freq_id),
-                    login_id: Set(fixture.login_id),
-                    group_master_keys: Set(group_master_keys.clone()),
-                    last_datetime_in_aor: Set(datetime),
-                    calculated_at: Set(now),
-                }
-            }),
-        )
-        .exec_without_returning(&env.dbx)
-        .await
-        .unwrap();
-
-        let network_ids =
-            [empty_network.id, fixture.network.id, fixture.network.id];
-        let last_activity = load_cached_network_last_activity(
-            &env.dbx,
-            &network_ids,
-            fixture.login_id,
-            &group_master_keys,
-        )
-        .await
-        .unwrap();
-        assert_eq!(
-            last_activity.get(&fixture.network.id),
-            Some(&Some(
-                (now - Duration::hours(1)).and_utc().timestamp_millis()
-            ))
-        );
-        assert_eq!(last_activity.get(&empty_network.id), Some(&None));
-        let rows = super::super::network_last_activity_rows(
-            &network_ids,
-            &last_activity,
-        );
-        assert_eq!(
-            rows.iter()
-                .map(|row| (row.network_id, row.last_activity_at))
-                .collect::<Vec<_>>(),
-            vec![
-                (empty_network.id, None),
-                (fixture.network.id, last_activity[&fixture.network.id]),
-                (fixture.network.id, last_activity[&fixture.network.id]),
-            ]
-        );
-        let tasks = network_recalculation_task::Entity::find()
-            .all(&env.dbx)
-            .await
-            .unwrap();
-        assert_eq!(tasks.len(), 1);
-        assert_eq!(tasks[0].network_freq_id, missing_freq.id);
-        assert_eq!(tasks[0].login_id, Some(fixture.login_id));
     }
 
     #[tokio::test]

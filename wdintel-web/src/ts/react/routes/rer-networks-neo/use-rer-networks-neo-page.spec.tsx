@@ -1390,6 +1390,31 @@ describe('useRerNetworksNeoPage', () => {
     expect(latest?.status?.text).toContain('Помилка завантаження останньої активності');
   });
 
+  it('loads later activity batches after an earlier batch fails', async () => {
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: Array.from({ length: 6 }, (_, index) => buildNetwork(index + 1)),
+      statusCounts: { active: 6, inactive: 0, archived: 0 },
+    });
+    const lastActivityAt = Date.UTC(2026, 8, 12, 10, 15);
+    apiMock.getNetworkLastActivity
+      .mockRejectedValueOnce(new Error('activity unavailable'))
+      .mockResolvedValueOnce([{ networkId: 6, lastActivityAt }]);
+
+    await renderHook();
+    await vi.waitFor(() =>
+      expect(latest?.rows[5]?.lastActivityLabel).toBe(
+        dayjs(lastActivityAt).format('DD.MM.YY HH:mm'),
+      ),
+    );
+
+    expect(latest?.rows[0]?.lastActivityLabel).toBe('Не вдалося завантажити');
+    expect(apiMock.getNetworkLastActivity).toHaveBeenNthCalledWith(
+      2,
+      { networkIds: [6] },
+      expect.any(Object),
+    );
+  });
+
   it('settles first-page last activity after pagination starts', async () => {
     const firstPage = Array.from({ length: 100 }, (_, index) => buildNetwork(index + 1));
     const firstPageActivity =
@@ -1404,15 +1429,22 @@ describe('useRerNetworksNeoPage', () => {
       list: [buildNetwork(101)],
       statusCounts: { active: 101, inactive: 0, archived: 0 },
     });
-    apiMock.getNetworkLastActivity
-      .mockImplementationOnce(() => firstPageActivity.promise)
-      .mockResolvedValueOnce([{ networkId: 101, lastActivityAt: secondActivityAt }]);
+    apiMock.getNetworkLastActivity.mockImplementation(
+      ({ networkIds }: { networkIds: number[] }) => {
+        if (networkIds[0] === 1) return firstPageActivity.promise;
+        if (networkIds[0] === 101)
+          return Promise.resolve([{ networkId: 101, lastActivityAt: secondActivityAt }]);
+        return Promise.resolve(
+          networkIds.map((networkId) => ({ networkId, lastActivityAt: null })),
+        );
+      },
+    );
 
     await renderHook();
     await flushEffects();
     expect(latest?.rows[0]?.lastActivityLabel).toBe('Завантаження…');
     expect(apiMock.getNetworkLastActivity).toHaveBeenCalledWith(
-      { networkIds: firstPage.map((network) => network.id) },
+      { networkIds: [1, 2, 3, 4, 5] },
       expect.any(Object),
     );
     expect(apiMock.getNetworkLastActivity).toHaveBeenCalledTimes(1);
@@ -1435,7 +1467,12 @@ describe('useRerNetworksNeoPage', () => {
         dayjs(firstActivityAt).format('DD.MM.YY HH:mm'),
       ),
     );
-    expect(apiMock.getNetworkLastActivity).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => expect(apiMock.getNetworkLastActivity).toHaveBeenCalledTimes(21));
+    expect(
+      apiMock.getNetworkLastActivity.mock.calls.every(
+        ([req]) => (req as { networkIds: number[] }).networkIds.length <= 5,
+      ),
+    ).toBe(true);
   });
 
   it('settles first-page activity after pagination starts', async () => {
