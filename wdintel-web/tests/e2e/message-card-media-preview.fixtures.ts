@@ -109,6 +109,7 @@ function buildMessageCardMediaPreviewMessage({
   withCompleteCoordinateError = false,
   coordinateLabel,
   coordinatePointCount = 1,
+  palitraEtalon,
   messageText,
   withCompletedOcrAndSummary = false,
 }: {
@@ -117,6 +118,7 @@ function buildMessageCardMediaPreviewMessage({
   withCompleteCoordinateError?: boolean;
   coordinateLabel?: string;
   coordinatePointCount?: number;
+  palitraEtalon?: string;
   messageText?: string;
   withCompletedOcrAndSummary?: boolean;
 } = {}): Record<string, unknown> {
@@ -219,7 +221,10 @@ function buildMessageCardMediaPreviewMessage({
     date: '13.07.2026',
     time: '12:34',
     freq: '123.4',
-    coords: withCompleteCoordinateError || coordinateLabel != null ? null : '50.45044, 30.52355',
+    coords:
+      palitraEtalon != null || withCompleteCoordinateError || coordinateLabel != null
+        ? null
+        : '50.45044, 30.52355',
     callsigns: withPolishContent ? ['E2E-ALPHA'] : [],
     callsignsAlg2: [],
     checked: false,
@@ -235,13 +240,13 @@ function buildMessageCardMediaPreviewMessage({
     unit: 'E2E Unit',
     callsignTokens: null,
     signalTokens: null,
-    pointTokens: null,
+    pointTokens: palitraEtalon == null ? null : [{ etalon: palitraEtalon }],
     noHeadersBody: null,
     keywordTokens: null,
     textMarked: null,
     datasourceId: null,
     location: null,
-    tags: null,
+    tags: palitraEtalon == null ? null : [1],
     networkIds: withPolishContent ? [301, 302] : null,
     inboxTags: null,
     metadata: [],
@@ -270,6 +275,7 @@ export function buildMessageCardMediaPreviewInboxResponse({
   withCompleteCoordinateError = false,
   coordinateLabel,
   coordinatePointCount = 1,
+  palitraEtalon,
   messageText,
   withCompletedOcrAndSummary = false,
 }: {
@@ -278,6 +284,7 @@ export function buildMessageCardMediaPreviewInboxResponse({
   withCompleteCoordinateError?: boolean;
   coordinateLabel?: string;
   coordinatePointCount?: number;
+  palitraEtalon?: string;
   messageText?: string;
   withCompletedOcrAndSummary?: boolean;
 } = {}): InboxMessagesRspRaw {
@@ -291,6 +298,7 @@ export function buildMessageCardMediaPreviewInboxResponse({
           withCompleteCoordinateError,
           coordinateLabel,
           coordinatePointCount,
+          palitraEtalon,
           messageText,
           withCompletedOcrAndSummary,
         }) as never,
@@ -384,6 +392,7 @@ async function installMessageCardMediaPreviewHostFixture(
   withCompleteCoordinateError: boolean,
   coordinateLabel: string | undefined,
   coordinatePointCount: number,
+  palitraEtalon: string | undefined,
   messageText: string | undefined,
   enableAudioTranscription: boolean,
   withCompletedOcrAndSummary: boolean,
@@ -394,6 +403,7 @@ async function installMessageCardMediaPreviewHostFixture(
     withCompleteCoordinateError,
     coordinateLabel,
     coordinatePointCount,
+    palitraEtalon,
     messageText,
     withCompletedOcrAndSummary,
   });
@@ -441,6 +451,29 @@ async function installMessageCardMediaPreviewHostFixture(
     );
   }
 
+  if (palitraEtalon != null) {
+    await page.route('**/api/tags/tags-list', (route) =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify([[1, { id: 1, label: 'E2E Palitra', is_palitra: true }]]),
+      }),
+    );
+    await page.route('**/api/palitra/v2/list-map', (route) =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify([{ palitra: { id: 1 } }]),
+      }),
+    );
+    await page.route('**/api/palitra/points/search', (route) =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify([
+          { points: [{ label: palitraEtalon, coords: { lat: 49.45044, lng: 31.52355 } }] },
+        ]),
+      }),
+    );
+  }
+
   if (withCompletedOcrAndSummary) {
     await page.route('**/api/messenger/media/e2e-image-1/ocr?*', async (route) => {
       await route.fulfill({
@@ -482,6 +515,7 @@ export async function openMessageCardPreviewHost(
     withCompleteCoordinateError = false,
     coordinateLabel,
     coordinatePointCount = 1,
+    palitraEtalon,
     messageText,
     enableAudioTranscription = false,
     withCompletedOcrAndSummary = false,
@@ -494,6 +528,7 @@ export async function openMessageCardPreviewHost(
     withCompleteCoordinateError?: boolean;
     coordinateLabel?: string;
     coordinatePointCount?: number;
+    palitraEtalon?: string;
     messageText?: string;
     enableAudioTranscription?: boolean;
     withCompletedOcrAndSummary?: boolean;
@@ -509,6 +544,7 @@ export async function openMessageCardPreviewHost(
     withCompleteCoordinateError,
     coordinateLabel,
     coordinatePointCount,
+    palitraEtalon,
     messageText,
     enableAudioTranscription,
     withCompletedOcrAndSummary,
