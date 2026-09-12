@@ -4902,7 +4902,17 @@ describe('MessageCard', () => {
     if (stage == null) throw new Error('preview stage not found');
 
     await act(async () => {
-      stage.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      for (const type of ['pointerdown', 'pointerup']) {
+        image.dispatchEvent(
+          new PointerEvent(type, {
+            bubbles: true,
+            pointerId: 1,
+            pointerType: 'mouse',
+            button: 0,
+          }),
+        );
+      }
+      image.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
     });
 
     expect(image.getAttribute('data-image-preview-zoom')).toBe('200');
@@ -5043,7 +5053,17 @@ describe('MessageCard', () => {
     Object.defineProperty(stage, 'clientHeight', { configurable: true, value: 300 });
 
     await act(async () => {
-      stage.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      for (const type of ['pointerdown', 'pointerup']) {
+        image.dispatchEvent(
+          new PointerEvent(type, {
+            bubbles: true,
+            pointerId: 1,
+            pointerType: 'mouse',
+            button: 0,
+          }),
+        );
+      }
+      image.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
     });
 
     expect(image.getAttribute('data-image-preview-zoom')).toBe('200');

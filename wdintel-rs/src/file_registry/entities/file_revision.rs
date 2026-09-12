@@ -9,11 +9,19 @@ use serde::{Deserialize, Serialize};
 )]
 #[sea_orm(table_name = "file_revision")]
 pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
+    #[sea_orm(
+        primary_key,
+        auto_increment = false,
+        unique_key = "file_revision_device_file_revision_key"
+    )]
     pub id: Uuid,
-    #[sea_orm(primary_key, auto_increment = false)]
+    #[sea_orm(
+        primary_key,
+        auto_increment = false,
+        unique_key = "file_revision_device_file_revision_key"
+    )]
     pub revision: i64,
-    #[sea_orm(unique_key = "file_metadata_revision_source_sequence_key")]
+    #[sea_orm(unique_key = "file_revision_device_file_revision_key")]
     pub device_id: Uuid,
     pub sync_id: Uuid,
     #[sea_orm(column_type = "Text")]
@@ -40,10 +48,14 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(has_many = "super::file_analysis_run_item::Entity")]
     FileAnalysisRunItem,
+    #[sea_orm(has_one = "super::file_content::Entity")]
+    FileContent,
+    #[sea_orm(has_many = "super::file_content_upload::Entity")]
+    FileContentUpload,
     #[sea_orm(
         belongs_to = "super::file_entry::Entity",
-        from = "Column::Id",
-        to = "super::file_entry::Column::Id",
+        from = "(Column::DeviceId, Column::Id)",
+        to = "(super::file_entry::Column::DeviceId, super::file_entry::Column::Id)",
         on_update = "NoAction",
         on_delete = "Restrict"
     )]
@@ -71,6 +83,18 @@ pub enum Relation {
 impl Related<super::file_analysis_run_item::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::FileAnalysisRunItem.def()
+    }
+}
+
+impl Related<super::file_content::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::FileContent.def()
+    }
+}
+
+impl Related<super::file_content_upload::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::FileContentUpload.def()
     }
 }
 

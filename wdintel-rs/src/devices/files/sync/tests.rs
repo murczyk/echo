@@ -3,7 +3,9 @@ use super::super::types::{
     FileSyncSessionItemResult, FileSyncSessionStatus, RawSourceFileState,
     RawSyncDeviceFileItem, RawSyncDeviceFilesReq, SourceFileStateKind,
 };
-use super::{automatic, complete, items, start_explicit, status};
+use super::{
+    automatic, automatic_with_metrics, complete, items, start_explicit, status,
+};
 use crate::config::ROLE_ADMIN;
 use crate::devices::{access, ROLE_DEVICE_SOURCE};
 use crate::entities::{device, login, organism};
@@ -17,8 +19,8 @@ use crate::types::Env;
 use chrono::{Duration, Utc};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
-    DatabaseConnection, EntityTrait, IntoActiveModel, PaginatorTrait,
-    QueryFilter,
+    DatabaseConnection, DbBackend, EntityTrait, IntoActiveModel,
+    PaginatorTrait, QueryFilter, Statement,
 };
 use serde_json::json;
 use std::sync::Arc;
@@ -107,6 +109,130 @@ fn accepted_result(result: &FileSyncResult) -> (&str, i64) {
         } => (file_id, *revision),
         result => panic!("expected accepted result, got {result:?}"),
     }
+}
+
+async fn insert_content_invalidation_fixtures(
+    file_db: &DatabaseConnection,
+    login_id: Uuid,
+    device_id: Uuid,
+    content_file_id: Uuid,
+    open_upload_file_id: Uuid,
+    expired_upload_file_id: Uuid,
+) -> (Uuid, Uuid) {
+    let completed_upload_id = Uuid::now_v7();
+    let completed_object_key = format!(
+        "device-file-content/{device_id}/{content_file_id}/1/{completed_upload_id}"
+    );
+    let open_upload_id = Uuid::now_v7();
+    let open_object_key = format!(
+        "device-file-content/{device_id}/{open_upload_file_id}/1/{open_upload_id}"
+    );
+    let expired_upload_id = Uuid::now_v7();
+    let expired_object_key = format!(
+        "device-file-content/{device_id}/{expired_upload_file_id}/1/{expired_upload_id}"
+    );
+    file_db
+        .execute_unprepared(&format!(
+            r#"
+insert into file_content_upload (
+    id,
+    device_id,
+    file_id,
+    revision,
+    created_by_login_id,
+    upload_length,
+    expected_sha256,
+    object_key,
+    status,
+    created_at,
+    last_activity_at,
+    expires_at,
+    hard_expires_at,
+    spool_removed_at,
+    next_cleanup_at
+) values (
+    '{completed_upload_id}',
+    '{device_id}',
+    '{content_file_id}',
+    1,
+    '{login_id}',
+    7,
+    decode(repeat('01', 32), 'hex'),
+    '{completed_object_key}',
+    'open',
+    now(),
+    now(),
+    now() + interval '1 day',
+    now() + interval '7 days',
+    null,
+    now() + interval '1 day'
+), (
+    '{open_upload_id}',
+    '{device_id}',
+    '{open_upload_file_id}',
+    1,
+    '{login_id}',
+    7,
+    decode(repeat('02', 32), 'hex'),
+    '{open_object_key}',
+    'open',
+    now(),
+    now(),
+    now() + interval '1 day',
+    now() + interval '7 days',
+    null,
+    now() + interval '1 day'
+), (
+    '{expired_upload_id}',
+    '{device_id}',
+    '{expired_upload_file_id}',
+    1,
+    '{login_id}',
+    7,
+    decode(repeat('03', 32), 'hex'),
+    '{expired_object_key}',
+    'open',
+    now() - interval '2 hours',
+    now() - interval '2 hours',
+    now() - interval '1 hour',
+    now() + interval '1 day',
+    null,
+    now() - interval '1 hour'
+);
+
+update file_content_upload
+set status = 'completed',
+    next_cleanup_at = clock_timestamp()
+where id = '{completed_upload_id}';
+
+insert into file_content (
+    file_id,
+    revision,
+    upload_id,
+    object_key,
+    source_size_bytes,
+    source_sha256,
+    is_encrypted,
+    created_at
+) values (
+    '{content_file_id}',
+    1,
+    '{completed_upload_id}',
+    '{completed_object_key}',
+    7,
+    decode(repeat('01', 32), 'hex'),
+    true,
+    now()
+);
+
+update file_entry
+set content_path = '{completed_object_key}'
+where id = '{content_file_id}';
+"#
+        ))
+        .await
+        .unwrap();
+    (open_upload_id, expired_upload_id)
 }
 
 #[test]
@@ -440,6 +566,155 @@ async fn automatic_sync_persists_revisions_and_full_replacement_projection() {
         }
         result => panic!("expected historical accepted result, got {result:?}"),
     }
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn content_upload_terminal_transitions_are_recorded() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let (actor, device_id) = sync_fixture(&env, "content-invalidation").await;
+    let file_registry = env.file_registry_db().unwrap();
+    let file_db = file_registry.connection();
+    let content_path = "C:\\reports\\published.log";
+    let upload_path = "C:\\reports\\uploading.log";
+    let expired_path = "C:\\reports\\expired.log";
+
+    let initial = automatic(
+        &env.dbx,
+        file_registry,
+        &actor,
+        device_id,
+        vec![
+            raw_item(content_path),
+            raw_item(upload_path),
+            raw_item(expired_path),
+        ],
+    )
+    .await
+    .unwrap();
+    let content_file_id =
+        Uuid::parse_str(accepted_result(&initial.results[0]).0).unwrap();
+    let open_upload_file_id =
+        Uuid::parse_str(accepted_result(&initial.results[1]).0).unwrap();
+    let expired_upload_file_id =
+        Uuid::parse_str(accepted_result(&initial.results[2]).0).unwrap();
+    let (open_upload_id, expired_upload_id) =
+        insert_content_invalidation_fixtures(
+            file_db,
+            actor.id,
+            device_id,
+            content_file_id,
+            open_upload_file_id,
+            expired_upload_file_id,
+        )
+        .await;
+
+    let (metrics, metrics_recorder) =
+        crate::telemetry::Metrics::recording(&env.config);
+    let content_spool = tempfile::tempdir().unwrap();
+    let content_storage =
+        opendal::Operator::new(opendal::services::Memory::default())
+            .unwrap()
+            .finish();
+    let content_runtime = super::super::content::runtime_for_test(
+        file_registry.clone(),
+        content_spool.path().to_path_buf(),
+        content_storage,
+        Some(metrics.clone()),
+    )
+    .await;
+    super::super::content::worker::cleanup_one_for_test(
+        &content_runtime,
+        expired_upload_id,
+    )
+    .await
+    .unwrap();
+    super::super::content::worker::cleanup_one_for_test(
+        &content_runtime,
+        expired_upload_id,
+    )
+    .await
+    .unwrap();
+
+    let updated = automatic_with_metrics(
+        &env.dbx,
+        file_registry,
+        &actor,
+        device_id,
+        vec![
+            raw_item(content_path),
+            raw_item(upload_path),
+            raw_item(expired_path),
+        ],
+        Some(&metrics),
+    )
+    .await
+    .unwrap();
+    assert_eq!(accepted_result(&updated.results[0]).1, 2);
+    assert_eq!(accepted_result(&updated.results[1]).1, 2);
+    assert_eq!(accepted_result(&updated.results[2]).1, 2);
+
+    let content_file = file_entry::Entity::find_by_id(content_file_id)
+        .one(file_db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(content_file.revision, Some(2));
+    assert_eq!(content_file.content_path, None);
+
+    let stale_upload = file_db
+        .query_one_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"
+select
+    status::text as status,
+    next_cleanup_at <= clock_timestamp() as cleanup_due
+from file_content_upload
+where id = $1
+"#,
+            [open_upload_id.into()],
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        stale_upload.try_get::<String>("", "status").unwrap(),
+        "stale"
+    );
+    assert!(stale_upload.try_get::<bool>("", "cleanup_due").unwrap());
+
+    let historical_content_count = file_db
+        .query_one_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"
+select count(*) as content_count
+from file_content
+where file_id = $1 and revision = 1
+"#,
+            [content_file_id.into()],
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get::<i64>("", "content_count")
+        .unwrap();
+    assert_eq!(historical_content_count, 1);
+
+    metrics.force_flush_for_test();
+    assert_eq!(
+        metrics_recorder.counter_value(
+            "echo.device_files.content_upload.terminal.count",
+            &[("status", "stale")],
+        ),
+        Some(1)
+    );
+    assert_eq!(
+        metrics_recorder.counter_value(
+            "echo.device_files.content_upload.terminal.count",
+            &[("status", "expired")],
+        ),
+        Some(1)
+    );
 }
 
 #[tokio::test]

@@ -13,6 +13,35 @@ use serde::{Deserialize, Serialize};
     Serialize,
     Deserialize,
 )]
+#[sea_orm(
+    rs_type = "Enum",
+    db_type = "Enum",
+    enum_name = "file_content_upload_status"
+)]
+pub enum FileContentUploadStatus {
+    #[sea_orm(string_value = "open")]
+    Open,
+    #[sea_orm(string_value = "completed")]
+    Completed,
+    #[sea_orm(string_value = "aborted")]
+    Aborted,
+    #[sea_orm(string_value = "expired")]
+    Expired,
+    #[sea_orm(string_value = "stale")]
+    Stale,
+    #[sea_orm(string_value = "rejected")]
+    Rejected,
+}
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    EnumIter,
+    DeriveActiveEnum,
+    Serialize,
+    Deserialize,
+)]
 #[sea_orm(rs_type = "Enum", db_type = "Enum", enum_name = "file_entry_kind")]
 pub enum FileEntryKind {
     #[sea_orm(string_value = "directory")]

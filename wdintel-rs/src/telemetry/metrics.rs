@@ -27,6 +27,12 @@ const DEVICE_FILES_SYNC_BATCHES_DESCRIPTION: &str =
 const DEVICE_FILES_SYNC_DURATION: &str = "echo.device_files.sync.duration";
 const DEVICE_FILES_SYNC_DURATION_DESCRIPTION: &str =
     "Device file synchronization batch duration";
+const DEVICE_FILE_CONTENT_ACCEPTED_BYTES: &str =
+    "echo.device_files.content_upload.accepted_bytes";
+const DEVICE_FILE_CONTENT_TERMINAL_COUNT: &str =
+    "echo.device_files.content_upload.terminal.count";
+const DEVICE_FILE_CONTENT_FAILURES_COUNT: &str =
+    "echo.device_files.content_upload.failures.count";
 const DEVICE_FILES_SYNC_DURATION_BUCKETS_SECS: &[f64] = &[
     0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0,
 ];
@@ -116,6 +122,9 @@ pub struct Metrics {
     synchronized_files: Counter<u64>,
     sync_batches: Counter<u64>,
     sync_duration: Histogram<f64>,
+    device_file_content_accepted_bytes: Counter<u64>,
+    device_file_content_terminal: Counter<u64>,
+    device_file_content_failures: Counter<u64>,
     file_analysis_runs: Gauge<u64>,
     file_analysis_run_statuses: Gauge<u64>,
     file_analysis_prepared_items: Counter<u64>,
@@ -209,6 +218,23 @@ impl Metrics {
             .f64_histogram(DEVICE_FILES_SYNC_DURATION)
             .with_description(DEVICE_FILES_SYNC_DURATION_DESCRIPTION)
             .with_unit("s")
+            .build();
+        let device_file_content_accepted_bytes = meter
+            .u64_counter(DEVICE_FILE_CONTENT_ACCEPTED_BYTES)
+            .with_description("Number of device file content source bytes accepted into spool")
+            .with_unit("By")
+            .build();
+        let device_file_content_terminal = meter
+            .u64_counter(DEVICE_FILE_CONTENT_TERMINAL_COUNT)
+            .with_description(
+                "Number of device file content upload terminal transitions",
+            )
+            .with_unit("1")
+            .build();
+        let device_file_content_failures = meter
+            .u64_counter(DEVICE_FILE_CONTENT_FAILURES_COUNT)
+            .with_description("Number of device file content finalization or cleanup failures")
+            .with_unit("1")
             .build();
         let file_analysis_runs = meter
             .u64_gauge(FILE_ANALYSIS_RUNS_COUNT)
@@ -333,6 +359,9 @@ impl Metrics {
             synchronized_files,
             sync_batches,
             sync_duration,
+            device_file_content_accepted_bytes,
+            device_file_content_terminal,
+            device_file_content_failures,
             file_analysis_runs,
             file_analysis_run_statuses,
             file_analysis_prepared_items,
@@ -434,6 +463,39 @@ impl Metrics {
         self.record_synchronized_files("updated", updated);
         self.sync_batches.add(1, &[]);
         self.sync_duration.record(duration.as_secs_f64(), &[]);
+    }
+
+    pub(crate) fn record_device_file_content_accepted_bytes(&self, count: u64) {
+        if count > 0 {
+            self.device_file_content_accepted_bytes.add(count, &[]);
+        }
+    }
+
+    pub(crate) fn record_device_file_content_terminal(
+        &self,
+        status: &'static str,
+    ) {
+        self.record_device_file_content_terminal_count(status, 1);
+    }
+
+    pub(crate) fn record_device_file_content_terminal_count(
+        &self,
+        status: &'static str,
+        count: u64,
+    ) {
+        if count == 0 {
+            return;
+        }
+        self.device_file_content_terminal
+            .add(count, &[KeyValue::new("status", status)]);
+    }
+
+    pub(crate) fn record_device_file_content_failure(
+        &self,
+        stage: &'static str,
+    ) {
+        self.device_file_content_failures
+            .add(1, &[KeyValue::new("stage", stage)]);
     }
 
     fn record_synchronized_files(&self, operation: &'static str, count: u64) {
@@ -594,6 +656,9 @@ fn metrics_view(instrument: &Instrument) -> Option<Stream> {
             DEVICE_FILES_SYNC_DURATION => {
                 (&[], Some(DEVICE_FILES_SYNC_DURATION_BUCKETS_SECS))
             }
+            DEVICE_FILE_CONTENT_ACCEPTED_BYTES => (&[], None),
+            DEVICE_FILE_CONTENT_TERMINAL_COUNT => (&["status"], None),
+            DEVICE_FILE_CONTENT_FAILURES_COUNT => (&["stage"], None),
             FILE_ANALYSIS_RUNS_COUNT => (&["cause"], None),
             FILE_ANALYSIS_RUNS_STATUS_COUNT => (&["status"], None),
             FILE_ANALYSIS_PREPARED_ITEMS_COUNT

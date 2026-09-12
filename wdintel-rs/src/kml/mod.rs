@@ -11,7 +11,6 @@ use actix_web::web::Json;
 use actix_web::HttpRequest;
 use actix_web::{get, post};
 use async_recursion::async_recursion;
-use futures_util::StreamExt;
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -631,7 +630,7 @@ pub async fn oneoff_fix_kml_main(
     mode: Mode,
     ps: &crate::OneoffFixKmzPs,
 ) -> Result<(), AppError> {
-    oneoff_fix_kml(mode, ps).await.c(h!())?;
+    oneoff_fix_kml(mode, ps, Path::new(&ps.kmz)).await.c(h!())?;
     Ok(())
 }
 
@@ -639,6 +638,7 @@ pub async fn oneoff_fix_kml_main(
 pub async fn oneoff_fix_kml(
     mode: Mode,
     ps: &crate::OneoffFixKmzPs,
+    source_name: &Path,
 ) -> Result<(), AppError> {
     let config = crate::config::read_config(mode)?;
     let kmz_path = Path::new(&ps.kmz);
@@ -649,14 +649,11 @@ pub async fn oneoff_fix_kml(
     crate::utils::zip::unzip(&tmp_dir_kmz)?;
     std::fs::remove_file(&tmp_dir_kmz)?;
     crate::utils::backup_tmp_dir(tmp_dir.path())?;
-    // todo: list dir, search for kml file name
-    let mut kml_path = tmp_dir
-        .path()
-        .join(kmz_path.file_stem().ok_or("no stem 28471")?)
-        .join("doc.kml");
-    if !kml_path.exists() {
-        kml_path = tmp_dir.path().join("doc.kml");
-    }
+    let kml_path = crate::utils::zip::find_kml_document_for_source(
+        tmp_dir.path(),
+        source_name,
+    )
+    .c(h!())?;
     println!("> kml_path: {kml_path:?}");
     let base_path = Path::new(&kml_path)
         .parent()
@@ -714,14 +711,89 @@ pub async fn oneoff_fix_kml(
     Ok(())
 }
 
+pub(crate) fn validate_upload_document(input: &str) -> Result<(), AppError> {
+    use quick_xml::events::Event;
+    let mut reader = quick_xml::Reader::from_str(input);
+    let mut depth = 0_usize;
+    let mut saw_root = false;
+    loop {
+        let event = reader
+            .read_event()
+            .map_err(|error| AppError::BL {
+                msg: format!("Invalid KML document: {error}"),
+            })
+            .c(h!())?;
+        match event {
+            Event::Start(element) if depth == 0 => {
+                if saw_root || element.local_name().as_ref() != b"kml" {
+                    return Err(AppError::BL {
+                        msg: "Uploaded document must have a single kml root"
+                            .to_string(),
+                    });
+                }
+                saw_root = true;
+                depth = 1;
+            }
+            Event::Empty(element) if depth == 0 => {
+                if saw_root || element.local_name().as_ref() != b"kml" {
+                    return Err(AppError::BL {
+                        msg: "Uploaded document must have a single kml root"
+                            .to_string(),
+                    });
+                }
+                saw_root = true;
+            }
+            Event::Start(_) => depth += 1,
+            Event::End(_) => {
+                depth = depth
+                    .checked_sub(1)
+                    .ok_or_else(|| AppError::BL {
+                        msg: "Invalid KML nesting".to_string(),
+                    })
+                    .c(h!())?;
+            }
+            Event::Text(text)
+                if depth == 0 && !text.iter().all(u8::is_ascii_whitespace) =>
+            {
+                return Err(AppError::BL {
+                    msg: "Unexpected text outside KML root".to_string(),
+                });
+            }
+            Event::CData(_) | Event::DocType(_) if depth == 0 => {
+                return Err(AppError::BL {
+                    msg: "Unexpected content outside KML root".to_string(),
+                });
+            }
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    if !saw_root || depth != 0 {
+        return Err(AppError::BL {
+            msg: "Incomplete KML document".to_string(),
+        });
+    }
+    Ok(())
+}
+
 pub async fn read_and_fix_kml(
     hide_titles: bool,
     kml_path: &Path,
     base_path: &Path,
 ) -> Result<Kml, AppError> {
-    let input = std::fs::read_to_string(kml_path)?;
-    let input = strip_kml_description(&input)?;
-    let mut kml: Kml = quick_xml::de::from_str(&input).c(h!())?;
+    let bytes = std::fs::read(kml_path).c(h!())?;
+    let input = std::str::from_utf8(&bytes)
+        .map_err(|error| AppError::BL {
+            msg: format!("Invalid KML encoding: {error}"),
+        })
+        .c(h!())?;
+    validate_upload_document(input).c(h!())?;
+    let input = strip_kml_description(input).c(h!())?;
+    let mut kml: Kml = quick_xml::de::from_str(&input)
+        .map_err(|error| AppError::BL {
+            msg: format!("Invalid KML document: {error}"),
+        })
+        .c(h!())?;
     let style_maps = extract_style_maps(&kml.nodes.clone())?;
     let style_maps_highlight =
         extract_style_maps_hightlight(&kml.nodes.clone())?;
@@ -1002,6 +1074,65 @@ fn replace_bad_symbols(s: &str) -> Result<String, AppError> {
     Ok(s.to_string().replace("", "-"))
 }
 
+async fn read_fix_kmz_payload(
+    payload: &mut Multipart,
+) -> Result<(bool, Vec<u8>, String, String), AppError> {
+    let mut hide_titles = false;
+    let mut file_bytes = None;
+    let mut download_name = String::new();
+    let mut source_name = String::new();
+    let mut total_bytes = 0;
+    let mut field_count = 0;
+    while let Some(item) =
+        crate::utils::multipart::next(payload).await.c(h!())?
+    {
+        field_count += 1;
+        if field_count > crate::config::MULTIPART_MAX_FIELDS {
+            return Err(AppError::BL {
+                msg: "Too many multipart fields".to_string(),
+            });
+        }
+        let mut field = item
+            .map_err(crate::utils::multipart::to_app_error)
+            .c(h!())?;
+        let is_option = field.name() == Some("hide_titles");
+        if !is_option && file_bytes.is_some() {
+            return Err(AppError::BL {
+                msg: "Only one uploaded file is supported".to_string(),
+            });
+        }
+        let remaining_bytes = crate::config::MULTIPART_MAX_BYTES - total_bytes;
+        let maximum_bytes = if is_option {
+            remaining_bytes.min(crate::config::MULTIPART_TEXT_MAX_BYTES)
+        } else {
+            remaining_bytes
+        };
+        let value = crate::utils::multipart::read_field_limited(
+            &mut field,
+            maximum_bytes,
+        )
+        .await
+        .c(h!())?;
+        total_bytes += value.len();
+        if is_option {
+            hide_titles = value == b"1";
+        } else {
+            source_name = field.name().unwrap_or("upload.kmz").to_string();
+            download_name = crate::utils::multipart::download_filename(
+                &field, "-fixed", "kmz",
+            );
+            file_bytes = Some(value);
+        }
+    }
+    let file_bytes = file_bytes
+        .filter(|bytes| !bytes.is_empty())
+        .ok_or_else(|| AppError::BL {
+            msg: "No file found".to_string(),
+        })
+        .c(h!())?;
+    Ok((hide_titles, file_bytes, download_name, source_name))
+}
+
 #[post("/api/kmz/fix")]
 pub async fn api_fix_kmz(
     user: actix_identity::Identity,
@@ -1010,46 +1141,12 @@ pub async fn api_fix_kmz(
     mut payload: Multipart,
 ) -> Result<actix_web::HttpResponse, AppError> {
     ensure_basic_role(&env.dbx, &user).await.c(h!())?;
-    let mut hide_titles: bool = false;
-    let mut val = vec![];
-    let mut filename: String = "".to_string();
-
-    while let Some(item) = payload.next().await {
-        let mut field = item.map_err(|e| -> AppError {
-            format!("Multipart error: {e:?}").into()
-        })?;
-        let field_name = field.name().c(h!())?;
-        if field_name == "hide_titles" {
-            while let Some(chunk) = field.next().await {
-                let v = chunk
-                    .map_err(|e| -> AppError {
-                        format!("Multipart error: {e:?}").into()
-                    })?
-                    .to_vec();
-                if String::from_utf8(v) == Ok("1".to_string()) {
-                    hide_titles = true;
-                }
-            }
-        } else {
-            filename = field_name.to_string();
-            let mut val_curr: Vec<u8> = vec![];
-            while let Some(chunk) = field.next().await {
-                val_curr.extend(
-                    chunk
-                        .map_err(|e| -> AppError {
-                            format!("Multipart error: {e:?}").into()
-                        })?
-                        .to_vec(),
-                );
-            }
-            val = val_curr;
-        }
-    }
-    let tmp_dir = TempDir::new()?;
-    println!("> tmp_dir {}", tmp_dir.path().display());
-    let kmz_file = tmp_dir.path().join(filename);
-    println!("> kmz_file: {}", kmz_file.display());
-    std::fs::write(&kmz_file, val)?;
+    let (hide_titles, val, download_name, source_name) =
+        read_fix_kmz_payload(&mut payload).await.c(h!())?;
+    let tmp_dir = TempDir::new().c(h!())?;
+    let kmz_file =
+        crate::utils::multipart::write_upload(tmp_dir.path(), "kmz", &val)
+            .c(h!())?;
     crate::utils::backup_tmp_dir(tmp_dir.path())?;
 
     let output =
@@ -1061,13 +1158,23 @@ pub async fn api_fix_kmz(
             res: output.clone(),
             hide_titles,
         },
+        Path::new(&source_name),
     )
     .await
     .c(h!())?;
     println!("> output: {}", output);
 
     let file = actix_files::NamedFile::open_async(&output).await.c(h!())?;
-    Ok(file.into_response(&http_req))
+    Ok(file
+        .set_content_type(
+            mime_guess::from_path(&download_name).first_or_octet_stream(),
+        )
+        .set_content_disposition(
+            crate::utils::multipart::download_content_disposition(
+                download_name,
+            ),
+        )
+        .into_response(&http_req))
 }
 
 #[derive(PartialEq, Debug)]
@@ -1179,7 +1286,14 @@ pub async fn oneoff_radio_per_day_per_abonent_main(
     m_dbx: Option<&sea_orm::DatabaseConnection>,
 ) -> Result<RadioRenderOutputs, AppError> {
     let config = crate::config::read_config(mode)?;
-    oneoff_radio_per_day_per_abonent(&config, ps, m_bgtask_id, m_dbx).await
+    oneoff_radio_per_day_per_abonent(
+        &config,
+        ps,
+        m_bgtask_id,
+        m_dbx,
+        Path::new(&ps.input),
+    )
+    .await
 }
 
 pub async fn oneoff_radio_per_day_per_abonent(
@@ -1187,6 +1301,7 @@ pub async fn oneoff_radio_per_day_per_abonent(
     ps: &crate::OneoffRadioPerDayPerAbonentPs,
     m_bgtask_id: Option<i64>,
     m_dbx: Option<&sea_orm::DatabaseConnection>,
+    source_name: &Path,
 ) -> Result<RadioRenderOutputs, AppError> {
     bgtask_log2(
         m_bgtask_id,
@@ -1228,13 +1343,11 @@ pub async fn oneoff_radio_per_day_per_abonent(
     std::fs::remove_file(&tmp_dir_kmz)?;
     bgtask_log2(m_bgtask_id, "> backup", m_dbx).await.c(h!())?;
     crate::utils::backup_tmp_dir(tmp_dir.path())?;
-    let mut kml_path = tmp_dir
-        .path()
-        .join(kmz_path.file_stem().ok_or("no stem 92832")?)
-        .join("doc.kml");
-    if !kml_path.exists() {
-        kml_path = tmp_dir.path().join("doc.kml");
-    }
+    let kml_path = crate::utils::zip::find_kml_document_for_source(
+        tmp_dir.path(),
+        source_name,
+    )
+    .c(h!())?;
     bgtask_log2(
         m_bgtask_id,
         &format!("> kml_path: {}", kml_path.display()),
@@ -1311,7 +1424,7 @@ pub async fn oneoff_radio_per_day_per_abonent(
                 format!("radios-{bgtask_id}-radio.kmz"),
             )
         } else {
-            let stem = kmz_path
+            let stem = source_name
                 .file_name()
                 .ok_or("error 19283")?
                 .to_str()
@@ -1338,7 +1451,7 @@ pub async fn oneoff_radio_per_day_per_abonent(
     let kmz_path_out_date = output_dir.path().join(&kmz_per_date_name);
     render_nodes(
         &kml,
-        kmz_path,
+        source_name,
         &kml_path,
         &nodes_per_date_per_radio,
         &kmz_path_out_date,
@@ -1350,7 +1463,7 @@ pub async fn oneoff_radio_per_day_per_abonent(
     let kmz_path_out_radio = output_dir.path().join(&kmz_per_radio_name);
     render_nodes(
         &kml,
-        kmz_path,
+        source_name,
         &kml_path,
         &nodes_per_radio_per_date,
         &kmz_path_out_radio,
@@ -1518,7 +1631,7 @@ async fn render_nodes_csv(
     m_bgtask_id: Option<i64>,
     m_dbx: Option<&sea_orm::DatabaseConnection>,
 ) -> Result<(), AppError> {
-    let per_page = 2000;
+    let per_page = crate::config::DELTA_RADIOS_CSV_ROWS_PER_PAGE;
     let mut rows = vec![];
     for (date, per_radio_map) in node_map.iter() {
         println!("> render_nodes_csv date: {date}");
@@ -1554,6 +1667,7 @@ async fn render_nodes_csv(
             }
         }
     }
+    write_radio_csv_rows(csv_path_out, &rows).c(h!())?;
     for (i, page_rows) in rows.chunks(per_page).enumerate() {
         let page = i + 1;
         let csv_path_out_paged = csv_path_out.with_file_name(
@@ -1566,11 +1680,7 @@ async fn render_nodes_csv(
                 .replace(".csv", &format!("-page-{page}.csv")[..]),
         );
         println!("> csv_path_out_paged: {}", csv_path_out_paged.display());
-        let mut wtr = csv::Writer::from_path(&csv_path_out_paged).c(h!())?;
-        for row in page_rows.iter() {
-            wtr.serialize(row).c(h!())?;
-        }
-        wtr.flush().c(h!())?;
+        write_radio_csv_rows(&csv_path_out_paged, page_rows).c(h!())?;
         bgtask_log2(
             m_bgtask_id,
             &format!("> wrote {}", csv_path_out_paged.display()),
@@ -1590,6 +1700,18 @@ async fn render_nodes_csv(
         .await
         .c(h!())?;
     }
+    Ok(())
+}
+
+fn write_radio_csv_rows(
+    path: &Path,
+    rows: &[crate::delta::types::DeltaCsvRow],
+) -> anyhow::Result<()> {
+    let mut writer = csv::Writer::from_path(path).c(h!())?;
+    for row in rows {
+        writer.serialize(row).c(h!())?;
+    }
+    writer.flush().c(h!())?;
     Ok(())
 }
 
@@ -1770,5 +1892,151 @@ mod tests {
                 year: "2023".to_string(),
             }
         )
+    }
+}
+
+#[cfg(test)]
+mod upload_regression_tests {
+    use super::*;
+    use actix_web::test::TestRequest;
+    use actix_web::ResponseError;
+
+    #[actix_web::test]
+    async fn radio_csv_render_keeps_full_output_and_paged_records() {
+        let kml: Kml = quick_xml::de::from_str(
+            "<kml><Document><Placemark><Point><coordinates>30,50</coordinates></Point></Placemark></Document></kml>",
+        )
+        .unwrap();
+        let nodes = gather_all_placemarks(&kml.nodes).unwrap();
+        let radio = "Радіо, \"А\"\nДругий рядок";
+        let node_map = BTreeMap::from([(
+            "2026-09-11".to_string(),
+            BTreeMap::from([(
+                radio.to_string(),
+                vec![nodes[0].clone(); 2_001],
+            )]),
+        )]);
+        let directory = TempDir::new().unwrap();
+        let path = directory.path().join("radio.csv");
+        render_nodes_csv(&node_map, &path, None, None)
+            .await
+            .unwrap();
+        let read_rows = |path: &Path| {
+            csv::Reader::from_path(path)
+                .unwrap()
+                .deserialize::<crate::delta::types::DeltaCsvRow>()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
+        };
+        let all = read_rows(&path);
+        let first = read_rows(&directory.path().join("radio-page-1.csv"));
+        let second = read_rows(&directory.path().join("radio-page-2.csv"));
+        assert_eq!(all.len(), 2_001);
+        assert_eq!(first.len(), 2_000);
+        assert_eq!(second.len(), 1);
+        assert_eq!(all, [first, second].concat());
+        assert!(all.iter().all(|row| {
+            row.name == radio
+                && row.coordinates == "POINT (30 50)"
+                && row.observation_datetime == "2026-09-11T12:00:00"
+        }));
+        let empty_path = directory.path().join("empty.csv");
+        render_nodes_csv(&BTreeMap::new(), &empty_path, None, None)
+            .await
+            .unwrap();
+        assert!(std::fs::read(empty_path).unwrap().is_empty());
+    }
+
+    fn multipart(fields: &[(&str, &[u8])]) -> Multipart {
+        let mut bytes = Vec::new();
+        for (name, value) in fields {
+            bytes.extend_from_slice(format!("--upload-test\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n").as_bytes());
+            bytes.extend_from_slice(value);
+            bytes.extend_from_slice(b"\r\n");
+        }
+        bytes.extend_from_slice(b"--upload-test--\r\n");
+        let (request, payload) = TestRequest::post()
+            .insert_header((
+                "content-type",
+                "multipart/form-data; boundary=upload-test",
+            ))
+            .set_payload(bytes)
+            .to_http_parts();
+        Multipart::new(request.headers(), payload)
+    }
+
+    #[test]
+    fn uploaded_kml_requires_a_complete_single_root() {
+        for input in [
+            "<foo/>",
+            "<kml>",
+            "<kml><Document></kml>",
+            "<kml/><kml/>",
+            "junk<kml/>",
+            "<kml/>junk",
+            "",
+        ] {
+            let error = validate_upload_document(input).unwrap_err();
+            assert_eq!(
+                error.error_response().status(),
+                actix_web::http::StatusCode::BAD_REQUEST,
+                "{input}"
+            );
+        }
+        for input in ["<kml/>", "<?xml version=\"1.0\"?><kml><Document/></kml>", "<g:kml xmlns:g=\"http://www.opengis.net/kml/2.2\"><g:Document/></g:kml>"] {
+            validate_upload_document(input).unwrap();
+        }
+    }
+
+    #[actix_web::test]
+    async fn kmz_fix_rejects_empty_repeated_and_oversized_fields() {
+        let oversized = vec![b'x'; crate::config::MULTIPART_TEXT_MAX_BYTES + 1];
+        for fields in [
+            vec![],
+            vec![("source", b"".as_slice())],
+            vec![
+                ("source", b"first".as_slice()),
+                ("second", b"other".as_slice()),
+            ],
+            vec![
+                ("hide_titles", oversized.as_slice()),
+                ("source", b"file".as_slice()),
+            ],
+        ] {
+            let error = read_fix_kmz_payload(&mut multipart(&fields))
+                .await
+                .unwrap_err();
+            assert_eq!(
+                error.error_response().status(),
+                actix_web::http::StatusCode::BAD_REQUEST
+            );
+        }
+        let mut fields = vec![
+            ("hide_titles", b"".as_slice());
+            crate::config::MULTIPART_MAX_FIELDS
+        ];
+        fields.push(("source", b"file"));
+        assert!(read_fix_kmz_payload(&mut multipart(&fields)).await.is_err());
+        fields.remove(0);
+        let (_, bytes, _, _) =
+            read_fix_kmz_payload(&mut multipart(&fields)).await.unwrap();
+        assert_eq!(bytes, b"file");
+    }
+
+    #[actix_web::test]
+    async fn kmz_fix_preserves_file_and_options_at_text_limit() {
+        let limit = vec![b'x'; crate::config::MULTIPART_TEXT_MAX_BYTES];
+        let (hide_titles, bytes, download_name, source_name) =
+            read_fix_kmz_payload(&mut multipart(&[
+                ("hide_titles", &limit),
+                ("../../owned-sentinel.kmz", b"file"),
+                ("hide_titles", b"1"),
+            ]))
+            .await
+            .unwrap();
+        assert!(hide_titles);
+        assert_eq!(download_name, "owned-sentinel-fixed.kmz");
+        assert_eq!(source_name, "../../owned-sentinel.kmz");
+        assert_eq!(bytes, b"file");
     }
 }

@@ -47,8 +47,10 @@ fn extract_lat_lng(cor_pair: &str) -> Result<(f64, f64), AppError> {
             msg: format!("Bad wgs yx pair: {cor_pair}"),
         });
     }
-    let lat: f64 = res[0].parse().c(h!())?;
-    let lng: f64 = res[1].parse().c(h!())?;
+    let lat: f64 =
+        res[0].parse().map_err(super::invalid_import_data).c(h!())?;
+    let lng: f64 =
+        res[1].parse().map_err(super::invalid_import_data).c(h!())?;
     Ok((lat, lng))
 }
 
@@ -64,7 +66,7 @@ pub fn csv_to_kmz(
     let obj_detail: BTreeMap<String, ObjectRsp> = BTreeMap::new();
     let obj_attachments: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for e_rec in rdr.deserialize() {
-        let rec: Record = e_rec.c(h!())?;
+        let rec: Record = e_rec.map_err(super::invalid_import_data).c(h!())?;
         let mut line_points: Vec<LocationGeometryRsp> = vec![];
         let cors: Vec<String> = rec
             .coordinates_wgs
@@ -184,11 +186,12 @@ pub async fn api_delta_csv_to_kmz(
         .await
         .c(h!())?;
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
+    let download_name = multipart::download_filename(&field, "", "kmz");
     let tmp_dir = TempDir::new()?;
     println!("> tmp_dir {}", tmp_dir.path().display());
-    let csv_file = tmp_dir.path().join(field.name().c(h!())?);
+    let csv_file =
+        multipart::write_upload(tmp_dir.path(), "csv", &val).c(h!())?;
     println!("> csv_file: {}", csv_file.display());
-    std::fs::write(&csv_file, val)?;
     crate::utils::backup_tmp_dir(tmp_dir.path())?;
 
     let output = csv_to_kmz(
@@ -199,5 +202,11 @@ pub async fn api_delta_csv_to_kmz(
     )?;
 
     let file = actix_files::NamedFile::open_async(&output).await.c(h!())?;
-    Ok(file.into_response(&http_req))
+    Ok(file
+        .set_content_disposition(
+            crate::utils::multipart::download_content_disposition(
+                download_name,
+            ),
+        )
+        .into_response(&http_req))
 }

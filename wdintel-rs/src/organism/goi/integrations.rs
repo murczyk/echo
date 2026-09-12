@@ -49,7 +49,6 @@ use actix_web::post;
 use actix_web::web::{Json, Path as ActixPath};
 use actix_web::HttpResponse;
 use chrono::{DateTime, FixedOffset, Utc};
-use futures_util::StreamExt;
 use sea_orm::*;
 use sea_query::{extension::postgres::PgExpr, Expr};
 use serde::Serialize;
@@ -891,7 +890,9 @@ async fn read_goi_categories_upload(
     payload: &mut Multipart,
 ) -> Result<GoiCategoriesUpload, AppError> {
     let mut upload: Option<GoiCategoriesUpload> = None;
-    while let Some(item) = payload.next().await {
+    while let Some(item) =
+        crate::utils::multipart::next(payload).await.context(h!())?
+    {
         let mut field = item.map_err(|err| AppError::BL {
             msg: format!("Multipart error: {err:?}"),
         })?;
@@ -931,7 +932,9 @@ async fn read_goi_categories_field_bytes(
     max_bytes: usize,
 ) -> Result<Vec<u8>, AppError> {
     let mut bytes = Vec::new();
-    while let Some(chunk) = field.next().await {
+    while let Some(chunk) =
+        crate::utils::multipart::next(field).await.context(h!())?
+    {
         let chunk = chunk.map_err(|err| AppError::BL {
             msg: format!("Field read error: {err:?}"),
         })?;

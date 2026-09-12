@@ -9940,6 +9940,7 @@ dependencies = [
  "itertools 0.14.0",
  "lazy_static",
  "levenshtein",
+ "libc",
  "log",
  "md-5 0.10.6",
  "milgeo-audio-wave",

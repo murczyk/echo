@@ -126,9 +126,16 @@ vi.mock('@uppy/core', () => {
       return this.files;
     }
     cancelAll() {}
+    destroy() {
+      this.cancelAll();
+      this.listeners.clear();
+    }
     removeFile(id: string) {
+      const removedFile = this.files.find((file) => file.id === id);
       this.files = this.files.filter((file) => file.id !== id);
-      this.listeners.get('file-removed')?.forEach((callback) => callback());
+      if (removedFile) {
+        this.listeners.get('file-removed')?.forEach((callback) => callback(removedFile));
+      }
     }
     addFile(file: Record<string, unknown>) {
       if (this.files.length >= 20) {

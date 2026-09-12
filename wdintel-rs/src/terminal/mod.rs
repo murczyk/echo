@@ -24,55 +24,57 @@ use tempfile::TempDir;
 use uuid::Uuid;
 
 fn pdf_to_text(file: &Path) -> Result<String, AppError> {
-    let orig_workdir = std::env::current_dir()?;
-    let res = pdf_to_text_1(file);
-    std::env::set_current_dir(orig_workdir)?;
-    res
+    Ok(pdf_to_text_1(file).c(h!())?)
 }
 
-fn pdf_to_text_1(file: &Path) -> Result<String, AppError> {
+fn pdf_to_text_1(file: &Path) -> anyhow::Result<String> {
     println!("> file: {}", file.display());
-    let tmp_dir = TempDir::new()?;
+    let tmp_dir = TempDir::new().c(h!())?;
     println!("> tmp_dir: {}", tmp_dir.path().display());
     let input_pdf = tmp_dir.path().join("input.pdf");
     println!("> input_pdf: {}", input_pdf.display());
-    std::fs::copy(file, &input_pdf)?;
-    std::env::set_current_dir(tmp_dir.path())?;
+    std::fs::copy(file, &input_pdf).c(h!())?;
     let output_txt = tmp_dir.path().join("output.txt");
     println!("> output_txt: {}", output_txt.display());
-    let _output = Command::new("pdftotext")
+    let output = Command::new("pdftotext")
+        .current_dir(tmp_dir.path())
         .arg(format!("{}", input_pdf.display()))
         .arg(format!("{}", output_txt.display()))
-        .output()?;
-    let file_res =
-        String::from_utf8_lossy(&std::fs::read(output_txt)?).to_string();
+        .output()
+        .c(h!())?;
+    anyhow::ensure!(
+        output.status.success(),
+        "pdftotext exited with {}",
+        output.status
+    );
+    let file_res = String::from_utf8_lossy(&std::fs::read(output_txt).c(h!())?)
+        .to_string();
     Ok(file_res)
     // Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 // | tmp_dir must be a tempdir with a file named "input.pdf". output file will be called "output.html"
 fn pdf_to_html(tmp_dir: &Path) -> Result<String, AppError> {
-    let orig_workdir = std::env::current_dir().c(h!())?;
-    let res = pdf_to_html_1(tmp_dir);
-    if let Err(ref e) = res {
-        println!("> error doing pdf_to_html: {e:?} {}", h!());
-    }
-    std::env::set_current_dir(orig_workdir).c(h!())?;
-    res
+    Ok(pdf_to_html_1(tmp_dir).c(h!())?)
 }
 
-fn pdf_to_html_1(tmp_dir: &Path) -> Result<String, AppError> {
-    std::env::set_current_dir(tmp_dir).c(h!())?;
+fn pdf_to_html_1(tmp_dir: &Path) -> anyhow::Result<String> {
     println!("> pdf_to_html_1");
     let output_html = tmp_dir.join("output.html");
     println!("> tmp_dir: {}", tmp_dir.display());
-    let _output = Command::new("pdf2htmlEX")
+    let output = Command::new("pdf2htmlEX")
+        .current_dir(tmp_dir)
         .arg("--embed-image=0")
         .arg("--tounicode=1")
         .arg("input.pdf")
         .arg("output.html")
         .output()
         .c(h!())?;
+    anyhow::ensure!(
+        output.status.success(),
+        "pdf2htmlEX exited with {}",
+        output.status
+    );
     let file_res = String::from_utf8_lossy(
         &std::fs::read(output_html.clone()).context(format!(
             "{} {}",
@@ -297,10 +299,9 @@ pub fn oneoff_test_opencv() -> Result<(), AppError> {
 
 // Stub implementations when OpenCV feature is disabled
 #[cfg(not(feature = "opencv"))]
-pub fn cut_out_photo(_in_path: &str, _out_path: &str) -> Result<(), AppError> {
-    warn!(
-        "opencv feature disabled; cut_out_photo({_in_path}, {_out_path}) is a no-op"
-    );
+pub fn cut_out_photo(in_path: &str, out_path: &str) -> Result<(), AppError> {
+    warn!("opencv feature disabled; preserving the original report image");
+    std::fs::copy(in_path, out_path).c(h!())?;
     Ok(())
 }
 
@@ -439,7 +440,7 @@ pub async fn upload_screenshot(
         .content_type()
         .map(|x| x.to_string())
         .unwrap_or("image/jpeg".to_string());
-    let ext = (if field.name().c(h!())?.ends_with(".png")
+    let ext = (if field.name().is_some_and(|name| name.ends_with(".png"))
         || content_type.to_string().contains("png")
     {
         "png"
@@ -475,6 +476,7 @@ pub async fn upload_pdf(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
+    admission: crate::utils::multipart_admission::MultipartAdmission,
 ) -> Result<Json<UploadPdfRes>, AppError> {
     ensure_basic_role(&env.dbx, &user).await.c(h!())?;
     let (s3_config, s3_operator) = s3_upload_ctx(env.as_ref())?;
@@ -487,23 +489,30 @@ pub async fn upload_pdf(
     println!("> upload_pdf writing into {}", input_pdf.display());
     std::fs::write(&input_pdf, val)?;
     println!("> beginning pdf_to_text");
-    let txt: String =
-        tokio::task::spawn_blocking(move || pdf_to_text(&input_pdf))
-            .await
-            .c(h!())??;
+    let text_dir = tmp_dir.clone();
+    let text_admission = admission.clone();
+    let txt: String = tokio::task::spawn_blocking(move || {
+        let _admission = text_admission;
+        pdf_to_text(&text_dir.path().join("input.pdf"))
+    })
+    .await
+    .c(h!())??;
     let items = extract_items(&txt)?;
     println!("> extracted items: {}", items.len());
     println!("> beginning pdf_to_html");
-    let html: String =
-        tokio::task::spawn_blocking(move || pdf_to_html(tmp_dir2.path()))
-            .await
-            .c(h!())??;
+    let html: String = tokio::task::spawn_blocking(move || {
+        let _admission = admission;
+        pdf_to_html(tmp_dir2.path())
+    })
+    .await
+    .c(h!())??;
     println!("> done doing pdf_to_html");
     println!("> getting images_per_num");
     let images_per_num = get_images_per_num(&html, &items)?;
     println!("> gathered images: {images_per_num:?}");
     println!("> stripping images now");
     let mut images_per_num2 = BTreeMap::new();
+    let mut prepared_images = std::collections::BTreeSet::new();
 
     crate::utils::backup_tmp_dir(tmp_dir.path())?;
 
@@ -514,11 +523,9 @@ pub async fn upload_pdf(
                 format!("{}", tmp_dir.path().join(image_name).display());
             println!("> processing {image}");
             let im_out = format!("{image}-cropped.png");
-            if let Err(e) = cut_out_photo(&image, &im_out) {
-                println!(
-                    "> error while cropping {image}, skipping. error: {e:?}"
-                );
-            };
+            if prepared_images.insert(image.clone()) {
+                cut_out_photo(&image, &im_out).context(h!())?;
+            }
             images2.push(im_out.clone());
         }
         images_per_num2.insert(num, images2);
@@ -531,8 +538,8 @@ pub async fn upload_pdf(
             let uuid = Uuid::new_v4().to_string();
             let filename = format!("report2kmz/{uuid}.png");
             let mut upload_futures = vec![];
-            if Path::new(image).exists() {
-                let img_bytes = std::fs::read(image)?;
+            {
+                let img_bytes = std::fs::read(image).c(h!())?;
                 let image_path = image.clone();
                 let s3_config = s3_config.clone();
                 let s3_operator = s3_operator.clone();
@@ -938,6 +945,68 @@ WGS-84: 47.161249, 33.718252
                 coord_wgs84: (47.161249, 33.718252),
             }]
         )
+    }
+
+    #[cfg(not(feature = "opencv"))]
+    #[test]
+    fn photo_fallback_preserves_image_and_reports_missing_source() {
+        let directory = TempDir::new().unwrap();
+        let input = directory.path().join("input.png");
+        let output = directory.path().join("output.png");
+        let source = include_bytes!("../../data/report_2022-11-01_22-02-38_01112022-Ж1/pdf2htmlEX-64x64.png");
+        std::fs::write(&input, source).unwrap();
+        for _ in 0..2 {
+            cut_out_photo(input.to_str().unwrap(), output.to_str().unwrap())
+                .unwrap();
+            assert_eq!(std::fs::read(&output).unwrap(), source);
+        }
+        std::fs::remove_file(&input).unwrap();
+        assert!(cut_out_photo(
+            input.to_str().unwrap(),
+            output.to_str().unwrap()
+        )
+        .is_err());
+    }
+
+    #[test]
+    #[ignore = "requires real pdftotext and pdf2htmlEX executables"]
+    #[serial]
+    fn concurrent_pdf_conversions_preserve_process_directory() {
+        let working_dir = std::env::current_dir().unwrap();
+        let source = working_dir.join("data/report21082022-2FOX.pdf");
+        let barrier = Arc::new(std::sync::Barrier::new(3));
+        let mut tasks = Vec::new();
+        for _ in 0..2 {
+            let source = source.clone();
+            let barrier = barrier.clone();
+            tasks.push(std::thread::spawn(move || {
+                let directory = TempDir::new().unwrap();
+                std::fs::copy(source, directory.path().join("input.pdf"))
+                    .unwrap();
+                barrier.wait();
+                let text =
+                    pdf_to_text(&directory.path().join("input.pdf")).unwrap();
+                let html = pdf_to_html(directory.path()).unwrap();
+                assert!(!text.is_empty());
+                assert!(html.contains("pdf2htmlEX"));
+                assert!(directory.path().join("output.html").is_file());
+                (text.len(), html.len())
+            }));
+        }
+        barrier.wait();
+        let mut unchanged = true;
+        while tasks.iter().any(|task| !task.is_finished()) {
+            unchanged &= std::env::current_dir().unwrap() == working_dir;
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        let sizes: Vec<_> =
+            tasks.into_iter().map(|task| task.join().unwrap()).collect();
+        assert!(
+            unchanged,
+            "PDF subprocess changed the API process directory"
+        );
+        assert_eq!(std::env::current_dir().unwrap(), working_dir);
+        assert_eq!(sizes[0].0, sizes[1].0);
     }
 
     #[test]
