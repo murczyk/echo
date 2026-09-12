@@ -41,6 +41,7 @@ describe('MessageReferenceLink', () => {
     document.body.innerHTML = '';
     mocks.fetchInboxItemContext.mockReset();
     mocks.notify.mockReset();
+    vi.restoreAllMocks();
   });
 
   async function renderLink() {
@@ -66,6 +67,16 @@ describe('MessageReferenceLink', () => {
     await act(async () => {
       await new Promise((resolve) => window.setTimeout(resolve, 750));
     });
+  }
+
+  async function click(link: Element | null) {
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+    await act(async () => {
+      link?.dispatchEvent(event);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    return event;
   }
 
   it('shows the linked message in the intelligence-report preview', async () => {
@@ -136,12 +147,137 @@ describe('MessageReferenceLink', () => {
     expect(link?.getAttribute('href')).toBe('https://echo.test/rer-analysis-neo?m=linked-message');
   });
 
+  it('keeps an unavailable message reference on the current page and shows a warning', async () => {
+    mocks.fetchInboxItemContext.mockResolvedValue({
+      message: null,
+      groupMasterKeys: [],
+      sigintInboxItemIds: [],
+      sinceTs: null,
+      tillTs: null,
+    });
+    const openWindow = vi.spyOn(window, 'open');
+
+    const clickEvent = await click(await renderLink());
+
+    expect(clickEvent.defaultPrevented).toBe(true);
+    expect(openWindow).not.toHaveBeenCalled();
+    expect(mocks.notify).toHaveBeenCalledWith({
+      severity: 'warning',
+      message: 'Повідомлення видалено або у вас немає до нього доступу.',
+    });
+  });
+
+  it('opens an available message reference after checking it', async () => {
+    mocks.fetchInboxItemContext.mockResolvedValue({
+      message: [
+        77,
+        minimalInboxMessage({
+          text: 'Текст пов’язаного повідомлення',
+          groupMasterKey: 'linked-group',
+        }),
+      ],
+      groupMasterKeys: ['linked-group'],
+      sigintInboxItemIds: [77],
+      sinceTs: null,
+      tillTs: null,
+    });
+    const openedWindow = { opener: window } as Window;
+    const openWindow = vi.spyOn(window, 'open').mockReturnValue(openedWindow);
+
+    const clickEvent = await click(await renderLink());
+
+    expect(clickEvent.defaultPrevented).toBe(true);
+    expect(openWindow).toHaveBeenCalledWith(
+      'https://echo.test/rer-analysis-neo?m=linked-message',
+      '_blank',
+    );
+    expect(openedWindow.opener).toBeNull();
+  });
+
+  it('warns when the browser blocks an available message reference', async () => {
+    mocks.fetchInboxItemContext.mockResolvedValue({
+      message: [
+        77,
+        minimalInboxMessage({
+          text: 'Текст пов’язаного повідомлення',
+          groupMasterKey: 'linked-group',
+        }),
+      ],
+      groupMasterKeys: ['linked-group'],
+      sigintInboxItemIds: [77],
+      sinceTs: null,
+      tillTs: null,
+    });
+    vi.spyOn(window, 'open').mockReturnValue(null);
+
+    await click(await renderLink());
+
+    expect(mocks.notify).toHaveBeenCalledWith({
+      severity: 'warning',
+      message:
+        'Не вдалося відкрити повідомлення у новій вкладці. Перевірте налаштування браузера та спробуйте ще раз.',
+    });
+  });
+
+  it('starts checking availability when the pointer reaches the reference', async () => {
+    mocks.fetchInboxItemContext.mockResolvedValue({
+      message: null,
+      groupMasterKeys: [],
+      sigintInboxItemIds: [],
+      sinceTs: null,
+      tillTs: null,
+    });
+    const link = await renderLink();
+
+    await act(async () => {
+      link?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(mocks.fetchInboxItemContext).toHaveBeenCalledTimes(1);
+  });
+
+  it('reuses the unavailable preview result when the reference is clicked', async () => {
+    mocks.fetchInboxItemContext.mockResolvedValue({
+      message: null,
+      groupMasterKeys: [],
+      sigintInboxItemIds: [],
+      sinceTs: null,
+      tillTs: null,
+    });
+    const link = await renderLink();
+
+    await hover(link);
+    await click(link);
+
+    expect(mocks.fetchInboxItemContext).toHaveBeenCalledTimes(1);
+    expect(mocks.notify).toHaveBeenCalledWith({
+      severity: 'warning',
+      message: 'Повідомлення видалено або у вас немає до нього доступу.',
+    });
+  });
+
+  it('stays on the current page when message availability cannot be checked', async () => {
+    mocks.fetchInboxItemContext.mockRejectedValue(new Error('Помилка завантаження'));
+    const openWindow = vi.spyOn(window, 'open');
+
+    const clickEvent = await click(await renderLink());
+
+    expect(clickEvent.defaultPrevented).toBe(true);
+    expect(openWindow).not.toHaveBeenCalled();
+    expect(mocks.notify).toHaveBeenCalledWith({
+      severity: 'error',
+      message: 'Не вдалося перевірити доступність повідомлення. Спробуйте ще раз.',
+    });
+  });
+
   it('shows an error toast and an unavailable preview when loading fails', async () => {
     mocks.fetchInboxItemContext.mockRejectedValue(new Error('Помилка завантаження'));
 
     const link = await renderLink();
     await hover(link);
 
+    expect(mocks.fetchInboxItemContext).toHaveBeenCalledTimes(1);
     expect(document.querySelector('[role="tooltip"]')?.textContent).toContain('Прев’ю недоступне');
     expect(mocks.notify).toHaveBeenCalledWith({
       severity: 'error',

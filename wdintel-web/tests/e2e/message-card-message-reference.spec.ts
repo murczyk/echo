@@ -43,6 +43,40 @@ test.describe('@smoke @message-references message-card references', () => {
       await expect(preview).toContainText('Текст пов’язаного повідомлення');
       await expect(preview).toContainText('Пов’язана група');
       await expect(preview).toContainText('2026-09-08 14:30');
+
+      const [linkedMessagePage] = await Promise.all([page.waitForEvent('popup'), link.click()]);
+      await linkedMessagePage.waitForURL(href);
+      expect(linkedMessagePage.url()).toBe(href);
+      await linkedMessagePage.close();
+    });
+
+    test(`${host} keeps an unavailable linked message on the current page`, async ({
+      page,
+      baseURL,
+    }) => {
+      const href = new URL('/rer-analysis-neo?m=e2e-unavailable-message', baseURL).href;
+      await openMessageCardPreviewHost(page, host, {
+        messageText: `Недоступне ${href}`,
+        messageReferenceResponse: {
+          message: null,
+          group_master_keys: [],
+          sigint_inbox_item_ids: [],
+          since_ts: null,
+          till_ts: null,
+        },
+      });
+      const currentUrl = page.url();
+      let popupOpened = false;
+      page.on('popup', () => {
+        popupOpened = true;
+      });
+
+      await page.getByRole('link', { name: 'повідомлення', exact: true }).click();
+
+      const unavailableMessage = 'Повідомлення видалено або у вас немає до нього доступу.';
+      await expect(page.getByRole('alert').filter({ hasText: unavailableMessage })).toBeVisible();
+      expect(page.url()).toBe(currentUrl);
+      expect(popupOpened).toBe(false);
     });
   }
 });
