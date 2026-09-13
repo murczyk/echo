@@ -181,6 +181,7 @@ export type AnalysisPageState = {
   centerTabPending: boolean;
   counts: CountStatsRsp | null;
   copiedFeedbackId: string | null;
+  directMessageError: string | null;
   error: string | null;
   editorMessage: { id: number; message: InboxMessage } | null;
   editorEditAsReport: boolean;
