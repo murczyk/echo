@@ -1444,6 +1444,7 @@ where
         merged_to: NotSet,
         active_from: Set(None),
         active_to: Set(None),
+        last_active_at: NotSet,
         do_not_archive: Set(true),
         unit_mask: Set(serde_json::to_value(unit_mask).context(h!())?),
         sigint_origin_id: NotSet,

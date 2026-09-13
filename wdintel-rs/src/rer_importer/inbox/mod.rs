@@ -1991,9 +1991,10 @@ where
     if message_ids.is_empty() {
         return Ok(());
     }
-    txn.execute_raw(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        r#"
+    let affected = txn
+        .query_all_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
             update sigint_network_freq as network_freq
             set last_seen_dt = null
             from sigint_inbox_item as inbox_item
@@ -2010,9 +2011,21 @@ where
                   signal_message.timestamp,
                   signal_message.created_at
               )
+            returning network_freq.id
         "#,
-        [message_ids.to_vec().into()],
-    ))
+            [message_ids.to_vec().into()],
+        ))
+        .await
+        .c(h!())?;
+    let network_freq_ids = affected
+        .iter()
+        .map(|row| row.try_get("", "id").c(h!()))
+        .collect::<anyhow::Result<Vec<i64>>>()
+        .c(h!())?;
+    crate::sigint::network::recalculation::enqueue_last_seen_for_freq_ids(
+        txn,
+        network_freq_ids,
+    )
     .await
     .c(h!())?;
     Ok(())

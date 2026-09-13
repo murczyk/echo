@@ -577,6 +577,11 @@ fn spawn_background_workers(
         )
         .await;
     });
+    let network_activity_db = env.dbx.clone();
+    spawn_named_worker("network_last_activity_worker", bg_set, async move {
+        crate::sigint::network::activity_cache::run_worker(network_activity_db)
+            .await;
+    });
     if config.fill_comp_freq_worker {
         spawn_named_worker("fill_comp_freq_worker", bg_set, async move {
             crate::rer_importer::reports::fill_comp_freq_worker(&dbx6).await;

@@ -1352,108 +1352,38 @@ describe('useRerNetworksNeoPage', () => {
     expect(latest?.rows[0]?.activityBars.some((bar) => bar.value === 3)).toBe(true);
   });
 
-  it('loads last interception dates after the network list without showing a false empty state', async () => {
-    const activity = deferred<Array<{ networkId: number; lastActivityAt: number | null }>>();
-    apiMock.getNetworkLastActivity.mockImplementationOnce(() => activity.promise);
+  it('uses last activity from the network list without another request', async () => {
+    const lastActivityAt = Date.now() - 24 * 60 * 60 * 1000;
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(1, { lastActivityAt }), buildNetwork(2)],
+      statusCounts: { active: 2, inactive: 0, archived: 0 },
+    });
 
     await renderHook();
-    await flushEffects();
-
-    expect(apiMock.getNetworkLastActivity).toHaveBeenCalledWith(
-      { networkIds: [1, 2] },
-      expect.any(Object),
-    );
-    expect(latest?.rows[0]?.lastActivityLabel).toBe('Завантаження…');
-
-    const lastActivityAt = Date.UTC(2026, 8, 12, 10, 15);
-    await act(async () => {
-      activity.resolve([
-        { networkId: 1, lastActivityAt },
-        { networkId: 2, lastActivityAt: null },
-      ]);
-      await activity.promise;
-    });
     await flushEffects();
 
     expect(latest?.rows[0]?.lastActivityLabel).toBe(dayjs(lastActivityAt).format('DD.MM.YY HH:mm'));
     expect(latest?.rows[1]?.lastActivityDetail).toBe('Немає перехоплень');
+    expect(apiMock.getNetworkLastActivity).not.toHaveBeenCalled();
   });
 
-  it('shows a last-activity loading error instead of reporting no interceptions', async () => {
+  it('expires the recent activity label at the 15-minute boundary', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-13T12:00:00Z'));
+    const lastActivityAt = Date.now() - 14 * 60 * 1000;
     apiMock.listNetworks.mockResolvedValueOnce({
-      list: Array.from({ length: 6 }, (_, index) => buildNetwork(index + 1)),
-      statusCounts: { active: 6, inactive: 0, archived: 0 },
+      list: [buildNetwork(1, { lastActivityAt })],
+      statusCounts: { active: 1, inactive: 0, archived: 0 },
     });
-    apiMock.getNetworkLastActivity.mockRejectedValueOnce(new Error('activity unavailable'));
-
-    await renderHook();
-    await vi.waitFor(() =>
-      expect(latest?.rows.map((row) => row.lastActivityLabel)).toEqual(
-        Array(6).fill('Не вдалося завантажити'),
-      ),
-    );
-
-    expect(latest?.status?.text).toContain('Помилка завантаження останньої активності');
-    expect(apiMock.getNetworkLastActivity).toHaveBeenCalledTimes(1);
-  });
-
-  it('settles first-page last activity after pagination starts', async () => {
-    const firstPage = Array.from({ length: 100 }, (_, index) => buildNetwork(index + 1));
-    const firstPageActivity =
-      deferred<Array<{ networkId: number; lastActivityAt: number | null }>>();
-    const firstActivityAt = Date.UTC(2026, 8, 11, 10, 15);
-    const secondActivityAt = Date.UTC(2026, 8, 12, 10, 15);
-    apiMock.listNetworks.mockResolvedValueOnce({
-      list: firstPage,
-      statusCounts: { active: 100, inactive: 0, archived: 0 },
-    });
-    apiMock.listNetworks.mockResolvedValueOnce({
-      list: [buildNetwork(101)],
-      statusCounts: { active: 101, inactive: 0, archived: 0 },
-    });
-    apiMock.getNetworkLastActivity
-      .mockImplementationOnce(() => firstPageActivity.promise)
-      .mockResolvedValueOnce([{ networkId: 101, lastActivityAt: secondActivityAt }]);
 
     await renderHook();
     await flushEffects();
-    expect(latest?.rows[0]?.lastActivityLabel).toBe('Завантаження…');
-    expect(apiMock.getNetworkLastActivity).toHaveBeenCalledWith(
-      { networkIds: firstPage.map((network) => network.id) },
-      expect.any(Object),
-    );
-    expect(apiMock.getNetworkLastActivity).toHaveBeenCalledTimes(1);
+    expect(latest?.rows[0]?.lastActivityLabel).toBe('Активна останні 15хв');
 
     await act(async () => {
-      await latest?.loadMoreNetworks();
+      vi.advanceTimersByTime(60_001);
     });
-    await vi.waitFor(() =>
-      expect(latest?.rows.find((row) => row.id === 101)?.lastActivityLabel).toBe(
-        dayjs(secondActivityAt).format('DD.MM.YY HH:mm'),
-      ),
-    );
-    expect(apiMock.getNetworkLastActivity).toHaveBeenNthCalledWith(
-      2,
-      { networkIds: [101] },
-      expect.any(Object),
-    );
-
-    await act(async () => {
-      firstPageActivity.resolve(
-        firstPage.map((network) => ({
-          networkId: network.id,
-          lastActivityAt: network.id === 1 ? firstActivityAt : null,
-        })),
-      );
-      await firstPageActivity.promise;
-    });
-    await vi.waitFor(() =>
-      expect(latest?.rows[0]?.lastActivityLabel).toBe(
-        dayjs(firstActivityAt).format('DD.MM.YY HH:mm'),
-      ),
-    );
-    expect(latest?.rows[99]?.lastActivityDetail).toBe('Немає перехоплень');
-    expect(apiMock.getNetworkLastActivity).toHaveBeenCalledTimes(2);
+    expect(latest?.rows[0]?.lastActivityLabel).toBe(dayjs(lastActivityAt).format('DD.MM.YY HH:mm'));
   });
 
   it('settles first-page activity after pagination starts', async () => {

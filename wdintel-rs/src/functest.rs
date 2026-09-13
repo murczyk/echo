@@ -1422,6 +1422,9 @@ pub mod tests {
         if out.active_to == NotSet {
             out.active_to = Set(None);
         }
+        if out.last_active_at == NotSet {
+            out.last_active_at = Set(None);
+        }
         if out.sigint_origin_id == NotSet {
             out.sigint_origin_id = Set(None);
         }

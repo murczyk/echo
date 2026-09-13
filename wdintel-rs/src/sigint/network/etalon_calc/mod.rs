@@ -352,6 +352,13 @@ where
     if sigint_inbox_item_ids.is_empty() {
         return Ok(result);
     }
+    let old_freq_ids =
+        crate::sigint::network::recalculation::load_freq_ids_for_message_links(
+            dbx,
+            &sigint_inbox_item_ids,
+        )
+        .await
+        .c(h!())?;
     crate::rer_importer::inbox::invalidate_messages_network_frequency_last_seen(
         dbx,
         &sigint_inbox_item_ids,
@@ -373,6 +380,19 @@ where
         .await
         .c(h!())?;
     }
+    let new_freq_ids =
+        crate::sigint::network::recalculation::load_freq_ids_for_message_links(
+            dbx,
+            &sigint_inbox_item_ids,
+        )
+        .await
+        .c(h!())?;
+    crate::sigint::network::recalculation::enqueue_last_seen_for_freq_ids(
+        dbx,
+        old_freq_ids.into_iter().chain(new_freq_ids),
+    )
+    .await
+    .c(h!())?;
     crate::inbox::unit_resolution::sync_calculated_network_unit_links(
         dbx,
         &sigint_inbox_item_ids,

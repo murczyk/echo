@@ -223,6 +223,24 @@ recalculation is pending. Expired entries are evicted hourly alongside the
 pre-existing network cleanup in the same worker. The cache and its queue are
 excluded from the optional analytics replica.
 
+The separate `network_last_activity_worker` refreshes
+`sigint_network.last_active_at` every five minutes in bounded network-ID batches
+from the global frequency `last_seen_dt` values. It also reads network links
+created in the previous 20 minutes, so new interceptions are reflected while a
+frequency recalculation is pending without writing the frequency cache. A
+composite network-link index, one-minute timeout per batch, and changed-row-only
+updates keep this work outside API requests. Activity is independent of the
+requesting login's message visibility.
+Link changes enqueue frequency recalculation, and invalidating a cached latest
+message enqueues recalculation so the next valid interception can be found.
+
+The optional `wdintel-rs --mode=live oneoff-backfill-network-last-activity`
+command fills only networks with a null `last_active_at` from their newest
+network-link `created_at`. Networks without links remain null. It processes
+networks in ID order, reports a resume cursor, and accepts `--after-id` with a
+network ID when resuming an interrupted run. The periodic worker subsequently
+revalidates these seeds against valid interception timestamps.
+
 ## Statistics storage
 
 `wdintel-rs-bgworker` derives recent and daily group statistics from

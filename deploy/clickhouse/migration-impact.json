@@ -1,5 +1,17 @@
 {
   "migrations": {
+    "echo:m20260913_204343_sigint_network_recent_links_index": {
+      "changes": []
+    },
+    "echo:m20260913_191055_sigint_network_last_active_at": {
+      "changes": [
+        {
+          "table": "public.sigint_network",
+          "strategy": "replicated_snapshot",
+          "targeted_resnapshot": true
+        }
+      ]
+    },
     "echo:m20260912_084600_signal_group_aviation": {
       "changes": [
         {
