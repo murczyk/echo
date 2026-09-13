@@ -3240,7 +3240,10 @@ mod tests {
         )
         .build(DbBackend::Postgres)
         .to_string();
-        assert_primary_sort_before_name(&sql, "SELECT MAX(activity_at)");
+        assert_primary_sort_before_name(
+            &sql,
+            "\"sigint_network\".\"last_active_at\" DESC NULLS LAST",
+        );
     }
 
     #[test]
