@@ -127,6 +127,7 @@ pub async fn zones_datasources_group_update(
         is_group_secret: rsp.is_secret,
         interseption_kind: rsp.interseption_kind,
         disable_network_assignment: rsp.disable_network_assignment,
+        is_aviation_group: rsp.is_aviation_group,
         areas_of_responsibility: rsp
             .aor
             .map(|aors| aors.into_iter().map(render_aor).collect()),
@@ -251,6 +252,16 @@ pub async fn zones_datasources_group_add(
             .await
             .c(h!())?
             .unwrap_or(false);
+    let is_aviation_group =
+        signal_group::Entity::find_by_id(group_master_key.clone())
+            .select_only()
+            .column(signal_group::Column::IsAviationGroup)
+            .into_tuple::<Option<bool>>()
+            .one(&txn)
+            .await
+            .c(h!())?
+            .flatten()
+            .unwrap_or(false);
 
     let (short_note, long_note) = group_admin_data::Entity::find()
         .filter(
@@ -286,6 +297,7 @@ pub async fn zones_datasources_group_add(
             is_group_secret: is_secret,
             interseption_kind,
             disable_network_assignment,
+            is_aviation_group,
             areas_of_responsibility,
             group_master_key,
             allowed_user_details: bl::render_group_logins(

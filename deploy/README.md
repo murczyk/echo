@@ -44,6 +44,26 @@ the `wdfiles-migration` schema migrator runs automatically during backend
 startup. The configured PostgreSQL user needs `CREATEDB` to provision the
 database and normal DDL permissions to run its migrations.
 
+Device file content uploads become available when `[file_registry]` and their
+storage requirements are configured. Missing or invalid upload storage disables
+only these new endpoints (503), with a startup warning; existing metadata and
+FileSync APIs remain available. Before enabling uploads in live mode:
+
+- point `storage_dir` at persistent local storage shared by the API and
+  `wdintel-rs-bgworker`; the service account must be able to create and access
+  `<storage_dir>/device-file-content-spool` (the runtime uses mode `0700` for
+  the directory and `0600` for spool files);
+- provision usable spool capacity of at least
+  `device_file_content.max_reserved_bytes +
+  device_file_content.spool_min_free_bytes` (`21 GiB` with defaults);
+- configure `[s3_config]` with the private bucket, endpoint, credentials, and a
+  valid base64 StrongBox key. Keep the endpoint, bucket, and key stable while
+  device content or upload rows exist; credentials may rotate;
+- add an S3 lifecycle rule that aborts abandoned incomplete multipart uploads;
+- run one Echo application host, one HTTP API process, and one logical
+  background cleanup worker. Multi-host and multi-API-process deployments are
+  not supported by this upload implementation.
+
 Generate the isolated SeaORM entity tree from the same configuration:
 
 ```bash

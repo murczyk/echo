@@ -68,6 +68,7 @@ pub struct ZoneDatasourceGroup {
     pub is_group_secret: bool,
     pub interseption_kind: InterseptionKind,
     pub disable_network_assignment: bool,
+    pub is_aviation_group: bool,
     pub allowed_users: Vec<String>,
     pub allowed_user_details: Vec<SignalGroupLogin>,
     pub allowed_organism_ids: Vec<i64>,
@@ -93,6 +94,7 @@ pub struct ZoneDatasourceGroupUpdateReq {
     pub is_secret: bool,
     pub interseption_kind: Option<InterseptionKind>,
     pub disable_network_assignment: Option<bool>,
+    pub is_aviation_group: Option<bool>,
     pub user_logins: Vec<String>,
     #[serde(default)]
     pub organism_ids: Vec<i64>,

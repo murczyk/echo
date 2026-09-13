@@ -199,7 +199,7 @@ pub mod test {
         );
 
         let error = runtime
-            .execute_unprepared("select pg_sleep(0.1)")
+            .execute_unprepared("select pg_sleep(2)")
             .await
             .unwrap_err();
         assert!(has_postgres_error_code(&error, "57014"));

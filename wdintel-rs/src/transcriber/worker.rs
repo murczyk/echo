@@ -867,7 +867,7 @@ mod tests {
             env.s3_config.as_ref().unwrap(),
             &env.config.s3_config.as_ref().unwrap().strongbox_key,
             &crate::messenger::media::media_object_key(&encrypted),
-            encrypted_data,
+            actix_web::web::Bytes::from_static(encrypted_data),
         )
         .await
         .unwrap();

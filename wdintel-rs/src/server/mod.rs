@@ -22,6 +22,8 @@ pub mod discord;
 mod healthcheck;
 pub mod middleware;
 pub mod monitoring;
+#[cfg(test)]
+mod upload_http_audit;
 pub use admin::RestartEchoRequest;
 
 fn systemd_listener() -> Result<Option<TcpListener>, AppError> {
@@ -57,6 +59,42 @@ pub(crate) async fn new_readonly_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     Ok(new_env_with_initialization(mode, false).await.c(h!())?)
 }
 
+pub(crate) fn build_runtime_storage(
+    config: &Config,
+    mode: Mode,
+) -> (Option<storage::S3Config>, Option<opendal::Operator>) {
+    let s3_config = match mk_s3_config(config) {
+        Ok(config) => config,
+        Err(error) => {
+            warn!("S3 storage is unavailable: {error:#}");
+            return (None, None);
+        }
+    };
+    let Some(storage_config) = &s3_config else {
+        error!("missing S3 config!");
+        return (None, None);
+    };
+    let s3 = match storage::build_s3_operator(storage_config) {
+        Ok(s3) => s3,
+        Err(error) => {
+            warn!("S3 storage is unavailable: {error:#?}");
+            return (s3_config, None);
+        }
+    };
+    if mode == Live
+        && config
+            .s3_config
+            .as_ref()
+            .is_some_and(|config| config.strongbox_key.is_empty())
+    {
+        error!(
+            "strongbox_key is missing! please run oneoff-generate-strongbox-key, then copy strongbox_key from output and put to config.toml"
+        );
+        return (s3_config, None);
+    }
+    (s3_config, Some(s3))
+}
+
 async fn new_env_with_initialization(
     mode: Mode,
     initialize: bool,
@@ -68,23 +106,7 @@ async fn new_env_with_initialization(
         .await
         .c(h!())?;
     let redisb = new_redisb(&config).await.c(h!())?;
-    let s3_config = mk_s3_config(&config).c(h!())?;
-    let s3 = if let Some(s3_config) = &s3_config {
-        let s3 = storage::build_s3_operator(s3_config).c(h!())?;
-        if mode == Live
-            && config.s3_config.clone().c(h!())?.strongbox_key.is_empty()
-        {
-            error!(
-                "strongbox_key is missing! please run oneoff-generate-strongbox-key, then copy strongbox_key from output and put to config.toml"
-            );
-            None
-        } else {
-            Some(s3)
-        }
-    } else {
-        error!("missing S3 config!");
-        None
-    };
+    let (s3_config, s3) = build_runtime_storage(&config, mode);
     let mil_geo = MilGeo::new(&mk_conn_string(&config)[..]);
     let dbx = crate::new_pg_pool_from_config(&config).await.c(h!())?;
     if initialize {
@@ -109,6 +131,14 @@ async fn new_env_with_initialization(
     if file_registry_db.is_none() {
         log_missing_file_registry_configuration(&dbx, mode).await;
     }
+    let device_file_content = crate::devices::files::content::build_runtime(
+        &config,
+        s3.as_ref(),
+        file_registry_db.as_ref(),
+        metrics.clone(),
+        mode,
+    )
+    .await;
     let mut replicas = vec![];
     if let Some(replica_configs) = config.replicas.clone() {
         for replica in replica_configs {
@@ -201,6 +231,7 @@ async fn new_env_with_initialization(
         dbx: dbx.clone(),
         echo_gpu_client,
         file_registry_db,
+        device_file_content,
         rq,
         rq_goi_associations,
         config: config.clone(),
@@ -774,6 +805,15 @@ fn spawn_background_workers(
             },
         );
     }
+    let upload_cleanup_storage_dir = config.storage_dir.clone();
+    let upload_cleanup_cancellation = cancel_token.clone();
+    spawn_named_worker("sigint_file_upload_cleanup", bg_set, async move {
+        crate::sigint::file_upload::run_cleanup_nofail(
+            upload_cleanup_storage_dir,
+            upload_cleanup_cancellation,
+        )
+        .await;
+    });
     if env.file_registry_db.is_some() {
         spawn_device_file_analytics_worker_pool(
             bg_set,
@@ -785,6 +825,20 @@ fn spawn_background_workers(
             env.clone(),
             cancel_token.clone(),
         );
+        if let Some(runtime) = env.device_file_content.clone() {
+            let content_cleanup_cancellation = cancel_token.clone();
+            spawn_named_worker(
+                "device_file_content_cleanup_worker",
+                bg_set,
+                async move {
+                    crate::devices::files::content::worker::run_nofail(
+                        runtime,
+                        content_cleanup_cancellation,
+                    )
+                    .await;
+                },
+            );
+        }
     }
     spawn_palitra_conversion_worker(bg_set, env);
 }
@@ -1104,6 +1158,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::devices::files::apply_sync_batch)
             .service(crate::devices::files::complete_sync_session)
             .service(crate::devices::files::sync_session_items)
+            .service(crate::devices::files::content::routes())
             .service(crate::devices::analytics::list_tags)
             .service(crate::devices::analytics::create_tag)
             .service(crate::devices::analytics::update_tag)
@@ -1470,6 +1525,9 @@ pub async fn main_server(
         let redis_for_middleware = env.redis.clone();
         App::new()
             .wrap(actix_web::middleware::Compress::default())
+            .wrap(actix_web::middleware::from_fn(
+                crate::utils::multipart_admission::limit_requests,
+            ))
             .app_data(actix_web::web::Data::from(env))
             .app_data(
                 web::JsonConfig::default().limit(SERVER_JSON_PAYLOAD_MAX_BYTES),

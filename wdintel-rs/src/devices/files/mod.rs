@@ -1,4 +1,5 @@
 mod bl;
+pub(crate) mod content;
 mod cursor;
 mod error;
 mod ltree;

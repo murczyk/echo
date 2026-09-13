@@ -75,6 +75,7 @@ pub mod terminal;
 pub mod tests;
 pub mod transcriber;
 pub mod ts;
+pub(crate) mod tus;
 pub mod types;
 pub mod unit;
 pub mod user_settings;

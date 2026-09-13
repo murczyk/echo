@@ -2,7 +2,6 @@ use actix_multipart::Multipart;
 use actix_web::{post, web, HttpResponse};
 use base64::Engine;
 use chrono::Utc;
-use futures_util::StreamExt;
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
@@ -99,53 +98,9 @@ fn invalid_grant() -> AppError {
 #[post("/internal/ocr/infer")]
 pub async fn infer(
     env: web::Data<Env>,
-    mut payload: Multipart,
+    payload: Multipart,
 ) -> Result<HttpResponse, AppError> {
-    let mut grant = None;
-    let mut request = AiEngineOcrRequest {
-        request_id: String::new(),
-        page_id: String::new(),
-        unit_id: String::new(),
-        prompt_version: String::new(),
-        retry: false,
-        image_png: Vec::new(),
-    };
-    while let Some(field) = payload.next().await {
-        let mut field = field.map_err(|error| AppError::BL {
-            msg: format!("OCR gateway multipart error: {error}"),
-        })?;
-        let name = field.name().unwrap_or_default().to_string();
-        let mut bytes = Vec::new();
-        while let Some(chunk) = field.next().await {
-            let chunk = chunk.map_err(|error| AppError::BL {
-                msg: format!("OCR gateway multipart error: {error}"),
-            })?;
-            if bytes.len().saturating_add(chunk.len()) > MAX_IMAGE_BYTES {
-                return Err(AppError::BL {
-                    msg: "OCR crop exceeds the gateway size limit".to_string(),
-                });
-            }
-            bytes.extend_from_slice(&chunk);
-        }
-        match name.as_str() {
-            "grant" => {
-                grant = Some(
-                    String::from_utf8(bytes).map_err(|_| invalid_grant())?,
-                )
-            }
-            "request_id" => {
-                request.request_id = String::from_utf8(bytes).c(h!())?
-            }
-            "page_id" => request.page_id = String::from_utf8(bytes).c(h!())?,
-            "unit_id" => request.unit_id = String::from_utf8(bytes).c(h!())?,
-            "prompt_version" => {
-                request.prompt_version = String::from_utf8(bytes).c(h!())?
-            }
-            "retry" => request.retry = bytes == b"true",
-            "image" => request.image_png = bytes,
-            _ => {}
-        }
-    }
+    let (grant, request) = parse_gateway_upload(payload).await?;
     let key = std::env::var(crate::config::OCR_GATEWAY_SIGNING_KEY_ENV)
         .map_err(|_| invalid_grant())?;
     let grant = verify_grant(grant.as_deref().unwrap_or_default(), &key)?;
@@ -189,6 +144,81 @@ pub async fn infer(
     Ok(HttpResponse::Ok().json(response))
 }
 
+async fn parse_gateway_upload(
+    mut payload: Multipart,
+) -> Result<(Option<String>, AiEngineOcrRequest), AppError> {
+    let mut grant = None;
+    let mut request = AiEngineOcrRequest {
+        request_id: String::new(),
+        page_id: String::new(),
+        unit_id: String::new(),
+        prompt_version: String::new(),
+        retry: false,
+        image_png: Vec::new(),
+    };
+    let mut field_count = 0;
+    let mut total_bytes: usize = 0;
+    while let Some(field) = crate::utils::multipart::next(&mut payload).await? {
+        field_count += 1;
+        if field_count > crate::config::MULTIPART_MAX_FIELDS {
+            return Err(AppError::BL {
+                msg: "Too many OCR multipart fields".to_string(),
+            });
+        }
+        let mut field = field.map_err(|error| AppError::BL {
+            msg: format!("OCR gateway multipart error: {error}"),
+        })?;
+        let name = field.name().unwrap_or_default().to_string();
+        let field_limit = if name == "image" {
+            MAX_IMAGE_BYTES
+        } else {
+            crate::config::MULTIPART_TEXT_MAX_BYTES
+        };
+        let bytes = crate::utils::multipart::read_field_limited(
+            &mut field,
+            field_limit,
+        )
+        .await?;
+        total_bytes = total_bytes.saturating_add(bytes.len());
+        if total_bytes > crate::config::MULTIPART_MAX_BYTES {
+            return Err(AppError::BL {
+                msg: "OCR multipart exceeds the total size limit".to_string(),
+            });
+        }
+        match name.as_str() {
+            "grant" => {
+                grant = Some(
+                    String::from_utf8(bytes).map_err(|_| invalid_grant())?,
+                )
+            }
+            "request_id" => {
+                request.request_id = String::from_utf8(bytes)
+                    .map_err(crate::utils::multipart::to_app_error)
+                    .c(h!())?
+            }
+            "page_id" => {
+                request.page_id = String::from_utf8(bytes)
+                    .map_err(crate::utils::multipart::to_app_error)
+                    .c(h!())?
+            }
+            "unit_id" => {
+                request.unit_id = String::from_utf8(bytes)
+                    .map_err(crate::utils::multipart::to_app_error)
+                    .c(h!())?
+            }
+            "prompt_version" => {
+                request.prompt_version = String::from_utf8(bytes)
+                    .map_err(crate::utils::multipart::to_app_error)
+                    .c(h!())?
+            }
+            "retry" => request.retry = bytes == b"true",
+            "image" => request.image_png = bytes,
+            _ => {}
+        }
+    }
+    Ok((grant, request))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -221,5 +251,57 @@ mod tests {
             base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(payload);
         let token = format!("{encoded}.{}", sign(KEY, encoded.as_bytes()));
         assert!(verify_grant(&token, KEY).is_err());
+    }
+    #[actix_web::test]
+    async fn gateway_upload_bounds_and_invalid_utf8_are_client_errors() {
+        use actix_web::ResponseError;
+        for (name, fields) in [
+            ("invalid-utf8", vec![("request_id", vec![0xff])]),
+            (
+                "text-limit",
+                vec![(
+                    "prompt_version",
+                    vec![b'x'; crate::config::MULTIPART_TEXT_MAX_BYTES + 1],
+                )],
+            ),
+            (
+                "image-limit",
+                vec![("image", vec![b'x'; MAX_IMAGE_BYTES + 1])],
+            ),
+            (
+                "field-count",
+                vec![
+                    ("unknown", vec![]);
+                    crate::config::MULTIPART_MAX_FIELDS + 1
+                ],
+            ),
+        ] {
+            let mut body = Vec::new();
+            for (field, value) in fields {
+                body.extend_from_slice(format!("--gateway-test\r\nContent-Disposition: form-data; name=\"{field}\"\r\n\r\n").as_bytes());
+                body.extend(value);
+                body.extend_from_slice(b"\r\n");
+            }
+            body.extend_from_slice(b"--gateway-test--\r\n");
+            let (request, payload) = actix_web::test::TestRequest::post()
+                .insert_header((
+                    "content-type",
+                    "multipart/form-data; boundary=gateway-test",
+                ))
+                .set_payload(body)
+                .to_http_parts();
+            let error = parse_gateway_upload(Multipart::new(
+                request.headers(),
+                payload,
+            ))
+            .await
+            .err()
+            .unwrap();
+            assert_eq!(
+                error.error_response().status(),
+                actix_web::http::StatusCode::BAD_REQUEST,
+                "{name}"
+            );
+        }
     }
 }

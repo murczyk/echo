@@ -115,12 +115,15 @@ pub(in crate::devices) async fn lock_active_visible_device(
     Ok(device)
 }
 
-pub(in crate::devices) async fn authorize_file_registry_access(
-    dbx: &DatabaseConnection,
+pub(in crate::devices) async fn authorize_file_registry_access<C>(
+    dbx: &C,
     login: &login::Model,
     device_id: Uuid,
     access_kind: FileRegistryDeviceAccess,
-) -> Result<Uuid, AppError> {
+) -> Result<Uuid, AppError>
+where
+    C: ConnectionTrait,
+{
     match access_kind {
         FileRegistryDeviceAccess::Read => {
             find_visible_device(

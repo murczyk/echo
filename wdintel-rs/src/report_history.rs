@@ -1966,7 +1966,8 @@ async fn record_completed_report(
         content_type,
         bytes: bytes.to_vec(),
     };
-    let upload_res = upload_report_bytes(env, &generated).await;
+    let upload_res =
+        upload_report_bytes(env, &generated.file_name, generated.bytes).await;
     let (s3_id, last_error, log) = match upload_res {
         Ok(s3_id) => (Some(s3_id), None, json!([])),
         Err(err) => {
@@ -2167,7 +2168,8 @@ async fn archive_completed_report_file(
         content_type,
         bytes,
     };
-    let s3_id = upload_report_bytes(env, &generated).await?;
+    let s3_id =
+        upload_report_bytes(env, &generated.file_name, generated.bytes).await?;
     let Some(_report_history) = ReportHistory::find_by_id(report_history_id)
         .one(&env.dbx)
         .await
@@ -3332,21 +3334,23 @@ async fn generate_and_store_report(
     bgtask_log_progress(bgtask_id, 10, "[1/3] Формування звіту", &env.dbx)
         .await;
     let generated = generate_report(env, report_history, bgtask_id).await?;
+    let generated_size = generated.bytes.len();
     log::info!(
         "report history stage complete: id={}, kind={}, stage=generated, bytes={}, rss_kib={:?}",
         report_history.id,
         report_history.report_kind,
-        generated.bytes.len(),
+        generated_size,
         report_worker_rss_kib()
     );
     bgtask_log_progress(bgtask_id, 85, "[2/3] Збереження звіту", &env.dbx)
         .await;
-    let s3_id = upload_report_bytes(env, &generated).await?;
+    let s3_id =
+        upload_report_bytes(env, &generated.file_name, generated.bytes).await?;
     log::info!(
         "report history stage complete: id={}, kind={}, stage=uploaded, bytes={}, rss_kib={:?}",
         report_history.id,
         report_history.report_kind,
-        generated.bytes.len(),
+        generated_size,
         report_worker_rss_kib()
     );
     let res = ReportHistory::update_many()
@@ -3602,7 +3606,8 @@ async fn generate_report(
 
 async fn upload_report_bytes(
     env: &Env,
-    generated: &GeneratedReport,
+    file_name: &str,
+    bytes: Vec<u8>,
 ) -> Result<String, AppError> {
     let Some(config) = env.config.s3_config.as_ref() else {
         return Err(AppError::BL {
@@ -3619,7 +3624,7 @@ async fn upload_report_bytes(
         "{REPORT_OBJECT_PREFIX}/{}",
         crate::storage::nested_object_key(&report_id)
     );
-    if let Some(ext) = Path::new(&generated.file_name)
+    if let Some(ext) = Path::new(file_name)
         .extension()
         .and_then(|ext| ext.to_str())
         .filter(|ext| !ext.is_empty())
@@ -3631,7 +3636,7 @@ async fn upload_report_bytes(
         s3_config,
         &config.strongbox_key,
         &object_key,
-        &generated.bytes,
+        bytes.into(),
     )
     .await
     .c(h!())?;

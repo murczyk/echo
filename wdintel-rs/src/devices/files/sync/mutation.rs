@@ -129,7 +129,8 @@ const APPLY_SYNC_ITEMS_SQL: &str = r#"
             source_file_state_settled_at =
                 excluded.source_file_state_settled_at,
             source_file_state_settled_by =
-                excluded.source_file_state_settled_by
+                excluded.source_file_state_settled_by,
+            content_path = null
         where current.revision < 9223372036854775807
         returning
             current.id,
@@ -179,6 +180,17 @@ const APPLY_SYNC_ITEMS_SQL: &str = r#"
         join accepted_input as accepted
           on accepted.device_id = mutated.device_id
          and accepted.absolute_path = mutated.absolute_path
+    ),
+    marked_stale_uploads as (
+        update file_content_upload as upload
+        set status = 'stale'::public.file_content_upload_status,
+            next_cleanup_at = greatest(clock_timestamp(), upload.created_at)
+        from mutation_results as result
+        where upload.device_id = result.device_id
+          and upload.file_id = result.file_id
+          and upload.revision < result.revision
+          and upload.status = 'open'::public.file_content_upload_status
+        returning upload.id
     ),
     cleared_current_tags as (
         delete from device_file_tag as link
@@ -264,6 +276,7 @@ const APPLY_SYNC_ITEMS_SQL: &str = r#"
         (select count(*) from accepted_input) as expected_mutated_count,
         (select count(*) from mutation_results) as mutated_count,
         (select count(*) from inserted_revisions) as revision_count,
+        (select count(*) from marked_stale_uploads) as stale_upload_count,
         (select count(*) from accepted_items) as accepted_count,
         (select count(*) from rejected_input) as expected_rejected_count,
         (select count(*) from rejected_items) as rejected_count
@@ -318,9 +331,9 @@ pub(super) async fn apply_sync_items(
     device_id: Uuid,
     items: Vec<file_sync_item::Model>,
     metrics: Option<&Metrics>,
-) -> Result<(), FilesystemError> {
+) -> Result<u64, FilesystemError> {
     let Some(first) = items.first() else {
-        return Ok(());
+        return Ok(0);
     };
     let sync_id = first.id;
     let batch_index = first.batch_index;
@@ -619,9 +632,9 @@ async fn persist_sync_items(
     mut accepted_items: Vec<AcceptedMutation>,
     rejected_items: Vec<RejectedMutation>,
     metrics: Option<&Metrics>,
-) -> Result<(), FilesystemError> {
+) -> Result<u64, FilesystemError> {
     if accepted_items.is_empty() && rejected_items.is_empty() {
-        return Ok(());
+        return Ok(0);
     }
     accepted_items
         .sort_unstable_by_key(|item| (item.batch_index, item.item_index));
@@ -715,7 +728,12 @@ async fn persist_sync_items(
         }
     }
 
-    Ok(())
+    let stale_upload_count: i64 =
+        counts.try_get("", "stale_upload_count").map_err(|error| {
+            map_transaction_body_error(anyhow::Error::new(error).context(h!()))
+        })?;
+    u64::try_from(stale_upload_count)
+        .map_err(|_| FilesystemError::Invariant("stale_upload_count_invalid"))
 }
 
 async fn lock_source_state(

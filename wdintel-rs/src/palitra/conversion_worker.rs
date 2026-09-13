@@ -332,60 +332,79 @@ async fn process_conversion_job(
     )
     .await
     .c(h!())?;
-    let txn = env.dbx.begin().await.c(h!())?;
-    if !lock_current_processing_job(&txn, job).await.c(h!())? {
-        txn.commit().await.c(h!())?;
-        return Ok(ConversionJobOutcome::Stale);
-    }
-    let Some(palitra) = lock_live_palitra_for_conversion(&txn, job.palitra_id)
+    let mut source =
+        super::UploadedPalitraSource::new(env, upload.s3_id.clone());
+    let txn = super::begin_palitra_upload(env, source.key.as_deref())
         .await
-        .c(h!())?
-    else {
-        delete_current_processing_job(&txn, job).await.c(h!())?;
-        txn.commit().await.c(h!())?;
-        return Ok(ConversionJobOutcome::Stale);
-    };
-    let fallback_color_hex =
-        super::read_latest_palitra_geometry_including_deleted(&txn, palitra.id)
+        .c(h!())?;
+    let result = async {
+        if !lock_current_processing_job(&txn, job).await.c(h!())? {
+            return Ok(ConversionJobOutcome::Stale);
+        }
+        let Some(palitra) =
+            lock_live_palitra_for_conversion(&txn, job.palitra_id)
+                .await
+                .c(h!())?
+        else {
+            delete_current_processing_job(&txn, job).await.c(h!())?;
+            return Ok(ConversionJobOutcome::Stale);
+        };
+        let fallback_color_hex =
+            super::read_latest_palitra_geometry_including_deleted(
+                &txn, palitra.id,
+            )
             .await
             .c(h!())?
             .map(|palitra_geometry| palitra_geometry.hex);
-    super::apply_loaded_palitra_file_to_existing_palitra(
-        env,
-        &txn,
-        &palitra,
-        &converted_name,
-        upload,
-        fallback_color_hex.as_deref(),
-    )
-    .await
-    .c(h!())?;
-    super::update_palitra_conversion_status(
-        &txn,
-        palitra.id,
-        PALITRA_CONVERSION_STATUS_READY,
-        Some(job.source_format.clone()),
-        Some(converted.receipt.clone()),
-        None,
-    )
-    .await
-    .c(h!())?;
-    if should_schedule_goi_upload_after_conversion(
-        palitra.imported_from_goi,
-        job.should_schedule_goi_upload,
-    ) {
-        super::schedule_palitra_goi_upload(&txn, palitra.id, converted_body)
-            .await
-            .c(h!())?;
-    }
-    let update_result = mark_conversion_job_done(&txn, job, converted.receipt)
+        super::apply_loaded_palitra_file_to_existing_palitra(
+            env,
+            &txn,
+            &palitra,
+            &converted_name,
+            upload,
+            fallback_color_hex.as_deref(),
+        )
         .await
         .c(h!())?;
-    if update_result.rows_affected != 1 {
-        bail!("current palitra conversion job disappeared before completion");
+        super::update_palitra_conversion_status(
+            &txn,
+            palitra.id,
+            PALITRA_CONVERSION_STATUS_READY,
+            Some(job.source_format.clone()),
+            Some(converted.receipt.clone()),
+            None,
+        )
+        .await
+        .c(h!())?;
+        if should_schedule_goi_upload_after_conversion(
+            palitra.imported_from_goi,
+            job.should_schedule_goi_upload,
+        ) {
+            super::schedule_palitra_goi_upload(
+                &txn,
+                palitra.id,
+                converted_body,
+            )
+            .await
+            .c(h!())?;
+        }
+        let update_result =
+            mark_conversion_job_done(&txn, job, converted.receipt)
+                .await
+                .c(h!())?;
+        if update_result.rows_affected != 1 {
+            bail!(
+                "current palitra conversion job disappeared before completion"
+            );
+        }
+        Ok(ConversionJobOutcome::Applied)
     }
-    txn.commit().await.c(h!())?;
-    Ok(ConversionJobOutcome::Applied)
+    .await;
+    source.cleanup_on_success =
+        matches!(result, Ok(ConversionJobOutcome::Stale));
+    super::finish_palitra_upload(txn, source, result)
+        .await
+        .c(h!())
 }
 
 fn should_schedule_goi_upload_after_conversion(

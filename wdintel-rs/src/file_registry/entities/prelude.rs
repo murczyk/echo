@@ -6,6 +6,8 @@ pub use super::device_file_tag::Entity as DeviceFileTag;
 pub use super::file_analysis_definition::Entity as FileAnalysisDefinition;
 pub use super::file_analysis_run::Entity as FileAnalysisRun;
 pub use super::file_analysis_run_item::Entity as FileAnalysisRunItem;
+pub use super::file_content::Entity as FileContent;
+pub use super::file_content_upload::Entity as FileContentUpload;
 pub use super::file_device_source_state::Entity as FileDeviceSourceState;
 pub use super::file_entry::Entity as FileEntry;
 pub use super::file_revision::Entity as FileRevision;
