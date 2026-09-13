@@ -1388,10 +1388,11 @@ describe('useRerNetworksNeoPage', () => {
 
     await renderHook();
     await vi.waitFor(() =>
-      expect(latest?.rows[5]?.lastActivityLabel).toBe('Не вдалося завантажити'),
+      expect(latest?.rows.map((row) => row.lastActivityLabel)).toEqual(
+        Array(6).fill('Не вдалося завантажити'),
+      ),
     );
 
-    expect(latest?.rows[0]?.lastActivityLabel).toBe('Не вдалося завантажити');
     expect(latest?.status?.text).toContain('Помилка завантаження останньої активності');
     expect(apiMock.getNetworkLastActivity).toHaveBeenCalledTimes(1);
   });
@@ -1410,16 +1411,9 @@ describe('useRerNetworksNeoPage', () => {
       list: [buildNetwork(101)],
       statusCounts: { active: 101, inactive: 0, archived: 0 },
     });
-    apiMock.getNetworkLastActivity.mockImplementation(
-      ({ networkIds }: { networkIds: number[] }) => {
-        if (networkIds[0] === 1) return firstPageActivity.promise;
-        if (networkIds[0] === 101)
-          return Promise.resolve([{ networkId: 101, lastActivityAt: secondActivityAt }]);
-        return Promise.resolve(
-          networkIds.map((networkId) => ({ networkId, lastActivityAt: null })),
-        );
-      },
-    );
+    apiMock.getNetworkLastActivity
+      .mockImplementationOnce(() => firstPageActivity.promise)
+      .mockResolvedValueOnce([{ networkId: 101, lastActivityAt: secondActivityAt }]);
 
     await renderHook();
     await flushEffects();
@@ -1438,9 +1432,19 @@ describe('useRerNetworksNeoPage', () => {
         dayjs(secondActivityAt).format('DD.MM.YY HH:mm'),
       ),
     );
+    expect(apiMock.getNetworkLastActivity).toHaveBeenNthCalledWith(
+      2,
+      { networkIds: [101] },
+      expect.any(Object),
+    );
 
     await act(async () => {
-      firstPageActivity.resolve([{ networkId: 1, lastActivityAt: firstActivityAt }]);
+      firstPageActivity.resolve(
+        firstPage.map((network) => ({
+          networkId: network.id,
+          lastActivityAt: network.id === 1 ? firstActivityAt : null,
+        })),
+      );
       await firstPageActivity.promise;
     });
     await vi.waitFor(() =>
@@ -1448,6 +1452,7 @@ describe('useRerNetworksNeoPage', () => {
         dayjs(firstActivityAt).format('DD.MM.YY HH:mm'),
       ),
     );
+    expect(latest?.rows[99]?.lastActivityDetail).toBe('Немає перехоплень');
     expect(apiMock.getNetworkLastActivity).toHaveBeenCalledTimes(2);
   });
 
