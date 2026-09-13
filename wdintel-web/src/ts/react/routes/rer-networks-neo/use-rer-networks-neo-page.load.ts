@@ -16,7 +16,6 @@ import {
 import {
   buildNetworksListReq,
   buildNetworksStatusCountsReq,
-  NETWORK_LAST_ACTIVITY_BATCH_SIZE,
   NETWORK_LIST_PAGE_SIZE,
   type NetworksFilterState,
 } from './helpers';
@@ -91,52 +90,40 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
 
     void (async () => {
       try {
-        for (let start = 0; start < networkIds.length; start += NETWORK_LAST_ACTIVITY_BATCH_SIZE) {
-          if (
-            controller.signal.aborted ||
-            args.activityQueryGenerationRef.current !== activityGeneration
-          )
-            return;
-          const batchIds = networkIds.slice(start, start + NETWORK_LAST_ACTIVITY_BATCH_SIZE);
-          try {
-            const activity = await getNetworkLastActivity(
-              { networkIds: batchIds },
-              { signal: controller.signal },
-            );
-            if (args.activityQueryGenerationRef.current !== activityGeneration) return;
-            const activityById = new Map(
-              activity.map((row) => [row.networkId, row.lastActivityAt]),
-            );
-            args.setNetworks((current) =>
-              current.map((network) =>
-                activityById.has(network.id)
-                  ? { ...network, lastActivityAt: activityById.get(network.id) ?? null }
-                  : network,
-              ),
-            );
-            args.setLastActivityLoadStateByNetworkId((current) => {
-              const next = new Map(current);
-              for (const networkId of batchIds) next.set(networkId, 'loaded');
-              return next;
-            });
-          } catch (error) {
-            if (controller.signal.aborted || isAbortError(error)) return;
-            if (isUnauthorizedError(error)) {
-              redirectToLogin();
-              return;
-            }
-            if (args.activityQueryGenerationRef.current !== activityGeneration) return;
-            args.setLastActivityLoadStateByNetworkId((current) => {
-              const next = new Map(current);
-              for (const networkId of batchIds) next.set(networkId, 'error');
-              return next;
-            });
-            args.setStatus({
-              kind: 'error',
-              text: `Помилка завантаження останньої активності: ${formatErrorMessage(error)}`,
-            });
-          }
+        const activity = await getNetworkLastActivity(
+          { networkIds },
+          { signal: controller.signal },
+        );
+        if (args.activityQueryGenerationRef.current !== activityGeneration) return;
+        const activityById = new Map(activity.map((row) => [row.networkId, row.lastActivityAt]));
+        args.setNetworks((current) =>
+          current.map((network) =>
+            activityById.has(network.id)
+              ? { ...network, lastActivityAt: activityById.get(network.id) ?? null }
+              : network,
+          ),
+        );
+        args.setLastActivityLoadStateByNetworkId((current) => {
+          const next = new Map(current);
+          for (const networkId of networkIds) next.set(networkId, 'loaded');
+          return next;
+        });
+      } catch (error) {
+        if (controller.signal.aborted || isAbortError(error)) return;
+        if (isUnauthorizedError(error)) {
+          redirectToLogin();
+          return;
         }
+        if (args.activityQueryGenerationRef.current !== activityGeneration) return;
+        args.setLastActivityLoadStateByNetworkId((current) => {
+          const next = new Map(current);
+          for (const networkId of networkIds) next.set(networkId, 'error');
+          return next;
+        });
+        args.setStatus({
+          kind: 'error',
+          text: `Помилка завантаження останньої активності: ${formatErrorMessage(error)}`,
+        });
       } finally {
         args.activityAbortControllersRef.current.delete(controller);
       }

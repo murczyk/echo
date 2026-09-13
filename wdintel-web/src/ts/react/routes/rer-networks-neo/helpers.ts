@@ -132,7 +132,6 @@ export function createDefaultNetworksFilterState(): NetworksFilterState {
 }
 
 export const NETWORK_LIST_PAGE_SIZE = 100;
-export const NETWORK_LAST_ACTIVITY_BATCH_SIZE = 5;
 
 export function getNetworkStatusLabel(network: Network): string {
   return getNetworkStatusDescriptor(network).label;
