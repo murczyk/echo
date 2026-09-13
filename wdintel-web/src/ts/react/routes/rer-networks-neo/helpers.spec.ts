@@ -171,6 +171,9 @@ describe('rer-networks-neo AOR filters', () => {
       new Map(),
     );
     expect(recentRow.lastActivityLabel).toBe('Активна останні 15хв');
+    expect(recentRow.lastActivityTooltip).toContain(
+      dayjs(recentRow.network.lastActivityAt).format('DD.MM.YY HH:mm'),
+    );
 
     const now = Date.UTC(2026, 8, 13, 12, 0);
     const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(now);

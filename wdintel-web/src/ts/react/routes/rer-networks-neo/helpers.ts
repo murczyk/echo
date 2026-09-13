@@ -248,9 +248,10 @@ export function buildNetworkRowView(
     activityLoadState: activityLoadStateByNetworkId.get(network.id) ?? 'loading',
     lastActivityLabel,
     lastActivityDetail,
-    lastActivityTooltip: lastActivityDetail
-      ? `${lastActivityDetail}: ${lastActivityLabel}`
-      : lastActivityLabel,
+    lastActivityTooltip:
+      lastActivityDetail && isPresent(network.lastActivityAt)
+        ? `${lastActivityDetail}: ${formatDateTime(network.lastActivityAt)}`
+        : lastActivityLabel,
     createdAtLabel: formatDate(network.createdAt),
   };
 }

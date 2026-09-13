@@ -67,6 +67,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
     useState<ActivityLoadStateByNetworkId>(new Map());
   const [lastActivityLoadStateByNetworkId, setLastActivityLoadStateByNetworkId] =
     useState<ActivityLoadStateByNetworkId>(new Map());
+  const [activityClock, setActivityClock] = useState(Date.now);
   const [filters, setFilters] = useState<NetworksFilterState>(() =>
     createDefaultNetworksFilterState(),
   );
@@ -185,12 +186,17 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
     [
       activityByNetworkId,
       activityLoadStateByNetworkId,
+      activityClock,
       lastActivityLoadStateByNetworkId,
       aorsById,
       networks,
       unitsById,
     ],
   );
+  useEffect(() => {
+    const interval = window.setInterval(() => setActivityClock(Date.now()), 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
   const aorOptions = useMemo(() => sortNetworkAorsForDisplay(aors), [aors]);
   const querySnapshot = useMemo<NetworksQuerySnapshot>(
     () => ({

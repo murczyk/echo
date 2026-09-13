@@ -294,9 +294,12 @@ pub struct OneoffBackfillInboxNetworksPs {
 
 #[derive(clap::Parser, Debug)]
 pub struct OneoffBackfillNetworkLastActivityPs {
-    /// Number of networks checked per transaction.
+    /// Number of frequency IDs fetched per page.
     #[arg(long, default_value_t = NETWORK_LAST_ACTIVITY_BACKFILL_BATCH_SIZE)]
     pub batch_size: i64,
+    /// Resume after this frequency ID.
+    #[arg(long, default_value_t = 0)]
+    pub after_id: i64,
 }
 
 #[derive(clap::Parser, Debug)]

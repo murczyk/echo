@@ -855,7 +855,7 @@ where
     Ok(())
 }
 
-async fn recalculate_last_seen(
+pub(super) async fn recalculate_last_seen(
     txn: &DatabaseTransaction,
     network_freq_id: i64,
 ) -> anyhow::Result<()> {

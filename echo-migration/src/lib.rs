@@ -417,6 +417,7 @@ mod m20260909_143915_sigint_unit_present_in_orbit;
 mod m20260909_145827_network_invalidation_reconciliation_index;
 mod m20260912_084600_signal_group_aviation;
 mod m20260913_191055_sigint_network_last_active_at;
+mod m20260913_204343_sigint_network_recent_links_index;
 
 pub struct Migrator;
 
@@ -993,6 +994,7 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(m20260912_084600_signal_group_aviation::Migration),
             Box::new(m20260913_191055_sigint_network_last_active_at::Migration),
+            Box::new(m20260913_204343_sigint_network_recent_links_index::Migration),
         ]
     }
 }
