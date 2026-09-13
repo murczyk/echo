@@ -982,8 +982,8 @@ Confirm those schemas and the analytics health check before advancing to the
 next server. If targeted reconciliation fails, stop the deployment and retry
 `just analytics-resnapshot-table --server <server> --table public.sigint_network`;
 do not trigger a full mirror resync. Run the network activity backfill described
-in the source architecture guide after the application migration to populate
-historical frequency activity.
+in the source architecture guide after the application migration to seed
+networks with no cached activity from their newest network link.
 
 ```json
 {

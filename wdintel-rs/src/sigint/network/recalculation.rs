@@ -336,13 +336,17 @@ where
         .c(h!())?;
     enqueue_tasks(
         db,
-        network_freq_ids.into_iter().map(|network_freq_id| {
-            (
-                NetworkRecalculationTaskKind::NetworkFreqLastSeen,
-                network_freq_id,
-                None,
-            )
-        }),
+        network_freq_ids
+            .into_iter()
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .map(|network_freq_id| {
+                (
+                    NetworkRecalculationTaskKind::NetworkFreqLastSeen,
+                    network_freq_id,
+                    None,
+                )
+            }),
     )
     .await
     .c(h!())?;
@@ -665,6 +669,62 @@ where
     Ok(())
 }
 
+pub(crate) async fn enqueue_last_seen_for_freq_ids<C, I>(
+    db: &C,
+    network_freq_ids: I,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+    I: IntoIterator<Item = i64>,
+{
+    enqueue_tasks(
+        db,
+        network_freq_ids.into_iter().map(|network_freq_id| {
+            (
+                NetworkRecalculationTaskKind::NetworkFreqLastSeen,
+                network_freq_id,
+                None,
+            )
+        }),
+    )
+    .await
+    .c(h!())
+}
+
+pub(crate) async fn load_freq_ids_for_message_links<C>(
+    db: &C,
+    message_ids: &[i64],
+) -> anyhow::Result<Vec<i64>>
+where
+    C: ConnectionTrait,
+{
+    if message_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows = db
+        .query_all_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+                select distinct network_freq.id
+                from sigint_inbox_item_network network_link
+                join sigint_inbox_item inbox_item
+                  on inbox_item.id = network_link.sigint_inbox_item_id
+                join sigint_network_freq network_freq
+                  on network_freq.network_id = network_link.sigint_network_id
+                 and network_freq.freq = inbox_item.freq
+                 and network_freq.deleted = false
+                where network_link.sigint_inbox_item_id = any($1::bigint[])
+            "#,
+            [message_ids.to_vec().into()],
+        ))
+        .await
+        .c(h!())?;
+    rows.iter()
+        .map(|row| row.try_get("", "id").c(h!()))
+        .collect::<anyhow::Result<Vec<i64>>>()
+        .c(h!())
+}
+
 async fn enqueue_tasks<C, I>(db: &C, tasks: I) -> anyhow::Result<()>
 where
     C: ConnectionTrait,
@@ -855,7 +915,7 @@ where
     Ok(())
 }
 
-pub(super) async fn recalculate_last_seen(
+async fn recalculate_last_seen(
     txn: &DatabaseTransaction,
     network_freq_id: i64,
 ) -> anyhow::Result<()> {
@@ -1121,7 +1181,93 @@ mod tests {
         mk_signal_group, mk_signal_group_aor, mk_signal_message,
         mk_signal_message_group,
     };
+    use chrono::Timelike;
     use serial_test::serial;
+
+    #[tokio::test]
+    #[serial]
+    async fn invalidated_latest_message_reveals_previous_network_activity() {
+        let env = cleanup().await.unwrap();
+        let newer = Utc::now().naive_utc().with_nanosecond(0).unwrap()
+            - Duration::hours(1);
+        let older = newer - Duration::hours(1);
+        let network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let network_freq = mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set("146.5000".to_string()),
+                active_from: Set(older - Duration::days(1)),
+                last_seen_dt: Set(Some(newer)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let mut newer_message_id = None;
+        for timestamp in [older, newer] {
+            let inbox_item = mk_sigint_inbox_item(
+                &env.dbx,
+                sigint_inbox_item::ActiveModel {
+                    freq: Set(Some("146.5000".to_string())),
+                    datetime: Set(Some(timestamp)),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            mk_sigint_inbox_item_network(
+                &env.dbx,
+                sigint_inbox_item_network::ActiveModel {
+                    sigint_inbox_item_id: Set(inbox_item.id),
+                    sigint_network_id: Set(network.id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            newer_message_id = Some(inbox_item.id);
+        }
+        let newer_message_id = newer_message_id.unwrap();
+        crate::rer_importer::inbox::invalidate_message_network_frequency_last_seen(
+            &env.dbx,
+            newer_message_id,
+        )
+        .await
+        .unwrap();
+        let mut message = signal_message::Entity::find_by_id(newer_message_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+        message.deleted = Set(true);
+        message.update(&env.dbx).await.unwrap();
+
+        assert!(network_recalculation_task::Entity::find()
+            .filter(
+                network_recalculation_task::Column::NetworkFreqId
+                    .eq(network_freq.id)
+            )
+            .filter(
+                network_recalculation_task::Column::TaskKind
+                    .eq(NetworkRecalculationTaskKind::NetworkFreqLastSeen)
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_some());
+        assert!(run_once(&env.dbx).await.unwrap());
+        let network_freq =
+            sigint_network_freq::Entity::find_by_id(network_freq.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(network_freq.last_seen_dt, Some(older));
+    }
 
     fn invalidation_task(
         id: i64,

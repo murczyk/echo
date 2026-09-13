@@ -231,13 +231,15 @@ frequency recalculation is pending without writing the frequency cache. A
 composite network-link index, one-minute timeout per batch, and changed-row-only
 updates keep this work outside API requests. Activity is independent of the
 requesting login's message visibility.
+Link changes enqueue frequency recalculation, and invalidating a cached latest
+message enqueues recalculation so the next valid interception can be found.
 
 The optional `wdintel-rs --mode=live oneoff-backfill-network-last-activity`
-command recalculates frequency rows with a null `last_seen_dt` from valid linked
-interception timestamps, then refreshes network activity. It processes
-frequencies in ID order, reports a resume cursor, and accepts `--after-id`
-when resuming an interrupted run. Existing non-null frequency values remain
-owned by the normal recalculation queue.
+command fills only networks with a null `last_active_at` from their newest
+network-link `created_at`. Networks without links remain null. It processes
+networks in ID order, reports a resume cursor, and accepts `--after-id` with a
+network ID when resuming an interrupted run. The periodic worker subsequently
+revalidates these seeds against valid interception timestamps.
 
 ## Statistics storage
 

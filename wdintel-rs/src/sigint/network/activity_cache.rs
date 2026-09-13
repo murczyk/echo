@@ -153,6 +153,7 @@ async fn refresh_batch(
                 join sigint_network_freq freq on freq.network_id = selected.id
                 join sigint_network network on network.id = freq.network_id
                 where freq.deleted = false
+                  and network.deleted = false
                   and freq.last_seen_dt >= freq.active_from
                   and (freq.active_to is null or freq.last_seen_dt <= freq.active_to)
                   and (network.active_from is null or freq.last_seen_dt >= network.active_from)
@@ -170,6 +171,7 @@ async fn refresh_batch(
                 set last_active_at = activity.last_active_at
                 from activity
                 where network.id = activity.id
+                  and network.id = any(array(select id from selected))
                   and network.last_active_at is distinct from activity.last_active_at
                 returning network.id
             )
@@ -248,8 +250,33 @@ mod tests {
 
         let mut freq = freq.into_active_model();
         freq.deleted = Set(true);
-        freq.update(&env.dbx).await.unwrap();
+        let freq = freq.update(&env.dbx).await.unwrap();
 
+        assert_eq!(refresh(&env.dbx).await.unwrap(), 1);
+        let network = sigint_network::Entity::find_by_id(network.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(network.last_active_at, None);
+
+        let mut freq = sigint_network_freq::Entity::find_by_id(freq.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+        freq.deleted = Set(false);
+        freq.update(&env.dbx).await.unwrap();
+        assert_eq!(refresh(&env.dbx).await.unwrap(), 1);
+        let mut network = sigint_network::Entity::find_by_id(network.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+        network.deleted = Set(true);
+        let network = network.update(&env.dbx).await.unwrap();
         assert_eq!(refresh(&env.dbx).await.unwrap(), 1);
         let network = sigint_network::Entity::find_by_id(network.id)
             .one(&env.dbx)

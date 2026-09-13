@@ -1367,6 +1367,25 @@ describe('useRerNetworksNeoPage', () => {
     expect(apiMock.getNetworkLastActivity).not.toHaveBeenCalled();
   });
 
+  it('expires the recent activity label at the 15-minute boundary', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-13T12:00:00Z'));
+    const lastActivityAt = Date.now() - 14 * 60 * 1000;
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(1, { lastActivityAt })],
+      statusCounts: { active: 1, inactive: 0, archived: 0 },
+    });
+
+    await renderHook();
+    await flushEffects();
+    expect(latest?.rows[0]?.lastActivityLabel).toBe('Активна останні 15хв');
+
+    await act(async () => {
+      vi.advanceTimersByTime(60_001);
+    });
+    expect(latest?.rows[0]?.lastActivityLabel).toBe(dayjs(lastActivityAt).format('DD.MM.YY HH:mm'));
+  });
+
   it('settles first-page activity after pagination starts', async () => {
     const firstPage = Array.from({ length: 100 }, (_, index) => buildNetwork(index + 1));
     const initialActivity = deferred<Record<string, Record<string, Record<string, number>>>>();

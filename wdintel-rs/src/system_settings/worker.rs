@@ -740,6 +740,21 @@ where
         .await
         .c(h!())?;
     }
+    if !source.networks.is_empty() {
+        let network_freq_ids =
+            crate::sigint::network::recalculation::load_freq_ids_for_message_links(
+                dbx,
+                &[inserted.id],
+            )
+            .await
+            .c(h!())?;
+        crate::sigint::network::recalculation::enqueue_last_seen_for_freq_ids(
+            dbx,
+            network_freq_ids,
+        )
+        .await
+        .c(h!())?;
+    }
     crate::inbox::unit_resolution::sync_network_unit_links(dbx, &[inserted.id])
         .await
         .c(h!())?;
