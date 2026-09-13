@@ -14,27 +14,7 @@ use sea_orm::*;
 use sea_query::Expr as SeaExpr;
 
 pub(crate) struct NetworkRenderAccess {
-    pub(crate) activity_groups: Vec<String>,
     load_encryption_keys: bool,
-}
-
-#[derive(Clone, Copy)]
-pub(crate) struct NetworkRenderOptions {
-    pub(crate) include_last_activity: bool,
-}
-
-impl NetworkRenderOptions {
-    pub(crate) fn full() -> Self {
-        Self {
-            include_last_activity: true,
-        }
-    }
-
-    pub(crate) fn lookup() -> Self {
-        Self {
-            include_last_activity: false,
-        }
-    }
 }
 
 pub(crate) async fn load_network_render_access<'a, 'async_trait, C>(
@@ -47,35 +27,7 @@ where
     let login = crate::users::load_active_login(txn, user_login)
         .await
         .c(h!())?;
-    if login.sigint_zone_id.is_some() && login.organism_id.is_some() {
-        let activity_groups =
-            crate::messenger::group::get_identity_sigint_groups(
-                txn, user_login,
-            )
-            .await
-            .context(h!())?;
-        return Ok(NetworkRenderAccess {
-            activity_groups,
-            load_encryption_keys: true,
-        });
-    }
-
-    let roles: Vec<String> = serde_json::from_value(login.roles).c(h!())?;
-    let is_api = crate::users::role_matches(&roles, "Api").context(h!())?
-        || crate::users::role_matches(&roles, "ApiAgent").context(h!())?;
-    if is_api {
-        return Ok(NetworkRenderAccess {
-            activity_groups: Vec::new(),
-            load_encryption_keys: login.organism_id.is_some(),
-        });
-    }
-
-    let activity_groups =
-        crate::messenger::group::get_identity_sigint_groups(txn, user_login)
-            .await
-            .context(h!())?;
     Ok(NetworkRenderAccess {
-        activity_groups,
         load_encryption_keys: login.organism_id.is_some(),
     })
 }
@@ -111,26 +63,6 @@ pub(crate) async fn render_networks_with_access<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    render_networks_with_options(
-        networks,
-        txn,
-        user_login,
-        access,
-        NetworkRenderOptions::full(),
-    )
-    .await
-}
-
-pub(crate) async fn render_networks_with_options<'a, 'async_trait, C>(
-    networks: Vec<sigint_network::Model>,
-    txn: &'a C,
-    user_login: &uuid::Uuid,
-    access: &NetworkRenderAccess,
-    options: NetworkRenderOptions,
-) -> Result<Vec<Network>, AppError>
-where
-    C: ConnectionTrait + 'async_trait,
-{
     let instant = std::time::Instant::now();
 
     if networks.is_empty() {
@@ -142,7 +74,7 @@ where
 
     // fetch all related data in bulk
     let network_freqs =
-        get_networks_freqs(txn, &network_ids, user_login, access, options)
+        get_networks_freqs(txn, &network_ids, user_login, access)
             .await
             .context(h!())?;
     let units_map =
@@ -192,9 +124,8 @@ where
             operation_mode: network.operation_mode.clone(),
             operation_type: network.operation_type.clone(),
             operation_period: network.operation_period.clone(),
-            last_activity_at: network_freqs
-                .last_activity_by_network_id
-                .get(&network.id)
+            last_activity_at: network
+                .last_active_at
                 .map(|timestamp| timestamp.and_utc().timestamp_millis()),
             last_updated_at: network.updated_at.and_utc().timestamp_millis(),
             last_updated_by: network.updated_by_login_id.map(|login_id| {
@@ -231,7 +162,6 @@ where
 
 struct NetworkFreqs {
     freqs_by_network_id: HashMap<i64, Vec<NetworkFreq>>,
-    last_activity_by_network_id: HashMap<i64, NaiveDateTime>,
 }
 
 async fn get_networks_freqs<'a, 'async_trait, C>(
@@ -239,7 +169,6 @@ async fn get_networks_freqs<'a, 'async_trait, C>(
     network_ids: &[i64],
     user_login: &uuid::Uuid,
     access: &NetworkRenderAccess,
-    options: NetworkRenderOptions,
 ) -> Result<NetworkFreqs, AppError>
 where
     C: ConnectionTrait + 'async_trait,
@@ -247,7 +176,6 @@ where
     if network_ids.is_empty() {
         return Ok(NetworkFreqs {
             freqs_by_network_id: HashMap::new(),
-            last_activity_by_network_id: HashMap::new(),
         });
     }
 
@@ -294,114 +222,9 @@ where
             });
     }
 
-    let last_activity_by_network_id = if options.include_last_activity {
-        load_network_last_activity(txn, network_ids, &access.activity_groups)
-            .await
-            .context(h!())?
-    } else {
-        HashMap::new()
-    };
-
     Ok(NetworkFreqs {
         freqs_by_network_id,
-        last_activity_by_network_id,
     })
-}
-
-pub(crate) async fn load_network_last_activity<'a, 'async_trait, C>(
-    txn: &'a C,
-    network_ids: &[i64],
-    groups: &[String],
-) -> Result<HashMap<i64, NaiveDateTime>, AppError>
-where
-    C: ConnectionTrait + 'async_trait,
-{
-    if network_ids.is_empty() || groups.is_empty() {
-        return Ok(HashMap::new());
-    }
-
-    #[derive(FromQueryResult)]
-    struct NetworkLastActivity {
-        network_id: i64,
-        last_activity_at: Option<NaiveDateTime>,
-    }
-
-    let sql = r#"
-        select
-            network_link.sigint_network_id as network_id,
-            max(coalesce(
-                inbox_item.datetime,
-                signal_message.timestamp,
-                signal_message.created_at
-            )) as last_activity_at
-        from sigint_inbox_item_network network_link
-        join sigint_network
-          on sigint_network.id = network_link.sigint_network_id
-        join sigint_inbox_item inbox_item
-          on inbox_item.id = network_link.sigint_inbox_item_id
-        join signal_message
-          on signal_message.id = inbox_item.id
-        join datasource_group
-          on datasource_group.id = signal_message.datasource_group_id
-        join signal_group
-          on signal_group.master_key = datasource_group.group_master_key
-        join sigint_network_freq network_freq
-          on network_freq.network_id = sigint_network.id
-         and network_freq.freq = inbox_item.freq
-         and network_freq.deleted = false
-        where network_link.sigint_network_id = any($1::bigint[])
-          and datasource_group.group_master_key = any($2::text[])
-          and signal_message.deleted = false
-          and signal_group.deleted = false
-          and signal_group.is_archived = false
-          and (
-              sigint_network.active_from is null
-              or coalesce(
-                  inbox_item.datetime,
-                  signal_message.timestamp,
-                  signal_message.created_at
-              ) >= sigint_network.active_from
-          )
-          and (
-              sigint_network.active_to is null
-              or coalesce(
-                  inbox_item.datetime,
-                  signal_message.timestamp,
-                  signal_message.created_at
-              ) <= sigint_network.active_to
-          )
-          and coalesce(
-              inbox_item.datetime,
-              signal_message.timestamp,
-              signal_message.created_at
-          ) >= network_freq.active_from
-          and (
-              network_freq.active_to is null
-              or coalesce(
-                  inbox_item.datetime,
-                  signal_message.timestamp,
-                  signal_message.created_at
-              ) <= network_freq.active_to
-          )
-        group by network_link.sigint_network_id
-    "#;
-
-    Ok(
-        NetworkLastActivity::find_by_statement(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            sql,
-            vec![network_ids.to_vec().into(), groups.to_vec().into()],
-        ))
-        .all(txn)
-        .await
-        .context(h!())?
-        .into_iter()
-        .filter_map(|row| {
-            row.last_activity_at
-                .map(|last_activity_at| (row.network_id, last_activity_at))
-        })
-        .collect(),
-    )
 }
 
 pub async fn get_networks_units<'a, 'async_trait, C>(
@@ -1296,7 +1119,7 @@ mod tests {
     // Regression for ECHO-3207: API network reads must not require SIGINT scope.
     #[tokio::test]
     #[serial]
-    async fn unscoped_api_renders_network_with_null_activity() {
+    async fn unscoped_api_renders_global_activity() {
         let env = cleanup().await.unwrap();
         let login = mk_login(
             &env.dbx,
@@ -1314,6 +1137,7 @@ mod tests {
         let network = mk_sigint_network(
             &env.dbx,
             sigint_network::ActiveModel {
+                last_active_at: Set(Some(dt(2))),
                 ..Default::default()
             },
         )
@@ -1335,15 +1159,19 @@ mod tests {
             .unwrap();
 
         assert_eq!(rendered.len(), 1);
-        assert_eq!(rendered[0].last_activity_at, None);
+        assert_eq!(
+            rendered[0].last_activity_at,
+            Some(dt(2).and_utc().timestamp_millis())
+        );
         assert_eq!(rendered[0].freqs.len(), 1);
         assert!(rendered[0].freqs[0].encryption_keys.is_empty());
     }
 
-    // Regression for ECHO-3207: activity must honor group access and frequency ranges.
+    // Regression for ECHO-3207: group activity must honor access and frequency ranges.
     #[tokio::test]
     #[serial]
-    async fn network_activity_uses_authorized_groups_and_active_frequencies() {
+    async fn network_group_activity_uses_authorized_groups_and_active_frequencies(
+    ) {
         let env = cleanup().await.unwrap();
         let datasource = find_test_datasource(&env.dbx).await.unwrap();
         let allowed_group = find_test_signal_group(&env.dbx).await.unwrap();
@@ -1419,12 +1247,6 @@ mod tests {
         .await;
 
         let groups = vec![allowed_group.master_key];
-        let last_activity =
-            load_network_last_activity(&env.dbx, &[network.id], &groups)
-                .await
-                .unwrap();
-        assert_eq!(last_activity.get(&network.id), Some(&dt(2)));
-
         let activity = load_network_group_activity_postgres(
             &env.dbx,
             &groups,
@@ -1480,56 +1302,5 @@ mod tests {
             .flat_map(HashMap::values)
             .sum();
         assert_eq!(message_count, 1);
-
-        let second_network = mk_sigint_network(&env.dbx, Default::default())
-            .await
-            .unwrap();
-        mk_sigint_network_freq(
-            &env.dbx,
-            sigint_network_freq::ActiveModel {
-                network_id: Set(second_network.id),
-                freq: Set(freq.to_string()),
-                active_from: Set(dt(1)),
-                last_seen_dt: Set(Some(dt(3))),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        seed_network_activity(
-            &env.dbx,
-            second_network.id,
-            allowed_datasource_group.id,
-            freq,
-            dt(1),
-        )
-        .await;
-        let deleted_message_id = seed_network_activity(
-            &env.dbx,
-            second_network.id,
-            allowed_datasource_group.id,
-            freq,
-            dt(3),
-        )
-        .await;
-        let deleted_message =
-            signal_message::Entity::find_by_id(deleted_message_id)
-                .one(&env.dbx)
-                .await
-                .unwrap()
-                .unwrap();
-        let mut deleted_message = deleted_message.into_active_model();
-        deleted_message.deleted = Set(true);
-        deleted_message.update(&env.dbx).await.unwrap();
-
-        let last_activity = load_network_last_activity(
-            &env.dbx,
-            &[network.id, second_network.id],
-            &groups,
-        )
-        .await
-        .unwrap();
-        assert_eq!(last_activity.get(&network.id), Some(&dt(7)));
-        assert_eq!(last_activity.get(&second_network.id), Some(&dt(1)));
     }
 }

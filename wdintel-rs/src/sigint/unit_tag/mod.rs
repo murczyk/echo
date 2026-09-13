@@ -949,6 +949,7 @@ mod tests {
             merged_to: None,
             active_from: None,
             active_to: None,
+            last_active_at: None,
             sigint_origin_id: None,
             original_id: None,
             do_not_archive: false,

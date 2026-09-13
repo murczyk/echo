@@ -1,6 +1,6 @@
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { Network } from '../../../../Bindings';
 import { NETWORK_STATUS_ACTIVE } from '../rer-network-details-neo/network-status';
@@ -163,6 +163,35 @@ describe('rer-networks-neo AOR filters', () => {
     expect(row.lastActivityLabel).toBe(dayjs(lastActivityAt).format('DD.MM.YY HH:mm'));
     expect(row.lastActivityDetail).toBe('Останнє перехоплення');
     expect(row.lastActivityTooltip).toContain(row.lastActivityLabel);
+
+    const recentRow = buildNetworkRowView(
+      { ...row.network, lastActivityAt: Date.now() - 10 * 60 * 1000 },
+      new Map(),
+      new Map(),
+      new Map(),
+    );
+    expect(recentRow.lastActivityLabel).toBe('Активна останні 15хв');
+
+    const now = Date.UTC(2026, 8, 13, 12, 0);
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      const atBoundary = buildNetworkRowView(
+        { ...row.network, lastActivityAt: now - 15 * 60 * 1000 },
+        new Map(),
+        new Map(),
+        new Map(),
+      );
+      const outsideBoundary = buildNetworkRowView(
+        { ...row.network, lastActivityAt: now - 15 * 60 * 1000 - 1 },
+        new Map(),
+        new Map(),
+        new Map(),
+      );
+      expect(atBoundary.lastActivityLabel).toBe('Активна останні 15хв');
+      expect(outsideBoundary.lastActivityLabel).not.toBe('Активна останні 15хв');
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   it('maps the active network list request to classic active-only flags', () => {
