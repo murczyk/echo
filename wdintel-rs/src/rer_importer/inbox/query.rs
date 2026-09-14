@@ -1,5 +1,6 @@
 use crate::config::{
-    ANALYTICS_INBOX_CANDIDATE_PAGE_SIZE, INBOX_COUNT_INDEXED_MAX_DAYS,
+    ANALYTICS_INBOX_CANDIDATE_PAGE_SIZE,
+    ANALYTICS_INBOX_POSTGRES_BOUNDS_MAX_DAYS, INBOX_COUNT_INDEXED_MAX_DAYS,
     INBOX_MESSAGES_PAGE_LIMIT, TAG_MINIMUM_CONFIDENCE,
 };
 use crate::entities::{prelude::*, *};
@@ -1576,12 +1577,6 @@ async fn resolve_analytics_inbox_message_id_scope(
     analytics_db: &DatabaseConnection,
     freshness_max_age_ms: u64,
 ) -> Result<Option<AnalyticsMessageIdScope>, AppError> {
-    #[derive(FromQueryResult)]
-    struct MessageIdBounds {
-        min_id: Option<i64>,
-        max_id: Option<i64>,
-    }
-
     let mut since_date = req
         .since_date_inclusive_ms
         .map(dt_from_millis)
@@ -1688,74 +1683,25 @@ async fn resolve_analytics_inbox_message_id_scope(
         }
     }
 
-    let bounds =
-        match req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime) {
-            InboxMessagesSortBy::IMSDatetime => {
-                let query = sigint_inbox_item::Entity::find()
-                    .select_only()
-                    .column_as(sigint_inbox_item::Column::Id.min(), "min_id")
-                    .column_as(sigint_inbox_item::Column::Id.max(), "max_id")
-                    .apply_if(since_date, |query, since_date| {
-                        query.filter(
-                            sigint_inbox_item::Column::Datetime.gte(since_date),
-                        )
-                    })
-                    .apply_if(till_date, |query, till_date| {
-                        query.filter(
-                            sigint_inbox_item::Column::Datetime.lte(till_date),
-                        )
-                    });
-                query
-                    .into_model::<MessageIdBounds>()
-                    .one(analytics_db)
-                    .await
-                    .context(h!())?
-            }
-            InboxMessagesSortBy::IMSTimestamp => {
-                let query = signal_message::Entity::find()
-                    .select_only()
-                    .column_as(signal_message::Column::Id.min(), "min_id")
-                    .column_as(signal_message::Column::Id.max(), "max_id")
-                    .apply_if(since_date, |query, since_date| {
-                        query.filter(
-                            signal_message::Column::Timestamp.gte(since_date),
-                        )
-                    })
-                    .apply_if(till_date, |query, till_date| {
-                        query.filter(
-                            signal_message::Column::Timestamp.lte(till_date),
-                        )
-                    });
-                query
-                    .into_model::<MessageIdBounds>()
-                    .one(analytics_db)
-                    .await
-                    .context(h!())?
-            }
-            InboxMessagesSortBy::IMSCreatedAt => {
-                let query = signal_message::Entity::find()
-                    .select_only()
-                    .column_as(signal_message::Column::Id.min(), "min_id")
-                    .column_as(signal_message::Column::Id.max(), "max_id")
-                    .apply_if(since_date, |query, date| {
-                        query
-                            .filter(signal_message::Column::CreatedAt.gte(date))
-                    })
-                    .apply_if(till_date, |query, date| {
-                        query
-                            .filter(signal_message::Column::CreatedAt.lte(date))
-                    });
-                query
-                    .into_model::<MessageIdBounds>()
-                    .one(analytics_db)
-                    .await
-                    .context(h!())?
-            }
-        }
-        .unwrap_or(MessageIdBounds {
-            min_id: None,
-            max_id: None,
+    let use_source_bounds = (since_date.is_none() && till_date.is_none())
+        || since_date.is_some_and(|since| {
+            since
+                >= Utc::now().naive_utc()
+                    - Duration::days(ANALYTICS_INBOX_POSTGRES_BOUNDS_MAX_DAYS)
         });
+    let bounds = load_inbox_message_id_bounds(
+        if use_source_bounds {
+            source_db
+        } else {
+            analytics_db
+        },
+        req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime),
+        since_date,
+        till_date,
+        use_source_bounds,
+    )
+    .await
+    .context(h!())?;
     let (Some(min_id), Some(max_id)) = (bounds.min_id, bounds.max_id) else {
         return Ok(None);
     };
@@ -1772,6 +1718,67 @@ async fn resolve_analytics_inbox_message_id_scope(
     } else {
         Ok(Some(AnalyticsMessageIdScope::From(min_id)))
     }
+}
+
+#[derive(FromQueryResult)]
+struct MessageIdBounds {
+    min_id: Option<i64>,
+    max_id: Option<i64>,
+}
+
+async fn load_inbox_message_id_bounds(
+    db: &DatabaseConnection,
+    sort_by: InboxMessagesSortBy,
+    since_date: Option<NaiveDateTime>,
+    till_date: Option<NaiveDateTime>,
+    use_source_bounds: bool,
+) -> Result<MessageIdBounds, AppError> {
+    let (table, column) = match sort_by {
+        InboxMessagesSortBy::IMSDatetime => ("sigint_inbox_item", "datetime"),
+        InboxMessagesSortBy::IMSTimestamp => ("signal_message", "timestamp"),
+        InboxMessagesSortBy::IMSCreatedAt => ("signal_message", "created_at"),
+    };
+    let mut values = Vec::new();
+    let mut filters = Vec::new();
+    if let Some(since_date) = since_date {
+        values.push(since_date.into());
+        filters.push(format!("\"{column}\" >= ${}", values.len()));
+    }
+    if let Some(till_date) = till_date {
+        values.push(till_date.into());
+        filters.push(format!("\"{column}\" <= ${}", values.len()));
+    }
+    let query = if filters.is_empty() || !use_source_bounds {
+        let suffix = if filters.is_empty() {
+            String::new()
+        } else {
+            format!(" WHERE {}", filters.join(" AND "))
+        };
+        format!(
+            "SELECT MIN(id) AS min_id, MAX(id) AS max_id FROM {table}{suffix}"
+        )
+    } else {
+        // OFFSET 0 prevents PostgreSQL from scanning the ID primary key twice
+        // to satisfy MIN/MAX while ignoring the selective time index.
+        format!(
+            "SELECT MIN(id) AS min_id, MAX(id) AS max_id FROM (SELECT id FROM {table} WHERE {} OFFSET 0) scoped",
+            filters.join(" AND ")
+        )
+    };
+    Ok(
+        MessageIdBounds::find_by_statement(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            query,
+            values,
+        ))
+        .one(db)
+        .await
+        .context(h!())?
+        .unwrap_or(MessageIdBounds {
+            min_id: None,
+            max_id: None,
+        }),
+    )
 }
 
 fn analytics_inbox_scope_is_closed(

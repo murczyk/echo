@@ -1318,17 +1318,13 @@ async fn process_invalidation_filter(
         )
         .await
         .c(h!())?;
-        for item_id in stats_recalculation_item_ids {
-            crate::stats::enqueue_group_stats_recalculation_for_message(
-                &txn,
-                item_id,
-                format!(
-                    "recalculated network unit links for inbox message {item_id}"
-                ),
-            )
-            .await
-            .c(h!())?;
-        }
+        crate::stats::enqueue_group_stats_recalculation_for_messages(
+            &txn,
+            &stats_recalculation_item_ids,
+            "recalculated network unit links for inbox messages",
+        )
+        .await
+        .c(h!())?;
         txn.commit().await.c(h!())?;
         for id in new_processed_item_ids {
             processed_items.insert(id);

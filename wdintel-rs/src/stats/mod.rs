@@ -548,7 +548,7 @@ async fn claim_pending_group_stats_recalculation_task(
             from group_stats_recalculation_task
             where completed_at is null
               and (started_at is null or started_at < $2)
-            order by created_at asc, id asc
+            order by completed_at asc, started_at asc, created_at asc, id asc
             for update skip locked
             limit $3
         )
