@@ -835,7 +835,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           });
           if (typeof registerDutyNotificationPreview === 'function') {
             registerDutyNotificationPreview(cycle, feedId, () =>
-              loadDutyNotificationPreview(previewRequest, () => {
+              loadDutyNotificationPreview(previewRequest, currentFeed.messageSortBy, () => {
                 const live = messageFeedsRef.current.find((candidate) => candidate.id === feedId);
                 return (
                   isLifecycleCurrent() &&

@@ -388,7 +388,7 @@ export function testBrowserNotification(): DutyBrowserNotificationStatus {
 
 export type DutyNotificationPreview = {
   messageId: number;
-  timestamp: number | null;
+  orderTimestamp: number | null;
   title: string;
   body: string;
 };
@@ -482,7 +482,7 @@ function deliverDutyAlerts(alerts: PendingDutyAlert[], cycle?: DutyNotificationP
         unique.set(preview.messageId, preview);
       });
     const newest = [...unique.values()].sort(
-      (a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0) || b.messageId - a.messageId,
+      (a, b) => (b.orderTimestamp ?? 0) - (a.orderTimestamp ?? 0) || b.messageId - a.messageId,
     )[0];
     if (
       !newest &&
