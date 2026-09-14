@@ -43,6 +43,7 @@ if [[ $# -eq 0 ]]; then
   run_case raw_only failure
   run_case mapping_preserved success
   run_case interrupted_retry success
+  run_case refresh_reconciles_state success
   run_case strategy_mismatch failure
   run_case terminal_state failure
   run_case recoverable_failure failure
@@ -60,6 +61,41 @@ export ECHO_ANALYTICS_RESNAPSHOT_TEST_MODE=true
 export ECHO_ANALYTICS_LIB=$TEST_DIR/resnapshot-test-lib.sh
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/resnapshot-table.sh"
+
+if [[ $scenario == refresh_reconciles_state ]]; then
+  analytics_bin_dir=$case_dir/bin
+  mkdir -p "$analytics_bin_dir"
+  for helper in \
+    refresh-current-views.sh \
+    refresh-gateway.sh \
+    reconcile-schema.sh \
+    reconcile-if-needed.sh \
+    check-analytics-health.sh
+  do
+    cat >"$analytics_bin_dir/$helper" <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+helper=${0##*/}
+printf '%s\n' "$helper" >>"$ECHO_RESNAPSHOT_TEST_CASE_DIR/operations"
+if [[ $helper == reconcile-if-needed.sh ]]; then
+  touch "$ECHO_RESNAPSHOT_TEST_CASE_DIR/reconciled"
+elif [[ $helper == check-analytics-health.sh ]]; then
+  [[ -f "$ECHO_RESNAPSHOT_TEST_CASE_DIR/reconciled" ]]
+fi
+MOCK
+    chmod +x "$analytics_bin_dir/$helper"
+  done
+  refresh_analytics
+  diff -u \
+    <(printf '%s\n' \
+      refresh-current-views.sh \
+      refresh-gateway.sh \
+      reconcile-schema.sh \
+      reconcile-if-needed.sh \
+      check-analytics-health.sh) \
+    "$operations_file"
+  exit 0
+fi
 
 # shellcheck disable=SC2034
 MIRROR_NAME=echo_mirror

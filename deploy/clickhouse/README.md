@@ -974,6 +974,17 @@ strict schema reconciliation. `empty_table_resnapshot` still refuses a
 non-empty source; targeted `replicated_snapshot` explicitly authorizes
 snapshotting one non-empty table.
 
+The `m20260913_191055_sigint_network_last_active_at` migration adds a nullable
+column to replicated `public.sigint_network`. Its `replicated_snapshot` impact
+authorizes the deployment verifier to resnapshot only that table and refresh
+its raw ClickHouse table, current-state view, and PostgreSQL gateway view.
+Confirm those schemas and the analytics health check before advancing to the
+next server. If targeted reconciliation fails, stop the deployment and retry
+`just analytics-resnapshot-table --server <server> --table public.sigint_network`;
+do not trigger a full mirror resync. Run the network activity backfill described
+in the source architecture guide after the application migration to seed
+networks with no cached activity from their newest network link.
+
 ```json
 {
   "migrations": {

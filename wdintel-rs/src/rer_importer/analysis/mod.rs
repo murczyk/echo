@@ -10271,6 +10271,7 @@ async fn collect_group_names(
             signal_group::Column::IgnoreOperativny,
             signal_group::Column::InterseptionKind,
             signal_group::Column::DisableNetworkAssignment,
+            signal_group::Column::IsAviationGroup,
         ])
         .filter(signal_group::Column::MasterKey.eq_any(group_keys.clone()))
         .into_tuple::<(
@@ -10279,6 +10280,7 @@ async fn collect_group_names(
             bool,
             sea_orm_active_enums::InterseptionKind,
             bool,
+            Option<bool>,
         )>()
         .all(txn)
         .await
@@ -10286,7 +10288,7 @@ async fn collect_group_names(
     let mut resolved_keys = vec![];
     let keys: Vec<String> = signal_groups
         .iter()
-        .map(|(key, _, _, _, _)| key.clone())
+        .map(|(key, _, _, _, _, _)| key.clone())
         .collect();
     let stats = match analytics_group_stats {
         Some(analytics_group_stats) => analytics_group_stats.clone(),
@@ -10311,6 +10313,7 @@ async fn collect_group_names(
         ignore_operativny,
         interseption_kind,
         disable_network_assignment,
+        is_aviation_group,
     ) in signal_groups
     {
         if let Some(name) = name {
@@ -10325,6 +10328,7 @@ async fn collect_group_names(
                 ignore_operativny,
                 interseption_kind: interseption_kind.into(),
                 disable_network_assignment,
+                is_aviation_group: is_aviation_group.unwrap_or(false),
                 group_stats: stats,
                 admin_data: group_admin_data,
                 areas_of_responsibility: aors,
@@ -10358,6 +10362,7 @@ async fn collect_group_names(
             interseption_kind:
                 crate::sigint::types::InterseptionKind::InterseptionRer,
             disable_network_assignment: false,
+            is_aviation_group: false,
             group_stats: stats,
             admin_data: group_admin_data,
             areas_of_responsibility: aors,

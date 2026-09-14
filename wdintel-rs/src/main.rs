@@ -75,6 +75,7 @@ pub mod terminal;
 pub mod tests;
 pub mod transcriber;
 pub mod ts;
+pub(crate) mod tus;
 pub mod types;
 pub mod unit;
 pub mod user_settings;
@@ -289,6 +290,16 @@ pub struct OneoffBackfillInboxNetworksPs {
     /// Start datetime (non-inclusive). Example: `2023-04-18T00:00:00`
     #[arg(long, value_enum)]
     pub end: Option<String>,
+}
+
+#[derive(clap::Parser, Debug)]
+pub struct OneoffBackfillNetworkLastActivityPs {
+    /// Number of networks checked per transaction.
+    #[arg(long, default_value_t = NETWORK_LAST_ACTIVITY_BACKFILL_BATCH_SIZE)]
+    pub batch_size: i64,
+    /// Resume after this network ID.
+    #[arg(long, default_value_t = 0)]
+    pub after_id: i64,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -1121,6 +1132,7 @@ enum Cmd {
     OneoffImportSignalsCallsignsCsv(OneoffImportSignalsCallsignsCsvPs),
     OneoffFixWhatsappSenders,
     OneoffBackfillInboxNetworks(OneoffBackfillInboxNetworksPs),
+    OneoffBackfillNetworkLastActivity(OneoffBackfillNetworkLastActivityPs),
     OneoffBackfillSignalMessageAuthorLogin(
         OneoffBackfillSignalMessageAuthorLoginPs,
     ),
@@ -1896,6 +1908,9 @@ async fn async_main(
         Cmd::OneoffBackfillInboxNetworks(ps) => {
             sigint::network::etalon_calc::oneoff::oneoff_backfill_inbox_networks(mode, ps)
                 .await
+        }
+        Cmd::OneoffBackfillNetworkLastActivity(ps) => {
+            sigint::network::activity_backfill::run_oneoff(mode, &ps).await
         }
         Cmd::OneoffBackfillSignalMessageAuthorLogin(ps) => {
             sigint::oneoff::oneoff_backfill_signal_message_author_login(mode, &ps)

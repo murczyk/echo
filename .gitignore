@@ -13,6 +13,7 @@ wdintel
 .codex
 node_modules
 deploy/config-local*.toml
+/deploy/config.toml
 deploy/config-live*.toml
 deploy/client_secret_*
 deploy/config-backup.toml

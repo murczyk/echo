@@ -30,7 +30,7 @@ function u24le(bytes: Uint8Array, offset: number) {
   return bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16);
 }
 
-function png(bytes: Uint8Array): ImageMetadata | null {
+function png(bytes: Uint8Array, sourceSize: number): ImageMetadata | null {
   if (
     bytes.length < 8 ||
     ![137, 80, 78, 71, 13, 10, 26, 10].every((value, index) => bytes[index] === value)
@@ -41,7 +41,7 @@ function png(bytes: Uint8Array): ImageMetadata | null {
   const chunkEnd = (offset: number) => {
     if (offset > bytes.length - 8) fail();
     const length = view.getUint32(offset);
-    if (length > bytes.length - offset - 12) fail();
+    if (length > sourceSize - offset - 12) fail();
     return offset + 12 + length;
   };
   const ihdrEnd = chunkEnd(8);
@@ -85,7 +85,7 @@ function jpeg(bytes: Uint8Array): ImageMetadata | null {
   fail();
 }
 
-function webp(bytes: Uint8Array): ImageMetadata | null {
+function webp(bytes: Uint8Array, sourceSize: number): ImageMetadata | null {
   if (
     bytes.length < 12 ||
     String.fromCharCode(...bytes.slice(0, 4)) !== 'RIFF' ||
@@ -96,9 +96,9 @@ function webp(bytes: Uint8Array): ImageMetadata | null {
     const kind = String.fromCharCode(...bytes.slice(offset, offset + 4));
     const length = new DataView(bytes.buffer, bytes.byteOffset).getUint32(offset + 4, true);
     const data = offset + 8;
-    if (data + length > bytes.length) fail();
+    if (data + length > sourceSize) fail();
     if (kind === 'VP8X') {
-      if (length < 10) fail();
+      if (length < 10 || data + 10 > bytes.length) fail();
       return {
         format: 'webp',
         width: u24le(bytes, data + 4) + 1,
@@ -109,6 +109,7 @@ function webp(bytes: Uint8Array): ImageMetadata | null {
     if (kind === 'VP8 ') {
       if (
         length < 10 ||
+        data + 10 > bytes.length ||
         bytes[data + 3] !== 0x9d ||
         bytes[data + 4] !== 0x01 ||
         bytes[data + 5] !== 0x2a
@@ -122,7 +123,7 @@ function webp(bytes: Uint8Array): ImageMetadata | null {
       };
     }
     if (kind === 'VP8L') {
-      if (length < 5 || bytes[data] !== 0x2f) fail();
+      if (length < 5 || data + 5 > bytes.length || bytes[data] !== 0x2f) fail();
       const packed =
         bytes[data + 1] |
         (bytes[data + 2] << 8) |
@@ -145,7 +146,8 @@ export async function validateImageEditorSource(source: ImageEditorSource): Prom
   const bytes = new Uint8Array(
     await source.blob.slice(0, MAX_IMAGE_EDITOR_HEADER_BYTES).arrayBuffer(),
   );
-  const metadata = png(bytes) ?? jpeg(bytes) ?? webp(bytes) ?? fail();
+  const metadata =
+    png(bytes, source.blob.size) ?? jpeg(bytes) ?? webp(bytes, source.blob.size) ?? fail();
   if (!metadata.width || !metadata.height) fail();
   if (metadata.animated)
     fail(

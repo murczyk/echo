@@ -29,11 +29,17 @@ flowchart LR
         reports["wdintel-rs-report-worker"]
         nlp["wdintel-py · NLP"]
         postgres[("PostgreSQL · wd")]
+        files[("PostgreSQL · wd_files · optional")]
         redis[("Redis")]
+        spool[("Persistent Device upload spool · optional")]
         vector["Vector · optional"]
 
         api --> postgres
+        api --> files
+        api <--> spool
         bg --> postgres
+        bg --> files
+        bg <--> spool
         bg -->|readiness + NLP requests| nlp
         reports --> postgres
         api --> redis
@@ -44,6 +50,8 @@ flowchart LR
 
     api -.-> integrations["Optional integrations\nVault · GOI · AI · Iggy"]
     bg -.-> integrations
+    api -->|finalized Device content| object_storage[("Private S3-compatible storage · optional")]
+    bg -->|safe cleanup| object_storage
     postgres ==>|logical CDC| analytics["Optional analytics LXC\nPeerDB · ClickHouse · PostgreSQL gateway"]
     vector -.-> observability["Optional observability\nSigNoz"]
 ```
@@ -53,7 +61,7 @@ does not create its LXC container. Optional analytics runs in a separate
 container and stores only derived data. PostgreSQL remains authoritative, and
 supported analytical reads fall back to PostgreSQL when analytics is stale or
 unavailable. The optional `wd_files` database stores device file metadata
-independently from the main `wd` database.
+and content publication pointers independently from the main `wd` database.
 
 Analytics control scripts and units are deployed as one content-addressed
 release to both the application and its paired analytics container. Source
@@ -66,6 +74,100 @@ installer holds the reconciliation lock, saves the previous library and
 configuration hashes, and stops gateway PostgreSQL before replacing its
 library. Inbox diagnostics record the final operation outcome and duration,
 including complete PostgreSQL fallback after candidate revalidation.
+
+## Device file content storage
+
+Device clients send resumable content through the API. In-progress bytes live
+in `<storage_dir>/device-file-content-spool`; finalized immutable content lives
+in the configured private S3-compatible bucket, while `wd_files` remains the
+authoritative metadata and publication store. The API and background worker
+must use the same persistent spool and the same stable S3 endpoint, bucket, and
+StrongBox key. Invalid or missing Device upload storage configuration disables
+only the new content-upload routes (503) and logs the cause; existing Echo and
+FileSync services still start. An empty S3 endpoint uses the storage provider's
+default endpoint.
+
+The first version supports one application host, one HTTP API process, and one
+logical Device content cleanup worker. The worker runs in
+`wdintel-rs-bgworker`, uses a PostgreSQL advisory lock for singleton ownership,
+and removes expired or terminal spool data plus unreferenced objects. Multi-host
+or multi-API-process topology is not supported.
+
+SIGINT TUS and multipart fallback uploads use
+`<storage_dir>/file_upload_tus`. Per-upload UUID file locks serialize writes,
+consumption, and cleanup across local processes. Lock files remain after cleanup
+to avoid replacing an inode while another process still holds it. Admission
+checks declared bytes (the 2 GiB maximum when unknown) against actual available
+disk space with a 512 MiB free-space floor. Legacy uploads have no aggregate
+byte or file-count quota, and unwritten pending uploads do not reserve space
+that would prevent an old client from switching to multipart fallback. Pending uploads
+expire after four hours and completed unconsumed uploads after eight hours.
+The `sigint_file_upload_cleanup` background worker scans every minute and skips
+busy uploads; consumption removes data and its sidecar together. API and
+background workers must share this persistent storage directory. Empty login
+directories are removed during consumption, cleanup and admission; legacy
+directories are pruned in short locked batches. Upload creation and
+completion retain their file locks until filesystem work finishes, including
+when the requesting task is cancelled.
+
+Shared multipart imports default to 200 MiB and 64 fields; text fields are
+limited to 80 KiB. Multipart reads fail after 30 seconds without progress,
+including truncated field headers and boundaries. A process-wide admission
+limit permits two buffered multipart requests at a time and queues additional
+requests before reading their bodies; cancellation removes a waiting request.
+Admission remains held through the response body and detached Alpine, Delta,
+and Terminal conversion work; SIGINT fallback streams to its spool with a
+per-file size limit and does not consume this buffer limit.
+
+Alpine converter upload, polling and result download share a one-hour overall
+deadline. The optional `alpine_conversion_timeout_seconds` setting accepts
+1–604800 seconds for deployments with longer conversions; missing values use
+3600 seconds, while zero and out-of-range values fail before contacting the
+converter. Status requests have a 30-second timeout and polls are ten seconds
+apart. Three consecutive request-send failures or HTTP 5xx/408/429 responses
+finish the job with an error; a valid pending status resets this failure count.
+Other HTTP errors, invalid response bodies, missing or duplicate requested
+receipts, and failed conversions terminate immediately. Response-body read or
+JSON decode errors are terminal as well. Failures populate the background job's
+error and release its multipart admission when the task finishes. Admission
+remains held while conversion buffers are alive; source and result logs contain
+byte counts instead of file payloads.
+
+Consumers with smaller
+existing limits retain them; OCR gateway images remain limited to 16 MiB. ZIP
+extraction rejects unsafe paths before extraction. Legacy importers preserve
+their accepted archive sizes and entry counts; callers with pre-existing
+archive limits retain both declared and streamed-output checks. Delta and KML
+conversion preserve the original source-name document priority and download
+names independently of the safe temporary upload filename. Download headers
+retain the legacy `filename` parameter alongside UTF-8 `filename*` when needed.
+
+Encryption and Device SHA work run on blocking workers. Shared encryption
+admits at most two operations per process, including object write and
+verification; additional operations wait for capacity. The permit stays
+with detached CPU work when a request is cancelled. Device finalization also
+retains its own admission permit. Device completion admits up to 16 waiting
+requests for at most one second before taking any spool or database lock;
+source preparation remains limited to two active finalizers by default.
+Authorization and target state are rechecked after the spool lock is acquired;
+authorization is also rechecked before refreshing an upload after a busy result.
+StrongBox still buffers its source,
+ciphertext, and serialized envelope: budget at least three times the source
+size per active encrypted operation, plus storage buffers and other requests.
+Large plaintext Device files remain streamed in 8 MiB chunks.
+
+Unit attachment cancellation before COMMIT schedules best-effort cleanup of its
+unpublished object.
+Once submitted, its owned COMMIT task finishes even if the request is cancelled.
+Unit and Palitra uploads retain the new object when COMMIT returns an error:
+a missing acknowledgement cannot safely prove rollback. Such uncertain objects
+are retained for investigation; no unreferenced-object janitor is implied.
+
+Terminal PDF converters use separate working directories for each subprocess.
+Their temporary files and admission remain owned until conversion finishes,
+including after request cancellation. Without the optional OpenCV feature,
+Terminal preserves the original PNG images instead of cropping them; conversion
+and image read failures are returned to the caller.
 
 ## Messenger processing
 
@@ -120,6 +222,24 @@ expires after 10 minutes, and is not served while inbox-network invalidation or
 recalculation is pending. Expired entries are evicted hourly alongside the
 pre-existing network cleanup in the same worker. The cache and its queue are
 excluded from the optional analytics replica.
+
+The separate `network_last_activity_worker` refreshes
+`sigint_network.last_active_at` every five minutes in bounded network-ID batches
+from the global frequency `last_seen_dt` values. It also reads network links
+created in the previous 20 minutes, so new interceptions are reflected while a
+frequency recalculation is pending without writing the frequency cache. A
+composite network-link index, one-minute timeout per batch, and changed-row-only
+updates keep this work outside API requests. Activity is independent of the
+requesting login's message visibility.
+Link changes enqueue frequency recalculation, and invalidating a cached latest
+message enqueues recalculation so the next valid interception can be found.
+
+The optional `wdintel-rs --mode=live oneoff-backfill-network-last-activity`
+command fills only networks with a null `last_active_at` from their newest
+network-link `created_at`. Networks without links remain null. It processes
+networks in ID order, reports a resume cursor, and accepts `--after-id` with a
+network ID when resuming an interrupted run. The periodic worker subsequently
+revalidates these seeds against valid interception timestamps.
 
 ## Statistics storage
 
@@ -199,3 +319,7 @@ binary and database schema are compatible.
 
 The previous accumulated architecture and rollout notes are preserved in the
 [architecture notes archive](../archive/2026-08-18-architecture-notes.md).
+
+SIGINT multipart fallback uses an inactivity timeout: transfers may last longer
+than ten minutes while bytes continue to arrive. Success, failure, and
+cancellation clear the watchdog.

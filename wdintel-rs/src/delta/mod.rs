@@ -61,8 +61,14 @@ pub fn kmz_to_geojson_1(
     input_path: &PathBuf,
     output: &PathBuf,
 ) -> Result<(), AppError> {
-    let input: String = std::fs::read_to_string(input_path)?;
-    let kml: Kml = quick_xml::de::from_str(&input[..]).c(h!())?;
+    let bytes = std::fs::read(input_path).c(h!())?;
+    let input = std::str::from_utf8(&bytes)
+        .map_err(invalid_import_data)
+        .c(h!())?;
+    crate::kml::validate_upload_document(input).c(h!())?;
+    let kml: Kml = quick_xml::de::from_str(input)
+        .map_err(invalid_import_data)
+        .c(h!())?;
     let style_map = crate::kml::extract_style_maps(&kml.nodes)?;
     let style_map_highlight =
         crate::kml::extract_style_maps_hightlight(&kml.nodes)?;
@@ -145,6 +151,12 @@ pub fn kmz_to_geojson_1(
     Ok(())
 }
 
+fn invalid_import_data(error: impl std::fmt::Display) -> AppError {
+    AppError::BL {
+        msg: format!("Invalid import data: {error}"),
+    }
+}
+
 fn feature_from_point(
     placemark: &Placemark,
     coordinates: &str,
@@ -156,9 +168,11 @@ fn feature_from_point(
         return Ok(None);
     };
     let (lat, lng) =
-        milgeo_rs::coordinates::parse_point_coordinates(&coordinates)?;
-    let lat_f: f64 = lat.parse().c(h!())?;
-    let lng_f: f64 = lng.parse().c(h!())?;
+        milgeo_rs::coordinates::parse_point_coordinates(&coordinates)
+            .map_err(invalid_import_data)
+            .c(h!())?;
+    let lat_f: f64 = lat.parse().map_err(invalid_import_data).c(h!())?;
+    let lng_f: f64 = lng.parse().map_err(invalid_import_data).c(h!())?;
     let mut comments: Vec<String> = vec![];
     if let Some(name) = &placemark.name {
         comments.push(name.to_string());
@@ -243,8 +257,9 @@ fn feature_from_line_string(
     let Some(coord_s) = normalize_kml_coordinates(coord_s) else {
         return Ok(None);
     };
-    let coords =
-        milgeo_rs::coordinates::parse_linestring_coordinates(&coord_s)?;
+    let coords = milgeo_rs::coordinates::parse_linestring_coordinates(&coord_s)
+        .map_err(invalid_import_data)
+        .c(h!())?;
     let coords_val: serde_json::Value = serde_json::Value::Array(
         coords
             .iter()
@@ -266,8 +281,9 @@ fn feature_from_polygon(coord_s: &str) -> Result<Option<Feature>, AppError> {
     let Some(coord_s) = normalize_kml_coordinates(coord_s) else {
         return Ok(None);
     };
-    let coords =
-        milgeo_rs::coordinates::parse_linestring_coordinates(&coord_s)?;
+    let coords = milgeo_rs::coordinates::parse_linestring_coordinates(&coord_s)
+        .map_err(invalid_import_data)
+        .c(h!())?;
     let coords_val: serde_json::Value =
         serde_json::Value::Array(vec![serde_json::Value::Array(
             coords
@@ -296,7 +312,9 @@ fn normalize_kml_coordinates(coord_s: &str) -> Option<String> {
 }
 
 fn extract_comments(s: &str) -> Result<Vec<String>, AppError> {
-    let document = tl::parse(s, tl::ParserOptions::default()).c(h!())?;
+    let document = tl::parse(s, tl::ParserOptions::default())
+        .map_err(invalid_import_data)
+        .c(h!())?;
     let parser = document.parser();
     let children = document.children();
     let mut res = vec![];
@@ -387,11 +405,12 @@ async fn radios_convert(
 ) -> Result<Json<i64>, AppError> {
     ensure_basic_role(&env.dbx, &user).await.c(h!())?;
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
+    let source_name = field.name().unwrap_or("upload.kmz").to_string();
     let tmp_dir = TempDir::new()?;
     println!("> tmp_dir {}", tmp_dir.path().display());
-    let data_file = tmp_dir.path().join(field.name().c(h!())?);
+    let data_file =
+        multipart::write_upload(tmp_dir.path(), "kmz", &val).c(h!())?;
     println!("> data_file: {}", data_file.display());
-    std::fs::write(&data_file, val)?;
     let loglines: Vec<String> = vec![];
     let bgtask = bgtask::ActiveModel {
         id: NotSet,
@@ -406,12 +425,17 @@ async fn radios_convert(
     let bgtask_id = bgtask.id;
 
     let env_spawn = env.clone();
-    tokio::spawn(async {
+    tokio::spawn(async move {
         let _tmp_dir = tmp_dir;
         let data_file2 = data_file;
-        radios_convert_go(env_spawn, &data_file2, Some(bgtask))
-            .await
-            .c(h!())?;
+        radios_convert_go(
+            env_spawn,
+            &data_file2,
+            Some(bgtask),
+            Path::new(&source_name),
+        )
+        .await
+        .c(h!())?;
         Ok::<(), AppError>(())
     });
 
@@ -422,8 +446,11 @@ pub async fn radios_convert_go(
     env: actix_web::web::Data<Env>,
     data_file: &Path,
     m_bgtask: Option<bgtask::Model>,
+    source_name: &Path,
 ) -> Result<(), AppError> {
-    let res = radios_convert_go2(env.clone(), data_file, &m_bgtask).await;
+    let res =
+        radios_convert_go2(env.clone(), data_file, &m_bgtask, source_name)
+            .await;
     finish_bgtask(m_bgtask.map(|x| x.id), &env.dbx, &res)
         .await
         .c(h!())?;
@@ -434,6 +461,7 @@ async fn radios_convert_go2(
     env: actix_web::web::Data<Env>,
     data_file: &Path,
     m_bgtask: &Option<bgtask::Model>,
+    source_name: &Path,
 ) -> Result<(), AppError> {
     let bgtask_id = m_bgtask
         .clone()
@@ -451,10 +479,11 @@ async fn radios_convert_go2(
         },
         m_bgtask_id,
         Some(&env.dbx),
+        source_name,
     )
     .await
     .c(h!())?;
-    store_radios_outputs(env.as_ref(), bgtask_id, &outputs)
+    store_radios_outputs(env.as_ref(), bgtask_id, outputs)
         .await
         .c(h!())?;
 
@@ -468,11 +497,11 @@ async fn radios_convert_go2(
 async fn store_radios_outputs(
     env: &Env,
     bgtask_id: i64,
-    outputs: &crate::kml::RadioRenderOutputs,
+    outputs: crate::kml::RadioRenderOutputs,
 ) -> Result<(), AppError> {
     let kmz_per_radio_key = crate::messenger::media::store_asset(
         env,
-        &outputs.kmz_per_radio_bytes,
+        outputs.kmz_per_radio_bytes.into(),
         Some(outputs.kmz_per_radio_name.as_str()),
         Some(crate::config::KMZ_CONTENT_TYPE),
     )
@@ -480,7 +509,7 @@ async fn store_radios_outputs(
     .c(h!())?;
     let kmz_per_date_key = crate::messenger::media::store_asset(
         env,
-        &outputs.kmz_per_date_bytes,
+        outputs.kmz_per_date_bytes.into(),
         Some(outputs.kmz_per_date_name.as_str()),
         Some(crate::config::KMZ_CONTENT_TYPE),
     )
@@ -488,7 +517,7 @@ async fn store_radios_outputs(
     .c(h!())?;
     let csv_key = crate::messenger::media::store_asset(
         env,
-        &outputs.csv_bytes,
+        outputs.csv_bytes.into(),
         Some(outputs.csv_name.as_str()),
         Some("text/csv"),
     )
@@ -503,7 +532,7 @@ async fn store_radios_outputs(
     let payload_bytes = serde_json::to_vec(&payload).c(h!())?;
     let payload_key = crate::messenger::media::store_asset(
         env,
-        &payload_bytes,
+        payload_bytes.into(),
         Some(&format!("radios-{}-outputs.json", bgtask_id)),
         Some("application/json"),
     )
@@ -657,6 +686,7 @@ pub async fn radios_download_result_csv(
     req: Json<RadiosDownloadResultReq>,
 ) -> Result<HttpResponse, AppError> {
     ensure_basic_role(&env.dbx, &user).await.c(h!())?;
+    let page_offset = radios_csv_page_offset(req.csv_page).c(h!())?;
     let page_part = match req.csv_page {
         None => "".to_string(),
         Some(page) => format!("-page-{page}"),
@@ -670,6 +700,7 @@ pub async fn radios_download_result_csv(
         )
         .await
         .c(h!())?;
+        let data = select_radios_csv_page(data.into(), page_offset).c(h!())?;
         let cd = header::ContentDisposition {
             disposition: header::DispositionType::Attachment,
             parameters: vec![header::DispositionParam::FilenameExt(
@@ -690,6 +721,52 @@ pub async fn radios_download_result_csv(
             .body(data));
     }
     Err(AppError::NotFound)
+}
+
+fn radios_csv_page_offset(
+    page: Option<i64>,
+) -> Result<Option<usize>, AppError> {
+    Ok(page
+        .map(|page| {
+            page.checked_sub(1)
+                .and_then(|page| usize::try_from(page).ok())
+                .and_then(|page| {
+                    page.checked_mul(config::DELTA_RADIOS_CSV_ROWS_PER_PAGE)
+                })
+                .ok_or_else(|| AppError::BL {
+                    msg: "Invalid CSV page".to_string(),
+                })
+        })
+        .transpose()
+        .c(h!())?)
+}
+
+fn select_radios_csv_page(
+    data: actix_web::web::Bytes,
+    offset: Option<usize>,
+) -> Result<actix_web::web::Bytes, AppError> {
+    let Some(offset) = offset else {
+        return Ok(data);
+    };
+    let mut reader = ::csv::Reader::from_reader(data.as_ref());
+    let headers = reader.headers().c(h!())?.clone();
+    let mut writer = ::csv::Writer::from_writer(Vec::new());
+    writer.write_record(&headers).c(h!())?;
+    let mut selected = 0;
+    for (index, row) in reader.records().enumerate() {
+        let row = row.c(h!())?;
+        if index >= offset {
+            writer.write_record(&row).c(h!())?;
+            selected += 1;
+            if selected == config::DELTA_RADIOS_CSV_ROWS_PER_PAGE {
+                break;
+            }
+        }
+    }
+    if selected == 0 {
+        return Err(AppError::NotFound);
+    }
+    Ok(writer.into_inner().c(h!())?.into())
 }
 
 pub async fn bgtask_log(
@@ -875,10 +952,11 @@ pub async fn import_map(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
+    admission: crate::utils::multipart_admission::MultipartAdmission,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
-    let filename = field.name().c(h!())?.to_string();
+    let source_name = field.name().unwrap_or("upload.kmz").to_string();
     let convert = enemy_units_geojson::ActiveModel {
         id: NotSet,
         status: Set(Some(sea_orm_active_enums::StatusEnum::Pending)),
@@ -908,6 +986,7 @@ pub async fn import_map(
     let convert_id = convert.id;
 
     tokio::spawn(async move {
+        let _admission = admission;
         let res = async {
             let tmp_dir = TempDir::new()?;
             bgtask_log(
@@ -917,9 +996,9 @@ pub async fn import_map(
             )
             .await
             .c(h!())?;
-            let geojson_file = Path::new(&filename).with_extension("geojson");
-            let geojson_file = geojson_file.file_name().ok_or("impossible")?;
-            let kmz_file = tmp_dir.path().join(filename);
+            let geojson_file = "converted.geojson";
+            let kmz_file =
+                multipart::write_upload(tmp_dir.path(), "kmz", &val).c(h!())?;
             bgtask_log(
                 Some(bgtask_id),
                 &format!("> kmz_file: {}", kmz_file.display()),
@@ -927,7 +1006,6 @@ pub async fn import_map(
             )
             .await
             .c(h!())?;
-            std::fs::write(&kmz_file, val)?;
             std::process::Command::new("ls")
                 .args([tmp_dir.path()])
                 .spawn()?;
@@ -943,28 +1021,11 @@ pub async fn import_map(
                 .await
                 .c(h!())?;
             crate::utils::backup_tmp_dir(tmp_dir.path())?;
-            let mut doc_kml = tmp_dir
-                .path()
-                .join(kmz_file.file_stem().ok_or("no stem 28471")?)
-                .join("doc.kml");
-            if !doc_kml.exists() {
-                doc_kml = tmp_dir.path().join("doc.kml");
-            }
-            if !doc_kml.exists() {
-                let entries: Vec<std::fs::DirEntry> =
-                    std::fs::read_dir(tmp_dir.path())?
-                        .filter_map(|x| x.ok())
-                        .collect();
-                for entry in entries {
-                    if entry.file_type()?.is_file() {
-                        let path = entry.path();
-                        if path.extension() == Some("kml".as_ref()) {
-                            doc_kml = path;
-                            break;
-                        }
-                    }
-                }
-            }
+            let doc_kml = crate::utils::zip::find_kml_document_for_source(
+                tmp_dir.path(),
+                Path::new(&source_name),
+            )
+            .c(h!())?;
             bgtask_log(
                 Some(bgtask_id),
                 &format!("> doc_kml: {}", doc_kml.display()),
@@ -1006,7 +1067,7 @@ pub async fn import_map(
             let geojson_bytes = std::fs::read(&output)?;
             let geojson_key = crate::messenger::media::store_asset(
                 env_clone.as_ref(),
-                &geojson_bytes,
+                geojson_bytes.into(),
                 Some(geojson_name.as_str()),
                 Some("application/geo+json"),
             )
@@ -1015,7 +1076,7 @@ pub async fn import_map(
             let kml_name = format!("enemy-units-{convert_id}.kml");
             let kml_key = crate::messenger::media::store_asset(
                 env_clone.as_ref(),
-                input.as_bytes(),
+                input.into_bytes().into(),
                 Some(kml_name.as_str()),
                 Some("application/vnd.google-earth.kml+xml"),
             )
@@ -1181,14 +1242,13 @@ pub async fn kmz_to_geojson(
 ) -> Result<actix_web::HttpResponse, AppError> {
     ensure_basic_role(&env.dbx, &user).await.c(h!())?;
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
-    let filename = field.name().c(h!())?;
+    let download_name = multipart::download_filename(&field, "", "geojson");
     let tmp_dir = TempDir::new()?;
     println!("> tmp_dir {}", tmp_dir.path().display());
-    let geojson_file = Path::new(&filename).with_extension("geojson");
-    let geojson_file = geojson_file.file_name().ok_or("impossible")?;
-    let kmz_file = tmp_dir.path().join(filename);
+    let geojson_file = "converted.geojson";
+    let kmz_file =
+        multipart::write_upload(tmp_dir.path(), "kmz", &val).c(h!())?;
     println!("> kmz_file: {}", kmz_file.display());
-    std::fs::write(&kmz_file, val)?;
     println!("> running ls");
     std::process::Command::new("ls")
         .args([tmp_dir.path()])
@@ -1197,35 +1257,21 @@ pub async fn kmz_to_geojson(
     crate::utils::zip::unzip(&kmz_file)?;
     println!("> unzip done");
     crate::utils::backup_tmp_dir(tmp_dir.path())?;
-    let src_dir = tmp_dir
-        .path()
-        .join(kmz_file.file_stem().ok_or("no stem 28471")?);
-    let mut doc_kml = src_dir.join("doc.kml");
-    if !doc_kml.exists() {
-        doc_kml = tmp_dir.path().join("doc.kml");
-    }
-    if !doc_kml.exists() {
-        // read the first kml file in the directory
-        let entries: Vec<std::fs::DirEntry> =
-            std::fs::read_dir(tmp_dir.path())?
-                .filter_map(|x| x.ok())
-                .collect();
-        for entry in entries {
-            if entry.file_type()?.is_file() {
-                let path = entry.path();
-                if path.extension() == Some("kml".as_ref()) {
-                    doc_kml = path;
-                    break;
-                }
-            }
-        }
-    }
+    let doc_kml = crate::utils::zip::find_kml_document_for_source(
+        tmp_dir.path(),
+        Path::new(field.name().unwrap_or("upload.kmz")),
+    )
+    .c(h!())?;
     println!("> doc_kml: {}", doc_kml.display());
     let output = tmp_dir.path().join(geojson_file);
     kmz_to_geojson_1(&doc_kml, &output)?;
 
     let file = actix_files::NamedFile::open_async(&output).await.c(h!())?;
-    Ok(file.into_response(&http_req))
+    Ok(file
+        .set_content_disposition(multipart::download_content_disposition(
+            download_name,
+        ))
+        .into_response(&http_req))
 }
 
 pub fn delta_objs_to_kmz(
@@ -1752,19 +1798,28 @@ async fn download_layer_result(
     let downloaded_layer: DownloadedLayer =
         serde_json::from_value(res_json).c(h!())?;
     let tmp_dir = TempDir::new()?;
-    let filename = format!("{}.kmz", downloaded_layer.overlay_name);
+    let layer_name = downloaded_layer
+        .overlay_name
+        .rsplit(['/', '\\'])
+        .next()
+        .filter(|name| !name.is_empty())
+        .unwrap_or("layer");
+    let filename = format!("{layer_name}.kmz");
     let outfile = tmp_dir.path().join(filename);
-    let res_bytes = match bgtask_res.res_s3_id.as_deref() {
+    let res_bytes: actix_web::web::Bytes = match bgtask_res.res_s3_id.as_deref()
+    {
         Some(key) => {
             crate::messenger::media::fetch_media_bytes_by_key(env.as_ref(), key)
                 .await
                 .c(h!())?
+                .into()
         }
         None => {
             let res_bytes = bgtask_res.res_bytes.clone().ok_or(format!(
                 "res_bytes must be non empty for task id: {}",
                 req.bgtask_id
             ))?;
+            let res_bytes: actix_web::web::Bytes = res_bytes.into();
             if env.config.s3_config.is_none() || env.s3_config.is_none() {
                 res_bytes
             } else {
@@ -1775,7 +1830,7 @@ async fn download_layer_result(
                     .to_string();
                 let res_s3_id = crate::messenger::media::store_asset(
                     env.as_ref(),
-                    &res_bytes,
+                    res_bytes.clone(),
                     Some(filename_s.as_str()),
                     Some(crate::config::KMZ_CONTENT_TYPE),
                 )
@@ -1813,6 +1868,58 @@ async fn download_layer_result(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn radios_csv_download_selects_record_pages_without_losing_multiline_fields(
+    ) {
+        let mut writer = ::csv::Writer::from_writer(Vec::new());
+        writer.write_record(["name", "comment"]).unwrap();
+        for index in 0..2_001 {
+            writer
+                .write_record([
+                    format!("radio-{index}"),
+                    format!("Коментар, \"{index}\"\nДругий рядок"),
+                ])
+                .unwrap();
+        }
+        let data: actix_web::web::Bytes = writer.into_inner().unwrap().into();
+        assert_eq!(select_radios_csv_page(data.clone(), None).unwrap(), data);
+        let mut pages = Vec::new();
+        for (page, expected_rows) in [(1, 2_000), (2, 1)] {
+            let bytes = select_radios_csv_page(
+                data.clone(),
+                radios_csv_page_offset(Some(page)).unwrap(),
+            )
+            .unwrap();
+            let mut reader = ::csv::Reader::from_reader(bytes.as_ref());
+            assert_eq!(
+                reader.headers().unwrap().iter().collect::<Vec<_>>(),
+                vec!["name", "comment"]
+            );
+            let rows = reader.records().collect::<Result<Vec<_>, _>>().unwrap();
+            assert_eq!(rows.len(), expected_rows);
+            pages.extend(rows);
+        }
+        let expected = ::csv::Reader::from_reader(data.as_ref())
+            .records()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(pages, expected);
+        for page in [0, -1, i64::MIN, i64::MAX] {
+            assert!(radios_csv_page_offset(Some(page)).is_err());
+        }
+        assert!(matches!(
+            select_radios_csv_page(
+                data,
+                radios_csv_page_offset(Some(3)).unwrap(),
+            ),
+            Err(AppError::NotFound)
+        ));
+        assert!(matches!(
+            select_radios_csv_page("".into(), Some(0)),
+            Err(AppError::NotFound)
+        ));
+    }
 
     #[test]
     fn summary_table_report_limit_error_has_structured_code() {
@@ -1854,8 +1961,9 @@ mod tests {
 
     #[test]
     fn kmz_to_geojson_accepts_multiline_polygon_coordinates() {
+        use std::io::Write;
+
         let tmp_dir = TempDir::new().unwrap();
-        let input_path = tmp_dir.path().join("doc.kml");
         let output_path = tmp_dir.path().join("doc.geojson");
         let input = r#"<kml xmlns="http://www.opengis.net/kml/2.2">
     <Document>
@@ -1880,7 +1988,22 @@ mod tests {
     </Document>
 </kml>"#
             .replace("{trailing_space}", " ");
-        std::fs::write(&input_path, input).unwrap();
+        let mut archive =
+            ::zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let options = ::zip::write::SimpleFileOptions::default();
+        archive.start_file("map/doc.kml", options).unwrap();
+        archive.write_all(input.as_bytes()).unwrap();
+        archive.start_file("doc.kml", options).unwrap();
+        archive.write_all(b"<kml><Document/></kml>").unwrap();
+        let bytes = archive.finish().unwrap().into_inner();
+        let upload =
+            multipart::write_upload(tmp_dir.path(), "kmz", &bytes).unwrap();
+        crate::utils::zip::unzip(&upload).unwrap();
+        let input_path = crate::utils::zip::find_kml_document_for_source(
+            tmp_dir.path(),
+            Path::new("map.kmz"),
+        )
+        .unwrap();
 
         kmz_to_geojson_1(&input_path, &output_path).unwrap();
 

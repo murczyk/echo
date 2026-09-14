@@ -8,6 +8,8 @@ pub mod device_file_tag;
 pub mod file_analysis_definition;
 pub mod file_analysis_run;
 pub mod file_analysis_run_item;
+pub mod file_content;
+pub mod file_content_upload;
 pub mod file_device_source_state;
 pub mod file_entry;
 pub mod file_revision;

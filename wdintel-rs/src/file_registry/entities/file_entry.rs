@@ -64,6 +64,14 @@ pub enum Relation {
     )]
     FileAnalysisRunItem,
     #[sea_orm(
+        belongs_to = "super::file_content::Entity",
+        from = "(Column::Id, Column::Revision, Column::ContentPath)",
+        to = "(super::file_content::Column::FileId, super::file_content::Column::Revision, super::file_content::Column::ObjectKey)",
+        on_update = "NoAction",
+        on_delete = "Restrict"
+    )]
+    FileContent,
+    #[sea_orm(
         belongs_to = "Entity",
         from = "(Column::DeviceId, Column::ParentId)",
         to = "(Column::DeviceId, Column::Id)",
@@ -108,6 +116,12 @@ impl Related<super::device_file_tag::Entity> for Entity {
 impl Related<super::file_analysis_run_item::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::FileAnalysisRunItem.def()
+    }
+}
+
+impl Related<super::file_content::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::FileContent.def()
     }
 }
 

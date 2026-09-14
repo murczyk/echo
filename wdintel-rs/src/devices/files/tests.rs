@@ -195,6 +195,8 @@ async fn clear_file_entries(db: &DatabaseConnection) {
             file_device_source_state,
             file_sync_item,
             file_sync_batch,
+            file_content,
+            file_content_upload,
             file_revision,
             file_sync_session,
             device_file_tag,

@@ -227,12 +227,12 @@ pub async fn rer_csv_import(
     mut payload: Multipart,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
+    let (_, val) = multipart::extract(&mut payload).await.c(h!())?;
     let tmp_dir = TempDir::new()?;
     println!("> tmp_dir {}", tmp_dir.path().display());
-    let csv_file = tmp_dir.path().join(field.name().c(h!())?);
+    let csv_file =
+        multipart::write_upload(tmp_dir.path(), "csv", &val).c(h!())?;
     println!("> csv_file: {}", csv_file.display());
-    std::fs::write(&csv_file, val)?;
     crate::utils::backup_tmp_dir(tmp_dir.path())?;
 
     let loglines: Vec<String> = vec![];
@@ -289,12 +289,12 @@ pub async fn rer_delta_csv_import(
     mut payload: Multipart,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
+    let (_, val) = multipart::extract(&mut payload).await.c(h!())?;
     let tmp_dir = TempDir::new()?;
     println!("> tmp_dir {}", tmp_dir.path().display());
-    let csv_file = tmp_dir.path().join(field.name().c(h!())?);
+    let csv_file =
+        multipart::write_upload(tmp_dir.path(), "csv", &val).c(h!())?;
     println!("> csv_file: {}", csv_file.display());
-    std::fs::write(&csv_file, val)?;
     crate::utils::backup_tmp_dir(tmp_dir.path())?;
 
     let loglines: Vec<String> = vec![];

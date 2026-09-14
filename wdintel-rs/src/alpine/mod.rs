@@ -12,7 +12,6 @@ use actix_web::web::Json;
 use actix_web::HttpResponse;
 use bytes::Bytes;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
-use futures_util::StreamExt;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::multipart::{Form, Part};
 use sea_orm::ActiveModelTrait;
@@ -74,13 +73,17 @@ async fn convert_alpinequest_file(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
+    admission: crate::utils::multipart_admission::MultipartAdmission,
 ) -> Result<Json<i64>, AppError> {
     info!("convert_alpinequest_file started");
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let converter_url = env.config.alpine_converter_url.clone().c(h!())?;
     let upload = read_payload(&mut payload).await.c(h!())?;
+    let converter_url = env.config.alpine_converter_url.clone().c(h!())?;
 
-    info!("convert_alpinequest_file uploading data: {:?}", upload);
+    info!(
+        "convert_alpinequest_file uploading {} bytes",
+        upload.file_bytes.len()
+    );
     let loglines: Vec<String> = vec![];
     let bgtask = bgtask::ActiveModel {
         id: NotSet,
@@ -97,6 +100,7 @@ async fn convert_alpinequest_file(
     let env_inner = env.get_ref().clone();
     info!("convert_alpinequest_file starting alpine conversion");
     tokio::spawn(async move {
+        let _admission = admission;
         let dbx = env_inner.dbx.clone();
         let res = async {
             bgtask_log(Some(bgtask_id), "> starting alpine conversion", &dbx)
@@ -114,7 +118,7 @@ async fn convert_alpinequest_file(
             .c(h!())?;
             let res_s3_id = crate::messenger::media::store_asset(
                 &env_inner,
-                &result.body,
+                result.body,
                 result.name.as_deref(),
                 result.content_type.as_deref(),
             )
@@ -198,65 +202,69 @@ async fn read_payload(payload: &mut Multipart) -> Result<UploadData, AppError> {
         output_format: "kmz".to_string(),
     };
 
-    while let Some(item) = payload.next().await {
-        let mut field = item.map_err(|e| -> AppError {
-            format!("Multipart error: {e:?}").into()
-        })?;
-        let field_name = field.name().c(h!())?.to_string();
-        if field_name == "hide_titles" {
-            let mut value = Vec::new();
-            while let Some(chunk) = field.next().await {
-                value.extend(
-                    chunk
-                        .map_err(|e| -> AppError {
-                            format!("Multipart error: {e:?}").into()
-                        })?
-                        .to_vec(),
-                );
-            }
-            data.hide_titles = String::from_utf8(value)
-                .ok()
-                .map(|v| v == "1")
-                .unwrap_or(false);
-            continue;
+    let mut total_bytes = 0;
+    let mut field_count = 0;
+    while let Some(item) =
+        crate::utils::multipart::next(payload).await.c(h!())?
+    {
+        field_count += 1;
+        if field_count > crate::config::MULTIPART_MAX_FIELDS {
+            return Err(AppError::BL {
+                msg: "Too many multipart fields".to_string(),
+            });
         }
-
-        if field_name == "output_format" {
-            let mut value = Vec::new();
-            while let Some(chunk) = field.next().await {
-                value.extend(
-                    chunk
-                        .map_err(|e| -> AppError {
-                            format!("Multipart error: {e:?}").into()
-                        })?
-                        .to_vec(),
-                );
-            }
-            if let Ok(output_format) = String::from_utf8(value) {
-                if !output_format.is_empty() {
-                    data.output_format = output_format;
+        let mut field = item
+            .map_err(crate::utils::multipart::to_app_error)
+            .c(h!())?;
+        let field_name = field
+            .name()
+            .ok_or_else(|| AppError::BL {
+                msg: "Multipart field has no name".to_string(),
+            })
+            .c(h!())?
+            .to_string();
+        let is_option =
+            matches!(field_name.as_str(), "hide_titles" | "output_format");
+        if !is_option && data.field_name.is_some() {
+            return Err(AppError::BL {
+                msg: "Only one uploaded file is supported".to_string(),
+            });
+        }
+        let remaining_bytes = crate::config::MULTIPART_MAX_BYTES - total_bytes;
+        let maximum_bytes = if is_option {
+            remaining_bytes.min(crate::config::MULTIPART_TEXT_MAX_BYTES)
+        } else {
+            remaining_bytes
+        };
+        let value = crate::utils::multipart::read_field_limited(
+            &mut field,
+            maximum_bytes,
+        )
+        .await
+        .c(h!())?;
+        total_bytes += value.len();
+        match field_name.as_str() {
+            "hide_titles" => data.hide_titles = value == b"1",
+            "output_format" => {
+                if let Ok(output_format) = String::from_utf8(value) {
+                    if !output_format.is_empty() {
+                        data.output_format = output_format;
+                    }
                 }
             }
-            continue;
+            _ => {
+                data.file_bytes = value;
+                data.field_name = Some(field_name.clone());
+                data.file_name = field
+                    .content_disposition()
+                    .and_then(|disposition| {
+                        disposition.get_filename().map(str::to_string)
+                    })
+                    .or(Some(field_name));
+                data.content_type =
+                    field.content_type().map(ToString::to_string);
+            }
         }
-
-        let mut val_curr: Vec<u8> = vec![];
-        while let Some(chunk) = field.next().await {
-            val_curr.extend(
-                chunk
-                    .map_err(|e| -> AppError {
-                        format!("Multipart error: {e:?}").into()
-                    })?
-                    .to_vec(),
-            );
-        }
-        data.file_bytes = val_curr;
-        data.field_name = Some(field_name.clone());
-        data.file_name = field
-            .content_disposition()
-            .and_then(|cd| cd.get_filename().map(|v| v.to_string()))
-            .or(Some(field_name));
-        data.content_type = field.content_type().map(|ct| ct.to_string());
     }
 
     if data.file_bytes.is_empty() {
@@ -272,6 +280,52 @@ async fn convert_file(
     env: &Env,
     converter_url: &str,
     upload: &UploadData,
+) -> anyhow::Result<ConversionResult> {
+    let timeout = env
+        .config
+        .alpine_conversion_timeout_seconds
+        .unwrap_or(crate::config::ALPINE_CONVERSION_TIMEOUT_SECONDS);
+    convert_file_with_deadline(
+        &env.rq,
+        converter_url,
+        upload,
+        timeout,
+        Duration::from_secs(
+            crate::config::ALPINE_CONVERSION_POLL_INTERVAL_SECONDS,
+        ),
+    )
+    .await
+    .c(h!())
+}
+
+async fn convert_file_with_deadline(
+    client: &reqwest::Client,
+    converter_url: &str,
+    upload: &UploadData,
+    timeout_seconds: u64,
+    poll_interval: Duration,
+) -> anyhow::Result<ConversionResult> {
+    anyhow::ensure!(
+        (1..=crate::config::ALPINE_CONVERSION_MAX_TIMEOUT_SECONDS)
+            .contains(&timeout_seconds),
+        "alpine_conversion_timeout_seconds must be between 1 and {}",
+        crate::config::ALPINE_CONVERSION_MAX_TIMEOUT_SECONDS
+    );
+    tokio::time::timeout(
+        Duration::from_secs(timeout_seconds),
+        convert_file_inner(client, converter_url, upload, poll_interval),
+    )
+    .await
+    .c("Alpine conversion exceeded its overall deadline")
+    .c(h!())?
+    .c(h!())
+}
+
+async fn convert_file_inner(
+    client: &reqwest::Client,
+    converter_url: &str,
+    upload: &UploadData,
+    poll_interval: Duration,
 ) -> anyhow::Result<ConversionResult> {
     let mut part = Part::bytes(upload.file_bytes.clone());
     if let Some(fname) = upload.file_name.clone() {
@@ -295,8 +349,7 @@ async fn convert_file(
         .text("output_format", upload.output_format.clone())
         .part("src_file".to_string(), part);
     let host = converter_url.trim_end_matches('/');
-    let resp = env
-        .rq
+    let resp = client
         .post(format!("{host}/api/upload-task"))
         .timeout(Duration::from_secs(
             crate::config::RQ_TIMEOUT_ALPINE_CONVERTER,
@@ -315,10 +368,13 @@ async fn convert_file(
         "✅ Upload successful, status: {status}, receipt: {receipt}. Waiting for conversion..."
     );
 
-    wait_for_completion(env, &receipt, host).await.c(h!())?;
-    let mut result = download_file(env, &receipt, host, &upload.output_format)
+    wait_for_completion(client, &receipt, host, poll_interval)
         .await
         .c(h!())?;
+    let mut result =
+        download_file(client, &receipt, host, &upload.output_format)
+            .await
+            .c(h!())?;
     result.receipt = receipt.clone();
     info!("✅ Conversion successful, receipt: {receipt}");
     Ok(result)
@@ -348,67 +404,103 @@ pub async fn convert_bytes_to_kmz(
 }
 
 async fn wait_for_completion(
-    env: &Env,
+    client: &reqwest::Client,
     receipt: &str,
     host: &str,
+    poll_interval: Duration,
 ) -> anyhow::Result<()> {
+    let mut consecutive_failures = 0;
     loop {
-        if let Ok(is_ok) = check_completion_status(env, receipt, host).await {
-            if is_ok {
-                return Ok(());
-            } else {
-                anyhow::bail!("failed to convert to KMZ")
+        match check_completion_status(client, receipt, host)
+            .await
+            .c(h!())?
+        {
+            ConversionStatus::Completed => return Ok(()),
+            ConversionStatus::Pending => consecutive_failures = 0,
+            ConversionStatus::Retryable(error) => {
+                consecutive_failures += 1;
+                if consecutive_failures
+                    >= crate::config::ALPINE_CONVERSION_MAX_CONSECUTIVE_POLL_FAILURES
+                {
+                    return Err(error).c("Alpine converter status remained unavailable");
+                }
             }
-        };
-        tokio::time::sleep(Duration::from_secs(10)).await;
+        }
+        tokio::time::sleep(poll_interval).await;
     }
 }
 
+enum ConversionStatus {
+    Pending,
+    Completed,
+    Retryable(anyhow::Error),
+}
+
 async fn check_completion_status(
-    env: &Env,
+    client: &reqwest::Client,
     receipt: &str,
     host: &str,
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<ConversionStatus> {
     let body = TaskStatusReq {
         receipts: vec![receipt.to_string()],
     };
-    let response = env
-        .rq
+    let response = client
         .post(format!("{host}/api/task-status-batch"))
         .timeout(Duration::from_secs(
-            crate::config::RQ_TIMEOUT_ALPINE_CONVERTER,
+            crate::config::ALPINE_CONVERSION_STATUS_TIMEOUT_SECONDS,
         ))
         .json(&body)
         .send()
         .await
-        .c(h!())?;
+        .c(h!());
+    let response = match response {
+        Ok(response) => response,
+        Err(error) => return Ok(ConversionStatus::Retryable(error)),
+    };
+    let status = response.status();
+    if status.is_server_error()
+        || status == reqwest::StatusCode::TOO_MANY_REQUESTS
+        || status == reqwest::StatusCode::REQUEST_TIMEOUT
+    {
+        return Ok(ConversionStatus::Retryable(anyhow::anyhow!(
+            "Converter status request failed: {status}"
+        )));
+    }
     if !response.status().is_success() {
         anyhow::bail!("Request failed with status: {}", response.status());
     }
-    let rsp = response
+    let mut matching = response
         .json::<TaskStatusRsp>()
         .await
         .c(h!())?
         .statuses
         .into_iter()
+        .filter(|status| status.receipt == receipt);
+    let rsp = matching
         .next()
+        .c("Converter response is missing the requested receipt")
         .c(h!())?;
+    anyhow::ensure!(
+        matching.next().is_none(),
+        "Converter response contains duplicate statuses for the requested receipt"
+    );
 
     if !rsp.completed {
-        anyhow::bail!("Task {receipt} is not converted yet");
+        return Ok(ConversionStatus::Pending);
     }
-
-    Ok(rsp.is_ok.unwrap_or_default())
+    if !rsp.is_ok.unwrap_or_default() {
+        anyhow::bail!("failed to convert to KMZ");
+    }
+    Ok(ConversionStatus::Completed)
 }
 
 async fn download_file(
-    env: &Env,
+    client: &reqwest::Client,
     receipt: &str,
     host: &str,
     output_format: &str,
 ) -> anyhow::Result<ConversionResult> {
-    let response = env
-        .rq
+    let response = client
         .get(format!("{host}/api/download-task/{receipt}"))
         .timeout(Duration::from_secs(
             crate::config::RQ_TIMEOUT_ALPINE_CONVERTER,
@@ -440,8 +532,8 @@ async fn download_file(
         .map(|v| v.to_string());
     let file_bytes = response.bytes().await.c(h!())?;
     info!(
-        "result of converting #{receipt}: filename={filename} file_bytes={:?}",
-        file_bytes
+        "Alpine conversion #{receipt} returned {} bytes",
+        file_bytes.len()
     );
 
     Ok(ConversionResult {
@@ -457,5 +549,81 @@ fn file_extension(output_format: &str) -> &'static str {
         "cog" => "tif",
         "geotiff" => "tif",
         _ => "kmz",
+    }
+}
+
+#[cfg(test)]
+mod conversion_tests;
+
+#[cfg(test)]
+mod upload_regression_tests {
+    use super::*;
+    use actix_web::test::TestRequest;
+    use actix_web::ResponseError;
+
+    fn multipart(fields: &[(&str, &[u8])]) -> Multipart {
+        let mut bytes = Vec::new();
+        for (name, value) in fields {
+            bytes.extend_from_slice(format!("--upload-test\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n").as_bytes());
+            bytes.extend_from_slice(value);
+            bytes.extend_from_slice(b"\r\n");
+        }
+        bytes.extend_from_slice(b"--upload-test--\r\n");
+        let (request, payload) = TestRequest::post()
+            .insert_header((
+                "content-type",
+                "multipart/form-data; boundary=upload-test",
+            ))
+            .set_payload(bytes)
+            .to_http_parts();
+        Multipart::new(request.headers(), payload)
+    }
+
+    #[actix_web::test]
+    async fn converter_rejects_extra_files_and_oversized_metadata() {
+        let oversized = vec![b'x'; crate::config::MULTIPART_TEXT_MAX_BYTES + 1];
+        for fields in [
+            vec![],
+            vec![
+                ("source", b"first".as_slice()),
+                ("second", b"other".as_slice()),
+            ],
+            vec![
+                ("hide_titles", oversized.as_slice()),
+                ("source", b"file".as_slice()),
+            ],
+        ] {
+            let error =
+                read_payload(&mut multipart(&fields)).await.unwrap_err();
+            assert_eq!(
+                error.error_response().status(),
+                actix_web::http::StatusCode::BAD_REQUEST
+            );
+        }
+        let mut fields = vec![
+            ("hide_titles", b"".as_slice());
+            crate::config::MULTIPART_MAX_FIELDS
+        ];
+        fields.push(("source", b"file"));
+        assert!(read_payload(&mut multipart(&fields)).await.is_err());
+        fields.remove(0);
+        let data = read_payload(&mut multipart(&fields)).await.unwrap();
+        assert_eq!(data.file_bytes, b"file");
+    }
+
+    #[actix_web::test]
+    async fn converter_preserves_file_and_options_at_text_limit() {
+        let limit = vec![b'x'; crate::config::MULTIPART_TEXT_MAX_BYTES];
+        let data = read_payload(&mut multipart(&[
+            ("hide_titles", &limit),
+            ("output_format", b"kml"),
+            ("source", b"file"),
+            ("hide_titles", b"1"),
+        ]))
+        .await
+        .unwrap();
+        assert_eq!(data.file_bytes, b"file");
+        assert_eq!(data.output_format, "kml");
+        assert!(data.hide_titles);
     }
 }

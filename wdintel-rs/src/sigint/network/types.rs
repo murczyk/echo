@@ -57,6 +57,17 @@ pub struct ListNetworksRsp {
     pub status_counts: ListNetworksStatusCountsRsp,
 }
 
+#[derive(Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, Clone)]
+pub struct NetworkLastActivityReq {
+    pub network_ids: Vec<i64>,
+}
+
+#[derive(Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, Clone)]
+pub struct NetworkLastActivityRow {
+    pub network_id: i64,
+    pub last_activity_at: Option<i64>,
+}
+
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]

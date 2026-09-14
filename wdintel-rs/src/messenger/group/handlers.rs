@@ -123,6 +123,7 @@ async fn collect_orphan_signal_groups(
                 ignore_operativny: g.ignore_operativny,
                 interseption_kind: g.interseption_kind.into(),
                 disable_network_assignment: g.disable_network_assignment,
+                is_aviation_group: g.is_aviation_group.unwrap_or(false),
                 is_archived: g.is_archived,
                 datasource_id: Some(dsid),
                 created_at: g.created_at.and_utc().timestamp_millis(),

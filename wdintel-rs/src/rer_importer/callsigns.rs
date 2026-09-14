@@ -62,8 +62,18 @@ pub async fn find_known_callsigns(
     rq: &reqwest::Client,
     body: &str,
 ) -> Result<Vec<CNCallsign>, AppError> {
+    Ok(find_known_callsigns_for_group(rq, body, false)
+        .await
+        .c(h!())?)
+}
+
+pub async fn find_known_callsigns_for_group(
+    rq: &reqwest::Client,
+    body: &str,
+    is_aviation_group: bool,
+) -> Result<Vec<CNCallsign>, AppError> {
     let body_orig = body;
-    let res = extract_callsigns(body)?;
+    let res = extract_callsigns_for_group(body, is_aviation_group).c(h!())?;
     if res.is_empty() {
         return Ok(vec![]);
     }
@@ -147,8 +157,16 @@ fn push_if_unique_callsign(
     }
 }
 
+#[cfg(test)]
 pub(crate) fn extract_callsigns(
     body: &str,
+) -> Result<Vec<CNCallsign>, AppError> {
+    extract_callsigns_for_group(body, false)
+}
+
+pub(crate) fn extract_callsigns_for_group(
+    body: &str,
+    is_aviation_group: bool,
 ) -> Result<Vec<CNCallsign>, AppError> {
     let body = &demoji::demoji(body);
     let mut res: Vec<CNCallsign> = vec![];
@@ -176,7 +194,9 @@ pub(crate) fn extract_callsigns(
     for callsign in extract_sender_receiver_pair(body)? {
         push_if_unique_callsign(&callsign, &mut res);
     }
-    for callsign in extract_avia_callsigns(body)? {
+    for callsign in
+        extract_avia_callsigns_for_group(body, is_aviation_group).c(h!())?
+    {
         push_if_unique_callsign(&callsign, &mut res);
     }
     Ok(res)
@@ -674,6 +694,26 @@ fn add_callsign(
     check_capital: bool,
     res: &mut Vec<CNCallsign>,
 ) -> bool {
+    add_callsign_with_numeric_min_len(
+        capts,
+        name,
+        line,
+        msg_pos,
+        check_capital,
+        3,
+        res,
+    )
+}
+
+fn add_callsign_with_numeric_min_len(
+    capts: &regex::Captures,
+    name: &str,
+    line: &str,
+    msg_pos: usize,
+    check_capital: bool,
+    numeric_min_len: usize,
+    res: &mut Vec<CNCallsign>,
+) -> bool {
     let Some(callsign_match) = capts.name(name) else {
         return false;
     };
@@ -689,7 +729,8 @@ fn add_callsign(
         return false;
     }
     if !callsign.chars().any(|c| c.is_alphabetic())
-        && !is_numeric_callsign(&callsign)
+        && !(callsign.len() >= numeric_min_len
+            && callsign.chars().all(|char_| char_.is_ascii_digit()))
     {
         return false;
     }
@@ -1173,7 +1214,15 @@ fn is_non_caps_format(lines: &Vec<String>) -> Result<bool, AppError> {
 }
 
 /// Extracts callsigns if the text is in "авіа барʼєр"'s format
+#[cfg(test)]
 fn extract_avia_callsigns(input: &str) -> Result<Vec<CNCallsign>, AppError> {
+    extract_avia_callsigns_for_group(input, false)
+}
+
+fn extract_avia_callsigns_for_group(
+    input: &str,
+    is_aviation_group: bool,
+) -> Result<Vec<CNCallsign>, AppError> {
     let lines: Vec<String> =
         input.trim().lines().map(|x| x.to_string()).collect();
 
@@ -1198,7 +1247,7 @@ fn extract_avia_callsigns(input: &str) -> Result<Vec<CNCallsign>, AppError> {
 
     const LITERAL_CALLSIGN_STR: &str =
         r"[\p{Cyrillic}]+((-[\p{Cyrillic}]+)|(\s+\d{1,2}))?";
-    const DIGITAL_CALLSIGN_STR: &str = r"(\d{1,3}[\s-]?[Йй])|(\d{3,})";
+    const DIGITAL_CALLSIGN_STR: &str = r"(\d{1,3}[\s-]?[Йй])|(\d{2,})";
 
     lazy_static! {
         // Regex for matching a single callsign
@@ -1212,8 +1261,14 @@ fn extract_avia_callsigns(input: &str) -> Result<Vec<CNCallsign>, AppError> {
     for line in lines.iter() {
         for capture in CALLSIGN_REGEX.captures_iter(line) {
             if capture.name("callsign").is_some() {
-                add_callsign(
-                    &capture, "callsign", line, msg_pos, false, &mut res,
+                add_callsign_with_numeric_min_len(
+                    &capture,
+                    "callsign",
+                    line,
+                    msg_pos,
+                    false,
+                    if is_aviation_group { 2 } else { 3 },
+                    &mut res,
                 );
             }
         }
@@ -1428,6 +1483,7 @@ pub async fn oneoff_reprocess_callsigns(
                 .cloned()
                 .unwrap_or_default();
             let Some(recomputed) = recompute_inbox_item_callsigns(
+                &dbx,
                 &rq,
                 &inbox_item,
                 message.as_ref(),
@@ -1554,20 +1610,30 @@ where
     crate::inbox::callsigns::load_by_item_ids(dbx, &inbox_item_ids).await
 }
 
-pub(crate) async fn recompute_inbox_item_callsigns(
+pub(crate) async fn recompute_inbox_item_callsigns<C>(
+    dbx: &C,
     rq: &reqwest::Client,
     inbox_item: &sigint_inbox_item::Model,
     message: Option<&signal_message::Model>,
     existing: crate::inbox::callsigns::InboxItemCallsigns,
     ai: Option<&crate::ai_callsign::worker::WorkerConfig>,
-) -> Result<Option<RecomputedInboxCallsigns>, AppError> {
+) -> Result<Option<RecomputedInboxCallsigns>, AppError>
+where
+    C: ConnectionTrait,
+{
     let Some(message) = message else {
         return Ok(None);
     };
     let Some(body) = message.body.clone() else {
         return Ok(None);
     };
-    let after = parse_reprocess_callsigns(rq, &body, ai).await?;
+    let is_aviation_group =
+        crate::inbox::message_is_aviation_group(dbx, message)
+            .await
+            .c(h!())?;
+    let after = parse_reprocess_callsigns(rq, &body, is_aviation_group, ai)
+        .await
+        .c(h!())?;
     let callsign_tokens = serde_json::to_value(
         highlight_callsigns(rq, &body, &after).await.c(h!())?,
     )
@@ -1586,9 +1652,12 @@ pub(crate) async fn recompute_inbox_item_callsigns(
 async fn parse_reprocess_callsigns(
     rq: &reqwest::Client,
     body: &str,
+    is_aviation_group: bool,
     ai: Option<&crate::ai_callsign::worker::WorkerConfig>,
 ) -> Result<Vec<String>, AppError> {
-    let regular = parse_primary_callsigns(rq, body).await?;
+    let regular = parse_primary_callsigns(rq, body, is_aviation_group)
+        .await
+        .c(h!())?;
     let Some(ai) = ai else {
         return Ok(regular);
     };
@@ -1607,8 +1676,11 @@ async fn parse_reprocess_callsigns(
 async fn parse_primary_callsigns(
     rq: &reqwest::Client,
     body: &str,
+    is_aviation_group: bool,
 ) -> Result<Vec<String>, AppError> {
-    let found = find_known_callsigns(rq, body).await.c(h!())?;
+    let found = find_known_callsigns_for_group(rq, body, is_aviation_group)
+        .await
+        .c(h!())?;
     Ok(crate::utils::uniq_via_btreeset(
         &crate::rer_importer::inbox::metadata::append_metadata_text_callsigns(
             crate::rer_importer::inbox::metadata::non_metadata_line_callsign_etalons(
@@ -3674,6 +3746,20 @@ async fn test_extract_callsigns_avia_format_no_caps_5_digits() {
         vec!["44307".to_string(), "Саксофон".to_string()];
     let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
     assert_eq!(ress, expected);
+}
+
+#[test]
+fn aviation_group_accepts_two_digit_callsigns() {
+    let body = "Отримано з поста 31_1\n--------------------------------------\n18.08.2025, 13:32:10\n128.500\nУКХ р/м НВ підрозділу 128.500 МГц\n67\n69\n12347\n\n— 67, я 69, прийом";
+    let standard = extract_callsigns_for_group(body, false).unwrap();
+    let aviation = extract_callsigns_for_group(body, true).unwrap();
+
+    assert!(!standard.iter().any(|callsign| callsign.text == "67"));
+    assert!(!standard.iter().any(|callsign| callsign.text == "69"));
+    assert!(standard.iter().any(|callsign| callsign.text == "12347"));
+    assert!(aviation.iter().any(|callsign| callsign.text == "67"));
+    assert!(aviation.iter().any(|callsign| callsign.text == "69"));
+    assert!(aviation.iter().any(|callsign| callsign.text == "12347"));
 }
 
 #[tokio::test]

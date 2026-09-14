@@ -2,6 +2,7 @@ import type { Dayjs } from 'dayjs';
 import type { InboxMessage } from '../../../../../Bindings';
 import type Uppy from '@uppy/core';
 import type { UppyFile } from '@uppy/core';
+import { useEffect, useRef } from 'react';
 
 import {
   createDeviceName,
@@ -55,8 +56,21 @@ export function useMessageSubmit({
   onEditSuccess,
   handleDrawerCloseAfterSubmit,
 }: SubmitOptions) {
+  const mounted = useRef(false);
+  const submission = useRef<AbortController | null>(null);
+  useEffect(() => {
+    mounted.current = true;
+    const cancel = () => submission.current?.abort();
+    uppy.on('cancel-all', cancel);
+    return () => {
+      mounted.current = false;
+      cancel();
+      uppy.off('cancel-all', cancel);
+    };
+  }, [uppy]);
+
   const onSubmit = async (data: MessageFormData) => {
-    if (busy) return;
+    if (busy || submission.current || !mounted.current) return;
     let createdResult: DirectSubmitResponse | null = null;
 
     const hasTextContent = isReportMode
@@ -86,6 +100,9 @@ export function useMessageSubmit({
       return;
     }
 
+    const controller = new AbortController();
+    submission.current = controller;
+    const { signal } = controller;
     setSubmitting(true);
     setErrorMsg(null);
 
@@ -94,6 +111,7 @@ export function useMessageSubmit({
       const deviceName = cyberEchoEnabled ? data.deviceName?.trim() : undefined;
       if (deviceName) {
         const device = await createDeviceName(deviceName);
+        signal.throwIfAborted();
         deviceNameId = device.id;
       } else if (cyberEchoEnabled && isEditMode && editTarget?.message.deviceName) {
         deviceNameId = null;
@@ -104,10 +122,12 @@ export function useMessageSubmit({
 
       if (files.length > 0) {
         const uploadResult = await uppy.upload();
+        signal.throwIfAborted();
         if (!uploadResult) {
           throw new Error('Помилка завантаження файлів (no result)');
         }
-        const failed = await fallbackFailedMessageUploads(uppy, uploadResult.failed || []);
+        const failed = await fallbackFailedMessageUploads(uppy, uploadResult.failed || [], signal);
+        signal.throwIfAborted();
         if (failed.length > 0) {
           throw new Error(formatMessageUploadError(uppy, failed[0]));
         }
@@ -187,6 +207,7 @@ export function useMessageSubmit({
 
       if (isEditMode && editTarget) {
         const res = await editDirectSubmit(editTarget.id, payload);
+        signal.throwIfAborted();
         addValues(recentValues);
         let editAppliedLocally = false;
         if (onSubmitEdit && res.message) {
@@ -207,15 +228,19 @@ export function useMessageSubmit({
         }
       } else {
         const result = await submitDirect(payload);
+        signal.throwIfAborted();
         addValues(recentValues);
         handleDrawerCloseAfterSubmit();
         createdResult = result;
       }
     } catch (error: unknown) {
-      console.error('Error creating message', error);
-      setErrorMsg(formatDirectSubmitError(error, 'save'));
+      if (!signal.aborted && !(error instanceof DOMException && error.name === 'AbortError')) {
+        console.error('Error creating message', error);
+        setErrorMsg(formatDirectSubmitError(error, 'save'));
+      }
     } finally {
-      setSubmitting(false);
+      submission.current = null;
+      if (mounted.current) setSubmitting(false);
     }
 
     if (createdResult) {
@@ -250,11 +275,11 @@ export function formatMessageUploadError(
   if (status === 413) {
     return `Не вдалося завантажити ${target}: файл завеликий або змінився після додавання.`;
   }
-  if (status) {
-    return `Не вдалося завантажити ${target} (HTTP ${status}). Повторіть спробу.`;
-  }
   if (failure?.message.startsWith('Резервне завантаження')) {
     return `Не вдалося завантажити ${target}. ${failure.message}`;
+  }
+  if (status) {
+    return `Не вдалося завантажити ${target} (HTTP ${status}). Повторіть спробу.`;
   }
   return `Не вдалося завантажити ${target}. Перевірте з’єднання та повторіть спробу.`;
 }

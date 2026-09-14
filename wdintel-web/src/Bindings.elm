@@ -1738,6 +1738,7 @@ type alias SignalGroupEntry =
     , ignoreOperativny : Bool
     , interseptionKind : InterseptionKind
     , disableNetworkAssignment : Bool
+    , isAviationGroup : Bool
     , groupStats : SignalGroupStats
     , adminData : Maybe (GroupAdminData)
     , areasOfResponsibility : Maybe (List (AreaOfResponsibility))
@@ -1752,6 +1753,7 @@ signalGroupEntryEncoder struct =
         , ( "ignore_operativny", (Json.Encode.bool) struct.ignoreOperativny )
         , ( "interseption_kind", (interseptionKindEncoder) struct.interseptionKind )
         , ( "disable_network_assignment", (Json.Encode.bool) struct.disableNetworkAssignment )
+        , ( "is_aviation_group", (Json.Encode.bool) struct.isAviationGroup )
         , ( "group_stats", (signalGroupStatsEncoder) struct.groupStats )
         , ( "admin_data", (Maybe.withDefault Json.Encode.null << Maybe.map (groupAdminDataEncoder)) struct.adminData )
         , ( "areas_of_responsibility", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (areaOfResponsibilityEncoder))) struct.areasOfResponsibility )
@@ -1764,6 +1766,7 @@ type alias OrphanSignalGroupEntry =
     , ignoreOperativny : Bool
     , interseptionKind : InterseptionKind
     , disableNetworkAssignment : Bool
+    , isAviationGroup : Bool
     , isArchived : Bool
     , datasourceId : Maybe (Int)
     , createdAt : Int
@@ -1781,6 +1784,7 @@ orphanSignalGroupEntryEncoder struct =
         , ( "ignore_operativny", (Json.Encode.bool) struct.ignoreOperativny )
         , ( "interseption_kind", (interseptionKindEncoder) struct.interseptionKind )
         , ( "disable_network_assignment", (Json.Encode.bool) struct.disableNetworkAssignment )
+        , ( "is_aviation_group", (Json.Encode.bool) struct.isAviationGroup )
         , ( "is_archived", (Json.Encode.bool) struct.isArchived )
         , ( "datasource_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.datasourceId )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
@@ -6907,6 +6911,7 @@ type alias ZoneDatasourceGroup =
     , isGroupSecret : Bool
     , interseptionKind : InterseptionKind
     , disableNetworkAssignment : Bool
+    , isAviationGroup : Bool
     , allowedUsers : List (String)
     , allowedUserDetails : List (SignalGroupLogin)
     , allowedOrganismIds : List (Int)
@@ -6926,6 +6931,7 @@ zoneDatasourceGroupEncoder struct =
         , ( "is_group_secret", (Json.Encode.bool) struct.isGroupSecret )
         , ( "interseption_kind", (interseptionKindEncoder) struct.interseptionKind )
         , ( "disable_network_assignment", (Json.Encode.bool) struct.disableNetworkAssignment )
+        , ( "is_aviation_group", (Json.Encode.bool) struct.isAviationGroup )
         , ( "allowed_users", (Json.Encode.list (Json.Encode.string)) struct.allowedUsers )
         , ( "allowed_user_details", (Json.Encode.list (signalGroupLoginEncoder)) struct.allowedUserDetails )
         , ( "allowed_organism_ids", (Json.Encode.list (Json.Encode.int)) struct.allowedOrganismIds )
@@ -6998,6 +7004,7 @@ type alias ZoneDatasourceGroupUpdateReq =
     , isSecret : Bool
     , interseptionKind : Maybe (InterseptionKind)
     , disableNetworkAssignment : Maybe (Bool)
+    , isAviationGroup : Maybe (Bool)
     , userLogins : List (String)
     , organismIds : List (Int)
     , adminLogins : List (String)
@@ -7015,6 +7022,7 @@ zoneDatasourceGroupUpdateReqEncoder struct =
         , ( "is_secret", (Json.Encode.bool) struct.isSecret )
         , ( "interseption_kind", (Maybe.withDefault Json.Encode.null << Maybe.map (interseptionKindEncoder)) struct.interseptionKind )
         , ( "disable_network_assignment", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.disableNetworkAssignment )
+        , ( "is_aviation_group", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isAviationGroup )
         , ( "user_logins", (Json.Encode.list (Json.Encode.string)) struct.userLogins )
         , ( "organism_ids", (Json.Encode.list (Json.Encode.int)) struct.organismIds )
         , ( "admin_logins", (Json.Encode.list (Json.Encode.string)) struct.adminLogins )
@@ -10130,6 +10138,32 @@ listNetworksRspEncoder struct =
     Json.Encode.object
         [ ( "list", (Json.Encode.list (networkEncoder)) struct.list )
         , ( "status_counts", (listNetworksStatusCountsRspEncoder) struct.statusCounts )
+        ]
+
+
+type alias NetworkLastActivityReq =
+    { networkIds : List (Int)
+    }
+
+
+networkLastActivityReqEncoder : NetworkLastActivityReq -> Json.Encode.Value
+networkLastActivityReqEncoder struct =
+    Json.Encode.object
+        [ ( "network_ids", (Json.Encode.list (Json.Encode.int)) struct.networkIds )
+        ]
+
+
+type alias NetworkLastActivityRow =
+    { networkId : Int
+    , lastActivityAt : Maybe (Int)
+    }
+
+
+networkLastActivityRowEncoder : NetworkLastActivityRow -> Json.Encode.Value
+networkLastActivityRowEncoder struct =
+    Json.Encode.object
+        [ ( "network_id", (Json.Encode.int) struct.networkId )
+        , ( "last_activity_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastActivityAt )
         ]
 
 
@@ -14313,6 +14347,7 @@ type alias GroupUpdateReq =
     , areaOfResponsibilityIds : Maybe (List (Int))
     , interseptionKind : Maybe (InterseptionKind)
     , disableNetworkAssignment : Maybe (Bool)
+    , isAviationGroup : Maybe (Bool)
     }
 
 
@@ -14326,6 +14361,7 @@ groupUpdateReqEncoder struct =
         , ( "area_of_responsibility_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.areaOfResponsibilityIds )
         , ( "interseption_kind", (Maybe.withDefault Json.Encode.null << Maybe.map (interseptionKindEncoder)) struct.interseptionKind )
         , ( "disable_network_assignment", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.disableNetworkAssignment )
+        , ( "is_aviation_group", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isAviationGroup )
         ]
 
 
@@ -15818,6 +15854,7 @@ orphanSignalGroupEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ignore_operativny" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interseption_kind" (interseptionKindDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_network_assignment" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_aviation_group" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_archived" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
@@ -15897,6 +15934,7 @@ signalGroupEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ignore_operativny" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interseption_kind" (interseptionKindDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_network_assignment" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_aviation_group" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_stats" (signalGroupStatsDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_data" (Json.Decode.nullable (groupAdminDataDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "areas_of_responsibility" (Json.Decode.nullable (Json.Decode.list (areaOfResponsibilityDecoder)))))
@@ -18626,6 +18664,7 @@ zoneDatasourceGroupDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_group_secret" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interseption_kind" (interseptionKindDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_network_assignment" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_aviation_group" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowed_users" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowed_user_details" (Json.Decode.list (signalGroupLoginDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowed_organism_ids" (Json.Decode.list (Json.Decode.int))))
@@ -18671,6 +18710,7 @@ zoneDatasourceGroupUpdateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_secret" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interseption_kind" (Json.Decode.nullable (interseptionKindDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_network_assignment" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_aviation_group" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "user_logins" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_ids" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_logins" (Json.Decode.list (Json.Decode.string))))
@@ -20875,6 +20915,19 @@ listNetworksRspDecoder =
     Json.Decode.succeed ListNetworksRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "list" (Json.Decode.list (networkDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status_counts" (listNetworksStatusCountsRspDecoder)))
+
+
+networkLastActivityReqDecoder : Json.Decode.Decoder NetworkLastActivityReq
+networkLastActivityReqDecoder =
+    Json.Decode.succeed NetworkLastActivityReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_ids" (Json.Decode.list (Json.Decode.int))))
+
+
+networkLastActivityRowDecoder : Json.Decode.Decoder NetworkLastActivityRow
+networkLastActivityRowDecoder =
+    Json.Decode.succeed NetworkLastActivityRow
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_activity_at" (Json.Decode.nullable (Json.Decode.int))))
 
 
 updateFreqNetworksReqDecoder : Json.Decode.Decoder UpdateFreqNetworksReq
@@ -23305,6 +23358,7 @@ groupUpdateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interseption_kind" (Json.Decode.nullable (interseptionKindDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_network_assignment" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_aviation_group" (Json.Decode.nullable (Json.Decode.bool))))
 
 
 groupEntryF1Decoder : Json.Decode.Decoder GroupEntryF1

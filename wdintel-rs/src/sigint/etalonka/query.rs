@@ -2554,7 +2554,7 @@ fn build_etalonka_networks_query(
     id_filter: Option<&Vec<i64>>,
     deleted_only: Option<bool>,
     text_search_mode: NetworkTextSearchMode,
-    groups: &[String],
+    _groups: &[String],
 ) -> Select<sigint_network::Entity> {
     let filter_unit = req.filter_unit.clone();
     let filter_unit_army_region = req.filter_unit_army_region.clone();
@@ -2723,7 +2723,7 @@ fn build_etalonka_networks_query(
             networks.filter(sigint_unit::Column::Other.eq(filter_unit_other));
     }
 
-    network_sort::apply_network_sorts(networks, req.sort_by.as_ref(), groups)
+    network_sort::apply_network_sorts(networks, req.sort_by.as_ref())
 }
 
 pub async fn load_networks(
@@ -3240,7 +3240,10 @@ mod tests {
         )
         .build(DbBackend::Postgres)
         .to_string();
-        assert_primary_sort_before_name(&sql, "SELECT MAX(activity_at)");
+        assert_primary_sort_before_name(
+            &sql,
+            "\"sigint_network\".\"last_active_at\" DESC NULLS LAST",
+        );
     }
 
     #[test]

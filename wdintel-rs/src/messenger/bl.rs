@@ -1011,7 +1011,19 @@ pub async fn bl_group_update(
     } else {
         group
     };
+    crate::sigint::zone::bl::update_group_aviation_if_present(
+        req.is_aviation_group,
+        &group.master_key,
+        txn,
+    )
+    .await
+    .c(h!())?;
 
+    let group = signal_group::Entity::find_by_id(req.master_key.clone())
+        .one(txn)
+        .await
+        .c(h!())?
+        .c(h!())?;
     let stats = collect_group_stats(vec![group.master_key.clone()], txn)
         .await
         .c(h!())?
