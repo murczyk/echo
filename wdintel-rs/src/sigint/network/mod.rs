@@ -3570,6 +3570,7 @@ pub async fn network_maintenance_worker(
     debug!("Starting network_maintenance_worker");
 
     let mut last_hourly_maintenance_finished_at = None;
+    let mut synthetic_repair_after_id = 0;
     let mut recalculation_interval =
         tokio::time::interval(std::time::Duration::from_secs(
             NETWORK_RECALCULATION_WORKER_INTERVAL_SECS,
@@ -3584,6 +3585,7 @@ pub async fn network_maintenance_worker(
             dbx,
             cleanup_networks_enabled,
             &mut last_hourly_maintenance_finished_at,
+            &mut synthetic_repair_after_id,
         )
         .await
         {
@@ -3596,6 +3598,7 @@ async fn network_maintenance_worker_iteration(
     dbx: &DatabaseConnection,
     cleanup_networks_enabled: bool,
     last_hourly_maintenance_finished_at: &mut Option<std::time::Instant>,
+    synthetic_repair_after_id: &mut i64,
 ) -> anyhow::Result<()> {
     let recalculation_result = recalculation::run_pending(dbx).await.c(h!());
     let hourly_maintenance_due = last_hourly_maintenance_finished_at
@@ -3607,8 +3610,12 @@ async fn network_maintenance_worker_iteration(
         })
         .unwrap_or(true);
     let hourly_maintenance_result = if hourly_maintenance_due {
-        let result =
-            run_hourly_network_maintenance(dbx, cleanup_networks_enabled).await;
+        let result = run_hourly_network_maintenance(
+            dbx,
+            cleanup_networks_enabled,
+            synthetic_repair_after_id,
+        )
+        .await;
         if result.is_ok() {
             *last_hourly_maintenance_finished_at =
                 Some(std::time::Instant::now());
@@ -3625,9 +3632,12 @@ async fn network_maintenance_worker_iteration(
 async fn run_hourly_network_maintenance(
     dbx: &DatabaseConnection,
     cleanup_networks_enabled: bool,
+    synthetic_repair_after_id: &mut i64,
 ) -> anyhow::Result<()> {
     let cleanup_result = if cleanup_networks_enabled {
-        cleanup_networks_worker_1(dbx).await.c(h!())
+        cleanup_networks_worker_1_with_cursor(dbx, synthetic_repair_after_id)
+            .await
+            .c(h!())
     } else {
         Ok(())
     };
@@ -3656,8 +3666,18 @@ struct CleanupActivityWindow {
     lookback_till: NaiveDateTime,
 }
 
+#[cfg(test)]
 async fn cleanup_networks_worker_1(
     dbx: &DatabaseConnection,
+) -> anyhow::Result<()> {
+    let mut synthetic_repair_after_id = 0;
+    cleanup_networks_worker_1_with_cursor(dbx, &mut synthetic_repair_after_id)
+        .await
+}
+
+async fn cleanup_networks_worker_1_with_cursor(
+    dbx: &DatabaseConnection,
+    synthetic_repair_after_id: &mut i64,
 ) -> anyhow::Result<()> {
     let delta = Duration::try_days(CLEANUP_NETWORKS_CUTOFF_TIME_DAYS)
         .context(h!())
@@ -3882,9 +3902,13 @@ async fn cleanup_networks_worker_1(
     )
     .await
     .context(h!())?;
-    repair_synthetic_network_inactivity(dbx)
-        .await
-        .context(h!())?;
+    repair_synthetic_network_inactivity(
+        dbx,
+        synthetic_repair_after_id,
+        CLEANUP_NETWORKS_SYNTHETIC_REPAIR_MAX_PER_PASS,
+    )
+    .await
+    .context(h!())?;
     debug!("cleanup_networks_worker completed");
     Ok(())
 }
@@ -4168,62 +4192,78 @@ async fn cleanup_other_network_activity(
 
 async fn repair_synthetic_network_inactivity(
     dbx: &DatabaseConnection,
+    after_id: &mut i64,
+    max_per_pass: usize,
 ) -> anyhow::Result<()> {
-    let mut after_id = 0;
+    let mut next_after_id = *after_id;
     let mut scanned = 0;
     let mut repaired = 0;
-    while scanned < CLEANUP_NETWORKS_SYNTHETIC_REPAIR_MAX_PER_PASS {
-        let network_ids = load_synthetic_network_inactivity_ids(
+    while scanned < max_per_pass {
+        let batch_size = (max_per_pass - scanned)
+            .min(CLEANUP_NETWORKS_SYNTHETIC_REPAIR_BATCH_SIZE as usize);
+        let mut scan_window = load_synthetic_network_inactivity_scan_window(
             dbx,
-            after_id,
-            (CLEANUP_NETWORKS_SYNTHETIC_REPAIR_MAX_PER_PASS - scanned)
-                .min(CLEANUP_NETWORKS_SYNTHETIC_REPAIR_BATCH_SIZE as usize)
-                as i64,
+            next_after_id,
+            batch_size as i64 + 1,
         )
         .await
         .context(h!())?;
-        if network_ids.is_empty() {
+        if scan_window.is_empty() {
+            next_after_id = 0;
             break;
         }
-        after_id = *network_ids.last().context(h!())?;
-        scanned += network_ids.len();
-        for network_id in network_ids {
-            if repair_synthetic_network_inactivity_one(dbx, network_id)
-                .await
-                .context(h!())?
+        let has_more = scan_window.len() > batch_size;
+        scan_window.truncate(batch_size);
+        next_after_id = scan_window.last().context(h!())?.0;
+        scanned += scan_window.len();
+        for (network_id, should_repair) in scan_window {
+            if should_repair
+                && repair_synthetic_network_inactivity_one(dbx, network_id)
+                    .await
+                    .context(h!())?
             {
                 repaired += 1;
             }
         }
+        if !has_more {
+            next_after_id = 0;
+            break;
+        }
     }
+    *after_id = next_after_id;
     if scanned > 0 {
         info!(
-            "cleanup synthetic inactivity repair: scanned={scanned} repaired={repaired} last_id={after_id} batch_limit_reached={}",
-            scanned == CLEANUP_NETWORKS_SYNTHETIC_REPAIR_MAX_PER_PASS
+            "cleanup synthetic inactivity repair: scanned={scanned} repaired={repaired} next_after_id={after_id} batch_limit_reached={}",
+            scanned == max_per_pass && *after_id != 0
         );
     }
     Ok(())
 }
 
-async fn load_synthetic_network_inactivity_ids(
+async fn load_synthetic_network_inactivity_scan_window(
     dbx: &DatabaseConnection,
     after_id: i64,
     limit: i64,
-) -> anyhow::Result<Vec<i64>> {
-    sqlx::query_scalar::<_, i64>(
+) -> anyhow::Result<Vec<(i64, bool)>> {
+    sqlx::query_as::<_, (i64, bool)>(
         r#"
-        select network.id
-        from sigint_network network
-        where network.id > $3
-          and network.deleted = false
-          and network.active_to is not null
-          and exists (
+        with scan_window as materialized (
+            select network.id, network.deleted, network.active_from, network.active_to
+            from sigint_network network
+            where network.id > $3
+            order by network.id
+            limit $4
+        )
+        select network.id,
+            (network.deleted = false
+             and network.active_to is not null
+             and exists (
               select 1 from sigint_network_freq freq
               where freq.network_id = network.id
                 and freq.deleted = false
                 and freq.active_to is null
-          )
-          and exists (
+             )
+             and exists (
               select 1
               from (
                   select decision.reason, decision.new_active_from, decision.new_active_to,
@@ -4240,9 +4280,9 @@ async fn load_synthetic_network_inactivity_ids(
                 and latest_decision.actor_kind = 'worker'
                 and latest_decision.worker_name = $2
                 and latest_decision.decision = 'deactivate'
-          )
+             )) as should_repair
+        from scan_window network
         order by network.id
-        limit $4
         "#,
     )
     .bind(SIGINT_NETWORK_ACTIVITY_REASON_CLEANUP_NETWORK_SYNTHETIC_INACTIVITY)
@@ -7694,6 +7734,16 @@ mod tests {
     async fn cleanup_repairs_synthetic_inactivity_with_open_frequency() {
         let env = cleanup().await.unwrap();
         let old_dt = cleanup_old_dt();
+        let noncandidate = mk_sigint_network(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                created_at: Set(old_dt),
+                updated_at: Set(old_dt),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         let network = mk_sigint_network(
             &env.dbx,
             sigint_network::ActiveModel {
@@ -7739,7 +7789,21 @@ mod tests {
         .unwrap();
         txn.commit().await.unwrap();
 
-        cleanup_networks_worker_1(&env.dbx).await.unwrap();
+        let mut after_id = 0;
+        repair_synthetic_network_inactivity(&env.dbx, &mut after_id, 1)
+            .await
+            .unwrap();
+        assert_eq!(after_id, noncandidate.id);
+        let inactive_network = sigint_network::Entity::find_by_id(network.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(inactive_network.active_to.is_some());
+        repair_synthetic_network_inactivity(&env.dbx, &mut after_id, 1)
+            .await
+            .unwrap();
+        assert_eq!(after_id, 0);
 
         let network = sigint_network::Entity::find_by_id(network.id)
             .one(&env.dbx)
