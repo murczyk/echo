@@ -411,7 +411,7 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
         args.setLastActivityLoadStateByNetworkId((current) => {
           const next = new Map(current);
           for (const networkId of requestedNetworkIds) {
-            next.set(networkId, 'loaded');
+            next.set(networkId, 'loading');
           }
           return next;
         });

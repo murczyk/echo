@@ -1464,6 +1464,7 @@ describe('useRerNetworksNeoPage', () => {
     await act(async () => {
       await latest?.loadMoreNetworks();
     });
+    expect(latest?.rows[100]?.lastActivityLabel).toBe('Завантаження…');
     await act(async () => {
       await latest?.loadMoreNetworks();
     });
@@ -1478,6 +1479,7 @@ describe('useRerNetworksNeoPage', () => {
       await pageTwoActivity.promise;
     });
     await vi.waitFor(() => expect(latest?.rows[100]?.activityLoadState).toBe('loaded'));
+    expect(latest?.rows[100]?.lastActivityDetail).toBe('Немає перехоплень за останні 10 днів');
   });
 
   it('ignores activity from a replaced list query', async () => {
