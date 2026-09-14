@@ -197,6 +197,7 @@ export function buildNetworkRowView(
   activityByNetworkId: Map<number, Record<string, Record<string, number>>>,
   activityLoadStateByNetworkId: ActivityLoadStateByNetworkId = new Map(),
   lastActivityLoadStateByNetworkId: ActivityLoadStateByNetworkId = new Map(),
+  visibleLastActivityAtByNetworkId: Map<number, number | null> = new Map(),
 ): NetworkRowView {
   const status = getNetworkStatusDescriptor(network);
   const unitLabels = (network.unitIds ?? [])
@@ -212,9 +213,10 @@ export function buildNetworkRowView(
     .filter((freq) => freq.deleted || freq.activeTo !== null)
     .filter((freq) => freq.freq.trim() !== '');
   const lastActivityLoadState = lastActivityLoadStateByNetworkId.get(network.id);
-  const activityAgeMs = isPresent(network.lastActivityAt)
-    ? Date.now() - network.lastActivityAt
-    : null;
+  const lastActivityAt = visibleLastActivityAtByNetworkId.has(network.id)
+    ? (visibleLastActivityAtByNetworkId.get(network.id) ?? null)
+    : network.lastActivityAt;
+  const activityAgeMs = isPresent(lastActivityAt) ? Date.now() - lastActivityAt : null;
   const lastActivityLabel =
     lastActivityLoadState === 'loading'
       ? 'Завантаження…'
@@ -224,13 +226,13 @@ export function buildNetworkRowView(
             activityAgeMs >= 0 &&
             activityAgeMs <= RECENT_NETWORK_ACTIVITY_WINDOW_MS
           ? 'Активна останні 15хв'
-          : formatDateTime(network.lastActivityAt);
+          : formatDateTime(lastActivityAt);
   const lastActivityDetail =
     lastActivityLoadState === 'loading' || lastActivityLoadState === 'error'
       ? ''
-      : isPresent(network.lastActivityAt)
+      : isPresent(lastActivityAt)
         ? 'Останнє перехоплення'
-        : 'Немає перехоплень';
+        : 'Немає перехоплень за останні 10 днів';
 
   return {
     id: network.id,
@@ -249,8 +251,8 @@ export function buildNetworkRowView(
     lastActivityLabel,
     lastActivityDetail,
     lastActivityTooltip:
-      lastActivityDetail && isPresent(network.lastActivityAt)
-        ? `${lastActivityDetail}: ${formatDateTime(network.lastActivityAt)}`
+      lastActivityDetail && isPresent(lastActivityAt)
+        ? `${lastActivityDetail}: ${formatDateTime(lastActivityAt)}`
         : lastActivityLabel,
     createdAtLabel: formatDate(network.createdAt),
   };
@@ -369,8 +371,6 @@ export function buildNetworksSortBy(sorting: MRT_SortingState): ListNetworksSort
       return [current.desc ? 'LocationDesc' : 'LocationAsc'];
     case 'network':
       return [current.desc ? 'NameDesc' : 'NameAsc'];
-    case 'lastActivity':
-      return [current.desc ? 'LastActivityDesc' : 'LastActivityAsc'];
     default:
       return ['NameAsc'];
   }

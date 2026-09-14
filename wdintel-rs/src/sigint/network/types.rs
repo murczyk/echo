@@ -5,6 +5,7 @@ use chrono::NaiveDateTime;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::FromQueryResult;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, FromQueryResult)]
 pub struct NetworkDetails {
@@ -197,6 +198,14 @@ pub struct NetworkGroupsActivityReq {
     pub network_ids: Vec<i64>,
     pub till_date_noninclusive_ms: Option<i64>,
     pub period: Option<NetworkGroupActivityPeriod>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, Default, Clone,
+)]
+pub struct NetworkGroupsActivitySummaryRsp {
+    pub activity: HashMap<String, HashMap<String, HashMap<String, i64>>>,
+    pub last_activity_at: HashMap<String, i64>,
 }
 
 #[derive(

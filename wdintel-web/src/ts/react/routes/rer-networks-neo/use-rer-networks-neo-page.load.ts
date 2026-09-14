@@ -9,7 +9,7 @@ import { getEncryptions } from '../../services/api/encryptions';
 import { getUnitsByIds, getUnitsList, mergeUnitsById } from '../../services/api/units';
 import {
   getNetworkUnitStats,
-  getNetworksGroupsActivity,
+  getNetworksGroupsActivitySummary,
   listNetworks,
 } from '../../services/api/networks';
 import {
@@ -71,6 +71,7 @@ type LoadArgs = {
   setNoMoreToLoad: Dispatch<SetStateAction<boolean>>;
   setNetworks: Dispatch<SetStateAction<Network[]>>;
   setActivityByNetworkId: Dispatch<SetStateAction<ActivityByNetworkId>>;
+  setVisibleLastActivityAtByNetworkId: Dispatch<SetStateAction<Map<number, number | null>>>;
   setActivityLoadStateByNetworkId: Dispatch<SetStateAction<ActivityLoadStateByNetworkId>>;
   setLastActivityLoadStateByNetworkId: Dispatch<SetStateAction<ActivityLoadStateByNetworkId>>;
   setBootstrapLoaded: Dispatch<SetStateAction<boolean>>;
@@ -87,7 +88,7 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
 
     void (async () => {
       try {
-        const activityRsp = await getNetworksGroupsActivity(
+        const activityRsp = await getNetworksGroupsActivitySummary(
           {
             networkIds,
             tillDateNoninclusiveMs: getActivityRequestUpperBoundMs(),
@@ -96,7 +97,14 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
           { signal: controller.signal },
         );
         if (args.activityQueryGenerationRef.current !== activityGeneration) return;
-        const normalized = normalizeActivityMap(activityRsp);
+        const normalized = normalizeActivityMap(activityRsp.activity);
+        args.setVisibleLastActivityAtByNetworkId((current) => {
+          const next = new Map(current);
+          for (const networkId of networkIds) {
+            next.set(networkId, activityRsp.lastActivityAt[String(networkId)] ?? null);
+          }
+          return next;
+        });
         args.setActivityByNetworkId((current) => {
           const nextActivity = new Map(current);
           for (const networkId of networkIds) {
@@ -105,6 +113,11 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
           return nextActivity;
         });
         args.setActivityLoadStateByNetworkId((current) => {
+          const next = new Map(current);
+          for (const networkId of networkIds) next.set(networkId, 'loaded');
+          return next;
+        });
+        args.setLastActivityLoadStateByNetworkId((current) => {
           const next = new Map(current);
           for (const networkId of networkIds) next.set(networkId, 'loaded');
           return next;
@@ -120,6 +133,15 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
           const next = new Map(current);
           for (const networkId of networkIds) next.set(networkId, 'error');
           return next;
+        });
+        args.setLastActivityLoadStateByNetworkId((current) => {
+          const next = new Map(current);
+          for (const networkId of networkIds) next.set(networkId, 'error');
+          return next;
+        });
+        args.setStatus({
+          kind: 'error',
+          text: `Помилка завантаження активності мереж: ${formatErrorMessage(error)}`,
         });
       } finally {
         args.activityAbortControllersRef.current.delete(controller);
@@ -207,17 +229,18 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
         args.setLastActivityLoadStateByNetworkId((current) => {
           const next = new Map(current);
           for (const networkId of requestedNetworkIds) {
-            next.set(networkId, 'loaded');
+            next.set(networkId, 'loading');
           }
           return next;
         });
       } else {
         args.setActivityByNetworkId(new Map());
+        args.setVisibleLastActivityAtByNetworkId(new Map());
         args.setActivityLoadStateByNetworkId(
           new Map(requestedNetworkIds.map((networkId) => [networkId, 'loading'])),
         );
         args.setLastActivityLoadStateByNetworkId(
-          new Map(requestedNetworkIds.map((networkId) => [networkId, 'loaded'])),
+          new Map(requestedNetworkIds.map((networkId) => [networkId, 'loading'])),
         );
       }
 
@@ -387,7 +410,7 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
         args.setLastActivityLoadStateByNetworkId((current) => {
           const next = new Map(current);
           for (const networkId of requestedNetworkIds) {
-            next.set(networkId, 'loaded');
+            next.set(networkId, 'loading');
           }
           return next;
         });

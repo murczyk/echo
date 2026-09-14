@@ -457,7 +457,7 @@ it('keeps MRT filter modes disabled on the networks table', () => {
     expect.objectContaining({ enableColumnFilter: false, enableSorting: false }),
   );
   expect(columnsById.get('lastActivity')).toEqual(
-    expect.objectContaining({ enableColumnFilter: false, enableSorting: true }),
+    expect.objectContaining({ enableColumnFilter: false, enableSorting: false }),
   );
   expect((capturedOptions?.state as Record<string, unknown> | undefined)?.columnOrder).toEqual(
     tableStateMock.columnOrder,
