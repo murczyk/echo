@@ -392,6 +392,9 @@ async fn get_inbox_messages_report_network_chunk(
         &req.units_exact_match_only,
     )?;
     let q = filter_denied_unit_ids(q, &req.denied_unit_ids);
+    let q =
+        filter_selected_device_names(q, &req.selected_device_names).c(h!())?;
+    let q = filter_denied_device_names(q, &req.denied_device_names).c(h!())?;
     let q = filter_selected_networks(
         q,
         &req.selected_networks,
@@ -527,5 +530,257 @@ fn merge_network_report_chunks(
         for (unit, messages) in unit_messages {
             network.2.entry(unit).or_default().extend(messages);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::functest::tests::*;
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set};
+    use serial_test::serial;
+
+    async fn seed_naushnom_device_message(
+        env: &Env,
+        datasource_group: &datasource_group::Model,
+        device_name_id: i64,
+        body: &str,
+        dt: NaiveDateTime,
+    ) -> i64 {
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some(body.to_string())),
+                created_at: Set(dt),
+                timestamp: Set(Some(dt)),
+                message_uid: Set(Some(body.to_string())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_message_group(
+            &env.dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(message.id),
+                group_master_key: Set(Some(
+                    datasource_group.group_master_key.clone(),
+                )),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                message_uid: Set(Some(body.to_string())),
+                created_at: Set(dt),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                date: Set(Some(dt.date().to_string())),
+                time: Set(Some(dt.time().format("%H:%M:%S").to_string())),
+                freq: Set(Some("138.500".to_string())),
+                device_name_id: Set(Some(device_name_id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_comment(
+            &env.dbx,
+            sigint_comment::ActiveModel {
+                login_id: Set(find_test_login(&env.dbx).await.unwrap().id),
+                signal_message_id: Set(message.id),
+                comment: Set(format!("comment: {body}")),
+                created_at: Set(dt),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        message.id
+    }
+
+    fn report_bodies(
+        reports: HashMap<
+            i64,
+            (
+                Option<String>,
+                String,
+                HashMap<String, Vec<NetworkMessagesReport>>,
+            ),
+        >,
+    ) -> HashSet<String> {
+        reports
+            .into_values()
+            .flat_map(|(_, _, messages)| messages.into_values().flatten())
+            .filter_map(|message| message.body)
+            .collect()
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn naushnom_custom_query_applies_device_name_filters() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let dt = chrono::NaiveDate::from_ymd_opt(2026, 4, 3)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
+        let device_a = device_name::ActiveModel {
+            name: Set(Some("ECHO-3461 naushnom Device A".to_string())),
+            login_id: Set(login.id),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let device_b = device_name::ActiveModel {
+            name: Set(Some("ECHO-3461 naushnom Device B".to_string())),
+            login_id: Set(login.id),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let network = mk_sigint_network(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                name: Set("ECHO-3461 naushnom network".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("ECHO-3461 naushnom unit".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_network_unit(
+            &env.dbx,
+            sigint_network_unit::ActiveModel {
+                network_id: Set(network.id),
+                unit_id: Set(unit.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set("138.500".to_string()),
+                active_from: Set(dt - chrono::Duration::days(1)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        seed_naushnom_device_message(
+            &env,
+            &datasource_group,
+            device_a.id,
+            "ECHO-3461 naushnom device A",
+            dt,
+        )
+        .await;
+        seed_naushnom_device_message(
+            &env,
+            &datasource_group,
+            device_b.id,
+            "ECHO-3461 naushnom device B",
+            dt,
+        )
+        .await;
+        let req = crate::rer_importer::types::InboxMessagesReq {
+            since_date_inclusive_ms: Some(
+                (dt - chrono::Duration::days(1))
+                    .and_utc()
+                    .timestamp_millis(),
+            ),
+            till_date_inclusive_ms: Some(
+                (dt + chrono::Duration::days(1))
+                    .and_utc()
+                    .timestamp_millis(),
+            ),
+            nolimit: Some(true),
+            ..Default::default()
+        };
+
+        let unfiltered = report_bodies(
+            get_inbox_messages_report_network_chunk(
+                &login.id,
+                &env,
+                &req,
+                ReportPeriodEnd::Inclusive,
+            )
+            .await
+            .unwrap(),
+        );
+        assert!(unfiltered.contains("ECHO-3461 naushnom device A"));
+        assert!(unfiltered.contains("ECHO-3461 naushnom device B"));
+
+        let denied = report_bodies(
+            get_inbox_messages_report_network_chunk(
+                &login.id,
+                &env,
+                &crate::rer_importer::types::InboxMessagesReq {
+                    denied_device_names: Some(vec![
+                        "ECHO-3461 naushnom Device A".to_string(),
+                    ]),
+                    ..req.clone()
+                },
+                ReportPeriodEnd::Inclusive,
+            )
+            .await
+            .unwrap(),
+        );
+        assert!(!denied.contains("ECHO-3461 naushnom device A"));
+        assert!(denied.contains("ECHO-3461 naushnom device B"));
+
+        let selected = report_bodies(
+            get_inbox_messages_report_network_chunk(
+                &login.id,
+                &env,
+                &crate::rer_importer::types::InboxMessagesReq {
+                    selected_device_names: Some(vec![
+                        "ECHO-3461 naushnom Device A".to_string(),
+                    ]),
+                    ..req.clone()
+                },
+                ReportPeriodEnd::Inclusive,
+            )
+            .await
+            .unwrap(),
+        );
+        assert!(selected.contains("ECHO-3461 naushnom device A"));
+        assert!(!selected.contains("ECHO-3461 naushnom device B"));
+
+        let empty = report_bodies(
+            get_inbox_messages_report_network_chunk(
+                &login.id,
+                &env,
+                &crate::rer_importer::types::InboxMessagesReq {
+                    selected_device_names: Some(Vec::new()),
+                    denied_device_names: Some(Vec::new()),
+                    ..req
+                },
+                ReportPeriodEnd::Inclusive,
+            )
+            .await
+            .unwrap(),
+        );
+        assert!(empty.contains("ECHO-3461 naushnom device A"));
+        assert!(empty.contains("ECHO-3461 naushnom device B"));
     }
 }

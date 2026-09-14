@@ -22,6 +22,13 @@ export type FeedFilterPanelModel = {
     postsDenied?: string[];
     unitsSelected?: string[];
     unitsDenied?: string[];
+    selectedDeviceNames?: string[];
+    deniedDeviceNames?: string[];
+  };
+  devices?: {
+    onSelectedChange: (v: string[]) => void;
+    onDeniedChange: (v: string[]) => void;
+    onModeTransfer: (next: FeedFilterModeTransfer) => void;
   };
   sources: {
     groupsList: string[];

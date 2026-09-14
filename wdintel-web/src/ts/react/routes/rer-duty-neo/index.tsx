@@ -25,6 +25,7 @@ import { fetchInboxItemContext, fetchMessagesByIds } from '../../services/api/in
 import { isAbortError } from '../../services/api/client';
 import { isIntelligenceReport } from '../shared/intelligence-reports';
 import { PointBlacklistPaletteNamesCacheProvider } from '../shared/message-card/PointBlacklistPaletteNamesCache';
+import { MessageDeviceAccessProvider } from '../shared/message-card/MessageDeviceAccess';
 import { scrollToAndHighlightMessage } from '../shared/message-card/message-card.utils';
 
 export type RerDutyNeoPageProps = {
@@ -63,6 +64,7 @@ export function RerDutyNeoPage({
   const {
     currentUser,
     cyberEchoEnabled,
+    deviceAccess,
     tagsLayout,
     audioTranscriptionCollapsed,
     audioTranscriptionEnabled,
@@ -124,7 +126,7 @@ export function RerDutyNeoPage({
     [cancelReportEditLoad],
   );
   const previousFeedCountRef = useRef(0);
-  const feeds = useRerDutyFeeds(authUserName, currentUser?.organismId ?? null);
+  const feeds = useRerDutyFeeds(authUserName, currentUser?.organismId ?? null, deviceAccess);
   const {
     messageFeeds,
     error,
@@ -280,6 +282,7 @@ export function RerDutyNeoPage({
     narrowScreen,
     authUserName,
     currentUser,
+    canUseMessageDevices: cyberEchoEnabled,
     tagsLayout,
     collapseMediaPreviews,
     mediaSummaryEnabled,
@@ -406,23 +409,25 @@ export function RerDutyNeoPage({
       <Box className="flex items-center justify-between flex-wrap gap-2 mb-2 shrink-0" />
 
       <PointBlacklistPaletteNamesCacheProvider>
-        <AudioTranscriptionPreferencesProvider
-          collapsedByDefault={audioTranscriptionCollapsed}
-          enabled={audioTranscriptionEnabled}
-        >
-          <RerDutyNeoWorkspace
-            activeFeedId={activeFeedIdSafe}
-            buildFeedColumnModel={buildFeedColumnModel}
-            columnRefsRef={columnRefsRef}
-            createMessageFeed={createMessageFeed}
-            openCreateMessageComposer={openCreateMessageComposer}
-            isInitialLoading={isInitialLoading}
-            messageFeeds={messageFeeds}
-            narrowScreen={narrowScreen}
-            onSelectFeed={setActiveFeedId}
-            showLoadingBackdrop={showLoadingBackdrop}
-          />
-        </AudioTranscriptionPreferencesProvider>
+        <MessageDeviceAccessProvider allowed={cyberEchoEnabled}>
+          <AudioTranscriptionPreferencesProvider
+            collapsedByDefault={audioTranscriptionCollapsed}
+            enabled={audioTranscriptionEnabled}
+          >
+            <RerDutyNeoWorkspace
+              activeFeedId={activeFeedIdSafe}
+              buildFeedColumnModel={buildFeedColumnModel}
+              columnRefsRef={columnRefsRef}
+              createMessageFeed={createMessageFeed}
+              openCreateMessageComposer={openCreateMessageComposer}
+              isInitialLoading={isInitialLoading}
+              messageFeeds={messageFeeds}
+              narrowScreen={narrowScreen}
+              onSelectFeed={setActiveFeedId}
+              showLoadingBackdrop={showLoadingBackdrop}
+            />
+          </AudioTranscriptionPreferencesProvider>
+        </MessageDeviceAccessProvider>
       </PointBlacklistPaletteNamesCacheProvider>
 
       <ManageMessageDrawer

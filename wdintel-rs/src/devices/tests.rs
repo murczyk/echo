@@ -33,7 +33,10 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 fn configure_routes(cfg: &mut ServiceConfig) {
-    cfg.service(super::devices::list)
+    cfg.service(crate::sigint::device_name::device_name_search)
+        .service(crate::sigint::device_name::device_name_resolve)
+        .service(crate::sigint::device_name::device_name_create)
+        .service(super::devices::list)
         .service(super::devices::unit_stats)
         .service(super::devices::aors)
         .service(super::devices::units)
@@ -316,6 +319,12 @@ async fn target_api_smoke_covers_all_routes() {
             && aor["name"].as_str() == Some(lookup_aor.name.as_str())
     }));
 
+    let response = post_json!(
+        "/api/sigint/device-name/create",
+        json!({"name": "ECHO-3461 denied source device"})
+    );
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
     let response = test::call_service(
         &app,
         test::TestRequest::post()
@@ -365,15 +374,11 @@ async fn target_api_smoke_covers_all_routes() {
         "/api/device/update",
         json!({"device_id": device_id, "name": "API renamed"})
     );
-    assert_eq!(response.status(), StatusCode::OK);
-    let updated: Value = test::read_body_json(response).await;
-    assert_eq!(updated["name"], "API renamed");
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert!(test::read_body(response).await.is_empty());
 
     let response = post_json!("/api/device/list", json!({}));
-    assert_eq!(response.status(), StatusCode::OK);
-    let list: Value = test::read_body_json(response).await;
-    assert_eq!(list["total"], 1);
-    assert_eq!(list["list"][0]["id"], device_id);
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
     let response = test::call_service(
         &app,
@@ -383,19 +388,11 @@ async fn target_api_smoke_covers_all_routes() {
             .to_request(),
     )
     .await;
-    assert_eq!(response.status(), StatusCode::OK);
-    let stats: Value = test::read_body_json(response).await;
-    assert_eq!(stats, json!({"units": []}));
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
     let response =
         post_json!("/api/device/detail", json!({"device_id": device_id}));
-    assert_eq!(response.status(), StatusCode::OK);
-    let detail: Value = test::read_body_json(response).await;
-    assert_eq!(detail["name"], "API renamed");
-
-    let response =
-        post_json!("/api/device/detail", json!({"device_id": other_device.id}));
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
     let response = post_json!(
         "/api/device/files/sync",
@@ -611,6 +608,47 @@ async fn target_api_smoke_covers_all_routes() {
 
     let response =
         post_json!("/api/device/files/roots", json!({"device_id": device_id}));
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    let mut login = login.into_active_model();
+    login.roles = Set(json!([ROLE_CYBER, ROLE_DEVICE_SOURCE]));
+    let login = login.update(&env.dbx).await.unwrap();
+
+    let response = post_json!(
+        "/api/device/update",
+        json!({"device_id": device_id, "name": "API renamed"})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let updated: Value = test::read_body_json(response).await;
+    assert_eq!(updated["name"], "API renamed");
+
+    let response = post_json!("/api/device/list", json!({}));
+    assert_eq!(response.status(), StatusCode::OK);
+    let list: Value = test::read_body_json(response).await;
+    assert_eq!(list["total"], 1);
+    assert_eq!(list["list"][0]["id"], device_id);
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/api/device/unit-stats")
+            .cookie(session_cookie.clone())
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let stats: Value = test::read_body_json(response).await;
+    assert_eq!(stats, json!({"units": []}));
+    let response =
+        post_json!("/api/device/detail", json!({"device_id": device_id}));
+    assert_eq!(response.status(), StatusCode::OK);
+    let detail: Value = test::read_body_json(response).await;
+    assert_eq!(detail["name"], "API renamed");
+    let response =
+        post_json!("/api/device/detail", json!({"device_id": other_device.id}));
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    let response =
+        post_json!("/api/device/files/roots", json!({"device_id": device_id}));
     assert_eq!(response.status(), StatusCode::OK);
     let roots: Value = test::read_body_json(response).await;
     assert_eq!(roots["roots"].as_array().unwrap().len(), 1);
@@ -815,7 +853,34 @@ async fn target_api_smoke_covers_all_routes() {
 
     let mut login = login.into_active_model();
     login.roles = Set(json!([ROLE_CYBER]));
+    let login = login.update(&env.dbx).await.unwrap();
+    let response = post_json!(
+        "/api/sigint/device-name/create",
+        json!({"name": "ECHO-3461 denied cyber-only device"})
+    );
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    let mut login = login.into_active_model();
+    login.roles = Set(json!(["Rer", ROLE_CYBER]));
     login.update(&env.dbx).await.unwrap();
+    let response = post_json!(
+        "/api/sigint/device-name/create",
+        json!({"name": "ECHO-3461 allowed device"})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = post_json!(
+        "/api/sigint/device-name/search",
+        json!({"search": "ECHO-3461 allowed"})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = post_json!(
+        "/api/sigint/device-name/resolve",
+        json!({"names": ["  echo-3461 allowed device  ", "ECHO-3461 ALLOWED DEVICE", "unknown"]})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let resolved: Value = test::read_body_json(response).await;
+    assert_eq!(resolved["devices"].as_array().unwrap().len(), 1);
+    assert_eq!(resolved["devices"][0]["name"], "ECHO-3461 allowed device");
     let response = post_json!(
         "/api/device/update",
         json!({
@@ -859,6 +924,106 @@ async fn target_api_smoke_covers_all_routes() {
         .await;
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn device_name_resolution_endpoint_rechecks_rer_and_device_access() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let settings = system_settings::ActiveModel {
+        devices_section_enabled: Set(true),
+        ..Default::default()
+    }
+    .insert(&env.dbx)
+    .await
+    .unwrap();
+    let organism = mk_organism(
+        &env.dbx,
+        organism::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let login = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            login: Set(format!("device-name-resolve-{}", Uuid::now_v7())),
+            roles: Set(json!(["Rer"])),
+            organism_id: Set(Some(organism.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let login_id = login.id;
+    let config = env.config.clone();
+    let redis_session_store =
+        RedisSessionStore::new(crate::redis_conn_string(&config).unwrap())
+            .await
+            .unwrap();
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::from(env.clone()))
+            .wrap(
+                IdentityMiddleware::builder()
+                    .visit_deadline(Some(std::time::Duration::from_secs(
+                        IDENTITY_DURATION_HOURS * 60 * 60,
+                    )))
+                    .build(),
+            )
+            .wrap(SessionMiddleware::new(redis_session_store, Key::generate()))
+            .route("/test/login/{login}", web::post().to(self::login))
+            .service(crate::sigint::device_name::device_name_resolve),
+    )
+    .await;
+    let login_response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(&format!("/test/login/{}", login.id))
+            .to_request(),
+    )
+    .await;
+    let session_cookie: Cookie<'static> = login_response
+        .response()
+        .cookies()
+        .next()
+        .unwrap()
+        .into_owned();
+    let request = |names: serde_json::Value| {
+        test::TestRequest::post()
+            .uri("/api/sigint/device-name/resolve")
+            .cookie(session_cookie.clone())
+            .set_json(json!({"names": names}))
+            .to_request()
+    };
+
+    let response = test::call_service(&app, request(json!([]))).await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    let mut login = login.into_active_model();
+    login.roles = Set(json!(["Rer", ROLE_CYBER]));
+    login.update(&env.dbx).await.unwrap();
+    crate::sigint::device_name::bl::create_device_name(
+        &env.dbx,
+        login_id,
+        crate::sigint::device_name::types::CreateDeviceNameReq {
+            name: "Пристрій".to_string(),
+        },
+    )
+    .await
+    .unwrap();
+    let response =
+        test::call_service(&app, request(json!(["  пристрІЙ  "]))).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let resolved: Value = test::read_body_json(response).await;
+    assert_eq!(resolved["devices"][0]["name"], "Пристрій");
+
+    let mut settings = settings.into_active_model();
+    settings.devices_section_enabled = Set(false);
+    settings.update(&env.dbx).await.unwrap();
+    let response = test::call_service(&app, request(json!([]))).await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }
 
 #[actix_web::test]
@@ -2373,7 +2538,7 @@ mod access_tests {
     fn access_maps_each_exact_device_role() {
         let cases = [
             (ROLE_CYBER, (true, true, true, false)),
-            (ROLE_DEVICE_SOURCE, (true, true, true, true)),
+            (ROLE_DEVICE_SOURCE, (false, true, true, true)),
             (ROLE_ADMIN, (true, true, true, true)),
         ];
 
@@ -2391,7 +2556,7 @@ mod access_tests {
             ),
             (
                 vec![ROLE_DEVICE_SOURCE, "Unrelated"],
-                (true, true, true, true),
+                (false, true, true, true),
             ),
             (vec![ROLE_CYBER, "Unrelated"], (true, true, true, false)),
         ];
@@ -2497,8 +2662,9 @@ mod access_tests {
         let login_id = login.id;
 
         let source = resolve_login_by_id(&env.dbx, &login_id).await.unwrap();
-        assert_eq!(capabilities(&source.roles), (true, true, true, true));
+        assert_eq!(capabilities(&source.roles), (false, true, true, true));
         assert_eq!(organism_id(&source).unwrap(), organism.id);
+        assert!(require_message_devices(&env.dbx, &login_id).await.is_err());
 
         let mut login = login.into_active_model();
         login.roles = Set(json!([ROLE_CYBER]));
@@ -2506,6 +2672,12 @@ mod access_tests {
 
         let cyber = resolve_login_by_id(&env.dbx, &login_id).await.unwrap();
         assert_eq!(capabilities(&cyber.roles), (true, true, true, false));
+        require_message_devices(&env.dbx, &login_id).await.unwrap();
+
+        let mut login = login.into_active_model();
+        login.roles = Set(json!([ROLE_ADMIN]));
+        let login = login.update(&env.dbx).await.unwrap();
+        require_message_devices(&env.dbx, &login_id).await.unwrap();
 
         let mut login = login.into_active_model();
         login.organism_id = Set(None);
@@ -2543,6 +2715,7 @@ mod access_tests {
             AppError::Forbidden(message)
                 if message == "devices_section_enabled is disabled"
         ));
+        assert!(require_message_devices(&env.dbx, &login_id).await.is_err());
     }
 
     #[tokio::test]

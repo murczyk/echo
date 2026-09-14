@@ -31,6 +31,7 @@ import {
   MESSAGE_CARD_DOWNLOAD_START_COOLDOWN_MS,
 } from '../../MessageCardMedia';
 import { AudioTranscriptionPreferencesProvider } from '../../MessageCardAudioTranscription';
+import { MessageDeviceAccessProvider } from '../../MessageDeviceAccess';
 import {
   normalizeLocationDisplayValue,
   resolveEtalonBindingDisplayValue,
@@ -714,6 +715,8 @@ async function renderHeader(
   const root = createRoot(container);
   const msg = overrides.msg ?? buildMessage();
   const metadataOverrides = overrides as Partial<{
+    canUseMessageDevices: boolean;
+    useMessageDeviceAccessProvider: boolean;
     groupName: string | null;
     senderName: string | null;
   }>;
@@ -754,7 +757,7 @@ async function renderHeader(
   };
 
   await act(async () => {
-    root.render(
+    const content = (
       <div data-message-header-grid="true">
         <MessageCardHeader {...props} />
         <MessageCardMetadata
@@ -763,7 +766,16 @@ async function renderHeader(
           senderName={metadataOverrides.senderName ?? 'Dow_Jones_2'}
           etalonDisplayModel={props.etalonDisplayModel}
         />
-      </div>,
+      </div>
+    );
+    root.render(
+      metadataOverrides.useMessageDeviceAccessProvider === false ? (
+        content
+      ) : (
+        <MessageDeviceAccessProvider allowed={metadataOverrides.canUseMessageDevices ?? true}>
+          {content}
+        </MessageDeviceAccessProvider>
+      ),
     );
   });
 
@@ -1219,6 +1231,39 @@ describe('MessageCard', () => {
       expect(metadataText.indexOf('1-й танк')).toBeLessThan(metadataText.indexOf('Харків'));
     },
   );
+
+  it('ECHO-3461 hides device metadata without device access', async () => {
+    const view = await renderHeader({
+      msg: buildMessage({ deviceName: 'Радіостанція' }),
+      canUseMessageDevices: false,
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('[title="Пристрій"]')).toBeNull();
+    expect(view.container.textContent).not.toContain('Радіостанція');
+  });
+
+  it('ECHO-3461 hides device metadata without a provider', async () => {
+    const view = await renderHeader({
+      msg: buildMessage({ deviceName: 'Радіостанція' }),
+      useMessageDeviceAccessProvider: false,
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('[title="Пристрій"]')).toBeNull();
+    expect(view.container.textContent).not.toContain('Радіостанція');
+  });
+
+  it('ECHO-3461 shows device metadata with an allowed provider', async () => {
+    const view = await renderHeader({
+      msg: buildMessage({ deviceName: 'Радіостанція' }),
+      canUseMessageDevices: true,
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('[title="Пристрій"]')).not.toBeNull();
+    expect(view.container.textContent).toContain('Радіостанція');
+  });
 
   it('keeps coordinates out of the header metadata', async () => {
     const view = await renderHeader({

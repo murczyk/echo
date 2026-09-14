@@ -38,6 +38,14 @@ type BulkPasteResolution<T> = {
   finalValue: T[];
 };
 
+type BulkResolutionState<T> =
+  | { status: 'idle' }
+  | { status: 'pending'; key: string }
+  | { status: 'success'; key: string; options: readonly T[] }
+  | { status: 'error'; key: string };
+
+const DEFAULT_BULK_PASTE_SEPARATORS = [','];
+
 type PowerAutocompleteProps<T> = Omit<
   AutocompleteProps<T, true, false, false>,
   'multiple' | 'renderInput'
@@ -57,6 +65,11 @@ type PowerAutocompleteProps<T> = Omit<
   getBulkCopyText?: (selected: readonly T[]) => string;
   onBulkPasteChange?: (nextValue: T[]) => void;
   onBulkPasteResolved?: (result: BulkPasteResolution<T>) => void;
+  resolveBulkPasteOptions?: (
+    tokens: readonly string[],
+    options: { signal: AbortSignal },
+  ) => Promise<readonly T[]>;
+  onBulkPasteResolveError?: (error: unknown) => void;
 };
 
 function escapeRegExp(value: string): string {
@@ -309,7 +322,7 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
   const {
     bulkPaste = false,
     bulkPasteOptions,
-    bulkPasteSeparators = [','],
+    bulkPasteSeparators = DEFAULT_BULK_PASTE_SEPARATORS,
     bulkPasteMenuLabel,
     bulkPasteDialogTitle,
     bulkPasteInputLabel,
@@ -318,6 +331,8 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
     onBulkCopy,
     onBulkPasteChange,
     onBulkPasteResolved,
+    resolveBulkPasteOptions,
+    onBulkPasteResolveError,
     getBulkPasteToken,
     getBulkPasteAliases,
     getBulkCopyText,
@@ -340,11 +355,38 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
   const menuLabel = bulkPasteMenuLabel ?? 'Додати кілька значень';
   const dialogTitle = bulkPasteDialogTitle ?? 'Додати кілька значень';
   const inputLabel = bulkPasteInputLabel ?? 'Значення';
+  const bulkPasteSeparatorsKey = bulkPasteSeparators.join('\u0000');
   const [bulkMenuAnchorEl, setBulkMenuAnchorEl] = useState<HTMLElement | null>(null);
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
   const [bulkDialogInputValue, setBulkDialogInputValue] = useState('');
   const [pendingBulkDialogOpen, setPendingBulkDialogOpen] = useState(false);
+  const [bulkResolution, setBulkResolution] = useState<BulkResolutionState<T>>({
+    status: 'idle',
+  });
   const bulkMenuTriggerRef = useRef<HTMLElement | null>(null);
+  const bulkResolutionRequestRef = useRef(0);
+  const bulkResolutionAbortRef = useRef<AbortController | null>(null);
+
+  const bulkTokens = useMemo(
+    () => splitBulkPasteValue(bulkDialogInputValue, bulkPasteSeparators),
+    [bulkDialogInputValue, bulkPasteSeparatorsKey],
+  );
+  const bulkResolutionKey = bulkTokens.map(normalizeBulkToken).join('\u0000');
+  const resolvedBulkPasteOptions =
+    bulkResolution.status === 'success' && bulkResolution.key === bulkResolutionKey
+      ? bulkResolution.options
+      : null;
+  const bulkResolutionReady =
+    !resolveBulkPasteOptions ||
+    (bulkResolution.status === 'success' && bulkResolution.key === bulkResolutionKey);
+  const bulkResolutionPending =
+    resolveBulkPasteOptions != null &&
+    bulkResolution.status === 'pending' &&
+    bulkResolution.key === bulkResolutionKey;
+  const bulkResolutionFailed =
+    resolveBulkPasteOptions != null &&
+    bulkResolution.status === 'error' &&
+    bulkResolution.key === bulkResolutionKey;
 
   const bulkPreview = useMemo(() => {
     if (!bulkPaste || !bulkDialogOpen) {
@@ -353,7 +395,9 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
 
     return buildBulkResolution({
       inputValue: bulkDialogInputValue,
-      options: bulkPasteOptions ?? options,
+      options: resolveBulkPasteOptions
+        ? (resolvedBulkPasteOptions ?? [])
+        : (bulkPasteOptions ?? options),
       selectedValue,
       getOptionLabel: bulkPasteLabel,
       getBulkPasteToken: bulkPasteToken,
@@ -368,11 +412,46 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
     bulkPasteLabel,
     bulkPasteToken,
     bulkPasteAliases,
-    bulkPasteSeparators,
+    bulkPasteSeparatorsKey,
     isOptionEqualToValue,
     bulkPasteOptions,
+    resolvedBulkPasteOptions,
+    resolveBulkPasteOptions,
     options,
     selectedValue,
+  ]);
+
+  useEffect(() => {
+    if (!bulkPaste || !bulkDialogOpen || !resolveBulkPasteOptions) return;
+    const tokens = splitBulkPasteValue(bulkDialogInputValue, bulkPasteSeparators);
+    bulkResolutionAbortRef.current?.abort();
+    if (tokens.length === 0) {
+      setBulkResolution({ status: 'idle' });
+      return;
+    }
+    const controller = new AbortController();
+    const request = bulkResolutionRequestRef.current + 1;
+    bulkResolutionRequestRef.current = request;
+    bulkResolutionAbortRef.current = controller;
+    setBulkResolution({ status: 'pending', key: bulkResolutionKey });
+    void resolveBulkPasteOptions(tokens, { signal: controller.signal })
+      .then((resolved) => {
+        if (controller.signal.aborted || request !== bulkResolutionRequestRef.current) return;
+        setBulkResolution({ status: 'success', key: bulkResolutionKey, options: resolved });
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted || request !== bulkResolutionRequestRef.current) return;
+        setBulkResolution({ status: 'error', key: bulkResolutionKey });
+        onBulkPasteResolveError?.(error);
+      });
+    return () => controller.abort();
+  }, [
+    bulkDialogOpen,
+    bulkPaste,
+    bulkResolutionKey,
+    bulkPasteSeparatorsKey,
+    onBulkPasteResolveError,
+    resolveBulkPasteOptions,
   ]);
 
   useEffect(() => {
@@ -413,6 +492,8 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
   };
 
   const closeBulkDialog = () => {
+    bulkResolutionAbortRef.current?.abort();
+    bulkResolutionRequestRef.current += 1;
     if (
       document.activeElement instanceof HTMLElement &&
       document.activeElement.closest('[role="dialog"]') != null
@@ -423,6 +504,7 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
     setBulkDialogOpen(false);
     setBulkDialogInputValue('');
     setPendingBulkDialogOpen(false);
+    setBulkResolution({ status: 'idle' });
 
     const restoreFocusTarget = bulkMenuTriggerRef.current;
     window.setTimeout(() => {
@@ -431,7 +513,7 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
   };
 
   const submitBulkDialog = () => {
-    if (bulkPreview.added.length === 0) {
+    if (!bulkResolutionReady || bulkResolutionFailed || bulkPreview.added.length === 0) {
       return;
     }
 
@@ -563,6 +645,16 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
                         </Typography>
                       </>
                     ) : null}
+                    {bulkResolutionPending ? (
+                      <Typography variant="body2" color="text.secondary">
+                        Перевіряємо значення…
+                      </Typography>
+                    ) : null}
+                    {bulkResolutionFailed ? (
+                      <Typography variant="body2" color="error">
+                        Не вдалося перевірити значення
+                      </Typography>
+                    ) : null}
                   </Box>
                 </Box>
               </DialogContent>
@@ -570,7 +662,9 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
                 <PowerButton onClick={closeBulkDialog}>Скасувати</PowerButton>
                 <PowerButton
                   variant="contained"
-                  disabled={bulkPreview.added.length === 0}
+                  disabled={
+                    !bulkResolutionReady || bulkResolutionFailed || bulkPreview.added.length === 0
+                  }
                   onClick={submitBulkDialog}
                 >
                   Додати

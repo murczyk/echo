@@ -245,7 +245,7 @@ mod write {
         let transaction = main_db.begin().await.c(h!())?;
         let device = {
             let transaction_db = &transaction;
-            let device = query::lock_active_visible_device(
+            let device = query::lock_active_device_for_update(
                 transaction_db,
                 login,
                 command.device_id,

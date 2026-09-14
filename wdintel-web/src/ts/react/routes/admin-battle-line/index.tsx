@@ -40,13 +40,17 @@ import {
   testBattleLine,
   uploadBattleLine,
 } from '../../services/api/battle-line';
+import { currentSystemSettings } from '../../services/api/system-settings';
+import { fetchCurrentUser } from '../../services/api/user';
 import { toErrorMessage } from '../rer-analysis-neo/use-analysis-data.shared';
 import { MessageCard } from '../shared/message-card/MessageCard';
+import { MessageDeviceAccessProvider } from '../shared/message-card/MessageDeviceAccess';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PageHeader } from '../../components/PageHeader';
 import { PageLoadingState } from '../../components/PageLoadingState';
 import { BattleLineMap } from './BattleLineMap';
 import { NetworkUnitMap } from './NetworkUnitMap';
+import { canUseMessageDevices } from '../../utils/roles';
 
 export type BattleLineTab = 'lbz' | 'networks' | 'unlinked' | 'unresolved';
 
@@ -69,22 +73,32 @@ function writeBattleLineTab(tab: BattleLineTab, replace = false) {
   );
 }
 
-function ReadOnlyMessage({ id, message }: { id: number; message: BattleLineTestRsp['message'] }) {
+function ReadOnlyMessage({
+  id,
+  message,
+  canUseMessageDevices,
+}: {
+  id: number;
+  message: BattleLineTestRsp['message'];
+  canUseMessageDevices: boolean;
+}) {
   return (
-    <MessageCard
-      id={id}
-      msg={message}
-      readOnly
-      displayMode="analysis"
-      analysisDestination="neo"
-      referenceTimeMs={Date.now()}
-      authUserName={null}
-      groupName={message.groupMasterKey}
-      senderName={message.sender}
-      copiedFeedbackId={null}
-      networkDisplayMap={{}}
-      tagsMap={{}}
-    />
+    <MessageDeviceAccessProvider allowed={canUseMessageDevices}>
+      <MessageCard
+        id={id}
+        msg={message}
+        readOnly
+        displayMode="analysis"
+        analysisDestination="neo"
+        referenceTimeMs={Date.now()}
+        authUserName={null}
+        groupName={message.groupMasterKey}
+        senderName={message.sender}
+        copiedFeedbackId={null}
+        networkDisplayMap={{}}
+        tagsMap={{}}
+      />
+    </MessageDeviceAccessProvider>
   );
 }
 
@@ -101,7 +115,15 @@ function formatSettlementCandidate(candidate: BattleLineSettlementCandidate): st
   }`;
 }
 
-function LbzTab({ state, reload }: { state: BattleLineState; reload: () => Promise<void> }) {
+function LbzTab({
+  state,
+  reload,
+  canUseMessageDevices,
+}: {
+  state: BattleLineState;
+  reload: () => Promise<void>;
+  canUseMessageDevices: boolean;
+}) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const testSerialRef = useRef(0);
   const [uploading, setUploading] = useState(false);
@@ -262,7 +284,11 @@ function LbzTab({ state, reload }: { state: BattleLineState; reload: () => Promi
               gap: 2,
             }}
           >
-            <ReadOnlyMessage id={testResult.inboxItemId} message={testResult.message} />
+            <ReadOnlyMessage
+              id={testResult.inboxItemId}
+              message={testResult.message}
+              canUseMessageDevices={canUseMessageDevices}
+            />
             <Stack spacing={1}>
               <Typography variant="body2">
                 Групи: {testResult.groupMasterKeys.join(', ') || 'немає'}
@@ -342,7 +368,13 @@ function LbzTab({ state, reload }: { state: BattleLineState; reload: () => Promi
   );
 }
 
-function UnlinkedTab({ onError }: { onError: (message: string) => void }) {
+function UnlinkedTab({
+  onError,
+  canUseMessageDevices,
+}: {
+  onError: (message: string) => void;
+  canUseMessageDevices: boolean;
+}) {
   const [page, setPage] = useState(1);
   const [data, setData] = useState<BattleLineUnlinkedInboxRsp | null>(null);
   const [loading, setLoading] = useState(true);
@@ -376,7 +408,11 @@ function UnlinkedTab({ onError }: { onError: (message: string) => void }) {
       ) : (
         data.items.map(([id, message]) => (
           <Paper key={id} variant="outlined">
-            <ReadOnlyMessage id={id} message={message} />
+            <ReadOnlyMessage
+              id={id}
+              message={message}
+              canUseMessageDevices={canUseMessageDevices}
+            />
           </Paper>
         ))
       )}
@@ -507,7 +543,23 @@ export function AdminBattleLinePage() {
   const [state, setState] = useState<BattleLineState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [messageDeviceAccessAllowed, setMessageDeviceAccessAllowed] = useState(false);
   const loadSerialRef = useRef(0);
+  const messageDeviceAccessSerialRef = useRef(0);
+  const reloadMessageDeviceAccess = useCallback(async () => {
+    const serial = messageDeviceAccessSerialRef.current + 1;
+    messageDeviceAccessSerialRef.current = serial;
+    try {
+      const [user, settings] = await Promise.all([fetchCurrentUser(), currentSystemSettings()]);
+      if (messageDeviceAccessSerialRef.current === serial) {
+        setMessageDeviceAccessAllowed(
+          canUseMessageDevices(user.roles, settings.devicesSectionEnabled),
+        );
+      }
+    } catch {
+      if (messageDeviceAccessSerialRef.current === serial) setMessageDeviceAccessAllowed(false);
+    }
+  }, []);
   const reload = useCallback(async () => {
     const serial = loadSerialRef.current + 1;
     loadSerialRef.current = serial;
@@ -528,6 +580,15 @@ export function AdminBattleLinePage() {
       loadSerialRef.current += 1;
     };
   }, [reload]);
+  useEffect(() => {
+    void reloadMessageDeviceAccess();
+    const onSystemSettingsSaved = () => void reloadMessageDeviceAccess();
+    window.addEventListener('system-settings-saved', onSystemSettingsSaved);
+    return () => {
+      messageDeviceAccessSerialRef.current += 1;
+      window.removeEventListener('system-settings-saved', onSystemSettingsSaved);
+    };
+  }, [reloadMessageDeviceAccess]);
   useEffect(() => {
     const requested = new URLSearchParams(window.location.search).get('tab');
     if (requested !== tab) writeBattleLineTab(tab, true);
@@ -557,7 +618,11 @@ export function AdminBattleLinePage() {
       <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
         {tab === 'lbz' ? (
           state ? (
-            <LbzTab state={state} reload={reload} />
+            <LbzTab
+              state={state}
+              reload={reload}
+              canUseMessageDevices={messageDeviceAccessAllowed}
+            />
           ) : loading ? (
             <PageLoadingState />
           ) : (
@@ -569,7 +634,9 @@ export function AdminBattleLinePage() {
             </Alert>
           )
         ) : null}
-        {tab === 'unlinked' ? <UnlinkedTab onError={setError} /> : null}
+        {tab === 'unlinked' ? (
+          <UnlinkedTab onError={setError} canUseMessageDevices={messageDeviceAccessAllowed} />
+        ) : null}
         {tab === 'unresolved' ? <UnresolvedTab onError={setError} /> : null}
         {tab === 'networks' ? <NetworksTab /> : null}
       </Box>

@@ -1336,6 +1336,7 @@ type alias InboxMessagesReq =
     , deniedUnitIds : Maybe (List (Int))
     , selectedLocations : Maybe (List (String))
     , selectedDeviceNames : Maybe (List (String))
+    , deniedDeviceNames : Maybe (List (String))
     , nolimit : Maybe (Bool)
     , orWithExtendedForm : Maybe (Bool)
     , loadLatest : Maybe (Bool)
@@ -1403,6 +1404,7 @@ inboxMessagesReqEncoder struct =
         , ( "denied_unit_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.deniedUnitIds )
         , ( "selected_locations", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.selectedLocations )
         , ( "selected_device_names", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.selectedDeviceNames )
+        , ( "denied_device_names", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.deniedDeviceNames )
         , ( "nolimit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.nolimit )
         , ( "or_with_extended_form", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.orWithExtendedForm )
         , ( "load_latest", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.loadLatest )
@@ -2782,6 +2784,8 @@ type alias RerDutyQueryStateWf =
     , unitsDenied : Maybe (List (String))
     , selectedUnitIds : Maybe (List (Int))
     , deniedUnitIds : Maybe (List (Int))
+    , selectedDeviceNames : Maybe (List (String))
+    , deniedDeviceNames : Maybe (List (String))
     , unitsExactMatchOnly : Maybe (Bool)
     , lastViewedMessageId : Maybe (Int)
     , highlightKeywordsEnabled : Maybe (Bool)
@@ -2804,6 +2808,8 @@ rerDutyQueryStateWfEncoder struct =
         , ( "units_denied", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.unitsDenied )
         , ( "selected_unit_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedUnitIds )
         , ( "denied_unit_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.deniedUnitIds )
+        , ( "selected_device_names", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.selectedDeviceNames )
+        , ( "denied_device_names", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.deniedDeviceNames )
         , ( "units_exact_match_only", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.unitsExactMatchOnly )
         , ( "last_viewed_message_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastViewedMessageId )
         , ( "highlight_keywords_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.highlightKeywordsEnabled )
@@ -8864,6 +8870,30 @@ type alias DeviceNameSearchRsp =
 
 deviceNameSearchRspEncoder : DeviceNameSearchRsp -> Json.Encode.Value
 deviceNameSearchRspEncoder struct =
+    Json.Encode.object
+        [ ( "devices", (Json.Encode.list (deviceNameSearchResultEncoder)) struct.devices )
+        ]
+
+
+type alias DeviceNameResolveReq =
+    { names : List (String)
+    }
+
+
+deviceNameResolveReqEncoder : DeviceNameResolveReq -> Json.Encode.Value
+deviceNameResolveReqEncoder struct =
+    Json.Encode.object
+        [ ( "names", (Json.Encode.list (Json.Encode.string)) struct.names )
+        ]
+
+
+type alias DeviceNameResolveRsp =
+    { devices : List (DeviceNameSearchResult)
+    }
+
+
+deviceNameResolveRspEncoder : DeviceNameResolveRsp -> Json.Encode.Value
+deviceNameResolveRspEncoder struct =
     Json.Encode.object
         [ ( "devices", (Json.Encode.list (deviceNameSearchResultEncoder)) struct.devices )
         ]
@@ -15339,6 +15369,7 @@ inboxMessagesReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "denied_unit_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_locations" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_device_names" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "denied_device_names" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "nolimit" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_with_extended_form" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "load_latest" (Json.Decode.nullable (Json.Decode.bool))))
@@ -16066,11 +16097,111 @@ rerDutyQueryStateWfDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs_denied" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "posts_selected" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "posts_denied" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [Json.Decode.field "units_selected" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string))), Json.Decode.succeed Nothing]))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [Json.Decode.field "units_denied" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string))), Json.Decode.succeed Nothing]))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [Json.Decode.field "selected_unit_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int))), Json.Decode.succeed Nothing]))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [Json.Decode.field "denied_unit_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int))), Json.Decode.succeed Nothing]))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [Json.Decode.field "units_exact_match_only" (Json.Decode.nullable (Json.Decode.bool)), Json.Decode.succeed Nothing]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.andThen
+            (\fields ->
+                case Dict.get "units_selected" fields of
+                    Nothing ->
+                        Json.Decode.succeed Nothing
+
+                    Just value ->
+                        case Json.Decode.decodeValue (Json.Decode.nullable (Json.Decode.list (Json.Decode.string))) value of
+                            Ok decoded ->
+                                Json.Decode.succeed decoded
+
+                            Err error ->
+                                Json.Decode.fail (Json.Decode.errorToString error)
+            )
+            (Json.Decode.dict Json.Decode.value)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.andThen
+            (\fields ->
+                case Dict.get "units_denied" fields of
+                    Nothing ->
+                        Json.Decode.succeed Nothing
+
+                    Just value ->
+                        case Json.Decode.decodeValue (Json.Decode.nullable (Json.Decode.list (Json.Decode.string))) value of
+                            Ok decoded ->
+                                Json.Decode.succeed decoded
+
+                            Err error ->
+                                Json.Decode.fail (Json.Decode.errorToString error)
+            )
+            (Json.Decode.dict Json.Decode.value)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.andThen
+            (\fields ->
+                case Dict.get "selected_unit_ids" fields of
+                    Nothing ->
+                        Json.Decode.succeed Nothing
+
+                    Just value ->
+                        case Json.Decode.decodeValue (Json.Decode.nullable (Json.Decode.list (Json.Decode.int))) value of
+                            Ok decoded ->
+                                Json.Decode.succeed decoded
+
+                            Err error ->
+                                Json.Decode.fail (Json.Decode.errorToString error)
+            )
+            (Json.Decode.dict Json.Decode.value)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.andThen
+            (\fields ->
+                case Dict.get "denied_unit_ids" fields of
+                    Nothing ->
+                        Json.Decode.succeed Nothing
+
+                    Just value ->
+                        case Json.Decode.decodeValue (Json.Decode.nullable (Json.Decode.list (Json.Decode.int))) value of
+                            Ok decoded ->
+                                Json.Decode.succeed decoded
+
+                            Err error ->
+                                Json.Decode.fail (Json.Decode.errorToString error)
+            )
+            (Json.Decode.dict Json.Decode.value)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.andThen
+            (\fields ->
+                case Dict.get "selected_device_names" fields of
+                    Nothing ->
+                        Json.Decode.succeed Nothing
+
+                    Just value ->
+                        case Json.Decode.decodeValue (Json.Decode.nullable (Json.Decode.list (Json.Decode.string))) value of
+                            Ok decoded ->
+                                Json.Decode.succeed decoded
+
+                            Err error ->
+                                Json.Decode.fail (Json.Decode.errorToString error)
+            )
+            (Json.Decode.dict Json.Decode.value)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.andThen
+            (\fields ->
+                case Dict.get "denied_device_names" fields of
+                    Nothing ->
+                        Json.Decode.succeed Nothing
+
+                    Just value ->
+                        case Json.Decode.decodeValue (Json.Decode.nullable (Json.Decode.list (Json.Decode.string))) value of
+                            Ok decoded ->
+                                Json.Decode.succeed decoded
+
+                            Err error ->
+                                Json.Decode.fail (Json.Decode.errorToString error)
+            )
+            (Json.Decode.dict Json.Decode.value)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.andThen
+            (\fields ->
+                case Dict.get "units_exact_match_only" fields of
+                    Nothing ->
+                        Json.Decode.succeed Nothing
+
+                    Just value ->
+                        case Json.Decode.decodeValue (Json.Decode.nullable (Json.Decode.bool)) value of
+                            Ok decoded ->
+                                Json.Decode.succeed decoded
+
+                            Err error ->
+                                Json.Decode.fail (Json.Decode.errorToString error)
+            )
+            (Json.Decode.dict Json.Decode.value)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_viewed_message_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_keywords_enabled" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_keyword_set_id" (Json.Decode.nullable (Json.Decode.int))))
@@ -20072,6 +20203,18 @@ deviceNameSearchResultDecoder =
 deviceNameSearchRspDecoder : Json.Decode.Decoder DeviceNameSearchRsp
 deviceNameSearchRspDecoder =
     Json.Decode.succeed DeviceNameSearchRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "devices" (Json.Decode.list (deviceNameSearchResultDecoder))))
+
+
+deviceNameResolveReqDecoder : Json.Decode.Decoder DeviceNameResolveReq
+deviceNameResolveReqDecoder =
+    Json.Decode.succeed DeviceNameResolveReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "names" (Json.Decode.list (Json.Decode.string))))
+
+
+deviceNameResolveRspDecoder : Json.Decode.Decoder DeviceNameResolveRsp
+deviceNameResolveRspDecoder =
+    Json.Decode.succeed DeviceNameResolveRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "devices" (Json.Decode.list (deviceNameSearchResultDecoder))))
 
 

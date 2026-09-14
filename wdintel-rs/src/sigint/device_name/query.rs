@@ -96,6 +96,38 @@ where
         .collect())
 }
 
+pub async fn find_by_exact_names<C>(
+    dbx: &C,
+    names: &[String],
+) -> Result<Vec<DeviceNameRow>, AppError>
+where
+    C: ConnectionTrait,
+{
+    if names.is_empty() {
+        return Ok(vec![]);
+    }
+    let placeholders = (1..=names.len())
+        .map(|index| format!("${index}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Ok(select_device_name()
+        .filter(Expr::cust_with_values(
+            format!(
+                "lower(coalesce(\"device_name\".\"name\", '')) IN ({placeholders})"
+            ),
+            names.to_vec(),
+        ))
+        .order_by_asc(device_name::Column::Name)
+        .order_by_asc(device_name::Column::Id)
+        .into_tuple::<(i64, Option<String>)>()
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(render_device_name_row)
+        .collect())
+}
+
 fn escape_like(input: &str) -> String {
     input
         .replace('\\', "\\\\")

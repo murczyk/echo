@@ -13,6 +13,7 @@ import {
 import { useRerDutyFeeds } from './useRerDutyFeeds';
 
 const hoisted = vi.hoisted(() => ({
+  fetchOrganismKeywordSets: vi.fn(),
   fetchAnalysisCallsignInfos: vi.fn(),
   fetchMessagesByIds: vi.fn(),
   fetchUserSettings: vi.fn(),
@@ -41,6 +42,9 @@ const hoisted = vi.hoisted(() => ({
   }>,
   initialCallsignInfoMap: {} as Record<string, { callsign: string; res: unknown[] }>,
   initialInboxCallsignInfoMap: {} as Record<string, { callsign: string; res: unknown[] }>,
+}));
+vi.mock('../../services/api/organism-keyword-sets', () => ({
+  fetchOrganismKeywordSets: hoisted.fetchOrganismKeywordSets,
 }));
 
 vi.mock('../../services/api/analysis', () => ({
@@ -129,6 +133,7 @@ vi.mock('../../services/api/inbox-messages', () => ({
 
 vi.mock('./useRerDutyFeedState', () => ({
   useRerDutyFeedState: () => {
+    const [error, setErrorState] = React.useState<string | null>(null);
     const [messageFeeds, setMessageFeeds] = React.useState(hoisted.messageFeeds);
     const [callsignInfoMap, setCallsignInfoMap] = React.useState<
       Record<string, { callsign: string; res: unknown[] }>
@@ -172,7 +177,10 @@ vi.mock('./useRerDutyFeedState', () => ({
         });
         setInboxCallsignInfoMap((current) => current);
       },
-      setError: hoisted.setFeedErrorMock,
+      setError: React.useCallback((message: string) => {
+        hoisted.setFeedErrorMock(message);
+        setErrorState(message);
+      }, []),
       setWatchModeByFeedId: vi.fn(),
       setMessageFeeds: (next) => {
         setMessageFeeds(next);
@@ -180,7 +188,7 @@ vi.mock('./useRerDutyFeedState', () => ({
       nearBottomByFeedIdRef: { current: {} },
       atBottomByFeedIdRef: { current: {} },
       columnRefsRef: { current: {} },
-      error: null,
+      error,
       createMessageFeed: vi.fn(),
       removeMessageFeed: vi.fn(),
       loadFeedInitialMessages: hoisted.loadFeedInitialMessages,
@@ -225,8 +233,12 @@ vi.mock('./useRerDutyFeedState', () => ({
 
 let latest: ReturnType<typeof useRerDutyFeeds> | null = null;
 
-function TestHarness() {
-  latest = useRerDutyFeeds(null);
+function TestHarness({
+  deviceAccess,
+}: {
+  deviceAccess?: import('./useRerDutyPageSettings').DeviceAccess;
+}) {
+  latest = useRerDutyFeeds(null, null, deviceAccess);
   return null;
 }
 
@@ -417,6 +429,7 @@ describe('useRerDutyFeeds', () => {
     hoisted.fetchAnalysisCallsignInfos.mockReset();
     hoisted.applyFilterMock.mockReset();
     hoisted.fetchUserSettings.mockResolvedValue({ disableAutoScroll: false });
+    hoisted.fetchOrganismKeywordSets.mockResolvedValue([]);
     hoisted.currentSystemSettings.mockResolvedValue({
       rerDutyTestEnabled: false,
       rerDutyTestSinceMs: 0,
@@ -439,6 +452,18 @@ describe('useRerDutyFeeds', () => {
     });
     latest = null;
     vi.useRealTimers();
+  });
+
+  it('exposes device-access lookup failures through its public error result', async () => {
+    await act(async () => {
+      root.render(
+        React.createElement(TestHarness, {
+          deviceAccess: { status: 'error', message: 'access lookup failed' },
+        }),
+      );
+      await flushMicrotasks();
+    });
+    expect(latest?.error).toBe('access lookup failed');
   });
 
   it('retries empty-result callsigns after the backoff expires even without unrelated rerenders', async () => {

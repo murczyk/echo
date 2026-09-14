@@ -5,6 +5,7 @@ import { isNullOrUndefined } from '../../utils/misc';
 
 import { fetchCurrentUser } from '../../services/api/user';
 import { currentSystemSettings } from '../../services/api/system-settings';
+import { canUseMessageDevices } from '../../utils/roles';
 import {
   normalizeUnknownUnitFilterValue,
   normalizeUnknownUnitSelections,
@@ -65,6 +66,9 @@ function inboxWindowMatchesMessages(
   return inboxWindow.inbox.inboxItems.every(([messageId]) => messageIds.has(messageId));
 }
 
+type DeviceAccess =
+  { status: 'loading' } | { status: 'allowed' } | { status: 'denied' } | { status: 'error' };
+
 export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPageViewModel {
   const theme = useTheme();
   const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
@@ -73,12 +77,17 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const [initialQueryState] = useState<AnalysisQueryState>(initState);
   const [queryState, setQueryState] = useState<AnalysisQueryState>(initialQueryState);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [systemSettingsLoaded, setSystemSettingsLoaded] = useState(false);
+  const [currentUserStatus, setCurrentUserStatus] = useState<'loading' | 'success' | 'error'>(
+    'loading',
+  );
+  const [systemSettingsStatus, setSystemSettingsStatus] = useState<'loading' | 'success' | 'error'>(
+    'loading',
+  );
   const [unitsExactMatchOnlyDefault, setUnitsExactMatchOnlyDefault] = useState<boolean | null>(
     null,
   );
   const [supportNonRerInterceptions, setSupportNonRerInterceptions] = useState(false);
-  const [cyberEchoEnabled, setCyberEchoEnabled] = useState(false);
+  const [devicesSectionEnabled, setDevicesSectionEnabled] = useState(false);
   const [audioTranscriptionEnabled, setAudioTranscriptionEnabled] = useState(false);
   const [showPelengDistanceToBattleline, setShowPelengDistanceToBattleline] = useState(false);
   const [lastResetState, setLastResetState] = useState<AnalysisQueryState>(() =>
@@ -146,6 +155,19 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const [centerTabPending, startCenterTabTransition] = useTransition();
   const setPageError = useCallback((message: string) => setError(message || null), []);
   const dutySettings = useDutySettings();
+  const deviceAccess: DeviceAccess =
+    currentUserStatus === 'error' || systemSettingsStatus === 'error'
+      ? { status: 'error' }
+      : currentUserStatus === 'loading' || systemSettingsStatus === 'loading'
+        ? { status: 'loading' }
+        : canUseMessageDevices(currentUser?.roles, devicesSectionEnabled)
+          ? { status: 'allowed' }
+          : { status: 'denied' };
+  const canUseDevices = deviceAccess.status === 'allowed';
+  const effectiveQueryState =
+    deviceAccess.status === 'denied' && queryState.deviceNamesSelected.length > 0
+      ? { ...queryState, deviceNamesSelected: [] }
+      : queryState;
   useEffect(() => {
     if (dutySettings.loadInProgress) return;
     setQueryState((current) =>
@@ -162,6 +184,8 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const directMessageWindowQueryState = useMemo(
     () => ({
       ...initialQueryState,
+      deviceNamesSelected:
+        deviceAccess.status === 'denied' ? [] : initialQueryState.deviceNamesSelected,
       groupsSelected: queryState.groupsSelected,
       freqsSelected: queryState.freqsSelected,
       networksSelected: queryState.networksSelected,
@@ -170,6 +194,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     }),
     [
       initialQueryState,
+      deviceAccess.status,
       queryState.freqsSelected,
       queryState.groupsSelected,
       queryState.networksSelected,
@@ -179,7 +204,16 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   );
 
   useEffect(() => {
-    if (!targetMessageUid || !targetMessageContextActive || dutySettings.loadInProgress) return;
+    if (
+      !targetMessageUid ||
+      !targetMessageContextActive ||
+      dutySettings.loadInProgress ||
+      deviceAccess.status === 'loading' ||
+      (deviceAccess.status === 'error' &&
+        directMessageWindowQueryState.deviceNamesSelected.length > 0)
+    ) {
+      return;
+    }
     let cancelled = false;
     const isContextRefresh = targetMessageLoadedRef.current;
     if (isContextRefresh) {
@@ -250,6 +284,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     };
   }, [
     directMessageWindowQueryState,
+    deviceAccess.status,
     dutySettings.loadInProgress,
     targetMessageContextActive,
     targetMessageUid,
@@ -293,7 +328,10 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const data = useAnalysisData({
     authUserName,
     currentUser,
-    deferInitialLoad: !systemSettingsLoaded || targetMessageContextResponsePending,
+    deferInitialLoad:
+      deviceAccess.status === 'loading' ||
+      (deviceAccess.status === 'error' && queryState.deviceNamesSelected.length > 0) ||
+      targetMessageContextResponsePending,
     focusedWindow: targetMessageWindow,
     focusedMessageActive: targetMessageContextActive,
     leftPanelOpen,
@@ -305,7 +343,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     rightSidebarVisible: rightPanelOpen,
     rightSidebarTab,
     shouldLoadNewCallsigns: rightPanelOpen && rightSidebarTab === 'newCallsigns',
-    queryState,
+    queryState: effectiveQueryState,
   });
   const reload = useCallback(
     (options: Parameters<typeof data.reload>[0] = {}) => {
@@ -511,15 +549,15 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     [data.options.newFreqs],
   );
   const analysisReq = useMemo(
-    () => buildAnalysisReq(queryState, dataFreqValues),
-    [dataFreqValues, queryState],
+    () => buildAnalysisReq(effectiveQueryState, dataFreqValues),
+    [dataFreqValues, effectiveQueryState],
   );
 
   const savedFilters = useAnalysisSavedFilters({
     allFrequencies: dataFreqValues,
     onError: setPageError,
     onUnauthorized: handleUnauthorized,
-    queryState,
+    queryState: effectiveQueryState,
     setQueryState,
   });
 
@@ -604,17 +642,15 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
         if (abortController.signal.aborted) return;
         setUnitsExactMatchOnlyDefault(settings.rerAnalysisUnitsExactMatchOnlyDefault);
         setSupportNonRerInterceptions(settings.supportNonRerInterceptions);
-        setCyberEchoEnabled(settings.devicesSectionEnabled);
+        setDevicesSectionEnabled(settings.devicesSectionEnabled);
         setAudioTranscriptionEnabled(settings.enableAudioTranscription ?? false);
         setShowPelengDistanceToBattleline(settings.showPelengDistanceToBattleline);
+        setSystemSettingsStatus('success');
       })
       .catch(() => {
         if (abortController.signal.aborted) return;
+        setSystemSettingsStatus('error');
         setPageError('Не вдалося завантажити системні налаштування.');
-      })
-      .finally(() => {
-        if (abortController.signal.aborted) return;
-        setSystemSettingsLoaded(true);
       });
 
     return () => {
@@ -629,16 +665,26 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
       .then((user) => {
         if (abortController.signal.aborted) return;
         setCurrentUser(user);
+        setCurrentUserStatus('success');
       })
       .catch((error) => {
         if (abortController.signal.aborted) return;
         setCurrentUser(null);
+        setCurrentUserStatus('error');
+        setPageError(`Не вдалося завантажити поточного користувача: ${toErrorMessage(error)}`);
       });
 
     return () => {
       abortController.abort();
     };
   }, []);
+
+  useEffect(() => {
+    if (deviceAccess.status !== 'denied') return;
+    setQueryState((current) =>
+      current.deviceNamesSelected.length === 0 ? current : { ...current, deviceNamesSelected: [] },
+    );
+  }, [deviceAccess.status, queryState.deviceNamesSelected]);
 
   useEffect(() => {
     if (rightPanelOpen && isNullOrUndefined(rightSidebarTab)) {
@@ -687,9 +733,9 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   );
 
   useEffect(() => {
-    if (!systemSettingsLoaded) return;
-    pushQueryStateToUrl(queryState, newestFirst, { leftPanelOpen, rightPanelOpen });
-  }, [leftPanelOpen, newestFirst, queryState, rightPanelOpen, systemSettingsLoaded]);
+    if (deviceAccess.status === 'loading' || deviceAccess.status === 'error') return;
+    pushQueryStateToUrl(effectiveQueryState, newestFirst, { leftPanelOpen, rightPanelOpen });
+  }, [deviceAccess.status, effectiveQueryState, leftPanelOpen, newestFirst, rightPanelOpen]);
 
   const toggleUnitFromMap = useCallback(
     (unitName: string | null) => {
@@ -1132,7 +1178,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     toggleReportTaskRunLogs: report.toggleReportTaskRunLogs,
     unitsExactMatchOnlyDefault,
     supportNonRerInterceptions,
-    cyberEchoEnabled,
+    cyberEchoEnabled: canUseDevices,
     updateReport: report.updateReport,
     updateExisting: savedFilters.updateExisting,
     updateQueryState,

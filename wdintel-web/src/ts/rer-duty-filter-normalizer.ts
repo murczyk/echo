@@ -54,6 +54,8 @@ export function normalizeRerDutyQueryStateWf(raw: Record<string, unknown>): RerD
     ),
     selectedUnitIds: null,
     deniedUnitIds: null,
+    selectedDeviceNames: readFilterValues(raw, ['selectedDeviceNames', 'selected_device_names']),
+    deniedDeviceNames: readFilterValues(raw, ['deniedDeviceNames', 'denied_device_names']),
     unitsExactMatchOnly: (raw.unitsExactMatchOnly ?? raw.units_exact_match_only ?? false) as
       boolean | null,
     lastViewedMessageId: (raw.lastViewedMessageId ?? raw.last_viewed_message_id ?? null) as

@@ -11,6 +11,7 @@ use crate::event_stream::fanout_mult;
 use crate::event_stream::types::{EventMsg, EventType};
 use crate::rer_importer::analysis::{
     analytics_inbox_candidates_supported, analytics_inbox_request_supported,
+    filter_denied_device_names, filter_selected_device_names,
     map_postgres_runtime_timeout, with_analytics_read_fallback,
 };
 use crate::rer_importer::inbox::bl::*;
@@ -44,6 +45,29 @@ use diagnostics::InboxReadDiagnostics;
 use submit_bl::*;
 
 type InboxDigest = (i64, Option<NaiveDateTime>);
+
+fn has_device_filters(req: &InboxMessagesReq) -> bool {
+    [
+        req.selected_device_names.as_ref(),
+        req.denied_device_names.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|names| !names.is_empty())
+}
+
+pub(crate) async fn require_device_filters(
+    dbx: &DatabaseConnection,
+    login_id: &Uuid,
+    req: &InboxMessagesReq,
+) -> Result<(), AppError> {
+    if has_device_filters(req) {
+        crate::devices::access::require_message_devices(dbx, login_id)
+            .await
+            .c(h!())?;
+    }
+    Ok(())
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RerAnalysisInboxRoute {
@@ -100,6 +124,9 @@ async fn get_inbox_map_inner(
     let user_id = login_id_from_identity(&user).c(h!())?;
     let page_id = req.page_id.clone();
     let req = req.into_inner();
+    require_device_filters(&env.dbx, &user_id, &req.inbox_items_filter)
+        .await
+        .c(h!())?;
     if req.show_settlements == Some(true) {
         has_role(&env.dbx, &user_id, ROLE_ADMIN).await.c(h!())?;
     }
@@ -173,6 +200,9 @@ async fn map_settlement_messages(
         .await
         .context(h!())?;
     let req = req.into_inner();
+    require_device_filters(&env.dbx, &login, &req.inbox_items_filter)
+        .await
+        .c(h!())?;
     let mut filter = req.inbox_items_filter;
     filter.nolimit = Some(true);
     let filtered_ids = build_inbox_settlement_ids_query(&login, &env, &filter)
@@ -684,6 +714,9 @@ async fn messages_by_id(
         ..Default::default()
     };
     let inbox_req = req.inbox_req.as_ref().unwrap_or(&default_req);
+    require_device_filters(&env.dbx, &login, inbox_req)
+        .await
+        .c(h!())?;
     let messages =
         messages_by_id_bl(&login, &logins, &env, &req.message_ids, inbox_req)
             .await?;
@@ -710,6 +743,9 @@ async fn messages_by_id_with_metadata(
         ..Default::default()
     };
     let inbox_req = req.inbox_req.as_ref().unwrap_or(&default_req);
+    require_device_filters(&env.dbx, &login, inbox_req)
+        .await
+        .c(h!())?;
     let messages =
         messages_by_id_bl(&login, &logins, &env, &req.message_ids, inbox_req)
             .await
@@ -749,6 +785,14 @@ async fn messages_by_uuid(
     has_any_role(&env.dbx, &login, vec!["Rer", "ApiAgent"])
         .await
         .c(h!())?;
+    let default_req = InboxMessagesReq {
+        highlight_points: Some(true),
+        ..Default::default()
+    };
+    let inbox_req = req.inbox_req.as_ref().unwrap_or(&default_req);
+    require_device_filters(&env.dbx, &login, inbox_req)
+        .await
+        .c(h!())?;
     let message_ids = signal_message::Entity::find()
         .select_only()
         .column(signal_message::Column::Id)
@@ -760,11 +804,6 @@ async fn messages_by_uuid(
     let logins = crate::users::get_organism_login_ids(&env.dbx, user)
         .await
         .context(h!())?;
-    let default_req = InboxMessagesReq {
-        highlight_points: Some(true),
-        ..Default::default()
-    };
-    let inbox_req = req.inbox_req.as_ref().unwrap_or(&default_req);
     let messages =
         messages_by_id_bl(&login, &logins, &env, &message_ids, inbox_req)
             .await
@@ -953,6 +992,11 @@ pub(crate) async fn messages_by_id_bl(
                 .add(owner_access),
         )
         .filter(signal_message::Column::Id.eq_any(message_ids.to_vec()));
+    messages =
+        filter_selected_device_names(messages, &req.selected_device_names)
+            .c(h!())?;
+    messages = filter_denied_device_names(messages, &req.denied_device_names)
+        .c(h!())?;
     let owner_organism_id =
         crate::tags::query::current_user_organism_id(&env.dbx, login)
             .await
@@ -1095,6 +1139,9 @@ async fn inbox_messages(
     let is_admin = has_role(&env.dbx, &user_id, "Admin").await.is_ok();
     let page_id = req.page_id.clone();
     let req = req.into_inner();
+    require_device_filters(&env.dbx, &user_id, &req)
+        .await
+        .c(h!())?;
     if has_role(&env.dbx, &user_id, AI_AGENT_ROLE_API)
         .await
         .is_ok()
@@ -1864,6 +1911,9 @@ async fn inbox_messages_count(
     let user_id = login_id_from_identity(&user)?;
     let page_id = req.page_id.clone();
     let req = req.into_inner();
+    require_device_filters(&env.dbx, &user_id, &req)
+        .await
+        .c(h!())?;
 
     let payload = serde_json::to_value(&req).context(h!())?;
     record_page_visit(&user_id, &page_id, &env, Some(payload))
@@ -4358,6 +4408,9 @@ async fn get_freq_pelengs_summary(
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
     let req = req.into_inner();
+    require_device_filters(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
 
     let q = build_inbox_query(&login, &env, &req).await.context(h!())?;
 
@@ -4395,24 +4448,64 @@ async fn get_freq_pelengs_summary(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::IDENTITY_DURATION_HOURS;
+    use crate::devices::ROLE_CYBER;
     use crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind;
     use crate::entities::{
-        datasource, datasource_group, echo_gpu_transcription_queue, login,
-        organism, organism_group, sigint_comment, sigint_inbox_item,
-        sigint_inbox_item_metadata, sigint_inbox_item_network,
-        sigint_inbox_item_point_token, sigint_inbox_item_settlement,
-        sigint_inbox_item_tag, sigint_inbox_item_unit, sigint_network_unit,
-        sigint_peleng, sigint_zone_datasource, signal_group, signal_message,
+        datasource, datasource_group, device_name,
+        echo_gpu_transcription_queue, login, organism, organism_group,
+        sigint_comment, sigint_inbox_item, sigint_inbox_item_metadata,
+        sigint_inbox_item_network, sigint_inbox_item_point_token,
+        sigint_inbox_item_settlement, sigint_inbox_item_tag,
+        sigint_inbox_item_unit, sigint_network_unit, sigint_peleng,
+        sigint_zone_datasource, signal_group, signal_message,
         signal_message_group, signal_message_media, system_settings, tag,
     };
     use crate::functest::tests::*;
+    use actix_identity::{Identity, IdentityMiddleware};
+    use actix_session::storage::RedisSessionStore;
+    use actix_session::SessionMiddleware;
+    use actix_web::cookie::{Cookie, Key};
+    use actix_web::{
+        http::StatusCode, test as actix_test, web, App, HttpMessage,
+        HttpRequest, HttpResponse,
+    };
     use chrono::{DateTime, SecondsFormat, Utc};
-    use sea_orm::ActiveValue::Set;
+    use sea_orm::{ActiveValue::Set, DatabaseConnection, IntoActiveModel};
     use serde_json::json;
     use serial_test::serial;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
     use uuid::Uuid;
+
+    async fn echo_3461_login(
+        request: HttpRequest,
+        login: web::Path<String>,
+    ) -> HttpResponse {
+        Identity::login(&request.extensions(), login.into_inner()).unwrap();
+        HttpResponse::NoContent().finish()
+    }
+
+    async fn set_devices_section_enabled(
+        db: &DatabaseConnection,
+        enabled: bool,
+    ) {
+        if let Some(settings) =
+            system_settings::Entity::find().one(db).await.unwrap()
+        {
+            let mut settings = settings.into_active_model();
+            settings.devices_section_enabled = Set(enabled);
+            settings.update(db).await.unwrap();
+        } else {
+            system_settings::ActiveModel {
+                devices_section_enabled: Set(enabled),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .unwrap();
+        }
+    }
 
     fn rer_duty_neo_latest_req() -> InboxMessagesReq {
         InboxMessagesReq {
@@ -4432,6 +4525,454 @@ mod tests {
             till_date_inclusive_ms: Some(till.and_utc().timestamp_millis()),
             newest_first: Some(true),
             ..Default::default()
+        }
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn echo_3461_map_boundaries_reject_unauthorized_device_filters() {
+        let env = cleanup_locked().await.unwrap().0;
+        let test_identity = mk_test_identity().await.unwrap();
+        let login_id =
+            crate::users::login_id_by_name(&env.dbx, &test_identity.login)
+                .await
+                .unwrap();
+        system_settings::ActiveModel {
+            devices_section_enabled: Set(true),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let mut login = login::Entity::find_by_id(login_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+        login.roles = Set(json!(["Rer"]));
+        login.update(&env.dbx).await.unwrap();
+        let redis_session_store = RedisSessionStore::new(
+            crate::redis_conn_string(&env.config).unwrap(),
+        )
+        .await
+        .unwrap();
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(web::Data::from(env.clone()))
+                .wrap(
+                    IdentityMiddleware::builder()
+                        .visit_deadline(Some(std::time::Duration::from_secs(
+                            IDENTITY_DURATION_HOURS * 60 * 60,
+                        )))
+                        .build(),
+                )
+                .wrap(SessionMiddleware::new(
+                    redis_session_store,
+                    Key::generate(),
+                ))
+                .route(
+                    "/test/echo-3461-login/{login}",
+                    web::post().to(echo_3461_login),
+                )
+                .service(get_inbox_map)
+                .service(map_settlement_messages)
+                .service(get_freq_pelengs_summary),
+        )
+        .await;
+        let login_response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(&format!("/test/echo-3461-login/{login_id}"))
+                .to_request(),
+        )
+        .await;
+        let session_cookie: Cookie<'static> = login_response
+            .response()
+            .cookies()
+            .next()
+            .unwrap()
+            .into_owned();
+        let device_filter = InboxMessagesReq {
+            selected_device_names: Some(vec!["ECHO-3461 device".to_string()]),
+            ..Default::default()
+        };
+
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/rer-importer/get-inbox-map")
+                .cookie(session_cookie.clone())
+                .set_json(MapPointsReq {
+                    inbox_items_filter: device_filter.clone(),
+                    map_filter: None,
+                    page_id: None,
+                    show_settlements: None,
+                })
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        let mut login = login::Entity::find_by_id(login_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+        login.roles = Set(json!(["Rer", "DeviceSource"]));
+        login.update(&env.dbx).await.unwrap();
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/rer-importer/get-freq-pelengs-summary")
+                .cookie(session_cookie.clone())
+                .set_json(InboxMessagesReq {
+                    denied_device_names: device_filter
+                        .selected_device_names
+                        .clone(),
+                    ..Default::default()
+                })
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        let mut login = login::Entity::find_by_id(login_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+        login.roles = Set(json!(["Rer", ROLE_CYBER]));
+        login.update(&env.dbx).await.unwrap();
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/rer-importer/get-inbox-map")
+                .cookie(session_cookie.clone())
+                .set_json(MapPointsReq {
+                    inbox_items_filter: device_filter.clone(),
+                    map_filter: None,
+                    page_id: None,
+                    show_settlements: None,
+                })
+                .to_request(),
+        )
+        .await;
+        assert_ne!(response.status(), StatusCode::FORBIDDEN);
+        let mut settings = system_settings::Entity::find()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+        settings.devices_section_enabled = Set(false);
+        settings.update(&env.dbx).await.unwrap();
+        let mut login = login::Entity::find_by_id(login_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+        login.roles = Set(json!(["Admin"]));
+        login.update(&env.dbx).await.unwrap();
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/rer-importer/map-settlement-messages")
+                .cookie(session_cookie)
+                .set_json(MapSettlementMessagesReq {
+                    settlement_id: 1,
+                    inbox_items_filter: device_filter,
+                    before_id_noninclusive: None,
+                })
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn echo_3461_message_by_id_device_filters_are_authorized_and_applied()
+    {
+        let env = cleanup_locked().await.unwrap().0;
+        let login = find_test_login(&env.dbx).await.unwrap();
+        set_devices_section_enabled(&env.dbx, true).await;
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let allowed_device = device_name::ActiveModel {
+            name: Set(Some("ECHO-3461 allowed device".to_string())),
+            login_id: Set(login.id),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let other_device = device_name::ActiveModel {
+            name: Set(Some("ECHO-3461 other device".to_string())),
+            login_id: Set(login.id),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let now = Utc::now().naive_utc();
+        let mut messages = Vec::new();
+        for (name, device_name_id) in
+            [("allowed", allowed_device.id), ("other", other_device.id)]
+        {
+            let message = mk_signal_message(
+                &env.dbx,
+                signal_message::ActiveModel {
+                    body: Set(Some(format!("ECHO-3461 {name}"))),
+                    created_at: Set(now),
+                    timestamp: Set(Some(now)),
+                    sender: Set(Some(login.id.to_string())),
+                    datasource_group_id: Set(Some(datasource_group.id)),
+                    deleted: Set(false),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            mk_signal_message_group(
+                &env.dbx,
+                signal_message_group::ActiveModel {
+                    signal_message_id: Set(message.id),
+                    group_master_key: Set(Some(
+                        datasource_group.group_master_key.clone(),
+                    )),
+                    sender: Set(message.sender.clone()),
+                    message_uid: Set(message.message_uid.clone()),
+                    datasource_group_id: Set(Some(datasource_group.id)),
+                    created_at: Set(now),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            mk_sigint_inbox_item(
+                &env.dbx,
+                sigint_inbox_item::ActiveModel {
+                    id: Set(message.id),
+                    device_name_id: Set(Some(device_name_id)),
+                    datetime: Set(Some(now)),
+                    checked: Set(Some(true)),
+                    reviewed: Set(Some(true)),
+                    parsed_unit_v2: Set(false),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            messages.push((message.id, message.id_uuid.unwrap()));
+        }
+        let redis_session_store = RedisSessionStore::new(
+            crate::redis_conn_string(&env.config).unwrap(),
+        )
+        .await
+        .unwrap();
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(web::Data::from(env.clone()))
+                .wrap(IdentityMiddleware::default())
+                .wrap(SessionMiddleware::new(
+                    redis_session_store,
+                    Key::generate(),
+                ))
+                .route(
+                    "/test/echo-3461-login/{login}",
+                    web::post().to(echo_3461_login),
+                )
+                .service(messages_by_id)
+                .service(messages_by_id_with_metadata)
+                .service(messages_by_uuid),
+        )
+        .await;
+        let login_response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(&format!("/test/echo-3461-login/{}", login.id))
+                .to_request(),
+        )
+        .await;
+        let session_cookie: Cookie<'static> = login_response
+            .response()
+            .cookies()
+            .next()
+            .unwrap()
+            .into_owned();
+        let endpoint_bodies = |filter: Option<InboxMessagesReq>| {
+            [
+                (
+                    "/api/rer-importer/messages-by-id",
+                    json!({"message_ids": [messages[0].0, messages[1].0], "inbox_req": filter}),
+                    "messages",
+                ),
+                (
+                    "/api/rer-importer/messages-by-id-with-metadata",
+                    json!({"message_ids": [messages[0].0, messages[1].0], "inbox_req": filter}),
+                    "inbox_items",
+                ),
+                (
+                    "/api/rer-importer/messages-by-uuid",
+                    json!({"message_uuids": [messages[0].1, messages[1].1], "inbox_req": filter}),
+                    "messages",
+                ),
+            ]
+        };
+        for filter in [
+            InboxMessagesReq {
+                selected_device_names: Some(vec![
+                    "ECHO-3461 allowed device".to_string()
+                ]),
+                ..Default::default()
+            },
+            InboxMessagesReq {
+                denied_device_names: Some(vec![
+                    "ECHO-3461 allowed device".to_string()
+                ]),
+                ..Default::default()
+            },
+            InboxMessagesReq {
+                selected_device_names: Some(vec![
+                    "ECHO-3461 guessed device".to_string()
+                ]),
+                ..Default::default()
+            },
+            InboxMessagesReq {
+                denied_device_names: Some(vec![
+                    "ECHO-3461 guessed device".to_string()
+                ]),
+                ..Default::default()
+            },
+        ] {
+            for (endpoint, body, _) in endpoint_bodies(Some(filter.clone())) {
+                let response = actix_test::call_service(
+                    &app,
+                    actix_test::TestRequest::post()
+                        .uri(endpoint)
+                        .cookie(session_cookie.clone())
+                        .set_json(body)
+                        .to_request(),
+                )
+                .await;
+                assert_eq!(
+                    response.status(),
+                    StatusCode::FORBIDDEN,
+                    "{endpoint}"
+                );
+            }
+        }
+        let mut login = login.into_active_model();
+        login.roles = Set(json!(["Rer", ROLE_CYBER]));
+        login.update(&env.dbx).await.unwrap();
+        for (filter, expected) in [
+            (
+                Some(InboxMessagesReq {
+                    selected_device_names: Some(vec![
+                        "ECHO-3461 allowed device".to_string(),
+                    ]),
+                    ..Default::default()
+                }),
+                vec![messages[0].0],
+            ),
+            (
+                Some(InboxMessagesReq {
+                    selected_device_names: Some(vec!["missing".to_string()]),
+                    ..Default::default()
+                }),
+                Vec::new(),
+            ),
+            (
+                Some(InboxMessagesReq {
+                    denied_device_names: Some(vec![
+                        "ECHO-3461 allowed device".to_string()
+                    ]),
+                    ..Default::default()
+                }),
+                vec![messages[1].0],
+            ),
+            (None, vec![messages[0].0, messages[1].0]),
+            (
+                Some(InboxMessagesReq {
+                    selected_device_names: Some(Vec::new()),
+                    denied_device_names: Some(Vec::new()),
+                    ..Default::default()
+                }),
+                vec![messages[0].0, messages[1].0],
+            ),
+        ] {
+            for (endpoint, body, field) in endpoint_bodies(filter.clone()) {
+                let response = actix_test::call_service(
+                    &app,
+                    actix_test::TestRequest::post()
+                        .uri(endpoint)
+                        .cookie(session_cookie.clone())
+                        .set_json(body)
+                        .to_request(),
+                )
+                .await;
+                assert_eq!(response.status(), StatusCode::OK, "{endpoint}");
+                let response: serde_json::Value =
+                    actix_test::read_body_json(response).await;
+                let mut ids = response[field]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|row| row[0].as_i64().unwrap())
+                    .collect::<Vec<_>>();
+                ids.sort_unstable();
+                let mut expected = expected.clone();
+                expected.sort_unstable();
+                assert_eq!(ids, expected, "{endpoint}");
+            }
+        }
+        set_devices_section_enabled(&env.dbx, false).await;
+        for filter in [
+            InboxMessagesReq {
+                selected_device_names: Some(vec![
+                    "ECHO-3461 allowed device".to_string()
+                ]),
+                ..Default::default()
+            },
+            InboxMessagesReq {
+                denied_device_names: Some(vec![
+                    "ECHO-3461 allowed device".to_string()
+                ]),
+                ..Default::default()
+            },
+        ] {
+            for (endpoint, body, _) in endpoint_bodies(Some(filter.clone())) {
+                let response = actix_test::call_service(
+                    &app,
+                    actix_test::TestRequest::post()
+                        .uri(endpoint)
+                        .cookie(session_cookie.clone())
+                        .set_json(body)
+                        .to_request(),
+                )
+                .await;
+                assert_eq!(
+                    response.status(),
+                    StatusCode::FORBIDDEN,
+                    "{endpoint}"
+                );
+            }
+        }
+        for (endpoint, body, _) in endpoint_bodies(None) {
+            let response = actix_test::call_service(
+                &app,
+                actix_test::TestRequest::post()
+                    .uri(endpoint)
+                    .cookie(session_cookie.clone())
+                    .set_json(body)
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::OK, "{endpoint}");
         }
     }
 

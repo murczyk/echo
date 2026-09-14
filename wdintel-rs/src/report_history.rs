@@ -2666,6 +2666,13 @@ pub async fn download_report_for_user_login(
         find_report_for_user(&env.dbx, report_history_id, user_login)
             .await?
             .ok_or(AppError::NotFound)?;
+    require_report_download_device_access(
+        &env.dbx,
+        user_login,
+        &report_history,
+    )
+    .await
+    .c(h!())?;
     let report_download_history =
         claim_report_download_attempt(&env.dbx, report_history_id, user_login)
             .await
@@ -2688,6 +2695,38 @@ pub async fn download_report_for_user_login(
         }
     }
     response
+}
+
+async fn require_report_download_device_access(
+    dbx: &DatabaseConnection,
+    user_login: &Uuid,
+    report_history: &report_history::Model,
+) -> Result<(), AppError> {
+    let request: ReportHistoryRequest =
+        serde_json::from_value(report_history.request.clone()).c(h!())?;
+    match &request {
+        ReportHistoryRequest::AnalysisExport { payload } => {
+            crate::rer_importer::analysis::require_analysis_device_filter_access(
+                dbx, user_login, payload,
+            )
+            .await
+            .c(h!())?;
+        }
+        ReportHistoryRequest::AnalysisReport { payload } => {
+            crate::rer_importer::inbox::require_device_filters(
+                dbx,
+                user_login,
+                &payload.req,
+            )
+            .await
+            .c(h!())?;
+        }
+        ReportHistoryRequest::EtalonkaFilter { .. }
+        | ReportHistoryRequest::EtalonkaBatch { .. }
+        | ReportHistoryRequest::GoiReport { .. }
+        | ReportHistoryRequest::GoiAssociationsReport { .. } => {}
+    }
+    Ok(())
 }
 
 async fn download_report(
@@ -3437,6 +3476,13 @@ async fn generate_report(
             })
         }
         ReportHistoryRequest::AnalysisExport { payload } => {
+            require_analysis_export_worker_access(
+                &env.dbx,
+                &report_history.requested_by_login_id,
+                &payload,
+            )
+            .await
+            .c(h!())?;
             let (file_name, content_type, bytes) = match report_history.report_kind.as_str() {
                 KIND_SUMMARY_TABLE => (
                     report_history
@@ -3602,6 +3648,21 @@ async fn generate_report(
             })
         }
     }
+}
+
+async fn require_analysis_export_worker_access(
+    dbx: &DatabaseConnection,
+    requested_by_login_id: &Uuid,
+    payload: &AnalysisStatsReq,
+) -> Result<(), AppError> {
+    crate::rer_importer::analysis::require_analysis_device_filter_access(
+        dbx,
+        requested_by_login_id,
+        payload,
+    )
+    .await
+    .c(h!())?;
+    Ok(())
 }
 
 async fn upload_report_bytes(
@@ -3964,13 +4025,549 @@ fn append_log_entry(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::{bgtask_res, login};
+    use crate::entities::{bgtask_res, login, system_settings};
     use crate::functest::tests::{cleanup, mk_login};
     use chrono::Timelike;
     use sea_orm::ActiveValue::{NotSet, Set};
     use sea_orm::{EntityTrait, QueryTrait};
     use serde_json::json;
     use serial_test::serial;
+
+    fn analysis_export_request(
+        selected_device_names: Option<Vec<String>>,
+    ) -> AnalysisStatsReq {
+        AnalysisStatsReq {
+            since_date_inclusive_ms: 0,
+            till_date_noninclusive_ms: 1,
+            selected_groups: None,
+            selected_senders: None,
+            selected_freqs: None,
+            selected_posts: None,
+            selected_callsigns: None,
+            selected_units: None,
+            selected_unit_ids: None,
+            selected_locations: None,
+            selected_device_names,
+            selected_aors: None,
+            or_with_extended_form: None,
+            or_bookmarked: None,
+            or_important: None,
+            or_with_coords: None,
+            or_without_coords: None,
+            search: None,
+            selected_tags: None,
+            denied_tags: None,
+            tag_presence: None,
+            selected_networks: None,
+            without_network: None,
+            metadata_cc: None,
+            metadata_sender: None,
+            metadata_receiver: None,
+            metadata_hash: None,
+            only_with_metadata: None,
+            without_metadata: None,
+            include_peleng_locations: None,
+            units_exact_match_only: None,
+            filter_tags_option: None,
+            without_model_tags: None,
+            report_tags_only_this_unit: None,
+            message_time_basis: None,
+        }
+    }
+
+    async fn set_devices_section_enabled_for_test(
+        dbx: &DatabaseConnection,
+        enabled: bool,
+    ) -> Result<(), AppError> {
+        let settings =
+            system_settings::Entity::find().one(dbx).await.c(h!())?;
+        if let Some(settings) = settings {
+            let mut settings = settings.into_active_model();
+            settings.devices_section_enabled = Set(enabled);
+            settings.update(dbx).await.c(h!())?;
+        } else {
+            system_settings::ActiveModel {
+                devices_section_enabled: Set(enabled),
+                ..Default::default()
+            }
+            .insert(dbx)
+            .await
+            .c(h!())?;
+        }
+        Ok(())
+    }
+
+    async fn set_report_test_roles(
+        dbx: &DatabaseConnection,
+        login: login::Model,
+        roles: serde_json::Value,
+    ) -> Result<login::Model, AppError> {
+        let mut login = login.into_active_model();
+        login.roles = Set(roles);
+        Ok(login.update(dbx).await.c(h!())?)
+    }
+
+    async fn assert_analysis_export_worker_forbidden(
+        env: &Env,
+        report: &report_history::Model,
+    ) {
+        match generate_report(env, report, 0).await.unwrap_err() {
+            AppError::Forbidden(_) => {}
+            error => panic!(
+                "expected analysis export worker device-access rejection, got {error:?}"
+            ),
+        }
+    }
+
+    async fn mark_report_done_with_dummy_object(
+        dbx: &DatabaseConnection,
+        report: report_history::Model,
+    ) -> Result<report_history::Model, AppError> {
+        let mut report = report.into_active_model();
+        report.status = Set(STATUS_DONE.to_string());
+        report.completed_at = Set(Some(Utc::now().naive_utc()));
+        report.s3_id = Set(Some("reports/should-not-be-read.xlsx".to_string()));
+        report.file_name = Set(Some("device-report.xlsx".to_string()));
+        report.content_type = Set(Some(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                .to_string(),
+        ));
+        Ok(report.update(dbx).await.c(h!())?)
+    }
+
+    async fn assert_download_attempt_pending(
+        dbx: &DatabaseConnection,
+        report_history_id: i64,
+    ) -> Result<(), AppError> {
+        let attempt = ReportDownloadHistory::find()
+            .filter(
+                report_download_history::Column::ReportHistoryId
+                    .eq(report_history_id),
+            )
+            .one(dbx)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)
+            .c(h!())?;
+        assert_eq!(attempt.started_at, None);
+        assert_eq!(attempt.completed_at, None);
+        assert_eq!(attempt.successful, None);
+        Ok(())
+    }
+
+    async fn enqueue_completed_device_export(
+        env: &Env,
+        login_id: &Uuid,
+    ) -> Result<report_history::Model, AppError> {
+        let report = enqueue_report(
+            &env.dbx,
+            login_id,
+            KIND_SUMMARY_TABLE,
+            ReportHistoryRequest::AnalysisExport {
+                payload: Box::new(analysis_export_request(Some(vec![
+                    "device-1".to_string(),
+                ]))),
+            },
+            None,
+            None,
+        )
+        .await
+        .c(h!())?;
+        mark_report_done_with_dummy_object(&env.dbx, report).await
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn completed_device_filtered_download_revalidates_access_before_claim(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await.c(h!())?;
+        set_devices_section_enabled_for_test(&env.dbx, true)
+            .await
+            .c(h!())?;
+        let owner = create_report_history_test_login(
+            &env.dbx,
+            "report-download-boundary-owner",
+        )
+        .await
+        .c(h!())?;
+        let owner = set_report_test_roles(&env.dbx, owner, json!(["Rer"]))
+            .await
+            .c(h!())?;
+        let report = enqueue_completed_device_export(&env, &owner.id)
+            .await
+            .c(h!())?;
+        assert_download_attempt_pending(&env.dbx, report.id)
+            .await
+            .c(h!())?;
+        assert!(matches!(
+            download_report_for_user_login(&env, &owner.id, report.id).await,
+            Err(AppError::Forbidden(_))
+        ));
+        assert_download_attempt_pending(&env.dbx, report.id)
+            .await
+            .c(h!())?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn admin_cross_owner_device_filtered_download_respects_current_settings(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await.c(h!())?;
+        set_devices_section_enabled_for_test(&env.dbx, true)
+            .await
+            .c(h!())?;
+        let owner = create_report_history_test_login(
+            &env.dbx,
+            "report-download-cross-owner",
+        )
+        .await
+        .c(h!())?;
+        let owner = set_report_test_roles(&env.dbx, owner, json!(["Rer"]))
+            .await
+            .c(h!())?;
+        let admin = create_report_history_test_login(
+            &env.dbx,
+            "report-download-cross-owner-admin",
+        )
+        .await
+        .c(h!())?;
+        let admin =
+            set_report_test_roles(&env.dbx, admin, json!(["Rer", "Admin"]))
+                .await
+                .c(h!())?;
+        let report = enqueue_completed_device_export(&env, &owner.id)
+            .await
+            .c(h!())?;
+        assert!(find_report_for_user(&env.dbx, report.id, &admin.id)
+            .await
+            .c(h!())?
+            .is_some());
+        require_report_download_device_access(&env.dbx, &admin.id, &report)
+            .await
+            .c(h!())?;
+        set_devices_section_enabled_for_test(&env.dbx, false)
+            .await
+            .c(h!())?;
+        assert_download_attempt_pending(&env.dbx, report.id)
+            .await
+            .c(h!())?;
+        assert!(matches!(
+            download_report_for_user_login(&env, &admin.id, report.id).await,
+            Err(AppError::Forbidden(_))
+        ));
+        assert_download_attempt_pending(&env.dbx, report.id)
+            .await
+            .c(h!())?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn report_download_revalidates_analysis_export_device_access(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await.c(h!())?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+        set_devices_section_enabled_for_test(&env.dbx, true)
+            .await
+            .c(h!())?;
+        let login = create_report_history_test_login(
+            &env.dbx,
+            "report-download-device-access",
+        )
+        .await
+        .c(h!())?;
+        let login = set_report_test_roles(&env.dbx, login, json!(["Cyber"]))
+            .await
+            .c(h!())?;
+        let report = enqueue_report(
+            &env.dbx,
+            &login.id,
+            KIND_SUMMARY_TABLE,
+            ReportHistoryRequest::AnalysisExport {
+                payload: Box::new(analysis_export_request(Some(vec![
+                    "device-1".to_string(),
+                ]))),
+            },
+            None,
+            None,
+        )
+        .await
+        .c(h!())?;
+        require_report_download_device_access(&env.dbx, &login.id, &report)
+            .await
+            .c(h!())?;
+        let login = set_report_test_roles(&env.dbx, login, json!(["Rer"]))
+            .await
+            .c(h!())?;
+        assert!(matches!(
+            require_report_download_device_access(&env.dbx, &login.id, &report)
+                .await,
+            Err(AppError::Forbidden(_))
+        ));
+        set_devices_section_enabled_for_test(&env.dbx, false)
+            .await
+            .c(h!())?;
+        let login = set_report_test_roles(&env.dbx, login, json!(["Admin"]))
+            .await
+            .c(h!())?;
+        assert!(matches!(
+            require_report_download_device_access(&env.dbx, &login.id, &report)
+                .await,
+            Err(AppError::Forbidden(_))
+        ));
+        Ok(())
+    }
+
+    fn analysis_report_request(
+        selected_device_names: Option<Vec<String>>,
+        denied_device_names: Option<Vec<String>>,
+    ) -> ReportHistoryRequest {
+        ReportHistoryRequest::AnalysisReport {
+            payload: Box::new(ReportPreviewReq {
+                kind: "tags".to_string(),
+                req: crate::rer_importer::types::InboxMessagesReq {
+                    selected_device_names,
+                    denied_device_names,
+                    ..Default::default()
+                },
+                report_type: None,
+                report_tags_only_this_unit: None,
+                tag_report_sort_by: None,
+                report_1213_linked_networks_only: None,
+                without_comments: None,
+                babak_new_callsign_min_mentions: None,
+                interception_keep_full_message: None,
+                interception_keep_old_colors: None,
+                digest_omit_exo_id: None,
+                digest_form_1_2_17: None,
+                sposob_unit_name: None,
+            }),
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn report_download_revalidates_analysis_report_device_filters(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await.c(h!())?;
+        set_devices_section_enabled_for_test(&env.dbx, true)
+            .await
+            .c(h!())?;
+        let login = create_report_history_test_login(
+            &env.dbx,
+            "report-download-inbox-device-access",
+        )
+        .await
+        .c(h!())?;
+        let login = set_report_test_roles(&env.dbx, login, json!(["Cyber"]))
+            .await
+            .c(h!())?;
+        for request in [
+            analysis_report_request(Some(vec!["device-1".to_string()]), None),
+            analysis_report_request(None, Some(vec!["device-1".to_string()])),
+        ] {
+            let report = enqueue_report(
+                &env.dbx,
+                &login.id,
+                KIND_RER_REPORT,
+                request,
+                None,
+                None,
+            )
+            .await
+            .c(h!())?;
+            require_report_download_device_access(&env.dbx, &login.id, &report)
+                .await
+                .c(h!())?;
+            let rer_only =
+                set_report_test_roles(&env.dbx, login.clone(), json!(["Rer"]))
+                    .await
+                    .c(h!())?;
+            assert!(matches!(
+                require_report_download_device_access(
+                    &env.dbx,
+                    &rer_only.id,
+                    &report
+                )
+                .await,
+                Err(AppError::Forbidden(_))
+            ));
+            let login =
+                set_report_test_roles(&env.dbx, rer_only, json!(["Cyber"]))
+                    .await
+                    .c(h!())?;
+            set_devices_section_enabled_for_test(&env.dbx, false)
+                .await
+                .c(h!())?;
+            assert!(matches!(
+                require_report_download_device_access(
+                    &env.dbx, &login.id, &report
+                )
+                .await,
+                Err(AppError::Forbidden(_))
+            ));
+            set_devices_section_enabled_for_test(&env.dbx, true)
+                .await
+                .c(h!())?;
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn report_download_device_access_allows_unfiltered_and_unrelated(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await.c(h!())?;
+        set_devices_section_enabled_for_test(&env.dbx, false)
+            .await
+            .c(h!())?;
+        let login = create_report_history_test_login(
+            &env.dbx,
+            "report-download-unfiltered-device-access",
+        )
+        .await
+        .c(h!())?;
+        let login = set_report_test_roles(&env.dbx, login, json!(["Rer"]))
+            .await
+            .c(h!())?;
+        for request in [
+            ReportHistoryRequest::AnalysisExport {
+                payload: Box::new(analysis_export_request(None)),
+            },
+            ReportHistoryRequest::AnalysisExport {
+                payload: Box::new(analysis_export_request(Some(vec![]))),
+            },
+            analysis_report_request(None, None),
+            analysis_report_request(Some(vec![]), Some(vec![])),
+            ReportHistoryRequest::GoiReport { payload: json!({}) },
+        ] {
+            let report = enqueue_report(
+                &env.dbx, &login.id, KIND_GOI, request, None, None,
+            )
+            .await
+            .c(h!())?;
+            require_report_download_device_access(&env.dbx, &login.id, &report)
+                .await
+                .c(h!())?;
+        }
+        Ok(())
+    }
+
+    // Regression: https://github.com/echoua/echo/issues/3461
+    #[tokio::test]
+    #[serial]
+    async fn analysis_export_workers_revalidate_device_filter_access(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await.c(h!())?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+        set_devices_section_enabled_for_test(&env.dbx, true)
+            .await
+            .c(h!())?;
+        let login = create_report_history_test_login(
+            &env.dbx,
+            "report-history-device-export-access",
+        )
+        .await
+        .c(h!())?;
+        let login = set_report_test_roles(&env.dbx, login, json!(["Cyber"]))
+            .await
+            .c(h!())?;
+
+        let mut reports = Vec::new();
+        for report_kind in [KIND_SUMMARY_TABLE, KIND_KMZ, KIND_GEOJSON] {
+            let request =
+                analysis_export_request(Some(vec!["ECHO-3461".to_string()]));
+            require_analysis_export_worker_access(
+                &env.dbx, &login.id, &request,
+            )
+            .await
+            .c(h!())?;
+            reports.push(
+                enqueue_report(
+                    &env.dbx,
+                    &login.id,
+                    report_kind,
+                    ReportHistoryRequest::AnalysisExport {
+                        payload: Box::new(request),
+                    },
+                    None,
+                    None,
+                )
+                .await
+                .c(h!())?,
+            );
+        }
+        let unsupported_report_kind = "ECHO-3461-unsupported-export";
+        let unsupported_report = enqueue_report(
+            &env.dbx,
+            &login.id,
+            unsupported_report_kind,
+            ReportHistoryRequest::AnalysisExport {
+                payload: Box::new(analysis_export_request(Some(vec![
+                    "ECHO-3461".to_string(),
+                ]))),
+            },
+            None,
+            None,
+        )
+        .await
+        .c(h!())?;
+
+        let login = set_report_test_roles(&env.dbx, login, json!(["Rer"]))
+            .await
+            .c(h!())?;
+        for report in &reports {
+            assert_analysis_export_worker_forbidden(&env, report).await;
+        }
+        assert_analysis_export_worker_forbidden(&env, &unsupported_report)
+            .await;
+
+        let login = set_report_test_roles(&env.dbx, login, json!(["Admin"]))
+            .await
+            .c(h!())?;
+        for report in &reports {
+            let request: ReportHistoryRequest =
+                serde_json::from_value(report.request.clone()).c(h!())?;
+            let ReportHistoryRequest::AnalysisExport { payload } = request
+            else {
+                unreachable!("analysis export report");
+            };
+            require_analysis_export_worker_access(
+                &env.dbx, &login.id, &payload,
+            )
+            .await
+            .c(h!())?;
+        }
+        match generate_report(&env, &unsupported_report, 0).await.unwrap_err() {
+            AppError::BL { msg } => assert_eq!(
+                msg,
+                format!("Unsupported analysis export kind: {unsupported_report_kind}")
+            ),
+            error => panic!("expected unsupported export error, got {error:?}"),
+        }
+
+        set_devices_section_enabled_for_test(&env.dbx, false)
+            .await
+            .c(h!())?;
+        for report in &reports {
+            assert_analysis_export_worker_forbidden(&env, report).await;
+        }
+        require_analysis_export_worker_access(
+            &env.dbx,
+            &login.id,
+            &analysis_export_request(None),
+        )
+        .await
+        .c(h!())?;
+        Ok(())
+    }
 
     #[test]
     fn admin_started_at_sort_keeps_unlaunched_reports_last() {

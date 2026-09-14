@@ -157,7 +157,11 @@ export function useManageMessageDrawer({
   const [freqInput, setFreqInput] = useState('');
 
   useEffect(() => {
-    if (!formReady) return;
+    if (!formReady || !cyberEchoEnabled) {
+      setDeviceNameOptions([]);
+      setDeviceNamesLoading(false);
+      return;
+    }
     let active = true;
 
     setDeviceNamesLoading(true);
@@ -175,7 +179,7 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [deviceNameInput, formReady]);
+  }, [cyberEchoEnabled, deviceNameInput, formReady]);
 
   useEffect(() => {
     if (!formReady) return;
@@ -484,7 +488,7 @@ export function useManageMessageDrawer({
         ...mapInboxMessageToForm(editTarget.message, tagsMap),
         text: editTarget.message.noHeadersBody?.body ?? editTarget.message.text ?? '',
         signalGroupMasterKey: editTarget.message.groupMasterKey ?? '',
-        deviceName: editTarget.message.deviceName ?? '',
+        deviceName: cyberEchoEnabled ? (editTarget.message.deviceName ?? '') : '',
         network_signal_name:
           metadata.length || editTarget.message.networkIds?.length || editTarget.message.networkName
             ? 'DMR'
@@ -528,6 +532,7 @@ export function useManageMessageDrawer({
     editTarget?.id,
     reportSource?.id,
     recentValues,
+    cyberEchoEnabled,
   ]);
 
   useEffect(() => {
@@ -725,6 +730,7 @@ export function useManageMessageDrawer({
 
   const { onSubmit } = useMessageSubmit({
     busy,
+    cyberEchoEnabled,
     isEditMode,
     isReportMode,
     isReportCreateMode,

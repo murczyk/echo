@@ -19,6 +19,7 @@ import { fallbackFailedMessageUploads, messageUploadFailure } from './message-up
 
 type SubmitOptions = {
   busy: boolean;
+  cyberEchoEnabled: boolean;
   isEditMode: boolean;
   isReportMode: boolean;
   isReportCreateMode: boolean;
@@ -38,6 +39,7 @@ type SubmitOptions = {
 
 export function useMessageSubmit({
   busy,
+  cyberEchoEnabled,
   isEditMode,
   isReportMode,
   isReportCreateMode,
@@ -106,12 +108,12 @@ export function useMessageSubmit({
 
     try {
       let deviceNameId: number | null | undefined;
-      const deviceName = data.deviceName?.trim();
+      const deviceName = cyberEchoEnabled ? data.deviceName?.trim() : undefined;
       if (deviceName) {
         const device = await createDeviceName(deviceName);
         signal.throwIfAborted();
         deviceNameId = device.id;
-      } else if (isEditMode && editTarget?.message.deviceName) {
+      } else if (cyberEchoEnabled && isEditMode && editTarget?.message.deviceName) {
         deviceNameId = null;
       }
 

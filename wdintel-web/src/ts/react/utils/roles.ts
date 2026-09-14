@@ -56,7 +56,14 @@ export function hasRole(roles: readonly string[] | null | undefined, role: UserR
 }
 
 export function canReadDevices(roles: readonly string[] | null | undefined): boolean {
-  return hasAnyRole(roles, ['Cyber', 'DeviceSource']);
+  return hasRole(roles, 'Cyber');
+}
+
+export function canUseMessageDevices(
+  roles: readonly string[] | null | undefined,
+  devicesSectionEnabled: boolean,
+): boolean {
+  return devicesSectionEnabled && hasRole(roles, 'Cyber');
 }
 
 export type DevicesCapabilities = {

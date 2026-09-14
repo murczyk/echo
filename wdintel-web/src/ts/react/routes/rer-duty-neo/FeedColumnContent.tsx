@@ -830,6 +830,8 @@ export const FeedColumnContent = memo(
           borderTopLeftRadius: 0,
           borderTopRightRadius: 0,
           position: 'relative',
+          zIndex: 0,
+          isolation: 'isolate',
         }}
       >
         <Box

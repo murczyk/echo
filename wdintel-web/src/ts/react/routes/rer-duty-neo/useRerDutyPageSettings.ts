@@ -13,10 +13,12 @@ import {
   type MessageTextPreviewLineLimit,
 } from '../../services/api/user-settings';
 import { DEFAULT_DUTY_TAGS_LAYOUT, type TagsLayoutVariant } from './utils';
+import { canUseMessageDevices } from '../../utils/roles';
 
 export type RerDutyPageSettings = {
   currentUser: User | null;
   cyberEchoEnabled: boolean;
+  deviceAccess: DeviceAccess;
   tagsLayout: TagsLayoutVariant;
   audioTranscriptionCollapsed: boolean;
   audioTranscriptionEnabled: boolean;
@@ -26,10 +28,23 @@ export type RerDutyPageSettings = {
   messageSortBy: MessageTimeBasis;
 };
 
+export type DeviceAccess =
+  | { status: 'loading' }
+  | { status: 'allowed' }
+  | { status: 'denied' }
+  | { status: 'error'; message: string };
+
 /** User preferences, system settings, and the auth user behind the Duty page chrome. */
 export function useRerDutyPageSettings(): RerDutyPageSettings {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [cyberEchoEnabled, setCyberEchoEnabled] = useState(false);
+  const [currentUserStatus, setCurrentUserStatus] = useState<'loading' | 'success' | 'error'>(
+    'loading',
+  );
+  const [devicesSectionEnabled, setDevicesSectionEnabled] = useState(false);
+  const [devicesSettingsStatus, setDevicesSettingsStatus] = useState<
+    'loading' | 'success' | 'error'
+  >('loading');
+  const [deviceAccessError, setDeviceAccessError] = useState<string | null>(null);
   const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
   const [audioTranscriptionCollapsed, setAudioTranscriptionCollapsed] = useState(false);
   const [audioTranscriptionEnabled, setAudioTranscriptionEnabled] = useState(false);
@@ -119,13 +134,16 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
     void currentSystemSettings()
       .then((settings) => {
         if (abortController.signal.aborted) return;
-        setCyberEchoEnabled(settings.devicesSectionEnabled);
+        setDevicesSectionEnabled(settings.devicesSectionEnabled);
         setAudioTranscriptionEnabled(settings.enableAudioTranscription ?? false);
+        setDevicesSettingsStatus('success');
       })
-      .catch(() => {
+      .catch((error) => {
         if (abortController.signal.aborted) return;
-        setCyberEchoEnabled(false);
+        setDevicesSectionEnabled(false);
         setAudioTranscriptionEnabled(false);
+        setDevicesSettingsStatus('error');
+        setDeviceAccessError(error instanceof Error ? error.message : String(error));
       });
 
     return () => {
@@ -140,10 +158,13 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
       .then((user) => {
         if (abortController.signal.aborted) return;
         setCurrentUser(user);
+        setCurrentUserStatus('success');
       })
-      .catch(() => {
+      .catch((error) => {
         if (abortController.signal.aborted) return;
         setCurrentUser(null);
+        setCurrentUserStatus('error');
+        setDeviceAccessError(error instanceof Error ? error.message : String(error));
       });
 
     return () => {
@@ -151,9 +172,21 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
     };
   }, []);
 
+  const deviceAccess: DeviceAccess =
+    currentUserStatus === 'error' || devicesSettingsStatus === 'error'
+      ? {
+          status: 'error',
+          message: deviceAccessError ?? 'Не вдалося перевірити доступ до пристроїв.',
+        }
+      : currentUserStatus === 'loading' || devicesSettingsStatus === 'loading'
+        ? { status: 'loading' }
+        : canUseMessageDevices(currentUser?.roles, devicesSectionEnabled)
+          ? { status: 'allowed' }
+          : { status: 'denied' };
   return {
     currentUser,
-    cyberEchoEnabled,
+    cyberEchoEnabled: canUseMessageDevices(currentUser?.roles, devicesSectionEnabled),
+    deviceAccess,
     tagsLayout,
     audioTranscriptionCollapsed,
     audioTranscriptionEnabled,
