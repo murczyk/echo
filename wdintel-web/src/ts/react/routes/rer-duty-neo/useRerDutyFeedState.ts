@@ -83,6 +83,15 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       createEmptyFeedState(id, filter),
     );
   });
+  const hasDeviceFilters = messageFeeds.some(
+    (feed) =>
+      (feed.filter.selectedDeviceNames?.length ?? 0) > 0 ||
+      (feed.filter.deniedDeviceNames?.length ?? 0) > 0,
+  );
+  const deviceAccessAllowsRequests =
+    deviceAccess.status === 'allowed' ||
+    deviceAccess.status === 'denied' ||
+    (deviceAccess.status === 'error' && !hasDeviceFilters);
   const {
     error,
     errorNotificationVersion,
@@ -1138,12 +1147,11 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     editReloadFeedIdsRef,
     loadGenerationByFeedIdRef,
     loadFeedInitialMessages,
-    deviceAccessResolved: deviceAccess.status === 'allowed' || deviceAccess.status === 'denied',
+    deviceAccessResolved: deviceAccessAllowsRequests,
   });
 
   useRerDutyPollingLifecycle({
-    ready:
-      shortStateReady && (deviceAccess.status === 'allowed' || deviceAccess.status === 'denied'),
+    ready: shortStateReady && deviceAccessAllowsRequests,
     hasShortState: Boolean(shortStateIdRef.current),
     pollIntervalMs,
     poll: pollCountThenLoadNewerIfNeeded,

@@ -155,6 +155,19 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const [centerTabPending, startCenterTabTransition] = useTransition();
   const setPageError = useCallback((message: string) => setError(message || null), []);
   const dutySettings = useDutySettings();
+  const deviceAccess: DeviceAccess =
+    currentUserStatus === 'error' || systemSettingsStatus === 'error'
+      ? { status: 'error' }
+      : currentUserStatus === 'loading' || systemSettingsStatus === 'loading'
+        ? { status: 'loading' }
+        : canUseMessageDevices(currentUser?.roles, devicesSectionEnabled)
+          ? { status: 'allowed' }
+          : { status: 'denied' };
+  const canUseDevices = deviceAccess.status === 'allowed';
+  const effectiveQueryState =
+    deviceAccess.status === 'denied' && queryState.deviceNamesSelected.length > 0
+      ? { ...queryState, deviceNamesSelected: [] }
+      : queryState;
   useEffect(() => {
     if (dutySettings.loadInProgress) return;
     setQueryState((current) =>
@@ -171,6 +184,8 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const directMessageWindowQueryState = useMemo(
     () => ({
       ...initialQueryState,
+      deviceNamesSelected:
+        deviceAccess.status === 'denied' ? [] : initialQueryState.deviceNamesSelected,
       groupsSelected: queryState.groupsSelected,
       freqsSelected: queryState.freqsSelected,
       networksSelected: queryState.networksSelected,
@@ -179,6 +194,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     }),
     [
       initialQueryState,
+      deviceAccess.status,
       queryState.freqsSelected,
       queryState.groupsSelected,
       queryState.networksSelected,
@@ -188,7 +204,16 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   );
 
   useEffect(() => {
-    if (!targetMessageUid || !targetMessageContextActive || dutySettings.loadInProgress) return;
+    if (
+      !targetMessageUid ||
+      !targetMessageContextActive ||
+      dutySettings.loadInProgress ||
+      deviceAccess.status === 'loading' ||
+      (deviceAccess.status === 'error' &&
+        directMessageWindowQueryState.deviceNamesSelected.length > 0)
+    ) {
+      return;
+    }
     let cancelled = false;
     const isContextRefresh = targetMessageLoadedRef.current;
     if (isContextRefresh) {
@@ -259,6 +284,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     };
   }, [
     directMessageWindowQueryState,
+    deviceAccess.status,
     dutySettings.loadInProgress,
     targetMessageContextActive,
     targetMessageUid,
@@ -298,19 +324,6 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const handleUnauthorized = useCallback((errorValue: unknown) => {
     return false;
   }, []);
-  const deviceAccess: DeviceAccess =
-    currentUserStatus === 'error' || systemSettingsStatus === 'error'
-      ? { status: 'error' }
-      : currentUserStatus === 'loading' || systemSettingsStatus === 'loading'
-        ? { status: 'loading' }
-        : canUseMessageDevices(currentUser?.roles, devicesSectionEnabled)
-          ? { status: 'allowed' }
-          : { status: 'denied' };
-  const canUseDevices = deviceAccess.status === 'allowed';
-  const effectiveQueryState =
-    deviceAccess.status === 'denied' && queryState.deviceNamesSelected.length > 0
-      ? { ...queryState, deviceNamesSelected: [] }
-      : queryState;
 
   const data = useAnalysisData({
     authUserName,

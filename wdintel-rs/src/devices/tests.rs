@@ -374,9 +374,8 @@ async fn target_api_smoke_covers_all_routes() {
         "/api/device/update",
         json!({"device_id": device_id, "name": "API renamed"})
     );
-    assert_eq!(response.status(), StatusCode::OK);
-    let updated: Value = test::read_body_json(response).await;
-    assert_eq!(updated["name"], "API renamed");
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert!(test::read_body(response).await.is_empty());
 
     let response = post_json!("/api/device/list", json!({}));
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
@@ -614,6 +613,14 @@ async fn target_api_smoke_covers_all_routes() {
     let mut login = login.into_active_model();
     login.roles = Set(json!([ROLE_CYBER, ROLE_DEVICE_SOURCE]));
     let login = login.update(&env.dbx).await.unwrap();
+
+    let response = post_json!(
+        "/api/device/update",
+        json!({"device_id": device_id, "name": "API renamed"})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let updated: Value = test::read_body_json(response).await;
+    assert_eq!(updated["name"], "API renamed");
 
     let response = post_json!("/api/device/list", json!({}));
     assert_eq!(response.status(), StatusCode::OK);

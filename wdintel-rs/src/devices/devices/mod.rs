@@ -22,8 +22,8 @@ use crate::sigint::aor::types::{
 use crate::sigint::unit::types::{ListUnitsReq, ListUnitsRsp};
 use crate::types::{Env, ShortContext};
 use actix_identity::Identity;
-use actix_web::post;
 use actix_web::web::{Data, Json};
+use actix_web::{post, HttpResponse};
 
 #[post("/api/device/list")]
 pub(crate) async fn list(
@@ -155,7 +155,7 @@ pub(crate) async fn update(
     env: Data<Env>,
     user: Identity,
     Json(body): Json<UpdateDeviceReq>,
-) -> Result<Json<DeviceDetails>, AppError> {
+) -> Result<HttpResponse, AppError> {
     let command = UpdateDeviceCommand {
         device_id: parse_uuid(&body.device_id),
         external_url: map_nullable_patch(body.external_url),
@@ -168,7 +168,11 @@ pub(crate) async fn update(
         .await
         .c(h!())?;
     let device = bl::update(&env.dbx, &login, command).await.c(h!())?;
-    Ok(Json(map_device_details(device)))
+    if access::require_read(&login.roles).is_ok() {
+        Ok(HttpResponse::Ok().json(map_device_details(device)))
+    } else {
+        Ok(HttpResponse::NoContent().finish())
+    }
 }
 
 fn map_list_sort(sort: DeviceListSortBy) -> DeviceListSort {

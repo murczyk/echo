@@ -79,6 +79,27 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     },
   );
 
+  it('loads and polls an unfiltered feed when the device access lookup fails', async () => {
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          deviceAccess={{ status: 'error', message: 'access lookup failed' }}
+        />,
+      );
+      await flushMicrotasks();
+    });
+
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(1);
+
+    await startPoll();
+
+    expect(hoisted.fetchInboxCount).toHaveBeenCalled();
+  });
+
   it('uses device filters after confirmed authorization and removes them only after confirmed denial', async () => {
     window.history.replaceState(
       {},

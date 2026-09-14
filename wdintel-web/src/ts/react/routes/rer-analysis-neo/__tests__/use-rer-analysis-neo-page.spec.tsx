@@ -444,6 +444,31 @@ describe('useRerAnalysisNeoPage', () => {
     expect(window.location.search).toContain('device-1');
   });
 
+  it('ECHO-3461 sanitizes direct-link device filters after access denial', async () => {
+    const userRequest = deferred<User>();
+    currentUserMock.fetchCurrentUser.mockReturnValueOnce(userRequest.promise);
+    window.history.replaceState(
+      {},
+      '',
+      `${window.location.pathname}?m=target-uid&deviceNames=device-1`,
+    );
+    renderHook();
+    await flushEffects();
+
+    expect(inboxMessagesMock.fetchInboxWindow).not.toHaveBeenCalled();
+
+    await act(async () => {
+      userRequest.resolve({ name: 'tester', roles: [] } as User);
+      await Promise.resolve();
+    });
+    await flushEffects();
+
+    expect(inboxMessagesMock.fetchInboxWindow).toHaveBeenCalledTimes(1);
+    expect(inboxMessagesMock.fetchInboxWindow.mock.calls[0]?.[0].inboxReq).toMatchObject({
+      selectedDeviceNames: null,
+    });
+  });
+
   it('ECHO-3461 defers a filtered query while the current-user lookup is pending', async () => {
     let resolveUser: (user: User) => void = () => {};
     currentUserMock.fetchCurrentUser.mockImplementationOnce(
