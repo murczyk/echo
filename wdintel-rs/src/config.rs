@@ -570,6 +570,8 @@ pub const SIGINT_NETWORK_ACTIVITY_REASON_CLEANUP_NETWORK_NO_ACTIVE_FREQUENCIES: 
     "cleanup_network_no_active_frequencies";
 pub const SIGINT_NETWORK_ACTIVITY_REASON_CLEANUP_NETWORK_SYNTHETIC_INACTIVITY: &str =
     "cleanup_network_synthetic_inactivity";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_CLEANUP_NETWORK_OPEN_FREQUENCY_REPAIRED: &str =
+    "cleanup_network_open_frequency_repaired";
 pub const SIGINT_NETWORK_ACTIVITY_REASON_RECENT_INTERCEPTIONS_THRESHOLD_MET:
     &str = "recent_interceptions_threshold_met";
 pub const MAX_AGE_MESSAGES_TO_UPDATE: i64 = 120;

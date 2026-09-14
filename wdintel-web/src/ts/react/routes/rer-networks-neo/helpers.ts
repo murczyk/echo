@@ -230,7 +230,7 @@ export function buildNetworkRowView(
       ? ''
       : isPresent(network.lastActivityAt)
         ? 'Останнє перехоплення'
-        : 'Немає перехоплень';
+        : 'Немає перехоплень за останні 10 днів';
 
   return {
     id: network.id,
