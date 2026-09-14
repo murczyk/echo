@@ -335,7 +335,7 @@ test.describe('image editor drawer integration #3448', () => {
     page,
   }) => {
     const { editor } = await openPendingImageEditor(page, 'duty');
-    await editor.getByRole('button', { name: 'Текст' }).click();
+    await editor.getByRole('button', { name: 'Текст', exact: true }).click();
     const surface = editor.locator('canvas').last();
     const box = await surface.boundingBox();
     expect(box).not.toBeNull();
@@ -351,6 +351,36 @@ test.describe('image editor drawer integration #3448', () => {
     await expect(deleteSelected).toBeEnabled();
     await page.keyboard.press('Delete');
     await expect(deleteSelected).toBeDisabled();
+  });
+
+  test('selects the clicked annotation after ending another text edit #3448', async ({ page }) => {
+    const { editor } = await openPendingImageEditor(page, 'duty');
+    const surface = editor.locator('canvas').last();
+    const box = await surface.boundingBox();
+    expect(box).not.toBeNull();
+    await editor.getByRole('button', { name: 'Текст', exact: true }).click();
+    await page.mouse.click(box!.x + box!.width * 0.25, box!.y + box!.height * 0.25);
+    await expect(editor.locator('textarea')).toBeFocused();
+    await page.keyboard.type('П1');
+    await page.mouse.click(box!.x + box!.width * 0.8, box!.y + box!.height * 0.8);
+    const first = await selectedTextState(editor);
+
+    await editor.getByRole('button', { name: 'Текст', exact: true }).click();
+    await page.mouse.click(box!.x + box!.width * 0.65, box!.y + box!.height * 0.65);
+    await expect(editor.locator('textarea')).toBeFocused();
+    await page.keyboard.type('П2');
+    const firstCenter = documentPointToScreen(box!, first, {
+      x: first.bounds.left + first.bounds.width / 2,
+      y: first.bounds.top + first.bounds.height / 2,
+    });
+    await page.mouse.click(firstCenter.x, firstCenter.y);
+
+    await expect(editor.getByRole('button', { name: 'Вибрати об’єкт' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(editor.locator('textarea')).toHaveCount(0);
+    await expect.poll(() => selectedTextState(editor).then((state) => state.text)).toBe(first.text);
   });
 
   test('moves text frames without changing their transforms at non-default zoom #3448', async ({

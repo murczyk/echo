@@ -122,7 +122,7 @@ export function useImageEditorDrawingGestures({
   cancelGestureRef: MutableRefObject<() => boolean>;
   setError: (error: string) => void;
   hiddenTextareaContainer: MutableRefObject<HTMLElement | null>;
-  onTextClickAway: () => void;
+  onTextClickAway: (preserveSelection: boolean) => void;
 }) {
   const configRef = useRef<Config>({
     tool,
@@ -175,7 +175,7 @@ export function useImageEditorDrawingGestures({
       canvas,
       fabric,
       isInteractionLocked: () => operationsRef.current.isInteractionLocked(),
-      onTextClickAway: () => operationsRef.current.onTextClickAway(),
+      onTextClickAway: () => operationsRef.current.onTextClickAway(true),
       saveHistory: () => operationsRef.current.saveHistory(),
     });
     let tearingDown = false;
@@ -229,8 +229,9 @@ export function useImageEditorDrawingGestures({
         return;
       }
       activeText.exitEditing();
-      if (!event.target) canvas.setActiveObject(activeText);
-      operationsRef.current.onTextClickAway();
+      const preserveSelection = !event.target;
+      if (preserveSelection) canvas.setActiveObject(activeText);
+      operationsRef.current.onTextClickAway(preserveSelection);
       editingTransitionHandled = true;
       canvas.requestRenderAll();
     };

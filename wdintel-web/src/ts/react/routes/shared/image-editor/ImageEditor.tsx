@@ -316,7 +316,7 @@ export function ImageEditor({
     cancelGestureRef,
     setError,
     hiddenTextareaContainer: hiddenTextareaContainerRef,
-    onTextClickAway: () => changeTool(ImageEditorTool.Select, true),
+    onTextClickAway: (preserveSelection) => changeTool(ImageEditorTool.Select, preserveSelection),
   });
 
   useEffect(
