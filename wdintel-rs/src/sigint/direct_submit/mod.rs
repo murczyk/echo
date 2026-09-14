@@ -13,14 +13,10 @@ use types::{
     DirectSubmitParseRsp, DirectSubmitPayload, DirectSubmitRsp,
 };
 
-fn resolve_copy_message_device_access(
-    result: Result<(), AppError>,
-) -> Result<bool, AppError> {
-    match result {
-        Ok(()) => Ok(true),
-        Err(AppError::Forbidden(_)) => Ok(false),
-        Err(error) => Err(error.c(h!())),
-    }
+fn create_message_device_access_required(
+    device_name_id: Option<Option<i64>>,
+) -> bool {
+    device_name_id.flatten().is_some()
 }
 
 #[post("/api/1.1/messages/copy")]
@@ -36,11 +32,13 @@ pub async fn copy_message(
         .map_err(|err| DirectSubmitApiError::new(err, action))?;
     let login = login_id_from_identity(&user)
         .map_err(|err| DirectSubmitApiError::new(err, action))?;
-    let can_use_message_devices = resolve_copy_message_device_access(
-        crate::devices::access::require_message_devices(&env.dbx, &login).await,
-    )
-    .c(h!())
-    .map_err(|err| DirectSubmitApiError::new(err, action))?;
+    let can_use_message_devices =
+        crate::devices::access::resolve_message_devices_access(
+            crate::devices::access::require_message_devices(&env.dbx, &login)
+                .await,
+        )
+        .c(h!())
+        .map_err(|err| DirectSubmitApiError::new(err, action))?;
     let mut response = bl::copy_signal_messages(
         &login,
         &env,
@@ -70,7 +68,7 @@ pub async fn submit_direct(
         .map_err(|err| DirectSubmitApiError::new(err, action))?;
     let login = login_id_from_identity(&user)
         .map_err(|err| DirectSubmitApiError::new(err, action))?;
-    if payload.device_name_id.is_some() {
+    if create_message_device_access_required(payload.device_name_id) {
         crate::devices::access::require_message_devices(&env.dbx, &login)
             .await
             .c(h!())
@@ -140,26 +138,23 @@ pub async fn parse_direct_submit(
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_copy_message_device_access;
+    use super::create_message_device_access_required;
+    use crate::devices::access::resolve_message_devices_access;
     use crate::error::AppError;
 
     #[test]
-    fn copy_message_device_access_classifier_preserves_authorization_outcomes()
-    {
-        assert_eq!(resolve_copy_message_device_access(Ok(())).unwrap(), true);
-        assert_eq!(
-            resolve_copy_message_device_access(Err(AppError::Forbidden(
-                "device operation is forbidden".to_string(),
-            )))
-            .unwrap(),
-            false,
-        );
+    fn message_device_access_classifier_preserves_authorization_outcomes() {
+        assert!(resolve_message_devices_access(Ok(())).unwrap());
+        assert!(!resolve_message_devices_access(Err(AppError::Forbidden(
+            "device operation is forbidden".to_string(),
+        )))
+        .unwrap());
     }
 
     #[test]
-    fn copy_message_device_access_classifier_contextualizes_infrastructure_failures(
-    ) {
-        let error = resolve_copy_message_device_access(Err(AppError::IO {
+    fn message_device_access_classifier_contextualizes_infrastructure_failures()
+    {
+        let error = resolve_message_devices_access(Err(AppError::IO {
             source: std::io::Error::other("device access database failure"),
         }))
         .unwrap_err();
@@ -171,5 +166,12 @@ mod tests {
         assert!(source.chain().any(|cause| cause
             .to_string()
             .contains("device access database failure")));
+    }
+
+    #[test]
+    fn create_requires_message_device_access_only_for_a_non_null_id() {
+        assert!(!create_message_device_access_required(None));
+        assert!(!create_message_device_access_required(Some(None)));
+        assert!(create_message_device_access_required(Some(Some(42))));
     }
 }

@@ -3166,9 +3166,10 @@ pub async fn rer_duty_filters_get(
             }
             Err(err) => return Err(err),
         };
-    if crate::devices::access::require_message_devices(&env.dbx, &login)
-        .await
-        .is_err()
+    if !crate::devices::access::resolve_message_devices_access(
+        crate::devices::access::require_message_devices(&env.dbx, &login).await,
+    )
+    .c(h!())?
     {
         redact_rer_duty_state_device_names(&mut payload.state);
     }
@@ -5854,9 +5855,11 @@ pub async fn saved_filters_list(
 
     let login = login_id_from_identity(&user).c(h!())?;
     let can_use_message_devices =
-        crate::devices::access::require_message_devices(&env.dbx, &login)
-            .await
-            .is_ok();
+        crate::devices::access::resolve_message_devices_access(
+            crate::devices::access::require_message_devices(&env.dbx, &login)
+                .await,
+        )
+        .c(h!())?;
     let mut filters: Vec<SavedFilter> = select_saved_filter_list(
         sea_orm_active_enums::SigintSavedFilterTypeEnum::Analysis,
         login,
@@ -5888,9 +5891,11 @@ pub async fn saved_filters_duty_list(
 
     let login = login_id_from_identity(&user).c(h!())?;
     let can_use_message_devices =
-        crate::devices::access::require_message_devices(&env.dbx, &login)
-            .await
-            .is_ok();
+        crate::devices::access::resolve_message_devices_access(
+            crate::devices::access::require_message_devices(&env.dbx, &login)
+                .await,
+        )
+        .c(h!())?;
     let mut filters: Vec<SavedFilterDuty> = select_saved_filter_list(
         sea_orm_active_enums::SigintSavedFilterTypeEnum::Duty,
         login,
@@ -5928,9 +5933,11 @@ pub async fn saved_filter_upsert(
         .await
         .c(h!())?;
     let can_use_message_devices =
-        crate::devices::access::require_message_devices(&env.dbx, &login)
-            .await
-            .is_ok();
+        crate::devices::access::resolve_message_devices_access(
+            crate::devices::access::require_message_devices(&env.dbx, &login)
+                .await,
+        )
+        .c(h!())?;
     let mut filters: Vec<SavedFilter> = saved_filter_upsert_1(
         sea_orm_active_enums::SigintSavedFilterTypeEnum::Analysis,
         login,
@@ -5964,9 +5971,11 @@ pub async fn saved_filter_duty_upsert(
     }
 
     let can_use_message_devices =
-        crate::devices::access::require_message_devices(&env.dbx, &login)
-            .await
-            .is_ok();
+        crate::devices::access::resolve_message_devices_access(
+            crate::devices::access::require_message_devices(&env.dbx, &login)
+                .await,
+        )
+        .c(h!())?;
     let mut filters: Vec<SavedFilterDuty> = saved_filter_upsert_1(
         sea_orm_active_enums::SigintSavedFilterTypeEnum::Duty,
         login,

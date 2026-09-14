@@ -7,7 +7,7 @@ use crate::entities::login;
 use crate::error::AppError;
 use crate::h;
 use crate::system_settings::ensure_devices_section_enabled;
-use crate::types::{ShortContext, Uuid};
+use crate::types::{ShortContext, ShortContextErr, Uuid};
 use actix_identity::Identity;
 use sea_orm::{
     AccessMode, ConnectionTrait, DatabaseConnection, IsolationLevel,
@@ -40,6 +40,16 @@ pub(crate) async fn require_message_devices(
     Ok(crate::users::has_role(dbx, login_id, ROLE_CYBER)
         .await
         .c(h!())?)
+}
+
+pub(crate) fn resolve_message_devices_access(
+    result: Result<(), AppError>,
+) -> Result<bool, AppError> {
+    match result {
+        Ok(()) => Ok(true),
+        Err(AppError::Forbidden(_)) => Ok(false),
+        Err(error) => Err(error.c(h!())),
+    }
 }
 
 pub(in crate::devices) fn require_create(

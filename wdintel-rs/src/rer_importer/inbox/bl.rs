@@ -734,9 +734,11 @@ pub async fn aggregate_to_inbox_messages(
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
     let mut res: Vec<(i64, InboxMessage)> = vec![];
     let can_use_message_devices =
-        crate::devices::access::require_message_devices(&env.dbx, login)
-            .await
-            .is_ok();
+        crate::devices::access::resolve_message_devices_access(
+            crate::devices::access::require_message_devices(&env.dbx, login)
+                .await,
+        )
+        .c(h!())?;
     let dbx_raw = env.dbx.get_postgres_connection_pool();
 
     let message_ids: Vec<i64> = messages.iter().map(|m| m.id).collect();

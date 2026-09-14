@@ -101,6 +101,17 @@ fn normalize_device_name_batch(
         .collect())
 }
 
+fn render_device_name(
+    device: query::DeviceNameRow,
+) -> Result<DeviceNameSearchResult, AppError> {
+    Ok(DeviceNameSearchResult {
+        id: device.id,
+        name: device.name.ok_or_else(|| AppError::BL {
+            msg: format!("device name #{} has empty name", device.id),
+        })?,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::{normalize_device_name, normalize_device_name_batch};
@@ -149,15 +160,4 @@ mod tests {
         .unwrap_err();
         assert!(matches!(error, AppError::BL { .. }));
     }
-}
-
-fn render_device_name(
-    device: query::DeviceNameRow,
-) -> Result<DeviceNameSearchResult, AppError> {
-    Ok(DeviceNameSearchResult {
-        id: device.id,
-        name: device.name.ok_or_else(|| AppError::BL {
-            msg: format!("device name #{} has empty name", device.id),
-        })?,
-    })
 }
