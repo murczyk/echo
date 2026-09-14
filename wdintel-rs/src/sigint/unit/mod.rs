@@ -1232,9 +1232,15 @@ async fn begin_unit_creation_transaction(
     req: &CreateUnitReq,
 ) -> Result<DatabaseTransaction, AppError> {
     if req.active {
-        Ok(crate::orbit::acquire_import_lock(dbx).await.c(h!())?)
+        Ok(
+            begin_orbit_unit_merge_transaction(dbx, &req.duplicate_unit_ids)
+                .await
+                .c(h!())?,
+        )
     } else {
-        Ok(dbx.begin().await.context(h!())?)
+        Ok(begin_unit_merge_transaction(dbx, &req.duplicate_unit_ids)
+            .await
+            .c(h!())?)
     }
 }
 
@@ -1971,8 +1977,7 @@ async fn delete_unit_for_login(
     login: &uuid::Uuid,
     unit_id: i64,
 ) -> Result<sigint_unit::Model, AppError> {
-    let transaction = dbx.begin().await.context(h!())?;
-    acquire_unit_merge_locks(&transaction, unit_id, unit_id)
+    let transaction = begin_unit_merge_transaction(dbx, &[unit_id])
         .await
         .c(h!())?;
     changelog::set_author(&transaction, login).await.c(h!())?;
@@ -2048,7 +2053,10 @@ pub async fn merge_units(
     unit_to_delete_id: i64,
     original_id: i64,
 ) -> Result<sigint_unit::Model, AppError> {
-    let transaction = dbx.begin().await.context(h!())?;
+    let transaction =
+        begin_unit_merge_transaction(dbx, &[unit_to_delete_id, original_id])
+            .await
+            .c(h!())?;
     let unit = merge_units_in_transaction(
         login,
         &transaction,
@@ -2084,31 +2092,80 @@ pub(crate) async fn acquire_unit_merge_locks_for_ids<C>(
 where
     C: ConnectionTrait,
 {
+    anyhow::ensure!(
+        try_acquire_unit_merge_locks_for_ids(transaction, unit_ids)
+            .await
+            .c(h!())?,
+        "unit merge lock is busy"
+    );
+    Ok(())
+}
+
+pub(crate) async fn begin_unit_merge_transaction(
+    dbx: &DatabaseConnection,
+    unit_ids: &[i64],
+) -> anyhow::Result<DatabaseTransaction> {
+    begin_unit_merge_transaction_with_import_lock(dbx, unit_ids, false).await
+}
+
+pub(crate) async fn begin_orbit_unit_merge_transaction(
+    dbx: &DatabaseConnection,
+    unit_ids: &[i64],
+) -> anyhow::Result<DatabaseTransaction> {
+    begin_unit_merge_transaction_with_import_lock(dbx, unit_ids, true).await
+}
+
+async fn begin_unit_merge_transaction_with_import_lock(
+    dbx: &DatabaseConnection,
+    unit_ids: &[i64],
+    import_lock: bool,
+) -> anyhow::Result<DatabaseTransaction> {
+    loop {
+        let transaction = if import_lock {
+            crate::orbit::acquire_import_lock(dbx).await.c(h!())?
+        } else {
+            dbx.begin().await.c(h!())?
+        };
+        if try_acquire_unit_merge_locks_for_ids(&transaction, unit_ids)
+            .await
+            .c(h!())?
+        {
+            return Ok(transaction);
+        }
+        transaction.rollback().await.c(h!())?;
+        tokio::time::sleep(std::time::Duration::from_millis(
+            SIGINT_UNIT_MERGE_ADVISORY_LOCK_POLL_MS,
+        ))
+        .await;
+    }
+}
+
+async fn try_acquire_unit_merge_locks_for_ids<C>(
+    transaction: &C,
+    unit_ids: &[i64],
+) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
     for unit_id in unit_ids.iter().copied().collect::<BTreeSet<_>>() {
         let lock_name = format!("unit:{unit_id}");
-        loop {
-            let row = transaction
-                .query_one_raw(Statement::from_sql_and_values(
-                    DatabaseBackend::Postgres,
-                    "select pg_try_advisory_xact_lock(hashtextextended($1::text || $2::text, 0)) as acquired",
-                    [
-                        SIGINT_UNIT_MERGE_ADVISORY_LOCK_NAMESPACE.into(),
-                        lock_name.clone().into(),
-                    ],
-                ))
-                .await
-                .c(h!())?
-                .c(h!())?;
-            if row.try_get::<bool>("", "acquired").c(h!())? {
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(
-                SIGINT_UNIT_MERGE_ADVISORY_LOCK_POLL_MS,
+        let row = transaction
+            .query_one_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "select pg_try_advisory_xact_lock(hashtextextended($1::text || $2::text, 0)) as acquired",
+                [
+                    SIGINT_UNIT_MERGE_ADVISORY_LOCK_NAMESPACE.into(),
+                    lock_name.into(),
+                ],
             ))
-            .await;
+            .await
+            .c(h!())?
+            .c(h!())?;
+        if !row.try_get::<bool>("", "acquired").c(h!())? {
+            return Ok(false);
         }
     }
-    Ok(())
+    Ok(true)
 }
 
 pub(crate) async fn merge_units_in_transaction<C>(
@@ -3365,18 +3422,40 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn unit_merge_locks_serialize_overlapping_merges() {
+    async fn unit_merge_lock_waiter_releases_pool_connection() {
         let env = cleanup().await.unwrap();
-        let first = env.dbx.begin().await.unwrap();
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(2)
+            .connect_with(
+                (*env.dbx.get_postgres_connection_pool().connect_options())
+                    .clone(),
+            )
+            .await
+            .unwrap();
+        let dbx = sea_orm::SqlxPostgresConnector::from_sqlx_postgres_pool(
+            pool.clone(),
+        );
+        let first = dbx.begin().await.unwrap();
         acquire_unit_merge_locks(&first, 1, 2).await.unwrap();
-        let dbx = env.dbx.clone();
         let mut second = tokio::spawn(async move {
-            let transaction = dbx.begin().await.unwrap();
-            acquire_unit_merge_locks(&transaction, 2, 3).await.unwrap();
-            transaction
+            begin_unit_merge_transaction(&dbx, &[2, 3]).await.unwrap()
         });
-        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while pool.size() < 2 {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
         assert!(!second.is_finished());
+        let connection = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            pool.acquire(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        drop(connection);
 
         first.commit().await.unwrap();
         let second = tokio::time::timeout(

@@ -12,6 +12,7 @@ const api = vi.hoisted(() => ({
   getUnitsPage: vi.fn(),
   getUnitIdsWithVisibleAttachments: vi.fn(),
   mergeDuplicateUnit: vi.fn(),
+  clearPendingUnitMerge: vi.fn(),
   loadPendingUnitMerge: vi.fn((): unknown => null),
   waitForBgtaskCompletion: vi.fn(),
 }));
@@ -35,7 +36,7 @@ vi.mock('../../services/api/system-settings', () => ({
 
 vi.mock('../../services/api/bgtask', () => ({
   BgtaskFailedError: class extends Error {},
-  clearPendingUnitMerge: vi.fn(),
+  clearPendingUnitMerge: api.clearPendingUnitMerge,
   fetchBgtaskStatusAndLogs: vi.fn(),
   getBgtaskProgressFromPercent: vi.fn(),
   loadPendingUnitMerge: api.loadPendingUnitMerge,
@@ -43,6 +44,7 @@ vi.mock('../../services/api/bgtask', () => ({
   waitForBgtaskCompletion: api.waitForBgtaskCompletion,
 }));
 
+import { BgtaskFailedError } from '../../services/api/bgtask';
 import { useRerUnitsPage } from './use-rer-units-page';
 
 type Page = ReturnType<typeof useRerUnitsPage>;
@@ -141,6 +143,44 @@ describe('useRerUnitsPage loading', () => {
 });
 
 describe('useRerUnitsPage mutations', () => {
+  it('refreshes units and attachments after a staged merge fails', async () => {
+    const req = { limit: 20, offset: 0 } as ListUnitsReq;
+    api.getUnitsPage
+      .mockResolvedValueOnce({
+        units: [activeUnit, inactiveUnit],
+        totalCount: 2,
+        statusCounts: { active: 1, inactive: 1 },
+        showLoadMore: false,
+      })
+      .mockResolvedValueOnce({
+        units: [activeUnit],
+        totalCount: 1,
+        statusCounts: { active: 1, inactive: 0 },
+        showLoadMore: false,
+      });
+    api.getUnitIdsWithVisibleAttachments
+      .mockResolvedValueOnce([inactiveUnit.id])
+      .mockResolvedValueOnce([activeUnit.id]);
+    api.loadPendingUnitMerge.mockReturnValueOnce({
+      taskId: 42,
+      original: activeUnit,
+      duplicate: inactiveUnit,
+    });
+    api.waitForBgtaskCompletion.mockRejectedValueOnce(new BgtaskFailedError('Merge failed'));
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => root?.render(createElement(Harness, { req })));
+    await flushEffects();
+
+    expect(api.clearPendingUnitMerge).toHaveBeenCalledWith(42);
+    expect(api.getUnitsPage).toHaveBeenCalledTimes(2);
+    expect(latestPage?.units.map((unit) => unit.id)).toEqual([activeUnit.id]);
+    expect(latestPage?.attachmentUnitIds).toEqual(new Set([activeUnit.id]));
+    expect(latestPage?.dialogError).toContain('Merge failed');
+  });
+
   it('resumes a pending merge after navigation and stops polling on unmount', async () => {
     const req = { limit: 20, offset: 0 } as ListUnitsReq;
     api.getUnitsPage.mockResolvedValue({

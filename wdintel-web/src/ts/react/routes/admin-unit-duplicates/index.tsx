@@ -126,8 +126,11 @@ export function AdminUnitDuplicatesPage({
       await loadUnits(controller.signal);
     } catch (error) {
       if (controller.signal.aborted) return;
-      if (error instanceof BgtaskFailedError) clearPendingUnitMerge(pending.taskId);
       setMergeError(formatUnitError(error));
+      if (error instanceof BgtaskFailedError) {
+        clearPendingUnitMerge(pending.taskId);
+        await loadUnits(controller.signal);
+      }
     } finally {
       if (!controller.signal.aborted) setSubmitting(false);
       if (mergePollController.current === controller) mergePollController.current = null;

@@ -447,8 +447,11 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
       setMergeProgressLabel(null);
     } catch (error) {
       if (controller.signal.aborted) return;
-      if (error instanceof BgtaskFailedError) clearPendingUnitMerge(pending.taskId);
       setDialogError(formatUnitError(error));
+      if (error instanceof BgtaskFailedError) {
+        clearPendingUnitMerge(pending.taskId);
+        await loadUnits({ signal: controller.signal });
+      }
     } finally {
       if (!controller.signal.aborted) setSubmitting(false);
       if (mergePollController.current === controller) mergePollController.current = null;
