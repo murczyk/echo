@@ -15,8 +15,6 @@ import { useGlobalSetting } from './use-global-settings';
 import { useDutySettings } from '../../hooks/use-duty-settings';
 import type { UserDutySettings } from '../../services/api/user-settings';
 import { listMyAdminGroups } from '../../services/api/zones';
-import { fetchCurrentUser } from '../../services/api/user';
-import { hasRole } from '../../utils/roles';
 
 export type SettingsSection = 'myGroups' | 'myOrganism' | 'duty' | 'analysis' | 'myReports';
 
@@ -90,7 +88,6 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   );
 
   const dutySettings = useDutySettings();
-  const [canSortMessagesByCreation, setCanSortMessagesByCreation] = useState(false);
   const scheduleDutySettingsSave = (overrides: Partial<UserDutySettings>) => {
     dutySettings.scheduleSave({
       tagsLayout: dutySettings.tagsLayout,
@@ -132,14 +129,6 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
         `Помилка завантаження груп: ${error instanceof Error ? error.message : 'невідома помилка'}`,
       );
     }
-  }, []);
-
-  useEffect(() => {
-    const abortController = new AbortController();
-    void fetchCurrentUser(abortController.signal)
-      .then((user) => setCanSortMessagesByCreation(hasRole(user.roles, 'Cyber')))
-      .catch(() => setCanSortMessagesByCreation(false));
-    return () => abortController.abort();
   }, []);
 
   useEffect(() => {
@@ -278,7 +267,6 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                 dutySettings.setMessageSortBy(value);
                 scheduleDutySettingsSave({ messageSortBy: value });
               }}
-              showMessageSortBy={canSortMessagesByCreation}
               mediaSummaryEnabled={dutySettings.mediaSummaryEnabled}
               onMediaSummaryEnabledChange={(value) => {
                 dutySettings.setMediaSummaryEnabled(value);
@@ -367,7 +355,6 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                       dutySettings.setMessageSortBy(value);
                       scheduleDutySettingsSave({ messageSortBy: value });
                     }}
-                    showMessageSortBy={canSortMessagesByCreation}
                     mediaSummaryEnabled={dutySettings.mediaSummaryEnabled}
                     onMediaSummaryEnabledChange={(value) => {
                       dutySettings.setMediaSummaryEnabled(value);

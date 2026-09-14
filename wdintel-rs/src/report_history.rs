@@ -3437,13 +3437,6 @@ async fn generate_report(
             })
         }
         ReportHistoryRequest::AnalysisExport { payload } => {
-            crate::rer_importer::analysis::ensure_analysis_message_time_basis_access_by_id(
-                env,
-                &report_history.requested_by_login_id,
-                &payload,
-            )
-            .await
-            .c(h!())?;
             let (file_name, content_type, bytes) = match report_history.report_kind.as_str() {
                 KIND_SUMMARY_TABLE => (
                     report_history

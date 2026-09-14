@@ -27,7 +27,6 @@ export type SettingsDutySectionProps = {
   onMessageTextPreviewLinesChange: (value: MessageTextPreviewLineLimit) => void;
   messageSortBy: MessageTimeBasis;
   onMessageSortByChange: (value: MessageTimeBasis) => void;
-  showMessageSortBy: boolean;
   mediaSummaryEnabled: boolean;
   onMediaSummaryEnabledChange: (value: boolean) => void;
   /** When true, duty feed does not auto-scroll / follow new messages. */
@@ -53,7 +52,6 @@ export function SettingsDutySection({
   onMessageTextPreviewLinesChange,
   messageSortBy,
   onMessageSortByChange,
-  showMessageSortBy,
   mediaSummaryEnabled,
   onMediaSummaryEnabledChange,
   disableAutoScroll,
@@ -108,7 +106,6 @@ export function SettingsDutySection({
             onMessageTextPreviewLinesChange={onMessageTextPreviewLinesChange}
             messageSortBy={messageSortBy}
             onMessageSortByChange={onMessageSortByChange}
-            showMessageSortBy={showMessageSortBy}
             mediaSummaryEnabled={mediaSummaryEnabled}
             onMediaSummaryEnabledChange={onMediaSummaryEnabledChange}
             collapseMediaPreviews={collapseMediaPreviews}

@@ -1,4 +1,4 @@
-use crate::users::{has_role, login_id_from_identity};
+use crate::users::login_id_from_identity;
 pub mod types;
 
 pub use types::{
@@ -55,25 +55,6 @@ fn model_to_dto(m: &user_settings::Model) -> UserDutySettingsDto {
     }
 }
 
-fn creation_sort_was_explicitly_requested(
-    has_explicit_message_sort_by: bool,
-    message_sort_by: MessageTimeBasis,
-) -> bool {
-    has_explicit_message_sort_by
-        && message_sort_by == MessageTimeBasis::MessageCreation
-}
-
-fn effective_message_sort_by(
-    message_sort_by: MessageTimeBasis,
-    has_cyber_role: bool,
-) -> MessageTimeBasis {
-    if message_sort_by == MessageTimeBasis::MessageCreation && !has_cyber_role {
-        MessageTimeBasis::MessageInterception
-    } else {
-        message_sort_by
-    }
-}
-
 #[get("/api/user/settings")]
 pub async fn user_settings_get(
     env: Data<Env>,
@@ -86,15 +67,10 @@ pub async fn user_settings_get(
         .one(&env.dbx)
         .await
         .c(h!())?;
-    let mut dto = match row {
+    let dto = match row {
         Some(m) => model_to_dto(&m),
         None => UserDutySettingsDto::default(),
     };
-    if dto.message_sort_by == MessageTimeBasis::MessageCreation
-        && has_role(&env.dbx, &login_id, "Cyber").await.is_err()
-    {
-        dto.message_sort_by = MessageTimeBasis::MessageInterception;
-    }
     Ok(Json(dto))
 }
 
@@ -117,12 +93,6 @@ pub async fn user_settings_put(
             .c(h!())?
             .map(|settings| model_to_dto(&settings).message_sort_by)
             .unwrap_or_default();
-    }
-    if creation_sort_was_explicitly_requested(
-        has_explicit_message_sort_by,
-        dto.message_sort_by,
-    ) {
-        has_role(&env.dbx, &login_id, "Cyber").await.c(h!())?;
     }
     let now = Utc::now().naive_utc();
     user_settings::Entity::insert(user_settings::ActiveModel {
@@ -183,37 +153,7 @@ pub async fn user_settings_put(
     .exec(&env.dbx)
     .await
     .c(h!())?;
-    dto.message_sort_by = effective_message_sort_by(
-        dto.message_sort_by,
-        has_role(&env.dbx, &login_id, "Cyber").await.is_ok(),
-    );
     Ok(Json(dto))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn role_loss_keeps_an_omitted_creation_preference_but_masks_it_in_response()
-    {
-        assert!(!creation_sort_was_explicitly_requested(
-            false,
-            MessageTimeBasis::MessageCreation,
-        ));
-        assert_eq!(
-            effective_message_sort_by(MessageTimeBasis::MessageCreation, false),
-            MessageTimeBasis::MessageInterception,
-        );
-    }
-
-    #[test]
-    fn explicit_creation_preference_requires_cyber_access() {
-        assert!(creation_sort_was_explicitly_requested(
-            true,
-            MessageTimeBasis::MessageCreation,
-        ));
-    }
 }
 
 async fn load_login(

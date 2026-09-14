@@ -8368,16 +8368,6 @@ fn correlated_and_new_callsign_queries_filter_by_creation_time() {
 }
 
 #[test]
-fn creation_time_analysis_requests_require_cyber_access() {
-    let mut req = mk_analysis_stats_req(1_000, 2_000);
-    assert!(!analysis_message_time_basis_requires_cyber(&req));
-
-    req.message_time_basis =
-        Some(crate::user_settings::MessageTimeBasis::MessageCreation);
-    assert!(analysis_message_time_basis_requires_cyber(&req));
-}
-
-#[test]
 fn new_callsign_thresholds_keep_existing_boundary_semantics() {
     let report_since = test_dt(2026, 2, 1, 0, 0);
     let callsigns = ["exact-24h", "exact-30d", "exact-7d", "never", "recent"]

@@ -13,7 +13,6 @@ function renderCard(
   messageTextPreviewLines: 20 | 40 | null,
   mediaSummaryEnabled = true,
   collapseMediaPreviews = true,
-  showMessageSortBy = false,
 ) {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -32,7 +31,6 @@ function renderCard(
         onMessageTextPreviewLinesChange={onMessageTextPreviewLinesChange}
         messageSortBy="interception"
         onMessageSortByChange={vi.fn()}
-        showMessageSortBy={showMessageSortBy}
         mediaSummaryEnabled={mediaSummaryEnabled}
         onMediaSummaryEnabledChange={onMediaSummaryEnabledChange}
         collapseMediaPreviews={collapseMediaPreviews}
@@ -116,8 +114,8 @@ describe('SettingsMessageCard', () => {
   });
 
   // https://github.com/echoua/echo/issues/3455
-  it('places Cyber-only message sorting immediately after the long-message setting', () => {
-    const { container } = renderCard(20, true, true, true);
+  it('places message sorting immediately after the long-message setting', () => {
+    const { container } = renderCard(20, true, true);
     const previewToggle = Array.from(container.querySelectorAll('*')).find(
       (item) => item.textContent === 'Згортати перегляд довгих повідомлень:',
     );
