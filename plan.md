@@ -45,10 +45,11 @@ deleted duplicate by design; they are not live dependencies to reassign.
    internal merge callers acquire the same locks in sorted order.
 3. Change the web endpoint to start a background task and return its ID. Write
    stage logs and a monotonic percentage to `bgtask`; finish with success or
-   failure and send the unit-changed event after successful final commit.
+   failure and send the unit-changed event after completion or failure.
 4. Poll the existing bgtask status API from the merge dialog. Display equal
    category progress without allowing the bar to move backwards; refresh the
-   unit list only after successful task completion. Retain the task ID across
+   unit list after success or failure because earlier batches may have
+   committed. Retain the task ID across
    navigation and mark interrupted tasks on API restart. Update both React
    callers and the unused Elm API response decoder for the endpoint's new
    return type.
@@ -64,7 +65,10 @@ marking the duplicate deleted. A writer that attaches to the duplicate after
 that commit is outside this task's control unless all unit-reference writers
 are changed to reject deleted units; this pre-existing soft-delete race is not
 introduced by the staged task. A failed or interrupted task leaves already
-committed reassignments intact and can be retried safely.
+committed reassignments intact. A retry must use the original survivor, which
+is pinned by the first task record. Each ORBIT-link batch reconciles derived
+duplicate and inconsistency state before commit, and failed or recovered tasks
+publish unit-change events for other clients.
 
 The local development database has no rows in the large reference tables,
 so it cannot provide a production-scale query plan or a meaningful timing

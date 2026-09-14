@@ -61,23 +61,27 @@ pub async fn merge_two_networks(
     }
 
     // Fetch units for both networks
-    let unit_from = sigint_network_unit::Entity::find()
+    let units_from = sigint_network_unit::Entity::find()
         .filter(sigint_network_unit::Column::NetworkId.eq(network_id_from))
         .select_only()
         .column(sigint_network_unit::Column::UnitId)
         .into_tuple::<i64>()
-        .one(txn)
+        .all(txn)
         .await
-        .context(h!())?;
+        .context(h!())?
+        .into_iter()
+        .collect::<HashSet<_>>();
 
-    let unit_to = sigint_network_unit::Entity::find()
+    let units_to = sigint_network_unit::Entity::find()
         .filter(sigint_network_unit::Column::NetworkId.eq(network_id_to))
         .select_only()
         .column(sigint_network_unit::Column::UnitId)
         .into_tuple::<i64>()
-        .one(txn)
+        .all(txn)
         .await
-        .context(h!())?;
+        .context(h!())?
+        .into_iter()
+        .collect::<HashSet<_>>();
 
     if perform_merge_check {
         // Validate if merge is allowed (Names should match)
@@ -88,7 +92,7 @@ pub async fn merge_two_networks(
         }
 
         // Ensure they belong to the same unit
-        if unit_from != unit_to {
+        if units_from != units_to {
             return Err(AppError::BL {
                 msg: "Networks belong to different units".to_string(),
             });
@@ -121,7 +125,7 @@ pub async fn merge_two_networks(
         .await
         .c(h!())?;
 
-    reassign_units(txn, network_id_from, network_id_to)
+    reassign_units(txn, login, network_id_from, network_id_to)
         .await
         .c(h!())?;
     reassign_encryption_keys(txn, network_id_from, network_id_to)
@@ -211,6 +215,7 @@ fn is_inactive_network(network: &sigint_network::Model) -> bool {
 
 async fn reassign_units(
     txn: &DatabaseTransaction,
+    login: &uuid::Uuid,
     network_id_from: i64,
     network_id_to: i64,
 ) -> anyhow::Result<()> {
@@ -229,9 +234,23 @@ async fn reassign_units(
         .c(h!())?;
     for unit in units_from {
         if unit_ids_to.insert(unit.unit_id) {
+            let old_value = serde_json::to_value(&unit).c(h!())?;
+            let id = unit.id;
             let mut unit = unit.into_active_model();
             unit.network_id = Set(network_id_to);
-            unit.update(txn).await.c(h!())?;
+            let unit = unit.update(txn).await.c(h!())?;
+            sigint_network_unit_changelog::ActiveModel {
+                sigint_network_unit_id: Set(id),
+                login_id: Set(*login),
+                action: Set("update".to_string()),
+                old_value: Set(Some(old_value)),
+                new_value: Set(Some(serde_json::to_value(unit).c(h!())?)),
+                req: Set(None),
+                ..Default::default()
+            }
+            .insert(txn)
+            .await
+            .c(h!())?;
         }
     }
     Ok(())
@@ -962,7 +981,7 @@ mod tests {
             mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
         let target_unit =
             mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
-        mk_sigint_network_unit(
+        let source_link = mk_sigint_network_unit(
             &env.dbx,
             sigint_network_unit::ActiveModel {
                 network_id: Set(source.id),
@@ -1031,6 +1050,17 @@ mod tests {
             .unwrap();
         assert!(target_units.contains(&source_unit.id));
         assert!(target_units.contains(&target_unit.id));
+        let changelog = sigint_network_unit_changelog::Entity::find()
+            .filter(
+                sigint_network_unit_changelog::Column::SigintNetworkUnitId
+                    .eq(source_link.id),
+            )
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(changelog.old_value.unwrap()["network_id"], source.id);
+        assert_eq!(changelog.new_value.unwrap()["network_id"], target.id);
         assert_eq!(
             sigint_network_encryption_key::Entity::find_by_id(key.id)
                 .one(&txn)
@@ -1062,6 +1092,59 @@ mod tests {
                     > 0
             );
         }
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn checked_network_merge_compares_all_linked_units() {
+        let env = cleanup().await.unwrap();
+        let login = crate::users::login_id_by_name(&env.dbx, "Tester")
+            .await
+            .unwrap();
+        let source = mk_sigint_network(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                name: Set("shared name".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let target = mk_sigint_network(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                name: Set("shared name".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let shared =
+            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let extra = mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        for (network_id, unit_id) in [
+            (source.id, shared.id),
+            (target.id, shared.id),
+            (target.id, extra.id),
+        ] {
+            mk_sigint_network_unit(
+                &env.dbx,
+                sigint_network_unit::ActiveModel {
+                    network_id: Set(network_id),
+                    unit_id: Set(unit_id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        let txn = env.dbx.begin().await.unwrap();
+        assert!(merge_two_networks(
+            &txn, &login, true, false, source.id, target.id
+        )
+        .await
+        .is_err());
         txn.rollback().await.unwrap();
     }
 }

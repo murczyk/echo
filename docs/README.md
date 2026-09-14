@@ -68,7 +68,9 @@ categories are moved in bounded, committed batches; the final transaction
 rechecks references, reconciles the survivor and parent activity, and marks the
 duplicate deleted. On API restart, unfinished merge tasks are marked failed
 unless that final transaction committed. An interrupted merge can be submitted
-again; already moved references remain on the survivor.
+again only with the original survivor; already moved references remain there.
+Each committed ORBIT-link batch reconciles duplicate and inconsistency state,
+and failed or recovered tasks publish a unit-change event for other clients.
 
 Analytics control scripts and units are deployed as one content-addressed
 release to both the application and its paired analytics container. Source

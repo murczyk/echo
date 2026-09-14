@@ -2122,14 +2122,25 @@ async fn begin_unit_merge_transaction_with_import_lock(
     import_lock: bool,
 ) -> anyhow::Result<DatabaseTransaction> {
     loop {
-        let transaction = if import_lock {
-            crate::orbit::acquire_import_lock(dbx).await.c(h!())?
+        let transaction = dbx.begin().await.c(h!())?;
+        let import_lock_acquired = if import_lock {
+            let row = transaction
+                .query_one_raw(Statement::from_sql_and_values(
+                    DatabaseBackend::Postgres,
+                    "select pg_try_advisory_xact_lock($1) as acquired",
+                    [crate::config::ORBIT_IMPORT_ADVISORY_LOCK_KEY.into()],
+                ))
+                .await
+                .c(h!())?
+                .c(h!())?;
+            row.try_get::<bool>("", "acquired").c(h!())?
         } else {
-            dbx.begin().await.c(h!())?
+            true
         };
-        if try_acquire_unit_merge_locks_for_ids(&transaction, unit_ids)
-            .await
-            .c(h!())?
+        if import_lock_acquired
+            && try_acquire_unit_merge_locks_for_ids(&transaction, unit_ids)
+                .await
+                .c(h!())?
         {
             return Ok(transaction);
         }
@@ -3467,6 +3478,55 @@ mod tests {
         .unwrap()
         .unwrap();
         second.commit().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn orbit_merge_import_lock_waiter_releases_pool_connection() {
+        let env = cleanup().await.unwrap();
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(2)
+            .connect_with(
+                (*env.dbx.get_postgres_connection_pool().connect_options())
+                    .clone(),
+            )
+            .await
+            .unwrap();
+        let dbx = sea_orm::SqlxPostgresConnector::from_sqlx_postgres_pool(
+            pool.clone(),
+        );
+        let first = crate::orbit::acquire_import_lock(&dbx).await.unwrap();
+        let mut second = tokio::spawn(async move {
+            begin_orbit_unit_merge_transaction(&dbx, &[2, 3])
+                .await
+                .unwrap()
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while pool.size() < 2 {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(!second.is_finished());
+        let connection = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            pool.acquire(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        drop(connection);
+
+        first.rollback().await.unwrap();
+        let second = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            &mut second,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        second.rollback().await.unwrap();
     }
 
     fn unit_req() -> CreateUnitReq {

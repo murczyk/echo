@@ -18,6 +18,7 @@ impl MigrationTrait for Migration {
             "create index concurrently if not exists sigint_network_unit_unit_id_id_idx on sigint_network_unit (unit_id, id);",
             "create index concurrently if not exists sigint_network_callsign_unit_id_id_idx on sigint_network_callsign (unit_id, id);",
             "create index concurrently if not exists sigint_inbox_item_unit_unit_id_id_idx on sigint_inbox_item_unit (unit_id, id);",
+            "create index concurrently if not exists bgtask_unit_merge_marker_idx on bgtask ((loglines->>0) text_pattern_ops);",
         ] {
             manager
                 .get_connection()
@@ -30,6 +31,7 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         for sql in [
+            "drop index concurrently if exists bgtask_unit_merge_marker_idx;",
             "drop index concurrently if exists sigint_inbox_item_unit_unit_id_id_idx;",
             "drop index concurrently if exists sigint_network_callsign_unit_id_id_idx;",
             "drop index concurrently if exists sigint_network_unit_unit_id_id_idx;",
