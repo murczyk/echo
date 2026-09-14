@@ -1,13 +1,15 @@
 use super::entities::{
-    file_device_source_state, file_entry, file_revision, file_sync_session,
+    file_content, file_content_upload, file_device_source_state, file_entry,
+    file_revision, file_sync_session,
     sea_orm_active_enums::{
-        FileEntryKind, FileSyncSessionMode, FileSyncSessionStatus,
+        FileContentUploadStatus, FileEntryKind, FileSyncSessionMode,
+        FileSyncSessionStatus,
     },
 };
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, DatabaseConnection, EntityTrait,
-    IntoActiveModel, TransactionTrait,
+    ActiveModelTrait, ActiveValue::Set, ConnectionTrait, DatabaseConnection,
+    EntityTrait, IntoActiveModel, TransactionTrait,
 };
 use uuid::Uuid;
 
@@ -109,4 +111,67 @@ pub(crate) async fn insert_entry(
     .unwrap();
     transaction.commit().await.unwrap();
     file
+}
+
+pub(crate) async fn publish_content<C>(
+    db: &C,
+    file: &file_entry::Model,
+    created_by_login_id: Uuid,
+) -> String
+where
+    C: ConnectionTrait,
+{
+    let revision = file.revision.unwrap();
+    let upload_id = Uuid::now_v7();
+    let object_key = format!(
+        "device-file-content/{}/{}/{revision}/{upload_id}",
+        file.device_id, file.id
+    );
+    let source_sha256 = vec![1_u8; 32];
+    let now = Utc::now().fixed_offset();
+    let expires_at = now + Duration::hours(1);
+    let hard_expires_at = now + Duration::days(1);
+
+    let upload = file_content_upload::ActiveModel {
+        id: Set(upload_id),
+        device_id: Set(file.device_id),
+        file_id: Set(file.id),
+        revision: Set(revision),
+        created_by_login_id: Set(created_by_login_id),
+        upload_length: Set(1),
+        expected_sha256: Set(source_sha256.clone()),
+        object_key: Set(object_key.clone()),
+        status: Set(FileContentUploadStatus::Open),
+        created_at: Set(now),
+        last_activity_at: Set(now),
+        expires_at: Set(expires_at),
+        hard_expires_at: Set(hard_expires_at),
+        spool_removed_at: Set(None),
+        next_cleanup_at: Set(Some(expires_at)),
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    let mut upload = upload.into_active_model();
+    upload.status = Set(FileContentUploadStatus::Completed);
+    upload.next_cleanup_at = Set(Some(now));
+    upload.update(db).await.unwrap();
+    file_content::ActiveModel {
+        file_id: Set(file.id),
+        revision: Set(revision),
+        upload_id: Set(upload_id),
+        object_key: Set(object_key.clone()),
+        source_size_bytes: Set(1),
+        source_sha256: Set(source_sha256),
+        is_encrypted: Set(true),
+        created_at: Set(now),
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    let mut file = file.clone().into_active_model();
+    file.content_path = Set(Some(object_key.clone()));
+    file.update(db).await.unwrap();
+
+    object_key
 }

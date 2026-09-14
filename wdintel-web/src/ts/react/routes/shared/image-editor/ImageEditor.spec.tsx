@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   canvasAdd: vi.fn(),
+  canvasConstructed: 0,
   canvasOptions: undefined as Record<string, unknown> | undefined,
   canvas: undefined as { getActiveObject: ReturnType<typeof vi.fn> } | undefined,
   canvasSnapshot: 'initial',
@@ -18,6 +19,7 @@ const mocks = vi.hoisted(() => ({
     get: vi.fn(),
   },
   fromURL: vi.fn(),
+  loadImageEditorFonts: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('./image-editor-export', () => ({
@@ -30,6 +32,9 @@ vi.mock('./image-editor-export', () => ({
 vi.mock('./image-editor-source-validation', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./image-editor-source-validation')>()),
   validateImageEditorSource: vi.fn().mockResolvedValue({ width: 200, height: 100 }),
+}));
+vi.mock('./image-editor-font', () => ({
+  loadImageEditorFonts: mocks.loadImageEditorFonts,
 }));
 vi.mock('fabric', () => {
   const classes = new Map<string, unknown>();
@@ -61,6 +66,7 @@ vi.mock('fabric', () => {
     getZoom = vi.fn(() => 1);
     toJSON = vi.fn(() => ({ snapshot: mocks.canvasSnapshot }));
     constructor(_element: HTMLCanvasElement, options: Record<string, unknown>) {
+      mocks.canvasConstructed += 1;
       mocks.canvasOptions = options;
       mocks.canvas = this;
     }
@@ -106,10 +112,15 @@ import { ImageEditor } from './ImageEditor';
 
 describe('ImageEditor initialization', () => {
   const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:source');
+  let consoleError: ReturnType<typeof vi.spyOn> | undefined;
 
   afterEach(() => {
+    consoleError?.mockRestore();
+    consoleError = undefined;
     vi.clearAllMocks();
     mocks.fromURL.mockResolvedValue(mocks.sourceImage);
+    mocks.loadImageEditorFonts.mockResolvedValue(undefined);
+    mocks.canvasConstructed = 0;
     mocks.canvasSnapshot = 'initial';
     document.body.replaceChildren();
   });
@@ -174,6 +185,88 @@ describe('ImageEditor initialization', () => {
     );
 
     act(() => root.unmount());
+  });
+
+  it('stops initialization when unmounted while fonts load #3448', async () => {
+    let resolveFonts!: () => void;
+    mocks.loadImageEditorFonts.mockImplementation(
+      () => new Promise<void>((resolve) => (resolveFonts = resolve)),
+    );
+    consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    document.body.appendChild(container);
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe = vi.fn();
+        disconnect = vi.fn();
+      },
+    );
+
+    await act(async () => {
+      root.render(
+        <ImageEditor
+          source={{ blob: new Blob(['source']), fileName: 'photo.jpg', mimeType: 'image/jpeg' }}
+          onCancel={vi.fn()}
+          onSaveReplacement={vi.fn()}
+          onSaveAsNew={vi.fn()}
+        />,
+      );
+    });
+    await vi.waitFor(() => expect(mocks.loadImageEditorFonts).toHaveBeenCalledOnce());
+
+    act(() => root.unmount());
+    await act(async () => {
+      resolveFonts();
+      await Promise.resolve();
+    });
+
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(mocks.fromURL).not.toHaveBeenCalled();
+    expect(mocks.canvasConstructed).toBe(0);
+    expect(consoleError).not.toHaveBeenCalled();
+  });
+
+  it('discards rejected font loading after unmount #3448', async () => {
+    let rejectFonts!: (cause: Error) => void;
+    mocks.loadImageEditorFonts.mockImplementation(
+      () => new Promise<void>((_resolve, reject) => (rejectFonts = reject)),
+    );
+    consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    document.body.appendChild(container);
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe = vi.fn();
+        disconnect = vi.fn();
+      },
+    );
+
+    await act(async () => {
+      root.render(
+        <ImageEditor
+          source={{ blob: new Blob(['source']), fileName: 'photo.jpg', mimeType: 'image/jpeg' }}
+          onCancel={vi.fn()}
+          onSaveReplacement={vi.fn()}
+          onSaveAsNew={vi.fn()}
+        />,
+      );
+    });
+    await vi.waitFor(() => expect(mocks.loadImageEditorFonts).toHaveBeenCalledOnce());
+
+    act(() => root.unmount());
+    await act(async () => {
+      rejectFonts(new Error('Шрифти недоступні'));
+      await Promise.resolve();
+    });
+
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(mocks.fromURL).not.toHaveBeenCalled();
+    expect(mocks.canvasConstructed).toBe(0);
+    expect(consoleError).not.toHaveBeenCalled();
   });
 
   it('keeps Apply disabled when Fabric cannot initialize the source image', async () => {
@@ -374,6 +467,43 @@ describe('ImageEditor initialization', () => {
     act(() => root.unmount());
   });
 
+  it('keeps editor cancellation behind text-editing Escape handling #3448', async () => {
+    const onCancel = vi.fn();
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    document.body.appendChild(container);
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe = vi.fn();
+        disconnect = vi.fn();
+      },
+    );
+    const activeText = { isEditing: true, exitEditing: vi.fn() };
+    mocks.canvas?.getActiveObject.mockReturnValue(activeText);
+
+    await act(async () => {
+      root.render(
+        <ImageEditor
+          source={{ blob: new Blob(['source']), fileName: 'photo.jpg', mimeType: 'image/jpeg' }}
+          onCancel={onCancel}
+          onSaveReplacement={vi.fn()}
+          onSaveAsNew={vi.fn()}
+        />,
+      );
+    });
+    await vi.waitFor(() => expect(mocks.canvas).toBeDefined());
+    mocks.canvas?.getActiveObject.mockReturnValue(activeText);
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+
+    expect(activeText.exitEditing).toHaveBeenCalledOnce();
+    expect(onCancel).not.toHaveBeenCalled();
+    act(() => root.unmount());
+  });
+
   it('cancels crop before cancelling the editor', async () => {
     const onCancel = vi.fn();
     const container = document.createElement('div');
@@ -449,13 +579,13 @@ describe('ImageEditor initialization', () => {
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
-    expect(container.textContent).toContain('Є незастосовані зміни');
+    expect(document.body.textContent).toContain('Відкинути зміни зображення?');
     expect(onCancel).not.toHaveBeenCalled();
 
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
-    expect(container.textContent).not.toContain('Є незастосовані зміни');
+    expect(document.body.textContent).not.toContain('Відкинути зміни зображення?');
     expect(onCancel).not.toHaveBeenCalled();
     act(() => root.unmount());
   });

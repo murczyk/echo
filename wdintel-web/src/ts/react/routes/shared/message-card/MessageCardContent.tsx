@@ -697,6 +697,7 @@ export function MessageCardMessageBody({
     pointBlacklistPendingKeys,
     hasMessageTextOverflow && !isMessageTextExpanded,
     messageTextPreviewLines,
+    reportGroupInfos,
   );
   const hasTextPrimary = Array.isArray(textPrimary)
     ? textPrimary.some((node) => isPresent(node))
@@ -1078,6 +1079,7 @@ function useMemoText(
   pendingBlacklistKeys?: Set<string>,
   showTextPreview = false,
   messageTextPreviewLines: 20 | 40 | null = 20,
+  messageLinkGroupInfos: Record<string, SignalGroupEntry> = {},
 ) {
   const messageText = msg.text ?? '';
   const visibleText =
@@ -1101,6 +1103,7 @@ function useMemoText(
           callsignInfoMap,
           networks,
           unitsMap,
+          messageLinkGroupInfos,
           freq: msg.freq ?? null,
           networkIds: msg.networkIds ?? null,
           searchText,
@@ -1109,7 +1112,7 @@ function useMemoText(
     : (() => {
         const text = visibleText.trim();
         if (text === '' || text === '—' || text === '-') return null;
-        return renderLinkifiedText(visibleText);
+        return renderLinkifiedText(visibleText, { groupInfos: messageLinkGroupInfos });
       })();
 }
 

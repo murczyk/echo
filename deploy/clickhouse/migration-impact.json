@@ -1,5 +1,26 @@
 {
   "migrations": {
+    "echo:m20260913_204343_sigint_network_recent_links_index": {
+      "changes": []
+    },
+    "echo:m20260913_191055_sigint_network_last_active_at": {
+      "changes": [
+        {
+          "table": "public.sigint_network",
+          "strategy": "replicated_snapshot",
+          "targeted_resnapshot": true
+        }
+      ]
+    },
+    "echo:m20260912_084600_signal_group_aviation": {
+      "changes": [
+        {
+          "table": "public.signal_group",
+          "strategy": "replicated_snapshot",
+          "targeted_resnapshot": true
+        }
+      ]
+    },
     "echo:m20260911_140000_babak_candidate_stream_index": {
       "changes": []
     },
@@ -8,7 +29,11 @@
     },
     "echo:m20260910_000000_add_message_sort_by_to_user_settings": {
       "changes": [
-        { "table": "public.user_settings", "strategy": "replicated_snapshot", "targeted_resnapshot": true }
+        {
+          "table": "public.user_settings",
+          "strategy": "replicated_snapshot",
+          "targeted_resnapshot": true
+        }
       ]
     },
     "echo:m20260909_145827_network_invalidation_reconciliation_index": {
@@ -28,8 +53,14 @@
     },
     "echo:m20260908_131435_network_recalculation_queue": {
       "changes": [
-        { "table": "public.network_recalculation_task", "strategy": "excluded" },
-        { "table": "public.network_freq_last_datetime_in_aor", "strategy": "excluded" }
+        {
+          "table": "public.network_recalculation_task",
+          "strategy": "excluded"
+        },
+        {
+          "table": "public.network_freq_last_datetime_in_aor",
+          "strategy": "excluded"
+        }
       ]
     },
     "echo:m20260903_180415_add_failed_unit_label_inbox_uuid": {
@@ -66,15 +97,42 @@
         { "table": "public.sigint_comment", "strategy": "mirror_resync" },
         { "table": "public.intel_product", "strategy": "mirror_resync" },
         { "table": "public.ai_callsign_worker_job", "strategy": "excluded" },
-        { "table": "public.sigint_inbox_item_callsign", "strategy": "mirror_resync" },
-        { "table": "public.sigint_inbox_item_metadata", "strategy": "mirror_resync" },
-        { "table": "public.sigint_inbox_item_network", "strategy": "mirror_resync" },
-        { "table": "public.sigint_inbox_item_point_token", "strategy": "mirror_resync" },
-        { "table": "public.sigint_inbox_item_settlement", "strategy": "mirror_resync" },
-        { "table": "public.sigint_inbox_item_tag", "strategy": "mirror_resync" },
-        { "table": "public.sigint_inbox_item_unit", "strategy": "mirror_resync" },
-        { "table": "public.sigint_inbox_item_unit_tag_queue", "strategy": "mirror_resync" },
-        { "table": "public.sigint_inbox_tag_model_error", "strategy": "mirror_resync" },
+        {
+          "table": "public.sigint_inbox_item_callsign",
+          "strategy": "mirror_resync"
+        },
+        {
+          "table": "public.sigint_inbox_item_metadata",
+          "strategy": "mirror_resync"
+        },
+        {
+          "table": "public.sigint_inbox_item_network",
+          "strategy": "mirror_resync"
+        },
+        {
+          "table": "public.sigint_inbox_item_point_token",
+          "strategy": "mirror_resync"
+        },
+        {
+          "table": "public.sigint_inbox_item_settlement",
+          "strategy": "mirror_resync"
+        },
+        {
+          "table": "public.sigint_inbox_item_tag",
+          "strategy": "mirror_resync"
+        },
+        {
+          "table": "public.sigint_inbox_item_unit",
+          "strategy": "mirror_resync"
+        },
+        {
+          "table": "public.sigint_inbox_item_unit_tag_queue",
+          "strategy": "mirror_resync"
+        },
+        {
+          "table": "public.sigint_inbox_tag_model_error",
+          "strategy": "mirror_resync"
+        },
         { "table": "public.sigint_peleng", "strategy": "mirror_resync" }
       ]
     },
@@ -101,15 +159,19 @@
     "echo:m20260828_143607_add_ai_settlement_parsing": {
       "changes": [
         { "table": "public.ai_settlement_settings", "strategy": "excluded" },
-        { "table": "public.ai_settlement_test_message", "strategy": "excluded" },
-        { "table": "public.ai_settlement_parse_result", "strategy": "excluded" },
+        {
+          "table": "public.ai_settlement_test_message",
+          "strategy": "excluded"
+        },
+        {
+          "table": "public.ai_settlement_parse_result",
+          "strategy": "excluded"
+        },
         { "table": "public.ai_settlement_worker_job", "strategy": "excluded" }
       ]
     },
     "echo:m20260827_180023_add_login_totp_secret": {
-      "changes": [
-        { "table": "public.login_totp", "strategy": "excluded" }
-      ]
+      "changes": [{ "table": "public.login_totp", "strategy": "excluded" }]
     },
     "echo:m20260826_083256_sigint_peleng_battle_line_distance": {
       "changes": [
@@ -126,7 +188,10 @@
     },
     "echo:m20260825_204254_ai_agent_engine_runtime_profile": {
       "changes": [
-        { "table": "public.ai_agent_engine_runtime_profile", "strategy": "excluded" }
+        {
+          "table": "public.ai_agent_engine_runtime_profile",
+          "strategy": "excluded"
+        }
       ]
     },
     "echo:m20260825_114553_add_settlement_geography_index": {
@@ -336,29 +401,19 @@
       ]
     },
     "echo:m20260707_135501_drop_device_aor_id": {
-      "changes": [
-        { "table": "public.device", "strategy": "mirror_resync" }
-      ]
+      "changes": [{ "table": "public.device", "strategy": "mirror_resync" }]
     },
     "echo:m20260707_180541_rename_device_tags_archive": {
-      "changes": [
-        { "table": "public.device", "strategy": "mirror_resync" }
-      ]
+      "changes": [{ "table": "public.device", "strategy": "mirror_resync" }]
     },
     "echo:m20260716_101007_device_hostname_ssh_port_and_drop_name_uniqueness": {
-      "changes": [
-        { "table": "public.device", "strategy": "mirror_resync" }
-      ]
+      "changes": [{ "table": "public.device", "strategy": "mirror_resync" }]
     },
     "echo:m20260716_134601_device_aor_id_uuid": {
-      "changes": [
-        { "table": "public.device_aor", "strategy": "mirror_resync" }
-      ]
+      "changes": [{ "table": "public.device_aor", "strategy": "mirror_resync" }]
     },
     "echo:m20260721_120720_device_source_label_custom_fields": {
-      "changes": [
-        { "table": "public.device", "strategy": "mirror_resync" }
-      ]
+      "changes": [{ "table": "public.device", "strategy": "mirror_resync" }]
     },
     "echo:m20260721_124518_drop_legacy_device_file": {
       "changes": [
@@ -366,14 +421,10 @@
       ]
     },
     "echo:m20260729_143549_add_device_organism": {
-      "changes": [
-        { "table": "public.device", "strategy": "cdc_backfill" }
-      ]
+      "changes": [{ "table": "public.device", "strategy": "cdc_backfill" }]
     },
     "echo:m20260803_130117_device_source_role_and_name": {
-      "changes": [
-        { "table": "public.device", "strategy": "mirror_resync" }
-      ]
+      "changes": [{ "table": "public.device", "strategy": "mirror_resync" }]
     },
     "echo:m20260803_212227_ai_agent_harness": {
       "changes": [
@@ -399,9 +450,7 @@
       ]
     },
     "echo:m20260804_094408_sigint_unit_deduplicate_candidate": {
-      "changes": [
-        { "table": "public.sigint_unit", "strategy": "cdc_backfill" }
-      ]
+      "changes": [{ "table": "public.sigint_unit", "strategy": "cdc_backfill" }]
     },
     "echo:m20260804_095344_ai_agent_dispatcher": {
       "changes": [
@@ -411,18 +460,17 @@
     "echo:m20260805_064150_ai_agent_mattermost_chat": {
       "changes": [
         { "table": "public.ai_agent_settings", "strategy": "excluded" },
-        { "table": "public.ai_agent_chat_mattermost_notification", "strategy": "excluded" }
+        {
+          "table": "public.ai_agent_chat_mattermost_notification",
+          "strategy": "excluded"
+        }
       ]
     },
     "echo:m20260805_135334_sigint_unit_orbit_note": {
-      "changes": [
-        { "table": "public.sigint_unit", "strategy": "cdc_backfill" }
-      ]
+      "changes": [{ "table": "public.sigint_unit", "strategy": "cdc_backfill" }]
     },
     "echo:m20260806_134330_sigint_unit_extended_echelons": {
-      "changes": [
-        { "table": "public.sigint_unit", "strategy": "cdc_backfill" }
-      ]
+      "changes": [{ "table": "public.sigint_unit", "strategy": "cdc_backfill" }]
     },
     "echo:m20260806_141904_report_history_duplicate_lookup": {
       "changes": []
@@ -461,9 +509,7 @@
       ]
     },
     "echo:m20260819_175820_device_settings": {
-      "changes": [
-        { "table": "public.device_settings", "strategy": "excluded" }
-      ]
+      "changes": [{ "table": "public.device_settings", "strategy": "excluded" }]
     },
     "echo:m20260820_121919_ai_intel_report_attempt": {
       "changes": [

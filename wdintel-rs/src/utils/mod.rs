@@ -12,6 +12,8 @@ pub mod grafana;
 pub mod http;
 pub mod json;
 pub mod multipart;
+pub mod multipart_admission;
+mod multipart_payload;
 pub mod orm;
 pub mod string;
 pub mod worker_watch;

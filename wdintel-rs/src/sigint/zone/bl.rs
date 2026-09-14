@@ -12,6 +12,7 @@ pub struct BlSzdGroupUpdateRes {
     pub is_secret: bool,
     pub interseption_kind: InterseptionKind,
     pub disable_network_assignment: bool,
+    pub is_aviation_group: bool,
     pub aor: Option<Vec<area_of_responsibility::Model>>,
     pub allowed_users: Vec<String>,
     pub allowed_user_details: Vec<SignalGroupLogin>,
@@ -90,6 +91,13 @@ pub async fn bl_szd_group_update(
         )
         .await
         .c(h!())?;
+    let is_aviation_group = update_group_aviation_if_present(
+        req.is_aviation_group,
+        &szd.group_master_key,
+        txn,
+    )
+    .await
+    .c(h!())?;
     let (short_note, long_note) = group_admin_data::Entity::find()
         .filter(
             group_admin_data::Column::GroupMasterKey.eq(&szd.group_master_key),
@@ -139,6 +147,7 @@ pub async fn bl_szd_group_update(
         is_secret,
         interseption_kind,
         disable_network_assignment,
+        is_aviation_group,
         aor: if aor.is_empty() { None } else { Some(aor) },
         allowed_user_details: render_group_logins(
             allowed_users.clone(),
@@ -155,6 +164,28 @@ pub async fn bl_szd_group_update(
         long_note,
     };
     Ok(res)
+}
+
+pub async fn update_group_aviation_if_present(
+    is_aviation_group: Option<bool>,
+    master_key: &str,
+    txn: &DatabaseTransaction,
+) -> Result<bool, AppError> {
+    let group = signal_group::Entity::find_by_id(master_key.to_string())
+        .one(txn)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    let Some(is_aviation_group) = is_aviation_group else {
+        return Ok(group.is_aviation_group.unwrap_or(false));
+    };
+    if group.is_aviation_group == Some(is_aviation_group) {
+        return Ok(is_aviation_group);
+    }
+    let mut group = group.into_active_model();
+    group.is_aviation_group = Set(Some(is_aviation_group));
+    group.update(txn).await.c(h!())?;
+    Ok(is_aviation_group)
 }
 
 async fn update_group_disable_network_assignment_if_present(
@@ -951,6 +982,7 @@ pub async fn bl_szd_groups_list(
         is_secret: bool,
         interseption_kind: db_enums::InterseptionKind,
         disable_network_assignment: bool,
+        is_aviation_group: Option<bool>,
         short_note: Option<String>,
         long_note: Option<String>,
     }
@@ -979,6 +1011,7 @@ pub async fn bl_szd_groups_list(
             signal_group::Column::DisableNetworkAssignment,
             "disable_network_assignment",
         )
+        .column_as(signal_group::Column::IsAviationGroup, "is_aviation_group")
         .column(group_admin_data::Column::ShortNote)
         .column(group_admin_data::Column::LongNote)
         .filter(datasource::Column::Deleted.eq(false))
@@ -997,6 +1030,7 @@ pub async fn bl_szd_groups_list(
             bool,
             InterseptionKind,
             bool,
+            Option<bool>,
             i64,
             Option<String>,
             Option<String>,
@@ -1007,6 +1041,7 @@ pub async fn bl_szd_groups_list(
             row.is_secret,
             row.interseption_kind.into(),
             row.disable_network_assignment,
+            row.is_aviation_group,
             row.id,
             row.short_note,
             row.long_note,
@@ -1047,6 +1082,7 @@ pub async fn bl_szd_groups_list(
                     is_secret,
                     interseption_kind,
                     disable_network_assignment,
+                    is_aviation_group,
                     szd_id,
                     short_note,
                     long_note,
@@ -1059,6 +1095,7 @@ pub async fn bl_szd_groups_list(
                     is_group_secret: is_secret,
                     interseption_kind,
                     disable_network_assignment,
+                    is_aviation_group: is_aviation_group.unwrap_or(false),
                     allowed_users: group_users
                         .get(&master_key)
                         .cloned()

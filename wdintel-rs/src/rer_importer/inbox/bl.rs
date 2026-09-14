@@ -992,9 +992,12 @@ pub async fn aggregate_to_inbox_messages(
             Some(jv) => serde_json::from_value::<Vec<InboxMessageMetadata>>(jv)
                 .context(h!())?,
         };
-        let inbox_tag_ids = m_inbox_tags
-            .as_ref()
-            .map(|tags| tags.iter().map(|tag| tag.tag_id).collect::<Vec<_>>());
+        let inbox_tag_ids = m_inbox_tags.as_ref().map(|tags| {
+            tags.iter()
+                .map(|tag| tag.tag_id)
+                .unique()
+                .collect::<Vec<_>>()
+        });
 
         let m_point_tokens = if highlight_points {
             palitra_points_by_message.remove(&message.id)

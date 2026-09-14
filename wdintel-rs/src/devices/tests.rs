@@ -6,8 +6,8 @@ use crate::entities::{
     system_settings,
 };
 use crate::file_registry::entities::{
-    analytics_tag, device_file_tag, file_entry,
-    sea_orm_active_enums::FileEntryKind,
+    analytics_tag, device_file_tag, file_content, file_content_upload,
+    file_entry, sea_orm_active_enums::FileEntryKind,
 };
 use crate::functest::tests::{
     cleanup_locked, mk_aor, mk_login, mk_organism, mk_sigint_unit,
@@ -19,14 +19,17 @@ use actix_session::SessionMiddleware;
 use actix_web::cookie::{Cookie, Key};
 use actix_web::web::ServiceConfig;
 use actix_web::{
-    http::StatusCode, test, web, App, HttpMessage, HttpRequest, HttpResponse,
+    http::{Method, StatusCode},
+    test, web, App, HttpMessage, HttpRequest, HttpResponse,
 };
+use base64::Engine;
 use chrono::{NaiveDateTime, Utc};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ConnectionTrait, EntityTrait,
     IntoActiveModel, TransactionTrait,
 };
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 fn configure_routes(cfg: &mut ServiceConfig) {
@@ -49,6 +52,7 @@ fn configure_routes(cfg: &mut ServiceConfig) {
         .service(super::files::apply_sync_batch)
         .service(super::files::complete_sync_session)
         .service(super::files::sync_session_items)
+        .service(super::files::content::routes())
         .service(super::analytics::list_tags)
         .service(super::analytics::create_tag)
         .service(super::analytics::update_tag)
@@ -233,7 +237,21 @@ async fn target_api_smoke_covers_all_routes() {
     let config = env.config.clone();
     let (metrics, metrics_recorder) =
         crate::telemetry::Metrics::recording(&config);
-    std::sync::Arc::get_mut(&mut env).unwrap().metrics = Some(metrics);
+    let content_spool = tempfile::tempdir().unwrap();
+    let content_storage =
+        opendal::Operator::new(opendal::services::Memory::default())
+            .unwrap()
+            .finish();
+    let content_runtime = super::files::content::runtime_for_test(
+        env.file_registry_db().unwrap().clone(),
+        content_spool.path().to_path_buf(),
+        content_storage.clone(),
+        Some(metrics.clone()),
+    )
+    .await;
+    let env_mut = std::sync::Arc::get_mut(&mut env).unwrap();
+    env_mut.metrics = Some(metrics);
+    env_mut.device_file_content = Some(content_runtime);
     let redis_session_store =
         RedisSessionStore::new(crate::redis_conn_string(&config).unwrap())
             .await
@@ -416,18 +434,175 @@ async fn target_api_smoke_covers_all_routes() {
         sync["results"][1]["file"]["file_id"].as_str().unwrap(),
     )
     .unwrap();
-    let mut good_file = file_entry::Entity::find_by_id(good_file_id)
+    let good_file = file_entry::Entity::find_by_id(good_file_id)
         .one(env.file_registry_db().unwrap().connection())
         .await
         .unwrap()
-        .unwrap()
-        .into_active_model();
-    good_file.content_path =
-        Set(Some(format!("devices/{device_id}/content/good.txt")));
-    good_file
-        .update(env.file_registry_db().unwrap().connection())
-        .await
         .unwrap();
+    let content = b"device API content";
+    let digest: [u8; 32] = Sha256::digest(content).into();
+    let metadata = format!(
+        "sha256 {}",
+        base64::engine::general_purpose::STANDARD.encode(digest)
+    );
+    let collection_path = format!(
+        "/api/device/files/{device_id}/{good_file_id}/revisions/{}/content-uploads",
+        good_file.revision.unwrap()
+    );
+
+    let response = test::call_service(
+        &app,
+        test::TestRequest::default()
+            .method(Method::OPTIONS)
+            .uri(&collection_path)
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(response.headers().get("tus-version").unwrap(), "1.0.0");
+
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(&collection_path)
+            .insert_header(("tus-resumable", "1.0.0"))
+            .insert_header(("upload-length", content.len().to_string()))
+            .insert_header(("upload-metadata", metadata.clone()))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(response.headers().get("tus-resumable").unwrap(), "1.0.0");
+
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(&collection_path)
+            .cookie(session_cookie.clone())
+            .insert_header(("tus-resumable", "1.0.0"))
+            .insert_header(("upload-length", content.len().to_string()))
+            .insert_header(("upload-metadata", metadata))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    assert_eq!(response.headers().get("tus-resumable").unwrap(), "1.0.0");
+    let upload_location = response
+        .headers()
+        .get("location")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let response = test::call_service(
+        &app,
+        test::TestRequest::default()
+            .method(Method::HEAD)
+            .uri(&upload_location)
+            .cookie(session_cookie.clone())
+            .insert_header(("tus-resumable", "1.0.0"))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(response.headers().get("upload-offset").unwrap(), "0");
+
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(&upload_location)
+            .cookie(session_cookie.clone())
+            .insert_header(("tus-resumable", "1.0.0"))
+            .insert_header(("x-http-method-override", "PATCH"))
+            .insert_header(("upload-offset", "0"))
+            .insert_header(("content-type", "application/offset+octet-stream"))
+            .set_payload(content.as_slice())
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        response
+            .headers()
+            .get("upload-offset")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .parse::<usize>()
+            .unwrap(),
+        content.len()
+    );
+
+    let complete_path = format!("{upload_location}/complete");
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(&complete_path)
+            .cookie(session_cookie.clone())
+            .insert_header(("tus-resumable", "1.0.0"))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let completed: Value = test::read_body_json(response).await;
+    assert_eq!(completed["file_id"], good_file_id.to_string());
+    assert_eq!(completed["revision"], good_file.revision.unwrap());
+    assert_eq!(completed["status"], "completed");
+
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(&complete_path)
+            .cookie(session_cookie.clone())
+            .insert_header(("tus-resumable", "1.0.0"))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(test::read_body_json::<Value, _>(response).await, completed);
+
+    let response = test::call_service(
+        &app,
+        test::TestRequest::default()
+            .method(Method::HEAD)
+            .uri(&upload_location)
+            .cookie(session_cookie.clone())
+            .insert_header(("tus-resumable", "1.0.0"))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        response
+            .headers()
+            .get("upload-offset")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .parse::<usize>()
+            .unwrap(),
+        content.len()
+    );
+    assert!(response.headers().get("upload-expires").is_none());
+
+    let stored_content = file_content::Entity::find_by_id((
+        good_file_id,
+        good_file.revision.unwrap(),
+    ))
+    .one(env.file_registry_db().unwrap().connection())
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(stored_content.is_encrypted);
+    assert!(
+        content_storage
+            .stat(&stored_content.object_key)
+            .await
+            .unwrap()
+            .content_length()
+            > u64::try_from(content.len()).unwrap()
+    );
     assert!(sync["results"][1].get("root").is_none());
     let root_id = sync["results"][1]["file"]["root_entry_id"]
         .as_str()
@@ -684,6 +859,520 @@ async fn target_api_smoke_covers_all_routes() {
         .await;
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn device_file_content_rejections_are_tus_compliant_and_side_effect_free()
+{
+    struct RejectionCase {
+        name: &'static str,
+        method: Method,
+        authenticated: bool,
+        headers: Vec<(&'static str, String)>,
+        payload: Option<&'static [u8]>,
+        expected_status: StatusCode,
+        expected_code: Option<&'static str>,
+        exposes_tus_versions: bool,
+    }
+
+    let (mut env, _guard) = cleanup_locked().await.unwrap();
+    system_settings::ActiveModel {
+        devices_section_enabled: Set(true),
+        ..Default::default()
+    }
+    .insert(&env.dbx)
+    .await
+    .unwrap();
+    let organism = mk_organism(
+        &env.dbx,
+        organism::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let login = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            login: Set(format!("content-api-{}", Uuid::now_v7())),
+            roles: Set(json!([ROLE_DEVICE_SOURCE])),
+            organism_id: Set(Some(organism.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let device = device_active_model(
+        &login.login,
+        organism.id,
+        Some("Content API device"),
+        json!({}),
+        false,
+        None,
+    )
+    .insert(&env.dbx)
+    .await
+    .unwrap();
+    let now = Utc::now().naive_utc();
+    let root_id = Uuid::now_v7();
+    analytics_root_entry(root_id, device.id, now)
+        .insert(env.file_registry_db().unwrap().connection())
+        .await
+        .unwrap();
+    let file = crate::file_registry::test_support::insert_entry(
+        env.file_registry_db().unwrap().connection(),
+        analytics_file_entry(
+            Uuid::now_v7(),
+            device.id,
+            root_id,
+            "upload.txt",
+            "txt",
+            now,
+        ),
+    )
+    .await;
+
+    let config = env.config.clone();
+    let content_spool = tempfile::tempdir().unwrap();
+    let content_storage =
+        opendal::Operator::new(opendal::services::Memory::default())
+            .unwrap()
+            .finish();
+    let content_runtime = super::files::content::runtime_for_test(
+        env.file_registry_db().unwrap().clone(),
+        content_spool.path().to_path_buf(),
+        content_storage.clone(),
+        None,
+    )
+    .await;
+    std::sync::Arc::get_mut(&mut env)
+        .unwrap()
+        .device_file_content = Some(content_runtime);
+    let redis_session_store =
+        RedisSessionStore::new(crate::redis_conn_string(&config).unwrap())
+            .await
+            .unwrap();
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::from(env.clone()))
+            .wrap(
+                IdentityMiddleware::builder()
+                    .visit_deadline(Some(std::time::Duration::from_secs(
+                        IDENTITY_DURATION_HOURS * 60 * 60,
+                    )))
+                    .build(),
+            )
+            .wrap(SessionMiddleware::new(redis_session_store, Key::generate()))
+            .route("/test/login/{login}", web::post().to(self::login))
+            .service(super::files::content::routes()),
+    )
+    .await;
+    let login_response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(&format!("/test/login/{}", login.id))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(login_response.status(), StatusCode::NO_CONTENT);
+    let session_cookie: Cookie<'static> = login_response
+        .response()
+        .cookies()
+        .next()
+        .unwrap()
+        .into_owned();
+
+    let content = b"abc";
+    let digest: [u8; 32] = Sha256::digest(content).into();
+    let metadata = format!(
+        "sha256 {}",
+        base64::engine::general_purpose::STANDARD.encode(digest)
+    );
+    let collection_path = format!(
+        "/api/device/files/{}/{}/revisions/{}/content-uploads",
+        device.id,
+        file.id,
+        file.revision.unwrap()
+    );
+    let collection_cases = [
+        RejectionCase {
+            name: "authentication is required",
+            method: Method::POST,
+            authenticated: false,
+            headers: vec![
+                ("tus-resumable", "1.0.0".to_string()),
+                ("upload-length", content.len().to_string()),
+                ("upload-metadata", metadata.clone()),
+            ],
+            payload: None,
+            expected_status: StatusCode::UNAUTHORIZED,
+            expected_code: None,
+            exposes_tus_versions: false,
+        },
+        RejectionCase {
+            name: "unsupported TUS version",
+            method: Method::POST,
+            authenticated: true,
+            headers: vec![
+                ("tus-resumable", "0.2.2".to_string()),
+                ("upload-length", content.len().to_string()),
+                ("upload-metadata", metadata.clone()),
+            ],
+            payload: None,
+            expected_status: StatusCode::PRECONDITION_FAILED,
+            expected_code: Some("unsupported_tus_version"),
+            exposes_tus_versions: true,
+        },
+        RejectionCase {
+            name: "unsupported collection method",
+            method: Method::PUT,
+            authenticated: true,
+            headers: vec![
+                ("tus-resumable", "1.0.0".to_string()),
+                ("upload-length", content.len().to_string()),
+                ("upload-metadata", metadata.clone()),
+            ],
+            payload: None,
+            expected_status: StatusCode::METHOD_NOT_ALLOWED,
+            expected_code: Some("method_not_allowed"),
+            exposes_tus_versions: false,
+        },
+        RejectionCase {
+            name: "non-canonical metadata",
+            method: Method::POST,
+            authenticated: true,
+            headers: vec![
+                ("tus-resumable", "1.0.0".to_string()),
+                ("upload-length", content.len().to_string()),
+                (
+                    "upload-metadata",
+                    format!("{metadata},filename dXBsb2FkLnR4dA=="),
+                ),
+            ],
+            payload: None,
+            expected_status: StatusCode::BAD_REQUEST,
+            expected_code: Some("invalid_upload_metadata"),
+            exposes_tus_versions: false,
+        },
+    ];
+
+    for case in collection_cases {
+        let mut request = test::TestRequest::default()
+            .method(case.method)
+            .uri(&collection_path);
+        if case.authenticated {
+            request = request.cookie(session_cookie.clone());
+        }
+        for (name, value) in case.headers {
+            request = request.insert_header((name, value));
+        }
+        if let Some(payload) = case.payload {
+            request = request.set_payload(payload);
+        }
+        let response = test::call_service(&app, request.to_request()).await;
+        assert_eq!(response.status(), case.expected_status, "{}", case.name);
+        assert_eq!(
+            response.headers().get("tus-resumable").unwrap(),
+            "1.0.0",
+            "{}",
+            case.name
+        );
+        if case.exposes_tus_versions {
+            assert_eq!(
+                response.headers().get("tus-version").unwrap(),
+                "1.0.0",
+                "{}",
+                case.name
+            );
+        }
+        if let Some(expected_code) = case.expected_code {
+            let body: Value = test::read_body_json(response).await;
+            assert_eq!(body["code"], expected_code, "{}", case.name);
+        }
+    }
+    assert!(file_content_upload::Entity::find()
+        .all(env.file_registry_db().unwrap().connection())
+        .await
+        .unwrap()
+        .is_empty());
+
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(&collection_path)
+            .cookie(session_cookie.clone())
+            .insert_header(("tus-resumable", "1.0.0"))
+            .insert_header(("upload-length", content.len().to_string()))
+            .insert_header(("upload-metadata", metadata))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let upload_location = response
+        .headers()
+        .get("location")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let resource_cases = [
+        RejectionCase {
+            name: "unsupported resource method",
+            method: Method::GET,
+            authenticated: true,
+            headers: vec![("tus-resumable", "1.0.0".to_string())],
+            payload: None,
+            expected_status: StatusCode::METHOD_NOT_ALLOWED,
+            expected_code: Some("method_not_allowed"),
+            exposes_tus_versions: false,
+        },
+        RejectionCase {
+            name: "unsupported resource TUS version",
+            method: Method::PATCH,
+            authenticated: true,
+            headers: vec![("tus-resumable", "0.2.2".to_string())],
+            payload: Some(b"x"),
+            expected_status: StatusCode::PRECONDITION_FAILED,
+            expected_code: Some("unsupported_tus_version"),
+            exposes_tus_versions: true,
+        },
+        RejectionCase {
+            name: "invalid PATCH content type",
+            method: Method::PATCH,
+            authenticated: true,
+            headers: vec![
+                ("tus-resumable", "1.0.0".to_string()),
+                ("upload-offset", "0".to_string()),
+                ("content-type", "application/octet-stream".to_string()),
+            ],
+            payload: Some(b"x"),
+            expected_status: StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            expected_code: Some("invalid_content_type"),
+            exposes_tus_versions: false,
+        },
+        RejectionCase {
+            name: "missing PATCH offset",
+            method: Method::PATCH,
+            authenticated: true,
+            headers: vec![
+                ("tus-resumable", "1.0.0".to_string()),
+                (
+                    "content-type",
+                    "application/offset+octet-stream".to_string(),
+                ),
+            ],
+            payload: Some(b"x"),
+            expected_status: StatusCode::BAD_REQUEST,
+            expected_code: Some("invalid_upload_offset"),
+            exposes_tus_versions: false,
+        },
+        RejectionCase {
+            name: "mismatched PATCH offset",
+            method: Method::PATCH,
+            authenticated: true,
+            headers: vec![
+                ("tus-resumable", "1.0.0".to_string()),
+                ("upload-offset", "1".to_string()),
+                (
+                    "content-type",
+                    "application/offset+octet-stream".to_string(),
+                ),
+            ],
+            payload: Some(b"x"),
+            expected_status: StatusCode::CONFLICT,
+            expected_code: Some("offset_mismatch"),
+            exposes_tus_versions: false,
+        },
+    ];
+
+    for case in resource_cases {
+        let mut request = test::TestRequest::default()
+            .method(case.method)
+            .uri(&upload_location)
+            .cookie(session_cookie.clone());
+        for (name, value) in case.headers {
+            request = request.insert_header((name, value));
+        }
+        if let Some(payload) = case.payload {
+            request = request.set_payload(payload);
+        }
+        let response = test::call_service(&app, request.to_request()).await;
+        assert_eq!(response.status(), case.expected_status, "{}", case.name);
+        assert_eq!(
+            response.headers().get("tus-resumable").unwrap(),
+            "1.0.0",
+            "{}",
+            case.name
+        );
+        if case.exposes_tus_versions {
+            assert_eq!(
+                response.headers().get("tus-version").unwrap(),
+                "1.0.0",
+                "{}",
+                case.name
+            );
+        }
+        let expected_code = case.expected_code.unwrap();
+        let body: Value = test::read_body_json(response).await;
+        assert_eq!(body["code"], expected_code, "{}", case.name);
+
+        let head = test::call_service(
+            &app,
+            test::TestRequest::default()
+                .method(Method::HEAD)
+                .uri(&upload_location)
+                .cookie(session_cookie.clone())
+                .insert_header(("tus-resumable", "1.0.0"))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(head.status(), StatusCode::NO_CONTENT, "{}", case.name);
+        assert_eq!(
+            head.headers().get("upload-offset").unwrap(),
+            "0",
+            "{} mutated the payload",
+            case.name
+        );
+    }
+
+    let complete_path = format!("{upload_location}/complete");
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(&complete_path)
+            .cookie(session_cookie.clone())
+            .insert_header(("tus-resumable", "1.0.0"))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let body: Value = test::read_body_json(response).await;
+    assert_eq!(body["code"], "upload_incomplete");
+    let head = test::call_service(
+        &app,
+        test::TestRequest::default()
+            .method(Method::HEAD)
+            .uri(&upload_location)
+            .cookie(session_cookie.clone())
+            .insert_header(("tus-resumable", "1.0.0"))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(head.status(), StatusCode::NO_CONTENT);
+    assert_eq!(head.headers().get("upload-offset").unwrap(), "0");
+
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(&upload_location)
+            .cookie(session_cookie.clone())
+            .insert_header(("tus-resumable", "1.0.0"))
+            .insert_header(("x-http-method-override", "PATCH"))
+            .insert_header(("upload-offset", "0"))
+            .insert_header(("content-type", "application/offset+octet-stream"))
+            .set_payload(content.as_slice())
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(&complete_path)
+            .cookie(session_cookie.clone())
+            .insert_header(("tus-resumable", "1.0.0"))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let completed: Value = test::read_body_json(response).await;
+
+    let empty_file = crate::file_registry::test_support::insert_entry(
+        env.file_registry_db().unwrap().connection(),
+        analytics_file_entry(
+            Uuid::now_v7(),
+            device.id,
+            root_id,
+            "empty.txt",
+            "txt",
+            now,
+        ),
+    )
+    .await;
+    let empty_revision = empty_file.revision.unwrap();
+    let empty_collection_path = format!(
+        "/api/device/files/{}/{}/revisions/{empty_revision}/content-uploads",
+        device.id, empty_file.id
+    );
+    let empty_digest: [u8; 32] = Sha256::digest([]).into();
+    let empty_metadata = format!(
+        "sha256 {}",
+        base64::engine::general_purpose::STANDARD.encode(empty_digest)
+    );
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(&empty_collection_path)
+            .cookie(session_cookie.clone())
+            .insert_header(("tus-resumable", "1.0.0"))
+            .insert_header(("upload-length", "0"))
+            .insert_header(("upload-metadata", empty_metadata))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let empty_upload_location = response
+        .headers()
+        .get("location")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(&format!("{empty_upload_location}/complete"))
+            .cookie(session_cookie.clone())
+            .insert_header(("tus-resumable", "1.0.0"))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let empty_completed: Value = test::read_body_json(response).await;
+    assert_eq!(empty_completed["file_id"], empty_file.id.to_string());
+    assert_eq!(empty_completed["revision"], empty_revision);
+    assert_eq!(empty_completed["status"], "completed");
+    let empty_content =
+        file_content::Entity::find_by_id((empty_file.id, empty_revision))
+            .one(env.file_registry_db().unwrap().connection())
+            .await
+            .unwrap()
+            .unwrap();
+    assert_eq!(empty_content.source_size_bytes, 0);
+    assert!(empty_content.is_encrypted);
+    assert!(
+        content_storage
+            .stat(&empty_content.object_key)
+            .await
+            .unwrap()
+            .content_length()
+            > 0
+    );
+
+    std::fs::remove_dir_all(content_spool.path()).unwrap();
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(&complete_path)
+            .cookie(session_cookie)
+            .insert_header(("tus-resumable", "1.0.0"))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(test::read_body_json::<Value, _>(response).await, completed);
 }
 
 #[actix_web::test]
@@ -1625,13 +2314,18 @@ async fn target_route_matrix_registers_only_post_routes() {
 mod access_tests {
     use super::super::access::*;
     use crate::config::ROLE_ADMIN;
+    use crate::devices::devices::query::{
+        authorize_file_registry_access, FileRegistryDeviceAccess,
+    };
+    use crate::devices::tests::schema::device_active_model;
     use crate::devices::{ROLE_CYBER, ROLE_DEVICE_SOURCE};
     use crate::entities::{login, organism, system_settings};
     use crate::error::AppError;
     use crate::functest::tests::{cleanup_locked, mk_login, mk_organism};
     use crate::types::Uuid;
     use sea_orm::{
-        ActiveModelTrait, ActiveValue::Set, DatabaseConnection, IntoActiveModel,
+        AccessMode, ActiveModelTrait, ActiveValue::Set, DatabaseConnection,
+        IntoActiveModel, IsolationLevel, TransactionTrait,
     };
     use serde_json::json;
     use serial_test::serial;
@@ -1848,6 +2542,102 @@ mod access_tests {
             disabled_section_error,
             AppError::Forbidden(message)
                 if message == "devices_section_enabled is disabled"
+        ));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn file_sync_authorization_uses_a_fresh_repeatable_read_snapshot() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        insert_devices_settings(&env.dbx, true).await;
+        let organism = mk_organism(
+            &env.dbx,
+            organism::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set(format!("device-snapshot-{}", Uuid::now_v7())),
+                roles: Set(json!([ROLE_DEVICE_SOURCE])),
+                organism_id: Set(Some(organism.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let device = device_active_model(
+            &login.login,
+            organism.id,
+            Some("Snapshot device"),
+            json!({}),
+            false,
+            None,
+        )
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let device_id = device.id;
+
+        authorize_file_sync_snapshot(&env.dbx, &login.id, device_id)
+            .await
+            .unwrap();
+
+        let transaction = env
+            .dbx
+            .begin_with_config(
+                Some(IsolationLevel::RepeatableRead),
+                Some(AccessMode::ReadOnly),
+            )
+            .await
+            .unwrap();
+        let snapshot_login =
+            resolve_login_by_id(&transaction, &login.id).await.unwrap();
+
+        let mut updated_login = login.into_active_model();
+        updated_login.roles = Set(json!([]));
+        let updated_login = updated_login.update(&env.dbx).await.unwrap();
+
+        authorize_file_registry_access(
+            &transaction,
+            &snapshot_login,
+            device_id,
+            FileRegistryDeviceAccess::FileSync,
+        )
+        .await
+        .unwrap();
+        transaction.commit().await.unwrap();
+
+        assert!(matches!(
+            authorize_file_sync_snapshot(
+                &env.dbx,
+                &snapshot_login.id,
+                device_id,
+            )
+                .await,
+            Err(AppError::Forbidden(message))
+                if message == DEVICE_OPERATION_FORBIDDEN
+        ));
+
+        let mut updated_login = updated_login.into_active_model();
+        updated_login.roles = Set(json!([ROLE_DEVICE_SOURCE]));
+        updated_login.update(&env.dbx).await.unwrap();
+        let mut archived_device = device.into_active_model();
+        archived_device.archived = Set(true);
+        archived_device.archived_at = Set(Some(chrono::Utc::now().naive_utc()));
+        archived_device.update(&env.dbx).await.unwrap();
+
+        assert!(matches!(
+            authorize_file_sync_snapshot(
+                &env.dbx,
+                &snapshot_login.id,
+                device_id,
+            )
+            .await,
+            Err(AppError::Form(_))
         ));
     }
 }

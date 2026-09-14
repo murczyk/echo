@@ -8055,9 +8055,7 @@ async fn analytics_fallback_maps_capped_postgres_query_to_one_timeout_error() {
         async move {
             postgres_attempts_query
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            db.execute_unprepared("select pg_sleep(0.1)")
-                .await
-                .c(h!())?;
+            db.execute_unprepared("select pg_sleep(2)").await.c(h!())?;
             Ok::<_, AppError>("postgres")
         },
         None,

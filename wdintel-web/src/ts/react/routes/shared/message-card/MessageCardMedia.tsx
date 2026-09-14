@@ -582,7 +582,7 @@ export function MessageMediaThumbnailDownloadLink({
   const downloading = isDownloadStarting(downloadKey);
   const label = `Завантажити вкладення: ${displayName}`;
   return (
-    <Tooltip title={label} enterDelay={400}>
+    <Tooltip title={label} enterDelay={400} disableInteractive>
       <MessageCardDisabledControlCursorWrapper
         disabled={downloading}
         className="message-card-thumbnail-download"

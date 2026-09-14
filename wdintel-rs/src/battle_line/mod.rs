@@ -872,22 +872,28 @@ pub async fn prepare_battle_line_import(
     data: &[u8],
 ) -> anyhow::Result<PreparedBattleLineImport> {
     if data.len() > BATTLE_LINE_UPLOAD_MAX_BYTES {
-        anyhow::bail!(
-            "Battle Line file exceeds the {BATTLE_LINE_UPLOAD_MAX_BYTES} byte limit"
-        );
+        anyhow::bail!(AppError::BL { msg: format!("Battle Line file exceeds the {BATTLE_LINE_UPLOAD_MAX_BYTES} byte limit") });
     }
     let source_file_name = sanitize_upload_filename(file_name);
     validate_battle_line_extension(&source_file_name).c(h!())?;
     let parsed = parse_point_line_features(&source_file_name, data)
         .await
         .c(h!())?;
-    let mut source_summary = summarize_features(&parsed.features).c(h!())?;
+    let mut source_summary = summarize_features(&parsed.features)
+        .map_err(invalid_battle_line_geometry)
+        .c(h!())?;
     source_summary.empty_point_count = parsed.empty_point_count;
     source_summary.empty_line_string_count = parsed.empty_line_string_count;
-    let cleanup = cleanup::clean_features(parsed.features).c(h!())?;
-    let summary = summarize_features(&cleanup.features).c(h!())?;
+    let cleanup = cleanup::clean_features(parsed.features)
+        .map_err(invalid_battle_line_geometry)
+        .c(h!())?;
+    let summary = summarize_features(&cleanup.features)
+        .map_err(invalid_battle_line_geometry)
+        .c(h!())?;
     let features = cleanup.features;
-    let geometry_wkt = features_to_wkt(&features).c(h!())?;
+    let geometry_wkt = features_to_wkt(&features)
+        .map_err(invalid_battle_line_geometry)
+        .c(h!())?;
     Ok(PreparedBattleLineImport {
         geometry_wkt,
         source_file_name,
@@ -907,11 +913,19 @@ fn validate_battle_line_extension(
         .unwrap_or_default()
         .to_ascii_lowercase();
     if !BATTLE_LINE_ALLOWED_UPLOAD_EXTENSIONS.contains(&extension.as_str()) {
-        anyhow::bail!(
-            "Only .kml and .kmz files are supported: {source_file_name}"
-        );
+        anyhow::bail!(AppError::BL {
+            msg: format!(
+                "Only .kml and .kmz files are supported: {source_file_name}"
+            )
+        });
     }
     Ok(())
+}
+
+fn invalid_battle_line_geometry(error: anyhow::Error) -> AppError {
+    AppError::BL {
+        msg: format!("Invalid Battle Line geometry: {error}"),
+    }
 }
 
 pub async fn activate_battle_line_import(
@@ -3711,6 +3725,29 @@ where id = $1
                     max_lon: 39.0,
                 },
             },
+        }
+    }
+}
+
+#[cfg(test)]
+mod upload_error_regression_tests {
+    use super::*;
+    use actix_web::ResponseError;
+
+    #[tokio::test]
+    async fn invalid_upload_geometry_produces_client_errors_before_activation()
+    {
+        for (name, data) in [
+            ("invalid.kmz", b"not an archive".as_slice()),
+            ("invalid.kml", b"<kml><broken>".as_slice()),
+            ("invalid.kml", b"\xff\xfe".as_slice()),
+            ("invalid.txt", b"unsupported".as_slice()),
+            ("empty.kml", b"<kml><Document/></kml>".as_slice()),
+            ("coordinate.kml", b"<kml><Document><Placemark><Point><coordinates>999,999</coordinates></Point></Placemark></Document></kml>".as_slice()),
+        ] {
+            let error = prepare_battle_line_import(name, data).await.unwrap_err();
+            let response = AppError::from(error).error_response();
+            assert_eq!(response.status(), actix_web::http::StatusCode::BAD_REQUEST, "{name}");
         }
     }
 }

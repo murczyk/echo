@@ -418,6 +418,9 @@ mod m20260909_145827_network_invalidation_reconciliation_index;
 mod m20260910_000000_add_message_sort_by_to_user_settings;
 mod m20260911_091429_signal_message_created_at_id_index;
 mod m20260911_140000_babak_candidate_stream_index;
+mod m20260912_084600_signal_group_aviation;
+mod m20260913_191055_sigint_network_last_active_at;
+mod m20260913_204343_sigint_network_recent_links_index;
 
 pub struct Migrator;
 
@@ -995,6 +998,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260910_000000_add_message_sort_by_to_user_settings::Migration),
             Box::new(m20260911_091429_signal_message_created_at_id_index::Migration),
             Box::new(m20260911_140000_babak_candidate_stream_index::Migration),
+            Box::new(m20260912_084600_signal_group_aviation::Migration),
+            Box::new(m20260913_191055_sigint_network_last_active_at::Migration),
+            Box::new(m20260913_204343_sigint_network_recent_links_index::Migration),
         ]
     }
 }

@@ -1167,7 +1167,9 @@ async fn repair_media_storage_row_inner(
     entry: &MediaStorageRepairEntry,
     apply: bool,
 ) -> Result<Option<String>, AppError> {
-    let source = tokio::fs::read(&entry.source_path).await.c(h!())?;
+    let source = actix_web::web::Bytes::from(
+        tokio::fs::read(&entry.source_path).await.c(h!())?,
+    );
     let expected_size = usize::try_from(media.size_bytes).c(h!())?;
     if source.len() != expected_size {
         return Err(AppError::BL {
@@ -1190,7 +1192,7 @@ async fn repair_media_storage_row_inner(
             audit.s3_config,
             audit.strongbox_key,
             &new_storage_key,
-            &source,
+            source.clone(),
         )
         .await
     } else {
@@ -1198,7 +1200,7 @@ async fn repair_media_storage_row_inner(
             &Some(audit.s3.clone()),
             audit.s3_config,
             &new_storage_key,
-            source.clone(),
+            source.to_vec(),
         )
         .await
     };

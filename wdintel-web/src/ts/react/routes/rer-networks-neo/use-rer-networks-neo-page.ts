@@ -13,6 +13,7 @@ import {
   buildNetworkRowView,
   createDefaultNetworksFilterState,
   mergeNetworkUnitStatsWithUnits,
+  RECENT_NETWORK_ACTIVITY_WINDOW_MS,
   sanitizeNetworkColumnFilters,
   sortNetworkAorsForDisplay,
   type NetworksFilterState,
@@ -65,6 +66,9 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
   const [activityByNetworkId, setActivityByNetworkId] = useState<ActivityByNetworkId>(new Map());
   const [activityLoadStateByNetworkId, setActivityLoadStateByNetworkId] =
     useState<ActivityLoadStateByNetworkId>(new Map());
+  const [lastActivityLoadStateByNetworkId, setLastActivityLoadStateByNetworkId] =
+    useState<ActivityLoadStateByNetworkId>(new Map());
+  const [activityClock, setActivityClock] = useState(Date.now);
   const [filters, setFilters] = useState<NetworksFilterState>(() =>
     createDefaultNetworksFilterState(),
   );
@@ -177,10 +181,38 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
           aorsById,
           activityByNetworkId,
           activityLoadStateByNetworkId,
+          lastActivityLoadStateByNetworkId,
         ),
       ),
-    [activityByNetworkId, activityLoadStateByNetworkId, aorsById, networks, unitsById],
+    [
+      activityByNetworkId,
+      activityLoadStateByNetworkId,
+      activityClock,
+      lastActivityLoadStateByNetworkId,
+      aorsById,
+      networks,
+      unitsById,
+    ],
   );
+  useEffect(() => {
+    const now = Date.now();
+    const nextChange = networks.reduce<number | null>((earliest, network) => {
+      const lastActivityAt = network.lastActivityAt;
+      if (lastActivityAt === null) return earliest;
+      const changeAt =
+        lastActivityAt > now
+          ? lastActivityAt
+          : lastActivityAt + RECENT_NETWORK_ACTIVITY_WINDOW_MS + 1;
+      if (changeAt <= now) return earliest;
+      return earliest === null ? changeAt : Math.min(earliest, changeAt);
+    }, null);
+    if (nextChange === null) return;
+    const timeout = window.setTimeout(
+      () => setActivityClock(Date.now()),
+      Math.min(nextChange - now, 2_147_483_647),
+    );
+    return () => window.clearTimeout(timeout);
+  }, [activityClock, networks]);
   const aorOptions = useMemo(() => sortNetworkAorsForDisplay(aors), [aors]);
   const querySnapshot = useMemo<NetworksQuerySnapshot>(
     () => ({
@@ -268,6 +300,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
         setNetworks,
         setActivityByNetworkId,
         setActivityLoadStateByNetworkId,
+        setLastActivityLoadStateByNetworkId,
         setBootstrapLoaded,
       }),
     [],

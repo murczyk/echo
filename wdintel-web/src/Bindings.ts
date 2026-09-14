@@ -657,6 +657,7 @@ export type SignalGroupEntry = {
   ignoreOperativny: boolean;
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
+  isAviationGroup: boolean;
   groupStats: SignalGroupStats;
   adminData: GroupAdminData | null;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
@@ -668,6 +669,7 @@ export type OrphanSignalGroupEntry = {
   ignoreOperativny: boolean;
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
+  isAviationGroup: boolean;
   isArchived: boolean;
   datasourceId: number | null;
   createdAt: number;
@@ -2623,6 +2625,7 @@ export type ZoneDatasourceGroup = {
   isGroupSecret: boolean;
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
+  isAviationGroup: boolean;
   allowedUsers: Array<string>;
   allowedUserDetails: Array<SignalGroupLogin>;
   allowedOrganismIds: Array<number>;
@@ -2660,6 +2663,7 @@ export type ZoneDatasourceGroupUpdateReq = {
   isSecret: boolean;
   interseptionKind: InterseptionKind | null;
   disableNetworkAssignment: boolean | null;
+  isAviationGroup: boolean | null;
   userLogins: Array<string>;
   organismIds: Array<number>;
   adminLogins: Array<string>;
@@ -3835,6 +3839,15 @@ export type ListNetworksStatusCountsRsp = {
 export type ListNetworksRsp = {
   list: Array<Network>;
   statusCounts: ListNetworksStatusCountsRsp;
+};
+
+export type NetworkLastActivityReq = {
+  networkIds: Array<number>;
+};
+
+export type NetworkLastActivityRow = {
+  networkId: number;
+  lastActivityAt: number | null;
 };
 
 export type UpdateFreqNetworksReq = {
@@ -5442,6 +5455,7 @@ export type GroupUpdateReq = {
   areaOfResponsibilityIds: Array<number> | null;
   interseptionKind: InterseptionKind | null;
   disableNetworkAssignment: boolean | null;
+  isAviationGroup: boolean | null;
 };
 
 export type GroupEntryF1 = {

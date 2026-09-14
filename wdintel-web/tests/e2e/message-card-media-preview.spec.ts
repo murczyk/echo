@@ -222,6 +222,8 @@ test.describe('@smoke', () => {
           MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1,
         );
         await expect(page.getByRole('dialog', { name: 'Перегляд зображення' })).toHaveCount(0);
+        await download.hover();
+        await expect(page.getByRole('tooltip', { name: /Завантажити вкладення:/ })).toBeVisible();
         await preview.click({ position: { x: 12, y: 60 } });
         const dialog = page.getByRole('dialog', { name: 'Перегляд зображення' });
         await expect(dialog).toBeVisible();

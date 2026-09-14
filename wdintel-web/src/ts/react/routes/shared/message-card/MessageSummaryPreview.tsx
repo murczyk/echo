@@ -43,6 +43,7 @@ type MessageSummaryPreviewProps = {
   label: string;
   groupName: string | null;
   time: string | null;
+  unavailable?: boolean;
   onBeforeOpen?: () => Promise<boolean | void>;
   children: ReactElement<PreviewTriggerProps>;
 };
@@ -52,6 +53,7 @@ function MessageSummaryPreviewContent({
   label,
   groupName,
   time,
+  unavailable = false,
 }: Omit<MessageSummaryPreviewProps, 'children'>) {
   return (
     <Paper
@@ -69,23 +71,29 @@ function MessageSummaryPreviewContent({
       <header className="border-b border-solid border-(--color-divider) px-3 py-2">
         <strong className="text-sm">{label}</strong>
       </header>
-      <div className="max-h-60 overflow-y-auto whitespace-pre-wrap wrap-break-word px-3 py-2.5 text-sm leading-5">
-        {summary.text.trim() || 'Без тексту'}
-      </div>
-      <dl className="m-0 grid gap-1 border-t border-solid border-(--color-divider) px-3 py-2 text-xs">
-        <div className="grid grid-cols-[76px_minmax(0,1fr)] gap-2">
-          <dt className="text-(--color-action)">Група</dt>
-          <dd className="m-0 wrap-break-word font-semibold">{groupName ?? 'Без групи'}</dd>
-        </div>
-        <div className="grid grid-cols-[76px_minmax(0,1fr)] gap-2">
-          <dt className="text-(--color-action)">Дата і час</dt>
-          <dd className="m-0 font-semibold">{time ?? 'Не вказано'}</dd>
-        </div>
-        <div className="grid grid-cols-[76px_minmax(0,1fr)] gap-2">
-          <dt className="text-(--color-action)">Вкладення</dt>
-          <dd className="m-0 font-semibold">{summary.attachmentsCount}</dd>
-        </div>
-      </dl>
+      {unavailable ? (
+        <div className="px-3 py-2.5 text-sm leading-5">Прев’ю недоступне</div>
+      ) : (
+        <>
+          <div className="max-h-60 overflow-y-auto whitespace-pre-wrap wrap-break-word px-3 py-2.5 text-sm leading-5">
+            {summary.text.trim() || 'Без тексту'}
+          </div>
+          <dl className="m-0 grid gap-1 border-t border-solid border-(--color-divider) px-3 py-2 text-xs">
+            <div className="grid grid-cols-[76px_minmax(0,1fr)] gap-2">
+              <dt className="text-(--color-action)">Група</dt>
+              <dd className="m-0 wrap-break-word font-semibold">{groupName ?? 'Без групи'}</dd>
+            </div>
+            <div className="grid grid-cols-[76px_minmax(0,1fr)] gap-2">
+              <dt className="text-(--color-action)">Дата і час</dt>
+              <dd className="m-0 font-semibold">{time ?? 'Не вказано'}</dd>
+            </div>
+            <div className="grid grid-cols-[76px_minmax(0,1fr)] gap-2">
+              <dt className="text-(--color-action)">Вкладення</dt>
+              <dd className="m-0 font-semibold">{summary.attachmentsCount}</dd>
+            </div>
+          </dl>
+        </>
+      )}
     </Paper>
   );
 }
@@ -95,6 +103,7 @@ export function MessageSummaryPreview({
   label,
   groupName,
   time,
+  unavailable,
   onBeforeOpen,
   children,
 }: MessageSummaryPreviewProps) {
@@ -292,6 +301,7 @@ export function MessageSummaryPreview({
               label={label}
               groupName={groupName}
               time={time}
+              unavailable={unavailable}
             />
           </div>
         </Popper>

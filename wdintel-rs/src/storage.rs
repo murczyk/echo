@@ -11,6 +11,7 @@ use actix_files::NamedFile;
 use actix_web::{web, HttpRequest, HttpResponse, Responder};
 use opendal::Operator;
 use rand::Rng;
+use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, LazyLock};
@@ -19,6 +20,13 @@ use strong_box::{Key, StaticStrongBox, StrongBox};
 use tokio::io::AsyncReadExt;
 use tokio::sync::Semaphore;
 use uuid::Uuid;
+
+static UPLOAD_ENCRYPT_SEMAPHORE: LazyLock<Arc<Semaphore>> =
+    LazyLock::new(|| {
+        Arc::new(Semaphore::new(
+            crate::config::STORAGE_UPLOAD_ENCRYPT_MAX_CONCURRENT_OPERATIONS,
+        ))
+    });
 
 static WHOLE_OBJECT_DECRYPT_SEMAPHORE: LazyLock<Arc<Semaphore>> = LazyLock::new(
     || {
@@ -265,20 +273,24 @@ pub async fn upload_encrypted_to_s3_with_operator(
     config: &S3Config,
     strongbox_key_b64: &str,
     rel_path: &str,
-    data: &[u8],
+    data: web::Bytes,
 ) -> Result<(), AppError> {
     let Some(op) = op else {
-        warn!("S3 not configured, failed to write!");
-        return Ok(());
+        return Err(AppError::BL {
+            msg: "S3 is not configured for encrypted upload".to_string(),
+        });
     };
     let remote_key = config.prefixed_key(rel_path);
-    let key = key_from_b64(strongbox_key_b64)?;
-    let sb = StaticStrongBox::new(key.clone(), vec![key]);
-    let ciphertext = sb
-        .encrypt(data, aad(&config.bucket, &remote_key).as_bytes())
-        .map_err(|err| AppError::BL {
-            msg: format!("failed to encrypt payload for {remote_key}: {err}"),
-        })?;
+    let key = key_from_b64(strongbox_key_b64).c(h!())?;
+    let (ciphertext, _permit) = encrypt_upload(
+        data,
+        key,
+        aad(&config.bucket, &remote_key),
+        UPLOAD_ENCRYPT_SEMAPHORE.clone(),
+        None,
+    )
+    .await
+    .c(h!())?;
     let expected_size = u64::try_from(ciphertext.len()).c(h!())?;
     let first_byte = ciphertext.first().copied();
     op.write(&remote_key, ciphertext).await.c(h!())?;
@@ -291,6 +303,57 @@ pub async fn upload_encrypted_to_s3_with_operator(
     }
     info!("stored to {}: {}", config.bucket.clone(), remote_key);
     Ok(())
+}
+
+async fn run_upload_cpu<T: Send + 'static>(
+    permit: tokio::sync::OwnedSemaphorePermit,
+    work: impl FnOnce() -> Result<T, AppError> + Send + 'static,
+) -> Result<(T, tokio::sync::OwnedSemaphorePermit), AppError> {
+    tokio::task::spawn_blocking(move || {
+        let result = work().c(h!())?;
+        Ok::<_, AppError>((result, permit))
+    })
+    .await
+    .c(h!())?
+}
+
+async fn encrypt_upload(
+    data: web::Bytes,
+    key: Key,
+    object_aad: String,
+    semaphore: Arc<Semaphore>,
+    finalization_guard: Option<Arc<tokio::sync::OwnedSemaphorePermit>>,
+) -> Result<(Vec<u8>, tokio::sync::OwnedSemaphorePermit), AppError> {
+    let permit = semaphore.acquire_owned().await.c(h!())?;
+    run_upload_cpu(permit, move || {
+        let _finalization_guard = finalization_guard;
+        let strongbox = StaticStrongBox::new(key.clone(), vec![key]);
+        strongbox
+            .encrypt(&data, object_aad.as_bytes())
+            .map_err(|error| AppError::BL {
+                msg: format!("failed to encrypt upload: {error}"),
+            })
+    })
+    .await
+}
+
+async fn hash_upload_chunk(
+    sha256: Sha256,
+    chunk: web::Bytes,
+) -> Result<(Sha256, web::Bytes), AppError> {
+    let permit = UPLOAD_ENCRYPT_SEMAPHORE
+        .clone()
+        .acquire_owned()
+        .await
+        .c(h!())?;
+    let (result, _permit) = run_upload_cpu(permit, move || {
+        let mut sha256 = sha256;
+        sha256.update(&chunk);
+        Ok((sha256, chunk))
+    })
+    .await
+    .c(h!())?;
+    Ok(result)
 }
 
 pub async fn upload_plaintext_file_to_s3_with_operator(
@@ -454,6 +517,147 @@ async fn delete_unverified_upload(op: &Operator, remote_key: &str) {
     }
 }
 
+#[derive(Debug)]
+pub(crate) enum DeviceContentUploadError {
+    Sha256Mismatch,
+    Internal(AppError),
+}
+
+impl From<AppError> for DeviceContentUploadError {
+    fn from(error: AppError) -> Self {
+        Self::Internal(error)
+    }
+}
+
+pub(crate) async fn upload_device_content_encrypted(
+    op: &Operator,
+    config: &S3Config,
+    strongbox_key_b64: &str,
+    full_key: &str,
+    data: web::Bytes,
+    finalization_guard: Option<Arc<tokio::sync::OwnedSemaphorePermit>>,
+) -> Result<(), AppError> {
+    if !config.prefix.is_empty() {
+        return Err(AppError::BL {
+            msg: "device content storage must be prefix-free".to_string(),
+        });
+    }
+    let key = key_from_b64(strongbox_key_b64).c(h!())?;
+    let (ciphertext, _permit) = encrypt_upload(
+        data,
+        key,
+        aad(&config.bucket, full_key),
+        UPLOAD_ENCRYPT_SEMAPHORE.clone(),
+        finalization_guard,
+    )
+    .await
+    .c(h!())?;
+    let expected_size = u64::try_from(ciphertext.len()).c(h!())?;
+    let first_byte = ciphertext.first().copied();
+    op.write(full_key, ciphertext).await.c(h!())?;
+    if let Err(error) =
+        verify_uploaded_s3_object(op, full_key, expected_size, first_byte).await
+    {
+        delete_unverified_upload(op, full_key).await;
+        return Err(error);
+    }
+    info!(
+        "stored encrypted device content in {}: {full_key}",
+        config.bucket
+    );
+    Ok(())
+}
+
+pub(crate) async fn upload_device_content_plaintext(
+    op: &Operator,
+    config: &S3Config,
+    full_key: &str,
+    file: tokio::fs::File,
+    expected_size: u64,
+    expected_sha256: &[u8; 32],
+) -> Result<(), DeviceContentUploadError> {
+    if !config.prefix.is_empty() {
+        return Err(DeviceContentUploadError::Internal(AppError::BL {
+            msg: "device content storage must be prefix-free".to_string(),
+        }));
+    }
+    let writer = op
+        .writer_with(full_key)
+        .chunk(crate::config::DEVICE_FILE_CONTENT_STREAM_CHUNK_BYTES)
+        .await
+        .c(h!())
+        .map_err(|error| DeviceContentUploadError::Internal(error.into()))?;
+    let mut writer = PlaintextUploadWriter::new(writer, full_key.to_string());
+    let read_limit = expected_size.checked_add(1).ok_or_else(|| {
+        DeviceContentUploadError::Internal(AppError::BL {
+            msg: "device content read limit overflowed".to_string(),
+        })
+    })?;
+    let mut stream = tokio_util::io::ReaderStream::with_capacity(
+        file.take(read_limit),
+        crate::config::DEVICE_FILE_CONTENT_STREAM_CHUNK_BYTES,
+    );
+    let mut size = 0_u64;
+    let mut first_byte = None;
+    let mut sha256 = Sha256::new();
+    while let Some(chunk) = futures_util::TryStreamExt::try_next(&mut stream)
+        .await
+        .c(h!())
+        .map_err(|error| DeviceContentUploadError::Internal(error.into()))?
+    {
+        if first_byte.is_none() {
+            first_byte = chunk.first().copied();
+        }
+        size = size
+            .checked_add(u64::try_from(chunk.len()).c(h!()).map_err(
+                |error| DeviceContentUploadError::Internal(error.into()),
+            )?)
+            .ok_or_else(|| {
+                DeviceContentUploadError::Internal(AppError::BL {
+                    msg: "device content byte count overflowed".to_string(),
+                })
+            })?;
+        let (next_sha256, chunk) = hash_upload_chunk(sha256, chunk)
+            .await
+            .map_err(DeviceContentUploadError::Internal)?;
+        sha256 = next_sha256;
+        if let Err(error) = writer.writer().write(chunk).await.c(h!()) {
+            let _ = writer.abort().await;
+            return Err(DeviceContentUploadError::Internal(error.into()));
+        }
+    }
+    let digest: [u8; 32] = sha256.finalize().into();
+    if size != expected_size || &digest != expected_sha256 {
+        if let Err(error) = writer.abort().await {
+            warn!("failed to abort rejected device content {full_key}: {error:#?}");
+        }
+        return Err(DeviceContentUploadError::Sha256Mismatch);
+    }
+    if let Err(error) = writer.close().await.c(h!()) {
+        let _ = writer.abort().await;
+        return Err(DeviceContentUploadError::Internal(error.into()));
+    }
+    if let Err(error) =
+        verify_uploaded_s3_object(op, full_key, expected_size, first_byte).await
+    {
+        delete_unverified_upload(op, full_key).await;
+        return Err(DeviceContentUploadError::Internal(error));
+    }
+    info!(
+        "stored plaintext device content in {}: {full_key}",
+        config.bucket
+    );
+    Ok(())
+}
+
+pub(crate) async fn delete_device_content_object(
+    op: &Operator,
+    full_key: &str,
+) -> Result<(), AppError> {
+    op.delete(full_key).await.c(h!())?;
+    Ok(())
+}
+
 async fn write_plaintext_bytes(
     writer: &mut opendal::Writer,
     data: bytes::Bytes,
@@ -463,6 +667,7 @@ async fn write_plaintext_bytes(
     for offset in (0..data.len()).step_by(chunk_size) {
         let end = offset.saturating_add(chunk_size).min(data.len());
         writer.write(data.slice(offset..end)).await.c(h!())?;
+        tokio::task::yield_now().await;
     }
     Ok(())
 }
@@ -494,6 +699,7 @@ async fn write_plaintext_file(
                 msg: "plaintext upload byte count overflowed".to_string(),
             })?;
         writer.write(chunk).await.c(h!())?;
+        tokio::task::yield_now().await;
     }
     Ok(PlaintextUploadSummary {
         size: written,
@@ -796,6 +1002,10 @@ pub fn mk_media_url(m: &signal_message_media::Model) -> String {
 }
 
 #[cfg(test)]
+#[path = "storage_upload_bench.rs"]
+mod upload_bench;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use futures_util::TryStreamExt;
@@ -810,6 +1020,132 @@ mod tests {
             secret_access_key: String::new(),
             prefix: "media".to_string(),
         }
+    }
+
+    fn device_memory_config() -> S3Config {
+        S3Config {
+            prefix: String::new(),
+            ..memory_config()
+        }
+    }
+
+    async fn assert_object_missing(op: &Operator, key: &str) {
+        let error = op.stat(key).await.unwrap_err();
+        assert_eq!(error.kind(), opendal::ErrorKind::NotFound);
+    }
+
+    #[tokio::test]
+    async fn encrypted_empty_device_content_uses_exact_key_and_aad() {
+        let op = Operator::new(Memory::default()).unwrap().finish();
+        let config = device_memory_config();
+        let strongbox_key = generate_strongbox_key_b64();
+        let object_key = "device-file-content/device/file/1/upload";
+
+        upload_device_content_encrypted(
+            &op,
+            &config,
+            &strongbox_key,
+            object_key,
+            web::Bytes::new(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        let encrypted = op.read(object_key).await.unwrap().to_vec();
+        assert!(!encrypted.is_empty());
+        assert_object_missing(&op, &format!("media/{object_key}")).await;
+        let key = key_from_b64(&strongbox_key).unwrap();
+        let strongbox = StaticStrongBox::new(key.clone(), vec![key]);
+        assert_eq!(
+            strongbox
+                .decrypt(&encrypted, aad(&config.bucket, object_key).as_bytes())
+                .unwrap(),
+            b""
+        );
+        assert!(strongbox
+            .decrypt(&encrypted, aad("other-bucket", object_key).as_bytes())
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn plaintext_device_content_validates_source_before_commit() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("device-upload.bin");
+        let data = b"device content";
+        tokio::fs::write(&path, data).await.unwrap();
+        let digest: [u8; 32] = Sha256::digest(data).into();
+        let op = Operator::new(Memory::default()).unwrap().finish();
+        let config = device_memory_config();
+
+        upload_device_content_plaintext(
+            &op,
+            &config,
+            "device-file-content/valid",
+            tokio::fs::File::open(&path).await.unwrap(),
+            u64::try_from(data.len()).unwrap(),
+            &digest,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            op.read("device-file-content/valid").await.unwrap().to_vec(),
+            data
+        );
+
+        let cases = [
+            ("wrong-sha", u64::try_from(data.len()).unwrap(), [0; 32]),
+            (
+                "short-source",
+                u64::try_from(data.len()).unwrap() + 1,
+                digest,
+            ),
+            (
+                "long-source",
+                u64::try_from(data.len()).unwrap() - 1,
+                digest,
+            ),
+        ];
+        for (name, expected_size, expected_sha256) in cases {
+            let object_key = format!("device-file-content/{name}");
+            let error = upload_device_content_plaintext(
+                &op,
+                &config,
+                &object_key,
+                tokio::fs::File::open(&path).await.unwrap(),
+                expected_size,
+                &expected_sha256,
+            )
+            .await
+            .unwrap_err();
+            assert!(matches!(error, DeviceContentUploadError::Sha256Mismatch));
+            assert_object_missing(&op, &object_key).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn device_content_storage_rejects_prefix_and_deletes_exact_key() {
+        let op = Operator::new(Memory::default()).unwrap().finish();
+        let config = memory_config();
+        let strongbox_key = generate_strongbox_key_b64();
+
+        assert!(upload_device_content_encrypted(
+            &op,
+            &config,
+            &strongbox_key,
+            "target",
+            web::Bytes::from_static(b"content"),
+            None,
+        )
+        .await
+        .is_err());
+        assert_object_missing(&op, "target").await;
+
+        op.write("target", "one").await.unwrap();
+        op.write("target-neighbor", "two").await.unwrap();
+        delete_device_content_object(&op, "target").await.unwrap();
+        assert_object_missing(&op, "target").await;
+        assert_eq!(op.read("target-neighbor").await.unwrap().to_vec(), b"two");
     }
 
     #[tokio::test]
@@ -977,7 +1313,7 @@ mod tests {
             &config,
             &strongbox_key,
             "object",
-            &plaintext,
+            web::Bytes::copy_from_slice(&plaintext),
         )
         .await
         .unwrap();
@@ -1033,5 +1369,140 @@ mod tests {
         .unwrap();
 
         assert_eq!(op.read("media/object").await.unwrap().to_vec(), data);
+    }
+}
+
+#[cfg(test)]
+mod upload_runtime_tests {
+    use super::*;
+    use std::time::Instant;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn encrypted_upload_keeps_single_thread_runtime_responsive() {
+        let op = Operator::new(opendal::services::Memory::default())
+            .unwrap()
+            .finish();
+        let config = S3Config {
+            bucket: "upload-runtime-test".to_string(),
+            region: String::new(),
+            endpoint: String::new(),
+            access_key_id: String::new(),
+            secret_access_key: String::new(),
+            prefix: String::new(),
+        };
+        let strongbox_key = generate_strongbox_key_b64();
+        let source = web::Bytes::from(vec![0x71; 16 * 1024 * 1024]);
+        let operator = Some(op.clone());
+        let upload = upload_encrypted_to_s3_with_operator(
+            &operator,
+            &config,
+            &strongbox_key,
+            "source",
+            source.clone(),
+        );
+        tokio::pin!(upload);
+        let mut ticks = 0;
+        let mut max_lag = Duration::ZERO;
+        let started = Instant::now();
+        loop {
+            let heartbeat_started = Instant::now();
+            tokio::select! {
+                biased;
+                result = &mut upload => { result.unwrap(); break; }
+                _ = tokio::time::sleep(Duration::from_millis(5)) => {
+                    ticks += 1;
+                    max_lag = max_lag.max(heartbeat_started.elapsed().saturating_sub(Duration::from_millis(5)));
+                }
+            }
+        }
+        eprintln!(
+            "upload heartbeat: elapsed_ms={} samples={ticks} max_lag_ms={}",
+            started.elapsed().as_millis(),
+            max_lag.as_millis()
+        );
+        assert!(
+            ticks >= 2,
+            "encryption monopolized the single-thread runtime"
+        );
+        assert!(
+            max_lag < Duration::from_millis(250),
+            "runtime heartbeat stalled for {max_lag:?}"
+        );
+        let ciphertext = op.read("source").await.unwrap().to_vec();
+        let key = key_from_b64(&strongbox_key).unwrap();
+        let strongbox = StaticStrongBox::new(key.clone(), vec![key]);
+        assert_eq!(
+            strongbox
+                .decrypt(&ciphertext, aad(&config.bucket, "source").as_bytes())
+                .unwrap()
+                .as_slice(),
+            source.as_ref()
+        );
+        assert!(strongbox
+            .decrypt(&ciphertext, aad("wrong-bucket", "source").as_bytes())
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn cancelled_upload_retains_cpu_permit_until_background_work_finishes(
+    ) {
+        let semaphore = Arc::new(Semaphore::new(1));
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let permit = semaphore.clone().acquire_owned().await.unwrap();
+        let upload = tokio::spawn(run_upload_cpu(permit, move || {
+            entered_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+            Ok(())
+        }));
+        entered_rx.await.unwrap();
+        upload.abort();
+        assert!(upload.await.unwrap_err().is_cancelled());
+        let permit_was_retained =
+            semaphore.clone().try_acquire_owned().is_err();
+        release_tx.send(()).unwrap();
+        let permit = tokio::time::timeout(
+            Duration::from_secs(5),
+            semaphore.clone().acquire_owned(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(permit_was_retained, "cancellation admitted another upload while CPU work was still active");
+        assert_eq!(semaphore.available_permits(), 0);
+        drop(permit);
+        assert_eq!(semaphore.available_permits(), 1);
+    }
+    #[tokio::test]
+    async fn concurrent_upload_waits_for_capacity_and_preserves_bytes() {
+        let semaphore = Arc::new(Semaphore::new(2));
+        let first = semaphore.clone().acquire_owned().await.unwrap();
+        let second = semaphore.clone().acquire_owned().await.unwrap();
+        let key = key_from_b64(&generate_strongbox_key_b64()).unwrap();
+        let mut upload = Box::pin(encrypt_upload(
+            web::Bytes::from_static(b"legacy attachment"),
+            key.clone(),
+            "bucket/object".to_string(),
+            semaphore.clone(),
+            None,
+        ));
+        assert!(tokio::time::timeout(Duration::from_millis(25), &mut upload)
+            .await
+            .is_err());
+        drop(first);
+        let (ciphertext, permit) =
+            tokio::time::timeout(Duration::from_secs(5), upload)
+                .await
+                .unwrap()
+                .unwrap();
+        let strongbox = StaticStrongBox::new(key.clone(), vec![key]);
+        assert_eq!(
+            strongbox.decrypt(&ciphertext, b"bucket/object").unwrap(),
+            b"legacy attachment"
+        );
+        assert_eq!(semaphore.available_permits(), 0);
+        drop(permit);
+        drop(second);
+        assert_eq!(semaphore.available_permits(), 2);
     }
 }

@@ -36,17 +36,23 @@ pub async fn parse_signal_message(
         .as_deref()
         .map(str::trim)
         .filter(|key| !key.is_empty());
-    // The group only refines unit/location extraction; parsing works without it.
-    let aor_id = if let Some(master_key) = master_key {
-        query::find_available_signal_group(&env.dbx, login, master_key).await?;
-        crate::messenger::group::resolve_group_aor_id(&env.dbx, master_key)
-            .await
-            .c(h!())?
+    let (aor_id, is_aviation_group) = if let Some(master_key) = master_key {
+        let group =
+            query::find_available_signal_group(&env.dbx, login, master_key)
+                .await
+                .c(h!())?;
+        (
+            crate::messenger::group::resolve_group_aor_id(&env.dbx, master_key)
+                .await
+                .c(h!())?,
+            group.is_aviation_group.unwrap_or(false),
+        )
     } else {
-        None
+        (None, false)
     };
 
-    parse_signal_message_body(env, &env.dbx, &body, aor_id).await
+    parse_signal_message_body(env, &env.dbx, &body, aor_id, is_aviation_group)
+        .await
 }
 
 pub async fn copy_signal_messages(
@@ -219,14 +225,19 @@ async fn parse_signal_message_body<C>(
     dbx: &C,
     body: &str,
     aor_id: Option<i64>,
+    is_aviation_group: bool,
 ) -> Result<DirectSubmitParseRsp, AppError>
 where
     C: ConnectionTrait,
 {
     let callsign_tokens =
-        crate::rer_importer::callsigns::find_known_callsigns(&env.rq, body)
-            .await
-            .c(h!())?;
+        crate::rer_importer::callsigns::find_known_callsigns_for_group(
+            &env.rq,
+            body,
+            is_aviation_group,
+        )
+        .await
+        .c(h!())?;
     let callsign_etalons =
         crate::rer_importer::inbox::metadata::non_metadata_line_callsign_etalons(
             &callsign_tokens,
@@ -1257,9 +1268,10 @@ mod tests {
         let env = cleanup().await.unwrap();
         let body = "01.04.2023_15:00 F=411,7500(МГЦ)\n49.12345, 37.12345\nID➡️:110(ЯРУС)\nID(CG)⬅️:50(СВЕТЛЫЙ)\nТекст повідомлення";
 
-        let parsed = parse_signal_message_body(&env, &env.dbx, body, None)
-            .await
-            .unwrap();
+        let parsed =
+            parse_signal_message_body(&env, &env.dbx, body, None, false)
+                .await
+                .unwrap();
 
         assert_eq!(parsed.freq.as_deref(), Some("411.7500"));
         assert_eq!(parsed.coords.len(), 1);

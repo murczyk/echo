@@ -1675,58 +1675,66 @@ async fn refresh_direct_goi_palitra_file(
             }
         };
     let uploaded_at = Utc::now();
-    let txn = env.dbx.begin().await.c(h!())?;
-    update_imported_palitra_fields(
-        &txn,
-        retained_palitra_id,
-        PALITRA_CONVERSION_STATUS_READY,
-        &extension,
-        is_archived,
-        imported_from_goi_update_for_refresh(tracked_rows),
-    )
-    .await
-    .c(h!())?;
-    rewrite_direct_goi_palitra_geometries(
-        env,
-        &txn,
-        retained_palitra_id,
-        &filename,
-        uploaded_at,
-        upload,
-    )
-    .await
-    .c(h!())?;
-    upsert_goi_palitra_sync(
-        &txn,
-        integration.id,
-        Some(retained_palitra_id),
-        remote_path,
-        PALITRA_GOI_SYNC_DIRECTION_GOI,
-        PALITRA_GOI_REMOTE_STATUS_PRESENT,
-        Some(file_size),
-        Some(file_sha256),
-        Some(super::goi_changelog::ok_entry(
-            "Synced from GOI",
-            "Палітру оновлено з ГОІ.",
-        )),
-        None,
-    )
-    .await
-    .c(h!())?;
-    refresh_palitra_missing_in_goi(&txn, retained_palitra_id)
+    let source = super::UploadedPalitraSource::new(env, upload.s3_id.clone());
+    let txn = super::begin_palitra_upload(env, source.key.as_deref())
         .await
         .c(h!())?;
-    delete_stale_tracked_goi_palitras(
-        &txn,
-        integration.id,
-        remote_path,
-        &palitra_ids,
-        retained_palitra_id,
-    )
-    .await
-    .c(h!())?;
-    txn.commit().await.c(h!())?;
-    Ok(())
+    let result = async {
+        update_imported_palitra_fields(
+            &txn,
+            retained_palitra_id,
+            PALITRA_CONVERSION_STATUS_READY,
+            &extension,
+            is_archived,
+            imported_from_goi_update_for_refresh(tracked_rows),
+        )
+        .await
+        .c(h!())?;
+        rewrite_direct_goi_palitra_geometries(
+            env,
+            &txn,
+            retained_palitra_id,
+            &filename,
+            uploaded_at,
+            upload,
+        )
+        .await
+        .c(h!())?;
+        upsert_goi_palitra_sync(
+            &txn,
+            integration.id,
+            Some(retained_palitra_id),
+            remote_path,
+            PALITRA_GOI_SYNC_DIRECTION_GOI,
+            PALITRA_GOI_REMOTE_STATUS_PRESENT,
+            Some(file_size),
+            Some(file_sha256),
+            Some(super::goi_changelog::ok_entry(
+                "Synced from GOI",
+                "Палітру оновлено з ГОІ.",
+            )),
+            None,
+        )
+        .await
+        .c(h!())?;
+        refresh_palitra_missing_in_goi(&txn, retained_palitra_id)
+            .await
+            .c(h!())?;
+        delete_stale_tracked_goi_palitras(
+            &txn,
+            integration.id,
+            remote_path,
+            &palitra_ids,
+            retained_palitra_id,
+        )
+        .await
+        .c(h!())?;
+        anyhow::Ok(())
+    }
+    .await;
+    super::finish_palitra_upload(txn, source, result)
+        .await
+        .c(h!())
 }
 
 async fn delete_stale_tracked_goi_palitras(
@@ -1924,10 +1932,13 @@ async fn load_direct_goi_palitra_upload(
                 return Ok(DirectGoiPalitraUpload::Invalid(format!("{err:#}")));
             }
         };
-    upload.s3_id =
-        super::kmz::store_palitra_source_file(&filename, &file_data, env)
-            .await
-            .c(h!())?;
+    upload.s3_id = super::kmz::store_palitra_source_file(
+        &filename,
+        actix_web::web::Bytes::from(file_data),
+        env,
+    )
+    .await
+    .c(h!())?;
     Ok(DirectGoiPalitraUpload::Ready(upload))
 }
 
@@ -2280,6 +2291,9 @@ async fn import_direct_goi_palitra_file(
     file_size: i64,
     file_sha256: String,
 ) -> anyhow::Result<Vec<i64>> {
+    let organism_ids =
+        goi_import_access(&env.dbx, integration).await.c(h!())?;
+    let author = integration.maintainer_login_id.c(h!())?;
     let upload =
         match load_direct_goi_palitra_upload(env, filename.clone(), file_data)
             .await
@@ -2319,49 +2333,54 @@ async fn import_direct_goi_palitra_file(
         s3_id,
     };
 
-    let organism_ids =
-        goi_import_access(&env.dbx, integration).await.c(h!())?;
-    let author = integration.maintainer_login_id.c(h!())?;
     let uploaded_at = Utc::now();
-    let txn = env.dbx.begin().await.c(h!())?;
-    let palitra = super::bl::create_palitra(
-        author,
-        CreatePalitraReq {
-            name: goi_palitra_name(remote_path),
-            color_hex: primary_color_hex,
-            access: PalitraAccess::ByOrganisms { organism_ids },
-            source_file_name: Some(filename.clone()),
-            last_uploaded_at_ts: Some(uploaded_at.timestamp_millis()),
-        },
-        &txn,
-    )
-    .await
-    .c(h!())?;
-    update_imported_palitra_folder(&txn, palitra.id, remote_path)
+    let source = super::UploadedPalitraSource::new(env, upload.s3_id.clone());
+    let txn = super::begin_palitra_upload(env, source.key.as_deref())
         .await
         .c(h!())?;
-    update_imported_palitra_fields(
-        &txn,
-        palitra.id,
-        PALITRA_CONVERSION_STATUS_READY,
-        &extension,
-        is_archived,
-        Some(true),
-    )
-    .await
-    .c(h!())?;
-    rewrite_direct_goi_palitra_geometries(
-        env,
-        &txn,
-        palitra.id,
-        &filename,
-        uploaded_at,
-        upload,
-    )
-    .await
-    .c(h!())?;
-    txn.commit().await.c(h!())?;
-    Ok(vec![palitra.id])
+    let result = async {
+        let palitra = super::bl::create_palitra(
+            author,
+            CreatePalitraReq {
+                name: goi_palitra_name(remote_path),
+                color_hex: primary_color_hex,
+                access: PalitraAccess::ByOrganisms { organism_ids },
+                source_file_name: Some(filename.clone()),
+                last_uploaded_at_ts: Some(uploaded_at.timestamp_millis()),
+            },
+            &txn,
+        )
+        .await
+        .c(h!())?;
+        update_imported_palitra_folder(&txn, palitra.id, remote_path)
+            .await
+            .c(h!())?;
+        update_imported_palitra_fields(
+            &txn,
+            palitra.id,
+            PALITRA_CONVERSION_STATUS_READY,
+            &extension,
+            is_archived,
+            Some(true),
+        )
+        .await
+        .c(h!())?;
+        rewrite_direct_goi_palitra_geometries(
+            env,
+            &txn,
+            palitra.id,
+            &filename,
+            uploaded_at,
+            upload,
+        )
+        .await
+        .c(h!())?;
+        anyhow::Ok(vec![palitra.id])
+    }
+    .await;
+    super::finish_palitra_upload(txn, source, result)
+        .await
+        .c(h!())
 }
 
 #[allow(clippy::too_many_arguments)]

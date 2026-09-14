@@ -2,6 +2,7 @@ type Canvas = import('fabric').Canvas;
 type Rect = import('fabric').Rect;
 import { ImageEditorObjectRole } from './image-editor.types';
 import { isTransientCropRole } from './image-editor-object-role';
+import { translateImageEditorAttachedArrowTarget } from './image-editor-attached-arrow';
 
 const MIN_CROP_SIZE = 8;
 const CROP_CONTROL_INSET = 8;
@@ -285,11 +286,16 @@ export function applyCrop({
   const cropX = Number(sourceImage.get('cropX') ?? 0) + bounds.left;
   const cropY = Number(sourceImage.get('cropY') ?? 0) + bounds.top;
   removeCropUi(canvas);
-  canvas
-    .getObjects()
-    .forEach((object) =>
-      object.set({ left: (object.left ?? 0) - bounds.left, top: (object.top ?? 0) - bounds.top }),
-    );
+  canvas.getObjects().forEach((object) => {
+    if (object.get('editorRole') === ImageEditorObjectRole.DerivedArrow) return;
+    if (object.get('editorRole') === ImageEditorObjectRole.Text)
+      translateImageEditorAttachedArrowTarget(
+        object as import('fabric').IText,
+        bounds.left,
+        bounds.top,
+      );
+    object.set({ left: (object.left ?? 0) - bounds.left, top: (object.top ?? 0) - bounds.top });
+  });
   sourceImage.set({
     cropX,
     cropY,
