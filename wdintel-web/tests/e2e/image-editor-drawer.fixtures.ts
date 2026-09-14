@@ -85,16 +85,6 @@ export function createImageEditorNoisePng() {
   };
 }
 
-async function installImageEditorAssetRoutes(page: Page) {
-  await installMessageCardMediaPreviewAssetRoutes(page);
-  await page.route('**/test-assets/message-card-media-preview/e2e-image-1.png', (route) =>
-    route.fulfill({
-      contentType: IMAGE_EDITOR_DRAWER_PNG.mimeType,
-      body: IMAGE_EDITOR_DRAWER_PNG.buffer,
-    }),
-  );
-}
-
 export function parseTusMetadata(value: string | undefined): Record<string, string> {
   if (!value) return {};
   return Object.fromEntries(
@@ -252,7 +242,10 @@ export async function openEditReportDrawer(page: Page): Promise<void> {
       groupMasterKey: report.groupMasterKey,
     },
   ];
-  await installImageEditorAssetRoutes(page);
+  await installMessageCardMediaPreviewAssetRoutes(page, undefined, {
+    body: IMAGE_EDITOR_DRAWER_PNG.buffer,
+    contentType: IMAGE_EDITOR_DRAWER_PNG.mimeType,
+  });
   const dutyMocks = await installRerDutyShortStateMocks(page, {
     inboxResponse,
     signalGroups: ['e2e-group'],
@@ -287,7 +280,10 @@ async function openDrawerFromMediaMessage(
     },
   ];
   (message as any).images = [];
-  await installImageEditorAssetRoutes(page);
+  await installMessageCardMediaPreviewAssetRoutes(page, undefined, {
+    body: IMAGE_EDITOR_DRAWER_PNG.buffer,
+    contentType: IMAGE_EDITOR_DRAWER_PNG.mimeType,
+  });
   const dutyMocks = await installRerDutyShortStateMocks(page, { inboxResponse });
   if (actionName === 'Створити розвіддонесення') {
     await page.route('**/api/1.1/messages/copy', (route) =>

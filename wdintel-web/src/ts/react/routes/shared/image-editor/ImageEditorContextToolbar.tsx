@@ -27,7 +27,6 @@ export enum ImageEditorToolbarContext {
   Shape = 'shape',
   Line = 'line',
   Brush = 'brush',
-  Highlight = 'highlight',
   Conceal = 'conceal',
   Magnifier = 'magnifier',
   Crop = 'crop',
@@ -47,7 +46,7 @@ const TOOLBAR_CONTEXT_BY_SELECTION_KIND = {
   [ImageEditorSelectionKind.Shape]: ImageEditorToolbarContext.Shape,
   [ImageEditorSelectionKind.Line]: ImageEditorToolbarContext.Line,
   [ImageEditorSelectionKind.Brush]: ImageEditorToolbarContext.Brush,
-  [ImageEditorSelectionKind.Highlight]: ImageEditorToolbarContext.Highlight,
+  [ImageEditorSelectionKind.Highlight]: ImageEditorToolbarContext.Brush,
   [ImageEditorSelectionKind.Concealment]: null,
 } satisfies Record<ImageEditorSelectionKind, ImageEditorToolbarContext | null>;
 const TOOLBAR_CONTEXT_BY_TOOL = {
@@ -60,7 +59,6 @@ const TOOLBAR_CONTEXT_BY_TOOL = {
   [ImageEditorTool.Line]: ImageEditorToolbarContext.Line,
   [ImageEditorTool.Arrow]: ImageEditorToolbarContext.Line,
   [ImageEditorTool.Brush]: ImageEditorToolbarContext.Brush,
-  [ImageEditorTool.Highlight]: ImageEditorToolbarContext.Highlight,
   [ImageEditorTool.Conceal]: ImageEditorToolbarContext.Conceal,
   [ImageEditorTool.Magnifier]: ImageEditorToolbarContext.Magnifier,
 } satisfies Record<ImageEditorTool, ImageEditorToolbarContext | null>;
@@ -96,6 +94,7 @@ export type ImageEditorContextToolbarProps = {
   cropActive: boolean;
   onApplyCrop: () => void;
   onCancelCrop: () => void;
+  onDeleteAttachedArrow: () => void;
 };
 
 export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps) {
@@ -104,8 +103,7 @@ export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps)
   const showText = context === ImageEditorToolbarContext.Text;
   const showShape = context === ImageEditorToolbarContext.Shape;
   const showLine = context === ImageEditorToolbarContext.Line;
-  const showBrush =
-    context === ImageEditorToolbarContext.Brush || context === ImageEditorToolbarContext.Highlight;
+  const showBrush = context === ImageEditorToolbarContext.Brush;
   const showStroke = showShape || showLine || showBrush;
   const showDash = showShape || showLine;
   return (
@@ -140,6 +138,15 @@ export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps)
                 active={props.bold}
                 compact
               />
+              {props.selection?.hasAttachedArrow ? (
+                <ImageEditorIconButton
+                  label="Видалити стрілку"
+                  icon={<CloseIcon />}
+                  onClick={props.onDeleteAttachedArrow}
+                  disabled={props.disabled}
+                  compact
+                />
+              ) : null}
             </ImageEditorContextGroup>
             <span aria-hidden="true" className="h-8 w-px shrink-0 bg-echo-border" />
             <ImageEditorContextGroup>
@@ -218,13 +225,13 @@ export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps)
                 <ImageEditorDashedLineIcon /> Пунктир
               </ToggleButton>
             ) : null}
-            {context === ImageEditorToolbarContext.Highlight ? (
+            {context === ImageEditorToolbarContext.Brush ? (
               <ImageEditorSliderControl
-                label="Прозорість"
+                label="Непрозорість"
                 value={props.highlightOpacity}
                 display={`${Math.round(props.highlightOpacity * 100)}%`}
                 min={0.1}
-                max={0.8}
+                max={1}
                 step={0.1}
                 onChange={props.onHighlightOpacityChange}
                 disabled={props.disabled}

@@ -3,6 +3,7 @@ import type { MouseEvent, ReactNode } from 'react';
 
 export function ImageEditorIconButton({
   label,
+  tooltipLabel,
   icon,
   onClick,
   disabled,
@@ -15,6 +16,7 @@ export function ImageEditorIconButton({
   ariaHaspopup,
 }: {
   label: string;
+  tooltipLabel?: string;
   icon: ReactNode;
   onClick: (event: MouseEvent<HTMLButtonElement>) => void;
   disabled: boolean;
@@ -27,7 +29,7 @@ export function ImageEditorIconButton({
   ariaHaspopup?: 'menu';
 }) {
   return (
-    <Tooltip title={label}>
+    <Tooltip title={tooltipLabel ?? label}>
       <span>
         <IconButton
           id={id}
