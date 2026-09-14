@@ -433,10 +433,17 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
       await waitForBgtaskCompletion(
         pending.taskId,
         (progress, logline) => {
+          setDialogError(null);
           setMergeProgress((current) => Math.max(current ?? 0, progress));
           if (logline !== null) setMergeProgressLabel(logline);
         },
-        { signal: controller.signal },
+        {
+          signal: controller.signal,
+          onStatusError: (error) =>
+            setDialogError(
+              `Не вдалося перевірити стан об’єднання: ${formatUnitError(error)}. Повторюємо спробу.`,
+            ),
+        },
       );
       if (controller.signal.aborted) return;
       clearPendingUnitMerge(pending.taskId);

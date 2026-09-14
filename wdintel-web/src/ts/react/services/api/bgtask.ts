@@ -1,4 +1,4 @@
-import { getJson } from './client';
+import { getJson, HttpRequestError, isAbortError } from './client';
 import { transformSnakeToCamel } from '../../../snake-to-camel';
 import type { Unit } from '../../../../Bindings';
 
@@ -108,28 +108,45 @@ export async function fetchBgtaskStatusAndLogs(
 export async function waitForBgtaskCompletion(
   taskId: number,
   onProgress: (progress: number, logline: string | null) => void,
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal; onStatusError?: (error: unknown) => void },
 ): Promise<void> {
   let skip = 0;
   for (;;) {
-    const status = await fetchBgtaskStatusAndLogs(taskId, skip, options);
+    let status: BgtaskStatusAndLogsRsp;
+    try {
+      status = await fetchBgtaskStatusAndLogs(taskId, skip, options);
+    } catch (error) {
+      if (
+        options?.signal?.aborted ||
+        isAbortError(error) ||
+        (error instanceof HttpRequestError && (error.status === 401 || error.status === 403))
+      )
+        throw error;
+      options?.onStatusError?.(error);
+      await waitForNextBgtaskPoll(options?.signal);
+      continue;
+    }
     skip += status.loglines.length;
     onProgress(status.progress ?? 0, status.loglines.at(-1) ?? null);
     if (!status.running) {
       if (status.finishedWithError !== null) throw new BgtaskFailedError(status.finishedWithError);
       return;
     }
-    await new Promise<void>((resolve, reject) => {
-      const onAbort = () => {
-        window.clearTimeout(timeoutId);
-        reject(options?.signal?.reason ?? new DOMException('Aborted', 'AbortError'));
-      };
-      const timeoutId = window.setTimeout(() => {
-        options?.signal?.removeEventListener('abort', onAbort);
-        resolve();
-      }, 1000);
-      if (options?.signal?.aborted) onAbort();
-      else options?.signal?.addEventListener('abort', onAbort, { once: true });
-    });
+    await waitForNextBgtaskPoll(options?.signal);
   }
+}
+
+function waitForNextBgtaskPoll(signal?: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const onAbort = () => {
+      window.clearTimeout(timeoutId);
+      reject(signal?.reason ?? new DOMException('Aborted', 'AbortError'));
+    };
+    const timeoutId = window.setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, 1000);
+    if (signal?.aborted) onAbort();
+    else signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }

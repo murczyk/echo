@@ -181,6 +181,45 @@ describe('useRerUnitsPage mutations', () => {
     expect(latestPage?.dialogError).toContain('Merge failed');
   });
 
+  it('keeps a pending merge active while status polling retries', async () => {
+    const req = { limit: 20, offset: 0 } as ListUnitsReq;
+    api.getUnitsPage.mockResolvedValue({
+      units: [activeUnit, inactiveUnit],
+      totalCount: 2,
+      statusCounts: { active: 1, inactive: 1 },
+      showLoadMore: false,
+    });
+    api.getUnitIdsWithVisibleAttachments.mockResolvedValue([]);
+    api.loadPendingUnitMerge.mockReturnValueOnce({
+      taskId: 42,
+      original: activeUnit,
+      duplicate: inactiveUnit,
+    });
+    let completeTask: (() => void) | undefined;
+    api.waitForBgtaskCompletion.mockImplementation((_taskId, onProgress, options) => {
+      options.onStatusError(new Error('Temporary failure'));
+      return new Promise<void>((resolve) => {
+        completeTask = () => {
+          onProgress(100, 'Done');
+          resolve();
+        };
+      });
+    });
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => root?.render(createElement(Harness, { req })));
+    expect(latestPage?.submitting).toBe(true);
+    expect(latestPage?.dialogError).toContain('Temporary failure');
+    expect(api.clearPendingUnitMerge).not.toHaveBeenCalled();
+
+    await act(async () => completeTask?.());
+    await flushEffects();
+    expect(api.clearPendingUnitMerge).toHaveBeenCalledWith(42);
+    expect(latestPage?.dialogError).toBeNull();
+  });
+
   it('resumes a pending merge after navigation and stops polling on unmount', async () => {
     const req = { limit: 20, offset: 0 } as ListUnitsReq;
     api.getUnitsPage.mockResolvedValue({

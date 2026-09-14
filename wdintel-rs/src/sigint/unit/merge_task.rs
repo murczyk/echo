@@ -356,7 +356,8 @@ async fn finish_merge_task(
         .one(dbx)
         .await
         .c(h!())?
-        .ok_or(AppError::NotFound)?;
+        .ok_or(AppError::NotFound)
+        .context(h!())?;
     let mut bgtask = bgtask.into_active_model();
     bgtask.running = Set(false);
     match result {

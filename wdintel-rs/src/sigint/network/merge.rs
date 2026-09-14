@@ -530,6 +530,56 @@ async fn reassign_duplicate_frequency_references(
     Ok(())
 }
 
+async fn move_network_frequency(
+    txn: &DatabaseTransaction,
+    login: &uuid::Uuid,
+    freq: sigint_network_freq::Model,
+    network_id_from: i64,
+    network_id_to: i64,
+) -> Result<(), AppError> {
+    let id = freq.id;
+    let freq_value = freq.freq.clone();
+    let json_old = sigint_network_freq::Entity::find_by_id(id)
+        .into_json()
+        .one(txn)
+        .await
+        .context(h!())?
+        .ok_or(AppError::NotFound)
+        .context(h!())?;
+
+    let mut freq = freq.into_active_model();
+    freq.network_id = Set(network_id_to);
+    freq.update(txn).await.context(h!())?;
+
+    info!(
+        "Frequency {id} ({freq_value}MHz) has been moved from network {network_id_from} to {network_id_to}"
+    );
+
+    let json_new = sigint_network_freq::Entity::find_by_id(id)
+        .into_json()
+        .one(txn)
+        .await
+        .context(h!())?
+        .ok_or(AppError::NotFound)
+        .context(h!())?;
+    sigint_network_freq_changelog::ActiveModel {
+        id: NotSet,
+        sigint_network_freq_id: Set(id),
+        login_id: Set(*login),
+        action: Set(ChangelogActionEnum::Merge),
+        created_at: NotSet,
+        new_value: Set(Some(json_new)),
+        old_value: Set(Some(json_old)),
+        req: Set(None),
+        sigint_origin_id: NotSet,
+        original_id: NotSet,
+    }
+    .insert(txn)
+    .await
+    .context(h!())?;
+    Ok(())
+}
+
 ///Reassign frequencies from the old networt to the new one
 async fn reassign_freqs(
     txn: &DatabaseTransaction,
@@ -565,61 +615,32 @@ async fn reassign_freqs(
         .context(h!())?;
 
     for freq in freqs_from {
-        let id = freq.id;
-        let freq_value = freq.freq.clone();
-        let json_old = sigint_network_freq::Entity::find_by_id(id)
-            .into_json()
-            .one(txn)
-            .await
-            .context(h!())?
-            .ok_or(AppError::NotFound)?;
-
-        let mut freq_model = freq.into_active_model();
-        freq_model.network_id = Set(network_id_to);
-        freq_model.update(txn).await.context(h!())?;
-
-        info!(
-            "Frequency {id} ({freq_value}MHz) has been moved from network {network_id_from} to {network_id_to}"
-        );
-
-        // Log the change of an old network in the changelog
-        let json_new = sigint_network_freq::Entity::find_by_id(id)
-            .into_json()
-            .one(txn)
-            .await
-            .context(h!())?
-            .ok_or(AppError::NotFound)?;
-        sigint_network_freq_changelog::ActiveModel {
-            id: NotSet,
-            sigint_network_freq_id: Set(id),
-            login_id: Set(*login),
-            action: Set(ChangelogActionEnum::Merge),
-            created_at: NotSet,
-            new_value: Set(Some(json_new)),
-            old_value: Set(Some(json_old)),
-            req: Set(None),
-            sigint_origin_id: NotSet,
-            original_id: NotSet,
-        }
-        .insert(txn)
+        move_network_frequency(
+            txn,
+            login,
+            freq,
+            network_id_from,
+            network_id_to,
+        )
         .await
         .context(h!())?;
     }
 
-    // Delete all remaining freqs in the source network (those not reassigned)
-    // Collect IDs first for logging
+    // Reconcile source frequencies that were not moved by the active-frequency pass.
     let mut freqs_to_delete = sigint_network_freq::Entity::find()
         .filter(sigint_network_freq::Column::NetworkId.eq(network_id_from));
     if !merge_inactive {
         freqs_to_delete = freqs_to_delete
             .filter(sigint_network_freq::Column::Deleted.eq(false));
     }
-    let freqs_to_delete = freqs_to_delete
+    let mut freqs_to_delete = freqs_to_delete
         .order_by_asc(sigint_network_freq::Column::Id)
         .lock_exclusive()
         .all(txn)
         .await
         .context(h!())?;
+    freqs_to_delete
+        .sort_by_key(|freq| (freq.deleted, freq.active_to.is_some(), freq.id));
     let target_freqs = sigint_network_freq::Entity::find()
         .filter(sigint_network_freq::Column::NetworkId.eq(network_id_to))
         .filter(sigint_network_freq::Column::Deleted.eq(false))
@@ -639,29 +660,49 @@ async fn reassign_freqs(
             })
             .or_insert((target_freq.id, active));
     }
-    let freq_vals = freqs_to_delete
-        .iter()
-        .map(|network_freq| network_freq.freq.clone())
-        .collect::<Vec<_>>();
-    let rows_affected = freqs_to_delete.len();
+    let mut deleted_freqs = Vec::new();
     let now = Utc::now().naive_utc();
     for network_freq in freqs_to_delete {
-        if let Some((target_freq_id, _)) =
-            target_freq_ids.get(&network_freq.freq)
-        {
+        let target_freq_id = target_freq_ids
+            .get(&network_freq.freq)
+            .filter(|(_, active)| {
+                network_freq.deleted
+                    || network_freq.active_to.is_some()
+                    || *active
+            })
+            .map(|(id, _)| *id);
+        if let Some(target_freq_id) = target_freq_id {
             reassign_duplicate_frequency_references(
                 txn,
                 network_freq.id,
-                *target_freq_id,
+                target_freq_id,
             )
             .await
             .context(h!())?;
+        } else {
+            if !network_freq.deleted {
+                target_freq_ids.insert(
+                    network_freq.freq.clone(),
+                    (network_freq.id, network_freq.active_to.is_none()),
+                );
+            }
+            move_network_frequency(
+                txn,
+                login,
+                network_freq,
+                network_id_from,
+                network_id_to,
+            )
+            .await
+            .context(h!())?;
+            continue;
         }
         let old_network_freq = network_freq.clone();
         let mut network_freq = network_freq.into_active_model();
         network_freq.deleted = Set(true);
         network_freq.active_to = Set(old_network_freq.active_to.or(Some(now)));
         let network_freq = network_freq.update(txn).await.context(h!())?;
+        deleted_freqs.push(network_freq.freq.clone());
         record_activity_decision_if_changed(
             txn,
             ActivityDecisionTarget::Frequency {
@@ -680,7 +721,8 @@ async fn reassign_freqs(
     }
     info!(
         "Marked as deleted {} remaining freqs: {:?}",
-        rows_affected, freq_vals
+        deleted_freqs.len(),
+        deleted_freqs
     );
 
     Ok(())
@@ -1282,6 +1324,129 @@ mod tests {
         assert_eq!(description.network_id, target.id);
         assert_eq!(description.sigint_network_freq_id, Some(target_freq.id));
         txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn network_merge_preserves_unmatched_key_frequencies() {
+        for (merge_inactive, source_closed, target_state, deleted_source) in [
+            (false, true, None, false),
+            (false, false, Some((true, false)), false),
+            (true, false, Some((true, false)), true),
+            (true, false, Some((false, true)), false),
+        ] {
+            let env = cleanup().await.unwrap();
+            let login = crate::users::login_id_by_name(&env.dbx, "Tester")
+                .await
+                .unwrap();
+            let source = mk_sigint_network(&env.dbx, Default::default())
+                .await
+                .unwrap();
+            let target = mk_sigint_network(&env.dbx, Default::default())
+                .await
+                .unwrap();
+            let closed_at = Utc::now().naive_utc();
+            if deleted_source {
+                mk_sigint_network_freq(
+                    &env.dbx,
+                    sigint_network_freq::ActiveModel {
+                        network_id: Set(source.id),
+                        freq: Set("147.0000".to_string()),
+                        deleted: Set(true),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+            }
+            let source_freq = mk_sigint_network_freq(
+                &env.dbx,
+                sigint_network_freq::ActiveModel {
+                    network_id: Set(source.id),
+                    freq: Set("147.0000".to_string()),
+                    active_to: Set(source_closed.then_some(closed_at)),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            let source_active_to = source_freq.active_to;
+            if let Some((deleted, closed)) = target_state {
+                mk_sigint_network_freq(
+                    &env.dbx,
+                    sigint_network_freq::ActiveModel {
+                        network_id: Set(target.id),
+                        freq: Set(source_freq.freq.clone()),
+                        deleted: Set(deleted),
+                        active_to: Set(closed.then_some(closed_at)),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+            }
+            let key = sigint_network_encryption_key::ActiveModel {
+                organism_id: Set(find_test_organism(&env.dbx)
+                    .await
+                    .unwrap()
+                    .id),
+                sigint_network_id: Set(Some(source.id)),
+                sigint_network_freq_id: Set(Some(source_freq.id)),
+                deleted: Set(false),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+            sigint_network_encryption_key_freq::ActiveModel {
+                sigint_network_encryption_key_id: Set(key.id),
+                sigint_network_freq_id: Set(source_freq.id),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+
+            let txn = env.dbx.begin().await.unwrap();
+            merge_two_networks(
+                &txn,
+                &login,
+                false,
+                merge_inactive,
+                source.id,
+                target.id,
+            )
+            .await
+            .unwrap();
+
+            let source_freq =
+                sigint_network_freq::Entity::find_by_id(source_freq.id)
+                    .one(&txn)
+                    .await
+                    .unwrap()
+                    .unwrap();
+            assert_eq!(source_freq.network_id, target.id);
+            assert!(!source_freq.deleted);
+            assert_eq!(source_freq.active_to, source_active_to);
+            let key = sigint_network_encryption_key::Entity::find_by_id(key.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(key.sigint_network_id, Some(target.id));
+            assert_eq!(key.sigint_network_freq_id, Some(source_freq.id));
+            let links = sigint_network_encryption_key_freq::Entity::find()
+                .filter(
+                    sigint_network_encryption_key_freq::Column::SigintNetworkEncryptionKeyId
+                        .eq(key.id),
+                )
+                .all(&txn)
+                .await
+                .unwrap();
+            assert_eq!(links.len(), 1);
+            assert_eq!(links[0].sigint_network_freq_id, source_freq.id);
+            txn.rollback().await.unwrap();
+        }
     }
 
     #[tokio::test]

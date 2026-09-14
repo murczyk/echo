@@ -112,10 +112,17 @@ export function AdminUnitDuplicatesPage({
       await waitForBgtaskCompletion(
         pending.taskId,
         (progress, logline) => {
+          setMergeError(null);
           setMergeProgress((current) => Math.max(current ?? 0, progress));
           if (logline !== null) setMergeProgressLabel(logline);
         },
-        { signal: controller.signal },
+        {
+          signal: controller.signal,
+          onStatusError: (error) =>
+            setMergeError(
+              `Не вдалося перевірити стан об’єднання: ${formatUnitError(error)}. Повторюємо спробу.`,
+            ),
+        },
       );
       if (controller.signal.aborted) return;
       clearPendingUnitMerge(pending.taskId);
