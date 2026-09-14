@@ -1,5 +1,8 @@
 {
   "migrations": {
+    "echo:m20260914_094608_unit_merge_reference_indexes": {
+      "changes": []
+    },
     "echo:m20260913_204343_sigint_network_recent_links_index": {
       "changes": []
     },

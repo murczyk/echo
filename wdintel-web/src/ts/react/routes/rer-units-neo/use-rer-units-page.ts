@@ -20,7 +20,16 @@ import {
   uploadUnitsKmz,
 } from '../../services/api/units';
 import type { RequestOptions } from '../../services/api/client';
-import { fetchBgtaskStatusAndLogs, getBgtaskProgressFromPercent } from '../../services/api/bgtask';
+import {
+  BgtaskFailedError,
+  clearPendingUnitMerge,
+  fetchBgtaskStatusAndLogs,
+  getBgtaskProgressFromPercent,
+  loadPendingUnitMerge,
+  savePendingUnitMerge,
+  waitForBgtaskCompletion,
+} from '../../services/api/bgtask';
+import type { PendingUnitMerge } from '../../services/api/bgtask';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { hasRole } from '../../utils/roles';
 import type { UnitFormSubmit } from './components/UnitFormDrawer';
@@ -71,28 +80,34 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
   const [unlinkingOrbitUnitId, setUnlinkingOrbitUnitId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Unit | null>(null);
   const [mergeTarget, setMergeTarget] = useState<Unit | null>(null);
+  const [mergeProgress, setMergeProgress] = useState<number | null>(null);
+  const [mergeProgressLabel, setMergeProgressLabel] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [uploadingKmz, setUploadingKmz] = useState(false);
   const [kmzTask, setKmzTask] = useState<KmzTask | null>(null);
   const mutationRefreshController = useRef<AbortController | null>(null);
+  const mergePollController = useRef<AbortController | null>(null);
+  const unitsLoadVersion = useRef(0);
 
   const loadUnits = useCallback(
     async (options?: RequestOptions) => {
+      const version = ++unitsLoadVersion.current;
+      const isCurrent = () => version === unitsLoadVersion.current && !options?.signal?.aborted;
       setLoading(true);
       setLoadError(null);
       try {
         const response = await getUnitsPage(listReq, options);
-        if (options?.signal?.aborted) return;
+        if (!isCurrent()) return;
         setUnits(response.units);
         setTotalCount(response.totalCount);
         setStatusCounts(response.statusCounts);
         try {
           const unitIds = response.units.map((unit) => unit.id);
           const attachmentIds = await getUnitIdsWithVisibleAttachments(unitIds, options);
-          if (!options?.signal?.aborted) setAttachmentUnitIds(new Set(attachmentIds));
+          if (isCurrent()) setAttachmentUnitIds(new Set(attachmentIds));
         } catch (error) {
-          if (options?.signal?.aborted) return;
+          if (!isCurrent()) return;
           setAttachmentUnitIds(new Set());
           setStatus({
             severity: 'error',
@@ -100,10 +115,10 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
           });
         }
       } catch (error) {
-        if (options?.signal?.aborted) return;
+        if (!isCurrent()) return;
         setLoadError(formatUnitError(error));
       } finally {
-        if (!options?.signal?.aborted) setLoading(false);
+        if (isCurrent()) setLoading(false);
       }
     },
     [listReq],
@@ -254,6 +269,8 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
 
   function openMergeDialog(unit: Unit) {
     setDialogError(null);
+    setMergeProgress(null);
+    setMergeProgressLabel(null);
     setMergeTarget(unit);
   }
 
@@ -263,6 +280,8 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
     setEditUnit(null);
     setDeleteTarget(null);
     setMergeTarget(null);
+    setMergeProgress(null);
+    setMergeProgressLabel(null);
     setDialogError(null);
   }
 
@@ -315,27 +334,31 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
     mutationRefreshController.current?.abort();
     const controller = new AbortController();
     mutationRefreshController.current = controller;
+    const version = ++unitsLoadVersion.current;
+    const isCurrent = () => version === unitsLoadVersion.current && !controller.signal.aborted;
     const options = { signal: controller.signal };
+    setLoading(true);
     try {
       const response = await getUnitsPage(listReq, options);
-      if (controller.signal.aborted) return;
+      if (!isCurrent()) return;
       const attachmentIds = await getUnitIdsWithVisibleAttachments(
         response.units.map((unit) => unit.id),
         options,
       );
-      if (controller.signal.aborted) return;
+      if (!isCurrent()) return;
       setUnits(response.units);
       setTotalCount(response.totalCount);
       setStatusCounts(response.statusCounts);
       setAttachmentUnitIds(new Set(attachmentIds));
       setStatus({ severity: 'success', text: successText });
     } catch (error) {
-      if (controller.signal.aborted) return;
+      if (!isCurrent()) return;
       setStatus({
         severity: 'warning',
         text: `${successText} Не вдалося оновити список: ${formatUnitError(error)}`,
       });
     } finally {
+      if (isCurrent()) setLoading(false);
       if (mutationRefreshController.current === controller) {
         mutationRefreshController.current = null;
       }
@@ -410,36 +433,85 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
     }
   }
 
+  async function trackMerge(pending: PendingUnitMerge) {
+    const controller = new AbortController();
+    mergePollController.current = controller;
+    try {
+      await waitForBgtaskCompletion(
+        pending.taskId,
+        (progress, logline) => {
+          setDialogError(null);
+          setMergeProgress((current) => Math.max(current ?? 0, progress));
+          if (logline !== null) setMergeProgressLabel(logline);
+        },
+        {
+          signal: controller.signal,
+          onStatusError: (error) =>
+            setDialogError(
+              `Не вдалося перевірити стан об’єднання: ${formatUnitError(error)}. Повторюємо спробу.`,
+            ),
+        },
+      );
+      if (controller.signal.aborted) return;
+      clearPendingUnitMerge(pending.taskId);
+      await refreshUnitsAfterMutation(`Підрозділ «${pending.duplicate.name}» об’єднано.`);
+      if (controller.signal.aborted) return;
+      setMergeTarget(null);
+      setMergeProgress(null);
+      setMergeProgressLabel(null);
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      setDialogError(formatUnitError(error));
+      if (error instanceof BgtaskFailedError) {
+        clearPendingUnitMerge(pending.taskId);
+        await loadUnits({ signal: controller.signal });
+      }
+    } finally {
+      if (!controller.signal.aborted) setSubmitting(false);
+      if (mergePollController.current === controller) mergePollController.current = null;
+    }
+  }
+
   async function confirmMerge(duplicate: Unit) {
     if (mergeTarget === null) return;
     setSubmitting(true);
     setDialogError(null);
+    setMergeProgress(0);
+    setMergeProgressLabel(null);
     try {
-      const merged = await mergeDuplicateUnit({
-        originalId: mergeTarget.id,
-        cloneToDeleteId: duplicate.id,
-      });
-      setUnits((current) =>
-        replaceUnit(
-          current.filter((unit) => unit.id !== duplicate.id),
-          merged,
-        ),
-      );
-      setAttachmentUnitIds((current) => {
-        const next = new Set(current);
-        if (next.delete(duplicate.id)) next.add(merged.id);
-        return next;
-      });
-      await refreshUnitsAfterMutation(
-        `Підрозділ «${duplicate.name}» об’єднано з «${merged.name}».`,
-      );
-      setMergeTarget(null);
+      let pending = loadPendingUnitMerge();
+      if (
+        pending !== null &&
+        (pending.original.id !== mergeTarget.id || pending.duplicate.id !== duplicate.id)
+      ) {
+        throw new Error('Інше об’єднання ще виконується. Завершіть його перед новим.');
+      }
+      if (pending === null) {
+        const taskId = await mergeDuplicateUnit({
+          originalId: mergeTarget.id,
+          cloneToDeleteId: duplicate.id,
+        });
+        pending = { taskId, original: mergeTarget, duplicate };
+        savePendingUnitMerge(pending);
+      }
+      await trackMerge(pending);
     } catch (error) {
       setDialogError(formatUnitError(error));
-    } finally {
       setSubmitting(false);
     }
   }
+
+  useEffect(() => {
+    const pending = loadPendingUnitMerge();
+    if (pending !== null) {
+      setMergeTarget(pending.original);
+      setSubmitting(true);
+      setMergeProgress(0);
+      setMergeProgressLabel(null);
+      void trackMerge(pending);
+    }
+    return () => mergePollController.current?.abort();
+  }, []);
 
   async function uploadKmz(file: File) {
     setUploadingKmz(true);
@@ -491,6 +563,8 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
     unlinkingOrbitUnitId,
     deleteTarget,
     mergeTarget,
+    mergeProgress,
+    mergeProgressLabel,
     submitting,
     dialogError,
     uploadingKmz,

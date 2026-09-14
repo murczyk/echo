@@ -27,8 +27,16 @@ use std::collections::{BTreeSet, HashMap};
 pub mod attachment;
 pub mod changelog;
 pub mod labels;
+mod merge_task;
+pub(crate) use merge_task::guard_capacity as unit_merge_guard_capacity;
 pub mod orbit;
 pub mod types;
+
+pub(crate) async fn recover_abandoned_merge_tasks(
+    dbx: &DatabaseConnection,
+) -> Result<bool, AppError> {
+    Ok(merge_task::recover_abandoned(dbx).await.c(h!())?)
+}
 
 pub fn unit_name(unit: &Unit) -> String {
     let unit_name = unit_name_from_hierarchy([
@@ -1225,9 +1233,15 @@ async fn begin_unit_creation_transaction(
     req: &CreateUnitReq,
 ) -> Result<DatabaseTransaction, AppError> {
     if req.active {
-        Ok(crate::orbit::acquire_import_lock(dbx).await.c(h!())?)
+        Ok(
+            begin_orbit_unit_merge_transaction(dbx, &req.duplicate_unit_ids)
+                .await
+                .c(h!())?,
+        )
     } else {
-        Ok(dbx.begin().await.context(h!())?)
+        Ok(begin_unit_merge_transaction(dbx, &req.duplicate_unit_ids)
+            .await
+            .c(h!())?)
     }
 }
 
@@ -1298,6 +1312,16 @@ where
             msg: "new unit cannot be merged into itself".to_string(),
         });
     }
+    acquire_unit_merge_locks_for_ids(
+        dbx,
+        &duplicate_unit_ids
+            .iter()
+            .copied()
+            .chain(std::iter::once(unit_id))
+            .collect::<Vec<_>>(),
+    )
+    .await
+    .c(h!())?;
     for duplicate_unit_id in duplicate_unit_ids {
         merge_units_in_transaction(login, dbx, duplicate_unit_id, unit_id)
             .await
@@ -1954,7 +1978,12 @@ async fn delete_unit_for_login(
     login: &uuid::Uuid,
     unit_id: i64,
 ) -> Result<sigint_unit::Model, AppError> {
-    let transaction = dbx.begin().await.context(h!())?;
+    let transaction = begin_unit_merge_transaction(dbx, &[unit_id])
+        .await
+        .c(h!())?;
+    merge_task::ensure_no_conflicting_merge(&transaction, unit_id, unit_id)
+        .await
+        .context(h!())?;
     changelog::set_author(&transaction, login).await.c(h!())?;
     let unit = sigint_unit::Entity::find_by_id(unit_id)
         .one(&transaction)
@@ -2006,7 +2035,7 @@ pub async fn delete_unit_duplicate(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
     req: Json<DeleteUnitDuplicateReq>,
-) -> Result<Json<Unit>, AppError> {
+) -> Result<Json<i64>, AppError> {
     let dbx = &env.dbx;
     ensure_rer_role(dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).context(h!())?;
@@ -2015,21 +2044,11 @@ pub async fn delete_unit_duplicate(
     let unit_to_delete_id = req.clone_to_delete_id;
     let original_id = req.original_id;
 
-    let unit = merge_units(login, dbx, unit_to_delete_id, original_id)
-        .await
-        .c(h!())?;
-
-    let event = EventMsg::new(EventType::ETUnitChanged);
-    fanout(&mut env.redis.clone(), event).await.context(h!())?;
-
-    let mut unit = render_unit(&unit).context(h!())?;
-    let can_view_orbit = orbit::can_view_orbit_data(dbx, &login)
-        .await
-        .context(h!())?;
-    apply_unit_orbit_visibility(dbx, &mut unit, can_view_orbit)
-        .await
-        .context(h!())?;
-    Ok(Json(unit))
+    Ok(Json(
+        merge_task::start(&env, login, unit_to_delete_id, original_id)
+            .await
+            .c(h!())?,
+    ))
 }
 
 pub async fn merge_units(
@@ -2038,10 +2057,10 @@ pub async fn merge_units(
     unit_to_delete_id: i64,
     original_id: i64,
 ) -> Result<sigint_unit::Model, AppError> {
-    let transaction = dbx.begin().await.context(h!())?;
-    acquire_unit_merge_locks(&transaction, unit_to_delete_id, original_id)
-        .await
-        .c(h!())?;
+    let transaction =
+        begin_unit_merge_transaction(dbx, &[unit_to_delete_id, original_id])
+            .await
+            .c(h!())?;
     let unit = merge_units_in_transaction(
         login,
         &transaction,
@@ -2054,41 +2073,118 @@ pub async fn merge_units(
     Ok(unit)
 }
 
-async fn acquire_unit_merge_locks(
-    transaction: &DatabaseTransaction,
+async fn acquire_unit_merge_locks<C>(
+    transaction: &C,
     unit_to_delete_id: i64,
     original_id: i64,
-) -> anyhow::Result<()> {
-    let (lower_id, higher_id) = if unit_to_delete_id < original_id {
-        (unit_to_delete_id, original_id)
-    } else {
-        (original_id, unit_to_delete_id)
-    };
-    let lock_names = [format!("unit:{lower_id}"), format!("unit:{higher_id}")];
-    for lock_name in lock_names {
-        loop {
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    acquire_unit_merge_locks_for_ids(
+        transaction,
+        &[unit_to_delete_id, original_id],
+    )
+    .await
+    .c(h!())
+}
+
+pub(crate) async fn acquire_unit_merge_locks_for_ids<C>(
+    transaction: &C,
+    unit_ids: &[i64],
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    anyhow::ensure!(
+        try_acquire_unit_merge_locks_for_ids(transaction, unit_ids)
+            .await
+            .c(h!())?,
+        "unit merge lock is busy"
+    );
+    Ok(())
+}
+
+pub(crate) async fn begin_unit_merge_transaction(
+    dbx: &DatabaseConnection,
+    unit_ids: &[i64],
+) -> anyhow::Result<DatabaseTransaction> {
+    begin_unit_merge_transaction_with_import_lock(dbx, unit_ids, false)
+        .await
+        .context(h!())
+}
+
+pub(crate) async fn begin_orbit_unit_merge_transaction(
+    dbx: &DatabaseConnection,
+    unit_ids: &[i64],
+) -> anyhow::Result<DatabaseTransaction> {
+    begin_unit_merge_transaction_with_import_lock(dbx, unit_ids, true)
+        .await
+        .context(h!())
+}
+
+async fn begin_unit_merge_transaction_with_import_lock(
+    dbx: &DatabaseConnection,
+    unit_ids: &[i64],
+    import_lock: bool,
+) -> anyhow::Result<DatabaseTransaction> {
+    loop {
+        let transaction = dbx.begin().await.c(h!())?;
+        let import_lock_acquired = if import_lock {
             let row = transaction
                 .query_one_raw(Statement::from_sql_and_values(
                     DatabaseBackend::Postgres,
-                    "select pg_try_advisory_xact_lock(hashtextextended($1::text || $2::text, 0)) as acquired",
-                    [
-                        SIGINT_UNIT_MERGE_ADVISORY_LOCK_NAMESPACE.into(),
-                        lock_name.clone().into(),
-                    ],
+                    "select pg_try_advisory_xact_lock($1) as acquired",
+                    [crate::config::ORBIT_IMPORT_ADVISORY_LOCK_KEY.into()],
                 ))
                 .await
                 .c(h!())?
                 .c(h!())?;
-            if row.try_get::<bool>("", "acquired").c(h!())? {
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(
-                SIGINT_UNIT_MERGE_ADVISORY_LOCK_POLL_MS,
+            row.try_get::<bool>("", "acquired").c(h!())?
+        } else {
+            true
+        };
+        if import_lock_acquired
+            && try_acquire_unit_merge_locks_for_ids(&transaction, unit_ids)
+                .await
+                .c(h!())?
+        {
+            return Ok(transaction);
+        }
+        transaction.rollback().await.c(h!())?;
+        tokio::time::sleep(std::time::Duration::from_millis(
+            SIGINT_UNIT_MERGE_ADVISORY_LOCK_POLL_MS,
+        ))
+        .await;
+    }
+}
+
+async fn try_acquire_unit_merge_locks_for_ids<C>(
+    transaction: &C,
+    unit_ids: &[i64],
+) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
+    for unit_id in unit_ids.iter().copied().collect::<BTreeSet<_>>() {
+        let lock_name = format!("unit:{unit_id}");
+        let row = transaction
+            .query_one_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "select pg_try_advisory_xact_lock(hashtextextended($1::text || $2::text, 0)) as acquired",
+                [
+                    SIGINT_UNIT_MERGE_ADVISORY_LOCK_NAMESPACE.into(),
+                    lock_name.into(),
+                ],
             ))
-            .await;
+            .await
+            .c(h!())?
+            .c(h!())?;
+        if !row.try_get::<bool>("", "acquired").c(h!())? {
+            return Ok(false);
         }
     }
-    Ok(())
+    Ok(true)
 }
 
 pub(crate) async fn merge_units_in_transaction<C>(
@@ -2150,6 +2246,9 @@ where
             msg: "unit cannot be merged into itself".to_string(),
         });
     }
+    acquire_unit_merge_locks(dbx, unit_to_delete_id, original_id)
+        .await
+        .c(h!())?;
     crate::stats::enqueue_group_stats_recalculation_for_linked_unit(
         dbx,
         unit_to_delete_id,
@@ -2163,6 +2262,7 @@ where
         unit_to_delete_id,
         original_id,
         name_policy,
+        true,
     )
     .await
     .context(h!())?;
@@ -2175,6 +2275,7 @@ async fn complete_unit_merge_in_transaction<C>(
     unit_to_delete_id: i64,
     original_id: i64,
     name_policy: MergeUnitNamePolicy,
+    move_references: bool,
 ) -> Result<sigint_unit::Model, AppError>
 where
     C: ConnectionTrait,
@@ -2184,15 +2285,27 @@ where
         find_units_for_merge(dbx, unit_to_delete_id, original_id)
             .await
             .context(h!())?;
+    merge_task::ensure_pinned_survivor(dbx, unit_to_delete_id, original_id)
+        .await
+        .context(h!())?;
+    merge_task::ensure_no_conflicting_merge(
+        dbx,
+        unit_to_delete_id,
+        original_id,
+    )
+    .await
+    .context(h!())?;
     let previous_unit_original = unit_original.clone();
     let unit_original =
         update_original_unit(unit_original, &unit_to_delete, dbx, name_policy)
             .await
             .context(h!())?;
 
-    swap_units(unit_to_delete_id, original_id, login, dbx)
-        .await
-        .context(h!())?;
+    if move_references {
+        swap_units(unit_to_delete_id, original_id, login, dbx)
+            .await
+            .context(h!())?;
+    }
 
     let unit_json_old = sigint_unit::Entity::find_by_id(unit_to_delete_id)
         .into_json()
@@ -2372,6 +2485,47 @@ pub(crate) fn redact_unit_orbit_data(unit: &mut Unit) {
     unit.is_deduplicate_candidate = None;
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum UnitReferenceStep {
+    Callsigns,
+    Signals,
+    NetworkUnits,
+    NetworkCallsigns,
+    Attachments,
+    Labels,
+    InboxLinks,
+    OrbitLinks,
+    Devices,
+}
+
+impl UnitReferenceStep {
+    const ALL: [Self; 9] = [
+        Self::Callsigns,
+        Self::Signals,
+        Self::NetworkUnits,
+        Self::NetworkCallsigns,
+        Self::Attachments,
+        Self::Labels,
+        Self::InboxLinks,
+        Self::OrbitLinks,
+        Self::Devices,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Callsigns => "Позивні",
+            Self::Signals => "Сигнали",
+            Self::NetworkUnits => "Підрозділи мереж",
+            Self::NetworkCallsigns => "Позивні мереж",
+            Self::Attachments => "Файли",
+            Self::Labels => "Мітки",
+            Self::InboxLinks => "Прив’язки повідомлень",
+            Self::OrbitLinks => "Прив’язки ORBIT",
+            Self::Devices => "Пристрої",
+        }
+    }
+}
+
 async fn swap_units<C>(
     old_unit_id: i64,
     new_unit_id: i64,
@@ -2381,11 +2535,108 @@ async fn swap_units<C>(
 where
     C: ConnectionTrait,
 {
-    let callsigns = sigint_callsign::Entity::find()
-        .filter(sigint_callsign::Column::UnitId.eq(old_unit_id))
-        .all(dbx)
+    for step in UnitReferenceStep::ALL {
+        swap_unit_references_step(
+            step,
+            old_unit_id,
+            new_unit_id,
+            login,
+            dbx,
+            None,
+        )
         .await
-        .context(h!())?;
+        .c(h!())?;
+    }
+    Ok(())
+}
+
+async fn swap_unit_references_step<C>(
+    step: UnitReferenceStep,
+    old_unit_id: i64,
+    new_unit_id: i64,
+    login: uuid::Uuid,
+    dbx: &C,
+    limit: Option<u64>,
+) -> anyhow::Result<u64>
+where
+    C: ConnectionTrait,
+{
+    let moved = match step {
+        UnitReferenceStep::Callsigns => {
+            move_unit_callsigns(old_unit_id, new_unit_id, login, dbx, limit)
+                .await
+                .c(h!())?
+        }
+        UnitReferenceStep::Signals => {
+            move_unit_signals(old_unit_id, new_unit_id, login, dbx, limit)
+                .await
+                .c(h!())?
+        }
+        UnitReferenceStep::NetworkUnits => {
+            move_unit_networks(old_unit_id, new_unit_id, login, dbx, limit)
+                .await
+                .c(h!())?
+        }
+        UnitReferenceStep::NetworkCallsigns => move_unit_network_callsigns(
+            old_unit_id,
+            new_unit_id,
+            login,
+            dbx,
+            limit,
+        )
+        .await
+        .c(h!())?,
+        UnitReferenceStep::Attachments => {
+            move_unit_attachments(old_unit_id, new_unit_id, dbx, limit)
+                .await
+                .c(h!())?
+        }
+        UnitReferenceStep::Labels => {
+            move_unit_labels(old_unit_id, new_unit_id, dbx, limit)
+                .await
+                .c(h!())?
+        }
+        UnitReferenceStep::InboxLinks => move_inbox_item_unit_links(
+            old_unit_id,
+            new_unit_id,
+            dbx,
+            limit,
+            None,
+        )
+        .await
+        .c(h!())?,
+        UnitReferenceStep::OrbitLinks => {
+            move_orbit_unit_links(old_unit_id, new_unit_id, dbx, limit)
+                .await
+                .c(h!())?
+        }
+        UnitReferenceStep::Devices => {
+            swap_unit_devices(old_unit_id, new_unit_id, dbx, limit)
+                .await
+                .c(h!())?
+        }
+    };
+    Ok(moved)
+}
+
+async fn move_unit_callsigns<C>(
+    old_unit_id: i64,
+    new_unit_id: i64,
+    login: uuid::Uuid,
+    dbx: &C,
+    limit: Option<u64>,
+) -> anyhow::Result<u64>
+where
+    C: ConnectionTrait,
+{
+    let mut query = sigint_callsign::Entity::find()
+        .filter(sigint_callsign::Column::UnitId.eq(old_unit_id))
+        .order_by_asc(sigint_callsign::Column::Id);
+    if let Some(limit) = limit {
+        query = query.limit(limit);
+    }
+    let callsigns = query.all(dbx).await.context(h!())?;
+    let moved = callsigns.len() as u64;
     for callsign in callsigns {
         let id = callsign.id;
         let json_old = sigint_callsign::Entity::find_by_id(id)
@@ -2419,12 +2670,27 @@ where
         .await
         .context(h!())?;
     }
+    Ok(moved)
+}
 
-    let signals = sigint_signal::Entity::find()
+async fn move_unit_signals<C>(
+    old_unit_id: i64,
+    new_unit_id: i64,
+    login: uuid::Uuid,
+    dbx: &C,
+    limit: Option<u64>,
+) -> anyhow::Result<u64>
+where
+    C: ConnectionTrait,
+{
+    let mut query = sigint_signal::Entity::find()
         .filter(sigint_signal::Column::Unit.eq(old_unit_id))
-        .all(dbx)
-        .await
-        .context(h!())?;
+        .order_by_asc(sigint_signal::Column::Id);
+    if let Some(limit) = limit {
+        query = query.limit(limit);
+    }
+    let signals = query.all(dbx).await.context(h!())?;
+    let moved = signals.len() as u64;
     for signal in signals {
         let id = signal.id;
         let json_old = sigint_signal::Entity::find_by_id(id)
@@ -2460,12 +2726,27 @@ where
         .await
         .context(h!())?;
     }
+    Ok(moved)
+}
 
-    let network_units = sigint_network_unit::Entity::find()
+async fn move_unit_networks<C>(
+    old_unit_id: i64,
+    new_unit_id: i64,
+    login: uuid::Uuid,
+    dbx: &C,
+    limit: Option<u64>,
+) -> anyhow::Result<u64>
+where
+    C: ConnectionTrait,
+{
+    let mut query = sigint_network_unit::Entity::find()
         .filter(sigint_network_unit::Column::UnitId.eq(old_unit_id))
-        .all(dbx)
-        .await
-        .context(h!())?;
+        .order_by_asc(sigint_network_unit::Column::Id);
+    if let Some(limit) = limit {
+        query = query.limit(limit);
+    }
+    let network_units = query.all(dbx).await.context(h!())?;
+    let moved = network_units.len() as u64;
     for network_unit in network_units {
         let id = network_unit.id;
         let json_old = sigint_network_unit::Entity::find_by_id(id)
@@ -2499,50 +2780,146 @@ where
         .await
         .context(h!())?;
     }
+    Ok(moved)
+}
 
-    sigint_unit_attachment::Entity::update_many()
+async fn move_unit_network_callsigns<C>(
+    old_unit_id: i64,
+    new_unit_id: i64,
+    login: uuid::Uuid,
+    dbx: &C,
+    limit: Option<u64>,
+) -> anyhow::Result<u64>
+where
+    C: ConnectionTrait,
+{
+    let mut query = sigint_network_callsign::Entity::find()
+        .filter(sigint_network_callsign::Column::UnitId.eq(old_unit_id))
+        .order_by_asc(sigint_network_callsign::Column::Id);
+    if let Some(limit) = limit {
+        query = query.limit(limit);
+    }
+    let network_callsigns = query.all(dbx).await.c(h!())?;
+    let moved = network_callsigns.len() as u64;
+    for network_callsign in network_callsigns {
+        let id = network_callsign.id;
+        let json_old = serde_json::to_value(&network_callsign).c(h!())?;
+        let mut network_callsign = network_callsign.into_active_model();
+        network_callsign.unit_id = Set(Some(new_unit_id));
+        let network_callsign = network_callsign.update(dbx).await.c(h!())?;
+        sigint_network_callsign_changelog::ActiveModel {
+            id: NotSet,
+            sigint_network_callsign_id: Set(id),
+            login_id: Set(login),
+            action: Set(ChangelogActionEnum::Update),
+            created_at: NotSet,
+            new_value: Set(Some(
+                serde_json::to_value(network_callsign).c(h!())?,
+            )),
+            old_value: Set(Some(json_old)),
+            req: Set(None),
+            sigint_origin_id: NotSet,
+            original_id: NotSet,
+        }
+        .insert(dbx)
+        .await
+        .c(h!())?;
+    }
+    Ok(moved)
+}
+
+async fn move_unit_attachments<C>(
+    old_unit_id: i64,
+    new_unit_id: i64,
+    dbx: &C,
+    limit: Option<u64>,
+) -> anyhow::Result<u64>
+where
+    C: ConnectionTrait,
+{
+    let mut update = sigint_unit_attachment::Entity::update_many()
         .col_expr(
             sigint_unit_attachment::Column::UnitId,
             Expr::value(new_unit_id),
         )
-        .filter(sigint_unit_attachment::Column::UnitId.eq(old_unit_id))
-        .exec(dbx)
-        .await
-        .context(h!())?;
+        .filter(sigint_unit_attachment::Column::UnitId.eq(old_unit_id));
+    if let Some(limit) = limit {
+        let ids = sigint_unit_attachment::Entity::find()
+            .filter(sigint_unit_attachment::Column::UnitId.eq(old_unit_id))
+            .order_by_asc(sigint_unit_attachment::Column::Id)
+            .limit(limit)
+            .select_only()
+            .column(sigint_unit_attachment::Column::Id)
+            .into_tuple::<i64>()
+            .all(dbx)
+            .await
+            .c(h!())?;
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        update = update.filter(sigint_unit_attachment::Column::Id.is_in(ids));
+    }
+    let result = update.exec(dbx).await.context(h!())?;
+    Ok(result.rows_affected)
+}
 
-    sigint_unit_label::Entity::update_many()
+async fn move_unit_labels<C>(
+    old_unit_id: i64,
+    new_unit_id: i64,
+    dbx: &C,
+    limit: Option<u64>,
+) -> anyhow::Result<u64>
+where
+    C: ConnectionTrait,
+{
+    let mut update = sigint_unit_label::Entity::update_many()
         .col_expr(
             sigint_unit_label::Column::SigintUnitId,
             Expr::value(new_unit_id),
         )
-        .filter(sigint_unit_label::Column::SigintUnitId.eq(old_unit_id))
-        .exec(dbx)
-        .await
-        .context(h!())?;
-
-    move_inbox_item_unit_links(old_unit_id, new_unit_id, dbx)
-        .await
-        .context(h!())?;
-
-    move_orbit_unit_links(old_unit_id, new_unit_id, dbx).await?;
-    swap_unit_devices(old_unit_id, new_unit_id, dbx).await?;
-
-    Ok(())
+        .filter(sigint_unit_label::Column::SigintUnitId.eq(old_unit_id));
+    if let Some(limit) = limit {
+        let ids = sigint_unit_label::Entity::find()
+            .filter(sigint_unit_label::Column::SigintUnitId.eq(old_unit_id))
+            .order_by_asc(sigint_unit_label::Column::Id)
+            .limit(limit)
+            .select_only()
+            .column(sigint_unit_label::Column::Id)
+            .into_tuple::<i64>()
+            .all(dbx)
+            .await
+            .c(h!())?;
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        update = update.filter(sigint_unit_label::Column::Id.is_in(ids));
+    }
+    let result = update.exec(dbx).await.context(h!())?;
+    Ok(result.rows_affected)
 }
 
 async fn move_inbox_item_unit_links<C>(
     old_unit_id: i64,
     new_unit_id: i64,
     dbx: &C,
-) -> anyhow::Result<()>
+    limit: Option<u64>,
+    link_ids: Option<&[i64]>,
+) -> anyhow::Result<u64>
 where
     C: ConnectionTrait,
 {
-    let links = sigint_inbox_item_unit::Entity::find()
+    let mut query = sigint_inbox_item_unit::Entity::find()
         .filter(sigint_inbox_item_unit::Column::UnitId.eq(old_unit_id))
-        .all(dbx)
-        .await
-        .context(h!())?;
+        .order_by_asc(sigint_inbox_item_unit::Column::Id);
+    if let Some(link_ids) = link_ids {
+        query = query.filter(
+            sigint_inbox_item_unit::Column::Id.is_in(link_ids.iter().copied()),
+        );
+    } else if let Some(limit) = limit {
+        query = query.limit(limit);
+    }
+    let links = query.all(dbx).await.context(h!())?;
+    let moved = links.len() as u64;
     for link in links {
         let duplicate = sigint_inbox_item_unit::Entity::find()
             .filter(sigint_inbox_item_unit::Column::ItemId.eq(link.item_id))
@@ -2559,50 +2936,77 @@ where
         link.unit_id = Set(new_unit_id);
         link.update(dbx).await.context(h!())?;
     }
-    Ok(())
+    Ok(moved)
 }
 
 async fn swap_unit_devices<C>(
     old_unit_id: i64,
     new_unit_id: i64,
     dbx: &C,
-) -> anyhow::Result<()>
+    limit: Option<u64>,
+) -> anyhow::Result<u64>
 where
     C: ConnectionTrait,
 {
-    device::Entity::update_many()
+    let mut update = device::Entity::update_many()
         .col_expr(device::Column::UnitId, Expr::value(Some(new_unit_id)))
         .col_expr(
             device::Column::UpdatedAt,
             Expr::value(Utc::now().naive_utc()),
         )
-        .filter(device::Column::UnitId.eq(old_unit_id))
-        .exec(dbx)
-        .await
-        .context(h!())?;
-    Ok(())
+        .filter(device::Column::UnitId.eq(old_unit_id));
+    if let Some(limit) = limit {
+        let ids = device::Entity::find()
+            .filter(device::Column::UnitId.eq(old_unit_id))
+            .order_by_asc(device::Column::Id)
+            .limit(limit)
+            .select_only()
+            .column(device::Column::Id)
+            .into_tuple::<uuid::Uuid>()
+            .all(dbx)
+            .await
+            .c(h!())?;
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        update = update.filter(device::Column::Id.is_in(ids));
+    }
+    let result = update.exec(dbx).await.context(h!())?;
+    Ok(result.rows_affected)
 }
 
 async fn move_orbit_unit_links<C>(
     old_unit_id: i64,
     new_unit_id: i64,
     dbx: &C,
-) -> anyhow::Result<()>
+    limit: Option<u64>,
+) -> anyhow::Result<u64>
 where
     C: ConnectionTrait,
 {
     if old_unit_id == new_unit_id {
-        return Ok(());
+        return Ok(0);
     }
-    let links = orbit_unit_sigint_unit::Entity::find()
+    let mut query = orbit_unit_sigint_unit::Entity::find()
         .filter(orbit_unit_sigint_unit::Column::SigintUnitId.eq(old_unit_id))
-        .all(dbx)
-        .await
-        .context(h!())?;
+        .order_by_asc(orbit_unit_sigint_unit::Column::OrbitUnitId);
+    if let Some(limit) = limit {
+        query = query.limit(limit);
+    }
+    let links = query.all(dbx).await.context(h!())?;
+    let moved = links.len() as u64;
+    let orbit_unit_ids = links
+        .iter()
+        .map(|link| link.orbit_unit_id)
+        .collect::<Vec<_>>();
     if !links.is_empty() {
         let existing_links = orbit_unit_sigint_unit::Entity::find()
             .filter(
                 orbit_unit_sigint_unit::Column::SigintUnitId.eq(new_unit_id),
+            )
+            .filter(
+                orbit_unit_sigint_unit::Column::OrbitUnitId
+                    .is_in(orbit_unit_ids.iter().copied()),
             )
             .all(dbx)
             .await
@@ -2640,12 +3044,20 @@ where
             .await
             .context(h!())?;
     }
-    orbit_unit_sigint_unit::Entity::delete_many()
-        .filter(orbit_unit_sigint_unit::Column::SigintUnitId.eq(old_unit_id))
-        .exec(dbx)
-        .await
-        .context(h!())?;
-    Ok(())
+    if !orbit_unit_ids.is_empty() {
+        orbit_unit_sigint_unit::Entity::delete_many()
+            .filter(
+                orbit_unit_sigint_unit::Column::SigintUnitId.eq(old_unit_id),
+            )
+            .filter(
+                orbit_unit_sigint_unit::Column::OrbitUnitId
+                    .is_in(orbit_unit_ids),
+            )
+            .exec(dbx)
+            .await
+            .context(h!())?;
+    }
+    Ok(moved)
 }
 
 async fn update_original_unit<C>(
@@ -3039,18 +3451,40 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn unit_merge_locks_serialize_overlapping_merges() {
+    async fn unit_merge_lock_waiter_releases_pool_connection() {
         let env = cleanup().await.unwrap();
-        let first = env.dbx.begin().await.unwrap();
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(2)
+            .connect_with(
+                (*env.dbx.get_postgres_connection_pool().connect_options())
+                    .clone(),
+            )
+            .await
+            .unwrap();
+        let dbx = sea_orm::SqlxPostgresConnector::from_sqlx_postgres_pool(
+            pool.clone(),
+        );
+        let first = dbx.begin().await.unwrap();
         acquire_unit_merge_locks(&first, 1, 2).await.unwrap();
-        let dbx = env.dbx.clone();
         let mut second = tokio::spawn(async move {
-            let transaction = dbx.begin().await.unwrap();
-            acquire_unit_merge_locks(&transaction, 2, 3).await.unwrap();
-            transaction
+            begin_unit_merge_transaction(&dbx, &[2, 3]).await.unwrap()
         });
-        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while pool.size() < 2 {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
         assert!(!second.is_finished());
+        let connection = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            pool.acquire(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        drop(connection);
 
         first.commit().await.unwrap();
         let second = tokio::time::timeout(
@@ -3061,6 +3495,55 @@ mod tests {
         .unwrap()
         .unwrap();
         second.commit().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn orbit_merge_import_lock_waiter_releases_pool_connection() {
+        let env = cleanup().await.unwrap();
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(2)
+            .connect_with(
+                (*env.dbx.get_postgres_connection_pool().connect_options())
+                    .clone(),
+            )
+            .await
+            .unwrap();
+        let dbx = sea_orm::SqlxPostgresConnector::from_sqlx_postgres_pool(
+            pool.clone(),
+        );
+        let first = crate::orbit::acquire_import_lock(&dbx).await.unwrap();
+        let mut second = tokio::spawn(async move {
+            begin_orbit_unit_merge_transaction(&dbx, &[2, 3])
+                .await
+                .unwrap()
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while pool.size() < 2 {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(!second.is_finished());
+        let connection = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            pool.acquire(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        drop(connection);
+
+        first.rollback().await.unwrap();
+        let second = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            &mut second,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        second.rollback().await.unwrap();
     }
 
     fn unit_req() -> CreateUnitReq {

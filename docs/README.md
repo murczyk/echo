@@ -63,6 +63,18 @@ supported analytical reads fall back to PostgreSQL when analytics is stale or
 unavailable. The optional `wd_files` database stores device file metadata
 and content publication pointers independently from the main `wd` database.
 
+Web duplicate-unit merges run as detached tasks in the API process. Reference
+categories are moved in bounded, committed batches; the final transaction
+rechecks references, reconciles the survivor and parent activity, and marks the
+duplicate deleted. On API restart, unfinished merge tasks are marked failed
+unless that final transaction committed. An interrupted merge can be submitted
+again with the original survivor, or its verified successor after a completed
+survivor merge; already moved references follow that completed chain.
+Registrations serialize both units and reject an unfinished merge chain until
+the earlier merge completes, so rejected starts do not pin a duplicate.
+Each committed ORBIT-link batch reconciles duplicate and inconsistency state,
+and failed or recovered tasks publish a unit-change event for other clients.
+
 Analytics control scripts and units are deployed as one content-addressed
 release to both the application and its paired analytics container. Source
 operations refuse to cross a release mismatch. A dedicated serialized

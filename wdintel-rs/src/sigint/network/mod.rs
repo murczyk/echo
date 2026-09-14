@@ -4709,38 +4709,6 @@ pub async fn merge_network(
         .next()
         .context(h!())?;
 
-    etalon_calc::invalidate_network_inbox(
-        sigint_network::Entity::find_by_id(req.network_id_from)
-            .one(&env.dbx)
-            .await
-            .c(h!())?
-            .c(h!())?,
-        vec![],
-        &env.dbx,
-        format!(
-            "merged this network {} to network {}",
-            req.network_id_from, req.network_id_to
-        ),
-    )
-    .await
-    .context(h!())?;
-
-    etalon_calc::invalidate_network_inbox(
-        sigint_network::Entity::find_by_id(req.network_id_to)
-            .one(&env.dbx)
-            .await
-            .c(h!())?
-            .c(h!())?,
-        vec![],
-        &env.dbx,
-        format!(
-            "merged network {} to this network {}",
-            req.network_id_from, req.network_id_to
-        ),
-    )
-    .await
-    .context(h!())?;
-
     Ok(Json(res))
 }
 
