@@ -398,7 +398,7 @@ pub async fn merge_two_network_freqs(
         .await
         .context(h!())?;
 
-    reassign_encryption_key_freqs(txn, freq_id_from, freq_id_to)
+    reassign_encryption_key_freqs(txn, freq_id_from, freq_id_to, None)
         .await
         .c(h!())?;
 
@@ -437,15 +437,29 @@ async fn reassign_encryption_key_freqs(
     txn: &DatabaseTransaction,
     freq_id_from: i64,
     freq_id_to: i64,
+    active_source_network_id: Option<i64>,
 ) -> Result<(), AppError> {
-    let key_freqs_from = sigint_network_encryption_key_freq::Entity::find()
+    let mut key_freqs_from = sigint_network_encryption_key_freq::Entity::find()
         .filter(
             sigint_network_encryption_key_freq::Column::SigintNetworkFreqId
                 .eq(freq_id_from),
-        )
-        .all(txn)
-        .await
-        .context(h!())?;
+        );
+    if let Some(network_id_from) = active_source_network_id {
+        let active_keys = sigint_network_encryption_key::Entity::find()
+            .select_only()
+            .column(sigint_network_encryption_key::Column::Id)
+            .filter(
+                sigint_network_encryption_key::Column::SigintNetworkId
+                    .eq(network_id_from),
+            )
+            .filter(sigint_network_encryption_key::Column::Deleted.eq(false))
+            .into_query();
+        key_freqs_from = key_freqs_from.filter(
+            sigint_network_encryption_key_freq::Column::SigintNetworkEncryptionKeyId
+                .in_subquery(active_keys),
+        );
+    }
+    let key_freqs_from = key_freqs_from.all(txn).await.context(h!())?;
 
     if key_freqs_from.is_empty() {
         return Ok(());
@@ -524,9 +538,185 @@ async fn reassign_duplicate_frequency_references(
         .exec(txn)
         .await
         .context(h!())?;
-    reassign_encryption_key_freqs(txn, freq_id_from, freq_id_to)
+    reassign_encryption_key_freqs(txn, freq_id_from, freq_id_to, None)
         .await
         .context(h!())?;
+    Ok(())
+}
+
+async fn active_source_frequency_ids(
+    txn: &DatabaseTransaction,
+    network_id_from: i64,
+) -> Result<HashSet<i64>, AppError> {
+    let mut ids = sigint_network_description::Entity::find()
+        .select_only()
+        .column(sigint_network_description::Column::SigintNetworkFreqId)
+        .filter(
+            sigint_network_description::Column::NetworkId.eq(network_id_from),
+        )
+        .filter(sigint_network_description::Column::Deleted.eq(false))
+        .filter(
+            sigint_network_description::Column::SigintNetworkFreqId
+                .is_not_null(),
+        )
+        .into_tuple::<i64>()
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .collect::<HashSet<_>>();
+    ids.extend(
+        sigint_network_encryption_key::Entity::find()
+            .select_only()
+            .column(sigint_network_encryption_key::Column::SigintNetworkFreqId)
+            .filter(
+                sigint_network_encryption_key::Column::SigintNetworkId
+                    .eq(network_id_from),
+            )
+            .filter(sigint_network_encryption_key::Column::Deleted.eq(false))
+            .filter(
+                sigint_network_encryption_key::Column::SigintNetworkFreqId
+                    .is_not_null(),
+            )
+            .into_tuple::<i64>()
+            .all(txn)
+            .await
+            .context(h!())?,
+    );
+    let active_keys = sigint_network_encryption_key::Entity::find()
+        .select_only()
+        .column(sigint_network_encryption_key::Column::Id)
+        .filter(
+            sigint_network_encryption_key::Column::SigintNetworkId
+                .eq(network_id_from),
+        )
+        .filter(sigint_network_encryption_key::Column::Deleted.eq(false))
+        .into_query();
+    ids.extend(
+        sigint_network_encryption_key_freq::Entity::find()
+            .select_only()
+            .column(sigint_network_encryption_key_freq::Column::SigintNetworkFreqId)
+            .filter(
+                sigint_network_encryption_key_freq::Column::SigintNetworkEncryptionKeyId
+                    .in_subquery(active_keys),
+            )
+            .into_tuple::<i64>()
+            .all(txn)
+            .await
+            .context(h!())?,
+    );
+    Ok(ids)
+}
+
+async fn reassign_active_deleted_frequency_references(
+    txn: &DatabaseTransaction,
+    network_id_from: i64,
+    freq_id_from: i64,
+    freq_id_to: i64,
+) -> Result<(), AppError> {
+    sigint_network_description::Entity::update_many()
+        .filter(
+            sigint_network_description::Column::NetworkId.eq(network_id_from),
+        )
+        .filter(sigint_network_description::Column::Deleted.eq(false))
+        .filter(
+            sigint_network_description::Column::SigintNetworkFreqId
+                .eq(freq_id_from),
+        )
+        .col_expr(
+            sigint_network_description::Column::SigintNetworkFreqId,
+            Expr::value(freq_id_to),
+        )
+        .exec(txn)
+        .await
+        .context(h!())?;
+    sigint_network_encryption_key::Entity::update_many()
+        .filter(
+            sigint_network_encryption_key::Column::SigintNetworkId
+                .eq(network_id_from),
+        )
+        .filter(sigint_network_encryption_key::Column::Deleted.eq(false))
+        .filter(
+            sigint_network_encryption_key::Column::SigintNetworkFreqId
+                .eq(freq_id_from),
+        )
+        .col_expr(
+            sigint_network_encryption_key::Column::SigintNetworkFreqId,
+            Expr::value(freq_id_to),
+        )
+        .exec(txn)
+        .await
+        .context(h!())?;
+    reassign_encryption_key_freqs(
+        txn,
+        freq_id_from,
+        freq_id_to,
+        Some(network_id_from),
+    )
+    .await
+    .context(h!())?;
+    Ok(())
+}
+
+async fn reconcile_referenced_deleted_source_frequencies(
+    txn: &DatabaseTransaction,
+    network_id_from: i64,
+    network_id_to: i64,
+    target_freq_ids: &HashMap<String, (i64, bool)>,
+) -> Result<(), AppError> {
+    let deleted_source_freqs = sigint_network_freq::Entity::find()
+        .filter(sigint_network_freq::Column::NetworkId.eq(network_id_from))
+        .filter(sigint_network_freq::Column::Deleted.eq(true))
+        .order_by_asc(sigint_network_freq::Column::Id)
+        .lock_exclusive()
+        .all(txn)
+        .await
+        .context(h!())?;
+    if deleted_source_freqs.is_empty() {
+        return Ok(());
+    }
+    let active_freq_ids = active_source_frequency_ids(txn, network_id_from)
+        .await
+        .context(h!())?;
+    let mut deleted_target_freq_ids = sigint_network_freq::Entity::find()
+        .filter(sigint_network_freq::Column::NetworkId.eq(network_id_to))
+        .filter(sigint_network_freq::Column::Deleted.eq(true))
+        .order_by_asc(sigint_network_freq::Column::Id)
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|freq| (freq.freq, freq.id))
+        .collect::<HashMap<_, _>>();
+    for source_freq in deleted_source_freqs {
+        if !active_freq_ids.contains(&source_freq.id) {
+            continue;
+        }
+        let target_freq_id = if let Some((id, _)) =
+            target_freq_ids.get(&source_freq.freq)
+        {
+            *id
+        } else if let Some(id) = deleted_target_freq_ids.get(&source_freq.freq)
+        {
+            *id
+        } else {
+            let mut target_freq = source_freq.clone().into_active_model();
+            target_freq.id = NotSet;
+            target_freq.network_id = Set(network_id_to);
+            target_freq.created_at = NotSet;
+            let target_freq = target_freq.insert(txn).await.context(h!())?;
+            deleted_target_freq_ids.insert(target_freq.freq, target_freq.id);
+            target_freq.id
+        };
+        reassign_active_deleted_frequency_references(
+            txn,
+            network_id_from,
+            source_freq.id,
+            target_freq_id,
+        )
+        .await
+        .context(h!())?;
+    }
     Ok(())
 }
 
@@ -724,6 +914,17 @@ async fn reassign_freqs(
         deleted_freqs.len(),
         deleted_freqs
     );
+
+    if !merge_inactive {
+        reconcile_referenced_deleted_source_frequencies(
+            txn,
+            network_id_from,
+            network_id_to,
+            &target_freq_ids,
+        )
+        .await
+        .context(h!())?;
+    }
 
     Ok(())
 }
@@ -1324,6 +1525,166 @@ mod tests {
         assert_eq!(description.network_id, target.id);
         assert_eq!(description.sigint_network_freq_id, Some(target_freq.id));
         txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn network_merge_reconciles_deleted_frequency_refs_of_active_owners()
+    {
+        for target_has_freq in [false, true] {
+            let env = cleanup().await.unwrap();
+            let login = crate::users::login_id_by_name(&env.dbx, "Tester")
+                .await
+                .unwrap();
+            let organism_id = find_test_organism(&env.dbx).await.unwrap().id;
+            let source = mk_sigint_network(&env.dbx, Default::default())
+                .await
+                .unwrap();
+            let target = mk_sigint_network(&env.dbx, Default::default())
+                .await
+                .unwrap();
+            let source_freq = mk_sigint_network_freq(
+                &env.dbx,
+                sigint_network_freq::ActiveModel {
+                    network_id: Set(source.id),
+                    freq: Set("148.0000".to_string()),
+                    deleted: Set(true),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            let target_freq = if target_has_freq {
+                Some(
+                    mk_sigint_network_freq(
+                        &env.dbx,
+                        sigint_network_freq::ActiveModel {
+                            network_id: Set(target.id),
+                            freq: Set(source_freq.freq.clone()),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                    .unwrap(),
+                )
+            } else {
+                None
+            };
+            let mut key_ids = Vec::new();
+            for deleted in [false, true] {
+                let key = sigint_network_encryption_key::ActiveModel {
+                    organism_id: Set(organism_id),
+                    sigint_network_id: Set(Some(source.id)),
+                    sigint_network_freq_id: Set(Some(source_freq.id)),
+                    deleted: Set(deleted),
+                    ..Default::default()
+                }
+                .insert(&env.dbx)
+                .await
+                .unwrap();
+                sigint_network_encryption_key_freq::ActiveModel {
+                    sigint_network_encryption_key_id: Set(key.id),
+                    sigint_network_freq_id: Set(source_freq.id),
+                    ..Default::default()
+                }
+                .insert(&env.dbx)
+                .await
+                .unwrap();
+                key_ids.push(key.id);
+            }
+            let mut description_ids = Vec::new();
+            for deleted in [false, true] {
+                let description = sigint_network_description::ActiveModel {
+                    network_id: Set(source.id),
+                    login_id: Set(login),
+                    r#type: Set(NetworkDescriptionType::Sign),
+                    description: Set("deleted source frequency".to_string()),
+                    topic: Set(String::new()),
+                    deleted: Set(deleted),
+                    sigint_network_freq_id: Set(Some(source_freq.id)),
+                    ..Default::default()
+                }
+                .insert(&env.dbx)
+                .await
+                .unwrap();
+                description_ids.push(description.id);
+            }
+
+            let txn = env.dbx.begin().await.unwrap();
+            merge_two_networks(
+                &txn, &login, false, false, source.id, target.id,
+            )
+            .await
+            .unwrap();
+            let source_freq =
+                sigint_network_freq::Entity::find_by_id(source_freq.id)
+                    .one(&txn)
+                    .await
+                    .unwrap()
+                    .unwrap();
+            assert_eq!(source_freq.network_id, source.id);
+            let target_freq_id = if let Some(target_freq) = target_freq {
+                target_freq.id
+            } else {
+                let copied = sigint_network_freq::Entity::find()
+                    .filter(
+                        sigint_network_freq::Column::NetworkId.eq(target.id),
+                    )
+                    .filter(
+                        sigint_network_freq::Column::Freq.eq(&source_freq.freq),
+                    )
+                    .one(&txn)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert!(copied.deleted);
+                copied.id
+            };
+            for (deleted, key_id, description_id) in [
+                (false, key_ids[0], description_ids[0]),
+                (true, key_ids[1], description_ids[1]),
+            ] {
+                let expected_freq_id = if deleted {
+                    source_freq.id
+                } else {
+                    target_freq_id
+                };
+                let expected_network_id =
+                    if deleted { source.id } else { target.id };
+                let key =
+                    sigint_network_encryption_key::Entity::find_by_id(key_id)
+                        .one(&txn)
+                        .await
+                        .unwrap()
+                        .unwrap();
+                assert_eq!(key.sigint_network_id, Some(expected_network_id));
+                assert_eq!(key.sigint_network_freq_id, Some(expected_freq_id));
+                let links = sigint_network_encryption_key_freq::Entity::find()
+                    .filter(
+                        sigint_network_encryption_key_freq::Column::SigintNetworkEncryptionKeyId
+                            .eq(key_id),
+                    )
+                    .all(&txn)
+                    .await
+                    .unwrap();
+                assert_eq!(links.len(), 1);
+                assert_eq!(links[0].sigint_network_freq_id, expected_freq_id);
+                let description =
+                    sigint_network_description::Entity::find_by_id(
+                        description_id,
+                    )
+                    .one(&txn)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(description.network_id, expected_network_id);
+                assert_eq!(
+                    description.sigint_network_freq_id,
+                    Some(expected_freq_id)
+                );
+            }
+            txn.rollback().await.unwrap();
+        }
     }
 
     #[tokio::test]

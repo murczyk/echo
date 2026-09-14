@@ -2,7 +2,8 @@ use super::*;
 use crate::config::{
     SIGINT_UNIT_MERGE_ADVISORY_LOCK_NAMESPACE,
     SIGINT_UNIT_MERGE_ADVISORY_LOCK_POLL_MS, SIGINT_UNIT_MERGE_BATCH_SIZE,
-    SIGINT_UNIT_MERGE_RESERVED_POOL_CONNECTIONS, SIGINT_UNIT_MERGE_TASK_MARKER,
+    SIGINT_UNIT_MERGE_RESERVED_POOL_CONNECTIONS,
+    SIGINT_UNIT_MERGE_TASK_FINISH_RETRY_MS, SIGINT_UNIT_MERGE_TASK_MARKER,
 };
 use crate::delta::bgtask_log;
 use tokio::sync::{Semaphore, SemaphorePermit};
@@ -35,13 +36,7 @@ pub(super) async fn start(
     tokio::spawn(async move {
         let result =
             run(&env, login, unit_to_delete_id, original_id, bgtask_id).await;
-        if let Err(error) =
-            finish_merge_task(&env.dbx, bgtask_id, &result).await
-        {
-            eprintln!(
-                "failed to finish unit merge task {bgtask_id}: {error:?}"
-            );
-        }
+        finish_merge_task_with_retry(&env.dbx, bgtask_id, &result).await;
         let event = EventMsg::new(EventType::ETUnitChanged);
         if let Err(error) = fanout(&mut env.redis.clone(), event).await {
             eprintln!("failed to publish unit merge change: {error:?}");
@@ -377,6 +372,31 @@ async fn finish_merge_task(
     }
     bgtask.update(dbx).await.c(h!())?;
     Ok(())
+}
+
+async fn finish_merge_task_with_retry(
+    dbx: &DatabaseConnection,
+    bgtask_id: i64,
+    result: &Result<(), AppError>,
+) {
+    loop {
+        match finish_merge_task(dbx, bgtask_id, result).await {
+            Ok(()) => return,
+            Err(AppError::NotFound) => {
+                eprintln!("unit merge task {bgtask_id} no longer exists");
+                return;
+            }
+            Err(error) => {
+                eprintln!(
+                    "failed to finish unit merge task {bgtask_id}, retrying: {error:?}"
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(
+                    SIGINT_UNIT_MERGE_TASK_FINISH_RETRY_MS,
+                ))
+                .await;
+            }
+        }
+    }
 }
 
 async fn run(

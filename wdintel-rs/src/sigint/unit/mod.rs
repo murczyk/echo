@@ -2109,14 +2109,18 @@ pub(crate) async fn begin_unit_merge_transaction(
     dbx: &DatabaseConnection,
     unit_ids: &[i64],
 ) -> anyhow::Result<DatabaseTransaction> {
-    begin_unit_merge_transaction_with_import_lock(dbx, unit_ids, false).await
+    begin_unit_merge_transaction_with_import_lock(dbx, unit_ids, false)
+        .await
+        .context(h!())
 }
 
 pub(crate) async fn begin_orbit_unit_merge_transaction(
     dbx: &DatabaseConnection,
     unit_ids: &[i64],
 ) -> anyhow::Result<DatabaseTransaction> {
-    begin_unit_merge_transaction_with_import_lock(dbx, unit_ids, true).await
+    begin_unit_merge_transaction_with_import_lock(dbx, unit_ids, true)
+        .await
+        .context(h!())
 }
 
 async fn begin_unit_merge_transaction_with_import_lock(
