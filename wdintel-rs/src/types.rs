@@ -109,6 +109,7 @@ pub struct Env {
     pub s3: Option<opendal::Operator>,
     pub s3_config: Option<crate::storage::S3Config>,
     pub dbx: sea_orm::DatabaseConnection,
+    pub(crate) unit_merge_guard_slots: Arc<tokio::sync::Semaphore>,
     pub echo_gpu_client: Arc<echo_gpu_client::EchoGpuClient>,
     pub file_registry_db: Option<FileRegistryDb>,
     pub(crate) device_file_content:

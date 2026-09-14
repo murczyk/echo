@@ -229,6 +229,11 @@ async fn new_env_with_initialization(
         s3_config,
         mil_geo: mil_geo.clone(),
         dbx: dbx.clone(),
+        unit_merge_guard_slots: Arc::new(tokio::sync::Semaphore::new(
+            crate::sigint::unit::unit_merge_guard_capacity(
+                dbx.get_postgres_connection_pool(),
+            ),
+        )),
         echo_gpu_client,
         file_registry_db,
         device_file_content,

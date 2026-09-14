@@ -2,9 +2,19 @@ use super::*;
 use crate::config::{
     SIGINT_UNIT_MERGE_ADVISORY_LOCK_NAMESPACE,
     SIGINT_UNIT_MERGE_ADVISORY_LOCK_POLL_MS, SIGINT_UNIT_MERGE_BATCH_SIZE,
-    SIGINT_UNIT_MERGE_TASK_MARKER,
+    SIGINT_UNIT_MERGE_RESERVED_POOL_CONNECTIONS, SIGINT_UNIT_MERGE_TASK_MARKER,
 };
 use crate::delta::bgtask_log;
+use tokio::sync::{Semaphore, SemaphorePermit};
+
+pub(crate) fn guard_capacity(pool: &sqlx::PgPool) -> usize {
+    std::cmp::max(
+        pool.options()
+            .get_max_connections()
+            .saturating_sub(SIGINT_UNIT_MERGE_RESERVED_POOL_CONNECTIONS),
+        1,
+    ) as usize
+}
 
 pub(super) async fn start(
     env: &actix_web::web::Data<Env>,
@@ -143,8 +153,9 @@ async fn run(
     original_id: i64,
     bgtask_id: i64,
 ) -> Result<(), AppError> {
-    let guard = acquire_merge_task_guard(
+    let (permit, guard) = acquire_merge_task_guard(
         env.dbx.get_postgres_connection_pool(),
+        &env.unit_merge_guard_slots,
         unit_to_delete_id,
         original_id,
     )
@@ -153,6 +164,7 @@ async fn run(
     let result =
         run_locked(env, login, unit_to_delete_id, original_id, bgtask_id).await;
     let rollback = guard.rollback().await;
+    drop(permit);
     if result.is_ok() {
         rollback.c(h!())?;
     } else if let Err(error) = rollback {
@@ -163,11 +175,18 @@ async fn run(
     result
 }
 
-async fn acquire_merge_task_guard(
-    pool: &sqlx::PgPool,
+async fn acquire_merge_task_guard<'a>(
+    pool: &'a sqlx::PgPool,
+    slots: &'a Semaphore,
     unit_to_delete_id: i64,
     original_id: i64,
-) -> anyhow::Result<sqlx::Transaction<'_, sqlx::Postgres>> {
+) -> anyhow::Result<(SemaphorePermit<'a>, sqlx::Transaction<'a, sqlx::Postgres>)>
+{
+    anyhow::ensure!(
+        pool.options().get_max_connections() >= 2,
+        "unit merges require at least two database connections"
+    );
+    let permit = slots.acquire().await.c(h!())?;
     loop {
         let mut guard = pool.begin().await.c(h!())?;
         let mut acquired = true;
@@ -189,7 +208,7 @@ async fn acquire_merge_task_guard(
             }
         }
         if acquired {
-            return Ok(guard);
+            return Ok((permit, guard));
         }
         guard.rollback().await.c(h!())?;
         tokio::time::sleep(std::time::Duration::from_millis(
@@ -415,11 +434,16 @@ mod tests {
             )
             .await
             .unwrap();
-        let guard = acquire_merge_task_guard(&pool, 1, 2).await.unwrap();
+        let slots = std::sync::Arc::new(Semaphore::new(2));
+        let (_permit, guard) =
+            acquire_merge_task_guard(&pool, &slots, 1, 2).await.unwrap();
         let waiting_pool = pool.clone();
+        let waiting_slots = slots.clone();
         let waiter = tokio::spawn(async move {
-            let guard =
-                acquire_merge_task_guard(&waiting_pool, 2, 3).await.unwrap();
+            let (_permit, guard) =
+                acquire_merge_task_guard(&waiting_pool, &waiting_slots, 2, 3)
+                    .await
+                    .unwrap();
             guard.rollback().await.unwrap();
         });
 
@@ -441,6 +465,51 @@ mod tests {
         drop(connection);
 
         guard.rollback().await.unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(2), waiter)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn disjoint_merge_guards_leave_pool_capacity_for_work() {
+        let env = cleanup().await.unwrap();
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(2)
+            .connect_with(
+                (*env.dbx.get_postgres_connection_pool().connect_options())
+                    .clone(),
+            )
+            .await
+            .unwrap();
+        let slots = std::sync::Arc::new(Semaphore::new(guard_capacity(&pool)));
+        assert_eq!(slots.available_permits(), 1);
+        let (first_permit, first_guard) =
+            acquire_merge_task_guard(&pool, &slots, 1, 2).await.unwrap();
+        let waiting_pool = pool.clone();
+        let waiting_slots = slots.clone();
+        let waiter = tokio::spawn(async move {
+            let (_permit, guard) =
+                acquire_merge_task_guard(&waiting_pool, &waiting_slots, 3, 4)
+                    .await
+                    .unwrap();
+            guard.rollback().await.unwrap();
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(!waiter.is_finished());
+        let connection = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            pool.acquire(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        drop(connection);
+
+        first_guard.rollback().await.unwrap();
+        drop(first_permit);
         tokio::time::timeout(std::time::Duration::from_secs(2), waiter)
             .await
             .unwrap()

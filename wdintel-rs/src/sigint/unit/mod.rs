@@ -28,6 +28,7 @@ pub mod attachment;
 pub mod changelog;
 pub mod labels;
 mod merge_task;
+pub(crate) use merge_task::guard_capacity as unit_merge_guard_capacity;
 pub mod orbit;
 pub mod types;
 
