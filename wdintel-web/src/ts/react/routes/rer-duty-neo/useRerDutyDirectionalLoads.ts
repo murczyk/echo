@@ -581,14 +581,14 @@ export function useRerDutyDirectionalLoads(params: Params) {
             runParams.setMessageFeeds((previous) =>
               previous.map((feed) => {
                 if (feed.id !== feedId) return feed;
-                let nextLocal = 0;
-                for (const [id] of feed.items) {
-                  if (!feed.readIds.has(id)) nextLocal += 1;
-                }
-                nextLocal += feed.windowedUnreadItems?.size ?? 0;
-                for (const [id] of feedPendingNewerItems(feed)) {
-                  if (!feed.readIds.has(id)) nextLocal += 1;
-                }
+                const localUnreadIds = new Set([
+                  ...feed.items.map(([id]) => id),
+                  ...(feed.windowedUnreadItems?.keys() ?? []),
+                  ...feedPendingNewerItems(feed).map(([id]) => id),
+                  ...(feed.unresolvedUnreadIds ?? []),
+                ]);
+                feed.readIds.forEach((id) => localUnreadIds.delete(id));
+                const nextLocal = localUnreadIds.size + (feed.unresolvedUnreadCount ?? 0);
                 localUnread = nextLocal;
                 return nextLocal === feed.unreadCount ? feed : { ...feed, unreadCount: nextLocal };
               }),

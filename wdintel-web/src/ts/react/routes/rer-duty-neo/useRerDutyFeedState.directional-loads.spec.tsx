@@ -359,6 +359,35 @@ describe('useRerDutyFeedState — directional loading and races', () => {
       expect(apiRef.current!.messageFeeds[0].pendingNewerItems?.map(([id]) => id)).toEqual([2]);
     });
 
+    it('preserves retained unread state when a newer page is exhausted (#3455)', async () => {
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+        current: null,
+      };
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(1, 2));
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
+      await act(async () => root.render(<TestHarness apiRef={apiRef} />));
+      await act(async () => flushMicrotasks());
+      await act(async () => {
+        apiRef.current!.setMessageFeeds((feeds) =>
+          feeds.map((feed) => ({
+            ...feed,
+            windowedUnreadItems: new Map([[2, 2]]),
+            pendingNewerItems: rangeRsp(2, 3).inboxItems,
+            unresolvedUnreadIds: new Set([3, 99]),
+            unresolvedUnreadCount: 2,
+            unreadCount: 6,
+          })),
+        );
+      });
+
+      await act(async () => apiRef.current!.loadFeedNewerMessages('mf-0'));
+
+      const feed = apiRef.current!.messageFeeds[0];
+      expect(feed.unreadCount).toBe(6);
+      expect(feed.unresolvedUnreadIds).toEqual(new Set([3, 99]));
+      expect(feed.unresolvedUnreadCount).toBe(2);
+    });
+
     it('keeps directional loading independent across two feeds', async () => {
       const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
         current: null,
