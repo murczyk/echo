@@ -1551,7 +1551,8 @@ pub fn main_gen_elm() -> Result<(), AppError> {
 
 fn patch_generated_elm(output: String) -> Result<String, AppError> {
     Ok(trim_trailing_whitespace(
-        patch_backward_compatible_decoders(patch_generated_elm_names(output))?,
+        patch_backward_compatible_decoders(patch_generated_elm_names(output))
+            .context(h!())?,
     ))
 }
 
@@ -1630,7 +1631,8 @@ fn patch_rer_duty_query_state_wf_decoder(
         .map(|offset| start + offset)
         .ok_or_else(|| AppError::BL {
             msg: "could not find rerDutyQueryStateWfDecoder body".to_string(),
-        })?;
+        })
+        .context(h!())?;
     let body_end = output[decoder_start..]
         .match_indices("\n\n")
         .map(|(offset, _)| decoder_start + offset)
@@ -1642,7 +1644,8 @@ fn patch_rer_duty_query_state_wf_decoder(
         .ok_or_else(|| AppError::BL {
             msg: "could not find rerDutyQueryStateWfDecoder body boundary"
                 .to_string(),
-        })?;
+        })
+        .context(h!())?;
     let prefix = &output[..start];
     let body = &output[start..body_end];
     let suffix = &output[body_end..];
@@ -1679,14 +1682,15 @@ fn patch_rer_duty_query_state_wf_decoder(
         );
             Ok(body.replacen(&strict, &compatible, 1))
         },
-    )?;
+    )
+    .context(h!())?;
     Ok(format!("{prefix}{body}{suffix}"))
 }
 
 fn patch_backward_compatible_decoders(
     output: String,
 ) -> Result<String, AppError> {
-    let output = patch_rer_duty_query_state_wf_decoder(output)?;
+    let output = patch_rer_duty_query_state_wf_decoder(output).context(h!())?;
     Ok(output
         .replace(
             RER_ANALYSIS_WITHOUT_NETWORK_STRICT_DECODER_RAW,
