@@ -41,7 +41,6 @@ export function useDeviceDetailsPage({
     () => ({
       canRead: capabilities.canRead,
       canEdit: capabilities.canWriteSourceData || capabilities.canWriteAnalyticalData,
-      canSyncFiles: capabilities.canWriteSourceData,
       fieldPermissions: {
         sourceData: capabilities.canWriteSourceData,
         analyticalData: capabilities.canWriteAnalyticalData,

@@ -1,7 +1,7 @@
 // @test-scope parser: network filter, request, status, and activity-state normalization fixtures
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { Network } from '../../../../../Bindings';
 import { NETWORK_STATUS_ACTIVE } from '../../rer-network-details-neo/network-status';
@@ -30,6 +30,23 @@ import {
 } from '../helpers';
 
 dayjs.extend(utc);
+
+const EMPTY_NETWORK_HIERARCHY_FILTER_FIELDS = {
+  filterUnitArmyRegion: null,
+  filterUnitMilitaryDistrict: null,
+  filterUnitArmy: null,
+  filterUnitCorps: null,
+  filterUnitDivision: null,
+  filterUnitBrigade: null,
+  filterUnitRegiment: null,
+  filterUnitBattalion: null,
+  filterUnitCompany: null,
+  filterUnitPlatoon: null,
+  filterUnitSquad: null,
+  filterUnitSection: null,
+  filterUnitTeamOrCrew: null,
+  filterUnitOther: null,
+} as const;
 
 describe('rer-networks-neo AOR filters', () => {
   it('keeps the no-AOR option first and the all-band option second in the filter menu', () => {
@@ -111,6 +128,76 @@ describe('rer-networks-neo AOR filters', () => {
     expect(row.developing).toBe(false);
   });
 
+  // Regression for ECHO-3207: the activity column must not display catalog edit time.
+  it('projects last activity from the latest interception timestamp', () => {
+    const lastActivityAt = Date.UTC(2026, 8, 7, 10, 15);
+    const row = buildNetworkRowView(
+      {
+        id: 1,
+        name: 'Alpha',
+        unitIds: [],
+        freqs: [],
+        aorIds: [],
+        location: '',
+        radioStation: null,
+        createdAt: 0,
+        purpose: null,
+        operationMode: null,
+        operationType: null,
+        operationPeriod: null,
+        doNotArchive: false,
+        lastActivityAt,
+        lastUpdatedAt: Date.UTC(2026, 7, 24, 8, 0),
+        lastUpdatedBy: 'Оператор',
+        activeFrom: null,
+        activeTo: null,
+        postIds: [],
+        descriptions: [],
+        deleted: false,
+        status: NETWORK_STATUS_ACTIVE,
+      },
+      new Map(),
+      new Map(),
+      new Map(),
+    );
+
+    expect(row.lastActivityLabel).toBe(dayjs(lastActivityAt).format('DD.MM.YY HH:mm'));
+    expect(row.lastActivityDetail).toBe('Останнє перехоплення');
+    expect(row.lastActivityTooltip).toContain(row.lastActivityLabel);
+
+    const recentRow = buildNetworkRowView(
+      { ...row.network, lastActivityAt: Date.now() - 10 * 60 * 1000 },
+      new Map(),
+      new Map(),
+      new Map(),
+    );
+    expect(recentRow.lastActivityLabel).toBe('Активна останні 15хв');
+    expect(recentRow.lastActivityTooltip).toContain(
+      dayjs(recentRow.network.lastActivityAt).format('DD.MM.YY HH:mm'),
+    );
+
+    const now = Date.UTC(2026, 8, 13, 12, 0);
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      const atBoundary = buildNetworkRowView(
+        { ...row.network, lastActivityAt: now - 15 * 60 * 1000 },
+        new Map(),
+        new Map(),
+        new Map(),
+      );
+      const outsideBoundary = buildNetworkRowView(
+        { ...row.network, lastActivityAt: now - 15 * 60 * 1000 - 1 },
+        new Map(),
+        new Map(),
+        new Map(),
+      );
+      expect(atBoundary.lastActivityLabel).toBe('Активна останні 15хв');
+      expect(outsideBoundary.lastActivityLabel).not.toBe('Активна останні 15хв');
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
   it('maps the active network list request to classic active-only flags', () => {
     expect(
       buildNetworksListReq({
@@ -132,12 +219,7 @@ describe('rer-networks-neo AOR filters', () => {
     ).toEqual({
       filterFreq: '128.5',
       filterUnit: '3 АК',
-      filterUnitArmyRegion: null,
-      filterUnitMilitaryDistrict: null,
-      filterUnitArmy: null,
-      filterUnitDivision: null,
-      filterUnitRegiment: null,
-      filterUnitBattalion: null,
+      ...EMPTY_NETWORK_HIERARCHY_FILTER_FIELDS,
       filterText: 'alpha',
       filterName: 'Alpha',
       filterLocation: 'Kyiv',
@@ -178,9 +260,17 @@ describe('rer-networks-neo AOR filters', () => {
         filterUnitArmyRegion: null,
         filterUnitMilitaryDistrict: null,
         filterUnitArmy: null,
+        filterUnitCorps: null,
         filterUnitDivision: null,
+        filterUnitBrigade: null,
         filterUnitRegiment: null,
         filterUnitBattalion: null,
+        filterUnitCompany: null,
+        filterUnitPlatoon: null,
+        filterUnitSquad: null,
+        filterUnitSection: null,
+        filterUnitTeamOrCrew: null,
+        filterUnitOther: null,
       }),
     );
   });
@@ -193,9 +283,17 @@ describe('rer-networks-neo AOR filters', () => {
         armyRegion: 'R',
         militaryDistrict: 'D',
         army: '1',
+        corps: 'C',
         division: '2',
+        brigade: 'BR',
         regiment: '3',
         battalion: '4',
+        company: 'CO',
+        platoon: 'P',
+        squad: 'SQ',
+        section: 'S',
+        teamOrCrew: 'T',
+        other: 'O',
       },
     };
 
@@ -217,9 +315,17 @@ describe('rer-networks-neo AOR filters', () => {
         filterUnitArmyRegion: 'R',
         filterUnitMilitaryDistrict: 'D',
         filterUnitArmy: '1',
+        filterUnitCorps: 'C',
         filterUnitDivision: '2',
+        filterUnitBrigade: 'BR',
         filterUnitRegiment: '3',
         filterUnitBattalion: '4',
+        filterUnitCompany: 'CO',
+        filterUnitPlatoon: 'P',
+        filterUnitSquad: 'SQ',
+        filterUnitSection: 'S',
+        filterUnitTeamOrCrew: 'T',
+        filterUnitOther: 'O',
       }),
     );
   });
@@ -232,9 +338,17 @@ describe('rer-networks-neo AOR filters', () => {
         armyRegion: null,
         militaryDistrict: null,
         army: '',
+        corps: undefined,
         division: null,
+        brigade: undefined,
         regiment: undefined,
         battalion: '4',
+        company: undefined,
+        platoon: undefined,
+        squad: undefined,
+        section: undefined,
+        teamOrCrew: undefined,
+        other: undefined,
       },
     };
 
@@ -292,12 +406,7 @@ describe('rer-networks-neo AOR filters', () => {
     ).toEqual({
       filterFreq: '128.5',
       filterUnit: null,
-      filterUnitArmyRegion: null,
-      filterUnitMilitaryDistrict: null,
-      filterUnitArmy: null,
-      filterUnitDivision: null,
-      filterUnitRegiment: null,
-      filterUnitBattalion: null,
+      ...EMPTY_NETWORK_HIERARCHY_FILTER_FIELDS,
       filterText: null,
       filterName: 'Alpha',
       filterLocation: 'Kyiv',
@@ -331,12 +440,7 @@ describe('rer-networks-neo AOR filters', () => {
     ).toEqual({
       filterFreq: '128.5',
       filterUnit: '3 АК',
-      filterUnitArmyRegion: null,
-      filterUnitMilitaryDistrict: null,
-      filterUnitArmy: null,
-      filterUnitDivision: null,
-      filterUnitRegiment: null,
-      filterUnitBattalion: null,
+      ...EMPTY_NETWORK_HIERARCHY_FILTER_FIELDS,
       filterText: 'alpha',
       filterName: 'Alpha',
       filterLocation: 'Kyiv',
@@ -371,12 +475,7 @@ describe('rer-networks-neo AOR filters', () => {
     ).toEqual({
       filterFreq: '128.5',
       filterUnit: '3 АК',
-      filterUnitArmyRegion: null,
-      filterUnitMilitaryDistrict: null,
-      filterUnitArmy: null,
-      filterUnitDivision: null,
-      filterUnitRegiment: null,
-      filterUnitBattalion: null,
+      ...EMPTY_NETWORK_HIERARCHY_FILTER_FIELDS,
       filterText: 'alpha',
       filterName: 'Alpha',
       filterLocation: 'Kyiv',
@@ -476,19 +575,31 @@ describe('rer-networks-neo AOR filters', () => {
     ]);
   });
 
-  it('builds activity bars from backend day keys and anchors the range at the latest day', () => {
-    const bars = buildActivityBars({
-      1780444800000: { foo: 2, bar: 1 },
-      1780531200000: { foo: 4, bar: 1 },
-      1780963200000: { foo: 7, bar: 4 },
-    });
+  // Regression for ECHO-3207: a stale latest bucket must not shift the chart away from today.
+  it('builds activity bars from backend day keys and anchors the range at today', () => {
+    const rangeEndMs = 1781136000000;
+    const bars = buildActivityBars(
+      {
+        1780444800000: { foo: 2, bar: 1 },
+        1780531200000: { foo: 4, bar: 1 },
+        1780963200000: { foo: 7, bar: 4 },
+      },
+      rangeEndMs,
+    );
 
     expect(bars).toHaveLength(10);
-    expect(bars.at(-1)?.title).toBe(dayjs.utc(1780963200000).format('DD.MM'));
-    expect(bars.at(-1)?.value).toBe(11);
-    expect(bars.at(-2)?.value).toBe(0);
+    expect(bars.at(-1)?.title).toBe(dayjs.utc(rangeEndMs).format('DD.MM'));
+    expect(bars.at(-1)?.value).toBe(0);
+    expect(bars.at(-3)?.value).toBe(11);
     expect(bars.some((bar) => bar.value === 3)).toBe(true);
     expect(bars.some((bar) => bar.value === 5)).toBe(true);
+  });
+
+  it('uses the Kyiv calendar day for the activity range', () => {
+    const kyivNextDayMs = Date.UTC(2026, 8, 8);
+    const bars = buildActivityBars({ [kyivNextDayMs]: { foo: 1 } }, Date.UTC(2026, 8, 7, 22, 30));
+
+    expect(bars.at(-1)).toEqual({ value: 1, title: '08.09' });
   });
 
   it('scales activity bar heights within row-local bounds', () => {

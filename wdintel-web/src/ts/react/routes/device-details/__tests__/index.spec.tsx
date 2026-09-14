@@ -1,14 +1,17 @@
 /**
  * @vitest-environment happy-dom
  */
+import { ThemeProvider } from '@mui/material/styles';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { DeviceDetails } from '../../../../../Bindings';
+import { createNeoMuiTheme } from '../../../mui-theme';
 import { DeviceDetailsPage } from '.././index';
 
 const DEVICE_ID = '018f0000-0000-7000-8000-000000000000';
+const testTheme = createNeoMuiTheme('light');
 
 const pageMock = vi.hoisted(() => ({
   useDeviceDetailsPage: vi.fn(),
@@ -24,10 +27,6 @@ vi.mock('.././use-device-details-page', () => ({
   useDeviceDetailsPage: pageMock.useDeviceDetailsPage,
 }));
 
-vi.mock('../../device-files/use-device-files', () => ({
-  useDeviceFiles: pageMock.useDeviceFiles,
-}));
-
 vi.mock('../../device-files/use-device-file-journal', () => ({
   useDeviceFileJournal: pageMock.useDeviceFileJournal,
 }));
@@ -37,15 +36,11 @@ vi.mock('../../device-files/use-device-analytics-tags', () => ({
 }));
 
 vi.mock('../../device-files', () => ({
-  DeviceFilesPanel: ({ canSync }: { canSync: boolean }) => (
-    <div data-testid="device-files-panel" data-can-sync={String(canSync)}>
-      Файли
-    </div>
+  useDeviceFiles: pageMock.useDeviceFiles,
+  DeviceFilesSidebar: () => <aside data-testid="device-files-sidebar">Бічна панель файлів</aside>,
+  DeviceFileContentPane: () => (
+    <section data-testid="device-file-content-pane">Вміст файлу</section>
   ),
-}));
-
-vi.mock('../../device-files/components/DeviceFileTree', () => ({
-  DeviceFileTree: () => <div data-testid="device-files-tree-panel">Файлове дерево</div>,
 }));
 
 vi.mock('../../device-files/components/DeviceFileJournal', () => ({
@@ -82,7 +77,6 @@ function buildPage(overrides: Record<string, unknown> = {}) {
     permissions: {
       canRead: true,
       canEdit: true,
-      canSyncFiles: true,
       fieldPermissions: { sourceData: true, analyticalData: true },
     },
     device: activeDevice,
@@ -142,7 +136,11 @@ afterEach(() => {
 
 function renderPage(authUserRoles: string[] = ['DeviceSource']) {
   act(() => {
-    root?.render(<DeviceDetailsPage deviceId={DEVICE_ID} authUserRoles={authUserRoles} />);
+    root?.render(
+      <ThemeProvider theme={testTheme}>
+        <DeviceDetailsPage deviceId={DEVICE_ID} authUserRoles={authUserRoles} />
+      </ThemeProvider>,
+    );
   });
 }
 
@@ -191,8 +189,8 @@ describe('DeviceDetailsPage layout', () => {
       deviceId: DEVICE_ID,
       enabled: true,
     });
-    expect(container?.querySelector('[data-testid="device-files-panel"]')).toBeNull();
-    expect(container?.querySelector('[data-testid="device-files-tree-panel"]')).toBeNull();
+    expect(container?.querySelector('[data-testid="device-files-sidebar"]')).toBeNull();
+    expect(container?.querySelector('[data-testid="device-file-content-pane"]')).toBeNull();
     expect(container?.querySelector('button[aria-label="Згорнути ліву панель"]')).not.toBeNull();
 
     const journalTab = tabs.find((tab) => tab.textContent === 'Журнал');
@@ -200,7 +198,7 @@ describe('DeviceDetailsPage layout', () => {
 
     expect(container?.querySelector('[data-testid="device-details-left-panel"]')).not.toBeNull();
     expect(container?.querySelector('[data-testid="device-file-journal"]')).not.toBeNull();
-    expect(container?.querySelector('[data-testid="device-files-tree-panel"]')).toBeNull();
+    expect(container?.querySelector('[data-testid="device-files-sidebar"]')).toBeNull();
     expect(pageMock.useDeviceFileJournal).toHaveBeenLastCalledWith({
       deviceId: DEVICE_ID,
       enabled: true,
@@ -211,18 +209,18 @@ describe('DeviceDetailsPage layout', () => {
     act(() => filesTab?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
 
     expect(container?.querySelector('[data-testid="device-details-left-panel"]')).toBeNull();
-    expect(container?.querySelector('[data-testid="device-files-tree-panel"]')).not.toBeNull();
-    expect(container?.querySelector('[data-testid="device-files-panel"]')).not.toBeNull();
-    expect(
-      container?.querySelector('[data-testid="device-files-panel"]')?.getAttribute('data-can-sync'),
-    ).toBe('true');
+    const filesSidebar = container?.querySelector('[data-testid="device-files-sidebar"]');
+    expect(filesSidebar).not.toBeNull();
+    expect(filesSidebar?.closest('[hidden]')).toBeNull();
+    expect(container?.querySelector('[data-testid="device-file-content-pane"]')).not.toBeNull();
 
     const collapseButton = container?.querySelector<HTMLButtonElement>(
       'button[aria-label="Згорнути ліву панель"]',
     );
     act(() => collapseButton?.click());
-    expect(container?.querySelector('[data-testid="device-files-tree-panel"]')).toBeNull();
-    expect(container?.querySelector('[data-testid="device-files-panel"]')).not.toBeNull();
+    expect(container?.querySelector('[data-testid="device-files-sidebar"]')).not.toBeNull();
+    expect(filesSidebar?.closest('[hidden]')).not.toBeNull();
+    expect(container?.querySelector('[data-testid="device-file-content-pane"]')).not.toBeNull();
     expect(container?.querySelector('button[aria-label="Розгорнути ліву панель"]')).not.toBeNull();
   });
 
@@ -282,9 +280,8 @@ describe('DeviceDetailsPage layout', () => {
       (tab) => tab.textContent === 'Файли',
     );
     act(() => filesTab?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
-    expect(container?.querySelector('[data-testid="device-files-tree-panel"]')).not.toBeNull();
-    expect(
-      container?.querySelector('[data-testid="device-files-panel"]')?.getAttribute('data-can-sync'),
-    ).toBe('false');
+    const filesSidebar = container?.querySelector('[data-testid="device-files-sidebar"]');
+    expect(filesSidebar).not.toBeNull();
+    expect(container?.querySelector('[data-testid="device-file-content-pane"]')).not.toBeNull();
   });
 });

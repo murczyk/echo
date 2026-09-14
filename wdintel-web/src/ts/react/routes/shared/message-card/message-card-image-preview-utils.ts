@@ -1,6 +1,7 @@
 import { clamp, type Point } from './message-card-image-utils';
 
 export const ZOOM_MIN = 100;
+export const ATTACHMENT_PREVIEW_DRAG_THRESHOLD_PX = 5;
 export const ZOOM_MAX = 400;
 export const ZOOM_STEP = 25;
 export const WHEEL_ZOOM_SENSITIVITY = 0.0015;

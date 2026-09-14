@@ -88,6 +88,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   );
   const [centerTab, setCenterTabState] = useState<AnalysisCenterTab>('messages');
   const [error, setError] = useState<string | null>(null);
+  const [directMessageError, setDirectMessageError] = useState<string | null>(null);
   const [leftPanelOpen, setLeftPanelOpen] = useState(
     () => initialPanelQueryState.leftPanelOpen ?? !isStackedFiltersLayout,
   );
@@ -145,6 +146,14 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const [centerTabPending, startCenterTabTransition] = useTransition();
   const setPageError = useCallback((message: string) => setError(message || null), []);
   const dutySettings = useDutySettings();
+  useEffect(() => {
+    if (dutySettings.loadInProgress) return;
+    setQueryState((current) =>
+      current.messageTimeBasis === dutySettings.messageSortBy
+        ? current
+        : { ...current, messageTimeBasis: dutySettings.messageSortBy },
+    );
+  }, [dutySettings.loadInProgress, dutySettings.messageSortBy]);
   const directQueryBoundaryRef = useRef({
     fromDateTimeStr: initialQueryState.fromDateTimeStr,
     toDateTimeStr: initialQueryState.toDateTimeStr,
@@ -157,6 +166,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
       freqsSelected: queryState.freqsSelected,
       networksSelected: queryState.networksSelected,
       withoutNetwork: queryState.withoutNetwork,
+      messageTimeBasis: dutySettings.messageSortBy,
     }),
     [
       initialQueryState,
@@ -164,11 +174,12 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
       queryState.groupsSelected,
       queryState.networksSelected,
       queryState.withoutNetwork,
+      dutySettings.messageSortBy,
     ],
   );
 
   useEffect(() => {
-    if (!targetMessageUid || !targetMessageContextActive) return;
+    if (!targetMessageUid || !targetMessageContextActive || dutySettings.loadInProgress) return;
     let cancelled = false;
     const isContextRefresh = targetMessageLoadedRef.current;
     if (isContextRefresh) {
@@ -192,12 +203,13 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
             removeMessageUidFromWindowUrl();
           } else {
             setTargetMessageContextActive(false);
-            setPageError('Не вдалося знайти повідомлення за посиланням.');
+            setDirectMessageError('Повідомлення за посиланням не знайдено або воно недоступне.');
           }
           if (!isContextRefresh) setTargetMessageContextLoading(false);
           setTargetMessageContextResponsePending(false);
           return;
         }
+        setDirectMessageError(null);
         targetMessageLoadedRef.current = true;
         targetMessageIdRef.current = res.targetMessageId;
         const targetMessage = res.inbox.inboxItems.find(
@@ -226,7 +238,9 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
         targetMessageContextSawReloadRef.current = false;
         setTargetMessageContextLoading(false);
         setTargetMessageContextResponsePending(false);
-        setPageError(`Не вдалося відкрити повідомлення за посиланням: ${toErrorMessage(err)}`);
+        setDirectMessageError(
+          `Не вдалося відкрити повідомлення за посиланням: ${toErrorMessage(err)}`,
+        );
       })
       .finally(() => {
         if (!cancelled) setTargetMessageLoading(false);
@@ -234,7 +248,12 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     return () => {
       cancelled = true;
     };
-  }, [directMessageWindowQueryState, setPageError, targetMessageContextActive, targetMessageUid]);
+  }, [
+    directMessageWindowQueryState,
+    dutySettings.loadInProgress,
+    targetMessageContextActive,
+    targetMessageUid,
+  ]);
 
   const clearTargetMessageFocus = useCallback(() => {
     setTargetMessageFocusActive(false);
@@ -698,14 +717,17 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   );
 
   const resetFilters = useCallback(() => {
-    const nextState = createResetQueryState();
+    const nextState = {
+      ...createResetQueryState(),
+      messageTimeBasis: dutySettings.messageSortBy,
+    };
     savedFilters.applySavedFilter(null);
     data.invalidateFilterSectionLoads();
     setQueryState(nextState);
     setLastResetState(nextState);
     setError(null);
     pushQueryStateToUrl(nextState, newestFirst);
-  }, [data, savedFilters, newestFirst]);
+  }, [data, dutySettings.messageSortBy, savedFilters, newestFirst]);
 
   const setIncludeOnlyNewFreqs = useCallback(
     (value: boolean) => {
@@ -962,6 +984,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     correlatedFreqsLoading: data.correlatedFreqsLoading,
     counts: data.counts,
     countsLoading: data.countsLoading,
+    directMessageError,
     editorMessage: editor.editorMessage,
     editorEditAsReport: editor.editorEditAsReport,
     editTargetLoadState: editor.editTargetLoadState,

@@ -56,6 +56,35 @@ export const IMAGE_EDITOR_DRAWER_PNG = {
   buffer: createEditorFixturePng(),
 };
 
+export function createImageEditorNoisePng() {
+  const width = 1024;
+  const height = 1024;
+  const pixels = Buffer.alloc((width * 3 + 1) * height);
+  let random = 20260911;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 1; x <= width * 3; x += 1) {
+      random ^= random << 13;
+      random ^= random >>> 17;
+      random ^= random << 5;
+      pixels[y * (width * 3 + 1) + x] = random & 255;
+    }
+  }
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header.set([8, 2, 0, 0, 0], 8);
+  return {
+    name: 'editor-large-idat.png',
+    mimeType: 'image/png',
+    buffer: Buffer.concat([
+      Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+      pngChunk('IHDR', header),
+      pngChunk('IDAT', deflateSync(pixels)),
+      pngChunk('IEND', Buffer.alloc(0)),
+    ]),
+  };
+}
+
 export function parseTusMetadata(value: string | undefined): Record<string, string> {
   if (!value) return {};
   return Object.fromEntries(
@@ -213,7 +242,10 @@ export async function openEditReportDrawer(page: Page): Promise<void> {
       groupMasterKey: report.groupMasterKey,
     },
   ];
-  await installMessageCardMediaPreviewAssetRoutes(page);
+  await installMessageCardMediaPreviewAssetRoutes(page, undefined, {
+    body: IMAGE_EDITOR_DRAWER_PNG.buffer,
+    contentType: IMAGE_EDITOR_DRAWER_PNG.mimeType,
+  });
   const dutyMocks = await installRerDutyShortStateMocks(page, {
     inboxResponse,
     signalGroups: ['e2e-group'],
@@ -248,7 +280,10 @@ async function openDrawerFromMediaMessage(
     },
   ];
   (message as any).images = [];
-  await installMessageCardMediaPreviewAssetRoutes(page);
+  await installMessageCardMediaPreviewAssetRoutes(page, undefined, {
+    body: IMAGE_EDITOR_DRAWER_PNG.buffer,
+    contentType: IMAGE_EDITOR_DRAWER_PNG.mimeType,
+  });
   const dutyMocks = await installRerDutyShortStateMocks(page, { inboxResponse });
   if (actionName === 'Створити розвіддонесення') {
     await page.route('**/api/1.1/messages/copy', (route) =>

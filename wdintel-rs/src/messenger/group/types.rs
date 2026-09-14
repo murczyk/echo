@@ -15,6 +15,7 @@ pub struct OrphanSignalGroupEntry {
     pub ignore_operativny: bool,
     pub interseption_kind: InterseptionKind,
     pub disable_network_assignment: bool,
+    pub is_aviation_group: bool,
     pub is_archived: bool,
     /// Ідентифікатор джерела даних, з якого походить група (може бути None)
     pub datasource_id: Option<i64>,
@@ -32,6 +33,7 @@ pub struct SignalGroupEntry {
     pub ignore_operativny: bool,
     pub interseption_kind: InterseptionKind,
     pub disable_network_assignment: bool,
+    pub is_aviation_group: bool,
     pub group_stats: SignalGroupStats,
     pub admin_data: Option<GroupAdminData>,
     pub areas_of_responsibility: Option<Vec<AreaOfResponsibility>>,
@@ -43,7 +45,7 @@ impl Serialize for OrphanSignalGroupEntry {
         S: serde::Serializer,
     {
         let mut state =
-            serializer.serialize_struct("OrphanSignalGroupEntry", 13)?;
+            serializer.serialize_struct("OrphanSignalGroupEntry", 14)?;
         state.serialize_field("master_key", &self.master_key)?;
         state.serialize_field("name", &self.name)?;
         state.serialize_field("ignore_operativny", &self.ignore_operativny)?;
@@ -56,6 +58,7 @@ impl Serialize for OrphanSignalGroupEntry {
             "disable_network_assignment",
             &self.disable_network_assignment,
         )?;
+        state.serialize_field("is_aviation_group", &self.is_aviation_group)?;
         state.serialize_field(
             "fills_etalonka",
             &(!self.disable_network_assignment),
@@ -78,7 +81,7 @@ impl Serialize for SignalGroupEntry {
     where
         S: serde::Serializer,
     {
-        let mut state = serializer.serialize_struct("SignalGroupEntry", 10)?;
+        let mut state = serializer.serialize_struct("SignalGroupEntry", 11)?;
         state.serialize_field("master_key", &self.master_key)?;
         state.serialize_field("name", &self.name)?;
         state.serialize_field("ignore_operativny", &self.ignore_operativny)?;
@@ -91,6 +94,7 @@ impl Serialize for SignalGroupEntry {
             "disable_network_assignment",
             &self.disable_network_assignment,
         )?;
+        state.serialize_field("is_aviation_group", &self.is_aviation_group)?;
         state.serialize_field(
             "fills_etalonka",
             &(!self.disable_network_assignment),
@@ -202,6 +206,7 @@ mod tests {
             ignore_operativny: false,
             interseption_kind: InterseptionKind::InterseptionRer,
             disable_network_assignment: true,
+            is_aviation_group: false,
             group_stats: SignalGroupStats::default(),
             admin_data: None,
             areas_of_responsibility: None,
@@ -223,6 +228,7 @@ mod tests {
             ignore_operativny: false,
             interseption_kind: InterseptionKind::InterseptionOther,
             disable_network_assignment: false,
+            is_aviation_group: false,
             is_archived: false,
             datasource_id: Some(1),
             created_at: 0,

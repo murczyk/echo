@@ -354,6 +354,8 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
           readIds: new Set<number>(),
           unreadCount: 9,
           windowedUnreadItems: new Map([[5, 50]]),
+          unresolvedUnreadIds: new Set<number>([99]),
+          unresolvedUnreadCount: 3,
         })),
       );
     });
@@ -365,6 +367,8 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     const feed = apiRef.current!.messageFeeds[0];
     expect(feed.unreadCount).toBe(0);
     expect(feed.windowedUnreadItems.size).toBe(0);
+    expect(feed.unresolvedUnreadIds).toEqual(new Set<number>());
+    expect(feed.unresolvedUnreadCount).toBe(0);
     expect(feed.readIds.has(1)).toBe(true);
     expect(feedIndicatorUnreadCount(feed)).toBe(0);
   });

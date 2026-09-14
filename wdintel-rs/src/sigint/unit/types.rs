@@ -42,6 +42,7 @@ pub struct Unit {
     pub army_region: String,
     pub comment: String,
     pub orbit_note: Option<String>,
+    pub present_in_orbit: Option<bool>,
     pub name: String,
     pub active: bool,
     pub is_deduplicate_candidate: Option<bool>,
@@ -300,6 +301,8 @@ pub struct CreateUnitReq {
     pub comment: String,
     pub orbit_note: Option<String>,
     #[serde(default)]
+    pub present_in_orbit: Option<bool>,
+    #[serde(default)]
     pub duplicate_unit_ids: Vec<i64>,
 }
 
@@ -335,6 +338,8 @@ pub struct UpdateUnitReq {
     pub comment: String,
     #[serde(default, deserialize_with = "deserialize_optional_update")]
     pub orbit_note: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_update")]
+    pub present_in_orbit: Option<Option<bool>>,
 }
 
 impl From<Unit> for UpdateUnitReq {
@@ -359,6 +364,7 @@ impl From<Unit> for UpdateUnitReq {
             active: unit.active,
             comment: unit.comment,
             orbit_note: Some(unit.orbit_note),
+            present_in_orbit: Some(unit.present_in_orbit),
         }
     }
 }

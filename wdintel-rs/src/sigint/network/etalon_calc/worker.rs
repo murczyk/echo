@@ -288,6 +288,7 @@ async fn run_inbox_network_worker_once(
     let mut work_started = Instant::now();
     let mut fuel = 1_000_000;
     let mut processed_items = HashSet::new();
+    let mut processed_frequencies = HashSet::new();
     let mut started_tasks = Vec::new();
     let mut stats_invalidation = NetworkStatsInvalidation::default();
     let total_counter = task_list.len();
@@ -297,6 +298,7 @@ async fn run_inbox_network_worker_once(
             finish_network_invalidation_tasks(
                 started_tasks,
                 stats_invalidation,
+                &processed_frequencies,
                 db,
                 stats_redis,
             )
@@ -348,6 +350,7 @@ async fn run_inbox_network_worker_once(
             next_tasks,
             &signal_group_aors,
             &mut processed_items,
+            &mut processed_frequencies,
             db,
         )
         .await
@@ -360,6 +363,7 @@ async fn run_inbox_network_worker_once(
     finish_network_invalidation_tasks(
         started_tasks,
         stats_invalidation,
+        &processed_frequencies,
         db,
         stats_redis,
     )
@@ -900,6 +904,7 @@ async fn run_network_invalidation_tasks(
     tasks: Vec<network_invalidation_task::Model>,
     signal_group_aors: &HashMap<i64, Vec<String>>,
     processed_items: &mut HashSet<i64>,
+    processed_frequencies: &mut HashSet<String>,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<network_invalidation_task::Model>> {
     let mut started_tasks = vec![];
@@ -913,9 +918,14 @@ async fn run_network_invalidation_tasks(
         task_filters.extend(build_task_filters(&task, signal_group_aors));
     }
 
-    process_task_filters(task_filters, processed_items, dbx)
-        .await
-        .c(h!())?;
+    process_task_filters(
+        task_filters,
+        processed_items,
+        processed_frequencies,
+        dbx,
+    )
+    .await
+    .c(h!())?;
 
     Ok(started_tasks)
 }
@@ -989,6 +999,7 @@ impl NetworkStatsScope {
 async fn finish_network_invalidation_tasks(
     started_tasks: Vec<network_invalidation_task::Model>,
     stats_invalidation: NetworkStatsInvalidation,
+    processed_frequencies: &HashSet<String>,
     dbx: &DatabaseConnection,
     stats_redis: &crate::stats::redis::GroupStatsRedis,
 ) -> anyhow::Result<()> {
@@ -1006,6 +1017,14 @@ async fn finish_network_invalidation_tasks(
         .await
         .c(h!())?;
     }
+
+    crate::sigint::network::recalculation::enqueue_for_network_invalidations(
+        dbx,
+        &started_tasks,
+        processed_frequencies,
+    )
+    .await
+    .c(h!())?;
 
     let completed_at = Some(Utc::now().naive_utc());
     mark_tasks_completed(started_tasks, completed_at, dbx)
@@ -1112,6 +1131,7 @@ fn build_task_filters(
 async fn process_task_filters(
     task_filters: Vec<TaskFilter>,
     processed_items: &mut HashSet<i64>,
+    processed_frequencies: &mut HashSet<String>,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<()> {
     let mut chunk_filters = Vec::new();
@@ -1127,6 +1147,7 @@ async fn process_task_filters(
             process_task_filter_chunk(
                 std::mem::take(&mut chunk_filters),
                 processed_items,
+                processed_frequencies,
                 dbx,
             )
             .await
@@ -1137,9 +1158,14 @@ async fn process_task_filters(
         chunk_filters.push(task_filter.condition);
     }
     if !chunk_filters.is_empty() {
-        process_task_filter_chunk(chunk_filters, processed_items, dbx)
-            .await
-            .c(h!())?;
+        process_task_filter_chunk(
+            chunk_filters,
+            processed_items,
+            processed_frequencies,
+            dbx,
+        )
+        .await
+        .c(h!())?;
     }
     Ok(())
 }
@@ -1147,13 +1173,19 @@ async fn process_task_filters(
 async fn process_task_filter_chunk(
     filters: Vec<Condition>,
     processed_items: &mut HashSet<i64>,
+    processed_frequencies: &mut HashSet<String>,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<()> {
     let mut pending_chunks = vec![filters];
     while let Some(mut filters) = pending_chunks.pop() {
         let main_filter = combine_task_filters(&filters);
-        match process_invalidation_filter(main_filter, processed_items, dbx)
-            .await
+        match process_invalidation_filter(
+            main_filter,
+            processed_items,
+            processed_frequencies,
+            dbx,
+        )
+        .await
         {
             Ok(()) => {}
             Err(error)
@@ -1222,6 +1254,7 @@ fn sqlx_error_is_statement_timeout(error: &sqlx::Error) -> bool {
 async fn process_invalidation_filter(
     main_filter: Condition,
     processed_items: &mut HashSet<i64>,
+    processed_frequencies: &mut HashSet<String>,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<()> {
     let mut last_id = None;
@@ -1256,6 +1289,7 @@ async fn process_invalidation_filter(
             break;
         }
         let mut new_processed_item_ids = Vec::new();
+        let mut new_processed_frequencies = HashSet::new();
         last_id = sigint_inbox_items.iter().map(|i| i.id).min();
         let mut items_to_process = vec![];
         for item in sigint_inbox_items {
@@ -1263,6 +1297,9 @@ async fn process_invalidation_filter(
                 continue;
             }
             new_processed_item_ids.push(item.id);
+            if let Some(frequency) = &item.freq {
+                new_processed_frequencies.insert(frequency.clone());
+            }
             items_to_process.push(item);
         }
         if items_to_process.is_empty() {
@@ -1296,6 +1333,7 @@ async fn process_invalidation_filter(
         for id in new_processed_item_ids {
             processed_items.insert(id);
         }
+        processed_frequencies.extend(new_processed_frequencies);
     }
     Ok(())
 }

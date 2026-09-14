@@ -240,6 +240,7 @@ async fn test_bl_szd_group_update_01() {
         is_secret: false,
         interseption_kind: None,
         disable_network_assignment: None,
+        is_aviation_group: Some(true),
         user_logins: vec![],
         organism_ids: vec![],
         admin_logins: vec![],
@@ -251,13 +252,27 @@ async fn test_bl_szd_group_update_01() {
     let res = bl_szd_group_update(&req, &szd, &txn).await.unwrap();
 
     assert!(res.aor.is_some());
+    assert!(res.is_aviation_group);
     let signal_group_aors = signal_group_aor::Entity::find()
-        .filter(signal_group_aor::Column::MasterKey.eq(group_master_key))
+        .filter(
+            signal_group_aor::Column::MasterKey.eq(group_master_key.clone()),
+        )
         .all(&txn)
         .await
         .unwrap();
     assert_eq!(signal_group_aors.len(), 1);
     assert_eq!(signal_group_aors[0].aor_id, aor.id);
+    assert_eq!(
+        network_invalidation_task::Entity::find()
+            .filter(
+                network_invalidation_task::Column::GroupMasterKey
+                    .eq(group_master_key),
+            )
+            .count(&txn)
+            .await
+            .unwrap(),
+        1
+    );
 
     txn.rollback().await.unwrap();
 }
@@ -334,6 +349,7 @@ async fn test_secret_group_update_preserves_ai_managed_logins() {
         is_secret: true,
         interseption_kind: None,
         disable_network_assignment: None,
+        is_aviation_group: None,
         user_logins: vec![human.id.to_string()],
         organism_ids: vec![],
         admin_logins: vec![],

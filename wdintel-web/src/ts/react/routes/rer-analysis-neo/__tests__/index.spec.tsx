@@ -2,7 +2,7 @@
  * @vitest-environment happy-dom
  */
 import { createRoot } from 'react-dom/client';
-import { act, useEffect, useState } from 'react';
+import { act } from 'react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -145,7 +145,26 @@ vi.mock('@mui/material/styles', () => ({
   useTheme: () => ({ breakpoints: { down: (key: string) => key } }),
 }));
 
-vi.mock('.././use-rer-analysis-neo-page', () => ({
+vi.mock('@mui/material/Alert', () => ({
+  default: ({
+    children,
+    onClose,
+    role = 'alert',
+  }: {
+    children: ReactNode;
+    onClose?: (event: React.SyntheticEvent) => void;
+    role?: string;
+  }) => (
+    <div role={role}>
+      {children}
+      {onClose ? (
+        <button type="button" aria-label="Закрити" onClick={(event) => onClose(event)} />
+      ) : null}
+    </div>
+  ),
+}));
+
+vi.mock('../use-rer-analysis-neo-page', () => ({
   useRerAnalysisNeoPage: useRerAnalysisNeoPageMock,
 }));
 
@@ -171,24 +190,6 @@ vi.mock('../../../components/PageHeader', () => ({
       {actions}
     </header>
   ),
-}));
-
-vi.mock('../../../components/PowerAlert', () => ({
-  PowerAlert: ({
-    children,
-    autoHideDuration,
-    ...props
-  }: { children: ReactNode; autoHideDuration?: number } & Record<string, unknown>) => {
-    const [visible, setVisible] = useState(true);
-
-    useEffect(() => {
-      if (autoHideDuration == null) return;
-      const timeoutId = window.setTimeout(() => setVisible(false), autoHideDuration);
-      return () => window.clearTimeout(timeoutId);
-    }, [autoHideDuration]);
-
-    return visible ? <div {...props}>{children}</div> : null;
-  },
 }));
 
 vi.mock('../../../components/PowerChip', () => ({
@@ -296,6 +297,7 @@ function buildPage() {
     currentUser: null,
     counts: null,
     countsLoading: true,
+    directMessageError: null,
     error: null,
     editorMessage: null,
     editorEditAsReport: false,
@@ -466,6 +468,52 @@ describe('RerAnalysisNeoPage', () => {
     for (const container of rendered.splice(0)) {
       document.body.removeChild(container);
     }
+  });
+
+  it('shows an unavailable direct-link error in the snackbar once', async () => {
+    const page = buildPage();
+    page.directMessageError = 'Повідомлення за посиланням не знайдено або воно недоступне.';
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+
+    expect(notifyMock).toHaveBeenCalledWith({
+      severity: 'error',
+      message: 'Повідомлення за посиланням не знайдено або воно недоступне.',
+    });
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+
+    expect(notifyMock).toHaveBeenCalledTimes(1);
+    root.unmount();
+  });
+
+  it('opens the report editor drawer from loading state and routes dismissal to closeEditor', async () => {
+    const page = buildPage();
+    page.editorMessage = null;
+    page.reportSource = null;
+    page.editorEditAsReport = true;
+    page.editTargetLoadState = { status: 'loading', reportId: 91 };
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+    const drawer = manageMessageDrawerPropsHistory.at(-1);
+    expect(drawer?.open).toBe(true);
+    expect(drawer?.editAsReport).toBe(true);
+    expect(drawer?.editTarget).toBeNull();
+    expect(drawer?.editTargetLoadState).toEqual({ status: 'loading', reportId: 91 });
+    expect(drawer?.onRetryEditTargetLoad).toBe(page.retryEditTargetLoad);
+    act(() => drawer?.onClose());
+    expect(page.closeEditor).toHaveBeenCalledOnce();
+    root.unmount();
   });
 
   it('collapses the narrow sidebar and restores the FAB around a sidebar map', async () => {

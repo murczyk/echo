@@ -294,7 +294,23 @@ where
         &existing_network_links,
         &desired_network_ids,
     );
+    let old_freq_ids = if stale_network_link_ids.is_empty() {
+        Vec::new()
+    } else {
+        crate::sigint::network::recalculation::load_freq_ids_for_message_links(
+            db,
+            &[sigint_inbox_item_id],
+        )
+        .await
+        .c(h!())?
+    };
     if !stale_network_link_ids.is_empty() {
+        crate::rer_importer::inbox::invalidate_message_network_frequency_last_seen(
+            db,
+            sigint_inbox_item_id,
+        )
+        .await
+        .c(h!())?;
         sigint_inbox_item_network::Entity::delete_many()
             .filter(
                 sigint_inbox_item_network::Column::Id
@@ -308,6 +324,7 @@ where
         .into_iter()
         .map(|link| link.sigint_network_id)
         .collect::<HashSet<_>>();
+    let mut added_network_ids = Vec::new();
     for network_id in desired_network_ids {
         if !existing_network_ids.contains(&network_id) {
             sigint_inbox_item_network::Entity::insert(
@@ -326,8 +343,25 @@ where
             .exec(db)
             .await
             .c(h!())?;
+            added_network_ids.push(network_id);
         }
     }
+    let new_freq_ids = if added_network_ids.is_empty() {
+        Vec::new()
+    } else {
+        crate::sigint::network::recalculation::load_freq_ids_for_message_links(
+            db,
+            &[sigint_inbox_item_id],
+        )
+        .await
+        .c(h!())?
+    };
+    crate::sigint::network::recalculation::enqueue_last_seen_for_freq_ids(
+        db,
+        old_freq_ids.into_iter().chain(new_freq_ids),
+    )
+    .await
+    .c(h!())?;
     crate::inbox::unit_resolution::sync_network_unit_links(
         db,
         &[sigint_inbox_item_id],
@@ -355,6 +389,19 @@ async fn delete_network_links_for_item<C>(
 where
     C: ConnectionTrait,
 {
+    let old_freq_ids =
+        crate::sigint::network::recalculation::load_freq_ids_for_message_links(
+            db,
+            &[sigint_inbox_item_id],
+        )
+        .await
+        .c(h!())?;
+    crate::rer_importer::inbox::invalidate_message_network_frequency_last_seen(
+        db,
+        sigint_inbox_item_id,
+    )
+    .await
+    .c(h!())?;
     sigint_inbox_item_network::Entity::delete_many()
         .filter(
             sigint_inbox_item_network::Column::SigintInboxItemId
@@ -363,6 +410,12 @@ where
         .exec(db)
         .await
         .c(h!())?;
+    crate::sigint::network::recalculation::enqueue_last_seen_for_freq_ids(
+        db,
+        old_freq_ids,
+    )
+    .await
+    .c(h!())?;
     crate::inbox::unit_resolution::sync_network_unit_links(
         db,
         &[sigint_inbox_item_id],
@@ -690,6 +743,64 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::network_recalculation_task;
+    use crate::entities::sea_orm_active_enums::NetworkRecalculationTaskKind;
+    use crate::functest::tests::{
+        cleanup_locked, mk_sigint_inbox_item, mk_sigint_inbox_item_network,
+        mk_sigint_network, mk_sigint_network_freq,
+    };
+    use serial_test::serial;
+
+    #[tokio::test]
+    #[serial]
+    async fn new_network_link_queues_frequency_activity_reconciliation() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let inbox_item = mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                freq: Set(Some("146.5000".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let network_freq = mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set("146.5000".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        sync_network_links(
+            &env.dbx,
+            inbox_item.id,
+            inbox_item.id_uuid,
+            vec![network],
+        )
+        .await
+        .unwrap();
+
+        assert!(network_recalculation_task::Entity::find()
+            .filter(
+                network_recalculation_task::Column::NetworkFreqId
+                    .eq(network_freq.id)
+            )
+            .filter(
+                network_recalculation_task::Column::TaskKind
+                    .eq(NetworkRecalculationTaskKind::NetworkFreqLastSeen)
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_some());
+    }
 
     #[test]
     fn unit_tag_match_requires_word_boundaries() {
@@ -841,6 +952,76 @@ mod tests {
         );
     }
 
+    // Regression for ECHO-3207: removing a derived link invalidates its activity cache.
+    #[tokio::test]
+    #[serial]
+    async fn stale_network_link_removal_invalidates_frequency_last_seen() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let timestamp = Utc::now().naive_utc();
+        let freq = "146.4500";
+        let inbox_item = mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                freq: Set(Some(freq.to_string())),
+                datetime: Set(Some(timestamp)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let network_freq = mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set(freq.to_string()),
+                active_from: Set(timestamp - Duration::days(1)),
+                last_seen_dt: Set(Some(timestamp)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item_network(
+            &env.dbx,
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(inbox_item.id),
+                sigint_network_id: Set(network.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        sync_network_links(
+            &env.dbx,
+            inbox_item.id,
+            inbox_item.id_uuid,
+            Vec::new(),
+        )
+        .await
+        .unwrap();
+
+        let network_freq =
+            sigint_network_freq::Entity::find_by_id(network_freq.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        let link_count = sigint_inbox_item_network::Entity::find()
+            .filter(
+                sigint_inbox_item_network::Column::SigintInboxItemId
+                    .eq(inbox_item.id),
+            )
+            .count(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(network_freq.last_seen_dt, None);
+        assert_eq!(link_count, 0);
+    }
+
     fn test_network(id: i64, unit_mask: Vec<&str>) -> sigint_network::Model {
         let dt = chrono::NaiveDate::from_ymd_opt(2026, 1, 1)
             .unwrap()
@@ -862,6 +1043,7 @@ mod tests {
             merged_to: None,
             active_from: None,
             active_to: None,
+            last_active_at: None,
             sigint_origin_id: None,
             original_id: None,
             do_not_archive: false,

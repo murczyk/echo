@@ -1,7 +1,10 @@
 use crate::users::login_id_from_identity;
 pub mod types;
 
-pub use types::{DutyTagsLayout, MessageTextPreviewLines, UserDutySettingsDto};
+pub use types::{
+    DutyTagsLayout, MessageTextPreviewLines, MessageTimeBasis,
+    UserDutySettingsDto,
+};
 
 use crate::entities::sea_orm_active_enums::{
     UserSettingsMessageTextPreviewLines as DbMessageTextPreviewLines,
@@ -45,6 +48,10 @@ fn model_to_dto(m: &user_settings::Model) -> UserDutySettingsDto {
         show_classic_analysis: m.show_classic_analysis,
         duty_collapse_media_previews: m.duty_collapse_media_previews,
         media_summary_enabled: m.media_summary_enabled,
+        message_sort_by: match m.message_sort_by.as_deref() {
+            Some("creation") => MessageTimeBasis::MessageCreation,
+            _ => MessageTimeBasis::MessageInterception,
+        },
     }
 }
 
@@ -71,11 +78,22 @@ pub async fn user_settings_get(
 pub async fn user_settings_put(
     env: Data<Env>,
     user: Identity,
-    req: Json<UserDutySettingsDto>,
+    req: Json<serde_json::Value>,
 ) -> Result<Json<UserDutySettingsDto>, AppError> {
     let login_id = login_id_from_identity(&user)?;
     load_login(&env.dbx, &login_id).await.c(h!())?;
-    let dto = req.into_inner();
+    let body = req.into_inner();
+    let has_explicit_message_sort_by = body.get("messageSortBy").is_some();
+    let mut dto: UserDutySettingsDto = serde_json::from_value(body).c(h!())?;
+    if !has_explicit_message_sort_by {
+        dto.message_sort_by = user_settings::Entity::find()
+            .filter(user_settings::Column::LoginId.eq(login_id))
+            .one(&env.dbx)
+            .await
+            .c(h!())?
+            .map(|settings| model_to_dto(&settings).message_sort_by)
+            .unwrap_or_default();
+    }
     let now = Utc::now().naive_utc();
     user_settings::Entity::insert(user_settings::ActiveModel {
         id: NotSet,
@@ -107,6 +125,10 @@ pub async fn user_settings_put(
         show_classic_analysis: Set(dto.show_classic_analysis),
         duty_collapse_media_previews: Set(dto.duty_collapse_media_previews),
         media_summary_enabled: Set(dto.media_summary_enabled),
+        message_sort_by: Set(Some(match dto.message_sort_by {
+            MessageTimeBasis::MessageInterception => "interception".to_owned(),
+            MessageTimeBasis::MessageCreation => "creation".to_owned(),
+        })),
         updated_at: Set(now),
     })
     .on_conflict(
@@ -123,6 +145,7 @@ pub async fn user_settings_put(
                 user_settings::Column::ShowClassicAnalysis,
                 user_settings::Column::DutyCollapseMediaPreviews,
                 user_settings::Column::MediaSummaryEnabled,
+                user_settings::Column::MessageSortBy,
                 user_settings::Column::UpdatedAt,
             ])
             .to_owned(),

@@ -13,7 +13,6 @@ describe('imageEditorCursor', () => {
     ['arrow', 'crosshair'],
     ['conceal', 'crosshair'],
     ['brush', 'crosshair'],
-    ['highlight', 'crosshair'],
     ['magnifier', 'zoom-in'],
     ['pan', 'grab'],
     ['crop', 'crosshair'],

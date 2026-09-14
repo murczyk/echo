@@ -34,6 +34,18 @@ fn order_by_nulls_last(
     }
 }
 
+fn order_by_expr_nulls_last(
+    query: Select<sigint_network::Entity>,
+    sort_expr: SimpleExpr,
+    descending: bool,
+) -> Select<sigint_network::Entity> {
+    query.order_by_with_nulls(
+        sort_expr,
+        if descending { Order::Desc } else { Order::Asc },
+        NullOrdering::Last,
+    )
+}
+
 pub(crate) fn apply_network_sort(
     query: Select<sigint_network::Entity>,
     sort_by: &ListNetworksSortBy,
@@ -45,14 +57,20 @@ pub(crate) fn apply_network_sort(
         ListNetworksSortBy::NameDesc => query
             .order_by_desc(sigint_network::Column::Name)
             .order_by_asc(sigint_network::Column::Id),
-        ListNetworksSortBy::LastActivityAsc => query
-            .order_by_asc(sigint_network::Column::UpdatedAt)
-            .order_by_asc(sigint_network::Column::Name)
-            .order_by_asc(sigint_network::Column::Id),
-        ListNetworksSortBy::LastActivityDesc => query
-            .order_by_desc(sigint_network::Column::UpdatedAt)
-            .order_by_asc(sigint_network::Column::Name)
-            .order_by_asc(sigint_network::Column::Id),
+        ListNetworksSortBy::LastActivityAsc => order_by_expr_nulls_last(
+            query,
+            sigint_network::Column::LastActiveAt.into_simple_expr(),
+            false,
+        )
+        .order_by_asc(sigint_network::Column::Name)
+        .order_by_asc(sigint_network::Column::Id),
+        ListNetworksSortBy::LastActivityDesc => order_by_expr_nulls_last(
+            query,
+            sigint_network::Column::LastActiveAt.into_simple_expr(),
+            true,
+        )
+        .order_by_asc(sigint_network::Column::Name)
+        .order_by_asc(sigint_network::Column::Id),
         ListNetworksSortBy::AorAsc => {
             order_by_nulls_last(query, network_first_aor_sort_sql(), false)
                 .order_by_asc(sigint_network::Column::Name)

@@ -180,6 +180,7 @@ pub struct GroupUpdateReq {
     pub area_of_responsibility_ids: Option<Vec<i64>>,
     pub interseption_kind: Option<InterseptionKind>,
     pub disable_network_assignment: Option<bool>,
+    pub is_aviation_group: Option<bool>,
 }
 
 pub struct UnstageResult {

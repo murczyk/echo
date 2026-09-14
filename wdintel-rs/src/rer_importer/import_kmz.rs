@@ -12,7 +12,6 @@ use chrono::prelude::*;
 use lazy_static::lazy_static;
 use regex::Regex;
 use sea_orm::*;
-use std::path::PathBuf;
 use tempfile::TempDir;
 
 #[post("/api/rer/delta-kmz-import")]
@@ -23,35 +22,18 @@ pub async fn rer_delta_kmz_import(
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
+    let file_name = field.name().unwrap_or("upload.kmz").to_string();
     let tmp_dir = TempDir::new()?;
     println!("> tmp_dir {}", tmp_dir.path().display());
-    let kmz_file = tmp_dir.path().join(field.name().c(h!())?);
+    let kmz_file =
+        multipart::write_upload(tmp_dir.path(), "kmz", &val).c(h!())?;
     let original_path = kmz_file.clone();
     println!("> kmz_file: {}", original_path.display());
-    std::fs::write(&kmz_file, val)?;
     println!("> running unzip {}", original_path.display());
     crate::utils::zip::unzip(&kmz_file)?;
     println!("> unzip done");
-    let mut doc_kml = tmp_dir.path().join("doc.kml");
-    if !doc_kml.exists() {
-        doc_kml = tmp_dir.path().join("doc.kml");
-    }
-    if !doc_kml.exists() {
-        // read the first kml file in the directory
-        let entries: Vec<std::fs::DirEntry> =
-            std::fs::read_dir(tmp_dir.path())?
-                .filter_map(|x| x.ok())
-                .collect();
-        for entry in entries {
-            if entry.file_type()?.is_file() {
-                let path = entry.path();
-                if path.extension() == Some("kml".as_ref()) {
-                    doc_kml = path;
-                    break;
-                }
-            }
-        }
-    }
+    let doc_kml =
+        crate::utils::zip::find_kml_document(tmp_dir.path()).c(h!())?;
     println!("> doc_kml: {}", doc_kml.display());
     crate::utils::backup_tmp_dir(tmp_dir.path())?;
 
@@ -74,7 +56,6 @@ pub async fn rer_delta_kmz_import(
     let redis2 = env.redis.clone();
     let settlements2 = env.settlements.clone();
     let bgtask_id2 = Box::new(bgtask_id);
-    let file_name = kmz_file.file_name().unwrap().to_string_lossy().to_string();
     tokio::spawn(async {
         let _tmp_dir = tmp_dir;
         let dbx3 = dbx2;
@@ -94,7 +75,6 @@ pub async fn rer_delta_kmz_import(
             file_name,
             doc_kml,
             Some(*bgtask_id3),
-            original_path,
         )
         .await;
 
@@ -123,7 +103,6 @@ pub async fn rer_delta_kmz_import_go(
     file_name: String,
     doc_kml: std::path::PathBuf,
     bgtask_id: Option<i64>,
-    original_path: PathBuf,
 ) -> Result<(), AppError> {
     bgtask_log(
         bgtask_id,
@@ -133,7 +112,7 @@ pub async fn rer_delta_kmz_import_go(
     .await
     .c(h!())?;
 
-    let filename = original_path
+    let filename = std::path::Path::new(&file_name)
         .file_name()
         .and_then(|x| x.to_str())
         .unwrap_or("");

@@ -1,12 +1,18 @@
 use super::{ROLE_CYBER, ROLE_DEVICE_SOURCE};
 use crate::config::ROLE_ADMIN;
+use crate::devices::devices::query::{
+    authorize_file_registry_access, FileRegistryDeviceAccess,
+};
 use crate::entities::login;
 use crate::error::AppError;
 use crate::h;
 use crate::system_settings::ensure_devices_section_enabled;
 use crate::types::{ShortContext, Uuid};
 use actix_identity::Identity;
-use sea_orm::DatabaseConnection;
+use sea_orm::{
+    AccessMode, ConnectionTrait, DatabaseConnection, IsolationLevel,
+    TransactionTrait,
+};
 
 pub(in crate::devices) const DEVICE_OPERATION_FORBIDDEN: &str =
     "device operation is forbidden";
@@ -95,10 +101,13 @@ pub(in crate::devices) async fn resolve_current_login(
     resolve_login_by_id(dbx, &login_id).await
 }
 
-pub(in crate::devices) async fn resolve_login_by_id(
-    dbx: &DatabaseConnection,
+pub(in crate::devices) async fn resolve_login_by_id<C>(
+    dbx: &C,
     login_id: &Uuid,
-) -> Result<login::Model, AppError> {
+) -> Result<login::Model, AppError>
+where
+    C: ConnectionTrait,
+{
     let login = crate::users::load_active_login(dbx, login_id)
         .await
         .c(h!())?;
@@ -107,6 +116,45 @@ pub(in crate::devices) async fn resolve_login_by_id(
 
     login.organism_id.ok_or(AppError::Unauthenticated).c(h!())?;
     Ok(login)
+}
+
+pub(in crate::devices) async fn authorize_file_sync_snapshot(
+    dbx: &DatabaseConnection,
+    login_id: &Uuid,
+    device_id: Uuid,
+) -> Result<(), AppError> {
+    let transaction = dbx
+        .begin_with_config(
+            Some(IsolationLevel::RepeatableRead),
+            Some(AccessMode::ReadOnly),
+        )
+        .await
+        .c(h!())?;
+    let authorization: Result<(), AppError> = async {
+        let login =
+            resolve_login_by_id(&transaction, login_id).await.c(h!())?;
+        authorize_file_registry_access(
+            &transaction,
+            &login,
+            device_id,
+            FileRegistryDeviceAccess::FileSync,
+        )
+        .await
+        .c(h!())?;
+        Ok(())
+    }
+    .await;
+
+    match authorization {
+        Ok(()) => {
+            transaction.commit().await.c(h!())?;
+            Ok(())
+        }
+        Err(error) => {
+            transaction.rollback().await.c(h!())?;
+            Err(error)
+        }
+    }
 }
 
 #[cfg(test)]

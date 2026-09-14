@@ -338,9 +338,15 @@ async fn load_geojson_report_items(
         .filter(
             datasource_group::Column::GroupMasterKey
                 .eq_any(sigint_groups.to_vec()),
-        )
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
+        );
+    let items = filter_analysis_message_time_basis(
+        items,
+        req.message_time_basis,
+        dt_since,
+        dt_till,
+        ReportPeriodEnd::NonInclusive,
+    );
+    let items = items
         .filter(sigint_inbox_item::Column::Lat.is_not_null())
         .filter(sigint_inbox_item::Column::Lng.is_not_null());
     let items =

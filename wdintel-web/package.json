@@ -11,7 +11,7 @@
     "prebuild": "npm run tokens:check",
     "format:all": "node scripts/format-files.mjs all",
     "format:staged": "node scripts/format-files.mjs staged",
-    "postinstall": "node scripts/strip-use-client.mjs",
+    "postinstall": "node scripts/strip-use-client.mjs && node scripts/enable-elm-land-vite-config.mjs",
     "prepare": "git -C .. config core.hooksPath .githooks || true",
     "strip-use-client": "node scripts/strip-use-client.mjs",
     "e2e": "npm run e2e:smoke",

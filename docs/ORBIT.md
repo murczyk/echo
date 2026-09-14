@@ -87,7 +87,7 @@ sudo wdintel-rs --mode=live tui-import-orbit-units
 The synchronization actions download and unpack the newest timestamped
 snapshot and fail if no snapshot exists. Database-mutating import sessions are
 serialized, so a second importer waits until the active import releases its
-PostgreSQL advisory lock. The first screen offers eleven workflows.
+PostgreSQL advisory lock. The first screen offers fourteen workflows.
 
 ### TUI workflow conventions
 
@@ -97,12 +97,11 @@ red; the operator must explicitly accept the proposed link, edit, or merge.
 Before persistence, accepted work is reloaded under the ORBIT advisory lock and
 is skipped when the compared data or match is stale.
 
-When such a workflow has an automatic mode that changes SIGINT units, it must
-offer separate scopes for all active units, all inactive units, or both. Manual
-mode reviews both active and inactive units and always shows the comparison
-diff. Automatic mode reloads, applies, and commits each item in its own
-transaction before continuing to the next item, so a later failure does not
-roll back earlier completed work.
+When such a workflow changes SIGINT units, its automatic and manual modes offer
+separate scopes for all active units, all inactive units, or both. Manual mode
+always shows the comparison diff. Automatic mode reloads, applies, and commits
+each item in its own transaction before continuing to the next item, so a later
+failure does not roll back earlier completed work.
 
 ### IMPORT NEW ORBIT DATA REVISION
 
@@ -180,6 +179,33 @@ units, inactive SIGINT units, or both. Units with zero or multiple active ORBIT
 links are skipped. Before update, the link, activity scope, current SIGINT
 values, and current ORBIT hierarchy are reloaded under the advisory lock; stale
 manual proposals are not applied.
+
+### Fix misplaced and unknown SIGINT echelon values
+
+This workflow builds separate normalized identity-value sets from every ORBIT
+echelon: other, team/crew, section, squad, platoon, company, battalion,
+regiment, brigade, division, corps, army, group-of-armies, and army-region. It
+first moves brigade values stored as SIGINT regiments and army values stored as
+corps. It then validates each SIGINT army, group-of-armies
+(`military_district`), and army-region field in a separate pass. A value found
+in exactly one other ORBIT echelon is moved there; a value absent from every
+collected ORBIT echelon is removed. Values that match their current echelon or
+are ambiguous between multiple echelons are left unchanged.
+
+Each move clears the source echelon and replaces the destination echelon with
+that source value. When the destination contains the reciprocal misplaced
+value, the two values are swapped atomically. Other occupied destinations are
+updated only when their existing values can be classified and safely
+relocated; unknown or ambiguous values are preserved by skipping the move. The
+SIGINT unit name is not changed by this workflow. Manual mode presents each
+incorrect source field in its own review dialog.
+
+Automatic and manual modes can target active SIGINT units, inactive SIGINT
+units, or both. Manual mode shows the current and proposed values for both
+affected fields. Before update, the ORBIT revision, activity scope, and current
+SIGINT values are reloaded under the advisory lock; stale manual proposals are
+not applied. Quitting manual review stops the remaining passes after saving
+already accepted changes.
 
 ### Merge duplicate SIGINT units linked to one ORBIT unit
 

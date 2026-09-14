@@ -144,6 +144,7 @@ export async function getPostsList(options?: RequestOptions): Promise<string[]> 
     filterTagsOption: null,
     withoutModelTags: null,
     reportTagsOnlyThisUnit: null,
+    messageTimeBasis: null,
   };
   const snakeBody = transformCamelToSnake<AnalysisStatsReq>(body);
   const raw = await postJson<PostStatsRsp>('/api/rer/analysis/stats/posts', snakeBody, options);
@@ -187,6 +188,7 @@ export async function getGroupInfosBatch(
     disableNetworkAssignment: (r.disable_network_assignment ??
       r.disableNetworkAssignment ??
       false) as boolean,
+    isAviationGroup: (r.is_aviation_group ?? r.isAviationGroup ?? false) as boolean,
     groupStats: (r.group_stats ?? r.groupStats) as SignalGroupStats,
     adminData: (r.admin_data ?? r.adminData ?? null) as GroupAdminData | null,
     areasOfResponsibility: (r.areas_of_responsibility ?? r.areasOfResponsibility ?? null) as

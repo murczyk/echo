@@ -1,19 +1,21 @@
 use crate::users::ensure_rer_role;
 use crate::users::login_id_from_identity;
 pub mod fallback;
+mod lifecycle;
 pub mod tus;
+
+#[cfg(test)]
+mod acceptance_tests;
 
 use crate::error::AppError;
 use crate::types::*;
 use actix_multipart::Multipart;
-use actix_web::http::header::{HeaderMap, HeaderName};
+use actix_web::http::header::HeaderMap;
 use actix_web::http::Method;
 use actix_web::{post, route, web, HttpRequest, HttpResponse};
 
 pub const TUS_PATH_BASE: &str = "/api/sigint/file-upload/tus";
-const HEADER_NAME_HTTP_METHOD_OVERRIDE: HeaderName =
-    HeaderName::from_static("x-http-method-override");
-
+pub const FALLBACK_PATH: &str = "/api/sigint/file-upload/fallback";
 #[route("/api/sigint/file-upload/tus", method = "POST", method = "OPTIONS")]
 pub async fn tus_base(
     user: actix_identity::Identity,
@@ -100,21 +102,47 @@ fn effective_tus_method(
     headers: &HeaderMap,
     has_request_file: bool,
 ) -> Method {
-    let is_patch_override = headers
-        .get(&HEADER_NAME_HTTP_METHOD_OVERRIDE)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value.eq_ignore_ascii_case("PATCH"));
-    if has_request_file && method == Method::POST && is_patch_override {
-        Method::PATCH
-    } else {
-        method.clone()
+    if !has_request_file {
+        return method.clone();
     }
+    crate::tus::effective_resource_method(method, headers, &[Method::PATCH])
+}
+
+pub async fn run_cleanup_nofail(
+    storage_dir: String,
+    cancellation: tokio_util::sync::CancellationToken,
+) {
+    let handler = tus::TusHandler::new(storage_dir, TUS_PATH_BASE);
+    loop {
+        if let Err(error) = handler.cleanup_expired().await {
+            log::error!("failed to clean legacy attachment uploads: {error:?}");
+        }
+        tokio::select! {
+            _ = cancellation.cancelled() => return,
+            _ = tokio::time::sleep(std::time::Duration::from_secs(crate::config::SIGINT_FILE_UPLOAD_CLEANUP_INTERVAL_SECS)) => {}
+        }
+    }
+}
+
+pub(crate) async fn remove_consumed_upload(
+    path: &std::path::Path,
+) -> anyhow::Result<bool> {
+    lifecycle::remove_consumed(path).await.c(h!())
+}
+
+pub(crate) async fn lock_uploaded_source(
+    path: &std::path::Path,
+) -> anyhow::Result<Option<lifecycle::UploadLock>> {
+    lifecycle::lock_source(path).await.c(h!())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use actix_web::http::header::HeaderValue;
+    use actix_web::http::header::{HeaderName, HeaderValue};
+
+    const HEADER_NAME_HTTP_METHOD_OVERRIDE: HeaderName =
+        HeaderName::from_static("x-http-method-override");
 
     #[test]
     fn post_with_patch_override_uses_patch_for_file_upload() {
@@ -149,6 +177,20 @@ mod tests {
         assert_eq!(
             effective_tus_method(&Method::POST, &headers, false),
             Method::POST
+        );
+    }
+
+    #[test]
+    fn delete_override_stays_post_for_sigint_upload() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            HEADER_NAME_HTTP_METHOD_OVERRIDE.clone(),
+            HeaderValue::from_static("DELETE"),
+        );
+
+        assert_eq!(
+            effective_tus_method(&Method::POST, &headers, true),
+            Method::POST,
         );
     }
 }

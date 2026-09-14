@@ -120,6 +120,7 @@ const sigintUnit: Unit = {
   armyRegion: 'ЗВА',
   comment: '',
   orbitNote: null,
+  presentInOrbit: null,
   name: '68 мсд 6 ЗВА ЛВО',
   active: false,
   isDeduplicateCandidate: null,

@@ -63,17 +63,12 @@ pub(super) async fn run(mode: Mode) -> anyhow::Result<()> {
     let Some(fix_mode) = tui::prompt_echelon_number_fix_mode().c(h!())? else {
         return Ok(());
     };
-    let activity_scope = if fix_mode == tui::LinkMode::Automatic {
-        let Some(activity_scope) = tui::prompt_unit_activity_scope(
-            "Choose automatic echelon-number fix scope (↑/↓, Enter, Esc: quit)",
-        )
-        .c(h!())?
-        else {
-            return Ok(());
-        };
-        activity_scope
-    } else {
-        tui::UnitActivityScope::Both
+    let Some(activity_scope) = tui::prompt_unit_activity_scope(
+        "Choose echelon-number fix scope (↑/↓, Enter, Esc: quit)",
+    )
+    .c(h!())?
+    else {
+        return Ok(());
     };
     let db = new_pg_pool_from_mode(mode).await.c(h!())?;
     run_with_database(&db, fix_mode, activity_scope)

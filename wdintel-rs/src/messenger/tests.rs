@@ -80,10 +80,12 @@ async fn test_bl_group_update_add_second_aor() {
         area_of_responsibility_ids: Some(vec![aor1.id]),
         interseption_kind: None,
         disable_network_assignment: None,
+        is_aviation_group: Some(true),
     };
 
     let res1 = bl_group_update(&req1, &txn).await.unwrap();
 
+    assert_eq!(res1.group.is_aviation_group, Some(true));
     assert_eq!(res1.aors.len(), 1);
     assert_eq!(res1.aors[0].id, aor1.id);
 
@@ -133,6 +135,7 @@ async fn test_bl_group_update_add_second_aor() {
         area_of_responsibility_ids: Some(vec![aor1.id, aor2.id]),
         interseption_kind: None,
         disable_network_assignment: None,
+        is_aviation_group: None,
     };
 
     let res2 = bl_group_update(&req2, &txn).await.unwrap();
@@ -254,6 +257,7 @@ async fn test_bl_group_update_disable_network_assignment_invalidates_all_history
         area_of_responsibility_ids: Some(vec![]),
         interseption_kind: None,
         disable_network_assignment: Some(true),
+        is_aviation_group: None,
     };
     let res = bl_group_update(&req, &txn).await.unwrap();
 

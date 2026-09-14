@@ -822,6 +822,7 @@ pub async fn upsert_group_area_of_responsibility(
     txn: &DatabaseTransaction,
     master_key: &str,
     aor_ids: Option<Vec<i64>>,
+    network_invalidation_enqueued: &mut bool,
 ) -> Result<Vec<Model>, AppError> {
     crate::battle_line::lock_updates(txn).await.c(h!())?;
     let existing_aor_ids = signal_group_aor::Entity::find()
@@ -890,6 +891,19 @@ pub async fn upsert_group_area_of_responsibility(
         crate::battle_line::requeue_settlement_links_for_group(txn, master_key)
             .await
             .c(h!())?;
+        let group = signal_group::Entity::find_by_id(master_key.to_string())
+            .one(txn)
+            .await
+            .c(h!())?
+            .c(h!())?;
+        crate::sigint::network::etalon_calc::invalidate_network_inbox_for_group_all_history_once(
+            txn,
+            &group,
+            format!("updated aors for group {master_key}"),
+            network_invalidation_enqueued,
+        )
+        .await
+        .c(h!())?;
         crate::stats::enqueue_group_stats_recalculation_for_group_history(
             txn,
             master_key,
@@ -913,6 +927,7 @@ pub async fn bl_group_update(
     req: &GroupUpdateReq,
     txn: &DatabaseTransaction,
 ) -> Result<BlGroupUpdateRes, AppError> {
+    let mut network_invalidation_enqueued = false;
     let m_group = group_admin_data::Entity::find()
         .filter(
             group_admin_data::Column::GroupMasterKey.eq(req.master_key.clone()),
@@ -939,10 +954,14 @@ pub async fn bl_group_update(
         None => req.area_of_responsibility_id.map(|id| vec![id]),
         Some(ids) => Some(ids.clone()),
     };
-    let aors =
-        upsert_group_area_of_responsibility(txn, &req.master_key, aor_ids)
-            .await
-            .c(h!())?;
+    let aors = upsert_group_area_of_responsibility(
+        txn,
+        &req.master_key,
+        aor_ids,
+        &mut network_invalidation_enqueued,
+    )
+    .await
+    .c(h!())?;
 
     group_data.short_note = Set(req.short_note.clone());
     group_data.long_note = Set(req.long_note.clone());
@@ -965,7 +984,6 @@ pub async fn bl_group_update(
         .await
         .c(h!())?
         .c(h!())?;
-    let mut network_invalidation_enqueued = false;
     let group = if let Some(disable_network_assignment) =
         req.disable_network_assignment
     {
@@ -993,7 +1011,19 @@ pub async fn bl_group_update(
     } else {
         group
     };
+    crate::sigint::zone::bl::update_group_aviation_if_present(
+        req.is_aviation_group,
+        &group.master_key,
+        txn,
+    )
+    .await
+    .c(h!())?;
 
+    let group = signal_group::Entity::find_by_id(req.master_key.clone())
+        .one(txn)
+        .await
+        .c(h!())?
+        .c(h!())?;
     let stats = collect_group_stats(vec![group.master_key.clone()], txn)
         .await
         .c(h!())?

@@ -25,6 +25,7 @@ import type { AnalysisReportState } from './report-helpers';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
 import type { ReportEditLoadState } from '../shared/manage-message/useManageMessageDrawer';
+import type { MessageTimeBasis } from '../../services/api/user-settings';
 
 export type AnalysisReportTaskRun = {
   id: number;
@@ -92,6 +93,8 @@ export type AnalysisQueryState = Omit<
   onlyWithMedia: boolean;
   reportTagsOnlyThisUnit: boolean;
   deviceNamesSelected: string[];
+  /** User preference; intentionally not saved in URLs or saved filters. */
+  messageTimeBasis?: MessageTimeBasis;
 };
 
 export type AnalysisFilterOptions = {
@@ -181,6 +184,7 @@ export type AnalysisPageState = {
   centerTabPending: boolean;
   counts: CountStatsRsp | null;
   copiedFeedbackId: string | null;
+  directMessageError: string | null;
   error: string | null;
   editorMessage: { id: number; message: InboxMessage } | null;
   editorEditAsReport: boolean;

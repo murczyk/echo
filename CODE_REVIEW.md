@@ -43,6 +43,9 @@ SQL is not exempt.
 
 ## Replicated PostgreSQL migrations
 
+Use comparable existing migration files as examples when writing new migrations.
+Follow their SQL structure, up/down behavior, and error-context pattern.
+
 CI compares migration DDL with
 `deploy/clickhouse/migration-impact.json`. Every changed Echo migration and
 every updated `echo-im` or `echo-gpu` migration revision must declare its
@@ -60,12 +63,11 @@ For `CREATE TABLE`, confirm whether the table belongs in
 PeerDB automatically after migration; exclusion changes remain an explicit
 deployment operation performed before migrations.
 
-Prefer nullable columns without a default on PeerDB-replicated tables when
-historical rows do not require a value. Do not add `NOT NULL` or a default only
-for application convenience: existing PostgreSQL rows then need an explicit
-ClickHouse backfill or mirror resync. When the field must be required, require
-the migration to justify the historical value and declare how it reaches
-ClickHouse.
+Do not add non-nullable columns to existing tables in migrations. Add columns as
+nullable and without a default, including boolean flags; interpret `NULL` in
+application code when it represents an unset or false value. Existing
+PostgreSQL rows then avoid an implicit value that needs a ClickHouse backfill or
+mirror resync.
 
 Flag `ALTER TABLE ... ADD COLUMN ... DEFAULT ...` on PeerDB-replicated tables.
 PeerDB propagates the column, but it does not populate existing ClickHouse rows

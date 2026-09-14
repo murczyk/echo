@@ -88,50 +88,6 @@ describe('device-details-page custom element', () => {
     expect(document.body.querySelector('[data-device-id]')).toBeNull();
   });
 
-  it('updates sync capability when roles change', async () => {
-    const element = document.createElement('device-details-page');
-    element.setAttribute('device-id', DEVICE_ID);
-    element.setAttribute('data-auth-user-roles', 'DeviceSource');
-    await mount(element);
-
-    const filesTab = Array.from(document.body.querySelectorAll<HTMLElement>('[role="tab"]')).find(
-      (tab) => tab.textContent === 'Файли',
-    );
-    expect(filesTab).toBeDefined();
-    await act(async () => {
-      filesTab?.click();
-      await Promise.resolve();
-    });
-
-    expect(
-      Array.from(document.body.querySelectorAll('button')).some((button) =>
-        button.textContent?.includes('Синхронізувати'),
-      ),
-    ).toBe(true);
-
-    await act(async () => {
-      element.setAttribute('data-auth-user-roles', 'Basic');
-      await Promise.resolve();
-    });
-
-    expect(
-      Array.from(document.body.querySelectorAll('button')).some((button) =>
-        button.textContent?.includes('Синхронізувати'),
-      ),
-    ).toBe(false);
-
-    await act(async () => {
-      element.setAttribute('data-auth-user-roles', 'Cyber');
-      await Promise.resolve();
-    });
-
-    expect(
-      Array.from(document.body.querySelectorAll('button')).some((button) =>
-        button.textContent?.includes('Синхронізувати'),
-      ),
-    ).toBe(true);
-  });
-
   // @test-scope safeguard: prevents a late device response from replacing the details for the newly selected device.
   it('ignores stale detail responses after the device-id attribute changes', async () => {
     let resolveFirst!: (response: Response) => void;

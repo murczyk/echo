@@ -22,7 +22,6 @@ import {
   listDevices,
   searchDeviceFiles,
   listDeviceAnalyticsFiles,
-  syncDeviceFiles,
   reanalyzeAll,
   reanalyzeDevice,
   toDeviceUpdatePatchReq,
@@ -89,54 +88,10 @@ function mockRootResponse() {
   };
 }
 
-function mockFileResponse() {
-  return {
-    file_id: FILE_ID,
-    device_id: DEVICE_ID,
-    parent_entry_id: ROOT_ID,
-    root_entry_id: ROOT_ID,
-    absolute_path: 'C:\\report.log',
-    has_content: false,
-    name: 'report.log',
-    path_components: ['report.log'],
-    mime_type: 'text/plain',
-    extension: 'log',
-    file_metadata_created_at: CREATED_AT,
-    file_metadata_modified_at: UPDATED_AT,
-    created_at: CREATED_AT,
-    updated_at: UPDATED_AT,
-    revision: 1,
-    sync_id: SYNC_ID,
-    source_file_state: null,
-    tags: [],
-  };
-}
-
 beforeEach(() => {
   vi.restoreAllMocks();
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(mockDeviceDetailsResponse())));
 });
-
-function mockSyncSummaryResponse() {
-  return {
-    sync_id: SYNC_ID,
-    device_id: DEVICE_ID,
-    mode: 'automatic',
-    status: 'completed_with_errors',
-    next_batch_index: 1,
-    counts: {
-      received: 2,
-      accepted: 1,
-      created: 1,
-      updated: 0,
-      rejected: 1,
-    },
-    created_at: CREATED_AT,
-    updated_at: UPDATED_AT,
-    completed_at: UPDATED_AT,
-    expires_at: null,
-  };
-}
 
 describe('devices API service routes', () => {
   it('lists devices using only the target request and response fields', async () => {
@@ -477,142 +432,6 @@ describe('device filesystem API service routes', () => {
       ],
       totalCount: 12_345,
       nextCursor: 'next',
-    });
-  });
-
-  it('sends path identity and normalizes the sync summary and item outcomes', async () => {
-    fetchMock().mockResolvedValueOnce(
-      jsonResponse({
-        sync: mockSyncSummaryResponse(),
-        results: [
-          {
-            status: 'accepted',
-            index: 0,
-            operation: 'created',
-            file_id: FILE_ID,
-            revision: 1,
-            file: mockFileResponse(),
-          },
-          {
-            status: 'rejected',
-            index: 1,
-            code: 'validation',
-            message: 'file validation failed',
-            field_errors: [{ path: 'files[1].absolute_path', message: 'invalid' }],
-          },
-        ],
-      }),
-    );
-
-    const rsp = await syncDeviceFiles({
-      deviceId: DEVICE_ID,
-      files: [
-        {
-          absolutePath: 'C:\\report.log',
-          mimeType: 'text/plain',
-          extension: 'log',
-          fileMetadataCreatedAt: CREATED_AT,
-          fileMetadataModifiedAt: UPDATED_AT,
-          sourceFileState: {
-            state: 'downloaded',
-            settledAt: UPDATED_AT,
-            settledBy: 'device-source',
-          },
-        },
-        {
-          absolutePath: 'C:\\moved.log',
-          mimeType: null,
-          extension: null,
-          fileMetadataCreatedAt: null,
-          fileMetadataModifiedAt: null,
-          sourceFileState: null,
-        },
-      ],
-    });
-
-    expect(requestBody()).toEqual({
-      device_id: DEVICE_ID,
-      files: [
-        {
-          absolute_path: 'C:\\report.log',
-          mime_type: 'text/plain',
-          extension: 'log',
-          file_metadata_created_at: CREATED_AT,
-          file_metadata_modified_at: UPDATED_AT,
-          source_file_state: {
-            state: 'downloaded',
-            settled_at: UPDATED_AT,
-            settled_by: 'device-source',
-          },
-        },
-        {
-          absolute_path: 'C:\\moved.log',
-          mime_type: null,
-          extension: null,
-          file_metadata_created_at: null,
-          file_metadata_modified_at: null,
-          source_file_state: null,
-        },
-      ],
-    });
-    expect(rsp.sync).toMatchObject({
-      syncId: SYNC_ID,
-      mode: 'automatic',
-      counts: { accepted: 1, rejected: 1 },
-    });
-    expect(rsp.results).toEqual([
-      {
-        Accepted: {
-          index: 0,
-          operation: 'created',
-          fileId: FILE_ID,
-          revision: 1,
-          file: expect.objectContaining({ fileId: FILE_ID, hasContent: false }),
-        },
-      },
-      {
-        Rejected: {
-          index: 1,
-          code: 'validation',
-          message: 'file validation failed',
-          fieldErrors: [{ path: 'files[1].absolute_path', message: 'invalid' }],
-        },
-      },
-    ]);
-  });
-  it('preserves Windows paths in sync request values', async () => {
-    fetchMock().mockResolvedValueOnce(
-      jsonResponse({ sync: mockSyncSummaryResponse(), results: [] }),
-    );
-    const absolutePath =
-      'D:\\Counter-Strike Source v34 HD\\cstrike\\sound\\weapons\\csgo\\c4\\c4_plant.wav';
-
-    await syncDeviceFiles({
-      deviceId: DEVICE_ID,
-      files: [
-        {
-          absolutePath,
-          mimeType: null,
-          extension: null,
-          fileMetadataCreatedAt: null,
-          fileMetadataModifiedAt: null,
-          sourceFileState: null,
-        },
-      ],
-    });
-
-    expect(requestBody()).toEqual({
-      device_id: DEVICE_ID,
-      files: [
-        {
-          absolute_path: absolutePath,
-          mime_type: null,
-          extension: null,
-          file_metadata_created_at: null,
-          file_metadata_modified_at: null,
-          source_file_state: null,
-        },
-      ],
     });
   });
 });

@@ -27,6 +27,7 @@ pub struct Model {
     pub show_classic_analysis: bool,
     pub duty_collapse_media_previews: bool,
     pub media_summary_enabled: bool,
+    pub message_sort_by: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

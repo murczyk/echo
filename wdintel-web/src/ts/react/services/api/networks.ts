@@ -12,6 +12,8 @@ import type {
   ListNetworksRsp,
   ListKeysReq,
   Network,
+  NetworkLastActivityReq,
+  NetworkLastActivityRow,
   NetworkGroupsActivityOneReq,
   ListNetworkPointsReq,
   ListNetworkPointsRsp,
@@ -56,6 +58,18 @@ export async function listNetworks(
   return transformSnakeToCamel<ListNetworksRsp>(data);
 }
 
+export async function getNetworkLastActivity(
+  req: NetworkLastActivityReq,
+  options?: RequestOptions,
+): Promise<NetworkLastActivityRow[]> {
+  const data = await postJson<NetworkLastActivityRow[]>(
+    '/api/sigint/network-last-activity',
+    transformCamelToSnake(req),
+    options,
+  );
+  return transformSnakeToCamel<NetworkLastActivityRow[]>(data);
+}
+
 /** Fetch all networks. Uses a filter so the backend returns full list without default limit. */
 export async function getNetworksList(options?: RequestOptions): Promise<Network[]> {
   const req: ListNetworksReq = {
@@ -64,9 +78,17 @@ export async function getNetworksList(options?: RequestOptions): Promise<Network
     filterUnitArmyRegion: null,
     filterUnitMilitaryDistrict: null,
     filterUnitArmy: null,
+    filterUnitCorps: null,
     filterUnitDivision: null,
+    filterUnitBrigade: null,
     filterUnitRegiment: null,
     filterUnitBattalion: null,
+    filterUnitCompany: null,
+    filterUnitPlatoon: null,
+    filterUnitSquad: null,
+    filterUnitSection: null,
+    filterUnitTeamOrCrew: null,
+    filterUnitOther: null,
     filterText: '',
     filterName: null,
     filterLocation: null,

@@ -1,21 +1,20 @@
 use crate::config::{
     PALITRA_POINT_FALLBACK_COLOR_HEX, PALITRA_STORAGE_DIR_NAME,
 };
+use crate::error::AppError;
 use crate::h;
 use crate::kml::types::*;
 use crate::palitra::types::*;
-use crate::types::{error, info};
+use crate::types::info;
 use crate::types::{Env, ShortContext};
+use actix_web::web::Bytes;
 use chrono::Utc;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{self};
 use std::path::Path;
 use tempfile::tempdir;
 use tokio::fs;
 use tokio::task;
 use walkdir::WalkDir;
-use zip::ZipArchive;
 
 pub struct PalitraLineString {
     pub coords: Vec<Coords>,
@@ -33,14 +32,19 @@ pub async fn load_coordinates_from_file(
     data: Vec<u8>,
     env: &Env,
 ) -> anyhow::Result<PalitraKmzData> {
-    let mut upload = parse_coordinates_from_file(&file_name, &data).await?;
-    upload.s3_id = store_palitra_source_file(&file_name, &data, env).await?;
+    let mut upload = parse_coordinates_from_file(&file_name, &data)
+        .await
+        .c(h!())?;
+    upload.s3_id =
+        store_palitra_source_file(&file_name, Bytes::from(data), env)
+            .await
+            .c(h!())?;
     Ok(upload)
 }
 
 pub(crate) async fn store_palitra_source_file(
     file_name: &str,
-    data: &[u8],
+    data: Bytes,
     env: &Env,
 ) -> anyhow::Result<Option<String>> {
     let storage_dir = std::env::temp_dir()
@@ -76,7 +80,7 @@ pub(crate) async fn parse_coordinates_from_file(
     data: &[u8],
 ) -> anyhow::Result<PalitraKmzData> {
     let safe_file_name = sanitize_upload_filename(file_name);
-    let tmp_dir = tempdir()?;
+    let tmp_dir = tempdir().c(h!())?;
     let path = tmp_dir.path().join(&safe_file_name);
     fs::write(path.as_path(), data).await.c(h!())?;
     let extension = path
@@ -89,7 +93,8 @@ pub(crate) async fn parse_coordinates_from_file(
         "kmz" => load_coordinates_from_kmz(path.as_path()).await,
         "kml" => load_coordinates_from_kml(path.as_path()).await,
         _ => anyhow::bail!("Unsupported coordinates extension: {extension}"),
-    }?;
+    }
+    .c(h!())?;
     Ok(PalitraKmzData {
         points: points.points,
         line_strings: points.line_strings,
@@ -98,7 +103,7 @@ pub(crate) async fn parse_coordinates_from_file(
 }
 
 pub fn sanitize_upload_filename(filename: &str) -> String {
-    Path::new(filename)
+    Path::new(filename.rsplit(['/', '\\']).next().unwrap_or(filename))
         .file_name()
         .and_then(|name| name.to_str())
         .map(|name| name.to_string())
@@ -108,19 +113,12 @@ pub fn sanitize_upload_filename(filename: &str) -> String {
 pub async fn load_coordinates_from_kmz(
     kmz_path: &Path,
 ) -> anyhow::Result<PalitraKmzData> {
-    let tmp_dir = tempdir()?;
+    let tmp_dir = tempdir().c(h!())?;
     let extract_to = tmp_dir.path().to_path_buf();
     let walkdir = WalkDir::new(extract_to.as_path()).into_iter();
     let file_path = kmz_path.to_path_buf();
     task::spawn_blocking(move || {
-        let zip_file = File::open(file_path)?;
-        let mut archive = ZipArchive::new(zip_file)
-            .map_err(|e| io::Error::other(format!("Zip error: {e:?}")))?;
-        archive.extract(extract_to.as_path()).map_err(|e| {
-            io::Error::other(format!("Extraction error: {e:?}"))
-        })?;
-
-        anyhow::Ok(())
+        crate::utils::zip::unzip_to(&file_path, &extract_to)
     })
     .await
     .c(h!())?
@@ -132,26 +130,50 @@ pub async fn load_coordinates_from_kmz(
         s3_id: None,
     };
 
-    for entry in walkdir.filter_map(|e| e.ok()) {
-        if entry.file_type().is_file() {
-            let path = entry.path();
-            if path.extension().and_then(|ext| ext.to_str()) == Some("kml") {
-                let coordinates = match load_coordinates_from_kml(path).await {
-                    Ok(c) => c,
-                    Err(e) => {
-                        error!(
-                            "failed to read all coordinates from kmz {:?}, bad file at {:?}: {:?}",
-                            kmz_path, path, e
-                        );
-                        continue;
-                    }
-                };
-                result.points.extend(coordinates.points);
-                result.line_strings.extend(coordinates.line_strings);
-            }
+    let mut kml_count = 0;
+    for entry in walkdir {
+        let entry = entry.c(h!())?;
+        if entry.file_type().is_file() && is_kml_path(entry.path()) {
+            let coordinates =
+                load_coordinates_from_kml(entry.path()).await.c(h!())?;
+            result.points.extend(coordinates.points);
+            result.line_strings.extend(coordinates.line_strings);
+            kml_count += 1;
         }
     }
+    ensure_kmz_contains_kml(kml_count).c(h!())?;
     Ok(result)
+}
+
+fn is_kml_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("kml"))
+}
+
+fn ensure_kmz_contains_kml(count: usize) -> anyhow::Result<()> {
+    if count == 0 {
+        return Err(AppError::BL {
+            msg: "KMZ archive contains no KML documents".to_string(),
+        })
+        .c(h!());
+    }
+    Ok(())
+}
+
+fn invalid_kml_error(error: AppError) -> anyhow::Error {
+    let error = anyhow::Error::new(error);
+    if error.chain().any(|cause| {
+        cause.downcast_ref::<std::io::Error>().is_some_and(|cause| {
+            cause.kind() != std::io::ErrorKind::InvalidData
+        })
+    }) {
+        return error;
+    }
+    AppError::BL {
+        msg: format!("Invalid KML document: {error:#}"),
+    }
+    .into()
 }
 
 pub async fn load_coordinates_from_kml(
@@ -160,6 +182,7 @@ pub async fn load_coordinates_from_kml(
     let parent = path.parent().c(h!())?;
     let doc = crate::kml::read_and_fix_kml(false, path, parent)
         .await
+        .map_err(invalid_kml_error)
         .c(h!())?;
     let mut style_indexes = StyleIndexes::default();
     collect_style_indexes_from_nodes(&doc.nodes, &mut style_indexes);
@@ -180,57 +203,56 @@ pub async fn load_coordinates_from_kml(
             }
             Node::Placemark(p) => {
                 let m_color = get_placemark_color(&p, &style_indexes);
-                let label = p.name.or(p.description);
-                let point = p.point.and_then(|p| p.coordinates);
-                m_add_coordinates(
-                    &mut values,
-                    label.clone(),
-                    point,
-                    m_color.clone(),
-                );
+                let label = p.name.clone().or_else(|| p.description.clone());
 
-                let polygon_point = p
-                    .polygon
-                    .and_then(|p| p.outer_boundary_is)
-                    .and_then(|o| o.linear_ring)
-                    .and_then(|l| l.coordinates)
-                    .and_then(|l| l.body);
-                m_add_coordinates(
-                    &mut values,
-                    label.clone(),
-                    polygon_point,
-                    m_color.clone(),
-                );
+                for point in placemark_point_coordinates(&p) {
+                    m_add_coordinates(
+                        &mut values,
+                        label.clone(),
+                        Some(point),
+                        m_color.clone(),
+                    )
+                    .c(h!())?;
+                }
 
-                let mut geometry_line_strings =
-                    p.multi_geometry.map(|p| p.line_strings).unwrap_or(vec![]);
+                for polygon_point in placemark_polygon_coordinates(&p) {
+                    m_add_coordinates(
+                        &mut values,
+                        label.clone(),
+                        Some(polygon_point),
+                        m_color.clone(),
+                    )
+                    .c(h!())?;
+                }
+
+                let mut geometry_line_strings = p
+                    .multi_geometry
+                    .map(|multi_geometry| multi_geometry.line_strings)
+                    .unwrap_or_default();
                 if let Some(line_string) = p.line_string {
                     geometry_line_strings.push(line_string);
                 }
 
                 for line_string in geometry_line_strings {
-                    let coordinates =
-                        line_string.coordinates.and_then(|c| c.body);
-                    if let Some(coords) = coordinates {
-                        match Coords::list_from_kml_coordinates(&coords) {
-                            Ok(coords_list) => {
-                                if coords_list.len() >= 2 {
-                                    line_strings.push(PalitraLineString {
-                                        coords: coords_list,
-                                        color: m_color.clone().or_else(|| {
-                                            Some(PALITRA_POINT_FALLBACK_COLOR_HEX.to_string())
-                                        }),
-                                    });
-                                }
-                            }
-                            Err(e) => {
-                                error!(
-                                    "Failed to parse line coordinates {coords}: {:?}",
-                                    e
-                                )
-                            }
-                        }
+                    let coords = line_string
+                        .coordinates
+                        .and_then(|c| c.body)
+                        .ok_or_else(|| AppError::BL {
+                            msg: "KML LineString coordinates are missing"
+                                .into(),
+                        })
+                        .c(h!())?;
+                    let coords_list =
+                        parse_upload_coordinates(&coords).c(h!())?;
+                    if coords_list.len() < 2 {
+                        return Err(AppError::BL { msg: "KML LineString must contain at least two coordinates".into() }).c(h!());
                     }
+                    line_strings.push(PalitraLineString {
+                        coords: coords_list,
+                        color: m_color.clone().or_else(|| {
+                            Some(PALITRA_POINT_FALLBACK_COLOR_HEX.to_string())
+                        }),
+                    });
                 }
             }
             _ => continue,
@@ -241,6 +263,49 @@ pub async fn load_coordinates_from_kml(
         line_strings,
         s3_id: None,
     })
+}
+
+fn placemark_point_coordinates(placemark: &Placemark) -> Vec<String> {
+    let mut coordinates = Vec::new();
+    if let Some(point) = &placemark.point {
+        if let Some(point_coordinates) = &point.coordinates {
+            coordinates.push(point_coordinates.clone());
+        }
+    }
+    if let Some(multi_geometry) = &placemark.multi_geometry {
+        for point in &multi_geometry.points {
+            if let Some(point_coordinates) = &point.coordinates {
+                coordinates.push(point_coordinates.clone());
+            }
+        }
+    }
+    coordinates
+}
+
+fn placemark_polygon_coordinates(placemark: &Placemark) -> Vec<String> {
+    let mut coordinates = Vec::new();
+    if let Some(polygon) = &placemark.polygon {
+        if let Some(polygon_coordinates) = polygon_coordinates(polygon) {
+            coordinates.push(polygon_coordinates.to_string());
+        }
+    }
+    if let Some(multi_geometry) = &placemark.multi_geometry {
+        for polygon in &multi_geometry.polygons {
+            if let Some(polygon_coordinates) = polygon_coordinates(polygon) {
+                coordinates.push(polygon_coordinates.to_string());
+            }
+        }
+    }
+    coordinates
+}
+
+fn polygon_coordinates(polygon: &Polygon) -> Option<&str> {
+    polygon
+        .outer_boundary_is
+        .as_ref()
+        .and_then(|outer_boundary| outer_boundary.linear_ring.as_ref())
+        .and_then(|linear_ring| linear_ring.coordinates.as_ref())
+        .and_then(|coordinates| coordinates.body.as_deref())
 }
 
 fn get_placemark_color(
@@ -254,25 +319,48 @@ fn m_add_coordinates(
     values: &mut Vec<PalitraPoint>,
     label: Option<String>,
     coordinates: Option<String>,
-    m_color: Option<String>,
-) {
-    if let Some(c) = coordinates {
-        match Coords::list_from_kml_coordinates(&c) {
-            Ok(coords_list) => {
-                for coords in coords_list {
-                    let point = PalitraPoint {
-                        coords,
-                        label: label.clone(),
-                        color: Some(m_color.clone().unwrap_or_else(|| {
-                            PALITRA_POINT_FALLBACK_COLOR_HEX.to_string()
-                        })),
-                    };
-                    values.push(point);
-                }
-            }
-            Err(e) => error!("Failed to parse coordinates {c}: {:?}", e),
+    color: Option<String>,
+) -> anyhow::Result<()> {
+    if let Some(coordinates) = coordinates {
+        for coords in parse_upload_coordinates(&coordinates).c(h!())? {
+            values.push(PalitraPoint {
+                coords,
+                label: label.clone(),
+                color: Some(color.clone().unwrap_or_else(|| {
+                    PALITRA_POINT_FALLBACK_COLOR_HEX.to_string()
+                })),
+            });
         }
     }
+    Ok(())
+}
+
+fn parse_upload_coordinates(coordinates: &str) -> anyhow::Result<Vec<Coords>> {
+    let mut parsed = Vec::new();
+    for token in coordinates.split_whitespace() {
+        let coords = Coords::from_csv(token)
+            .map_err(super::invalid_palitra_upload)
+            .c(h!())?;
+        if !coords.lat.is_finite()
+            || !coords.lng.is_finite()
+            || !(-90.0..=90.0).contains(&coords.lat)
+            || !(-180.0..=180.0).contains(&coords.lng)
+        {
+            return Err(AppError::BL {
+                msg: "KML coordinates are outside latitude/longitude bounds"
+                    .into(),
+            })
+            .c(h!());
+        }
+        parsed.push(coords);
+    }
+    if parsed.is_empty() {
+        return Err(AppError::BL {
+            msg: "KML coordinates are empty".into(),
+        })
+        .c(h!());
+    }
+    Ok(parsed)
 }
 
 #[derive(Default)]
@@ -291,19 +379,13 @@ struct StyleIndexes {
 pub async fn extract_top_colors_from_kmz(
     kmz_path: &Path,
 ) -> anyhow::Result<Vec<KmzColorInfo>> {
-    let tmp_dir = tempdir()?;
+    let tmp_dir = tempdir().c(h!())?;
     let extract_to = tmp_dir.path().to_path_buf();
     let walkdir = WalkDir::new(extract_to.as_path()).into_iter();
     let file_path = kmz_path.to_path_buf();
 
     task::spawn_blocking(move || {
-        let zip_file = File::open(file_path)?;
-        let mut archive = ZipArchive::new(zip_file)
-            .map_err(|e| io::Error::other(format!("Zip error: {e:?}")))?;
-        archive.extract(extract_to.as_path()).map_err(|e| {
-            io::Error::other(format!("Extraction error: {e:?}"))
-        })?;
-        anyhow::Ok(())
+        crate::utils::zip::unzip_to(&file_path, &extract_to)
     })
     .await
     .c(h!())?
@@ -311,28 +393,18 @@ pub async fn extract_top_colors_from_kmz(
 
     let mut color_counts: HashMap<String, ColorAggregate> = HashMap::new();
 
-    for entry in walkdir.filter_map(|e| e.ok()) {
-        if entry.file_type().is_file() {
-            let path = entry.path();
-            if path.extension().and_then(|ext| ext.to_str()) == Some("kml") {
-                match extract_color_aggregates_from_kml(path).await {
-                    Ok(kml_color_counts) => {
-                        merge_color_aggregates(
-                            &mut color_counts,
-                            kml_color_counts,
-                        );
-                    }
-                    Err(e) => {
-                        error!(
-                            "Failed to extract colors from {:?}: {:?}",
-                            path, e
-                        );
-                        continue;
-                    }
-                }
-            }
+    let mut kml_count = 0;
+    for entry in walkdir {
+        let entry = entry.c(h!())?;
+        if entry.file_type().is_file() && is_kml_path(entry.path()) {
+            let counts = extract_color_aggregates_from_kml(entry.path())
+                .await
+                .c(h!())?;
+            merge_color_aggregates(&mut color_counts, counts);
+            kml_count += 1;
         }
     }
+    ensure_kmz_contains_kml(kml_count).c(h!())?;
 
     Ok(extract_top_colors_from_aggregates(color_counts))
 }
@@ -341,7 +413,8 @@ pub async fn extract_top_colors_from_kmz(
 pub async fn extract_top_colors_from_kml(
     kml_path: &Path,
 ) -> anyhow::Result<Vec<KmzColorInfo>> {
-    let color_counts = extract_color_aggregates_from_kml(kml_path).await?;
+    let color_counts =
+        extract_color_aggregates_from_kml(kml_path).await.c(h!())?;
     Ok(extract_top_colors_from_aggregates(color_counts))
 }
 
@@ -351,6 +424,7 @@ async fn extract_color_aggregates_from_kml(
     let parent = path.parent().c(h!())?;
     let doc = crate::kml::read_and_fix_kml(false, path, parent)
         .await
+        .map_err(invalid_kml_error)
         .c(h!())?;
 
     let mut style_indexes = StyleIndexes::default();
@@ -531,24 +605,11 @@ fn collect_color_from_placemark(
 }
 
 fn placemark_has_supported_geometry(placemark: &Placemark) -> bool {
-    let has_point_coordinates = placemark
-        .point
-        .as_ref()
-        .and_then(|point| point.coordinates.as_ref())
-        .is_some();
-    if has_point_coordinates {
+    if !placemark_point_coordinates(placemark).is_empty() {
         return true;
     }
 
-    let has_polygon_coordinates = placemark
-        .polygon
-        .as_ref()
-        .and_then(|polygon| polygon.outer_boundary_is.as_ref())
-        .and_then(|outer_boundary| outer_boundary.linear_ring.as_ref())
-        .and_then(|linear_ring| linear_ring.coordinates.as_ref())
-        .and_then(|coordinates| coordinates.body.as_ref())
-        .is_some();
-    if has_polygon_coordinates {
+    if !placemark_polygon_coordinates(placemark).is_empty() {
         return true;
     }
 
@@ -764,10 +825,90 @@ mod tests {
 
     #[tokio::test]
     async fn malformed_kml_is_rejected_before_storage() {
-        let data = b"2<?xml version=\"1.0\"?><kml></kml>";
+        for data in [
+            b"2<?xml version=\"1.0\"?><kml></kml>".as_slice(),
+            b"<unrelated/>",
+            b"<kml><Document>",
+            b"<kml/><kml/>",
+        ] {
+            let error = parse_coordinates_from_file("broken.kml", data)
+                .await
+                .err()
+                .unwrap();
+            assert!(matches!(AppError::from(error), AppError::BL { .. }));
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("broken.kml");
+            fs::write(&path, data).await.unwrap();
+            assert!(matches!(
+                AppError::from(
+                    extract_top_colors_from_kml(&path).await.unwrap_err()
+                ),
+                AppError::BL { .. }
+            ));
+        }
+        for coordinates in [
+            "30,50,0 broken 31,51,0",
+            "NaN,50,0",
+            "30,91,0",
+            "181,50,0",
+            "30,50,0",
+            "",
+        ] {
+            let document = format!("<kml><Placemark><LineString><coordinates>{coordinates}</coordinates></LineString></Placemark></kml>");
+            let error =
+                parse_coordinates_from_file("broken.kml", document.as_bytes())
+                    .await
+                    .err()
+                    .unwrap();
+            assert!(
+                matches!(AppError::from(error), AppError::BL { .. }),
+                "{coordinates}"
+            );
+        }
+    }
 
-        assert!(parse_coordinates_from_file("broken.kml", data)
-            .await
-            .is_err());
+    #[tokio::test]
+    async fn load_coordinates_from_kml_reads_multigeometry_features(
+    ) -> anyhow::Result<()> {
+        let tmp_dir = tempdir().c(h!())?;
+        let path = tmp_dir.path().join("multi.kml");
+        let kml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <Placemark>
+      <name>multi</name>
+      <Point>
+        <coordinates>30.51,50.44,0</coordinates>
+      </Point>
+      <MultiGeometry>
+        <Point>
+          <coordinates>30.52,50.45,0</coordinates>
+        </Point>
+        <Polygon>
+          <outerBoundaryIs>
+            <LinearRing>
+              <coordinates>
+                30.00,50.00,0
+                30.10,50.00,0
+                30.10,50.10,0
+                30.00,50.00,0
+              </coordinates>
+            </LinearRing>
+          </outerBoundaryIs>
+        </Polygon>
+      </MultiGeometry>
+    </Placemark>
+  </Document>
+</kml>"#;
+        fs::write(path.as_path(), kml).await.c(h!())?;
+
+        let data = load_coordinates_from_kml(path.as_path()).await.c(h!())?;
+
+        assert_eq!(data.points.len(), 6);
+        assert!(data
+            .points
+            .iter()
+            .all(|point| point.label.as_deref() == Some("multi")));
+        Ok(())
     }
 }

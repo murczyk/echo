@@ -126,10 +126,16 @@ vi.mock('@uppy/core', () => {
       return this.files;
     }
     cancelAll() {}
+    destroy() {
+      this.cancelAll();
+      this.listeners.clear();
+    }
     removeFile(id: string) {
-      const file = this.files.find((file) => file.id === id);
+      const removedFile = this.files.find((file) => file.id === id);
       this.files = this.files.filter((file) => file.id !== id);
-      if (file) this.listeners.get('file-removed')?.forEach((callback) => callback(file));
+      if (removedFile) {
+        this.listeners.get('file-removed')?.forEach((callback) => callback(removedFile));
+      }
     }
     addFile(file: Record<string, unknown>) {
       if (this.files.length >= 20) {
@@ -2189,6 +2195,81 @@ describe('ManageMessageDrawer edit mode', () => {
     root.unmount();
   });
 
+  // ECHO-3073: both the edit response and a later reopen may contain repeated tag IDs.
+  it('keeps tag selections unique across edit save response and reopen', async () => {
+    referenceDataMocks.getTagsForDisplay.mockResolvedValue({
+      tagsMap: { 7: { label: 'арта' }, 9: { label: 'зв’язок' } },
+      tagsOrder: [7, 9],
+    });
+    const initialMessage = buildMessage({ tags: [7] });
+    const savedResponse = buildMessage({ text: 'edited body', tags: [7, 7, 9, 9] });
+    const onSubmitEdit = vi.fn();
+    directSubmitMocks.editDirectSubmit.mockResolvedValue({
+      signal_message_id: 42,
+      message: savedResponse,
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const render = (open: boolean, message: InboxMessage) =>
+      root.render(
+        <ManageMessageDrawer
+          open={open}
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={vi.fn()}
+          editTarget={{ id: 42, message }}
+          onSubmitEdit={onSubmitEdit}
+        />,
+      );
+
+    await act(async () => {
+      render(true, initialMessage);
+      for (let index = 0; index < 8; index += 1) await Promise.resolve();
+    });
+    expect(autocompleteValuesByLabel.get('Теги')).toEqual(['арта']);
+
+    act(() => {
+      textFieldPropsByLabel
+        .get('Текст повідомлення')
+        ?.onChange?.({ target: { value: 'edited body' } });
+    });
+    await act(async () => {
+      (container.querySelector('form') as HTMLFormElement).dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      );
+    });
+    expect(directSubmitMocks.editDirectSubmit).toHaveBeenCalledTimes(1);
+    expect(directSubmitMocks.editDirectSubmit).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({ full_body: 'edited body', tags: ['арта'] }),
+    );
+    expect(onSubmitEdit).toHaveBeenCalledWith(42, savedResponse);
+
+    await act(async () => {
+      render(false, initialMessage);
+    });
+    await act(async () => {
+      render(true, onSubmitEdit.mock.calls[0][1] as InboxMessage);
+      for (let index = 0; index < 8; index += 1) await Promise.resolve();
+    });
+    expect(autocompleteValuesByLabel.get('Теги')).toEqual(['арта', 'зв’язок']);
+    expect(textFieldPropsByLabel.get('Текст повідомлення')?.value).toBe('edited body');
+
+    await act(async () => {
+      (container.querySelector('form') as HTMLFormElement).dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      );
+    });
+    expect(directSubmitMocks.editDirectSubmit).toHaveBeenCalledTimes(2);
+    expect(directSubmitMocks.editDirectSubmit).toHaveBeenLastCalledWith(
+      42,
+      expect.objectContaining({ full_body: 'edited body', tags: ['арта', 'зв’язок'] }),
+    );
+
+    root.unmount();
+  });
+
   it('hydrates a calculated network and its units when stored fields are empty', async () => {
     networkMocks.getNetworksByIds.mockResolvedValue([
       {
@@ -2238,7 +2319,8 @@ describe('ManageMessageDrawer edit mode', () => {
     root.unmount();
   });
 
-  it('backfills tags after the async load without clobbering an in-window edit', async () => {
+  // ECHO-3073: late dictionary hydration must not reintroduce duplicate chips.
+  it('backfills unique tags after the async load without clobbering an in-window edit', async () => {
     // Defer the tagsMap resolution so we can interleave a user edit between the initial
     // seed (empty tagsMap) and the tags load — the exact narrow-window the fix guards.
     let resolveTags: (value: {
@@ -2254,7 +2336,7 @@ describe('ManageMessageDrawer edit mode', () => {
     const onSubmitEdit = vi.fn();
     directSubmitMocks.editDirectSubmit.mockResolvedValue({
       signal_message_id: 55,
-      message: buildMessage({ extendedForm: 'existing comment', tags: [7] }),
+      message: buildMessage({ extendedForm: 'existing comment', tags: [7, 7, 9, 9] }),
     });
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -2268,7 +2350,7 @@ describe('ManageMessageDrawer edit mode', () => {
           onClose={vi.fn()}
           editTarget={{
             id: 55,
-            message: buildMessage({ extendedForm: 'existing comment', tags: [7] }),
+            message: buildMessage({ extendedForm: 'existing comment', tags: [7, 7, 9, 9] }),
           }}
           editSaveInFlight={false}
           onSubmitEdit={onSubmitEdit}
@@ -2289,11 +2371,15 @@ describe('ManageMessageDrawer edit mode', () => {
 
     // Now the tags fetch resolves.
     await act(async () => {
-      resolveTags({ tagsMap: { 7: { label: 'арта' } }, tagsOrder: [7] });
+      resolveTags({
+        tagsMap: { 7: { label: 'арта' }, 9: { label: 'зв’язок' } },
+        tagsOrder: [7, 9],
+      });
     });
 
     // Tags backfilled after the async load...
     expect(container.textContent).toContain('арта');
+    expect(autocompleteValuesByLabel.get('Теги')).toEqual(['арта', 'зв’язок']);
 
     const form = container.querySelector('form') as HTMLFormElement;
     await act(async () => {
@@ -2308,7 +2394,7 @@ describe('ManageMessageDrawer edit mode', () => {
     );
     expect(onSubmitEdit.mock.calls[0][1]).toMatchObject({
       extendedForm: 'existing comment',
-      tags: [7],
+      tags: [7, 7, 9, 9],
     });
 
     root.unmount();

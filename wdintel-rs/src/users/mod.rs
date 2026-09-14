@@ -1730,10 +1730,13 @@ where
     Ok(res)
 }
 
-pub async fn validate_login(
-    dbx: &DatabaseConnection,
+pub async fn validate_login<C>(
+    dbx: &C,
     login: &str,
-) -> Result<UserValidationResult, AppError> {
+) -> Result<UserValidationResult, AppError>
+where
+    C: ConnectionTrait,
+{
     let login_result = login::Entity::find()
         .filter(login::Column::Login.eq(login))
         .find_with_related(organism::Entity)
@@ -1815,10 +1818,13 @@ pub async fn validate_login(
     })
 }
 
-pub async fn validate_login_id(
-    dbx: &DatabaseConnection,
+pub async fn validate_login_id<C>(
+    dbx: &C,
     login_id: &Uuid,
-) -> Result<UserValidationResult, AppError> {
+) -> Result<UserValidationResult, AppError>
+where
+    C: ConnectionTrait,
+{
     let login_name = login::Entity::find_by_id(*login_id)
         .select_only()
         .column(login::Column::Login)

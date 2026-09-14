@@ -11,7 +11,11 @@ import type {
 } from '../../../../Bindings';
 import { fetchInboxMessages } from '../../services/api/inbox';
 import { fetchMessagesByIdsWithMetadata } from '../../services/api/inbox-messages';
-import { DUTY_FEED_MESSAGE_WINDOW_LIMIT, windowInitialMessageItems } from './utils';
+import {
+  DUTY_FEED_MESSAGE_WINDOW_LIMIT,
+  messageOrderCursor,
+  windowInitialMessageItems,
+} from './utils';
 import type { MessageFeedState } from './utils';
 import type { MessageCursor } from './utils';
 
@@ -21,6 +25,7 @@ export function createEmptyFeedState(
 ): MessageFeedState {
   return {
     id,
+    messageSortBy: 'IMSTimestamp',
     filter,
     items: [],
     loading: true,
@@ -76,28 +81,54 @@ type Params = {
 function preserveUnreadState(
   feed: MessageFeedState,
   items: Array<[number, InboxMessage]>,
-): Pick<MessageFeedState, 'readIds' | 'windowedUnreadItems' | 'unreadCount'> {
+): Pick<
+  MessageFeedState,
+  | 'readIds'
+  | 'windowedUnreadItems'
+  | 'unresolvedUnreadIds'
+  | 'unresolvedUnreadCount'
+  | 'unreadCount'
+> {
   const itemIds = new Set(items.map(([id]) => id));
-  const readIds = new Set([...feed.readIds].filter((id) => itemIds.has(id)));
-  const windowedUnreadItems = new Map(feed.windowedUnreadItems);
-  let unreadCount = feed.unreadCount;
-  items.forEach(([id, message]) => {
-    if (!readIds.has(id) && !windowedUnreadItems.has(id) && message.timestamp != null) {
-      windowedUnreadItems.set(id, message.timestamp);
-      unreadCount += 1;
-    }
-  });
-  return { readIds, windowedUnreadItems, unreadCount };
+  const readIds = new Set(feed.readIds);
+  const knownUnreadIds = new Set([
+    ...feed.windowedUnreadItems.keys(),
+    ...(feed.unresolvedUnreadIds ?? []),
+    ...feed.items.filter(([id]) => !feed.readIds.has(id)).map(([id]) => id),
+    ...(feed.pendingNewerItems ?? []).filter(([id]) => !feed.readIds.has(id)).map(([id]) => id),
+  ]);
+  const unresolvedUnreadIds = new Set([...knownUnreadIds].filter((id) => !itemIds.has(id)));
+  const previousUnresolvedUnreadCount = Math.max(
+    feed.unresolvedUnreadCount ?? 0,
+    feed.unreadCount - knownUnreadIds.size,
+  );
+  const newlyMaterializedUnreadCount = items.filter(
+    ([id]) => !readIds.has(id) && !knownUnreadIds.has(id),
+  ).length;
+  const unresolvedUnreadCount = Math.max(
+    0,
+    previousUnresolvedUnreadCount - newlyMaterializedUnreadCount,
+  );
+  const loadedUnreadCount = items.filter(([id]) => !readIds.has(id)).length;
+  const windowedUnreadItems = new Map<number, number>();
+  return {
+    readIds,
+    windowedUnreadItems,
+    unresolvedUnreadIds,
+    unresolvedUnreadCount,
+    unreadCount: loadedUnreadCount + unresolvedUnreadIds.size + unresolvedUnreadCount,
+  };
 }
 
 function windowInitialMessageItemsAroundTarget(
   items: Array<[number, InboxMessage]>,
   targetMessageIds: readonly number[],
+  messageSortBy: 'IMSTimestamp' | 'IMSCreatedAt',
 ): Array<[number, InboxMessage]> {
-  const sortedItems = windowInitialMessageItems(items, Math.max(1, items.length));
+  const sortedItems = windowInitialMessageItems(items, Math.max(1, items.length), messageSortBy);
   const targetIds = new Set(targetMessageIds);
   const targetIndex = sortedItems.findIndex(([id]) => targetIds.has(id));
-  if (targetIndex < 0) return windowInitialMessageItems(sortedItems);
+  if (targetIndex < 0) return windowInitialMessageItems(sortedItems, undefined, messageSortBy);
 
   const beforeTarget = Math.floor(DUTY_FEED_MESSAGE_WINDOW_LIMIT / 2);
   let start = Math.max(0, targetIndex - beforeTarget);
@@ -179,9 +210,14 @@ export function useRerDutyInitialLoad(params: Params) {
         const metadata = mergeInitialLoadMetadata(responses);
         current.mergeInboxCallsigns(feedId, metadata.callsigns, { replace: true });
         const loadedItems = responses.flatMap((loadedResponse) => loadedResponse.inboxItems);
+        const messageSortBy = inboxReq.sortBy === 'IMSCreatedAt' ? 'IMSCreatedAt' : 'IMSTimestamp';
         const items = initialTarget
-          ? windowInitialMessageItemsAroundTarget(loadedItems, initialTarget.messageIds)
-          : windowInitialMessageItems(loadedItems);
+          ? windowInitialMessageItemsAroundTarget(
+              loadedItems,
+              initialTarget.messageIds,
+              messageSortBy,
+            )
+          : windowInitialMessageItems(loadedItems, undefined, messageSortBy);
         const previousFeed = current.messageFeedsRef.current.find(
           (candidate) => candidate.id === feedId,
         );
@@ -193,10 +229,10 @@ export function useRerDutyInitialLoad(params: Params) {
           current.clearFeedUnreadBaselines(feedId);
           const tail = items.at(-1);
           if (tail) {
-            current.installFeedUnreadCursorAndBaseline(effectiveFeed, {
-              id: tail[0],
-              timestamp: tail[1].timestamp,
-            });
+            current.installFeedUnreadCursorAndBaseline(
+              { ...effectiveFeed, messageSortBy },
+              messageOrderCursor(tail[0], tail[1], messageSortBy),
+            );
           } else if (pollCursor) {
             current.installFeedUnreadCursorAndBaseline(effectiveFeed, pollCursor);
           } else {
@@ -208,6 +244,7 @@ export function useRerDutyInitialLoad(params: Params) {
             candidate.id === feedId
               ? {
                   ...candidate,
+                  messageSortBy,
                   items,
                   loading: false,
                   referenceTimeMs: Date.now(),
@@ -217,6 +254,8 @@ export function useRerDutyInitialLoad(params: Params) {
                     : {
                         readIds: new Set<number>(items.map(([id]) => id)),
                         windowedUnreadItems: new Map<number, number>(),
+                        unresolvedUnreadIds: new Set<number>(),
+                        unresolvedUnreadCount: 0,
                         unreadCount: 0,
                       }),
                 }
@@ -235,7 +274,13 @@ export function useRerDutyInitialLoad(params: Params) {
           current.setGroupInfos((previous) => ({ ...previous, ...groups }));
         }
         const tail = items.at(-1);
-        return tail ? { id: tail[0], timestamp: tail[1].timestamp } : null;
+        return tail
+          ? messageOrderCursor(
+              tail[0],
+              tail[1],
+              inboxReq.sortBy === 'IMSCreatedAt' ? 'IMSCreatedAt' : 'IMSTimestamp',
+            )
+          : null;
       } catch (error) {
         if (current.getFeedLoadGeneration(feedId) !== requestGeneration) return;
         const currentFeed = current.messageFeedsRef.current.find(
@@ -243,7 +288,11 @@ export function useRerDutyInitialLoad(params: Params) {
         );
         const effectiveTail = currentFeed?.pendingNewerItems?.at(-1) ?? currentFeed?.items.at(-1);
         const fallbackCursor = effectiveTail
-          ? { id: effectiveTail[0], timestamp: effectiveTail[1].timestamp }
+          ? messageOrderCursor(
+              effectiveTail[0],
+              effectiveTail[1],
+              currentFeed?.messageSortBy ?? 'IMSTimestamp',
+            )
           : null;
         if (preserveUnread) {
           current.completeFeedReload(feedId);

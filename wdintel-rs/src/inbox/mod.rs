@@ -110,10 +110,16 @@ where
         m_dt.as_ref().map(|dt| dt.with_timezone(&Utc).naive_utc());
     let freq = crate::rer_importer::frequency::extract_freq(&body)?
         .map(|v| crate::rer_importer::frequency::etalon(&v));
+    let is_aviation_group =
+        message_is_aviation_group(txn, &message).await.c(h!())?;
     let known_callsign_tokens =
-        crate::rer_importer::callsigns::find_known_callsigns(rq, &body)
-            .await
-            .c(h!())?;
+        crate::rer_importer::callsigns::find_known_callsigns_for_group(
+            rq,
+            &body,
+            is_aviation_group,
+        )
+        .await
+        .c(h!())?;
     let callsign_etalons =
         crate::rer_importer::inbox::metadata::non_metadata_line_callsign_etalons(
             &known_callsign_tokens,
@@ -254,6 +260,15 @@ where
         datetime::from_date_time_text(date_v.as_deref(), time_v.as_deref())
             .c(h!())?;
 
+    if existing_inbox_item {
+        crate::rer_importer::inbox::prepare_message_network_activity_change(
+            txn,
+            message_id,
+            &format!("reprocessed inbox message {message_id}"),
+        )
+        .await
+        .c(h!())?;
+    }
     let result = sigint_inbox_item::ActiveModel {
         id: Set(message.id),
         id_uuid: Set(message.id_uuid),
@@ -660,6 +675,47 @@ where
             .await
             .c(h!())?;
     Ok(direct_other_count > 0)
+}
+
+pub(crate) async fn message_is_aviation_group<C>(
+    txn: &C,
+    message: &signal_message::Model,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    let linked_group = signal_message_group::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message_group::Relation::SignalGroup.def(),
+        )
+        .filter(signal_message_group::Column::SignalMessageId.eq(message.id))
+        .filter(signal_group::Column::IsAviationGroup.eq(true))
+        .select_only()
+        .column(signal_message_group::Column::Id)
+        .into_tuple::<i64>()
+        .one(txn)
+        .await
+        .c(h!())?;
+    if linked_group.is_some() {
+        return Ok(true);
+    }
+    let Some(datasource_group_id) = message.datasource_group_id else {
+        return Ok(false);
+    };
+    Ok(datasource_group::Entity::find_by_id(datasource_group_id)
+        .join(
+            JoinType::InnerJoin,
+            datasource_group::Relation::SignalGroup.def(),
+        )
+        .filter(signal_group::Column::IsAviationGroup.eq(true))
+        .select_only()
+        .column(datasource_group::Column::Id)
+        .into_tuple::<i64>()
+        .one(txn)
+        .await
+        .c(h!())?
+        .is_some())
 }
 pub async fn fanout_inbox_changed(
     redis: &mut redis::aio::ConnectionManager,

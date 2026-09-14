@@ -281,6 +281,7 @@ describe('units API', () => {
         isDeduplicateCandidate: null,
         comment: '',
         orbitNote: null,
+        presentInOrbit: null,
         duplicateUnitIds: [],
       }),
     ).resolves.toMatchObject([

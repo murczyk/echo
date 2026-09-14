@@ -3,9 +3,11 @@ import Uppy from '@uppy/core';
 import type { UppyFile } from '@uppy/core';
 import Tus from '@uppy/tus';
 
+import { emitUnauthorizedEvent } from '../../../auth-redirect';
 import { MESSAGE_TUS_ENDPOINT } from '../message-tus-resume';
 import {
   forgetMessageUploadFailure,
+  messageUploadFailure,
   rememberMessageUploadFailure,
 } from './message-upload-fallback';
 
@@ -71,11 +73,18 @@ export function useMessageUppy(busy: boolean, occupiedAttachmentCount = 0) {
       limit: 3,
       overridePatchMethod: true,
       removeFingerprintOnSuccess: true,
+      onShouldRetry(error, _retryAttempt, _options, defaultShouldRetry) {
+        // Uppy aborts the XHR before upload-error, which resets its live response status.
+        const status = error.originalResponse?.getStatus();
+        if (status !== undefined) Object.assign(error, { status });
+        return defaultShouldRetry(error);
+      },
     }),
   );
 
   const [uppyFiles, setUppyFiles] = useState<UppyFile<any, any>[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const effectGeneration = useRef(0);
 
   const addFiles = (files: File[], getName: (file: File) => string) => {
     setAttachmentErrorMsg(null);
@@ -102,6 +111,7 @@ export function useMessageUppy(busy: boolean, occupiedAttachmentCount = 0) {
   };
 
   useEffect(() => {
+    const generation = ++effectGeneration.current;
     const updateFiles = () => {
       setUppyFiles([...uppy.getFiles()]);
     };
@@ -118,6 +128,7 @@ export function useMessageUppy(busy: boolean, occupiedAttachmentCount = 0) {
       response?: { status?: number },
     ) => {
       if (file) rememberMessageUploadFailure(uppy, file, error, response?.status);
+      if (file && messageUploadFailure(uppy, file.id)?.status === 401) emitUnauthorizedEvent();
       updateFiles();
     };
     const handleUploadSuccess = (file: UppyFile<any, any> | undefined) => {
@@ -150,6 +161,10 @@ export function useMessageUppy(busy: boolean, occupiedAttachmentCount = 0) {
       uppy.off('upload-retry', updateFiles);
       uppy.off('restriction-failed', handleRestrictionFailed);
       uppy.off('state-update', updateFiles);
+      uppy.cancelAll();
+      queueMicrotask(() => {
+        if (effectGeneration.current === generation) uppy.destroy();
+      });
     };
   }, [uppy]);
 

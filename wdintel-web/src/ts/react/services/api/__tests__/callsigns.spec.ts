@@ -49,6 +49,8 @@ describe('callsigns API', () => {
     const request = {
       filterUnitArmyRegion: 'R1',
       filterUnitMilitaryDistrict: 'D1',
+      filterUnitBrigade: 'BR',
+      filterUnitTeamOrCrew: 'T',
     } as Parameters<typeof listCallsigns>[0];
 
     await listCallsigns(request);
@@ -60,6 +62,8 @@ describe('callsigns API', () => {
       expect(JSON.parse(String(options?.body))).toMatchObject({
         filter_unit_army_region: 'R1',
         filter_unit_military_district: 'D1',
+        filter_unit_brigade: 'BR',
+        filter_unit_team_or_crew: 'T',
       });
     }
   });

@@ -1,7 +1,11 @@
 use super::entities::sea_orm_active_enums::{
-    FileEntryKind, FileSyncSessionMode, FileSyncSessionStatus,
+    FileContentUploadStatus, FileEntryKind, FileSyncSessionMode,
+    FileSyncSessionStatus,
 };
-use super::entities::{file_entry, file_revision, file_sync_session};
+use super::entities::{
+    file_content, file_content_upload, file_entry, file_revision,
+    file_sync_session,
+};
 use super::*;
 use crate::devices::analytics::types::RuleExpression;
 use chrono::{Duration, NaiveDateTime, Utc};
@@ -94,9 +98,63 @@ async fn file_registry_schema_and_entity_round_trip() {
         assert_legacy_file_table_is_absent(connection).await;
         assert_file_entry_schema(connection).await;
         assert_batched_file_sync_schema(connection).await;
+        assert_file_content_schema(connection).await;
         assert_file_analysis_schema(connection).await;
         assert_default_analytics_tags(connection).await;
         assert_file_entry_entity_round_trip(connection).await;
+    }
+
+    sqlx::Postgres::drop_database(&database_url).await.unwrap();
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn content_migration_rejects_legacy_pointer_without_provenance() {
+    let (config, database_url) = isolated_file_registry_config().await;
+
+    {
+        let file_registry_db = connect_runtime(&config, Mode::Debug)
+            .await
+            .unwrap()
+            .unwrap();
+        let connection = file_registry_db.connection();
+        let migrations = wdfiles_migration::Migrator::migrations();
+        let content_migration_count = migrations
+            .iter()
+            .position(|migration| {
+                migration.name() == "m20260905_160446_device_file_content"
+            })
+            .unwrap();
+        wdfiles_migration::Migrator::up(
+            connection,
+            Some(u32::try_from(content_migration_count).unwrap()),
+        )
+        .await
+        .unwrap();
+
+        let transaction = connection.begin().await.unwrap();
+        let tree = insert_file_entry_tree(&transaction).await;
+        transaction
+            .execute_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "update file_entry set content_path = $2 where id = $1",
+                vec![tree.file_id.into(), "legacy/device-file-content".into()],
+            ))
+            .await
+            .unwrap();
+        transaction.commit().await.unwrap();
+
+        let error = wdfiles_migration::Migrator::up(connection, Some(1))
+            .await
+            .unwrap_err();
+        assert!(
+            format!("{error:?}").contains(
+                "file_entry contains legacy content_path values without file_content provenance"
+            ),
+            "unexpected migration error: {error:?}"
+        );
+        assert!(!table_exists(connection, "file_content").await);
+        assert!(!table_exists(connection, "file_content_upload").await);
     }
 
     sqlx::Postgres::drop_database(&database_url).await.unwrap();
@@ -536,6 +594,7 @@ async fn assert_migration_versions(connection: &DatabaseConnection) {
             "m20260819_103638_optional_source_file_state_settled_by"
                 .to_string(),
             "m20260819_103954_update_file_entry_analysis_guard".to_string(),
+            "m20260905_160446_device_file_content".to_string(),
         ]
     );
 }
@@ -992,7 +1051,10 @@ order by type.typname, value.enumsortorder
     );
     assert_eq!(
         constraint_names(connection, "file_revision", 'u').await,
-        vec!["file_metadata_revision_source_sequence_key".to_string()]
+        vec![
+            "file_metadata_revision_source_sequence_key".to_string(),
+            "file_revision_device_file_revision_key".to_string(),
+        ]
     );
     assert_eq!(
         constraint_names(connection, "file_sync_item", 'c').await,
@@ -1010,9 +1072,9 @@ order by type.typname, value.enumsortorder
     assert_eq!(
         constraint_names(connection, "file_revision", 'f').await,
         vec![
-            "file_metadata_revision_file_fk".to_string(),
             "file_metadata_revision_input_fk".to_string(),
             "file_metadata_revision_session_fk".to_string(),
+            "file_revision_device_file_fk".to_string(),
         ]
     );
     assert_eq!(
@@ -1064,6 +1126,7 @@ order by tablename, indexname
                 "file_metadata_revision_source_sequence_key",
             ),
             ("file_revision", "file_metadata_revision_sync_file_idx",),
+            ("file_revision", "file_revision_device_file_revision_key",),
             ("file_sync_batch", "file_sync_batch_pkey"),
             ("file_sync_item", "file_sync_item_accepted_path_uidx"),
             ("file_sync_item", "file_sync_item_pkey"),
@@ -1097,6 +1160,314 @@ order by tgname
     assert_eq!(
         revision_triggers,
         vec!["file_metadata_revision_immutable_trg".to_string()]
+    );
+}
+
+async fn assert_file_content_schema(connection: &DatabaseConnection) {
+    assert_exact_columns(
+        connection,
+        "file_content_upload",
+        &[
+            ("id", "NO", None, "uuid", "uuid"),
+            ("device_id", "NO", None, "uuid", "uuid"),
+            ("file_id", "NO", None, "uuid", "uuid"),
+            ("revision", "NO", None, "bigint", "int8"),
+            ("created_by_login_id", "NO", None, "uuid", "uuid"),
+            ("upload_length", "NO", None, "bigint", "int8"),
+            ("expected_sha256", "NO", None, "bytea", "bytea"),
+            ("object_key", "NO", None, "text", "text"),
+            (
+                "status",
+                "NO",
+                None,
+                "USER-DEFINED",
+                "file_content_upload_status",
+            ),
+            (
+                "created_at",
+                "NO",
+                None,
+                "timestamp with time zone",
+                "timestamptz",
+            ),
+            (
+                "last_activity_at",
+                "NO",
+                None,
+                "timestamp with time zone",
+                "timestamptz",
+            ),
+            (
+                "expires_at",
+                "NO",
+                None,
+                "timestamp with time zone",
+                "timestamptz",
+            ),
+            (
+                "hard_expires_at",
+                "NO",
+                None,
+                "timestamp with time zone",
+                "timestamptz",
+            ),
+            (
+                "spool_removed_at",
+                "YES",
+                None,
+                "timestamp with time zone",
+                "timestamptz",
+            ),
+            (
+                "next_cleanup_at",
+                "YES",
+                None,
+                "timestamp with time zone",
+                "timestamptz",
+            ),
+        ],
+    )
+    .await;
+    assert_exact_columns(
+        connection,
+        "file_content",
+        &[
+            ("file_id", "NO", None, "uuid", "uuid"),
+            ("revision", "NO", None, "bigint", "int8"),
+            ("upload_id", "NO", None, "uuid", "uuid"),
+            ("object_key", "NO", None, "text", "text"),
+            ("source_size_bytes", "NO", None, "bigint", "int8"),
+            ("source_sha256", "NO", None, "bytea", "bytea"),
+            ("is_encrypted", "NO", None, "boolean", "bool"),
+            (
+                "created_at",
+                "NO",
+                None,
+                "timestamp with time zone",
+                "timestamptz",
+            ),
+        ],
+    )
+    .await;
+
+    let enum_values = connection
+        .query_all_raw(Statement::from_string(
+            DbBackend::Postgres,
+            r#"
+select value.enumlabel
+from pg_catalog.pg_type as type
+join pg_catalog.pg_enum as value on value.enumtypid = type.oid
+where type.typname = 'file_content_upload_status'
+order by value.enumsortorder
+"#
+            .to_string(),
+        ))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| row.try_get("", "enumlabel").unwrap())
+        .collect::<Vec<String>>();
+    assert_eq!(
+        enum_values,
+        [
+            "open",
+            "completed",
+            "aborted",
+            "expired",
+            "stale",
+            "rejected"
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .collect::<Vec<_>>()
+    );
+
+    assert_eq!(
+        constraint_names(connection, "file_content_upload", 'c').await,
+        vec![
+            "file_content_upload_empty_sha256_check".to_string(),
+            "file_content_upload_length_check".to_string(),
+            "file_content_upload_object_key_check".to_string(),
+            "file_content_upload_sha256_check".to_string(),
+            "file_content_upload_state_shape_check".to_string(),
+            "file_content_upload_time_check".to_string(),
+        ]
+    );
+    assert_eq!(
+        constraint_names(connection, "file_content_upload", 'f').await,
+        vec!["file_content_upload_target_fk".to_string()]
+    );
+    assert_eq!(
+        constraint_names(connection, "file_content_upload", 'u').await,
+        vec![
+            "file_content_upload_binding_key".to_string(),
+            "file_content_upload_object_key_key".to_string(),
+        ]
+    );
+    assert_eq!(
+        constraint_names(connection, "file_content", 'c').await,
+        vec![
+            "file_content_sha256_check".to_string(),
+            "file_content_size_check".to_string(),
+        ]
+    );
+    assert_eq!(
+        constraint_names(connection, "file_content", 'f').await,
+        vec![
+            "file_content_revision_fk".to_string(),
+            "file_content_upload_binding_fk".to_string(),
+        ]
+    );
+    assert_eq!(
+        constraint_names(connection, "file_content", 'u').await,
+        vec![
+            "file_content_current_pointer_key".to_string(),
+            "file_content_object_key_key".to_string(),
+            "file_content_upload_id_key".to_string(),
+        ]
+    );
+
+    let foreign_keys = connection
+        .query_all_raw(Statement::from_string(
+            DbBackend::Postgres,
+            r#"
+select conname, pg_get_constraintdef(oid) as definition
+from pg_catalog.pg_constraint
+where conname in (
+    'file_content_revision_fk',
+    'file_content_upload_binding_fk',
+    'file_content_upload_target_fk',
+    'file_entry_current_content_fk',
+    'file_revision_device_file_fk'
+)
+order by conname
+"#
+            .to_string(),
+        ))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| {
+            (
+                row.try_get("", "conname").unwrap(),
+                row.try_get("", "definition").unwrap(),
+            )
+        })
+        .collect::<Vec<(String, String)>>();
+    assert_eq!(
+        foreign_keys,
+        [
+            (
+                "file_content_revision_fk",
+                "FOREIGN KEY (file_id, revision) REFERENCES file_revision(id, revision) ON DELETE RESTRICT",
+            ),
+            (
+                "file_content_upload_binding_fk",
+                "FOREIGN KEY (upload_id, file_id, revision, object_key, source_size_bytes, source_sha256) REFERENCES file_content_upload(id, file_id, revision, object_key, upload_length, expected_sha256) ON DELETE RESTRICT",
+            ),
+            (
+                "file_content_upload_target_fk",
+                "FOREIGN KEY (device_id, file_id, revision) REFERENCES file_revision(device_id, id, revision) ON DELETE RESTRICT",
+            ),
+            (
+                "file_entry_current_content_fk",
+                "FOREIGN KEY (id, revision, content_path) REFERENCES file_content(file_id, revision, object_key) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED",
+            ),
+            (
+                "file_revision_device_file_fk",
+                "FOREIGN KEY (device_id, id) REFERENCES file_entry(device_id, id) ON DELETE RESTRICT",
+            ),
+        ]
+        .into_iter()
+        .map(|(name, definition)| (name.to_string(), definition.to_string()))
+        .collect::<Vec<_>>()
+    );
+
+    let indexes = connection
+        .query_all_raw(Statement::from_string(
+            DbBackend::Postgres,
+            r#"
+select tablename, indexname
+from pg_catalog.pg_indexes
+where schemaname = 'public'
+  and tablename in ('file_content', 'file_content_upload')
+order by tablename, indexname
+"#
+            .to_string(),
+        ))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| {
+            (
+                row.try_get("", "tablename").unwrap(),
+                row.try_get("", "indexname").unwrap(),
+            )
+        })
+        .collect::<Vec<(String, String)>>();
+    assert_eq!(
+        indexes,
+        [
+            ("file_content", "file_content_current_pointer_key"),
+            ("file_content", "file_content_object_key_key"),
+            ("file_content", "file_content_pkey"),
+            ("file_content", "file_content_upload_id_key"),
+            ("file_content_upload", "file_content_upload_binding_key",),
+            ("file_content_upload", "file_content_upload_cleanup_idx"),
+            ("file_content_upload", "file_content_upload_object_key_key",),
+            (
+                "file_content_upload",
+                "file_content_upload_open_target_uidx",
+            ),
+            ("file_content_upload", "file_content_upload_pkey"),
+            (
+                "file_content_upload",
+                "file_content_upload_reserved_bytes_idx",
+            ),
+            (
+                "file_content_upload",
+                "file_content_upload_reserved_count_idx",
+            ),
+        ]
+        .into_iter()
+        .map(|(table, index)| (table.to_string(), index.to_string()))
+        .collect::<Vec<_>>()
+    );
+
+    let triggers = connection
+        .query_all_raw(Statement::from_string(
+            DbBackend::Postgres,
+            r#"
+select relation.relname as table_name, trigger.tgname as trigger_name
+from pg_catalog.pg_trigger as trigger
+join pg_catalog.pg_class as relation on relation.oid = trigger.tgrelid
+join pg_catalog.pg_namespace as namespace on namespace.oid = relation.relnamespace
+where namespace.nspname = 'public'
+  and relation.relname in ('file_content', 'file_content_upload')
+  and not trigger.tgisinternal
+order by relation.relname, trigger.tgname
+"#
+            .to_string(),
+        ))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| {
+            (
+                row.try_get("", "table_name").unwrap(),
+                row.try_get("", "trigger_name").unwrap(),
+            )
+        })
+        .collect::<Vec<(String, String)>>();
+    assert_eq!(
+        triggers,
+        [
+            ("file_content", "file_content_immutable_trg"),
+            ("file_content_upload", "file_content_upload_mutation_trg",),
+        ]
+        .into_iter()
+        .map(|(table, trigger)| (table.to_string(), trigger.to_string()))
+        .collect::<Vec<_>>()
     );
 }
 
@@ -1541,6 +1912,7 @@ async fn assert_file_entry_constraints(connection: &DatabaseConnection) {
         vec![
             "file_entry_analysis_input_fk".to_string(),
             "file_entry_current_analysis_fk".to_string(),
+            "file_entry_current_content_fk".to_string(),
             "file_entry_current_revision_fk".to_string(),
             "file_entry_current_session_fk".to_string(),
             "file_entry_parent_fk".to_string(),
@@ -1551,6 +1923,7 @@ async fn assert_file_entry_constraints(connection: &DatabaseConnection) {
         vec![
             "file_entry_absolute_path_length_check".to_string(),
             "file_entry_absolute_path_windows_check".to_string(),
+            "file_entry_content_revision_check".to_string(),
             "file_entry_directory_content_path_null_check".to_string(),
             "file_entry_directory_metadata_null_check".to_string(),
             "file_entry_extension_check".to_string(),
@@ -1825,7 +2198,7 @@ async fn assert_file_entry_entity_round_trip(connection: &DatabaseConnection) {
     assert_eq!(hierarchy_path, tree.file_hierarchy_path);
 
     let second_file_id = Uuid::new_v4();
-    let mut second_file = file_entry_row(
+    let second_file = file_entry_row(
         second_file_id,
         tree.device_id,
         tree.sync_id,
@@ -1835,8 +2208,6 @@ async fn assert_file_entry_entity_round_trip(connection: &DatabaseConnection) {
         r"C:\var\copy.log",
         tree.created_at,
     );
-    second_file.content_path =
-        Set(Some("devices/018f0000/report.log".to_string()));
     let second_file = second_file.insert(&transaction).await.unwrap();
     insert_file_revision(
         &transaction,
@@ -1849,9 +2220,35 @@ async fn assert_file_entry_entity_round_trip(connection: &DatabaseConnection) {
         tree.created_at,
     )
     .await;
+    let content_path = super::test_support::publish_content(
+        &transaction,
+        &second_file,
+        Uuid::now_v7(),
+    )
+    .await;
+    let content = file_content::Entity::find_by_id((second_file_id, 1))
+        .one(&transaction)
+        .await
+        .unwrap()
+        .unwrap();
+    let upload = file_content_upload::Entity::find_by_id(content.upload_id)
+        .one(&transaction)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(content.object_key, content_path);
+    assert_eq!(content.source_size_bytes, 1);
+    assert_eq!(content.source_sha256, vec![1_u8; 32]);
+    assert!(content.is_encrypted);
+    assert_eq!(upload.status, FileContentUploadStatus::Completed);
     transaction
         .execute_unprepared("set constraints all immediate")
         .await
+        .unwrap();
+    let second_file = file_entry::Entity::find_by_id(second_file_id)
+        .one(&transaction)
+        .await
+        .unwrap()
         .unwrap();
     assert_eq!(second_file.id, second_file_id);
     assert_eq!(second_file.kind, FileEntryKind::File);
@@ -1862,7 +2259,7 @@ async fn assert_file_entry_entity_round_trip(connection: &DatabaseConnection) {
     );
     assert_eq!(
         second_file.content_path.as_deref(),
-        Some("devices/018f0000/report.log")
+        Some(content_path.as_str())
     );
 
     assert_file_entry_rejections(&transaction, &tree).await;

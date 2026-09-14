@@ -55,6 +55,9 @@ vi.mock('@uppy/core', () => {
       return [];
     }
     cancelAll() {}
+    destroy() {
+      this.cancelAll();
+    }
     upload() {
       return Promise.resolve({ successful: [], failed: [] });
     }

@@ -61,11 +61,11 @@ describe('Duty browser notifications', () => {
 
     let resolvePreview!: (value: {
       kind: 'ready';
-      preview: { messageId: number; timestamp: number; title: string; body: string };
+      preview: { messageId: number; orderTimestamp: number; title: string; body: string };
     }) => void;
     const pending = new Promise<{
       kind: 'ready';
-      preview: { messageId: number; timestamp: number; title: string; body: string };
+      preview: { messageId: number; orderTimestamp: number; title: string; body: string };
     }>((resolve) => {
       resolvePreview = resolve;
     });
@@ -76,7 +76,7 @@ describe('Duty browser notifications', () => {
     cancelDutyNotificationPollCycle(cancelled);
     resolvePreview({
       kind: 'ready',
-      preview: { messageId: 1, timestamp: 1, title: 'Sender', body: 'Body' },
+      preview: { messageId: 1, orderTimestamp: 1, title: 'Sender', body: 'Body' },
     });
     await Promise.resolve();
     await Promise.resolve();
@@ -106,11 +106,11 @@ describe('Duty browser notifications', () => {
     });
     let resolvePreview!: (value: {
       kind: 'ready';
-      preview: { messageId: number; timestamp: number; title: string; body: string };
+      preview: { messageId: number; orderTimestamp: number; title: string; body: string };
     }) => void;
     const pending = new Promise<{
       kind: 'ready';
-      preview: { messageId: number; timestamp: number; title: string; body: string };
+      preview: { messageId: number; orderTimestamp: number; title: string; body: string };
     }>((resolve) => {
       resolvePreview = resolve;
     });
@@ -124,7 +124,7 @@ describe('Duty browser notifications', () => {
     });
     resolvePreview({
       kind: 'ready',
-      preview: { messageId: 1, timestamp: 1, title: 'Sender', body: 'Body' },
+      preview: { messageId: 1, orderTimestamp: 1, title: 'Sender', body: 'Body' },
     });
     await Promise.resolve();
     await Promise.resolve();
@@ -133,7 +133,7 @@ describe('Duty browser notifications', () => {
     const disabled = beginDutyNotificationPollCycle();
     const loader = vi.fn(async () => ({
       kind: 'ready' as const,
-      preview: { messageId: 2, timestamp: 2, title: 'Sender', body: 'Body' },
+      preview: { messageId: 2, orderTimestamp: 2, title: 'Sender', body: 'Body' },
     }));
     registerDutyNotificationPreview(disabled, 'feed-a', loader);
     notifyDutyNewMessages('feed-a', 1, disabled);
@@ -142,7 +142,7 @@ describe('Duty browser notifications', () => {
   });
 
   // Regression: https://github.com/echoua/echo/pull/3331
-  it('aggregates ready previews into the newest unique rich notification', async () => {
+  it('aggregates ready previews by resolved order timestamp into one rich notification', async () => {
     const values = new Map<string, string>();
     Object.defineProperty(window, 'localStorage', {
       configurable: true,
@@ -164,15 +164,15 @@ describe('Duty browser notifications', () => {
     registerDutyNotificationPreview(cycle, 'stale', async () => ({ kind: 'stale' }));
     registerDutyNotificationPreview(cycle, 'old', async () => ({
       kind: 'ready',
-      preview: { messageId: 4, timestamp: 10, title: 'Old', body: 'Old body' },
+      preview: { messageId: 4, orderTimestamp: 20, title: 'Old', body: 'Old body' },
     }));
     registerDutyNotificationPreview(cycle, 'new', async () => ({
       kind: 'ready',
-      preview: { messageId: 5, timestamp: 20, title: 'New', body: 'New body' },
+      preview: { messageId: 5, orderTimestamp: 10, title: 'New', body: 'New body' },
     }));
     registerDutyNotificationPreview(cycle, 'duplicate', async () => ({
       kind: 'ready',
-      preview: { messageId: 5, timestamp: 20, title: 'Duplicate', body: 'Duplicate body' },
+      preview: { messageId: 5, orderTimestamp: 10, title: 'Duplicate', body: 'Duplicate body' },
     }));
     for (const feedId of ['stale', 'old', 'new', 'duplicate'])
       notifyDutyNewMessages(feedId, 1, cycle);
@@ -184,8 +184,8 @@ describe('Duty browser notifications', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(NotificationMock).toHaveBeenCalledTimes(1);
     expect(NotificationMock).toHaveBeenLastCalledWith(
-      'Duplicate',
-      expect.objectContaining({ body: 'Duplicate body', silent: true }),
+      'Old',
+      expect.objectContaining({ body: 'Old body', silent: true }),
     );
   });
 

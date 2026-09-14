@@ -28,16 +28,16 @@ export function normalizeEditorColor(value: unknown) {
   return FALLBACK_EDITOR_COLOR;
 }
 
-export function withHighlightAlpha(baseColor: string, opacity = 0.4) {
+export function withHighlightAlpha(baseColor: string, opacity = 1) {
   return `${normalizeEditorColor(baseColor)}${Math.round(Math.max(0, Math.min(1, opacity)) * 255)
     .toString(16)
     .padStart(2, '0')}`;
 }
 
 function highlightOpacity(stroke: unknown) {
-  if (typeof stroke !== 'string') return 0.4;
+  if (typeof stroke !== 'string') return 1;
   const alpha = stroke.match(/^#[\da-f]{6}([\da-f]{2})$/i)?.[1];
-  return alpha ? Math.max(0.1, Math.min(0.8, parseInt(alpha, 16) / 255)) : 0.4;
+  return alpha ? Math.max(0.1, Math.min(1, parseInt(alpha, 16) / 255)) : 1;
 }
 
 function dashEnabled(value: unknown) {
@@ -91,7 +91,9 @@ export function readImageEditorObjectStyle(
     strokeWidth: selected.strokeWidth ?? 1,
     dash: dashEnabled(selected.strokeDashArray),
     opacity:
-      role === ImageEditorObjectRole.Highlight ? highlightOpacity(selected.stroke) : undefined,
+      role === ImageEditorObjectRole.Highlight || role === ImageEditorObjectRole.Brush
+        ? highlightOpacity(selected.stroke)
+        : undefined,
   };
 }
 

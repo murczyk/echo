@@ -144,6 +144,11 @@ focusTotpInput =
     Task.attempt (\_ -> NoOp) (Browser.Dom.focus "totp-token")
 
 
+focusTotpSetupHeading : Cmd Msg
+focusTotpSetupHeading =
+    Task.attempt (\_ -> NoOp) (Browser.Dom.focus "totp-setup-heading")
+
+
 pendingFromLoginRsp : B.LoginRsp -> Maybe Pending2fa
 pendingFromLoginRsp rsp =
     case rsp of
@@ -305,7 +310,13 @@ update shared msg model =
                         , formErrors = Dict.empty
                         , authInFlight = False
                       }
-                    , E.sendCmd focusTotpInput
+                    , E.sendCmd <|
+                        case pending of
+                            Setup _ ->
+                                focusTotpSetupHeading
+
+                            Verify _ ->
+                                focusTotpInput
                     )
 
         Confirm2fa ->
@@ -436,10 +447,19 @@ totpPanel model pending =
         setupBits =
             case pending of
                 Setup { qrBase64, manualKey } ->
-                    [ div [ class "mb-3 w-100 text-center" ]
+                    [ div [ class "mb-3 w-100 text-start" ]
+                        [ h2 [ id "totp-setup-heading", attribute "tabindex" "-1", class "h5" ]
+                            [ text "Налаштуйте двофакторну автентифікацію" ]
+                        , ol [ class "mb-0 ps-3" ]
+                            [ li [] [ text "Встановіть на телефон застосунок-автентифікатор з офіційного магазину, наприклад Microsoft Authenticator, Google Authenticator, Authy або Duo Mobile." ]
+                            , li [] [ text "У застосунку виберіть додавання облікового запису та відскануйте QR-код." ]
+                            , li [] [ text "Введіть нижче 6-значний код, який з’явиться в застосунку." ]
+                            ]
+                        ]
+                    , div [ class "mb-3 w-100 text-center" ]
                         [ img
                             [ src ("data:image/png;base64," ++ qrBase64)
-                            , alt "QR код для 2FA"
+                            , alt "QR-код для налаштування двофакторної автентифікації"
                             , style "width" "180px"
                             , style "height" "180px"
                             , style "background" "#fff"
@@ -447,27 +467,32 @@ totpPanel model pending =
                             ]
                             []
                         ]
-                    , div [ class "mb-2 w-100 text-center small" ]
-                        [ text "Відскануйте QR у застосунку автентифікатора або введіть ключ вручну:" ]
+                    , div [ class "mb-2 w-100 text-start small" ]
+                        [ text "Не вдається відсканувати QR-код? Введіть цей ключ вручну:" ]
                     , div
                         [ class "mb-3 w-100 text-center text-info small font-monospace"
                         , style "word-break" "break-all"
                         ]
                         [ text manualKey ]
+                    , div [ class "mb-3 w-100 text-start small" ]
+                        [ text "Не надсилайте QR-код або ключ іншим людям." ]
                     ]
 
                 Verify _ ->
-                    [ div [ class "mb-3 w-100 text-center small  " ]
-                        [ text "Введіть код з застосунку автентифікатора" ]
+                    [ div [ class "mb-3 w-100 text-start" ]
+                        [ h2 [ class "h5" ] [ text "Підтвердіть вхід" ]
+                        , p [ class "mb-0 small" ] [ text "Введіть 6-значний код із застосунку-автентифікатора." ]
+                        ]
                     ]
     in
     setupBits
-        ++ [ div [ class "mb-2 w-100" ] <|
-                input
+        ++ [ div [ class "mb-2 w-100" ]
+                ([ label [ for "totp-token", class "form-label" ] [ text "6-значний код" ]
+                 , input
                     [ type_ "text"
                     , class "form-control"
                     , id "totp-token"
-                    , placeholder "код з автентифікатора"
+                    , placeholder "000000"
                     , value model.totpTokenInp
                     , onInput SetTotpTokenInp
                     , disabled model.authInFlight
@@ -476,7 +501,9 @@ totpPanel model pending =
                     , isInvalidCls "token" model.formErrors
                     ]
                     []
-                    :: fieldError "token" model.formErrors
+                 ]
+                    ++ fieldError "token" model.formErrors
+                )
            , div [ class "mb-2 w-100 d-flex justify-content-center" ]
                 [ button
                     [ type_ "submit"
@@ -504,7 +531,7 @@ body _ deltaLoginFlag sharedToasts model =
         formWidth =
             case model.pending2fa of
                 Just (Setup _) ->
-                    style "width" "320px"
+                    style "width" "min(420px, calc(100vw - 32px))"
 
                 _ ->
                     style "width" "280px"
@@ -682,8 +709,8 @@ body _ deltaLoginFlag sharedToasts model =
     [ Shared.Components.Toast.overlay SharedToastMsg sharedToasts
     , Shared.Components.Toast.view ToastMsg model.toasts <|
         div
-            [ class "d-flex flex-column justify-content-center align-items-center"
-            , style "height" "100vh"
+            [ class "d-flex flex-column justify-content-center align-items-center py-3"
+            , style "min-height" "100vh"
             , style "background-image" "linear-gradient(to bottom, rgba(var(--bd-coyote-rgb), 1), var(--bd-oak-barrel)"
             ]
             [ Html.form

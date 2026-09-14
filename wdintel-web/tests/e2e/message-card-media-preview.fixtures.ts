@@ -20,6 +20,12 @@ const MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX = '/test-assets/message-card-media
 
 const TRANSPARENT_PNG_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4////fwAJ+wP7bq8W2QAAAABJRU5ErkJggg==';
+const LARGE_IMAGE_SVG = `
+  <svg xmlns="http://www.w3.org/2000/svg" width="900" height="1600" viewBox="0 0 900 1600">
+    <rect width="900" height="1600" fill="#1b365d"/>
+    <circle cx="640" cy="300" r="180" fill="#f5a623"/>
+    <text x="80" y="1200" fill="white" font-size="80">E2E attachment</text>
+  </svg>`;
 
 function buildValidWavAudioFixture(): Buffer {
   const sampleRate = 8_000;
@@ -60,7 +66,25 @@ const MARKDOWN_PREVIEW_TEXT = [
   '[Safe link](https://example.test/safe-link)',
 ].join('\n');
 
-function buildMessageCardMediaPreviewMessage(): Record<string, unknown> {
+function buildMessageCardMediaPreviewMessage({
+  withPolishContent = false,
+  withPartialCoordinateError = false,
+  withCompleteCoordinateError = false,
+  coordinateLabel,
+  coordinatePointCount = 1,
+  palitraEtalon,
+  messageText,
+  withCompletedOcrAndSummary = false,
+}: {
+  withPolishContent?: boolean;
+  withPartialCoordinateError?: boolean;
+  withCompleteCoordinateError?: boolean;
+  coordinateLabel?: string;
+  coordinatePointCount?: number;
+  palitraEtalon?: string;
+  messageText?: string;
+  withCompletedOcrAndSummary?: boolean;
+} = {}): Record<string, unknown> {
   const image1 = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1}`;
   const image2 = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image2}`;
   const video1 = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.video1}`;
@@ -73,6 +97,31 @@ function buildMessageCardMediaPreviewMessage(): Record<string, unknown> {
     messageUid: 'e2e-message-card-preview',
     text: 'E2E message-card media preview fixture',
     media: [
+      ...(withCompletedOcrAndSummary
+        ? [
+            {
+              id: 'e2e-image-1',
+              content_type: 'image/svg+xml',
+              file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1,
+              size_bytes: 1_024,
+              href: image1,
+              ocr: {
+                state: 'completed',
+                qualityStatus: 'accepted',
+                processedPages: 1,
+                totalPages: 1,
+                lastError: null,
+                queueSize: null,
+                attempts: 1,
+                statusLog: [],
+                aiEngineId: null,
+                aiEngineName: null,
+                modelName: null,
+              },
+              summary: { state: 'completed', lastError: null, hasCoordinates: false },
+            },
+          ]
+        : []),
       {
         id: 'e2e-image-1',
         content_type: 'image/png',
@@ -129,8 +178,11 @@ function buildMessageCardMediaPreviewMessage(): Record<string, unknown> {
     date: '13.07.2026',
     time: '12:34',
     freq: '123.4',
-    coords: null,
-    callsigns: [],
+    coords:
+      palitraEtalon != null || withCompleteCoordinateError || coordinateLabel != null
+        ? null
+        : '50.45044, 30.52355',
+    callsigns: withPolishContent ? ['E2E-ALPHA'] : [],
     callsignsAlg2: [],
     checked: false,
     important: false,
@@ -145,22 +197,54 @@ function buildMessageCardMediaPreviewMessage(): Record<string, unknown> {
     unit: 'E2E Unit',
     callsignTokens: null,
     signalTokens: null,
-    pointTokens: null,
+    pointTokens: palitraEtalon == null ? null : [{ etalon: palitraEtalon }],
     noHeadersBody: null,
     keywordTokens: null,
     textMarked: null,
     datasourceId: null,
     location: null,
-    tags: null,
-    networkIds: null,
+    tags: palitraEtalon == null ? null : [1],
+    networkIds: withPolishContent ? [301, 302] : null,
     inboxTags: null,
     metadata: [],
   };
 }
 
-export function buildMessageCardMediaPreviewInboxResponse(): InboxMessagesRspRaw {
+export function buildMessageCardMediaPreviewInboxResponse({
+  withPolishContent = false,
+  withPartialCoordinateError = false,
+  withCompleteCoordinateError = false,
+  coordinateLabel,
+  coordinatePointCount = 1,
+  palitraEtalon,
+  messageText,
+  withCompletedOcrAndSummary = false,
+}: {
+  withPolishContent?: boolean;
+  withPartialCoordinateError?: boolean;
+  withCompleteCoordinateError?: boolean;
+  coordinateLabel?: string;
+  coordinatePointCount?: number;
+  palitraEtalon?: string;
+  messageText?: string;
+  withCompletedOcrAndSummary?: boolean;
+} = {}): InboxMessagesRspRaw {
   return {
-    inbox_items: [[101, buildMessageCardMediaPreviewMessage() as never]],
+    inbox_items: [
+      [
+        101,
+        buildMessageCardMediaPreviewMessage({
+          withPolishContent,
+          withPartialCoordinateError,
+          withCompleteCoordinateError,
+          coordinateLabel,
+          coordinatePointCount,
+          palitraEtalon,
+          messageText,
+          withCompletedOcrAndSummary,
+        }) as never,
+      ],
+    ],
     callsigns: [],
     signal_profiles: {},
     signal_groups: [],
@@ -176,18 +260,34 @@ async function fulfillAsset(route: Route, body: BodyInit, contentType: string): 
   });
 }
 
-export async function installMessageCardMediaPreviewAssetRoutes(page: Page): Promise<void> {
+export async function installMessageCardMediaPreviewAssetRoutes(
+  page: Page,
+  deferredImageResponse?: DeferredMediaResponse,
+  image1Override?: { body: Buffer; contentType: string },
+): Promise<void> {
   await page.route(`**${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/**`, async (route) => {
     const pathname = new URL(route.request().url()).pathname;
     const fileName = pathname.split('/').pop() ?? '';
 
     if (fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1) {
-      await fulfillAsset(route, Buffer.from(TRANSPARENT_PNG_BASE64, 'base64'), 'image/png');
+      if (image1Override) {
+        await fulfillAsset(route, image1Override.body, image1Override.contentType);
+        return;
+      }
+      if (deferredImageResponse) {
+        await deferredImageResponse.fulfill(
+          route,
+          Buffer.from(TRANSPARENT_PNG_BASE64, 'base64'),
+          'image/png',
+        );
+        return;
+      }
+      await fulfillAsset(route, LARGE_IMAGE_SVG, 'image/svg+xml');
       return;
     }
 
     if (fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image2) {
-      await fulfillAsset(route, Buffer.from(TRANSPARENT_PNG_BASE64, 'base64'), 'image/png');
+      await fulfillAsset(route, LARGE_IMAGE_SVG, 'image/svg+xml');
       return;
     }
 
@@ -223,30 +323,190 @@ export async function installMessageCardMediaPreviewAssetRoutes(page: Page): Pro
 async function installMessageCardMediaPreviewHostFixture(
   page: Page,
   host: MessageCardMediaPreviewHost,
+  withPolishContent: boolean,
+  withPartialCoordinateError: boolean,
+  withCompleteCoordinateError: boolean,
+  coordinateLabel: string | undefined,
+  coordinatePointCount: number,
+  palitraEtalon: string | undefined,
+  messageText: string | undefined,
   enableAudioTranscription: boolean,
+  withCompletedOcrAndSummary: boolean,
+  messageReferenceResponse: unknown | undefined,
+  messageReferenceDelayMs: number,
+  signalGroups: InboxMessagesRspRaw['signal_groups'] | undefined,
 ): Promise<void> {
-  const inboxResponse = buildMessageCardMediaPreviewInboxResponse();
+  const inboxResponse = {
+    ...buildMessageCardMediaPreviewInboxResponse({
+      withPolishContent,
+      withPartialCoordinateError,
+      withCompleteCoordinateError,
+      coordinateLabel,
+      coordinatePointCount,
+      palitraEtalon,
+      messageText,
+      withCompletedOcrAndSummary,
+    }),
+    signal_groups: signalGroups ?? [],
+  };
+
+  const networkInfoResponse = withPolishContent ? MESSAGE_CARD_POLISH_NETWORKS : undefined;
 
   if (host === 'analysis') {
     await installAnalysisNeoApiMocks(page, { inboxResponse, enableAudioTranscription });
     return;
   }
 
-  await installRerDutyShortStateMocks(page, { inboxResponse, enableAudioTranscription });
+  if (messageReferenceResponse !== undefined) {
+    await page.route('**/api/rer-importer/inbox-item-context', async (route) => {
+      if (messageReferenceDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, messageReferenceDelayMs));
+      }
+      await route.fulfill({
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify(messageReferenceResponse),
+      });
+    });
+  }
+
+  if (withPartialCoordinateError || withCompleteCoordinateError || coordinateLabel != null) {
+    let requestCount = 0;
+    await page.route(
+      '**/api/messenger/media/e2e-coordinate-error/summary/coordinates',
+      async (route) => {
+        requestCount += 1;
+        if (withPartialCoordinateError || (withCompleteCoordinateError && requestCount === 1)) {
+          await route.fulfill({ status: 500, body: 'coordinate lookup failed' });
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({
+            coordinates: Array.from({ length: coordinatePointCount }, (_, index) => ({
+              title: coordinateLabel ?? 'E2E coordinate',
+              description: 'Recovered coordinate',
+              plannedMeans: null,
+              coordinateSystem: 'wgs84',
+              value: `50.45044, ${30.52355 + index / 100_000}`,
+            })),
+          }),
+        });
+      },
+    );
+  }
+
+  if (palitraEtalon != null) {
+    await page.route('**/api/tags/tags-list', (route) =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify([[1, { id: 1, label: 'E2E Palitra', is_palitra: true }]]),
+      }),
+    );
+    await page.route('**/api/palitra/v2/list-map', (route) =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify([{ palitra: { id: 1 } }]),
+      }),
+    );
+    await page.route('**/api/palitra/points/search', (route) =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify([
+          { points: [{ label: palitraEtalon, coords: { lat: 49.45044, lng: 31.52355 } }] },
+        ]),
+      }),
+    );
+  }
+
+  if (withCompletedOcrAndSummary) {
+    await page.route('**/api/messenger/media/e2e-image-1/ocr?*', async (route) => {
+      await route.fulfill({
+        contentType: 'text/html; charset=utf-8',
+        body: '<!doctype html><html><body style="height:1600px"><p>E2E OCR text</p><p>OCR scroll content</p></body></html>',
+      });
+    });
+    await page.route('**/api/messenger/media/e2e-image-1/summary', async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          state: 'completed',
+          summary: [
+            'E2E completed media summary',
+            'E2E summary detail 1',
+            'E2E summary detail 2',
+            'E2E summary detail 3',
+            'E2E summary detail 4',
+          ].join('\n'),
+          coordinates: [],
+          lastError: null,
+          sourceKind: 'ocr',
+          sourceCharCount: 42,
+          aiEngineName: 'E2E',
+        }),
+      });
+    });
+  }
 }
 
 export async function openMessageCardPreviewHost(
   page: Page,
   host: MessageCardMediaPreviewHost,
   {
+    revealAudio = false,
+    revealCoordinates = false,
+    withPolishContent = false,
+    withPartialCoordinateError = false,
+    withCompleteCoordinateError = false,
+    coordinateLabel,
+    coordinatePointCount = 1,
+    palitraEtalon,
+    messageText,
     enableAudioTranscription = false,
+    withCompletedOcrAndSummary = false,
+    deferredImageResponse,
+    messageReferenceResponse,
+    messageReferenceDelayMs = 0,
+    signalGroups,
   }: {
+    revealAudio?: boolean;
+    revealCoordinates?: boolean;
+    withPolishContent?: boolean;
+    withPartialCoordinateError?: boolean;
+    withCompleteCoordinateError?: boolean;
+    coordinateLabel?: string;
+    coordinatePointCount?: number;
+    palitraEtalon?: string;
+    messageText?: string;
     enableAudioTranscription?: boolean;
+    withCompletedOcrAndSummary?: boolean;
+    deferredImageResponse?: DeferredMediaResponse;
+    messageReferenceResponse?: unknown;
+    messageReferenceDelayMs?: number;
+    signalGroups?: InboxMessagesRspRaw['signal_groups'];
   } = {},
 ): Promise<void> {
-  await installMessageCardMediaPreviewAssetRoutes(page);
-  await installMessageCardMediaPreviewHostFixture(page, host, enableAudioTranscription);
-  await page.goto(host === 'analysis' ? '/rer-analysis-neo' : '/rer-duty-neo');
+  await installMessageCardMediaPreviewAssetRoutes(page, deferredImageResponse);
+  await installMessageCardMediaPreviewHostFixture(
+    page,
+    host,
+    withPolishContent,
+    withPartialCoordinateError,
+    withCompleteCoordinateError,
+    coordinateLabel,
+    coordinatePointCount,
+    palitraEtalon,
+    messageText,
+    enableAudioTranscription,
+    withCompletedOcrAndSummary,
+    messageReferenceResponse,
+    messageReferenceDelayMs,
+    signalGroups,
+  );
+  await page.goto(
+    host === 'analysis' ? '/rer-analysis-neo' : '/rer-duty-neo',
+    deferredImageResponse ? { waitUntil: 'domcontentloaded' } : undefined,
+  );
 
   const media = page.getByRole('button', { name: /^(Розгорнути|Згорнути) медіа:/ });
   await expect(media).toBeVisible();

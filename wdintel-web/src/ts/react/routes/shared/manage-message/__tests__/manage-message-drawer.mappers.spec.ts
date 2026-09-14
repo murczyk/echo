@@ -116,6 +116,22 @@ describe('mapInboxMessageToForm', () => {
     expect(values.tags).toEqual(['арта']);
   });
 
+  // ECHO-3073: attribution rows may legitimately repeat a tag ID.
+  it('hydrates unique exact tag labels in their first-occurrence order', () => {
+    const message = buildMessage({ tags: [7, 7, 9, 10, 99, 9] });
+    const dictionary: Record<number, Tag> = {
+      7: { ...tagsMap[7], label: 'зв’язок' },
+      9: { ...tagsMap[7], label: 'арта, ствольна' },
+      10: { ...tagsMap[7], label: 'зв’язок' },
+    };
+
+    const values = mapInboxMessageToForm(message, dictionary);
+
+    expect(values.tags).toEqual(['зв’язок', 'арта, ствольна']);
+    expect(message.tags).toEqual([7, 7, 9, 10, 99, 9]);
+    expect(dictionary[9]?.label).toBe('арта, ствольна');
+  });
+
   it('prefers parsed date and time over the ingest timestamp', () => {
     const values = mapInboxMessageToForm(
       buildMessage({

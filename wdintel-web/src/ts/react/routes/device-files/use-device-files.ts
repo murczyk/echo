@@ -3,18 +3,15 @@ import { useCallback, useEffect } from 'react';
 import { useDeviceFileCounts } from './use-device-file-counts';
 import { useDeviceFileTree } from './use-device-file-tree';
 import { useDeviceFilesLoad } from './use-device-files.load';
-import { useDeviceFilesSync } from './use-device-files.sync';
 import type { DeviceAnalyticsTagFilter } from './types';
 
 export function useDeviceFiles({
   deviceId,
   enabled,
-  canSync,
   tagFilter,
 }: {
   deviceId: string;
   enabled: boolean;
-  canSync: boolean;
   tagFilter: DeviceAnalyticsTagFilter;
 }) {
   const load = useDeviceFilesLoad({ deviceId, enabled, tagFilter });
@@ -46,13 +43,8 @@ export function useDeviceFiles({
     });
     await Promise.all([load.refreshVisible(), tree.refreshExpanded()]);
   }, [counts.enqueue, counts.reset, load.refreshVisible, load.roots, tree.refreshExpanded]);
-  const sync = useDeviceFilesSync({
-    deviceId,
-    canSync,
-    onCommitted: refreshVisible,
-  });
 
-  return { ...load, tree, counts, refreshVisible, sync };
+  return { ...load, tree, counts, refreshVisible };
 }
 
 export type DeviceFilesState = ReturnType<typeof useDeviceFiles>;

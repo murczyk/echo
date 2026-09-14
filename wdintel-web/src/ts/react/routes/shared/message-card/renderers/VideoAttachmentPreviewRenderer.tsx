@@ -761,6 +761,9 @@ export function VideoAttachmentPreviewRenderer({
       kind="video"
       onPointerDown={resetHideControlsTimer}
       onDoubleClick={handleStageDoubleClick}
+      onPrimaryClick={(_, region) => {
+        if (region === 'background') handleClose();
+      }}
     >
       <Box
         onMouseMove={resetHideControlsTimer}

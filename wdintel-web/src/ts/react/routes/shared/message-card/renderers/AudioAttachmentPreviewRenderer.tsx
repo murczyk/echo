@@ -57,7 +57,12 @@ export function AudioAttachmentPreviewRenderer({
   }, [dismissChildOverlay, onChildOverlayChange]);
   useEffect(() => () => onChildOverlayChange?.(false), [onChildOverlayChange]);
   const stage = (
-    <MessageCardAttachmentPreviewStage kind="audio">
+    <MessageCardAttachmentPreviewStage
+      kind="audio"
+      onPrimaryClick={(_, region) => {
+        if (region === 'background') onClose();
+      }}
+    >
       <div className="flex h-full w-full min-h-0 overflow-y-auto overscroll-contain touch-pan-y">
         <div
           data-audio-preview-content

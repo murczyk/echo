@@ -133,6 +133,7 @@ pub async fn collect_groups(
                 ignore_operativny: g.ignore_operativny,
                 interseption_kind: g.interseption_kind.clone().into(),
                 disable_network_assignment: g.disable_network_assignment,
+                is_aviation_group: g.is_aviation_group.unwrap_or(false),
                 group_stats: stats,
                 admin_data: group_admin_data,
                 areas_of_responsibility: aors,
@@ -170,6 +171,7 @@ pub async fn collect_groups(
             interseption_kind:
                 crate::sigint::types::InterseptionKind::InterseptionRer,
             disable_network_assignment: false,
+            is_aviation_group: false,
             group_stats: stats,
             admin_data,
             areas_of_responsibility: aors,
@@ -543,6 +545,7 @@ where
             is_archived: NotSet,
             interseption_kind: NotSet,
             disable_network_assignment: NotSet,
+            is_aviation_group: NotSet,
         }
         .insert(db)
         .await

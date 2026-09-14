@@ -6,8 +6,12 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { InboxMessage } from '../../../../../../Bindings';
-import { MessageCardCoordinateAttachment } from '../MessageCardCoordinateAttachment.tsx';
+import type { InboxMessage, Tag } from '../../../../../../Bindings';
+import * as coordinateFormat from '../../../../../maps/coordinate-format';
+import { getTileLayers } from '../../../../../web-components/analysis-map/tile-layers';
+import { CoordinateAttachmentThumbnail } from '../CoordinateAttachmentThumbnail';
+import { CoordinatePreviewMapSurface } from '../CoordinatePreviewMapSurface';
+import { MessageCardCoordinateAttachment } from '../MessageCardCoordinateAttachment';
 import {
   CoordinatePreviewLookupError,
   resolveMessageCoordinatePreview,
@@ -47,10 +51,10 @@ vi.mock('../attachment-preview/MessageCardAttachmentPreviewProvider.tsx', () => 
   },
 }));
 
-vi.mock('../../../../web-components/analysis-map/tile-layers', () => ({
+vi.mock('../../../../../web-components/analysis-map/tile-layers', () => ({
   DEFAULT_BASE_LAYER_ID: 'esriWorldImagery',
   getTileLayers: vi.fn(() => ({
-    esriWorldImagery: { addTo: vi.fn() },
+    esriWorldImagery: { addTo: vi.fn(), on: vi.fn(), off: vi.fn() },
     googleHybrid: {
       addTo: vi.fn(),
     },
@@ -59,6 +63,32 @@ vi.mock('../../../../web-components/analysis-map/tile-layers', () => ({
 }));
 
 vi.mock('leaflet', () => {
+  class GridLayer {
+    private handlers = new Map<string, Set<() => void>>();
+
+    addTo() {
+      return this;
+    }
+
+    on(event: string, handler: () => void) {
+      this.handlers.set(event, new Set([...(this.handlers.get(event) ?? []), handler]));
+      return this;
+    }
+
+    off(event: string, handler?: () => void) {
+      if (handler == null) this.handlers.delete(event);
+      else this.handlers.get(event)?.delete(handler);
+      return this;
+    }
+
+    fire(event: string) {
+      this.handlers.get(event)?.forEach((handler) => handler());
+      return this;
+    }
+  }
+  class LayerGroup {
+    eachLayer() {}
+  }
   const container = {
     style: {} as Record<string, string>,
   };
@@ -73,21 +103,31 @@ vi.mock('leaflet', () => {
       return container;
     },
     invalidateSize: vi.fn(),
+    getBounds() {
+      return { contains: vi.fn(() => true) };
+    },
     remove: vi.fn(),
   };
   const marker = {
-    bindTooltip() {
-      return marker;
-    },
+    bindTooltip: vi.fn(() => marker),
     addTo() {
       return marker;
     },
     remove: vi.fn(),
   };
+  const rectangle = {
+    addTo() {
+      return rectangle;
+    },
+    remove: vi.fn(),
+  };
 
   return {
+    GridLayer,
+    LayerGroup,
     map: vi.fn(() => map),
     circleMarker: vi.fn(() => marker),
+    rectangle: vi.fn(() => rectangle),
     latLngBounds: vi.fn(() => ({})),
   };
 });
@@ -115,6 +155,7 @@ describe('MessageCardCoordinateAttachment', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     act(() => {
       root.unmount();
       container.remove();
@@ -162,12 +203,12 @@ describe('MessageCardCoordinateAttachment', () => {
 
     await act(async () => {
       button?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-      button?.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
+      button?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
       await Promise.resolve();
     });
 
-    expect(document.body.querySelector('[data-popper-placement="top"]')).not.toBeNull();
-    expect(document.body.textContent).toContain('Відкрити на мапі');
+    expect(document.body.querySelector('[data-coordinate-hover-preview]')).not.toBeNull();
+    expect(document.body.textContent).not.toContain('Відкрити на мапі');
 
     await act(async () => {
       button?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -210,6 +251,95 @@ describe('MessageCardCoordinateAttachment', () => {
     expect(container.querySelectorAll('button[aria-label^="Open "]')).toHaveLength(1);
     expect(container.querySelectorAll('[data-coordinate-preview-count]')).toHaveLength(1);
     expect(container.querySelector('[data-coordinate-preview-count]')?.textContent).toBe('9');
+    const button = container.querySelector('button[aria-label="Open BRAVO on map"]');
+    expect(button).not.toBeNull();
+    expect(button?.getAttribute('style')).toContain('width: 100%');
+    expect(button?.getAttribute('style')).toContain('height: 100%');
+    expect(button?.getAttribute('style')).toContain('max-width: none');
+    expect(button?.getAttribute('style')).toContain('flex-grow: 0');
+    expect(button?.getAttribute('style')).toContain('flex-shrink: 0');
+    expect(button?.getAttribute('style')).toContain('flex-basis: auto');
+
+    await act(async () => {
+      button?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      button?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(document.body.querySelector('[data-coordinate-hover-preview]')).not.toBeNull();
+    expect(document.body.textContent).not.toContain('Відкрити на мапі');
+    expect(container.textContent).not.toContain('+1');
+
+    await act(async () => {
+      button?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('[role="dialog"]')?.getAttribute('data-index')).toBe('0');
+    expect(container.querySelector('[role="dialog"]')?.getAttribute('data-attachment-count')).toBe(
+      '1',
+    );
+  });
+
+  it('updates the thumbnail without recreating the map when a coordinate is removed', async () => {
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      width: 180,
+      height: 120,
+    } as DOMRect);
+    const leaflet = await import('leaflet');
+    const points = [
+      { source: 'direct' as const, lat: 50.45, lng: 30.52, label: 'BRAVO' },
+      { source: 'direct' as const, lat: 50.46, lng: 30.53, label: 'CHARLIE' },
+    ];
+
+    await act(async () => {
+      root.render(<CoordinateAttachmentThumbnail points={points} onOpen={vi.fn()} />);
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+    });
+    expect(leaflet.map).toHaveBeenCalledTimes(1);
+    expect(leaflet.map).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ preferCanvas: false }),
+    );
+
+    await act(async () => {
+      root.render(<CoordinateAttachmentThumbnail points={[points[1]]} onOpen={vi.fn()} />);
+      await Promise.resolve();
+    });
+
+    expect(leaflet.map).toHaveBeenCalledTimes(1);
+    expect(leaflet.circleMarker).toHaveBeenCalledTimes(3);
+    expect(leaflet.circleMarker).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ interactive: false }),
+    );
+    expect(leaflet.circleMarker.mock.results[0]?.value.bindTooltip).not.toHaveBeenCalled();
+    rectSpy.mockRestore();
+  });
+
+  it('keeps a thumbnail point when MGRS conversion is unavailable', async () => {
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      width: 180,
+      height: 120,
+    } as DOMRect);
+    const mgrsTextSpy = vi.spyOn(coordinateFormat, 'getCoordinateMgrsText').mockReturnValue(null);
+    const leaflet = await import('leaflet');
+
+    await act(async () => {
+      root.render(
+        <CoordinatePreviewMapSurface
+          points={[{ source: 'direct', lat: 50.45, lng: 30.52, label: 'BRAVO' }]}
+          mode="thumbnail"
+        />,
+      );
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+    });
+
+    expect(leaflet.circleMarker).toHaveBeenCalledTimes(1);
+    expect(mgrsTextSpy).not.toHaveBeenCalled();
+    expect(leaflet.circleMarker.mock.results[0]?.value.bindTooltip).not.toHaveBeenCalled();
+    mgrsTextSpy.mockRestore();
+    rectSpy.mockRestore();
   });
 
   // @test-scope regression: https://github.com/echoua/echo/issues/3324
@@ -438,5 +568,186 @@ describe('MessageCardCoordinateAttachment', () => {
 
     expect(container.textContent).not.toContain('Не вдалося завантажити точку мапи');
     expect(container.querySelector('button[aria-label="Open BRAVO on map"]')).not.toBeNull();
+  });
+
+  it('ECHO-3380 opens the medium preview only after sustained mouse hover and closes after leaving both surfaces', async () => {
+    vi.useFakeTimers();
+    const onOpen = vi.fn();
+    await act(async () => {
+      root.render(
+        <CoordinateAttachmentThumbnail
+          points={[{ source: 'direct', lat: 50.45, lng: 30.52, label: 'BRAVO' }]}
+          onOpen={onOpen}
+        />,
+      );
+    });
+    const trigger = container.querySelector('button[aria-label="Open BRAVO on map"]');
+    expect(document.body.querySelector('[data-coordinate-hover-preview]')).toBeNull();
+
+    await act(async () => {
+      trigger?.dispatchEvent(new MouseEvent('pointerover', { bubbles: true }));
+      vi.advanceTimersByTime(599);
+    });
+    expect(document.body.querySelector('[data-coordinate-hover-preview]')).toBeNull();
+
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+    });
+    const preview = document.body.querySelector('[data-coordinate-hover-preview]');
+    expect(preview).not.toBeNull();
+    expect(trigger?.getAttribute('aria-describedby')).toBe(preview?.id);
+
+    await act(async () => {
+      trigger?.dispatchEvent(new MouseEvent('pointerout', { bubbles: true }));
+      preview?.dispatchEvent(new MouseEvent('pointerover', { bubbles: true }));
+      vi.advanceTimersByTime(120);
+    });
+    expect(document.body.querySelector('[data-coordinate-hover-preview]')).not.toBeNull();
+
+    await act(async () => {
+      preview?.dispatchEvent(new MouseEvent('pointerout', { bubbles: true }));
+      vi.advanceTimersByTime(120);
+    });
+    expect(document.body.querySelector('[data-coordinate-hover-preview]')).toBeNull();
+    await act(async () => {
+      trigger?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(onOpen).toHaveBeenCalledOnce();
+  });
+
+  it.each(['mouse', 'pen'] as const)(
+    'ECHO-3380 opens the medium preview for a %s pointer when hover none matches',
+    async (pointerType) => {
+      vi.useFakeTimers();
+      vi.stubGlobal(
+        'matchMedia',
+        vi.fn(() => ({ matches: true })),
+      );
+      await act(async () => {
+        root.render(
+          <CoordinateAttachmentThumbnail
+            points={[{ source: 'direct', lat: 50.45, lng: 30.52, label: 'BRAVO' }]}
+            onOpen={vi.fn()}
+          />,
+        );
+      });
+      const trigger = container.querySelector('button[aria-label="Open BRAVO on map"]');
+      const pointerEnter = new Event('pointerover', { bubbles: true });
+      Object.defineProperty(pointerEnter, 'pointerType', { value: pointerType });
+      await act(async () => {
+        trigger?.dispatchEvent(pointerEnter);
+        vi.advanceTimersByTime(600);
+      });
+      expect(document.body.querySelector('[data-coordinate-hover-preview]')).not.toBeNull();
+    },
+  );
+
+  it('ECHO-3380 opens the medium preview on focus but rejects touch pointer interaction', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: true })),
+    );
+    await act(async () => {
+      root.render(
+        <CoordinateAttachmentThumbnail
+          points={[{ source: 'direct', lat: 50.45, lng: 30.52, label: 'BRAVO' }]}
+          onOpen={vi.fn()}
+        />,
+      );
+    });
+    const trigger = container.querySelector('button[aria-label="Open BRAVO on map"]');
+    const touchEnter = new Event('pointerover', { bubbles: true });
+    Object.defineProperty(touchEnter, 'pointerType', { value: 'touch' });
+    await act(async () => {
+      trigger?.dispatchEvent(touchEnter);
+      vi.advanceTimersByTime(600);
+    });
+    expect(document.body.querySelector('[data-coordinate-hover-preview]')).toBeNull();
+
+    await act(async () => {
+      trigger?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    });
+    expect(document.body.querySelector('[data-coordinate-hover-preview]')).not.toBeNull();
+  });
+
+  it('ECHO-3380 keeps the map loading until its primary tile succeeds', async () => {
+    const leaflet = await import('leaflet');
+    const primaryLayer = new leaflet.GridLayer();
+    vi.mocked(getTileLayers).mockReturnValue({ esriWorldImagery: primaryLayer } as never);
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      width: 180,
+      height: 120,
+    } as DOMRect);
+    await act(async () => {
+      root.render(
+        <CoordinatePreviewMapSurface
+          points={[{ source: 'direct', lat: 50.45, lng: 30.52, label: 'BRAVO' }]}
+          mode="thumbnail"
+        />,
+      );
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+    });
+    expect(container.querySelector('.coordinate-preview-map-skeleton')).not.toBeNull();
+    await act(async () => {
+      primaryLayer.fire('tileload');
+    });
+    expect(container.querySelector('.coordinate-preview-map-skeleton')).toBeNull();
+  });
+
+  it('ECHO-3380 renders the map fallback when initialization fails', async () => {
+    const leaflet = await import('leaflet');
+    vi.mocked(leaflet.map).mockImplementationOnce(() => {
+      throw new Error('map unavailable');
+    });
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      width: 180,
+      height: 120,
+    } as DOMRect);
+    await act(async () => {
+      root.render(
+        <CoordinatePreviewMapSurface
+          points={[{ source: 'direct', lat: 50.45, lng: 30.52, label: 'BRAVO' }]}
+          mode="thumbnail"
+        />,
+      );
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+    });
+    expect(container.textContent).toContain('Не вдалося завантажити мапу');
+  });
+
+  it('ECHO-3380 removes a partially initialized map when the base layer fails', async () => {
+    const leaflet = await import('leaflet');
+    const primaryLayer = new leaflet.GridLayer();
+    const addTo = vi.spyOn(primaryLayer, 'addTo').mockImplementation(() => {
+      throw new Error('base layer unavailable');
+    });
+    const off = vi.spyOn(primaryLayer, 'off');
+    vi.mocked(getTileLayers).mockReturnValue({ esriWorldImagery: primaryLayer } as never);
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      width: 180,
+      height: 120,
+    } as DOMRect);
+
+    await act(async () => {
+      root.render(
+        <CoordinatePreviewMapSurface
+          points={[{ source: 'direct', lat: 50.45, lng: 30.52, label: 'BRAVO' }]}
+          mode="thumbnail"
+        />,
+      );
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+    });
+
+    expect(addTo).toHaveBeenCalledOnce();
+    expect(container.textContent).toContain('Не вдалося завантажити мапу');
+    expect(leaflet.map).toHaveBeenCalledOnce();
+    const map = vi.mocked(leaflet.map).mock.results[0]?.value;
+    expect(map.remove).toHaveBeenCalledOnce();
+    expect(off).toHaveBeenCalledWith('tileload', expect.any(Function));
+    expect(off).toHaveBeenCalledWith('load', expect.any(Function));
+
+    expect(() => root.unmount()).not.toThrow();
+    expect(map.remove).toHaveBeenCalledOnce();
   });
 });

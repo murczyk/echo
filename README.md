@@ -45,6 +45,17 @@ additional terminal when working with report generation:
 just dev-bgworker
 ```
 
+To enable Device content uploads with `file_registry`, configure a private S3
+bucket and a valid 32-byte base64 StrongBox key in `[s3_config]`. Copy the
+tracked `deploy/config-debug.toml` template to ignored `deploy/config.toml`
+before adding local credentials; debug mode prefers this private file. For a new
+development bucket, generate a key with
+`target/debug/wdintel-rs oneoff-generate-strongbox-key`. Keep the key in the
+ignored local config, use the same value for API and background workers, and
+retain it across restarts: existing encrypted objects require their original
+key. Empty or malformed keys disable Device content uploads; the server and
+existing FileSync API remain available, with the cause logged at startup.
+
 Python service (optional, for NLP stuff only):
 
 ```

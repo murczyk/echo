@@ -67,7 +67,6 @@ function buildFiles(
       loadMoreBranch: vi.fn(),
       refreshExpanded: vi.fn(),
     },
-    sync: { openSyncForEntry: vi.fn() },
   } as unknown as DeviceFilesState;
 }
 
@@ -95,7 +94,7 @@ describe('DeviceFileTree counters', () => {
       root?.render(<DeviceFileTree files={buildFiles({ loading: true })} />);
     });
 
-    expect(container?.textContent).toContain('Файлова система');
+    expect(container?.querySelector('[aria-label="Синхронізовані файлові корені"]')).not.toBeNull();
     expect(container?.querySelector('[aria-label="Завантаження кількості файлів"]')).not.toBeNull();
     expect(
       container?.querySelector('[aria-label^="Вибрати каталог"]')?.getAttribute('aria-label'),

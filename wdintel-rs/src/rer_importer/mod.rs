@@ -1177,11 +1177,11 @@ pub async fn oneoff_round_freq(mode: Mode) -> Result<(), AppError> {
 
     let q = Statement::from_sql_and_values(
         DbBackend::Postgres,
-        r#"UPDATE sigint_inbox_item AS sii
-                SET freq = res
-                FROM (
+        r#"WITH updated AS (
                     SELECT
-                        sii.id, TO_CHAR(FLOOR(CAST(sii.freq AS NUMERIC)) + ROUND(MOD(CAST(sii.freq AS NUMERIC) * 1000, 1000) / 5) * 0.005, '999.9999') AS res
+                        sii.id,
+                        sii.freq AS old_freq,
+                        TO_CHAR(FLOOR(CAST(sii.freq AS NUMERIC)) + ROUND(MOD(CAST(sii.freq AS NUMERIC) * 1000, 1000) / 5) * 0.005, '999.9999') AS res
                     FROM sigint_inbox_item AS sii
                         INNER JOIN signal_message AS sm ON sm.id = sii.id
                         INNER JOIN datasource_group dg ON sm.datasource_group_id = dg.id
@@ -1192,7 +1192,27 @@ pub async fn oneoff_round_freq(mode: Mode) -> Result<(), AppError> {
                         AND sg.name = $1
                         AND sg.deleted = false
                         AND sii.freq <> TO_CHAR(FLOOR(CAST(sii.freq AS NUMERIC)) + ROUND(MOD(CAST(sii.freq AS NUMERIC) * 1000, 1000) / 5) * 0.005, '999.9999')
-                ) AS updated
+                ), invalidated AS (
+                    UPDATE sigint_network_freq AS network_freq
+                    SET last_seen_dt = NULL
+                    FROM updated
+                    INNER JOIN sigint_inbox_item AS inbox_item ON inbox_item.id = updated.id
+                    INNER JOIN signal_message ON signal_message.id = inbox_item.id
+                    INNER JOIN sigint_inbox_item_network AS network_link
+                        ON network_link.sigint_inbox_item_id = inbox_item.id
+                    WHERE network_freq.network_id = network_link.sigint_network_id
+                      AND network_freq.freq = updated.old_freq
+                      AND network_freq.deleted = false
+                      AND network_freq.last_seen_dt = COALESCE(
+                          inbox_item.datetime,
+                          signal_message.timestamp,
+                          signal_message.created_at
+                      )
+                    RETURNING network_freq.id
+                )
+                UPDATE sigint_inbox_item AS sii
+                SET freq = updated.res
+                FROM updated
                 WHERE
                   sii.id = updated.id
             "#,
@@ -1248,6 +1268,12 @@ pub async fn oneoff_nominalize_freq(mode: Mode) -> Result<(), AppError> {
             let freq2 = self::frequency::etalon(freq);
             if &freq2 != freq {
                 let item_id = item.id;
+                crate::rer_importer::inbox::invalidate_message_network_frequency_last_seen(
+                    &dbx,
+                    item_id,
+                )
+                .await
+                .c(h!())?;
                 let mut item: sigint_inbox_item::ActiveModel = item.into();
                 item.freq = Set(Some(freq2));
                 item.update(&dbx).await.c(h!())?;

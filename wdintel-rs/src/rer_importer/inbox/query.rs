@@ -40,6 +40,9 @@ fn inbox_items_cte_cursor_expr(req_sort_by: InboxMessagesSortBy) -> SimpleExpr {
         InboxMessagesSortBy::IMSTimestamp => {
             Expr::col((Alias::new("inbox_items_cte"), Alias::new("timestamp")))
         }
+        InboxMessagesSortBy::IMSCreatedAt => {
+            Expr::col((Alias::new("inbox_items_cte"), Alias::new("created_at")))
+        }
     }
 }
 
@@ -129,6 +132,9 @@ fn inbox_date_gte_expr(
         InboxMessagesSortBy::IMSTimestamp => {
             Expr::col(signal_message::Column::Timestamp).gte(rhs)
         }
+        InboxMessagesSortBy::IMSCreatedAt => {
+            signal_message_created_at_expr().gte(rhs)
+        }
     }
 }
 
@@ -143,7 +149,14 @@ fn inbox_date_lte_expr(
         InboxMessagesSortBy::IMSTimestamp => {
             Expr::col(signal_message::Column::Timestamp).lte(rhs)
         }
+        InboxMessagesSortBy::IMSCreatedAt => {
+            signal_message_created_at_expr().lte(rhs)
+        }
     }
+}
+
+fn signal_message_created_at_expr() -> SimpleExpr {
+    Expr::col((signal_message::Entity, signal_message::Column::CreatedAt))
 }
 
 pub(crate) async fn build_filtered_inbox_query<'a, 'async_trait, C>(
@@ -206,6 +219,16 @@ where
                 .filter(signal_message::Column::Deleted.eq(false))
                 .filter(signal_message::Column::Timestamp.is_not_null())
                 .order_by_desc(signal_message::Column::Timestamp)
+                .order_by_desc(signal_message::Column::Id)
+                .into_tuple::<i64>()
+                .one(dbx)
+                .await
+                .c(h!())?,
+            InboxMessagesSortBy::IMSCreatedAt => SignalMessage::find()
+                .select_only()
+                .column(signal_message::Column::Id)
+                .filter(signal_message::Column::Deleted.eq(false))
+                .order_by_desc(signal_message::Column::CreatedAt)
                 .order_by_desc(signal_message::Column::Id)
                 .into_tuple::<i64>()
                 .one(dbx)
@@ -752,6 +775,8 @@ fn build_period_unit_filtered_inbox_digest(
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        (req.sort_by == Some(InboxMessagesSortBy::IMSCreatedAt))
+            .then_some(crate::user_settings::MessageTimeBasis::MessageCreation),
     )?;
     let query = filter_denied_units_for_period(
         query,
@@ -759,6 +784,8 @@ fn build_period_unit_filtered_inbox_digest(
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        (req.sort_by == Some(InboxMessagesSortBy::IMSCreatedAt))
+            .then_some(crate::user_settings::MessageTimeBasis::MessageCreation),
     )?
     .select_only()
     .column_as(Expr::cust("COUNT(*)"), "count")
@@ -1093,6 +1120,9 @@ pub(crate) async fn scan_analytics_inbox_candidate_ids(
             InboxMessagesSortBy::IMSTimestamp => {
                 query.filter(signal_message::Column::Timestamp.lt(till))
             }
+            InboxMessagesSortBy::IMSCreatedAt => {
+                query.filter(signal_message::Column::CreatedAt.lt(till))
+            }
         };
     }
     query = extra(query);
@@ -1287,6 +1317,10 @@ fn analytics_inbox_ordering_expr(req: &InboxMessagesReq) -> SimpleExpr {
         InboxMessagesSortBy::IMSTimestamp => Expr::col((
             signal_message::Entity,
             signal_message::Column::Timestamp,
+        )),
+        InboxMessagesSortBy::IMSCreatedAt => Expr::col((
+            signal_message::Entity,
+            signal_message::Column::CreatedAt,
         )),
     }
 }
@@ -1623,6 +1657,34 @@ async fn resolve_analytics_inbox_message_id_scope(
                 }));
             }
         }
+        InboxMessagesSortBy::IMSCreatedAt => {
+            if let Some(cursor_id) = req.since_id_noninclusive {
+                let cursor_date = signal_message::Entity::find_by_id(cursor_id)
+                    .select_only()
+                    .column(signal_message::Column::CreatedAt)
+                    .into_tuple::<NaiveDateTime>()
+                    .one(source_db)
+                    .await
+                    .context(h!())?
+                    .context(h!())?;
+                since_date = Some(since_date.map_or(cursor_date, |date| {
+                    std::cmp::max(date, cursor_date)
+                }));
+            }
+            if let Some(cursor_id) = req.before_id_noninclusive {
+                let cursor_date = signal_message::Entity::find_by_id(cursor_id)
+                    .select_only()
+                    .column(signal_message::Column::CreatedAt)
+                    .into_tuple::<NaiveDateTime>()
+                    .one(source_db)
+                    .await
+                    .context(h!())?
+                    .context(h!())?;
+                till_date = Some(till_date.map_or(cursor_date, |date| {
+                    std::cmp::min(date, cursor_date)
+                }));
+            }
+        }
     }
 
     let bounds =
@@ -1662,6 +1724,25 @@ async fn resolve_analytics_inbox_message_id_scope(
                         query.filter(
                             signal_message::Column::Timestamp.lte(till_date),
                         )
+                    });
+                query
+                    .into_model::<MessageIdBounds>()
+                    .one(analytics_db)
+                    .await
+                    .context(h!())?
+            }
+            InboxMessagesSortBy::IMSCreatedAt => {
+                let query = signal_message::Entity::find()
+                    .select_only()
+                    .column_as(signal_message::Column::Id.min(), "min_id")
+                    .column_as(signal_message::Column::Id.max(), "max_id")
+                    .apply_if(since_date, |query, date| {
+                        query
+                            .filter(signal_message::Column::CreatedAt.gte(date))
+                    })
+                    .apply_if(till_date, |query, date| {
+                        query
+                            .filter(signal_message::Column::CreatedAt.lte(date))
                     });
                 query
                     .into_model::<MessageIdBounds>()
@@ -2106,6 +2187,16 @@ where
                         ))
                     };
                 }
+                InboxMessagesSortBy::IMSCreatedAt => {
+                    let created_at = to_ts_expr(message.created_at);
+                    q = q.filter(inbox_cursor_comparison(
+                        signal_message_created_at_expr(),
+                        Expr::cust("signal_message.id"),
+                        (created_at, since_id_noninclusive),
+                        true,
+                        analytics,
+                    ));
+                }
             }
         }
         if let Some(before_id_noninclusive) = req.before_id_noninclusive {
@@ -2150,6 +2241,16 @@ where
                         signal_message::Column::Timestamp.into_simple_expr(),
                         Expr::cust("signal_message.id"),
                         (timestamp, before_id_noninclusive),
+                        false,
+                        analytics,
+                    ));
+                }
+                InboxMessagesSortBy::IMSCreatedAt => {
+                    let created_at = to_ts_expr(message.created_at);
+                    q = q.filter(inbox_cursor_comparison(
+                        signal_message_created_at_expr(),
+                        Expr::cust("signal_message.id"),
+                        (created_at, before_id_noninclusive),
                         false,
                         analytics,
                     ));
@@ -2273,6 +2374,27 @@ where
                     }
                 }
             }
+            InboxMessagesSortBy::IMSCreatedAt => {
+                if let Some(message) =
+                    SignalMessage::find_by_id(since_id_noninclusive)
+                        .filter(signal_message::Column::Deleted.eq(false))
+                        .one(dbx)
+                        .await
+                        .c(h!())?
+                {
+                    let created_at = to_ts_expr(message.created_at);
+                    q.and_where(
+                        Expr::tuple([
+                            signal_message_created_at_expr(),
+                            inbox_items_cte_id_expr(),
+                        ])
+                        .gt(SimpleExpr::Tuple(vec![
+                            created_at,
+                            since_id_noninclusive.into(),
+                        ])),
+                    );
+                }
+            }
         }
     }
     if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {
@@ -2282,6 +2404,9 @@ where
                 Some(InboxMessagesSortBy::IMSTimestamp) => {
                     Expr::col(signal_message::Column::Timestamp)
                         .gte(to_ts_expr(ts))
+                }
+                Some(InboxMessagesSortBy::IMSCreatedAt) => {
+                    signal_message_created_at_expr().gte(to_ts_expr(ts))
                 }
                 _ => Expr::col(sigint_inbox_item::Column::Datetime)
                     .gte(to_ts_expr(ts)),
@@ -2322,6 +2447,11 @@ where
                     .order_by_desc(signal_message::Column::Timestamp)
                     .order_by_desc(signal_message::Column::Id);
             }
+            InboxMessagesSortBy::IMSCreatedAt => {
+                q = q
+                    .order_by_desc(signal_message::Column::CreatedAt)
+                    .order_by_desc(signal_message::Column::Id);
+            }
         }
     }
 
@@ -2340,6 +2470,11 @@ where
                         .order_by_desc(signal_message::Column::Timestamp)
                         .order_by_desc(signal_message::Column::Id);
                 }
+                InboxMessagesSortBy::IMSCreatedAt => {
+                    q = q
+                        .order_by_desc(signal_message::Column::CreatedAt)
+                        .order_by_desc(signal_message::Column::Id);
+                }
             }
             // m_order_asc = Some(false);
         } else {
@@ -2352,6 +2487,11 @@ where
                 InboxMessagesSortBy::IMSTimestamp => {
                     q = q
                         .order_by_asc(signal_message::Column::Timestamp)
+                        .order_by_asc(signal_message::Column::Id);
+                }
+                InboxMessagesSortBy::IMSCreatedAt => {
+                    q = q
+                        .order_by_asc(signal_message::Column::CreatedAt)
                         .order_by_asc(signal_message::Column::Id);
                 }
             }
@@ -2386,6 +2526,10 @@ pub async fn get_bl_ordering_stmt(
                 q.order_by(signal_message::Column::Timestamp, Order::Desc)
                     .order_by(signal_message::Column::Id, Order::Desc);
             }
+            InboxMessagesSortBy::IMSCreatedAt => {
+                q.order_by(signal_message::Column::CreatedAt, Order::Desc)
+                    .order_by(signal_message::Column::Id, Order::Desc);
+            }
         }
     }
 
@@ -2405,6 +2549,10 @@ pub async fn get_bl_ordering_stmt(
                     q.order_by(signal_message::Column::Timestamp, Order::Desc)
                         .order_by(signal_message::Column::Id, Order::Desc);
                 }
+                InboxMessagesSortBy::IMSCreatedAt => {
+                    q.order_by(signal_message::Column::CreatedAt, Order::Desc)
+                        .order_by(signal_message::Column::Id, Order::Desc);
+                }
             }
             // m_order_asc = Some(false);
         } else {
@@ -2415,6 +2563,10 @@ pub async fn get_bl_ordering_stmt(
                 }
                 InboxMessagesSortBy::IMSTimestamp => {
                     q.order_by(signal_message::Column::Timestamp, Order::Asc)
+                        .order_by(signal_message::Column::Id, Order::Asc);
+                }
+                InboxMessagesSortBy::IMSCreatedAt => {
+                    q.order_by(signal_message::Column::CreatedAt, Order::Asc)
                         .order_by(signal_message::Column::Id, Order::Asc);
                 }
             }
@@ -2576,4 +2728,50 @@ pub fn build_inbox_metadata_lateral_query() -> SelectStatement {
         )
         .group_by(sigint_inbox_item_metadata::Column::SigintInboxItemId)
         .into_query()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn joined_creation_time_filters_and_ordering_are_qualified() {
+        let timestamp = Utc::now().naive_utc();
+        let request_sort_by = InboxMessagesSortBy::IMSCreatedAt;
+        let cursor = inbox_cursor_comparison(
+            signal_message_created_at_expr(),
+            Expr::col((signal_message::Entity, signal_message::Column::Id)),
+            (to_ts_expr(timestamp), 1),
+            true,
+            false,
+        );
+        let query = signal_message::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                signal_message::Relation::SigintInboxItem.def(),
+            )
+            .filter(inbox_date_gte_expr(request_sort_by, to_ts_expr(timestamp)))
+            .filter(inbox_date_lte_expr(request_sort_by, to_ts_expr(timestamp)))
+            .filter(cursor)
+            .order_by_asc(signal_message_created_at_expr())
+            .build(DbBackend::Postgres)
+            .to_string();
+        let descending = signal_message::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                signal_message::Relation::SigintInboxItem.def(),
+            )
+            .order_by_desc(signal_message_created_at_expr())
+            .build(DbBackend::Postgres)
+            .to_string();
+
+        let created_at = r#""signal_message"."created_at""#;
+        assert!(query.matches(created_at).count() >= 4, "{query}");
+        assert!(
+            query.contains("ORDER BY \"signal_message\".\"created_at\" ASC")
+        );
+        assert!(descending
+            .contains("ORDER BY \"signal_message\".\"created_at\" DESC"));
+        assert!(!query.contains("WHERE \"created_at\""), "{query}");
+    }
 }

@@ -6,6 +6,7 @@ import {
   type DutyNotificationPreviewResult,
 } from './notifications';
 import { withDutyFeedRequestDeadline } from './dutyFeedRequestDeadline';
+import { messageOrderTimestamp } from './utils';
 
 const PREVIEW_DEADLINE_MS = 3_000;
 
@@ -18,6 +19,7 @@ function shortenBody(body: string | null | undefined): string | null {
 
 export async function loadDutyNotificationPreview(
   req: InboxMessagesReq,
+  messageSortBy: 'IMSTimestamp' | 'IMSCreatedAt',
   isCurrent: () => boolean,
 ): Promise<DutyNotificationPreviewResult> {
   if (!isCurrent()) return { kind: DutyNotificationPreviewResultKind.Stale };
@@ -30,10 +32,13 @@ export async function loadDutyNotificationPreview(
       response.signalGroups.map((group) => [group.masterKey, group]),
     );
     const newest = [...new Map(response.inboxItems).entries()]
-      .map(([messageId, message]) => ({ messageId, message }))
+      .map(([messageId, message]) => ({
+        messageId,
+        message,
+        orderTimestamp: messageOrderTimestamp(message, messageSortBy),
+      }))
       .sort(
-        (a, b) =>
-          (b.message.timestamp ?? 0) - (a.message.timestamp ?? 0) || b.messageId - a.messageId,
+        (a, b) => (b.orderTimestamp ?? 0) - (a.orderTimestamp ?? 0) || b.messageId - a.messageId,
       )[0];
     if (!newest) return { kind: DutyNotificationPreviewResultKind.Unavailable };
     const labels = buildMessageCardDisplayLabels(newest.message, {
@@ -52,7 +57,12 @@ export async function loadDutyNotificationPreview(
         : (preview ?? fallback);
     return {
       kind: DutyNotificationPreviewResultKind.Ready,
-      preview: { messageId: newest.messageId, timestamp: newest.message.timestamp, title, body },
+      preview: {
+        messageId: newest.messageId,
+        orderTimestamp: newest.orderTimestamp ?? null,
+        title,
+        body,
+      },
     };
   } catch {
     return isCurrent()

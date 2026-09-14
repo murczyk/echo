@@ -12,7 +12,7 @@ export function registerPaddedTextAnnotation(fabric: typeof import('fabric')) {
   class ImageEditorText extends fabric.IText {
     static type = IMAGE_EDITOR_TEXT_TYPE;
     annotationBackgroundEnabled = false;
-    annotationBackgroundColor = '#000000';
+    annotationBackgroundColor = '#ffffff';
     annotationBackgroundPadding = TEXT_BACKGROUND_PADDING_DEFAULT;
 
     constructor(text: string, options: Record<string, unknown> = {}) {
@@ -71,6 +71,8 @@ export function registerPaddedTextAnnotation(fabric: typeof import('fabric')) {
     'annotationBackgroundEnabled',
     'annotationBackgroundColor',
     'annotationBackgroundPadding',
+    'attachedArrowTargetX',
+    'attachedArrowTargetY',
   ];
   ImageEditorText.cacheProperties = [
     ...fabric.IText.cacheProperties,

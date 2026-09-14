@@ -1099,6 +1099,7 @@ where
             orbit_note: NotSet,
             is_inconsistent: NotSet,
             updated_at: Set(rec.updated_at),
+            present_in_orbit: NotSet,
         };
 
         let new_rec = if new_record {
@@ -1172,6 +1173,7 @@ async fn import_sigint_network_data(
             sigint_origin_id: Set(Some(origin_id)),
             location: Set(rec.location),
             active_to: Set(rec.active_to),
+            last_active_at: NotSet,
             do_not_archive: Set(rec.do_not_archive),
             unit_mask: Set(rec.unit_mask),
         };

@@ -75,6 +75,7 @@ pub mod terminal;
 pub mod tests;
 pub mod transcriber;
 pub mod ts;
+pub(crate) mod tus;
 pub mod types;
 pub mod unit;
 pub mod user_settings;
@@ -292,6 +293,16 @@ pub struct OneoffBackfillInboxNetworksPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffBackfillNetworkLastActivityPs {
+    /// Number of networks checked per transaction.
+    #[arg(long, default_value_t = NETWORK_LAST_ACTIVITY_BACKFILL_BATCH_SIZE)]
+    pub batch_size: i64,
+    /// Resume after this network ID.
+    #[arg(long, default_value_t = 0)]
+    pub after_id: i64,
+}
+
+#[derive(clap::Parser, Debug)]
 pub struct OneoffBackfillSignalMessageAuthorLoginPs {
     /// Number of rows updated in each transaction per table.
     #[arg(long, default_value_t = 10_000)]
@@ -428,6 +439,13 @@ pub struct OneoffReprocessInboxPostsPs {
     /// Do not persist updates.
     #[arg(long)]
     pub dry_run: bool,
+}
+
+#[derive(clap::Args, Debug)]
+pub struct OneoffMigrateSavedFilterUnitIdsPs {
+    /// Apply all proposed migrations without interactive review.
+    #[arg(long, action)]
+    pub auto_apply: bool,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -1114,6 +1132,7 @@ enum Cmd {
     OneoffImportSignalsCallsignsCsv(OneoffImportSignalsCallsignsCsvPs),
     OneoffFixWhatsappSenders,
     OneoffBackfillInboxNetworks(OneoffBackfillInboxNetworksPs),
+    OneoffBackfillNetworkLastActivity(OneoffBackfillNetworkLastActivityPs),
     OneoffBackfillSignalMessageAuthorLogin(
         OneoffBackfillSignalMessageAuthorLoginPs,
     ),
@@ -1131,7 +1150,7 @@ enum Cmd {
     OneoffAuditMissingEchoImMessages(OneoffAuditMissingEchoImMessagesPs),
     OneoffReprocessInboxPosts(OneoffReprocessInboxPostsPs),
     /// Review and migrate saved unit filters from labels to unit IDs.
-    OneoffMigrateSavedFilterUnitIds,
+    OneoffMigrateSavedFilterUnitIds(OneoffMigrateSavedFilterUnitIdsPs),
     OneoffRestartEcho(OneoffRestartEchoPs),
     OneoffKillOldQueries(OneoffKillOldQueriesPs),
     OneoffRefreshAiModels,
@@ -1890,6 +1909,9 @@ async fn async_main(
             sigint::network::etalon_calc::oneoff::oneoff_backfill_inbox_networks(mode, ps)
                 .await
         }
+        Cmd::OneoffBackfillNetworkLastActivity(ps) => {
+            sigint::network::activity_backfill::run_oneoff(mode, &ps).await
+        }
         Cmd::OneoffBackfillSignalMessageAuthorLogin(ps) => {
             sigint::oneoff::oneoff_backfill_signal_message_author_login(mode, &ps)
                 .await
@@ -1952,8 +1974,8 @@ async fn async_main(
         Cmd::OneoffReprocessInboxPosts(ps) => {
             rer_importer::oneoff_reprocess_inbox_posts(mode, &ps).await
         }
-        Cmd::OneoffMigrateSavedFilterUnitIds => {
-            rer_importer::saved_filter_unit_ids::run(mode).await
+        Cmd::OneoffMigrateSavedFilterUnitIds(ps) => {
+            rer_importer::saved_filter_unit_ids::run(mode, ps.auto_apply).await
         }
         Cmd::NetworkInvalidationTui => {
            sigint::network::etalon_calc::tui::run_network_invalidation_tui(mode).await

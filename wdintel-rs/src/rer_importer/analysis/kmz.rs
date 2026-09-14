@@ -198,9 +198,15 @@ async fn load_kmz_report_items(
             datasource_group::Column::GroupMasterKey
                 .eq_any(sigint_groups.to_vec()),
         )
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
+        .filter(signal_message::Column::Deleted.eq(false));
+    let items = filter_analysis_message_time_basis(
+        items,
+        req.message_time_basis,
+        dt_since,
+        dt_till,
+        ReportPeriodEnd::NonInclusive,
+    );
+    let items = items
         .filter(sigint_inbox_item::Column::Lat.is_not_null())
         .filter(sigint_inbox_item::Column::Lng.is_not_null());
     let items =

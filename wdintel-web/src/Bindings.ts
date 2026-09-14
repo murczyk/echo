@@ -69,6 +69,7 @@ export type Key = {
 export type MultiGeometry = {
   points: Array<Point>;
   lineStrings: Array<LineString>;
+  polygons: Array<Polygon>;
 };
 
 export type Pair = {
@@ -403,6 +404,9 @@ export type InboxMessage = {
   important: boolean;
   bookmarked: boolean;
   timestamp: number | null;
+  createdAt: number | null;
+  createdAtOrder: number | null;
+  hasDateInHeader: boolean;
   groupMasterKey: string | null;
   sender: string | null;
   extendedForm: string | null;
@@ -474,7 +478,7 @@ export type InboxMessageTag = {
   organismId: number | null;
 };
 
-export type InboxMessagesSortBy = 'IMSDatetime' | 'IMSTimestamp';
+export type InboxMessagesSortBy = 'IMSDatetime' | 'IMSTimestamp' | 'IMSCreatedAt';
 
 export type TagFilterOption = 'OneOfTags' | 'AllTags';
 
@@ -653,6 +657,7 @@ export type SignalGroupEntry = {
   ignoreOperativny: boolean;
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
+  isAviationGroup: boolean;
   groupStats: SignalGroupStats;
   adminData: GroupAdminData | null;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
@@ -664,6 +669,7 @@ export type OrphanSignalGroupEntry = {
   ignoreOperativny: boolean;
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
+  isAviationGroup: boolean;
   isArchived: boolean;
   datasourceId: number | null;
   createdAt: number;
@@ -764,6 +770,7 @@ export type AnalysisStatsReq = {
   filterTagsOption: TagFilterOption | null;
   withoutModelTags: boolean | null;
   reportTagsOnlyThisUnit: boolean | null;
+  messageTimeBasis: MessageTimeBasis | null;
 };
 
 export type AnalysisCallsignFrequencyMatchesReq = {
@@ -2618,6 +2625,7 @@ export type ZoneDatasourceGroup = {
   isGroupSecret: boolean;
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
+  isAviationGroup: boolean;
   allowedUsers: Array<string>;
   allowedUserDetails: Array<SignalGroupLogin>;
   allowedOrganismIds: Array<number>;
@@ -2655,6 +2663,7 @@ export type ZoneDatasourceGroupUpdateReq = {
   isSecret: boolean;
   interseptionKind: InterseptionKind | null;
   disableNetworkAssignment: boolean | null;
+  isAviationGroup: boolean | null;
   userLogins: Array<string>;
   organismIds: Array<number>;
   adminLogins: Array<string>;
@@ -2937,6 +2946,7 @@ export type Unit = {
   armyRegion: string;
   comment: string;
   orbitNote: string | null;
+  presentInOrbit: boolean | null;
   name: string;
   active: boolean;
   isDeduplicateCandidate: boolean | null;
@@ -3040,6 +3050,7 @@ export type CreateUnitReq = {
   isDeduplicateCandidate: boolean | null;
   comment: string;
   orbitNote: string | null;
+  presentInOrbit: boolean | null;
   duplicateUnitIds: Array<number>;
 };
 
@@ -3414,9 +3425,17 @@ export type ListCallsignsReq = {
   filterUnitArmyRegion: string | null;
   filterUnitMilitaryDistrict: string | null;
   filterUnitArmy: string | null;
+  filterUnitCorps: string | null;
   filterUnitDivision: string | null;
+  filterUnitBrigade: string | null;
   filterUnitRegiment: string | null;
   filterUnitBattalion: string | null;
+  filterUnitCompany: string | null;
+  filterUnitPlatoon: string | null;
+  filterUnitSquad: string | null;
+  filterUnitSection: string | null;
+  filterUnitTeamOrCrew: string | null;
+  filterUnitOther: string | null;
   filterDeveloping: DevelopingFilter | null;
   sinceDateInclusiveMs: number | null;
   tillDateInclusiveMs: number | null;
@@ -3793,6 +3812,7 @@ export type Network = {
   operationMode: string | null;
   operationType: string | null;
   operationPeriod: string | null;
+  lastActivityAt: number | null;
   lastUpdatedAt: number;
   lastUpdatedBy: string | null;
   activeFrom: number | null;
@@ -3819,6 +3839,15 @@ export type ListNetworksStatusCountsRsp = {
 export type ListNetworksRsp = {
   list: Array<Network>;
   statusCounts: ListNetworksStatusCountsRsp;
+};
+
+export type NetworkLastActivityReq = {
+  networkIds: Array<number>;
+};
+
+export type NetworkLastActivityRow = {
+  networkId: number;
+  lastActivityAt: number | null;
 };
 
 export type UpdateFreqNetworksReq = {
@@ -4052,9 +4081,17 @@ export type ListNetworksReq = {
   filterUnitArmyRegion: string | null;
   filterUnitMilitaryDistrict: string | null;
   filterUnitArmy: string | null;
+  filterUnitCorps: string | null;
   filterUnitDivision: string | null;
+  filterUnitBrigade: string | null;
   filterUnitRegiment: string | null;
   filterUnitBattalion: string | null;
+  filterUnitCompany: string | null;
+  filterUnitPlatoon: string | null;
+  filterUnitSquad: string | null;
+  filterUnitSection: string | null;
+  filterUnitTeamOrCrew: string | null;
+  filterUnitOther: string | null;
   filterText: string | null;
   filterName: string | null;
   filterLocation: string | null;
@@ -5418,6 +5455,7 @@ export type GroupUpdateReq = {
   areaOfResponsibilityIds: Array<number> | null;
   interseptionKind: InterseptionKind | null;
   disableNetworkAssignment: boolean | null;
+  isAviationGroup: boolean | null;
 };
 
 export type GroupEntryF1 = {
@@ -5524,6 +5562,8 @@ export type DutyTagsLayout = 'Full' | 'Compact' | 'Hidden';
 
 export type MessageTextPreviewLines = 'Twenty' | 'Forty' | 'Off';
 
+export type MessageTimeBasis = 'interception' | 'creation';
+
 export type UserDutySettingsDto = {
   tagsLayout: DutyTagsLayout;
   messageTextPreviewLines: MessageTextPreviewLines;
@@ -5536,4 +5576,5 @@ export type UserDutySettingsDto = {
   showClassicAnalysis: boolean;
   dutyCollapseMediaPreviews: boolean;
   mediaSummaryEnabled: boolean;
+  messageSortBy: MessageTimeBasis;
 };

@@ -1,4 +1,5 @@
 import dayjs from 'dayjs';
+import timezone from 'dayjs/plugin/timezone';
 import utc from 'dayjs/plugin/utc';
 import type { MRT_ColumnFiltersState, MRT_SortingState } from 'material-react-table';
 
@@ -10,7 +11,7 @@ import type {
   NetworkFreq,
   Unit,
 } from '../../../../Bindings';
-import { isPresent } from '../../utils/misc';
+import { APP_TIME_ZONE, isPresent } from '../../utils/misc';
 import type { SelectedSidebarUnitFilter } from '../rer-callsigns-neo/types';
 import type {
   ActivityLoadStateByNetworkId,
@@ -18,6 +19,7 @@ import type {
 } from './use-rer-networks-neo-page.types';
 
 dayjs.extend(utc);
+dayjs.extend(timezone);
 
 export type NetworkRowView = {
   id: number;
@@ -61,9 +63,17 @@ export type NetworkUnitStatView = {
   armyRegion: string;
   militaryDistrict: string;
   army: string;
+  corps: string;
   division: string;
+  brigade: string;
   regiment: string;
   battalion: string;
+  company: string;
+  platoon: string;
+  squad: string;
+  section: string;
+  teamOrCrew: string;
+  other: string;
   count: number;
 };
 
@@ -73,6 +83,7 @@ export const NETWORK_COLUMN_FILTER_IDS = ['network', 'aors', 'freqs', 'location'
 type NetworkColumnFilterId = (typeof NETWORK_COLUMN_FILTER_IDS)[number];
 export const ACTIVITY_BAR_MIN_HEIGHT = 6;
 export const ACTIVITY_BAR_VISIBLE_MIN_HEIGHT = 8;
+export const RECENT_NETWORK_ACTIVITY_WINDOW_MS = 15 * 60 * 1000;
 export const ACTIVITY_BAR_MAX_HEIGHT = 34;
 export const NETWORK_STATUS_ACTIVE_COLOR = '#54c06c';
 export const NETWORK_STATUS_INACTIVE_COLOR = '#bfbfbf';
@@ -83,9 +94,17 @@ type NetworkUnitFilterFields = {
   filterUnitArmyRegion: string | null;
   filterUnitMilitaryDistrict: string | null;
   filterUnitArmy: string | null;
+  filterUnitCorps: string | null;
   filterUnitDivision: string | null;
+  filterUnitBrigade: string | null;
   filterUnitRegiment: string | null;
   filterUnitBattalion: string | null;
+  filterUnitCompany: string | null;
+  filterUnitPlatoon: string | null;
+  filterUnitSquad: string | null;
+  filterUnitSection: string | null;
+  filterUnitTeamOrCrew: string | null;
+  filterUnitOther: string | null;
 };
 
 export type NetworkStatusDescriptor = {
@@ -133,9 +152,9 @@ export function getNetworkStatusDescriptor(network: Network): NetworkStatusDescr
 
 export function buildActivityBars(
   activityByDay: Record<string, Record<string, number>> | null | undefined,
+  rangeEndMs = Date.now(),
 ): Array<{ value: number; title: string }> {
   const dayCounts = new Map<number, number>();
-  let lastKnownDayMs: number | null = null;
 
   for (const [dayKey, groups] of Object.entries(activityByDay ?? {})) {
     const dayMs = Number(dayKey);
@@ -143,11 +162,9 @@ export function buildActivityBars(
     const value = Object.values(groups ?? {}).reduce((sum, count) => sum + count, 0);
     const normalizedDayMs = dayjs.utc(dayMs).startOf('day').valueOf();
     dayCounts.set(normalizedDayMs, value);
-    lastKnownDayMs =
-      lastKnownDayMs === null ? normalizedDayMs : Math.max(lastKnownDayMs, normalizedDayMs);
   }
 
-  const rangeEnd = dayjs.utc(lastKnownDayMs ?? dayjs.utc().valueOf()).startOf('day');
+  const rangeEnd = dayjs.utc(dayjs(rangeEndMs).tz(APP_TIME_ZONE).format('YYYY-MM-DD'));
   return Array.from({ length: 10 }, (_, index) => {
     const day = rangeEnd.subtract(9 - index, 'day').startOf('day');
     return {
@@ -179,6 +196,7 @@ export function buildNetworkRowView(
   aorsById: Map<number, AreaOfResponsibility>,
   activityByNetworkId: Map<number, Record<string, Record<string, number>>>,
   activityLoadStateByNetworkId: ActivityLoadStateByNetworkId = new Map(),
+  lastActivityLoadStateByNetworkId: ActivityLoadStateByNetworkId = new Map(),
 ): NetworkRowView {
   const status = getNetworkStatusDescriptor(network);
   const unitLabels = (network.unitIds ?? [])
@@ -193,6 +211,26 @@ export function buildNetworkRowView(
   const inactiveFrequencies = network.freqs
     .filter((freq) => freq.deleted || freq.activeTo !== null)
     .filter((freq) => freq.freq.trim() !== '');
+  const lastActivityLoadState = lastActivityLoadStateByNetworkId.get(network.id);
+  const activityAgeMs = isPresent(network.lastActivityAt)
+    ? Date.now() - network.lastActivityAt
+    : null;
+  const lastActivityLabel =
+    lastActivityLoadState === 'loading'
+      ? 'Завантаження…'
+      : lastActivityLoadState === 'error'
+        ? 'Не вдалося завантажити'
+        : activityAgeMs !== null &&
+            activityAgeMs >= 0 &&
+            activityAgeMs <= RECENT_NETWORK_ACTIVITY_WINDOW_MS
+          ? 'Активна останні 15хв'
+          : formatDateTime(network.lastActivityAt);
+  const lastActivityDetail =
+    lastActivityLoadState === 'loading' || lastActivityLoadState === 'error'
+      ? ''
+      : isPresent(network.lastActivityAt)
+        ? 'Останнє перехоплення'
+        : 'Немає перехоплень';
 
   return {
     id: network.id,
@@ -208,13 +246,12 @@ export function buildNetworkRowView(
     inactiveFrequencies,
     activityBars: buildActivityBars(activityByNetworkId.get(network.id)),
     activityLoadState: activityLoadStateByNetworkId.get(network.id) ?? 'loading',
-    lastActivityLabel: formatDateTime(network.lastUpdatedAt),
-    lastActivityDetail: network.lastUpdatedBy?.trim() || 'невідомий',
-    lastActivityTooltip: [
-      `Створено: ${formatDateTime(network.createdAt)}`,
-      `Оновлено: ${formatDateTime(network.lastUpdatedAt)}`,
-      `Автор: ${network.lastUpdatedBy?.trim() || 'невідомий'}`,
-    ].join('\n'),
+    lastActivityLabel,
+    lastActivityDetail,
+    lastActivityTooltip:
+      lastActivityDetail && isPresent(network.lastActivityAt)
+        ? `${lastActivityDetail}: ${formatDateTime(network.lastActivityAt)}`
+        : lastActivityLabel,
     createdAtLabel: formatDate(network.createdAt),
   };
 }
@@ -290,9 +327,17 @@ export function mergeNetworkUnitStatsWithUnits(
         armyRegion: unit.armyRegion,
         militaryDistrict: unit.militaryDistrict,
         army: unit.army,
+        corps: unit.corps,
         division: unit.division,
+        brigade: unit.brigade,
         regiment: unit.regiment,
         battalion: unit.battalion,
+        company: unit.company,
+        platoon: unit.platoon,
+        squad: unit.squad,
+        section: unit.section,
+        teamOrCrew: unit.teamOrCrew,
+        other: unit.other,
         count: stat.count,
       };
     })
@@ -385,14 +430,38 @@ export function buildNetworkUnitFilterFields(params: {
       filterUnitArmy: normalizeUnitHierarchyFilterValue(
         params.selectedSidebarUnitFilter.hierarchy.army,
       ),
+      filterUnitCorps: normalizeUnitHierarchyFilterValue(
+        params.selectedSidebarUnitFilter.hierarchy.corps,
+      ),
       filterUnitDivision: normalizeUnitHierarchyFilterValue(
         params.selectedSidebarUnitFilter.hierarchy.division,
+      ),
+      filterUnitBrigade: normalizeUnitHierarchyFilterValue(
+        params.selectedSidebarUnitFilter.hierarchy.brigade,
       ),
       filterUnitRegiment: normalizeUnitHierarchyFilterValue(
         params.selectedSidebarUnitFilter.hierarchy.regiment,
       ),
       filterUnitBattalion: normalizeUnitHierarchyFilterValue(
         params.selectedSidebarUnitFilter.hierarchy.battalion,
+      ),
+      filterUnitCompany: normalizeUnitHierarchyFilterValue(
+        params.selectedSidebarUnitFilter.hierarchy.company,
+      ),
+      filterUnitPlatoon: normalizeUnitHierarchyFilterValue(
+        params.selectedSidebarUnitFilter.hierarchy.platoon,
+      ),
+      filterUnitSquad: normalizeUnitHierarchyFilterValue(
+        params.selectedSidebarUnitFilter.hierarchy.squad,
+      ),
+      filterUnitSection: normalizeUnitHierarchyFilterValue(
+        params.selectedSidebarUnitFilter.hierarchy.section,
+      ),
+      filterUnitTeamOrCrew: normalizeUnitHierarchyFilterValue(
+        params.selectedSidebarUnitFilter.hierarchy.teamOrCrew,
+      ),
+      filterUnitOther: normalizeUnitHierarchyFilterValue(
+        params.selectedSidebarUnitFilter.hierarchy.other,
       ),
     };
   }
@@ -407,9 +476,17 @@ export function buildNetworkUnitFilterFields(params: {
     filterUnitArmyRegion: null,
     filterUnitMilitaryDistrict: null,
     filterUnitArmy: null,
+    filterUnitCorps: null,
     filterUnitDivision: null,
+    filterUnitBrigade: null,
     filterUnitRegiment: null,
     filterUnitBattalion: null,
+    filterUnitCompany: null,
+    filterUnitPlatoon: null,
+    filterUnitSquad: null,
+    filterUnitSection: null,
+    filterUnitTeamOrCrew: null,
+    filterUnitOther: null,
   };
 }
 

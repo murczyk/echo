@@ -134,6 +134,7 @@ describe('useRerDutyFeedCrud', () => {
     });
     expect(latest.current?.messageFeeds?.[initialCount]).toEqual({
       id: 'mf-generated',
+      messageSortBy: 'IMSTimestamp',
       filter: emptyFilter(),
       items: [],
       loading: true,

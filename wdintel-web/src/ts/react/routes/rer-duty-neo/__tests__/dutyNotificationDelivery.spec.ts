@@ -47,11 +47,14 @@ function response(message: InboxMessage, groupName = 'Group'): InboxMessagesRsp 
   };
 }
 
-async function deliver(req: InboxMessagesReq): Promise<ReturnType<typeof vi.fn>> {
+async function deliver(
+  req: InboxMessagesReq,
+  messageSortBy: 'IMSTimestamp' | 'IMSCreatedAt' = 'IMSTimestamp',
+): Promise<ReturnType<typeof vi.fn>> {
   const NotificationMock = setup();
   const cycle = beginDutyNotificationPollCycle();
   registerDutyNotificationPreview(cycle, 'feed-a', () =>
-    loadDutyNotificationPreview(req, () => true),
+    loadDutyNotificationPreview(req, messageSortBy, () => true),
   );
   notifyDutyNewMessages('feed-a', 1, cycle);
   endDutyNotificationPollCycle(cycle);
@@ -77,7 +80,42 @@ afterEach(() => {
 describe('Duty rich notification delivery', () => {
   const req = {} as InboxMessagesReq;
 
-  // @test-scope regression: https://github.com/echoua/echo/pull/3331
+  // https://github.com/echoua/echo/issues/3455
+  it('uses the active message ordering basis for notification previews', async () => {
+    const interceptionNewest = minimalInboxMessage({
+      sender: 'Interception newest',
+      groupMasterKey: 'group',
+      timestamp: 200,
+      createdAtOrder: 100,
+    });
+    const creationNewest = minimalInboxMessage({
+      sender: 'Creation newest',
+      groupMasterKey: 'group',
+      timestamp: 100,
+      createdAtOrder: 200,
+    });
+    const previewResponse = response(interceptionNewest);
+    previewResponse.inboxItems = [
+      [1, interceptionNewest],
+      [2, creationNewest],
+    ];
+    fetchInboxMessages.mockResolvedValue(previewResponse);
+
+    await expect(
+      loadDutyNotificationPreview(req, 'IMSTimestamp', () => true),
+    ).resolves.toMatchObject({
+      kind: 'ready',
+      preview: { messageId: 1, orderTimestamp: 200, title: 'Interception newest' },
+    });
+    await expect(
+      loadDutyNotificationPreview(req, 'IMSCreatedAt', () => true),
+    ).resolves.toMatchObject({
+      kind: 'ready',
+      preview: { messageId: 2, orderTimestamp: 200, title: 'Creation newest' },
+    });
+  });
+
+  // Regression: https://github.com/echoua/echo/pull/3331
   it('delivers header-free rich content and sender/group fallbacks', async () => {
     fetchInboxMessages.mockResolvedValueOnce(
       response(
@@ -152,7 +190,7 @@ describe('Duty rich notification delivery', () => {
     const NotificationMock = setup();
     const cycle = beginDutyNotificationPollCycle();
     registerDutyNotificationPreview(cycle, 'feed-a', () =>
-      loadDutyNotificationPreview(req, () => true),
+      loadDutyNotificationPreview(req, 'IMSTimestamp', () => true),
     );
     notifyDutyNewMessages('feed-a', 1, cycle);
     endDutyNotificationPollCycle(cycle);
@@ -184,7 +222,7 @@ describe('Duty rich notification delivery', () => {
     const NotificationMock = setup();
     const cycle = beginDutyNotificationPollCycle();
     registerDutyNotificationPreview(cycle, 'feed-a', () =>
-      loadDutyNotificationPreview(req, () => current),
+      loadDutyNotificationPreview(req, 'IMSTimestamp', () => current),
     );
     notifyDutyNewMessages('feed-a', 1, cycle);
     endDutyNotificationPollCycle(cycle);

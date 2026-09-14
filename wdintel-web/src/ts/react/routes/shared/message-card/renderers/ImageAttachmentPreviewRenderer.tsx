@@ -1,10 +1,10 @@
-import type { PointerEvent as ReactPointerEvent, SyntheticEvent } from 'react';
+import type { SyntheticEvent } from 'react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import EditIcon from '@mui/icons-material/Edit';
 import {
-  Box,
   Alert,
+  Box,
   CircularProgress,
   Divider,
   IconButton,
@@ -14,26 +14,21 @@ import {
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { MessageCardDisabledControlCursorWrapper } from '../MessageCardDisabledControlCursorWrapper';
-
 import {
-  clamp,
-  clampPan,
   deriveImageDownloadName,
   derivePreviewFileName,
   formatSizeBytes,
   type MessageCardImage,
   type Point,
 } from '../message-card-image-utils';
-import {
-  getNextWheelZoom,
-  isInteractivePreviewTarget,
-  ZOOM_MAX,
-  ZOOM_MARKS,
-  ZOOM_MIN,
-  ZOOM_STEP,
-  type DragState,
-} from '../message-card-image-preview-utils';
+import { ZOOM_MIN } from '../message-card-image-preview-utils';
+import { AttachmentPreviewZoomBadge } from '../attachment-preview/AttachmentPreviewZoomBadge';
 import { MessageCardAttachmentPreviewHeader } from '../attachment-preview/MessageCardAttachmentPreviewHeader';
+import { MessageCardAttachmentPreviewInfoPopover } from '../attachment-preview/MessageCardAttachmentPreviewInfoPopover';
+import { MessageCardAttachmentPreviewLayout } from '../attachment-preview/MessageCardAttachmentPreviewLayout';
+import { MessageCardAttachmentPreviewStage } from '../attachment-preview/MessageCardAttachmentPreviewStage';
+import { blurActiveAttachmentPreviewElement } from '../attachment-preview/message-card-attachment-preview';
+import type { MessageCardPreviewNavigation } from '../attachment-preview/message-card-preview.types';
 import {
   getOcrDownloadItems,
   getOcrInfoSections,
@@ -41,14 +36,6 @@ import {
   OcrPreviewAction,
   OcrSplitPreview,
 } from '../attachment-preview/OcrPreview';
-import { MessageCardAttachmentPreviewInfoPopover } from '../attachment-preview/MessageCardAttachmentPreviewInfoPopover';
-import { MessageCardAttachmentPreviewStage } from '../attachment-preview/MessageCardAttachmentPreviewStage';
-import { AttachmentPreviewZoomBadge } from '../attachment-preview/AttachmentPreviewZoomBadge';
-import { canCopyImageToClipboard, copyImageToClipboard } from '../copy-image-to-clipboard';
-import { blurActiveAttachmentPreviewElement } from '../attachment-preview/message-card-attachment-preview';
-import { MessageCardAttachmentPreviewLayout } from '../attachment-preview/MessageCardAttachmentPreviewLayout';
-import type { MessageCardDownloadGuardProps } from '../MessageCardMedia';
-import type { MessageCardPreviewNavigation } from '../attachment-preview/message-card-preview.types';
 import {
   isSupportedOcrImage,
   MediaReprocessAction,
@@ -59,21 +46,20 @@ import {
   type AttachmentPreviewReportDraft,
   type AttachmentPreviewReportVisibility,
 } from '../attachment-preview/ReportTextPreview';
-import { useImageAttachmentEditorSession } from './use-image-attachment-editor-session';
+import { canCopyImageToClipboard, copyImageToClipboard } from '../copy-image-to-clipboard';
+import type { MessageCardDownloadGuardProps } from '../MessageCardMedia';
 import type {
   ImageEditingCapability,
   RegisterImageEditorEscapeHandler,
 } from '../../image-editor/image-editor.types';
+import { useImageAttachmentEditorSession } from './use-image-attachment-editor-session';
+import { useImageAttachmentPreviewGestures } from './use-image-attachment-preview-gestures';
 
 const ImageEditor = lazy(() =>
   import('../../image-editor/ImageEditor').then(({ ImageEditor: Component }) => ({
     default: Component,
   })),
 );
-type StageSize = {
-  width: number;
-  height: number;
-};
 
 function ImagePreview({
   image,
@@ -94,12 +80,17 @@ function ImagePreview({
   zoom: number;
   pan: Point;
   failedHref: string | null;
-  imageSize: StageSize | null;
+  imageSize: { width: number; height: number } | null;
   onLoad: (image: HTMLImageElement) => void;
   onError: () => void;
 }) {
   return (
     <>
+      {failedHref === href ? (
+        <Typography variant="body2" sx={{ color: 'text.secondary', textAlign: 'center' }}>
+          Зображення недоступне
+        </Typography>
+      ) : null}
       <Box
         component="img"
         src={href}
@@ -128,11 +119,6 @@ function ImagePreview({
           pointerEvents: 'none',
         }}
       />
-      {failedHref === href ? (
-        <Typography variant="body2" sx={{ color: 'text.secondary', textAlign: 'center' }}>
-          Зображення недоступне
-        </Typography>
-      ) : null}
     </>
   );
 }
@@ -146,15 +132,17 @@ function ImageCopyAction({
   enabled: boolean;
   onCopy: () => void;
 }) {
-  const title =
-    status === 'copying'
-      ? 'Копіювання...'
-      : enabled
-        ? 'Скопіювати зображення'
-        : 'Копіювання зображень недоступне';
-
   return (
-    <Tooltip title={title} enterDelay={300}>
+    <Tooltip
+      title={
+        status === 'copying'
+          ? 'Копіювання...'
+          : enabled
+            ? 'Скопіювати зображення'
+            : 'Копіювання зображень недоступне'
+      }
+      enterDelay={300}
+    >
       <MessageCardDisabledControlCursorWrapper disabled={!enabled || status === 'copying'}>
         <IconButton
           aria-label="Скопіювати зображення"
@@ -188,7 +176,6 @@ function ImageCopyStatus({ status }: { status: 'idle' | 'copying' | 'copied' | '
           ? 'Не вдалося скопіювати зображення'
           : '';
   if (label === '') return null;
-
   return (
     <Typography
       variant="caption"
@@ -208,25 +195,6 @@ function ImageCopyStatus({ status }: { status: 'idle' | 'copying' | 'copied' | '
       {label}
     </Typography>
   );
-}
-
-function getFittedImageSize(imageSize: StageSize | null, stage: HTMLDivElement): StageSize {
-  if (
-    imageSize === null ||
-    !Number.isFinite(imageSize.width) ||
-    !Number.isFinite(imageSize.height) ||
-    imageSize.width <= 0 ||
-    imageSize.height <= 0
-  ) {
-    return { width: stage.clientWidth, height: stage.clientHeight };
-  }
-  const fitScale = Math.min(
-    stage.clientWidth / imageSize.width,
-    stage.clientHeight / imageSize.height,
-  );
-  return Number.isFinite(fitScale)
-    ? { width: imageSize.width * fitScale, height: imageSize.height * fitScale }
-    : { width: stage.clientWidth, height: stage.clientHeight };
 }
 
 export function ImageAttachmentPreviewRenderer({
@@ -259,76 +227,60 @@ export function ImageAttachmentPreviewRenderer({
   reportDraft?: AttachmentPreviewReportDraft;
 } & MessageCardDownloadGuardProps &
   AttachmentPreviewReportVisibility) {
-  const resolvedIndex = navigation.index;
-  const currentImage = image;
-  const currentHref = currentImage.href;
-  const currentPreviewKey = `${resolvedIndex}:${currentHref}`;
+  const href = image.href;
+  const key = `${navigation.index}:${href}`;
   const [failedHref, setFailedHref] = useState<string | null>(null);
   const [loadedImage, setLoadedImage] = useState<HTMLImageElement | null>(null);
   const [loadedImageKey, setLoadedImageKey] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copying' | 'copied' | 'error'>('idle');
-  const [zoom, setZoom] = useState(ZOOM_MIN);
+  const [infoAnchorEl, setInfoAnchorEl] = useState<HTMLButtonElement | null>(null);
+  const [ocrVisible, setOcrVisible] = useState(false);
+  const [ocrFullPane, setOcrFullPane] = useState(false);
+  const [ocrStatus, setOcrStatus] = useState(image.ocr ?? null);
+  const [summaryVisible, setSummaryVisible] = useState(false);
+  const [summaryStatus, setSummaryStatus] = useState(image.summary ?? null);
+  const currentHrefRef = useRef(href);
+  const copyKeyRef = useRef<string | null>(null);
   const editor = useImageAttachmentEditorSession({
-    image: currentImage,
+    image,
     imageEditing,
     registerEditorEscapeHandler,
   });
+  const close = useCallback(() => {
+    blurActiveAttachmentPreviewElement();
+    onClose();
+  }, [onClose]);
+  const gestures = useImageAttachmentPreviewGestures({
+    previewKey: key,
+    href,
+    failedHref,
+    interactionLocked: editor.isLocked,
+    onBackgroundClick: close,
+  });
+  const isMobile = useMediaQuery(useTheme().breakpoints.down('sm'));
+  const previewFileName = useMemo(
+    () => derivePreviewFileName(image, navigation.index),
+    [image, navigation.index],
+  );
+  const downloadFileName = useMemo(
+    () => deriveImageDownloadName(image, navigation.index),
+    [image, navigation.index],
+  );
+  useEffect(() => {
+    currentHrefRef.current = href;
+  }, [href]);
   useEffect(() => {
     onEditModeChange?.(editor.isLocked);
     return () => onEditModeChange?.(false);
   }, [editor.isLocked, onEditModeChange]);
-  const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
-  const [imageSize, setImageSize] = useState<StageSize | null>(null);
-  const [infoAnchorEl, setInfoAnchorEl] = useState<HTMLButtonElement | null>(null);
-  const [ocrVisible, setOcrVisible] = useState(false);
-  const [ocrFullPane, setOcrFullPane] = useState(false);
-  const [ocrStatus, setOcrStatus] = useState(currentImage.ocr ?? null);
-  const [summaryVisible, setSummaryVisible] = useState(false);
-  const [summaryStatus, setSummaryStatus] = useState(currentImage.summary ?? null);
-  const [stageEl, setStageEl] = useState<HTMLDivElement | null>(null);
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const stageRef = useRef<HTMLDivElement | null>(null);
-  const copyRequestKeyRef = useRef<string | null>(null);
-  const currentHrefRef = useRef(currentHref);
-  const zoomRef = useRef(zoom);
-  const panRef = useRef(pan);
-  const dragRef = useRef<DragState | null>(null);
-  const pointerListenersRef = useRef<{
-    move: (event: PointerEvent) => void;
-    end: (event: PointerEvent) => void;
-  } | null>(null);
-  const infoOpen = infoAnchorEl !== null;
-  useEffect(() => onChildOverlayChange?.(infoOpen), [infoOpen, onChildOverlayChange]);
   useEffect(() => {
     if (dismissChildOverlay) setInfoAnchorEl(null);
   }, [dismissChildOverlay]);
-  const previewFileName = useMemo(
-    () => derivePreviewFileName(currentImage, resolvedIndex),
-    [currentImage, resolvedIndex],
-  );
-  const downloadFileName = useMemo(
-    () => deriveImageDownloadName(currentImage, resolvedIndex),
-    [currentImage, resolvedIndex],
-  );
-  const removePointerListeners = useCallback(() => {
-    const listeners = pointerListenersRef.current;
-    if (listeners === null) return;
-    window.removeEventListener('pointermove', listeners.move as EventListener);
-    window.removeEventListener('pointerup', listeners.end as EventListener);
-    window.removeEventListener('pointercancel', listeners.end as EventListener);
-    pointerListenersRef.current = null;
-  }, []);
-
-  const resetImageState = useCallback(() => {
-    removePointerListeners();
-    dragRef.current = null;
-    setZoom(ZOOM_MIN);
-    zoomRef.current = ZOOM_MIN;
-    setPan({ x: 0, y: 0 });
-    panRef.current = { x: 0, y: 0 };
+  const infoOpen = infoAnchorEl !== null;
+  useEffect(() => onChildOverlayChange?.(infoOpen), [infoOpen, onChildOverlayChange]);
+  useEffect(() => {
+    gestures.reset();
     setFailedHref(null);
-    setImageSize(null);
     setLoadedImage(null);
     setLoadedImageKey(null);
     setCopyStatus('idle');
@@ -336,259 +288,36 @@ export function ImageAttachmentPreviewRenderer({
     setOcrVisible(false);
     setOcrFullPane(false);
     setSummaryVisible(false);
-    setSummaryStatus(currentImage.summary ?? null);
-    copyRequestKeyRef.current = null;
-  }, [currentImage.summary, removePointerListeners]);
-
-  const resetPreviewState = useCallback(() => {
-    resetImageState();
-  }, [resetImageState]);
-
-  const addPointerListeners = useCallback(() => {
-    removePointerListeners();
-
-    const handlePointerMove = (event: PointerEvent) => {
-      const drag = dragRef.current;
-      if (drag === null || event.pointerId !== drag.pointerId) return;
-      event.preventDefault();
-      const nextPan = clampPan(
-        {
-          x: drag.origin.x + (event.clientX - drag.startX),
-          y: drag.origin.y + (event.clientY - drag.startY),
-        },
-        drag.fittedImageWidth,
-        drag.fittedImageHeight,
-        drag.stageWidth,
-        drag.stageHeight,
-        zoomRef.current,
-        ZOOM_MAX,
-      );
-      panRef.current = nextPan;
-      setPan(nextPan);
-    };
-
-    const handlePointerEnd = (event: PointerEvent) => {
-      const drag = dragRef.current;
-      if (drag === null || event.pointerId !== drag.pointerId) return;
-      dragRef.current = null;
-      removePointerListeners();
-    };
-
-    pointerListenersRef.current = {
-      move: handlePointerMove,
-      end: handlePointerEnd,
-    };
-    window.addEventListener('pointermove', handlePointerMove as EventListener, {
-      passive: false,
-    });
-    window.addEventListener('pointerup', handlePointerEnd as EventListener);
-    window.addEventListener('pointercancel', handlePointerEnd as EventListener);
-  }, [removePointerListeners]);
-
-  const closeDialog = () => {
-    blurActiveAttachmentPreviewElement();
-    resetPreviewState();
-    onClose();
-  };
-
-  const setStageNode = useCallback((node: HTMLDivElement | null) => {
-    stageRef.current = node;
-    setStageEl(node);
-  }, []);
-
+    setOcrStatus(image.ocr ?? null);
+    setSummaryStatus(image.summary ?? null);
+    copyKeyRef.current = null;
+  }, [href, image.ocr, image.summary, navigation.index]);
   useEffect(() => {
-    currentHrefRef.current = currentHref;
-  }, [currentHref]);
-
-  useEffect(() => {
-    zoomRef.current = zoom;
-  }, [zoom]);
-
-  useEffect(() => {
-    panRef.current = pan;
-  }, [pan]);
-
-  const setPreviewZoom = (nextZoom: number, cursorPoint: Point = { x: 0, y: 0 }) => {
-    const clampedZoom = clamp(nextZoom, ZOOM_MIN, ZOOM_MAX);
-    const stage = stageRef.current;
-    const currentZoom = zoomRef.current;
-
-    if (clampedZoom === ZOOM_MIN) {
-      setZoom(ZOOM_MIN);
-      setPan({ x: 0, y: 0 });
-      panRef.current = { x: 0, y: 0 };
-      zoomRef.current = ZOOM_MIN;
-      return;
+    if (initialAction === 'edit-image') {
+      onInitialActionConsumed?.();
+      void editor.open();
     }
-
-    const currentPan = panRef.current;
-    const fittedImageSize = stage === null ? null : getFittedImageSize(imageSize, stage);
-    const nextPan =
-      stage === null
-        ? currentPan
-        : clampPan(
-            {
-              x: cursorPoint.x - (clampedZoom / currentZoom) * (cursorPoint.x - currentPan.x),
-              y: cursorPoint.y - (clampedZoom / currentZoom) * (cursorPoint.y - currentPan.y),
-            },
-            fittedImageSize?.width ?? 0,
-            fittedImageSize?.height ?? 0,
-            stage.clientWidth,
-            stage.clientHeight,
-            clampedZoom,
-            ZOOM_MAX,
-          );
-    panRef.current = nextPan;
-    setPan(nextPan);
-
-    zoomRef.current = clampedZoom;
-    setZoom(clampedZoom);
-  };
-
-  useEffect(() => {
-    resetImageState();
-    setOcrStatus(currentImage.ocr ?? null);
-  }, [currentHref, currentImage.ocr, currentImage.summary, resolvedIndex, resetImageState]);
-
-  useEffect(() => {
-    if (stageEl === null) return;
-
-    let touchStartDist = 0;
-    let touchStartZoom = ZOOM_MIN;
-
-    const handleStageWheelNative = (event: WheelEvent) => {
-      if (isInteractivePreviewTarget(event.target)) return;
-      event.preventDefault();
-      const rect = stageEl.getBoundingClientRect();
-      setPreviewZoom(
-        getNextWheelZoom(zoomRef.current, event.deltaY, event.deltaMode, rect.height),
-        {
-          x: event.clientX - (rect.left + rect.width / 2),
-          y: event.clientY - (rect.top + rect.height / 2),
-        },
-      );
-    };
-
-    const handleTouchStart = (event: TouchEvent) => {
-      if (event.touches.length === 2) {
-        const t1 = event.touches[0];
-        const t2 = event.touches[1];
-        if (!t1 || !t2) return;
-        touchStartDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-        touchStartZoom = zoomRef.current;
-      }
-    };
-
-    const handleTouchMove = (event: TouchEvent) => {
-      if (event.touches.length === 2 && touchStartDist > 0) {
-        event.preventDefault();
-        const t1 = event.touches[0];
-        const t2 = event.touches[1];
-        if (!t1 || !t2) return;
-        const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-        const rect = stageEl.getBoundingClientRect();
-        const centerPoint = {
-          x: (t1.clientX + t2.clientX) / 2 - (rect.left + rect.width / 2),
-          y: (t1.clientY + t2.clientY) / 2 - (rect.top + rect.height / 2),
-        };
-        const nextZoom = touchStartZoom * (dist / touchStartDist);
-        setPreviewZoom(nextZoom, centerPoint);
-      }
-    };
-
-    const handleTouchEnd = () => {
-      touchStartDist = 0;
-    };
-
-    let gestureStartZoom = ZOOM_MIN;
-
-    const handleGestureStart = (event: Event) => {
-      event.preventDefault();
-      gestureStartZoom = zoomRef.current;
-    };
-
-    const handleGestureChange = (event: Event) => {
-      event.preventDefault();
-      const gestureEvent = event as unknown as {
-        scale: number;
-        clientX?: number;
-        clientY?: number;
-      };
-      if (typeof gestureEvent.scale === 'number') {
-        const rect = stageEl.getBoundingClientRect();
-        const centerPoint = {
-          x: (gestureEvent.clientX ?? rect.left + rect.width / 2) - (rect.left + rect.width / 2),
-          y: (gestureEvent.clientY ?? rect.top + rect.height / 2) - (rect.top + rect.height / 2),
-        };
-        const nextZoom = gestureStartZoom * gestureEvent.scale;
-        setPreviewZoom(nextZoom, centerPoint);
-      }
-    };
-
-    const handleGestureEnd = (event: Event) => {
-      event.preventDefault();
-    };
-
-    stageEl.addEventListener('wheel', handleStageWheelNative, { passive: false });
-    stageEl.addEventListener('gesturestart', handleGestureStart, { passive: false });
-    stageEl.addEventListener('gesturechange', handleGestureChange, { passive: false });
-    stageEl.addEventListener('gestureend', handleGestureEnd, { passive: false });
-    stageEl.addEventListener('touchstart', handleTouchStart, { passive: true });
-    stageEl.addEventListener('touchmove', handleTouchMove, { passive: false });
-    stageEl.addEventListener('touchend', handleTouchEnd, { passive: true });
-    stageEl.addEventListener('touchcancel', handleTouchEnd, { passive: true });
-
-    return () => {
-      stageEl.removeEventListener('wheel', handleStageWheelNative);
-      stageEl.removeEventListener('gesturestart', handleGestureStart);
-      stageEl.removeEventListener('gesturechange', handleGestureChange);
-      stageEl.removeEventListener('gestureend', handleGestureEnd);
-      stageEl.removeEventListener('touchstart', handleTouchStart);
-      stageEl.removeEventListener('touchmove', handleTouchMove);
-      stageEl.removeEventListener('touchend', handleTouchEnd);
-      stageEl.removeEventListener('touchcancel', handleTouchEnd);
-    };
-  }, [imageSize, stageEl]);
-
-  useEffect(() => removePointerListeners, [removePointerListeners]);
-
-  const handleImageLoad = (image: HTMLImageElement) => {
-    setImageSize({ width: image.naturalWidth, height: image.naturalHeight });
+  }, [editor.open, initialAction, onInitialActionConsumed]);
+  const onLoad = (element: HTMLImageElement) => {
+    gestures.registerImage(element);
     setFailedHref(null);
-    setLoadedImage(image);
-    setLoadedImageKey(currentPreviewKey);
+    setLoadedImage(element);
+    setLoadedImageKey(key);
   };
-
-  const handleImageError = () => {
-    setFailedHref(currentHref);
-    setLoadedImage(null);
-  };
-
-  const handleCopyImage = async () => {
-    if (loadedImage === null || loadedImageKey !== currentPreviewKey) return;
-
+  const copy = async () => {
+    if (loadedImage === null || loadedImageKey !== key) return;
     setCopyStatus('copying');
-    copyRequestKeyRef.current = currentPreviewKey;
-
+    copyKeyRef.current = key;
     try {
       await copyImageToClipboard(loadedImage, currentHrefRef.current);
-      if (copyRequestKeyRef.current !== currentPreviewKey) return;
-      setCopyStatus('copied');
+      if (copyKeyRef.current === key) setCopyStatus('copied');
     } catch {
-      if (copyRequestKeyRef.current !== currentPreviewKey) return;
-      setCopyStatus('error');
+      if (copyKeyRef.current === key) setCopyStatus('error');
     }
   };
-
-  useEffect(() => {
-    if (initialAction !== 'edit-image') return;
-    onInitialActionConsumed?.();
-    void editor.open();
-  }, [editor.open, initialAction, onInitialActionConsumed]);
-
-  const handleReprocessQueued = useCallback(
-    (nextOcr: NonNullable<MessageCardImage['ocr']>) => {
-      setOcrStatus(nextOcr);
+  const queueOcr = useCallback(
+    (ocr: NonNullable<MessageCardImage['ocr']>) => {
+      setOcrStatus(ocr);
       setOcrVisible(true);
       setOcrFullPane(false);
       setSummaryStatus(null);
@@ -597,58 +326,7 @@ export function ImageAttachmentPreviewRenderer({
     },
     [onReportVisibleChange],
   );
-
-  const handleDoubleClick = (event: SyntheticEvent<HTMLDivElement>) => {
-    const mouseEvent = event as unknown as MouseEvent;
-    if (isInteractivePreviewTarget(mouseEvent.target)) return;
-    const stage = stageRef.current;
-    if (!stage) return;
-    const rect = stage.getBoundingClientRect();
-    const cursorPoint = {
-      x: mouseEvent.clientX - (rect.left + rect.width / 2),
-      y: mouseEvent.clientY - (rect.top + rect.height / 2),
-    };
-
-    if (zoomRef.current > ZOOM_MIN) {
-      setPreviewZoom(ZOOM_MIN, cursorPoint);
-    } else {
-      setPreviewZoom(200, cursorPoint);
-    }
-  };
-
-  const startPan = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (isInteractivePreviewTarget(event.target)) return;
-    if (zoom === ZOOM_MIN) return;
-    const stage = stageRef.current;
-    if (stage === null) return;
-    const fittedImageSize = getFittedImageSize(imageSize, stage);
-    dragRef.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      origin: pan,
-      fittedImageWidth: fittedImageSize.width,
-      fittedImageHeight: fittedImageSize.height,
-      stageWidth: stage.clientWidth,
-      stageHeight: stage.clientHeight,
-    };
-    addPointerListeners();
-    (event.currentTarget as HTMLDivElement).setPointerCapture(event.pointerId);
-  };
-
-  const stopPan = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current;
-    if (drag === null || drag.pointerId !== event.pointerId) return;
-    dragRef.current = null;
-    removePointerListeners();
-    try {
-      (event.currentTarget as HTMLDivElement).releasePointerCapture(event.pointerId);
-    } catch {
-      // Ignore pointer-capture teardown failures.
-    }
-  };
-
-  if (editor.session !== null) {
+  if (editor.session !== null)
     return (
       <Suspense
         fallback={<CircularProgress className="m-auto" aria-label="Завантаження редактора" />}
@@ -662,38 +340,46 @@ export function ImageAttachmentPreviewRenderer({
         />
       </Suspense>
     );
-  }
-
-  const fileSize = currentImage.sizeBytes;
-  const sourceStage = (
+  const source = (
     <MessageCardAttachmentPreviewStage
-      ref={setStageNode}
+      ref={gestures.stageRef}
       kind="image"
-      cursor={zoom > ZOOM_MIN ? 'grab' : 'default'}
-      onPointerDown={startPan}
-      onPointerUp={stopPan}
-      onPointerLeave={stopPan}
-      onDoubleClick={handleDoubleClick}
+      cursor={gestures.zoom > ZOOM_MIN ? 'grab' : 'default'}
+      onPointerDown={gestures.onPointerDown}
+      onPointerMove={gestures.onPointerMove}
+      onPointerUp={gestures.onPointerUp}
+      onPointerCancel={gestures.onPointerCancel}
+      onLostPointerCapture={gestures.onLostPointerCapture}
+      onPrimaryClick={gestures.onPrimaryClick}
+      getPrimaryPointerRegion={gestures.getPrimaryPointerRegion}
+      activationEnabled={!editor.isLocked}
+      activationKey={key}
     >
       <ImagePreview
-        image={currentImage}
-        href={currentHref}
+        image={image}
+        href={href}
         carouselIndex={navigation.index}
         previewFileName={previewFileName}
-        zoom={zoom}
-        pan={pan}
+        zoom={gestures.zoom}
+        pan={gestures.pan}
         failedHref={failedHref}
-        imageSize={imageSize}
-        onLoad={handleImageLoad}
-        onError={handleImageError}
+        imageSize={gestures.imageSize}
+        onLoad={onLoad}
+        onError={() => {
+          setFailedHref(href);
+          setLoadedImage(null);
+        }}
       />
-      <AttachmentPreviewZoomBadge zoom={zoom} onResetZoom={() => setPreviewZoom(ZOOM_MIN)} />
+      <AttachmentPreviewZoomBadge
+        zoom={gestures.zoom}
+        onResetZoom={() => gestures.setPreviewZoom(ZOOM_MIN)}
+      />
     </MessageCardAttachmentPreviewStage>
   );
   const stage = (
     <OcrSplitPreview
-      source={sourceStage}
-      mediaId={currentImage.id}
+      source={source}
+      mediaId={image.id}
       ocr={ocrStatus}
       visible={ocrVisible}
       fullPane={ocrFullPane}
@@ -708,142 +394,6 @@ export function ImageAttachmentPreviewRenderer({
       onReportVisibleChange={onReportVisibleChange}
     />
   );
-  const header = (
-    <MessageCardAttachmentPreviewHeader
-      fileName={previewFileName}
-      openHref={currentHref}
-      download={{ href: currentHref, fileName: downloadFileName }}
-      navigation={{ ...navigation, disabled: editor.isLocked }}
-      additionalActions={
-        <>
-          <MediaSummaryAction
-            status={summaryStatus}
-            active={summaryVisible}
-            onClick={() =>
-              setSummaryVisible((visible) => {
-                const next = !visible;
-                if (next && isMobile) setOcrVisible(false);
-                if (next) onReportVisibleChange(false);
-                return next;
-              })
-            }
-          />
-          {reportDraft != null ? (
-            <ReportTextPreviewAction
-              active={reportVisible}
-              onClick={() => {
-                const next = !reportVisible;
-                if (next) {
-                  setOcrVisible(false);
-                  setOcrFullPane(false);
-                  setSummaryVisible(false);
-                }
-                onReportVisibleChange(next);
-              }}
-            />
-          ) : null}
-          <OcrPreviewAction
-            ocr={ocrStatus}
-            active={ocrVisible}
-            onClick={() =>
-              setOcrVisible((visible) => {
-                const next = !visible;
-                if (next && isMobile) setSummaryVisible(false);
-                if (next) onReportVisibleChange(false);
-                return next;
-              })
-            }
-          />
-          {summaryStatus != null || ocrStatus != null ? (
-            <Divider
-              orientation="vertical"
-              flexItem
-              sx={{ mx: 0.25, my: 0.75, borderColor: 'divider' }}
-            />
-          ) : null}
-          <ImageCopyAction
-            status={copyStatus}
-            enabled={
-              loadedImage !== null &&
-              loadedImageKey === currentPreviewKey &&
-              canCopyImageToClipboard(loadedImage)
-            }
-            onCopy={handleCopyImage}
-          />
-          {imageEditing?.canEdit(currentImage) ? (
-            <Tooltip title="Редагувати зображення" enterDelay={300}>
-              <span>
-                <IconButton
-                  aria-label="Редагувати зображення"
-                  size="small"
-                  onClick={() => void editor.open()}
-                  disabled={editor.isLocked}
-                  sx={{
-                    color: 'text.secondary',
-                    '&:hover': { color: 'text.primary', backgroundColor: 'action.hover' },
-                    '&.Mui-disabled': { color: 'action.disabled' },
-                  }}
-                >
-                  {editor.loading ? (
-                    <CircularProgress size={16} color="inherit" />
-                  ) : (
-                    <EditIcon fontSize="small" />
-                  )}
-                </IconButton>
-              </span>
-            </Tooltip>
-          ) : null}
-        </>
-      }
-      overflowAction={
-        <MediaReprocessAction
-          mediaId={currentImage.id}
-          supported={
-            ocrStatus != null ||
-            isSupportedOcrImage(currentImage.contentType, currentImage.fileName)
-          }
-          ocr={ocrStatus}
-          onQueued={handleReprocessQueued}
-          downloadItems={getOcrDownloadItems(currentImage.id, ocrStatus, previewFileName)}
-          isDownloadStarting={isDownloadStarting}
-          onDownloadStart={onDownloadStart}
-        />
-      }
-      status={<ImageCopyStatus status={copyStatus} />}
-      onInfoClick={(event) => {
-        setInfoAnchorEl(event.currentTarget);
-        onChildOverlayChange?.(true);
-      }}
-      infoSeverity={getOcrInfoSeverity(ocrStatus)}
-      onClose={closeDialog}
-      downloadKey={`media:${String(currentImage?.id ?? '')}`}
-      isDownloadStarting={isDownloadStarting}
-      onDownloadStart={onDownloadStart}
-    />
-  );
-  const infoPopover = (
-    <MessageCardAttachmentPreviewInfoPopover
-      open={infoOpen}
-      anchorEl={infoAnchorEl}
-      onClose={() => {
-        setInfoAnchorEl(null);
-        onChildOverlayChange?.(false);
-      }}
-      fields={[
-        { label: 'URL', value: currentImage.href || '—' },
-        { label: 'Файл', value: previewFileName },
-        { label: 'Тип', value: currentImage.contentType?.trim() || '—' },
-        { label: 'Розмір файлу', value: formatSizeBytes(fileSize) },
-        {
-          label: 'Розмір зображення',
-          value: imageSize != null ? `${imageSize.width} × ${imageSize.height}` : '—',
-        },
-        ...(currentImage.id?.trim() ? [{ label: 'ID', value: currentImage.id.trim() }] : []),
-      ]}
-      sections={getOcrInfoSections(ocrStatus)}
-    />
-  );
-
   return (
     <MessageCardAttachmentPreviewLayout
       stage={
@@ -858,10 +408,145 @@ export function ImageAttachmentPreviewRenderer({
           stage
         )
       }
-      header={header}
-      infoPopover={infoPopover}
+      header={
+        <MessageCardAttachmentPreviewHeader
+          fileName={previewFileName}
+          openHref={href}
+          download={{ href, fileName: downloadFileName }}
+          navigation={{ ...navigation, disabled: editor.isLocked }}
+          additionalActions={
+            <>
+              <MediaSummaryAction
+                status={summaryStatus}
+                active={summaryVisible}
+                onClick={() =>
+                  setSummaryVisible((open) => {
+                    const next = !open;
+                    if (next && isMobile) setOcrVisible(false);
+                    if (next) onReportVisibleChange(false);
+                    return next;
+                  })
+                }
+              />
+              {reportDraft != null ? (
+                <ReportTextPreviewAction
+                  active={reportVisible}
+                  onClick={() => {
+                    const next = !reportVisible;
+                    if (next) {
+                      setOcrVisible(false);
+                      setOcrFullPane(false);
+                      setSummaryVisible(false);
+                    }
+                    onReportVisibleChange(next);
+                  }}
+                />
+              ) : null}
+              <OcrPreviewAction
+                ocr={ocrStatus}
+                active={ocrVisible}
+                onClick={() =>
+                  setOcrVisible((open) => {
+                    const next = !open;
+                    if (next && isMobile) setSummaryVisible(false);
+                    if (next) onReportVisibleChange(false);
+                    return next;
+                  })
+                }
+              />
+              {summaryStatus != null || ocrStatus != null ? (
+                <Divider
+                  orientation="vertical"
+                  flexItem
+                  sx={{ mx: 0.25, my: 0.75, borderColor: 'divider' }}
+                />
+              ) : null}
+              <ImageCopyAction
+                status={copyStatus}
+                enabled={
+                  loadedImage !== null &&
+                  loadedImageKey === key &&
+                  canCopyImageToClipboard(loadedImage)
+                }
+                onCopy={copy}
+              />
+              {imageEditing?.canEdit(image) ? (
+                <Tooltip title="Редагувати зображення" enterDelay={300}>
+                  <span>
+                    <IconButton
+                      aria-label="Редагувати зображення"
+                      size="small"
+                      onClick={() => void editor.open()}
+                      disabled={editor.isLocked}
+                      sx={{
+                        color: 'text.secondary',
+                        '&:hover': { color: 'text.primary', backgroundColor: 'action.hover' },
+                        '&.Mui-disabled': { color: 'action.disabled' },
+                      }}
+                    >
+                      {editor.loading ? (
+                        <CircularProgress size={16} color="inherit" />
+                      ) : (
+                        <EditIcon fontSize="small" />
+                      )}
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              ) : null}
+            </>
+          }
+          overflowAction={
+            <MediaReprocessAction
+              mediaId={image.id}
+              supported={
+                ocrStatus != null || isSupportedOcrImage(image.contentType, image.fileName)
+              }
+              ocr={ocrStatus}
+              onQueued={queueOcr}
+              downloadItems={getOcrDownloadItems(image.id, ocrStatus, previewFileName)}
+              isDownloadStarting={isDownloadStarting}
+              onDownloadStart={onDownloadStart}
+            />
+          }
+          status={<ImageCopyStatus status={copyStatus} />}
+          onInfoClick={(event) => {
+            setInfoAnchorEl(event.currentTarget);
+            onChildOverlayChange?.(true);
+          }}
+          infoSeverity={getOcrInfoSeverity(ocrStatus)}
+          onClose={close}
+          downloadKey={`media:${String(image.id ?? '')}`}
+          isDownloadStarting={isDownloadStarting}
+          onDownloadStart={onDownloadStart}
+        />
+      }
+      infoPopover={
+        <MessageCardAttachmentPreviewInfoPopover
+          open={infoOpen}
+          anchorEl={infoAnchorEl}
+          onClose={() => {
+            setInfoAnchorEl(null);
+            onChildOverlayChange?.(false);
+          }}
+          fields={[
+            { label: 'URL', value: href || '—' },
+            { label: 'Файл', value: previewFileName },
+            { label: 'Тип', value: image.contentType?.trim() || '—' },
+            { label: 'Розмір файлу', value: formatSizeBytes(image.sizeBytes) },
+            {
+              label: 'Розмір зображення',
+              value:
+                gestures.imageSize == null
+                  ? '—'
+                  : `${gestures.imageSize.width} × ${gestures.imageSize.height}`,
+            },
+            ...(image.id?.trim() ? [{ label: 'ID', value: image.id.trim() }] : []),
+          ]}
+          sections={getOcrInfoSections(ocrStatus)}
+        />
+      }
       navigation={navigation}
-      swipeEnabled={zoom <= ZOOM_MIN && !editor.isLocked}
+      swipeEnabled={gestures.zoom <= ZOOM_MIN && !editor.isLocked}
     />
   );
 }

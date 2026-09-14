@@ -390,6 +390,7 @@ refresh_analytics() {
   "$analytics_bin_dir/refresh-current-views.sh"
   "$analytics_bin_dir/refresh-gateway.sh"
   "$analytics_bin_dir/reconcile-schema.sh"
+  "$analytics_bin_dir/reconcile-if-needed.sh"
   "$analytics_bin_dir/check-analytics-health.sh"
 }
 

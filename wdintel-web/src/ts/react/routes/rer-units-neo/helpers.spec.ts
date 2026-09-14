@@ -34,6 +34,7 @@ function unit(overrides: Partial<Unit>): Unit {
     armyRegion: '',
     comment: '',
     orbitNote: null,
+    presentInOrbit: null,
     name: '',
     active: true,
     isDeduplicateCandidate: null,

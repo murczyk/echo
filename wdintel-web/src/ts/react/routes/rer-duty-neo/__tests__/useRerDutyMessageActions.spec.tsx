@@ -762,6 +762,43 @@ describe('useRerDutyMessageActions', () => {
     expect(feed.unreadCount).toBe(3);
   });
 
+  it('acknowledges an overlapping bottom unread identity only once', async () => {
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          initialFeeds={[
+            buildFeed({
+              items: [[1, minimalInboxMessage({ timestamp: 100 })]],
+              readIds: new Set<number>(),
+              windowedUnreadItems: new Map([
+                [1, 100],
+                [2, 200],
+              ]),
+              unresolvedUnreadIds: new Set([99]),
+              unreadCount: 3,
+            }),
+          ]}
+        />,
+      );
+      await flushMicrotasks();
+    });
+
+    await act(async () => apiRef.current!.handleVisibleMessageIds('mf-0')(1, { atBottom: true }));
+    let feed = apiRef.current!.messageFeeds[0];
+    expect(feed.readIds).toContain(1);
+    expect(feed.windowedUnreadItems).toEqual(new Map([[2, 200]]));
+    expect(feed.unresolvedUnreadIds).toEqual(new Set([99]));
+    expect(feed.unreadCount).toBe(2);
+
+    await act(async () => apiRef.current!.handleVisibleMessageIds('mf-0')(1, { atBottom: true }));
+    feed = apiRef.current!.messageFeeds[0];
+    expect(feed.windowedUnreadItems).toEqual(new Map([[2, 200]]));
+    expect(feed.unresolvedUnreadIds).toEqual(new Set([99]));
+    expect(feed.unreadCount).toBe(2);
+  });
+
   it('decrements unreadCount only when deleting an unread message', async () => {
     const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
     await act(async () => {

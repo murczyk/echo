@@ -6,6 +6,7 @@ import {
   IMAGE_EDITOR_DIMENSIONS_TOO_LARGE_ERROR,
   IMAGE_EDITOR_SOURCE_TOO_LARGE_ERROR,
   MAX_IMAGE_EDITOR_SIDE,
+  MAX_IMAGE_EDITOR_HEADER_BYTES,
   MAX_IMAGE_EDITOR_SOURCE_BYTES,
   readBoundedImageEditorResponse,
   validateImageEditorSource,
@@ -88,6 +89,35 @@ describe('image editor bounded source validation #3294', () => {
       width: 6000,
       height: 4000,
     });
+  });
+
+  it('parses PNG and WebP headers when image payloads exceed the header budget', async () => {
+    const payloadBytes = MAX_IMAGE_EDITOR_HEADER_BYTES + 512;
+    const largePng = new Uint8Array(33 + 12 + payloadBytes + 12);
+    largePng.set(png(1024, 1024).slice(0, 33));
+    new DataView(largePng.buffer).setUint32(33, payloadBytes);
+    largePng.set([73, 68, 65, 84], 37);
+    largePng.set(pngChunk('IEND'), 45 + payloadBytes);
+    await expect(validateImageEditorSource(source(largePng))).resolves.toMatchObject({
+      format: 'png',
+      width: 1024,
+      height: 1024,
+    });
+    await expect(validateImageEditorSource(source(largePng.slice(0, 128)))).rejects.toThrow();
+    for (const [kind, header] of [
+      ['VP8 ', [0, 0, 0, 0x9d, 1, 0x2a, 4, 0, 3, 0]],
+      ['VP8L', [0x2f, 3, 0x80, 0, 0]],
+    ] as const) {
+      const largeWebp = new Uint8Array(20 + payloadBytes);
+      largeWebp.set(webp(kind, [...header]));
+      new DataView(largeWebp.buffer).setUint32(16, payloadBytes, true);
+      await expect(validateImageEditorSource(source(largeWebp))).resolves.toMatchObject({
+        format: 'webp',
+        width: 4,
+        height: 3,
+      });
+      await expect(validateImageEditorSource(source(largeWebp.slice(0, 128)))).rejects.toThrow();
+    }
   });
 
   it('rejects APNG chunks but not acTL bytes in ancillary payloads', async () => {

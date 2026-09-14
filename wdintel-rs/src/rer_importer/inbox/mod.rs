@@ -1892,44 +1892,143 @@ async fn delete_message(
         .await
         .c(h!())?;
     let is_intelligence_report = !intelligence_report_parent_ids.is_empty();
-    let result = match signal_message::Entity::find_by_id(req.id)
+    soft_delete_message(&txn, req.id).await.context(h!())?;
+    txn.commit().await.c(h!())?;
+    if is_intelligence_report {
+        let mut redis = env.redis.clone();
+        let mut changed_message_ids = intelligence_report_parent_ids;
+        if !changed_message_ids.contains(&req.id) {
+            changed_message_ids.push(req.id);
+        }
+        if let Err(error) = crate::inbox::fanout_intelligence_report_changes(
+            &mut redis,
+            changed_message_ids,
+        )
+        .await
+        {
+            error!("failed to fan out intelligence report deletion: {error:?}");
+        }
+    } else {
+        fanout_inbox_changed(&env, vec![req.id]).await;
+    }
+    Ok(Json(()))
+}
+
+async fn soft_delete_message<C>(
+    txn: &C,
+    message_id: i64,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let signal_message = signal_message::Entity::find_by_id(message_id)
         .filter(signal_message::Column::Deleted.eq(false))
-        .one(&txn)
+        .one(txn)
         .await
         .context(h!())?
-    {
-        None => Err(AppError::NotFound),
-        Some(signal_message) => {
-            let mut signal_message = signal_message.into_active_model();
-            signal_message.deleted = Set(true);
-            signal_message.update(&txn).await.context(h!())?;
-            Ok(Json(()))
-        }
-    };
-    txn.commit().await.c(h!())?;
-    if result.is_ok() {
-        if is_intelligence_report {
-            let mut redis = env.redis.clone();
-            let mut changed_message_ids = intelligence_report_parent_ids;
-            if !changed_message_ids.contains(&req.id) {
-                changed_message_ids.push(req.id);
-            }
-            if let Err(error) =
-                crate::inbox::fanout_intelligence_report_changes(
-                    &mut redis,
-                    changed_message_ids,
-                )
-                .await
-            {
-                error!(
-                    "failed to fan out intelligence report deletion: {error:?}"
-                );
-            }
-        } else {
-            fanout_inbox_changed(&env, vec![req.id]).await;
-        }
+        .ok_or(AppError::NotFound)
+        .context(h!())?;
+    prepare_message_network_activity_change(
+        txn,
+        message_id,
+        &format!("deleted inbox message {message_id}"),
+    )
+    .await
+    .context(h!())?;
+
+    let mut signal_message = signal_message.into_active_model();
+    signal_message.deleted = Set(true);
+    signal_message.update(txn).await.context(h!())?;
+    Ok(())
+}
+
+pub(crate) async fn invalidate_message_network_frequency_last_seen<C>(
+    txn: &C,
+    message_id: i64,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    invalidate_messages_network_frequency_last_seen(txn, &[message_id]).await
+}
+
+pub(crate) async fn prepare_message_network_activity_change<C>(
+    txn: &C,
+    message_id: i64,
+    reason: &str,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    prepare_messages_network_activity_change(txn, &[message_id], reason).await
+}
+
+pub(crate) async fn prepare_messages_network_activity_change<C>(
+    txn: &C,
+    message_ids: &[i64],
+    reason: &str,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    crate::stats::enqueue_group_stats_recalculation_for_messages(
+        txn,
+        message_ids,
+        reason,
+    )
+    .await
+    .c(h!())?;
+    invalidate_messages_network_frequency_last_seen(txn, message_ids).await
+}
+
+pub(crate) async fn invalidate_messages_network_frequency_last_seen<C>(
+    txn: &C,
+    message_ids: &[i64],
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    if message_ids.is_empty() {
+        return Ok(());
     }
-    result
+    let affected = txn
+        .query_all_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            update sigint_network_freq as network_freq
+            set last_seen_dt = null
+            from sigint_inbox_item as inbox_item
+            join signal_message
+              on signal_message.id = inbox_item.id
+            join sigint_inbox_item_network as network_link
+              on network_link.sigint_inbox_item_id = inbox_item.id
+            where signal_message.id = any($1::bigint[])
+              and network_freq.network_id = network_link.sigint_network_id
+              and network_freq.freq = inbox_item.freq
+              and network_freq.deleted = false
+              and network_freq.last_seen_dt = coalesce(
+                  inbox_item.datetime,
+                  signal_message.timestamp,
+                  signal_message.created_at
+              )
+            returning network_freq.id
+        "#,
+            [message_ids.to_vec().into()],
+        ))
+        .await
+        .c(h!())?;
+    let network_freq_ids = affected
+        .iter()
+        .map(|row| row.try_get("", "id").c(h!()))
+        .collect::<anyhow::Result<Vec<i64>>>()
+        .c(h!())?;
+    crate::sigint::network::recalculation::enqueue_last_seen_for_freq_ids(
+        txn,
+        network_freq_ids,
+    )
+    .await
+    .c(h!())?;
+    Ok(())
 }
 
 #[post("/api/rer-importer/inbox/submit")]
@@ -2033,6 +2132,9 @@ fn generic_submit_item_to_inbox_message(
         important: false,
         bookmarked: false,
         timestamp: Some(timestamp.and_utc().timestamp_millis()),
+        created_at: None,
+        created_at_order: None,
+        has_date_in_header: false,
         group_master_key: None,
         sender: item.sender.clone(),
         extended_form: item.comment.clone(),
@@ -2426,6 +2528,13 @@ async fn update_submit_signal_message(
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
+    prepare_message_network_activity_change(
+        txn,
+        signal_message.id,
+        &format!("updated submitted inbox message {}", signal_message.id),
+    )
+    .await
+    .c(h!())?;
     let assign_author =
         signal_message.login_id.is_none() && signal_message.sender.is_none();
     let mut signal_message = signal_message.into_active_model();
@@ -2490,6 +2599,16 @@ async fn upsert_submit_signal_message_inner(
                 .c(h!())?;
             match signal_message {
                 Some(signal_message) => {
+                    prepare_message_network_activity_change(
+                        txn,
+                        signal_message.id,
+                        &format!(
+                            "updated submitted inbox message {}",
+                            signal_message.id
+                        ),
+                    )
+                    .await
+                    .c(h!())?;
                     let assign_author = signal_message.login_id.is_none()
                         && signal_message.sender.is_none();
                     let mut signal_message = signal_message.into_active_model();
@@ -4110,10 +4229,9 @@ async fn get_freq_pelengs_summary(
 ) -> Result<Json<FreqPelengsActivityRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
+    let req = req.into_inner();
 
-    let q = build_inbox_query(&login, &env, &req.into_inner())
-        .await
-        .context(h!())?;
+    let q = build_inbox_query(&login, &env, &req).await.context(h!())?;
 
     let q = format!(
         r#"SELECT "freq" as freq, COUNT(*) AS count
@@ -5463,6 +5581,181 @@ mod tests {
                 .unwrap();
             assert_eq!(inbox_item.datetime, Some(expected));
         }
+    }
+
+    // Regression for ECHO-3207: edits invalidate pre-update network activity.
+    #[serial]
+    #[tokio::test]
+    async fn test_submit_upsert_invalidates_old_frequency_last_seen() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let timestamp = Utc::now().naive_utc() - Duration::hours(1);
+        let old_freq = "146.4500";
+        let new_freq = "147.4500";
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                timestamp: Set(Some(timestamp)),
+                created_at: Set(timestamp),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inbox_item = mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                freq: Set(Some(old_freq.to_string())),
+                datetime: Set(Some(timestamp)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let network_freq = mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set(old_freq.to_string()),
+                active_from: Set(timestamp - Duration::days(1)),
+                last_seen_dt: Set(Some(timestamp)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item_network(
+            &env.dbx,
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(inbox_item.id),
+                sigint_network_id: Set(network.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let logins = vec![login.id];
+        let txn = env.dbx.begin().await.unwrap();
+
+        submit_upsert_inbox_item(
+            env.settlements.clone(),
+            &txn,
+            message.id,
+            &InboxMessage::from(InboxInsertPayload {
+                text: "frequency edit".to_string(),
+                freq: Some(new_freq.to_string()),
+                ..Default::default()
+            }),
+            &login.id,
+            &logins,
+            InboxLocationSubmitMode::PreserveTyped,
+            true,
+            false,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let network_freq =
+            sigint_network_freq::Entity::find_by_id(network_freq.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(inbox_item.freq.as_deref(), Some(new_freq));
+        assert_eq!(network_freq.last_seen_dt, None);
+    }
+
+    // Regression for ECHO-3207: clear the old fallback before changing it.
+    #[serial]
+    #[tokio::test]
+    async fn test_submit_update_invalidates_timestamp_fallback_before_edit() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let old_timestamp = Utc::now().naive_utc() - Duration::hours(2);
+        let new_timestamp = old_timestamp + Duration::hours(1);
+        let freq = "146.4500";
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                timestamp: Set(Some(old_timestamp)),
+                created_at: Set(old_timestamp),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inbox_item = mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                freq: Set(Some(freq.to_string())),
+                datetime: Set(None),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let network_freq = mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set(freq.to_string()),
+                active_from: Set(old_timestamp - Duration::days(1)),
+                last_seen_dt: Set(Some(old_timestamp)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item_network(
+            &env.dbx,
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(inbox_item.id),
+                sigint_network_id: Set(network.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+
+        update_submit_signal_message(
+            &txn,
+            &env.config,
+            message.id,
+            &login.id,
+            &InboxMessage::from(InboxInsertPayload {
+                text: "timestamp edit".to_string(),
+                ..Default::default()
+            }),
+            Some(new_timestamp),
+            None,
+            &[],
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        let network_freq =
+            sigint_network_freq::Entity::find_by_id(network_freq.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(network_freq.last_seen_dt, None);
     }
 
     #[serial]
@@ -6966,18 +7259,31 @@ mod tests {
 
     #[serial]
     #[tokio::test]
-    async fn test_messages_by_id_includes_organism_on_tags() {
+    async fn test_messages_by_id_deduplicates_flat_tags() {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let tag = find_test_bpla_tag(&env.dbx).await.unwrap();
         let datasource_group =
             find_test_datasource_group(&env.dbx).await.unwrap();
-
+        let peer_login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                id: NotSet,
+                login: Set("DuplicateTagPeer".to_string()),
+                organism_id: Set(login.organism_id),
+                sigint_zone_id: Set(login.sigint_zone_id),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        // ECHO-3073: keep attribution details without duplicate flat tag IDs.
         let message = seed_message_with_tags(
             &env,
             &datasource_group,
             &tag,
-            std::slice::from_ref(&login),
+            &[login.clone(), peer_login],
         )
         .await
         .unwrap();
@@ -6997,16 +7303,163 @@ mod tests {
         .unwrap();
 
         assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].1.tags, Some(vec![tag.id]));
         let inbox_tags = messages[0]
             .1
             .inbox_tags
             .as_ref()
             .expect("inbox tags must be present");
-        let tag_entry = inbox_tags
+        assert_eq!(inbox_tags.len(), 2);
+        assert!(inbox_tags.iter().all(|entry| entry.tag_id == tag.id));
+        assert!(inbox_tags
             .iter()
-            .find(|t| t.login.as_deref() == Some(login.login.as_str()))
-            .expect("tag by login must be present");
-        assert_eq!(tag_entry.organism_id, login.organism_id);
+            .all(|entry| entry.organism_id == login.organism_id));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_messages_by_id_deduplicates_flat_tags_after_filtering() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let tag = find_test_bpla_tag(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let shared_tag = mk_tag(
+            &env.dbx,
+            tag::ActiveModel {
+                label: Set(format!("shared-tag-{}", Uuid::new_v4())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let model_only_tag = mk_tag(
+            &env.dbx,
+            tag::ActiveModel {
+                label: Set(format!("model-only-tag-{}", Uuid::new_v4())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let low_confidence_tag = mk_tag(
+            &env.dbx,
+            tag::ActiveModel {
+                label: Set(format!("low-confidence-tag-{}", Uuid::new_v4())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let threshold_tag = mk_tag(
+            &env.dbx,
+            tag::ActiveModel {
+                label: Set(format!("threshold-tag-{}", Uuid::new_v4())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let message = seed_message_with_tags(
+            &env,
+            &datasource_group,
+            &tag,
+            std::slice::from_ref(&login),
+        )
+        .await
+        .unwrap();
+        for (tag_id, confidence, tag_model) in [
+            (shared_tag.id, 1.0, None),
+            (shared_tag.id, 1.0, Some("test-model")),
+            (model_only_tag.id, 1.0, Some("test-model")),
+            (low_confidence_tag.id, 0.6, None),
+            (threshold_tag.id, TAG_MINIMUM_CONFIDENCE, None),
+        ] {
+            sigint_inbox_item_tag::ActiveModel {
+                sigint_inbox_item_id: Set(message.id),
+                tag_id: Set(tag_id),
+                confidence: Set(confidence),
+                login_id: Set(Some(login.id)),
+                model: Set(tag_model.map(str::to_string)),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+        let logins =
+            crate::users::get_organism_login_ids_by_id(&env.dbx, &login.id)
+                .await
+                .unwrap();
+
+        let messages = messages_by_id_bl(
+            &login.id,
+            &logins,
+            &env,
+            &[message.id],
+            &messages_by_id_default_req(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(messages.len(), 1);
+        let flat_tags = messages[0]
+            .1
+            .tags
+            .as_ref()
+            .expect("flat tags must be present");
+        assert_eq!(flat_tags.iter().unique().count(), flat_tags.len());
+        assert_eq!(
+            flat_tags.iter().copied().collect::<BTreeSet<_>>(),
+            BTreeSet::from([
+                tag.id,
+                shared_tag.id,
+                model_only_tag.id,
+                threshold_tag.id,
+            ])
+        );
+        let inbox_tags = messages[0]
+            .1
+            .inbox_tags
+            .as_ref()
+            .expect("inbox tags must be present");
+        assert_eq!(
+            inbox_tags
+                .iter()
+                .filter(|entry| entry.tag_id == shared_tag.id)
+                .count(),
+            2
+        );
+        assert!(!inbox_tags
+            .iter()
+            .any(|entry| entry.tag_id == low_confidence_tag.id));
+
+        // ECHO-3073: retain manual attribution records while hiding model rows.
+        let without_model_tags = messages_by_id_bl(
+            &login.id,
+            &logins,
+            &env,
+            &[message.id],
+            &InboxMessagesReq {
+                without_model_tags: Some(true),
+                ..messages_by_id_default_req()
+            },
+        )
+        .await
+        .unwrap();
+        let filtered = &without_model_tags[0].1;
+        let filtered_tags = filtered.tags.as_ref().unwrap();
+        assert_eq!(filtered_tags.iter().unique().count(), filtered_tags.len());
+        assert_eq!(
+            filtered_tags.iter().copied().collect::<BTreeSet<_>>(),
+            BTreeSet::from([tag.id, shared_tag.id, threshold_tag.id])
+        );
+        let filtered_inbox_tags = filtered.inbox_tags.as_ref().unwrap();
+        assert_eq!(filtered_inbox_tags.len(), 3);
+        assert!(filtered_inbox_tags
+            .iter()
+            .all(|entry| entry.model.is_none()));
     }
 
     #[serial]
@@ -7077,6 +7530,78 @@ mod tests {
         expected_unit_ids.sort_unstable();
 
         assert_eq!(messages[0].1.unit_ids, expected_unit_ids);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn deleting_message_invalidates_network_frequency_last_seen() {
+        let env = cleanup().await.unwrap();
+        let timestamp = Utc::now().naive_utc() - Duration::hours(1);
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                timestamp: Set(Some(timestamp)),
+                created_at: Set(timestamp),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let freq = "146.4500";
+        let inbox_item = mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                freq: Set(Some(freq.to_string())),
+                datetime: Set(Some(timestamp)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let network_freq = mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set(freq.to_string()),
+                active_from: Set(timestamp - Duration::days(1)),
+                last_seen_dt: Set(Some(timestamp)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item_network(
+            &env.dbx,
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(inbox_item.id),
+                sigint_network_id: Set(network.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let txn = env.dbx.begin().await.unwrap();
+        soft_delete_message(&txn, message.id).await.unwrap();
+        txn.commit().await.unwrap();
+
+        let message = signal_message::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let network_freq =
+            sigint_network_freq::Entity::find_by_id(network_freq.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(message.deleted);
+        assert_eq!(network_freq.last_seen_dt, None);
     }
 
     #[serial]

@@ -57,6 +57,17 @@ pub struct ListNetworksRsp {
     pub status_counts: ListNetworksStatusCountsRsp,
 }
 
+#[derive(Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, Clone)]
+pub struct NetworkLastActivityReq {
+    pub network_ids: Vec<i64>,
+}
+
+#[derive(Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, Clone)]
+pub struct NetworkLastActivityRow {
+    pub network_id: i64,
+    pub last_activity_at: Option<i64>,
+}
+
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
@@ -73,6 +84,7 @@ pub struct Network {
     pub operation_mode: Option<String>,
     pub operation_type: Option<String>,
     pub operation_period: Option<String>,
+    pub last_activity_at: Option<i64>,
     pub last_updated_at: i64,
     pub last_updated_by: Option<String>,
     pub active_from: Option<i64>,
@@ -407,9 +419,17 @@ pub struct ListNetworksReq {
     pub filter_unit_army_region: Option<String>,
     pub filter_unit_military_district: Option<String>,
     pub filter_unit_army: Option<String>,
+    pub filter_unit_corps: Option<String>,
     pub filter_unit_division: Option<String>,
+    pub filter_unit_brigade: Option<String>,
     pub filter_unit_regiment: Option<String>,
     pub filter_unit_battalion: Option<String>,
+    pub filter_unit_company: Option<String>,
+    pub filter_unit_platoon: Option<String>,
+    pub filter_unit_squad: Option<String>,
+    pub filter_unit_section: Option<String>,
+    pub filter_unit_team_or_crew: Option<String>,
+    pub filter_unit_other: Option<String>,
     pub filter_text: Option<String>,
     pub filter_name: Option<String>,
     pub filter_location: Option<String>,

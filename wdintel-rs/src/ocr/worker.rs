@@ -574,11 +574,16 @@ async fn finalize_job(
     job.update(&env.dbx).await.context(h!())?;
     publish_inbox_change(env, media_id).await.context(h!())?;
     if matches!(quality_status.as_deref(), Some("accepted" | "degraded")) {
-        enqueue_media_summary(env, media_id, &html, force_summary)
-            .await
-            .unwrap_or_else(|err| {
-                error!("failed to enqueue media summary: {err:#?}")
-            });
+        enqueue_media_summary(
+            env,
+            media_id,
+            std::str::from_utf8(&html).context(h!())?,
+            force_summary,
+        )
+        .await
+        .unwrap_or_else(|err| {
+            error!("failed to enqueue media summary: {err:#?}")
+        });
     }
     Ok(())
 }
@@ -621,7 +626,7 @@ async fn prepare_and_store_result(
     config: &OcrRuntimeConfig,
     media_id: Uuid,
     extractor_job_id: Uuid,
-) -> anyhow::Result<(String, i64, String)> {
+) -> anyhow::Result<(String, i64, actix_web::web::Bytes)> {
     let result = download_result(&env.rq, config, extractor_job_id)
         .await
         .context(h!())?;
@@ -630,6 +635,7 @@ async fn prepare_and_store_result(
             .await
             .context(h!())?
             .context(h!())?;
+    let html = actix_web::web::Bytes::from(html.into_bytes());
     let object_key = ocr_result_key(&config.instance_id, media_id);
     let app_s3_config = env.config.s3_config.as_ref().context(h!())?;
     let s3_config = env.s3_config.as_ref().context(h!())?;
@@ -638,7 +644,7 @@ async fn prepare_and_store_result(
         s3_config,
         &app_s3_config.strongbox_key,
         &object_key,
-        html.as_bytes(),
+        html.clone(),
     )
     .await
     .context(h!())?;

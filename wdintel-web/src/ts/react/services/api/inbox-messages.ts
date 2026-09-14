@@ -357,6 +357,7 @@ function normalizeSignalGroupEntry(
     disableNetworkAssignment: (raw.disableNetworkAssignment ??
       raw.disable_network_assignment ??
       false) as boolean,
+    isAviationGroup: (raw.isAviationGroup ?? raw.is_aviation_group ?? false) as boolean,
     groupStats:
       groupStats && typeof groupStats.activityLastDay === 'number' ? groupStats : defaultGroupStats,
     adminData: (raw.adminData ?? raw.admin_data ?? null) as GroupAdminData | null,

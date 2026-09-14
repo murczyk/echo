@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { describe, expect, it, vi } from 'vitest';
 
 import { useImageAttachmentEditorSession } from '../use-image-attachment-editor-session';
+import { MessageCardAttachmentPreviewStage } from '../../attachment-preview/MessageCardAttachmentPreviewStage';
 
 // @test-scope regression: https://github.com/echoua/echo/issues/3099
 it('keeps stale sources and replacements bound to the original attachment #3099', async () => {
@@ -88,5 +89,97 @@ it('clears a failed image source error when carousel navigation changes the targ
   expect(loadSource).toHaveBeenCalledOnce();
   expect(controls!.session).toBeNull();
   expect(controls!.loading).toBe(false);
+  act(() => root.unmount());
+});
+
+it('ECHO-3368 invalidates stage gestures while editor loading and unlocks after failure or cancel', async () => {
+  const image = { id: 'image', href: '/image.png' } as never;
+  const sources: Array<{ resolve: (value: any) => void; reject: (reason: Error) => void }> = [];
+  const loadSource = vi.fn(
+    () =>
+      new Promise((resolve, reject) => {
+        sources.push({ resolve, reject });
+      }),
+  );
+  const activated = vi.fn();
+  function Harness() {
+    const editor = useImageAttachmentEditorSession({
+      image,
+      imageEditing: {
+        canEdit: () => true,
+        loadSource,
+        applyReplacement: vi.fn(),
+        addAsNew: vi.fn(),
+      },
+    });
+    return (
+      <>
+        <button aria-label="open" onClick={() => void editor.open()} />
+        <button aria-label="cancel" onClick={editor.close} />
+        <MessageCardAttachmentPreviewStage
+          kind="image"
+          activationEnabled={!editor.isLocked}
+          activationKey={`${editor.loading}:${editor.session !== null}`}
+          onPrimaryClick={() => activated()}
+        >
+          <div>image</div>
+        </MessageCardAttachmentPreviewStage>
+        {editor.error ? <div role="alert">{editor.error}</div> : null}
+      </>
+    );
+  }
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  act(() => root.render(<Harness />));
+  const stage = container.querySelector('[data-image-preview-stage]')!;
+  const pointer = (type: string) => {
+    const event = new Event(type, { bubbles: true });
+    Object.defineProperties(event, {
+      pointerId: { value: 1 },
+      pointerType: { value: 'mouse' },
+      button: { value: 0 },
+      clientX: { value: 20 },
+      clientY: { value: 20 },
+    });
+    stage.dispatchEvent(event);
+  };
+  const click = () => stage.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+
+  act(() => pointer('pointerdown'));
+  act(() => (container.querySelector('[aria-label="open"]') as HTMLButtonElement).click());
+  await vi.waitFor(() => expect(loadSource).toHaveBeenCalledOnce());
+  act(() => {
+    pointer('pointerup');
+    click();
+  });
+  expect(activated).not.toHaveBeenCalled();
+
+  await act(async () => sources[0]!.reject(new Error('source failed')));
+  await vi.waitFor(() => expect(container.querySelector('[role="alert"]')).not.toBeNull());
+  act(() => {
+    pointer('pointerdown');
+    pointer('pointerup');
+    click();
+  });
+  expect(activated).toHaveBeenCalledOnce();
+
+  act(() => (container.querySelector('[aria-label="open"]') as HTMLButtonElement).click());
+  await vi.waitFor(() => expect(loadSource).toHaveBeenCalledTimes(2));
+  await act(async () =>
+    sources[1]!.resolve({
+      blob: new Blob(['source']),
+      fileName: 'image.png',
+      mimeType: 'image/png',
+    }),
+  );
+  await vi.waitFor(() => expect(container.querySelector('[aria-label="cancel"]')).not.toBeNull());
+  act(() => (container.querySelector('[aria-label="cancel"]') as HTMLButtonElement).click());
+  act(() => {
+    pointer('pointerdown');
+    pointer('pointerup');
+    click();
+  });
+  expect(activated).toHaveBeenCalledTimes(2);
   act(() => root.unmount());
 });

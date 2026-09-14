@@ -398,6 +398,11 @@ fn probed_content_type(data: &[u8]) -> Option<&'static str> {
     infer::get(data).map(|kind| kind.mime_type())
 }
 
+pub(crate) fn device_content_probe_is_excluded_video(data: &[u8]) -> bool {
+    probed_content_type(data)
+        .is_some_and(content_type_is_excluded_from_encryption)
+}
+
 fn is_mpeg_transport_stream(data: &[u8]) -> bool {
     crate::config::MESSENGER_MEDIA_MPEG_TS_PACKET_LAYOUTS
         .iter()
@@ -428,7 +433,12 @@ async fn prepare_attachment(
     force_plaintext: bool,
     allow_probed_video_exclusion: bool,
 ) -> Result<Option<PreparedAttachment>, AppError> {
-    let mut file = match fs::File::open(path).await {
+    let mut file = match fs::File::options()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+        .await
+    {
         Ok(file) => file,
         Err(error) if error.kind() == ErrorKind::NotFound => {
             warn!(
@@ -440,8 +450,13 @@ async fn prepare_attachment(
             return Err(anyhow::Error::from(error).context(h!()).into());
         }
     };
-    let size_bytes =
-        i64::try_from(file.metadata().await.c(h!())?.len()).c(h!())?;
+    let metadata = file.metadata().await.c(h!())?;
+    if !metadata.is_file() {
+        return Err(AppError::BL {
+            msg: "attachment source is not a regular file".to_string(),
+        });
+    }
+    let size_bytes = i64::try_from(metadata.len()).c(h!())?;
     let mut probe =
         vec![0; crate::config::MESSENGER_MEDIA_CONTENT_TYPE_PROBE_SIZE_BYTES];
     let read = file.read(&mut probe).await.c(h!())?;
@@ -504,7 +519,7 @@ async fn upload_prepared_attachment(
                 s3_config,
                 strongbox_key,
                 object_key,
-                &data,
+                data.into(),
             )
             .await
         }
@@ -613,6 +628,11 @@ async fn stage_media_attachment(
     storage_config: &storage::S3Config,
     deletion: UploadedAttachmentDeletion,
 ) -> Result<Option<StagedMediaAttachment>, AppError> {
+    let source_lease = crate::sigint::file_upload::lock_uploaded_source(
+        Path::new(&attachment.path),
+    )
+    .await
+    .c(h!())?;
     let ext = guess_extension(
         attachment.name.as_deref(),
         Path::new(&attachment.path),
@@ -630,6 +650,9 @@ async fn stage_media_attachment(
     )
     .await?
     else {
+        if source_lease.is_some() {
+            return Err(AppError::BL { msg: "attachment upload expired or was removed before submission; upload it again".to_string() });
+        }
         return Ok(None);
     };
     let content_type = resolve_attachment_content_type(
@@ -767,6 +790,21 @@ pub async fn delete_uploaded_attachment_files(
     attachments: &[MediaUploadInput],
 ) {
     for attachment in attachments {
+        match crate::sigint::file_upload::remove_consumed_upload(
+            std::path::Path::new(&attachment.path),
+        )
+        .await
+        {
+            Ok(true) => continue,
+            Ok(false) => {}
+            Err(error) => {
+                error!(
+                    "failed to delete attachment upload {}: {error:?}",
+                    attachment.path
+                );
+                continue;
+            }
+        }
         if let Err(e) = tokio::fs::remove_file(&attachment.path).await {
             if e.kind() == ErrorKind::NotFound {
                 continue;
@@ -1208,7 +1246,7 @@ pub async fn fetch_media_bytes_by_key(
 
 pub async fn store_asset(
     env: &Env,
-    data: &[u8],
+    data: actix_web::web::Bytes,
     name: Option<&str>,
     content_type: Option<&str>,
 ) -> Result<String, AppError> {
@@ -1219,7 +1257,7 @@ pub async fn store_asset(
         msg: "S3 is not configured".to_string(),
     })?;
     let _ct = content_type.map(|s| s.to_string()).unwrap_or_else(|| {
-        detect_content_type(name, Path::new(name.unwrap_or("")), data)
+        detect_content_type(name, Path::new(name.unwrap_or("")), &data)
     });
     let object_id = Uuid::now_v7();
     let ext = guess_extension(name, Path::new(name.unwrap_or("")));
@@ -1640,6 +1678,67 @@ mod tests {
         staged.cleanup_after_rollback(&config, &s3).await;
         delete_uploaded_attachment_files(&sources).await;
         assert!(!existing_path.exists());
+    }
+
+    #[tokio::test]
+    async fn removed_resolved_upload_fails_staging_and_rolls_back_earlier_objects(
+    ) {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let temporary = tempfile::tempdir().unwrap();
+        let handler = crate::sigint::file_upload::tus::TusHandler::new(
+            temporary.path().display().to_string(),
+            crate::sigint::file_upload::TUS_PATH_BASE,
+        );
+        let login = Uuid::new_v4();
+        let upload = handler
+            .create_completed_upload(
+                &login,
+                Default::default(),
+                futures_util::stream::iter([Ok(
+                    actix_web::web::Bytes::from_static(b"source"),
+                )]),
+            )
+            .await
+            .unwrap();
+        let crate::sigint::file_upload::tus::CompletedUploadWriteResult::Stored { upload_url, .. } = upload else { panic!("missing upload"); };
+        let mut attachments = handler
+            .resolve_completed_uploads(&login, &[upload_url])
+            .await
+            .unwrap();
+        delete_uploaded_attachment_files(&attachments).await;
+        let first = temporary.path().join("valid.bin");
+        tokio::fs::write(&first, b"valid first source")
+            .await
+            .unwrap();
+        attachments.insert(
+            0,
+            MediaUploadInput {
+                path: first.display().to_string(),
+                name: None,
+                content_type: None,
+            },
+        );
+        let mut config = env.config.clone();
+        config.s3_config = Some(crate::config::S3Config {
+            s3_access_key_id: "test".into(),
+            s3_secret_access_key: "test".into(),
+            s3_endpoint: String::new(),
+            s3_region: String::new(),
+            s3_bucket: "test".into(),
+            strongbox_key: crate::storage::generate_strongbox_key_b64(),
+        });
+        let op = Operator::new(Memory::default()).unwrap().finish();
+        let result = stage_media_attachments(
+            &attachments,
+            &config,
+            &Some(op.clone()),
+            UploadedAttachmentDeletion::DeleteAfterCommit,
+            None,
+        )
+        .await;
+        assert!(matches!(result, Err(AppError::BL { .. })));
+        assert!(op.list("/").await.unwrap().is_empty());
+        assert!(first.exists());
     }
 
     #[test]

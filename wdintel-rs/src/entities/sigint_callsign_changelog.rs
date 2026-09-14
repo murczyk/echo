@@ -40,7 +40,7 @@ pub enum Relation {
         from = "Column::SigintCallsignId",
         to = "super::sigint_callsign::Column::Id",
         on_update = "NoAction",
-        on_delete = "NoAction"
+        on_delete = "Cascade"
     )]
     SigintCallsign,
     #[sea_orm(

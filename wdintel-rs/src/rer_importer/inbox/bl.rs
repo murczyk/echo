@@ -42,6 +42,7 @@ pub struct InboxMessageDesc {
     pub message_uid: Option<String>,
     pub body: Option<String>,
     pub timestamp: Option<NaiveDateTime>,
+    pub created_at: NaiveDateTime,
     pub sender: Option<String>,
     pub freq: Option<String>,
     pub coords: Option<String>,
@@ -991,9 +992,12 @@ pub async fn aggregate_to_inbox_messages(
             Some(jv) => serde_json::from_value::<Vec<InboxMessageMetadata>>(jv)
                 .context(h!())?,
         };
-        let inbox_tag_ids = m_inbox_tags
-            .as_ref()
-            .map(|tags| tags.iter().map(|tag| tag.tag_id).collect::<Vec<_>>());
+        let inbox_tag_ids = m_inbox_tags.as_ref().map(|tags| {
+            tags.iter()
+                .map(|tag| tag.tag_id)
+                .unique()
+                .collect::<Vec<_>>()
+        });
 
         let m_point_tokens = if highlight_points {
             palitra_points_by_message.remove(&message.id)
@@ -1076,6 +1080,13 @@ pub async fn aggregate_to_inbox_messages(
                 timestamp: message
                     .timestamp
                     .map(|x| x.and_utc().timestamp_millis()),
+                created_at: Some(
+                    message.created_at.and_utc().timestamp_millis(),
+                ),
+                created_at_order: Some(
+                    message.created_at.and_utc().timestamp_micros(),
+                ),
+                has_date_in_header: crate::rer_importer::body_noheader::leading_header_has_calendar_date(&body),
                 group_master_key: group_entry
                     .as_ref()
                     .and_then(|(entry, _)| entry.group_master_key.clone()),
@@ -1298,14 +1309,21 @@ where
             .await
             .c(h!())?;
     } else {
-        let mut message =
-            signal_message::Entity::find_by_id(comment.intel_message_id)
-                .one(db)
-                .await
-                .c(h!())?
-                .ok_or(AppError::NotFound)
-                .c(h!())?
-                .into_active_model();
+        let message_id = comment.intel_message_id;
+        crate::rer_importer::inbox::prepare_message_network_activity_change(
+            db,
+            message_id,
+            &format!("deleted linked message comment {message_id}"),
+        )
+        .await
+        .c(h!())?;
+        let mut message = signal_message::Entity::find_by_id(message_id)
+            .one(db)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)
+            .c(h!())?
+            .into_active_model();
         message.deleted = Set(true);
         message.update(db).await.c(h!())?;
     }
@@ -1943,6 +1961,15 @@ pub async fn submit_upsert_inbox_item(
             "upsert request id = {id}; login = {login}; new value: {:?}; old value: {:?}",
             message, existing
         );
+    }
+    if existing_message {
+        crate::rer_importer::inbox::prepare_message_network_activity_change(
+            txn,
+            id,
+            &format!("updated inbox message {id}"),
+        )
+        .await
+        .c(h!())?;
     }
 
     let submitted_coords =

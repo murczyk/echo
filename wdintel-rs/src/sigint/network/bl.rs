@@ -13,10 +13,52 @@ use sea_orm::sea_query::*;
 use sea_orm::*;
 use sea_query::Expr as SeaExpr;
 
+pub(crate) struct NetworkRenderAccess {
+    load_encryption_keys: bool,
+}
+
+pub(crate) async fn load_network_render_access<'a, 'async_trait, C>(
+    txn: &'a C,
+    user_login: &uuid::Uuid,
+) -> Result<NetworkRenderAccess, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let login = crate::users::load_active_login(txn, user_login)
+        .await
+        .c(h!())?;
+    Ok(NetworkRenderAccess {
+        load_encryption_keys: login.organism_id.is_some(),
+    })
+}
+
 pub async fn render_networks<'a, 'async_trait, C>(
     networks: Vec<sigint_network::Model>,
     txn: &'a C,
     user_login: &uuid::Uuid,
+) -> Result<Vec<Network>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    if networks.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let access = load_network_render_access(txn, user_login)
+        .await
+        .context(h!())?;
+    Ok(
+        render_networks_with_access(networks, txn, user_login, &access)
+            .await
+            .context(h!())?,
+    )
+}
+
+pub(crate) async fn render_networks_with_access<'a, 'async_trait, C>(
+    networks: Vec<sigint_network::Model>,
+    txn: &'a C,
+    user_login: &uuid::Uuid,
+    access: &NetworkRenderAccess,
 ) -> Result<Vec<Network>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
@@ -31,9 +73,10 @@ where
     let network_ids: Vec<i64> = networks.iter().map(|n| n.id).collect();
 
     // fetch all related data in bulk
-    let freqs_map = get_networks_freqs(txn, &network_ids, user_login)
-        .await
-        .context(h!())?;
+    let network_freqs =
+        get_networks_freqs(txn, &network_ids, user_login, access)
+            .await
+            .context(h!())?;
     let units_map =
         get_networks_units(txn, &network_ids).await.context(h!())?;
     let posts_map =
@@ -61,7 +104,11 @@ where
     for network in &networks {
         networks_res.push(Network {
             id: network.id,
-            freqs: freqs_map.get(&network.id).cloned().unwrap_or_default(),
+            freqs: network_freqs
+                .freqs_by_network_id
+                .get(&network.id)
+                .cloned()
+                .unwrap_or_default(),
             unit_ids: units_map.get(&network.id).cloned(),
             post_ids: posts_map.get(&network.id).cloned().unwrap_or_default(),
             descriptions: descs_map
@@ -77,6 +124,9 @@ where
             operation_mode: network.operation_mode.clone(),
             operation_type: network.operation_type.clone(),
             operation_period: network.operation_period.clone(),
+            last_activity_at: network
+                .last_active_at
+                .map(|timestamp| timestamp.and_utc().timestamp_millis()),
             last_updated_at: network.updated_at.and_utc().timestamp_millis(),
             last_updated_by: network.updated_by_login_id.map(|login_id| {
                 updated_by_logins
@@ -110,16 +160,23 @@ where
     Ok(networks_res)
 }
 
+struct NetworkFreqs {
+    freqs_by_network_id: HashMap<i64, Vec<NetworkFreq>>,
+}
+
 async fn get_networks_freqs<'a, 'async_trait, C>(
     txn: &'a C,
     network_ids: &[i64],
     user_login: &uuid::Uuid,
-) -> Result<HashMap<i64, Vec<NetworkFreq>>, AppError>
+    access: &NetworkRenderAccess,
+) -> Result<NetworkFreqs, AppError>
 where
     C: ConnectionTrait + 'async_trait,
 {
     if network_ids.is_empty() {
-        return Ok(HashMap::new());
+        return Ok(NetworkFreqs {
+            freqs_by_network_id: HashMap::new(),
+        });
     }
 
     let freqs = sigint_network_freq::Entity::find()
@@ -133,16 +190,20 @@ where
 
     let freq_ids = freqs.iter().map(|x| x.id).collect::<Vec<_>>();
 
-    let mut keys =
+    let mut keys = if access.load_encryption_keys {
         crate::sigint::key::load_freq_keys(txn, user_login, freq_ids)
             .await
-            .c(h!())?;
+            .c(h!())?
+    } else {
+        HashMap::new()
+    };
 
-    let mut freq_map: HashMap<i64, Vec<NetworkFreq>> = HashMap::new();
+    let mut freqs_by_network_id: HashMap<i64, Vec<NetworkFreq>> =
+        HashMap::new();
 
     for freq in freqs {
         let keys = keys.remove(&freq.id).unwrap_or_default();
-        freq_map
+        freqs_by_network_id
             .entry(freq.network_id)
             .or_default()
             .push(NetworkFreq {
@@ -161,7 +222,9 @@ where
             });
     }
 
-    Ok(freq_map)
+    Ok(NetworkFreqs {
+        freqs_by_network_id,
+    })
 }
 
 pub async fn get_networks_units<'a, 'async_trait, C>(
@@ -398,11 +461,9 @@ pub async fn network_group_activity_bl(
     } else {
         Utc::now().naive_utc()
     };
-    let dt_since = dt_till
-        .checked_sub_signed(TimeDelta::days(
-            req.period.unwrap_or_default().lookback_days(),
-        ))
-        .context(h!())?;
+    let (dt_since, dt_till) =
+        network_group_activity_bounds(dt_till, req.period.unwrap_or_default())
+            .context(h!())?;
 
     let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
         &env.dbx,
@@ -468,6 +529,10 @@ async fn load_network_group_activity_postgres(
             sigint_inbox_item::Relation::SigintInboxItemNetwork.def(),
             Alias::new("sigint_inbox_item_network"),
         )
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item_network::Relation::SigintNetwork.def(),
+        )
         .join_as(
             JoinType::InnerJoin,
             signal_message::Relation::DatasourceGroup.def(),
@@ -481,7 +546,7 @@ async fn load_network_group_activity_postgres(
         .select_only()
         .column_as(
             Expr::cust(
-                "(EXTRACT(EPOCH FROM DATE_TRUNC('day', sigint_inbox_item.datetime AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')) * 1000)::BIGINT",
+                "(EXTRACT(EPOCH FROM DATE_TRUNC('day', COALESCE(sigint_inbox_item.datetime, signal_message.timestamp, signal_message.created_at) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')) * 1000)::BIGINT",
             ),
             "day",
         )
@@ -500,8 +565,21 @@ async fn load_network_group_activity_postgres(
             datasource_group::Column::GroupMasterKey.eq_any(groups.to_vec()),
         )
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(sigint_inbox_item::Column::Datetime.lte(dt_till))
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+        .filter(network_activity_timestamp().lt(dt_till))
+        .filter(network_activity_timestamp().gte(dt_since))
+        .filter(
+            Expr::col(sigint_network::Column::ActiveFrom)
+                .is_null()
+                .or(network_activity_timestamp()
+                    .gte(Expr::col(sigint_network::Column::ActiveFrom))),
+        )
+        .filter(
+            Expr::col(sigint_network::Column::ActiveTo)
+                .is_null()
+                .or(network_activity_timestamp()
+                    .lte(Expr::col(sigint_network::Column::ActiveTo))),
+        )
+        .filter(network_activity_has_matching_frequency())
         .filter(
             sigint_inbox_item_network::Column::SigintNetworkId
                 .eq_any(network_ids.to_vec()),
@@ -546,6 +624,45 @@ async fn load_network_group_activity_postgres(
     }
 
     Ok(res)
+}
+
+fn network_activity_timestamp() -> SimpleExpr {
+    Expr::cust(
+        "COALESCE(sigint_inbox_item.datetime, signal_message.timestamp, signal_message.created_at)",
+    )
+}
+
+fn network_group_activity_bounds(
+    till: NaiveDateTime,
+    period: NetworkGroupActivityPeriod,
+) -> Result<(NaiveDateTime, NaiveDateTime), AppError> {
+    let lookback_days =
+        <u64 as TryFrom<i64>>::try_from(period.lookback_days()).c(h!())?;
+    let till = till.and_utc().with_timezone(&Kyiv);
+    let since = till
+        .checked_sub_days(Days::new(lookback_days))
+        .context(h!())?;
+    Ok((
+        since.with_timezone(&Utc).naive_utc(),
+        till.with_timezone(&Utc).naive_utc(),
+    ))
+}
+
+fn network_activity_has_matching_frequency() -> SimpleExpr {
+    Expr::cust(
+        r#"EXISTS (
+            SELECT 1
+            FROM sigint_network_freq network_freq
+            WHERE network_freq.network_id = sigint_inbox_item_network.sigint_network_id
+              AND network_freq.freq = sigint_inbox_item.freq
+              AND network_freq.deleted = false
+              AND COALESCE(sigint_inbox_item.datetime, signal_message.timestamp, signal_message.created_at) >= network_freq.active_from
+              AND (
+                  network_freq.active_to IS NULL
+                  OR COALESCE(sigint_inbox_item.datetime, signal_message.timestamp, signal_message.created_at) <= network_freq.active_to
+              )
+        )"#,
+    )
 }
 
 pub async fn collect_network_units(
@@ -917,4 +1034,273 @@ pub async fn fetch_count(
     .c(h!())?;
 
     Ok(result.map_or(0, |r| r.count))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::functest::tests::*;
+    use serial_test::serial;
+
+    fn dt(day: u32) -> NaiveDateTime {
+        NaiveDate::from_ymd_opt(2026, 9, day)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap()
+    }
+
+    #[test]
+    fn network_activity_bounds_follow_kyiv_calendar_days() {
+        let till = Kyiv
+            .with_ymd_and_hms(2026, 11, 2, 0, 0, 0)
+            .single()
+            .unwrap()
+            .with_timezone(&Utc)
+            .naive_utc();
+
+        let (since, actual_till) = network_group_activity_bounds(
+            till,
+            NetworkGroupActivityPeriod::Last10Days,
+        )
+        .unwrap();
+
+        let expected_since = Kyiv
+            .with_ymd_and_hms(2026, 10, 23, 0, 0, 0)
+            .single()
+            .unwrap()
+            .with_timezone(&Utc)
+            .naive_utc();
+        assert_eq!(since, expected_since);
+        assert_eq!(actual_till, till);
+    }
+
+    async fn seed_network_activity(
+        dbx: &DatabaseConnection,
+        network_id: i64,
+        datasource_group_id: i64,
+        freq: &str,
+        timestamp: NaiveDateTime,
+    ) -> i64 {
+        let message = mk_signal_message(
+            dbx,
+            signal_message::ActiveModel {
+                datasource_group_id: Set(Some(datasource_group_id)),
+                timestamp: Set(Some(timestamp)),
+                created_at: Set(timestamp),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inbox_item = mk_sigint_inbox_item(
+            dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                freq: Set(Some(freq.to_string())),
+                datetime: Set(None),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item_network(
+            dbx,
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(inbox_item.id),
+                sigint_network_id: Set(network_id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        message.id
+    }
+
+    // Regression for ECHO-3207: API network reads must not require SIGINT scope.
+    #[tokio::test]
+    #[serial]
+    async fn unscoped_api_renders_global_activity() {
+        let env = cleanup().await.unwrap();
+        let login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("unscoped-network-api".to_string()),
+                roles: Set(serde_json::to_value(vec![crate::config::ROLE_API])
+                    .unwrap()),
+                sigint_zone_id: Set(None),
+                organism_id: Set(None),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let network = mk_sigint_network(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                last_active_at: Set(Some(dt(2))),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set("146.5000".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let rendered = render_networks(vec![network], &env.dbx, &login.id)
+            .await
+            .unwrap();
+
+        assert_eq!(rendered.len(), 1);
+        assert_eq!(
+            rendered[0].last_activity_at,
+            Some(dt(2).and_utc().timestamp_millis())
+        );
+        assert_eq!(rendered[0].freqs.len(), 1);
+        assert!(rendered[0].freqs[0].encryption_keys.is_empty());
+    }
+
+    // Regression for ECHO-3207: group activity must honor access and frequency ranges.
+    #[tokio::test]
+    #[serial]
+    async fn network_group_activity_uses_authorized_groups_and_active_frequencies(
+    ) {
+        let env = cleanup().await.unwrap();
+        let datasource = find_test_datasource(&env.dbx).await.unwrap();
+        let allowed_group = find_test_signal_group(&env.dbx).await.unwrap();
+        let allowed_datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let hidden_group = mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                datasource_id: Set(Some(datasource.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let hidden_datasource_group = mk_datasource_group(
+            &env.dbx,
+            datasource_group::ActiveModel {
+                datasource_id: Set(datasource.id),
+                group_master_key: Set(hidden_group.master_key),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let network = mk_sigint_network(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                active_from: Set(Some(dt(1))),
+                active_to: Set(Some(dt(7))),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let freq = "146.5000";
+        mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set(freq.to_string()),
+                active_from: Set(dt(1)),
+                active_to: Set(Some(dt(5))),
+                last_seen_dt: Set(Some(dt(6))),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        seed_network_activity(
+            &env.dbx,
+            network.id,
+            allowed_datasource_group.id,
+            freq,
+            dt(2),
+        )
+        .await;
+        seed_network_activity(
+            &env.dbx,
+            network.id,
+            hidden_datasource_group.id,
+            freq,
+            dt(4),
+        )
+        .await;
+        seed_network_activity(
+            &env.dbx,
+            network.id,
+            allowed_datasource_group.id,
+            freq,
+            dt(6),
+        )
+        .await;
+
+        let groups = vec![allowed_group.master_key];
+        let activity = load_network_group_activity_postgres(
+            &env.dbx,
+            &groups,
+            &[network.id],
+            dt(1),
+            dt(7),
+        )
+        .await
+        .unwrap();
+        let message_count: i64 = activity
+            .get(&network.id.to_string())
+            .unwrap()
+            .values()
+            .flat_map(HashMap::values)
+            .sum();
+        assert_eq!(message_count, 1);
+
+        let boundary_freq = "146.6000";
+        mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set(boundary_freq.to_string()),
+                active_from: Set(dt(1)),
+                active_to: Set(Some(dt(7))),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        seed_network_activity(
+            &env.dbx,
+            network.id,
+            allowed_datasource_group.id,
+            boundary_freq,
+            dt(7),
+        )
+        .await;
+
+        let activity = load_network_group_activity_postgres(
+            &env.dbx,
+            &groups,
+            &[network.id],
+            dt(1),
+            dt(7),
+        )
+        .await
+        .unwrap();
+        let message_count: i64 = activity
+            .get(&network.id.to_string())
+            .unwrap()
+            .values()
+            .flat_map(HashMap::values)
+            .sum();
+        assert_eq!(message_count, 1);
+    }
 }

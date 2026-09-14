@@ -11,6 +11,8 @@ import {
   createDefaultFilters,
   getExportPermission,
   getExportPermissionFromRoles,
+  getSidebarGroupLabel,
+  getSortDescriptor,
   getUnitSelectionError,
   normalizeDuplicateLookupValue,
   mergeUnitStatsWithUnits,
@@ -27,6 +29,35 @@ import { buildUnitTree } from '../components/UnitStatsSidebar';
 import type { CallsignsSortState } from '../types';
 import type { Callsign, Unit, User } from '../../../../../Bindings';
 import { filterUnitsBySearch, findExactUnitSearchMatch } from '../../../utils/unit-search';
+
+const EMPTY_UNIT_HIERARCHY = {
+  armyRegion: '',
+  militaryDistrict: '',
+  army: '',
+  corps: '',
+  division: '',
+  brigade: '',
+  regiment: '',
+  battalion: '',
+  company: '',
+  platoon: '',
+  squad: '',
+  section: '',
+  teamOrCrew: '',
+  other: '',
+} as const;
+
+function firstBranchLabels(tree: ReturnType<typeof buildUnitTree>): string[] {
+  const labels: string[] = [];
+  let nodes = tree;
+  while (nodes.length > 0) {
+    const node = nodes[0];
+    labels.push(node.label);
+    if (node.kind === 'leaf') break;
+    nodes = node.children;
+  }
+  return labels;
+}
 
 describe('rer-callsigns helpers', () => {
   // @test-scope safeguard: prevents duplicate hints from being assigned to the wrong draft callsign row
@@ -142,18 +173,34 @@ describe('rer-callsigns helpers', () => {
         armyRegion: 'R',
         militaryDistrict: 'D',
         army: 'A',
+        corps: 'C',
         division: '',
-        regiment: null,
-        battalion: null,
+        brigade: 'BR',
+        regiment: 'R',
+        battalion: 'B',
+        company: 'CO',
+        platoon: 'P',
+        squad: 'SQ',
+        section: 'S',
+        teamOrCrew: 'T',
+        other: 'O',
       },
     });
 
     expect(req.filterUnitArmyRegion).toBe('R');
     expect(req.filterUnitMilitaryDistrict).toBe('D');
     expect(req.filterUnitArmy).toBe('A');
+    expect(req.filterUnitCorps).toBe('C');
     expect(req.filterUnitDivision).toBe('');
-    expect(req.filterUnitRegiment).toBeNull();
-    expect(req.filterUnitBattalion).toBeNull();
+    expect(req.filterUnitBrigade).toBe('BR');
+    expect(req.filterUnitRegiment).toBe('R');
+    expect(req.filterUnitBattalion).toBe('B');
+    expect(req.filterUnitCompany).toBe('CO');
+    expect(req.filterUnitPlatoon).toBe('P');
+    expect(req.filterUnitSquad).toBe('SQ');
+    expect(req.filterUnitSection).toBe('S');
+    expect(req.filterUnitTeamOrCrew).toBe('T');
+    expect(req.filterUnitOther).toBe('O');
   });
 
   // @test-scope parser: unit search ranking fixture for callsign editing
@@ -181,6 +228,7 @@ describe('rer-callsigns helpers', () => {
       [
         10,
         {
+          ...EMPTY_UNIT_HIERARCHY,
           id: 10,
           name: '11 АК',
           armyRegion: 'ЗС РФ',
@@ -201,9 +249,17 @@ describe('rer-callsigns helpers', () => {
         armyRegion: 'ЗС РФ',
         militaryDistrict: 'Західний ВО',
         army: '1 ОА',
+        corps: '',
         division: '3 мсд',
+        brigade: '',
         regiment: '11 мсп',
         battalion: '2 мсб',
+        company: '',
+        platoon: '',
+        squad: '',
+        section: '',
+        teamOrCrew: '',
+        other: '',
       },
     ]);
   });
@@ -214,6 +270,7 @@ describe('rer-callsigns helpers', () => {
       [
         10,
         {
+          ...EMPTY_UNIT_HIERARCHY,
           id: 10,
           name: '11 АК',
           armyRegion: '',
@@ -244,18 +301,125 @@ describe('rer-callsigns helpers', () => {
     });
     expect('children' in tree[0] ? tree[0].children : []).toEqual([
       expect.objectContaining({
-        kind: 'group',
+        kind: 'leaf',
         label: '3 мсд',
+        unitName: '11 АК',
         count: 4,
       }),
     ]);
     expect(JSON.stringify(tree)).not.toContain('#99');
   });
 
-  // @test-scope parser: callsign unit hierarchy regional disambiguation fixture
+  it('skips empty hierarchy groups while preserving exact hierarchy paths', () => {
+    const tree = buildUnitTree([
+      {
+        ...EMPTY_UNIT_HIERARCHY,
+        unitId: 1,
+        count: 2,
+        unitName: 'Unit 1',
+        armyRegion: '',
+        militaryDistrict: '',
+        army: 'A',
+        division: '',
+        regiment: 'R',
+        battalion: '',
+      },
+      {
+        ...EMPTY_UNIT_HIERARCHY,
+        unitId: 2,
+        count: 3,
+        unitName: 'Unit 2',
+        armyRegion: '',
+        militaryDistrict: '',
+        army: 'A',
+        division: '',
+        regiment: 'R',
+        battalion: '',
+      },
+    ]);
+
+    expect(tree).toEqual([
+      expect.objectContaining({
+        kind: 'group',
+        label: 'A',
+        children: [
+          expect.objectContaining({
+            kind: 'group',
+            label: 'R',
+            hierarchy: expect.objectContaining({ army: 'A', division: '', regiment: 'R' }),
+          }),
+        ],
+      }),
+    ]);
+    expect(JSON.stringify(tree)).not.toContain('Без ');
+    expect(
+      getSidebarGroupLabel({
+        armyRegion: null,
+        militaryDistrict: null,
+        army: 'A',
+        corps: null,
+        division: '',
+        brigade: null,
+        regiment: null,
+        battalion: null,
+        company: null,
+        platoon: null,
+        squad: null,
+        section: null,
+        teamOrCrew: null,
+        other: null,
+      }),
+    ).toBe('A');
+  });
+
+  it('uses every echelon and makes the terminal singleton the unit leaf', () => {
+    const tree = buildUnitTree([
+      {
+        ...EMPTY_UNIT_HIERARCHY,
+        unitId: 1,
+        count: 2,
+        unitName: 'Full unit name',
+        armyRegion: 'Army region',
+        militaryDistrict: 'Military district',
+        army: 'A',
+        corps: 'Corps',
+        division: 'Division',
+        brigade: 'Brigade',
+        regiment: 'Regiment',
+        battalion: 'Battalion',
+        company: 'Company',
+        platoon: 'Platoon',
+        squad: 'Squad',
+        section: 'Section',
+        teamOrCrew: 'Team',
+        other: 'Other',
+      },
+    ]);
+
+    expect(firstBranchLabels(tree)).toEqual([
+      'Army region',
+      'Military district',
+      'A',
+      'Corps',
+      'Division',
+      'Brigade',
+      'Regiment',
+      'Battalion',
+      'Company',
+      'Platoon',
+      'Squad',
+      'Section',
+      'Team',
+      'Other',
+    ]);
+    expect(tree[0]).toMatchObject({ kind: 'group' });
+    expect(JSON.stringify(tree)).toContain('"unitName":"Full unit name"');
+  });
+
   it('separates same-named armies by region and district', () => {
     const tree = buildUnitTree([
       {
+        ...EMPTY_UNIT_HIERARCHY,
         unitId: 1,
         count: 2,
         unitName: 'A D1 R1',
@@ -267,6 +431,7 @@ describe('rer-callsigns helpers', () => {
         battalion: '',
       },
       {
+        ...EMPTY_UNIT_HIERARCHY,
         unitId: 2,
         count: 3,
         unitName: 'A D1 R2',

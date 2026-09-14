@@ -20,6 +20,7 @@ const apiMock = vi.hoisted(() => ({
   deleteNetwork: vi.fn(),
   downloadNetworkEtalonkaReportTaskResult: vi.fn(),
   getNetworksGroupsActivity: vi.fn(),
+  getNetworkLastActivity: vi.fn(),
   getNetworkUnitStats: vi.fn(),
   getEncryptions: vi.fn(),
   currentSystemSettings: vi.fn(),
@@ -104,6 +105,7 @@ vi.mock('../../../services/api/networks', () => ({
   deleteNetwork: apiMock.deleteNetwork,
   downloadNetworkEtalonkaReportTaskResult: apiMock.downloadNetworkEtalonkaReportTaskResult,
   getNetworksGroupsActivity: apiMock.getNetworksGroupsActivity,
+  getNetworkLastActivity: apiMock.getNetworkLastActivity,
   getNetworkUnitStats: apiMock.getNetworkUnitStats,
   listNetworks: apiMock.listNetworks,
   launchNetworkEtalonkaBatchReportTask: apiMock.launchNetworkEtalonkaBatchReportTask,
@@ -184,6 +186,7 @@ function buildNetwork(id: number, overrides: Partial<Network> = {}): Network {
     operationType: null,
     operationPeriod: null,
     doNotArchive: false,
+    lastActivityAt: null,
     lastUpdatedAt: now,
     lastUpdatedBy: 'tester',
     activeFrom: null,
@@ -251,6 +254,7 @@ describe('useRerNetworksNeoPage', () => {
     reportHistoryMock.fetchReportHistoryStatus.mockReset();
     reportHistoryMock.fetchReportHistoryTaskStatus.mockReset();
     apiMock.getNetworksGroupsActivity.mockReset();
+    apiMock.getNetworkLastActivity.mockReset();
     apiMock.getNetworkUnitStats.mockReset();
     apiMock.getEncryptions.mockReset();
     apiMock.currentSystemSettings.mockReset();
@@ -269,6 +273,7 @@ describe('useRerNetworksNeoPage', () => {
     apiMock.getNetworkUnitStats.mockResolvedValue([]);
     apiMock.listPosts.mockResolvedValue([]);
     apiMock.getNetworksGroupsActivity.mockResolvedValue({});
+    apiMock.getNetworkLastActivity.mockResolvedValue([]);
     apiMock.getEncryptions.mockResolvedValue([{ id: 11, name: 'FM' } as never]);
     apiMock.currentSystemSettings.mockResolvedValue({
       id: 1,
@@ -981,9 +986,17 @@ describe('useRerNetworksNeoPage', () => {
         filterUnitArmyRegion: null,
         filterUnitMilitaryDistrict: null,
         filterUnitArmy: null,
+        filterUnitCorps: null,
         filterUnitDivision: null,
+        filterUnitBrigade: null,
         filterUnitRegiment: null,
         filterUnitBattalion: null,
+        filterUnitCompany: null,
+        filterUnitPlatoon: null,
+        filterUnitSquad: null,
+        filterUnitSection: null,
+        filterUnitTeamOrCrew: null,
+        filterUnitOther: null,
         filterText: null,
         filterName: null,
         filterLocation: null,
@@ -1168,9 +1181,17 @@ describe('useRerNetworksNeoPage', () => {
         filterUnitArmyRegion: null,
         filterUnitMilitaryDistrict: null,
         filterUnitArmy: null,
+        filterUnitCorps: null,
         filterUnitDivision: null,
+        filterUnitBrigade: null,
         filterUnitRegiment: null,
         filterUnitBattalion: null,
+        filterUnitCompany: null,
+        filterUnitPlatoon: null,
+        filterUnitSquad: null,
+        filterUnitSection: null,
+        filterUnitTeamOrCrew: null,
+        filterUnitOther: null,
         filterText: null,
         filterName: null,
         filterLocation: null,
@@ -1309,9 +1330,9 @@ describe('useRerNetworksNeoPage', () => {
 
   it('requests activity data with a concrete upper bound and maps returned bars', async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-06-12T15:34:56Z'));
+    vi.setSystemTime(new Date('2026-09-07T22:30:00Z'));
 
-    const todayKey = dayjs().startOf('day').valueOf();
+    const todayKey = Date.UTC(2026, 8, 8);
     apiMock.getNetworksGroupsActivity.mockResolvedValueOnce({
       1: {
         [todayKey]: { alpha: 3 },
@@ -1324,7 +1345,7 @@ describe('useRerNetworksNeoPage', () => {
     expect(apiMock.getNetworksGroupsActivity).toHaveBeenCalledWith(
       {
         networkIds: [1, 2],
-        tillDateNoninclusiveMs: dayjs().startOf('day').add(1, 'day').valueOf(),
+        tillDateNoninclusiveMs: Date.UTC(2026, 8, 8, 21),
         period: null,
       },
       expect.any(Object),
@@ -1332,7 +1353,40 @@ describe('useRerNetworksNeoPage', () => {
     expect(latest?.rows[0]?.activityBars.some((bar) => bar.value === 3)).toBe(true);
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3329
+  it('uses last activity from the network list without another request', async () => {
+    const lastActivityAt = Date.now() - 24 * 60 * 60 * 1000;
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(1, { lastActivityAt }), buildNetwork(2)],
+      statusCounts: { active: 2, inactive: 0, archived: 0 },
+    });
+
+    await renderHook();
+    await flushEffects();
+
+    expect(latest?.rows[0]?.lastActivityLabel).toBe(dayjs(lastActivityAt).format('DD.MM.YY HH:mm'));
+    expect(latest?.rows[1]?.lastActivityDetail).toBe('Немає перехоплень');
+    expect(apiMock.getNetworkLastActivity).not.toHaveBeenCalled();
+  });
+
+  it('expires the recent activity label at the 15-minute boundary', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-13T12:00:00Z'));
+    const lastActivityAt = Date.now() - 14 * 60 * 1000;
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(1, { lastActivityAt })],
+      statusCounts: { active: 1, inactive: 0, archived: 0 },
+    });
+
+    await renderHook();
+    await flushEffects();
+    expect(latest?.rows[0]?.lastActivityLabel).toBe('Активна останні 15хв');
+
+    await act(async () => {
+      vi.advanceTimersByTime(60_001);
+    });
+    expect(latest?.rows[0]?.lastActivityLabel).toBe(dayjs(lastActivityAt).format('DD.MM.YY HH:mm'));
+  });
+
   it('settles first-page activity after pagination starts', async () => {
     const firstPage = Array.from({ length: 100 }, (_, index) => buildNetwork(index + 1));
     const initialActivity = deferred<Record<string, Record<string, Record<string, number>>>>();

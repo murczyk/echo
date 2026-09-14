@@ -290,6 +290,13 @@ async fn cleanup_replayed_messages(
             changed_message_ids: vec![],
         });
     }
+    crate::rer_importer::inbox::prepare_messages_network_activity_change(
+        &txn,
+        &replayed_message_ids,
+        "deleted replayed inbox messages",
+    )
+    .await
+    .c(h!())?;
     signal_message::Entity::update_many()
         .col_expr(signal_message::Column::Deleted, Expr::value(true))
         .filter(signal_message::Column::Id.is_in(replayed_message_ids.clone()))
@@ -730,6 +737,21 @@ where
             sigint_inbox_item_network::Column::SigintInboxItemId,
         ])
         .exec(dbx)
+        .await
+        .c(h!())?;
+    }
+    if !source.networks.is_empty() {
+        let network_freq_ids =
+            crate::sigint::network::recalculation::load_freq_ids_for_message_links(
+                dbx,
+                &[inserted.id],
+            )
+            .await
+            .c(h!())?;
+        crate::sigint::network::recalculation::enqueue_last_seen_for_freq_ids(
+            dbx,
+            network_freq_ids,
+        )
         .await
         .c(h!())?;
     }

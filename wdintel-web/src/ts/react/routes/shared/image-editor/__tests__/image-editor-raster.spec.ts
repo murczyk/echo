@@ -75,8 +75,8 @@ function canvasFixture() {
   } as never;
 }
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3099
-describe('image editor raster operations #3099', () => {
+// @test-scope regression: https://github.com/echoua/echo/issues/3448
+describe('image editor raster operations #3448', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('blurs an expanded source canvas and crops it back to selected native bounds', async () => {
@@ -107,29 +107,29 @@ describe('image editor raster operations #3099', () => {
 
     expect(drawImage).toHaveBeenCalledWith(
       expect.any(HTMLImageElement),
-      104,
+      100,
       50,
-      62,
-      46,
+      100,
+      80,
       0,
       0,
-      62,
-      46,
+      100,
+      80,
     );
     expect(drawImage).toHaveBeenCalledWith(
       expect.any(HTMLCanvasElement),
       0,
       0,
-      62,
-      46,
+      100,
+      80,
       0,
       0,
-      62,
-      46,
+      100,
+      80,
     );
     expect(drawImage).toHaveBeenCalledWith(
       expect.any(HTMLCanvasElement),
-      16,
+      20,
       10,
       30,
       20,
