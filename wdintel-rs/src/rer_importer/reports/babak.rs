@@ -1127,6 +1127,7 @@ async fn get_inbox_messages_report_unit(
             req.report_tags_only_this_unit.unwrap_or(false),
             req.without_model_tags.unwrap_or(false),
             include_comments,
+            babak_uses_creation_time(req),
         )
         .await
         .context(h!())?;
@@ -1905,6 +1906,7 @@ async fn load_babak_enrichment_batch(
     only_this_unit: bool,
     without_model_tags: bool,
     include_comments: bool,
+    use_creation_time: bool,
 ) -> Result<Vec<BabakEnrichmentRow>, AppError> {
     if candidate_ids.is_empty() {
         return Ok(Vec::new());
@@ -1995,7 +1997,7 @@ async fn load_babak_enrichment_batch(
             where comments.comments is not null
         )
         select
-            item.datetime,
+            case when $7 then message.created_at else item.datetime end as datetime,
             message.body,
             item.lat,
             item.lng,
@@ -2013,7 +2015,7 @@ async fn load_babak_enrichment_batch(
         left join message_units on message_units.id = candidate.id
         left join message_tags on message_tags.id = candidate.id
         left join message_comments on message_comments.id = candidate.id
-        order by item.datetime, message.id
+        order by case when $7 then message.created_at else item.datetime end, message.id
         "#,
         [
             candidate_ids.to_vec().into(),
@@ -2022,6 +2024,7 @@ async fn load_babak_enrichment_batch(
             login_ids.to_vec().into(),
             without_model_tags.into(),
             include_comments.into(),
+            use_creation_time.into(),
         ],
     );
     Ok(BabakEnrichmentRow::find_by_statement(stmt)
@@ -3109,6 +3112,7 @@ mod tests {
         .await
         .unwrap();
         let second_created_at = now + chrono::Duration::hours(20);
+        let second_interception_at = now - chrono::Duration::hours(10);
         let second_message = mk_signal_message(
             &env.dbx,
             signal_message::ActiveModel {
@@ -3131,9 +3135,12 @@ mod tests {
                 lat: Set(Some(50.0)),
                 lng: Set(Some(30.0)),
                 tags: Set(Some(json!([bpla_tag.id]))),
-                date: Set(Some(second_created_at.date().to_string())),
+                date: Set(Some(second_interception_at.date().to_string())),
                 time: Set(Some(
-                    second_created_at.time().format("%H:%M:%S").to_string(),
+                    second_interception_at
+                        .time()
+                        .format("%H:%M:%S")
+                        .to_string(),
                 )),
                 unit_v2: Set(Some("TestUnit".to_string())),
                 checked: Set(Some(true)),
@@ -3242,10 +3249,10 @@ mod tests {
             kind: "babak".to_string(),
             req: InboxMessagesReq {
                 since_date_inclusive_ms: Some(
-                    datetime.and_utc().timestamp_millis() - 1_000,
+                    second_datetime.and_utc().timestamp_millis() - 1_000,
                 ),
                 till_date_inclusive_ms: Some(
-                    second_datetime.and_utc().timestamp_millis(),
+                    datetime.and_utc().timestamp_millis(),
                 ),
                 nolimit: Some(true),
                 ..Default::default()
@@ -3315,6 +3322,39 @@ mod tests {
         assert!(comments.iter().any(|comment| {
             comment.comment.as_deref() == Some("linked intelligence report")
         }));
+        let interception_comments = comments
+            .iter()
+            .filter(|comment| {
+                matches!(
+                    comment.text.as_deref(),
+                    Some("test message") | Some("second test message")
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            interception_comments
+                .first()
+                .and_then(|comment| comment.text.as_deref()),
+            Some("second test message"),
+        );
+        assert_eq!(
+            interception_comments
+                .first()
+                .and_then(|comment| comment.datetime),
+            Some(second_datetime),
+        );
+        assert_eq!(
+            interception_comments
+                .last()
+                .and_then(|comment| comment.text.as_deref()),
+            Some("test message"),
+        );
+        assert_eq!(
+            interception_comments
+                .last()
+                .and_then(|comment| comment.datetime),
+            Some(datetime),
+        );
         let single_unit = &single.units[0];
         assert_eq!(unit.unit, single_unit.unit);
         assert_eq!(unit.count, single_unit.count);
@@ -3331,6 +3371,46 @@ mod tests {
         assert_eq!(creation.units[0].unit, unit.unit);
         assert_eq!(creation.units[0].count, unit.count);
         assert_eq!(creation.new_callsigns, res.new_callsigns);
+        let creation_comments: Vec<BabakComment> = serde_json::from_value(
+            creation.units[0]
+                .comments
+                .clone()
+                .expect("expected creation-order Babak comments"),
+        )
+        .unwrap();
+        let creation_comments = creation_comments
+            .iter()
+            .filter(|comment| {
+                matches!(
+                    comment.text.as_deref(),
+                    Some("test message") | Some("second test message")
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            creation_comments
+                .first()
+                .and_then(|comment| comment.text.as_deref()),
+            Some("test message"),
+        );
+        assert_eq!(
+            creation_comments
+                .first()
+                .and_then(|comment| comment.datetime),
+            Some(message.created_at),
+        );
+        assert_eq!(
+            creation_comments
+                .last()
+                .and_then(|comment| comment.text.as_deref()),
+            Some("second test message"),
+        );
+        assert_eq!(
+            creation_comments
+                .last()
+                .and_then(|comment| comment.datetime),
+            Some(second_message.created_at),
+        );
         assert!(
             res.new_callsigns
                 .not_seen_7days

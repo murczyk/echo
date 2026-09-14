@@ -98,9 +98,16 @@ function preserveUnreadState(
     ...(feed.pendingNewerItems ?? []).filter(([id]) => !feed.readIds.has(id)).map(([id]) => id),
   ]);
   const unresolvedUnreadIds = new Set([...knownUnreadIds].filter((id) => !itemIds.has(id)));
-  const unresolvedUnreadCount = Math.max(
+  const previousUnresolvedUnreadCount = Math.max(
     feed.unresolvedUnreadCount ?? 0,
     feed.unreadCount - knownUnreadIds.size,
+  );
+  const newlyMaterializedUnreadCount = items.filter(
+    ([id]) => !readIds.has(id) && !knownUnreadIds.has(id),
+  ).length;
+  const unresolvedUnreadCount = Math.max(
+    0,
+    previousUnresolvedUnreadCount - newlyMaterializedUnreadCount,
   );
   const loadedUnreadCount = items.filter(([id]) => !readIds.has(id)).length;
   const windowedUnreadItems = new Map<number, number>();

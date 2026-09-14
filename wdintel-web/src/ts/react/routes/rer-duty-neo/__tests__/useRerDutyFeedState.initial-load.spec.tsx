@@ -406,7 +406,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(untouchedFeed.readIds).toEqual(new Set([10]));
     expect(untouchedFeed.windowedUnreadItems).toEqual(new Map());
     expect(untouchedFeed.unresolvedUnreadIds).toEqual(new Set([99]));
-    expect(untouchedFeed.unreadCount).toBe(4);
+    expect(untouchedFeed.unreadCount).toBe(3);
   });
 
   it('completes an edit refresh before requesting unread counts', async () => {
@@ -596,6 +596,65 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(feed.unresolvedUnreadIds).toEqual(new Set<number>());
     expect(feed.unresolvedUnreadCount).toBe(0);
     expect(feed.unreadCount).toBe(2);
+  });
+
+  it('does not double-count anonymous unread stock across basis changes (#3455)', async () => {
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp([[1, minimalInboxMessage({ timestamp: 1_000, createdAt: 2_000 })]]),
+    );
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} messageSortBy="IMSTimestamp" />);
+    });
+    await act(async () => flushMicrotasks());
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) => ({
+          ...feed,
+          readIds: new Set<number>(),
+          unresolvedUnreadCount: 1,
+          unreadCount: 2,
+        })),
+      );
+    });
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp([
+        [1, minimalInboxMessage({ timestamp: 1_000, createdAt: 2_000 })],
+        [2, minimalInboxMessage({ timestamp: 2_000, createdAt: 1_000 })],
+      ]),
+    );
+
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} messageSortBy="IMSCreatedAt" />);
+    });
+    await act(async () => apiRef.current?.reloadFeedsPreservingUnread());
+    await act(async () => flushMicrotasks());
+
+    expect(apiRef.current!.messageFeeds[0]).toMatchObject({
+      unresolvedUnreadCount: 0,
+      unreadCount: 2,
+    });
+    expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual([2, 1]);
+
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp([
+        [1, minimalInboxMessage({ timestamp: 1_000, createdAt: 2_000 })],
+        [2, minimalInboxMessage({ timestamp: 2_000, createdAt: 1_000 })],
+      ]),
+    );
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} messageSortBy="IMSTimestamp" />);
+    });
+    await act(async () => apiRef.current?.reloadFeedsPreservingUnread());
+    await act(async () => flushMicrotasks());
+
+    expect(apiRef.current!.messageFeeds[0]).toMatchObject({
+      unresolvedUnreadCount: 0,
+      unreadCount: 2,
+    });
   });
 
   it('uses creation-order cursors for an initial saved creation preference', async () => {
