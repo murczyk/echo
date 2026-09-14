@@ -183,7 +183,7 @@ export function useNetworksTableColumns({
         header: 'Остання активність',
         accessorFn: (row) => row.lastActivityLabel,
         enableColumnFilter: false,
-        enableSorting: true,
+        enableSorting: false,
         meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
         Cell: mrtCustomCell(({ row }) => (
           <LastActivityCell

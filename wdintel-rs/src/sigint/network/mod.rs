@@ -3609,7 +3609,10 @@ async fn network_maintenance_worker_iteration(
     let hourly_maintenance_result = if hourly_maintenance_due {
         let result =
             run_hourly_network_maintenance(dbx, cleanup_networks_enabled).await;
-        *last_hourly_maintenance_finished_at = Some(std::time::Instant::now());
+        if result.is_ok() {
+            *last_hourly_maintenance_finished_at =
+                Some(std::time::Instant::now());
+        }
         result
     } else {
         Ok(())
@@ -3870,7 +3873,6 @@ async fn cleanup_networks_worker_1(
 
     cleanup_other_networks(
         dbx,
-        start_time.naive_utc() - Duration::hours(6),
         recent_network_cutoff,
         CleanupActivityWindow {
             delta,
@@ -3889,7 +3891,6 @@ async fn cleanup_networks_worker_1(
 
 async fn cleanup_other_networks(
     dbx: &DatabaseConnection,
-    created_before: NaiveDateTime,
     recent_network_cutoff: NaiveDateTime,
     activity_window: CleanupActivityWindow,
 ) -> anyhow::Result<()> {
@@ -3918,7 +3919,7 @@ async fn cleanup_other_networks(
             "#,
         )
         .bind(after_id)
-        .bind(created_before)
+        .bind(recent_network_cutoff)
         .bind(
             (CLEANUP_NETWORKS_OTHER_MAX_PER_PASS - scanned)
                 .min(CLEANUP_NETWORKS_OTHER_BATCH_SIZE as usize)
@@ -4001,7 +4002,6 @@ async fn cleanup_candidate_network_activity(
         .await
         .context(h!())?;
     let is_recent_network = network.created_at > activity_window.lookback_since;
-    let mut invalidation_freqs = Vec::new();
     for network_freq in network_freqs {
         if is_recent_network
             || network.do_not_archive
@@ -4041,7 +4041,6 @@ async fn cleanup_candidate_network_activity(
         )
         .await
         .context(h!())?;
-        invalidation_freqs.push(network_freq.freq);
     }
 
     let network_id = network.id;
@@ -4074,14 +4073,9 @@ async fn cleanup_candidate_network_activity(
     )
     .await
     .context(h!())?;
-    invalidate_cleanup_network_activity(
-        &txn,
-        &network,
-        updated_network,
-        invalidation_freqs,
-    )
-    .await
-    .c(h!())?;
+    invalidate_cleanup_network_activity(&txn, &network, updated_network)
+        .await
+        .c(h!())?;
     txn.commit().await.context(h!())?;
     Ok(())
 }
@@ -4150,14 +4144,20 @@ async fn cleanup_other_network_activity(
     )
     .await
     .context(h!())?;
-    if old_network.deleted != network.deleted
-        || old_network.active_to != network.active_to
-    {
-        invalidate_cleanup_network_activity(
+    if old_network.deleted != network.deleted {
+        invalidate_cleanup_network_activity(&txn, &old_network, Some(network))
+            .await
+            .c(h!())?;
+    } else if old_network.active_to != network.active_to {
+        etalon_calc::enqueue_network_invalidation_task(
             &txn,
-            &old_network,
-            Some(network),
-            Vec::new(),
+            network.active_to,
+            None,
+            etalon_calc::NetworkInvalidationScope {
+                sigint_network_id: Some(network_id),
+                ..Default::default()
+            },
+            format!("cleanup worker deactivated network {network_id}"),
         )
         .await
         .c(h!())?;
@@ -4226,7 +4226,7 @@ async fn load_synthetic_network_inactivity_ids(
           and exists (
               select 1
               from (
-                  select decision.reason, decision.new_active_to,
+                  select decision.reason, decision.new_active_from, decision.new_active_to,
                          decision.actor_kind, decision.worker_name, decision.decision
                   from sigint_activity_decision_changelog decision
                   where decision.network_id = network.id
@@ -4235,6 +4235,7 @@ async fn load_synthetic_network_inactivity_ids(
                   limit 1
               ) latest_decision
               where latest_decision.reason = $1
+                and latest_decision.new_active_from is not distinct from network.active_from
                 and latest_decision.new_active_to = network.active_to
                 and latest_decision.actor_kind = 'worker'
                 and latest_decision.worker_name = $2
@@ -4273,6 +4274,7 @@ async fn repair_synthetic_network_inactivity_one(
         .select_only()
         .columns([
             sigint_activity_decision_changelog::Column::Reason,
+            sigint_activity_decision_changelog::Column::NewActiveFrom,
             sigint_activity_decision_changelog::Column::NewActiveTo,
             sigint_activity_decision_changelog::Column::ActorKind,
             sigint_activity_decision_changelog::Column::WorkerName,
@@ -4283,6 +4285,7 @@ async fn repair_synthetic_network_inactivity_one(
         .into_tuple::<(
             String,
             Option<NaiveDateTime>,
+            Option<NaiveDateTime>,
             String,
             Option<String>,
             String,
@@ -4290,23 +4293,22 @@ async fn repair_synthetic_network_inactivity_one(
         .one(&txn)
         .await
         .context(h!())?;
-    let has_open_frequency = sigint_network_freq::Entity::find()
+    let network_freqs = sigint_network_freq::Entity::find()
         .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
         .filter(sigint_network_freq::Column::Deleted.eq(false))
-        .filter(sigint_network_freq::Column::ActiveTo.is_null())
-        .select_only()
-        .column(sigint_network_freq::Column::Id)
-        .into_tuple::<i64>()
-        .one(&txn)
+        .all(&txn)
         .await
-        .context(h!())?
-        .is_some();
+        .context(h!())?;
+    let has_open_frequency = network_freqs
+        .iter()
+        .any(|network_freq| network_freq.active_to.is_none());
     if network.deleted
         || network.active_to.is_none()
         || !has_open_frequency
-        || !latest_decision.is_some_and(|(reason, new_active_to, actor_kind, worker_name, decision)| {
+        || !latest_decision.is_some_and(|(reason, new_active_from, new_active_to, actor_kind, worker_name, decision)| {
             reason
                 == SIGINT_NETWORK_ACTIVITY_REASON_CLEANUP_NETWORK_SYNTHETIC_INACTIVITY
+                && new_active_from == network.active_from
                 && new_active_to == network.active_to
                 && actor_kind == "worker"
                 && worker_name.as_deref()
@@ -4334,16 +4336,45 @@ async fn repair_synthetic_network_inactivity_one(
     )
     .await
     .context(h!())?;
-    invalidate_cleanup_network_activity(
+    invalidate_repaired_network_activity(
         &txn,
-        &network,
-        Some(updated_network),
-        Vec::new(),
+        network_id,
+        network.active_to.context(h!())?,
+        &network_freqs,
     )
     .await
     .c(h!())?;
     txn.commit().await.context(h!())?;
     Ok(true)
+}
+
+async fn invalidate_repaired_network_activity(
+    txn: &DatabaseTransaction,
+    network_id: i64,
+    old_active_to: NaiveDateTime,
+    network_freqs: &[sigint_network_freq::Model],
+) -> anyhow::Result<()> {
+    if old_active_to >= Utc::now().naive_utc() {
+        return Ok(());
+    }
+    for network_freq in network_freqs {
+        if network_freq
+            .active_to
+            .is_some_and(|active_to| active_to <= old_active_to)
+        {
+            continue;
+        }
+        etalon_calc::invalidate_network_inbox_for_freq(
+            &network_freq.freq,
+            Some(std::cmp::max(old_active_to, network_freq.active_from)),
+            network_freq.active_to,
+            txn,
+            format!("cleanup worker reopened network {network_id}"),
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(())
 }
 
 async fn cleanup_network_active_to<'a, 'async_trait, C>(
@@ -4419,22 +4450,34 @@ async fn invalidate_cleanup_network_activity(
     txn: &DatabaseTransaction,
     network: &sigint_network::Model,
     updated_network: Option<sigint_network::Model>,
-    invalidation_freqs: Vec<String>,
 ) -> anyhow::Result<()> {
-    for freq in invalidation_freqs {
-        etalon_calc::invalidate_network_inbox(
-            updated_network.clone().unwrap_or_else(|| network.clone()),
-            vec![freq],
+    if let Some(updated_network) = updated_network {
+        invalidate_earlier_cleanup_network_activity(
             txn,
-            format!(
-                "cleanup worker updates active_to for deleted network {}",
-                network.id
-            ),
+            network,
+            &updated_network,
         )
         .await
         .c(h!())?;
-    }
-    if let Some(updated_network) = updated_network {
+        if !updated_network.deleted
+            && network.active_from == updated_network.active_from
+            && network.active_to.is_none()
+            && updated_network.active_to.is_some()
+        {
+            etalon_calc::enqueue_network_invalidation_task(
+                txn,
+                updated_network.active_to,
+                None,
+                etalon_calc::NetworkInvalidationScope {
+                    sigint_network_id: Some(network.id),
+                    ..Default::default()
+                },
+                format!("cleanup worker deactivated network {}", network.id),
+            )
+            .await
+            .c(h!())?;
+            return Ok(());
+        }
         let mut invalidation_network = updated_network.clone();
         invalidation_network.active_from =
             match (network.active_from, updated_network.active_from) {
@@ -4453,6 +4496,51 @@ async fn invalidate_cleanup_network_activity(
             format!(
                 "cleanup worker calculated active_to for inactive network {}",
                 updated_network.id
+            ),
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(())
+}
+
+async fn invalidate_earlier_cleanup_network_activity(
+    txn: &DatabaseTransaction,
+    network: &sigint_network::Model,
+    updated_network: &sigint_network::Model,
+) -> anyhow::Result<()> {
+    let Some(old_active_from) = network.active_from.filter(|old_active_from| {
+        updated_network
+            .active_from
+            .is_none_or(|new_active_from| new_active_from < *old_active_from)
+    }) else {
+        return Ok(());
+    };
+    let network_freqs = sigint_network_freq::Entity::find()
+        .filter(sigint_network_freq::Column::NetworkId.eq(network.id))
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .all(txn)
+        .await
+        .c(h!())?;
+    for network_freq in network_freqs {
+        let since = std::cmp::max(
+            network_freq.active_from,
+            updated_network
+                .active_from
+                .unwrap_or(network_freq.active_from),
+        );
+        let till =
+            Some(network_freq.active_to.map_or(old_active_from, |active_to| {
+                std::cmp::min(old_active_from, active_to)
+            }));
+        etalon_calc::invalidate_network_inbox_for_freq(
+            &network_freq.freq,
+            Some(since),
+            till,
+            txn,
+            format!(
+                "cleanup worker expanded network {} activity start",
+                network.id
             ),
         )
         .await
@@ -7474,6 +7562,73 @@ mod tests {
         assert!(stale_freq.active_to.is_some());
         assert_eq!(open_freq.active_to, None);
         assert_eq!(network.active_to, None);
+        let invalidation_count = network_invalidation_task::Entity::find()
+            .filter(network_invalidation_task::Column::Frequency.eq("131.5750"))
+            .count(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(invalidation_count, 0);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn cleanup_reconciles_earlier_network_start_without_existing_link() {
+        let env = cleanup().await.unwrap();
+        let old_dt = cleanup_old_dt();
+        let old_active_from = old_dt + Duration::days(1);
+        let network = mk_sigint_network(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                created_at: Set(old_dt),
+                updated_at: Set(old_dt),
+                active_from: Set(Some(old_active_from)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set("131.5750".to_string()),
+                active_from: Set(old_dt),
+                last_seen_dt: Set(Some(old_dt)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        cleanup_networks_worker_1(&env.dbx).await.unwrap();
+
+        let network = sigint_network::Entity::find_by_id(network.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            network.active_from.unwrap().and_utc().timestamp_micros(),
+            old_dt.and_utc().timestamp_micros()
+        );
+        let invalidation = network_invalidation_task::Entity::find()
+            .filter(network_invalidation_task::Column::Frequency.eq("131.5750"))
+            .filter(
+                network_invalidation_task::Column::SigintNetworkId.is_null(),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(invalidation.sigint_network_id, None);
+        assert_eq!(
+            invalidation.since_ts.and_utc().timestamp_micros(),
+            old_dt.and_utc().timestamp_micros()
+        );
+        assert_eq!(
+            invalidation.till_ts.and_utc().timestamp_micros(),
+            old_active_from.and_utc().timestamp_micros()
+        );
     }
 
     #[tokio::test]
@@ -7527,6 +7682,10 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
+        assert_eq!(
+            invalidation.since_ts.and_utc().timestamp_micros(),
+            closed_at.and_utc().timestamp_micros()
+        );
         assert!(invalidation.till_ts > closed_at);
     }
 
@@ -7603,6 +7762,83 @@ mod tests {
             latest_decision.reason,
             SIGINT_NETWORK_ACTIVITY_REASON_CLEANUP_NETWORK_OPEN_FREQUENCY_REPAIRED
         );
+        let invalidation_count = network_invalidation_task::Entity::find()
+            .filter(network_invalidation_task::Column::Frequency.eq("131.5750"))
+            .count(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(invalidation_count, 0);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn cleanup_reconciles_reopened_network_from_former_end() {
+        let env = cleanup().await.unwrap();
+        let old_dt = cleanup_old_dt();
+        let network = mk_sigint_network(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                created_at: Set(old_dt),
+                updated_at: Set(old_dt),
+                active_from: Set(Some(old_dt)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set("131.5750".to_string()),
+                active_from: Set(old_dt),
+                last_seen_dt: Set(Some(Utc::now().naive_utc())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let mut inactive_network = network.clone().into_active_model();
+        let closed_at = Utc::now().naive_utc() - Duration::hours(1);
+        inactive_network.active_to = Set(Some(closed_at));
+        let inactive_network = inactive_network.update(&txn).await.unwrap();
+        record_activity_decision_if_changed(
+            &txn,
+            ActivityDecisionTarget::Network {
+                network_id: network.id,
+            },
+            ActivityDecisionActor::worker(
+                SIGINT_NETWORK_ACTIVITY_DECISION_WORKER_CLEANUP,
+            ),
+            SIGINT_NETWORK_ACTIVITY_REASON_CLEANUP_NETWORK_SYNTHETIC_INACTIVITY,
+            ActivityState::network(&network),
+            ActivityState::network(&inactive_network),
+            ActivityDecisionEvidence::default(),
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        cleanup_networks_worker_1(&env.dbx).await.unwrap();
+
+        let network = sigint_network::Entity::find_by_id(network.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(network.active_to, None);
+        let invalidation = network_invalidation_task::Entity::find()
+            .filter(network_invalidation_task::Column::Frequency.eq("131.5750"))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            invalidation.since_ts.and_utc().timestamp_micros(),
+            closed_at.and_utc().timestamp_micros()
+        );
+        assert_eq!(invalidation.sigint_network_id, None);
     }
 
     // Regression for ECHO-3207: repair must not undo a later inactive-range edit.
@@ -7670,6 +7906,77 @@ mod tests {
         assert_eq!(
             network.active_to.unwrap().and_utc().timestamp_micros(),
             adjusted_active_to.and_utc().timestamp_micros()
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn cleanup_preserves_adjusted_synthetic_active_from() {
+        let env = cleanup().await.unwrap();
+        let old_dt = cleanup_old_dt();
+        let network = mk_sigint_network(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                created_at: Set(old_dt),
+                updated_at: Set(old_dt),
+                active_from: Set(Some(old_dt)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set("131.5750".to_string()),
+                active_from: Set(old_dt),
+                last_seen_dt: Set(Some(Utc::now().naive_utc())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let mut inactive_network = network.clone().into_active_model();
+        inactive_network.active_to = Set(Some(old_dt + Duration::days(1)));
+        let inactive_network = inactive_network.update(&txn).await.unwrap();
+        record_activity_decision_if_changed(
+            &txn,
+            ActivityDecisionTarget::Network {
+                network_id: network.id,
+            },
+            ActivityDecisionActor::worker(
+                SIGINT_NETWORK_ACTIVITY_DECISION_WORKER_CLEANUP,
+            ),
+            SIGINT_NETWORK_ACTIVITY_REASON_CLEANUP_NETWORK_SYNTHETIC_INACTIVITY,
+            ActivityState::network(&network),
+            ActivityState::network(&inactive_network),
+            ActivityDecisionEvidence::default(),
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        let adjusted_active_from = old_dt + Duration::hours(1);
+        let mut adjusted_network = inactive_network.into_active_model();
+        adjusted_network.active_from = Set(Some(adjusted_active_from));
+        adjusted_network.update(&env.dbx).await.unwrap();
+
+        cleanup_networks_worker_1(&env.dbx).await.unwrap();
+
+        let network = sigint_network::Entity::find_by_id(network.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            network.active_from.unwrap().and_utc().timestamp_micros(),
+            adjusted_active_from.and_utc().timestamp_micros()
+        );
+        assert_eq!(
+            network.active_to.unwrap().and_utc().timestamp_micros(),
+            (old_dt + Duration::days(1)).and_utc().timestamp_micros()
         );
     }
 

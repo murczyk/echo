@@ -64,6 +64,9 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
   const [posts, setPosts] = useState<Array<{ id: number; name: string }>>([]);
   const [unitStats, setUnitStats] = useState<Array<{ unitId: number; count: number }>>([]);
   const [activityByNetworkId, setActivityByNetworkId] = useState<ActivityByNetworkId>(new Map());
+  const [visibleLastActivityAtByNetworkId, setVisibleLastActivityAtByNetworkId] = useState<
+    Map<number, number | null>
+  >(new Map());
   const [activityLoadStateByNetworkId, setActivityLoadStateByNetworkId] =
     useState<ActivityLoadStateByNetworkId>(new Map());
   const [lastActivityLoadStateByNetworkId, setLastActivityLoadStateByNetworkId] =
@@ -182,11 +185,13 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
           activityByNetworkId,
           activityLoadStateByNetworkId,
           lastActivityLoadStateByNetworkId,
+          visibleLastActivityAtByNetworkId,
         ),
       ),
     [
       activityByNetworkId,
       activityLoadStateByNetworkId,
+      visibleLastActivityAtByNetworkId,
       activityClock,
       lastActivityLoadStateByNetworkId,
       aorsById,
@@ -197,7 +202,9 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
   useEffect(() => {
     const now = Date.now();
     const nextChange = networks.reduce<number | null>((earliest, network) => {
-      const lastActivityAt = network.lastActivityAt;
+      const lastActivityAt = visibleLastActivityAtByNetworkId.has(network.id)
+        ? (visibleLastActivityAtByNetworkId.get(network.id) ?? null)
+        : network.lastActivityAt;
       if (lastActivityAt === null) return earliest;
       const changeAt =
         lastActivityAt > now
@@ -212,7 +219,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
       Math.min(nextChange - now, 2_147_483_647),
     );
     return () => window.clearTimeout(timeout);
-  }, [activityClock, networks]);
+  }, [activityClock, networks, visibleLastActivityAtByNetworkId]);
   const aorOptions = useMemo(() => sortNetworkAorsForDisplay(aors), [aors]);
   const querySnapshot = useMemo<NetworksQuerySnapshot>(
     () => ({
@@ -299,6 +306,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
         setNoMoreToLoad,
         setNetworks,
         setActivityByNetworkId,
+        setVisibleLastActivityAtByNetworkId,
         setActivityLoadStateByNetworkId,
         setLastActivityLoadStateByNetworkId,
         setBootstrapLoaded,

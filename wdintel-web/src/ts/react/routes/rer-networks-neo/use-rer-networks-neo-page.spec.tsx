@@ -1383,6 +1383,7 @@ describe('useRerNetworksNeoPage', () => {
     expect(latest?.rows[0]?.lastActivityLabel).toBe(
       dayjs(visibleLastActivityAt).format('DD.MM.YY HH:mm'),
     );
+    expect(latest?.rows[0]?.network.lastActivityAt).toBe(cachedLastActivityAt);
     expect(latest?.rows[1]?.lastActivityDetail).toBe('Немає перехоплень за останні 10 днів');
     expect(apiMock.getNetworkLastActivity).not.toHaveBeenCalled();
   });
