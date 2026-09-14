@@ -225,12 +225,8 @@ export async function deleteUnit(unitId: number): Promise<Unit> {
   return transformSnakeToCamel<Unit>(raw);
 }
 
-export async function mergeDuplicateUnit(req: DeleteUnitDuplicateReq): Promise<Unit> {
-  const raw = await postJson<unknown>(
-    '/api/sigint/unit/delete-duplicate',
-    transformCamelToSnake(req),
-  );
-  return transformSnakeToCamel<Unit>(raw);
+export async function mergeDuplicateUnit(req: DeleteUnitDuplicateReq): Promise<number> {
+  return postJson<number>('/api/sigint/unit/delete-duplicate', transformCamelToSnake(req));
 }
 
 export async function getUnitIdsWithVisibleAttachments(

@@ -475,6 +475,8 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
       <MergeUnitDialog
         original={page.mergeTarget}
         submitting={page.submitting}
+        progress={page.mergeProgress}
+        progressLabel={page.mergeProgressLabel}
         error={page.dialogError}
         onClose={page.closeDialogs}
         onConfirm={(duplicate) => void page.confirmMerge(duplicate)}

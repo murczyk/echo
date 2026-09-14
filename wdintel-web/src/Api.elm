@@ -731,14 +731,14 @@ sigint_unit_delete toMsg req =
 
 
 sigint_unit_delete_duplicate :
-    (Result ApiError Unit -> msg)
+    (Result ApiError Int -> msg)
     -> DeleteUnitDuplicateReq
     -> Cmd msg
 sigint_unit_delete_duplicate toMsg req =
     Http.post
         { url = "/api/sigint/unit/delete-duplicate"
         , body = Http.jsonBody (deleteUnitDuplicateReqEncoder req)
-        , expect = leExpectJson toMsg unitDecoder
+        , expect = leExpectJson toMsg Decode.int
         }
 
 

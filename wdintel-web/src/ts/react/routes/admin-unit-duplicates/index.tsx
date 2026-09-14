@@ -17,6 +17,7 @@ import {
 } from '../../components/mui-customized/table/get-default-table-options';
 import { MrtOverflowText } from '../../components/mui-customized/table/mrt-overflow';
 import { getUnitDuplicates, mergeDuplicateUnit } from '../../services/api/units';
+import { waitForBgtaskCompletion } from '../../services/api/bgtask';
 import { handleNavigateWithinSpaClick } from '../../utils/browser';
 import { hasRole } from '../../utils/roles';
 import { SettingsNeoTable } from '../settings-neo/SettingsNeoTable';
@@ -73,6 +74,8 @@ export function AdminUnitDuplicatesPage({
   const [status, setStatus] = useState<string | null>(null);
   const [mergeTarget, setMergeTarget] = useState<Unit | null>(null);
   const [mergeError, setMergeError] = useState<string | null>(null);
+  const [mergeProgress, setMergeProgress] = useState<number | null>(null);
+  const [mergeProgressLabel, setMergeProgressLabel] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const canMerge = hasRole(authUserRoles, 'Rer') && hasRole(authUserRoles, 'UnitsEditor');
 
@@ -98,14 +101,22 @@ export function AdminUnitDuplicatesPage({
     if (mergeTarget === null) return;
     setSubmitting(true);
     setMergeError(null);
+    setMergeProgress(0);
+    setMergeProgressLabel(null);
     try {
       const original = mergeTarget;
-      const merged = await mergeDuplicateUnit({
+      const taskId = await mergeDuplicateUnit({
         originalId: original.id,
         cloneToDeleteId: duplicate.id,
       });
+      await waitForBgtaskCompletion(taskId, (progress, logline) => {
+        setMergeProgress((current) => Math.max(current ?? 0, progress));
+        if (logline !== null) setMergeProgressLabel(logline);
+      });
       setMergeTarget(null);
-      setStatus(`Підрозділ «${duplicate.name}» об’єднано з «${merged.name}».`);
+      setMergeProgress(null);
+      setMergeProgressLabel(null);
+      setStatus(`Підрозділ «${duplicate.name}» об’єднано.`);
       await loadUnits();
     } catch (error) {
       setMergeError(formatUnitError(error));
@@ -232,6 +243,8 @@ export function AdminUnitDuplicatesPage({
                   disabled={submitting}
                   onClick={() => {
                     setMergeError(null);
+                    setMergeProgress(null);
+                    setMergeProgressLabel(null);
                     setMergeTarget(row.original.sigintUnit);
                   }}
                 />
@@ -244,10 +257,14 @@ export function AdminUnitDuplicatesPage({
         <MergeUnitDialog
           original={mergeTarget}
           submitting={submitting}
+          progress={mergeProgress}
+          progressLabel={mergeProgressLabel}
           error={mergeError}
           onClose={() => {
             setMergeTarget(null);
             setMergeError(null);
+            setMergeProgress(null);
+            setMergeProgressLabel(null);
           }}
           onConfirm={(duplicate) => void confirmMerge(duplicate)}
         />

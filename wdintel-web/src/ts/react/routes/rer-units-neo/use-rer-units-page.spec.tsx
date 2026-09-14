@@ -11,6 +11,8 @@ const api = vi.hoisted(() => ({
   createUnit: vi.fn(),
   getUnitsPage: vi.fn(),
   getUnitIdsWithVisibleAttachments: vi.fn(),
+  mergeDuplicateUnit: vi.fn(),
+  waitForBgtaskCompletion: vi.fn(),
 }));
 
 vi.mock('../../services/api/units', () => ({
@@ -20,7 +22,7 @@ vi.mock('../../services/api/units', () => ({
   getUnitsPage: api.getUnitsPage,
   getUnitDetails: vi.fn(),
   getUnitIdsWithVisibleAttachments: api.getUnitIdsWithVisibleAttachments,
-  mergeDuplicateUnit: vi.fn(),
+  mergeDuplicateUnit: api.mergeDuplicateUnit,
   unlinkOrbitUnit: vi.fn(),
   updateUnit: vi.fn(),
   uploadUnitsKmz: vi.fn(),
@@ -33,6 +35,7 @@ vi.mock('../../services/api/system-settings', () => ({
 vi.mock('../../services/api/bgtask', () => ({
   fetchBgtaskStatusAndLogs: vi.fn(),
   getBgtaskProgressFromPercent: vi.fn(),
+  waitForBgtaskCompletion: api.waitForBgtaskCompletion,
 }));
 
 import { useRerUnitsPage } from './use-rer-units-page';
@@ -133,6 +136,54 @@ describe('useRerUnitsPage loading', () => {
 });
 
 describe('useRerUnitsPage mutations', () => {
+  it('keeps merge progress monotonic while waiting for the background task', async () => {
+    const req = { limit: 20, offset: 0 } as ListUnitsReq;
+    api.getUnitsPage.mockResolvedValue({
+      units: [activeUnit, inactiveUnit],
+      totalCount: 2,
+      statusCounts: { active: 1, inactive: 1 },
+      showLoadMore: false,
+    });
+    api.getUnitIdsWithVisibleAttachments.mockResolvedValue([]);
+    api.mergeDuplicateUnit.mockResolvedValue(42);
+    let finishTask: (() => void) | undefined;
+    api.waitForBgtaskCompletion.mockImplementation(async (_taskId, onProgress) => {
+      onProgress(50, 'Сигнали');
+      onProgress(20, 'Повторна перевірка');
+      await new Promise<void>((resolve) => {
+        finishTask = resolve;
+      });
+    });
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => root?.render(createElement(Harness, { req })));
+    await flushEffects();
+    act(() => latestPage?.openMergeDialog(activeUnit));
+
+    let merge: Promise<void> | undefined;
+    await act(async () => {
+      merge = latestPage?.confirmMerge(inactiveUnit);
+      await flushEffects();
+    });
+    expect(api.mergeDuplicateUnit).toHaveBeenCalledWith({
+      originalId: activeUnit.id,
+      cloneToDeleteId: inactiveUnit.id,
+    });
+    expect(latestPage?.mergeProgress).toBe(50);
+    expect(latestPage?.submitting).toBe(true);
+    expect(api.getUnitsPage).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      finishTask?.();
+      await merge;
+    });
+    expect(latestPage?.mergeTarget).toBe(null);
+    expect(latestPage?.submitting).toBe(false);
+    expect(api.getUnitsPage).toHaveBeenCalledTimes(2);
+  });
+
   it('closes the create dialog before a slow post-create refresh completes', async () => {
     const req = { limit: 20, offset: 0, filterActive: true } as ListUnitsReq;
     const createdUnit = { id: 515, name: '6 зва', active: true } as Unit;

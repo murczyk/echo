@@ -27,6 +27,7 @@ use std::collections::{BTreeSet, HashMap};
 pub mod attachment;
 pub mod changelog;
 pub mod labels;
+mod merge_task;
 pub mod orbit;
 pub mod types;
 
@@ -1955,6 +1956,9 @@ async fn delete_unit_for_login(
     unit_id: i64,
 ) -> Result<sigint_unit::Model, AppError> {
     let transaction = dbx.begin().await.context(h!())?;
+    acquire_unit_merge_locks(&transaction, unit_id, unit_id)
+        .await
+        .c(h!())?;
     changelog::set_author(&transaction, login).await.c(h!())?;
     let unit = sigint_unit::Entity::find_by_id(unit_id)
         .one(&transaction)
@@ -2006,7 +2010,7 @@ pub async fn delete_unit_duplicate(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
     req: Json<DeleteUnitDuplicateReq>,
-) -> Result<Json<Unit>, AppError> {
+) -> Result<Json<i64>, AppError> {
     let dbx = &env.dbx;
     ensure_rer_role(dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).context(h!())?;
@@ -2015,21 +2019,11 @@ pub async fn delete_unit_duplicate(
     let unit_to_delete_id = req.clone_to_delete_id;
     let original_id = req.original_id;
 
-    let unit = merge_units(login, dbx, unit_to_delete_id, original_id)
-        .await
-        .c(h!())?;
-
-    let event = EventMsg::new(EventType::ETUnitChanged);
-    fanout(&mut env.redis.clone(), event).await.context(h!())?;
-
-    let mut unit = render_unit(&unit).context(h!())?;
-    let can_view_orbit = orbit::can_view_orbit_data(dbx, &login)
-        .await
-        .context(h!())?;
-    apply_unit_orbit_visibility(dbx, &mut unit, can_view_orbit)
-        .await
-        .context(h!())?;
-    Ok(Json(unit))
+    Ok(Json(
+        merge_task::start(&env, login, unit_to_delete_id, original_id)
+            .await
+            .c(h!())?,
+    ))
 }
 
 pub async fn merge_units(
@@ -2039,9 +2033,6 @@ pub async fn merge_units(
     original_id: i64,
 ) -> Result<sigint_unit::Model, AppError> {
     let transaction = dbx.begin().await.context(h!())?;
-    acquire_unit_merge_locks(&transaction, unit_to_delete_id, original_id)
-        .await
-        .c(h!())?;
     let unit = merge_units_in_transaction(
         login,
         &transaction,
@@ -2054,11 +2045,14 @@ pub async fn merge_units(
     Ok(unit)
 }
 
-async fn acquire_unit_merge_locks(
-    transaction: &DatabaseTransaction,
+async fn acquire_unit_merge_locks<C>(
+    transaction: &C,
     unit_to_delete_id: i64,
     original_id: i64,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
     let (lower_id, higher_id) = if unit_to_delete_id < original_id {
         (unit_to_delete_id, original_id)
     } else {
@@ -2150,6 +2144,9 @@ where
             msg: "unit cannot be merged into itself".to_string(),
         });
     }
+    acquire_unit_merge_locks(dbx, unit_to_delete_id, original_id)
+        .await
+        .c(h!())?;
     crate::stats::enqueue_group_stats_recalculation_for_linked_unit(
         dbx,
         unit_to_delete_id,
@@ -2163,6 +2160,7 @@ where
         unit_to_delete_id,
         original_id,
         name_policy,
+        true,
     )
     .await
     .context(h!())?;
@@ -2175,6 +2173,7 @@ async fn complete_unit_merge_in_transaction<C>(
     unit_to_delete_id: i64,
     original_id: i64,
     name_policy: MergeUnitNamePolicy,
+    move_references: bool,
 ) -> Result<sigint_unit::Model, AppError>
 where
     C: ConnectionTrait,
@@ -2190,9 +2189,11 @@ where
             .await
             .context(h!())?;
 
-    swap_units(unit_to_delete_id, original_id, login, dbx)
-        .await
-        .context(h!())?;
+    if move_references {
+        swap_units(unit_to_delete_id, original_id, login, dbx)
+            .await
+            .context(h!())?;
+    }
 
     let unit_json_old = sigint_unit::Entity::find_by_id(unit_to_delete_id)
         .into_json()
@@ -2372,7 +2373,125 @@ pub(crate) fn redact_unit_orbit_data(unit: &mut Unit) {
     unit.is_deduplicate_candidate = None;
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum UnitReferenceStep {
+    Callsigns,
+    Signals,
+    NetworkUnits,
+    NetworkCallsigns,
+    Attachments,
+    Labels,
+    InboxLinks,
+    OrbitLinks,
+    Devices,
+}
+
+impl UnitReferenceStep {
+    const ALL: [Self; 9] = [
+        Self::Callsigns,
+        Self::Signals,
+        Self::NetworkUnits,
+        Self::NetworkCallsigns,
+        Self::Attachments,
+        Self::Labels,
+        Self::InboxLinks,
+        Self::OrbitLinks,
+        Self::Devices,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Callsigns => "Позивні",
+            Self::Signals => "Сигнали",
+            Self::NetworkUnits => "Підрозділи мереж",
+            Self::NetworkCallsigns => "Позивні мереж",
+            Self::Attachments => "Файли",
+            Self::Labels => "Мітки",
+            Self::InboxLinks => "Прив’язки повідомлень",
+            Self::OrbitLinks => "Прив’язки ORBIT",
+            Self::Devices => "Пристрої",
+        }
+    }
+}
+
 async fn swap_units<C>(
+    old_unit_id: i64,
+    new_unit_id: i64,
+    login: uuid::Uuid,
+    dbx: &C,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    for step in UnitReferenceStep::ALL {
+        swap_unit_references_step(step, old_unit_id, new_unit_id, login, dbx)
+            .await
+            .c(h!())?;
+    }
+    Ok(())
+}
+
+async fn swap_unit_references_step<C>(
+    step: UnitReferenceStep,
+    old_unit_id: i64,
+    new_unit_id: i64,
+    login: uuid::Uuid,
+    dbx: &C,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    match step {
+        UnitReferenceStep::Callsigns => {
+            move_unit_callsigns(old_unit_id, new_unit_id, login, dbx)
+                .await
+                .c(h!())?
+        }
+        UnitReferenceStep::Signals => {
+            move_unit_signals(old_unit_id, new_unit_id, login, dbx)
+                .await
+                .c(h!())?
+        }
+        UnitReferenceStep::NetworkUnits => {
+            move_unit_networks(old_unit_id, new_unit_id, login, dbx)
+                .await
+                .c(h!())?
+        }
+        UnitReferenceStep::NetworkCallsigns => {
+            move_unit_network_callsigns(old_unit_id, new_unit_id, login, dbx)
+                .await
+                .c(h!())?
+        }
+        UnitReferenceStep::Attachments => {
+            move_unit_attachments(old_unit_id, new_unit_id, dbx)
+                .await
+                .c(h!())?
+        }
+        UnitReferenceStep::Labels => {
+            move_unit_labels(old_unit_id, new_unit_id, dbx)
+                .await
+                .c(h!())?
+        }
+        UnitReferenceStep::InboxLinks => {
+            move_inbox_item_unit_links(old_unit_id, new_unit_id, dbx)
+                .await
+                .c(h!())?
+        }
+        UnitReferenceStep::OrbitLinks => {
+            move_orbit_unit_links(old_unit_id, new_unit_id, dbx)
+                .await
+                .c(h!())?
+        }
+        UnitReferenceStep::Devices => {
+            swap_unit_devices(old_unit_id, new_unit_id, dbx)
+                .await
+                .c(h!())?
+        }
+    }
+    Ok(())
+}
+
+async fn move_unit_callsigns<C>(
     old_unit_id: i64,
     new_unit_id: i64,
     login: uuid::Uuid,
@@ -2419,7 +2538,18 @@ where
         .await
         .context(h!())?;
     }
+    Ok(())
+}
 
+async fn move_unit_signals<C>(
+    old_unit_id: i64,
+    new_unit_id: i64,
+    login: uuid::Uuid,
+    dbx: &C,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
     let signals = sigint_signal::Entity::find()
         .filter(sigint_signal::Column::Unit.eq(old_unit_id))
         .all(dbx)
@@ -2460,7 +2590,18 @@ where
         .await
         .context(h!())?;
     }
+    Ok(())
+}
 
+async fn move_unit_networks<C>(
+    old_unit_id: i64,
+    new_unit_id: i64,
+    login: uuid::Uuid,
+    dbx: &C,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
     let network_units = sigint_network_unit::Entity::find()
         .filter(sigint_network_unit::Column::UnitId.eq(old_unit_id))
         .all(dbx)
@@ -2499,7 +2640,58 @@ where
         .await
         .context(h!())?;
     }
+    Ok(())
+}
 
+async fn move_unit_network_callsigns<C>(
+    old_unit_id: i64,
+    new_unit_id: i64,
+    login: uuid::Uuid,
+    dbx: &C,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    let network_callsigns = sigint_network_callsign::Entity::find()
+        .filter(sigint_network_callsign::Column::UnitId.eq(old_unit_id))
+        .all(dbx)
+        .await
+        .c(h!())?;
+    for network_callsign in network_callsigns {
+        let id = network_callsign.id;
+        let json_old = serde_json::to_value(&network_callsign).c(h!())?;
+        let mut network_callsign = network_callsign.into_active_model();
+        network_callsign.unit_id = Set(Some(new_unit_id));
+        let network_callsign = network_callsign.update(dbx).await.c(h!())?;
+        sigint_network_callsign_changelog::ActiveModel {
+            id: NotSet,
+            sigint_network_callsign_id: Set(id),
+            login_id: Set(login),
+            action: Set(ChangelogActionEnum::Update),
+            created_at: NotSet,
+            new_value: Set(Some(
+                serde_json::to_value(network_callsign).c(h!())?,
+            )),
+            old_value: Set(Some(json_old)),
+            req: Set(None),
+            sigint_origin_id: NotSet,
+            original_id: NotSet,
+        }
+        .insert(dbx)
+        .await
+        .c(h!())?;
+    }
+    Ok(())
+}
+
+async fn move_unit_attachments<C>(
+    old_unit_id: i64,
+    new_unit_id: i64,
+    dbx: &C,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
     sigint_unit_attachment::Entity::update_many()
         .col_expr(
             sigint_unit_attachment::Column::UnitId,
@@ -2509,7 +2701,17 @@ where
         .exec(dbx)
         .await
         .context(h!())?;
+    Ok(())
+}
 
+async fn move_unit_labels<C>(
+    old_unit_id: i64,
+    new_unit_id: i64,
+    dbx: &C,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
     sigint_unit_label::Entity::update_many()
         .col_expr(
             sigint_unit_label::Column::SigintUnitId,
@@ -2519,14 +2721,6 @@ where
         .exec(dbx)
         .await
         .context(h!())?;
-
-    move_inbox_item_unit_links(old_unit_id, new_unit_id, dbx)
-        .await
-        .context(h!())?;
-
-    move_orbit_unit_links(old_unit_id, new_unit_id, dbx).await?;
-    swap_unit_devices(old_unit_id, new_unit_id, dbx).await?;
-
     Ok(())
 }
 

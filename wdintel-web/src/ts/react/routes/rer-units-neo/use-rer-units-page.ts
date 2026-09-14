@@ -20,7 +20,11 @@ import {
   uploadUnitsKmz,
 } from '../../services/api/units';
 import type { RequestOptions } from '../../services/api/client';
-import { fetchBgtaskStatusAndLogs, getBgtaskProgressFromPercent } from '../../services/api/bgtask';
+import {
+  fetchBgtaskStatusAndLogs,
+  getBgtaskProgressFromPercent,
+  waitForBgtaskCompletion,
+} from '../../services/api/bgtask';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { hasRole } from '../../utils/roles';
 import type { UnitFormSubmit } from './components/UnitFormDrawer';
@@ -71,6 +75,8 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
   const [unlinkingOrbitUnitId, setUnlinkingOrbitUnitId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Unit | null>(null);
   const [mergeTarget, setMergeTarget] = useState<Unit | null>(null);
+  const [mergeProgress, setMergeProgress] = useState<number | null>(null);
+  const [mergeProgressLabel, setMergeProgressLabel] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [uploadingKmz, setUploadingKmz] = useState(false);
@@ -254,6 +260,8 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
 
   function openMergeDialog(unit: Unit) {
     setDialogError(null);
+    setMergeProgress(null);
+    setMergeProgressLabel(null);
     setMergeTarget(unit);
   }
 
@@ -263,6 +271,8 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
     setEditUnit(null);
     setDeleteTarget(null);
     setMergeTarget(null);
+    setMergeProgress(null);
+    setMergeProgressLabel(null);
     setDialogError(null);
   }
 
@@ -414,26 +424,21 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
     if (mergeTarget === null) return;
     setSubmitting(true);
     setDialogError(null);
+    setMergeProgress(0);
+    setMergeProgressLabel(null);
     try {
-      const merged = await mergeDuplicateUnit({
+      const taskId = await mergeDuplicateUnit({
         originalId: mergeTarget.id,
         cloneToDeleteId: duplicate.id,
       });
-      setUnits((current) =>
-        replaceUnit(
-          current.filter((unit) => unit.id !== duplicate.id),
-          merged,
-        ),
-      );
-      setAttachmentUnitIds((current) => {
-        const next = new Set(current);
-        if (next.delete(duplicate.id)) next.add(merged.id);
-        return next;
+      await waitForBgtaskCompletion(taskId, (progress, logline) => {
+        setMergeProgress((current) => Math.max(current ?? 0, progress));
+        if (logline !== null) setMergeProgressLabel(logline);
       });
-      await refreshUnitsAfterMutation(
-        `Підрозділ «${duplicate.name}» об’єднано з «${merged.name}».`,
-      );
+      await refreshUnitsAfterMutation(`Підрозділ «${duplicate.name}» об’єднано.`);
       setMergeTarget(null);
+      setMergeProgress(null);
+      setMergeProgressLabel(null);
     } catch (error) {
       setDialogError(formatUnitError(error));
     } finally {
@@ -491,6 +496,8 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
     unlinkingOrbitUnitId,
     deleteTarget,
     mergeTarget,
+    mergeProgress,
+    mergeProgressLabel,
     submitting,
     dialogError,
     uploadingKmz,

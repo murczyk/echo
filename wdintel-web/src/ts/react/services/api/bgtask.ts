@@ -61,3 +61,20 @@ export async function fetchBgtaskStatusAndLogs(
     progress: rsp.progress ?? 0,
   };
 }
+
+export async function waitForBgtaskCompletion(
+  taskId: number,
+  onProgress: (progress: number, logline: string | null) => void,
+): Promise<void> {
+  let skip = 0;
+  for (;;) {
+    const status = await fetchBgtaskStatusAndLogs(taskId, skip);
+    skip += status.loglines.length;
+    onProgress(status.progress ?? 0, status.loglines.at(-1) ?? null);
+    if (!status.running) {
+      if (status.finishedWithError !== null) throw new Error(status.finishedWithError);
+      return;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 1000));
+  }
+}
