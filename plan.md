@@ -65,21 +65,42 @@ marking the duplicate deleted. A writer that attaches to the duplicate after
 that commit is outside this task's control unless all unit-reference writers
 are changed to reject deleted units; this pre-existing soft-delete race is not
 introduced by the staged task. A failed or interrupted task leaves already
-committed reassignments intact. A retry must use the original survivor, which
-is pinned by the first task record. Each ORBIT-link batch reconciles derived
-duplicate and inconsistency state before commit, and failed or recovered tasks
-publish unit-change events for other clients.
+committed reassignments intact. A retry uses the original survivor pinned by
+the first accepted task, or follows its verified completed merge chain.
+Registrations lock both units and reject unfinished merge chains before
+recording a task. Each ORBIT-link batch reconciles derived duplicate and
+inconsistency state before commit. Failed or recovered tasks publish
+unit-change events for other clients.
 
-The local development database has no rows in the large reference tables,
-so it cannot provide a production-scale query plan or a meaningful timing
-comparison. The index columns match the unit-ID predicates used by the staged
-steps and final check.
+`EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, SUMMARY ON)` on temporary PostgreSQL 14
+tables compared each ordered 50-row batch query before and after its composite
+index. The stress fixture used 1,000,000 rows per reference table (5,000,000
+for inbox links), a 64-byte payload, and one matching unit every 10,000 rows.
+
+| Query | Before index | After index |
+| --- | --- | --- |
+| Callsigns | Sequential scan, 999,900 rows filtered, 14,286 local buffers read; 49.93 ms | Bitmap index scan on `unit_id`, 96 local buffers read; 0.91 ms |
+| Signals | Sequential scan, 999,900 rows filtered, 14,286 local buffers read; 40.28 ms | Bitmap index scan on `unit`, 96 local buffers read; 0.38 ms |
+| Network units | Sequential scan, 999,900 rows filtered, 15,385 local buffers read; 42.90 ms | Bitmap index scan on `unit_id`, 96 local buffers read; 0.42 ms |
+| Network callsigns | Sequential scan, 999,900 rows filtered, 14,286 local buffers read; 40.22 ms | Bitmap index scan on `unit_id`, 96 local buffers read; 0.44 ms |
+| Inbox links, `FOR UPDATE` | Existing `(unit_id, kind, item_id)` bitmap scan and sort, 505 local buffers read; 15.17 ms | `(unit_id, id)` index scan, 53 local buffers read; 0.22 ms |
+
+The new scans use the unit predicate as an index condition. These synthetic
+plans establish a large-table access path, but production row counts and data
+distribution are unavailable in this workspace; production timings remain
+unverified.
+
+The registration conflict lookup was also tested against 1,000,000 synthetic
+background tasks, including 1,000 merge markers. Its marker expression index
+produced a `BitmapOr` plan, read 1,003 local buffers, and completed in 2.42 ms
+with cold buffers. After five prepared executions, PostgreSQL retained the
+indexed custom plan (0.27 ms with cached buffers).
 
 ## Verification
 
-- Three database-backed staged merge tests passed, including bounded label
+- Thirteen database-backed staged merge tests passed, including bounded label
   batches, a late inbox reference, restart recovery, survivor reconciliation,
-  and the direct network-callsign audit entry.
+  chain-registration rejection, and the direct network-callsign audit entry.
 - Focused React tests and `just build-front` passed.
 - The catalog-aware analytics migration check passed on a database restored
   from the standard test dump; `just migrate-up`, `cargo check`, and Clippy

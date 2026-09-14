@@ -27,26 +27,10 @@ pub(super) async fn start(
             msg: "unit cannot be merged into itself".to_string(),
         });
     }
-    let transaction = acquire_merge_registration(&env.dbx, unit_to_delete_id)
-        .await
-        .c(h!())?;
-    ensure_pinned_survivor(&transaction, unit_to_delete_id, original_id)
-        .await?;
-    let bgtask = bgtask::ActiveModel {
-        id: NotSet,
-        progress: Set(0),
-        loglines: Set(serde_json::json!([
-            format!("{SIGINT_UNIT_MERGE_TASK_MARKER}{unit_to_delete_id}:{original_id}"),
-            "Початок об’єднання"
-        ])),
-        running: Set(true),
-        finished_with_error: Set(None),
-    }
-    .insert(&transaction)
-    .await
-    .c(h!())?;
-    transaction.commit().await.c(h!())?;
-    let bgtask_id = bgtask.id;
+    let bgtask_id =
+        register_merge_task(&env.dbx, unit_to_delete_id, original_id)
+            .await
+            .context(h!())?;
     let env = env.clone();
     tokio::spawn(async move {
         let result =
@@ -64,6 +48,51 @@ pub(super) async fn start(
         }
     });
     Ok(bgtask_id)
+}
+
+async fn register_merge_task(
+    dbx: &DatabaseConnection,
+    unit_to_delete_id: i64,
+    original_id: i64,
+) -> Result<i64, AppError> {
+    let transaction = dbx.begin().await.c(h!())?;
+    if !try_acquire_unit_merge_locks_for_ids(
+        &transaction,
+        &[unit_to_delete_id, original_id],
+    )
+    .await
+    .c(h!())?
+    {
+        transaction.rollback().await.c(h!())?;
+        return Err(AppError::BL {
+            msg: "Unit merge is already in progress; retry after it finishes"
+                .to_string(),
+        });
+    }
+    ensure_merge_units_active(&transaction, unit_to_delete_id, original_id)
+        .await
+        .context(h!())?;
+    ensure_pinned_survivor(&transaction, unit_to_delete_id, original_id)
+        .await
+        .context(h!())?;
+    ensure_no_conflicting_merge(&transaction, unit_to_delete_id, original_id)
+        .await
+        .context(h!())?;
+    let bgtask = bgtask::ActiveModel {
+        id: NotSet,
+        progress: Set(0),
+        loglines: Set(serde_json::json!([
+            format!("{SIGINT_UNIT_MERGE_TASK_MARKER}{unit_to_delete_id}:{original_id}"),
+            "Початок об’єднання"
+        ])),
+        running: Set(true),
+        finished_with_error: Set(None),
+    }
+    .insert(&transaction)
+    .await
+    .c(h!())?;
+    transaction.commit().await.c(h!())?;
+    Ok(bgtask.id)
 }
 
 pub(super) async fn recover_abandoned(
@@ -129,36 +158,93 @@ pub(super) async fn recover_abandoned(
     Ok(recovered_task)
 }
 
-async fn acquire_merge_registration(
-    dbx: &DatabaseConnection,
-    duplicate_id: i64,
-) -> anyhow::Result<DatabaseTransaction> {
-    loop {
-        let transaction = dbx.begin().await.c(h!())?;
-        let row = transaction
-            .query_one_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "select pg_try_advisory_xact_lock(hashtextextended($1::text || $2::text, 0)) as acquired",
-                [
-                    SIGINT_UNIT_MERGE_ADVISORY_LOCK_NAMESPACE.into(),
-                    format!("register:{duplicate_id}").into(),
-                ],
-            ))
-            .await
-            .c(h!())?
-            .c(h!())?;
-        if row.try_get::<bool>("", "acquired").c(h!())? {
-            return Ok(transaction);
-        }
-        transaction.rollback().await.c(h!())?;
-        tokio::time::sleep(std::time::Duration::from_millis(
-            SIGINT_UNIT_MERGE_ADVISORY_LOCK_POLL_MS,
-        ))
-        .await;
+async fn ensure_merge_units_active<C>(
+    dbx: &C,
+    unit_to_delete_id: i64,
+    original_id: i64,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let ids = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Id.is_in([unit_to_delete_id, original_id]))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .select_only()
+        .column(sigint_unit::Column::Id)
+        .into_tuple::<i64>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    if ids.len() != 2 {
+        return Err(AppError::NotFound);
     }
+    Ok(())
 }
 
-async fn ensure_pinned_survivor<C>(
+pub(super) async fn ensure_no_conflicting_merge<C>(
+    dbx: &C,
+    unit_to_delete_id: i64,
+    original_id: i64,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let rows = dbx
+        .query_all_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "select loglines->>0 as marker from bgtask where loglines->>0 like $1 or loglines->>0 like $2",
+            [
+                format!("{SIGINT_UNIT_MERGE_TASK_MARKER}{original_id}:%").into(),
+                format!("{SIGINT_UNIT_MERGE_TASK_MARKER}%:{unit_to_delete_id}").into(),
+            ],
+        ))
+        .await
+        .c(h!())?;
+    let mut dependent_ids = Vec::new();
+    for row in rows {
+        let marker: String = row.try_get("", "marker").c(h!())?;
+        let Some((duplicate_id, survivor_id)) = marker
+            .strip_prefix(SIGINT_UNIT_MERGE_TASK_MARKER)
+            .and_then(|ids| ids.split_once(':'))
+            .and_then(|(duplicate_id, survivor_id)| {
+                Some((
+                    duplicate_id.parse::<i64>().ok()?,
+                    survivor_id.parse::<i64>().ok()?,
+                ))
+            })
+        else {
+            continue;
+        };
+        if duplicate_id == original_id {
+            return Err(AppError::BL {
+                msg: format!(
+                    "Unit {original_id} has an unfinished outbound merge; finish it before changing this unit"
+                ),
+            });
+        }
+        if survivor_id == unit_to_delete_id {
+            dependent_ids.push(duplicate_id);
+        }
+    }
+    if !dependent_ids.is_empty() {
+        let dependent = sigint_unit::Entity::find()
+            .filter(sigint_unit::Column::Id.is_in(dependent_ids))
+            .filter(sigint_unit::Column::Deleted.eq(false))
+            .one(dbx)
+            .await
+            .c(h!())?;
+        if dependent.is_some() {
+            return Err(AppError::BL {
+                msg: format!(
+                    "Unit {unit_to_delete_id} is the survivor of an unfinished merge; finish it before changing this unit"
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+pub(super) async fn ensure_pinned_survivor<C>(
     dbx: &C,
     duplicate_id: i64,
     survivor_id: i64,
@@ -174,20 +260,78 @@ where
         ))
         .await
         .c(h!())?;
+    let mut resolved_survivors = std::collections::HashMap::new();
     for row in rows {
         let marker: String = row.try_get("", "marker").c(h!())?;
         let prior_survivor = marker
             .rsplit_once(':')
             .and_then(|(_, id)| id.parse::<i64>().ok());
-        if prior_survivor != Some(survivor_id) {
+        let resolved_survivor = if let Some(prior_survivor) = prior_survivor {
+            if let Some(resolved) = resolved_survivors.get(&prior_survivor) {
+                Some(*resolved)
+            } else {
+                let resolved = resolve_completed_survivor(dbx, prior_survivor)
+                    .await
+                    .context(h!())?;
+                resolved_survivors.insert(prior_survivor, resolved);
+                Some(resolved)
+            }
+        } else {
+            None
+        };
+        if resolved_survivor != Some(survivor_id) {
             return Err(AppError::BL {
                 msg: format!(
-                    "Unit {duplicate_id} has an interrupted merge into another survivor; retry with the original survivor"
+                    "Unit {duplicate_id} has an interrupted merge into another survivor; retry with its current survivor"
                 ),
             });
         }
     }
     Ok(())
+}
+
+async fn resolve_completed_survivor<C>(
+    dbx: &C,
+    survivor_id: i64,
+) -> Result<i64, AppError>
+where
+    C: ConnectionTrait,
+{
+    let mut current_id = survivor_id;
+    let mut seen = std::collections::HashSet::new();
+    loop {
+        if !seen.insert(current_id) {
+            return Err(AppError::BL {
+                msg: "Unit merge history contains a cycle".to_string(),
+            });
+        }
+        let unit = sigint_unit::Entity::find_by_id(current_id)
+            .one(dbx)
+            .await
+            .c(h!())?;
+        if !unit.is_some_and(|unit| unit.deleted) {
+            break;
+        }
+        let change = sigint_unit_changelog::Entity::find()
+            .filter(sigint_unit_changelog::Column::SigintUnitId.eq(current_id))
+            .filter(
+                sigint_unit_changelog::Column::Action.eq("delete_duplicate"),
+            )
+            .order_by_desc(sigint_unit_changelog::Column::Id)
+            .one(dbx)
+            .await
+            .c(h!())?;
+        let Some(next_id) = change
+            .as_ref()
+            .and_then(|change| change.new_value.as_ref())
+            .and_then(|value| value.get("id"))
+            .and_then(serde_json::Value::as_i64)
+        else {
+            break;
+        };
+        current_id = next_id;
+    }
+    Ok(current_id)
 }
 
 async fn finish_merge_task(
@@ -291,7 +435,9 @@ async fn run_locked(
     original_id: i64,
     bgtask_id: i64,
 ) -> Result<(), AppError> {
-    ensure_pinned_survivor(&env.dbx, unit_to_delete_id, original_id).await?;
+    ensure_pinned_survivor(&env.dbx, unit_to_delete_id, original_id)
+        .await
+        .context(h!())?;
     let step_count = UnitReferenceStep::ALL.len() + 1;
     loop {
         for (index, step) in UnitReferenceStep::ALL.into_iter().enumerate() {
@@ -1114,5 +1260,188 @@ mod tests {
             .unwrap();
         assert_eq!(task.progress, 100);
         assert!(task.finished_with_error.is_none());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn overlapping_chain_registrations_cannot_both_start() {
+        let env = cleanup().await.unwrap();
+        let duplicate =
+            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let middle =
+            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let survivor =
+            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+
+        let (first, second) = tokio::join!(
+            register_merge_task(&env.dbx, duplicate.id, middle.id),
+            register_merge_task(&env.dbx, middle.id, survivor.id),
+        );
+        assert_ne!(first.is_ok(), second.is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn busy_registration_rejects_without_pinning_a_unit() {
+        let env = cleanup().await.unwrap();
+        let duplicate =
+            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let survivor =
+            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let guard = begin_unit_merge_transaction(
+            &env.dbx,
+            &[duplicate.id, survivor.id],
+        )
+        .await
+        .unwrap();
+        let task_count = bgtask::Entity::find().count(&env.dbx).await.unwrap();
+
+        let rejected = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            register_merge_task(&env.dbx, duplicate.id, survivor.id),
+        )
+        .await
+        .unwrap();
+        assert!(rejected.is_err());
+        assert_eq!(
+            bgtask::Entity::find().count(&env.dbx).await.unwrap(),
+            task_count
+        );
+        guard.rollback().await.unwrap();
+        register_merge_task(&env.dbx, duplicate.id, survivor.id)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn rejected_chain_merge_can_target_completed_survivor() {
+        let env = cleanup().await.unwrap();
+        let duplicate =
+            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let middle =
+            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let survivor =
+            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let login = crate::users::login_id_by_name(&env.dbx, "Tester")
+            .await
+            .unwrap();
+
+        register_merge_task(&env.dbx, middle.id, survivor.id)
+            .await
+            .unwrap();
+        assert!(register_merge_task(&env.dbx, duplicate.id, middle.id)
+            .await
+            .is_err());
+        assert!(finalize(&env.dbx, login, middle.id, survivor.id)
+            .await
+            .unwrap());
+        assert!(register_merge_task(&env.dbx, duplicate.id, middle.id)
+            .await
+            .is_err());
+        register_merge_task(&env.dbx, duplicate.id, survivor.id)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn unfinished_inbound_merge_blocks_survivor_deletion() {
+        let env = cleanup().await.unwrap();
+        let duplicate =
+            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let middle =
+            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let survivor =
+            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let login = crate::users::login_id_by_name(&env.dbx, "Tester")
+            .await
+            .unwrap();
+
+        register_merge_task(&env.dbx, duplicate.id, middle.id)
+            .await
+            .unwrap();
+        assert!(register_merge_task(&env.dbx, middle.id, survivor.id)
+            .await
+            .is_err());
+        assert!(merge_units(login, &env.dbx, middle.id, survivor.id)
+            .await
+            .is_err());
+        assert!(delete_unit_for_login(&env.dbx, &login, middle.id)
+            .await
+            .is_err());
+        assert!(finalize(&env.dbx, login, duplicate.id, middle.id)
+            .await
+            .unwrap());
+        register_merge_task(&env.dbx, middle.id, survivor.id)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn interrupted_merge_can_follow_a_completed_survivor_chain() {
+        let env = cleanup().await.unwrap();
+        let duplicate =
+            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let middle =
+            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let survivor =
+            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let unrelated =
+            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let login = crate::users::login_id_by_name(&env.dbx, "Tester")
+            .await
+            .unwrap();
+        let label = sigint_unit_label::ActiveModel {
+            sigint_unit_id: Set(duplicate.id),
+            label: Set("interrupted chain".to_string()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        move_step(
+            &env.dbx,
+            login,
+            duplicate.id,
+            middle.id,
+            UnitReferenceStep::Labels,
+        )
+        .await
+        .unwrap();
+        merge_units(login, &env.dbx, middle.id, survivor.id)
+            .await
+            .unwrap();
+        bgtask::ActiveModel {
+            progress: Set(40),
+            loglines: Set(serde_json::json!([format!(
+                "{SIGINT_UNIT_MERGE_TASK_MARKER}{}:{}",
+                duplicate.id, middle.id
+            )])),
+            running: Set(false),
+            finished_with_error: Set(Some("interrupted".to_string())),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        assert_eq!(
+            sigint_unit_label::Entity::find_by_id(label.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .sigint_unit_id,
+            survivor.id
+        );
+        assert!(register_merge_task(&env.dbx, duplicate.id, unrelated.id)
+            .await
+            .is_err());
+        register_merge_task(&env.dbx, duplicate.id, survivor.id)
+            .await
+            .unwrap();
     }
 }

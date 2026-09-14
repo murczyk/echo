@@ -68,7 +68,10 @@ categories are moved in bounded, committed batches; the final transaction
 rechecks references, reconciles the survivor and parent activity, and marks the
 duplicate deleted. On API restart, unfinished merge tasks are marked failed
 unless that final transaction committed. An interrupted merge can be submitted
-again only with the original survivor; already moved references remain there.
+again with the original survivor, or its verified successor after a completed
+survivor merge; already moved references follow that completed chain.
+Registrations serialize both units and reject an unfinished merge chain until
+the earlier merge completes, so rejected starts do not pin a duplicate.
 Each committed ORBIT-link batch reconciles duplicate and inconsistency state,
 and failed or recovered tasks publish a unit-change event for other clients.
 

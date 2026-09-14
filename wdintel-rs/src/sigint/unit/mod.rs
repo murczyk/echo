@@ -1981,6 +1981,9 @@ async fn delete_unit_for_login(
     let transaction = begin_unit_merge_transaction(dbx, &[unit_id])
         .await
         .c(h!())?;
+    merge_task::ensure_no_conflicting_merge(&transaction, unit_id, unit_id)
+        .await
+        .context(h!())?;
     changelog::set_author(&transaction, login).await.c(h!())?;
     let unit = sigint_unit::Entity::find_by_id(unit_id)
         .one(&transaction)
@@ -2278,6 +2281,16 @@ where
         find_units_for_merge(dbx, unit_to_delete_id, original_id)
             .await
             .context(h!())?;
+    merge_task::ensure_pinned_survivor(dbx, unit_to_delete_id, original_id)
+        .await
+        .context(h!())?;
+    merge_task::ensure_no_conflicting_merge(
+        dbx,
+        unit_to_delete_id,
+        original_id,
+    )
+    .await
+    .context(h!())?;
     let previous_unit_original = unit_original.clone();
     let unit_original =
         update_original_unit(unit_original, &unit_to_delete, dbx, name_policy)
