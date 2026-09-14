@@ -8,6 +8,7 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::sigint::network::activity_decision::*;
 use crate::sigint::network::bl::*;
+use crate::sigint::network::etalon_calc;
 use crate::types::*;
 use chrono::*;
 use sea_orm::sea_query::*;
@@ -24,6 +25,11 @@ pub async fn merge_two_networks(
     network_id_from: i64,
     network_id_to: i64,
 ) -> anyhow::Result<(), AppError> {
+    if network_id_from == network_id_to {
+        return Err(AppError::BL {
+            msg: "Network cannot be merged into itself".to_string(),
+        });
+    }
     let networks = sigint_network::Entity::find()
         .filter(
             sigint_network::Column::Id.is_in([network_id_from, network_id_to]),
@@ -115,6 +121,16 @@ pub async fn merge_two_networks(
         .await
         .c(h!())?;
 
+    reassign_units(txn, network_id_from, network_id_to)
+        .await
+        .c(h!())?;
+    reassign_encryption_keys(txn, network_id_from, network_id_to)
+        .await
+        .c(h!())?;
+    reassign_saved_filters(txn, network_id_from, network_id_to)
+        .await
+        .c(h!())?;
+
     // Update network_to attributes by concatenating only unique values
     let new_location = concat_unique(
         Some(network_to.location.clone()),
@@ -165,7 +181,24 @@ pub async fn merge_two_networks(
     network_from_model.merged_to = Set(Some(network_id_to));
     network_from_model.updated_at = Set(Utc::now().naive_utc());
     network_from_model.updated_by_login_id = Set(Some(*login));
-    network_from_model.update(txn).await.context(h!())?;
+    let network_from = network_from_model.update(txn).await.context(h!())?;
+
+    etalon_calc::invalidate_network_inbox(
+        network_from,
+        vec![],
+        txn,
+        format!("merged network {network_id_from} into {network_id_to}"),
+    )
+    .await
+    .c(h!())?;
+    etalon_calc::invalidate_network_inbox(
+        network_to,
+        vec![],
+        txn,
+        format!("merged network {network_id_from} into {network_id_to}"),
+    )
+    .await
+    .c(h!())?;
 
     info!("✅ Merged network {network_id_from} into {network_id_to}");
 
@@ -174,6 +207,89 @@ pub async fn merge_two_networks(
 
 fn is_inactive_network(network: &sigint_network::Model) -> bool {
     network.deleted || network.active_to.is_some()
+}
+
+async fn reassign_units(
+    txn: &DatabaseTransaction,
+    network_id_from: i64,
+    network_id_to: i64,
+) -> anyhow::Result<()> {
+    let mut unit_ids_to = sigint_network_unit::Entity::find()
+        .filter(sigint_network_unit::Column::NetworkId.eq(network_id_to))
+        .all(txn)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|link| link.unit_id)
+        .collect::<HashSet<_>>();
+    let units_from = sigint_network_unit::Entity::find()
+        .filter(sigint_network_unit::Column::NetworkId.eq(network_id_from))
+        .all(txn)
+        .await
+        .c(h!())?;
+    for unit in units_from {
+        if unit_ids_to.insert(unit.unit_id) {
+            let mut unit = unit.into_active_model();
+            unit.network_id = Set(network_id_to);
+            unit.update(txn).await.c(h!())?;
+        }
+    }
+    Ok(())
+}
+
+async fn reassign_encryption_keys(
+    txn: &DatabaseTransaction,
+    network_id_from: i64,
+    network_id_to: i64,
+) -> anyhow::Result<()> {
+    sigint_network_encryption_key::Entity::update_many()
+        .col_expr(
+            sigint_network_encryption_key::Column::SigintNetworkId,
+            Expr::value(network_id_to),
+        )
+        .filter(
+            sigint_network_encryption_key::Column::SigintNetworkId
+                .eq(network_id_from),
+        )
+        .filter(sigint_network_encryption_key::Column::Deleted.eq(false))
+        .exec(txn)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+async fn reassign_saved_filters(
+    txn: &DatabaseTransaction,
+    network_id_from: i64,
+    network_id_to: i64,
+) -> anyhow::Result<()> {
+    let saved_filters = sigint_saved_filter::Entity::find()
+        .filter(Expr::cust_with_values(
+            "req @> jsonb_build_object('selected_networks', jsonb_build_array($1))",
+            [Value::BigInt(Some(network_id_from))],
+        ))
+        .lock_exclusive()
+        .all(txn)
+        .await
+        .c(h!())?;
+    for saved_filter in saved_filters {
+        let mut req = saved_filter.req.clone();
+        let selected_networks = req
+            .get_mut("selected_networks")
+            .and_then(serde_json::Value::as_array_mut)
+            .c(h!())?;
+        let mut seen = HashSet::new();
+        selected_networks.retain_mut(|network_id| {
+            if network_id.as_i64() == Some(network_id_from) {
+                *network_id = serde_json::json!(network_id_to);
+            }
+            network_id.as_i64().is_none_or(|id| seen.insert(id))
+        });
+        let mut saved_filter = saved_filter.into_active_model();
+        saved_filter.req = Set(req);
+        saved_filter.update(txn).await.c(h!())?;
+    }
+    Ok(())
 }
 
 pub async fn merge_two_network_freqs(
@@ -817,5 +933,135 @@ fn concat_unique(to: Option<String>, from: Option<String>) -> Option<String> {
         (Some(to_val), None) => Some(to_val.to_string()),
         (None, Some(from_val)) => Some(from_val.to_string()),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::functest::tests::{
+        cleanup, find_test_organism, mk_sigint_network, mk_sigint_network_unit,
+        mk_sigint_unit,
+    };
+    use serial_test::serial;
+
+    #[tokio::test]
+    #[serial]
+    async fn network_merge_preserves_references_and_queues_recalculation() {
+        let env = cleanup().await.unwrap();
+        let login = crate::users::login_id_by_name(&env.dbx, "Tester")
+            .await
+            .unwrap();
+        let source = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let target = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let source_unit =
+            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let target_unit =
+            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        mk_sigint_network_unit(
+            &env.dbx,
+            sigint_network_unit::ActiveModel {
+                network_id: Set(source.id),
+                unit_id: Set(source_unit.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_network_unit(
+            &env.dbx,
+            sigint_network_unit::ActiveModel {
+                network_id: Set(target.id),
+                unit_id: Set(target_unit.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let key = sigint_network_encryption_key::ActiveModel {
+            organism_id: Set(find_test_organism(&env.dbx).await.unwrap().id),
+            sigint_network_id: Set(Some(source.id)),
+            deleted: Set(false),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let saved_filter = sigint_saved_filter::ActiveModel {
+            name: Set("merge reference".to_string()),
+            req: Set(serde_json::json!({
+                "selected_networks": [source.id, target.id, source.id]
+            })),
+            login_id: Set(Some(login)),
+            r#type: Set(Some(SigintSavedFilterTypeEnum::Analysis)),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+
+        assert!(merge_two_networks(
+            &txn, &login, false, false, source.id, source.id
+        )
+        .await
+        .is_err());
+        merge_two_networks(&txn, &login, false, false, source.id, target.id)
+            .await
+            .unwrap();
+
+        let source = sigint_network::Entity::find_by_id(source.id)
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(source.deleted);
+        assert_eq!(source.merged_to, Some(target.id));
+        let target_units = sigint_network_unit::Entity::find()
+            .filter(sigint_network_unit::Column::NetworkId.eq(target.id))
+            .select_only()
+            .column(sigint_network_unit::Column::UnitId)
+            .into_tuple::<i64>()
+            .all(&txn)
+            .await
+            .unwrap();
+        assert!(target_units.contains(&source_unit.id));
+        assert!(target_units.contains(&target_unit.id));
+        assert_eq!(
+            sigint_network_encryption_key::Entity::find_by_id(key.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap()
+                .sigint_network_id,
+            Some(target.id)
+        );
+        assert_eq!(
+            sigint_saved_filter::Entity::find_by_id(saved_filter.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap()
+                .req["selected_networks"],
+            serde_json::json!([target.id])
+        );
+        for network_id in [source.id, target.id] {
+            assert!(
+                network_invalidation_task::Entity::find()
+                    .filter(
+                        network_invalidation_task::Column::SigintNetworkId
+                            .eq(network_id)
+                    )
+                    .count(&txn)
+                    .await
+                    .unwrap()
+                    > 0
+            );
+        }
+        txn.rollback().await.unwrap();
     }
 }

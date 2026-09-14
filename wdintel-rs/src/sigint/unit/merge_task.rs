@@ -1,6 +1,7 @@
 use super::*;
 use crate::config::{
-    SIGINT_UNIT_MERGE_ADVISORY_LOCK_NAMESPACE, SIGINT_UNIT_MERGE_BATCH_SIZE,
+    SIGINT_UNIT_MERGE_ADVISORY_LOCK_NAMESPACE,
+    SIGINT_UNIT_MERGE_ADVISORY_LOCK_POLL_MS, SIGINT_UNIT_MERGE_BATCH_SIZE,
     SIGINT_UNIT_MERGE_TASK_MARKER,
 };
 use crate::delta::bgtask_log;
@@ -142,23 +143,13 @@ async fn run(
     original_id: i64,
     bgtask_id: i64,
 ) -> Result<(), AppError> {
-    let mut guard = env
-        .dbx
-        .get_postgres_connection_pool()
-        .begin()
-        .await
-        .c(h!())?;
-    for unit_id in [
-        std::cmp::min(unit_to_delete_id, original_id),
-        std::cmp::max(unit_to_delete_id, original_id),
-    ] {
-        sqlx::query("select pg_advisory_xact_lock(hashtextextended($1::text || $2::text, 0))")
-            .bind(SIGINT_UNIT_MERGE_ADVISORY_LOCK_NAMESPACE)
-            .bind(format!("unit:{unit_id}"))
-            .execute(&mut *guard)
-            .await
-            .c(h!())?;
-    }
+    let guard = acquire_merge_task_guard(
+        env.dbx.get_postgres_connection_pool(),
+        unit_to_delete_id,
+        original_id,
+    )
+    .await
+    .c(h!())?;
     let result =
         run_locked(env, login, unit_to_delete_id, original_id, bgtask_id).await;
     let rollback = guard.rollback().await;
@@ -170,6 +161,42 @@ async fn run(
         );
     }
     result
+}
+
+async fn acquire_merge_task_guard(
+    pool: &sqlx::PgPool,
+    unit_to_delete_id: i64,
+    original_id: i64,
+) -> anyhow::Result<sqlx::Transaction<'_, sqlx::Postgres>> {
+    loop {
+        let mut guard = pool.begin().await.c(h!())?;
+        let mut acquired = true;
+        for unit_id in [
+            std::cmp::min(unit_to_delete_id, original_id),
+            std::cmp::max(unit_to_delete_id, original_id),
+        ] {
+            let locked: bool = sqlx::query_scalar(
+                "select pg_try_advisory_xact_lock(hashtextextended($1::text || $2::text, 0))",
+            )
+            .bind(SIGINT_UNIT_MERGE_ADVISORY_LOCK_NAMESPACE)
+            .bind(format!("unit:{unit_id}"))
+            .fetch_one(&mut *guard)
+            .await
+            .c(h!())?;
+            if !locked {
+                acquired = false;
+                break;
+            }
+        }
+        if acquired {
+            return Ok(guard);
+        }
+        guard.rollback().await.c(h!())?;
+        tokio::time::sleep(std::time::Duration::from_millis(
+            SIGINT_UNIT_MERGE_ADVISORY_LOCK_POLL_MS,
+        ))
+        .await;
+    }
 }
 
 async fn run_locked(
@@ -375,6 +402,50 @@ mod tests {
     use super::*;
     use crate::functest::tests::{cleanup, mk_sigint_network, mk_sigint_unit};
     use serial_test::serial;
+
+    #[tokio::test]
+    #[serial]
+    async fn staged_merge_waiter_releases_pool_connection() {
+        let env = cleanup().await.unwrap();
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(2)
+            .connect_with(
+                (*env.dbx.get_postgres_connection_pool().connect_options())
+                    .clone(),
+            )
+            .await
+            .unwrap();
+        let guard = acquire_merge_task_guard(&pool, 1, 2).await.unwrap();
+        let waiting_pool = pool.clone();
+        let waiter = tokio::spawn(async move {
+            let guard =
+                acquire_merge_task_guard(&waiting_pool, 2, 3).await.unwrap();
+            guard.rollback().await.unwrap();
+        });
+
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while pool.size() < 2 {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(!waiter.is_finished());
+        let connection = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            pool.acquire(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        drop(connection);
+
+        guard.rollback().await.unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(2), waiter)
+            .await
+            .unwrap()
+            .unwrap();
+    }
 
     #[tokio::test]
     #[serial]
