@@ -701,6 +701,18 @@ async fn persist_selection_batch(
         return Ok(PersistSelectionBatchOutcome::default());
     }
     let transaction = super::acquire_import_lock(db).await.c(h!())?;
+    let unit_ids = selections
+        .iter()
+        .flat_map(|selection| {
+            [selection.unit_to_delete_id, selection.survivor_id]
+        })
+        .collect::<Vec<_>>();
+    crate::sigint::unit::acquire_unit_merge_locks_for_ids(
+        &transaction,
+        &unit_ids,
+    )
+    .await
+    .c(h!())?;
     let login = crate::users::system_login_id(&transaction).await.c(h!())?;
     super::reconcile_sigint_unit_deduplicate_candidates(&transaction)
         .await

@@ -16,8 +16,9 @@ deleted duplicate by design; they are not live dependencies to reassign.
 - Scope: the web duplicate-merge endpoint used by `/rer-units-neo` and the
   admin duplicate list. Create-unit, TUI, and ORBIT batch merges retain their
   existing atomic transaction behavior.
-- Reassign each dependency category atomically in its own short transaction,
-  retaining the current audit and link-conflict behavior.
+- Reassign each dependency category in bounded, committed row batches,
+  retaining the current audit and link-conflict behavior; retries resume
+  safely after a partially moved category.
 - After all categories, check for newly attached dependencies. If any exist,
   repeat the reassignment loop. Only finalize the survivor and mark the
   duplicate deleted in a short transaction after a clean check under unit row
@@ -36,19 +37,21 @@ deleted duplicate by design; they are not live dependencies to reassign.
    callsign unit reference, including its changelog behavior. Add indexes for
    the large reference tables queried by unit ID.
 2. Add a staged merge coordinator: validate and serialize the pair, run the
-   category transactions, recheck all dependencies, and retry on new work.
+   bounded category batches, recheck all dependencies, and retry on new work.
    Finalize metadata, changelog, parent/ORBIT reconciliation, and deletion only
    after a clean check in the final transaction. Preserve retry safety if a
    prior category committed before an error. Hold the existing advisory merge
    locks in a coordination-only transaction across phases; make synchronous
-   internal merge callers acquire the same locks.
+   internal merge callers acquire the same locks in sorted order.
 3. Change the web endpoint to start a background task and return its ID. Write
    stage logs and a monotonic percentage to `bgtask`; finish with success or
    failure and send the unit-changed event after successful final commit.
 4. Poll the existing bgtask status API from the merge dialog. Display equal
    category progress without allowing the bar to move backwards; refresh the
-   unit list only after successful task completion. Update both React callers
-   and the unused Elm API response decoder for the endpoint's new return type.
+   unit list only after successful task completion. Retain the task ID across
+   navigation and mark interrupted tasks on API restart. Update both React
+   callers and the unused Elm API response decoder for the endpoint's new
+   return type.
 5. Add focused database-backed coverage for staged movement, retries after
    newly attached references, and finalization. Run
    `cargo fmt`, `cargo check`, `cargo clippy`, focused tests, frontend staged
@@ -60,22 +63,23 @@ The final transaction locks both unit rows and checks dependencies again before
 marking the duplicate deleted. A writer that attaches to the duplicate after
 that commit is outside this task's control unless all unit-reference writers
 are changed to reject deleted units; this pre-existing soft-delete race is not
-introduced by the staged task. A failed task leaves already committed
-reassignments intact and can be retried safely.
+introduced by the staged task. A failed or interrupted task leaves already
+committed reassignments intact and can be retried safely.
 
-The local development database has no rows in the four large reference tables,
+The local development database has no rows in the large reference tables,
 so it cannot provide a production-scale query plan or a meaningful timing
 comparison. The index columns match the unit-ID predicates used by the staged
 steps and final check.
 
 ## Verification
 
-- Two database-backed staged merge tests passed, including a late-reference
-  retry and the direct network-callsign audit entry.
+- Three database-backed staged merge tests passed, including bounded label
+  batches, a late inbox reference, restart recovery, survivor reconciliation,
+  and the direct network-callsign audit entry.
 - Focused React tests and `just build-front` passed.
 - The catalog-aware analytics migration check passed on a database restored
   from the standard test dump; `just migrate-up`, `cargo check`, and Clippy
   passed.
-- Entity generation produced no model changes needed for an index-only
-  migration. Its whole-tree formatting post-step was stopped and unrelated
-  generated differences were reverted.
+- Entity generation was attempted after applying the index-only migration.
+  The local database lacks checked-in relation helpers, so unrelated generated
+  differences were reverted; no entity change is needed for the new indexes.

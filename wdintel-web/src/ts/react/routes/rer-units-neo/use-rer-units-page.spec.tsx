@@ -12,6 +12,7 @@ const api = vi.hoisted(() => ({
   getUnitsPage: vi.fn(),
   getUnitIdsWithVisibleAttachments: vi.fn(),
   mergeDuplicateUnit: vi.fn(),
+  loadPendingUnitMerge: vi.fn((): unknown => null),
   waitForBgtaskCompletion: vi.fn(),
 }));
 
@@ -33,8 +34,12 @@ vi.mock('../../services/api/system-settings', () => ({
 }));
 
 vi.mock('../../services/api/bgtask', () => ({
+  BgtaskFailedError: class extends Error {},
+  clearPendingUnitMerge: vi.fn(),
   fetchBgtaskStatusAndLogs: vi.fn(),
   getBgtaskProgressFromPercent: vi.fn(),
+  loadPendingUnitMerge: api.loadPendingUnitMerge,
+  savePendingUnitMerge: vi.fn(),
   waitForBgtaskCompletion: api.waitForBgtaskCompletion,
 }));
 
@@ -136,6 +141,43 @@ describe('useRerUnitsPage loading', () => {
 });
 
 describe('useRerUnitsPage mutations', () => {
+  it('resumes a pending merge after navigation and stops polling on unmount', async () => {
+    const req = { limit: 20, offset: 0 } as ListUnitsReq;
+    api.getUnitsPage.mockResolvedValue({
+      units: [activeUnit, inactiveUnit],
+      totalCount: 2,
+      statusCounts: { active: 1, inactive: 1 },
+      showLoadMore: false,
+    });
+    api.getUnitIdsWithVisibleAttachments.mockResolvedValue([]);
+    api.loadPendingUnitMerge.mockReturnValueOnce({
+      taskId: 42,
+      original: activeUnit,
+      duplicate: inactiveUnit,
+    });
+    let finishTask: (() => void) | undefined;
+    api.waitForBgtaskCompletion.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishTask = resolve;
+        }),
+    );
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => root?.render(createElement(Harness, { req })));
+    expect(latestPage?.mergeTarget?.id).toBe(activeUnit.id);
+    expect(latestPage?.submitting).toBe(true);
+    expect(api.mergeDuplicateUnit).not.toHaveBeenCalled();
+    const signal = api.waitForBgtaskCompletion.mock.calls[0][2].signal as AbortSignal;
+
+    await act(async () => root?.unmount());
+    root = null;
+    expect(signal.aborted).toBe(true);
+    finishTask?.();
+  });
+
   it('keeps merge progress monotonic while waiting for the background task', async () => {
     const req = { limit: 20, offset: 0 } as ListUnitsReq;
     api.getUnitsPage.mockResolvedValue({

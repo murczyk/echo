@@ -31,6 +31,12 @@ mod merge_task;
 pub mod orbit;
 pub mod types;
 
+pub(crate) async fn recover_abandoned_merge_tasks(
+    dbx: &DatabaseConnection,
+) -> Result<bool, AppError> {
+    Ok(merge_task::recover_abandoned(dbx).await.c(h!())?)
+}
+
 pub fn unit_name(unit: &Unit) -> String {
     let unit_name = unit_name_from_hierarchy([
         &unit.other,
@@ -1299,6 +1305,16 @@ where
             msg: "new unit cannot be merged into itself".to_string(),
         });
     }
+    acquire_unit_merge_locks_for_ids(
+        dbx,
+        &duplicate_unit_ids
+            .iter()
+            .copied()
+            .chain(std::iter::once(unit_id))
+            .collect::<Vec<_>>(),
+    )
+    .await
+    .c(h!())?;
     for duplicate_unit_id in duplicate_unit_ids {
         merge_units_in_transaction(login, dbx, duplicate_unit_id, unit_id)
             .await
@@ -2053,13 +2069,23 @@ async fn acquire_unit_merge_locks<C>(
 where
     C: ConnectionTrait,
 {
-    let (lower_id, higher_id) = if unit_to_delete_id < original_id {
-        (unit_to_delete_id, original_id)
-    } else {
-        (original_id, unit_to_delete_id)
-    };
-    let lock_names = [format!("unit:{lower_id}"), format!("unit:{higher_id}")];
-    for lock_name in lock_names {
+    acquire_unit_merge_locks_for_ids(
+        transaction,
+        &[unit_to_delete_id, original_id],
+    )
+    .await
+    .c(h!())
+}
+
+pub(crate) async fn acquire_unit_merge_locks_for_ids<C>(
+    transaction: &C,
+    unit_ids: &[i64],
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    for unit_id in unit_ids.iter().copied().collect::<BTreeSet<_>>() {
+        let lock_name = format!("unit:{unit_id}");
         loop {
             let row = transaction
                 .query_one_raw(Statement::from_sql_and_values(
@@ -2424,9 +2450,16 @@ where
     C: ConnectionTrait,
 {
     for step in UnitReferenceStep::ALL {
-        swap_unit_references_step(step, old_unit_id, new_unit_id, login, dbx)
-            .await
-            .c(h!())?;
+        swap_unit_references_step(
+            step,
+            old_unit_id,
+            new_unit_id,
+            login,
+            dbx,
+            None,
+        )
+        .await
+        .c(h!())?;
     }
     Ok(())
 }
@@ -2437,58 +2470,67 @@ async fn swap_unit_references_step<C>(
     new_unit_id: i64,
     login: uuid::Uuid,
     dbx: &C,
-) -> anyhow::Result<()>
+    limit: Option<u64>,
+) -> anyhow::Result<u64>
 where
     C: ConnectionTrait,
 {
-    match step {
+    let moved = match step {
         UnitReferenceStep::Callsigns => {
-            move_unit_callsigns(old_unit_id, new_unit_id, login, dbx)
+            move_unit_callsigns(old_unit_id, new_unit_id, login, dbx, limit)
                 .await
                 .c(h!())?
         }
         UnitReferenceStep::Signals => {
-            move_unit_signals(old_unit_id, new_unit_id, login, dbx)
+            move_unit_signals(old_unit_id, new_unit_id, login, dbx, limit)
                 .await
                 .c(h!())?
         }
         UnitReferenceStep::NetworkUnits => {
-            move_unit_networks(old_unit_id, new_unit_id, login, dbx)
+            move_unit_networks(old_unit_id, new_unit_id, login, dbx, limit)
                 .await
                 .c(h!())?
         }
-        UnitReferenceStep::NetworkCallsigns => {
-            move_unit_network_callsigns(old_unit_id, new_unit_id, login, dbx)
-                .await
-                .c(h!())?
-        }
+        UnitReferenceStep::NetworkCallsigns => move_unit_network_callsigns(
+            old_unit_id,
+            new_unit_id,
+            login,
+            dbx,
+            limit,
+        )
+        .await
+        .c(h!())?,
         UnitReferenceStep::Attachments => {
-            move_unit_attachments(old_unit_id, new_unit_id, dbx)
+            move_unit_attachments(old_unit_id, new_unit_id, dbx, limit)
                 .await
                 .c(h!())?
         }
         UnitReferenceStep::Labels => {
-            move_unit_labels(old_unit_id, new_unit_id, dbx)
+            move_unit_labels(old_unit_id, new_unit_id, dbx, limit)
                 .await
                 .c(h!())?
         }
-        UnitReferenceStep::InboxLinks => {
-            move_inbox_item_unit_links(old_unit_id, new_unit_id, dbx)
-                .await
-                .c(h!())?
-        }
+        UnitReferenceStep::InboxLinks => move_inbox_item_unit_links(
+            old_unit_id,
+            new_unit_id,
+            dbx,
+            limit,
+            None,
+        )
+        .await
+        .c(h!())?,
         UnitReferenceStep::OrbitLinks => {
-            move_orbit_unit_links(old_unit_id, new_unit_id, dbx)
+            move_orbit_unit_links(old_unit_id, new_unit_id, dbx, limit)
                 .await
                 .c(h!())?
         }
         UnitReferenceStep::Devices => {
-            swap_unit_devices(old_unit_id, new_unit_id, dbx)
+            swap_unit_devices(old_unit_id, new_unit_id, dbx, limit)
                 .await
                 .c(h!())?
         }
-    }
-    Ok(())
+    };
+    Ok(moved)
 }
 
 async fn move_unit_callsigns<C>(
@@ -2496,15 +2538,19 @@ async fn move_unit_callsigns<C>(
     new_unit_id: i64,
     login: uuid::Uuid,
     dbx: &C,
-) -> anyhow::Result<()>
+    limit: Option<u64>,
+) -> anyhow::Result<u64>
 where
     C: ConnectionTrait,
 {
-    let callsigns = sigint_callsign::Entity::find()
+    let mut query = sigint_callsign::Entity::find()
         .filter(sigint_callsign::Column::UnitId.eq(old_unit_id))
-        .all(dbx)
-        .await
-        .context(h!())?;
+        .order_by_asc(sigint_callsign::Column::Id);
+    if let Some(limit) = limit {
+        query = query.limit(limit);
+    }
+    let callsigns = query.all(dbx).await.context(h!())?;
+    let moved = callsigns.len() as u64;
     for callsign in callsigns {
         let id = callsign.id;
         let json_old = sigint_callsign::Entity::find_by_id(id)
@@ -2538,7 +2584,7 @@ where
         .await
         .context(h!())?;
     }
-    Ok(())
+    Ok(moved)
 }
 
 async fn move_unit_signals<C>(
@@ -2546,15 +2592,19 @@ async fn move_unit_signals<C>(
     new_unit_id: i64,
     login: uuid::Uuid,
     dbx: &C,
-) -> anyhow::Result<()>
+    limit: Option<u64>,
+) -> anyhow::Result<u64>
 where
     C: ConnectionTrait,
 {
-    let signals = sigint_signal::Entity::find()
+    let mut query = sigint_signal::Entity::find()
         .filter(sigint_signal::Column::Unit.eq(old_unit_id))
-        .all(dbx)
-        .await
-        .context(h!())?;
+        .order_by_asc(sigint_signal::Column::Id);
+    if let Some(limit) = limit {
+        query = query.limit(limit);
+    }
+    let signals = query.all(dbx).await.context(h!())?;
+    let moved = signals.len() as u64;
     for signal in signals {
         let id = signal.id;
         let json_old = sigint_signal::Entity::find_by_id(id)
@@ -2590,7 +2640,7 @@ where
         .await
         .context(h!())?;
     }
-    Ok(())
+    Ok(moved)
 }
 
 async fn move_unit_networks<C>(
@@ -2598,15 +2648,19 @@ async fn move_unit_networks<C>(
     new_unit_id: i64,
     login: uuid::Uuid,
     dbx: &C,
-) -> anyhow::Result<()>
+    limit: Option<u64>,
+) -> anyhow::Result<u64>
 where
     C: ConnectionTrait,
 {
-    let network_units = sigint_network_unit::Entity::find()
+    let mut query = sigint_network_unit::Entity::find()
         .filter(sigint_network_unit::Column::UnitId.eq(old_unit_id))
-        .all(dbx)
-        .await
-        .context(h!())?;
+        .order_by_asc(sigint_network_unit::Column::Id);
+    if let Some(limit) = limit {
+        query = query.limit(limit);
+    }
+    let network_units = query.all(dbx).await.context(h!())?;
+    let moved = network_units.len() as u64;
     for network_unit in network_units {
         let id = network_unit.id;
         let json_old = sigint_network_unit::Entity::find_by_id(id)
@@ -2640,7 +2694,7 @@ where
         .await
         .context(h!())?;
     }
-    Ok(())
+    Ok(moved)
 }
 
 async fn move_unit_network_callsigns<C>(
@@ -2648,15 +2702,19 @@ async fn move_unit_network_callsigns<C>(
     new_unit_id: i64,
     login: uuid::Uuid,
     dbx: &C,
-) -> anyhow::Result<()>
+    limit: Option<u64>,
+) -> anyhow::Result<u64>
 where
     C: ConnectionTrait,
 {
-    let network_callsigns = sigint_network_callsign::Entity::find()
+    let mut query = sigint_network_callsign::Entity::find()
         .filter(sigint_network_callsign::Column::UnitId.eq(old_unit_id))
-        .all(dbx)
-        .await
-        .c(h!())?;
+        .order_by_asc(sigint_network_callsign::Column::Id);
+    if let Some(limit) = limit {
+        query = query.limit(limit);
+    }
+    let network_callsigns = query.all(dbx).await.c(h!())?;
+    let moved = network_callsigns.len() as u64;
     for network_callsign in network_callsigns {
         let id = network_callsign.id;
         let json_old = serde_json::to_value(&network_callsign).c(h!())?;
@@ -2681,62 +2739,101 @@ where
         .await
         .c(h!())?;
     }
-    Ok(())
+    Ok(moved)
 }
 
 async fn move_unit_attachments<C>(
     old_unit_id: i64,
     new_unit_id: i64,
     dbx: &C,
-) -> anyhow::Result<()>
+    limit: Option<u64>,
+) -> anyhow::Result<u64>
 where
     C: ConnectionTrait,
 {
-    sigint_unit_attachment::Entity::update_many()
+    let mut update = sigint_unit_attachment::Entity::update_many()
         .col_expr(
             sigint_unit_attachment::Column::UnitId,
             Expr::value(new_unit_id),
         )
-        .filter(sigint_unit_attachment::Column::UnitId.eq(old_unit_id))
-        .exec(dbx)
-        .await
-        .context(h!())?;
-    Ok(())
+        .filter(sigint_unit_attachment::Column::UnitId.eq(old_unit_id));
+    if let Some(limit) = limit {
+        let ids = sigint_unit_attachment::Entity::find()
+            .filter(sigint_unit_attachment::Column::UnitId.eq(old_unit_id))
+            .order_by_asc(sigint_unit_attachment::Column::Id)
+            .limit(limit)
+            .select_only()
+            .column(sigint_unit_attachment::Column::Id)
+            .into_tuple::<i64>()
+            .all(dbx)
+            .await
+            .c(h!())?;
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        update = update.filter(sigint_unit_attachment::Column::Id.is_in(ids));
+    }
+    let result = update.exec(dbx).await.context(h!())?;
+    Ok(result.rows_affected)
 }
 
 async fn move_unit_labels<C>(
     old_unit_id: i64,
     new_unit_id: i64,
     dbx: &C,
-) -> anyhow::Result<()>
+    limit: Option<u64>,
+) -> anyhow::Result<u64>
 where
     C: ConnectionTrait,
 {
-    sigint_unit_label::Entity::update_many()
+    let mut update = sigint_unit_label::Entity::update_many()
         .col_expr(
             sigint_unit_label::Column::SigintUnitId,
             Expr::value(new_unit_id),
         )
-        .filter(sigint_unit_label::Column::SigintUnitId.eq(old_unit_id))
-        .exec(dbx)
-        .await
-        .context(h!())?;
-    Ok(())
+        .filter(sigint_unit_label::Column::SigintUnitId.eq(old_unit_id));
+    if let Some(limit) = limit {
+        let ids = sigint_unit_label::Entity::find()
+            .filter(sigint_unit_label::Column::SigintUnitId.eq(old_unit_id))
+            .order_by_asc(sigint_unit_label::Column::Id)
+            .limit(limit)
+            .select_only()
+            .column(sigint_unit_label::Column::Id)
+            .into_tuple::<i64>()
+            .all(dbx)
+            .await
+            .c(h!())?;
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        update = update.filter(sigint_unit_label::Column::Id.is_in(ids));
+    }
+    let result = update.exec(dbx).await.context(h!())?;
+    Ok(result.rows_affected)
 }
 
 async fn move_inbox_item_unit_links<C>(
     old_unit_id: i64,
     new_unit_id: i64,
     dbx: &C,
-) -> anyhow::Result<()>
+    limit: Option<u64>,
+    link_ids: Option<&[i64]>,
+) -> anyhow::Result<u64>
 where
     C: ConnectionTrait,
 {
-    let links = sigint_inbox_item_unit::Entity::find()
+    let mut query = sigint_inbox_item_unit::Entity::find()
         .filter(sigint_inbox_item_unit::Column::UnitId.eq(old_unit_id))
-        .all(dbx)
-        .await
-        .context(h!())?;
+        .order_by_asc(sigint_inbox_item_unit::Column::Id);
+    if let Some(link_ids) = link_ids {
+        query = query.filter(
+            sigint_inbox_item_unit::Column::Id.is_in(link_ids.iter().copied()),
+        );
+    } else if let Some(limit) = limit {
+        query = query.limit(limit);
+    }
+    let links = query.all(dbx).await.context(h!())?;
+    let moved = links.len() as u64;
     for link in links {
         let duplicate = sigint_inbox_item_unit::Entity::find()
             .filter(sigint_inbox_item_unit::Column::ItemId.eq(link.item_id))
@@ -2753,50 +2850,77 @@ where
         link.unit_id = Set(new_unit_id);
         link.update(dbx).await.context(h!())?;
     }
-    Ok(())
+    Ok(moved)
 }
 
 async fn swap_unit_devices<C>(
     old_unit_id: i64,
     new_unit_id: i64,
     dbx: &C,
-) -> anyhow::Result<()>
+    limit: Option<u64>,
+) -> anyhow::Result<u64>
 where
     C: ConnectionTrait,
 {
-    device::Entity::update_many()
+    let mut update = device::Entity::update_many()
         .col_expr(device::Column::UnitId, Expr::value(Some(new_unit_id)))
         .col_expr(
             device::Column::UpdatedAt,
             Expr::value(Utc::now().naive_utc()),
         )
-        .filter(device::Column::UnitId.eq(old_unit_id))
-        .exec(dbx)
-        .await
-        .context(h!())?;
-    Ok(())
+        .filter(device::Column::UnitId.eq(old_unit_id));
+    if let Some(limit) = limit {
+        let ids = device::Entity::find()
+            .filter(device::Column::UnitId.eq(old_unit_id))
+            .order_by_asc(device::Column::Id)
+            .limit(limit)
+            .select_only()
+            .column(device::Column::Id)
+            .into_tuple::<uuid::Uuid>()
+            .all(dbx)
+            .await
+            .c(h!())?;
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        update = update.filter(device::Column::Id.is_in(ids));
+    }
+    let result = update.exec(dbx).await.context(h!())?;
+    Ok(result.rows_affected)
 }
 
 async fn move_orbit_unit_links<C>(
     old_unit_id: i64,
     new_unit_id: i64,
     dbx: &C,
-) -> anyhow::Result<()>
+    limit: Option<u64>,
+) -> anyhow::Result<u64>
 where
     C: ConnectionTrait,
 {
     if old_unit_id == new_unit_id {
-        return Ok(());
+        return Ok(0);
     }
-    let links = orbit_unit_sigint_unit::Entity::find()
+    let mut query = orbit_unit_sigint_unit::Entity::find()
         .filter(orbit_unit_sigint_unit::Column::SigintUnitId.eq(old_unit_id))
-        .all(dbx)
-        .await
-        .context(h!())?;
+        .order_by_asc(orbit_unit_sigint_unit::Column::OrbitUnitId);
+    if let Some(limit) = limit {
+        query = query.limit(limit);
+    }
+    let links = query.all(dbx).await.context(h!())?;
+    let moved = links.len() as u64;
+    let orbit_unit_ids = links
+        .iter()
+        .map(|link| link.orbit_unit_id)
+        .collect::<Vec<_>>();
     if !links.is_empty() {
         let existing_links = orbit_unit_sigint_unit::Entity::find()
             .filter(
                 orbit_unit_sigint_unit::Column::SigintUnitId.eq(new_unit_id),
+            )
+            .filter(
+                orbit_unit_sigint_unit::Column::OrbitUnitId
+                    .is_in(orbit_unit_ids.iter().copied()),
             )
             .all(dbx)
             .await
@@ -2834,12 +2958,20 @@ where
             .await
             .context(h!())?;
     }
-    orbit_unit_sigint_unit::Entity::delete_many()
-        .filter(orbit_unit_sigint_unit::Column::SigintUnitId.eq(old_unit_id))
-        .exec(dbx)
-        .await
-        .context(h!())?;
-    Ok(())
+    if !orbit_unit_ids.is_empty() {
+        orbit_unit_sigint_unit::Entity::delete_many()
+            .filter(
+                orbit_unit_sigint_unit::Column::SigintUnitId.eq(old_unit_id),
+            )
+            .filter(
+                orbit_unit_sigint_unit::Column::OrbitUnitId
+                    .is_in(orbit_unit_ids),
+            )
+            .exec(dbx)
+            .await
+            .context(h!())?;
+    }
+    Ok(moved)
 }
 
 async fn update_original_unit<C>(

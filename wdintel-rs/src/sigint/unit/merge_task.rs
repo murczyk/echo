@@ -1,6 +1,9 @@
 use super::*;
-use crate::config::SIGINT_UNIT_MERGE_ADVISORY_LOCK_NAMESPACE;
-use crate::delta::{bgtask_log, finish_bgtask};
+use crate::config::{
+    SIGINT_UNIT_MERGE_ADVISORY_LOCK_NAMESPACE, SIGINT_UNIT_MERGE_BATCH_SIZE,
+    SIGINT_UNIT_MERGE_TASK_MARKER,
+};
+use crate::delta::bgtask_log;
 
 pub(super) async fn start(
     env: &actix_web::web::Data<Env>,
@@ -16,7 +19,10 @@ pub(super) async fn start(
     let bgtask = bgtask::ActiveModel {
         id: NotSet,
         progress: Set(0),
-        loglines: Set(serde_json::json!([])),
+        loglines: Set(serde_json::json!([
+            format!("{SIGINT_UNIT_MERGE_TASK_MARKER}{unit_to_delete_id}:{original_id}"),
+            "Початок об’єднання"
+        ])),
         running: Set(true),
         finished_with_error: Set(None),
     }
@@ -29,7 +35,7 @@ pub(super) async fn start(
         let result =
             run(&env, login, unit_to_delete_id, original_id, bgtask_id).await;
         if let Err(error) =
-            finish_bgtask(Some(bgtask_id), &env.dbx, &result).await
+            finish_merge_task(&env.dbx, bgtask_id, &result).await
         {
             eprintln!(
                 "failed to finish unit merge task {bgtask_id}: {error:?}"
@@ -37,6 +43,96 @@ pub(super) async fn start(
         }
     });
     Ok(bgtask_id)
+}
+
+pub(super) async fn recover_abandoned(
+    dbx: &DatabaseConnection,
+) -> Result<bool, AppError> {
+    let tasks = bgtask::Entity::find()
+        .filter(bgtask::Column::Running.eq(true))
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let mut recovered_commit = false;
+    for task in tasks {
+        let Some((duplicate_id, survivor_id)) = task
+            .loglines
+            .as_array()
+            .and_then(|lines| lines.first())
+            .and_then(serde_json::Value::as_str)
+            .and_then(|line| line.strip_prefix(SIGINT_UNIT_MERGE_TASK_MARKER))
+            .and_then(|ids| ids.split_once(':'))
+            .and_then(|(duplicate_id, survivor_id)| {
+                Some((
+                    duplicate_id.parse::<i64>().ok()?,
+                    survivor_id.parse::<i64>().ok()?,
+                ))
+            })
+        else {
+            continue;
+        };
+        let duplicate = sigint_unit::Entity::find_by_id(duplicate_id)
+            .one(dbx)
+            .await
+            .c(h!())?;
+        let survivor = sigint_unit::Entity::find_by_id(survivor_id)
+            .one(dbx)
+            .await
+            .c(h!())?;
+        let merge_changelog = sigint_unit_changelog::Entity::find()
+            .filter(
+                sigint_unit_changelog::Column::SigintUnitId.eq(duplicate_id),
+            )
+            .filter(
+                sigint_unit_changelog::Column::Action.eq("delete_duplicate"),
+            )
+            .one(dbx)
+            .await
+            .c(h!())?;
+        let committed = merge_changelog
+            .as_ref()
+            .and_then(|change| change.new_value.as_ref())
+            .and_then(|value| value.get("id"))
+            .and_then(serde_json::Value::as_i64)
+            == Some(survivor_id)
+            && duplicate.is_some_and(|unit| unit.deleted)
+            && survivor.is_some_and(|unit| !unit.deleted);
+        let mut task = task.into_active_model();
+        task.running = Set(false);
+        if committed {
+            recovered_commit = true;
+            task.progress = Set(100);
+        } else {
+            task.finished_with_error = Set(Some(
+                "Об’єднання перервано перезапуском сервера. Повторіть об’єднання."
+                    .to_string(),
+            ));
+        }
+        task.update(dbx).await.c(h!())?;
+    }
+    Ok(recovered_commit)
+}
+
+async fn finish_merge_task(
+    dbx: &DatabaseConnection,
+    bgtask_id: i64,
+    result: &Result<(), AppError>,
+) -> Result<(), AppError> {
+    let bgtask = bgtask::Entity::find_by_id(bgtask_id)
+        .one(dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+    let mut bgtask = bgtask.into_active_model();
+    bgtask.running = Set(false);
+    match result {
+        Ok(()) => bgtask.progress = Set(100),
+        Err(error) => {
+            bgtask.finished_with_error = Set(Some(format!("{error:?}")))
+        }
+    }
+    bgtask.update(dbx).await.c(h!())?;
+    Ok(())
 }
 
 async fn run(
@@ -65,7 +161,14 @@ async fn run(
     }
     let result =
         run_locked(env, login, unit_to_delete_id, original_id, bgtask_id).await;
-    guard.rollback().await.c(h!())?;
+    let rollback = guard.rollback().await;
+    if result.is_ok() {
+        rollback.c(h!())?;
+    } else if let Err(error) = rollback {
+        eprintln!(
+            "failed to release unit merge lock after task error: {error:?}"
+        );
+    }
     result
 }
 
@@ -128,30 +231,62 @@ async fn move_step(
     original_id: i64,
     step: UnitReferenceStep,
 ) -> Result<(), AppError> {
-    let transaction = dbx.begin().await.c(h!())?;
-    find_units_for_merge(&transaction, unit_to_delete_id, original_id)
-        .await
-        .context(h!())?;
-    changelog::set_author(&transaction, &login).await.c(h!())?;
-    if step == UnitReferenceStep::InboxLinks {
-        crate::stats::enqueue_group_stats_recalculation_for_linked_unit(
-            &transaction,
-            unit_to_delete_id,
-            format!("merged unit {unit_to_delete_id} into {original_id}"),
-        )
-        .await
-        .c(h!())?;
+    loop {
+        let transaction = dbx.begin().await.c(h!())?;
+        find_units_for_merge(&transaction, unit_to_delete_id, original_id)
+            .await
+            .context(h!())?;
+        changelog::set_author(&transaction, &login).await.c(h!())?;
+        let batch_full = if step == UnitReferenceStep::InboxLinks {
+            let link_ids = sigint_inbox_item_unit::Entity::find()
+                .filter(
+                    sigint_inbox_item_unit::Column::UnitId
+                        .eq(unit_to_delete_id),
+                )
+                .order_by_asc(sigint_inbox_item_unit::Column::Id)
+                .limit(SIGINT_UNIT_MERGE_BATCH_SIZE)
+                .lock_exclusive()
+                .select_only()
+                .column(sigint_inbox_item_unit::Column::Id)
+                .into_tuple::<i64>()
+                .all(&transaction)
+                .await
+                .c(h!())?;
+            crate::stats::enqueue_group_stats_recalculation_for_unit_link_ids(
+                &transaction,
+                &link_ids,
+                format!("merged unit {unit_to_delete_id} into {original_id}"),
+            )
+            .await
+            .c(h!())?;
+            move_inbox_item_unit_links(
+                unit_to_delete_id,
+                original_id,
+                &transaction,
+                None,
+                Some(&link_ids),
+            )
+            .await
+            .c(h!())?;
+            link_ids.len() as u64 == SIGINT_UNIT_MERGE_BATCH_SIZE
+        } else {
+            swap_unit_references_step(
+                step,
+                unit_to_delete_id,
+                original_id,
+                login,
+                &transaction,
+                Some(SIGINT_UNIT_MERGE_BATCH_SIZE),
+            )
+            .await
+            .c(h!())?
+                == SIGINT_UNIT_MERGE_BATCH_SIZE
+        };
+        transaction.commit().await.c(h!())?;
+        if !batch_full {
+            break;
+        }
     }
-    swap_unit_references_step(
-        step,
-        unit_to_delete_id,
-        original_id,
-        login,
-        &transaction,
-    )
-    .await
-    .c(h!())?;
-    transaction.commit().await.c(h!())?;
     Ok(())
 }
 
@@ -272,6 +407,23 @@ mod tests {
         .insert(&env.dbx)
         .await
         .unwrap();
+        let orbit_unit_id = uuid::Uuid::new_v4();
+        orbit_unit::ActiveModel {
+            unit_id: Set(orbit_unit_id),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        orbit_unit_sigint_unit::ActiveModel {
+            orbit_unit_id: Set(orbit_unit_id),
+            sigint_unit_id: Set(duplicate.id),
+            is_manual: Set(true),
+            is_suppressed: Set(false),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
         let task = bgtask::ActiveModel {
             id: NotSet,
             progress: Set(0),
@@ -313,6 +465,22 @@ mod tests {
                 .unwrap(),
             1
         );
+        assert!(orbit_unit_sigint_unit::Entity::find_by_id((
+            orbit_unit_id,
+            survivor.id
+        ))
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .is_some());
+        assert!(orbit_unit_sigint_unit::Entity::find_by_id((
+            orbit_unit_id,
+            duplicate.id
+        ))
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .is_none());
         assert!(
             sigint_unit::Entity::find_by_id(duplicate.id)
                 .one(&env.dbx)
@@ -387,6 +555,21 @@ mod tests {
         .insert(&env.dbx)
         .await
         .unwrap();
+        let inbox_item = crate::functest::tests::mk_sigint_inbox_item(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let link = sigint_inbox_item_unit::ActiveModel {
+            item_id: Set(inbox_item.id),
+            unit_id: Set(duplicate.id),
+            kind: Set(crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind::Parsed),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
         assert!(!finalize(&env.dbx, login, duplicate.id, survivor.id)
             .await
             .unwrap());
@@ -399,9 +582,27 @@ mod tests {
         )
         .await
         .unwrap();
+        move_step(
+            &env.dbx,
+            login,
+            duplicate.id,
+            survivor.id,
+            UnitReferenceStep::InboxLinks,
+        )
+        .await
+        .unwrap();
         assert!(finalize(&env.dbx, login, duplicate.id, survivor.id)
             .await
             .unwrap());
+        assert_eq!(
+            sigint_inbox_item_unit::Entity::find_by_id(link.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .unit_id,
+            survivor.id
+        );
         assert_eq!(
             sigint_unit_label::Entity::find_by_id(second.id)
                 .one(&env.dbx)
@@ -419,5 +620,120 @@ mod tests {
                 .unwrap()
                 .deleted
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn staged_merge_batches_labels_and_reconciles_survivor() {
+        let env = cleanup().await.unwrap();
+        let login = crate::users::login_id_by_name(&env.dbx, "Tester")
+            .await
+            .unwrap();
+        let duplicate = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                regiment: Set("55 мбр".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let survivor = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Custom survivor".to_string()),
+                company: Set("1 рота".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for index in 0..=SIGINT_UNIT_MERGE_BATCH_SIZE {
+            sigint_unit_label::ActiveModel {
+                sigint_unit_id: Set(duplicate.id),
+                label: Set(format!("staged batch label {index}")),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+
+        move_step(
+            &env.dbx,
+            login,
+            duplicate.id,
+            survivor.id,
+            UnitReferenceStep::Labels,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            sigint_unit_label::Entity::find()
+                .filter(
+                    sigint_unit_label::Column::SigintUnitId.eq(duplicate.id)
+                )
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            0
+        );
+        let interrupted = bgtask::ActiveModel {
+            progress: Set(60),
+            loglines: Set(serde_json::json!([
+                format!(
+                    "{SIGINT_UNIT_MERGE_TASK_MARKER}{}:{}",
+                    duplicate.id, survivor.id
+                ),
+                "Перервано"
+            ])),
+            running: Set(true),
+            finished_with_error: Set(None),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        recover_abandoned(&env.dbx).await.unwrap();
+        let interrupted = bgtask::Entity::find_by_id(interrupted.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!interrupted.running);
+        assert!(interrupted.finished_with_error.is_some());
+
+        assert!(finalize(&env.dbx, login, duplicate.id, survivor.id)
+            .await
+            .unwrap());
+        let committed = bgtask::ActiveModel {
+            progress: Set(90),
+            loglines: Set(serde_json::json!([format!(
+                "{SIGINT_UNIT_MERGE_TASK_MARKER}{}:{}",
+                duplicate.id, survivor.id
+            )])),
+            running: Set(true),
+            finished_with_error: Set(None),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        recover_abandoned(&env.dbx).await.unwrap();
+        let committed = bgtask::Entity::find_by_id(committed.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!committed.running);
+        assert_eq!(committed.progress, 100);
+        assert!(committed.finished_with_error.is_none());
+        let survivor = sigint_unit::Entity::find_by_id(survivor.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(survivor.name, "Custom survivor");
+        assert_eq!(survivor.regiment, "55 мбр");
     }
 }

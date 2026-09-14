@@ -21,10 +21,15 @@ import {
 } from '../../services/api/units';
 import type { RequestOptions } from '../../services/api/client';
 import {
+  BgtaskFailedError,
+  clearPendingUnitMerge,
   fetchBgtaskStatusAndLogs,
   getBgtaskProgressFromPercent,
+  loadPendingUnitMerge,
+  savePendingUnitMerge,
   waitForBgtaskCompletion,
 } from '../../services/api/bgtask';
+import type { PendingUnitMerge } from '../../services/api/bgtask';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { hasRole } from '../../utils/roles';
 import type { UnitFormSubmit } from './components/UnitFormDrawer';
@@ -82,6 +87,7 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
   const [uploadingKmz, setUploadingKmz] = useState(false);
   const [kmzTask, setKmzTask] = useState<KmzTask | null>(null);
   const mutationRefreshController = useRef<AbortController | null>(null);
+  const mergePollController = useRef<AbortController | null>(null);
 
   const loadUnits = useCallback(
     async (options?: RequestOptions) => {
@@ -420,6 +426,35 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
     }
   }
 
+  async function trackMerge(pending: PendingUnitMerge) {
+    const controller = new AbortController();
+    mergePollController.current = controller;
+    try {
+      await waitForBgtaskCompletion(
+        pending.taskId,
+        (progress, logline) => {
+          setMergeProgress((current) => Math.max(current ?? 0, progress));
+          if (logline !== null) setMergeProgressLabel(logline);
+        },
+        { signal: controller.signal },
+      );
+      if (controller.signal.aborted) return;
+      clearPendingUnitMerge(pending.taskId);
+      await refreshUnitsAfterMutation(`Підрозділ «${pending.duplicate.name}» об’єднано.`);
+      if (controller.signal.aborted) return;
+      setMergeTarget(null);
+      setMergeProgress(null);
+      setMergeProgressLabel(null);
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      if (error instanceof BgtaskFailedError) clearPendingUnitMerge(pending.taskId);
+      setDialogError(formatUnitError(error));
+    } finally {
+      if (!controller.signal.aborted) setSubmitting(false);
+      if (mergePollController.current === controller) mergePollController.current = null;
+    }
+  }
+
   async function confirmMerge(duplicate: Unit) {
     if (mergeTarget === null) return;
     setSubmitting(true);
@@ -427,24 +462,39 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
     setMergeProgress(0);
     setMergeProgressLabel(null);
     try {
-      const taskId = await mergeDuplicateUnit({
-        originalId: mergeTarget.id,
-        cloneToDeleteId: duplicate.id,
-      });
-      await waitForBgtaskCompletion(taskId, (progress, logline) => {
-        setMergeProgress((current) => Math.max(current ?? 0, progress));
-        if (logline !== null) setMergeProgressLabel(logline);
-      });
-      await refreshUnitsAfterMutation(`Підрозділ «${duplicate.name}» об’єднано.`);
-      setMergeTarget(null);
-      setMergeProgress(null);
-      setMergeProgressLabel(null);
+      let pending = loadPendingUnitMerge();
+      if (
+        pending !== null &&
+        (pending.original.id !== mergeTarget.id || pending.duplicate.id !== duplicate.id)
+      ) {
+        throw new Error('Інше об’єднання ще виконується. Завершіть його перед новим.');
+      }
+      if (pending === null) {
+        const taskId = await mergeDuplicateUnit({
+          originalId: mergeTarget.id,
+          cloneToDeleteId: duplicate.id,
+        });
+        pending = { taskId, original: mergeTarget, duplicate };
+        savePendingUnitMerge(pending);
+      }
+      await trackMerge(pending);
     } catch (error) {
       setDialogError(formatUnitError(error));
-    } finally {
       setSubmitting(false);
     }
   }
+
+  useEffect(() => {
+    const pending = loadPendingUnitMerge();
+    if (pending !== null) {
+      setMergeTarget(pending.original);
+      setSubmitting(true);
+      setMergeProgress(0);
+      setMergeProgressLabel(null);
+      void trackMerge(pending);
+    }
+    return () => mergePollController.current?.abort();
+  }, []);
 
   async function uploadKmz(file: File) {
     setUploadingKmz(true);

@@ -1446,6 +1446,20 @@ pub async fn main_server(
     let env = init_runtime_env(mode, crate::PgRuntimePoolRole::Web)
         .await
         .c(h!())?;
+    let recovered_merge =
+        crate::sigint::unit::recover_abandoned_merge_tasks(&env.dbx)
+            .await
+            .c(h!())?;
+    if recovered_merge {
+        let event = crate::event_stream::types::EventMsg::new(
+            crate::event_stream::types::EventType::ETUnitChanged,
+        );
+        if let Err(error) =
+            crate::event_stream::fanout(&mut env.redis.clone(), event).await
+        {
+            warn!("failed to publish recovered unit merge change: {error:?}");
+        }
+    }
     let config = env.config.clone();
 
     let redis_session_store =

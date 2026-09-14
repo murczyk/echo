@@ -270,7 +270,47 @@ pub async fn enqueue_group_stats_recalculation_for_linked_unit<'a, C>(
 where
     C: ConnectionTrait + 'a,
 {
-    let master_keys = sigint_inbox_item_unit::Entity::find()
+    Ok(enqueue_group_stats_recalculation_for_unit_links(
+        dbx,
+        Some(unit_id),
+        None,
+        reason,
+    )
+    .await
+    .c(h!())?)
+}
+
+pub async fn enqueue_group_stats_recalculation_for_unit_link_ids<'a, C>(
+    dbx: &'a C,
+    link_ids: &[i64],
+    reason: String,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait + 'a,
+{
+    if link_ids.is_empty() {
+        return Ok(false);
+    }
+    Ok(enqueue_group_stats_recalculation_for_unit_links(
+        dbx,
+        None,
+        Some(link_ids),
+        reason,
+    )
+    .await
+    .c(h!())?)
+}
+
+async fn enqueue_group_stats_recalculation_for_unit_links<'a, C>(
+    dbx: &'a C,
+    unit_id: Option<i64>,
+    link_ids: Option<&[i64]>,
+    reason: String,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait + 'a,
+{
+    let mut query = sigint_inbox_item_unit::Entity::find()
         .join(
             JoinType::InnerJoin,
             sigint_inbox_item_unit::Relation::SigintInboxItem.def(),
@@ -283,9 +323,18 @@ where
             JoinType::InnerJoin,
             signal_message::Relation::SignalMessageGroup.def(),
         )
-        .filter(sigint_inbox_item_unit::Column::UnitId.eq(unit_id))
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(signal_message_group::Column::GroupMasterKey.is_not_null())
+        .filter(signal_message_group::Column::GroupMasterKey.is_not_null());
+    if let Some(unit_id) = unit_id {
+        query =
+            query.filter(sigint_inbox_item_unit::Column::UnitId.eq(unit_id));
+    }
+    if let Some(link_ids) = link_ids {
+        query = query.filter(
+            sigint_inbox_item_unit::Column::Id.is_in(link_ids.iter().copied()),
+        );
+    }
+    let master_keys = query
         .select_only()
         .column(signal_message_group::Column::GroupMasterKey)
         .distinct()
@@ -4017,6 +4066,25 @@ mod tests {
                 (inactive_unit.id, 1),
             ]
         );
+        let link_id = sigint_inbox_item_unit::Entity::find()
+            .filter(sigint_inbox_item_unit::Column::ItemId.eq(inbox_item_id))
+            .filter(sigint_inbox_item_unit::Column::UnitId.eq(active_unit.id))
+            .filter(
+                sigint_inbox_item_unit::Column::Kind
+                    .eq(SigintInboxItemUnitKind::Parsed),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        assert!(enqueue_group_stats_recalculation_for_unit_link_ids(
+            &env.dbx,
+            &[link_id],
+            "moved linked unit batch".to_string(),
+        )
+        .await
+        .unwrap());
         assert!(enqueue_group_stats_recalculation_for_linked_unit(
             &env.dbx,
             active_unit.id,
