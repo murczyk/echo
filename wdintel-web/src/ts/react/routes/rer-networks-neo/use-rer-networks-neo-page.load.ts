@@ -72,6 +72,7 @@ type LoadArgs = {
   setNetworks: Dispatch<SetStateAction<Network[]>>;
   setActivityByNetworkId: Dispatch<SetStateAction<ActivityByNetworkId>>;
   setActivityLoadStateByNetworkId: Dispatch<SetStateAction<ActivityLoadStateByNetworkId>>;
+  setLastActivityLoadStateByNetworkId: Dispatch<SetStateAction<ActivityLoadStateByNetworkId>>;
   setBootstrapLoaded: Dispatch<SetStateAction<boolean>>;
 };
 
@@ -203,10 +204,20 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
           for (const networkId of requestedNetworkIds) next.set(networkId, 'loading');
           return next;
         });
+        args.setLastActivityLoadStateByNetworkId((current) => {
+          const next = new Map(current);
+          for (const networkId of requestedNetworkIds) {
+            next.set(networkId, 'loaded');
+          }
+          return next;
+        });
       } else {
         args.setActivityByNetworkId(new Map());
         args.setActivityLoadStateByNetworkId(
           new Map(requestedNetworkIds.map((networkId) => [networkId, 'loading'])),
+        );
+        args.setLastActivityLoadStateByNetworkId(
+          new Map(requestedNetworkIds.map((networkId) => [networkId, 'loaded'])),
         );
       }
 
@@ -371,6 +382,13 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
         args.setActivityLoadStateByNetworkId((current) => {
           const next = new Map(current);
           for (const networkId of requestedNetworkIds) next.set(networkId, 'loading');
+          return next;
+        });
+        args.setLastActivityLoadStateByNetworkId((current) => {
+          const next = new Map(current);
+          for (const networkId of requestedNetworkIds) {
+            next.set(networkId, 'loaded');
+          }
           return next;
         });
         loadActivity(requestedNetworkIds, args.activityQueryGenerationRef.current);

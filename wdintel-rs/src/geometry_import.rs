@@ -3,14 +3,11 @@ use crate::types::ShortContext;
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::name::ResolveResult;
 use quick_xml::NsReader as XmlReader;
-use std::fs::File;
-use std::io::{self, Read, Seek};
 use std::path::Path;
 use tempfile::tempdir;
 use tokio::fs;
 use tokio::task;
 use walkdir::WalkDir;
-use zip::ZipArchive;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ImportedCoordinate {
@@ -95,62 +92,29 @@ async fn parse_kmz_file(
 }
 
 fn extract_archive(path: &Path, extract_to: &Path) -> anyhow::Result<()> {
-    let archive_file = File::open(path).c(h!())?;
-    let mut archive = ZipArchive::new(archive_file)
-        .map_err(|error| io::Error::other(format!("Zip error: {error:?}")))
-        .c(h!())?;
-    validate_archive_limits(
-        &mut archive,
+    crate::utils::zip::unzip_to_limited(
+        path,
+        extract_to,
         crate::config::BATTLE_LINE_KMZ_MAX_ENTRIES,
         crate::config::BATTLE_LINE_KMZ_MAX_EXTRACTED_BYTES,
     )
-    .c(h!())?;
-    archive
-        .extract(extract_to)
-        .map_err(|error| {
-            io::Error::other(format!("Extraction error: {error:?}"))
-        })
-        .c(h!())?;
-    Ok(())
-}
-
-fn validate_archive_limits<R>(
-    archive: &mut ZipArchive<R>,
-    maximum_entries: usize,
-    maximum_extracted_bytes: u64,
-) -> anyhow::Result<()>
-where
-    R: Read + Seek,
-{
-    if archive.len() > maximum_entries {
-        anyhow::bail!(
-            "KMZ contains {} entries; the limit is {maximum_entries}",
-            archive.len()
-        );
-    }
-    let mut extracted_bytes = 0_u64;
-    for index in 0..archive.len() {
-        let entry = archive
-            .by_index(index)
-            .map_err(|error| {
-                io::Error::other(format!("Zip entry error: {error:?}"))
-            })
-            .c(h!())?;
-        extracted_bytes = extracted_bytes.checked_add(entry.size()).c(h!())?;
-        if extracted_bytes > maximum_extracted_bytes {
-            anyhow::bail!(
-                "KMZ expands to more than the {maximum_extracted_bytes} byte limit"
-            );
-        }
-    }
-    Ok(())
+    .c(h!())
 }
 
 async fn parse_kml_file(
     path: &Path,
 ) -> anyhow::Result<ParsedPointLineFeatures> {
-    let input = fs::read_to_string(path).await.c(h!())?;
-    parse_kml_geometry(&input).c(h!())
+    let bytes = fs::read(path).await.c(h!())?;
+    let input = std::str::from_utf8(&bytes)
+        .map_err(|error| crate::error::AppError::BL {
+            msg: format!("Invalid KML encoding: {error}"),
+        })
+        .c(h!())?;
+    parse_kml_geometry(input)
+        .map_err(|error| crate::error::AppError::BL {
+            msg: format!("Invalid KML geometry: {error}"),
+        })
+        .c(h!())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -551,8 +515,10 @@ pub fn parse_kml_coordinates_lenient(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::zip::validate_archive_limits;
     use std::io::{Cursor, Write};
     use zip::write::SimpleFileOptions;
+    use zip::ZipArchive;
 
     #[test]
     fn parses_kml_coordinate_order() {

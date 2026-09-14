@@ -111,6 +111,8 @@ pub struct Env {
     pub dbx: sea_orm::DatabaseConnection,
     pub echo_gpu_client: Arc<echo_gpu_client::EchoGpuClient>,
     pub file_registry_db: Option<FileRegistryDb>,
+    pub(crate) device_file_content:
+        Option<Arc<crate::devices::files::content::DeviceFileContentRuntime>>,
     /// GreptimeDB connection via Postgresql driver
     pub greptimedb: Arc<RwLock<Option<deadpool_postgres::Pool>>>,
     pub rq: reqwest::Client,

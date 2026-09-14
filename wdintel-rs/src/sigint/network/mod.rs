@@ -35,6 +35,8 @@ use sqlx::FromRow;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use time::{Duration as TimeDuration, PrimitiveDateTime};
 
+pub(crate) mod activity_backfill;
+pub(crate) mod activity_cache;
 pub(crate) mod activity_decision;
 pub(crate) mod analytics;
 pub mod bl;
@@ -78,31 +80,24 @@ pub async fn network_list(
     )
     .await?;
     let user_id = login_id_from_identity(&user)?;
-    let access = load_network_render_access(&env.dbx, &user_id)
-        .await
-        .context(h!())?;
-
     let text_search_mode =
         resolve_network_text_search_mode(&env.dbx, &req).await?;
     let networks = build_networks_query_with_text_search_mode(
         &req,
         NetworkQueryKind::List,
         text_search_mode,
-        &access.activity_groups,
     )
     .all(&env.dbx)
     .await
     .context(h!())?;
 
-    let res = render_networks_with_options(
-        networks,
-        &env.dbx,
-        &user_id,
-        &access,
-        network_list_render_options(&req),
-    )
-    .await
-    .context(h!())?;
+    let access = load_network_render_access(&env.dbx, &user_id)
+        .await
+        .context(h!())?;
+    let res =
+        render_networks_with_access(networks, &env.dbx, &user_id, &access)
+            .await
+            .context(h!())?;
 
     let status_counts = load_network_status_counts(&env.dbx, &req).await?;
 
@@ -112,19 +107,55 @@ pub async fn network_list(
     }))
 }
 
-fn network_list_render_options(req: &ListNetworksReq) -> NetworkRenderOptions {
-    let include_last_activity = req.sort_by.as_ref().is_some_and(|sorts| {
-        sorts.iter().any(|sort| {
-            matches!(
-                sort,
-                ListNetworksSortBy::LastActivityAsc
-                    | ListNetworksSortBy::LastActivityDesc
-            )
-        })
-    });
-    NetworkRenderOptions {
-        include_last_activity,
+#[post("/api/sigint/network-last-activity")]
+pub async fn network_last_activity(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<NetworkLastActivityReq>,
+) -> Result<Json<Vec<NetworkLastActivityRow>>, AppError> {
+    let user_id = login_id_from_identity(&user).context(h!())?;
+    has_any_role(&env.dbx, &user_id, vec!["Rer", "Api", "ApiAgent"])
+        .await
+        .context(h!())?;
+    if req.network_ids.len() > NETWORK_LAST_ACTIVITY_BATCH_MAX_NETWORKS {
+        return Err(AppError::BL {
+            msg: "Too many network IDs".to_string(),
+        });
     }
+    let mut seen = HashSet::new();
+    let network_ids = req
+        .network_ids
+        .iter()
+        .copied()
+        .filter(|network_id| seen.insert(*network_id))
+        .collect::<Vec<_>>();
+    let last_activity = sigint_network::Entity::find()
+        .filter(sigint_network::Column::Id.is_in(network_ids))
+        .select_only()
+        .columns([
+            sigint_network::Column::Id,
+            sigint_network::Column::LastActiveAt,
+        ])
+        .into_tuple::<(i64, Option<NaiveDateTime>)>()
+        .all(&env.dbx)
+        .await
+        .context(h!())?
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+    Ok(Json(
+        req.network_ids
+            .iter()
+            .map(|network_id| NetworkLastActivityRow {
+                network_id: *network_id,
+                last_activity_at: last_activity.get(network_id).and_then(
+                    |timestamp| {
+                        timestamp
+                            .map(|value| value.and_utc().timestamp_millis())
+                    },
+                ),
+            })
+            .collect(),
+    ))
 }
 
 #[derive(Copy, Clone, Eq, PartialEq)]
@@ -142,7 +173,6 @@ fn build_networks_query(
         req,
         kind,
         NetworkTextSearchMode::Substring,
-        &["test-group".to_string()],
     )
 }
 
@@ -150,7 +180,6 @@ fn build_networks_query_with_text_search_mode(
     req: &ListNetworksReq,
     kind: NetworkQueryKind,
     text_search_mode: NetworkTextSearchMode,
-    activity_groups: &[String],
 ) -> Select<sigint_network::Entity> {
     let mut query = sigint_network::Entity::find();
     query = apply_network_list_filters_with_text_search_mode(
@@ -161,11 +190,7 @@ fn build_networks_query_with_text_search_mode(
     );
 
     if matches!(kind, NetworkQueryKind::List) {
-        query = sort::apply_network_sorts(
-            query,
-            req.sort_by.as_ref(),
-            activity_groups,
-        );
+        query = sort::apply_network_sorts(query, req.sort_by.as_ref());
 
         let has_filters = req.filter_freq.is_some()
             || req.filter_text.is_some()
@@ -235,7 +260,6 @@ fn build_networks_counts_query_with_text_search_mode(
         req,
         NetworkQueryKind::Counts,
         text_search_mode,
-        &[],
     )
     .select_only()
     .column_as(
@@ -565,15 +589,9 @@ pub async fn network_info_batch_id(
     let access = load_network_render_access(&txn, &user_id)
         .await
         .context(h!())?;
-    let res = render_networks_with_options(
-        networks,
-        &txn,
-        &user_id,
-        &access,
-        NetworkRenderOptions::lookup(),
-    )
-    .await
-    .context(h!())?;
+    let res = render_networks_with_access(networks, &txn, &user_id, &access)
+        .await
+        .context(h!())?;
     txn.commit().await.context(h!())?;
     Ok(Json(res))
 }
@@ -1106,6 +1124,7 @@ pub async fn create_network(
         merged_to: NotSet,
         active_from: Set(active_from),
         active_to: Set(active_to),
+        last_active_at: NotSet,
         do_not_archive: Set(req.do_not_archive),
         unit_mask: Set(serde_json::to_value(unit_mask).context(h!())?),
         sigint_origin_id: NotSet,
@@ -5879,25 +5898,39 @@ mod tests {
         assert!(!sql.contains("LIMIT"));
     }
 
-    #[test]
-    fn list_query_sorts_by_last_activity_with_stable_secondary_keys() {
+    #[tokio::test]
+    #[serial]
+    async fn list_query_sorts_by_global_last_activity() {
+        let env = cleanup().await.unwrap();
+        let recent_at = Utc::now().naive_utc();
+        let recent = mk_sigint_network(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                last_active_at: Set(Some(recent_at)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inactive = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
         let mut req = empty_list_networks_req();
         req.sort_by = Some(vec![ListNetworksSortBy::LastActivityDesc]);
+        req.ids = Some(vec![recent.id, inactive.id]);
 
-        let sql = build_networks_query(&req, NetworkQueryKind::List)
-            .build(DbBackend::Postgres)
-            .to_string();
+        let networks = build_networks_query(&req, NetworkQueryKind::List)
+            .all(&env.dbx)
+            .await
+            .unwrap();
 
-        assert!(sql.contains("SELECT MAX(activity_at)"));
-        assert!(sql.contains(
-            "datasource_group.group_master_key = ANY(ARRAY ['test-group'])"
-        ));
-        assert!(sql.contains("ORDER BY inbox_item.datetime DESC LIMIT 1"));
-        assert!(sql.contains("ORDER BY signal_message.timestamp DESC LIMIT 1"));
-        assert!(sql.contains("ORDER BY signal_message.created_at DESC LIMIT 1"));
-        assert!(sql.contains("DESC"));
-        assert!(sql.contains("\"sigint_network\".\"name\" ASC"));
-        assert!(sql.contains("\"sigint_network\".\"id\" ASC"));
+        assert_eq!(
+            networks
+                .into_iter()
+                .map(|network| network.id)
+                .collect::<Vec<_>>(),
+            vec![recent.id, inactive.id]
+        );
     }
 
     #[test]
@@ -6061,7 +6094,6 @@ mod tests {
             &req,
             NetworkQueryKind::List,
             text_search_mode,
-            &[],
         )
         .all(&env.dbx)
         .await
@@ -6096,7 +6128,6 @@ mod tests {
             &req,
             NetworkQueryKind::List,
             text_search_mode,
-            &[],
         )
         .all(&env.dbx)
         .await
@@ -6143,7 +6174,6 @@ mod tests {
             &req,
             NetworkQueryKind::List,
             text_search_mode,
-            &[],
         )
         .all(&env.dbx)
         .await
@@ -6161,7 +6191,6 @@ mod tests {
             &req,
             NetworkQueryKind::List,
             text_search_mode,
-            &[],
         )
         .all(&env.dbx)
         .await
@@ -6261,7 +6290,6 @@ mod tests {
             &req,
             NetworkQueryKind::List,
             text_search_mode,
-            &[],
         )
         .all(&env.dbx)
         .await
@@ -6305,7 +6333,6 @@ mod tests {
             &req,
             NetworkQueryKind::List,
             text_search_mode,
-            &[],
         )
         .all(&env.dbx)
         .await
@@ -6341,7 +6368,6 @@ mod tests {
             &req,
             NetworkQueryKind::List,
             text_search_mode,
-            &[],
         )
         .all(&env.dbx)
         .await

@@ -83,6 +83,7 @@ export const NETWORK_COLUMN_FILTER_IDS = ['network', 'aors', 'freqs', 'location'
 type NetworkColumnFilterId = (typeof NETWORK_COLUMN_FILTER_IDS)[number];
 export const ACTIVITY_BAR_MIN_HEIGHT = 6;
 export const ACTIVITY_BAR_VISIBLE_MIN_HEIGHT = 8;
+export const RECENT_NETWORK_ACTIVITY_WINDOW_MS = 15 * 60 * 1000;
 export const ACTIVITY_BAR_MAX_HEIGHT = 34;
 export const NETWORK_STATUS_ACTIVE_COLOR = '#54c06c';
 export const NETWORK_STATUS_INACTIVE_COLOR = '#bfbfbf';
@@ -195,6 +196,7 @@ export function buildNetworkRowView(
   aorsById: Map<number, AreaOfResponsibility>,
   activityByNetworkId: Map<number, Record<string, Record<string, number>>>,
   activityLoadStateByNetworkId: ActivityLoadStateByNetworkId = new Map(),
+  lastActivityLoadStateByNetworkId: ActivityLoadStateByNetworkId = new Map(),
 ): NetworkRowView {
   const status = getNetworkStatusDescriptor(network);
   const unitLabels = (network.unitIds ?? [])
@@ -209,10 +211,26 @@ export function buildNetworkRowView(
   const inactiveFrequencies = network.freqs
     .filter((freq) => freq.deleted || freq.activeTo !== null)
     .filter((freq) => freq.freq.trim() !== '');
-  const lastActivityLabel = formatDateTime(network.lastActivityAt);
-  const lastActivityDetail = isPresent(network.lastActivityAt)
-    ? 'Останнє перехоплення'
-    : 'Немає перехоплень';
+  const lastActivityLoadState = lastActivityLoadStateByNetworkId.get(network.id);
+  const activityAgeMs = isPresent(network.lastActivityAt)
+    ? Date.now() - network.lastActivityAt
+    : null;
+  const lastActivityLabel =
+    lastActivityLoadState === 'loading'
+      ? 'Завантаження…'
+      : lastActivityLoadState === 'error'
+        ? 'Не вдалося завантажити'
+        : activityAgeMs !== null &&
+            activityAgeMs >= 0 &&
+            activityAgeMs <= RECENT_NETWORK_ACTIVITY_WINDOW_MS
+          ? 'Активна останні 15хв'
+          : formatDateTime(network.lastActivityAt);
+  const lastActivityDetail =
+    lastActivityLoadState === 'loading' || lastActivityLoadState === 'error'
+      ? ''
+      : isPresent(network.lastActivityAt)
+        ? 'Останнє перехоплення'
+        : 'Немає перехоплень';
 
   return {
     id: network.id,
@@ -230,7 +248,10 @@ export function buildNetworkRowView(
     activityLoadState: activityLoadStateByNetworkId.get(network.id) ?? 'loading',
     lastActivityLabel,
     lastActivityDetail,
-    lastActivityTooltip: `${lastActivityDetail}: ${lastActivityLabel}`,
+    lastActivityTooltip:
+      lastActivityDetail && isPresent(network.lastActivityAt)
+        ? `${lastActivityDetail}: ${formatDateTime(network.lastActivityAt)}`
+        : lastActivityLabel,
     createdAtLabel: formatDate(network.createdAt),
   };
 }

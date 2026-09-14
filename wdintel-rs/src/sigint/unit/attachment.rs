@@ -27,7 +27,6 @@ use actix_multipart::{Field, Multipart};
 use actix_web::http::header;
 use actix_web::web::{Data, Json};
 use actix_web::{post, HttpResponse};
-use futures_util::StreamExt;
 use sea_orm::*;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
@@ -35,7 +34,7 @@ use std::time::Duration;
 struct AttachmentUploadFile {
     file_name: String,
     content_type: String,
-    bytes: Vec<u8>,
+    bytes: actix_web::web::Bytes,
 }
 
 struct AttachmentUpload {
@@ -131,10 +130,19 @@ pub async fn upload_unit_attachment(
         err
     })?;
     validate_upload_target(&env.dbx, upload.unit_id, &upload.aor_ids).await?;
+    store_attachment_upload(&env, &login, upload)
+        .await
+        .map(Json)
+}
 
+async fn store_attachment_upload(
+    env: &Env,
+    login: &uuid::Uuid,
+    upload: AttachmentUpload,
+) -> Result<UnitAttachment, AppError> {
     let storage_key = crate::messenger::media::store_asset(
-        &env,
-        &upload.file.bytes,
+        env,
+        upload.file.bytes.clone(),
         Some(&upload.file.file_name),
         Some(&upload.file.content_type),
     )
@@ -150,13 +158,13 @@ pub async fn upload_unit_attachment(
         err
     })?;
 
-    match insert_attachment(&env, &login, upload, storage_key.clone()).await {
-        Ok(attachment) => Ok(Json(attachment)),
+    let stored = UploadedUnitAttachment::new(env, storage_key.clone());
+    match insert_attachment(env, login, upload, stored).await {
+        Ok(attachment) => Ok(attachment),
         Err(err) => {
             error!(
                 "failed to save unit attachment metadata: storage_key={storage_key}: {err:#?}"
             );
-            delete_stored_asset_best_effort(&env, &storage_key).await;
             Err(err)
         }
     }
@@ -520,7 +528,7 @@ async fn insert_attachment(
     env: &Env,
     login: &uuid::Uuid,
     upload: AttachmentUpload,
-    storage_key: String,
+    stored: UploadedUnitAttachment,
 ) -> Result<UnitAttachment, AppError> {
     let txn = env.dbx.begin().await.c(h!())?;
     let aors =
@@ -531,7 +539,7 @@ async fn insert_attachment(
         file_name: Set(upload.file.file_name),
         content_type: Set(upload.file.content_type),
         size_bytes: Set(i64::try_from(upload.file.bytes.len()).c(h!())?),
-        storage_key: Set(storage_key),
+        storage_key: Set(stored.key.as_ref().unwrap().clone()),
         short_description: Set(upload.short_description),
         full_description: Set(upload.full_description),
         created_by_login_id: Set(*login),
@@ -554,7 +562,7 @@ async fn insert_attachment(
         .exec(&txn)
         .await
         .c(h!())?;
-    txn.commit().await.c(h!())?;
+    commit_attachment_upload(txn, stored).await.c(h!())?;
 
     Ok(render_attachment(
         attachment,
@@ -655,7 +663,7 @@ async fn parse_attachment_upload(
     let mut aor_ids = None;
     let mut file = None;
 
-    while let Some(item) = payload.next().await {
+    while let Some(item) = crate::utils::multipart::next(&mut payload).await? {
         let mut field = item.map_err(|err| AppError::BL {
             msg: format!("Multipart error: {err:?}"),
         })?;
@@ -783,7 +791,7 @@ async fn read_upload_file(
     Ok(AttachmentUploadFile {
         file_name,
         content_type,
-        bytes,
+        bytes: bytes.into(),
     })
 }
 
@@ -793,7 +801,7 @@ async fn read_field_bytes(
     field_name: &str,
 ) -> Result<Vec<u8>, AppError> {
     let mut bytes = Vec::new();
-    while let Some(chunk) = field.next().await {
+    while let Some(chunk) = crate::utils::multipart::next(field).await? {
         let chunk = chunk.map_err(|err| AppError::BL {
             msg: format!("Multipart error: {err:?}"),
         })?;
@@ -955,6 +963,58 @@ fn attachment_download_response(
         .body(bytes)
 }
 
+struct UploadedUnitAttachment {
+    env: Env,
+    key: Option<String>,
+}
+
+impl UploadedUnitAttachment {
+    fn new(env: &Env, key: String) -> Self {
+        Self {
+            env: env.clone(),
+            key: Some(key),
+        }
+    }
+}
+
+impl Drop for UploadedUnitAttachment {
+    fn drop(&mut self) {
+        let Some(key) = self.key.take() else {
+            return;
+        };
+        let env = self.env.clone();
+        match tokio::runtime::Handle::try_current() {
+            Ok(runtime) => {
+                runtime.spawn(async move {
+                    delete_stored_asset_best_effort(&env, &key).await;
+                });
+            }
+            Err(error) => {
+                error!(
+                    "cannot clean unpublished unit attachment {key}: {error}"
+                );
+            }
+        }
+    }
+}
+
+async fn commit_attachment_upload(
+    txn: DatabaseTransaction,
+    mut stored: UploadedUnitAttachment,
+) -> anyhow::Result<()> {
+    tokio::spawn(async move {
+        // A missing COMMIT acknowledgement cannot prove the object is unreferenced.
+        let key = stored.key.take().unwrap();
+        if let Err(error) = txn.commit().await {
+            warn!("unit attachment COMMIT outcome is unknown; retaining {key}: {error:?}");
+            return Err(error).c(h!());
+        }
+        Ok(())
+    })
+    .await
+    .c(h!())?
+}
+
 async fn delete_stored_asset_best_effort(env: &Env, storage_key: &str) {
     let (Some(s3), Some(s3_config)) = (&env.s3, &env.s3_config) else {
         return;
@@ -986,6 +1046,328 @@ mod tests {
         parent_aor: area_of_responsibility::Model,
         child_aor: area_of_responsibility::Model,
         unrelated_aor: area_of_responsibility::Model,
+    }
+
+    struct UploadFixture {
+        env: Env,
+        login: uuid::Uuid,
+        unit_id: i64,
+        aor_id: i64,
+    }
+
+    impl UploadFixture {
+        async fn new() -> Self {
+            let env = cleanup().await.unwrap();
+            let mut env = env.as_ref().clone();
+            let login = find_test_login(&env.dbx).await.unwrap().id;
+            let aor_id = find_test_aor(&env.dbx).await.unwrap().id;
+            let unit_id = mk_sigint_unit(
+                &env.dbx,
+                sigint_unit::ActiveModel {
+                    created_by_login_id: Set(login),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap()
+            .id;
+            let config = crate::config::S3Config {
+                s3_access_key_id: "test".into(),
+                s3_secret_access_key: "test".into(),
+                s3_endpoint: String::new(),
+                s3_region: String::new(),
+                s3_bucket: "unit-attachment-upload-test".into(),
+                strongbox_key: crate::storage::generate_strongbox_key_b64(),
+            };
+            env.s3_config = Some(crate::storage::S3Config::from(&config));
+            env.config.s3_config = Some(config);
+            env.s3 = Some(
+                opendal::Operator::new(opendal::services::Memory::default())
+                    .unwrap()
+                    .finish(),
+            );
+            Self {
+                env,
+                login,
+                unit_id,
+                aor_id,
+            }
+        }
+
+        fn upload(&self) -> AttachmentUpload {
+            AttachmentUpload {
+                unit_id: self.unit_id,
+                aor_ids: vec![self.aor_id],
+                short_description: "upload recovery".into(),
+                full_description: "upload recovery test".into(),
+                file: AttachmentUploadFile {
+                    file_name: "recovery.txt".into(),
+                    content_type: "text/plain".into(),
+                    bytes: actix_web::web::Bytes::from_static(
+                        b"attachment bytes",
+                    ),
+                },
+            }
+        }
+
+        async fn object_keys(&self) -> Vec<String> {
+            self.env
+                .s3
+                .as_ref()
+                .unwrap()
+                .list_with("/")
+                .recursive(true)
+                .await
+                .unwrap()
+                .into_iter()
+                .filter(|entry| entry.metadata().is_file())
+                .map(|entry| entry.path().to_owned())
+                .collect()
+        }
+
+        async fn wait_for_objects(&self, count: usize) {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while self.object_keys().await.len() != count {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .unwrap();
+        }
+    }
+
+    async fn backend_pid(txn: &DatabaseTransaction) -> i32 {
+        txn.query_one_raw(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "SELECT pg_backend_pid() AS pid",
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get("", "pid")
+        .unwrap()
+    }
+
+    async fn wait_for_blocked_query(env: &Env, blocker: i32) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let waiting: bool = env.dbx.query_one_raw(
+                    Statement::from_sql_and_values(DatabaseBackend::Postgres,
+                        "SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND $1 = ANY(pg_blocking_pids(pid))) AS waiting",
+                        [blocker.into()],
+                    ),
+                ).await.unwrap().unwrap().try_get("", "waiting").unwrap();
+                if waiting { return; }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn cancelled_attachment_insert_removes_object_and_retry_preserves_content(
+    ) {
+        let fixture = UploadFixture::new().await;
+        let blocker = fixture.env.dbx.begin().await.unwrap();
+        blocker
+            .execute_unprepared(
+                "LOCK TABLE sigint_unit_attachment IN SHARE MODE",
+            )
+            .await
+            .unwrap();
+        let blocker_pid = backend_pid(&blocker).await;
+        let env = fixture.env.clone();
+        let login = fixture.login;
+        let upload = fixture.upload();
+        let request = tokio::spawn(async move {
+            store_attachment_upload(&env, &login, upload).await
+        });
+        wait_for_blocked_query(&fixture.env, blocker_pid).await;
+        assert_eq!(fixture.object_keys().await.len(), 1);
+        request.abort();
+        assert!(request.await.unwrap_err().is_cancelled());
+        blocker.rollback().await.unwrap();
+        fixture.wait_for_objects(0).await;
+        assert_eq!(
+            sigint_unit_attachment::Entity::find()
+                .filter(
+                    sigint_unit_attachment::Column::UnitId.eq(fixture.unit_id)
+                )
+                .count(&fixture.env.dbx)
+                .await
+                .unwrap(),
+            0
+        );
+
+        let attachment = store_attachment_upload(
+            &fixture.env,
+            &fixture.login,
+            fixture.upload(),
+        )
+        .await
+        .unwrap();
+        let saved = sigint_unit_attachment::Entity::find_by_id(attachment.id)
+            .one(&fixture.env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            fixture.object_keys().await,
+            vec![fixture
+                .env
+                .s3_config
+                .as_ref()
+                .unwrap()
+                .prefixed_key(&saved.storage_key),]
+        );
+        let bytes = crate::storage::download_and_decrypt_messenger_media_from_s3_with_operator(
+            &fixture.env.s3,
+            &fixture.env.s3_config,
+            &fixture.env.config.s3_config.as_ref().unwrap().strongbox_key,
+            &saved.storage_key,
+        ).await.unwrap();
+        assert_eq!(bytes, b"attachment bytes");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn attachment_insert_failure_cleans_object_but_commit_failure_retains_it(
+    ) {
+        let fixture = UploadFixture::new().await;
+        assert!(store_attachment_upload(
+            &fixture.env,
+            &uuid::Uuid::new_v4(),
+            fixture.upload(),
+        )
+        .await
+        .is_err());
+        fixture.wait_for_objects(0).await;
+
+        let key = "commit-outcome-unknown".to_owned();
+        let remote = fixture.env.s3_config.as_ref().unwrap().prefixed_key(&key);
+        fixture
+            .env
+            .s3
+            .as_ref()
+            .unwrap()
+            .write(&remote, "retain me")
+            .await
+            .unwrap();
+        let txn = fixture.env.dbx.begin().await.unwrap();
+        let pid = backend_pid(&txn).await;
+        let terminated: bool = fixture
+            .env
+            .dbx
+            .query_one_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "SELECT pg_terminate_backend($1, 5000) AS terminated",
+                [pid.into()],
+            ))
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get("", "terminated")
+            .unwrap();
+        assert!(terminated);
+        let result = commit_attachment_upload(
+            txn,
+            UploadedUnitAttachment::new(&fixture.env, key),
+        )
+        .await;
+        assert!(result.is_err());
+        assert_eq!(
+            fixture
+                .env
+                .s3
+                .as_ref()
+                .unwrap()
+                .read(&remote)
+                .await
+                .unwrap()
+                .to_bytes(),
+            "retain me"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn cancelled_attachment_commit_finishes_and_retains_referenced_object(
+    ) {
+        let fixture = UploadFixture::new().await;
+        let key = "cancelled-commit".to_owned();
+        let remote = fixture.env.s3_config.as_ref().unwrap().prefixed_key(&key);
+        fixture
+            .env
+            .s3
+            .as_ref()
+            .unwrap()
+            .write(&remote, "committed bytes")
+            .await
+            .unwrap();
+        let blocker = fixture.env.dbx.begin().await.unwrap();
+        let blocker_pid = backend_pid(&blocker).await;
+        blocker
+            .execute_unprepared("SELECT pg_advisory_xact_lock(7829130645)")
+            .await
+            .unwrap();
+        let txn = fixture.env.dbx.begin().await.unwrap();
+        txn.execute_unprepared(r#"
+CREATE TEMP TABLE attachment_commit_barrier (id integer) ON COMMIT DROP;
+CREATE OR REPLACE FUNCTION pg_temp.wait_attachment_commit() RETURNS trigger
+LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock(7829130645); RETURN NEW; END $$;
+CREATE CONSTRAINT TRIGGER attachment_commit_wait AFTER INSERT ON attachment_commit_barrier
+DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION pg_temp.wait_attachment_commit();
+INSERT INTO attachment_commit_barrier VALUES (1);
+"#).await.unwrap();
+        let attachment = sigint_unit_attachment::ActiveModel {
+            unit_id: Set(fixture.unit_id),
+            file_name: Set("commit.txt".into()),
+            content_type: Set("text/plain".into()),
+            size_bytes: Set(15),
+            storage_key: Set(key.clone()),
+            short_description: Set("commit".into()),
+            full_description: Set("commit cancellation".into()),
+            created_by_login_id: Set(fixture.login),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        let stored = UploadedUnitAttachment::new(&fixture.env, key);
+        let request = tokio::spawn(commit_attachment_upload(txn, stored));
+        wait_for_blocked_query(&fixture.env, blocker_pid).await;
+        request.abort();
+        assert!(request.await.unwrap_err().is_cancelled());
+        assert!(sigint_unit_attachment::Entity::find_by_id(attachment.id)
+            .one(&fixture.env.dbx)
+            .await
+            .unwrap()
+            .is_none());
+        blocker.rollback().await.unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while sigint_unit_attachment::Entity::find_by_id(attachment.id)
+                .one(&fixture.env.dbx)
+                .await
+                .unwrap()
+                .is_none()
+            {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            fixture
+                .env
+                .s3
+                .as_ref()
+                .unwrap()
+                .read(&remote)
+                .await
+                .unwrap()
+                .to_bytes(),
+            "committed bytes"
+        );
     }
 
     async fn create_test_aor(

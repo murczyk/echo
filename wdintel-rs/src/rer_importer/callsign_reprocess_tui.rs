@@ -553,6 +553,7 @@ async fn process_next_item(
         .unwrap_or_default();
     let inbox_item_id = inbox_item.id;
     let recomputed = match recompute_inbox_item_callsigns(
+        db,
         rq,
         &inbox_item,
         message.as_ref(),

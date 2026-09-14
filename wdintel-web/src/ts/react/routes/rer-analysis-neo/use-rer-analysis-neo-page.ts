@@ -88,6 +88,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   );
   const [centerTab, setCenterTabState] = useState<AnalysisCenterTab>('messages');
   const [error, setError] = useState<string | null>(null);
+  const [directMessageError, setDirectMessageError] = useState<string | null>(null);
   const [leftPanelOpen, setLeftPanelOpen] = useState(
     () => initialPanelQueryState.leftPanelOpen ?? !isStackedFiltersLayout,
   );
@@ -192,12 +193,13 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
             removeMessageUidFromWindowUrl();
           } else {
             setTargetMessageContextActive(false);
-            setPageError('Не вдалося знайти повідомлення за посиланням.');
+            setDirectMessageError('Повідомлення за посиланням не знайдено або воно недоступне.');
           }
           if (!isContextRefresh) setTargetMessageContextLoading(false);
           setTargetMessageContextResponsePending(false);
           return;
         }
+        setDirectMessageError(null);
         targetMessageLoadedRef.current = true;
         targetMessageIdRef.current = res.targetMessageId;
         const targetMessage = res.inbox.inboxItems.find(
@@ -226,7 +228,9 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
         targetMessageContextSawReloadRef.current = false;
         setTargetMessageContextLoading(false);
         setTargetMessageContextResponsePending(false);
-        setPageError(`Не вдалося відкрити повідомлення за посиланням: ${toErrorMessage(err)}`);
+        setDirectMessageError(
+          `Не вдалося відкрити повідомлення за посиланням: ${toErrorMessage(err)}`,
+        );
       })
       .finally(() => {
         if (!cancelled) setTargetMessageLoading(false);
@@ -234,7 +238,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     return () => {
       cancelled = true;
     };
-  }, [directMessageWindowQueryState, setPageError, targetMessageContextActive, targetMessageUid]);
+  }, [directMessageWindowQueryState, targetMessageContextActive, targetMessageUid]);
 
   const clearTargetMessageFocus = useCallback(() => {
     setTargetMessageFocusActive(false);
@@ -962,6 +966,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     correlatedFreqsLoading: data.correlatedFreqsLoading,
     counts: data.counts,
     countsLoading: data.countsLoading,
+    directMessageError,
     editorMessage: editor.editorMessage,
     editorEditAsReport: editor.editorEditAsReport,
     editTargetLoadState: editor.editTargetLoadState,

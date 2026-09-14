@@ -113,7 +113,9 @@ pub(super) async fn automatic(
     }
     let batch =
         insert_batch_and_items(&transaction, sync_id, 0, files, now).await?;
-    process_pending_items(&transaction, device_id, sync_id, 0, metrics).await?;
+    let stale_upload_count =
+        process_pending_items(&transaction, device_id, sync_id, 0, metrics)
+            .await?;
     let batch = finalize_batch(&transaction, batch).await?;
     let sync =
         finalize_automatic_session(&transaction, sync_id, &batch).await?;
@@ -121,6 +123,7 @@ pub(super) async fn automatic(
         .await
         .map_err(map_database)?;
     transaction.commit().await.map_err(map_infrastructure)?;
+    record_stale_uploads(metrics, stale_upload_count);
 
     let results = load_results(file_db, sync_id, Some(0), None, None).await?;
     let results = hydrate_results(file_db, results)
@@ -404,7 +407,7 @@ async fn process_explicit_items(
     let session = lock_session(&transaction, sync_id).await?;
     ensure_open_explicit(&session)?;
     let batch = load_batch(&transaction, sync_id, batch_index).await?;
-    if batch.status == DbBatchStatus::Processing {
+    let stale_upload_count = if batch.status == DbBatchStatus::Processing {
         process_pending_items(
             &transaction,
             session.device_id,
@@ -412,9 +415,13 @@ async fn process_explicit_items(
             batch_index,
             metrics,
         )
-        .await?;
-    }
-    transaction.commit().await.map_err(map_infrastructure)
+        .await?
+    } else {
+        0
+    };
+    transaction.commit().await.map_err(map_infrastructure)?;
+    record_stale_uploads(metrics, stale_upload_count);
+    Ok(())
 }
 
 async fn process_pending_items(
@@ -423,7 +430,7 @@ async fn process_pending_items(
     sync_id: Uuid,
     batch_index: i32,
     metrics: Option<&Metrics>,
-) -> Result<(), SyncServiceError> {
+) -> Result<u64, SyncServiceError> {
     let pending = file_sync_item::Entity::find()
         .filter(file_sync_item::Column::Id.eq(sync_id))
         .filter(file_sync_item::Column::BatchIndex.eq(batch_index))
@@ -434,8 +441,14 @@ async fn process_pending_items(
         .await
         .map_err(map_database)?;
     super::mutation::apply_sync_items(transaction, device_id, pending, metrics)
-        .await?;
-    Ok(())
+        .await
+        .map_err(Into::into)
+}
+
+fn record_stale_uploads(metrics: Option<&Metrics>, count: u64) {
+    if let Some(metrics) = metrics {
+        metrics.record_device_file_content_terminal_count("stale", count);
+    }
 }
 
 async fn insert_session<C: ConnectionTrait>(

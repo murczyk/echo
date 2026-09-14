@@ -1,8 +1,38 @@
 import type { ReactNode } from 'react';
 
+import type { SignalGroupEntry } from '../../../../../Bindings';
+import { MessageReferenceLink } from './MessageReferenceLink';
+
 const URL_RE = /https?:\/\/[^\s<>"'`]+/gi;
 const TRAILING_PUNCTUATION_RE = /[.,;:!?]+$/;
 const TRAILING_CLOSER_RE = /[)\]}]+$/;
+const MESSAGE_REFERENCE_PATHS = new Set(['/rer-analysis-neo', '/rer-duty-neo']);
+const EMPTY_GROUP_INFOS: Record<string, SignalGroupEntry> = {};
+
+type LinkifiedTextOptions = {
+  currentOrigin?: string;
+  groupInfos?: Record<string, SignalGroupEntry>;
+};
+
+export function parseMessageReferenceUrl(
+  candidate: string,
+  currentOrigin: string,
+): { messageIdentifier: string } | null {
+  try {
+    const url = new URL(candidate);
+    const messageIdentifier = url.searchParams.get('m')?.trim();
+    if (
+      url.origin !== currentOrigin ||
+      !MESSAGE_REFERENCE_PATHS.has(url.pathname) ||
+      !messageIdentifier
+    ) {
+      return null;
+    }
+    return { messageIdentifier };
+  } catch {
+    return null;
+  }
+}
 
 function countOccurrences(text: string, needle: string): number {
   if (needle === '') return 0;
@@ -53,7 +83,7 @@ function toSafeUrl(candidate: string): string | null {
   }
 }
 
-export function renderLinkifiedText(text: string): ReactNode[] {
+export function renderLinkifiedText(text: string, options: LinkifiedTextOptions = {}): ReactNode[] {
   if (text === '') return [];
 
   const renderedNodes: ReactNode[] = [];
@@ -72,21 +102,33 @@ export function renderLinkifiedText(text: string): ReactNode[] {
     if (safeUrl == null) {
       renderedNodes.push(rawUrl);
     } else {
+      const currentOrigin =
+        options.currentOrigin ?? (typeof window === 'undefined' ? '' : window.location.origin);
+      const messageReference = parseMessageReferenceUrl(safeUrl, currentOrigin);
       renderedNodes.push(
-        <a
-          key={`${matchIndex}:${safeUrl}`}
-          href={safeUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            color: 'var(--color-action)',
-            textDecoration: 'underline',
-            textDecorationThickness: '1px',
-            textUnderlineOffset: '2px',
-          }}
-        >
-          {url}
-        </a>,
+        messageReference == null ? (
+          <a
+            key={`${matchIndex}:${safeUrl}`}
+            href={safeUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              color: 'var(--color-action)',
+              textDecoration: 'underline',
+              textDecorationThickness: '1px',
+              textUnderlineOffset: '2px',
+            }}
+          >
+            {url}
+          </a>
+        ) : (
+          <MessageReferenceLink
+            key={`${matchIndex}:${safeUrl}`}
+            href={safeUrl}
+            messageIdentifier={messageReference.messageIdentifier}
+            groupInfos={options.groupInfos ?? EMPTY_GROUP_INFOS}
+          />
+        ),
       );
       if (suffix !== '') renderedNodes.push(suffix);
     }

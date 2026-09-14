@@ -10,6 +10,7 @@ export default defineConfig({
     dedupe: ['react', 'react-dom'],
   },
   optimizeDeps: {
+    entries: ['src/interop.ts'],
     include: ['react', 'react-dom', '@mui/material', '@mui/icons-material', 'fabric'],
   },
 });

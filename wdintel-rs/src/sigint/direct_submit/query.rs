@@ -1607,6 +1607,19 @@ async fn copy_inbox_networks<C>(
 where
     C: ConnectionTrait,
 {
+    let old_freq_ids =
+        crate::sigint::network::recalculation::load_freq_ids_for_message_links(
+            dbx,
+            &[target_inbox_item_id],
+        )
+        .await
+        .c(h!())?;
+    crate::rer_importer::inbox::invalidate_message_network_frequency_last_seen(
+        dbx,
+        target_inbox_item_id,
+    )
+    .await
+    .c(h!())?;
     let source = crate::entities::sigint_inbox_item_network::Entity::find()
         .filter(
             crate::entities::sigint_inbox_item_network::Column::SigintInboxItemId
@@ -1653,6 +1666,19 @@ where
         .await
         .c(h!())?;
     }
+    let new_freq_ids =
+        crate::sigint::network::recalculation::load_freq_ids_for_message_links(
+            dbx,
+            &[target_inbox_item_id],
+        )
+        .await
+        .c(h!())?;
+    crate::sigint::network::recalculation::enqueue_last_seen_for_freq_ids(
+        dbx,
+        old_freq_ids.into_iter().chain(new_freq_ids),
+    )
+    .await
+    .c(h!())?;
     Ok(())
 }
 

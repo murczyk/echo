@@ -22,6 +22,7 @@ import type {
   ContentNode,
   InboxMessage,
   Network,
+  SignalGroupEntry,
   Unit,
 } from '../../../../../Bindings';
 import { normalizeCallsignLookupValue } from '../../../utils/callsign-normalization';
@@ -597,6 +598,7 @@ export function renderMarkedText(
     callsignInfoMap?: Record<string, CallsignInfoRes>;
     networks?: Network[];
     unitsMap?: Record<number, Unit>;
+    messageLinkGroupInfos?: Record<string, SignalGroupEntry>;
     freq?: string | null;
     networkIds?: number[] | null;
     searchText?: string | null;
@@ -624,7 +626,13 @@ export function renderMarkedText(
     }
 
     if ('CNTextC' in node) {
-      renderedNodes.push(<span key={i}>{renderLinkifiedText(node.CNTextC.text)}</span>);
+      renderedNodes.push(
+        <span key={i}>
+          {renderLinkifiedText(node.CNTextC.text, {
+            groupInfos: options?.messageLinkGroupInfos,
+          })}
+        </span>,
+      );
       continue;
     }
 

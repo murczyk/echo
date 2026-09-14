@@ -36,6 +36,7 @@ pub struct Model {
     pub do_not_archive: bool,
     #[sea_orm(column_type = "JsonBinary")]
     pub unit_mask: Json,
+    pub last_active_at: Option<DateTime>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
