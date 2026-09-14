@@ -4,7 +4,7 @@
   "inventories": {
     "main": 2752,
     "head": 2584,
-    "current": 2353,
+    "current": 2457,
     "relocated": 1444,
     "genuinelyRemoved": 555,
     "incoming": 5
@@ -2678,13 +2678,12 @@
       "originalFile": "src/ts/react/device-details-page-element.spec.tsx",
       "identity": "device-details-page custom element > updates sync capability when roles change",
       "subsystem": "react-entrypoints-and-utilities",
-      "disposition": "retained-and-moved",
-      "reason": "User-visible administration or maintenance workspace interaction safeguard.",
+      "disposition": "removed-non-contractual-detail",
+      "reason": "This isolated role-update rendering sequence did not exercise an independently observable failure outcome.",
       "behaviorReference": "admin-workspace-interaction-integrity",
       "userVisibleOrAppearance": "user-visible",
       "originatingEchoReference": null,
-      "recoveryStatus": "audited-retained",
-      "recoveredTestFile": "src/ts/react/__tests__/device-details-page-element.spec.tsx"
+      "recoveryStatus": "audited-removed"
     },
     {
       "originalFile": "src/ts/react/devices-page-element.spec.tsx",
@@ -4364,25 +4363,23 @@
       "originalFile": "src/ts/react/routes/device-files/components/DeviceFileSyncDialog.spec.tsx",
       "identity": "DeviceFileSyncDialog > freezes accepted rows and keeps rejected fields correctable",
       "subsystem": "device-files",
-      "disposition": "retained-and-moved",
-      "reason": "User-visible device workspace interaction safeguard.",
+      "disposition": "removed-documented-behavior",
+      "reason": "The Device Files behavior contract now records the accepted/rejected row recovery requirement.",
       "behaviorReference": "device-workspace-interaction-integrity",
       "userVisibleOrAppearance": "user-visible",
       "originatingEchoReference": null,
-      "recoveryStatus": "audited-retained",
-      "recoveredTestFile": "src/ts/react/routes/device-files/components/__tests__/DeviceFileSyncDialog.spec.tsx"
+      "recoveryStatus": "audited-removed"
     },
     {
       "originalFile": "src/ts/react/routes/device-files/components/DeviceFileSyncDialog.spec.tsx",
       "identity": "DeviceFileSyncDialog > shows transport uncertainty without presenting an automatic retry",
       "subsystem": "device-files",
-      "disposition": "retained-and-moved",
-      "reason": "User-visible device workspace interaction safeguard.",
+      "disposition": "removed-documented-behavior",
+      "reason": "The Device Files behavior contract now records transport uncertainty and manual recovery.",
       "behaviorReference": "device-workspace-interaction-integrity",
       "userVisibleOrAppearance": "user-visible",
       "originatingEchoReference": null,
-      "recoveryStatus": "audited-retained",
-      "recoveredTestFile": "src/ts/react/routes/device-files/components/__tests__/DeviceFileSyncDialog.spec.tsx"
+      "recoveryStatus": "audited-removed"
     },
     {
       "originalFile": "src/ts/react/routes/device-files/components/DeviceFileTree.spec.tsx",
@@ -4530,61 +4527,56 @@
       "originalFile": "src/ts/react/routes/device-files/use-device-files.sync.spec.tsx",
       "identity": "useDeviceFilesSync > blocks duplicate submit and row mutation while a request is in flight",
       "subsystem": "device-files",
-      "disposition": "retained-and-moved",
-      "reason": "User-visible device workspace interaction safeguard.",
+      "disposition": "removed-documented-behavior",
+      "reason": "The Device Files behavior contract records the in-flight mutation lock.",
       "behaviorReference": "device-workspace-interaction-integrity",
       "userVisibleOrAppearance": "user-visible",
       "originatingEchoReference": null,
-      "recoveryStatus": "audited-retained",
-      "recoveredTestFile": "src/ts/react/routes/device-files/__tests__/use-device-files.sync.spec.tsx"
+      "recoveryStatus": "audited-removed"
     },
     {
       "originalFile": "src/ts/react/routes/device-files/use-device-files.sync.spec.tsx",
       "identity": "useDeviceFilesSync > blocks mutations after sync capability is revoked",
       "subsystem": "device-files",
-      "disposition": "retained-and-moved",
-      "reason": "User-visible device workspace interaction safeguard.",
+      "disposition": "removed-documented-behavior",
+      "reason": "The Device Files behavior contract records capability revocation before mutation.",
       "behaviorReference": "device-workspace-interaction-integrity",
       "userVisibleOrAppearance": "user-visible",
       "originatingEchoReference": null,
-      "recoveryStatus": "audited-retained",
-      "recoveredTestFile": "src/ts/react/routes/device-files/__tests__/use-device-files.sync.spec.tsx"
+      "recoveryStatus": "audited-removed"
     },
     {
       "originalFile": "src/ts/react/routes/device-files/use-device-files.sync.spec.tsx",
       "identity": "useDeviceFilesSync > does not retry an uncertain transport failure automatically",
       "subsystem": "device-files",
-      "disposition": "retained-and-moved",
-      "reason": "User-visible device workspace interaction safeguard.",
+      "disposition": "removed-documented-behavior",
+      "reason": "The Device Files behavior contract records that uncertain transport failures are not retried automatically.",
       "behaviorReference": "device-workspace-interaction-integrity",
       "userVisibleOrAppearance": "user-visible",
       "originatingEchoReference": null,
-      "recoveryStatus": "audited-retained",
-      "recoveredTestFile": "src/ts/react/routes/device-files/__tests__/use-device-files.sync.spec.tsx"
+      "recoveryStatus": "audited-removed"
     },
     {
       "originalFile": "src/ts/react/routes/device-files/use-device-files.sync.spec.tsx",
       "identity": "useDeviceFilesSync > freezes submit indices and resubmits only rejected rows",
       "subsystem": "device-files",
-      "disposition": "retained-and-moved",
-      "reason": "User-visible device workspace interaction safeguard.",
+      "disposition": "removed-documented-behavior",
+      "reason": "The Device Files behavior contract records frozen submit indices and rejected-row resubmission.",
       "behaviorReference": "device-workspace-interaction-integrity",
       "userVisibleOrAppearance": "user-visible",
       "originatingEchoReference": null,
-      "recoveryStatus": "audited-retained",
-      "recoveredTestFile": "src/ts/react/routes/device-files/__tests__/use-device-files.sync.spec.tsx"
+      "recoveryStatus": "audited-removed"
     },
     {
       "originalFile": "src/ts/react/routes/device-files/use-device-files.sync.spec.tsx",
       "identity": "useDeviceFilesSync > submits the exact Windows path without a path-syntax selector",
       "subsystem": "device-files",
-      "disposition": "retained-and-moved",
-      "reason": "User-visible device workspace interaction safeguard.",
+      "disposition": "removed-documented-behavior",
+      "reason": "The Device Files behavior contract records exact path preservation without a syntax selector.",
       "behaviorReference": "device-workspace-interaction-integrity",
       "userVisibleOrAppearance": "user-visible",
       "originatingEchoReference": null,
-      "recoveryStatus": "audited-retained",
-      "recoveredTestFile": "src/ts/react/routes/device-files/__tests__/use-device-files.sync.spec.tsx"
+      "recoveryStatus": "audited-removed"
     },
     {
       "originalFile": "src/ts/react/routes/devices/components/DevicesTable.spec.tsx",
@@ -14941,17 +14933,20 @@
     {
       "identity": "device file sync helpers > binds top-level field errors and marks only transport failures uncertain",
       "from": "src/ts/react/routes/device-files/helpers.spec.ts",
-      "to": "src/ts/react/routes/device-files/__tests__/helpers.spec.ts"
+      "to": "src/ts/react/routes/device-files/__tests__/helpers.spec.ts",
+      "removedInFinalAudit": true
     },
     {
       "identity": "device file sync helpers > creates an existing-file row from canonical backend fields",
       "from": "src/ts/react/routes/device-files/helpers.spec.ts",
-      "to": "src/ts/react/routes/device-files/__tests__/helpers.spec.ts"
+      "to": "src/ts/react/routes/device-files/__tests__/helpers.spec.ts",
+      "removedInFinalAudit": true
     },
     {
       "identity": "device file sync helpers > maps ordered accepted and rejected results to the frozen submit snapshot",
       "from": "src/ts/react/routes/device-files/helpers.spec.ts",
-      "to": "src/ts/react/routes/device-files/__tests__/helpers.spec.ts"
+      "to": "src/ts/react/routes/device-files/__tests__/helpers.spec.ts",
+      "removedInFinalAudit": true
     },
     {
       "identity": "device file sync helpers > preserves %s rejection codes",
@@ -18717,7 +18712,8 @@
     {
       "identity": "rer-networks-neo AOR filters > builds activity bars from backend day keys and anchors the range at the latest day",
       "from": "src/ts/react/routes/rer-networks-neo/helpers.spec.ts",
-      "to": "src/ts/react/routes/rer-networks-neo/__tests__/helpers.spec.ts"
+      "to": "src/ts/react/routes/rer-networks-neo/__tests__/helpers.spec.ts",
+      "removedInFinalAudit": true
     },
     {
       "identity": "rer-networks-neo AOR filters > builds the backend status count request without a status chip filter",
@@ -19482,27 +19478,32 @@
     {
       "identity": "image editor raster operations #3099 > blurs an expanded source canvas and crops it back to selected native bounds",
       "from": "src/ts/react/routes/shared/image-editor/image-editor-raster.spec.ts",
-      "to": "src/ts/react/routes/shared/image-editor/__tests__/image-editor-raster.spec.ts"
+      "to": "src/ts/react/routes/shared/image-editor/__tests__/image-editor-raster.spec.ts",
+      "removedInFinalAudit": true
     },
     {
       "identity": "image editor raster operations #3099 > composites an overlapping concealment into a later regional patch #3099",
       "from": "src/ts/react/routes/shared/image-editor/image-editor-raster.spec.ts",
-      "to": "src/ts/react/routes/shared/image-editor/__tests__/image-editor-raster.spec.ts"
+      "to": "src/ts/react/routes/shared/image-editor/__tests__/image-editor-raster.spec.ts",
+      "removedInFinalAudit": true
     },
     {
       "identity": "image editor raster operations #3099 > pixelates the complete normalized selection at native scale #3099",
       "from": "src/ts/react/routes/shared/image-editor/image-editor-raster.spec.ts",
-      "to": "src/ts/react/routes/shared/image-editor/__tests__/image-editor-raster.spec.ts"
+      "to": "src/ts/react/routes/shared/image-editor/__tests__/image-editor-raster.spec.ts",
+      "removedInFinalAudit": true
     },
     {
       "identity": "image editor raster operations #3099 > redacts the complete normalized selection once #3099",
       "from": "src/ts/react/routes/shared/image-editor/image-editor-raster.spec.ts",
-      "to": "src/ts/react/routes/shared/image-editor/__tests__/image-editor-raster.spec.ts"
+      "to": "src/ts/react/routes/shared/image-editor/__tests__/image-editor-raster.spec.ts",
+      "removedInFinalAudit": true
     },
     {
       "identity": "image editor raster operations #3099 > rejects an over-budget raster operation before mutating the canvas #3099",
       "from": "src/ts/react/routes/shared/image-editor/image-editor-raster.spec.ts",
-      "to": "src/ts/react/routes/shared/image-editor/__tests__/image-editor-raster.spec.ts"
+      "to": "src/ts/react/routes/shared/image-editor/__tests__/image-editor-raster.spec.ts",
+      "removedInFinalAudit": true
     },
     {
       "identity": "image editor bounded source validation #3294 > bounds streamed responses even without an honest content length",
@@ -20039,7 +20040,8 @@
     {
       "identity": "ManageMessageDrawer edit mode > backfills tags after the async load without clobbering an in-window edit",
       "from": "src/ts/react/routes/shared/manage-message/ManageMessageDrawer.edit.spec.tsx",
-      "to": "src/ts/react/routes/shared/manage-message/__tests__/ManageMessageDrawer.edit.spec.tsx"
+      "to": "src/ts/react/routes/shared/manage-message/__tests__/ManageMessageDrawer.edit.spec.tsx",
+      "removedInFinalAudit": true
     },
     {
       "identity": "ManageMessageDrawer edit mode > blocks duplicate keyboard and direct submissions while a valid create is pending",
@@ -20662,7 +20664,8 @@
     {
       "identity": "device filesystem API service routes > preserves Windows paths in sync request values",
       "from": "src/ts/react/services/api/devices.spec.ts",
-      "to": "src/ts/react/services/api/__tests__/devices.spec.ts"
+      "to": "src/ts/react/services/api/__tests__/devices.spec.ts",
+      "removedInFinalAudit": true
     },
     {
       "identity": "device filesystem API service routes > searches a subtree with canonical filters",
@@ -20672,7 +20675,8 @@
     {
       "identity": "device filesystem API service routes > sends path identity and normalizes the sync summary and item outcomes",
       "from": "src/ts/react/services/api/devices.spec.ts",
-      "to": "src/ts/react/services/api/__tests__/devices.spec.ts"
+      "to": "src/ts/react/services/api/__tests__/devices.spec.ts",
+      "removedInFinalAudit": true
     },
     {
       "identity": "devices API service routes > creates a device with its permitted source and name fields",
@@ -21942,14 +21946,14 @@
       "behaviorReference": "src/ts/react/snake-to-camel.ts"
     },
     {
-      "id": "image previews preserve carousel order, info, download, and fullscreen escape",
+      "id": "image previews preserve carousel order, info, and download",
       "file": "tests/e2e/message-card-media-preview.spec.ts",
       "decision": "retained",
       "reason": "Browser-level evidence-preview safeguard; it exercises attachment inspection, download, carousel order, and escape handling.",
       "behaviorReference": "docs/frontend/react-behavior-contracts/message-card.md"
     },
     {
-      "id": "video previews preserve carousel controls, info, download, and fullscreen escape",
+      "id": "video previews preserve carousel controls, info, and download",
       "file": "tests/e2e/message-card-media-preview.spec.ts",
       "decision": "retained",
       "reason": "Browser-level evidence-preview safeguard; it exercises attachment inspection, download, carousel order, and escape handling.",

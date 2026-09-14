@@ -5,7 +5,6 @@ import * as fabric from 'fabric';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createArrow } from '../image-editor-arrow';
-import { applyArrowStyle, readImageEditorObjectStyle } from '../image-editor-selection-style';
 import {
   cancelImageEditorAttachedArrowGesture,
   imageEditorAttachedArrowGeometry,
@@ -83,6 +82,7 @@ function attachedArrowHarness(target?: { x: number; y: number }) {
   };
 }
 
+// @test-scope regression: https://github.com/echoua/echo/issues/3099
 describe('image editor arrow geometry #3099', () => {
   it.each([
     [
@@ -119,40 +119,7 @@ describe('image editor arrow geometry #3099', () => {
   });
 });
 
-describe('standalone arrow style preservation #3448', () => {
-  it('merges color, width, and dash against the rendered shaft rather than Group defaults', () => {
-    const arrow = createArrow({
-      fabric,
-      start: { x: 10, y: 10 },
-      end: { x: 110, y: 10 },
-      stroke: '#ef4444',
-      strokeWidth: 4,
-      dash: false,
-    })!;
-    expect(readImageEditorObjectStyle(arrow, fabric)).toMatchObject({
-      stroke: '#ef4444',
-      strokeWidth: 4,
-      dash: false,
-    });
-    expect(
-      applyArrowStyle({ selected: arrow, fabric, stroke: '#22c55e', strokeWidth: 4, dash: false }),
-    ).toBe(true);
-    expect(readImageEditorObjectStyle(arrow, fabric)).toMatchObject({
-      stroke: '#22c55e',
-      strokeWidth: 4,
-      dash: false,
-    });
-    expect(
-      applyArrowStyle({ selected: arrow, fabric, stroke: '#22c55e', strokeWidth: 8, dash: true }),
-    ).toBe(true);
-    expect(readImageEditorObjectStyle(arrow, fabric)).toMatchObject({
-      stroke: '#22c55e',
-      strokeWidth: 8,
-      dash: true,
-    });
-  });
-});
-
+// @test-scope regression: https://github.com/echoua/echo/issues/3448
 describe('text callout geometry #3448', () => {
   it('anchors a rotated padded label at its transformed boundary', () => {
     const text = new fabric.IText('Текст', {

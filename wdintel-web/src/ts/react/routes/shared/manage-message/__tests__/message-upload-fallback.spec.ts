@@ -87,6 +87,7 @@ describe('message upload fallback', () => {
     expect(messageUploadFailure(uppy, file.id)).toBeUndefined();
   });
 
+  // @test-scope safeguard: prevents an uncertain upload response from losing the attachment before retry.
   it.each(['{', '{}', 'null', '{"upload_url":42}', '{"upload_url":{}}', '{"upload_url":"  "}'])(
     'keeps an attachment retryable when the upload response cannot supply a URL: %s',
     async (responseText) => {
@@ -105,6 +106,7 @@ describe('message upload fallback', () => {
     },
   );
 
+  // @test-scope safeguard: prevents cancellation from starting queued uploads after the attachment flow is gone.
   it.each(['cancel-all', 'remove-file', 'unmount-signal'])(
     'aborts pending requests and prevents queued uploads after %s',
     async (cancellation) => {
@@ -138,6 +140,7 @@ describe('message upload fallback', () => {
     },
   );
 
+  // @test-scope safeguard: prevents uncertain completion from duplicating a completed attachment on retry.
   it.each(['timeout', 'abort', 'error'])(
     'settles a request %s and allows retry without duplicating a completed request',
     async (failure) => {
@@ -172,6 +175,7 @@ describe('message upload fallback', () => {
     },
   );
 
+  // @test-scope safeguard: prevents sustained byte progress from being treated as a stuck upload.
   it.each([true, false])(
     'allows a slow upload to progress for more than ten minutes with lengthComputable=%s',
     async (lengthComputable) => {
@@ -201,6 +205,7 @@ describe('message upload fallback', () => {
     },
   );
 
+  // @test-scope safeguard: prevents a no-progress upload from leaving the attachment operation stuck indefinitely.
   it('times out after ten minutes without new bytes despite repeated progress events', async () => {
     vi.useFakeTimers();
     vi.stubGlobal('XMLHttpRequest', PendingXMLHttpRequest);

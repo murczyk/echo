@@ -80,7 +80,7 @@ afterEach(() => {
 describe('Duty rich notification delivery', () => {
   const req = {} as InboxMessagesReq;
 
-  // https://github.com/echoua/echo/issues/3455
+  // @test-scope regression: https://github.com/echoua/echo/issues/3455
   it('uses the active message ordering basis for notification previews', async () => {
     const interceptionNewest = minimalInboxMessage({
       sender: 'Interception newest',
@@ -115,7 +115,7 @@ describe('Duty rich notification delivery', () => {
     });
   });
 
-  // Regression: https://github.com/echoua/echo/pull/3331
+  // @test-scope regression: https://github.com/echoua/echo/pull/3331
   it('delivers header-free rich content and sender/group fallbacks', async () => {
     fetchInboxMessages.mockResolvedValueOnce(
       response(

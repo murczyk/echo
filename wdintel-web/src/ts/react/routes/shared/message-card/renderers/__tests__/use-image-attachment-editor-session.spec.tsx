@@ -92,6 +92,7 @@ it('clears a failed image source error when carousel navigation changes the targ
   act(() => root.unmount());
 });
 
+// @test-scope regression: https://github.com/echoua/echo/issues/3368
 it('ECHO-3368 invalidates stage gestures while editor loading and unlocks after failure or cancel', async () => {
   const image = { id: 'image', href: '/image.png' } as never;
   const sources: Array<{ resolve: (value: any) => void; reject: (reason: Error) => void }> = [];

@@ -45,6 +45,7 @@ function availableMessageResponse() {
   };
 }
 
+// @test-scope regression: https://github.com/echoua/echo/issues/3092
 describe('MessageReferenceLink', () => {
   let root: Root | null = null;
   let container: HTMLDivElement | null = null;
@@ -149,13 +150,6 @@ describe('MessageReferenceLink', () => {
     expect(preview?.textContent).toContain('Пов’язана група');
     expect(preview?.textContent).toContain('2026-09-08 14:30');
     expect(preview?.textContent).toContain('Вкладення1');
-  });
-
-  it('shows the message reference with medium emphasis and no underline', async () => {
-    const link = await renderLink();
-
-    expect(link?.style.fontWeight).toBe('600');
-    expect(link?.style.textDecoration).toBe('none');
   });
 
   it('keeps the link usable and shows a privacy-safe unavailable preview', async () => {

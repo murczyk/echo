@@ -58,6 +58,7 @@ describe('rer palitra actions', () => {
     vi.clearAllMocks();
   });
 
+  // @test-scope safeguard: prevents missing Delta geometry from blocking a valid unsplit download.
   it('falls back to default download when Delta split has no geometry', async () => {
     const blob = new Blob(['zip']);
     palitraApiMock.downloadPalitras
@@ -79,6 +80,7 @@ describe('rer palitra actions', () => {
     expect(props.setStatus).toHaveBeenCalledWith(null);
   });
 
+  // @test-scope safeguard: prevents unrelated Delta download failures from being hidden by fallback handling.
   it('keeps other Delta split errors visible', async () => {
     palitraApiMock.downloadPalitras.mockRejectedValueOnce(new Error('Delta split failed'));
 

@@ -236,6 +236,7 @@ test.describe('@smoke @regression', () => {
 });
 
 test.describe('message card media preview contract', () => {
+  // @test-scope regression: https://github.com/echoua/echo/issues/3368
   test('ECHO-3368 centres every primary image-click zoom', async ({ page }) => {
     for (const host of ['duty', 'analysis'] as const) {
       await openMessageCardPreviewHost(page, host);
@@ -267,6 +268,7 @@ test.describe('message card media preview contract', () => {
     }
   });
 
+  // @test-scope regression: https://github.com/echoua/echo/issues/3368
   test('ECHO-3368 zooms image clicks and dismisses only exposed image-stage background', async ({
     page,
   }) => {
@@ -347,6 +349,7 @@ test.describe('message card media preview contract', () => {
     }
   });
 
+  // @test-scope regression: https://github.com/echoua/echo/issues/3368
   test('ECHO-3368 preserves content interactions for non-image previews', async ({ page }) => {
     await openMessageCardPreviewHost(page, 'duty');
 
@@ -396,6 +399,7 @@ test.describe('message card media preview contract', () => {
     await coordinateDialog.getByRole('button', { name: 'Закрити', exact: true }).click();
   });
 
+  // @test-scope regression: https://github.com/echoua/echo/issues/3368
   test('ECHO-3368 keeps audio content protected and dismisses its outer stage background', async ({
     page,
   }) => {
@@ -417,6 +421,7 @@ test.describe('message card media preview contract', () => {
     await expect(dialog).toHaveCount(0);
   });
 
+  // @test-scope regression: https://github.com/echoua/echo/issues/3368
   test('ECHO-3368 protects completed OCR and summary panels', async ({ page }) => {
     await openMessageCardPreviewHost(page, 'duty', { withCompletedOcrAndSummary: true });
     const dialog = await openImagePreview(page);
@@ -453,6 +458,7 @@ test.describe('message card media preview contract', () => {
     await expect(dialog).toBeVisible();
   });
 
+  // @test-scope regression: https://github.com/echoua/echo/issues/3368
   test.describe('ECHO-3368 touch gestures', () => {
     test.use({ hasTouch: true });
 
@@ -669,6 +675,7 @@ test.describe('message card media preview contract', () => {
     });
   });
 
+  // @test-scope regression: https://github.com/echoua/echo/issues/3324
   test('ECHO-3324 keeps exactly one collapsed attachment section open', async ({ page }) => {
     await openMessageCardPreviewHost(page, 'duty');
 
@@ -695,6 +702,7 @@ test.describe('message card media preview contract', () => {
     await expect(coordinates).toHaveAttribute('aria-expanded', 'false');
   });
 
+  // @test-scope regression: https://github.com/echoua/echo/issues/3324
   test('ECHO-3324 aligns coordinate tiles with media tiles at wide and narrow card widths', async ({
     page,
   }) => {
@@ -767,6 +775,7 @@ test.describe('message card media preview contract', () => {
     }
   });
 
+  // @test-scope regression: https://github.com/echoua/echo/issues/3324
   test('ECHO-3324 keeps complete coordinate failures square and retries into a map', async ({
     page,
   }) => {
@@ -815,6 +824,7 @@ test.describe('message card media preview contract', () => {
     await expect(failureTile).toHaveCount(0);
   });
 
+  // @test-scope regression: https://github.com/echoua/echo/issues/3324
   test('ECHO-3324 renders numeric coordinate counts inside shared Duty and Analysis tiles', async ({
     page,
   }) => {
@@ -910,6 +920,7 @@ test.describe('message card media preview contract', () => {
     }
   });
 
+  // @test-scope regression: https://github.com/echoua/echo/issues/3380
   test('ECHO-3380 keeps the coordinate hover preview tile-driven, side by side, and non-scrollable', async ({
     page,
   }) => {
@@ -1039,6 +1050,7 @@ test.describe('message card media preview contract', () => {
     }
   });
 
+  // @test-scope regression: https://github.com/echoua/echo/issues/3380
   test('resolves a Palitra coordinate into the fullscreen MGRS map in both hosts', async ({
     page,
   }) => {
@@ -1105,6 +1117,7 @@ test.describe('message card media preview contract', () => {
     }
   });
 
+  // @test-scope safeguard: preserves image-preview identity, carousel order, and download behavior.
   test('image previews preserve carousel order, info, and download', async ({ page }) => {
     await openMessageCardPreviewHost(page, 'duty');
 
@@ -1144,6 +1157,7 @@ test.describe('message card media preview contract', () => {
     await verifyEscapeClose(page, imageDialog, () => openImagePreview(page));
   });
 
+  // @test-scope regression: https://github.com/echoua/echo/issues/3460
   test('ECHO-3460 reveals stage navigation only beside the hovered desktop edge', async ({
     page,
   }) => {
@@ -1181,6 +1195,7 @@ test.describe('message card media preview contract', () => {
     await expectPreviewCounter(dialog, '1 / 7');
   });
 
+  // @test-scope safeguard: preserves video-preview identity, carousel order, and download behavior.
   test('video previews preserve carousel controls, info, and download', async ({ page }) => {
     await openMessageCardPreviewHost(page, 'duty');
 

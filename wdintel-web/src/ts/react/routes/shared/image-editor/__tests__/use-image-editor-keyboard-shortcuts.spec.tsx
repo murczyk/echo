@@ -61,6 +61,7 @@ function Harness({
   );
 }
 
+// @test-scope regression: https://github.com/echoua/echo/issues/3448
 describe('useImageEditorKeyboardShortcuts #3448', () => {
   afterEach(() => {
     vi.restoreAllMocks();

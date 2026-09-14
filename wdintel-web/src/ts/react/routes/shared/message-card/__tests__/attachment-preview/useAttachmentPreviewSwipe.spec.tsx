@@ -149,6 +149,7 @@ describe('useAttachmentPreviewSwipe', () => {
     expect(onPrevious).not.toHaveBeenCalled();
   });
 
+  // @test-scope regression: https://github.com/echoua/echo/issues/3368
   it('restores fresh swipes after pinch completion while navigation was disabled #3368', async () => {
     container = document.createElement('div');
     document.body.appendChild(container);

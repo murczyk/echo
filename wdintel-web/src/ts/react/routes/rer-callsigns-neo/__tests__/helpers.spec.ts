@@ -310,6 +310,7 @@ describe('rer-callsigns helpers', () => {
     expect(JSON.stringify(tree)).not.toContain('#99');
   });
 
+  // @test-scope parser: callsign unit hierarchy normalization fixture with empty echelons.
   it('skips empty hierarchy groups while preserving exact hierarchy paths', () => {
     const tree = buildUnitTree([
       {
@@ -372,6 +373,7 @@ describe('rer-callsigns helpers', () => {
     ).toBe('A');
   });
 
+  // @test-scope parser: callsign unit hierarchy normalization fixture with every supported echelon.
   it('uses every echelon and makes the terminal singleton the unit leaf', () => {
     const tree = buildUnitTree([
       {
@@ -416,6 +418,7 @@ describe('rer-callsigns helpers', () => {
     expect(JSON.stringify(tree)).toContain('"unitName":"Full unit name"');
   });
 
+  // @test-scope parser: callsign unit hierarchy regional disambiguation fixture.
   it('separates same-named armies by region and district', () => {
     const tree = buildUnitTree([
       {

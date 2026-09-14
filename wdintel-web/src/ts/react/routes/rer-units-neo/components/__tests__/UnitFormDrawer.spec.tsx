@@ -96,16 +96,7 @@ afterEach(() => {
 });
 
 describe('UnitFormDrawer', () => {
-  it.each([undefined, 'orbit'] as const)(
-    'shows ORBIT presence in the %s edit flow',
-    async (editSection) => {
-      const root = await renderDialog(vi.fn(), duplicate, editSection);
-
-      expect(document.body.textContent).toContain('Присутній в Orbit');
-      act(() => root.unmount());
-    },
-  );
-
+  // @test-scope safeguard: prevents an ORBIT-linked unit from being created without the selected duplicate association.
   it('waits for duplicate selection before creating an ORBIT-linked unit', async () => {
     vi.mocked(getCreateUnitDuplicateCandidates).mockResolvedValue([duplicate]);
     const onSubmit = vi.fn();

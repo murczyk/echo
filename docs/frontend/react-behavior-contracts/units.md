@@ -18,3 +18,11 @@
 - **Source implementation:** `src/ts/react/services/api/units.ts`
 - **Existing test(s):** `src/ts/react/services/api/__tests__/units.spec.ts`, `routes/rer-units-neo/components/UnitFormDrawer.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational parser and compatibility coverage.
+
+## ORBIT presence and duplicate selection
+
+- **Status:** normative
+- **Behavior ID:** `react-units-orbit-presence-and-duplicate-selection`
+- **Affected route/component:** RER Unit form drawer.
+- **Expected observable result:** a unit can be absent from ORBIT, present but unlinked, or linked to an ORBIT record. Creating an ORBIT-linked unit waits for the operator to explicitly select an offered duplicate association, so the resulting unit retains that relationship.
+- **Source implementation:** `src/ts/react/routes/rer-units-neo/components/UnitFormDrawer.tsx`.
