@@ -13,7 +13,7 @@ use crate::types::*;
 use chrono::*;
 use sea_orm::sea_query::*;
 use sea_orm::*;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QuerySelect};
 
@@ -495,6 +495,41 @@ async fn reassign_encryption_key_freqs(
     Ok(())
 }
 
+async fn reassign_duplicate_frequency_references(
+    txn: &DatabaseTransaction,
+    freq_id_from: i64,
+    freq_id_to: i64,
+) -> Result<(), AppError> {
+    sigint_network_description::Entity::update_many()
+        .filter(
+            sigint_network_description::Column::SigintNetworkFreqId
+                .eq(freq_id_from),
+        )
+        .col_expr(
+            sigint_network_description::Column::SigintNetworkFreqId,
+            Expr::value(freq_id_to),
+        )
+        .exec(txn)
+        .await
+        .context(h!())?;
+    sigint_network_encryption_key::Entity::update_many()
+        .filter(
+            sigint_network_encryption_key::Column::SigintNetworkFreqId
+                .eq(freq_id_from),
+        )
+        .col_expr(
+            sigint_network_encryption_key::Column::SigintNetworkFreqId,
+            Expr::value(freq_id_to),
+        )
+        .exec(txn)
+        .await
+        .context(h!())?;
+    reassign_encryption_key_freqs(txn, freq_id_from, freq_id_to)
+        .await
+        .context(h!())?;
+    Ok(())
+}
+
 ///Reassign frequencies from the old networt to the new one
 async fn reassign_freqs(
     txn: &DatabaseTransaction,
@@ -585,6 +620,25 @@ async fn reassign_freqs(
         .all(txn)
         .await
         .context(h!())?;
+    let target_freqs = sigint_network_freq::Entity::find()
+        .filter(sigint_network_freq::Column::NetworkId.eq(network_id_to))
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .order_by_asc(sigint_network_freq::Column::Id)
+        .all(txn)
+        .await
+        .context(h!())?;
+    let mut target_freq_ids = HashMap::new();
+    for target_freq in target_freqs {
+        let active = target_freq.active_to.is_none();
+        target_freq_ids
+            .entry(target_freq.freq)
+            .and_modify(|entry: &mut (i64, bool)| {
+                if active && !entry.1 {
+                    *entry = (target_freq.id, active);
+                }
+            })
+            .or_insert((target_freq.id, active));
+    }
     let freq_vals = freqs_to_delete
         .iter()
         .map(|network_freq| network_freq.freq.clone())
@@ -592,6 +646,17 @@ async fn reassign_freqs(
     let rows_affected = freqs_to_delete.len();
     let now = Utc::now().naive_utc();
     for network_freq in freqs_to_delete {
+        if let Some((target_freq_id, _)) =
+            target_freq_ids.get(&network_freq.freq)
+        {
+            reassign_duplicate_frequency_references(
+                txn,
+                network_freq.id,
+                *target_freq_id,
+            )
+            .await
+            .context(h!())?;
+        }
         let old_network_freq = network_freq.clone();
         let mut network_freq = network_freq.into_active_model();
         network_freq.deleted = Set(true);
@@ -959,8 +1024,8 @@ fn concat_unique(to: Option<String>, from: Option<String>) -> Option<String> {
 mod tests {
     use super::*;
     use crate::functest::tests::{
-        cleanup, find_test_organism, mk_sigint_network, mk_sigint_network_unit,
-        mk_sigint_unit,
+        cleanup, find_test_organism, mk_sigint_network, mk_sigint_network_freq,
+        mk_sigint_network_unit, mk_sigint_unit,
     };
     use serial_test::serial;
 
@@ -1092,6 +1157,130 @@ mod tests {
                     > 0
             );
         }
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn network_merge_repoints_duplicate_frequency_references() {
+        let env = cleanup().await.unwrap();
+        let login = crate::users::login_id_by_name(&env.dbx, "Tester")
+            .await
+            .unwrap();
+        let organism_id = find_test_organism(&env.dbx).await.unwrap().id;
+        let source = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let target = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let source_freq = mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(source.id),
+                freq: Set("146.5000".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let target_freq = mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(target.id),
+                freq: Set(source_freq.freq.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let key = sigint_network_encryption_key::ActiveModel {
+            organism_id: Set(organism_id),
+            sigint_network_id: Set(Some(source.id)),
+            sigint_network_freq_id: Set(Some(source_freq.id)),
+            deleted: Set(false),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let duplicate_key = sigint_network_encryption_key::ActiveModel {
+            organism_id: Set(organism_id),
+            sigint_network_id: Set(Some(source.id)),
+            deleted: Set(false),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        for (key_id, freq_id) in [
+            (key.id, source_freq.id),
+            (duplicate_key.id, source_freq.id),
+            (duplicate_key.id, target_freq.id),
+        ] {
+            sigint_network_encryption_key_freq::ActiveModel {
+                sigint_network_encryption_key_id: Set(key_id),
+                sigint_network_freq_id: Set(freq_id),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+        let description = sigint_network_description::ActiveModel {
+            network_id: Set(source.id),
+            login_id: Set(login),
+            r#type: Set(NetworkDescriptionType::Sign),
+            description: Set("same frequency".to_string()),
+            topic: Set(String::new()),
+            deleted: Set(false),
+            sigint_network_freq_id: Set(Some(source_freq.id)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let txn = env.dbx.begin().await.unwrap();
+        merge_two_networks(&txn, &login, false, false, source.id, target.id)
+            .await
+            .unwrap();
+
+        assert!(
+            sigint_network_freq::Entity::find_by_id(source_freq.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap()
+                .deleted
+        );
+        let key = sigint_network_encryption_key::Entity::find_by_id(key.id)
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(key.sigint_network_id, Some(target.id));
+        assert_eq!(key.sigint_network_freq_id, Some(target_freq.id));
+        for key_id in [key.id, duplicate_key.id] {
+            let links = sigint_network_encryption_key_freq::Entity::find()
+                .filter(
+                    sigint_network_encryption_key_freq::Column::SigintNetworkEncryptionKeyId
+                        .eq(key_id),
+                )
+                .all(&txn)
+                .await
+                .unwrap();
+            assert_eq!(links.len(), 1);
+            assert_eq!(links[0].sigint_network_freq_id, target_freq.id);
+        }
+        let description =
+            sigint_network_description::Entity::find_by_id(description.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(description.network_id, target.id);
+        assert_eq!(description.sigint_network_freq_id, Some(target_freq.id));
         txn.rollback().await.unwrap();
     }
 

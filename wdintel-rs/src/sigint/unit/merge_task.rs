@@ -72,6 +72,19 @@ async fn register_merge_task(
     ensure_merge_units_active(&transaction, unit_to_delete_id, original_id)
         .await
         .context(h!())?;
+    let existing_task = transaction
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "select 1 from bgtask where loglines->>0 = $1 and running = true limit 1",
+            [format!("{SIGINT_UNIT_MERGE_TASK_MARKER}{unit_to_delete_id}:{original_id}").into()],
+        ))
+        .await
+        .c(h!())?;
+    if existing_task.is_some() {
+        return Err(AppError::BL {
+            msg: "Unit merge is already in progress".to_string(),
+        });
+    }
     ensure_pinned_survivor(&transaction, unit_to_delete_id, original_id)
         .await
         .context(h!())?;
@@ -1278,6 +1291,35 @@ mod tests {
             register_merge_task(&env.dbx, middle.id, survivor.id),
         );
         assert_ne!(first.is_ok(), second.is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn duplicate_registration_waits_for_existing_task_to_finish() {
+        let env = cleanup().await.unwrap();
+        let duplicate =
+            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let survivor =
+            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let first = register_merge_task(&env.dbx, duplicate.id, survivor.id)
+            .await
+            .unwrap();
+
+        assert!(register_merge_task(&env.dbx, duplicate.id, survivor.id)
+            .await
+            .is_err());
+        let mut task = bgtask::Entity::find_by_id(first)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+        task.running = Set(false);
+        task.finished_with_error = Set(Some("interrupted".to_string()));
+        task.update(&env.dbx).await.unwrap();
+        assert!(register_merge_task(&env.dbx, duplicate.id, survivor.id)
+            .await
+            .is_ok());
     }
 
     #[tokio::test]
