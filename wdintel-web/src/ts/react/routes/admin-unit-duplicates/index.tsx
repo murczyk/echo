@@ -85,17 +85,21 @@ export function AdminUnitDuplicatesPage({
   const [mergeProgressLabel, setMergeProgressLabel] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const mergePollController = useRef<AbortController | null>(null);
+  const unitsLoadVersion = useRef(0);
   const canMerge = hasRole(authUserRoles, 'Rer') && hasRole(authUserRoles, 'UnitsEditor');
 
   const loadUnits = useCallback(async (signal?: AbortSignal) => {
+    const version = ++unitsLoadVersion.current;
+    const isCurrent = () => version === unitsLoadVersion.current && !signal?.aborted;
     setLoading(true);
     setLoadError(null);
     try {
-      setUnits(await getUnitDuplicates(signal ? { signal } : undefined));
+      const units = await getUnitDuplicates(signal ? { signal } : undefined);
+      if (isCurrent()) setUnits(units);
     } catch (error) {
-      if (!signal?.aborted) setLoadError(formatUnitError(error));
+      if (isCurrent()) setLoadError(formatUnitError(error));
     } finally {
-      if (!signal?.aborted) setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, []);
 

@@ -205,10 +205,19 @@ where
     let rows = dbx
         .query_all_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            "select loglines->>0 as marker from bgtask where loglines->>0 like $1 or loglines->>0 like $2",
+            "select loglines->>0 as marker from bgtask where loglines->>0 like $1 or (reverse(loglines->>0) like $2 and left(loglines->>0, length($3)) = $3)",
             [
                 format!("{SIGINT_UNIT_MERGE_TASK_MARKER}{original_id}:%").into(),
-                format!("{SIGINT_UNIT_MERGE_TASK_MARKER}%:{unit_to_delete_id}").into(),
+                format!(
+                    "{}:%",
+                    unit_to_delete_id
+                        .to_string()
+                        .chars()
+                        .rev()
+                        .collect::<String>()
+                )
+                .into(),
+                SIGINT_UNIT_MERGE_TASK_MARKER.into(),
             ],
         ))
         .await

@@ -2,7 +2,7 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Unit } from '../../../../Bindings';
+import type { Unit, UnitDuplicate } from '../../../../Bindings';
 
 const mocks = vi.hoisted(() => ({
   getUnitDuplicates: vi.fn(),
@@ -87,6 +87,59 @@ describe('AdminUnitDuplicatesPage', () => {
 
     await act(async () => completeTask?.());
     expect(taskMocks.clearPendingUnitMerge).toHaveBeenCalledWith(42);
+    await act(async () => root.unmount());
+  });
+
+  it('keeps the terminal merge refresh over a stale mount load', async () => {
+    let resolveInitial: ((units: UnitDuplicate[]) => void) | undefined;
+    mocks.getUnitDuplicates
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveInitial = resolve;
+          }),
+      )
+      .mockResolvedValueOnce([]);
+    taskMocks.loadPendingUnitMerge.mockReturnValueOnce({
+      taskId: 42,
+      original: { id: 1, name: 'Original' } as Unit,
+      duplicate: { id: 2, name: 'Duplicate' } as Unit,
+    });
+    taskMocks.waitForBgtaskCompletion.mockResolvedValueOnce(undefined);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => root.render(<AdminUnitDuplicatesPage authUserRoles={[]} />));
+    expect(mocks.getUnitDuplicates).toHaveBeenCalledTimes(2);
+
+    await act(async () =>
+      resolveInitial?.([
+        {
+          sigintUnit: {
+            id: 2,
+            name: 'Stale duplicate',
+            other: '',
+            teamOrCrew: '',
+            section: '',
+            squad: '',
+            platoon: '',
+            company: '',
+            battalion: '',
+            regiment: '',
+            brigade: '',
+            division: '',
+            corps: '',
+            army: '',
+            militaryDistrict: '',
+            armyRegion: '',
+          } as Unit,
+          orbitUnitId: 'stale',
+          orbitUnitFullName: 'Stale Orbit unit',
+        },
+      ]),
+    );
+    expect(container.textContent).not.toContain('Stale duplicate');
     await act(async () => root.unmount());
   });
 });

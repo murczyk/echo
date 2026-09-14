@@ -143,6 +143,50 @@ describe('useRerUnitsPage loading', () => {
 });
 
 describe('useRerUnitsPage mutations', () => {
+  it('keeps the terminal merge refresh over a stale mount load', async () => {
+    const req = { limit: 20, offset: 0 } as ListUnitsReq;
+    let resolveInitial: ((response: unknown) => void) | undefined;
+    api.getUnitsPage
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveInitial = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({
+        units: [activeUnit],
+        totalCount: 1,
+        statusCounts: { active: 1, inactive: 0 },
+        showLoadMore: false,
+      });
+    api.getUnitIdsWithVisibleAttachments.mockResolvedValue([activeUnit.id]);
+    api.loadPendingUnitMerge.mockReturnValueOnce({
+      taskId: 42,
+      original: activeUnit,
+      duplicate: inactiveUnit,
+    });
+    api.waitForBgtaskCompletion.mockResolvedValueOnce(undefined);
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => root?.render(createElement(Harness, { req })));
+    await flushEffects();
+    expect(latestPage?.units.map((unit) => unit.id)).toEqual([activeUnit.id]);
+
+    await act(async () => {
+      resolveInitial?.({
+        units: [activeUnit, inactiveUnit],
+        totalCount: 2,
+        statusCounts: { active: 1, inactive: 1 },
+        showLoadMore: false,
+      });
+    });
+    expect(latestPage?.units.map((unit) => unit.id)).toEqual([activeUnit.id]);
+    expect(latestPage?.attachmentUnitIds).toEqual(new Set([activeUnit.id]));
+    expect(api.getUnitIdsWithVisibleAttachments).toHaveBeenCalledTimes(1);
+  });
+
   it('refreshes units and attachments after a staged merge fails', async () => {
     const req = { limit: 20, offset: 0 } as ListUnitsReq;
     api.getUnitsPage

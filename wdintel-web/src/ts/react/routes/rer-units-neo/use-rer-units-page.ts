@@ -88,23 +88,26 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
   const [kmzTask, setKmzTask] = useState<KmzTask | null>(null);
   const mutationRefreshController = useRef<AbortController | null>(null);
   const mergePollController = useRef<AbortController | null>(null);
+  const unitsLoadVersion = useRef(0);
 
   const loadUnits = useCallback(
     async (options?: RequestOptions) => {
+      const version = ++unitsLoadVersion.current;
+      const isCurrent = () => version === unitsLoadVersion.current && !options?.signal?.aborted;
       setLoading(true);
       setLoadError(null);
       try {
         const response = await getUnitsPage(listReq, options);
-        if (options?.signal?.aborted) return;
+        if (!isCurrent()) return;
         setUnits(response.units);
         setTotalCount(response.totalCount);
         setStatusCounts(response.statusCounts);
         try {
           const unitIds = response.units.map((unit) => unit.id);
           const attachmentIds = await getUnitIdsWithVisibleAttachments(unitIds, options);
-          if (!options?.signal?.aborted) setAttachmentUnitIds(new Set(attachmentIds));
+          if (isCurrent()) setAttachmentUnitIds(new Set(attachmentIds));
         } catch (error) {
-          if (options?.signal?.aborted) return;
+          if (!isCurrent()) return;
           setAttachmentUnitIds(new Set());
           setStatus({
             severity: 'error',
@@ -112,10 +115,10 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
           });
         }
       } catch (error) {
-        if (options?.signal?.aborted) return;
+        if (!isCurrent()) return;
         setLoadError(formatUnitError(error));
       } finally {
-        if (!options?.signal?.aborted) setLoading(false);
+        if (isCurrent()) setLoading(false);
       }
     },
     [listReq],
@@ -331,27 +334,31 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
     mutationRefreshController.current?.abort();
     const controller = new AbortController();
     mutationRefreshController.current = controller;
+    const version = ++unitsLoadVersion.current;
+    const isCurrent = () => version === unitsLoadVersion.current && !controller.signal.aborted;
     const options = { signal: controller.signal };
+    setLoading(true);
     try {
       const response = await getUnitsPage(listReq, options);
-      if (controller.signal.aborted) return;
+      if (!isCurrent()) return;
       const attachmentIds = await getUnitIdsWithVisibleAttachments(
         response.units.map((unit) => unit.id),
         options,
       );
-      if (controller.signal.aborted) return;
+      if (!isCurrent()) return;
       setUnits(response.units);
       setTotalCount(response.totalCount);
       setStatusCounts(response.statusCounts);
       setAttachmentUnitIds(new Set(attachmentIds));
       setStatus({ severity: 'success', text: successText });
     } catch (error) {
-      if (controller.signal.aborted) return;
+      if (!isCurrent()) return;
       setStatus({
         severity: 'warning',
         text: `${successText} Не вдалося оновити список: ${formatUnitError(error)}`,
       });
     } finally {
+      if (isCurrent()) setLoading(false);
       if (mutationRefreshController.current === controller) {
         mutationRefreshController.current = null;
       }

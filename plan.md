@@ -91,17 +91,19 @@ distribution are unavailable in this workspace; production timings remain
 unverified.
 
 The registration conflict lookup was also tested against 1,000,000 synthetic
-background tasks, including 1,000 merge markers. Its marker expression index
-produced a `BitmapOr` plan, read 1,003 local buffers, and completed in 2.42 ms
-with cold buffers. After five prepared executions, PostgreSQL retained the
-indexed custom plan (0.27 ms with cached buffers).
+background tasks, including 1,000 merge markers, in a transaction on the
+restored test database. The suffix predicate with only the marker index scanned
+1,000 candidate rows and 1,014 buffers in 8.77 ms. With the reverse-marker
+index, PostgreSQL used both indexes under `BitmapOr`, visited two heap blocks
+and eight buffers, and completed in 0.043 ms. The fixture transaction was
+rolled back; production distribution and timings remain unverified.
 
 ## Verification
 
-- Thirteen database-backed staged merge tests passed, including bounded label
+- Fourteen database-backed staged merge tests passed, including bounded label
   batches, a late inbox reference, restart recovery, survivor reconciliation,
   chain-registration rejection, and the direct network-callsign audit entry.
-- Focused React tests and `just build-front` passed.
+- React regression tests, the full frontend suite, and `just build-front` passed.
 - The catalog-aware analytics migration check passed on a database restored
   from the standard test dump; `just migrate-up`, `cargo check`, and Clippy
   passed.
