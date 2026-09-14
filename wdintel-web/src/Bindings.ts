@@ -404,6 +404,9 @@ export type InboxMessage = {
   important: boolean;
   bookmarked: boolean;
   timestamp: number | null;
+  createdAt: number | null;
+  createdAtOrder: number | null;
+  hasDateInHeader: boolean;
   groupMasterKey: string | null;
   sender: string | null;
   extendedForm: string | null;
@@ -475,7 +478,7 @@ export type InboxMessageTag = {
   organismId: number | null;
 };
 
-export type InboxMessagesSortBy = 'IMSDatetime' | 'IMSTimestamp';
+export type InboxMessagesSortBy = 'IMSDatetime' | 'IMSTimestamp' | 'IMSCreatedAt';
 
 export type TagFilterOption = 'OneOfTags' | 'AllTags';
 
@@ -767,6 +770,7 @@ export type AnalysisStatsReq = {
   filterTagsOption: TagFilterOption | null;
   withoutModelTags: boolean | null;
   reportTagsOnlyThisUnit: boolean | null;
+  messageTimeBasis: MessageTimeBasis | null;
 };
 
 export type AnalysisCallsignFrequencyMatchesReq = {
@@ -5558,6 +5562,8 @@ export type DutyTagsLayout = 'Full' | 'Compact' | 'Hidden';
 
 export type MessageTextPreviewLines = 'Twenty' | 'Forty' | 'Off';
 
+export type MessageTimeBasis = 'interception' | 'creation';
+
 export type UserDutySettingsDto = {
   tagsLayout: DutyTagsLayout;
   messageTextPreviewLines: MessageTextPreviewLines;
@@ -5570,4 +5576,5 @@ export type UserDutySettingsDto = {
   showClassicAnalysis: boolean;
   dutyCollapseMediaPreviews: boolean;
   mediaSummaryEnabled: boolean;
+  messageSortBy: MessageTimeBasis;
 };

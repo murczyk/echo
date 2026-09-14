@@ -3783,6 +3783,7 @@ mod tests {
             filter_tags_option: None,
             without_model_tags: None,
             report_tags_only_this_unit: None,
+            message_time_basis: None,
         }
     }
 

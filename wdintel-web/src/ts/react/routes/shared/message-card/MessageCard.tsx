@@ -41,7 +41,10 @@ import {
 } from '../../rer-duty-neo/utils';
 import { resolveMessageCardEtalonDisplayModel } from './message-card.utils';
 import type { AddPointHighlightBlacklistRequest } from './point-highlight-blacklist';
-import type { MessageTextPreviewLineLimit } from '../../../services/api/user-settings';
+import type {
+  MessageTextPreviewLineLimit,
+  MessageTimeBasis,
+} from '../../../services/api/user-settings';
 import { DEFAULT_MEDIA_SUMMARY_ENABLED } from '../../../hooks/duty-settings-defaults';
 import {
   canDownloadAllMessageAttachments,
@@ -73,7 +76,11 @@ const MessageCardRoot = styled('div')(({ theme }) => ({
 
 export function formatMessageCardTooltipTime(
   msg: Pick<InboxMessage, 'time' | 'timestamp'>,
+  preferTimestamp = false,
 ): string {
+  if (preferTimestamp && isPresent(msg.timestamp)) {
+    return dayjs(msg.timestamp).tz(APP_TIME_ZONE).format('HH:mm:ss');
+  }
   const time = msg.time;
   if (time === null) return NO_DATA_LABEL;
   const trimmed = time.trim();
@@ -154,6 +161,7 @@ export type MessageCardProps = {
   collapseMediaPreviews?: boolean;
   mediaSummaryEnabled?: boolean;
   messageTextPreviewLines?: MessageTextPreviewLineLimit;
+  messageTimeBasis?: MessageTimeBasis;
 };
 
 // Performance boundary: this component is repeated throughout Duty feeds.
@@ -211,8 +219,13 @@ function MessageCardComponent({
   collapseMediaPreviews,
   mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
   messageTextPreviewLines = 20,
+  messageTimeBasis = 'interception',
 }: MessageCardProps) {
-  const [messageRootRef, relativeTimeMs] = useRelativeTimeDisplayMs(referenceTimeMs, msg.timestamp);
+  const displayTimestamp = messageTimeBasis === 'creation' ? msg.createdAt : msg.timestamp;
+  const [messageRootRef, relativeTimeMs] = useRelativeTimeDisplayMs(
+    referenceTimeMs,
+    displayTimestamp,
+  );
   const downloadGuard = useMessageCardDownloadGuard();
   const compactLayout = feedCount >= 3;
   const derivedNetworkMap = useMemo(() => {
@@ -265,10 +278,17 @@ function MessageCardComponent({
   );
   const watermarkUserName = authUserName?.trim() ?? '';
   const timeDistance =
-    isPresent(msg.timestamp) && isPresent(relativeTimeMs)
-      ? messageRenderDistance(msg.timestamp, relativeTimeMs)
+    isPresent(displayTimestamp) && isPresent(relativeTimeMs)
+      ? messageRenderDistance(displayTimestamp, relativeTimeMs)
       : null;
-  const tooltipTime = useMemo(() => formatMessageCardTooltipTime(msg), [msg]);
+  const tooltipTime = useMemo(
+    () =>
+      formatMessageCardTooltipTime(
+        { ...msg, timestamp: displayTimestamp },
+        messageTimeBasis === 'creation',
+      ),
+    [displayTimestamp, messageTimeBasis, msg],
+  );
 
   const topRight =
     displayMode === 'duty' ? (
@@ -328,6 +348,7 @@ function MessageCardComponent({
     displayMode,
     id,
     msg,
+    displayTimestamp: messageTimeBasis === 'creation' ? displayTimestamp : undefined,
     copiedFeedbackId,
     etalonDisplayModel,
     mapHref,
@@ -408,6 +429,7 @@ function MessageCardComponent({
           collapseMediaPreviews={collapseMediaPreviews ?? false}
           mediaSummaryEnabled={mediaSummaryEnabled}
           messageTextPreviewLines={messageTextPreviewLines}
+          messageTimeBasis={messageTimeBasis}
           isDownloadStarting={downloadGuard.isDownloadStarting}
           onDownloadStart={downloadGuard.onDownloadStart}
         />

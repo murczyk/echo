@@ -51,6 +51,27 @@ pub enum MessageTextPreviewLines {
     PartialEq,
     Eq,
     Clone,
+    Copy,
+    Default,
+)]
+pub enum MessageTimeBasis {
+    #[default]
+    #[serde(rename = "interception")]
+    MessageInterception,
+    #[serde(rename = "creation")]
+    MessageCreation,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
 )]
 #[serde(rename_all = "camelCase")]
 pub struct UserDutySettingsDto {
@@ -75,6 +96,8 @@ pub struct UserDutySettingsDto {
     pub duty_collapse_media_previews: bool,
     #[serde(default = "default_media_summary_enabled")]
     pub media_summary_enabled: bool,
+    #[serde(default)]
+    pub message_sort_by: MessageTimeBasis,
 }
 
 fn default_duty_collapse_media_previews() -> bool {
@@ -99,6 +122,7 @@ impl Default for UserDutySettingsDto {
             show_classic_analysis: false,
             duty_collapse_media_previews: false,
             media_summary_enabled: false,
+            message_sort_by: MessageTimeBasis::MessageInterception,
         }
     }
 }

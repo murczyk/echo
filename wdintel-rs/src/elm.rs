@@ -1526,6 +1526,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::messenger::types::GroupEntryF1,
             crate::user_settings::types::DutyTagsLayout,
             crate::user_settings::types::MessageTextPreviewLines,
+            crate::user_settings::types::MessageTimeBasis,
             crate::user_settings::types::UserDutySettingsDto,
         ],
         queries: [],
@@ -1542,8 +1543,16 @@ pub fn main_gen_elm() -> Result<(), AppError> {
 
 fn patch_generated_elm(output: String) -> String {
     trim_trailing_whitespace(patch_backward_compatible_decoders(
-        patch_generated_elm_names(output),
+        patch_message_time_basis_encoder(patch_generated_elm_names(output)),
     ))
+}
+
+fn patch_message_time_basis_encoder(output: String) -> String {
+    output.replacen(
+        "messageTimeBasisDecoder : Json.Decode.Decoder MessageTimeBasis",
+        "messageTimeBasisEncoder : MessageTimeBasis -> Json.Encode.Value\nmessageTimeBasisEncoder value =\n    case value of\n        MessageInterception ->\n            Json.Encode.string \"interception\"\n\n        MessageCreation ->\n            Json.Encode.string \"creation\"\n\n\nmessageTimeBasisDecoder : Json.Decode.Decoder MessageTimeBasis",
+        1,
+    )
 }
 
 fn trim_trailing_whitespace(output: String) -> String {

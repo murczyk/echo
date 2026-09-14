@@ -11,6 +11,7 @@ import {
   saveUserSettings,
   type UserDutySettings,
   type MessageTextPreviewLineLimit,
+  type MessageTimeBasis,
 } from '../services/api/user-settings';
 
 type DutySettingsValue = UserDutySettings;
@@ -33,6 +34,7 @@ export type DutySettingsHook = DutySettingsValue & {
   setDutyCollapseMediaPreviews: (value: boolean) => void;
   setMediaSummaryEnabled: (value: boolean) => void;
   setMessageTextPreviewLines: (value: MessageTextPreviewLineLimit) => void;
+  setMessageSortBy: (value: MessageTimeBasis) => void;
   scheduleSave: (nextSettings: DutySettingsSaveRequest) => void;
 };
 
@@ -42,6 +44,7 @@ function normalizeDutySettings(
   const messageTextPreviewLines = settings?.messageTextPreviewLines;
 
   return {
+    messageSortBy: settings?.messageSortBy === 'creation' ? 'creation' : 'interception',
     messageTextPreviewLines: messageTextPreviewLines === undefined ? 20 : messageTextPreviewLines,
     tagsLayout: settings?.tagsLayout ?? DEFAULT_DUTY_TAGS_LAYOUT,
     disableAutoScroll: settings?.disableAutoScroll ?? false,
@@ -177,6 +180,7 @@ export function useDutySettings(): DutySettingsHook {
       setSettings((current) => ({ ...current, mediaSummaryEnabled: value })),
     setMessageTextPreviewLines: (value) =>
       setSettings((current) => ({ ...current, messageTextPreviewLines: value })),
+    setMessageSortBy: (value) => setSettings((current) => ({ ...current, messageSortBy: value })),
     scheduleSave,
   };
 }

@@ -257,6 +257,7 @@ vi.mock('../../services/api/user-settings', () => ({
     dutyCollapseMediaPreviews: true,
     mediaSummaryEnabled: false,
     messageTextPreviewLines: 20,
+    messageSortBy: 'interception',
   }),
   saveUserSettings: saveUserDutySettings,
 }));
@@ -347,7 +348,7 @@ describe('SettingsNeoPage', () => {
   });
 
   it.each(['duty', 'analysis'] as const)(
-    'renders the shared preview control inside the message-card settings for %s',
+    'renders the shared message-card and sorting controls for %s',
     async (section) => {
       await act(async () => {
         root.render(<SettingsNeoPage section={section} />);
@@ -362,6 +363,8 @@ describe('SettingsNeoPage', () => {
       expect(container.textContent).toContain('Щільний');
       expect(container.textContent).toContain('Без тегів');
       expect(container.textContent).toContain('Згортати перегляд довгих повідомлень:');
+      expect(container.textContent).toContain('За датою перехоплення');
+      expect(container.textContent).toContain('За датою створення');
       expect(container.textContent).toContain(
         'Визначає, коли з’являється кнопка «Показати більше».',
       );
@@ -384,6 +387,7 @@ describe('SettingsNeoPage', () => {
         expect(saveUserDutySettings).toHaveBeenLastCalledWith({
           tagsLayout: 'compact',
           messageTextPreviewLines: value,
+          messageSortBy: 'interception',
           disableAutoScroll: false,
           analysisMapInSidebar: false,
           dutyAudioTranscriptionCollapsed: false,
@@ -448,6 +452,7 @@ describe('SettingsNeoPage', () => {
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: false,
       messageTextPreviewLines: 20,
+      messageSortBy: 'interception',
     });
 
     await act(async () => {
@@ -492,6 +497,7 @@ describe('SettingsNeoPage', () => {
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: false,
       messageTextPreviewLines: 20,
+      messageSortBy: 'interception',
     });
   });
 
@@ -526,6 +532,7 @@ describe('SettingsNeoPage', () => {
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: false,
       messageTextPreviewLines: 20,
+      messageSortBy: 'interception',
     });
   });
 
@@ -560,6 +567,7 @@ describe('SettingsNeoPage', () => {
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: false,
       messageTextPreviewLines: 20,
+      messageSortBy: 'interception',
     });
 
     saveUserDutySettings.mockClear();
@@ -593,6 +601,7 @@ describe('SettingsNeoPage', () => {
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: false,
       messageTextPreviewLines: 20,
+      messageSortBy: 'interception',
     });
   });
 
@@ -631,6 +640,7 @@ describe('SettingsNeoPage', () => {
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: false,
       messageTextPreviewLines: 20,
+      messageSortBy: 'interception',
     });
 
     const hiddenButton = Array.from(container.querySelectorAll('button')).find(
@@ -655,6 +665,7 @@ describe('SettingsNeoPage', () => {
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: false,
       messageTextPreviewLines: 20,
+      messageSortBy: 'interception',
     });
   });
 
@@ -698,6 +709,7 @@ describe('SettingsNeoPage', () => {
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: true,
       messageTextPreviewLines: 20,
+      messageSortBy: 'interception',
     });
   });
 

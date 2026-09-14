@@ -1,5 +1,8 @@
 import type { InboxMessage, User } from '../../../../Bindings';
-import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
+import type {
+  MessageTextPreviewLineLimit,
+  MessageTimeBasis,
+} from '../../services/api/user-settings';
 import type { FeedColumnModel } from './types';
 import { useDutyFeedColumnActions, type RerDutyFeedsBundle } from './useDutyFeedColumnActions';
 import {
@@ -18,6 +21,7 @@ export type DutyFeedColumnModelDeps = {
   collapseMediaPreviews: boolean;
   mediaSummaryEnabled: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
+  messageTimeBasis: MessageTimeBasis;
   openReportEditor: (reportId: number) => void;
   openMessageEditor: (target: { id: number; message: InboxMessage }) => void;
   openReportComposer: (source: { id: number; message: InboxMessage }) => void;
@@ -260,6 +264,7 @@ function buildFeedMessageCard(
     collapseMediaPreviews: deps.collapseMediaPreviews,
     mediaSummaryEnabled: deps.mediaSummaryEnabled,
     messageTextPreviewLines: deps.messageTextPreviewLines,
+    messageTimeBasis: deps.messageTimeBasis,
     tagsMap,
     tagsOrder,
     botTagAction,

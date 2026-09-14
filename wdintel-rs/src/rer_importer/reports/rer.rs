@@ -10,6 +10,7 @@ use crate::rer_importer::report_chunking::{
     inbox_report_chunk_req, inbox_report_period_chunks, ReportPeriodEnd,
 };
 use crate::rer_importer::reports::types::ReportPreviewReq;
+use crate::rer_importer::types::InboxMessagesSortBy;
 use crate::types::{Env, ShortContext};
 use crate::utils::{dt_from_millis, dt_zoned_from_millis};
 use anyhow::Context;
@@ -629,6 +630,7 @@ async fn load_candidate_item_ids_chunk(
         since_ms,
         till_ms,
         period_end,
+        candidate_req.sort_by,
         require_network_link,
         require_non_empty_comments,
     )?;
@@ -648,10 +650,11 @@ fn apply_candidate_item_filters(
     since_ms: Option<i64>,
     till_ms: Option<i64>,
     period_end: ReportPeriodEnd,
+    sort_by: Option<InboxMessagesSortBy>,
     require_network_link: bool,
     require_non_empty_comments: bool,
 ) -> Result<Select<signal_message::Entity>, AppError> {
-    let candidate_timestamp = candidate_report_timestamp_expr();
+    let candidate_timestamp = candidate_report_timestamp_expr(sort_by);
     if let Some(since_ms) = since_ms {
         query = query.filter(
             candidate_timestamp
@@ -694,10 +697,16 @@ fn candidate_query_req_without_date_bounds(
     (candidate_req, since_ms, till_ms)
 }
 
-fn candidate_report_timestamp_expr() -> SimpleExpr {
-    Expr::cust(
-        r#"COALESCE("sigint_inbox_item"."datetime", "signal_message"."timestamp")"#,
-    )
+fn candidate_report_timestamp_expr(
+    sort_by: Option<InboxMessagesSortBy>,
+) -> SimpleExpr {
+    if sort_by == Some(InboxMessagesSortBy::IMSCreatedAt) {
+        Expr::cust(r#""signal_message"."created_at""#)
+    } else {
+        Expr::cust(
+            r#"COALESCE("sigint_inbox_item"."datetime", "signal_message"."timestamp")"#,
+        )
+    }
 }
 
 fn item_network_link_exists() -> SimpleExpr {
@@ -1728,7 +1737,7 @@ mod tests {
     #[test]
     fn candidate_report_timestamp_uses_datetime_then_signal_timestamp() {
         let sql = sea_orm::sea_query::Query::select()
-            .expr(candidate_report_timestamp_expr())
+            .expr(candidate_report_timestamp_expr(None))
             .to_string(sea_orm::sea_query::PostgresQueryBuilder);
 
         assert_eq!(
@@ -1738,12 +1747,24 @@ mod tests {
     }
 
     #[test]
+    fn candidate_report_timestamp_uses_creation_time_when_selected() {
+        let sql = sea_orm::sea_query::Query::select()
+            .expr(candidate_report_timestamp_expr(Some(
+                InboxMessagesSortBy::IMSCreatedAt,
+            )))
+            .to_string(sea_orm::sea_query::PostgresQueryBuilder);
+
+        assert_eq!(sql, r#"SELECT "signal_message"."created_at""#);
+    }
+
+    #[test]
     fn candidate_item_filters_make_network_link_optional() {
         let query_without_network = apply_candidate_item_filters(
             signal_message::Entity::find(),
             None,
             None,
             ReportPeriodEnd::Inclusive,
+            None,
             false,
             false,
         )
@@ -1756,6 +1777,7 @@ mod tests {
             None,
             None,
             ReportPeriodEnd::Inclusive,
+            None,
             true,
             false,
         )
@@ -1780,6 +1802,7 @@ mod tests {
             Some(1_000),
             Some(2_000),
             ReportPeriodEnd::NonInclusive,
+            Some(InboxMessagesSortBy::IMSCreatedAt),
             false,
             false,
         )

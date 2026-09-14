@@ -144,6 +144,7 @@ export async function getPostsList(options?: RequestOptions): Promise<string[]> 
     filterTagsOption: null,
     withoutModelTags: null,
     reportTagsOnlyThisUnit: null,
+    messageTimeBasis: null,
   };
   const snakeBody = transformCamelToSnake<AnalysisStatsReq>(body);
   const raw = await postJson<PostStatsRsp>('/api/rer/analysis/stats/posts', snakeBody, options);

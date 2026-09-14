@@ -262,6 +262,7 @@ export function AnalysisCenterPanel({
             tagsOrder={page.tagsOrder}
             tagsLoading={page.filtersLoading && Object.keys(page.tagsMap).length === 0}
             tagsLayout={page.tagsLayout}
+            messageTimeBasis={page.queryState.messageTimeBasis}
             collapseMediaPreviews={page.collapseMediaPreviews}
             mediaSummaryEnabled={page.mediaSummaryEnabled}
             messageTextPreviewLines={page.messageTextPreviewLines}

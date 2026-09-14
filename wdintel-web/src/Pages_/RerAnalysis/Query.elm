@@ -338,6 +338,7 @@ analysisStatsParams dtFromPosix dtToPosix model =
                 Just model.unitsExactMatchOnly
         , withoutModelTags = Just model.withoutModelTags
         , reportTagsOnlyThisUnit = Just model.reportTagsOnlyThisUnit
+        , messageTimeBasis = Nothing
         }
 
 
@@ -377,6 +378,7 @@ analysisStatsDefaultParams dtFromPosix dtToPosix =
     , unitsExactMatchOnly = Nothing
     , withoutModelTags = Nothing
     , reportTagsOnlyThisUnit = Nothing
+    , messageTimeBasis = Nothing
     }
 
 

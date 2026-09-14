@@ -2132,6 +2132,9 @@ fn generic_submit_item_to_inbox_message(
         important: false,
         bookmarked: false,
         timestamp: Some(timestamp.and_utc().timestamp_millis()),
+        created_at: None,
+        created_at_order: None,
+        has_date_in_header: false,
         group_master_key: None,
         sender: item.sender.clone(),
         extended_form: item.comment.clone(),
@@ -4226,10 +4229,9 @@ async fn get_freq_pelengs_summary(
 ) -> Result<Json<FreqPelengsActivityRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
+    let req = req.into_inner();
 
-    let q = build_inbox_query(&login, &env, &req.into_inner())
-        .await
-        .context(h!())?;
+    let q = build_inbox_query(&login, &env, &req).await.context(h!())?;
 
     let q = format!(
         r#"SELECT "freq" as freq, COUNT(*) AS count

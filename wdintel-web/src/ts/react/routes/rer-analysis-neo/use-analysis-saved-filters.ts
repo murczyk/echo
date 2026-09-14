@@ -9,7 +9,7 @@ import {
   upsertAnalysisSavedFilter,
 } from '../../services/api/analysis';
 import {
-  buildAnalysisReq,
+  buildSavedFilterReq,
   queryStateFromSavedFilter,
   queryStateMatchesSavedFilter,
 } from './helpers';
@@ -126,7 +126,7 @@ export function useAnalysisSavedFilters({
 
   const saveAsNew = useCallback(
     async (name: string) => {
-      const req = buildAnalysisReq(queryState, allFrequencies);
+      const req = buildSavedFilterReq(queryState, allFrequencies);
       const nextName = name.trim();
       if (isNullOrUndefined(req) || nextName === '') return false;
       setSaveInFlight(true);
@@ -180,7 +180,7 @@ export function useAnalysisSavedFilters({
 
   const updateExisting = useCallback(async () => {
     if (!loadedSavedFilter) return;
-    const req = buildAnalysisReq(queryState, allFrequencies);
+    const req = buildSavedFilterReq(queryState, allFrequencies);
     if (isNullOrUndefined(req)) return;
     setSaveInFlight(true);
     onError('');

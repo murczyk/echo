@@ -29,6 +29,8 @@ function renderCard(
         onTagsLayoutChange={onTagsLayoutChange}
         messageTextPreviewLines={messageTextPreviewLines}
         onMessageTextPreviewLinesChange={onMessageTextPreviewLinesChange}
+        messageSortBy="interception"
+        onMessageSortByChange={vi.fn()}
         mediaSummaryEnabled={mediaSummaryEnabled}
         onMediaSummaryEnabledChange={onMediaSummaryEnabledChange}
         collapseMediaPreviews={collapseMediaPreviews}
@@ -109,6 +111,28 @@ describe('SettingsMessageCard', () => {
         ),
       ).toBe(true);
     }
+  });
+
+  // https://github.com/echoua/echo/issues/3455
+  it('places message sorting immediately after the long-message setting', () => {
+    const { container } = renderCard(20, true, true);
+    const previewToggle = Array.from(container.querySelectorAll('*')).find(
+      (item) => item.textContent === 'Згортати перегляд довгих повідомлень:',
+    );
+    const sorting = Array.from(container.querySelectorAll('*')).find(
+      (item) => item.textContent === 'Сортування:',
+    );
+
+    expect(previewToggle).toBeDefined();
+    expect(sorting).toBeDefined();
+    expect(
+      Boolean(
+        previewToggle?.compareDocumentPosition(sorting ?? document.body) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      ),
+    ).toBe(true);
+    expect(container.textContent).toContain('За датою перехоплення');
+    expect(container.textContent).toContain('За датою створення');
   });
 
   it.each([

@@ -248,8 +248,13 @@ export function createResetQueryState(now: Date = new Date()): AnalysisQueryStat
 }
 
 function messageDateInAppTimeZone(
-  message: Pick<InboxMessage, 'date' | 'timestamp'>,
+  message: Pick<InboxMessage, 'date' | 'timestamp' | 'createdAt'>,
+  messageTimeBasis: AnalysisQueryState['messageTimeBasis'],
 ): string | null {
+  if (messageTimeBasis === 'creation') {
+    if (message.createdAt == null || !Number.isFinite(message.createdAt)) return null;
+    return dayjs(message.createdAt).tz(APP_TIME_ZONE).format('YYYY-MM-DD');
+  }
   if (message.date != null && combineDateTimeToMs(message.date, '00:00', APP_TIME_ZONE) != null) {
     return message.date;
   }
@@ -259,10 +264,10 @@ function messageDateInAppTimeZone(
 
 export function extendQueryDateRangeForDirectMessage(
   state: AnalysisQueryState,
-  message: Pick<InboxMessage, 'date' | 'timestamp'>,
+  message: Pick<InboxMessage, 'date' | 'timestamp' | 'createdAt'>,
   now: Date = new Date(),
 ): AnalysisQueryState {
-  const messageDate = messageDateInAppTimeZone(message);
+  const messageDate = messageDateInAppTimeZone(message, state.messageTimeBasis);
   if (messageDate == null) return state;
 
   const messageDayStartMs = combineDateTimeToMs(messageDate, '00:00', APP_TIME_ZONE);
@@ -442,7 +447,20 @@ export function buildAnalysisReq(
     filterTagsOption: query.filterTagsOption,
     withoutModelTags: query.withoutModelTags,
     reportTagsOnlyThisUnit: query.reportTagsOnlyThisUnit,
+    // Generated TypeScript uses the Rust variant name, while the HTTP contract
+    // intentionally serializes this enum as the stable lowercase wire value.
+    messageTimeBasis: (query.messageTimeBasis === 'creation'
+      ? 'creation'
+      : null) as AnalysisStatsReq['messageTimeBasis'],
   };
+}
+
+export function buildSavedFilterReq(
+  state: AnalysisQueryState,
+  allFrequencies: string[] = [],
+): AnalysisStatsReq | null {
+  const req = buildAnalysisReq(state, allFrequencies);
+  return isNullOrUndefined(req) ? null : { ...req, messageTimeBasis: null };
 }
 
 export function buildInboxReq(
@@ -506,7 +524,7 @@ export function buildInboxReq(
     metadataHash: req.metadataHash,
     onlyWithMetadata: req.onlyWithMetadata,
     withoutMetadata: req.withoutMetadata,
-    sortBy: null,
+    sortBy: state.messageTimeBasis === 'creation' ? 'IMSCreatedAt' : null,
     reportTagsOnlyThisUnit: req.reportTagsOnlyThisUnit,
     ignoreImportedCoords: null,
     includePelengLocations: req.includePelengLocations,
@@ -525,6 +543,7 @@ export function buildInboxOverallCountReq(state: AnalysisQueryState): InboxMessa
     ...emptyQueryState(),
     fromDateTimeStr: state.fromDateTimeStr,
     toDateTimeStr: state.toDateTimeStr,
+    messageTimeBasis: state.messageTimeBasis,
   });
 }
 
@@ -692,6 +711,7 @@ function analysisReqComparisonKey(
   const {
     sinceDateInclusiveMs: _sinceDateInclusiveMs,
     tillDateNoninclusiveMs: _tillDateNoninclusiveMs,
+    messageTimeBasis: _messageTimeBasis,
     ...rest
   } = normalized;
   return JSON.stringify(rest);
