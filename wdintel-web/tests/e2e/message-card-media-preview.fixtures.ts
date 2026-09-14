@@ -20,6 +20,38 @@ const MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX = '/test-assets/message-card-media
 
 const TRANSPARENT_PNG_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4////fwAJ+wP7bq8W2QAAAABJRU5ErkJggg==';
+
+export type DeferredMediaResponse = {
+  waitForRequest: () => Promise<void>;
+  release: () => void;
+  fulfill: (route: Route, body: BodyInit, contentType: string) => Promise<void>;
+};
+
+export function createDeferredMediaResponse(): DeferredMediaResponse {
+  let resolveRequest!: () => void;
+  let resolveRelease!: () => void;
+  const request = new Promise<void>((resolve) => {
+    resolveRequest = resolve;
+  });
+  const release = new Promise<void>((resolve) => {
+    resolveRelease = resolve;
+  });
+  let released = false;
+
+  return {
+    waitForRequest: () => request,
+    release: () => {
+      if (released) return;
+      released = true;
+      resolveRelease();
+    },
+    fulfill: async (route, body, contentType) => {
+      resolveRequest();
+      await release;
+      await fulfillAsset(route, body, contentType);
+    },
+  };
+}
 const LARGE_IMAGE_SVG = `
   <svg xmlns="http://www.w3.org/2000/svg" width="900" height="1600" viewBox="0 0 900 1600">
     <rect width="900" height="1600" fill="#1b365d"/>
@@ -97,14 +129,26 @@ function buildMessageCardMediaPreviewMessage({
     messageUid: 'e2e-message-card-preview',
     text: 'E2E message-card media preview fixture',
     media: [
-      ...(withCompletedOcrAndSummary
+      ...(withPartialCoordinateError || withCompleteCoordinateError || coordinateLabel != null
         ? [
             {
-              id: 'e2e-image-1',
-              content_type: 'image/svg+xml',
-              file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1,
-              size_bytes: 1_024,
-              href: image1,
+              id: 'e2e-coordinate-error',
+              content_type: 'text/plain',
+              file_name: 'e2e-coordinate-source.txt',
+              size_bytes: 128,
+              href: text,
+              summary: { state: 'completed', lastError: null, hasCoordinates: true },
+            },
+          ]
+        : []),
+      {
+        id: 'e2e-image-1',
+        content_type: 'image/png',
+        file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1,
+        size_bytes: 512,
+        href: image1,
+        ...(withCompletedOcrAndSummary
+          ? {
               ocr: {
                 state: 'completed',
                 qualityStatus: 'accepted',
@@ -119,15 +163,8 @@ function buildMessageCardMediaPreviewMessage({
                 modelName: null,
               },
               summary: { state: 'completed', lastError: null, hasCoordinates: false },
-            },
-          ]
-        : []),
-      {
-        id: 'e2e-image-1',
-        content_type: 'image/png',
-        file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1,
-        size_bytes: 512,
-        href: image1,
+            }
+          : {}),
       },
       {
         id: 'e2e-image-2',
@@ -354,10 +391,15 @@ async function installMessageCardMediaPreviewHostFixture(
 
   if (host === 'analysis') {
     await installAnalysisNeoApiMocks(page, { inboxResponse, enableAudioTranscription });
-    return;
+  } else {
+    await installRerDutyShortStateMocks(page, {
+      inboxResponse,
+      networkInfoResponse,
+      enableAudioTranscription,
+    });
   }
 
-  if (messageReferenceResponse !== undefined) {
+  if (host === 'duty' && messageReferenceResponse !== undefined) {
     await page.route('**/api/rer-importer/inbox-item-context', async (route) => {
       if (messageReferenceDelayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, messageReferenceDelayMs));
@@ -516,4 +558,15 @@ export async function openMessageCardPreviewHost(
   }
   await expect(page.getByRole('button', { name: 'Відкрити зображення' })).toHaveCount(2);
   await expect(page.getByRole('button', { name: 'Відкрити відео' })).toHaveCount(2);
+
+  if (revealAudio) {
+    const audio = page.getByRole('button', { name: /^(Розгорнути|Згорнути) аудіо:/ });
+    if ((await audio.getAttribute('aria-expanded')) !== 'true') await audio.click();
+  }
+  if (revealCoordinates) {
+    const coordinates = page.getByRole('button', {
+      name: /^(Розгорнути|Згорнути) координати:/,
+    });
+    if ((await coordinates.getAttribute('aria-expanded')) !== 'true') await coordinates.click();
+  }
 }

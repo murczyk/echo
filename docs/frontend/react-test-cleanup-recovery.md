@@ -2,13 +2,17 @@
 
 `react-test-removal-dispositions.json` is the machine-readable recovery ledger for this migration.
 
-Its reference inventory is `main` at `009062bd10c51ca280689165dcd0dd96b69fd1b9`:
+Its final checkpoint is `e3f020aa1`; the current working tree is the authoritative AST source:
 
-- 2,752 original test identities;
-- 2,353 retained AST identities in the final React tree;
-- 1,444 relocation records with existing final targets;
-- 555 genuinely removed identities with explicit dispositions;
-- 5 incoming identities with an explicit admission decision.
+- 2,460 retained React AST identities in the final tree;
+- 1,465 relocation records with existing final targets;
+- 28 genuinely removed identities with explicit final-removal dispositions;
+- 466 incoming identities with an explicit admission decision.
+
+Counters are derived by `test-ledger-check.mjs`: `current` is the unique AST
+identity count under `src/ts/react`; `incoming` is the number of unique
+`file + id` incoming records; `genuinelyRemoved` is moved records with a valid
+final-removal object; and `relocated` is moved records without one.
 
 An empty test-scope baseline is not evidence that a removal is valid. A removal becomes complete only when its ledger record has an admitted disposition and, where the test protected visible behavior, a linked behavior contract or stronger retained test.
 

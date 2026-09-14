@@ -71,3 +71,13 @@
 - **Source implementation:** routes/shared/image-editor/ImageEditorContextControls.tsx and image-editor-padded-text.ts.
 - **Existing test(s):** ImageEditorContextControls.spec.tsx and image-editor-padded-text.spec.ts.
 - **Original Echo issue/PR, if known:** [#3099](https://github.com/echoua/echo/issues/3099), [#3294](https://github.com/echoua/echo/issues/3294).
+
+## Selection styles and reachable controls
+
+- **Status:** issue-backed regression
+- **Behavior ID:** `react-image-editor-selection-style-and-responsive-controls`
+- **Affected route/component:** shared image-editor selection toolbar and drawer controls.
+- **Expected observable result:** changing a standalone arrow's color, dash, or width preserves the other selected styles. Width changes recalculate dashed rectangle, ellipse, and line spacing, while solid annotations remain solid. Editor actions remain reachable at representative viewport sizes and shortcut help is available from desktop and mobile controls.
+- **Source implementation:** `routes/shared/image-editor/ImageEditor.tsx` and selection-style helpers.
+- **Existing test(s):** `use-image-editor-selection-style.spec.tsx`; `tests/e2e/image-editor-drawer.spec.ts`.
+- **Original Echo issue/PR, if known:** [#3448](https://github.com/echoua/echo/issues/3448).

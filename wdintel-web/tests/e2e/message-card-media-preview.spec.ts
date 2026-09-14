@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
 import {
+  createDeferredMediaResponse,
   MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES,
   openMessageCardPreviewHost,
 } from './message-card-media-preview.fixtures';
@@ -723,7 +724,8 @@ test.describe('message card media preview contract', () => {
           if (item) item.style.width = `${width}px`;
         }, cardWidth);
 
-        await mediaControl.click();
+        if ((await mediaControl.getAttribute('aria-expanded')) !== 'true')
+          await mediaControl.click();
         await expect(mediaControl).toHaveAttribute('aria-expanded', 'true');
         const imageTile = card.locator('[data-picture-thumb-layout]').first();
         const videoTile = card.locator('[data-video-thumb-state]').first();
@@ -736,7 +738,8 @@ test.describe('message card media preview contract', () => {
         expect(videoBox?.width).toBe(72);
         expect(videoBox?.height).toBe(72);
 
-        await coordinateControl.click();
+        if ((await coordinateControl.getAttribute('aria-expanded')) !== 'true')
+          await coordinateControl.click();
         await expect(coordinateControl).toHaveAttribute('aria-expanded', 'true');
 
         const coordinateHost = card.locator('[data-coordinate-preview-root]');
@@ -793,6 +796,7 @@ test.describe('message card media preview contract', () => {
       const host = card.locator('[data-coordinate-preview-root]');
       const failureTile = card.locator('[data-coordinate-preview-retry-tile]');
       const retry = failureTile.getByRole('button', { name: 'Повторити завантаження координат' });
+      await host.scrollIntoViewIfNeeded();
       await expect(failureTile).toBeVisible();
       await expect(retry).toBeVisible();
       const [hostBox, tileBox, retryBox, hostOverflow] = await Promise.all([
@@ -853,12 +857,14 @@ test.describe('message card media preview contract', () => {
           if (item) item.style.width = `${width}px`;
         }, cardWidth);
 
-        await mediaControl.click();
+        if ((await mediaControl.getAttribute('aria-expanded')) !== 'true')
+          await mediaControl.click();
         const [imageBox, videoBox] = await Promise.all([
           card.locator('[data-picture-thumb-layout]').first().boundingBox(),
           card.locator('[data-video-thumb-state]').first().boundingBox(),
         ]);
-        await coordinateControl.click();
+        if ((await coordinateControl.getAttribute('aria-expanded')) !== 'true')
+          await coordinateControl.click();
         await expect(coordinateTile).toBeVisible();
         await expect(count).toHaveText('9');
         expect(await count.textContent()).toBe('9');
@@ -1050,7 +1056,7 @@ test.describe('message card media preview contract', () => {
     }
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3380
+  // @test-scope regression: https://github.com/echoua/echo/issues/3453
   test('resolves a Palitra coordinate into the fullscreen MGRS map in both hosts', async ({
     page,
   }) => {

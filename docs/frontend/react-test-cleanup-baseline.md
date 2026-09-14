@@ -51,6 +51,21 @@ No browser or Vitest test is removed solely because of this baseline. Replacemen
 
 ## Final checkpoint — 2026-09-09
 
+The final ledger reconciliation uses `e3f020aa1` and the current AST rather
+than inherited counters. It records 2,460 retained React identities, 466
+incoming decisions, 28 genuine removals, and 1,465 relocations.
+
+### Ledger mutation proof
+
+Run each temporary ledger mutation with `npm run test:ts:ledger-check`, then
+revert it: a nonexistent `toIdentity` must produce `invalid moved target`; a
+still-existing final removal must produce `finally removed identity still
+exists`; removing or changing an incoming retained decision must produce
+missing-current or removed-identity failures; duplicate entries must produce
+duplicate-key failures; changing an inventory must produce an inventory
+mismatch; and a nonexistent behavior ID must produce an unresolved-behavior-
+reference failure.
+
 - Scope debt: zero new debt and zero legacy debt.
 - Vitest gate passed 315 files and 2,622 tests; `just build-front` passed.
   Local unavailable-API warnings remain expected Happy DOM noise when a test

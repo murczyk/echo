@@ -107,7 +107,7 @@ async function openPendingImageEditor(
   await expect(preview).toBeVisible();
   await preview.getByRole('button', { name: 'Редагувати зображення' }).click();
   const editor = page.getByLabel('Редактор зображення');
-  await expect(editor).toBeVisible({ timeout: 30_000 });
+  await expect(editor).toBeVisible();
   return { editor, preview };
 }
 
@@ -562,6 +562,66 @@ test('TUS preserves a busy upload while resuming after a lost accepted chunk res
     }),
     contentType: 'application/json',
   });
+});
+
+// @test-scope regression: https://github.com/echoua/echo/issues/3448
+test('keeps editor actions reachable at representative viewports', async ({ page }) => {
+  const { editor } = await openPendingImageEditor(page, 'duty');
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 768, height: 900 },
+    { width: 360, height: 800 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect(editor.locator('canvas[data-fabric="top"]')).toBeVisible();
+    await expect(editor.getByRole('button', { name: 'Текст', exact: true })).toBeVisible();
+    await expect(editor.locator('footer').getByRole('button', { name: 'Скасувати' })).toBeVisible();
+    await expect(
+      editor.locator('footer').getByRole('button', { name: 'Зберегти', exact: true }),
+    ).toBeVisible();
+  }
+});
+
+// @test-scope regression: https://github.com/echoua/echo/issues/3448
+test('presents shortcut help across desktop and mobile controls #3448', async ({ page }) => {
+  const { editor } = await openPendingImageEditor(page, 'duty');
+  await page.setViewportSize({ width: 360, height: 800 });
+  await editor.getByRole('button', { name: 'Ще' }).click();
+  await page.getByRole('menuitem', { name: 'Гарячі клавіші' }).click();
+  const help = page.getByRole('heading', { name: 'Гарячі клавіші' });
+  await expect(help).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(help).toBeHidden();
+  await expect(editor).toBeVisible();
+});
+
+// @test-scope regression: https://github.com/echoua/echo/issues/3448
+test('keeps standalone-arrow toolbar styles combined after each edit #3448', async ({ page }) => {
+  const { editor } = await openPendingImageEditor(page, 'duty');
+  await editor.getByRole('button', { name: 'Стрілка' }).click();
+  const surface = editor.locator('canvas').last();
+  const box = await surface.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.move(box!.x + 40, box!.y + 50);
+  await page.mouse.down();
+  await page.mouse.move(box!.x + 180, box!.y + 100);
+  await page.mouse.up();
+  await editor.getByRole('button', { name: 'Вибрати об’єкт' }).click();
+  await page.mouse.click(box!.x + 110, box!.y + 75);
+  const width = editor.getByRole('slider', { name: 'Товщина' });
+  await expect(width).toHaveValue('4');
+  const color = editor.getByLabel('Контур');
+  await color.evaluate((input: HTMLInputElement) => {
+    input.value = '#22c55e';
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await expect(width).toHaveValue('4');
+  const dash = editor.getByRole('button', { name: 'Пунктир' });
+  await dash.click();
+  await expect(dash).toHaveAttribute('aria-pressed', 'true');
+  await width.press('ArrowRight');
+  await expect(width).toHaveValue('5');
+  await expect(dash).toHaveAttribute('aria-pressed', 'true');
 });
 
 // @test-scope regression: https://github.com/echoua/echo/issues/3294

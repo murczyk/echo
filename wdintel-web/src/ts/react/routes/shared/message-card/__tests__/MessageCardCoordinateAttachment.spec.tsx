@@ -281,7 +281,7 @@ describe('MessageCardCoordinateAttachment', () => {
     );
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3380
+  // @test-scope regression: https://github.com/echoua/echo/issues/3453
   it('updates the thumbnail without recreating the map when a coordinate is removed', async () => {
     const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
       width: 180,

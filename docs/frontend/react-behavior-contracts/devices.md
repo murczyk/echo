@@ -123,3 +123,24 @@
 - **Source implementation:** `routes/devices/`, `routes/device-details/`, and `routes/device-files/`.
 - **Existing test(s):** route and component interaction suites under those directories.
 - **Original Echo issue/PR, if known:** none recorded; retained as user-visible operational safeguards.
+
+## Retired manual Device Files synchronization
+
+- **Status:** retired historical behavior
+- **Behavior ID:** `device-files-manual-sync-retired`
+- **Affected route/component:** the removed `DeviceFileSyncDialog`, `useDeviceFilesSync`, sync helpers, and sync API flow.
+- **Expected observable result:** no manual React synchronization dialog, row-freezing/retry flow, or synchronization authorization action remains in the current Device Files client.
+- **Current behavior:** Device Files provides the file workspace, tree, search, journal, and analytics functionality. The removed synchronization-specific invariants are historical and no longer client behavior.
+- **Source implementation:** current `routes/device-files/` workspace only; the manual synchronization components and hooks were removed upstream.
+
+## Final test-cleanup removals
+
+- **Status:** audit record
+- **Behavior ID:** `react-test-cleanup-final-removals`
+- **Expected observable result:** a record marked finally removed has no matching AST identity in either its original or moved target path.
+
+## Retained post-checkpoint test identities
+
+- **Status:** audit record
+- **Behavior ID:** `react-test-cleanup-retained-identities`
+- **Expected observable result:** every retained post-checkpoint React AST identity remains present and keeps the concrete admission rationale declared by its source `@test-scope` annotation.
