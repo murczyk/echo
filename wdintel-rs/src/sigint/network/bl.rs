@@ -455,6 +455,17 @@ pub async fn network_group_activity_bl(
     env: actix_web::web::Data<Env>,
     req: Json<NetworkGroupsActivityReq>,
 ) -> Result<HashMap<String, HashMap<String, HashMap<String, i64>>>, AppError> {
+    Ok(network_group_activity_summary_bl(user, env, req)
+        .await
+        .context(h!())?
+        .activity)
+}
+
+pub async fn network_group_activity_summary_bl(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<NetworkGroupsActivityReq>,
+) -> Result<NetworkGroupsActivitySummaryRsp, AppError> {
     ensure_rer_role(&env.dbx, &user).await.context(h!())?;
     let dt_till = if let Some(till) = req.till_date_noninclusive_ms {
         dt_from_millis(till).context(h!())?
@@ -513,9 +524,9 @@ async fn load_network_group_activity_postgres(
     network_ids: &[i64],
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
-) -> Result<HashMap<String, HashMap<String, HashMap<String, i64>>>, AppError> {
+) -> Result<NetworkGroupsActivitySummaryRsp, AppError> {
     if groups.is_empty() || network_ids.is_empty() {
-        return Ok(HashMap::new());
+        return Ok(NetworkGroupsActivitySummaryRsp::default());
     }
 
     let networks_group_stat = signal_message::Entity::find()
@@ -556,6 +567,10 @@ async fn load_network_group_activity_postgres(
         )
         .column_as(signal_group::Column::Name, "group")
         .column_as(Expr::cust("count(*)"), "count")
+        .column_as(
+            Expr::cust("max(COALESCE(sigint_inbox_item.datetime, signal_message.timestamp, signal_message.created_at))"),
+            "last_activity_at",
+        )
         .group_by(Expr::cust(
             "network_id, day, signal_group.name",
         ))
@@ -599,9 +614,10 @@ async fn load_network_group_activity_postgres(
         pub count: i64,
         pub group: String,
         pub day: i64,
+        pub last_activity_at: NaiveDateTime,
     }
 
-    let mut res = HashMap::new();
+    let mut res = NetworkGroupsActivitySummaryRsp::default();
     for row in networks_group_stat
         .into_model::<NetworkGroupsMessageCountByDay>()
         .all(db)
@@ -612,15 +628,20 @@ async fn load_network_group_activity_postgres(
         let day = row.day.to_string();
         let group = row.group.clone();
         let count = row.count;
-        if !res.contains_key(&network_id) {
-            res.insert(network_id.clone(), HashMap::new());
-        }
-        let freq_map = res.get_mut(&network_id).unwrap();
-        if !freq_map.contains_key(&day) {
-            freq_map.insert(day.clone(), HashMap::new());
-        }
-        let day_map = freq_map.get_mut(&day).unwrap();
-        day_map.insert(group.clone(), count);
+        let last_activity_at =
+            row.last_activity_at.and_utc().timestamp_millis();
+        res.last_activity_at
+            .entry(network_id.clone())
+            .and_modify(|current| {
+                *current = std::cmp::max(*current, last_activity_at)
+            })
+            .or_insert(last_activity_at);
+        res.activity
+            .entry(network_id)
+            .or_default()
+            .entry(day)
+            .or_default()
+            .insert(group, count);
     }
 
     Ok(res)
@@ -1256,7 +1277,12 @@ mod tests {
         )
         .await
         .unwrap();
+        assert_eq!(
+            activity.last_activity_at.get(&network.id.to_string()),
+            Some(&dt(2).and_utc().timestamp_millis())
+        );
         let message_count: i64 = activity
+            .activity
             .get(&network.id.to_string())
             .unwrap()
             .values()
@@ -1295,7 +1321,12 @@ mod tests {
         )
         .await
         .unwrap();
+        assert_eq!(
+            activity.last_activity_at.get(&network.id.to_string()),
+            Some(&dt(2).and_utc().timestamp_millis())
+        );
         let message_count: i64 = activity
+            .activity
             .get(&network.id.to_string())
             .unwrap()
             .values()

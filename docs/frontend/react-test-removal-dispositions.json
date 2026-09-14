@@ -4,10 +4,10 @@
   "inventories": {
     "main": 2752,
     "head": 2584,
-    "current": 2457,
+    "current": 2458,
     "relocated": 1444,
     "genuinelyRemoved": 555,
-    "incoming": 5
+    "incoming": 7
   },
   "removed": [
     {
@@ -21972,6 +21972,22 @@
       "decision": "removed",
       "reason": "Direct timer and helper sequencing coverage is not an observable operational safeguard.",
       "behaviorReference": "production/type invariant"
+    },
+    {
+      "id": "useRerNetworksNeoPage > uses precise visible activity from the chart response",
+      "file": "src/ts/react/routes/rer-networks-neo/__tests__/use-rer-networks-neo-page.spec.tsx",
+      "decision": "retained",
+      "reason": "PR #3489 regression coverage prevents a stale cached list timestamp from replacing precise activity in the visible chart window.",
+      "behaviorReference": "react-networks-activity-pagination-state",
+      "originatingEchoReference": "https://github.com/echoua/echo/pull/3489"
+    },
+    {
+      "id": "networks API etalonka report download > returns precise activity alongside the grouped chart from one request",
+      "file": "src/ts/react/services/api/__tests__/networks.spec.ts",
+      "decision": "retained",
+      "reason": "Operational parser fixture for the combined network activity-summary response.",
+      "behaviorReference": "react-networks-api-compatibility",
+      "originatingEchoReference": "https://github.com/echoua/echo/pull/3489"
     }
   ]
 }

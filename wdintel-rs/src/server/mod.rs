@@ -1320,6 +1320,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::network::network_freq_callsigns_batch)
             .service(crate::sigint::network::network_freqs_list)
             .service(crate::sigint::network::network_group_activity)
+            .service(crate::sigint::network::network_group_activity_summary)
             .service(crate::sigint::network::network_group_activity_one)
             .service(crate::sigint::network::network_signals_list)
             .service(crate::sigint::network::list_network_points)

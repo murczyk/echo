@@ -13,6 +13,7 @@ import {
   getNetworkFreqCallsignsBatch,
   getSingleNetworkFreqs,
   getNetworksGroupsActivity,
+  getNetworksGroupsActivitySummary,
   listNetworks,
   launchNetworkEtalonkaBatchReportTask,
   launchNetworksEtalonkaReportTask,
@@ -267,6 +268,30 @@ describe('networks API etalonka report download', () => {
       }),
       undefined,
     );
+  });
+
+  // @test-scope parser: network activity-summary response normalization fixture.
+  it('returns precise activity alongside the grouped chart from one request', async () => {
+    postJsonMock.mockResolvedValueOnce({
+      activity: { 1: { 123: { alpha: 2 } } },
+      last_activity_at: { 1: 456 },
+    });
+
+    const response = await getNetworksGroupsActivitySummary({
+      networkIds: [1],
+      tillDateNoninclusiveMs: 789,
+      period: null,
+    });
+
+    expect(postJsonMock).toHaveBeenCalledWith(
+      '/api/sigint/network-group-activity-summary',
+      expect.objectContaining({ network_ids: [1], till_date_noninclusive_ms: 789 }),
+      undefined,
+    );
+    expect(response).toEqual({
+      activity: { 1: { 123: { alpha: 2 } } },
+      lastActivityAt: { 1: 456 },
+    });
   });
 
   it('encodes the relation messages request with snake_case body and passes abort signal through', async () => {

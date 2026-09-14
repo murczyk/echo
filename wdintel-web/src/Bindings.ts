@@ -3942,6 +3942,11 @@ export type NetworkGroupsActivityReq = {
   period: NetworkGroupActivityPeriod | null;
 };
 
+export type NetworkGroupsActivitySummaryRsp = {
+  activity: Record<string, Record<string, Record<string, number>>>;
+  lastActivityAt: Record<string, number>;
+};
+
 export type AddNetworkFreqReq = {
   networkId: number;
   freqRec: AddNetworkFreq;

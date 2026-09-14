@@ -10412,6 +10412,20 @@ networkGroupsActivityReqEncoder struct =
         ]
 
 
+type alias NetworkGroupsActivitySummaryRsp =
+    { activity : Dict String (Dict String (Dict String (Int)))
+    , lastActivityAt : Dict String (Int)
+    }
+
+
+networkGroupsActivitySummaryRspEncoder : NetworkGroupsActivitySummaryRsp -> Json.Encode.Value
+networkGroupsActivitySummaryRspEncoder struct =
+    Json.Encode.object
+        [ ( "activity", (Json.Encode.dict identity (Json.Encode.dict identity (Json.Encode.dict identity (Json.Encode.int)))) struct.activity )
+        , ( "last_activity_at", (Json.Encode.dict identity (Json.Encode.int)) struct.lastActivityAt )
+        ]
+
+
 type alias AddNetworkFreqReq =
     { networkId : Int
     , freqRec : AddNetworkFreq
@@ -21404,6 +21418,13 @@ networkGroupsActivityReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_ids" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_noninclusive_ms" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "period" (Json.Decode.nullable (networkGroupActivityPeriodDecoder))))
+
+
+networkGroupsActivitySummaryRspDecoder : Json.Decode.Decoder NetworkGroupsActivitySummaryRsp
+networkGroupsActivitySummaryRspDecoder =
+    Json.Decode.succeed NetworkGroupsActivitySummaryRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "activity" (Json.Decode.dict (Json.Decode.dict (Json.Decode.dict (Json.Decode.int))))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_activity_at" (Json.Decode.dict (Json.Decode.int))))
 
 
 networkUnitStatRowDecoder : Json.Decode.Decoder NetworkUnitStatRow

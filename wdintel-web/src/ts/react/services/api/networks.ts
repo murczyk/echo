@@ -34,6 +34,7 @@ import type {
   NetworkCallsignRelationMessagesReq,
   NetworkCallsignRelationMessagesRsp,
   NetworkGroupsActivityReq,
+  NetworkGroupsActivitySummaryRsp,
   UpdateNetworkDescriptionReq,
   UpdateNetworkFreqReq,
   UpdateNetworkPostsReq,
@@ -186,6 +187,18 @@ export async function getNetworksGroupsActivity(
     options,
   );
   return transformSnakeToCamel<Record<string, Record<string, Record<string, number>>>>(data);
+}
+
+export async function getNetworksGroupsActivitySummary(
+  req: NetworkGroupsActivityReq,
+  options?: RequestOptions,
+): Promise<NetworkGroupsActivitySummaryRsp> {
+  const data = await postJson<NetworkGroupsActivitySummaryRsp>(
+    '/api/sigint/network-group-activity-summary',
+    transformCamelToSnake(req),
+    options,
+  );
+  return transformSnakeToCamel<NetworkGroupsActivitySummaryRsp>(data);
 }
 
 export async function getNetworkUnitStats(): Promise<Array<{ unitId: number; count: number }>> {

@@ -7,7 +7,12 @@ import { act, createElement, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { AreaOfResponsibility, Network, Unit } from '../../../../../Bindings';
+import type {
+  AreaOfResponsibility,
+  Network,
+  NetworkGroupsActivitySummaryRsp,
+  Unit,
+} from '../../../../../Bindings';
 import { HttpRequestError } from '../../../services/api/client';
 import {
   NETWORK_STATUS_ACTIVE,
@@ -19,7 +24,7 @@ const apiMock = vi.hoisted(() => ({
   createNetwork: vi.fn(),
   deleteNetwork: vi.fn(),
   downloadNetworkEtalonkaReportTaskResult: vi.fn(),
-  getNetworksGroupsActivity: vi.fn(),
+  getNetworksGroupsActivitySummary: vi.fn(),
   getNetworkLastActivity: vi.fn(),
   getNetworkUnitStats: vi.fn(),
   getEncryptions: vi.fn(),
@@ -104,7 +109,7 @@ vi.mock('../../../services/api/networks', () => ({
   createNetwork: apiMock.createNetwork,
   deleteNetwork: apiMock.deleteNetwork,
   downloadNetworkEtalonkaReportTaskResult: apiMock.downloadNetworkEtalonkaReportTaskResult,
-  getNetworksGroupsActivity: apiMock.getNetworksGroupsActivity,
+  getNetworksGroupsActivitySummary: apiMock.getNetworksGroupsActivitySummary,
   getNetworkLastActivity: apiMock.getNetworkLastActivity,
   getNetworkUnitStats: apiMock.getNetworkUnitStats,
   listNetworks: apiMock.listNetworks,
@@ -253,7 +258,7 @@ describe('useRerNetworksNeoPage', () => {
     bgtaskMock.fetchBgtaskStatusAndLogs.mockReset();
     reportHistoryMock.fetchReportHistoryStatus.mockReset();
     reportHistoryMock.fetchReportHistoryTaskStatus.mockReset();
-    apiMock.getNetworksGroupsActivity.mockReset();
+    apiMock.getNetworksGroupsActivitySummary.mockReset();
     apiMock.getNetworkLastActivity.mockReset();
     apiMock.getNetworkUnitStats.mockReset();
     apiMock.getEncryptions.mockReset();
@@ -272,7 +277,10 @@ describe('useRerNetworksNeoPage', () => {
     apiMock.getUnitsByIds.mockResolvedValue([]);
     apiMock.getNetworkUnitStats.mockResolvedValue([]);
     apiMock.listPosts.mockResolvedValue([]);
-    apiMock.getNetworksGroupsActivity.mockResolvedValue({});
+    apiMock.getNetworksGroupsActivitySummary.mockResolvedValue({
+      activity: {},
+      lastActivityAt: {},
+    });
     apiMock.getNetworkLastActivity.mockResolvedValue([]);
     apiMock.getEncryptions.mockResolvedValue([{ id: 11, name: 'FM' } as never]);
     apiMock.currentSystemSettings.mockResolvedValue({
@@ -838,7 +846,10 @@ describe('useRerNetworksNeoPage', () => {
       statusCounts: { active: number; inactive: number; archived: number };
     }>();
     apiMock.listNetworks.mockImplementationOnce(() => firstLoad.promise);
-    apiMock.getNetworksGroupsActivity.mockResolvedValue({});
+    apiMock.getNetworksGroupsActivitySummary.mockResolvedValue({
+      activity: {},
+      lastActivityAt: {},
+    });
 
     await renderHook();
     await flushEffects();
@@ -1333,16 +1344,17 @@ describe('useRerNetworksNeoPage', () => {
     vi.setSystemTime(new Date('2026-09-07T22:30:00Z'));
 
     const todayKey = Date.UTC(2026, 8, 8);
-    apiMock.getNetworksGroupsActivity.mockResolvedValueOnce({
-      1: {
-        [todayKey]: { alpha: 3 },
+    apiMock.getNetworksGroupsActivitySummary.mockResolvedValueOnce({
+      activity: {
+        1: { [todayKey]: { alpha: 3 } },
       },
+      lastActivityAt: { 1: todayKey + 12 * 60 * 60 * 1000 },
     });
 
     await renderHook();
     await flushEffects();
 
-    expect(apiMock.getNetworksGroupsActivity).toHaveBeenCalledWith(
+    expect(apiMock.getNetworksGroupsActivitySummary).toHaveBeenCalledWith(
       {
         networkIds: [1, 2],
         tillDateNoninclusiveMs: Date.UTC(2026, 8, 8, 21),
@@ -1351,20 +1363,30 @@ describe('useRerNetworksNeoPage', () => {
       expect.any(Object),
     );
     expect(latest?.rows[0]?.activityBars.some((bar) => bar.value === 3)).toBe(true);
+    expect(latest?.rows[0]?.lastActivityLabel).toBe('08.09.26 12:00');
   });
 
-  it('uses last activity from the network list without another request', async () => {
-    const lastActivityAt = Date.now() - 24 * 60 * 60 * 1000;
+  // @test-scope regression: https://github.com/echoua/echo/pull/3489
+  it('uses precise visible activity from the chart response', async () => {
+    const cachedLastActivityAt = Date.now() - 24 * 60 * 60 * 1000;
+    const visibleLastActivityAt = cachedLastActivityAt - 60 * 60 * 1000;
     apiMock.listNetworks.mockResolvedValueOnce({
-      list: [buildNetwork(1, { lastActivityAt }), buildNetwork(2)],
+      list: [buildNetwork(1, { lastActivityAt: cachedLastActivityAt }), buildNetwork(2)],
       statusCounts: { active: 2, inactive: 0, archived: 0 },
+    });
+    apiMock.getNetworksGroupsActivitySummary.mockResolvedValueOnce({
+      activity: {},
+      lastActivityAt: { 1: visibleLastActivityAt },
     });
 
     await renderHook();
     await flushEffects();
 
-    expect(latest?.rows[0]?.lastActivityLabel).toBe(dayjs(lastActivityAt).format('DD.MM.YY HH:mm'));
-    expect(latest?.rows[1]?.lastActivityDetail).toBe('Немає перехоплень');
+    expect(latest?.rows[0]?.lastActivityLabel).toBe(
+      dayjs(visibleLastActivityAt).format('DD.MM.YY HH:mm'),
+    );
+    expect(latest?.rows[0]?.network.lastActivityAt).toBe(cachedLastActivityAt);
+    expect(latest?.rows[1]?.lastActivityDetail).toBe('Немає перехоплень за останні 10 днів');
     expect(apiMock.getNetworkLastActivity).not.toHaveBeenCalled();
   });
 
@@ -1375,6 +1397,10 @@ describe('useRerNetworksNeoPage', () => {
     apiMock.listNetworks.mockResolvedValueOnce({
       list: [buildNetwork(1, { lastActivityAt })],
       statusCounts: { active: 1, inactive: 0, archived: 0 },
+    });
+    apiMock.getNetworksGroupsActivitySummary.mockResolvedValueOnce({
+      activity: {},
+      lastActivityAt: { 1: lastActivityAt },
     });
 
     await renderHook();
@@ -1389,7 +1415,7 @@ describe('useRerNetworksNeoPage', () => {
 
   it('settles first-page activity after pagination starts', async () => {
     const firstPage = Array.from({ length: 100 }, (_, index) => buildNetwork(index + 1));
-    const initialActivity = deferred<Record<string, Record<string, Record<string, number>>>>();
+    const initialActivity = deferred<NetworkGroupsActivitySummaryRsp>();
     apiMock.listNetworks.mockResolvedValueOnce({
       list: firstPage,
       statusCounts: { active: 100, inactive: 0, archived: 0 },
@@ -1398,7 +1424,7 @@ describe('useRerNetworksNeoPage', () => {
       list: [buildNetwork(101)],
       statusCounts: { active: 101, inactive: 0, archived: 0 },
     });
-    apiMock.getNetworksGroupsActivity.mockImplementationOnce(() => initialActivity.promise);
+    apiMock.getNetworksGroupsActivitySummary.mockImplementationOnce(() => initialActivity.promise);
 
     await renderHook();
     await flushEffects();
@@ -1409,7 +1435,7 @@ describe('useRerNetworksNeoPage', () => {
     expect(latest?.rows[0]?.activityLoadState).toBe('loading');
 
     await act(async () => {
-      initialActivity.resolve({});
+      initialActivity.resolve({ activity: {}, lastActivityAt: {} });
       await initialActivity.promise;
     });
     await vi.waitFor(() => expect(latest?.rows[0]?.activityLoadState).toBe('loaded'));
@@ -1419,7 +1445,7 @@ describe('useRerNetworksNeoPage', () => {
   it('does not abort page-two activity when page three starts loading', async () => {
     const pageOne = Array.from({ length: 100 }, (_, index) => buildNetwork(index + 1));
     const pageTwo = Array.from({ length: 100 }, (_, index) => buildNetwork(index + 101));
-    const pageTwoActivity = deferred<Record<string, Record<string, Record<string, number>>>>();
+    const pageTwoActivity = deferred<NetworkGroupsActivitySummaryRsp>();
     apiMock.listNetworks.mockResolvedValueOnce({
       list: pageOne,
       statusCounts: { active: 100, inactive: 0, archived: 0 },
@@ -1432,37 +1458,39 @@ describe('useRerNetworksNeoPage', () => {
       list: [buildNetwork(201)],
       statusCounts: { active: 201, inactive: 0, archived: 0 },
     });
-    apiMock.getNetworksGroupsActivity
-      .mockResolvedValueOnce({})
+    apiMock.getNetworksGroupsActivitySummary
+      .mockResolvedValueOnce({ activity: {}, lastActivityAt: {} })
       .mockImplementationOnce(() => pageTwoActivity.promise)
-      .mockResolvedValueOnce({});
+      .mockResolvedValueOnce({ activity: {}, lastActivityAt: {} });
 
     await renderHook();
     await flushEffects();
     await act(async () => {
       await latest?.loadMoreNetworks();
     });
+    expect(latest?.rows[100]?.lastActivityLabel).toBe('Завантаження…');
     await act(async () => {
       await latest?.loadMoreNetworks();
     });
 
-    const pageTwoActivityCall = apiMock.getNetworksGroupsActivity.mock.results[1];
+    const pageTwoActivityCall = apiMock.getNetworksGroupsActivitySummary.mock.results[1];
     expect(pageTwoActivityCall).toBeDefined();
-    const pageTwoSignal = apiMock.getNetworksGroupsActivity.mock.calls[1]?.[1]?.signal;
+    const pageTwoSignal = apiMock.getNetworksGroupsActivitySummary.mock.calls[1]?.[1]?.signal;
     expect(pageTwoSignal?.aborted).toBe(false);
 
     await act(async () => {
-      pageTwoActivity.resolve({});
+      pageTwoActivity.resolve({ activity: {}, lastActivityAt: {} });
       await pageTwoActivity.promise;
     });
     await vi.waitFor(() => expect(latest?.rows[100]?.activityLoadState).toBe('loaded'));
+    expect(latest?.rows[100]?.lastActivityDetail).toBe('Немає перехоплень за останні 10 днів');
   });
 
   // @test-scope regression: https://github.com/echoua/echo/issues/3329
   it('ignores activity from a replaced list query', async () => {
-    const oldActivity = deferred<Record<string, Record<string, Record<string, number>>>>();
-    const newActivity = deferred<Record<string, Record<string, Record<string, number>>>>();
-    apiMock.getNetworksGroupsActivity
+    const oldActivity = deferred<NetworkGroupsActivitySummaryRsp>();
+    const newActivity = deferred<NetworkGroupsActivitySummaryRsp>();
+    apiMock.getNetworksGroupsActivitySummary
       .mockImplementationOnce(() => oldActivity.promise)
       .mockImplementationOnce(() => newActivity.promise);
     apiMock.listNetworks.mockResolvedValueOnce({
@@ -1485,14 +1513,14 @@ describe('useRerNetworksNeoPage', () => {
     expect(latest?.rows[0]?.activityLoadState).toBe('loading');
 
     await act(async () => {
-      oldActivity.resolve({});
+      oldActivity.resolve({ activity: {}, lastActivityAt: {} });
       await oldActivity.promise;
     });
     await flushEffects();
     expect(latest?.rows[0]?.activityLoadState).toBe('loading');
 
     await act(async () => {
-      newActivity.resolve({});
+      newActivity.resolve({ activity: {}, lastActivityAt: {} });
       await newActivity.promise;
     });
     await vi.waitFor(() => expect(latest?.rows[0]?.activityLoadState).toBe('loaded'));
@@ -1500,13 +1528,19 @@ describe('useRerNetworksNeoPage', () => {
 
   // @test-scope regression: https://github.com/echoua/echo/issues/3329
   it('marks every requested network as activity error without rendering inactivity', async () => {
-    apiMock.getNetworksGroupsActivity.mockRejectedValueOnce(new Error('activity unavailable'));
+    apiMock.getNetworksGroupsActivitySummary.mockRejectedValueOnce(
+      new Error('activity unavailable'),
+    );
 
     await renderHook();
     await vi.waitFor(() =>
       expect(latest?.rows.every((row) => row.activityLoadState === 'error')).toBe(true),
     );
     expect(latest?.rows.every((row) => row.activityLoadState !== 'loaded')).toBe(true);
+    expect(latest?.rows.every((row) => row.lastActivityLabel === 'Не вдалося завантажити')).toBe(
+      true,
+    );
+    expect(latest?.status?.text).toContain('activity unavailable');
   });
 
   it('enables edit and delete permissions for UnitsEditor roles', async () => {

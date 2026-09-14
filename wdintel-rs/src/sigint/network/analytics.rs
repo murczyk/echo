@@ -4,16 +4,13 @@ use crate::sigint::etalonka::query::CallsignActivityInfo;
 use crate::sigint::etalonka::types::NetworkPointQueryRes;
 use crate::sigint::network::types::{
     NetworkCallsignRelationMessage, NetworkCallsignRelationMessagesReq,
-    NetworkFreqCallsignsPeriod,
+    NetworkFreqCallsignsPeriod, NetworkGroupsActivitySummaryRsp,
 };
 use crate::types::*;
 use chrono::NaiveDateTime;
 use sea_orm::*;
 use sqlx::FromRow;
 use std::collections::{HashMap, HashSet};
-
-type NetworkGroupActivity =
-    HashMap<String, HashMap<String, HashMap<String, i64>>>;
 
 const NETWORK_GROUP_ACTIVITY_SQL: &str = r#"
 SELECT
@@ -29,7 +26,8 @@ SELECT
         )) * 1000
     )::BIGINT AS day,
     COALESCE(signal_group.name, datasource_group.group_master_key) AS group_name,
-    count(*) AS message_count
+    count(*) AS message_count,
+    max(COALESCE(inbox_item.datetime, signal_message.timestamp, signal_message.created_at)) AS last_activity_at
 FROM echo_clickhouse_derived.message_network_link network_link
 JOIN sigint_inbox_item inbox_item
     ON inbox_item.id = network_link.sigint_inbox_item_id
@@ -385,6 +383,7 @@ struct NetworkGroupActivityRow {
     day: i64,
     group_name: String,
     message_count: i64,
+    last_activity_at: NaiveDateTime,
 }
 
 #[derive(Debug, FromRow)]
@@ -412,16 +411,16 @@ pub(crate) async fn load_network_group_activity(
     network_ids: &[i64],
     since: NaiveDateTime,
     till: NaiveDateTime,
-) -> Result<NetworkGroupActivity, AppError> {
+) -> Result<NetworkGroupsActivitySummaryRsp, AppError> {
     if groups.is_empty() || network_ids.is_empty() {
-        return Ok(HashMap::new());
+        return Ok(NetworkGroupsActivitySummaryRsp::default());
     }
 
     let datasource_group_ids = load_datasource_group_ids(source_db, groups)
         .await
         .context(h!())?;
     if datasource_group_ids.is_empty() {
-        return Ok(HashMap::new());
+        return Ok(NetworkGroupsActivitySummaryRsp::default());
     }
     let (network_bounds, period_bounds) = tokio::try_join!(
         load_networks_message_id_bounds(source_db, network_ids),
@@ -433,12 +432,12 @@ pub(crate) async fn load_network_group_activity(
         Some((period_min_id, period_max_id)),
     ) = (network_bounds, period_bounds)
     else {
-        return Ok(HashMap::new());
+        return Ok(NetworkGroupsActivitySummaryRsp::default());
     };
     let min_item_id = std::cmp::max(network_min_id, period_min_id);
     let max_item_id = std::cmp::min(network_max_id, period_max_id);
     if min_item_id > max_item_id {
-        return Ok(HashMap::new());
+        return Ok(NetworkGroupsActivitySummaryRsp::default());
     }
 
     let rows = sqlx::query_as::<_, NetworkGroupActivityRow>(
@@ -454,16 +453,27 @@ pub(crate) async fn load_network_group_activity(
     .await
     .c(h!())?;
 
-    let mut activity = NetworkGroupActivity::new();
+    let mut response = NetworkGroupsActivitySummaryRsp::default();
     for row in rows {
-        activity
-            .entry(row.network_id.to_string())
+        let network_id = row.network_id.to_string();
+        let last_activity_at =
+            row.last_activity_at.and_utc().timestamp_millis();
+        response
+            .last_activity_at
+            .entry(network_id.clone())
+            .and_modify(|current| {
+                *current = std::cmp::max(*current, last_activity_at)
+            })
+            .or_insert(last_activity_at);
+        response
+            .activity
+            .entry(network_id)
             .or_default()
             .entry(row.day.to_string())
             .or_default()
             .insert(row.group_name, row.message_count);
     }
-    Ok(activity)
+    Ok(response)
 }
 
 pub(crate) async fn load_network_points(
