@@ -1,6 +1,6 @@
 use self::types::{
-    CreateDeviceNameReq, CreateDeviceNameRsp, DeviceNameSearchReq,
-    DeviceNameSearchRsp,
+    CreateDeviceNameReq, CreateDeviceNameRsp, DeviceNameResolveReq,
+    DeviceNameResolveRsp, DeviceNameSearchReq, DeviceNameSearchRsp,
 };
 use crate::error::AppError;
 use crate::types::*;
@@ -47,5 +47,22 @@ pub async fn device_name_search(
         .await
         .c(h!())?;
 
+    Ok(Json(rsp))
+}
+
+#[post("/api/sigint/device-name/resolve")]
+pub async fn device_name_resolve(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<DeviceNameResolveReq>,
+) -> Result<Json<DeviceNameResolveRsp>, AppError> {
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    crate::devices::access::require_message_devices(&env.dbx, &login)
+        .await
+        .c(h!())?;
+    let rsp = bl::resolve_device_names(&env.dbx, req.into_inner())
+        .await
+        .c(h!())?;
     Ok(Json(rsp))
 }

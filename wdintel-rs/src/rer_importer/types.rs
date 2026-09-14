@@ -1506,7 +1506,9 @@ pub struct RerDutyQueryStateWf {
     pub freqs_denied: Option<Vec<String>>,
     pub posts_selected: Option<Vec<String>>,
     pub posts_denied: Option<Vec<String>>,
+    #[serde(default)]
     pub units_selected: Option<Vec<String>>,
+    #[serde(default)]
     pub units_denied: Option<Vec<String>>,
     #[serde(default)]
     pub selected_unit_ids: Option<Vec<i64>>,
@@ -1516,6 +1518,7 @@ pub struct RerDutyQueryStateWf {
     pub selected_device_names: Option<Vec<String>>,
     #[serde(default)]
     pub denied_device_names: Option<Vec<String>>,
+    #[serde(default)]
     pub units_exact_match_only: Option<bool>,
     pub last_viewed_message_id: Option<i64>,
     pub highlight_keywords_enabled: Option<bool>,

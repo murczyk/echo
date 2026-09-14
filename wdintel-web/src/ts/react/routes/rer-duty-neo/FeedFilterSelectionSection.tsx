@@ -45,6 +45,11 @@ export type FeedFilterSelectionSectionProps<T> = {
   getBulkPasteToken?: (option: T) => string;
   getBulkPasteAliases?: (option: T) => readonly string[];
   getBulkCopyText?: (selected: readonly T[]) => string;
+  resolveBulkPasteOptions?: (
+    tokens: readonly string[],
+    options: { signal: AbortSignal },
+  ) => Promise<readonly T[]>;
+  onBulkPasteResolveError?: (error: unknown) => void;
 };
 
 export function FeedFilterSelectionSection<T>({
@@ -85,6 +90,8 @@ export function FeedFilterSelectionSection<T>({
   getBulkPasteToken,
   getBulkPasteAliases,
   getBulkCopyText,
+  resolveBulkPasteOptions,
+  onBulkPasteResolveError,
 }: FeedFilterSelectionSectionProps<T>) {
   const shouldKeepOpen = keepOpenOnSelect ?? keepOpenAndPreserveInputOnSelect;
   const shouldPreserveInput = preserveInputOnSelect ?? keepOpenAndPreserveInputOnSelect;
@@ -206,6 +213,8 @@ export function FeedFilterSelectionSection<T>({
           getBulkPasteToken={getBulkPasteToken}
           getBulkPasteAliases={getBulkPasteAliases}
           getBulkCopyText={getBulkCopyText}
+          resolveBulkPasteOptions={resolveBulkPasteOptions}
+          onBulkPasteResolveError={onBulkPasteResolveError}
           onInputChange={
             rankedSearch || shouldKeepOpen
               ? (_, nextValue, reason) => {

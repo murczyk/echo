@@ -3353,6 +3353,14 @@ export type DeviceNameSearchRsp = {
   devices: Array<DeviceNameSearchResult>;
 };
 
+export type DeviceNameResolveReq = {
+  names: Array<string>;
+};
+
+export type DeviceNameResolveRsp = {
+  devices: Array<DeviceNameSearchResult>;
+};
+
 export type CreateDeviceNameReq = {
   name: string;
 };

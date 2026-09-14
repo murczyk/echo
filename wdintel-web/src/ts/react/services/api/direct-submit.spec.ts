@@ -5,6 +5,7 @@ import {
   copyDirectSubmit,
   editDirectSubmit,
   formatDirectSubmitError,
+  resolveDeviceNames,
   submitDirect,
 } from './direct-submit';
 
@@ -66,6 +67,20 @@ const rawMessage = {
 };
 
 describe('direct-submit response normalization', () => {
+  it('resolves a device-name batch through the dedicated endpoint', async () => {
+    apiMocks.postJson.mockResolvedValueOnce({ devices: [{ id: 7, name: 'DEVICE-A' }] });
+    const options = { signal: new AbortController().signal };
+
+    await expect(resolveDeviceNames([' device-a ', 'DEVICE-B'], options)).resolves.toEqual([
+      { id: 7, name: 'DEVICE-A' },
+    ]);
+    expect(apiMocks.postJson).toHaveBeenCalledWith(
+      '/api/sigint/device-name/resolve',
+      { names: [' device-a ', 'DEVICE-B'] },
+      options,
+    );
+  });
+
   it('loads the report-copy payload from the message endpoint', async () => {
     const response = {
       payloads: [

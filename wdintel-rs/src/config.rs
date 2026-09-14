@@ -849,6 +849,7 @@ pub const FEATURE_SIGINT_COMMENT_PARSING_ENV: &str =
     "ECHO_FEATURE_SIGINT_COMMENT_PARSING";
 pub const SIGINT_COMMENT_LEGACY_BLACKLIST_TEXT: &str = "Службовий радіообмін";
 pub const DEVICE_NAME_SEARCH_LIMIT: u64 = 20;
+pub const DEVICE_NAME_RESOLVE_LIMIT: usize = 500;
 pub const SETTLEMENTS_LEGACY_FILE: &str = "settlements.json";
 pub const SETTLEMENTS_REGIONS_DIR: &str = "settlements_json";
 pub const SETTLEMENTS_REGION_FILE_EXTENSION: &str = "json";

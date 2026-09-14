@@ -20,16 +20,21 @@ const RER_DUTY_TEST_SINCE_MS_DECODER_FROM_INT: &str =
 const RER_DUTY_TEST_SINCE_MS_DECODER_FROM_INT_ROW: &str =
     r#"Json.Decode.field "rer_duty_test_since_ms" (Json.Decode.int)"#;
 const RER_DUTY_TEST_SINCE_MS_DECODER_FROM_FLOAT: &str = r#"Json.Decode.field "rer_duty_test_since_ms" (Json.Decode.map round Json.Decode.float)"#;
-const RER_DUTY_WF_UNITS_SELECTED_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_selected" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))"#;
-const RER_DUTY_WF_UNITS_SELECTED_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [Json.Decode.field "units_selected" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string))), Json.Decode.succeed Nothing]))"#;
-const RER_DUTY_WF_UNIT_FILTERS_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_denied" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_unit_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "denied_unit_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_exact_match_only" (Json.Decode.nullable (Json.Decode.bool))))"#;
-const RER_DUTY_WF_UNIT_FILTERS_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [Json.Decode.field "units_denied" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string))), Json.Decode.succeed Nothing]))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [Json.Decode.field "selected_unit_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int))), Json.Decode.succeed Nothing]))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [Json.Decode.field "denied_unit_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int))), Json.Decode.succeed Nothing]))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [Json.Decode.field "units_exact_match_only" (Json.Decode.nullable (Json.Decode.bool)), Json.Decode.succeed Nothing]))"#;
+const RER_DUTY_WF_COMPAT_FIELDS: &[(&str, &str)] = &[
+    ("units_selected", "Json.Decode.list (Json.Decode.string)"),
+    ("units_denied", "Json.Decode.list (Json.Decode.string)"),
+    ("selected_unit_ids", "Json.Decode.list (Json.Decode.int)"),
+    ("denied_unit_ids", "Json.Decode.list (Json.Decode.int)"),
+    (
+        "selected_device_names",
+        "Json.Decode.list (Json.Decode.string)",
+    ),
+    (
+        "denied_device_names",
+        "Json.Decode.list (Json.Decode.string)",
+    ),
+    ("units_exact_match_only", "Json.Decode.bool"),
+];
 const EVENT_MSG_ORIGIN_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "event_type" (eventTypeDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "origin" (Json.Decode.nullable (Json.Decode.string))))"#;
@@ -490,6 +495,8 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::device_name::types::DeviceNameSearchReq,
             crate::sigint::device_name::types::DeviceNameSearchResult,
             crate::sigint::device_name::types::DeviceNameSearchRsp,
+            crate::sigint::device_name::types::DeviceNameResolveReq,
+            crate::sigint::device_name::types::DeviceNameResolveRsp,
             crate::sigint::device_name::types::CreateDeviceNameReq,
             crate::sigint::device_name::types::CreateDeviceNameRsp,
             crate::sigint::callsign::types::AddAsKnownNetworkCallsignReq,
@@ -1222,6 +1229,8 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::device_name::types::DeviceNameSearchReq,
             crate::sigint::device_name::types::DeviceNameSearchResult,
             crate::sigint::device_name::types::DeviceNameSearchRsp,
+            crate::sigint::device_name::types::DeviceNameResolveReq,
+            crate::sigint::device_name::types::DeviceNameResolveRsp,
             crate::sigint::device_name::types::CreateDeviceNameReq,
             crate::sigint::device_name::types::CreateDeviceNameRsp,
             crate::sigint::callsign::types::AddAsKnownNetworkCallsignReq,
@@ -1534,15 +1543,15 @@ pub fn main_gen_elm() -> Result<(), AppError> {
     .unwrap();
     let output = String::from_utf8(target).context(h!())?;
     println!("> patching...");
-    let output = patch_generated_elm(output);
+    let output = patch_generated_elm(output).c(h!())?;
     let output = format!("{}\n", output.trim_end());
     std::fs::write("../wdintel-web/src/Bindings.elm", output)?;
     Ok(())
 }
 
-fn patch_generated_elm(output: String) -> String {
-    trim_trailing_whitespace(patch_backward_compatible_decoders(
-        patch_generated_elm_names(output),
+fn patch_generated_elm(output: String) -> Result<String, AppError> {
+    Ok(trim_trailing_whitespace(
+        patch_backward_compatible_decoders(patch_generated_elm_names(output))?,
     ))
 }
 
@@ -1602,8 +1611,83 @@ fn patch_generated_elm_names(output: String) -> String {
         )
 }
 
-fn patch_backward_compatible_decoders(output: String) -> String {
-    output
+fn patch_rer_duty_query_state_wf_decoder(
+    output: String,
+) -> Result<String, AppError> {
+    const DECLARATION: &str = "rerDutyQueryStateWfDecoder :";
+    let declarations = output.match_indices(DECLARATION).collect::<Vec<_>>();
+    if declarations.len() != 1 {
+        return Err(AppError::BL {
+            msg: format!(
+                "expected exactly one {DECLARATION} declaration, found {}",
+                declarations.len()
+            ),
+        });
+    }
+    let start = declarations[0].0;
+    let decoder_start = output[start..]
+        .find("rerDutyQueryStateWfDecoder =")
+        .map(|offset| start + offset)
+        .ok_or_else(|| AppError::BL {
+            msg: "could not find rerDutyQueryStateWfDecoder body".to_string(),
+        })?;
+    let body_end = output[decoder_start..]
+        .match_indices("\n\n")
+        .map(|(offset, _)| decoder_start + offset)
+        .find(|boundary| {
+            output[*boundary + 2..].lines().next().is_some_and(|line| {
+                !line.starts_with(' ') && line.contains(" :")
+            })
+        })
+        .ok_or_else(|| AppError::BL {
+            msg: "could not find rerDutyQueryStateWfDecoder body boundary"
+                .to_string(),
+        })?;
+    let prefix = &output[..start];
+    let body = &output[start..body_end];
+    let suffix = &output[body_end..];
+    let body = RER_DUTY_WF_COMPAT_FIELDS.iter().try_fold(
+        body.to_string(),
+        |body, (field, decoder)| {
+        let strict = format!(
+            r#"Json.Decode.field "{field}" (Json.Decode.nullable ({decoder}))"#
+        );
+            let occurrences = body.match_indices(&strict).count();
+            if occurrences != 1 {
+                return Err(AppError::BL {
+                    msg: format!(
+                        "expected exactly one strict {field} decoder in rerDutyQueryStateWfDecoder, found {occurrences}"
+                    ),
+                });
+            }
+        let compatible = format!(
+            r#"Json.Decode.andThen
+            (\fields ->
+                case Dict.get "{field}" fields of
+                    Nothing ->
+                        Json.Decode.succeed Nothing
+
+                    Just value ->
+                        case Json.Decode.decodeValue (Json.Decode.nullable ({decoder})) value of
+                            Ok decoded ->
+                                Json.Decode.succeed decoded
+
+                            Err error ->
+                                Json.Decode.fail (Json.Decode.errorToString error)
+            )
+            (Json.Decode.dict Json.Decode.value)"#
+        );
+            Ok(body.replacen(&strict, &compatible, 1))
+        },
+    )?;
+    Ok(format!("{prefix}{body}{suffix}"))
+}
+
+fn patch_backward_compatible_decoders(
+    output: String,
+) -> Result<String, AppError> {
+    let output = patch_rer_duty_query_state_wf_decoder(output)?;
+    Ok(output
         .replace(
             RER_ANALYSIS_WITHOUT_NETWORK_STRICT_DECODER_RAW,
             RER_ANALYSIS_WITHOUT_NETWORK_COMPAT_DECODER_RAW,
@@ -1637,14 +1721,6 @@ fn patch_backward_compatible_decoders(output: String) -> String {
             RER_DUTY_TEST_SINCE_MS_DECODER_FROM_FLOAT,
         )
         .replace(
-            RER_DUTY_WF_UNITS_SELECTED_STRICT_DECODER,
-            RER_DUTY_WF_UNITS_SELECTED_COMPAT_DECODER,
-        )
-        .replace(
-            RER_DUTY_WF_UNIT_FILTERS_STRICT_DECODER,
-            RER_DUTY_WF_UNIT_FILTERS_COMPAT_DECODER,
-        )
-        .replace(
             EVENT_MSG_INTELLIGENCE_REPORT_STRICT_DECODER,
             EVENT_MSG_INTELLIGENCE_REPORT_COMPAT_DECODER,
         )
@@ -1655,5 +1731,55 @@ fn patch_backward_compatible_decoders(output: String) -> String {
         .replace(
             LONG_POLL_DEPLOYMENT_MAINTENANCE_STRICT_DECODER,
             LONG_POLL_DEPLOYMENT_MAINTENANCE_COMPAT_DECODER,
+        ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        patch_rer_duty_query_state_wf_decoder, RER_DUTY_WF_COMPAT_FIELDS,
+    };
+
+    fn strict_field(field: &str, decoder: &str) -> String {
+        format!(
+            r#"Json.Decode.field "{field}" (Json.Decode.nullable ({decoder}))"#
         )
+    }
+
+    fn synthetic_decoder() -> String {
+        let duty_fields = RER_DUTY_WF_COMPAT_FIELDS
+            .iter()
+            .map(|(field, decoder)| strict_field(field, decoder))
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!(
+            "unrelatedDecoder : Json.Decode.Decoder X\nunrelatedDecoder =\n    {}\n\nrerDutyQueryStateWfDecoder : Json.Decode.Decoder X\nrerDutyQueryStateWfDecoder =\n    {}\n\nnextDecoder : Json.Decode.Decoder X\nnextDecoder =\n    Json.Decode.succeed X",
+            strict_field("selected_device_names", "Json.Decode.list (Json.Decode.string)"),
+            duty_fields,
+        )
+    }
+
+    #[test]
+    fn duty_compatibility_patch_is_scoped_and_fail_fast() {
+        let source = synthetic_decoder();
+        let patched =
+            patch_rer_duty_query_state_wf_decoder(source.clone()).unwrap();
+        assert!(patched.contains("unrelatedDecoder =\n    Json.Decode.field \"selected_device_names\""));
+        assert!(patched
+            .contains("rerDutyQueryStateWfDecoder =\n    Json.Decode.andThen"));
+        assert!(patch_rer_duty_query_state_wf_decoder(
+            source.replace("rerDutyQueryStateWfDecoder", "otherDecoder")
+        )
+        .is_err());
+        assert!(patch_rer_duty_query_state_wf_decoder(format!(
+            "{source}\n\n{source}"
+        ))
+        .is_err());
+        assert!(patch_rer_duty_query_state_wf_decoder(source.replacen(
+            "Json.Decode.field \"units_selected\" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))",
+            "Json.Decode.succeed Nothing",
+            1,
+        ))
+        .is_err());
+    }
 }

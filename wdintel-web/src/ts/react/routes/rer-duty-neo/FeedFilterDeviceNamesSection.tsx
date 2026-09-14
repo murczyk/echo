@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
-import { searchDeviceNames } from '../../services/api/direct-submit';
+import { resolveDeviceNames, searchDeviceNames } from '../../services/api/direct-submit';
 import { toErrorMessage } from '../rer-analysis-neo/use-analysis-data.shared';
 import { FeedFilterSelectionSection } from './FeedFilterSelectionSection';
 import {
@@ -39,6 +39,20 @@ export function FeedFilterDeviceNamesSection({
   const options = useMemo(
     () => [...new Set([...selection.localValue, ...remoteOptions])],
     [remoteOptions, selection.localValue],
+  );
+  const resolveBulkPasteOptions = useCallback(
+    async (tokens: readonly string[], options: { signal: AbortSignal }) =>
+      (await resolveDeviceNames(tokens, options)).map((device) => device.name),
+    [],
+  );
+  const handleBulkPasteResolveError = useCallback(
+    (error: unknown) => {
+      notify({
+        severity: 'error',
+        message: `Не вдалося перевірити назви пристроїв: ${toErrorMessage(error)}`,
+      });
+    },
+    [notify],
   );
 
   useEffect(() => {
@@ -85,7 +99,7 @@ export function FeedFilterDeviceNamesSection({
       }
       loading={loading}
       loadingText="Завантажуємо назви пристроїв…"
-      noOptionsText="Назв пристроїв не знайдено"
+      noOptionsText={input.trim().length > 0 ? 'Назв пристроїв не знайдено' : 'Немає варіантів'}
       onInputChange={setInput}
       keepOpenOnSelect
       bulkPaste
@@ -93,6 +107,8 @@ export function FeedFilterDeviceNamesSection({
       bulkPasteMenuLabel="Додати кілька пристроїв"
       bulkPasteDialogTitle="Додати кілька пристроїв"
       bulkPasteInputLabel="Пристрої"
+      resolveBulkPasteOptions={resolveBulkPasteOptions}
+      onBulkPasteResolveError={handleBulkPasteResolveError}
       bulkCopy
       bulkCopyMenuLabel="Копіювати обрані пристрої"
     />
