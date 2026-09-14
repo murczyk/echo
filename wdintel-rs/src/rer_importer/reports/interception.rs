@@ -34,6 +34,7 @@ mod palette;
 #[derive(FromQueryResult)]
 struct InboxMessage {
     message_id: i64,
+    created_at: NaiveDateTime,
     date: Option<String>,
     time: Option<String>,
     freq: Option<String>,
@@ -135,7 +136,7 @@ async fn collect_interception_report_messages(
         crate::report_history::ensure_report_record_count(record_count)
             .context(h!())?;
     }
-    sort_interception_report_messages(&mut messages);
+    sort_interception_report_messages(&mut messages, req.sort_by);
     Ok(messages)
 }
 
@@ -320,12 +321,19 @@ fn merge_interception_report_chunk(
     record_count
 }
 
-fn sort_interception_report_messages(messages: &mut [InboxMessage]) {
+fn sort_interception_report_messages(
+    messages: &mut [InboxMessage],
+    sort_by: Option<InboxMessagesSortBy>,
+) {
     messages.sort_by(|left, right| {
-        left.date
-            .cmp(&right.date)
-            .then_with(|| left.time.cmp(&right.time))
-            .then_with(|| left.message_id.cmp(&right.message_id))
+        if sort_by == Some(InboxMessagesSortBy::IMSCreatedAt) {
+            left.created_at.cmp(&right.created_at)
+        } else {
+            left.date
+                .cmp(&right.date)
+                .then_with(|| left.time.cmp(&right.time))
+        }
+        .then_with(|| left.message_id.cmp(&right.message_id))
     });
 }
 
@@ -669,6 +677,7 @@ async fn build_inbox_messages_report_sql(
         .column(sigint_inbox_item::Column::Time)
         .column(sigint_inbox_item::Column::Freq)
         .column(signal_message::Column::Id)
+        .column(signal_message::Column::CreatedAt)
         .column(signal_message::Column::Body)
         .expr_as(
             Expr::cust(
@@ -770,6 +779,7 @@ async fn build_inbox_messages_report_sql(
         .group_by(sigint_inbox_item::Column::Freq)
         .group_by(sigint_inbox_item::Column::UnitV2)
         .group_by(signal_message::Column::Body)
+        .group_by(signal_message::Column::CreatedAt)
         .group_by(signal_message::Column::Id)
         .group_by(sigint_inbox_item::Column::Id)
         .group_by(sigint_inbox_item::Column::Coords)
@@ -812,6 +822,9 @@ async fn build_inbox_messages_report_sql(
             }
             InboxMessagesSortBy::IMSTimestamp => {
                 q.filter(signal_message::Column::Timestamp.lt(till))
+            }
+            InboxMessagesSortBy::IMSCreatedAt => {
+                q.filter(signal_message::Column::CreatedAt.lt(till))
             }
         };
     }
@@ -1305,7 +1318,7 @@ mod tests {
     };
     use crate::entities::prelude::SignalMessage;
     use crate::rer_importer::report_chunking::ReportPeriodEnd;
-    use crate::rer_importer::types::InboxMessagesReq;
+    use crate::rer_importer::types::{InboxMessagesReq, InboxMessagesSortBy};
     use chrono::NaiveDateTime;
     use sea_orm::{DbBackend, EntityTrait, QueryTrait};
     use std::collections::HashSet;
@@ -1349,6 +1362,7 @@ mod tests {
         .unwrap();
         InboxMessage {
             message_id: datetime.and_utc().timestamp(),
+            created_at: datetime,
             date: Some(date.to_string()),
             time: Some(time.to_string()),
             freq: None,
@@ -1435,13 +1449,79 @@ mod tests {
             interception_message("2026-08-06", "13:00:00", "fourth"),
             interception_message("2026-08-06", "12:00:00", "third"),
         ];
-        sort_interception_report_messages(&mut messages);
+        sort_interception_report_messages(&mut messages, None);
         assert_eq!(
             messages
                 .iter()
                 .filter_map(|message| message.body.as_deref())
                 .collect::<Vec<_>>(),
             vec!["first", "second", "third", "fourth"],
+        );
+    }
+
+    #[test]
+    fn interception_report_sorts_by_creation_time_when_requested() {
+        let mut messages = vec![
+            InboxMessage {
+                message_id: 30,
+                created_at: NaiveDateTime::parse_from_str(
+                    "2026-08-06 12:00:00",
+                    "%Y-%m-%d %H:%M:%S",
+                )
+                .unwrap(),
+                ..interception_message(
+                    "2026-08-06",
+                    "10:00:00",
+                    "displayed first",
+                )
+            },
+            InboxMessage {
+                message_id: 7,
+                created_at: NaiveDateTime::parse_from_str(
+                    "2026-08-06 09:00:00",
+                    "%Y-%m-%d %H:%M:%S",
+                )
+                .unwrap(),
+                ..interception_message(
+                    "2026-08-06",
+                    "12:00:00",
+                    "creation tie second",
+                )
+            },
+            InboxMessage {
+                message_id: 2,
+                created_at: NaiveDateTime::parse_from_str(
+                    "2026-08-06 09:00:00",
+                    "%Y-%m-%d %H:%M:%S",
+                )
+                .unwrap(),
+                ..interception_message(
+                    "2026-08-06",
+                    "11:00:00",
+                    "creation tie first",
+                )
+            },
+        ];
+
+        sort_interception_report_messages(&mut messages, None);
+        assert_eq!(
+            messages
+                .iter()
+                .map(|message| message.message_id)
+                .collect::<Vec<_>>(),
+            [30, 2, 7],
+        );
+
+        sort_interception_report_messages(
+            &mut messages,
+            Some(InboxMessagesSortBy::IMSCreatedAt),
+        );
+        assert_eq!(
+            messages
+                .iter()
+                .map(|message| message.message_id)
+                .collect::<Vec<_>>(),
+            [2, 7, 30],
         );
     }
 

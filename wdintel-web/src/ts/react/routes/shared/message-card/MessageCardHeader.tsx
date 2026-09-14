@@ -31,9 +31,10 @@ import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import SettingsInputAntennaIcon from '@mui/icons-material/SettingsInputAntenna';
 import SettingsInputAntennaOutlinedIcon from '@mui/icons-material/SettingsInputAntennaOutlined';
 import { Menu, MenuItem } from '@mui/material';
+import dayjs from 'dayjs';
 import { memo, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { ButtonHTMLAttributes, CSSProperties, MouseEvent, ReactNode, RefObject } from 'react';
-import { ELLIPSIS, isPresent } from '../../../utils/misc';
+import { APP_TIME_ZONE, ELLIPSIS, isPresent } from '../../../utils/misc';
 import { blurActiveElement } from '../../../utils/focus';
 
 import type { InboxMessage } from '../../../../../Bindings';
@@ -887,6 +888,7 @@ export type MessageCardHeaderProps = {
   excludeMenuOptions?: MessageEntityExcludeMenuOption[];
   id: number;
   msg: InboxMessage;
+  displayTimestamp?: number | null;
   copiedFeedbackId: string | null;
   etalonDisplayModel: MessageCardEtalonDisplayModel;
   mapHref?: string;
@@ -975,6 +977,7 @@ function MessageCardHeaderComponent({
   excludeMenuOptions = [],
   id,
   msg,
+  displayTimestamp,
   copiedFeedbackId,
   etalonDisplayModel,
   mapHref,
@@ -1009,12 +1012,20 @@ function MessageCardHeaderComponent({
     <div className="inline-flex flex-wrap items-center gap-2">
       <div className="message-card-timestamp-item" data-message-card-timestamp-item="true">
         <ScheduleOutlinedIcon className="message-card-header-icon message-card-timestamp-icon" />
-        <HeaderText>{formatTime(msg.time)}</HeaderText>
+        <HeaderText>
+          {displayTimestamp == null
+            ? formatTime(msg.time)
+            : dayjs(displayTimestamp).tz(APP_TIME_ZONE).format('HH:mm')}
+        </HeaderText>
       </div>
-      {isPresent(msg.date) ? (
+      {isPresent(displayTimestamp) || isPresent(msg.date) ? (
         <div className="message-card-timestamp-item" data-message-card-timestamp-item="true">
           <CalendarTodayOutlinedIcon className="message-card-header-icon message-card-timestamp-icon" />
-          <HeaderText>{formatDateNoYear(msg.date)}</HeaderText>
+          <HeaderText>
+            {displayTimestamp == null
+              ? formatDateNoYear(msg.date)
+              : dayjs(displayTimestamp).tz(APP_TIME_ZONE).format('DD.MM')}
+          </HeaderText>
         </div>
       ) : null}
     </div>

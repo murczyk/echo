@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest';
 import type { SavedFilter } from '../../../../../Bindings';
 import {
   buildAnalysisReq,
+  buildSavedFilterReq,
   createInitialQueryState,
   createResetQueryState,
   buildInboxReq,
+  buildInboxOverallCountReq,
   extendQueryDateRangeForDirectMessage,
   hasMeaningfulFiltersBeyondDateRange,
   hasMeaningfulUiFiltersBeyondDateRange,
@@ -145,6 +147,27 @@ describe('rer-analysis-neo helpers', () => {
     });
     expect(buildInboxReq(state, [], true)?.onlyWithMedia).toBe(true);
     delete (globalThis as { window?: Window }).window;
+  });
+
+  it('sends the creation date basis to analysis and inbox requests', () => {
+    const state = createQueryState({
+      messageTimeBasis: 'creation',
+      fromDateTimeStr: '2026-08-28T00:00',
+      toDateTimeStr: '2026-08-29T00:00',
+      groupsSelected: ['group'],
+      freqsSelected: ['100.0'],
+    });
+
+    expect(buildAnalysisReq(state)?.messageTimeBasis).toBe('creation');
+    expect(buildInboxReq(state)?.sortBy).toBe('IMSCreatedAt');
+    expect(buildInboxOverallCountReq(state)).toMatchObject({
+      sortBy: 'IMSCreatedAt',
+      sinceDateInclusiveMs: Date.UTC(2026, 7, 27, 21),
+      tillDateInclusiveMs: Date.UTC(2026, 7, 28, 21),
+      selectedGroups: null,
+      selectedFreqs: null,
+    });
+    expect(buildInboxOverallCountReq(createQueryState())?.sortBy).toBeNull();
   });
 
   it('keeps the saved filter clean when only the date range differs', () => {
@@ -361,6 +384,38 @@ describe('rer-analysis-neo helpers', () => {
     expect(next.toDateTimeStr).toBe('2026-08-29T00:00');
   });
 
+  it('uses creation time rather than interception time for creation-mode direct links', () => {
+    const state = createQueryState({
+      messageTimeBasis: 'creation',
+      fromDateTimeStr: '2026-08-28T00:00',
+      toDateTimeStr: '2026-08-29T00:00',
+    });
+    const next = extendQueryDateRangeForDirectMessage(
+      state,
+      { date: '2026-01-01', timestamp: Date.UTC(2026, 0, 1), createdAt: Date.UTC(2026, 7, 29) },
+      new Date(Date.UTC(2026, 7, 29, 12)),
+    );
+
+    expect(next.fromDateTimeStr).toBe('2026-08-28T00:00');
+    expect(next.toDateTimeStr).toBe('2026-08-30T00:00');
+  });
+
+  it('does not widen a creation-mode direct-link range from interception time when creation time is unavailable', () => {
+    const state = createQueryState({
+      messageTimeBasis: 'creation',
+      fromDateTimeStr: '2026-08-28T00:00',
+      toDateTimeStr: '2026-08-29T00:00',
+    });
+
+    expect(
+      extendQueryDateRangeForDirectMessage(
+        state,
+        { date: '2026-01-01', timestamp: Date.UTC(2026, 0, 1), createdAt: null },
+        new Date(Date.UTC(2026, 7, 29, 12)),
+      ),
+    ).toEqual(state);
+  });
+
   it('keeps earlier bounds and extends a direct-link range forward through today', () => {
     const state = createQueryState({
       fromDateTimeStr: '2026-08-18T00:00',
@@ -440,6 +495,38 @@ describe('rer-analysis-neo helpers', () => {
 
     expect(nextState.freqsSelected).toEqual(['123.4']);
     expect(nextState.adjacentFreqsRange).toBe(0);
+  });
+
+  // https://github.com/echoua/echo/issues/3455
+  it('keeps the active creation-time preference when applying a saved filter', () => {
+    const savedFilter = createSavedFilter(createQueryState({ freqsSelected: ['123.4'] }));
+    const currentState = createQueryState({
+      messageTimeBasis: 'creation',
+      freqsSelected: ['999.9'],
+    });
+
+    const nextState = queryStateFromSavedFilter(savedFilter, currentState);
+
+    expect(nextState.messageTimeBasis).toBe('creation');
+    expect(nextState.freqsSelected).toEqual(['123.4']);
+  });
+
+  // https://github.com/echoua/echo/issues/3455
+  it('ignores the active time preference when matching saved filters', () => {
+    const interception = createQueryState({ messageTimeBasis: 'interception' });
+    const creation = createQueryState({ messageTimeBasis: 'creation' });
+    const savedFilter = createSavedFilter(interception);
+
+    expect(queryStateComparisonKey(creation)).toBe(queryStateComparisonKey(interception));
+    expect(queryStateMatchesSavedFilter(creation, savedFilter)).toBe(true);
+  });
+
+  // https://github.com/echoua/echo/issues/3455
+  it('does not persist the active time preference in saved-filter requests', () => {
+    const req = buildSavedFilterReq(createQueryState({ messageTimeBasis: 'creation' }));
+
+    expect(req).not.toBeNull();
+    expect(req?.messageTimeBasis).toBeNull();
   });
 
   it('detects showMap deep link for duty → analysis map tab', () => {

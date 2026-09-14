@@ -1089,6 +1089,9 @@ type alias InboxMessage =
     , important : Bool
     , bookmarked : Bool
     , timestamp : Maybe (Int)
+    , createdAt : Maybe (Int)
+    , createdAtOrder : Maybe (Int)
+    , hasDateInHeader : Bool
     , groupMasterKey : Maybe (String)
     , sender : Maybe (String)
     , extendedForm : Maybe (String)
@@ -1136,6 +1139,9 @@ inboxMessageEncoder struct =
         , ( "important", (Json.Encode.bool) struct.important )
         , ( "bookmarked", (Json.Encode.bool) struct.bookmarked )
         , ( "timestamp", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.timestamp )
+        , ( "created_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.createdAt )
+        , ( "created_at_order", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.createdAtOrder )
+        , ( "has_date_in_header", (Json.Encode.bool) struct.hasDateInHeader )
         , ( "group_master_key", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.groupMasterKey )
         , ( "sender", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.sender )
         , ( "extended_form", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.extendedForm )
@@ -1268,6 +1274,7 @@ inboxMessageTagEncoder struct =
 type InboxMessagesSortBy
     = ImsDatetime
     | ImsTimestamp
+    | ImsCreatedAt
 
 
 inboxMessagesSortByEncoder : InboxMessagesSortBy -> Json.Encode.Value
@@ -1277,6 +1284,8 @@ inboxMessagesSortByEncoder enum =
             Json.Encode.string "IMSDatetime"
         ImsTimestamp ->
             Json.Encode.string "IMSTimestamp"
+        ImsCreatedAt ->
+            Json.Encode.string "IMSCreatedAt"
 
 type TagFilterOption
     = OneOfTags
@@ -1987,6 +1996,7 @@ type alias AnalysisStatsReq =
     , filterTagsOption : Maybe (TagFilterOption)
     , withoutModelTags : Maybe (Bool)
     , reportTagsOnlyThisUnit : Maybe (Bool)
+    , messageTimeBasis : Maybe (MessageTimeBasis)
     }
 
 
@@ -2027,6 +2037,7 @@ analysisStatsReqEncoder struct =
         , ( "filter_tags_option", (Maybe.withDefault Json.Encode.null << Maybe.map (tagFilterOptionEncoder)) struct.filterTagsOption )
         , ( "without_model_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.withoutModelTags )
         , ( "report_tags_only_this_unit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.reportTagsOnlyThisUnit )
+        , ( "message_time_basis", (Maybe.withDefault Json.Encode.null << Maybe.map (messageTimeBasisEncoder)) struct.messageTimeBasis )
         ]
 
 
@@ -15161,6 +15172,9 @@ inboxMessageDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "important" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "bookmarked" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "timestamp" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at_order" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_date_in_header" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_key" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "extended_form" (Json.Decode.nullable (Json.Decode.string))))
@@ -15256,6 +15270,15 @@ inboxMessagesSortByDecoder =
                     case x of
                         "IMSTimestamp" ->
                             Json.Decode.succeed ImsTimestamp
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "IMSCreatedAt" ->
+                            Json.Decode.succeed ImsCreatedAt
                         unexpected ->
                             Json.Decode.fail <| "Unexpected variant " ++ unexpected
                 )
@@ -15590,6 +15613,7 @@ analysisStatsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "filter_tags_option" (Json.Decode.nullable (tagFilterOptionDecoder)), Json.Decode.succeed Nothing ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_model_tags" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_tags_only_this_unit" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_time_basis" (Json.Decode.nullable (messageTimeBasisDecoder))))
 
 
 analysisCallsignFrequencyMatchesReqDecoder : Json.Decode.Decoder AnalysisCallsignFrequencyMatchesReq
@@ -23584,6 +23608,44 @@ messageTextPreviewLinesDecoder =
                 )
         ]
 
+type MessageTimeBasis
+    = MessageInterception
+    | MessageCreation
+
+
+messageTimeBasisEncoder : MessageTimeBasis -> Json.Encode.Value
+messageTimeBasisEncoder value =
+    case value of
+        MessageInterception ->
+            Json.Encode.string "interception"
+
+        MessageCreation ->
+            Json.Encode.string "creation"
+
+
+messageTimeBasisDecoder : Json.Decode.Decoder MessageTimeBasis
+messageTimeBasisDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "interception" ->
+                            Json.Decode.succeed MessageInterception
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "creation" ->
+                            Json.Decode.succeed MessageCreation
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
 type alias UserDutySettingsDto =
     { tagsLayout : DutyTagsLayout
     , messageTextPreviewLines : MessageTextPreviewLines
@@ -23596,6 +23658,7 @@ type alias UserDutySettingsDto =
     , showClassicAnalysis : Bool
     , dutyCollapseMediaPreviews : Bool
     , mediaSummaryEnabled : Bool
+    , messageSortBy : MessageTimeBasis
     }
 
 
@@ -23613,3 +23676,4 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "showClassicAnalysis" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "dutyCollapseMediaPreviews" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mediaSummaryEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageSortBy" (messageTimeBasisDecoder)))

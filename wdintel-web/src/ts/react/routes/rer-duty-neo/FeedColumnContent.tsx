@@ -108,6 +108,7 @@ type DutyMessageCardItemProps = {
   collapseMediaPreviews?: boolean;
   mediaSummaryEnabled?: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
+  messageTimeBasis: import('../../services/api/user-settings').MessageTimeBasis;
   botTagAction: MessageCardBotTagAction | null;
   onCancelBotTagAction?: () => void;
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void | Promise<void>;
@@ -147,6 +148,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
   collapseMediaPreviews = false,
   mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
   messageTextPreviewLines,
+  messageTimeBasis,
   botTagAction,
   onCancelBotTagAction,
   onMarkBotTagWrong,
@@ -199,6 +201,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       collapseMediaPreviews={collapseMediaPreviews}
       mediaSummaryEnabled={mediaSummaryEnabled}
       messageTextPreviewLines={messageTextPreviewLines}
+      messageTimeBasis={messageTimeBasis}
       botTagAction={botTagAction?.messageId === id ? botTagAction : null}
       onCancelBotTagAction={onCancelBotTagAction}
       onMarkBotTagWrong={onMarkBotTagWrong}
@@ -285,6 +288,7 @@ type DutyMessageListProps = {
   collapseMediaPreviews?: boolean;
   mediaSummaryEnabled?: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
+  messageTimeBasis: import('../../services/api/user-settings').MessageTimeBasis;
   botTagAction: MessageCardBotTagAction | null;
   onCancelBotTagAction: () => void;
   onMarkBotTagWrong: (messageId: number, tagId: number) => void | Promise<void>;
@@ -329,6 +333,7 @@ const DutyMessageList = memo(
     collapseMediaPreviews = false,
     mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
     messageTextPreviewLines,
+    messageTimeBasis,
     botTagAction,
     onCancelBotTagAction,
     onMarkBotTagWrong,
@@ -384,6 +389,7 @@ const DutyMessageList = memo(
                   collapseMediaPreviews={collapseMediaPreviews}
                   mediaSummaryEnabled={mediaSummaryEnabled}
                   messageTextPreviewLines={messageTextPreviewLines}
+                  messageTimeBasis={messageTimeBasis}
                   botTagAction={botTagAction}
                   onCancelBotTagAction={onCancelBotTagAction}
                   onMarkBotTagWrong={onMarkBotTagWrong}
@@ -631,6 +637,7 @@ export const FeedColumnContent = memo(
       collapseMediaPreviews = false,
       mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
       messageTextPreviewLines,
+      messageTimeBasis,
       tagsMap,
       tagsOrder,
       botTagAction,
@@ -767,6 +774,7 @@ export const FeedColumnContent = memo(
           collapseMediaPreviews={collapseMediaPreviews}
           mediaSummaryEnabled={mediaSummaryEnabled}
           messageTextPreviewLines={messageTextPreviewLines}
+          messageTimeBasis={messageTimeBasis}
           botTagAction={botTagAction}
           onCancelBotTagAction={stableOnCancelBotTagAction}
           onMarkBotTagWrong={stableOnMarkBotTagWrong}

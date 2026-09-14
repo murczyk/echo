@@ -7,8 +7,8 @@ use anyhow::Context;
 use chrono::NaiveDateTime;
 use sea_orm::prelude::Expr;
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect,
-    QueryTrait, Select,
+    ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter,
+    QuerySelect, QueryTrait, Select,
 };
 use std::cmp::Ordering;
 
@@ -177,9 +177,11 @@ pub fn compare_inbox_report_message_oldest_first(
     req: &InboxMessagesReq,
     left_datetime: Option<NaiveDateTime>,
     left_timestamp: Option<NaiveDateTime>,
+    left_created_at: NaiveDateTime,
     left_id: i64,
     right_datetime: Option<NaiveDateTime>,
     right_timestamp: Option<NaiveDateTime>,
+    right_created_at: NaiveDateTime,
     right_id: i64,
 ) -> Ordering {
     let (left, right) = match req
@@ -188,6 +190,9 @@ pub fn compare_inbox_report_message_oldest_first(
     {
         InboxMessagesSortBy::IMSDatetime => (left_datetime, right_datetime),
         InboxMessagesSortBy::IMSTimestamp => (left_timestamp, right_timestamp),
+        InboxMessagesSortBy::IMSCreatedAt => {
+            (Some(left_created_at), Some(right_created_at))
+        }
     };
     compare_optional_datetime(left, right).then_with(|| left_id.cmp(&right_id))
 }
@@ -242,6 +247,13 @@ where
             InboxMessagesSortBy::IMSTimestamp => {
                 query.filter(signal_message::Column::Timestamp.lt(till))
             }
+            InboxMessagesSortBy::IMSCreatedAt => query.filter(
+                Expr::col((
+                    signal_message::Entity,
+                    signal_message::Column::CreatedAt,
+                ))
+                .lt(till),
+            ),
         },
     )
 }
@@ -390,9 +402,11 @@ mod tests {
                 &InboxMessagesReq::default(),
                 Some(older_datetime),
                 Some(newer_datetime),
+                older_datetime,
                 1,
                 Some(newer_datetime),
                 Some(older_datetime),
+                newer_datetime,
                 2,
             ),
             Ordering::Less,
@@ -406,12 +420,31 @@ mod tests {
                 },
                 Some(older_datetime),
                 Some(newer_datetime),
+                older_datetime,
                 1,
                 Some(newer_datetime),
                 Some(older_datetime),
+                newer_datetime,
                 2,
             ),
             Ordering::Greater,
+        );
+        assert_eq!(
+            compare_inbox_report_message_oldest_first(
+                &InboxMessagesReq {
+                    sort_by: Some(InboxMessagesSortBy::IMSCreatedAt),
+                    ..Default::default()
+                },
+                Some(newer_datetime),
+                Some(newer_datetime),
+                older_datetime,
+                1,
+                Some(older_datetime),
+                Some(older_datetime),
+                newer_datetime,
+                2,
+            ),
+            Ordering::Less,
         );
     }
 

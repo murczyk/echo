@@ -1,7 +1,12 @@
 import { useCallback } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
-import { compareMessageTuple, type MessageFeedState } from './utils';
+import {
+  compareMessageTuple,
+  messageOrderCursor,
+  messageOrderTimestamp,
+  type MessageFeedState,
+} from './utils';
 import { getDutyFollowScrollBehavior } from './duty-follow-scroll';
 import { ScrollNavigationIntent } from './windowed-feed-scroll-shared';
 import type { ExplicitFeedNavigation } from './useRerDutyNavigation';
@@ -132,7 +137,7 @@ export function useRerDutyFeedInteractionActions(params: Params) {
       // Capture their tail now; a later poll arrival must stay beyond this operation.
       const capturedTarget = feed.pendingNewerItems?.at(-1) ?? feed.items.at(-1);
       const capturedCursor = capturedTarget
-        ? { id: capturedTarget[0], timestamp: capturedTarget[1].timestamp }
+        ? messageOrderCursor(capturedTarget[0], capturedTarget[1], feed.messageSortBy)
         : null;
       const requestVerifiedLanding = (
         target: { id: number; timestamp: number | null },
@@ -279,24 +284,25 @@ export function useRerDutyFeedInteractionActions(params: Params) {
               newlyReadIds.push(id);
             }
             if (id === lastVisibleId) {
-              lastVisibleTimestamp = message.timestamp;
+              lastVisibleTimestamp = messageOrderTimestamp(message, f.messageSortBy);
               break;
             }
           }
 
           let windowedUnreadItems = f.windowedUnreadItems ?? new Map<number, number>();
-          let clearedWindowedCount = 0;
+          let unresolvedUnreadIds = f.unresolvedUnreadIds ?? new Set<number>();
+          const acknowledgedIds = new Set(newlyReadIds);
           if (opts?.atBottom === true && windowedUnreadItems.size > 0) {
             const boundary = { id: lastVisibleId, timestamp: lastVisibleTimestamp ?? null };
             const nextWindowed = new Map<number, number>();
             for (const [id, timestamp] of windowedUnreadItems) {
               if (compareMessageTuple({ id, timestamp }, boundary) <= 0) {
-                clearedWindowedCount += 1;
+                acknowledgedIds.add(id);
               } else {
                 nextWindowed.set(id, timestamp);
               }
             }
-            if (clearedWindowedCount > 0) {
+            if (nextWindowed.size !== windowedUnreadItems.size) {
               windowedUnreadItems = nextWindowed;
             }
           } else if (newlyReadIds.length > 0) {
@@ -304,7 +310,12 @@ export function useRerDutyFeedInteractionActions(params: Params) {
             newlyReadIds.forEach((id) => windowedUnreadItems.delete(id));
           }
 
-          if (newlyReadIds.length === 0 && clearedWindowedCount === 0) return f;
+          if (newlyReadIds.length > 0) {
+            unresolvedUnreadIds = new Set(unresolvedUnreadIds);
+            newlyReadIds.forEach((id) => unresolvedUnreadIds.delete(id));
+          }
+
+          if (acknowledgedIds.size === 0) return f;
 
           changed = true;
           const nextReadIds = new Set(f.readIds);
@@ -313,7 +324,8 @@ export function useRerDutyFeedInteractionActions(params: Params) {
             ...f,
             readIds: nextReadIds,
             windowedUnreadItems,
-            unreadCount: Math.max(0, f.unreadCount - newlyReadIds.length - clearedWindowedCount),
+            unresolvedUnreadIds,
+            unreadCount: Math.max(0, f.unreadCount - acknowledgedIds.size),
           };
         });
         return changed ? next : prev;

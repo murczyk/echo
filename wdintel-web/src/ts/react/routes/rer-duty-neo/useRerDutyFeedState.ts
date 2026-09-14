@@ -34,7 +34,7 @@ import { useRerDutyDirectionalLoads } from './useRerDutyDirectionalLoads';
 import { useRerDutyShortState } from './useRerDutyShortState';
 import { createEmptyFeedState, useRerDutyInitialLoad } from './useRerDutyInitialLoad';
 import { buildFeedCountSignature } from './rerDutyFeedCount';
-import { compareMessageTuple } from './utils';
+import { compareMessageTuple, messageOrderCursor, messageOrderTimestamp } from './utils';
 import { loadDutyNotificationPreview } from './dutyNotificationPreview';
 import type { TailAvailability } from './types';
 import { beginDutyScrollDebugActivity, recordDutyScrollDebugEvent } from './duty-scroll-debug';
@@ -59,6 +59,7 @@ export type FeedStateDeps = {
   /** When true, duty page must not auto-scroll / follow new messages (user prefs). */
   disableAutoScroll: boolean;
   deviceAccess: DeviceAccess;
+  messageSortBy?: 'IMSTimestamp' | 'IMSCreatedAt';
   onFeedRemoved?: (feedId: string) => void;
 };
 
@@ -277,6 +278,17 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       previous.map((feed) => (feedIds.includes(feed.id) ? { ...feed, loading: true } : feed)),
     );
   }, [markFeedReloadRequested]);
+  const reloadFeedsPreservingUnread = useCallback(() => {
+    const feedIds = Array.from(new Set(messageFeedsRef.current.map((feed) => feed.id)));
+    if (feedIds.length === 0) return;
+    feedIds.forEach((feedId) => {
+      markFeedReloadRequested(feedId, true);
+      editReloadFeedIdsRef.current.add(feedId);
+    });
+    setMessageFeeds((previous) =>
+      previous.map((feed) => (feedIds.includes(feed.id) ? { ...feed, loading: true } : feed)),
+    );
+  }, [markFeedReloadRequested]);
   const completeFeedReload = useCallback((feedId: string) => {
     pendingReloadFeedIdsRef.current = new Set(
       [...pendingReloadFeedIdsRef.current].filter((id) => id !== feedId),
@@ -368,14 +380,19 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       const target =
         confirmedTarget ??
         (feed.items.at(-1)
-          ? { id: feed.items.at(-1)![0], timestamp: feed.items.at(-1)![1].timestamp }
+          ? {
+              id: feed.items.at(-1)![0],
+              timestamp: messageOrderTimestamp(feed.items.at(-1)![1], feed.messageSortBy) ?? null,
+            }
           : null);
       if (target != null) {
         const readThroughTarget = (id: number, timestamp: number | null) =>
           compareMessageTuple({ id, timestamp }, target) <= 0;
         const remainingUnreadCount =
           feed.items.filter(
-            ([id, message]) => !feed.readIds.has(id) && !readThroughTarget(id, message.timestamp),
+            ([id, message]) =>
+              !feed.readIds.has(id) &&
+              !readThroughTarget(id, messageOrderTimestamp(message, feed.messageSortBy) ?? null),
           ).length +
           [...feed.windowedUnreadItems.entries()].filter(
             ([id, timestamp]) => !readThroughTarget(id, timestamp),
@@ -398,17 +415,62 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
             compareMessageTuple({ id, timestamp }, target) <= 0;
           const readIds = new Set(candidate.readIds);
           candidate.items.forEach(([id, message]) => {
-            if (throughTarget(id, message.timestamp)) readIds.add(id);
+            if (
+              throughTarget(id, messageOrderTimestamp(message, candidate.messageSortBy) ?? null)
+            ) {
+              readIds.add(id);
+            }
           });
           const windowedUnreadItems = new Map(candidate.windowedUnreadItems);
           windowedUnreadItems.forEach((timestamp, id) => {
             if (throughTarget(id, timestamp)) windowedUnreadItems.delete(id);
           });
+          const loadedTail = candidate.items.at(-1);
+          const reachedLoadedTail =
+            loadedTail != null &&
+            (candidate.pendingNewerItems?.length ?? 0) === 0 &&
+            compareMessageTuple(
+              {
+                id: loadedTail[0],
+                timestamp: messageOrderTimestamp(loadedTail[1], candidate.messageSortBy) ?? null,
+              },
+              target,
+            ) === 0;
+          const unresolvedUnreadIds = reachedLoadedTail
+            ? new Set<number>()
+            : new Set(candidate.unresolvedUnreadIds);
+          if (!reachedLoadedTail) readIds.forEach((id) => unresolvedUnreadIds.delete(id));
+          const unresolvedUnreadCount = reachedLoadedTail
+            ? 0
+            : (candidate.unresolvedUnreadCount ?? 0);
+          const loadedIds = new Set(candidate.items.map(([id]) => id));
+          const loadedUnreadIds = new Set(
+            candidate.items.filter(([id]) => !readIds.has(id)).map(([id]) => id),
+          );
+          const pendingUnreadIds = new Set(
+            (candidate.pendingNewerItems ?? [])
+              .filter(([id]) => !readIds.has(id))
+              .map(([id]) => id),
+          );
+          const windowedUnreadCount = [...windowedUnreadItems.keys()].filter(
+            (id) => !loadedIds.has(id) && !pendingUnreadIds.has(id),
+          ).length;
           const unreadCount =
-            candidate.items.filter(([id]) => !readIds.has(id)).length +
-            windowedUnreadItems.size +
-            (candidate.pendingNewerItems ?? []).filter(([id]) => !readIds.has(id)).length;
-          return { ...candidate, readIds, windowedUnreadItems, unreadCount };
+            loadedUnreadIds.size +
+            windowedUnreadCount +
+            [...unresolvedUnreadIds].filter(
+              (id) => !loadedUnreadIds.has(id) && !pendingUnreadIds.has(id),
+            ).length +
+            unresolvedUnreadCount +
+            pendingUnreadIds.size;
+          return {
+            ...candidate,
+            readIds,
+            windowedUnreadItems,
+            unresolvedUnreadIds,
+            unresolvedUnreadCount,
+            unreadCount,
+          };
         }),
       );
     },
@@ -496,13 +558,14 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           : feed.filter;
       return buildInboxReq({
         ...opts,
+        sortBy: deps.messageSortBy,
         filter,
         expandedFreqsSelected: expandedSelected,
         expandedFreqsDenied: expandedDenied,
         highlightSignals: feed.highlightSignalsEnabled ?? false,
       });
     },
-    [deviceAccess.status, freqs],
+    [deps.messageSortBy, deviceAccess.status, freqs],
   );
 
   useEffect(() => {
@@ -708,7 +771,10 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         compareMessageTuple(earliestWindowedUnreadItem, currentCursor) <= 0;
       let nextCursor: MessageCursor | null = cursorIsUnsafe ? null : currentCursor;
       for (const [id, message] of feed.items) {
-        const itemCursor = { id, timestamp: message.timestamp };
+        const itemCursor = {
+          id,
+          timestamp: messageOrderTimestamp(message, feed.messageSortBy) ?? null,
+        };
         if (nextCursor != null && compareMessageTuple(itemCursor, nextCursor) <= 0) continue;
         if (
           earliestWindowedUnreadItem !== null &&
@@ -728,15 +794,12 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       const hasBlockingWindowedUnread =
         earliestWindowedUnreadItem !== null &&
         loadedTail != null &&
-        compareMessageTuple(earliestWindowedUnreadItem, {
-          id: loadedTail[0],
-          timestamp: loadedTail[1].timestamp,
-        }) <= 0;
+        compareMessageTuple(
+          earliestWindowedUnreadItem,
+          messageOrderCursor(loadedTail[0], loadedTail[1], feed.messageSortBy),
+        ) <= 0;
       if (loadedFullyRead && !hasBlockingWindowedUnread) {
-        nextCursor = {
-          id: loadedTail[0],
-          timestamp: loadedTail[1].timestamp,
-        };
+        nextCursor = messageOrderCursor(loadedTail[0], loadedTail[1], feed.messageSortBy);
       }
       if (
         nextCursor != null &&
@@ -810,7 +873,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           });
           if (typeof registerDutyNotificationPreview === 'function') {
             registerDutyNotificationPreview(cycle, feedId, () =>
-              loadDutyNotificationPreview(previewRequest, () => {
+              loadDutyNotificationPreview(previewRequest, currentFeed.messageSortBy, () => {
                 const live = messageFeedsRef.current.find((candidate) => candidate.id === feedId);
                 return (
                   isLifecycleCurrent() &&
@@ -1161,6 +1224,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     reloadEmptyFeeds,
     reloadFeeds,
     reloadEditedFeeds,
+    reloadFeedsPreservingUnread,
     loadFeedOlderMessages,
     loadFeedNewerMessages,
     flushPendingNewerMessages,

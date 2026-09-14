@@ -1,5 +1,6 @@
 use crate::location::SettlementDetails;
 use crate::messenger::group::types::SignalGroupEntry;
+use crate::user_settings::MessageTimeBasis;
 use chrono::NaiveDateTime;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::FromQueryResult;
@@ -55,6 +56,12 @@ pub struct InboxMessage {
     pub important: bool,
     pub bookmarked: bool,
     pub timestamp: Option<i64>,
+    #[serde(default)]
+    pub created_at: Option<i64>,
+    #[serde(default)]
+    pub created_at_order: Option<i64>,
+    #[serde(default)]
+    pub has_date_in_header: bool,
     pub group_master_key: Option<String>,
     pub sender: Option<String>,
     pub extended_form: Option<String>,
@@ -186,6 +193,9 @@ impl From<InboxInsertPayload> for InboxMessage {
             important: payload.important,
             bookmarked: payload.bookmarked,
             timestamp: payload.timestamp,
+            created_at: None,
+            created_at_order: None,
+            has_date_in_header: false,
             group_master_key: payload.group_master_key,
             sender: payload.sender,
             extended_form: payload.extended_form,
@@ -376,6 +386,7 @@ pub struct FreqDetailedPoint {
 pub enum InboxMessagesSortBy {
     IMSDatetime,
     IMSTimestamp,
+    IMSCreatedAt,
 }
 
 #[derive(
@@ -942,6 +953,8 @@ pub struct AnalysisStatsReq {
     pub filter_tags_option: Option<TagFilterOption>,
     pub without_model_tags: Option<bool>,
     pub report_tags_only_this_unit: Option<bool>,
+    #[serde(default)]
+    pub message_time_basis: Option<MessageTimeBasis>,
 }
 
 #[derive(
@@ -1781,6 +1794,9 @@ mod tests {
         };
 
         let message = InboxMessage::from(payload.clone());
+        assert_eq!(message.created_at, None);
+        assert_eq!(message.created_at_order, None);
+        assert!(!message.has_date_in_header);
         let payload_json = serde_json::to_value(payload).unwrap();
         let message_json = serde_json::to_value(message).unwrap();
         let payload_fields = payload_json.as_object().unwrap();
@@ -1804,9 +1820,12 @@ mod tests {
             .collect::<BTreeSet<_>>();
         let expected_omitted_keys = BTreeSet::from([
             "callsign_tokens".to_string(),
+            "created_at".to_string(),
+            "created_at_order".to_string(),
             "coords_with_locality".to_string(),
             "device_name".to_string(),
             "intelligence_reports".to_string(),
+            "has_date_in_header".to_string(),
             "keyword_tokens".to_string(),
             "message_comments".to_string(),
             "message_uid".to_string(),

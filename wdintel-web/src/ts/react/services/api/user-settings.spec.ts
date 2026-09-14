@@ -37,6 +37,7 @@ describe('user-settings api', () => {
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: false,
       messageTextPreviewLines: 20,
+      messageSortBy: 'interception',
     });
   });
 
@@ -81,11 +82,13 @@ describe('user-settings api', () => {
       tagsLayout: 'compact',
       disableAutoScroll: false,
       messageTextPreviewLines: wireValue,
+      messageSortBy: 'interception',
     });
 
     await saveUserSettings({
       tagsLayout: 'compact',
       messageTextPreviewLines: value,
+      messageSortBy: 'interception',
       disableAutoScroll: false,
       analysisMapInSidebar: false,
       dutyAudioTranscriptionCollapsed: false,
@@ -99,7 +102,10 @@ describe('user-settings api', () => {
 
     expect(mocks.putJson).toHaveBeenCalledWith(
       '/api/user/settings',
-      expect.objectContaining({ messageTextPreviewLines: wireValue }),
+      expect.objectContaining({
+        messageTextPreviewLines: wireValue,
+        messageSortBy: 'interception',
+      }),
       { signal: undefined },
     );
   });
@@ -117,6 +123,7 @@ describe('user-settings api', () => {
       dutyCollapseMediaPreviews: false,
       mediaSummaryEnabled: true,
       messageTextPreviewLines: 'twenty',
+      messageSortBy: 'interception',
     });
 
     await saveUserSettings({
@@ -131,6 +138,7 @@ describe('user-settings api', () => {
       dutyCollapseMediaPreviews: false,
       mediaSummaryEnabled: true,
       messageTextPreviewLines: 20,
+      messageSortBy: 'interception',
     });
 
     expect(mocks.putJson).toHaveBeenCalledWith(
@@ -147,6 +155,7 @@ describe('user-settings api', () => {
         dutyCollapseMediaPreviews: false,
         mediaSummaryEnabled: true,
         messageTextPreviewLines: 'twenty',
+        messageSortBy: 'interception',
       },
       { signal: undefined },
     );
@@ -165,10 +174,12 @@ describe('user-settings api', () => {
       tagsLayout: 'compact',
       disableAutoScroll: false,
       messageTextPreviewLines: wireValue,
+      messageSortBy: 'interception',
     });
 
     await expect(fetchUserSettings()).resolves.toMatchObject({
       messageTextPreviewLines: expected,
+      messageSortBy: 'interception',
     });
   });
 
@@ -192,6 +203,7 @@ describe('user-settings api', () => {
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: false,
       messageTextPreviewLines: 20,
+      messageSortBy: 'interception',
     });
 
     expect(mocks.putJson).toHaveBeenCalledWith(

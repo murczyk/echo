@@ -27,6 +27,7 @@ import { blurActiveElement } from '../../../utils/focus';
 import { copyMessageValue } from '../message-utils';
 import { PowerAlert } from '../../../components/PowerAlert';
 import type { TagsLayoutVariant } from '../../rer-duty-neo/utils';
+import type { MessageTimeBasis } from '../../../services/api/user-settings';
 import type { AddPointHighlightBlacklistRequest } from '../../shared/message-card/point-highlight-blacklist';
 import type { AnalysisDirectMessageNavigation } from '../types';
 import { ANALYSIS_MESSAGES_PAGE_SIZE, getFirstLoadedMessagesPageIndex } from '../helpers';
@@ -122,6 +123,7 @@ type Props = {
   tagsOrder: number[];
   tagsLoading: boolean;
   tagsLayout: TagsLayoutVariant;
+  messageTimeBasis?: MessageTimeBasis;
   mediaSummaryEnabled?: boolean;
   collapseMediaPreviews: boolean;
   messageTextPreviewLines: 20 | 40 | null;
@@ -326,6 +328,7 @@ type AnalysisMessageCardItemProps = {
   tagsOrder: number[];
   tagsLoading: boolean;
   tagsLayout: TagsLayoutVariant;
+  messageTimeBasis?: MessageTimeBasis;
   mediaSummaryEnabled?: boolean;
   collapseMediaPreviews: boolean;
   messageTextPreviewLines: 20 | 40 | null;
@@ -365,6 +368,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   tagsOrder,
   tagsLoading,
   tagsLayout,
+  messageTimeBasis,
   mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
   collapseMediaPreviews,
   messageTextPreviewLines,
@@ -401,6 +405,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       tagsOrder={tagsOrder}
       tagsLoading={tagsLoading}
       tagsLayout={tagsLayout}
+      messageTimeBasis={messageTimeBasis}
       collapseMediaPreviews={collapseMediaPreviews}
       messageTextPreviewLines={messageTextPreviewLines}
       searchText={searchText}
@@ -547,6 +552,7 @@ function AnalysisMessagesPaneComponent({
   tagsOrder,
   tagsLoading,
   tagsLayout,
+  messageTimeBasis,
   mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
   collapseMediaPreviews,
   messageTextPreviewLines,
@@ -1194,6 +1200,7 @@ function AnalysisMessagesPaneComponent({
               tagsOrder={tagsOrder}
               tagsLoading={tagsLoading}
               tagsLayout={tagsLayout}
+              messageTimeBasis={messageTimeBasis}
               mediaSummaryEnabled={mediaSummaryEnabled}
               collapseMediaPreviews={collapseMediaPreviews}
               messageTextPreviewLines={messageTextPreviewLines}

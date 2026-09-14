@@ -91,6 +91,25 @@ pub(in crate::rer_importer) struct AnalyticsTagAccess {
     pub(in crate::rer_importer) unit_login_ids: Vec<uuid::Uuid>,
 }
 
+fn filter_stats_message_time_range<Q>(
+    query: Q,
+    req: &AnalysisStatsReq,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+) -> Q
+where
+    Q: QueryFilter,
+{
+    match req.message_time_basis {
+        Some(crate::user_settings::MessageTimeBasis::MessageCreation) => query
+            .filter(signal_message::Column::CreatedAt.gte(dt_since))
+            .filter(signal_message::Column::CreatedAt.lt(dt_till)),
+        _ => query
+            .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+            .filter(sigint_inbox_item::Column::Datetime.lt(dt_till)),
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum AnalysisFacet {
     Groups,
@@ -987,12 +1006,12 @@ pub(super) fn build_groups_query(
             "count",
         )
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         .group_by(Expr::col((
             signal_message_group::Entity,
             signal_message_group::Column::GroupMasterKey,
         )));
+    let groups_res =
+        filter_stats_message_time_range(groups_res, &req, dt_since, dt_till);
     apply_group_stats_filters(
         groups_res,
         &None,
@@ -1040,6 +1059,7 @@ fn apply_group_stats_filters(
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        req.message_time_basis,
         scope,
         units,
     )
@@ -1125,9 +1145,11 @@ pub(super) async fn fetch_daily_group_activity_with_db(
         )
         .select_only()
         .column_as(
-            Expr::cust(
-                "(sigint_inbox_item.datetime AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date",
-            ),
+            Expr::cust(match req.message_time_basis {
+                Some(crate::user_settings::MessageTimeBasis::MessageCreation) =>
+                    "(signal_message.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date",
+                _ => "(sigint_inbox_item.datetime AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date",
+            }),
             "msg_date",
         )
         .column_as(
@@ -1143,10 +1165,9 @@ pub(super) async fn fetch_daily_group_activity_with_db(
             "value",
         )
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         .group_by(Expr::cust("1, 2"))
         .order_by_desc(Expr::cust("1"));
+    let query = filter_stats_message_time_range(query, req, dt_since, dt_till);
     let query = apply_group_stats_filters(
         query,
         &req.selected_groups,
@@ -1213,10 +1234,9 @@ fn callsign_relation_messages_query(
         .group_by(signal_message::Column::Id)
         .group_by(sigint_inbox_item::Column::Freq)
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         .filter(Expr::cust(crate::inbox::callsigns::sql_exists_condition("sigint_inbox_item")))
         .filter(sigint_inbox_item_callsign::Column::Deleted.eq(false));
+    let query = filter_stats_message_time_range(query, req, dt_since, dt_till);
     let query = if let Some(required_callsigns) = required_callsigns {
         let required_callsigns = required_callsigns
             .iter()
@@ -1608,7 +1628,11 @@ pub(super) fn build_sender_breakdown_query(
     let sender_stats_groups = sender_stats_groups(&req, &master_keys);
     let per_day_expr = Expr::cust_with_exprs(
         "to_char(($1 AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date, 'DD.MM.YYYY')",
-        [Expr::col(sigint_inbox_item::Column::Datetime).into_simple_expr()],
+        [match req.message_time_basis {
+            Some(crate::user_settings::MessageTimeBasis::MessageCreation) =>
+                Expr::col(signal_message::Column::CreatedAt).into_simple_expr(),
+            _ => Expr::col(sigint_inbox_item::Column::Datetime).into_simple_expr(),
+        }],
     );
     let breakdown_query =
         build_join_for_sender_stats(&sender_stats_groups, scope)
@@ -1621,12 +1645,16 @@ pub(super) fn build_sender_breakdown_query(
                 Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
                 "count",
             )
-            .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-            .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
             .group_by(preferred_group_sender_expr(None))
             .group_by(sigint_inbox_item::Column::Freq)
             .group_by(sigint_inbox_item::Column::PostId)
             .group_by(per_day_expr);
+    let breakdown_query = filter_stats_message_time_range(
+        breakdown_query,
+        &req,
+        dt_since,
+        dt_till,
+    );
     let breakdown_query = apply_sender_dimension_filters(breakdown_query, &req);
     let breakdown_query = apply_sender_filters_for_login(
         breakdown_query,
@@ -1715,10 +1743,9 @@ fn build_senders_filtered_query(
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
     let sender_stats_groups = sender_stats_groups(&req, &master_keys);
-    let senders_res = build_join_for_sender_stats(&sender_stats_groups, scope)
-        // .filter(signal_message::Column::DuplicateOf.is_null())
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+    let senders_res = build_join_for_sender_stats(&sender_stats_groups, scope);
+    let senders_res =
+        filter_stats_message_time_range(senders_res, &req, dt_since, dt_till);
     let senders_res = apply_sender_dimension_filters(senders_res, &req);
     let senders_res = if scope.is_some() {
         senders_res
@@ -1742,6 +1769,7 @@ fn build_senders_filtered_query(
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        req.message_time_basis,
         scope,
         units,
     )
@@ -1881,6 +1909,7 @@ where
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        req.message_time_basis,
         scope,
         units,
     )
@@ -2175,10 +2204,10 @@ fn build_posts_filtered_query(
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
-        .filter(signal_message::Column::Deleted.eq(false))
-        // .filter(signal_message::Column::DuplicateOf.is_null())
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+        .filter(signal_message::Column::Deleted.eq(false));
+    // .filter(signal_message::Column::DuplicateOf.is_null());
+    let post_res =
+        filter_stats_message_time_range(post_res, &req, dt_since, dt_till);
     let post_res = apply_analytics_message_id_scope(post_res, scope);
     let post_res = apply_message_access_filter(
         post_res,
@@ -2195,6 +2224,7 @@ fn build_posts_filtered_query(
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        req.message_time_basis,
         scope,
         units,
     )
@@ -2623,10 +2653,10 @@ fn build_freqs_filtered_query(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
-        .filter(signal_message::Column::Deleted.eq(false))
-        // .filter(signal_message::Column::DuplicateOf.is_null())
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+        .filter(signal_message::Column::Deleted.eq(false));
+    // .filter(signal_message::Column::DuplicateOf.is_null());
+    let freqs_res =
+        filter_stats_message_time_range(freqs_res, &req, dt_since, dt_till);
     let freqs_res = apply_analytics_message_id_scope(freqs_res, scope);
     let freqs_res = apply_message_access_filter(
         freqs_res,
@@ -2643,6 +2673,7 @@ fn build_freqs_filtered_query(
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        req.message_time_basis,
         scope,
         units,
     )
@@ -3112,9 +3143,9 @@ fn build_metadata_messages_query_with_units(
     units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let messages_q = build_join_for_sigint_inbox_item()
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+        .filter(signal_message::Column::Deleted.eq(false));
+    let messages_q =
+        filter_stats_message_time_range(messages_q, req, dt_since, dt_till);
     let messages_q = apply_analytics_message_id_scope(messages_q, scope);
     apply_sender_filters_for_login(
         messages_q,
@@ -3419,10 +3450,9 @@ fn build_callsigns_filtered_query(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
-        .filter(signal_message::Column::Deleted.eq(false))
-        // .filter(signal_message::Column::DuplicateOf.is_null())
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+        .filter(signal_message::Column::Deleted.eq(false));
+    let callsigns_res =
+        filter_stats_message_time_range(callsigns_res, &req, dt_since, dt_till);
     let callsigns_res = apply_analytics_message_id_scope(callsigns_res, scope);
     let callsigns_res = apply_message_access_filter(
         callsigns_res,
@@ -3442,6 +3472,7 @@ fn build_callsigns_filtered_query(
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        req.message_time_basis,
         scope,
         units,
     )?;
@@ -3658,6 +3689,7 @@ pub(super) async fn fetch_tags_raw_with_db(
         &req.units_exact_match_only,
         since,
         till,
+        req.message_time_basis,
         Some(scope),
         units.as_ref(),
     )
@@ -3857,6 +3889,7 @@ fn build_tags_query_parts(
             matching_network_ids_alias,
             dt_since,
             dt_till,
+            req.message_time_basis,
         )?;
         ctes.push(
             CommonTableExpression::new()
@@ -4017,6 +4050,7 @@ fn build_tags_analytics_count_query_with_scope(
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        req.message_time_basis,
         scope,
         units,
     )
@@ -4073,11 +4107,9 @@ fn build_tags_filtered_query_with_owner_condition(
             )
             .filter(owner_condition);
     }
-    tags_res = tags_res
-        .filter(signal_message::Column::Deleted.eq(false))
-        // .filter(signal_message::Column::DuplicateOf.is_null())
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+    tags_res = tags_res.filter(signal_message::Column::Deleted.eq(false));
+    tags_res =
+        filter_stats_message_time_range(tags_res, &req, dt_since, dt_till);
     tags_res = apply_analytics_message_id_scope(tags_res, scope);
     if join_result_tags {
         if let Some(scope) = scope {
@@ -4565,10 +4597,9 @@ fn build_units_filtered_query(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
-        .filter(signal_message::Column::Deleted.eq(false))
-        // .filter(signal_message::Column::DuplicateOf.is_null())
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+        .filter(signal_message::Column::Deleted.eq(false));
+    let units_res =
+        filter_stats_message_time_range(units_res, &req, dt_since, dt_till);
     let units_res = apply_analytics_message_id_scope(units_res, scope);
     let units_res = apply_message_access_filter(
         units_res,
@@ -4882,10 +4913,9 @@ fn build_locations_filtered_query_for_login(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
-        .filter(signal_message::Column::Deleted.eq(false))
-        // .filter(signal_message::Column::DuplicateOf.is_null())
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+        .filter(signal_message::Column::Deleted.eq(false));
+    let locations_res =
+        filter_stats_message_time_range(locations_res, &req, dt_since, dt_till);
     let locations_res = apply_analytics_message_id_scope(locations_res, scope);
     let locations_res = apply_message_access_filter(
         locations_res,
@@ -4902,6 +4932,7 @@ fn build_locations_filtered_query_for_login(
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        req.message_time_basis,
         scope,
         units,
     )
@@ -5480,10 +5511,9 @@ fn build_aor_messages_query(
         Some(_) => messages,
         None => messages.filter(message_in_groups_exists(master_keys.to_vec())),
     };
-    let messages = messages
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+    let messages = messages.filter(signal_message::Column::Deleted.eq(false));
+    let messages =
+        filter_stats_message_time_range(messages, req, dt_since, dt_till);
     let messages = apply_analytics_message_id_scope(messages, scope);
     let messages = apply_analytics_group_message_id_scope(messages, scope);
     let messages = apply_joined_group_rows_filter(
@@ -5503,6 +5533,7 @@ fn build_aor_messages_query(
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        req.message_time_basis,
         scope,
         units,
     )
@@ -5880,10 +5911,9 @@ fn build_network_analytics_messages_query(
         Some(_) => messages,
         None => messages.filter(message_in_groups_exists(master_keys.to_vec())),
     };
-    let messages = messages
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+    let messages = messages.filter(signal_message::Column::Deleted.eq(false));
+    let messages =
+        filter_stats_message_time_range(messages, req, dt_since, dt_till);
     let messages = apply_analytics_message_id_scope(messages, scope);
     let messages = apply_analytics_group_message_id_scope(messages, scope);
     let messages = apply_joined_group_rows_filter(
@@ -5903,6 +5933,7 @@ fn build_network_analytics_messages_query(
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        req.message_time_basis,
         scope,
         units,
     )
@@ -6496,9 +6527,9 @@ fn build_networks_query_for_login(
             signal_message::Relation::SignalMessageGroup.def(),
         )
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(message_in_groups_exists(master_keys.clone()))
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+        .filter(message_in_groups_exists(master_keys.clone()));
+    let messages_q =
+        filter_stats_message_time_range(messages_q, &req, dt_since, dt_till);
     let messages_q = apply_joined_group_rows_filter(
         messages_q,
         &req.selected_groups,
@@ -6624,6 +6655,7 @@ fn build_networks_query_for_login(
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        req.message_time_basis,
         None,
         None,
     )
@@ -6928,6 +6960,8 @@ async fn fetch_counts_for_login_with_conn(
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
     let read_stats_aggregated = allow_stats_aggregated
+        && req.message_time_basis
+            != Some(crate::user_settings::MessageTimeBasis::MessageCreation)
         && can_read_stats_aggregated(&env.config, dt_since, dt_till)
         && is_5min_stats_bucket_range_aligned(dt_since, dt_till);
 
@@ -6940,6 +6974,7 @@ async fn fetch_counts_for_login_with_conn(
         env,
         read_stats_aggregated,
         scope,
+        &req.0,
     )
     .await
     .context(h!())?;
@@ -6977,10 +7012,13 @@ async fn fetch_counts_for_login_with_conn(
             Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
             "count",
         )
-        .filter(signal_message::Column::Deleted.eq(false))
-        // .filter(signal_message::Column::DuplicateOf.is_null())
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+        .filter(signal_message::Column::Deleted.eq(false));
+    let selected_count_res = filter_stats_message_time_range(
+        selected_count_res,
+        req,
+        dt_since,
+        dt_till,
+    );
     let selected_count_res =
         apply_analytics_message_id_scope(selected_count_res, scope);
     // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)));
@@ -7005,6 +7043,7 @@ async fn fetch_counts_for_login_with_conn(
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        req.message_time_basis,
         scope,
         units,
     )
@@ -7111,6 +7150,7 @@ async fn fetch_count_overall(
     env: &Env,
     read_stats_aggregated: bool,
     scope: Option<&AnalyticsMessageIdScope>,
+    req: &AnalysisStatsReq,
 ) -> anyhow::Result<i64> {
     if read_stats_aggregated {
         return read_total_stats_aggregated_for_env(
@@ -7141,10 +7181,13 @@ async fn fetch_count_overall(
             Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
             "count",
         )
-        .filter(signal_message::Column::Deleted.eq(false))
-        // .filter(signal_message::Column::DuplicateOf.is_null())
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+        .filter(signal_message::Column::Deleted.eq(false));
+    let overall_count_res = filter_stats_message_time_range(
+        overall_count_res,
+        req,
+        dt_since,
+        dt_till,
+    );
     let overall_count_res =
         apply_analytics_message_id_scope(overall_count_res, scope);
     let overall_count_res = apply_message_access_filter(

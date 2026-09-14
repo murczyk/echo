@@ -155,6 +155,14 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const [centerTabPending, startCenterTabTransition] = useTransition();
   const setPageError = useCallback((message: string) => setError(message || null), []);
   const dutySettings = useDutySettings();
+  useEffect(() => {
+    if (dutySettings.loadInProgress) return;
+    setQueryState((current) =>
+      current.messageTimeBasis === dutySettings.messageSortBy
+        ? current
+        : { ...current, messageTimeBasis: dutySettings.messageSortBy },
+    );
+  }, [dutySettings.loadInProgress, dutySettings.messageSortBy]);
   const directQueryBoundaryRef = useRef({
     fromDateTimeStr: initialQueryState.fromDateTimeStr,
     toDateTimeStr: initialQueryState.toDateTimeStr,
@@ -167,6 +175,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
       freqsSelected: queryState.freqsSelected,
       networksSelected: queryState.networksSelected,
       withoutNetwork: queryState.withoutNetwork,
+      messageTimeBasis: dutySettings.messageSortBy,
     }),
     [
       initialQueryState,
@@ -174,11 +183,12 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
       queryState.groupsSelected,
       queryState.networksSelected,
       queryState.withoutNetwork,
+      dutySettings.messageSortBy,
     ],
   );
 
   useEffect(() => {
-    if (!targetMessageUid || !targetMessageContextActive) return;
+    if (!targetMessageUid || !targetMessageContextActive || dutySettings.loadInProgress) return;
     let cancelled = false;
     const isContextRefresh = targetMessageLoadedRef.current;
     if (isContextRefresh) {
@@ -247,7 +257,12 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     return () => {
       cancelled = true;
     };
-  }, [directMessageWindowQueryState, targetMessageContextActive, targetMessageUid]);
+  }, [
+    directMessageWindowQueryState,
+    dutySettings.loadInProgress,
+    targetMessageContextActive,
+    targetMessageUid,
+  ]);
 
   const clearTargetMessageFocus = useCallback(() => {
     setTargetMessageFocusActive(false);
@@ -735,14 +750,17 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   );
 
   const resetFilters = useCallback(() => {
-    const nextState = createResetQueryState();
+    const nextState = {
+      ...createResetQueryState(),
+      messageTimeBasis: dutySettings.messageSortBy,
+    };
     savedFilters.applySavedFilter(null);
     data.invalidateFilterSectionLoads();
     setQueryState(nextState);
     setLastResetState(nextState);
     setError(null);
     pushQueryStateToUrl(nextState, newestFirst);
-  }, [data, savedFilters, newestFirst]);
+  }, [data, dutySettings.messageSortBy, savedFilters, newestFirst]);
 
   const setIncludeOnlyNewFreqs = useCallback(
     (value: boolean) => {

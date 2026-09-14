@@ -34,7 +34,6 @@ pub async fn report_docx_kind_tag(
         &login,
         env,
         &current_req,
-        &period,
         tag_report_sort_by,
     )
     .await
@@ -47,8 +46,6 @@ pub async fn report_docx_kind_tag(
 struct TagReportPeriod {
     date_from: String,
     date_to: String,
-    date_from_dt: chrono::NaiveDateTime,
-    date_to_dt: chrono::NaiveDateTime,
 }
 
 struct TagReportData {
@@ -81,6 +78,7 @@ struct TagReportMessageCandidate {
     id: i64,
     freq: Option<String>,
     datetime: Option<chrono::NaiveDateTime>,
+    created_at: Option<chrono::NaiveDateTime>,
 }
 
 fn tag_report_period(
@@ -99,8 +97,6 @@ fn tag_report_period(
     Ok(TagReportPeriod {
         date_from: date_from_dt.format("%H:%M %d.%m.%Y").to_string(),
         date_to: date_to_dt.format("%H:%M %d.%m.%Y").to_string(),
-        date_from_dt: date_from_dt.naive_utc(),
-        date_to_dt: date_to_dt.naive_utc(),
     })
 }
 
@@ -109,9 +105,10 @@ async fn load_tag_report_data(
     login: &uuid::Uuid,
     env: &Env,
     req: &crate::rer_importer::types::InboxMessagesReq,
-    period: &TagReportPeriod,
     tag_report_sort_by: TagReportSortBy,
 ) -> Result<TagReportData, AppError> {
+    let creation_time_sorting = req.sort_by
+        == Some(crate::rer_importer::types::InboxMessagesSortBy::IMSCreatedAt);
     let report_settings =
         crate::system_settings::get_report_generation_settings(&env.dbx)
             .await
@@ -139,20 +136,29 @@ async fn load_tag_report_data(
             .await
             .context(h!())?;
         let snapshot = load_tag_report_snapshot_txn(
-            &txn, login, env, &chunk_req, period, chunk.end,
+            &txn, login, env, &chunk_req, chunk.end,
         )
         .await
         .context(h!())?;
         txn.commit().await.context(h!())?;
-        let chunk_data =
-            collect_tag_report_data(&chunk_req, tag_report_sort_by, snapshot);
+        let chunk_data = collect_tag_report_data(
+            &chunk_req,
+            tag_report_sort_by,
+            creation_time_sorting,
+            snapshot,
+        );
         important_ids.extend(chunk_data.important_ids);
         for message in chunk_data.messages {
             messages_by_id.entry(message.message_id).or_insert(message);
         }
     }
     let mut messages = messages_by_id.into_values().collect::<Vec<_>>();
-    sort_tag_report_messages(&mut messages, tag_report_sort_by);
+    // Chunk aggregation rebuilds this list by message ID, so use the request basis again.
+    sort_tag_report_messages(
+        &mut messages,
+        tag_report_sort_by,
+        creation_time_sorting,
+    );
     Ok(TagReportData {
         important_ids,
         messages,
@@ -164,7 +170,6 @@ async fn load_tag_report_snapshot_txn(
     login: &uuid::Uuid,
     env: &Env,
     req: &crate::rer_importer::types::InboxMessagesReq,
-    period: &TagReportPeriod,
     period_end: ReportPeriodEnd,
 ) -> Result<TagReportSnapshot, AppError> {
     let login_ids = crate::users::get_organism_login_ids_by_id(txn, login)
@@ -176,15 +181,10 @@ async fn load_tag_report_snapshot_txn(
             .context(h!())?;
     let message_ids: Vec<i64> =
         candidates.iter().map(|message| message.id).collect();
-    let important_ids = load_tag_report_important_ids(
-        txn,
-        login,
-        &login_ids,
-        &message_ids,
-        period,
-    )
-    .await
-    .context(h!())?;
+    let important_ids =
+        load_tag_report_important_ids(txn, login, &login_ids, &message_ids)
+            .await
+            .context(h!())?;
     let signal_messages = load_tag_report_signal_messages(txn, &message_ids)
         .await
         .context(h!())?;
@@ -220,10 +220,15 @@ async fn load_tag_report_snapshot_txn(
 fn collect_tag_report_data(
     req: &crate::rer_importer::types::InboxMessagesReq,
     tag_report_sort_by: TagReportSortBy,
+    creation_time_sorting: bool,
     snapshot: TagReportSnapshot,
 ) -> TagReportData {
     let mut candidates = snapshot.candidates;
-    sort_tag_report_candidates(&mut candidates, tag_report_sort_by);
+    sort_tag_report_candidates(
+        &mut candidates,
+        tag_report_sort_by,
+        creation_time_sorting,
+    );
     let messages = collect_tag_report_messages(
         req,
         candidates,
@@ -255,6 +260,7 @@ async fn load_tag_report_candidates(
     .column_as(signal_message::Column::Id, "id")
     .column_as(sigint_inbox_item::Column::Freq, "freq")
     .column_as(sigint_inbox_item::Column::Datetime, "datetime")
+    .column_as(signal_message::Column::CreatedAt, "created_at")
     .into_model::<TagReportMessageCandidate>()
     .all(txn)
     .await
@@ -265,47 +271,101 @@ async fn load_tag_report_candidates(
 fn sort_tag_report_messages(
     messages: &mut [TagReportMessage],
     tag_report_sort_by: TagReportSortBy,
+    creation_time_sorting: bool,
 ) {
     messages.sort_by(|left, right| match tag_report_sort_by {
-        TagReportSortBy::ByTime => tag_report_message_time_order(left, right),
+        TagReportSortBy::ByTime => {
+            tag_report_message_time_order(left, right, creation_time_sorting)
+        }
         TagReportSortBy::ByFreqThenTime => left
             .inbox
             .freq
             .as_deref()
             .unwrap_or("")
             .cmp(right.inbox.freq.as_deref().unwrap_or(""))
-            .then_with(|| tag_report_message_time_order(left, right)),
+            .then_with(|| {
+                tag_report_message_time_order(
+                    left,
+                    right,
+                    creation_time_sorting,
+                )
+            }),
     });
 }
 
 fn tag_report_message_time_order(
     left: &TagReportMessage,
     right: &TagReportMessage,
+    creation_time_sorting: bool,
 ) -> std::cmp::Ordering {
-    (left.inbox.datetime, left.message_id)
-        .cmp(&(right.inbox.datetime, right.message_id))
+    tag_report_time_order(
+        if creation_time_sorting {
+            Some(left.signal_message.created_at)
+        } else {
+            left.inbox.datetime
+        },
+        left.message_id,
+        if creation_time_sorting {
+            Some(right.signal_message.created_at)
+        } else {
+            right.inbox.datetime
+        },
+        right.message_id,
+    )
 }
 
 fn sort_tag_report_candidates(
     messages: &mut [TagReportMessageCandidate],
     tag_report_sort_by: TagReportSortBy,
+    creation_time_sorting: bool,
 ) {
     messages.sort_by(|left, right| match tag_report_sort_by {
-        TagReportSortBy::ByTime => tag_report_time_order(left, right),
+        TagReportSortBy::ByTime => {
+            tag_report_candidate_time_order(left, right, creation_time_sorting)
+        }
         TagReportSortBy::ByFreqThenTime => left
             .freq
             .as_deref()
             .unwrap_or("")
             .cmp(right.freq.as_deref().unwrap_or(""))
-            .then_with(|| tag_report_time_order(left, right)),
+            .then_with(|| {
+                tag_report_candidate_time_order(
+                    left,
+                    right,
+                    creation_time_sorting,
+                )
+            }),
     });
 }
 
-fn tag_report_time_order(
+fn tag_report_candidate_time_order(
     left: &TagReportMessageCandidate,
     right: &TagReportMessageCandidate,
+    creation_time_sorting: bool,
 ) -> std::cmp::Ordering {
-    (left.datetime, left.id).cmp(&(right.datetime, right.id))
+    tag_report_time_order(
+        if creation_time_sorting {
+            left.created_at
+        } else {
+            left.datetime
+        },
+        left.id,
+        if creation_time_sorting {
+            right.created_at
+        } else {
+            right.datetime
+        },
+        right.id,
+    )
+}
+
+fn tag_report_time_order(
+    left_time: Option<chrono::NaiveDateTime>,
+    left_id: i64,
+    right_time: Option<chrono::NaiveDateTime>,
+    right_id: i64,
+) -> std::cmp::Ordering {
+    (left_time, left_id).cmp(&(right_time, right_id))
 }
 
 async fn load_tag_report_important_ids(
@@ -313,7 +373,6 @@ async fn load_tag_report_important_ids(
     login: &uuid::Uuid,
     logins: &[uuid::Uuid],
     message_ids: &[i64],
-    period: &TagReportPeriod,
 ) -> Result<BTreeSet<i64>, AppError> {
     if message_ids.is_empty() {
         return Ok(BTreeSet::new());
@@ -341,8 +400,6 @@ async fn load_tag_report_important_ids(
             signal_message::Relation::DatasourceGroup.def(),
         )
         .filter(datasource_group::Column::GroupMasterKey.eq_any(sigint_groups))
-        .filter(sigint_inbox_item::Column::Datetime.gte(period.date_from_dt))
-        .filter(sigint_inbox_item::Column::Datetime.lte(period.date_to_dt))
         .filter(signal_message::Column::Deleted.eq(false))
         .all(txn)
         .await
@@ -677,23 +734,29 @@ mod tests {
         id: i64,
         freq: &str,
         datetime: chrono::NaiveDateTime,
+        created_at: chrono::NaiveDateTime,
     ) -> TagReportMessageCandidate {
         TagReportMessageCandidate {
             id,
             freq: Some(freq.to_string()),
             datetime: Some(datetime),
+            created_at: Some(created_at),
         }
     }
 
     #[test]
     fn tag_report_sort_by_time_ignores_frequency() {
         let mut messages = vec![
-            candidate(1, "200.000", dt(10, 0)),
-            candidate(2, "100.000", dt(9, 0)),
-            candidate(3, "300.000", dt(9, 30)),
+            candidate(1, "200.000", dt(10, 0), dt(10, 0)),
+            candidate(2, "100.000", dt(9, 0), dt(9, 0)),
+            candidate(3, "300.000", dt(9, 30), dt(9, 30)),
         ];
 
-        sort_tag_report_candidates(&mut messages, TagReportSortBy::ByTime);
+        sort_tag_report_candidates(
+            &mut messages,
+            TagReportSortBy::ByTime,
+            false,
+        );
 
         assert_eq!(
             messages
@@ -707,14 +770,15 @@ mod tests {
     #[test]
     fn tag_report_sort_by_freq_then_time_keeps_frequency_primary() {
         let mut messages = vec![
-            candidate(1, "200.000", dt(9, 0)),
-            candidate(2, "100.000", dt(10, 0)),
-            candidate(3, "100.000", dt(9, 30)),
+            candidate(1, "200.000", dt(9, 0), dt(9, 0)),
+            candidate(2, "100.000", dt(10, 0), dt(10, 0)),
+            candidate(3, "100.000", dt(9, 30), dt(9, 30)),
         ];
 
         sort_tag_report_candidates(
             &mut messages,
             TagReportSortBy::ByFreqThenTime,
+            false,
         );
 
         assert_eq!(
@@ -726,6 +790,40 @@ mod tests {
         );
     }
 
+    // https://github.com/echoua/echo/issues/3455
+    #[test]
+    fn tag_report_creation_sorting_uses_creation_time_within_each_sort_mode() {
+        let mut by_time = vec![
+            candidate(1, "200.000", dt(10, 0), dt(9, 0)),
+            candidate(2, "100.000", dt(9, 0), dt(10, 0)),
+        ];
+        sort_tag_report_candidates(&mut by_time, TagReportSortBy::ByTime, true);
+        assert_eq!(
+            by_time
+                .into_iter()
+                .map(|message| message.id)
+                .collect::<Vec<_>>(),
+            vec![1, 2]
+        );
+
+        let mut by_freq_then_time = vec![
+            candidate(1, "100.000", dt(10, 0), dt(9, 0)),
+            candidate(2, "100.000", dt(9, 0), dt(10, 0)),
+        ];
+        sort_tag_report_candidates(
+            &mut by_freq_then_time,
+            TagReportSortBy::ByFreqThenTime,
+            true,
+        );
+        assert_eq!(
+            by_freq_then_time
+                .into_iter()
+                .map(|message| message.id)
+                .collect::<Vec<_>>(),
+            vec![1, 2]
+        );
+    }
+
     #[tokio::test]
     #[serial]
     async fn tag_report_keeps_importance_across_timestamp_chunks() {
@@ -734,14 +832,15 @@ mod tests {
         let datasource_group =
             find_test_datasource_group(&env.dbx).await.unwrap();
         set_report_chunking_hours(&env.dbx, 1).await;
-        let timestamp = dt(10, 30);
+        let created_at = dt(10, 30);
+        let interception_datetime = dt(3, 30);
 
         let signal_message = mk_signal_message(
             &env.dbx,
             signal_message::ActiveModel {
                 body: Set(Some("important-across-chunks".to_string())),
-                created_at: Set(timestamp),
-                timestamp: Set(Some(timestamp)),
+                created_at: Set(created_at),
+                timestamp: Set(Some(created_at)),
                 message_uid: Set(Some("important-across-chunks".to_string())),
                 datasource_group_id: Set(Some(datasource_group.id)),
                 ..Default::default()
@@ -759,7 +858,7 @@ mod tests {
                 datasource_group_id: Set(Some(datasource_group.id)),
                 sender: Set(Some("sender-1".to_string())),
                 message_uid: Set(Some("important-across-chunks".to_string())),
-                created_at: Set(timestamp),
+                created_at: Set(created_at),
                 ..Default::default()
             },
         )
@@ -769,10 +868,11 @@ mod tests {
             &env.dbx,
             sigint_inbox_item::ActiveModel {
                 id: Set(signal_message.id),
-                date: Set(Some(timestamp.date().to_string())),
+                date: Set(Some(interception_datetime.date().to_string())),
                 time: Set(Some(
-                    timestamp.time().format("%H:%M:%S").to_string(),
+                    interception_datetime.time().format("%H:%M:%S").to_string(),
                 )),
+                datetime: Set(Some(interception_datetime)),
                 ..Default::default()
             },
         )
@@ -797,16 +897,14 @@ mod tests {
                 dt(12, 0).and_utc().timestamp_millis(),
             ),
             nolimit: Some(true),
-            sort_by: Some(InboxMessagesSortBy::IMSTimestamp),
+            sort_by: Some(InboxMessagesSortBy::IMSCreatedAt),
             ..Default::default()
         };
-        let period = tag_report_period(&req).unwrap();
         let data = load_tag_report_data(
             &env.dbx,
             &login.id,
             &env,
             &req,
-            &period,
             TagReportSortBy::ByTime,
         )
         .await

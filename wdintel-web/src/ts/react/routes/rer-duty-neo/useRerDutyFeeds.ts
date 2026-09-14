@@ -151,6 +151,7 @@ export function useRerDutyFeeds(
   const filterOpts = useRerDutyFilterOptions();
   const [pollIntervalSec, setPollIntervalSec] = useState(1);
   const dutySettings = useDutySettings();
+  const messageSortByRef = useRef(dutySettings.messageSortBy);
   // Until the persisted preference is known (or after it fails), Duty must not make an
   // automatic positioning decision from the optimistic default.
   const dutyDisableAutoScroll =
@@ -172,6 +173,7 @@ export function useRerDutyFeeds(
     pollIntervalSec,
     disableAutoScroll: dutyDisableAutoScroll,
     deviceAccess,
+    messageSortBy: dutySettings.messageSortBy === 'creation' ? 'IMSCreatedAt' : 'IMSTimestamp',
     onFeedRemoved: filterOpts.pruneSavedFilterUiState,
   });
   const setFeedError = feedState.setError;
@@ -227,6 +229,11 @@ export function useRerDutyFeeds(
   useEffect(() => {
     if (dutySettings.loadError) feedState.setError(dutySettings.loadError);
   }, [dutySettings.loadError, feedState.setError]);
+  useEffect(() => {
+    if (messageSortByRef.current === dutySettings.messageSortBy) return;
+    messageSortByRef.current = dutySettings.messageSortBy;
+    feedState.reloadFeedsPreservingUnread();
+  }, [dutySettings.messageSortBy, feedState.reloadFeedsPreservingUnread]);
 
   useInboxChangedMessageIds({
     onMessageIds: async (messageIds) => {

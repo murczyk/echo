@@ -261,6 +261,7 @@ pub(in crate::rer_importer) fn apply_analysis_unit_filters<E>(
     units_exact_match_only: &Option<bool>,
     dt_since: chrono::NaiveDateTime,
     dt_till: chrono::NaiveDateTime,
+    message_time_basis: Option<crate::user_settings::MessageTimeBasis>,
     scope: Option<&AnalyticsMessageIdScope>,
     resolved: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<Select<E>, AppError>
@@ -301,6 +302,7 @@ where
         units_exact_match_only,
         dt_since,
         dt_till,
+        message_time_basis,
     )
     .context(h!())?)
 }

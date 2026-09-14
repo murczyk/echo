@@ -1785,6 +1785,7 @@ pub async fn callsigns_graph(
         selected_aors: req.selected_aors.clone(),
         without_model_tags: req.without_model_tags,
         report_tags_only_this_unit: req.report_tags_only_this_unit,
+        message_time_basis: None,
     };
 
     let summary_table: SummaryTableFreq =
@@ -2165,6 +2166,9 @@ mod tests {
             important: false,
             bookmarked: false,
             timestamp: None,
+            created_at: None,
+            created_at_order: None,
+            has_date_in_header: false,
             group_master_key: None,
             sender: None,
             extended_form: None,

@@ -106,6 +106,7 @@ export function DutyFeedStateHarness(props: {
   setProfiles?: Parameters<typeof useRerDutyFeedState>[0]['setProfiles'];
   setGroupInfos?: Parameters<typeof useRerDutyFeedState>[0]['setGroupInfos'];
   deviceAccess?: DeviceAccess;
+  messageSortBy?: Parameters<typeof useRerDutyFeedState>[0]['messageSortBy'];
 }) {
   const api = useRerDutyFeedState({
     freqs: props.freqs ?? [],
@@ -117,6 +118,7 @@ export function DutyFeedStateHarness(props: {
     pollIntervalSec: 1,
     disableAutoScroll: props.disableAutoScroll ?? false,
     deviceAccess: props.deviceAccess ?? { status: 'allowed' },
+    messageSortBy: props.messageSortBy,
   });
   props.apiRef.current = new Proxy(api, {
     get(target, property, receiver) {

@@ -101,6 +101,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
       showClassicAnalysis: dutySettings.showClassicAnalysis,
       dutyCollapseMediaPreviews: dutySettings.dutyCollapseMediaPreviews,
       mediaSummaryEnabled: dutySettings.mediaSummaryEnabled,
+      messageSortBy: dutySettings.messageSortBy,
       ...overrides,
     });
   };
@@ -261,6 +262,11 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                 dutySettings.setMessageTextPreviewLines(value);
                 scheduleDutySettingsSave({ messageTextPreviewLines: value });
               }}
+              messageSortBy={dutySettings.messageSortBy}
+              onMessageSortByChange={(value) => {
+                dutySettings.setMessageSortBy(value);
+                scheduleDutySettingsSave({ messageSortBy: value });
+              }}
               mediaSummaryEnabled={dutySettings.mediaSummaryEnabled}
               onMediaSummaryEnabledChange={(value) => {
                 dutySettings.setMediaSummaryEnabled(value);
@@ -343,6 +349,11 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                     onMessageTextPreviewLinesChange={(value) => {
                       dutySettings.setMessageTextPreviewLines(value);
                       scheduleDutySettingsSave({ messageTextPreviewLines: value });
+                    }}
+                    messageSortBy={dutySettings.messageSortBy}
+                    onMessageSortByChange={(value) => {
+                      dutySettings.setMessageSortBy(value);
+                      scheduleDutySettingsSave({ messageSortBy: value });
                     }}
                     mediaSummaryEnabled={dutySettings.mediaSummaryEnabled}
                     onMediaSummaryEnabledChange={(value) => {

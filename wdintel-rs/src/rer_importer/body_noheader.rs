@@ -125,6 +125,12 @@ lazy_static! {
     // Buran-style date/time label line: `Дата: ...` / `Час: ...`
     static ref RE_DT_LABEL: Regex =
         Regex::new(r#"^(Дата/час|Дата|Час)\s*[: ]"#).unwrap();
+    static ref RE_CALENDAR_DATE: Regex = Regex::new(
+        r#"(?:^|\s)(?:[0-9]{2}\.[0-9]{2}(?:\.[0-9]{2,4})?|[0-9]{4}-[0-9]{2}-[0-9]{2})(?:$|[\s,._])"#
+    ).unwrap();
+    static ref RE_DATE_ONLY: Regex = Regex::new(
+        r#"^[0-9]{2}\.[0-9]{2}(?:\.[0-9]{2,4})?$|^[0-9]{4}-[0-9]{2}-[0-9]{2}$"#
+    ).unwrap();
     static ref RE_UNIT_DIVIDER: Regex =
         Regex::new(r#"(?i)^-+\s*(?:РЕР|РР)\s+\d+\s+[^-]+-+$"#).unwrap();
     static ref UNIT_WATERMARK_LINES: HashSet<String> = ["---- РР 47 ОМБР ----"]
@@ -177,6 +183,31 @@ pub fn is_datetime_header_line(line: &str) -> bool {
     is_datetime_header_line_raw(line)
         || normalize_decorated_header_line(line)
             .is_some_and(|line| is_datetime_header_line_raw(&line))
+}
+
+/// Detect a calendar date only in the parser-recognized leading header.
+pub fn leading_header_has_calendar_date(input: &str) -> bool {
+    input
+        .lines()
+        .skip_while(|line| line.trim().is_empty())
+        .take_while(|line| is_display_header_line(line))
+        .any(display_header_has_calendar_date)
+}
+
+fn is_display_header_line(line: &str) -> bool {
+    is_header_line(line) || display_header_has_date_only(line)
+}
+
+fn display_header_has_date_only(line: &str) -> bool {
+    RE_DATE_ONLY.is_match(line)
+        || normalize_decorated_header_line(line)
+            .is_some_and(|line| RE_DATE_ONLY.is_match(&line))
+}
+
+fn display_header_has_calendar_date(line: &str) -> bool {
+    RE_CALENDAR_DATE.is_match(line)
+        || normalize_decorated_header_line(line)
+            .is_some_and(|line| RE_CALENDAR_DATE.is_match(&line))
 }
 
 fn is_datetime_header_line_raw(line: &str) -> bool {
@@ -1084,5 +1115,59 @@ mod tests {
         let res = extract_text(body).unwrap().body;
 
         assert_eq!(res, "Перехоплення");
+    }
+
+    #[test]
+    fn detects_calendar_dates_only_in_leading_headers() {
+        assert!(leading_header_has_calendar_date(
+            "15.08.2026, 08:55:41\nПерехоплення"
+        ));
+        assert!(leading_header_has_calendar_date(
+            "Дата 15.08.2026\nЧас 08:55:41\nПерехоплення"
+        ));
+        assert!(leading_header_has_calendar_date(
+            "[15.08.2026 08:55:41]\nПерехоплення"
+        ));
+        assert!(leading_header_has_calendar_date("15.08.2026\nПерехоплення"));
+    }
+
+    #[test]
+    fn rejects_time_only_and_body_dates() {
+        assert!(!leading_header_has_calendar_date("08:55\nПерехоплення"));
+        assert!(!leading_header_has_calendar_date(
+            "Перехоплення про 15.08.2026\n— репліка"
+        ));
+    }
+
+    #[test]
+    fn date_only_lines_are_display_headers_but_remain_in_extracted_bodies() {
+        let input = "15.08.2026\nПерехоплення";
+        assert!(leading_header_has_calendar_date(input));
+        assert_eq!(extract_text(input).unwrap().body, input);
+        assert!(!is_datetime_header_line("15.08.2026"));
+    }
+
+    #[test]
+    fn detects_decorated_date_only_display_headers_without_changing_extraction()
+    {
+        for input in [
+            "[15.08.2026]\nПерехоплення",
+            "  { 15.08.2026 }  \nПерехоплення",
+        ] {
+            assert!(leading_header_has_calendar_date(input), "{input}");
+            assert_eq!(extract_text(input).unwrap().body, input, "{input}");
+        }
+
+        assert!(leading_header_has_calendar_date(
+            "[15.08.2026, 08:55:41]\nПерехоплення"
+        ));
+
+        assert!(!leading_header_has_calendar_date("08:55\nПерехоплення"));
+        assert!(!leading_header_has_calendar_date(
+            "Перехоплення\n15.08.2026\nще один рядок"
+        ));
+        assert!(!leading_header_has_calendar_date(
+            "Зустріч буде 15.08.2026\nПерехоплення"
+        ));
     }
 }

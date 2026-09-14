@@ -252,6 +252,7 @@ fn mk_analysis_stats_req(
         filter_tags_option: None,
         without_model_tags: None,
         report_tags_only_this_unit: None,
+        message_time_basis: None,
     }
 }
 
@@ -1339,6 +1340,36 @@ async fn set_message_unit(
     Ok(())
 }
 
+async fn set_message_population_times(
+    db: &DatabaseConnection,
+    signal_message_id: i64,
+    created_at: NaiveDateTime,
+    interception_datetime: NaiveDateTime,
+) -> Result<(), AppError> {
+    let signal_message = signal_message::Entity::find_by_id(signal_message_id)
+        .one(db)
+        .await
+        .context(h!())?
+        .context(h!())?;
+    let mut signal_message = signal_message.into_active_model();
+    signal_message.created_at = Set(created_at);
+    signal_message.update(db).await.context(h!())?;
+
+    let inbox_item = sigint_inbox_item::Entity::find_by_id(signal_message_id)
+        .one(db)
+        .await
+        .context(h!())?
+        .context(h!())?;
+    let mut inbox_item = inbox_item.into_active_model();
+    inbox_item.datetime = Set(Some(interception_datetime));
+    inbox_item.date = Set(Some(interception_datetime.date().to_string()));
+    inbox_item.time = Set(Some(
+        interception_datetime.time().format("%H:%M:%S").to_string(),
+    ));
+    inbox_item.update(db).await.context(h!())?;
+    Ok(())
+}
+
 async fn set_message_post(
     db: &DatabaseConnection,
     signal_message_id: i64,
@@ -1945,6 +1976,27 @@ fn postgres_tags_exact_unit_query_only_uses_linked_candidates() {
         !str::contains(matching_ids_sql, "UNION ALL"),
         "{matching_ids_sql}"
     );
+}
+
+#[test]
+fn postgres_tags_creation_unit_query_uses_creation_bounds() {
+    let mut req = mk_analysis_stats_req(0, 86_400_000);
+    req.selected_units = Some(vec!["unit".to_string()]);
+    req.message_time_basis =
+        Some(crate::user_settings::MessageTimeBasis::MessageCreation);
+    let query = stats::build_tags_query(
+        &req,
+        &uuid::Uuid::nil(),
+        test_dt(1970, 1, 1, 0, 0),
+        test_dt(1970, 1, 2, 0, 0),
+        vec!["group".to_string()],
+    )
+    .unwrap();
+    let sql = DbBackend::Postgres.build(&query).sql;
+
+    assert!(sql.contains("selected_header_unit_signal_message"), "{sql}");
+    assert!(sql.contains("selected_linked_unit_signal_message"), "{sql}");
+    assert!(sql.contains("created_at"), "{sql}");
 }
 
 #[tokio::test]
@@ -4893,6 +4945,239 @@ async fn rer_analysis_units_exact_and_undefined_filters_work() {
 
 #[tokio::test]
 #[serial]
+async fn rer_analysis_legacy_unit_filters_follow_message_time_basis() {
+    let fixture = mk_aor_filter_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    db.execute_unprepared(
+        "CREATE SCHEMA IF NOT EXISTS echo_clickhouse_derived; \
+         CREATE OR REPLACE VIEW echo_clickhouse_derived.message_network_link AS \
+         SELECT sigint_inbox_item_id, sigint_network_id FROM sigint_inbox_item_network",
+    )
+    .await
+    .unwrap();
+    let login_id = crate::users::login_id_by_name(db, "Tester").await.unwrap();
+    let linked_unit = mk_sigint_unit(
+        db,
+        sigint_unit::ActiveModel {
+            name: Set("Creation linked unit".to_string()),
+            created_by_login_id: Set(login_id),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let linked_network = mk_network_fixture(
+        db,
+        "Creation linked network",
+        "945.1",
+        fixture.aor_a.id,
+        fixture.created_at,
+    )
+    .await
+    .unwrap();
+    mk_sigint_network_unit(
+        db,
+        sigint_network_unit::ActiveModel {
+            network_id: Set(linked_network.network.id),
+            unit_id: Set(linked_unit.id),
+            created_at: Set(fixture.created_at),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let inside = test_dt(2026, 3, 2, 8, 5);
+    let outside = test_dt(2026, 3, 2, 9, 5);
+    let header_creation = mk_analysis_message(
+        db,
+        "creation-header-inside",
+        "945.2",
+        inside,
+        &[&fixture.group_x],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    set_message_unit(db, header_creation.id, Some("Creation header unit"))
+        .await
+        .unwrap();
+    set_message_population_times(db, header_creation.id, inside, outside)
+        .await
+        .unwrap();
+    let header_interception = mk_analysis_message(
+        db,
+        "interception-header-inside",
+        "945.3",
+        inside,
+        &[&fixture.group_x],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    set_message_unit(db, header_interception.id, Some("Creation header unit"))
+        .await
+        .unwrap();
+    set_message_population_times(db, header_interception.id, outside, inside)
+        .await
+        .unwrap();
+
+    let linked_creation = mk_analysis_message(
+        db,
+        "creation-linked-inside",
+        "945.1",
+        inside,
+        &[&fixture.group_x],
+        &[linked_network.network.id],
+        false,
+    )
+    .await
+    .unwrap();
+    set_message_unit(db, linked_creation.id, Some("Header noise"))
+        .await
+        .unwrap();
+    set_message_population_times(db, linked_creation.id, inside, outside)
+        .await
+        .unwrap();
+    let linked_interception = mk_analysis_message(
+        db,
+        "interception-linked-inside",
+        "945.1",
+        inside,
+        &[&fixture.group_x],
+        &[linked_network.network.id],
+        false,
+    )
+    .await
+    .unwrap();
+    set_message_unit(db, linked_interception.id, Some("Header noise"))
+        .await
+        .unwrap();
+    set_message_population_times(db, linked_interception.id, outside, inside)
+        .await
+        .unwrap();
+
+    let unit_tag = mk_tag(
+        db,
+        tag::ActiveModel {
+            label: Set("Creation unit boundary tag".to_string()),
+            enabled: Set(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    for message_id in [
+        header_creation.id,
+        header_interception.id,
+        linked_creation.id,
+        linked_interception.id,
+    ] {
+        mk_sigint_inbox_item_tag(
+            db,
+            sigint_inbox_item_tag::ActiveModel {
+                sigint_inbox_item_id: Set(message_id),
+                tag_id: Set(unit_tag.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    let mut header_req = analysis_stats_req_for_aor_fixture(&fixture);
+    header_req.selected_units = Some(vec!["Creation header unit".to_string()]);
+    header_req.units_exact_match_only = Some(false);
+    header_req.message_time_basis =
+        Some(crate::user_settings::MessageTimeBasis::MessageCreation);
+    assert_eq!(
+        fetch_selected_count_for_req(&fixture.env, &header_req)
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        fetch_freq_counts_for_req(&fixture.env, &header_req)
+            .await
+            .unwrap(),
+        BTreeMap::from([("945.2".to_string(), 1)])
+    );
+    assert_eq!(
+        fetch_tag_counts_for_req(&fixture.env, &header_req)
+            .await
+            .unwrap(),
+        BTreeMap::from([(unit_tag.id, 1)])
+    );
+
+    header_req.message_time_basis = None;
+    assert_eq!(
+        fetch_selected_count_for_req(&fixture.env, &header_req)
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        fetch_freq_counts_for_req(&fixture.env, &header_req)
+            .await
+            .unwrap(),
+        BTreeMap::from([("945.3".to_string(), 1)])
+    );
+    assert_eq!(
+        fetch_tag_counts_for_req(&fixture.env, &header_req)
+            .await
+            .unwrap(),
+        BTreeMap::from([(unit_tag.id, 1)])
+    );
+
+    let mut linked_req = analysis_stats_req_for_aor_fixture(&fixture);
+    linked_req.selected_units = Some(vec!["Creation linked unit".to_string()]);
+    linked_req.units_exact_match_only = Some(true);
+    linked_req.message_time_basis =
+        Some(crate::user_settings::MessageTimeBasis::MessageCreation);
+    assert_eq!(
+        fetch_selected_count_for_req(&fixture.env, &linked_req)
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        fetch_freq_counts_for_req(&fixture.env, &linked_req)
+            .await
+            .unwrap(),
+        BTreeMap::from([("945.1".to_string(), 1)])
+    );
+    assert_eq!(
+        fetch_tag_counts_for_req(&fixture.env, &linked_req)
+            .await
+            .unwrap(),
+        BTreeMap::from([(unit_tag.id, 1)])
+    );
+
+    linked_req.message_time_basis = None;
+    assert_eq!(
+        fetch_selected_count_for_req(&fixture.env, &linked_req)
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        fetch_freq_counts_for_req(&fixture.env, &linked_req)
+            .await
+            .unwrap(),
+        BTreeMap::from([("945.1".to_string(), 1)])
+    );
+    assert_eq!(
+        fetch_tag_counts_for_req(&fixture.env, &linked_req)
+            .await
+            .unwrap(),
+        BTreeMap::from([(unit_tag.id, 1)])
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn rer_analysis_units_match_etalon_units_during_active_window() {
     let fixture = mk_aor_filter_fixture().await.unwrap();
     let db = &fixture.env.dbx;
@@ -7685,6 +7970,15 @@ fn count_stats_analytics_supports_tag_filters() {
 }
 
 #[test]
+fn creation_time_requests_bypass_interception_scoped_analytics() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.message_time_basis =
+        Some(crate::user_settings::MessageTimeBasis::MessageCreation);
+
+    assert!(!analytics_count_request_supported(&req));
+}
+
+#[test]
 fn count_stats_analytics_supports_callsign_and_search_filters() {
     let mut req = mk_analysis_stats_req(0, 1);
 
@@ -8108,6 +8402,60 @@ fn new_callsign_queries_return_only_aggregates() {
         "{sql}"
     );
     assert!(!sql.contains("EXISTS"), "{sql}");
+}
+
+#[test]
+fn correlated_and_new_callsign_queries_filter_by_creation_time() {
+    let mut req = mk_analysis_stats_req(1_000, 2_000);
+    req.message_time_basis =
+        Some(crate::user_settings::MessageTimeBasis::MessageCreation);
+    let correlated = build_correlated_freq_messages_query(
+        &req,
+        vec!["group-1".to_string()],
+        dt_from_millis(req.since_date_inclusive_ms).unwrap(),
+        dt_from_millis(req.till_date_noninclusive_ms).unwrap(),
+        None,
+    )
+    .unwrap()
+    .build(DbBackend::Postgres)
+    .to_string();
+    assert!(
+        correlated.contains(r#""signal_message"."created_at""#),
+        "{correlated}"
+    );
+    assert!(
+        !correlated.contains(r#""sigint_inbox_item"."datetime" >="#),
+        "{correlated}"
+    );
+
+    let new_callsigns_sql = build_new_callsign_filtered_items_query(
+        &uuid::Uuid::nil(),
+        &req,
+        req.since_date_inclusive_ms,
+        req.till_date_noninclusive_ms,
+        ReportPeriodEnd::NonInclusive,
+        &["group-1".to_string()],
+        &None,
+        false,
+        crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres,
+        None,
+        None,
+    )
+    .unwrap()
+    .build(DbBackend::Postgres)
+    .to_string();
+    assert!(
+        new_callsigns_sql.contains(r#""signal_message"."created_at""#),
+        "{new_callsigns_sql}"
+    );
+    assert!(
+        new_callsigns_sql.contains(r#""timestamp""#),
+        "{new_callsigns_sql}"
+    );
+    assert!(
+        !new_callsigns_sql.contains(r#""sigint_inbox_item"."datetime" >="#),
+        "{new_callsigns_sql}"
+    );
 }
 
 #[test]

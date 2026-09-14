@@ -11,6 +11,7 @@ export const USER_SETTINGS_UPDATED_EVENT = 'user-settings-updated';
 
 export type { UserDutySettingsDto };
 export type UserDutySettings = {
+  messageSortBy: MessageTimeBasis;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
   tagsLayout: TagsLayoutVariant;
   disableAutoScroll: boolean;
@@ -23,6 +24,8 @@ export type UserDutySettings = {
   dutyCollapseMediaPreviews: boolean;
   mediaSummaryEnabled: boolean;
 };
+
+export type MessageTimeBasis = 'interception' | 'creation';
 
 export type MessageTextPreviewLineLimit = 20 | 40 | null;
 
@@ -38,6 +41,7 @@ type UserDutySettingsWire = Omit<
   | 'showClassicAnalysis'
   | 'dutyCollapseMediaPreviews'
   | 'mediaSummaryEnabled'
+  | 'messageSortBy'
 > & {
   messageTextPreviewLines?: string | null;
   tagsLayout: DutyTagsLayoutWire;
@@ -49,6 +53,7 @@ type UserDutySettingsWire = Omit<
   showClassicAnalysis?: boolean | null;
   dutyCollapseMediaPreviews?: boolean | null;
   mediaSummaryEnabled?: boolean | null;
+  messageSortBy?: MessageTimeBasis | null;
 };
 
 function normalizeMessageTextPreviewLines(
@@ -105,6 +110,7 @@ function serializeTagsLayout(tagsLayout: TagsLayoutVariant): DutyTagsLayoutWire 
 
 function normalizeUserDutySettings(raw: UserDutySettingsWire): UserDutySettings {
   return {
+    messageSortBy: raw.messageSortBy === 'creation' ? 'creation' : 'interception',
     messageTextPreviewLines: normalizeMessageTextPreviewLines(raw.messageTextPreviewLines),
     tagsLayout: normalizeTagsLayout(raw.tagsLayout),
     disableAutoScroll: raw.disableAutoScroll,
@@ -132,6 +138,7 @@ export async function saveUserSettings(
   const response = await putJson<UserDutySettingsWire>(
     '/api/user/settings',
     {
+      messageSortBy: body.messageSortBy,
       messageTextPreviewLines: serializeMessageTextPreviewLines(body.messageTextPreviewLines),
       tagsLayout: serializeTagsLayout(body.tagsLayout),
       disableAutoScroll: body.disableAutoScroll,

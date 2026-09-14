@@ -189,7 +189,8 @@ export type Node =
   | { StyleMap: StyleMap }
   | { author: Author }
   | { link: AtomLinkData }
-  | { CascadingStyle: CascadingStyle };
+  | { CascadingStyle: CascadingStyle }
+;
 
 export type Kml = {
   nodes: Array<Node>;
@@ -300,7 +301,10 @@ export type UploadPdfRes = {
 };
 
 export type BgtaskErrorCode =
-  'mouse_report_message_limit' | 'summary_table_report_message_limit' | 'no_default_aor';
+  | 'mouse_report_message_limit'
+  | 'summary_table_report_message_limit'
+  | 'no_default_aor'
+;
 
 export type BgtaskStatusAndLogsRsp = {
   running: boolean;
@@ -404,6 +408,9 @@ export type InboxMessage = {
   important: boolean;
   bookmarked: boolean;
   timestamp: number | null;
+  createdAt: number | null;
+  createdAtOrder: number | null;
+  hasDateInHeader: boolean;
   groupMasterKey: string | null;
   sender: string | null;
   extendedForm: string | null;
@@ -475,11 +482,21 @@ export type InboxMessageTag = {
   organismId: number | null;
 };
 
-export type InboxMessagesSortBy = 'IMSDatetime' | 'IMSTimestamp';
+export type InboxMessagesSortBy =
+  | 'IMSDatetime'
+  | 'IMSTimestamp'
+  | 'IMSCreatedAt'
+;
 
-export type TagFilterOption = 'OneOfTags' | 'AllTags';
+export type TagFilterOption =
+  | 'OneOfTags'
+  | 'AllTags'
+;
 
-export type TagPresenceFilter = 'WithTags' | 'WithoutTags';
+export type TagPresenceFilter =
+  | 'WithTags'
+  | 'WithoutTags'
+;
 
 export type InboxMessagesReq = {
   sinceIdNoninclusive: number | null;
@@ -768,6 +785,7 @@ export type AnalysisStatsReq = {
   filterTagsOption: TagFilterOption | null;
   withoutModelTags: boolean | null;
   reportTagsOnlyThisUnit: boolean | null;
+  messageTimeBasis: MessageTimeBasis | null;
 };
 
 export type AnalysisCallsignFrequencyMatchesReq = {
@@ -1368,7 +1386,8 @@ export type InboxGroupStats = {
 export type PalitraAccess =
   | { ByLogins: { logins: Array<string> } }
   | { ByOrganisms: { organismIds: Array<number> } }
-  | { ByAor: { aorIds: Array<number> } };
+  | { ByAor: { aorIds: Array<number> } }
+;
 
 export type CreatePalitraReq = {
   name: string;
@@ -1592,7 +1611,8 @@ export type ContentNode =
   | { CNCallsignC: CnCallsign }
   | { CNHighlightC: CnHighlight }
   | { CNSignalC: CnSignal }
-  | { CNPointC: CnPoint };
+  | { CNPointC: CnPoint }
+;
 
 export type CnSignal = {
   begin: number;
@@ -1693,7 +1713,10 @@ export type Login = {
   totpEnabled: boolean;
 };
 
-export type ListLoginsSortBy = 'LoginCreatedAtDesc' | 'LoginCreatedAtAsc';
+export type ListLoginsSortBy =
+  | 'LoginCreatedAtDesc'
+  | 'LoginCreatedAtAsc'
+;
 
 export type ListLoginsReq = {
   sortBy: ListLoginsSortBy | null;
@@ -1740,7 +1763,10 @@ export type MarkReleaseSeenReq = {
   releaseId: string;
 };
 
-export type DeactivationReasonType = 'Admin' | 'Inactive';
+export type DeactivationReasonType =
+  | 'Admin'
+  | 'Inactive'
+;
 
 export type ApiIntegration = {
   id: number;
@@ -1795,9 +1821,16 @@ export type UnitSummary = {
   name: string;
 };
 
-export type FileEntryKind = 'directory' | 'file';
+export type FileEntryKind =
+  | 'directory'
+  | 'file'
+;
 
-export type DeviceArchivedFilter = 'active_only' | 'archived_only' | 'all';
+export type DeviceArchivedFilter =
+  | 'active_only'
+  | 'archived_only'
+  | 'all'
+;
 
 export type DeviceListSortBy =
   | 'display_title_asc'
@@ -1805,7 +1838,8 @@ export type DeviceListSortBy =
   | 'created_at_asc'
   | 'created_at_desc'
   | 'updated_at_asc'
-  | 'updated_at_desc';
+  | 'updated_at_desc'
+;
 
 export type DeviceStatusCounts = {
   active: number;
@@ -2030,7 +2064,11 @@ export type JournalDeviceFilesRsp = {
   nextCursor: string | null;
 };
 
-export type SourceFileStateKind = 'scanned' | 'downloaded' | 'changed';
+export type SourceFileStateKind =
+  | 'scanned'
+  | 'downloaded'
+  | 'changed'
+;
 
 export type SourceFileState = {
   state: SourceFileStateKind;
@@ -2047,15 +2085,33 @@ export type SyncDeviceFileItem = {
   sourceFileState: SourceFileState | null;
 };
 
-export type FileSyncOperation = 'created' | 'updated';
+export type FileSyncOperation =
+  | 'created'
+  | 'updated'
+;
 
-export type FileSyncSessionMode = 'automatic' | 'explicit';
+export type FileSyncSessionMode =
+  | 'automatic'
+  | 'explicit'
+;
 
-export type FileSyncSessionStatus = 'open' | 'completed' | 'completed_with_errors' | 'expired';
+export type FileSyncSessionStatus =
+  | 'open'
+  | 'completed'
+  | 'completed_with_errors'
+  | 'expired'
+;
 
-export type FileSyncBatchStatus = 'processing' | 'applied' | 'applied_with_errors';
+export type FileSyncBatchStatus =
+  | 'processing'
+  | 'applied'
+  | 'applied_with_errors'
+;
 
-export type FileSyncErrorCode = 'validation' | 'duplicate_path_in_session';
+export type FileSyncErrorCode =
+  | 'validation'
+  | 'duplicate_path_in_session'
+;
 
 export type FileSyncFieldError = {
   path: string;
@@ -2094,44 +2150,14 @@ export type BatchSummary = {
 };
 
 export type FileSyncResult =
-  | {
-      Accepted: {
-        index: number;
-        operation: FileSyncOperation;
-        fileId: string;
-        revision: number;
-        file: DeviceFile;
-      };
-    }
-  | {
-      Rejected: {
-        index: number;
-        code: FileSyncErrorCode;
-        message: string;
-        fieldErrors: Array<FileSyncFieldError>;
-      };
-    };
+  | { Accepted: { index: number; operation: FileSyncOperation; fileId: string; revision: number; file: DeviceFile } }
+  | { Rejected: { index: number; code: FileSyncErrorCode; message: string; fieldErrors: Array<FileSyncFieldError> } }
+;
 
 export type FileSyncSessionItemResult =
-  | {
-      status: {
-        batchIndex: number;
-        itemIndex: number;
-        operation: FileSyncOperation;
-        fileId: string;
-        revision: number;
-        file: DeviceFile;
-      };
-    }
-  | {
-      status: {
-        batchIndex: number;
-        itemIndex: number;
-        code: FileSyncErrorCode;
-        message: string;
-        fieldErrors: Array<FileSyncFieldError>;
-      };
-    };
+  | { status: { batchIndex: number; itemIndex: number; operation: FileSyncOperation; fileId: string; revision: number; file: DeviceFile } }
+  | { status: { batchIndex: number; itemIndex: number; code: FileSyncErrorCode; message: string; fieldErrors: Array<FileSyncFieldError> } }
+;
 
 export type SyncDeviceFilesReq = {
   deviceId: string;
@@ -2171,15 +2197,26 @@ export type FileSyncSessionItemsRsp = {
   nextCursor: string | null;
 };
 
-export type RuleField = 'file_name' | 'directory_path' | 'full_path' | 'extension';
+export type RuleField =
+  | 'file_name'
+  | 'directory_path'
+  | 'full_path'
+  | 'extension'
+;
 
-export type RuleMatcher = 'equals' | 'contains' | 'contains_token' | 'regex';
+export type RuleMatcher =
+  | 'equals'
+  | 'contains'
+  | 'contains_token'
+  | 'regex'
+;
 
 export type RuleExpression =
   | { all: { children: Array<RuleExpression> } }
   | { any: { children: Array<RuleExpression> } }
   | { not: { child: RuleExpression } }
-  | { match: { field: RuleField; matcher: RuleMatcher; values: Array<string> } };
+  | { match: { field: RuleField; matcher: RuleMatcher; values: Array<string> } }
+;
 
 export type RuleValidationError = {
   path: string;
@@ -2366,7 +2403,10 @@ export type DeviceAnalyticsFilesRsp = {
   nextCursor: string | null;
 };
 
-export type TagMatch = 'any' | 'all';
+export type TagMatch =
+  | 'any'
+  | 'all'
+;
 
 export type DeviceSettingsReq = {
   mattermostWebhookUrl: string | null;
@@ -2405,7 +2445,11 @@ export type MyScope = {
 };
 
 export type ListOrganismsSortBy =
-  'OrganismCreatedAtDesc' | 'OrganismCreatedAtAsc' | 'OrganismNameAsc' | 'OrganismNameDesc';
+  | 'OrganismCreatedAtDesc'
+  | 'OrganismCreatedAtAsc'
+  | 'OrganismNameAsc'
+  | 'OrganismNameDesc'
+;
 
 export type ListOrganismsReq = {
   sortBy: ListOrganismsSortBy | null;
@@ -2485,7 +2529,8 @@ export type ListGoiAssociationsSortBy =
   | 'GoiAssociationAuthorAsc'
   | 'GoiAssociationAuthorDesc'
   | 'GoiAssociationCreatedAtDesc'
-  | 'GoiAssociationCreatedAtAsc';
+  | 'GoiAssociationCreatedAtAsc'
+;
 
 export type ListGoiAssociationsReq = {
   limit: number | null;
@@ -2552,7 +2597,8 @@ export type ListGoiKnowledgeSortBy =
   | 'GoiKnowledgeSourceDateDesc'
   | 'GoiKnowledgeSourceDateAsc'
   | 'GoiKnowledgeCreatedAtDesc'
-  | 'GoiKnowledgeCreatedAtAsc';
+  | 'GoiKnowledgeCreatedAtAsc'
+;
 
 export type ListGoiKnowledgeReq = {
   limit: number | null;
@@ -2616,7 +2662,10 @@ export type SigintZone = {
   createdAt: number;
 };
 
-export type InterseptionKind = 'rer' | 'other';
+export type InterseptionKind =
+  | 'rer'
+  | 'other'
+;
 
 export type ZoneDatasourceGroup = {
   sigintZoneDatasourceId: number;
@@ -2834,7 +2883,10 @@ export type ReoReportSettings = {
   noComments: boolean;
 };
 
-export type ReoReportFileType = 'Docx' | 'Xlsx';
+export type ReoReportFileType =
+  | 'Docx'
+  | 'Xlsx'
+;
 
 export type ActiveNetworksReportSettings = {
   aorIds: Array<number>;
@@ -2844,7 +2896,10 @@ export type NetworkFrequenciesReportSettings = {
   aorIds: Array<number>;
 };
 
-export type ReportAggregation = 'ByProfile' | 'ByPost';
+export type ReportAggregation =
+  | 'ByProfile'
+  | 'ByPost'
+;
 
 export type ReportPreviewReq = {
   kind: string;
@@ -2874,14 +2929,18 @@ export type ReportType =
   | 'Digest'
   | 'Rer'
   | { ActiveNetworks: ActiveNetworksReportSettings }
-  | { NetworkFrequencies: NetworkFrequenciesReportSettings };
+  | { NetworkFrequencies: NetworkFrequenciesReportSettings }
+;
 
 export type SenderReportSettings = {
   aggregation: ReportAggregation;
   advancedFreqs: boolean;
 };
 
-export type TagReportSortBy = 'ByTime' | 'ByFreqThenTime';
+export type TagReportSortBy =
+  | 'ByTime'
+  | 'ByFreqThenTime'
+;
 
 export type ListUnitsSortBy =
   | 'CreatedAtDesc'
@@ -2923,9 +2982,13 @@ export type ListUnitsSortBy =
   | 'UnitOrbitNoteAsc'
   | 'UnitOrbitNoteDesc'
   | 'UnitOrbitLinkedAsc'
-  | 'UnitOrbitLinkedDesc';
+  | 'UnitOrbitLinkedDesc'
+;
 
-export type ListUnitsSearchMode = 'Strict' | 'Relaxed';
+export type ListUnitsSearchMode =
+  | 'Strict'
+  | 'Relaxed'
+;
 
 export type Unit = {
   id: number;
@@ -3145,7 +3208,10 @@ export type UnresolvedUnitLabel = {
 };
 
 export type UnresolvedUnitLabelArchiveFilter =
-  'AllUnresolvedUnitLabels' | 'NewUnresolvedUnitLabels' | 'ArchivedUnresolvedUnitLabels';
+  | 'AllUnresolvedUnitLabels'
+  | 'NewUnresolvedUnitLabels'
+  | 'ArchivedUnresolvedUnitLabels'
+;
 
 export type ListUnresolvedUnitLabelsReq = {
   page: number | null;
@@ -3292,7 +3358,10 @@ export type UnitAttachmentDownloadReq = {
   attachmentId: number;
 };
 
-export type ListSignalsSortBy = 'SignalsCreatedAtAsc' | 'SignalsCreatedAtDesc';
+export type ListSignalsSortBy =
+  | 'SignalsCreatedAtAsc'
+  | 'SignalsCreatedAtDesc'
+;
 
 export type Signal = {
   id: number;
@@ -3416,9 +3485,14 @@ export type ListCallsignsSortBy =
   | 'CallsignCreatedAtAsc'
   | 'CallsignCreatedAtDesc'
   | 'CallsignUnitAsc'
-  | 'CallsignUnitDesc';
+  | 'CallsignUnitDesc'
+;
 
-export type DevelopingFilter = 'OnlyDeveloping' | 'OnlyNonDeveloping' | 'All';
+export type DevelopingFilter =
+  | 'OnlyDeveloping'
+  | 'OnlyNonDeveloping'
+  | 'All'
+;
 
 export type ListCallsignsReq = {
   afterId: number | null;
@@ -3459,7 +3533,8 @@ export type ListNetworkCallsignsSortBy =
   | 'NetworkCallsignAsc'
   | 'NetworkCallsignDesc'
   | 'NetworkCallsignCreatedAtAsc'
-  | 'NetworkCallsignCreatedAtDesc';
+  | 'NetworkCallsignCreatedAtDesc'
+;
 
 export type ListNetworkCallsignsReq = {
   networkId: number;
@@ -3614,7 +3689,9 @@ export type EtalonkaSettings = {
 };
 
 export type EtalonkaReportType =
-  { AccordingToTheForm: EtalonkaSettings } | { ExtendedReport: EtalonkaExtendedSettings };
+  | { AccordingToTheForm: EtalonkaSettings }
+  | { ExtendedReport: EtalonkaExtendedSettings }
+;
 
 export type NetworkFreqsRes = {
   networkFreqId: number;
@@ -3703,7 +3780,12 @@ export type ListFreqsRsp = {
   freqs: Array<Freq>;
 };
 
-export type ListFreqsSortBy = 'FreqAsc' | 'FreqDesc' | 'MessageCountAsc' | 'MessageCountDesc';
+export type ListFreqsSortBy =
+  | 'FreqAsc'
+  | 'FreqDesc'
+  | 'MessageCountAsc'
+  | 'MessageCountDesc'
+;
 
 export type FreqUnitStatsRsp = {
   units: Array<FreqUnitStatRow>;
@@ -3832,10 +3914,16 @@ export type Network = {
   status: NetworkStatus;
 };
 
-export type NetworkStatus = 'NetworkActive' | 'NetworkInactive';
+export type NetworkStatus =
+  | 'NetworkActive'
+  | 'NetworkInactive'
+;
 
 export type ListNetworksStatusFilter =
-  'ListNetworksActive' | 'ListNetworksInactive' | 'ListNetworksArchived';
+  | 'ListNetworksActive'
+  | 'ListNetworksInactive'
+  | 'ListNetworksArchived'
+;
 
 export type ListNetworksStatusCountsRsp = {
   active: number;
@@ -3935,7 +4023,11 @@ export type FindLiveNetwork = {
   locations: Array<string>;
 };
 
-export type NetworkGroupActivityPeriod = 'Last10Days' | 'Last30Days' | 'Last60Days';
+export type NetworkGroupActivityPeriod =
+  | 'Last10Days'
+  | 'Last30Days'
+  | 'Last60Days'
+;
 
 export type NetworkGroupsActivityOneReq = {
   networkId: number;
@@ -4019,7 +4111,10 @@ export type NetworkCallsignRelationMessagesReq = {
 };
 
 export type NetworkCallsignRelationEnrichmentSource =
-  'RelationEnrichmentNone' | 'RelationEnrichmentNetwork' | 'RelationEnrichmentCatalog';
+  | 'RelationEnrichmentNone'
+  | 'RelationEnrichmentNetwork'
+  | 'RelationEnrichmentCatalog'
+;
 
 export type NetworkCallsignRelationNode = {
   id: string;
@@ -4123,7 +4218,8 @@ export type ListNetworksSortBy =
   | 'FreqAsc'
   | 'FreqDesc'
   | 'LocationAsc'
-  | 'LocationDesc';
+  | 'LocationDesc'
+;
 
 export type NetworkUnitStatRow = {
   unitId: number;
@@ -4155,7 +4251,11 @@ export type SingleNetworkFreqsListRsp = {
   freqs: Array<NetworkFreqsRes>;
 };
 
-export type NetworkFreqCallsignsPeriod = 'Last7Days' | 'Last21Days' | 'Unlimited';
+export type NetworkFreqCallsignsPeriod =
+  | 'Last7Days'
+  | 'Last21Days'
+  | 'Unlimited'
+;
 
 export type NetworkFreqCallsignsReq = {
   networkFreqId: number;
@@ -4176,7 +4276,11 @@ export type NetworkFreqCallsignsBatchRsp = {
   callsignsByNetworkFreqId: Record<string, Array<string>>;
 };
 
-export type SingleNetworkCallsignsSection = 'Everything' | 'Catalog' | 'Intercepted';
+export type SingleNetworkCallsignsSection =
+  | 'Everything'
+  | 'Catalog'
+  | 'Intercepted'
+;
 
 export type SingleNetworkCallsignsReq = {
   networkId: number;
@@ -4232,7 +4336,10 @@ export type PostSearchRsp = {
   posts: Array<PostSearchResult>;
 };
 
-export type ListPostsSortBy = 'PostNameDesc' | 'PostNameAsc';
+export type ListPostsSortBy =
+  | 'PostNameDesc'
+  | 'PostNameAsc'
+;
 
 export type ListPostsReq = {
   sortBy: ListPostsSortBy | null;
@@ -4254,7 +4361,10 @@ export type DeletePostReq = {
   id: number;
 };
 
-export type NetworkDescrType = 'Confirmation' | 'Sign';
+export type NetworkDescrType =
+  | 'Confirmation'
+  | 'Sign'
+;
 
 export type NetworkDescription = {
   id: number;
@@ -5323,7 +5433,8 @@ export type EventType =
   | 'ETCallsignChanged'
   | 'ETSignalChanged'
   | 'ETUnitChanged'
-  | { ETInboxChanged: number };
+  | { ETInboxChanged: number }
+;
 
 export type EventMsg = {
   id: string;
@@ -5539,7 +5650,9 @@ export type UpdateAreaOfResponsibilityReportOrderReq = {
 };
 
 export type ListAreasOfResponsibilitySortBy =
-  'AreaOfResponsibilityNameDesc' | 'AreaOfResponsibilityNameAsc';
+  | 'AreaOfResponsibilityNameDesc'
+  | 'AreaOfResponsibilityNameAsc'
+;
 
 export type ListAreasOfResponsibilityReq = {
   sortBy: ListAreasOfResponsibilitySortBy | null;
@@ -5565,9 +5678,22 @@ export type LocalityDetails = {
   isRf: boolean;
 };
 
-export type DutyTagsLayout = 'Full' | 'Compact' | 'Hidden';
+export type DutyTagsLayout =
+  | 'Full'
+  | 'Compact'
+  | 'Hidden'
+;
 
-export type MessageTextPreviewLines = 'Twenty' | 'Forty' | 'Off';
+export type MessageTextPreviewLines =
+  | 'Twenty'
+  | 'Forty'
+  | 'Off'
+;
+
+export type MessageTimeBasis =
+  | 'interception'
+  | 'creation'
+;
 
 export type UserDutySettingsDto = {
   tagsLayout: DutyTagsLayout;
@@ -5581,4 +5707,5 @@ export type UserDutySettingsDto = {
   showClassicAnalysis: boolean;
   dutyCollapseMediaPreviews: boolean;
   mediaSummaryEnabled: boolean;
+  messageSortBy: MessageTimeBasis;
 };

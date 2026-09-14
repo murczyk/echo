@@ -1068,6 +1068,99 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.directMessageNavigation?.focusActive).toBe(false);
   });
 
+  // https://github.com/echoua/echo/issues/3455
+  it('uses saved creation-time sorting for direct-link context', async () => {
+    const targetMessage = { text: 'target', date: null, timestamp: null } as InboxMessage;
+    const buildWindow = (neighborId: number): InboxWindowRsp => ({
+      targetMessageId: 50,
+      inbox: {
+        inboxItems: [
+          [neighborId, { text: `neighbor-${neighborId}` } as InboxMessage],
+          [50, targetMessage],
+        ],
+        pollCursorId: null,
+        callsigns: [],
+        signalProfiles: {},
+        signalGroups: [],
+        freqPelengsSummary: null,
+        pageLimit: 20,
+      },
+      hasMoreBefore: true,
+      hasMoreAfter: true,
+    });
+    userSettingsMock.fetchUserSettings.mockResolvedValueOnce({ messageSortBy: 'creation' });
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(buildWindow(49));
+    window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
+
+    renderHook();
+    await flushEffects();
+
+    expect(inboxMessagesMock.fetchInboxWindow.mock.calls[0]?.[0].inboxReq).toMatchObject({
+      sortBy: 'IMSCreatedAt',
+    });
+
+    expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      focusedWindow: buildWindow(49),
+      focusedMessageActive: true,
+    });
+  });
+
+  // https://github.com/echoua/echo/issues/3455
+  it('rejects stale direct-link context after the time basis changes', async () => {
+    const targetMessage = { text: 'target', date: null, timestamp: null } as InboxMessage;
+    const buildWindow = (neighborId: number): InboxWindowRsp => ({
+      targetMessageId: 50,
+      inbox: {
+        inboxItems: [
+          [neighborId, { text: `neighbor-${neighborId}` } as InboxMessage],
+          [50, targetMessage],
+        ],
+        pollCursorId: null,
+        callsigns: [],
+        signalProfiles: {},
+        signalGroups: [],
+        freqPelengsSummary: null,
+        pageLimit: 20,
+      },
+      hasMoreBefore: true,
+      hasMoreAfter: true,
+    });
+    let resolveInterception: ((value: InboxWindowRsp) => void) | undefined;
+    inboxMessagesMock.fetchInboxWindow
+      .mockImplementationOnce(
+        () =>
+          new Promise<InboxWindowRsp>((resolve) => {
+            resolveInterception = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(buildWindow(49));
+    window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
+
+    renderHook();
+    await flushEffects();
+    expect(inboxMessagesMock.fetchInboxWindow.mock.calls[0]?.[0].inboxReq).toMatchObject({
+      sortBy: null,
+    });
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent('user-settings-updated', { detail: { messageSortBy: 'creation' } }),
+      );
+    });
+    await flushEffects();
+    expect(inboxMessagesMock.fetchInboxWindow.mock.calls[1]?.[0].inboxReq).toMatchObject({
+      sortBy: 'IMSCreatedAt',
+    });
+
+    resolveInterception?.(buildWindow(48));
+    await flushEffects();
+
+    expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      focusedWindow: buildWindow(49),
+      focusedMessageActive: true,
+    });
+  });
+
   it('updates the visible chunk across previous and next direct-link navigation', async () => {
     const targetMessage = {
       text: 'target',
