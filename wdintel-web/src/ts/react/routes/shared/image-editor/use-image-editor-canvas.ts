@@ -2,6 +2,12 @@ import { useEffect, type MutableRefObject, type RefObject } from 'react';
 
 import { setImageEditorBackground } from './image-editor-canvas-references';
 import { registerPaddedTextAnnotation } from './image-editor-padded-text';
+import { loadImageEditorFonts } from './image-editor-font';
+import {
+  installImageEditorAttachedArrowControls,
+  removeImageEditorAttachedArrow,
+  reconcileImageEditorAttachedArrows,
+} from './image-editor-attached-arrow';
 import {
   MAX_IMAGE_EDITOR_PIXELS,
   MAX_IMAGE_EDITOR_SIDE,
@@ -66,6 +72,8 @@ export function useImageEditorCanvas({
         if (disposed || !canvasElementRef.current) return;
         fabricRef.current = fabric;
         registerPaddedTextAnnotation(fabric);
+        await loadImageEditorFonts();
+        if (disposed || !canvasElementRef.current) return;
         objectUrl = URL.createObjectURL(source.blob);
         const image = await fabric.FabricImage.fromURL(objectUrl);
         if (disposed) return;
@@ -87,30 +95,47 @@ export function useImageEditorCanvas({
         canvas.setDimensions({ width: image.width, height: image.height });
         setImageEditorBackground({ canvas, source: image });
         canvasRef.current = canvas;
+        if (import.meta.env.DEV)
+          (
+            canvasElementRef.current as HTMLCanvasElement & {
+              __imageEditorTestCanvas?: import('fabric').Canvas;
+            }
+          ).__imageEditorTestCanvas = canvas;
         sourceRef.current = image;
         const commit = (event?: { target?: import('fabric').FabricObject }) => {
           const role = event?.target?.get('editorRole');
-          if (isTransientCropRole(role)) return;
+          if (isTransientCropRole(role) || role === ImageEditorObjectRole.DerivedArrow) return;
+          reconcileImageEditorAttachedArrows({ canvas, fabric });
           saveHistory();
         };
         canvas.on('object:modified', commit);
         canvas.on('path:created', (event) => {
           const role =
-            toolRef.current === ImageEditorTool.Brush ||
-            toolRef.current === ImageEditorTool.Highlight
-              ? toolRef.current === ImageEditorTool.Brush
-                ? ImageEditorObjectRole.Brush
-                : ImageEditorObjectRole.Highlight
-              : undefined;
+            toolRef.current === ImageEditorTool.Brush ? ImageEditorObjectRole.Brush : undefined;
           if (role && event.path)
             event.path.set({ editorRole: role, selectable: false, evented: false });
           commit();
         });
         const commitText = (event: { target?: import('fabric').FabricObject }) => {
           const text = event.target as import('fabric').IText | undefined;
-          finalizeImageEditorText(canvas, text, () => commit(event));
+          if (!text) return;
+          const retained = finalizeImageEditorText(canvas, text, () => commit(event));
+          if (retained) reconcileImageEditorAttachedArrows({ canvas, fabric });
+          else {
+            removeImageEditorAttachedArrow(canvas, text);
+            reconcileImageEditorAttachedArrows({ canvas, fabric });
+            commit(event);
+          }
         };
         canvas.on('text:editing:exited', commitText);
+        const reconcile = (event: { target?: import('fabric').FabricObject }) => {
+          if (event.target instanceof fabric.IText)
+            reconcileImageEditorAttachedArrows({ canvas, fabric });
+        };
+        canvas.on('object:moving', reconcile);
+        canvas.on('object:scaling', reconcile);
+        canvas.on('object:rotating', reconcile);
+        installImageEditorAttachedArrowControls({ canvas, fabric, onComplete: saveHistory });
         saveHistory();
         onDocumentResized();
         setCanvasReady(true);
@@ -120,6 +145,7 @@ export function useImageEditorCanvas({
           URL.revokeObjectURL(objectUrl);
           objectUrl = null;
         }
+        if (disposed) return;
         setError(
           cause instanceof Error ? cause.message : 'Не вдалося відкрити зображення для редагування',
         );
@@ -129,6 +155,12 @@ export function useImageEditorCanvas({
     void init();
     return () => {
       disposed = true;
+      if (canvasElementRef.current)
+        (
+          canvasElementRef.current as HTMLCanvasElement & {
+            __imageEditorTestCanvas?: import('fabric').Canvas;
+          }
+        ).__imageEditorTestCanvas = undefined;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
       canvasRef.current?.dispose();
       canvasRef.current = null;

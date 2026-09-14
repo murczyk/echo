@@ -322,12 +322,17 @@ async function fulfillAsset(route: Route, body: BodyInit, contentType: string): 
 export async function installMessageCardMediaPreviewAssetRoutes(
   page: Page,
   deferredImageResponse?: DeferredMediaResponse,
+  image1Override?: { body: Buffer; contentType: string },
 ): Promise<void> {
   await page.route(`**${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/**`, async (route) => {
     const pathname = new URL(route.request().url()).pathname;
     const fileName = pathname.split('/').pop() ?? '';
 
     if (fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1) {
+      if (image1Override) {
+        await fulfillAsset(route, image1Override.body, image1Override.contentType);
+        return;
+      }
       if (deferredImageResponse) {
         await deferredImageResponse.fulfill(
           route,

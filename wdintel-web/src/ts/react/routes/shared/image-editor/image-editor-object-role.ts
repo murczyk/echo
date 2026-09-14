@@ -8,6 +8,7 @@ export const TRANSIENT_CROP_ROLES = new Set<ImageEditorObjectRole>([
 ]);
 export const NON_DELETABLE_ROLES = new Set<ImageEditorObjectRole>([
   ImageEditorObjectRole.Concealment,
+  ImageEditorObjectRole.DerivedArrow,
   ...TRANSIENT_CROP_ROLES,
 ]);
 export const STYLEABLE_ANNOTATION_ROLES = new Set<ImageEditorObjectRole>([

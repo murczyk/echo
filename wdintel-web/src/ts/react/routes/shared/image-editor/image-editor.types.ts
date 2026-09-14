@@ -13,7 +13,6 @@ export enum ImageEditorTool {
   Line = 'line',
   Arrow = 'arrow',
   Brush = 'brush',
-  Highlight = 'highlight',
   Conceal = 'conceal',
   Magnifier = 'magnifier',
 }
@@ -34,6 +33,7 @@ export enum ImageEditorObjectRole {
   Ellipse = 'ellipse',
   Line = 'line',
   Arrow = 'arrow',
+  DerivedArrow = 'derived-arrow',
   Brush = 'brush',
   Highlight = 'highlight',
   ConcealmentDraft = 'concealment-draft',
@@ -60,6 +60,7 @@ export enum ImageEditorSaveDestination {
 export type ImageEditorSelectionDescriptor = {
   kind: ImageEditorSelectionKind;
   role: ImageEditorObjectRole;
+  hasAttachedArrow?: boolean;
 };
 
 export type ImageEditorSource = {

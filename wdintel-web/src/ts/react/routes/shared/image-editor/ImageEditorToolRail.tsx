@@ -8,9 +8,9 @@ import CropIcon from '@mui/icons-material/Crop';
 import DeleteIcon from '@mui/icons-material/Delete';
 import FitScreenIcon from '@mui/icons-material/FitScreen';
 import HighlightAltIcon from '@mui/icons-material/HighlightAlt';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import PanToolIcon from '@mui/icons-material/PanTool';
-import BorderColorIcon from '@mui/icons-material/BorderColor';
 import RectangleOutlinedIcon from '@mui/icons-material/RectangleOutlined';
 import RedoIcon from '@mui/icons-material/Redo';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
@@ -19,7 +19,15 @@ import TextFieldsIcon from '@mui/icons-material/TextFields';
 import UndoIcon from '@mui/icons-material/Undo';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
-import { ListItemIcon, ListSubheader, MenuItem, useMediaQuery } from '@mui/material';
+import {
+  IconButton,
+  ListItemIcon,
+  ListSubheader,
+  MenuItem,
+  Popover,
+  Tooltip,
+  useMediaQuery,
+} from '@mui/material';
 import { useEffect, useState, type ReactNode } from 'react';
 
 import { PowerMenu } from '../../../components/PowerMenu';
@@ -27,6 +35,10 @@ import { ImageEditorIconButton } from './ImageEditorIconButton';
 import { ImageEditorDiagonalLineIcon } from './ImageEditorIcons';
 import { ImageEditorViewControls } from './ImageEditorViewControls';
 import { ImageEditorTool } from './image-editor.types';
+import {
+  IMAGE_EDITOR_TOOL_SHORTCUTS,
+  imageEditorToolShortcutLabel,
+} from './image-editor-shortcuts';
 
 function ToolGroup({ children }: { children: ReactNode }) {
   return <div className="flex shrink-0 items-center gap-1">{children}</div>;
@@ -34,6 +46,28 @@ function ToolGroup({ children }: { children: ReactNode }) {
 
 function GroupSeparator() {
   return <span aria-hidden="true" className="mx-1 h-6 w-px shrink-0 bg-echo-border" />;
+}
+
+function ShortcutGroup({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: Array<{ label: string; shortcut: string }>;
+}) {
+  return (
+    <section className="mb-echo-sm last:mb-0" aria-label={title}>
+      <h3 className="mb-1 text-echo-sm font-semibold">{title}</h3>
+      <ul className="m-0 list-none p-0 text-echo-sm">
+        {rows.map((row) => (
+          <li key={row.label} className="grid grid-cols-[minmax(0,1fr)_auto] gap-echo-lg py-1">
+            <span>{row.label}</span>
+            <kbd className="md:whitespace-nowrap">{row.shortcut}</kbd>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 
 type Props = {
@@ -66,7 +100,6 @@ const TOOLS: Record<ImageEditorTool, { label: string; icon: ReactNode; iconSize?
   [ImageEditorTool.Line]: { label: 'Лінія', icon: <ImageEditorDiagonalLineIcon /> },
   [ImageEditorTool.Arrow]: { label: 'Стрілка', icon: <ArrowForwardIcon /> },
   [ImageEditorTool.Brush]: { label: 'Пензель', icon: <BrushIcon /> },
-  [ImageEditorTool.Highlight]: { label: 'Маркер', icon: <BorderColorIcon /> },
   [ImageEditorTool.Conceal]: { label: 'Розмиття', icon: <BlurOnIcon /> },
   [ImageEditorTool.Magnifier]: { label: 'Лупа', icon: <SearchIcon /> },
 };
@@ -93,8 +126,12 @@ export function ImageEditorToolRail(props: Props) {
   const desktop = useMediaQuery('(min-width: 1280px)', { noSsr: true });
   const tablet = useMediaQuery('(min-width: 768px)', { noSsr: true });
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const [helpAnchor, setHelpAnchor] = useState<HTMLElement | null>(null);
   useEffect(() => {
-    if (props.dismissMenu) setAnchor(null);
+    if (props.dismissMenu) {
+      setAnchor(null);
+      setHelpAnchor(null);
+    }
   }, [props.dismissMenu]);
   const closeMenu = () => {
     setAnchor(null);
@@ -102,10 +139,12 @@ export function ImageEditorToolRail(props: Props) {
   };
   const toolButton = (value: ImageEditorTool) => {
     const { label, icon, iconSize } = TOOLS[value];
+    const shortcut = imageEditorToolShortcutLabel(value);
     return (
       <ImageEditorIconButton
         key={value}
         label={label}
+        tooltipLabel={shortcut ? `${label} · ${shortcut}` : label}
         icon={icon}
         onClick={() => props.onToolChange(value)}
         disabled={props.disabled}
@@ -124,6 +163,7 @@ export function ImageEditorToolRail(props: Props) {
   };
   const menuTool = (value: ImageEditorTool) => {
     const { label, icon } = TOOLS[value];
+    const shortcut = imageEditorToolShortcutLabel(value);
     return (
       <MenuItem
         key={value}
@@ -132,13 +172,78 @@ export function ImageEditorToolRail(props: Props) {
         onClick={() => selectTool(value)}
       >
         <ListItemIcon>{icon}</ListItemIcon>
-        {label}
+        <span className="min-w-0 flex-1">{label}</span>
+        {shortcut ? <kbd className="ml-echo-sm whitespace-nowrap">{shortcut}</kbd> : null}
       </MenuItem>
     );
   };
   const visibleTools = tablet ? TABLET_VISIBLE_TOOLS : MOBILE_VISIBLE_TOOLS;
   const overflowTools = TOOL_ORDER.filter((value) => !visibleTools.includes(value));
   const moreIsActive = !desktop && overflowTools.includes(props.tool);
+  const helpButton = (
+    <Tooltip title="Гарячі клавіші">
+      <span>
+        <IconButton
+          aria-label="Гарячі клавіші"
+          aria-expanded={Boolean(helpAnchor)}
+          aria-haspopup="dialog"
+          onClick={(event) => {
+            setHelpAnchor(event.currentTarget);
+            props.onMenuOpenChange(true);
+          }}
+          disabled={props.disabled}
+          className="size-10 shrink-0 rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-echo-focus"
+        >
+          <HelpOutlineIcon />
+        </IconButton>
+      </span>
+    </Tooltip>
+  );
+  const helpPopover = (
+    <Popover
+      open={Boolean(helpAnchor)}
+      anchorEl={helpAnchor}
+      onClose={() => {
+        setHelpAnchor(null);
+        props.onMenuOpenChange(false);
+      }}
+      anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+    >
+      <section
+        className="max-h-[calc(100vh-1rem)] w-[min(44rem,calc(100vw-1rem))] overflow-y-auto p-echo-md"
+        aria-label="Гарячі клавіші"
+      >
+        <h2 className="mb-echo-sm text-echo-lg font-semibold">Гарячі клавіші</h2>
+        <p className="mb-echo-sm text-echo-sm">
+          Під час введення тексту швидкий вибір інструментів вимкнено.
+        </p>
+        <ShortcutGroup
+          title="Інструменти"
+          rows={IMAGE_EDITOR_TOOL_SHORTCUTS.map((shortcut) => ({
+            label: TOOLS[shortcut.tool].label,
+            shortcut: `${shortcut.key} / ${shortcut.ukrainianKey}`,
+          }))}
+        />
+        <ShortcutGroup
+          title="Редагування"
+          rows={[
+            { label: 'Скасувати', shortcut: '⌘Z / Ctrl+Z' },
+            { label: 'Повторити', shortcut: '⌘⇧Z / Ctrl+Shift+Z / Ctrl+Y' },
+            { label: 'Видалити вибране', shortcut: 'Delete / Backspace' },
+            { label: 'Застосувати обрізання', shortcut: 'Enter' },
+            { label: 'Скасувати дію', shortcut: 'Esc' },
+          ]}
+        />
+        <ShortcutGroup
+          title="Полотно"
+          rows={[
+            { label: 'Тимчасово перемістити', shortcut: 'Space + перетягування / середня кнопка' },
+            { label: 'Масштаб', shortcut: 'Wheel' },
+          ]}
+        />
+      </section>
+    </Popover>
+  );
   return (
     <nav
       aria-label="Інструменти редактора"
@@ -157,7 +262,6 @@ export function ImageEditorToolRail(props: Props) {
               {toolButton(ImageEditorTool.Text)} {toolButton(ImageEditorTool.Rectangle)}
               {toolButton(ImageEditorTool.Ellipse)} {toolButton(ImageEditorTool.Line)}
               {toolButton(ImageEditorTool.Arrow)} {toolButton(ImageEditorTool.Brush)}
-              {toolButton(ImageEditorTool.Highlight)}
             </ToolGroup>
             <GroupSeparator />
             <ToolGroup>
@@ -166,6 +270,7 @@ export function ImageEditorToolRail(props: Props) {
             </ToolGroup>
             <div className="min-w-0 flex-1" />
             <ToolGroup>
+              {helpButton}
               <ImageEditorIconButton
                 label="Видалити вибране"
                 icon={<DeleteIcon />}
@@ -305,9 +410,24 @@ export function ImageEditorToolRail(props: Props) {
               </ListItemIcon>
               Центрувати
             </MenuItem>
+            <MenuItem
+              disabled={props.disabled}
+              onClick={(event) => {
+                const moreButton = anchor;
+                closeMenu();
+                setHelpAnchor(moreButton);
+                props.onMenuOpenChange(true);
+              }}
+            >
+              <ListItemIcon>
+                <HelpOutlineIcon />
+              </ListItemIcon>
+              Гарячі клавіші
+            </MenuItem>
           </PowerMenu>
         </>
       )}
+      {helpPopover}
     </nav>
   );
 }
