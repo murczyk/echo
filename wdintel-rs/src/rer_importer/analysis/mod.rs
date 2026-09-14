@@ -6500,8 +6500,8 @@ fn build_new_callsign_filtered_items_query(
     let query = filter_analysis_message_time_basis(
         query,
         req.message_time_basis,
-        dt_from_millis(since_ms)?,
-        dt_from_millis(till_ms)?,
+        dt_from_millis(since_ms).context(h!())?,
+        dt_from_millis(till_ms).context(h!())?,
         period_end,
     );
     let query = if let Some(scope) = scope {

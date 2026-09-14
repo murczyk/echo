@@ -133,7 +133,7 @@ fn inbox_date_gte_expr(
             Expr::col(signal_message::Column::Timestamp).gte(rhs)
         }
         InboxMessagesSortBy::IMSCreatedAt => {
-            Expr::col(signal_message::Column::CreatedAt).gte(rhs)
+            signal_message_created_at_expr().gte(rhs)
         }
     }
 }
@@ -150,9 +150,13 @@ fn inbox_date_lte_expr(
             Expr::col(signal_message::Column::Timestamp).lte(rhs)
         }
         InboxMessagesSortBy::IMSCreatedAt => {
-            Expr::col(signal_message::Column::CreatedAt).lte(rhs)
+            signal_message_created_at_expr().lte(rhs)
         }
     }
+}
+
+fn signal_message_created_at_expr() -> SimpleExpr {
+    Expr::col((signal_message::Entity, signal_message::Column::CreatedAt))
 }
 
 pub(crate) async fn build_filtered_inbox_query<'a, 'async_trait, C>(
@@ -2186,7 +2190,7 @@ where
                 InboxMessagesSortBy::IMSCreatedAt => {
                     let created_at = to_ts_expr(message.created_at);
                     q = q.filter(inbox_cursor_comparison(
-                        signal_message::Column::CreatedAt.into_simple_expr(),
+                        signal_message_created_at_expr(),
                         Expr::cust("signal_message.id"),
                         (created_at, since_id_noninclusive),
                         true,
@@ -2244,7 +2248,7 @@ where
                 InboxMessagesSortBy::IMSCreatedAt => {
                     let created_at = to_ts_expr(message.created_at);
                     q = q.filter(inbox_cursor_comparison(
-                        signal_message::Column::CreatedAt.into_simple_expr(),
+                        signal_message_created_at_expr(),
                         Expr::cust("signal_message.id"),
                         (created_at, before_id_noninclusive),
                         false,
@@ -2381,8 +2385,7 @@ where
                     let created_at = to_ts_expr(message.created_at);
                     q.and_where(
                         Expr::tuple([
-                            signal_message::Column::CreatedAt
-                                .into_simple_expr(),
+                            signal_message_created_at_expr(),
                             inbox_items_cte_id_expr(),
                         ])
                         .gt(SimpleExpr::Tuple(vec![
@@ -2403,8 +2406,7 @@ where
                         .gte(to_ts_expr(ts))
                 }
                 Some(InboxMessagesSortBy::IMSCreatedAt) => {
-                    Expr::col(signal_message::Column::CreatedAt)
-                        .gte(to_ts_expr(ts))
+                    signal_message_created_at_expr().gte(to_ts_expr(ts))
                 }
                 _ => Expr::col(sigint_inbox_item::Column::Datetime)
                     .gte(to_ts_expr(ts)),
@@ -2726,4 +2728,50 @@ pub fn build_inbox_metadata_lateral_query() -> SelectStatement {
         )
         .group_by(sigint_inbox_item_metadata::Column::SigintInboxItemId)
         .into_query()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn joined_creation_time_filters_and_ordering_are_qualified() {
+        let timestamp = Utc::now().naive_utc();
+        let request_sort_by = InboxMessagesSortBy::IMSCreatedAt;
+        let cursor = inbox_cursor_comparison(
+            signal_message_created_at_expr(),
+            Expr::col((signal_message::Entity, signal_message::Column::Id)),
+            (to_ts_expr(timestamp), 1),
+            true,
+            false,
+        );
+        let query = signal_message::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                signal_message::Relation::SigintInboxItem.def(),
+            )
+            .filter(inbox_date_gte_expr(request_sort_by, to_ts_expr(timestamp)))
+            .filter(inbox_date_lte_expr(request_sort_by, to_ts_expr(timestamp)))
+            .filter(cursor)
+            .order_by_asc(signal_message_created_at_expr())
+            .build(DbBackend::Postgres)
+            .to_string();
+        let descending = signal_message::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                signal_message::Relation::SigintInboxItem.def(),
+            )
+            .order_by_desc(signal_message_created_at_expr())
+            .build(DbBackend::Postgres)
+            .to_string();
+
+        let created_at = r#""signal_message"."created_at""#;
+        assert!(query.matches(created_at).count() >= 4, "{query}");
+        assert!(
+            query.contains("ORDER BY \"signal_message\".\"created_at\" ASC")
+        );
+        assert!(descending
+            .contains("ORDER BY \"signal_message\".\"created_at\" DESC"));
+        assert!(!query.contains("WHERE \"created_at\""), "{query}");
+    }
 }

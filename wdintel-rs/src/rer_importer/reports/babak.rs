@@ -1431,13 +1431,111 @@ fn babak_candidate_streams_are_eligible(
     {
         return false;
     }
-    let unfiltered = InboxMessagesReq {
-        since_date_inclusive_ms: req.since_date_inclusive_ms,
-        till_date_inclusive_ms: req.till_date_inclusive_ms,
-        sort_by: req.sort_by,
-        ..Default::default()
-    };
-    *req == unfiltered
+    // Analysis attaches presentation and response-control fields that do not
+    // affect Babak candidate membership, so normalize them before eligibility.
+    // Optional collections are filters only when nonempty. Likewise,
+    // `filter_tags_option` is meaningful only with an active tag filter, and
+    // `include_peleng_locations` is meaningful only with location filters.
+    let mut effective = req.clone();
+    effective.since_date_inclusive_ms = None;
+    effective.till_date_inclusive_ms = None;
+    effective.sort_by = None;
+    effective.nolimit = None;
+    effective.load_latest = effective.load_latest.filter(|enabled| *enabled);
+    effective.return_duplicates =
+        effective.return_duplicates.filter(|enabled| *enabled);
+    effective.newest_first = None;
+    effective.highlight_callsigns = None;
+    effective.highlight_keywords = None;
+    effective.highlight_searchres = None;
+    effective.highlight_signals = None;
+    effective.highlight_points = None;
+    effective.highlight_keyword_set_id = None;
+    effective.skip_group_stats = None;
+    effective.calculate_freq_pelengs_summary = None;
+    effective.page_id = None;
+    normalize_empty_candidate_collections(&mut effective);
+    if effective.selected_tags.is_none()
+        && effective.denied_tags.is_none()
+        && effective.tag_presence.is_none()
+    {
+        effective.filter_tags_option = None;
+    }
+    if effective.selected_locations.is_none() {
+        effective.include_peleng_locations = None;
+    }
+    effective.report_tags_only_this_unit = effective
+        .report_tags_only_this_unit
+        .filter(|enabled| *enabled);
+    effective.checked_only = effective.checked_only.filter(|enabled| *enabled);
+    effective.only_show_unprocessed =
+        effective.only_show_unprocessed.filter(|enabled| *enabled);
+    effective.or_with_extended_form =
+        effective.or_with_extended_form.filter(|enabled| *enabled);
+    effective.or_bookmarked =
+        effective.or_bookmarked.filter(|enabled| *enabled);
+    effective.or_important = effective.or_important.filter(|enabled| *enabled);
+    effective.or_with_coords =
+        effective.or_with_coords.filter(|enabled| *enabled);
+    effective.or_without_coords =
+        effective.or_without_coords.filter(|enabled| *enabled);
+    effective.without_network =
+        effective.without_network.filter(|enabled| *enabled);
+    effective.only_with_metadata =
+        effective.only_with_metadata.filter(|enabled| *enabled);
+    effective.without_metadata =
+        effective.without_metadata.filter(|enabled| *enabled);
+    effective.only_with_media =
+        effective.only_with_media.filter(|enabled| *enabled);
+    effective.ignore_imported_coords =
+        effective.ignore_imported_coords.filter(|enabled| *enabled);
+    effective.units_exact_match_only =
+        effective.units_exact_match_only.filter(|enabled| *enabled);
+    effective.without_model_tags =
+        effective.without_model_tags.filter(|enabled| *enabled);
+    effective == InboxMessagesReq::default()
+}
+
+fn normalize_empty_candidate_collections(req: &mut InboxMessagesReq) {
+    macro_rules! normalize_empty {
+        ($($field:ident),+ $(,)?) => {
+            $(
+                if !req
+                    .$field
+                    .as_ref()
+                    .map_or(false, |items| !items.is_empty())
+                {
+                    req.$field = None;
+                }
+            )+
+        };
+    }
+
+    normalize_empty!(
+        selected_groups,
+        denied_groups,
+        selected_senders,
+        denied_senders,
+        selected_freqs,
+        selected_posts,
+        denied_posts,
+        denied_freqs,
+        selected_callsigns,
+        selected_units,
+        denied_units,
+        selected_unit_ids,
+        denied_unit_ids,
+        selected_locations,
+        selected_device_names,
+        selected_tags,
+        denied_tags,
+        selected_aors,
+        selected_networks,
+        metadata_cc,
+        metadata_sender,
+        metadata_receiver,
+        metadata_hash,
+    );
 }
 
 async fn load_babak_candidate_page_for_groups(
@@ -2256,6 +2354,146 @@ mod tests {
             babak_message_time_basis(&InboxMessagesReq::default()),
             None
         );
+    }
+
+    #[test]
+    fn babak_candidate_streams_accept_neutral_analysis_controls_only() {
+        let access = BabakCandidateAccess {
+            sigint_groups: Vec::new(),
+            datasource_group_ids: vec![1, 2],
+            login_ids: Vec::new(),
+            analytics_tag_access: None,
+        };
+        let req = InboxMessagesReq {
+            since_date_inclusive_ms: Some(1),
+            till_date_inclusive_ms: Some(2),
+            sort_by: Some(InboxMessagesSortBy::IMSCreatedAt),
+            only_show_unprocessed: Some(false),
+            nolimit: Some(true),
+            checked_only: Some(false),
+            or_with_extended_form: Some(false),
+            load_latest: Some(false),
+            return_duplicates: Some(false),
+            or_bookmarked: Some(false),
+            or_important: Some(false),
+            or_with_coords: Some(false),
+            or_without_coords: Some(false),
+            newest_first: Some(true),
+            highlight_callsigns: Some(true),
+            highlight_keywords: Some(true),
+            highlight_searchres: Some(true),
+            highlight_points: Some(true),
+            selected_networks: Some(Vec::new()),
+            without_network: Some(false),
+            only_with_metadata: Some(false),
+            without_metadata: Some(false),
+            only_with_media: Some(false),
+            report_tags_only_this_unit: Some(false),
+            ignore_imported_coords: Some(false),
+            include_peleng_locations: Some(true),
+            units_exact_match_only: Some(false),
+            calculate_freq_pelengs_summary: Some(false),
+            skip_group_stats: Some(true),
+            filter_tags_option: Some(
+                crate::rer_importer::types::TagFilterOption::OneOfTags,
+            ),
+            page_id: Some("analysis".to_string()),
+            without_model_tags: Some(false),
+            ..Default::default()
+        };
+        assert!(babak_candidate_streams_are_eligible(&req, None, &access));
+
+        let selected_network = InboxMessagesReq {
+            selected_networks: Some(vec![1]),
+            ..req.clone()
+        };
+        assert!(!babak_candidate_streams_are_eligible(
+            &selected_network,
+            None,
+            &access,
+        ));
+        let selected_location = InboxMessagesReq {
+            selected_locations: Some(vec!["location".to_string()]),
+            ..req.clone()
+        };
+        assert!(!babak_candidate_streams_are_eligible(
+            &selected_location,
+            None,
+            &access,
+        ));
+        let selected_tag = InboxMessagesReq {
+            selected_tags: Some(vec![1]),
+            ..req.clone()
+        };
+        assert!(!babak_candidate_streams_are_eligible(
+            &selected_tag,
+            None,
+            &access,
+        ));
+        let denied_tag = InboxMessagesReq {
+            denied_tags: Some(vec![1]),
+            ..req.clone()
+        };
+        assert!(!babak_candidate_streams_are_eligible(
+            &denied_tag,
+            None,
+            &access,
+        ));
+        let checked = InboxMessagesReq {
+            checked_only: Some(true),
+            ..req.clone()
+        };
+        assert!(!babak_candidate_streams_are_eligible(
+            &checked, None, &access
+        ));
+        let interception = InboxMessagesReq {
+            sort_by: Some(InboxMessagesSortBy::IMSTimestamp),
+            ..req.clone()
+        };
+        assert!(!babak_candidate_streams_are_eligible(
+            &interception,
+            None,
+            &access,
+        ));
+        assert!(!babak_candidate_streams_are_eligible(
+            &InboxMessagesReq {
+                sort_by: Some(InboxMessagesSortBy::IMSCreatedAt),
+                ..Default::default()
+            },
+            Some(&AnalyticsMessageIdScope::Empty),
+            &access,
+        ));
+        let empty_access = BabakCandidateAccess {
+            sigint_groups: Vec::new(),
+            datasource_group_ids: Vec::new(),
+            login_ids: Vec::new(),
+            analytics_tag_access: None,
+        };
+        assert!(!babak_candidate_streams_are_eligible(
+            &InboxMessagesReq {
+                sort_by: Some(InboxMessagesSortBy::IMSCreatedAt),
+                ..Default::default()
+            },
+            None,
+            &empty_access,
+        ));
+        let excessive_access = BabakCandidateAccess {
+            datasource_group_ids: vec![
+                1;
+                RER_BABAK_CANDIDATE_STREAM_MAX_GROUPS + 1
+            ],
+            sigint_groups: Vec::new(),
+            login_ids: Vec::new(),
+            analytics_tag_access: None,
+        };
+        assert!(!babak_candidate_streams_are_eligible(
+            &InboxMessagesReq {
+                sort_by: Some(InboxMessagesSortBy::IMSCreatedAt),
+                ..Default::default()
+            },
+            None,
+            &excessive_access,
+        ));
     }
 
     #[test]

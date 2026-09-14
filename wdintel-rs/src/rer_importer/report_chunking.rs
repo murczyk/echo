@@ -7,8 +7,8 @@ use anyhow::Context;
 use chrono::NaiveDateTime;
 use sea_orm::prelude::Expr;
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect,
-    QueryTrait, Select,
+    ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter,
+    QuerySelect, QueryTrait, Select,
 };
 use std::cmp::Ordering;
 
@@ -247,9 +247,13 @@ where
             InboxMessagesSortBy::IMSTimestamp => {
                 query.filter(signal_message::Column::Timestamp.lt(till))
             }
-            InboxMessagesSortBy::IMSCreatedAt => {
-                query.filter(signal_message::Column::CreatedAt.lt(till))
-            }
+            InboxMessagesSortBy::IMSCreatedAt => query.filter(
+                Expr::col((
+                    signal_message::Entity,
+                    signal_message::Column::CreatedAt,
+                ))
+                .lt(till),
+            ),
         },
     )
 }

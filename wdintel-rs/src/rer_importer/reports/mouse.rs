@@ -11,7 +11,7 @@ use crate::rer_importer::report_chunking::{
     build_filtered_inbox_report_chunk_query,
     exclude_inbox_report_linked_intel_products, report_chunk_exclusive_till,
     report_period_chunks, restrict_inbox_report_to_message_ids,
-    ReportPeriodChunk, ReportPeriodEnd,
+    ReportPeriodEnd,
 };
 use crate::rer_importer::reports::inbox_light::blank_inbox_message;
 use crate::types::*;
@@ -225,17 +225,16 @@ async fn collect_mouse_report_data(
         crate::messenger::group::get_identity_sigint_groups(&read_db, &login)
             .await
             .context(h!())?;
+    let all_message_ids: Vec<i64> =
+        messages.iter().map(|(id, _)| *id).collect();
     let important_ids =
-        load_mouse_important_ids(&read_db, &login, &groups, &chunks)
+        load_mouse_important_ids(&read_db, &login, &groups, &all_message_ids)
             .await
             .c(h!())?;
     let bookmark_ids =
-        load_mouse_bookmark_ids(&read_db, &login, &groups, &chunks)
+        load_mouse_bookmark_ids(&read_db, &login, &groups, &all_message_ids)
             .await
             .c(h!())?;
-
-    let all_message_ids: Vec<i64> =
-        messages.iter().map(|(id, _)| *id).collect();
     let datasource_map: BTreeMap<i64, datasource::Model> =
         datasource::Entity::find()
             .all(&read_db)
@@ -1113,32 +1112,37 @@ async fn load_mouse_important_ids(
     dbx: &DatabaseConnection,
     login: &uuid::Uuid,
     groups: &[String],
-    chunks: &[ReportPeriodChunk],
+    message_ids: &[i64],
 ) -> Result<BTreeSet<i64>, AppError> {
+    if message_ids.is_empty() {
+        return Ok(BTreeSet::new());
+    }
     let mut ids = BTreeSet::new();
-    for chunk in chunks {
-        let query = sigint_important::Entity::find()
-            .filter(sigint_important::Column::LoginId.eq(*login))
-            .join(
-                JoinType::InnerJoin,
-                sigint_important::Relation::SignalMessage.def(),
-            )
-            .join(
-                JoinType::InnerJoin,
-                signal_message::Relation::SigintInboxItem.def(),
-            )
-            .join(
-                JoinType::InnerJoin,
-                signal_message::Relation::DatasourceGroup.def(),
-            )
-            .filter(signal_message::Column::Deleted.eq(false))
-            .filter(
-                datasource_group::Column::GroupMasterKey
-                    .eq_any(groups.to_vec()),
-            );
-        let query = filter_mouse_time_chunk(query, *chunk)?;
+    for message_ids in message_ids.chunks(RER_REPORT_ENRICHMENT_ID_BATCH_SIZE) {
         ids.extend(
-            query
+            sigint_important::Entity::find()
+                .filter(sigint_important::Column::LoginId.eq(*login))
+                .join(
+                    JoinType::InnerJoin,
+                    sigint_important::Relation::SignalMessage.def(),
+                )
+                .join(
+                    JoinType::InnerJoin,
+                    signal_message::Relation::SigintInboxItem.def(),
+                )
+                .join(
+                    JoinType::InnerJoin,
+                    signal_message::Relation::DatasourceGroup.def(),
+                )
+                .filter(signal_message::Column::Deleted.eq(false))
+                .filter(
+                    datasource_group::Column::GroupMasterKey
+                        .eq_any(groups.to_vec()),
+                )
+                .filter(
+                    sigint_important::Column::SignalMessageId
+                        .eq_any(message_ids.to_vec()),
+                )
                 .all(dbx)
                 .await
                 .c(h!())?
@@ -1153,32 +1157,37 @@ async fn load_mouse_bookmark_ids(
     dbx: &DatabaseConnection,
     login: &uuid::Uuid,
     groups: &[String],
-    chunks: &[ReportPeriodChunk],
+    message_ids: &[i64],
 ) -> Result<BTreeSet<i64>, AppError> {
+    if message_ids.is_empty() {
+        return Ok(BTreeSet::new());
+    }
     let mut ids = BTreeSet::new();
-    for chunk in chunks {
-        let query = sigint_bookmark::Entity::find()
-            .filter(sigint_bookmark::Column::LoginId.eq(*login))
-            .join(
-                JoinType::InnerJoin,
-                sigint_bookmark::Relation::SignalMessage.def(),
-            )
-            .join(
-                JoinType::InnerJoin,
-                signal_message::Relation::SigintInboxItem.def(),
-            )
-            .join(
-                JoinType::InnerJoin,
-                signal_message::Relation::DatasourceGroup.def(),
-            )
-            .filter(signal_message::Column::Deleted.eq(false))
-            .filter(
-                datasource_group::Column::GroupMasterKey
-                    .eq_any(groups.to_vec()),
-            );
-        let query = filter_mouse_time_chunk(query, *chunk)?;
+    for message_ids in message_ids.chunks(RER_REPORT_ENRICHMENT_ID_BATCH_SIZE) {
         ids.extend(
-            query
+            sigint_bookmark::Entity::find()
+                .filter(sigint_bookmark::Column::LoginId.eq(*login))
+                .join(
+                    JoinType::InnerJoin,
+                    sigint_bookmark::Relation::SignalMessage.def(),
+                )
+                .join(
+                    JoinType::InnerJoin,
+                    signal_message::Relation::SigintInboxItem.def(),
+                )
+                .join(
+                    JoinType::InnerJoin,
+                    signal_message::Relation::DatasourceGroup.def(),
+                )
+                .filter(signal_message::Column::Deleted.eq(false))
+                .filter(
+                    datasource_group::Column::GroupMasterKey
+                        .eq_any(groups.to_vec()),
+                )
+                .filter(
+                    sigint_bookmark::Column::SignalMessageId
+                        .eq_any(message_ids.to_vec()),
+                )
                 .all(dbx)
                 .await
                 .c(h!())?
@@ -1187,28 +1196,6 @@ async fn load_mouse_bookmark_ids(
         );
     }
     Ok(ids)
-}
-
-fn filter_mouse_time_chunk<Q>(
-    query: Q,
-    chunk: ReportPeriodChunk,
-) -> Result<Q, AppError>
-where
-    Q: QueryFilter,
-{
-    let query = query.filter(
-        sigint_inbox_item::Column::Datetime
-            .gte(dt_from_millis(chunk.since_ms)?),
-    );
-    let till = dt_from_millis(chunk.till_ms)?;
-    Ok(match chunk.end {
-        ReportPeriodEnd::Inclusive => {
-            query.filter(sigint_inbox_item::Column::Datetime.lte(till))
-        }
-        ReportPeriodEnd::NonInclusive => {
-            query.filter(sigint_inbox_item::Column::Datetime.lt(till))
-        }
-    })
 }
 
 type MouseEnrichmentMaps = (
@@ -1780,7 +1767,8 @@ mod tests {
     use super::*;
     use crate::functest::tests::{
         cleanup, find_test_datasource_group, find_test_login,
-        mk_sigint_inbox_item, mk_signal_message,
+        mk_sigint_bookmark, mk_sigint_important, mk_sigint_inbox_item,
+        mk_signal_message,
     };
     use crate::rer_importer::reports::types::ReportPreviewReq;
     use sea_orm::prelude::Expr;
@@ -1875,6 +1863,86 @@ mod tests {
             false,
         )
         .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn mouse_marker_loaders_keep_selected_candidate_markers() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_important(
+            &env.dbx,
+            sigint_important::ActiveModel {
+                login_id: Set(Some(login.id)),
+                signal_message_id: Set(message.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_bookmark(
+            &env.dbx,
+            sigint_bookmark::ActiveModel {
+                login_id: Set(login.id),
+                signal_message_id: Set(message.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let groups = crate::messenger::group::get_identity_sigint_groups(
+            &env.dbx, &login.id,
+        )
+        .await
+        .unwrap();
+        let important = load_mouse_important_ids(
+            &env.dbx,
+            &login.id,
+            &groups,
+            &[message.id],
+        )
+        .await
+        .unwrap();
+        let bookmarks = load_mouse_bookmark_ids(
+            &env.dbx,
+            &login.id,
+            &groups,
+            &[message.id],
+        )
+        .await
+        .unwrap();
+
+        assert!(important.contains(&message.id));
+        assert!(bookmarks.contains(&message.id));
+        assert!(load_mouse_important_ids(&env.dbx, &login.id, &groups, &[])
+            .await
+            .unwrap()
+            .is_empty());
+        assert!(load_mouse_bookmark_ids(&env.dbx, &login.id, &groups, &[])
+            .await
+            .unwrap()
+            .is_empty());
     }
 
     #[tokio::test]

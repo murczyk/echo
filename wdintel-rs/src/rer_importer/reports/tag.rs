@@ -34,7 +34,6 @@ pub async fn report_docx_kind_tag(
         &login,
         env,
         &current_req,
-        &period,
         tag_report_sort_by,
     )
     .await
@@ -47,8 +46,6 @@ pub async fn report_docx_kind_tag(
 struct TagReportPeriod {
     date_from: String,
     date_to: String,
-    date_from_dt: chrono::NaiveDateTime,
-    date_to_dt: chrono::NaiveDateTime,
 }
 
 struct TagReportData {
@@ -99,8 +96,6 @@ fn tag_report_period(
     Ok(TagReportPeriod {
         date_from: date_from_dt.format("%H:%M %d.%m.%Y").to_string(),
         date_to: date_to_dt.format("%H:%M %d.%m.%Y").to_string(),
-        date_from_dt: date_from_dt.naive_utc(),
-        date_to_dt: date_to_dt.naive_utc(),
     })
 }
 
@@ -109,7 +104,6 @@ async fn load_tag_report_data(
     login: &uuid::Uuid,
     env: &Env,
     req: &crate::rer_importer::types::InboxMessagesReq,
-    period: &TagReportPeriod,
     tag_report_sort_by: TagReportSortBy,
 ) -> Result<TagReportData, AppError> {
     let report_settings =
@@ -139,7 +133,7 @@ async fn load_tag_report_data(
             .await
             .context(h!())?;
         let snapshot = load_tag_report_snapshot_txn(
-            &txn, login, env, &chunk_req, period, chunk.end,
+            &txn, login, env, &chunk_req, chunk.end,
         )
         .await
         .context(h!())?;
@@ -164,7 +158,6 @@ async fn load_tag_report_snapshot_txn(
     login: &uuid::Uuid,
     env: &Env,
     req: &crate::rer_importer::types::InboxMessagesReq,
-    period: &TagReportPeriod,
     period_end: ReportPeriodEnd,
 ) -> Result<TagReportSnapshot, AppError> {
     let login_ids = crate::users::get_organism_login_ids_by_id(txn, login)
@@ -176,15 +169,10 @@ async fn load_tag_report_snapshot_txn(
             .context(h!())?;
     let message_ids: Vec<i64> =
         candidates.iter().map(|message| message.id).collect();
-    let important_ids = load_tag_report_important_ids(
-        txn,
-        login,
-        &login_ids,
-        &message_ids,
-        period,
-    )
-    .await
-    .context(h!())?;
+    let important_ids =
+        load_tag_report_important_ids(txn, login, &login_ids, &message_ids)
+            .await
+            .context(h!())?;
     let signal_messages = load_tag_report_signal_messages(txn, &message_ids)
         .await
         .context(h!())?;
@@ -313,7 +301,6 @@ async fn load_tag_report_important_ids(
     login: &uuid::Uuid,
     logins: &[uuid::Uuid],
     message_ids: &[i64],
-    period: &TagReportPeriod,
 ) -> Result<BTreeSet<i64>, AppError> {
     if message_ids.is_empty() {
         return Ok(BTreeSet::new());
@@ -341,8 +328,6 @@ async fn load_tag_report_important_ids(
             signal_message::Relation::DatasourceGroup.def(),
         )
         .filter(datasource_group::Column::GroupMasterKey.eq_any(sigint_groups))
-        .filter(sigint_inbox_item::Column::Datetime.gte(period.date_from_dt))
-        .filter(sigint_inbox_item::Column::Datetime.lte(period.date_to_dt))
         .filter(signal_message::Column::Deleted.eq(false))
         .all(txn)
         .await
@@ -734,14 +719,15 @@ mod tests {
         let datasource_group =
             find_test_datasource_group(&env.dbx).await.unwrap();
         set_report_chunking_hours(&env.dbx, 1).await;
-        let timestamp = dt(10, 30);
+        let created_at = dt(10, 30);
+        let interception_datetime = dt(3, 30);
 
         let signal_message = mk_signal_message(
             &env.dbx,
             signal_message::ActiveModel {
                 body: Set(Some("important-across-chunks".to_string())),
-                created_at: Set(timestamp),
-                timestamp: Set(Some(timestamp)),
+                created_at: Set(created_at),
+                timestamp: Set(Some(created_at)),
                 message_uid: Set(Some("important-across-chunks".to_string())),
                 datasource_group_id: Set(Some(datasource_group.id)),
                 ..Default::default()
@@ -759,7 +745,7 @@ mod tests {
                 datasource_group_id: Set(Some(datasource_group.id)),
                 sender: Set(Some("sender-1".to_string())),
                 message_uid: Set(Some("important-across-chunks".to_string())),
-                created_at: Set(timestamp),
+                created_at: Set(created_at),
                 ..Default::default()
             },
         )
@@ -769,10 +755,11 @@ mod tests {
             &env.dbx,
             sigint_inbox_item::ActiveModel {
                 id: Set(signal_message.id),
-                date: Set(Some(timestamp.date().to_string())),
+                date: Set(Some(interception_datetime.date().to_string())),
                 time: Set(Some(
-                    timestamp.time().format("%H:%M:%S").to_string(),
+                    interception_datetime.time().format("%H:%M:%S").to_string(),
                 )),
+                datetime: Set(Some(interception_datetime)),
                 ..Default::default()
             },
         )
@@ -797,16 +784,14 @@ mod tests {
                 dt(12, 0).and_utc().timestamp_millis(),
             ),
             nolimit: Some(true),
-            sort_by: Some(InboxMessagesSortBy::IMSTimestamp),
+            sort_by: Some(InboxMessagesSortBy::IMSCreatedAt),
             ..Default::default()
         };
-        let period = tag_report_period(&req).unwrap();
         let data = load_tag_report_data(
             &env.dbx,
             &login.id,
             &env,
             &req,
-            &period,
             TagReportSortBy::ByTime,
         )
         .await
