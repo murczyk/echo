@@ -3569,7 +3569,7 @@ pub async fn network_maintenance_worker(
 ) {
     debug!("Starting network_maintenance_worker");
 
-    let mut last_hourly_maintenance_finished_at = None;
+    let mut last_maintenance_started_at = None;
     let mut synthetic_repair_after_id = 0;
     let mut recalculation_interval =
         tokio::time::interval(std::time::Duration::from_secs(
@@ -3584,7 +3584,7 @@ pub async fn network_maintenance_worker(
         if let Err(error) = network_maintenance_worker_iteration(
             dbx,
             cleanup_networks_enabled,
-            &mut last_hourly_maintenance_finished_at,
+            &mut last_maintenance_started_at,
             &mut synthetic_repair_after_id,
         )
         .await
@@ -3597,39 +3597,35 @@ pub async fn network_maintenance_worker(
 async fn network_maintenance_worker_iteration(
     dbx: &DatabaseConnection,
     cleanup_networks_enabled: bool,
-    last_hourly_maintenance_finished_at: &mut Option<std::time::Instant>,
+    last_maintenance_started_at: &mut Option<std::time::Instant>,
     synthetic_repair_after_id: &mut i64,
 ) -> anyhow::Result<()> {
     let recalculation_result = recalculation::run_pending(dbx).await.c(h!());
-    let hourly_maintenance_due = last_hourly_maintenance_finished_at
-        .map(|finished_at| {
-            finished_at.elapsed()
+    let maintenance_due = last_maintenance_started_at
+        .map(|started_at| {
+            started_at.elapsed()
                 >= std::time::Duration::from_secs(
                     CLEANUP_NETWORKS_WORKER_SLEEP_DURATION,
                 )
         })
         .unwrap_or(true);
-    let hourly_maintenance_result = if hourly_maintenance_due {
-        let result = run_hourly_network_maintenance(
+    let maintenance_result = if maintenance_due {
+        *last_maintenance_started_at = Some(std::time::Instant::now());
+        run_network_maintenance(
             dbx,
             cleanup_networks_enabled,
             synthetic_repair_after_id,
         )
-        .await;
-        if result.is_ok() {
-            *last_hourly_maintenance_finished_at =
-                Some(std::time::Instant::now());
-        }
-        result
+        .await
     } else {
         Ok(())
     };
     recalculation_result.context(h!())?;
-    hourly_maintenance_result.c(h!())?;
+    maintenance_result.c(h!())?;
     Ok(())
 }
 
-async fn run_hourly_network_maintenance(
+async fn run_network_maintenance(
     dbx: &DatabaseConnection,
     cleanup_networks_enabled: bool,
     synthetic_repair_after_id: &mut i64,
@@ -3902,7 +3898,7 @@ async fn cleanup_networks_worker_1_with_cursor(
     )
     .await
     .context(h!())?;
-    repair_synthetic_network_inactivity(
+    repair_synthetic_network_inactivity_until_complete(
         dbx,
         synthetic_repair_after_id,
         CLEANUP_NETWORKS_SYNTHETIC_REPAIR_MAX_PER_PASS,
@@ -4190,7 +4186,22 @@ async fn cleanup_other_network_activity(
     Ok(())
 }
 
-async fn repair_synthetic_network_inactivity(
+async fn repair_synthetic_network_inactivity_until_complete(
+    dbx: &DatabaseConnection,
+    after_id: &mut i64,
+    max_per_pass: usize,
+) -> anyhow::Result<()> {
+    loop {
+        repair_synthetic_network_inactivity_batch(dbx, after_id, max_per_pass)
+            .await
+            .context(h!())?;
+        if *after_id == 0 {
+            return Ok(());
+        }
+    }
+}
+
+async fn repair_synthetic_network_inactivity_batch(
     dbx: &DatabaseConnection,
     after_id: &mut i64,
     max_per_pass: usize,
@@ -7731,10 +7742,10 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn cleanup_repairs_synthetic_inactivity_with_open_frequency() {
+    async fn cleanup_repairs_synthetic_inactivity_across_scan_batches() {
         let env = cleanup().await.unwrap();
         let old_dt = cleanup_old_dt();
-        let noncandidate = mk_sigint_network(
+        let _noncandidate = mk_sigint_network(
             &env.dbx,
             sigint_network::ActiveModel {
                 created_at: Set(old_dt),
@@ -7790,19 +7801,13 @@ mod tests {
         txn.commit().await.unwrap();
 
         let mut after_id = 0;
-        repair_synthetic_network_inactivity(&env.dbx, &mut after_id, 1)
-            .await
-            .unwrap();
-        assert_eq!(after_id, noncandidate.id);
-        let inactive_network = sigint_network::Entity::find_by_id(network.id)
-            .one(&env.dbx)
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(inactive_network.active_to.is_some());
-        repair_synthetic_network_inactivity(&env.dbx, &mut after_id, 1)
-            .await
-            .unwrap();
+        repair_synthetic_network_inactivity_until_complete(
+            &env.dbx,
+            &mut after_id,
+            1,
+        )
+        .await
+        .unwrap();
         assert_eq!(after_id, 0);
 
         let network = sigint_network::Entity::find_by_id(network.id)
