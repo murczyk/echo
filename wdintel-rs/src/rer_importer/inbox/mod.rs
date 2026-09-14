@@ -1675,6 +1675,12 @@ async fn query_inbox_digest_with_analytics(
     if duty_uses_source_postgres {
         return query_inbox_digest(env.dbx.clone(), postgres_query).await;
     }
+    if let Some(digest) =
+        try_query_recent_duty_source_digest(login, &env, &req, &postgres_query)
+            .await
+    {
+        return Ok(digest);
+    }
     if rer_duty_fresh_tail_request_supported(&req) {
         return Ok(query_rer_duty_inbox_digest_with_fresh_tail(
             login,
@@ -1725,6 +1731,42 @@ async fn query_inbox_digest_with_analytics(
     )
     .await
     .context(h!())?)
+}
+
+async fn try_query_recent_duty_source_digest(
+    login: uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    postgres_query: &str,
+) -> Option<InboxDigest> {
+    if env.analytics.is_none()
+        || !rer_duty_recent_inbox_request_supported(req, Utc::now().naive_utc())
+    {
+        return None;
+    }
+    let result = async {
+        let query = build_analytics_inbox_digest_query(
+            &login,
+            env,
+            req,
+            &env.dbx,
+            analytics_freshness_max_age_ms(env),
+        )
+        .await
+        .context(h!())?
+        .unwrap_or_else(|| postgres_query.to_string());
+        query_inbox_digest(env.dbx.clone(), query).await
+    }
+    .await;
+    match result {
+        Ok(digest) => Some(digest),
+        Err(error) => {
+            warn!(
+                "recent Duty inbox count failed on source PostgreSQL; using analytics: {error:?}"
+            );
+            None
+        }
+    }
 }
 
 async fn query_rer_duty_inbox_digest_with_fresh_tail(
@@ -3532,6 +3574,19 @@ async fn get_inbox_messages_with_analytics_candidates_inner(
     };
     let now = Utc::now().naive_utc();
     let freshness_max_age_ms = analytics_freshness_max_age_ms(env);
+    if let Some(messages) = try_load_recent_duty_source_candidates(
+        login,
+        logins,
+        env,
+        req,
+        diagnostics,
+        now,
+        freshness_max_age_ms,
+    )
+    .await
+    {
+        return Ok(messages);
+    }
     match rer_analysis_inbox_route(req, now, freshness_max_age_ms) {
         RerAnalysisInboxRoute::AnalyticsHybrid => {
             if analytics_inbox_candidates_supported(req) {
@@ -3603,8 +3658,81 @@ async fn get_inbox_messages_with_analytics_candidates_inner(
     .await
 }
 
+async fn try_load_recent_duty_source_candidates(
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
+    env: &Env,
+    req: &InboxMessagesReq,
+    diagnostics: &mut InboxReadDiagnostics,
+    now: NaiveDateTime,
+    freshness_max_age_ms: u64,
+) -> Option<Vec<(i64, InboxMessage)>> {
+    if env.analytics.is_none()
+        || !rer_duty_recent_inbox_request_supported(req, now)
+        || req.nolimit == Some(true)
+    {
+        return None;
+    }
+    let result = async {
+        let Some(candidate_ids) = load_analytics_inbox_candidates(
+            login,
+            env,
+            req,
+            &env.dbx,
+            freshness_max_age_ms,
+        )
+        .await
+        .context(h!())?
+        else {
+            return Ok(None);
+        };
+        hydrate_analytics_inbox_candidates(
+            login,
+            logins,
+            env,
+            req,
+            &candidate_ids,
+            diagnostics,
+        )
+        .await
+        .context(h!())
+    }
+    .await;
+    match result {
+        Ok(Some(messages)) => {
+            diagnostics.route = "postgres_candidates";
+            diagnostics.reason = "none";
+            Some(messages)
+        }
+        Ok(None) => None,
+        Err(error) => {
+            warn!(
+                "recent Duty inbox candidates failed on source PostgreSQL; using analytics: {error:?}"
+            );
+            None
+        }
+    }
+}
+
 fn rer_duty_fresh_tail_request_supported(req: &InboxMessagesReq) -> bool {
     analytics_inbox_request_supported(req)
+}
+
+fn rer_duty_recent_inbox_request_supported(
+    req: &InboxMessagesReq,
+    now: NaiveDateTime,
+) -> bool {
+    if !inbox_request_is_for_rer_duty(req)
+        || req.sort_by != Some(InboxMessagesSortBy::IMSTimestamp)
+    {
+        return false;
+    }
+    let Some(since_ms) = req.since_date_inclusive_ms else {
+        return false;
+    };
+    dt_from_millis(since_ms).is_ok_and(|since| {
+        since >= now - Duration::days(RER_DUTY_POSTGRES_RECENT_INBOX_DAYS)
+    })
 }
 
 fn rer_duty_fresh_tail_candidates_supported(req: &InboxMessagesReq) -> bool {
@@ -4482,6 +4610,53 @@ mod tests {
                 now,
             )
         );
+    }
+
+    #[test]
+    fn recent_duty_timestamp_windows_use_source_candidates() {
+        let now = NaiveDate::from_ymd_opt(2026, 9, 14)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
+        let req = InboxMessagesReq {
+            page_id: Some(RER_DUTY_PAGE_ID.to_string()),
+            sort_by: Some(InboxMessagesSortBy::IMSTimestamp),
+            since_date_inclusive_ms: Some(
+                (now - Duration::days(1)).and_utc().timestamp_millis(),
+            ),
+            ..Default::default()
+        };
+        assert!(rer_duty_recent_inbox_request_supported(&req, now));
+        assert!(rer_duty_recent_inbox_request_supported(
+            &InboxMessagesReq {
+                page_id: Some(RER_DUTY_NEO_PAGE_ID.to_string()),
+                ..req.clone()
+            },
+            now,
+        ));
+        assert!(!rer_duty_recent_inbox_request_supported(
+            &InboxMessagesReq {
+                since_date_inclusive_ms: Some(
+                    (now - Duration::days(3)).and_utc().timestamp_millis(),
+                ),
+                ..req.clone()
+            },
+            now,
+        ));
+        assert!(!rer_duty_recent_inbox_request_supported(
+            &InboxMessagesReq {
+                page_id: Some("rer-analysis".to_string()),
+                ..req.clone()
+            },
+            now,
+        ));
+        assert!(!rer_duty_recent_inbox_request_supported(
+            &InboxMessagesReq {
+                sort_by: Some(InboxMessagesSortBy::IMSDatetime),
+                ..req
+            },
+            now,
+        ));
     }
 
     #[test]
