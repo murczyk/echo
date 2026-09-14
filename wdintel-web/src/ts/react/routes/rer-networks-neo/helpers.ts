@@ -534,6 +534,7 @@ export function sanitizeNetworkColumnFilters(
 }
 
 export function buildNetworksListReq(params: {
+  unitId?: number;
   searchText: string;
   selectedSidebarUnitFilter: SelectedSidebarUnitFilter | null;
   selectedUnitLabel: string | null;
@@ -560,6 +561,7 @@ export function buildNetworksListReq(params: {
 
   return {
     filterFreq,
+    filterUnitId: params.unitId ?? null,
     ...unitFilterFields,
     filterText: params.searchText.trim() === '' ? null : params.searchText.trim(),
     filterName,
@@ -577,6 +579,7 @@ export function buildNetworksListReq(params: {
 }
 
 export function buildNetworksReportReq(params: {
+  unitId?: number;
   searchText: string;
   selectedSidebarUnitFilter: SelectedSidebarUnitFilter | null;
   selectedUnitLabel: string | null;
@@ -593,6 +596,7 @@ export function buildNetworksReportReq(params: {
 }
 
 export function buildNetworksStatusCountsReq(params: {
+  unitId?: number;
   searchText: string;
   selectedSidebarUnitFilter: SelectedSidebarUnitFilter | null;
   selectedUnitLabel: string | null;
@@ -608,6 +612,7 @@ export function buildNetworksStatusCountsReq(params: {
   });
   return {
     filterFreq,
+    filterUnitId: params.unitId ?? null,
     ...unitFilterFields,
     filterText: params.searchText.trim() === '' ? null : params.searchText.trim(),
     filterName,

@@ -10806,6 +10806,7 @@ updFreqNetworkEncoder struct =
 
 type alias ListNetworksReq =
     { filterFreq : Maybe (String)
+    , filterUnitId : Maybe (Int)
     , filterUnit : Maybe (String)
     , filterUnitArmyRegion : Maybe (String)
     , filterUnitMilitaryDistrict : Maybe (String)
@@ -10840,6 +10841,7 @@ listNetworksReqEncoder : ListNetworksReq -> Json.Encode.Value
 listNetworksReqEncoder struct =
     Json.Encode.object
         [ ( "filter_freq", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterFreq )
+        , ( "filter_unit_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.filterUnitId )
         , ( "filter_unit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnit )
         , ( "filter_unit_army_region", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitArmyRegion )
         , ( "filter_unit_military_district", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitMilitaryDistrict )
@@ -21352,6 +21354,7 @@ listNetworksReqDecoder : Json.Decode.Decoder ListNetworksReq
 listNetworksReqDecoder =
     Json.Decode.succeed ListNetworksReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_freq" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_army_region" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_military_district" (Json.Decode.nullable (Json.Decode.string))))

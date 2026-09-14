@@ -196,6 +196,7 @@ fn build_networks_query_with_text_search_mode(
             || req.filter_name.is_some()
             || req.filter_location.is_some()
             || req.status_filter.is_some()
+            || req.filter_unit_id.is_some()
             || req.filter_unit.is_some()
             || req.filter_unit_army_region.is_some()
             || req.filter_unit_military_district.is_some()
@@ -5966,6 +5967,7 @@ mod tests {
     fn empty_list_networks_req() -> ListNetworksReq {
         ListNetworksReq {
             filter_freq: None,
+            filter_unit_id: None,
             filter_unit: None,
             filter_unit_army_region: None,
             filter_unit_military_district: None,
@@ -6466,6 +6468,75 @@ mod tests {
             },
         )
         .await
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn network_list_filters_by_exact_unit_id() {
+        let env = cleanup().await.unwrap();
+        let first_unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Same name".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let second_unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Same name".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let first_network = mk_sigint_network(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                name: Set("First".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let second_network = mk_sigint_network(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                name: Set("Second".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for (network_id, unit_id) in [
+            (first_network.id, first_unit.id),
+            (second_network.id, second_unit.id),
+        ] {
+            mk_sigint_network_unit(
+                &env.dbx,
+                sigint_network_unit::ActiveModel {
+                    network_id: Set(network_id),
+                    unit_id: Set(unit_id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+
+        let mut req = empty_list_networks_req();
+        req.filter_unit_id = Some(first_unit.id);
+        let networks = build_networks_query(&req, NetworkQueryKind::List)
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        let counts = load_network_status_counts(&env.dbx, &req).await.unwrap();
+
+        assert_eq!(networks.len(), 1);
+        assert_eq!(networks[0].id, first_network.id);
+        assert_eq!(counts.active + counts.inactive + counts.archived, 1);
     }
 
     #[tokio::test]

@@ -50,6 +50,7 @@ toLayout user _ =
 type Tab
     = Overview
     | Files
+    | Networks
     | Management
     | ChildUnits
     | Changelog
@@ -108,6 +109,9 @@ init _ route _ =
             case Dict.get "tab" route.query of
                 Just "files" ->
                     Files
+
+                Just "networks" ->
+                    Networks
 
                 Just "management" ->
                     Management
@@ -836,6 +840,9 @@ detailsView user shared model details =
             Files ->
                 filesTab user shared model details.attachments
 
+            Networks ->
+                networksTab user details.unit.id
+
             Management ->
                 managementTab model details
 
@@ -1067,7 +1074,7 @@ tabsView activeTab hasOrbitUnit showManagement =
     let
         tabButton tab label =
             button
-                [ class "px-4 py-2 text-sm font-medium border-b-2 bg-transparent"
+                [ class "px-4 py-2 text-sm font-medium border-b-2 bg-transparent flex-shrink-0 whitespace-nowrap"
                 , classList
                     [ ( "border-primary text-primary", activeTab == tab )
                     , ( "border-transparent text-secondary", activeTab /= tab )
@@ -1086,22 +1093,38 @@ tabsView activeTab hasOrbitUnit showManagement =
                 [ text label ]
     in
     nav
-        [ class "d-flex border-bottom"
+        [ class "d-flex border-bottom overflow-x-auto"
         , attribute "role" "tablist"
         ]
         [ tabButton Overview "Огляд"
         , tabButton Files "Файли"
+        , tabButton Networks "Мережі"
+        , if hasOrbitUnit then
+            tabButton ChildUnits "Підпорядковані підрозділи"
+
+          else
+            text ""
         , tabButton Changelog "Журнал змін"
         , if showManagement then
             tabButton Management "Керування"
 
           else
             text ""
-        , if hasOrbitUnit then
-            tabButton ChildUnits "Підпорядковані підрозділи"
+        ]
 
-          else
-            text ""
+
+networksTab : Auth.User -> Int -> Html Msg
+networksTab user unitId =
+    div
+        [ attribute "role" "tabpanel"
+        , style "height" "70vh"
+        ]
+        [ node "rer-networks-neo"
+            [ attribute "data-auth-user-roles" (String.join "," user.roles)
+            , attribute "data-unit-id" (String.fromInt unitId)
+            , class "block w-full h-full"
+            ]
+            []
         ]
 
 

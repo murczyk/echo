@@ -200,6 +200,7 @@ describe('rer-networks-neo AOR filters', () => {
   it('maps the active network list request to classic active-only flags', () => {
     expect(
       buildNetworksListReq({
+        unitId: 42,
         searchText: '  alpha  ',
         selectedSidebarUnitFilter: null,
         selectedUnitLabel: '  3 АК  ',
@@ -217,6 +218,7 @@ describe('rer-networks-neo AOR filters', () => {
       }),
     ).toEqual({
       filterFreq: '128.5',
+      filterUnitId: 42,
       filterUnit: '3 АК',
       ...EMPTY_NETWORK_HIERARCHY_FILTER_FIELDS,
       filterText: 'alpha',
@@ -404,6 +406,7 @@ describe('rer-networks-neo AOR filters', () => {
       }),
     ).toEqual({
       filterFreq: '128.5',
+      filterUnitId: null,
       filterUnit: null,
       ...EMPTY_NETWORK_HIERARCHY_FILTER_FIELDS,
       filterText: null,
@@ -424,6 +427,7 @@ describe('rer-networks-neo AOR filters', () => {
   it('builds the filtered top report request without paging', () => {
     expect(
       buildNetworksReportReq({
+        unitId: 42,
         searchText: 'alpha',
         selectedSidebarUnitFilter: null,
         selectedUnitLabel: '3 АК',
@@ -438,6 +442,7 @@ describe('rer-networks-neo AOR filters', () => {
       }),
     ).toEqual({
       filterFreq: '128.5',
+      filterUnitId: 42,
       filterUnit: '3 АК',
       ...EMPTY_NETWORK_HIERARCHY_FILTER_FIELDS,
       filterText: 'alpha',
@@ -458,6 +463,7 @@ describe('rer-networks-neo AOR filters', () => {
   it('builds the backend status count request without a status chip filter', () => {
     expect(
       buildNetworksStatusCountsReq({
+        unitId: 42,
         searchText: 'alpha',
         selectedSidebarUnitFilter: null,
         selectedUnitLabel: '3 АК',
@@ -473,6 +479,7 @@ describe('rer-networks-neo AOR filters', () => {
       }),
     ).toEqual({
       filterFreq: '128.5',
+      filterUnitId: 42,
       filterUnit: '3 АК',
       ...EMPTY_NETWORK_HIERARCHY_FILTER_FIELDS,
       filterText: 'alpha',

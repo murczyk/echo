@@ -75,6 +75,7 @@ export async function getNetworkLastActivity(
 export async function getNetworksList(options?: RequestOptions): Promise<Network[]> {
   const req: ListNetworksReq = {
     filterFreq: null,
+    filterUnitId: null,
     filterUnit: null,
     filterUnitArmyRegion: null,
     filterUnitMilitaryDistrict: null,

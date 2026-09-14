@@ -88,6 +88,7 @@ loadSharedLookupData path =
         , E.getNetworksList NetworksLoadedByApi
             { sortBy = Nothing
             , filterFreq = Nothing
+            , filterUnitId = Nothing
             , filterUnit = Nothing
             , filterUnitArmyRegion = Nothing
             , filterUnitMilitaryDistrict = Nothing
@@ -733,6 +734,7 @@ update req msg model =
                     , E.getNetworksList NetworksLoadedByApi
                         { sortBy = Nothing
                         , filterFreq = Nothing
+                        , filterUnitId = Nothing
                         , filterUnit = Nothing
                         , filterUnitArmyRegion = Nothing
                         , filterUnitMilitaryDistrict = Nothing

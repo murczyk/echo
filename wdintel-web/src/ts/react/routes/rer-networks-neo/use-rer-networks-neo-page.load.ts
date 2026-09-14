@@ -34,6 +34,7 @@ import { redirectToLogin } from '../../auth-redirect';
 import type { SelectedSidebarUnitFilter } from '../rer-callsigns-neo/types';
 
 type LoadArgs = {
+  unitId?: number;
   tableStateContext: {
     globalFilter: string;
     columnFilters: MRT_ColumnFiltersState;
@@ -173,6 +174,7 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
       args.mainAbortRef.current = controller;
     }
     const req = buildNetworksListReq({
+      unitId: args.unitId,
       searchText: snapshot.globalFilter,
       selectedSidebarUnitFilter: snapshot.selectedSidebarUnitFilter,
       selectedUnitLabel:
@@ -198,7 +200,7 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
         ? Promise.all([
             getUnitsList(),
             listAors({ sortBy: null }),
-            getNetworkUnitStats(),
+            args.unitId ? Promise.resolve([]) : getNetworkUnitStats(),
             listPosts(),
             getEncryptions(),
           ])
@@ -312,6 +314,7 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
     const seq = args.requestSeqRef.current;
     try {
       const countsReq = buildNetworksStatusCountsReq({
+        unitId: args.unitId,
         searchText:
           args.latestQuerySnapshotRef.current?.globalFilter ??
           args.tableStateContextRef.current.globalFilter,
@@ -377,6 +380,7 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
         fullQueryKey: '',
       };
       const req = buildNetworksListReq({
+        unitId: args.unitId,
         searchText: snapshot.globalFilter,
         selectedSidebarUnitFilter:
           snapshot.selectedSidebarUnitFilter ?? args.selectedSidebarUnitFilterRef.current,

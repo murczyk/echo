@@ -26,8 +26,14 @@ const columnOrder = buildDefaultColumnOrder({
   withRowActions: true,
 });
 
-function RerNetworksNeoPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
-  const page = useRerNetworksNeoPage({ authUserRoles });
+function RerNetworksNeoPageBody({
+  authUserRoles = [],
+  unitId,
+}: {
+  authUserRoles?: string[];
+  unitId?: number;
+}) {
+  const page = useRerNetworksNeoPage({ authUserRoles, unitId });
   const tableStateContext = useTableStateContext();
   const isDesktopLayout = useMediaQuery((theme) => theme.breakpoints.up('lg'));
   const aorFilterOptions = useMemo(
@@ -156,7 +162,7 @@ function RerNetworksNeoPageBody({ authUserRoles = [] }: { authUserRoles?: string
         <TablePageToolbar
           title="Мережі"
           titleLeadingActions={
-            !isDesktopLayout ? null : (
+            !isDesktopLayout || unitId ? null : (
               <SidePanelToggleButton
                 side="left"
                 active={page.sidebarOpen}
@@ -194,7 +200,7 @@ function RerNetworksNeoPageBody({ authUserRoles = [] }: { authUserRoles?: string
           useFlexGap
           sx={{ flex: 1, minHeight: 0, alignItems: 'stretch' }}
         >
-          {isDesktopLayout ? (
+          {unitId ? null : isDesktopLayout ? (
             page.sidebarOpen ? (
               <Box
                 sx={{ display: 'flex', alignItems: 'stretch', gap: 0, flexShrink: 0, minHeight: 0 }}
@@ -304,17 +310,21 @@ function RerNetworksNeoPageBody({ authUserRoles = [] }: { authUserRoles?: string
   );
 }
 
-export function RerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: string[] } = {}) {
+export function RerNetworksNeoPage({
+  authUserRoles = [],
+  unitId,
+}: { authUserRoles?: string[]; unitId?: number } = {}) {
   return (
     <TableStateProvider
-      tableId="rer-networks-neo"
+      key={unitId ?? 'all'}
+      tableId={unitId ? 'rer-unit-networks' : 'rer-networks-neo'}
       defaultColumnOrder={columnOrder}
       defaultColumnVisibility={{}}
       defaultEnableColumnOrdering={false}
       defaultSorting={DEFAULT_NETWORKS_SORTING}
       sanitizeColumnFilters={sanitizeNetworkColumnFilters}
     >
-      <RerNetworksNeoPageBody authUserRoles={authUserRoles} />
+      <RerNetworksNeoPageBody authUserRoles={authUserRoles} unitId={unitId} />
     </TableStateProvider>
   );
 }

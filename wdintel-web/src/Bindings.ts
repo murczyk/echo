@@ -4184,6 +4184,7 @@ export type UpdFreqNetwork = {
 
 export type ListNetworksReq = {
   filterFreq: string | null;
+  filterUnitId: number | null;
   filterUnit: string | null;
   filterUnitArmyRegion: string | null;
   filterUnitMilitaryDistrict: string | null;
