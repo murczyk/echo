@@ -303,54 +303,63 @@ where
                 None => true,
             }
         });
-        if flights.len() >= ANALYTICS_MESSAGE_ID_SCOPE_CACHE_MAX_ENTRIES {
-            let oldest_completed_key = flights
-                .iter()
-                .filter_map(|(key, flight)| {
-                    flight
+        if let Some(flight) = flights.get(&key) {
+            Some(flight.clone())
+        } else {
+            if flights.len() >= ANALYTICS_MESSAGE_ID_SCOPE_CACHE_MAX_ENTRIES {
+                let oldest_completed_key = flights
+                    .iter()
+                    .filter_map(|(key, flight)| {
+                        flight
+                            .result
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner())
+                            .as_ref()
+                            .map(|(completed_at, _)| (*key, *completed_at))
+                    })
+                    .min_by_key(|(_, completed_at)| *completed_at)
+                    .map(|(key, _)| key);
+                if let Some(key) = oldest_completed_key {
+                    flights.remove(&key);
+                }
+            }
+            if flights.len() >= ANALYTICS_MESSAGE_ID_SCOPE_CACHE_MAX_ENTRIES {
+                None
+            } else {
+                let flight = Arc::new(AnalyticsMessageIdScopeFlight {
+                    result: std::sync::Mutex::new(None),
+                    finished: Notify::new(),
+                });
+                flights.insert(key, flight.clone());
+                let runner_flight = flight.clone();
+                let resolve = resolve.take().context(h!())?;
+                tokio::spawn(async move {
+                    let result =
+                        resolve().await.map_err(|err| format!("{err:?}"));
+                    let cache_result = result.is_ok();
+                    *runner_flight
                         .result
                         .lock()
-                        .unwrap_or_else(|poisoned| poisoned.into_inner())
-                        .as_ref()
-                        .map(|(completed_at, _)| (*key, *completed_at))
-                })
-                .min_by_key(|(_, completed_at)| *completed_at)
-                .map(|(key, _)| key);
-            if let Some(key) = oldest_completed_key {
-                flights.remove(&key);
+                        .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+                        Some((std::time::Instant::now(), result));
+                    runner_flight.finished.notify_waiters();
+                    if !cache_result {
+                        let mut flights =
+                            ANALYTICS_MESSAGE_ID_SCOPE_FLIGHTS.lock().await;
+                        if flights.get(&key).is_some_and(|current| {
+                            Arc::ptr_eq(current, &runner_flight)
+                        }) {
+                            flights.remove(&key);
+                        }
+                    }
+                });
+                Some(flight)
             }
         }
-        if let Some(flight) = flights.get(&key) {
-            flight.clone()
-        } else {
-            let flight = Arc::new(AnalyticsMessageIdScopeFlight {
-                result: std::sync::Mutex::new(None),
-                finished: Notify::new(),
-            });
-            flights.insert(key, flight.clone());
-            let runner_flight = flight.clone();
-            let resolve = resolve.take().context(h!())?;
-            tokio::spawn(async move {
-                let result = resolve().await.map_err(|err| format!("{err:?}"));
-                let cache_result = result.is_ok();
-                *runner_flight
-                    .result
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner()) =
-                    Some((std::time::Instant::now(), result));
-                runner_flight.finished.notify_waiters();
-                if !cache_result {
-                    let mut flights =
-                        ANALYTICS_MESSAGE_ID_SCOPE_FLIGHTS.lock().await;
-                    if flights.get(&key).is_some_and(|current| {
-                        Arc::ptr_eq(current, &runner_flight)
-                    }) {
-                        flights.remove(&key);
-                    }
-                }
-            });
-            flight
-        }
+    };
+    let Some(flight) = flight else {
+        let resolve = resolve.take().context(h!())?;
+        return Ok(resolve().await.context(h!())?);
     };
 
     loop {

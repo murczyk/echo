@@ -1366,19 +1366,42 @@ async fn mark_tasks_completed(
     completed_at: Option<NaiveDateTime>,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<()> {
-    for tasks in started_tasks.chunks(NETWORK_INVALIDATION_DELETE_MAX_IDS) {
-        network_invalidation_task::Entity::update_many()
-            .col_expr(
-                network_invalidation_task::Column::CompletedAt,
-                Expr::value(completed_at),
-            )
-            .filter(
-                network_invalidation_task::Column::Id
-                    .is_in(tasks.iter().map(|task| task.id)),
-            )
-            .exec(dbx)
-            .await
-            .c(h!())?;
+    let mut task_ids_by_started_at = BTreeMap::new();
+    for task in started_tasks {
+        let started_at = task.started_at.c(h!())?;
+        task_ids_by_started_at
+            .entry(started_at)
+            .or_insert_with(Vec::new)
+            .push(task.id);
+    }
+    for (started_at, task_ids) in task_ids_by_started_at {
+        for task_ids in task_ids.chunks(NETWORK_INVALIDATION_DELETE_MAX_IDS) {
+            let result = network_invalidation_task::Entity::update_many()
+                .col_expr(
+                    network_invalidation_task::Column::CompletedAt,
+                    Expr::value(completed_at),
+                )
+                .filter(
+                    network_invalidation_task::Column::Id
+                        .is_in(task_ids.iter().copied()),
+                )
+                .filter(
+                    network_invalidation_task::Column::StartedAt.eq(started_at),
+                )
+                .filter(
+                    network_invalidation_task::Column::CompletedAt.is_null(),
+                )
+                .exec(dbx)
+                .await
+                .c(h!())?;
+            if result.rows_affected != task_ids.len() as u64 {
+                warn!(
+                    "completed {} of {} network invalidation tasks still owned by this attempt",
+                    result.rows_affected,
+                    task_ids.len()
+                );
+            }
+        }
     }
     Ok(())
 }
@@ -1458,6 +1481,8 @@ async fn reset_tasks_started_at(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::functest::tests::cleanup;
+    use serial_test::serial;
     use std::borrow::Cow;
     use std::fmt;
 
@@ -1479,6 +1504,66 @@ mod tests {
             group_master_key: None,
             tag: NETWORK_INVALIDATION_TASK_TAG_RECENT.to_string(),
         }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn stale_attempt_cannot_complete_or_reset_reclaimed_task() {
+        let env = cleanup().await.unwrap();
+        let claimed_at = Utc::now().naive_utc().with_nanosecond(0).unwrap()
+            - chrono::Duration::minutes(2);
+        let reclaimed_at = claimed_at + chrono::Duration::minutes(1);
+        let stale_task = network_invalidation_task::ActiveModel {
+            id: NotSet,
+            frequency: Set(None),
+            since_ts: Set(claimed_at),
+            till_ts: Set(reclaimed_at),
+            completed_at: Set(None),
+            created_at: NotSet,
+            sigint_network_id: Set(None),
+            started_at: Set(Some(claimed_at)),
+            aor_id: Set(None),
+            group_master_key: Set(None),
+            tag: Set(NETWORK_INVALIDATION_TASK_TAG_RECENT.to_string()),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let mut reclaimed_task = stale_task.clone().into_active_model();
+        reclaimed_task.started_at = Set(Some(reclaimed_at));
+        let reclaimed_task = reclaimed_task.update(&env.dbx).await.unwrap();
+
+        mark_tasks_completed(
+            std::slice::from_ref(&stale_task),
+            Some(Utc::now().naive_utc()),
+            &env.dbx,
+        )
+        .await
+        .unwrap();
+        reset_tasks_started_at(std::slice::from_ref(&stale_task), &env.dbx)
+            .await;
+
+        let task =
+            network_invalidation_task::Entity::find_by_id(reclaimed_task.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(task.started_at, Some(reclaimed_at));
+        assert_eq!(task.completed_at, None);
+
+        mark_tasks_completed(&[task], Some(Utc::now().naive_utc()), &env.dbx)
+            .await
+            .unwrap();
+        assert!(network_invalidation_task::Entity::find_by_id(
+            reclaimed_task.id
+        )
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap()
+        .completed_at
+        .is_some());
     }
 
     #[test]

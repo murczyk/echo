@@ -10,10 +10,11 @@ use crate::error::AppError;
 use crate::event_stream::fanout_mult;
 use crate::event_stream::types::{EventMsg, EventType};
 use crate::rer_importer::analysis::{
-    analytics_inbox_candidates_supported, analytics_inbox_request_supported,
-    filter_denied_device_names, filter_selected_device_names,
-    map_postgres_runtime_timeout, with_analytics_read_fallback,
-    with_analytics_read_fallback_outcome,
+    acquire_analytics_postgres_fallback_capacity,
+    analytics_fallback_needs_capacity, analytics_inbox_candidates_supported,
+    analytics_inbox_request_supported, filter_denied_device_names,
+    filter_selected_device_names, map_postgres_runtime_timeout,
+    with_analytics_read_fallback, with_analytics_read_fallback_outcome,
 };
 use crate::rer_importer::inbox::bl::*;
 use crate::rer_importer::inbox::query::*;
@@ -86,12 +87,17 @@ struct HybridInboxCandidateIds {
 enum AnalyticsInboxCandidateIds {
     Available(Vec<i64>),
     EmptyScope,
-    Unavailable(&'static str),
+    Unavailable(AnalyticsInboxUnavailable),
+}
+
+struct AnalyticsInboxUnavailable {
+    reason: &'static str,
+    fallback_permit: Option<tokio::sync::OwnedSemaphorePermit>,
 }
 
 enum HybridInboxCandidateLoad {
     Available(HybridInboxCandidateIds),
-    Fallback(&'static str),
+    Fallback(AnalyticsInboxUnavailable),
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -3621,10 +3627,12 @@ async fn get_inbox_messages_with_analytics_candidates_inner(
     req: &InboxMessagesReq,
     diagnostics: &mut InboxReadDiagnostics,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    diagnostics.reason = if env.analytics.is_none() {
-        "unconfigured"
-    } else if !analytics_inbox_candidates_supported(req) {
+    diagnostics.reason = if !analytics_inbox_candidates_supported(req) {
         "query_policy"
+    } else if env.analytics.is_none() && env.config.analytics.is_some() {
+        "analytics_unavailable"
+    } else if env.analytics.is_none() {
+        "unconfigured"
     } else {
         "none"
     };
@@ -3659,6 +3667,9 @@ async fn get_inbox_messages_with_analytics_candidates_inner(
                     return Ok(messages);
                 }
             }
+            ensure_inbox_postgres_fallback_capacity(diagnostics)
+                .await
+                .context(h!())?;
             diagnostics.start_postgres();
             return get_inbox_messages_with_internal_lower_bound(
                 login, logins, env, req, None,
@@ -3701,11 +3712,17 @@ async fn get_inbox_messages_with_analytics_candidates_inner(
             AnalyticsInboxCandidateIds::EmptyScope => {
                 diagnostics.fallback("analytics_empty_scope");
             }
-            AnalyticsInboxCandidateIds::Unavailable(reason) => {
-                diagnostics.fallback(reason);
+            AnalyticsInboxCandidateIds::Unavailable(unavailable) => {
+                diagnostics.fallback(unavailable.reason);
+                diagnostics.hold_analytics_fallback_capacity(
+                    unavailable.fallback_permit,
+                );
             }
         }
     }
+    ensure_inbox_postgres_fallback_capacity(diagnostics)
+        .await
+        .context(h!())?;
     diagnostics.start_postgres();
     let internal_lower_bound =
         rer_duty_neo_adaptive_lower_bound(login, env, req).await;
@@ -3717,6 +3734,21 @@ async fn get_inbox_messages_with_analytics_candidates_inner(
         internal_lower_bound,
     )
     .await
+}
+
+async fn ensure_inbox_postgres_fallback_capacity(
+    diagnostics: &mut InboxReadDiagnostics,
+) -> Result<(), AppError> {
+    if !analytics_fallback_needs_capacity(diagnostics.reason)
+        || diagnostics.has_analytics_fallback_capacity()
+    {
+        return Ok(());
+    }
+    let permit = acquire_analytics_postgres_fallback_capacity("inbox messages")
+        .await
+        .context(h!())?;
+    diagnostics.hold_analytics_fallback_capacity(Some(permit));
+    Ok(())
 }
 
 async fn try_load_recent_duty_source_candidates(
@@ -3849,14 +3881,19 @@ async fn try_load_rer_analysis_inbox_hybrid(
     .await
     {
         Ok(HybridInboxCandidateLoad::Available(candidates)) => candidates,
-        Ok(HybridInboxCandidateLoad::Fallback(reason)) => {
-            diagnostics.fallback(reason);
+        Ok(HybridInboxCandidateLoad::Fallback(unavailable)) => {
+            diagnostics.fallback(unavailable.reason);
+            diagnostics
+                .hold_analytics_fallback_capacity(unavailable.fallback_permit);
             warn!(
                 target: "rer_analysis_inbox_route",
                 "rer_analysis_inbox_route route=postgres_fallback analytics_candidates_available=false elapsed_ms={}",
                 started.elapsed().as_millis(),
             );
             return Ok(None);
+        }
+        Err(error @ AppError::ServiceUnavailable { .. }) => {
+            return Err(error);
         }
         Err(error) => {
             diagnostics.stage = "postgres_tail";
@@ -3923,14 +3960,19 @@ async fn try_load_rer_duty_inbox_hybrid(
     .await
     {
         Ok(HybridInboxCandidateLoad::Available(candidates)) => candidates,
-        Ok(HybridInboxCandidateLoad::Fallback(reason)) => {
-            diagnostics.fallback(reason);
+        Ok(HybridInboxCandidateLoad::Fallback(unavailable)) => {
+            diagnostics.fallback(unavailable.reason);
+            diagnostics
+                .hold_analytics_fallback_capacity(unavailable.fallback_permit);
             warn!(
                 target: "rer_duty_inbox_route",
                 "rer_duty_inbox_route route=postgres_fallback analytics_candidates_available=false elapsed_ms={}",
                 started.elapsed().as_millis(),
             );
             return Ok(None);
+        }
+        Err(error @ AppError::ServiceUnavailable { .. }) => {
+            return Err(error);
         }
         Err(error) => {
             diagnostics.stage = "postgres_tail";
@@ -4005,11 +4047,14 @@ async fn load_hybrid_inbox_candidate_ids(
             }
             AnalyticsInboxCandidateIds::EmptyScope => {
                 return Ok(HybridInboxCandidateLoad::Fallback(
-                    "analytics_empty_scope",
+                    AnalyticsInboxUnavailable {
+                        reason: "analytics_empty_scope",
+                        fallback_permit: None,
+                    },
                 ));
             }
-            AnalyticsInboxCandidateIds::Unavailable(reason) => {
-                return Ok(HybridInboxCandidateLoad::Fallback(reason));
+            AnalyticsInboxCandidateIds::Unavailable(unavailable) => {
+                return Ok(HybridInboxCandidateLoad::Fallback(unavailable));
             }
         };
     let tail_started = Instant::now();
@@ -4109,12 +4154,17 @@ async fn load_analytics_inbox_candidate_ids(
                 None => Ok(AnalyticsInboxCandidateIds::EmptyScope),
             }
         },
-        |_db| async { Ok(AnalyticsInboxCandidateIds::Unavailable("unknown")) },
+        |_db| async { Ok(AnalyticsInboxCandidateIds::EmptyScope) },
     )
     .await
     .context(h!())?;
     if let Some(reason) = outcome.postgres_reason {
-        return Ok(AnalyticsInboxCandidateIds::Unavailable(reason));
+        return Ok(AnalyticsInboxCandidateIds::Unavailable(
+            AnalyticsInboxUnavailable {
+                reason,
+                fallback_permit: outcome.postgres_fallback_permit,
+            },
+        ));
     }
     Ok(outcome.value)
 }

@@ -908,6 +908,12 @@ where
     Ok(())
 }
 
+#[derive(FromQueryResult)]
+struct NetworkLastSeenTask {
+    id: i64,
+    network_freq_id: i64,
+}
+
 async fn calculate_last_seen_tasks(
     txn: &DatabaseTransaction,
     claimed_task: &network_recalculation_task::Model,
@@ -928,6 +934,9 @@ async fn calculate_last_seen_tasks(
         .await
         .c(h!())?;
     if network_recalculation_task::Entity::find_by_id(claimed_task.id)
+        .select_only()
+        .column(network_recalculation_task::Column::Id)
+        .into_tuple::<i64>()
         .one(txn)
         .await
         .c(h!())?
@@ -935,29 +944,28 @@ async fn calculate_last_seen_tasks(
     {
         return Ok(());
     }
-    let tasks = network_recalculation_task::Model::find_by_statement(
-        Statement::from_sql_and_values(
+    let tasks =
+        NetworkLastSeenTask::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
-                select task.*
+                select task.id, task.network_freq_id
                 from network_recalculation_task task
                 join sigint_network_freq nf
                   on nf.id = task.network_freq_id
                 where task.task_kind = 'network_freq_last_seen'
                   and nf.network_id = $1
-                order by task.created_at, task.id
+                order by (task.id = $3) desc, task.created_at, task.id
                 limit $2
-                for update of task
             "#,
             vec![
                 network_id.into(),
                 NETWORK_RECALCULATION_LAST_SEEN_BATCH_SIZE.into(),
+                claimed_task.id.into(),
             ],
-        ),
-    )
-    .all(txn)
-    .await
-    .c(h!())?;
+        ))
+        .all(txn)
+        .await
+        .c(h!())?;
     let network_freq_ids = tasks
         .iter()
         .map(|task| task.network_freq_id)
@@ -966,19 +974,46 @@ async fn calculate_last_seen_tasks(
         return Ok(());
     }
     sigint_network_freq::Entity::find()
+        .select_only()
+        .column(sigint_network_freq::Column::Id)
         .filter(sigint_network_freq::Column::Id.is_in(network_freq_ids.clone()))
         .order_by_asc(sigint_network_freq::Column::Id)
         .lock(LockType::NoKeyUpdate)
+        .into_tuple::<i64>()
         .all(txn)
         .await
         .c(h!())?;
     lock_network_freq_recalculations(txn, &network_freq_ids)
         .await
         .c(h!())?;
+    // Enqueue transactions may take frequency locks before contending on the
+    // pending-task index, so claim task rows only after those locks.
+    claim_network_last_seen_task_batch(txn, &tasks)
+        .await
+        .c(h!())?;
     recalculate_last_seen(txn, &network_freq_ids)
         .await
         .c(h!())?;
     network_recalculation_task::Entity::delete_many()
+        .filter(
+            network_recalculation_task::Column::Id
+                .is_in(tasks.iter().map(|task| task.id)),
+        )
+        .exec(txn)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+async fn claim_network_last_seen_task_batch(
+    txn: &DatabaseTransaction,
+    tasks: &[NetworkLastSeenTask],
+) -> anyhow::Result<()> {
+    network_recalculation_task::Entity::update_many()
+        .col_expr(
+            network_recalculation_task::Column::StartedAt,
+            Expr::value(Some(Utc::now().naive_utc())),
+        )
         .filter(
             network_recalculation_task::Column::Id
                 .is_in(tasks.iter().map(|task| task.id)),
@@ -1481,6 +1516,165 @@ mod tests {
                 Some(timestamp)
             );
         }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn claimed_last_seen_task_is_included_beyond_batch_boundary() {
+        let env = cleanup().await.unwrap();
+        let timestamp = Utc::now().naive_utc().with_nanosecond(0).unwrap();
+        let network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        sigint_network_freq::Entity::insert_many(
+            (0..=NETWORK_RECALCULATION_LAST_SEEN_BATCH_SIZE).map(|index| {
+                sigint_network_freq::ActiveModel {
+                    network_id: Set(network.id),
+                    freq: Set(format!("{index}.0000")),
+                    created_at: Set(timestamp),
+                    kind: Set(
+                        crate::entities::sea_orm_active_enums::SigintNetworkKind::Vhf,
+                    ),
+                    modulation_id: Set(None),
+                    active_from: Set(timestamp - Duration::days(1)),
+                    active_to: Set(None),
+                    sigint_origin_id: Set(None),
+                    deleted: Set(false),
+                    original_id: Set(None),
+                    last_seen_dt: Set(None),
+                    modulation: Set("NFM".to_string()),
+                    encryption_id: Set(None),
+                    ..Default::default()
+                }
+            }),
+        )
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+        let network_freq_ids = sigint_network_freq::Entity::find()
+            .filter(sigint_network_freq::Column::NetworkId.eq(network.id))
+            .select_only()
+            .column(sigint_network_freq::Column::Id)
+            .order_by_asc(sigint_network_freq::Column::Id)
+            .into_tuple::<i64>()
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        enqueue_tasks(
+            &env.dbx,
+            network_freq_ids.iter().map(|network_freq_id| {
+                (
+                    NetworkRecalculationTaskKind::NetworkFreqLastSeen,
+                    *network_freq_id,
+                    None,
+                )
+            }),
+        )
+        .await
+        .unwrap();
+        let claimed_task = network_recalculation_task::Entity::find()
+            .filter(
+                network_recalculation_task::Column::NetworkFreqId
+                    .eq(*network_freq_ids.last().unwrap()),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+
+        calculate_task(&env.dbx, &claimed_task).await.unwrap();
+
+        assert!(network_recalculation_task::Entity::find_by_id(
+            claimed_task.id
+        )
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .is_none());
+        assert_eq!(
+            network_recalculation_task::Entity::find()
+                .filter(
+                    network_recalculation_task::Column::TaskKind
+                        .eq(NetworkRecalculationTaskKind::NetworkFreqLastSeen),
+                )
+                .filter(
+                    network_recalculation_task::Column::NetworkFreqId
+                        .is_in(network_freq_ids),
+                )
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn concurrent_enqueue_survives_captured_task_deletion() {
+        let env = cleanup().await.unwrap();
+        let fixture = setup_queue_fixture(&env.dbx).await;
+        enqueue_task(
+            &env.dbx,
+            NetworkRecalculationTaskKind::NetworkFreqLastSeen,
+            fixture.network_freq.id,
+            None,
+        )
+        .await
+        .unwrap();
+        let task = network_recalculation_task::Entity::find()
+            .filter(
+                network_recalculation_task::Column::TaskKind
+                    .eq(NetworkRecalculationTaskKind::NetworkFreqLastSeen),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        claim_network_last_seen_task_batch(
+            &txn,
+            &[NetworkLastSeenTask {
+                id: task.id,
+                network_freq_id: task.network_freq_id,
+            }],
+        )
+        .await
+        .unwrap();
+        let db = env.dbx.clone();
+        let network_freq_id = fixture.network_freq.id;
+        let enqueue = tokio::spawn(async move {
+            enqueue_task(
+                &db,
+                NetworkRecalculationTaskKind::NetworkFreqLastSeen,
+                network_freq_id,
+                None,
+            )
+            .await
+            .unwrap();
+        });
+        tokio::task::yield_now().await;
+
+        delete_claimed_task(&txn, task.id).await.unwrap();
+        txn.commit().await.unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(5), enqueue)
+            .await
+            .unwrap()
+            .unwrap();
+
+        let remaining = network_recalculation_task::Entity::find()
+            .filter(
+                network_recalculation_task::Column::TaskKind
+                    .eq(NetworkRecalculationTaskKind::NetworkFreqLastSeen),
+            )
+            .filter(
+                network_recalculation_task::Column::NetworkFreqId
+                    .eq(fixture.network_freq.id),
+            )
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].started_at, None);
     }
 
     fn invalidation_task(

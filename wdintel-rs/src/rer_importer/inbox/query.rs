@@ -22,6 +22,7 @@ use chrono::{Duration, NaiveDateTime, Utc};
 use sea_orm::{sea_query::PostgresQueryBuilder, *};
 use sea_query::{Alias, Expr, ExprTrait, Query, SelectStatement, SimpleExpr};
 use std::collections::{BTreeSet, HashMap};
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Mutex;
@@ -1752,33 +1753,40 @@ async fn load_inbox_message_id_bounds(
     let cache_key = format!(
         "{pool_identity}:{sort_by:?}:{since_date:?}:{till_date:?}:{use_source_bounds}"
     );
-    let gate = analytics_inbox_message_id_bounds_cache_gate(&cache_key).await;
-    let Some(gate) = gate else {
-        return load_inbox_message_id_bounds_uncached(
+    Ok(load_inbox_message_id_bounds_cached(&cache_key, || {
+        load_inbox_message_id_bounds_uncached(
             db,
             sort_by,
             since_date,
             till_date,
             use_source_bounds,
         )
-        .await;
+    })
+    .await
+    .context(h!())?)
+}
+
+async fn load_inbox_message_id_bounds_cached<Load, LoadFuture>(
+    cache_key: &str,
+    load: Load,
+) -> Result<MessageIdBounds, AppError>
+where
+    Load: FnOnce() -> LoadFuture,
+    LoadFuture: Future<Output = Result<MessageIdBounds, AppError>>,
+{
+    let gate = analytics_inbox_message_id_bounds_cache_gate(cache_key).await;
+    let Some(gate) = gate else {
+        return Ok(load().await.context(h!())?);
     };
     let _permit = gate.lock().await;
     if let Some(bounds) =
-        cached_analytics_inbox_message_id_bounds(&cache_key, &gate).await
+        cached_analytics_inbox_message_id_bounds(cache_key, &gate).await
     {
         return Ok(bounds);
     }
-    let result = load_inbox_message_id_bounds_uncached(
-        db,
-        sort_by,
-        since_date,
-        till_date,
-        use_source_bounds,
-    )
-    .await;
-    record_analytics_inbox_message_id_bounds(&cache_key, &gate, &result).await;
-    result
+    let result = load().await;
+    record_analytics_inbox_message_id_bounds(cache_key, &gate, &result).await;
+    Ok(result.context(h!())?)
 }
 
 async fn analytics_inbox_message_id_bounds_cache_gate(
@@ -1797,6 +1805,10 @@ async fn analytics_inbox_message_id_bounds_cache_gate(
             || entry.last_used.elapsed() < cache_ttl
             || entry.gate.try_lock().is_err()
     });
+    if let Some(entry) = cache.get_mut(cache_key) {
+        entry.last_used = now;
+        return Some(entry.gate.clone());
+    }
     if cache.len() >= ANALYTICS_INBOX_MESSAGE_ID_BOUNDS_CACHE_MAX_ENTRIES {
         let oldest_key = cache
             .iter()
@@ -1812,7 +1824,6 @@ async fn analytics_inbox_message_id_bounds_cache_gate(
             last_used: now,
         }
     });
-    entry.last_used = now;
     Some(entry.gate.clone())
 }
 
@@ -2876,30 +2887,30 @@ mod tests {
     #[tokio::test]
     async fn analytics_inbox_bounds_cache_coalesces_and_reuses_success() {
         let key = format!("bounds-cache-test-{}", uuid::Uuid::new_v4());
-        let first_gate = analytics_inbox_message_id_bounds_cache_gate(&key)
-            .await
-            .unwrap();
-        let second_gate = analytics_inbox_message_id_bounds_cache_gate(&key)
-            .await
-            .unwrap();
-        assert!(Arc::ptr_eq(&first_gate, &second_gate));
-
-        let bounds = MessageIdBounds {
-            min_id: Some(1),
-            max_id: Some(2),
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let load = || {
+            let calls = calls.clone();
+            async move {
+                calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                tokio::task::yield_now().await;
+                Ok(MessageIdBounds {
+                    min_id: Some(1),
+                    max_id: Some(2),
+                })
+            }
         };
-        record_analytics_inbox_message_id_bounds(
-            &key,
-            &first_gate,
-            &Ok(bounds),
-        )
-        .await;
-        let cached =
-            cached_analytics_inbox_message_id_bounds(&key, &first_gate)
-                .await
-                .unwrap();
-        assert_eq!(cached.min_id, Some(1));
-        assert_eq!(cached.max_id, Some(2));
+        let (first, second) = tokio::join!(
+            load_inbox_message_id_bounds_cached(&key, load),
+            load_inbox_message_id_bounds_cached(&key, load),
+        );
+        let third = load_inbox_message_id_bounds_cached(&key, load)
+            .await
+            .unwrap();
+
+        assert_eq!(first.unwrap().min_id, Some(1));
+        assert_eq!(second.unwrap().max_id, Some(2));
+        assert_eq!(third.min_id, Some(1));
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 
     #[test]

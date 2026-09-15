@@ -218,7 +218,7 @@ pub async fn oneoff_backfill_signal_message_uuid(
     mode: Mode,
     ps: &OneoffBackfillSignalMessageUuidPs,
 ) -> Result<(), AppError> {
-    validate_batch_size(ps.batch_size)?;
+    validate_batch_size(ps.batch_size).c(h!())?;
     let db = crate::new_pg_maintenance_connection_from_mode(mode)
         .await
         .c(h!())?;

@@ -8432,7 +8432,8 @@ async fn count_stats(
         master_keys_noimport,
     };
     let analytics_config = env.config.analytics.as_ref();
-    let analytics = if analytics_count_request_supported(&req) {
+    let analytics_supported = analytics_count_request_supported(&req);
+    let analytics = if analytics_supported {
         env.analytics.as_ref()
     } else {
         trace!(
@@ -8484,14 +8485,25 @@ async fn count_stats(
         .map(AnalyticsConfig::retry_cooldown_ms)
         .unwrap_or(ANALYTICS_RETRY_COOLDOWN_MS_DEFAULT);
     let postgres_query = query_count_stats_postgres(&req, &user, &env, access);
+    let postgres_reason = if !analytics_supported {
+        "query_policy"
+    } else if env.analytics.is_none() {
+        if analytics_config.is_some() {
+            "analytics_unavailable"
+        } else {
+            "unconfigured"
+        }
+    } else {
+        "circuit_open"
+    };
     if analytics_query.is_none() {
-        info!(target: "analytics_route", "operation=\"analysis stats count\" route=postgres reason={}",
-            if analytics.is_none() { "unconfigured" } else { "circuit_open" });
+        info!(target: "analytics_route", "operation=\"analysis stats count\" route=postgres reason={postgres_reason}");
     }
     let response = with_count_stats_analytics_fallback(
         analytics_query,
         core::time::Duration::from_millis(timeout_ms),
         postgres_query,
+        postgres_reason,
         analytics_attempt.map(|(_, retry_attempt)| retry_attempt),
         core::time::Duration::from_millis(retry_cooldown_ms),
     )
@@ -8577,6 +8589,8 @@ struct AnalyticsRetryCancellationGuard<'a> {
 pub(crate) struct AnalyticsReadOutcome<T> {
     pub(crate) value: T,
     pub(crate) postgres_reason: Option<&'static str>,
+    pub(crate) postgres_fallback_permit:
+        Option<tokio::sync::OwnedSemaphorePermit>,
 }
 
 pub(crate) fn postgres_pool_identity(db: &DatabaseConnection) -> usize {
@@ -8647,6 +8661,7 @@ async fn with_count_stats_analytics_fallback<T, A, P>(
     analytics_query: Option<A>,
     timeout: core::time::Duration,
     postgres_query: P,
+    postgres_reason: &'static str,
     retry_attempt: Option<AnalyticsRetryAttempt<'_>>,
     retry_cooldown: core::time::Duration,
 ) -> Result<T, AppError>
@@ -8657,7 +8672,7 @@ where
     let _retry_cancellation_guard = retry_attempt
         .as_ref()
         .map(AnalyticsRetryAttempt::cancellation_guard);
-    let mut reason = "analytics_skipped";
+    let mut reason = postgres_reason;
     if let Some(analytics_query) = analytics_query {
         let started = std::time::Instant::now();
         let open_circuit = match tokio::time::timeout(timeout, analytics_query)
@@ -8702,9 +8717,17 @@ where
         }
     }
 
-    let _fallback_permit =
-        acquire_analytics_postgres_fallback_capacity("analysis stats count")
-            .await?;
+    let _fallback_permit = if analytics_fallback_needs_capacity(reason) {
+        Some(
+            acquire_analytics_postgres_fallback_capacity(
+                "analysis stats count",
+            )
+            .await
+            .context(h!())?,
+        )
+    } else {
+        None
+    };
     let started = std::time::Instant::now();
     let response = postgres_query.await.map_err(|error| {
         map_postgres_runtime_timeout(error, "analysis stats count")
@@ -8735,7 +8758,8 @@ where
         analytics_query,
         postgres_query,
     )
-    .await?
+    .await
+    .context(h!())?
     .value)
 }
 
@@ -8752,7 +8776,7 @@ where
     P: FnOnce(DatabaseConnection) -> PFut,
     PFut: std::future::Future<Output = Result<T, AppError>>,
 {
-    with_analytics_read_fallback_inner(
+    Ok(with_analytics_read_fallback_inner(
         env,
         operation,
         analytics_supported,
@@ -8761,6 +8785,7 @@ where
         postgres_query,
     )
     .await
+    .context(h!())?)
 }
 
 pub(crate) async fn with_internally_timed_analytics_read_fallback<
@@ -8790,7 +8815,8 @@ where
         analytics_query,
         postgres_query,
     )
-    .await?
+    .await
+    .context(h!())?
     .value)
 }
 
@@ -8824,7 +8850,11 @@ where
     let mut reason = if !analytics_supported {
         "query_policy"
     } else if env.analytics.is_none() {
-        "unconfigured"
+        if env.config.analytics.is_some() {
+            "analytics_unavailable"
+        } else {
+            "unconfigured"
+        }
     } else {
         "circuit_open"
     };
@@ -8859,6 +8889,7 @@ where
                 return Ok(AnalyticsReadOutcome {
                     value: response,
                     postgres_reason: None,
+                    postgres_fallback_permit: None,
                 });
             }
             Some(Err(err)) => {
@@ -8897,8 +8928,13 @@ where
         );
     }
 
-    let _fallback_permit = if analytics_fallback_needs_capacity(reason) {
-        Some(acquire_analytics_postgres_fallback_capacity(operation).await?)
+    let postgres_fallback_permit = if analytics_fallback_needs_capacity(reason)
+    {
+        Some(
+            acquire_analytics_postgres_fallback_capacity(operation)
+                .await
+                .context(h!())?,
+        )
     } else {
         None
     };
@@ -8911,20 +8947,26 @@ where
     response.map(|value| AnalyticsReadOutcome {
         value,
         postgres_reason: Some(reason),
+        postgres_fallback_permit,
     })
 }
 
-fn analytics_fallback_needs_capacity(reason: &str) -> bool {
+pub(crate) fn analytics_fallback_needs_capacity(reason: &str) -> bool {
     matches!(
         reason,
         "analytics_error"
             | "analytics_timeout"
             | "analytics_unhealthy"
+            | "analytics_unavailable"
             | "circuit_open"
+            | "candidate_ordering_incomplete"
+            | "candidate_revalidation_incomplete"
+            | "postgres_tail_error"
+            | "revalidation_error"
     )
 }
 
-async fn acquire_analytics_postgres_fallback_capacity(
+pub(crate) async fn acquire_analytics_postgres_fallback_capacity(
     operation: &str,
 ) -> Result<tokio::sync::OwnedSemaphorePermit, AppError> {
     let timeout = core::time::Duration::from_millis(

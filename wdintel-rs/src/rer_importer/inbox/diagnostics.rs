@@ -13,6 +13,7 @@ pub(super) struct InboxReadDiagnostics {
     pub(super) ordered_count: Option<usize>,
     result_count: Option<usize>,
     postgres_started: Option<Instant>,
+    _analytics_fallback_permit: Option<tokio::sync::OwnedSemaphorePermit>,
 }
 
 impl InboxReadDiagnostics {
@@ -30,13 +31,31 @@ impl InboxReadDiagnostics {
             ordered_count: None,
             result_count: None,
             postgres_started: None,
+            _analytics_fallback_permit: None,
         }
     }
 
     pub(super) fn fallback(&mut self, reason: &'static str) {
-        self.route = "postgres_fallback";
+        self.route = if matches!(reason, "unconfigured" | "query_policy") {
+            "postgres"
+        } else {
+            "postgres_fallback"
+        };
         self.reason = reason;
         self.failed_stage = self.stage;
+    }
+
+    pub(super) fn hold_analytics_fallback_capacity(
+        &mut self,
+        permit: Option<tokio::sync::OwnedSemaphorePermit>,
+    ) {
+        if permit.is_some() {
+            self._analytics_fallback_permit = permit;
+        }
+    }
+
+    pub(super) fn has_analytics_fallback_capacity(&self) -> bool {
+        self._analytics_fallback_permit.is_some()
     }
 
     pub(super) fn start_postgres(&mut self) {
