@@ -3255,9 +3255,17 @@ fn generic_stats_base_select() -> Select<signal_message::Entity> {
         )
         .filter(signal_message::Column::Deleted.eq(false))
         .group_by(signal_message::Column::Id)
+        .group_by(signal_message::Column::CreatedAt)
+        .group_by(signal_message::Column::LoginId)
         .group_by(sigint_inbox_item::Column::Id)
+        .group_by(sigint_inbox_item::Column::Datetime)
         .group_by(signal_message_group::Column::GroupMasterKey)
+        .group_by(sigint_inbox_item::Column::Freq)
+        .group_by(sigint_inbox_item::Column::LocationV2)
+        .group_by(sigint_inbox_item::Column::UnitV2)
+        .group_by(sigint_inbox_item::Column::PostId)
         .group_by(signal_group_aor::Column::Id)
+        .group_by(signal_group_aor::Column::AorId)
 }
 
 async fn load_network_stats(
@@ -3372,8 +3380,12 @@ fn network_stats_base_select() -> Select<signal_message::Entity> {
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_network::Column::Deleted.eq(false))
         .group_by(signal_message::Column::Id)
+        .group_by(signal_message::Column::CreatedAt)
+        .group_by(signal_message::Column::Timestamp)
         .group_by(sigint_inbox_item::Column::Id)
+        .group_by(sigint_inbox_item::Column::Datetime)
         .group_by(signal_message_group::Column::GroupMasterKey)
+        .group_by(sigint_inbox_item::Column::Freq)
         .group_by(sigint_inbox_item_network::Column::SigintNetworkId)
 }
 
