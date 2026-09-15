@@ -44,6 +44,7 @@ import {
   pushShortStateToUrl,
   pushStateToUrl,
   resolveDutyTargetMessageIds,
+  toQueryState,
   toRerDutyStateFromShort,
   toShortQueryState,
   windowInitialMessageItems,
@@ -564,7 +565,7 @@ describe('rer-duty utils', () => {
     expect(parseStateFromUrl()).toEqual({ messageFeeds: [['mf-0', emptyFilter()]] });
   });
 
-  it('restores persisted filters and merges their options into url state', () => {
+  it('restores persisted filters without merging their options into url state', () => {
     const storage = new Map<string, string>();
     Object.defineProperty(window, 'localStorage', {
       configurable: true,
@@ -619,8 +620,27 @@ describe('rer-duty utils', () => {
     expect(parseStateFromUrl()).toEqual({
       messageFeeds: [
         ['mf-other', { ...emptyFilter(), groupsSelected: ['group-a'] }],
+        ['mf-stored', { ...emptyFilter(), freqsSelected: ['166.6'] }],
+      ],
+    });
+
+    clearPersistedDutyFilterState();
+  });
+
+  it('round-trips feed options through long state urls', () => {
+    const feed = indicatorFeed({
+      filter: { ...emptyFilter(), freqsSelected: ['166.6'] },
+      adjacentFreqsRange: 0.005,
+      highlightSignalsEnabled: true,
+      onlyMyUnitTagsEnabled: true,
+    });
+
+    pushStateToUrl(toQueryState([feed]));
+
+    expect(parseStateFromUrl()).toEqual({
+      messageFeeds: [
         [
-          'mf-stored',
+          'mf-0',
           { ...emptyFilter(), freqsSelected: ['166.6'] },
           {
             adjacentFreqsRange: 0.005,
@@ -630,8 +650,6 @@ describe('rer-duty utils', () => {
         ],
       ],
     });
-
-    clearPersistedDutyFilterState();
   });
 
   it('builds map search hrefs from deduplicated etalons and extracts point etalons', () => {

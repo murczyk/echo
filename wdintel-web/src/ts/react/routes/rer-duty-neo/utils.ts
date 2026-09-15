@@ -19,17 +19,13 @@ import { getCanonicalUnitIdValue, isCanonicalUnitIdValue } from '../../utils/uni
 import { normalizeRerDutyQueryStateWf } from '../../../rer-duty-filter-normalizer';
 import { readPersistedDutyFilterState } from './duty-filter-persistence';
 
-export type RerDutyState = {
-  messageFeeds: [string, RerDutyFeedFilterState][];
-};
-
 export type DutyFeedFilterOptions = {
   adjacentFreqsRange: number;
   highlightSignalsEnabled: boolean;
   onlyMyUnitTagsEnabled: boolean;
 };
 
-type InitialRerDutyState = {
+export type RerDutyState = {
   messageFeeds: [string, RerDutyFeedFilterState, DutyFeedFilterOptions?][];
 };
 
@@ -275,7 +271,7 @@ function normalizePersistedFeedEntries(
   });
 }
 
-function parsePersistedDutyState(): InitialRerDutyState | null {
+function parsePersistedDutyState(): RerDutyState | null {
   const persistedState = readPersistedDutyFilterState();
   if (!persistedState || typeof persistedState !== 'object' || Array.isArray(persistedState)) {
     return null;
@@ -447,7 +443,7 @@ export function buildInboxReq(opts: {
 
 export const normalizeFeed = normalizeRerDutyQueryStateWf;
 
-export function parseStateFromUrl(): InitialRerDutyState {
+export function parseStateFromUrl(): RerDutyState {
   const params = new URLSearchParams(window.location.search);
   const stateStr = params.get('state');
   if (!stateStr) {
@@ -463,13 +459,7 @@ export function parseStateFromUrl(): InitialRerDutyState {
     const raw = JSON.parse(decodeURIComponent(stateStr)) as Record<string, unknown>;
     if (!raw || typeof raw !== 'object') return { messageFeeds: [['mf-0', emptyFilter()]] };
     const wfs = raw.messageFeeds ?? raw.waterfalls ?? raw.waterfall;
-    const persistedOptionsById = readPersistedDutyFeedOptionsById();
-    return {
-      messageFeeds: normalizeFeedEntries(wfs).map(([id, filter]) => {
-        const options = persistedOptionsById.get(id);
-        return options ? [id, filter, options] : [id, filter];
-      }),
-    };
+    return { messageFeeds: normalizePersistedFeedEntries(wfs) };
   } catch {
     return { messageFeeds: [['mf-0', emptyFilter()]] };
   }
@@ -1250,7 +1240,15 @@ export function feedColumnUnreadDisplayed(feed: MessageFeedState): number {
 
 export function toQueryState(messageFeeds: MessageFeedState[]): RerDutyState {
   return {
-    messageFeeds: messageFeeds.map((f) => [f.id, f.filter]),
+    messageFeeds: messageFeeds.map((f) => [
+      f.id,
+      f.filter,
+      {
+        adjacentFreqsRange: f.adjacentFreqsRange,
+        highlightSignalsEnabled: f.highlightSignalsEnabled,
+        onlyMyUnitTagsEnabled: f.onlyMyUnitTagsEnabled,
+      },
+    ]),
   };
 }
 

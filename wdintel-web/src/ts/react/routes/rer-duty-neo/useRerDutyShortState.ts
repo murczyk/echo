@@ -10,6 +10,7 @@ import {
   pushStateToUrl,
   readPersistedDutyFeedOptionsById,
   stableStringify,
+  toQueryState,
   toRerDutyStateFromShort,
   toShortQueryState,
 } from './utils';
@@ -123,7 +124,7 @@ export function useRerDutyShortState(params: Params) {
     (next: MessageFeedState[]) => {
       if (shortStateIdRef.current && !ready) blockHydrationRef.current = true;
       if (!featureEnabled) {
-        pushStateToUrl({ messageFeeds: next.map((feed) => [feed.id, feed.filter]) });
+        pushStateToUrl(toQueryState(next));
         return;
       }
       const queryState = toShortQueryState(next);
@@ -137,7 +138,7 @@ export function useRerDutyShortState(params: Params) {
         pushShortStateToUrl(cached.id);
         return;
       }
-      pushStateToUrl({ messageFeeds: next.map((feed) => [feed.id, feed.filter]) });
+      pushStateToUrl(toQueryState(next));
       const requestId = requestRef.current.requestId + 1;
       requestRef.current = { requestId, hash: stateHash };
       rerDutyShortStateCreate(queryState)
@@ -153,7 +154,7 @@ export function useRerDutyShortState(params: Params) {
           if (requestRef.current.requestId !== requestId) return;
           if (requestRef.current.hash !== stateHash) return;
           paramsRef.current.setError(error instanceof Error ? error.message : String(error));
-          pushStateToUrl({ messageFeeds: next.map((feed) => [feed.id, feed.filter]) });
+          pushStateToUrl(toQueryState(next));
         });
     },
     [featureEnabled, ready],

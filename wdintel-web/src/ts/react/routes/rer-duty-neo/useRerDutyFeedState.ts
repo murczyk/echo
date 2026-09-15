@@ -17,6 +17,7 @@ import {
   parseDutyMessageUidFromWindow,
   pushStateToUrl,
   stableStringify,
+  toQueryState,
 } from './utils';
 import type { MessageCursor, MessageFeedState } from './utils';
 import { useRerDutyFeedCrud } from './useRerDutyFeedCrud';
@@ -194,6 +195,9 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     if (shortStateIdRef.current && !shortStateReady) return;
     const result = persistDutyFilterState(persistedFilterStateRef.current);
     if (!result.ok) console.warn('Failed to persist Duty filters', result.error);
+    if (new URL(window.location.href).searchParams.has('state')) {
+      pushStateToUrl(toQueryState(messageFeedsRef.current));
+    }
   }, [filterPersistenceReady, persistedFilterStateHash, shortStateIdRef, shortStateReady]);
 
   const {
@@ -620,7 +624,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         };
       });
       if (changed) {
-        pushStateToUrl({ messageFeeds: next.map((feed) => [feed.id, feed.filter]) });
+        pushStateToUrl(toQueryState(next));
         return next;
       }
       return current;
