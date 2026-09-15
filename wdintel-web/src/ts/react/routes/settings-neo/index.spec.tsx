@@ -299,6 +299,11 @@ vi.mock('./SettingsMyOrganismSection', () => ({
 
 import { SettingsNeoPage } from './index';
 import { preserveUnknownOrganismIds } from './SettingsMyGroupsSection';
+import {
+  isDutyFilterPersistenceDisabled,
+  persistDutyFilterState,
+  readPersistedDutyFilterState,
+} from '../rer-duty-neo/duty-filter-persistence';
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -316,6 +321,15 @@ describe('SettingsNeoPage', () => {
 
   beforeEach(() => {
     window.history.replaceState({}, '', '/settings-neo');
+    const storage = new Map<string, string>();
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+        removeItem: (key: string) => storage.delete(key),
+      },
+    });
     saveUserDutySettings.mockReset();
     saveUserDutySettings.mockImplementation(async (settings) => settings);
     fetchServerInfoMock.mockReset();
@@ -459,6 +473,28 @@ describe('SettingsNeoPage', () => {
       secondSave.resolve();
       await Promise.resolve();
     });
+  });
+
+  it('disables browser persistence and removes the current Duty filter', async () => {
+    persistDutyFilterState({ messageFeeds: [['mf-0', { groupsSelected: ['group-a'] }]] });
+    await act(async () => {
+      root.render(<SettingsNeoPage section="duty" />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const persistenceSwitch = Array.from(container.querySelectorAll('button')).find(
+      (button) =>
+        (button.textContent === 'on' || button.textContent === 'off') &&
+        button.parentElement?.textContent?.includes('Не зберігати поточний фільтр'),
+    );
+    expect(persistenceSwitch).toBeTruthy();
+
+    await act(async () => persistenceSwitch?.click());
+
+    expect(isDutyFilterPersistenceDisabled()).toBe(true);
+    expect(readPersistedDutyFilterState()).toBeNull();
+    expect(saveUserDutySettings).not.toHaveBeenCalled();
   });
 
   it('saves analysis map placement and emits the updated settings event', async () => {

@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { minimalInboxMessage } from '../inbox-message-mocks';
+import { emptyFilter } from '../utils';
 
 const useRerDutyFeedsMock = vi.hoisted(() => vi.fn());
 const notifyMock = vi.hoisted(() => vi.fn());
@@ -92,6 +93,13 @@ vi.mock('../RerDutyNeoWorkspace', () => ({
             includeValues: [],
             excludeValues: ['153.6250', '154.0000'],
           })
+        }
+      />
+      <button
+        type="button"
+        aria-label="Скинути поточний фільтр"
+        onClick={() =>
+          buildFeedColumnModel(messageFeeds[0]).filterPanel.actions.onDiscardCurrentFilter()
         }
       />
       {messageFeeds[0]?.items[0] ? (
@@ -685,6 +693,37 @@ describe('RerDutyNeoPage creation workflow', () => {
       ...state.messageFeeds[0].filter,
       freqsSelected: null,
       freqsDenied: ['153.6250', '154.0000'],
+    });
+
+    root.unmount();
+  });
+
+  it('discards the current filter and its saved-filter selection', async () => {
+    const { container, root, state } = await renderPage();
+
+    await click(container.querySelector('button[aria-label="Скинути поточний фільтр"]'));
+
+    expect(state.setSelectedSavedIdByFeedId).toHaveBeenCalledOnce();
+    expect(state.setSaveFilterNameByFeedId).toHaveBeenCalledOnce();
+    expect(state.applyFilter).toHaveBeenCalledWith('feed-1', emptyFilter());
+    const updateFeeds = state.setMessageFeeds.mock.calls[0]?.[0];
+    const updatedFeeds = updateFeeds(
+      state.messageFeeds.map((feed) => ({
+        ...feed,
+        adjacentFreqsRange: 0.005,
+        highlightSignalsEnabled: true,
+        onlyMyUnitTagsEnabled: true,
+      })),
+    );
+    expect(updatedFeeds[0]).toMatchObject({
+      adjacentFreqsRange: 0,
+      highlightSignalsEnabled: false,
+      onlyMyUnitTagsEnabled: false,
+    });
+    expect(updatedFeeds[1]).toMatchObject({
+      adjacentFreqsRange: 0.005,
+      highlightSignalsEnabled: true,
+      onlyMyUnitTagsEnabled: true,
     });
 
     root.unmount();

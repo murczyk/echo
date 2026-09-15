@@ -31,6 +31,7 @@ import {
   shouldBufferNewerMessages,
   getPointEtalonsFromMessage,
   getShortStateIdFromUrl,
+  hasActiveFeedFilter,
   isMessageEntityExcluded,
   messageHasPalitraTag,
   normalizeFeed,
@@ -46,6 +47,11 @@ import {
   toShortQueryState,
   windowInitialMessageItems,
 } from '../utils';
+import {
+  clearPersistedDutyFilterState,
+  persistDutyFilterState,
+  setDutyFilterPersistenceDisabled,
+} from '../duty-filter-persistence';
 import type { MessageFeedState } from '../utils';
 import type { InboxMessage, Network, SignalProfileEntry, Tag, Unit } from '../../../../../Bindings';
 
@@ -304,6 +310,14 @@ describe('rer-duty utils', () => {
     ).toBe(true);
   });
 
+  it('detects active message filters without treating highlighting as filtering', () => {
+    expect(hasActiveFeedFilter(emptyFilter())).toBe(false);
+    expect(hasActiveFeedFilter({ ...emptyFilter(), groupsDenied: ['group-a'] })).toBe(true);
+    expect(hasActiveFeedFilter({ ...emptyFilter(), selectedDeviceNames: ['device-a'] })).toBe(true);
+    expect(hasActiveFeedFilter({ ...emptyFilter(), unitsExactMatchOnly: true })).toBe(true);
+    expect(hasActiveFeedFilter({ ...emptyFilter(), highlightKeywordSetId: 5 })).toBe(false);
+  });
+
   it('compares keyword highlight by set id in filtersEqual', () => {
     const base = emptyFilter();
     expect(
@@ -530,6 +544,29 @@ describe('rer-duty utils', () => {
   it('falls back to default when url state is corrupted', () => {
     window.history.replaceState({}, '', '/?state=%7Bbad-json');
     expect(parseStateFromUrl()).toEqual({ messageFeeds: [['mf-0', emptyFilter()]] });
+  });
+
+  it('restores the current filters from local storage when the url has no state', () => {
+    const storage = new Map<string, string>();
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+        removeItem: (key: string) => storage.delete(key),
+      },
+    });
+    setDutyFilterPersistenceDisabled(false);
+    persistDutyFilterState({
+      messageFeeds: [['mf-stored', { ...emptyFilter(), freqsSelected: ['155.5'] }]],
+    });
+    window.history.replaceState({}, '', '/rer-duty-neo');
+
+    expect(parseStateFromUrl()).toEqual({
+      messageFeeds: [['mf-stored', { ...emptyFilter(), freqsSelected: ['155.5'] }]],
+    });
+
+    clearPersistedDutyFilterState();
   });
 
   it('builds map search hrefs from deduplicated etalons and extracts point etalons', () => {

@@ -209,6 +209,7 @@ export function FeedColumnHeader({
   onNotificationStatusChanged,
 }: FeedColumnHeaderProps) {
   const iconOnlyHeader = feedCount >= DUTY_ICON_ONLY_COLUMN_HEADER_MIN_FEEDS;
+  const hasActiveFilter = filterPanel.hasActiveFilter;
 
   return (
     <Box
@@ -260,7 +261,28 @@ export function FeedColumnHeader({
             <HeaderPanelToggle
               iconOnly={iconOnlyHeader}
               label="Фільтри"
-              icon={<SettingsOutlinedIcon />}
+              icon={
+                <Box
+                  component="span"
+                  sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}
+                >
+                  {hasActiveFilter ? (
+                    <Box
+                      component="span"
+                      data-duty-active-filter-indicator
+                      aria-hidden="true"
+                      sx={{
+                        width: 6,
+                        height: 6,
+                        flexShrink: 0,
+                        borderRadius: '50%',
+                        bgcolor: 'primary.main',
+                      }}
+                    />
+                  ) : null}
+                  <SettingsOutlinedIcon />
+                </Box>
+              }
               expanded={showFilters}
               onClick={onToggleFilters}
             />

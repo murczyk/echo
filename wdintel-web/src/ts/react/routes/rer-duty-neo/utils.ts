@@ -17,6 +17,7 @@ import { emptyArrToNull, isNullOrUndefined, isPresent } from '../../utils/misc';
 import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
 import { getCanonicalUnitIdValue, isCanonicalUnitIdValue } from '../../utils/unit-search';
 import { normalizeRerDutyQueryStateWf } from '../../../rer-duty-filter-normalizer';
+import { readPersistedDutyFilterState } from './duty-filter-persistence';
 
 export type RerDutyState = {
   messageFeeds: [string, RerDutyFeedFilterState][];
@@ -194,6 +195,27 @@ export function emptyFilter(): RerDutyFeedFilterState {
   };
 }
 
+export function hasActiveFeedFilter(filter: RerDutyFeedFilterState): boolean {
+  return (
+    [
+      filter.groupsSelected,
+      filter.groupsDenied,
+      filter.sendersSelected,
+      filter.deniedSenders,
+      filter.freqsSelected,
+      filter.freqsDenied,
+      filter.postsSelected,
+      filter.postsDenied,
+      filter.unitsSelected,
+      filter.unitsDenied,
+      filter.selectedUnitIds,
+      filter.deniedUnitIds,
+      filter.selectedDeviceNames,
+      filter.deniedDeviceNames,
+    ].some((values) => (values?.length ?? 0) > 0) || filter.unitsExactMatchOnly === true
+  );
+}
+
 function normalizeFeedEntries(entries: unknown): [string, RerDutyFeedFilterState][] {
   if (!Array.isArray(entries) || entries.length === 0) return [['mf-0', emptyFilter()]];
   return entries.map((entry: unknown) => {
@@ -361,7 +383,16 @@ export const normalizeFeed = normalizeRerDutyQueryStateWf;
 export function parseStateFromUrl(): RerDutyState {
   const params = new URLSearchParams(window.location.search);
   const stateStr = params.get('state');
-  if (!stateStr) return { messageFeeds: [['mf-0', emptyFilter()]] };
+  if (!stateStr) {
+    if (params.has('state-short')) return { messageFeeds: [['mf-0', emptyFilter()]] };
+    const persistedState = readPersistedDutyFilterState();
+    if (persistedState && typeof persistedState === 'object' && !Array.isArray(persistedState)) {
+      const raw = persistedState as Record<string, unknown>;
+      const wfs = raw.messageFeeds ?? raw.waterfalls ?? raw.waterfall;
+      if (wfs != null) return { messageFeeds: normalizeFeedEntries(wfs) };
+    }
+    return { messageFeeds: [['mf-0', emptyFilter()]] };
+  }
   try {
     const raw = JSON.parse(decodeURIComponent(stateStr)) as Record<string, unknown>;
     if (!raw || typeof raw !== 'object') return { messageFeeds: [['mf-0', emptyFilter()]] };

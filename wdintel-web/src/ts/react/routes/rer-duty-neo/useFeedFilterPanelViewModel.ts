@@ -52,6 +52,8 @@ type FeedFilterSelectionViewModel<T> = {
 
 export type FeedFilterPanelViewModel = {
   isDarkMode: boolean;
+  hasActiveFilter: boolean;
+  onDiscardCurrentFilter: () => void;
   groups: FeedFilterSelectionViewModel<string>;
   senders: FeedFilterSelectionViewModel<{ id: string; label: string }>;
   freqs: FeedFilterSelectionViewModel<string> & {
@@ -251,6 +253,8 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
 
   return {
     isDarkMode,
+    hasActiveFilter: panel.hasActiveFilter,
+    onDiscardCurrentFilter: actions.onDiscardCurrentFilter,
     groups: {
       mode: groupsSelectionState.mode,
       value: groupsSelectionState.localValue,

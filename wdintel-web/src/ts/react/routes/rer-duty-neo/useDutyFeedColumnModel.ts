@@ -6,8 +6,10 @@ import type {
 import type { FeedColumnModel } from './types';
 import { useDutyFeedColumnActions, type RerDutyFeedsBundle } from './useDutyFeedColumnActions';
 import {
+  emptyFilter,
   feedIndicatorUnreadCount,
   feedNeedsUnreadPrefetch,
+  hasActiveFeedFilter,
   type MessageFeedState,
   type TagsLayoutVariant,
 } from './utils';
@@ -109,6 +111,11 @@ function buildFeedFilterPanel(
 
   return {
     feedId: feed.id,
+    hasActiveFilter:
+      hasActiveFeedFilter(feed.filter) ||
+      feed.adjacentFreqsRange !== 0 ||
+      feed.highlightSignalsEnabled ||
+      feed.onlyMyUnitTagsEnabled,
     filterState: {
       groupsSelected: feed.filter.groupsSelected ?? [],
       deniedGroups: feed.filter.groupsDenied ?? [],
@@ -240,6 +247,23 @@ function buildFeedFilterPanel(
       onRenameSelectedSavedFilter: handleRenameSelectedSavedFilter,
       onDeleteSelectedSavedFilter: handleDeleteSelectedSavedFilter,
       onApplySavedFilter: (saved) => handleApplySavedFilter(feed.id, saved),
+      onDiscardCurrentFilter: () => {
+        setSelectedSavedIdByFeedId((prev) => ({ ...prev, [feed.id]: null }));
+        setSaveFilterNameByFeedId((prev) => ({ ...prev, [feed.id]: '' }));
+        applyFilter(feed.id, emptyFilter());
+        setMessageFeeds((prev) =>
+          prev.map((item) =>
+            item.id === feed.id
+              ? {
+                  ...item,
+                  adjacentFreqsRange: 0,
+                  highlightSignalsEnabled: false,
+                  onlyMyUnitTagsEnabled: false,
+                }
+              : item,
+          ),
+        );
+      },
     },
   };
 }

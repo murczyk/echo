@@ -22,6 +22,7 @@ import {
   feedLoadedUnreadCount,
   feedPendingNewerUnreadCount,
 } from '../utils';
+import { readPersistedDutyFilterState } from '../duty-filter-persistence';
 
 const fixture = createDutyFeedStateFixture();
 const hoisted = getDutyApiMocks();
@@ -50,6 +51,20 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(1);
     expect(apiRef.current?.messageFeeds[0]?.items[0]?.[0]).toBe(1);
     expect(apiRef.current?.messageFeeds[0]?.loading).toBe(false);
+  });
+
+  it('persists applied filters in local storage', async () => {
+    const { apiRef } = await mountLoadedFeed();
+
+    apiRef.current!.applyFilter('mf-0', {
+      ...apiRef.current!.messageFeeds[0].filter,
+      groupsSelected: ['group-a'],
+    });
+    await act(async () => flushMicrotasks());
+
+    expect(readPersistedDutyFilterState()).toMatchObject({
+      messageFeeds: [['mf-0', expect.objectContaining({ groupsSelected: ['group-a'] })]],
+    });
   });
 
   it.each([

@@ -15,6 +15,7 @@ import {
   findAllAdjacentFreqs,
   parseStateFromUrl,
   pushStateToUrl,
+  stableStringify,
 } from './utils';
 import type { MessageCursor, MessageFeedState } from './utils';
 import { useRerDutyFeedCrud } from './useRerDutyFeedCrud';
@@ -50,6 +51,7 @@ import {
   DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS,
   withDutyFeedRequestDeadline,
 } from './dutyFeedRequestDeadline';
+import { persistDutyFilterState } from './duty-filter-persistence';
 
 export type FeedStateDeps = {
   freqs: string[];
@@ -171,6 +173,18 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     shortStateIdRef,
     persistStateToUrl,
   } = useRerDutyShortState({ messageFeeds, messageFeedsRef, setMessageFeeds, setError });
+  const persistedFilterState = {
+    messageFeeds: messageFeeds.map((feed) => [feed.id, feed.filter] as const),
+  };
+  const persistedFilterStateRef = useRef(persistedFilterState);
+  persistedFilterStateRef.current = persistedFilterState;
+  const persistedFilterStateHash = stableStringify(persistedFilterState);
+
+  useEffect(() => {
+    if (shortStateIdRef.current && !shortStateReady) return;
+    const result = persistDutyFilterState(persistedFilterStateRef.current);
+    if (!result.ok) console.warn('Failed to persist Duty filters', result.error);
+  }, [persistedFilterStateHash, shortStateIdRef, shortStateReady]);
 
   const {
     inboxCallsignInfoMap,
