@@ -522,8 +522,7 @@ describe('ImageAttachmentPreviewRenderer', () => {
     const stageNavigation = container.querySelectorAll<HTMLButtonElement>(
       '[data-attachment-preview-stage-nav]',
     );
-    expect(stageNavigation).toHaveLength(2);
-    expect(Array.from(stageNavigation).every((button) => button.disabled)).toBe(true);
+    expect(stageNavigation).toHaveLength(0);
     latestStageProps?.onPrimaryClick?.(new MouseEvent('click'), 'background');
     expect(onClose).not.toHaveBeenCalled();
 

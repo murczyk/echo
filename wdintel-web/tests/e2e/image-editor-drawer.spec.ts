@@ -274,6 +274,14 @@ test.describe('image editor drawer integration #3448', () => {
     }
   });
 
+  test('renders the edited image without a border #3448', async ({ page }) => {
+    const { editor } = await openPendingImageEditor(page, 'duty');
+    const document = editor.locator('[data-image-editor-document]');
+
+    await expect(document).toBeVisible();
+    await expect(document).toHaveCSS('border-top-width', '0px');
+  });
+
   test('presents shortcut help across desktop and mobile controls #3448', async ({ page }) => {
     const { editor } = await openPendingImageEditor(page, 'duty');
     await page.setViewportSize({ width: 1280, height: 900 });
