@@ -8,6 +8,7 @@ import {
   getShortStateIdFromUrl,
   pushShortStateToUrl,
   pushStateToUrl,
+  readPersistedDutyFeedOptionsById,
   stableStringify,
   toRerDutyStateFromShort,
   toShortQueryState,
@@ -38,6 +39,9 @@ export function useRerDutyShortState(params: Params) {
   });
   const mountedRef = useRef(true);
   const shortStateIdRef = useRef(getShortStateIdFromUrl());
+  const [persistedFeedOptionsById] = useState(() =>
+    shortStateIdRef.current ? readPersistedDutyFeedOptionsById() : new Map(),
+  );
   const [filterPersistenceReady, setFilterPersistenceReady] = useState(
     shortStateIdRef.current === null,
   );
@@ -85,7 +89,7 @@ export function useRerDutyShortState(params: Params) {
             setFilterPersistenceReady(true);
             current.setMessageFeeds(
               (state.messageFeeds ?? [['mf-0', emptyFilter()]]).map(([id, filter]) =>
-                createEmptyFeedState(id, filter),
+                createEmptyFeedState(id, filter, persistedFeedOptionsById.get(id)),
               ),
             );
           } catch (error) {

@@ -126,6 +126,61 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     );
   });
 
+  it('restores persisted options when hydrating a short link', async () => {
+    persistDutyFilterState({
+      messageFeeds: [
+        [
+          'mf-short',
+          { ...emptyFilter(), groupsSelected: ['stored-group'] },
+          {
+            adjacentFreqsRange: 0.005,
+            highlightSignalsEnabled: true,
+            onlyMyUnitTagsEnabled: true,
+          },
+        ],
+      ],
+    });
+    window.history.replaceState({}, '', '/rer-duty-neo?state-short=short-id');
+    hoisted.systemSettingsCurrent.mockResolvedValueOnce({
+      id: 1,
+      rerAnalysisUnitsExactMatchOnlyDefault: false,
+      rerDutyTestEnabled: false,
+      rerDutyInsertHistoricalInterceptions: false,
+      rerDutyTestSinceMs: 0,
+      rerDutyTestLimit: 1,
+      rerDutyPollIntervalSec: 1,
+      rerShortUrlEnabled: true,
+    });
+    hoisted.rerDutyShortStateGet.mockResolvedValueOnce({
+      state: {
+        waterfalls: [['mf-short', { ...emptyFilter(), freqsSelected: ['155.5'] }]] as Array<
+          [string, ReturnType<typeof emptyFilter>]
+        >,
+      },
+    });
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} freqs={['155.5', '155.504']} />);
+      await flushMicrotasks();
+    });
+
+    expect(apiRef.current?.messageFeeds[0]).toMatchObject({
+      id: 'mf-short',
+      adjacentFreqsRange: 0.005,
+      highlightSignalsEnabled: true,
+      onlyMyUnitTagsEnabled: true,
+    });
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selectedFreqs: ['155.5', '155.504'],
+        highlightSignals: true,
+      }),
+    );
+  });
+
   it('keeps stored filters out of direct message navigation', async () => {
     persistDutyFilterState({
       messageFeeds: [

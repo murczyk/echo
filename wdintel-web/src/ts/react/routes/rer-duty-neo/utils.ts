@@ -275,6 +275,26 @@ function normalizePersistedFeedEntries(
   });
 }
 
+function parsePersistedDutyState(): InitialRerDutyState | null {
+  const persistedState = readPersistedDutyFilterState();
+  if (!persistedState || typeof persistedState !== 'object' || Array.isArray(persistedState)) {
+    return null;
+  }
+  const raw = persistedState as Record<string, unknown>;
+  const messageFeeds = raw.messageFeeds ?? raw.waterfalls ?? raw.waterfall;
+  return messageFeeds == null
+    ? null
+    : { messageFeeds: normalizePersistedFeedEntries(messageFeeds) };
+}
+
+export function readPersistedDutyFeedOptionsById(): Map<string, DutyFeedFilterOptions> {
+  const optionsByFeedId = new Map<string, DutyFeedFilterOptions>();
+  parsePersistedDutyState()?.messageFeeds.forEach(([id, , options]) => {
+    if (options) optionsByFeedId.set(id, options);
+  });
+  return optionsByFeedId;
+}
+
 /** Distinguishes null/undefined from []. Backend treats None (no filter) vs Some([]) (empty filter → no rows) differently. */
 function optArrEqual(a: string[] | null | undefined, b: string[] | null | undefined): boolean {
   if (isNullOrUndefined(a) && isNullOrUndefined(b)) return true;
@@ -435,12 +455,8 @@ export function parseStateFromUrl(): InitialRerDutyState {
     if (parseDutyMessageUidFromWindow() !== null) {
       return { messageFeeds: [['mf-0', emptyFilter()]] };
     }
-    const persistedState = readPersistedDutyFilterState();
-    if (persistedState && typeof persistedState === 'object' && !Array.isArray(persistedState)) {
-      const raw = persistedState as Record<string, unknown>;
-      const wfs = raw.messageFeeds ?? raw.waterfalls ?? raw.waterfall;
-      if (wfs != null) return { messageFeeds: normalizePersistedFeedEntries(wfs) };
-    }
+    const persistedState = parsePersistedDutyState();
+    if (persistedState) return persistedState;
     return { messageFeeds: [['mf-0', emptyFilter()]] };
   }
   try {
