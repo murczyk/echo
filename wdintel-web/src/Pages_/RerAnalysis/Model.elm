@@ -210,6 +210,7 @@ type alias Model =
     , systemSettingsLoaded : Bool
     , audioTranscriptionEnabled : Bool
     , analysisAudioTranscriptionCollapsed : Bool
+    , disableBotTags : Bool
     , withoutModelTags : Bool
     , editSidebar : Maybe Int
     , eventLastId : Maybe String

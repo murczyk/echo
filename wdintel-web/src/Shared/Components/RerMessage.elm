@@ -53,6 +53,7 @@ type alias ViewParams =
     , pointTokenClickUrlFor : B.InboxMessage -> Maybe (String -> String)
     , audioTranscriptionEnabled : Bool
     , audioTranscriptionCollapsed : Bool
+    , disableBotTags : Bool
     }
 
 
@@ -626,7 +627,7 @@ update vps msg model =
                                 Api.inbox_message_tags_add (TagSaveDone msgId tagId messageBefore) { messageId = msgId, tagId = tagId }
 
                         botPanel =
-                            if userHasTag && hasBotTag msgId tagId vps.messages then
+                            if not vps.disableBotTags && userHasTag && hasBotTag msgId tagId vps.messages then
                                 Just { messageId = msgId, tagId = tagId }
 
                             else
@@ -933,6 +934,16 @@ hasBotTag msgId tagId messages =
 inboxTagsFor : B.InboxMessage -> List B.InboxMessageTag
 inboxTagsFor message =
     message.inboxTags |> Maybe.withDefault []
+
+
+visibleInboxTags : Bool -> Maybe (List B.InboxMessageTag) -> Maybe (List B.InboxMessageTag)
+visibleInboxTags disableBotTags inboxTags =
+    if disableBotTags then
+        inboxTags
+            |> Maybe.map (List.filter (\tag -> MaybeX.isNothing tag.model))
+
+    else
+        inboxTags
 
 
 tagIdsWithFallback : List B.InboxMessageTag -> List Int -> List Int
@@ -1593,11 +1604,15 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                     [ class "flex justify-center"
                     ]
                   <|
-                    [ tagsBlock message.tags message.inboxTags (ToggleTag msgId) vps.tags
+                    [ tagsBlock
+                        message.tags
+                        (visibleInboxTags vps.disableBotTags message.inboxTags)
+                        (ToggleTag msgId)
+                        vps.tags
                     ]
                 , case model.botTagAction of
                     Just action ->
-                        if action.messageId == msgId then
+                        if not vps.disableBotTags && action.messageId == msgId then
                             div
                                 [ class "flex gap-2 items-center text-xs bg-card border border-border rounded px-3 py-2 shadow-sm" ]
                                 [ button

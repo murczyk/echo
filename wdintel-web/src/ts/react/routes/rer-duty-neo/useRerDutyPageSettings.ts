@@ -22,6 +22,7 @@ export type RerDutyPageSettings = {
   tagsLayout: TagsLayoutVariant;
   audioTranscriptionCollapsed: boolean;
   audioTranscriptionEnabled: boolean;
+  hideBotTags: boolean;
   collapseMediaPreviews: boolean;
   mediaSummaryEnabled: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
@@ -48,6 +49,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
   const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
   const [audioTranscriptionCollapsed, setAudioTranscriptionCollapsed] = useState(false);
   const [audioTranscriptionEnabled, setAudioTranscriptionEnabled] = useState(false);
+  const [hideBotTags, setHideBotTags] = useState(false);
   const [collapseMediaPreviews, setCollapseMediaPreviews] = useState(
     DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
   );
@@ -136,12 +138,14 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         if (abortController.signal.aborted) return;
         setDevicesSectionEnabled(settings.devicesSectionEnabled);
         setAudioTranscriptionEnabled(settings.enableAudioTranscription ?? false);
+        setHideBotTags(settings.disableBotTags ?? false);
         setDevicesSettingsStatus('success');
       })
       .catch((error) => {
         if (abortController.signal.aborted) return;
         setDevicesSectionEnabled(false);
         setAudioTranscriptionEnabled(false);
+        setHideBotTags(false);
         setDevicesSettingsStatus('error');
         setDeviceAccessError(error instanceof Error ? error.message : String(error));
       });
@@ -190,6 +194,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
     tagsLayout,
     audioTranscriptionCollapsed,
     audioTranscriptionEnabled,
+    hideBotTags,
     collapseMediaPreviews,
     mediaSummaryEnabled,
     messageTextPreviewLines,

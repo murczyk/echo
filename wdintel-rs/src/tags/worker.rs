@@ -107,6 +107,13 @@ async fn process_suggest_message_tags(
     redis: &mut redis::aio::ConnectionManager,
     tag_keyword_regex_cache: &Arc<RwLock<TagKeywordRegexCache>>,
 ) -> Result<bool, AppError> {
+    if crate::system_settings::bot_tags_disabled(dbx)
+        .await
+        .c(h!())?
+    {
+        return Ok(false);
+    }
+
     let txn = dbx.begin().await.c(h!())?;
 
     let message_ids = get_messages(&txn).await.c(h!())?;
@@ -117,6 +124,13 @@ async fn process_suggest_message_tags(
             process_messages(message_ids, rq, &txn, tag_keyword_regex_cache)
                 .await
                 .c(h!())?;
+        if crate::system_settings::bot_tags_disabled(&txn)
+            .await
+            .c(h!())?
+        {
+            txn.rollback().await.c(h!())?;
+            return Ok(false);
+        }
         txn.commit().await.c(h!())?;
         if result.inserted_count > 0
             && !result.message_ids_for_events.is_empty()
@@ -525,4 +539,57 @@ async fn do_refresh_models(
     }
 
     Ok(updated)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::functest::tests::cleanup;
+    use serial_test::serial;
+
+    #[tokio::test]
+    #[serial]
+    async fn echo_3501_disabled_bot_tags_leave_suggestion_queue_untouched() {
+        let env = cleanup().await.unwrap();
+        system_settings::Entity::insert(system_settings::ActiveModel {
+            disable_bot_tags: Set(Some(true)),
+            ..Default::default()
+        })
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+        tag_suggestion_worker_queue::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        tag_suggestion_worker_queue::Entity::insert(
+            tag_suggestion_worker_queue::ActiveModel {
+                sigint_inbox_item_id: Set(-1),
+            },
+        )
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+        let mut redis = env.redis.clone();
+
+        let processed = process_suggest_message_tags(
+            &env.rq,
+            &env.dbx,
+            &mut redis,
+            &env.tag_keyword_regex_cache,
+        )
+        .await
+        .unwrap();
+
+        assert!(!processed);
+        assert!(tag_suggestion_worker_queue::Entity::find_by_id(-1)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_some());
+        tag_suggestion_worker_queue::Entity::delete_by_id(-1)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+    }
 }

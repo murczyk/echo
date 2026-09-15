@@ -66,6 +66,7 @@ export type FeedColumnModel = {
     /** When true, empty network ids do not fall back to `msg.unit`. Server `featureStrictNetworks`. */
     featureStrictNetworks: boolean;
     tagsLayout: TagsLayoutVariant;
+    hideBotTags: boolean;
     /** When true, Duty cards hide heavy media behind reveal banners until opened. */
     collapseMediaPreviews?: boolean;
     mediaSummaryEnabled?: boolean;

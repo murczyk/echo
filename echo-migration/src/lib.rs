@@ -423,6 +423,7 @@ mod m20260913_191055_sigint_network_last_active_at;
 mod m20260913_204343_sigint_network_recent_links_index;
 mod m20260914_094608_unit_merge_reference_indexes;
 mod m20260914_234219_group_stats_dirty_days;
+mod m20260915_105452_disable_bot_tags;
 
 pub struct Migrator;
 
@@ -1005,6 +1006,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260913_204343_sigint_network_recent_links_index::Migration),
             Box::new(m20260914_094608_unit_merge_reference_indexes::Migration),
             Box::new(m20260914_234219_group_stats_dirty_days::Migration),
+            Box::new(m20260915_105452_disable_bot_tags::Migration),
         ]
     }
 }

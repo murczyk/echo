@@ -3625,6 +3625,7 @@ mod tests {
             show_classic_analysis: Set(true),
             show_peleng_distance_to_battleline: Set(false),
             hide_orbit_data: Set(false),
+            disable_bot_tags: Set(None),
         }
         .insert(dbx)
         .await

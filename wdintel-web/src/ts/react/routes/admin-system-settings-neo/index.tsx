@@ -47,6 +47,7 @@ type SystemSettingsForm = {
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
   showPelengDistanceToBattleline: boolean;
+  disableBotTags: boolean;
   dutyTestEnabled: boolean;
   dutyTestSinceMs: number;
   dutyTestLimit: number;
@@ -78,6 +79,7 @@ type SystemSettingsPayload = {
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
   showPelengDistanceToBattleline: boolean;
+  disableBotTags: boolean;
   dutyTestEnabled: boolean;
   dutyTestSinceMs: number;
   dutyTestLimit: number;
@@ -107,6 +109,7 @@ const EMPTY_FORM: SystemSettingsForm = {
   showClassicDuty: true,
   showClassicAnalysis: true,
   showPelengDistanceToBattleline: false,
+  disableBotTags: false,
   dutyTestEnabled: false,
   dutyTestSinceMs: 0,
   dutyTestLimit: 1,
@@ -145,6 +148,8 @@ const DUTY_POLL_INTERVAL_TOOLTIP =
   'Пауза між перевірками справжніх нових повідомлень в Оперативному.';
 const DUTY_TEST_REPLAY_INTERVAL_TOOLTIP =
   'Пауза між тестовими повідомленнями. Перше повідомлення надходить одразу, після останнього цикл починається знову.';
+const DISABLE_BOT_TAGS_TOOLTIP =
+  'Приховує теги, додані ботом, на сторінках «Аналіз» та «Оперативний Neo» і призупиняє створення нових. Після вимкнення наявні теги знову відображатимуться, а бот продовжить роботу.';
 
 function dutyTestSinceDateTime(value: number) {
   return value > 0 ? dayjs(value).tz(APP_TIME_ZONE) : null;
@@ -186,6 +191,7 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     showClassicDuty: item?.showClassicDuty ?? true,
     showClassicAnalysis: item?.showClassicAnalysis ?? true,
     showPelengDistanceToBattleline: item?.showPelengDistanceToBattleline ?? false,
+    disableBotTags: item?.disableBotTags ?? false,
     dutyTestEnabled: item?.rerDutyTestEnabled ?? false,
     dutyTestSinceMs: item?.rerDutyTestSinceMs ?? 0,
     dutyTestLimit: item?.rerDutyTestLimit ?? 1,
@@ -217,6 +223,7 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.showClassicDuty === b.showClassicDuty &&
     a.showClassicAnalysis === b.showClassicAnalysis &&
     a.showPelengDistanceToBattleline === b.showPelengDistanceToBattleline &&
+    a.disableBotTags === b.disableBotTags &&
     a.dutyTestEnabled === b.dutyTestEnabled &&
     a.dutyTestSinceMs === b.dutyTestSinceMs &&
     a.dutyTestLimit === b.dutyTestLimit &&
@@ -304,6 +311,7 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     showClassicDuty: form.showClassicDuty,
     showClassicAnalysis: form.showClassicAnalysis,
     showPelengDistanceToBattleline: form.showPelengDistanceToBattleline,
+    disableBotTags: form.disableBotTags,
     dutyTestEnabled: form.dutyTestEnabled,
     dutyTestSinceMs: form.dutyTestSinceMs,
     dutyTestLimit: form.dutyTestLimit,
@@ -422,6 +430,18 @@ function MainSettingsSection({
           Прапорець «точний збіг за еталонкою» на аналізі увімкнений
         </ButtonBase>
       </Box>
+
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.disableBotTags}
+            onChange={(_, checked) => {
+              patchForm({ disableBotTags: checked });
+            }}
+          />
+        }
+        label={<InfoLabel label="Вимкнути теги бота" tooltip={DISABLE_BOT_TAGS_TOOLTIP} />}
+      />
 
       <FormControlLabel
         control={
@@ -965,6 +985,7 @@ export function AdminSystemSettingsNeoPage() {
         showClassicDuty: payload.showClassicDuty,
         showClassicAnalysis: payload.showClassicAnalysis,
         showPelengDistanceToBattleline: payload.showPelengDistanceToBattleline,
+        disableBotTags: payload.disableBotTags,
         autofixEchoimMissingMessages: payload.autofixEchoimMissingMessages,
         devicesSectionEnabled: payload.devicesSectionEnabled,
         sigintCommentParsingEnabled: payload.sigintCommentParsingEnabled,

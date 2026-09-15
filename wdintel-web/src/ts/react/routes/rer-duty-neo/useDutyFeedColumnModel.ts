@@ -19,6 +19,7 @@ export type DutyFeedColumnModelDeps = {
   currentUser: User | null;
   canUseMessageDevices: boolean;
   tagsLayout: TagsLayoutVariant;
+  hideBotTags: boolean;
   collapseMediaPreviews: boolean;
   mediaSummaryEnabled: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
@@ -278,6 +279,7 @@ function buildFeedMessageCard(
     profiles,
     featureStrictNetworks,
     tagsLayout: deps.tagsLayout,
+    hideBotTags: deps.hideBotTags,
     collapseMediaPreviews: deps.collapseMediaPreviews,
     mediaSummaryEnabled: deps.mediaSummaryEnabled,
     messageTextPreviewLines: deps.messageTextPreviewLines,
