@@ -16,6 +16,13 @@ Every accepted item, atomically:
 3. increments the file revision and the device-wide source sequence;
 4. records the terminal item outcome.
 
+An accepted metadata revision clears current content even when bytes are
+unchanged. The source may explicitly republish an earlier verified object via
+the [content reuse API](../../docs/device-file-content-reuse.md), with the
+original upload UUID, exact size and SHA-256. A separate immutable binding
+records the new revision; replay of an old binding cannot overwrite newer
+metadata. Normal TUS publication remains available for changed bytes.
+
 ## Flow
 
 ```mermaid

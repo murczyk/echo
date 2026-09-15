@@ -109,6 +109,52 @@ async fn file_registry_schema_and_entity_round_trip() {
 
 #[tokio::test]
 #[serial_test::serial]
+async fn verified_content_reuse_migration_preserves_original_publication() {
+    let (config, database_url) = isolated_file_registry_config().await;
+    run_migrations(&config, Mode::Debug).await.unwrap();
+    {
+        let db = connect_runtime(&config, Mode::Debug)
+            .await
+            .unwrap()
+            .unwrap();
+        let connection = db.connection();
+        let tx = connection.begin().await.unwrap();
+        let tree = insert_file_entry_tree(&tx).await;
+        let file = file_entry::Entity::find_by_id(tree.file_id)
+            .one(&tx)
+            .await
+            .unwrap()
+            .unwrap();
+        let object =
+            super::test_support::publish_content(&tx, &file, Uuid::now_v7())
+                .await;
+        tx.commit().await.unwrap();
+
+        wdfiles_migration::Migrator::down(connection, Some(1))
+            .await
+            .unwrap();
+        wdfiles_migration::Migrator::up(connection, Some(1))
+            .await
+            .unwrap();
+        assert_file_content_schema(connection).await;
+        let content = file_content::Entity::find_by_id((file.id, 1))
+            .one(connection)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(content.object_key, object);
+        let upload = file_content_upload::Entity::find_by_id(content.upload_id)
+            .one(connection)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(upload.status, FileContentUploadStatus::Completed);
+    }
+    sqlx::Postgres::drop_database(&database_url).await.unwrap();
+}
+
+#[tokio::test]
+#[serial_test::serial]
 async fn content_migration_rejects_legacy_pointer_without_provenance() {
     let (config, database_url) = isolated_file_registry_config().await;
 
@@ -595,6 +641,7 @@ async fn assert_migration_versions(connection: &DatabaseConnection) {
                 .to_string(),
             "m20260819_103954_update_file_entry_analysis_guard".to_string(),
             "m20260905_160446_device_file_content".to_string(),
+            "m20260915_212032_reuse_verified_file_content".to_string(),
         ]
     );
 }
@@ -1302,6 +1349,7 @@ order by value.enumsortorder
         vec![
             "file_content_upload_binding_key".to_string(),
             "file_content_upload_object_key_key".to_string(),
+            "file_content_upload_verified_identity_key".to_string(),
         ]
     );
     assert_eq!(
@@ -1315,16 +1363,12 @@ order by value.enumsortorder
         constraint_names(connection, "file_content", 'f').await,
         vec![
             "file_content_revision_fk".to_string(),
-            "file_content_upload_binding_fk".to_string(),
+            "file_content_verified_upload_binding_fk".to_string(),
         ]
     );
     assert_eq!(
         constraint_names(connection, "file_content", 'u').await,
-        vec![
-            "file_content_current_pointer_key".to_string(),
-            "file_content_object_key_key".to_string(),
-            "file_content_upload_id_key".to_string(),
-        ]
+        vec!["file_content_current_pointer_key".to_string(),]
     );
 
     let foreign_keys = connection
@@ -1335,7 +1379,7 @@ select conname, pg_get_constraintdef(oid) as definition
 from pg_catalog.pg_constraint
 where conname in (
     'file_content_revision_fk',
-    'file_content_upload_binding_fk',
+    'file_content_verified_upload_binding_fk',
     'file_content_upload_target_fk',
     'file_entry_current_content_fk',
     'file_revision_device_file_fk'
@@ -1362,12 +1406,12 @@ order by conname
                 "FOREIGN KEY (file_id, revision) REFERENCES file_revision(id, revision) ON DELETE RESTRICT",
             ),
             (
-                "file_content_upload_binding_fk",
-                "FOREIGN KEY (upload_id, file_id, revision, object_key, source_size_bytes, source_sha256) REFERENCES file_content_upload(id, file_id, revision, object_key, upload_length, expected_sha256) ON DELETE RESTRICT",
-            ),
-            (
                 "file_content_upload_target_fk",
                 "FOREIGN KEY (device_id, file_id, revision) REFERENCES file_revision(device_id, id, revision) ON DELETE RESTRICT",
+            ),
+            (
+                "file_content_verified_upload_binding_fk",
+                "FOREIGN KEY (upload_id, file_id, object_key, source_size_bytes, source_sha256) REFERENCES file_content_upload(id, file_id, object_key, upload_length, expected_sha256) ON DELETE RESTRICT",
             ),
             (
                 "file_entry_current_content_fk",
@@ -1409,9 +1453,9 @@ order by tablename, indexname
         indexes,
         [
             ("file_content", "file_content_current_pointer_key"),
-            ("file_content", "file_content_object_key_key"),
+            ("file_content", "file_content_object_key_idx"),
             ("file_content", "file_content_pkey"),
-            ("file_content", "file_content_upload_id_key"),
+            ("file_content", "file_content_upload_id_idx"),
             ("file_content_upload", "file_content_upload_binding_key",),
             ("file_content_upload", "file_content_upload_cleanup_idx"),
             ("file_content_upload", "file_content_upload_object_key_key",),
@@ -1427,6 +1471,10 @@ order by tablename, indexname
             (
                 "file_content_upload",
                 "file_content_upload_reserved_count_idx",
+            ),
+            (
+                "file_content_upload",
+                "file_content_upload_verified_identity_key"
             ),
         ]
         .into_iter()
@@ -1463,6 +1511,7 @@ order by relation.relname, trigger.tgname
         triggers,
         [
             ("file_content", "file_content_immutable_trg"),
+            ("file_content", "file_content_verify_reuse_trg"),
             ("file_content_upload", "file_content_upload_mutation_trg",),
         ]
         .into_iter()

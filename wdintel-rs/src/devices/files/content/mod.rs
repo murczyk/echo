@@ -2,6 +2,7 @@ mod finalizer;
 mod protocol;
 mod read;
 mod repository;
+mod reuse;
 mod spool;
 pub(crate) mod worker;
 
@@ -188,6 +189,7 @@ pub(crate) async fn runtime_for_test(
 pub(crate) fn routes() -> impl HttpServiceFactory {
     (
         read::download_content,
+        reuse::routes(),
         web::resource(COMPLETE_PATH).route(web::route().to(complete)),
         web::resource(COLLECTION_PATH).route(web::route().to(collection)),
         web::resource(RESOURCE_PATH).route(web::route().to(resource)),

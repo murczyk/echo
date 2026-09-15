@@ -12,20 +12,20 @@ pub struct Model {
     #[sea_orm(
         primary_key,
         auto_increment = false,
-        unique_key = "file_content_upload_binding_key"
+        unique_key = "file_content_upload_verified_identity_key"
     )]
     pub id: Uuid,
     pub device_id: Uuid,
-    #[sea_orm(unique_key = "file_content_upload_binding_key")]
+    #[sea_orm(unique_key = "file_content_upload_verified_identity_key")]
     pub file_id: Uuid,
     #[sea_orm(unique_key = "file_content_upload_binding_key")]
     pub revision: i64,
     pub created_by_login_id: Uuid,
-    #[sea_orm(unique_key = "file_content_upload_binding_key")]
+    #[sea_orm(unique_key = "file_content_upload_verified_identity_key")]
     pub upload_length: i64,
     #[sea_orm(
         column_type = "VarBinary(StringLen::None)",
-        unique_key = "file_content_upload_binding_key"
+        unique_key = "file_content_upload_verified_identity_key"
     )]
     pub expected_sha256: Vec<u8>,
     #[sea_orm(column_type = "Text", unique)]

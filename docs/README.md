@@ -105,6 +105,11 @@ logical Device content cleanup worker. The worker runs in
 and removes expired or terminal spool data plus unreferenced objects. Multi-host
 or multi-API-process topology is not supported.
 
+Sources can [reuse verified content across metadata revisions](device-file-content-reuse.md)
+when the exact byte count and SHA-256 match an earlier completed upload of the
+same file. Reuse publishes a separate immutable revision binding without
+another transfer; it does not change FileSync invalidation semantics.
+
 SIGINT TUS and multipart fallback uploads use
 `<storage_dir>/file_upload_tus`. Per-upload UUID file locks serialize writes,
 consumption, and cleanup across local processes. Lock files remain after cleanup

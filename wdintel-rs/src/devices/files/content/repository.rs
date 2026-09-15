@@ -1112,7 +1112,7 @@ async fn load_completed_on<C: ConnectionTrait>(
 ) -> Result<Option<CompletedContent>> {
     db.query_one_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        "select upload_id, file_id, revision from file_content where upload_id = $1",
+        "select c.upload_id, c.file_id, c.revision from file_content c join file_content_upload u on u.id=c.upload_id where c.upload_id=$1 and c.revision=u.revision",
         [upload_id.into()],
     ))
     .await
