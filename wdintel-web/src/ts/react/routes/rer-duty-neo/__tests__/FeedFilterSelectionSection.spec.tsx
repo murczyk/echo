@@ -233,6 +233,7 @@ describe('FeedFilterSelectionSection', () => {
     const container = document.createElement('div');
     const root = createRoot(container);
     const onValueChange = vi.fn();
+    const onInputChange = vi.fn();
     act(() => {
       root.render(
         <FeedFilterSelectionSection
@@ -245,6 +246,7 @@ describe('FeedFilterSelectionSection', () => {
           getOptionLabel={(option) => option}
           rankedSearch
           keepOpenAndPreserveInputOnSelect
+          onInputChange={onInputChange}
         />,
       );
     });
@@ -272,11 +274,14 @@ describe('FeedFilterSelectionSection', () => {
     ]);
     expect(latestAutocompleteProps().disableCloseOnSelect).toBe(true);
     expect(latestAutocompleteProps().inputValue).toBe('136 омсбр');
+    expect(onInputChange).not.toHaveBeenCalledWith('');
 
     act(() => {
       latestAutocompleteProps().onClose();
     });
     expect(latestAutocompleteProps().inputValue).toBe('');
+    expect(onInputChange).toHaveBeenLastCalledWith('');
+    expect(onInputChange.mock.calls.filter(([value]) => value === '')).toHaveLength(1);
 
     act(() => {
       latestAutocompleteProps().onInputChange(null, '58', 'input');
@@ -317,6 +322,36 @@ describe('FeedFilterSelectionSection', () => {
     expect(onValueChange).toHaveBeenCalledWith(['A']);
     expect(latestAutocompleteProps().disableCloseOnSelect).toBe(true);
     expect(latestAutocompleteProps().inputValue).toBe('');
+    act(() => root.unmount());
+  });
+
+  it('propagates one empty query after a clear-on-select selection', () => {
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    const onInputChange = vi.fn();
+    act(() => {
+      root.render(
+        <FeedFilterSelectionSection
+          title="Пристрої"
+          mode="include"
+          onModeChange={vi.fn()}
+          value={[]}
+          onValueChange={vi.fn()}
+          options={['A']}
+          getOptionLabel={(option) => option}
+          keepOpenOnSelect
+          onInputChange={onInputChange}
+        />,
+      );
+    });
+    act(() => {
+      const props = latestAutocompleteProps();
+      props.onInputChange(null, 'A', 'input');
+      props.onChange(null, ['A'], 'selectOption');
+      props.onInputChange(null, '', 'selectOption');
+      props.onInputChange(null, '', 'reset');
+    });
+    expect(onInputChange.mock.calls.map(([value]) => value)).toEqual(['A', '']);
     act(() => root.unmount());
   });
 

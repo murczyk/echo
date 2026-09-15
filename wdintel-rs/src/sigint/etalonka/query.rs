@@ -2783,6 +2783,7 @@ pub async fn load_networks_by_id(
 > {
     let sort_req = ListNetworksReq {
         filter_freq: None,
+        filter_unit_id: None,
         filter_unit: None,
         filter_unit_army_region: None,
         filter_unit_military_district: None,
@@ -2860,6 +2861,7 @@ mod tests {
     fn empty_list_networks_req() -> ListNetworksReq {
         ListNetworksReq {
             filter_freq: None,
+            filter_unit_id: None,
             filter_unit: None,
             filter_unit_army_region: None,
             filter_unit_military_district: None,

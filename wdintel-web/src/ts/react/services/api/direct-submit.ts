@@ -1,16 +1,18 @@
 import { HttpRequestError, postJson } from './client';
 import type { RequestOptions } from './client';
-import type { InboxMessage } from '../../../../Bindings';
+import type {
+  DeviceNameResolveReq,
+  DeviceNameResolveRsp,
+  DeviceNameSearchResult,
+  InboxMessage,
+} from '../../../../Bindings';
 import { normalizeInboxMessageFromWire } from './inbox-messages';
 
 export type DeviceNameSearchRequest = {
   search: string;
 };
 
-export type DeviceNameResponse = {
-  id: number;
-  name: string;
-};
+export type DeviceNameResponse = DeviceNameSearchResult;
 
 export type DeviceNameSearchResponse = {
   devices: DeviceNameResponse[];
@@ -42,6 +44,18 @@ export async function searchDeviceName(
     options,
   );
   return result?.devices && result.devices.length > 0 ? result.devices[0] : null;
+}
+
+export async function resolveDeviceNames(
+  names: readonly string[],
+  options?: RequestOptions,
+): Promise<DeviceNameResponse[]> {
+  const result = await postJson<DeviceNameResolveRsp>(
+    '/api/sigint/device-name/resolve',
+    { names: [...names] } satisfies DeviceNameResolveReq,
+    options,
+  );
+  return result?.devices || [];
 }
 
 export async function createDeviceName(

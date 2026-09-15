@@ -1148,10 +1148,11 @@ fn direct_submit_payload_to_item(
 mod tests {
     use super::*;
     use crate::entities::{
-        device_name, intel_product, palitra, palitra_highlight_worker_job,
-        sigint_comment, sigint_inbox_item, sigint_inbox_item_point_token,
-        sigint_inbox_item_tag, signal_message, signal_message_group,
-        signal_message_media, tag, tag_suggestion_worker_queue,
+        device_name, intel_product, login, palitra,
+        palitra_highlight_worker_job, sigint_comment, sigint_inbox_item,
+        sigint_inbox_item_point_token, sigint_inbox_item_tag, signal_message,
+        signal_message_group, signal_message_media, system_settings, tag,
+        tag_suggestion_worker_queue,
     };
     use crate::functest::tests::cleanup;
     use sea_orm::{
@@ -1162,6 +1163,24 @@ mod tests {
 
     const TEST_LOGIN: &str = "Tester";
     const TEST_SIGNAL_GROUP_KEY: &str = "vukho-test-master-key";
+
+    async fn enable_devices_section(db: &DatabaseConnection) {
+        if let Some(settings) =
+            system_settings::Entity::find().one(db).await.unwrap()
+        {
+            let mut settings = settings.into_active_model();
+            settings.devices_section_enabled = Set(true);
+            settings.update(db).await.unwrap();
+        } else {
+            system_settings::ActiveModel {
+                devices_section_enabled: Set(true),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .unwrap();
+        }
+    }
 
     fn direct_submit_payload(text: &str) -> DirectSubmitPayload {
         DirectSubmitPayload {
@@ -1323,6 +1342,15 @@ mod tests {
         let login_id = crate::users::login_id_by_name(&env.dbx, TEST_LOGIN)
             .await
             .unwrap();
+        let login = login::Entity::find_by_id(login_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let mut login = login.into_active_model();
+        login.roles = Set(serde_json::json!(["Rer", "Cyber"]));
+        login.update(&env.dbx).await.unwrap();
+        enable_devices_section(&env.dbx).await;
         let device_name_id =
             device_name::Entity::insert(device_name::ActiveModel {
                 name: Set(Some("edit-test-device".to_string())),
@@ -1577,6 +1605,39 @@ mod tests {
                 .unwrap()
                 .unwrap()
                 .device_name_id,
+            None
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn direct_submit_redacts_device_name_without_cyber_access() {
+        let env = cleanup().await.unwrap();
+        let login_id = crate::users::login_id_by_name(&env.dbx, TEST_LOGIN)
+            .await
+            .unwrap();
+        let device_name_id =
+            device_name::Entity::insert(device_name::ActiveModel {
+                name: Set(Some("rer-only-device".to_string())),
+                login_id: Set(login_id),
+                ..Default::default()
+            })
+            .exec(&env.dbx)
+            .await
+            .unwrap()
+            .last_insert_id;
+        let mut payload = direct_submit_payload("rer-only device visibility");
+        payload.device_name_id = Some(Some(device_name_id));
+
+        let submitted = submit_signal_message(&login_id, &env, payload)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            submitted
+                .message
+                .as_ref()
+                .and_then(|message| message.device_name.as_deref()),
             None
         );
     }

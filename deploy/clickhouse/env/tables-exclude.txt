@@ -5,6 +5,7 @@ public.goi_knowledge
 public.bgtask
 public.bgtask_res
 public.group_stats_recalculation_task
+public.group_stats_recalculation_day
 public.network_invalidation_task
 public.network_invalidation_worker
 public.network_recalculation_task

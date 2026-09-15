@@ -4,10 +4,10 @@
   "inventories": {
     "main": 2752,
     "head": 2584,
-    "current": 2460,
+    "current": 2537,
     "relocated": 1465,
     "genuinelyRemoved": 28,
-    "incoming": 466
+    "incoming": 543
   },
   "removed": [
     {
@@ -25742,6 +25742,622 @@
     {
       "id": "unitsFromNames / unitNamesFromUnits > round-trips saved ids through unit options",
       "file": "src/ts/react/utils/__tests__/unit-search.spec.ts",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "PowerAutocomplete > resolves pasted options outside the normal option page before allowing submission",
+      "file": "src/ts/react/components/__tests__/PowerAutocomplete.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "PowerAutocomplete > does not reuse a successful batch after the normalized input batch changes",
+      "file": "src/ts/react/components/__tests__/PowerAutocomplete.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "PowerAutocomplete > keeps Add disabled when the current bulk resolution fails",
+      "file": "src/ts/react/components/__tests__/PowerAutocomplete.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "PowerAutocomplete > does not report an aborted bulk resolver rejection after the dialog closes",
+      "file": "src/ts/react/components/__tests__/PowerAutocomplete.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "AdminBattleLinePage > message device access > provides device access to test-result and unlinked message cards only when enabled",
+      "file": "src/ts/react/routes/admin-battle-line/__tests__/index.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "AdminBattleLinePage > message device access > updates the test-result card when device settings are disabled",
+      "file": "src/ts/react/routes/admin-battle-line/__tests__/index.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "AdminBattleLinePage > message device access > keeps a test-result card denied until device access resolves",
+      "file": "src/ts/react/routes/admin-battle-line/__tests__/index.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "AdminBattleLinePage > message device access > keeps unlinked cards denied until the current user resolves",
+      "file": "src/ts/react/routes/admin-battle-line/__tests__/index.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "AdminBattleLinePage > message device access > keeps unlinked cards denied when device settings fail without hiding the page",
+      "file": "src/ts/react/routes/admin-battle-line/__tests__/index.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "AdminBattleLinePage > message device access > ignores a stale device-access reload after system settings change",
+      "file": "src/ts/react/routes/admin-battle-line/__tests__/index.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "AdminSystemSettingsNeoPage success notifications > saves the bot tag toggle",
+      "file": "src/ts/react/routes/admin-system-settings-neo/__tests__/index.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "AdminUnitDuplicatesPage > keeps polling a pending merge after a temporary status failure",
+      "file": "src/ts/react/routes/admin-unit-duplicates/__tests__/index.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "AdminUnitDuplicatesPage > keeps the terminal merge refresh over a stale mount load",
+      "file": "src/ts/react/routes/admin-unit-duplicates/__tests__/index.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "DeviceFileSearchResults > renders duplicate paths as separate ID-keyed rows and navigates by entry ID",
+      "file": "src/ts/react/routes/device-files/components/__tests__/DeviceFileSearchResults.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "useRerAnalysisNeoPage > ECHO-3461 strips unauthorized device filters before analysis data receives them",
+      "file": "src/ts/react/routes/rer-analysis-neo/__tests__/use-rer-analysis-neo-page.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "useRerAnalysisNeoPage > ECHO-3461 preserves a device-filtered URL and defers loading while access is pending or fails",
+      "file": "src/ts/react/routes/rer-analysis-neo/__tests__/use-rer-analysis-neo-page.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "useRerAnalysisNeoPage > ECHO-3461 preserves device filters when the current-user lookup fails",
+      "file": "src/ts/react/routes/rer-analysis-neo/__tests__/use-rer-analysis-neo-page.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "useRerAnalysisNeoPage > ECHO-3461 sanitizes direct-link device filters after access denial",
+      "file": "src/ts/react/routes/rer-analysis-neo/__tests__/use-rer-analysis-neo-page.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "useRerAnalysisNeoPage > ECHO-3461 defers a filtered query while the current-user lookup is pending",
+      "file": "src/ts/react/routes/rer-analysis-neo/__tests__/use-rer-analysis-neo-page.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "useRerAnalysisNeoPage > ECHO-3501 exposes disabled bot tags from system settings",
+      "file": "src/ts/react/routes/rer-analysis-neo/__tests__/use-rer-analysis-neo-page.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "AnalysisMessagesPane > ECHO-3501 passes the bot tag setting through to analysis message cards",
+      "file": "src/ts/react/routes/rer-analysis-neo/components/__tests__/AnalysisMessagesPane.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "FeedFilterDeviceNamesSection > ECHO-3461 searches device names remotely and retains both filter modes",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/FeedFilterDeviceNamesSection.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "FeedFilterDeviceNamesSection > ECHO-3461 reports remote search errors",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/FeedFilterDeviceNamesSection.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "FeedFilterDeviceNamesSection > ECHO-3461 transfers device names and clears the opposite mode",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/FeedFilterDeviceNamesSection.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "FeedFilterDeviceNamesSection > ECHO-3461 searches with an empty query after receiving cleared input",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/FeedFilterDeviceNamesSection.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "FeedFilterDeviceNamesSection > ECHO-3461 distinguishes an empty option page from a failed device-name search",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/FeedFilterDeviceNamesSection.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "FeedFilterDeviceNamesSection > ECHO-3461 keeps loading feedback ahead of empty-state feedback during a search",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/FeedFilterDeviceNamesSection.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "FeedFilterDeviceNamesSection > ECHO-3461 forwards one typed batch resolver and surfaces its failure",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/FeedFilterDeviceNamesSection.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "FeedFilterDeviceNamesSection > ECHO-3461 keeps an unchanged bulk resolution alive through ordinary search rerenders",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/FeedFilterDeviceNamesSection.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "FeedFilterPanel > discards the current filter from the filter panel",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/FeedFilterPanel.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "FeedFilterSelectionSection > propagates one empty query after a clear-on-select selection",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/FeedFilterSelectionSection.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "Duty filter persistence > keeps the current filter until persistence is disabled",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/duty-filter-persistence.spec.ts",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "Duty filter persistence > does not restore stale state after a partial disable failure",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/duty-filter-persistence.spec.ts",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "RerDutyNeoPage creation workflow > discards the current filter and its saved-filter selection",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/index.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "RerDutyNeoPage creation workflow > reloads when discarding signal highlighting as the only active option",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/index.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "RerDutyNeoPage creation workflow > reloads the feed when adjacent-frequency expansion changes",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/index.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "RerDutyNeoPage creation workflow > opens and dismisses a loading report editor without applying a stale result",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/index.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "RerDutyNeoPage creation workflow > keeps a regular editor active when a stale report load resolves",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/index.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "useRerDutyFeedState — initial loading and reloads > persists applied filters in local storage",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeedState.initial-load.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "useRerDutyFeedState — initial loading and reloads > restores every persisted filter option before the initial request",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeedState.initial-load.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "useRerDutyFeedState — initial loading and reloads > restores persisted options when hydrating a short link",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeedState.initial-load.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "useRerDutyFeedState — initial loading and reloads > keeps stored filters out of direct message navigation",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeedState.initial-load.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "useRerDutyFeedState — initial loading and reloads > preserves stored filters when a short link cannot be resolved",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeedState.initial-load.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "useRerDutyFeedState — initial loading and reloads > keeps advanced-option edits made while a short link is loading",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeedState.initial-load.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "useRerDutyFeedState — initial loading and reloads > preserves device filters without an unfiltered initial request while access is $status",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeedState.initial-load.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "useRerDutyFeedState — initial loading and reloads > loads and polls an unfiltered feed when the device access lookup fails",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeedState.initial-load.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "useRerDutyFeedState — initial loading and reloads > uses device filters after confirmed authorization and removes them only after confirmed denial",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeedState.initial-load.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "mergeKnownGroupKeys > keeps the safety poll aligned with the backend count cache",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeeds.spec.ts",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "useRerDutyFeeds > exposes device-access lookup failures through its public error result",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeeds.spec.ts",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "useRerDutyFilterOptions > keeps frequency-dependent loads blocked until a retry succeeds",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFilterOptions.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "useRerDutyPageSettings device access > remains loading when settings resolve before the user, then allows Cyber",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyPageSettings.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "useRerDutyPageSettings device access > remains loading when the user resolves before settings, then allows Admin",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyPageSettings.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "useRerDutyPageSettings device access > reports lookup failures as retained errors",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyPageSettings.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "useRerDutyPageSettings device access > denies only completed authoritative settings or roles",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyPageSettings.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "useRerDutyPageSettings device access > exposes the bot tag visibility setting",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyPageSettings.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "rer-duty utils > detects active message filters without treating highlighting as filtering",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/utils.spec.ts",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "rer-duty utils > clears active filters without discarding keyword highlighting state",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/utils.spec.ts",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "rer-duty utils > restores persisted filters without merging their options into url state",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/utils.spec.ts",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "rer-duty utils > round-trips feed options through long state urls",
+      "file": "src/ts/react/routes/rer-duty-neo/__tests__/utils.spec.ts",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "useRerUnitsPage mutations > keeps the terminal merge refresh over a stale mount load",
+      "file": "src/ts/react/routes/rer-units-neo/__tests__/use-rer-units-page.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "useRerUnitsPage mutations > refreshes units and attachments after a staged merge fails",
+      "file": "src/ts/react/routes/rer-units-neo/__tests__/use-rer-units-page.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "useRerUnitsPage mutations > keeps a pending merge active while status polling retries",
+      "file": "src/ts/react/routes/rer-units-neo/__tests__/use-rer-units-page.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "useRerUnitsPage mutations > resumes a pending merge after navigation and stops polling on unmount",
+      "file": "src/ts/react/routes/rer-units-neo/__tests__/use-rer-units-page.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "useRerUnitsPage mutations > keeps merge progress monotonic while waiting for the background task",
+      "file": "src/ts/react/routes/rer-units-neo/__tests__/use-rer-units-page.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "SettingsNeoPage > disables browser persistence and removes the current Duty filter",
+      "file": "src/ts/react/routes/settings-neo/__tests__/index.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "MessageCard > ECHO-3461 hides device metadata without device access",
+      "file": "src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "MessageCard > ECHO-3461 hides device metadata without a provider",
+      "file": "src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "MessageCard > ECHO-3461 shows device metadata with an allowed provider",
+      "file": "src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "MessageCard > ECHO-3324 cancels the Popover anchored to the matching mixed-provenance tag",
+      "file": "src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "MessageCard > ECHO-3324 confirms the matching bot action exactly once",
+      "file": "src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "MessageCard > ECHO-3324 retains the active tag anchor through unrelated card rerenders",
+      "file": "src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "MessageCard > ECHO-3324 does not show a bot Popover for a %s",
+      "file": "src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "MessageCardAttachmentPreviewDialog > does not render carousel arrows while editing #3448",
+      "file": "src/ts/react/routes/shared/message-card/attachment-preview/__tests__/MessageCardAttachmentPreviewDialog.spec.tsx",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "waitForBgtaskCompletion > retries a temporary status failure without losing the task",
+      "file": "src/ts/react/services/api/__tests__/bgtask.spec.ts",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "waitForBgtaskCompletion > stops retrying when polling is aborted",
+      "file": "src/ts/react/services/api/__tests__/bgtask.spec.ts",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "direct-submit response normalization > resolves a device-name batch through the dedicated endpoint",
+      "file": "src/ts/react/services/api/__tests__/direct-submit.spec.ts",
+      "decision": "retained",
+      "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
+      "behaviorReference": "react-test-cleanup-retained-identities",
+      "originatingEchoReference": null
+    },
+    {
+      "id": "direct-submit response normalization > loads the report-copy payload from the message endpoint",
+      "file": "src/ts/react/services/api/__tests__/direct-submit.spec.ts",
       "decision": "retained",
       "reason": "Retained post-checkpoint AST identity; its source @test-scope admission remains the concrete coverage rationale.",
       "behaviorReference": "react-test-cleanup-retained-identities",

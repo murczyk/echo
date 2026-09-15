@@ -41,6 +41,13 @@ pub(in crate::devices) fn visible_devices_query(
     scope: DeviceReadScope,
 ) -> Result<Select<device::Entity>, AppError> {
     access::require_read(&login.roles).c(h!())?;
+    scoped_devices_query(login, scope)
+}
+
+fn scoped_devices_query(
+    login: &login::Model,
+    scope: DeviceReadScope,
+) -> Result<Select<device::Entity>, AppError> {
     let organism_id = access::organism_id(login).c(h!())?;
 
     let query = device::Entity::find().filter(
@@ -73,6 +80,7 @@ where
         .ok_or(AppError::NotFound)
 }
 
+#[cfg(test)]
 pub(in crate::devices) async fn find_active_visible_device<C>(
     dbx: &C,
     login: &login::Model,
@@ -95,12 +103,44 @@ where
     Ok(device)
 }
 
-pub(in crate::devices) async fn lock_active_visible_device(
+pub(in crate::devices) async fn lock_active_device_for_update(
     dbx: &DatabaseTransaction,
     login: &login::Model,
     device_id: Uuid,
 ) -> Result<device::Model, AppError> {
-    let device = visible_devices_query(login, DeviceReadScope::IncludeArchived)
+    Ok(lock_active_scoped_device(dbx, login, device_id)
+        .await
+        .c(h!())?)
+}
+
+async fn find_active_scoped_device<C>(
+    dbx: &C,
+    login: &login::Model,
+    device_id: Uuid,
+) -> Result<device::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    let device = scoped_devices_query(login, DeviceReadScope::IncludeArchived)
+        .c(h!())?
+        .filter(device::Column::Id.eq(device_id))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
+        .c(h!())?;
+    if device.archived {
+        return Err(archived_device_error());
+    }
+    Ok(device)
+}
+
+async fn lock_active_scoped_device(
+    dbx: &DatabaseTransaction,
+    login: &login::Model,
+    device_id: Uuid,
+) -> Result<device::Model, AppError> {
+    let device = scoped_devices_query(login, DeviceReadScope::IncludeArchived)
         .c(h!())?
         .filter(device::Column::Id.eq(device_id))
         .lock_exclusive()
@@ -137,7 +177,7 @@ where
         }
         FileRegistryDeviceAccess::FileSync => {
             access::require_file_sync(&login.roles).c(h!())?;
-            find_active_visible_device(dbx, login, device_id)
+            find_active_scoped_device(dbx, login, device_id)
                 .await
                 .c(h!())?;
         }

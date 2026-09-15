@@ -23,12 +23,11 @@ function testCallName(expression) {
   if (ts.isIdentifier(expression)) return expression.text;
   if (ts.isPropertyAccessExpression(expression)) {
     if (
-      ['describe', 'beforeEach', 'afterEach', 'beforeAll', 'afterAll'].includes(
+      !['each', 'only', 'skip', 'skipIf', 'runIf', 'todo', 'fails', 'concurrent'].includes(
         expression.name.text,
       )
-    ) {
+    )
       return null;
-    }
     return testCallName(expression.expression);
   }
   if (ts.isCallExpression(expression)) return testCallName(expression.expression);
@@ -39,6 +38,7 @@ function isTestDeclaration(node) {
   return (
     ts.isCallExpression(node) &&
     ['it', 'test'].includes(testCallName(node.expression) ?? '') &&
+    node.arguments[0] != null &&
     ts.isStringLiteralLike(node.arguments[0])
   );
 }

@@ -87,10 +87,10 @@ export function DeviceFilesSidebar({
       aria-busy={files.rootsLoading || files.rootsRefreshing}
       className="flex max-h-[50vh] min-h-0 min-w-0 flex-col overflow-hidden rounded-echo-md border border-echo-border bg-echo-surface echo-lg:h-full echo-lg:max-h-none"
     >
-      <header className="flex shrink-0 items-center justify-between gap-echo-sm border-b border-echo-border px-echo-md py-echo-sm">
+      <header className="flex h-[58px] shrink-0 items-center justify-between gap-echo-sm border-b border-echo-border px-echo-lg py-echo-sm">
         <h2
           id="device-files-sidebar-title"
-          className="m-0 min-w-0 truncate text-echo-lg font-semibold text-echo-text"
+          className="m-0 min-w-0 truncate text-[20px]! font-semibold! text-echo-text"
         >
           Файли
         </h2>
@@ -228,6 +228,7 @@ export function DeviceFilesSidebar({
                   error={files.searchError}
                   loadMoreError={files.searchLoadMoreError}
                   onOpenDirectory={openSearchDirectory}
+                  onSelectFile={files.selectFile}
                   onRetry={() => void files.retrySearch()}
                   onLoadMore={() => void files.loadMoreSearch()}
                 />

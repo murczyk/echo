@@ -40,6 +40,7 @@ function buildProps(overrides: Partial<FeedFilterPanelProps['panel']> = {}): Fee
   return {
     panel: {
       feedId: 'mf-0',
+      hasActiveFilter: false,
       filterState: {
         groupsSelected: [],
         deniedGroups: [],
@@ -95,6 +96,7 @@ function buildProps(overrides: Partial<FeedFilterPanelProps['panel']> = {}): Fee
         onRenameSelectedSavedFilter: vi.fn(async () => true),
         onDeleteSelectedSavedFilter: vi.fn(async () => {}),
         onApplySavedFilter: vi.fn(),
+        onDiscardCurrentFilter: vi.fn(),
       },
       ...overrides,
     },
@@ -153,6 +155,28 @@ describe('FeedFilterPanel', () => {
     expect(
       selectionProps.find((value) => value.title === 'Підрозділи')?.bulkPasteSeparators,
     ).toEqual(['\n']);
+  });
+
+  it('discards the current filter from the filter panel', async () => {
+    const onDiscardCurrentFilter = vi.fn();
+    await act(async () => {
+      root.render(
+        <FeedFilterPanel
+          {...buildProps({
+            hasActiveFilter: true,
+            actions: { ...buildProps().panel.actions, onDiscardCurrentFilter },
+          })}
+        />,
+      );
+    });
+
+    const discardButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Скинути поточний фільтр',
+    );
+    expect(discardButton?.disabled).toBe(false);
+
+    act(() => discardButton?.click());
+    expect(onDiscardCurrentFilter).toHaveBeenCalledOnce();
   });
 
   it('keeps catalog errors persistent and maps their structured severity', async () => {

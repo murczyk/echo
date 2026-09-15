@@ -174,6 +174,13 @@ pub(crate) async fn report_docx_generate_file(
     save_legacy_log: bool,
     bgtask_id: Option<i64>,
 ) -> Result<ReportTaskGenerated, AppError> {
+    crate::rer_importer::inbox::require_device_filters(
+        &env.dbx,
+        &user_login,
+        &req.req,
+    )
+    .await
+    .c(h!())?;
     cleanup_old_reports_nofail(&env.dbx, &env.config).await;
     req.req.nolimit = Some(true);
     ensure_report_launch_permissions(&env.dbx, &user_login, &req.kind)
@@ -357,6 +364,13 @@ pub async fn report_docx_task_launch(
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let user_login = login_id_from_identity(&user)?;
     let req_inner = req.into_inner();
+    crate::rer_importer::inbox::require_device_filters(
+        &env.dbx,
+        &user_login,
+        &req_inner.req,
+    )
+    .await
+    .c(h!())?;
     let report_kind = req_inner.kind.clone();
     ensure_report_launch_permissions_with_error_code_header(
         &env.dbx,
@@ -662,4 +676,260 @@ pub async fn fill_comp_freq_worker_1(
         .await
         .c(h!())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::IDENTITY_DURATION_HOURS;
+    use crate::devices::ROLE_CYBER;
+    use crate::entities::{login, report_history, system_settings};
+    use crate::functest::tests::*;
+    use actix_identity::{Identity, IdentityMiddleware};
+    use actix_session::storage::RedisSessionStore;
+    use actix_session::SessionMiddleware;
+    use actix_web::cookie::{Cookie, Key};
+    use actix_web::{
+        http::StatusCode, test as actix_test, web, App, HttpMessage,
+        HttpRequest, HttpResponse,
+    };
+    use sea_orm::{
+        ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel,
+    };
+    use serial_test::serial;
+
+    async fn echo_3461_login(
+        request: HttpRequest,
+        login: web::Path<String>,
+    ) -> HttpResponse {
+        Identity::login(&request.extensions(), login.into_inner()).unwrap();
+        HttpResponse::NoContent().finish()
+    }
+
+    fn report_request(
+        selected_device_names: Option<Vec<String>>,
+        denied_device_names: Option<Vec<String>>,
+    ) -> types::ReportPreviewReq {
+        types::ReportPreviewReq {
+            kind: kinds::TAGS.to_string(),
+            req: crate::rer_importer::types::InboxMessagesReq {
+                selected_device_names,
+                denied_device_names,
+                ..Default::default()
+            },
+            report_type: None,
+            report_tags_only_this_unit: None,
+            tag_report_sort_by: None,
+            report_1213_linked_networks_only: None,
+            without_comments: None,
+            babak_new_callsign_min_mentions: None,
+            interception_keep_full_message: None,
+            interception_keep_old_colors: None,
+            digest_omit_exo_id: None,
+            digest_form_1_2_17: None,
+            sposob_unit_name: None,
+        }
+    }
+
+    async fn set_roles(
+        dbx: &DatabaseConnection,
+        login_id: uuid::Uuid,
+        roles: serde_json::Value,
+    ) {
+        let login = login::Entity::find_by_id(login_id)
+            .one(dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let mut login = login.into_active_model();
+        login.roles = Set(roles);
+        login.update(dbx).await.unwrap();
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn echo_3461_report_device_filters_require_access_at_launch_and_generation(
+    ) {
+        let env = cleanup_locked().await.unwrap().0;
+        let test_identity = mk_test_identity().await.unwrap();
+        let login_id =
+            crate::users::login_id_by_name(&env.dbx, &test_identity.login)
+                .await
+                .unwrap();
+        system_settings::ActiveModel {
+            devices_section_enabled: Set(true),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let redis_session_store = RedisSessionStore::new(
+            crate::redis_conn_string(&env.config).unwrap(),
+        )
+        .await
+        .unwrap();
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(web::Data::from(env.clone()))
+                .wrap(
+                    IdentityMiddleware::builder()
+                        .visit_deadline(Some(std::time::Duration::from_secs(
+                            IDENTITY_DURATION_HOURS * 60 * 60,
+                        )))
+                        .build(),
+                )
+                .wrap(SessionMiddleware::new(
+                    redis_session_store,
+                    Key::generate(),
+                ))
+                .route(
+                    "/test/echo-3461-login/{login}",
+                    web::post().to(echo_3461_login),
+                )
+                .service(report_docx_task_launch),
+        )
+        .await;
+        let login_response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(&format!("/test/echo-3461-login/{login_id}"))
+                .to_request(),
+        )
+        .await;
+        let session_cookie: Cookie<'static> = login_response
+            .response()
+            .cookies()
+            .next()
+            .unwrap()
+            .into_owned();
+        let history_count = report_history::Entity::find()
+            .all(&env.dbx)
+            .await
+            .unwrap()
+            .len();
+        let launch = |req: types::ReportPreviewReq| {
+            actix_test::call_service(
+                &app,
+                actix_test::TestRequest::post()
+                    .uri("/api/rer/report-docx-task-launch")
+                    .cookie(session_cookie.clone())
+                    .set_json(req)
+                    .to_request(),
+            )
+        };
+
+        assert_eq!(
+            launch(report_request(Some(vec!["ECHO-3461".to_string()]), None))
+                .await
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            report_history::Entity::find()
+                .all(&env.dbx)
+                .await
+                .unwrap()
+                .len(),
+            history_count
+        );
+
+        set_roles(
+            &env.dbx,
+            login_id,
+            serde_json::json!(["Rer", "DeviceSource"]),
+        )
+        .await;
+        assert_eq!(
+            launch(report_request(None, Some(vec!["ECHO-3461".to_string()])))
+                .await
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            report_history::Entity::find()
+                .all(&env.dbx)
+                .await
+                .unwrap()
+                .len(),
+            history_count
+        );
+
+        set_roles(&env.dbx, login_id, serde_json::json!(["Rer", ROLE_CYBER]))
+            .await;
+        assert_ne!(
+            launch(report_request(Some(vec!["ECHO-3461".to_string()]), None))
+                .await
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+        assert_ne!(
+            launch(report_request(Some(vec![]), Some(vec![])))
+                .await
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+        assert_ne!(
+            launch(report_request(None, None)).await.status(),
+            StatusCode::FORBIDDEN
+        );
+
+        set_roles(&env.dbx, login_id, serde_json::json!(["Admin"])).await;
+        assert_ne!(
+            launch(report_request(Some(vec!["ECHO-3461".to_string()]), None))
+                .await
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+
+        let mut settings = system_settings::Entity::find()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+        settings.devices_section_enabled = Set(false);
+        settings.update(&env.dbx).await.unwrap();
+        for roles in [
+            serde_json::json!(["Rer", ROLE_CYBER]),
+            serde_json::json!(["Admin"]),
+        ] {
+            set_roles(&env.dbx, login_id, roles).await;
+            assert_eq!(
+                launch(report_request(
+                    Some(vec!["ECHO-3461".to_string()]),
+                    None
+                ))
+                .await
+                .status(),
+                StatusCode::FORBIDDEN
+            );
+        }
+
+        let report_output_dir =
+            PathBuf::from(&env.config.storage_dir).join("reports_log");
+        let report_files_before = std::fs::read_dir(&report_output_dir)
+            .map(|entries| {
+                entries
+                    .map(|entry| entry.unwrap().file_name())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        assert!(report_docx_generate_file(
+            login_id,
+            &env,
+            report_request(Some(vec!["ECHO-3461".to_string()]), None),
+            false,
+            None,
+        )
+        .await
+        .is_err());
+        let report_files_after = std::fs::read_dir(&report_output_dir)
+            .map(|entries| {
+                entries
+                    .map(|entry| entry.unwrap().file_name())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        assert_eq!(report_files_after, report_files_before);
+    }
 }

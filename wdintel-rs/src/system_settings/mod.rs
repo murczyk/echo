@@ -40,6 +40,10 @@ pub struct EchoImSyncCursor {
     pub inbox_message_id: i32,
 }
 
+fn effective_rer_duty_poll_interval_sec(interval_sec: i64) -> i64 {
+    interval_sec.max(crate::config::RER_DUTY_POLL_INTERVAL_MIN_SEC)
+}
+
 impl PelengBounds {
     fn from_corners(
         top_left_lat: f64,
@@ -75,7 +79,9 @@ fn map_system_settings_item(
             .rer_duty_insert_historical_interceptions,
         rer_duty_test_since_ms: settings.rer_duty_test_since_ms,
         rer_duty_test_limit: settings.rer_duty_test_limit,
-        rer_duty_poll_interval_sec: settings.rer_duty_poll_interval_sec,
+        rer_duty_poll_interval_sec: effective_rer_duty_poll_interval_sec(
+            settings.rer_duty_poll_interval_sec,
+        ),
         rer_duty_test_replay_interval_sec: settings
             .rer_duty_test_replay_interval_sec,
         created_at: settings.created_at.and_utc().timestamp_millis(),
@@ -109,6 +115,7 @@ fn map_system_settings_item(
         show_classic_analysis: settings.show_classic_analysis,
         show_peleng_distance_to_battleline: settings
             .show_peleng_distance_to_battleline,
+        disable_bot_tags: settings.disable_bot_tags.unwrap_or(false),
     })
 }
 
@@ -289,6 +296,17 @@ where
         .await
         .c(h!())?
         .map(|settings| settings.enable_audio_transcription)
+        .unwrap_or(false))
+}
+
+pub async fn bot_tags_disabled<C>(dbx: &C) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(get_active_system_settings(dbx)
+        .await
+        .c(h!())?
+        .and_then(|settings| settings.disable_bot_tags)
         .unwrap_or(false))
 }
 
@@ -553,7 +571,9 @@ fn system_settings_active_model(
         rer_duty_insert_historical_interceptions: Set(req.rer_duty_test_enabled),
         rer_duty_test_since_ms: Set(req.rer_duty_test_since_ms),
         rer_duty_test_limit: Set(req.rer_duty_test_limit),
-        rer_duty_poll_interval_sec: Set(req.rer_duty_poll_interval_sec.max(1)),
+        rer_duty_poll_interval_sec: Set(effective_rer_duty_poll_interval_sec(
+            req.rer_duty_poll_interval_sec,
+        )),
         rer_duty_test_replay_interval_sec: Set(
             req.rer_duty_test_replay_interval_sec
         ),
@@ -601,6 +621,7 @@ fn system_settings_active_model(
         limit_big_reports: Set(req.limit_big_reports),
         enable_audio_transcription: Set(req.enable_audio_transcription),
         hide_orbit_data: Set(hide_orbit_data),
+        disable_bot_tags: Set(Some(req.disable_bot_tags)),
     })
 }
 
@@ -727,7 +748,9 @@ pub async fn current_system_settings(
                 .rer_duty_insert_historical_interceptions,
             rer_duty_test_since_ms: settings.rer_duty_test_since_ms,
             rer_duty_test_limit: settings.rer_duty_test_limit,
-            rer_duty_poll_interval_sec: settings.rer_duty_poll_interval_sec,
+            rer_duty_poll_interval_sec: effective_rer_duty_poll_interval_sec(
+                settings.rer_duty_poll_interval_sec,
+            ),
             rer_duty_test_replay_interval_sec: settings
                 .rer_duty_test_replay_interval_sec,
             short_url_enabled: settings.short_url_enabled,
@@ -758,6 +781,7 @@ pub async fn current_system_settings(
             show_peleng_distance_to_battleline: settings
                 .show_peleng_distance_to_battleline,
             hide_orbit_data: settings.hide_orbit_data,
+            disable_bot_tags: settings.disable_bot_tags.unwrap_or(false),
         },
         None => SystemSettingsCurrentRsp {
             id: None,
@@ -766,7 +790,8 @@ pub async fn current_system_settings(
             rer_duty_insert_historical_interceptions: false,
             rer_duty_test_since_ms: 0,
             rer_duty_test_limit: 1,
-            rer_duty_poll_interval_sec: 1,
+            rer_duty_poll_interval_sec:
+                crate::config::RER_DUTY_POLL_INTERVAL_MIN_SEC,
             rer_duty_test_replay_interval_sec: 1,
             short_url_enabled: false,
             support_non_rer_interceptions: false,
@@ -789,6 +814,7 @@ pub async fn current_system_settings(
             show_classic_analysis: true,
             show_peleng_distance_to_battleline: false,
             hide_orbit_data: false,
+            disable_bot_tags: false,
         },
     }))
 }
@@ -865,6 +891,12 @@ mod tests {
     static TEST_LOCK: tokio::sync::Mutex<()> =
         tokio::sync::Mutex::const_new(());
 
+    #[test]
+    fn rer_duty_poll_interval_matches_count_cache_freshness() {
+        assert_eq!(effective_rer_duty_poll_interval_sec(1), 5);
+        assert_eq!(effective_rer_duty_poll_interval_sec(10), 10);
+    }
+
     async fn test_login_id(env: &Env) -> uuid::Uuid {
         crate::users::login_id_by_name(&env.dbx, "Tester")
             .await
@@ -883,6 +915,20 @@ mod tests {
         settings.enable_audio_transcription = Set(true);
         settings.update(&env.dbx).await.unwrap();
         assert!(audio_transcription_enabled(&env.dbx).await.unwrap());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn bot_tags_are_enabled_by_default_and_use_active_setting() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+        assert!(!bot_tags_disabled(&env.dbx).await.unwrap());
+
+        let settings = insert_settings(&env.dbx, old_ts(), false).await;
+        let mut settings: system_settings::ActiveModel = settings.into();
+        settings.disable_bot_tags = Set(Some(true));
+        settings.update(&env.dbx).await.unwrap();
+        assert!(bot_tags_disabled(&env.dbx).await.unwrap());
     }
 
     #[tokio::test]
@@ -1140,6 +1186,7 @@ mod tests {
             show_classic_duty: true,
             show_classic_analysis: true,
             show_peleng_distance_to_battleline: false,
+            disable_bot_tags: false,
         }
     }
 
@@ -1204,6 +1251,7 @@ mod tests {
             show_classic_analysis: Set(true),
             show_peleng_distance_to_battleline: Set(false),
             hide_orbit_data: Set(false),
+            disable_bot_tags: Set(None),
         }
         .insert(dbx)
         .await

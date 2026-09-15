@@ -26,6 +26,20 @@ pub struct DeviceNameSearchRsp {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct DeviceNameResolveReq {
+    pub names: Vec<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct DeviceNameResolveRsp {
+    pub devices: Vec<DeviceNameSearchResult>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct CreateDeviceNameReq {
     pub name: String,
 }

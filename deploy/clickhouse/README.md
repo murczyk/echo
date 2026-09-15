@@ -193,6 +193,17 @@ password stays in `echo-peerdb-<source-hostname>`.
 Exclusions may name optional tables that are absent on an instance; if such a
 table is created later, it remains excluded automatically.
 
+`group_stats_recalculation_day` is a PostgreSQL-only compaction queue. For a
+manual deployment, stop `wdintel-rs-bgworker` before applying
+`m20260914_234219_group_stats_dirty_days`. On an instance with ClickHouse, run
+`/opt/echo-peerdb/bin/source-sync-exclusions.sh --yes` before the migration so
+the new table is excluded before it is created. Apply the migration and new
+binary, run the full group-statistics oneoff documented in the changelog, then
+start the worker. Run `/opt/echo-peerdb/bin/source-verify-deploy.sh` and confirm
+that `public.group_stats_recalculation_day` is absent from raw/current/gateway.
+Standard Echo deployment stops the worker, syncs the packaged exclusion list
+before migrations, and performs deployment verification afterward.
+
 `battle_line_version` and `battle_line_aor_geometry` are PostgreSQL-only and
 intentionally excluded from analytics. Before applying
 `m20260818_130237_battle_line_and_inbox_settlement`, deploy and reconcile the
@@ -600,11 +611,11 @@ reconciliation.
 
 Every analysis facet and dedicated facet count first resolves one shared
 minimum/maximum message-ID scope for its requested time interval. Concurrent
-requests for the same unresolved range share that lookup, but completed
-results are not cached. The timestamp predicate stays authoritative, while
-the same ID bounds constrain `signal_message`, `sigint_inbox_item`, every
-message-group relation, and tag, network, callsign, metadata, and AOR message
-links.
+requests for the same range share that lookup. Successful results are cached
+for five seconds in a bounded 2,048-entry cache; failed lookups are removed.
+The timestamp predicate stays authoritative, while the same ID bounds
+constrain `signal_message`, `sigint_inbox_item`, every message-group relation,
+and tag, network, callsign, metadata, and AOR message links.
 Group authorization, selected groups, and sender filtering use one bounded,
 flat message-group join unless the joined group relation supplies the facet
 dimension. An empty scope returns an empty facet or zero count without
@@ -627,16 +638,27 @@ that file it does nothing. Operators can also run
 Copy [app-analytics.toml.example](env/app-analytics.toml.example) into the
 source Echo config, using `GATEWAY_PASSWORD`. Restart Echo only after an
 operator compares PostgreSQL and gateway counts. The application initializes
-analytics best-effort and retries each complete analytical operation through
-PostgreSQL when analytics fails. Every 15–60 seconds, a native timer writes a fresh UUID
+analytics best-effort. Its dedicated pool defaults to eight connections per
+application process and retries each complete analytical operation through
+PostgreSQL when analytics fails. Incident fallbacks share an eight-request
+per-process PostgreSQL capacity limit; after 250 ms of saturation they return a
+retryable 503. Intentional PostgreSQL routing for an unconfigured analytics
+tier or an unsupported query is not capacity-limited; a configured pool that
+failed initialization is treated as an incident. Every 15–60 seconds, a
+native timer writes a fresh UUID
 nonce to the migrated source table `echo_analytics.heartbeat`, waits for the
 mirror slot, and queries `public.echo_analytics__heartbeat` through PostgreSQL
 18 and `pg_clickhouse`. It records success only when that exact nonce is visible
 from ClickHouse, making this an end-to-end data-plane probe rather than only a
 WAL acknowledgement check. Echo requires that record to be healthy and newer than
 `freshness_max_age_ms` before using analytical results, so a stalled but still
-queryable ClickHouse also falls back. Failed attempts open a short per-process
-cooldown instead of making every request wait for the unavailable gateway.
+queryable ClickHouse also falls back. A heartbeat visibility timeout updates
+probe diagnostics but preserves the last successful health decision, allowing
+that freshness budget to decide when reads stop. Hard service, mirror, slot,
+and desired-state failures mark health false immediately. Replication-health
+rejections do not open a query circuit; actual query failures and timeouts open
+a short per-process cooldown instead of making every request wait for the
+unavailable gateway.
 Keep `ANALYTICS_HEALTH_STALE_AFTER_SECONDS` and `freshness_max_age_ms` aligned;
 the supplied values are 90 seconds.
 
@@ -695,8 +717,11 @@ shapes retain their existing PostgreSQL routing or whole-operation fallback.
 PostgreSQL tail covering `max(2 * freshness_max_age_ms, 5 minutes)`, including
 recent analysis ranges, Duty polling, and initial/latest requests. The tail
 uses `signal_message.created_at`, so backdated arrivals are included. Its
-boundary is captured before the analytics scan. Candidates are deduplicated,
-hydrated in bounded batches, revalidated, and ordered on source PostgreSQL.
+boundary is captured before the analytics scan. Successful source or analytics
+message-ID boundary lookups are singleflight-coalesced and cached for five
+seconds in a bounded 2,048-entry cache; failures are not cached. Candidates are
+deduplicated, hydrated in bounded batches, revalidated, and ordered on source
+PostgreSQL.
 Any analytics, tail, or revalidation failure retries the complete request on
 PostgreSQL. Counts split historical and fresh records at the same created-at
 boundary to avoid overlap. Routing logs identify the operation, selected

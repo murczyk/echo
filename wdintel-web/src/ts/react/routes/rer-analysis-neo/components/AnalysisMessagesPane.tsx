@@ -123,6 +123,7 @@ type Props = {
   tagsOrder: number[];
   tagsLoading: boolean;
   tagsLayout: TagsLayoutVariant;
+  hideBotTags: boolean;
   messageTimeBasis?: MessageTimeBasis;
   mediaSummaryEnabled?: boolean;
   collapseMediaPreviews: boolean;
@@ -328,6 +329,7 @@ type AnalysisMessageCardItemProps = {
   tagsOrder: number[];
   tagsLoading: boolean;
   tagsLayout: TagsLayoutVariant;
+  hideBotTags: boolean;
   messageTimeBasis?: MessageTimeBasis;
   mediaSummaryEnabled?: boolean;
   collapseMediaPreviews: boolean;
@@ -368,6 +370,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   tagsOrder,
   tagsLoading,
   tagsLayout,
+  hideBotTags,
   messageTimeBasis,
   mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
   collapseMediaPreviews,
@@ -405,6 +408,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       tagsOrder={tagsOrder}
       tagsLoading={tagsLoading}
       tagsLayout={tagsLayout}
+      hideBotTags={hideBotTags}
       messageTimeBasis={messageTimeBasis}
       collapseMediaPreviews={collapseMediaPreviews}
       messageTextPreviewLines={messageTextPreviewLines}
@@ -552,6 +556,7 @@ function AnalysisMessagesPaneComponent({
   tagsOrder,
   tagsLoading,
   tagsLayout,
+  hideBotTags,
   messageTimeBasis,
   mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
   collapseMediaPreviews,
@@ -1200,6 +1205,7 @@ function AnalysisMessagesPaneComponent({
               tagsOrder={tagsOrder}
               tagsLoading={tagsLoading}
               tagsLayout={tagsLayout}
+              hideBotTags={hideBotTags}
               messageTimeBasis={messageTimeBasis}
               mediaSummaryEnabled={mediaSummaryEnabled}
               collapseMediaPreviews={collapseMediaPreviews}

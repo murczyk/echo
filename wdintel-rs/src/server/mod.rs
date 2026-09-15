@@ -229,6 +229,11 @@ async fn new_env_with_initialization(
         s3_config,
         mil_geo: mil_geo.clone(),
         dbx: dbx.clone(),
+        unit_merge_guard_slots: Arc::new(tokio::sync::Semaphore::new(
+            crate::sigint::unit::unit_merge_guard_capacity(
+                dbx.get_postgres_connection_pool(),
+            ),
+        )),
         echo_gpu_client,
         file_registry_db,
         device_file_content,
@@ -1119,6 +1124,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::file_upload::fallback_upload)
             .service(crate::sigint::device_name::device_name_create)
             .service(crate::sigint::device_name::device_name_search)
+            .service(crate::sigint::device_name::device_name_resolve)
             .service(crate::users::list_logins)
             .service(crate::users::create_login)
             .service(crate::users::create_delta_login)
@@ -1447,6 +1453,20 @@ pub async fn main_server(
     let env = init_runtime_env(mode, crate::PgRuntimePoolRole::Web)
         .await
         .c(h!())?;
+    let recovered_merge_task =
+        crate::sigint::unit::recover_abandoned_merge_tasks(&env.dbx)
+            .await
+            .c(h!())?;
+    if recovered_merge_task {
+        let event = crate::event_stream::types::EventMsg::new(
+            crate::event_stream::types::EventType::ETUnitChanged,
+        );
+        if let Err(error) =
+            crate::event_stream::fanout(&mut env.redis.clone(), event).await
+        {
+            warn!("failed to publish recovered unit merge change: {error:?}");
+        }
+    }
     let config = env.config.clone();
 
     let redis_session_store =

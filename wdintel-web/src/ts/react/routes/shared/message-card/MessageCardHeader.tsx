@@ -49,6 +49,7 @@ import {
   type MessageCardNavigationMenuItem,
   type MessageCardRenderedNetwork,
 } from './message-card.utils';
+import { useMessageDeviceAccess } from './MessageDeviceAccess';
 
 const COPY_TITLE = `Копіювати${ELLIPSIS}`;
 const NAVIGATE_TITLE = `Перейти${ELLIPSIS}`;
@@ -923,10 +924,11 @@ export function MessageCardMetadata({
   etalonDisplayModel: MessageCardEtalonDisplayModel;
   metadataTrigger?: ReactNode;
 }) {
+  const canUseMessageDevices = useMessageDeviceAccess();
   const locationDisplayValue = etalonDisplayModel.locationDisplayValue;
   const showTopGridLocation =
     etalonDisplayModel.primaryKind !== 'location' && locationDisplayValue != null;
-  const deviceName = msg.deviceName?.trim();
+  const deviceName = canUseMessageDevices ? msg.deviceName?.trim() : undefined;
 
   return (
     <div className="flex w-full items-start gap-2">

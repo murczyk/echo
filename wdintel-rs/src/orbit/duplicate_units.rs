@@ -1012,7 +1012,14 @@ async fn persist_selection_batch(
     if selections.is_empty() {
         return Ok(PersistReview::default());
     }
-    let transaction = super::acquire_import_lock(db).await.c(h!())?;
+    let unit_ids = selections
+        .iter()
+        .flat_map(|selection| selection.reviewed_units.keys().copied())
+        .collect::<Vec<_>>();
+    let transaction =
+        crate::sigint::unit::begin_orbit_unit_merge_transaction(db, &unit_ids)
+            .await
+            .c(h!())?;
     let login = crate::users::system_login_id(&transaction).await.c(h!())?;
     let (orbit_sync, matcher) =
         persistence::load_latest_test_link_matcher_with_sync(&transaction)

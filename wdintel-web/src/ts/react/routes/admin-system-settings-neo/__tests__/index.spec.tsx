@@ -74,6 +74,14 @@ function audioSwitch(container: HTMLElement): HTMLInputElement | null {
   );
 }
 
+function botTagsSwitch(container: HTMLElement): HTMLInputElement | null {
+  return (
+    Array.from(container.querySelectorAll('label'))
+      .find((label) => label.textContent?.includes('Вимкнути теги бота'))
+      ?.querySelector('input') ?? null
+  );
+}
+
 describe('AdminSystemSettingsNeoPage success notifications', () => {
   beforeEach(() => {
     window.history.replaceState({}, '', '/admin/system-settings-neo');
@@ -154,6 +162,19 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
       }),
     );
     expect(saveButton?.disabled).toBe(true);
+    await act(async () => root.unmount());
+  });
+
+  // @test-scope safeguard: prevents the bot-tag disable setting from being lost when system settings are saved.
+  it('saves the bot tag toggle', async () => {
+    const { container, root } = await renderPage();
+    const checkbox = botTagsSwitch(container);
+    expect(checkbox?.checked).toBe(false);
+
+    await act(async () => checkbox?.click());
+    await act(async () => button(container, 'зберегти')?.click());
+
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ disableBotTags: true }));
     await act(async () => root.unmount());
   });
 

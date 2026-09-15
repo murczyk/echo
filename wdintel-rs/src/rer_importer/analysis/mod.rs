@@ -36,6 +36,7 @@ use sea_query::*;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::error::Error as StdError;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use tempfile::TempDir;
 
 pub(in crate::rer_importer) mod analytics_unit;
@@ -1876,6 +1877,52 @@ where
     ))
 }
 
+pub fn filter_denied_device_names<Q>(
+    q: Q,
+    denied_device_names: &Option<Vec<String>>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    let Some(denied_device_names) = denied_device_names
+        .as_ref()
+        .filter(|names| !names.is_empty())
+    else {
+        return Ok(q);
+    };
+
+    let device_name_ids = device_name::Entity::find()
+        .select_only()
+        .column(device_name::Column::Id)
+        .filter(device_name::Column::Name.is_in(denied_device_names.clone()))
+        .into_query();
+    Ok(q.filter(
+        sigint_inbox_item::Column::DeviceNameId
+            .is_null()
+            .or(sigint_inbox_item::Column::DeviceNameId
+                .not_in_subquery(device_name_ids)),
+    ))
+}
+
+fn analysis_req_has_device_names(req: &AnalysisStatsReq) -> bool {
+    req.selected_device_names
+        .as_ref()
+        .is_some_and(|names| !names.is_empty())
+}
+
+pub(crate) async fn require_analysis_device_filter_access(
+    dbx: &DatabaseConnection,
+    login: &Uuid,
+    req: &AnalysisStatsReq,
+) -> Result<(), AppError> {
+    if analysis_req_has_device_names(req) {
+        crate::devices::access::require_message_devices(dbx, login)
+            .await
+            .c(h!())?;
+    }
+    Ok(())
+}
+
 fn get_related_tag_items_filter(
     unique_tags: BTreeSet<i64>,
     tag_filter_option: TagFilterOption,
@@ -2990,6 +3037,32 @@ fn rer_duty_short_state_hash_key(hash: &str) -> String {
     format!("{RER_DUTY_SHORT_STATE_REDIS_HASH_KEY_PREFIX}{hash}")
 }
 
+fn rer_duty_filter_has_device_names(filter: &RerDutyQueryStateWf) -> bool {
+    [
+        filter.selected_device_names.as_ref(),
+        filter.denied_device_names.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|names| !names.is_empty())
+}
+
+fn rer_duty_state_has_device_names(state: &RerDutyQueryState) -> bool {
+    state
+        .waterfalls
+        .as_ref()
+        .into_iter()
+        .flatten()
+        .any(|(_, filter)| rer_duty_filter_has_device_names(filter))
+}
+
+fn redact_rer_duty_state_device_names(state: &mut RerDutyQueryState) {
+    for (_, filter) in state.waterfalls.as_mut().into_iter().flatten() {
+        filter.selected_device_names = None;
+        filter.denied_device_names = None;
+    }
+}
+
 async fn rer_duty_short_state_create_or_reuse(
     redis: &mut redis::aio::ConnectionManager,
     state: RerDutyQueryState,
@@ -3054,7 +3127,12 @@ pub async fn rer_duty_filters_create(
     req: Json<RerDutyShortStateCreateReq>,
 ) -> Result<Json<RerDutyShortStateCreateRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    if rer_duty_state_has_device_names(&req.state) {
+        crate::devices::access::require_message_devices(&env.dbx, &login)
+            .await
+            .c(h!())?;
+    }
     let mut redis = env.redis.clone();
     let (id, reused) =
         rer_duty_short_state_create_or_reuse(&mut redis, req.state.clone())
@@ -3074,10 +3152,10 @@ pub async fn rer_duty_filters_get(
     req: Json<RerDutyShortStateGetReq>,
 ) -> Result<Json<RerDutyShortStateGetRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     let req = req.into_inner();
     let mut redis = env.redis.clone();
-    let payload =
+    let mut payload =
         match rer_duty_short_state_get_and_refresh(&mut redis, &req.id).await {
             Ok(payload) => payload,
             Err(AppError::NotFound) => {
@@ -3089,6 +3167,13 @@ pub async fn rer_duty_filters_get(
             }
             Err(err) => return Err(err),
         };
+    if !crate::devices::access::resolve_message_devices_access(
+        crate::devices::access::require_message_devices(&env.dbx, &login).await,
+    )
+    .c(h!())?
+    {
+        redact_rer_duty_state_device_names(&mut payload.state);
+    }
     info!("rer duty short-state loaded id={} login={login}", req.id);
     Ok(Json(payload))
 }
@@ -3402,7 +3487,10 @@ pub async fn summary_table_freq_1(
         get_identity_sigint_groups_noimport(&env.dbx, user, &env.config)
             .await
             .c(h!())?;
-    let login = login_id_from_identity(user)?;
+    let login = login_id_from_identity(user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, req)
+        .await
+        .c(h!())?;
     summary_table_freq_by_login(&login, env, req, &master_keys).await
 }
 
@@ -5121,7 +5209,10 @@ async fn launch_analysis_export_task(
     content_type: Option<String>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let report_history = crate::report_history::enqueue_report(
         &env.dbx,
         &login,
@@ -5185,7 +5276,10 @@ async fn correlated_freqs(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<CorrelatedFreqsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let req = req.into_inner();
     let empty = CorrelatedFreqsRsp { freqs: vec![] };
     let Some(selected_freqs) = req.selected_freqs.as_ref() else {
@@ -5556,7 +5650,14 @@ pub async fn edit_freq_unit_name(
     req: Json<EditFreqUnitNameReq>,
 ) -> Result<Json<()>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(
+        &env.dbx,
+        &login,
+        &req.analysis_stats_req,
+    )
+    .await
+    .c(h!())?;
     let reqan = req.analysis_stats_req.clone();
     let dt_since = dt_from_millis(reqan.since_date_inclusive_ms)?;
     let dt_till = dt_from_millis(reqan.till_date_noninclusive_ms)?;
@@ -5628,7 +5729,7 @@ pub async fn edit_freq_unit_name(
         &None,
         &req.filter_tags_option,
         &reqan.without_model_tags,
-        &login_id_from_identity(&user)?,
+        &login,
         req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     let rows_res = filter_selected_networks(
@@ -5753,15 +5854,33 @@ pub async fn saved_filters_list(
 ) -> Result<Json<Vec<SavedFilter>>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
 
-    Ok(Json(
-        select_saved_filter_list(
-            sea_orm_active_enums::SigintSavedFilterTypeEnum::Analysis,
-            login_id_from_identity(&user)?,
-            &env.dbx,
+    let login = login_id_from_identity(&user).c(h!())?;
+    let can_use_message_devices =
+        crate::devices::access::resolve_message_devices_access(
+            crate::devices::access::require_message_devices(&env.dbx, &login)
+                .await,
         )
-        .await
-        .c(h!())?,
-    ))
+        .c(h!())?;
+    let mut filters: Vec<SavedFilter> = select_saved_filter_list(
+        sea_orm_active_enums::SigintSavedFilterTypeEnum::Analysis,
+        login,
+        &env.dbx,
+    )
+    .await
+    .c(h!())?;
+    if !can_use_message_devices {
+        for filter in &mut filters {
+            filter.req.selected_device_names = None;
+        }
+    }
+    Ok(Json(filters))
+}
+
+fn redact_saved_duty_filter_device_names(filters: &mut [SavedFilterDuty]) {
+    for filter in filters {
+        filter.req.selected_device_names = None;
+        filter.req.denied_device_names = None;
+    }
 }
 
 #[post("/api/rer/duty/saved-filters")]
@@ -5771,15 +5890,24 @@ pub async fn saved_filters_duty_list(
 ) -> Result<Json<Vec<SavedFilterDuty>>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
 
-    Ok(Json(
-        select_saved_filter_list(
-            sea_orm_active_enums::SigintSavedFilterTypeEnum::Duty,
-            login_id_from_identity(&user)?,
-            &env.dbx,
+    let login = login_id_from_identity(&user).c(h!())?;
+    let can_use_message_devices =
+        crate::devices::access::resolve_message_devices_access(
+            crate::devices::access::require_message_devices(&env.dbx, &login)
+                .await,
         )
-        .await
-        .c(h!())?,
-    ))
+        .c(h!())?;
+    let mut filters: Vec<SavedFilterDuty> = select_saved_filter_list(
+        sea_orm_active_enums::SigintSavedFilterTypeEnum::Duty,
+        login,
+        &env.dbx,
+    )
+    .await
+    .c(h!())?;
+    if !can_use_message_devices {
+        redact_saved_duty_filter_device_names(&mut filters);
+    }
+    Ok(Json(filters))
 }
 
 fn filter_type_form_path(
@@ -5801,18 +5929,32 @@ pub async fn saved_filter_upsert(
     req: Json<SavedFilterUpsertReq>,
 ) -> Result<Json<Vec<SavedFilter>>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-
-    Ok(Json(
-        saved_filter_upsert_1(
-            sea_orm_active_enums::SigintSavedFilterTypeEnum::Analysis,
-            login_id_from_identity(&user)?,
-            &env.dbx,
-            req.name.clone(),
-            serde_json::to_value(req.req.clone()).context(h!())?,
-        )
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req.req)
         .await
-        .c(h!())?,
-    ))
+        .c(h!())?;
+    let can_use_message_devices =
+        crate::devices::access::resolve_message_devices_access(
+            crate::devices::access::require_message_devices(&env.dbx, &login)
+                .await,
+        )
+        .c(h!())?;
+    let mut filters: Vec<SavedFilter> = saved_filter_upsert_1(
+        sea_orm_active_enums::SigintSavedFilterTypeEnum::Analysis,
+        login,
+        &env.dbx,
+        req.name.clone(),
+        serde_json::to_value(req.req.clone()).context(h!())?,
+    )
+    .await
+    .c(h!())?;
+    if !can_use_message_devices {
+        for filter in &mut filters {
+            filter.req.selected_device_names = None;
+        }
+    }
+
+    Ok(Json(filters))
 }
 
 #[post("/api/rer/duty/saved-filter-upsert")]
@@ -5822,18 +5964,32 @@ pub async fn saved_filter_duty_upsert(
     req: Json<SavedFilterDutyUpsertReq>,
 ) -> Result<Json<Vec<SavedFilterDuty>>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    if rer_duty_filter_has_device_names(&req.req) {
+        crate::devices::access::require_message_devices(&env.dbx, &login)
+            .await
+            .c(h!())?;
+    }
 
-    Ok(Json(
-        saved_filter_upsert_1(
-            sea_orm_active_enums::SigintSavedFilterTypeEnum::Duty,
-            login_id_from_identity(&user)?,
-            &env.dbx,
-            req.name.clone(),
-            serde_json::to_value(req.req.clone()).context(h!())?,
+    let can_use_message_devices =
+        crate::devices::access::resolve_message_devices_access(
+            crate::devices::access::require_message_devices(&env.dbx, &login)
+                .await,
         )
-        .await
-        .c(h!())?,
-    ))
+        .c(h!())?;
+    let mut filters: Vec<SavedFilterDuty> = saved_filter_upsert_1(
+        sea_orm_active_enums::SigintSavedFilterTypeEnum::Duty,
+        login,
+        &env.dbx,
+        req.name.clone(),
+        serde_json::to_value(req.req.clone()).context(h!())?,
+    )
+    .await
+    .c(h!())?;
+    if !can_use_message_devices {
+        redact_saved_duty_filter_device_names(&mut filters);
+    }
+    Ok(Json(filters))
 }
 
 async fn saved_filter_upsert_1<T>(
@@ -5936,8 +6092,11 @@ pub async fn new_callsigns(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<NewCallsignsRes>, AppError> {
-    let user_id = &login_id_from_identity(&user)?;
-    let res = bi_new_callsigns(user_id, &env, &req.into_inner())
+    let user_id = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &user_id, &req)
+        .await
+        .c(h!())?;
+    let res = bi_new_callsigns(&user_id, &env, &req.into_inner())
         .await
         .context(h!())?;
 
@@ -6003,6 +6162,7 @@ pub async fn bi_new_callsigns(
             load_new_callsigns_with_db(
                 analytics_user_id,
                 analytics_req,
+                &None,
                 analytics_groups,
                 &db,
                 crate::inbox::callsigns::EffectiveCallsignSqlSource::Analytics,
@@ -6018,6 +6178,7 @@ pub async fn bi_new_callsigns(
             load_new_callsigns_with_db(
                 postgres_user_id,
                 postgres_req,
+                &None,
                 postgres_groups,
                 &db,
                 crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres,
@@ -6039,6 +6200,7 @@ pub async fn bi_new_callsigns_chunked(
     user_id: &uuid::Uuid,
     env: &Env,
     req: &AnalysisStatsReq,
+    denied_device_names: &Option<Vec<String>>,
     chunking_hours: i64,
     final_end: ReportPeriodEnd,
     min_mentions: i64,
@@ -6070,6 +6232,7 @@ pub async fn bi_new_callsigns_chunked(
                 chunk.till_ms,
                 chunk.end,
                 &group_master_keys,
+                denied_device_names,
                 true,
                 &env.dbx,
             )
@@ -6114,6 +6277,7 @@ pub async fn bi_new_callsigns_chunked(
             chunk.till_ms,
             chunk.end,
             &group_master_keys,
+            denied_device_names,
             false,
             &env.dbx,
             crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres,
@@ -6156,6 +6320,7 @@ fn new_callsign_periods(
 async fn load_new_callsigns_with_db(
     user_id: &uuid::Uuid,
     req: &AnalysisStatsReq,
+    denied_device_names: &Option<Vec<String>>,
     group_master_keys: Vec<String>,
     db: &DatabaseConnection,
     callsign_source: crate::inbox::callsigns::EffectiveCallsignSqlSource,
@@ -6169,6 +6334,7 @@ async fn load_new_callsigns_with_db(
         req.till_date_noninclusive_ms,
         ReportPeriodEnd::NonInclusive,
         &group_master_keys,
+        denied_device_names,
         true,
         db,
         callsign_source,
@@ -6194,6 +6360,7 @@ async fn load_new_callsigns_with_db(
         req.since_date_inclusive_ms,
         ReportPeriodEnd::NonInclusive,
         &group_master_keys,
+        denied_device_names,
         false,
         db,
         callsign_source,
@@ -6233,6 +6400,7 @@ async fn load_new_callsigns_in_range_with_db(
     till_ms: i64,
     period_end: ReportPeriodEnd,
     group_master_keys: &[String],
+    denied_device_names: &Option<Vec<String>>,
     include_aor_filter: bool,
     db: &DatabaseConnection,
     callsign_source: crate::inbox::callsigns::EffectiveCallsignSqlSource,
@@ -6246,6 +6414,7 @@ async fn load_new_callsigns_in_range_with_db(
         till_ms,
         period_end,
         group_master_keys,
+        denied_device_names,
         include_aor_filter,
         callsign_source,
         analytics_tag_access,
@@ -6297,6 +6466,7 @@ async fn load_new_callsign_counts_in_range_with_db(
     till_ms: i64,
     period_end: ReportPeriodEnd,
     group_master_keys: &[String],
+    denied_device_names: &Option<Vec<String>>,
     include_aor_filter: bool,
     db: &DatabaseConnection,
 ) -> Result<BTreeMap<String, i64>, AppError> {
@@ -6307,6 +6477,7 @@ async fn load_new_callsign_counts_in_range_with_db(
         till_ms,
         period_end,
         group_master_keys,
+        denied_device_names,
         include_aor_filter,
         crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres,
         None,
@@ -6332,6 +6503,7 @@ async fn load_new_callsign_last_seen_with_db(
     till_ms: i64,
     period_end: ReportPeriodEnd,
     group_master_keys: &[String],
+    denied_device_names: &Option<Vec<String>>,
     include_aor_filter: bool,
     db: &DatabaseConnection,
     callsign_source: crate::inbox::callsigns::EffectiveCallsignSqlSource,
@@ -6345,6 +6517,7 @@ async fn load_new_callsign_last_seen_with_db(
         till_ms,
         period_end,
         group_master_keys,
+        denied_device_names,
         include_aor_filter,
         callsign_source,
         analytics_tag_access,
@@ -6409,6 +6582,7 @@ fn build_new_callsign_filtered_items_query(
     till_ms: i64,
     period_end: ReportPeriodEnd,
     group_master_keys: &[String],
+    denied_device_names: &Option<Vec<String>>,
     include_aor_filter: bool,
     callsign_source: crate::inbox::callsigns::EffectiveCallsignSqlSource,
     analytics_tag_access: Option<&stats::AnalyticsTagAccess>,
@@ -6483,8 +6657,10 @@ fn build_new_callsign_filtered_items_query(
         scope,
     )?;
     let query = filter_search(query, &req.search)?;
+    let query = filter_selected_device_names(query, &req.selected_device_names)
+        .c(h!())?;
     let query =
-        filter_selected_device_names(query, &req.selected_device_names)?;
+        filter_denied_device_names(query, denied_device_names).c(h!())?;
     let query = match callsign_source {
         crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres => {
             filter_selected_tags(
@@ -6701,7 +6877,7 @@ pub async fn batch_message_comments(
     req: Json<BatchMessageCommentsReq>,
 ) -> Result<Json<MessageComments>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     let message_ids: Vec<i64> =
         req.messages.iter().map(|m| m.message_id).collect();
     let comments = batch_message_comments_bl(&env.dbx, &login, &message_ids)
@@ -6957,7 +7133,7 @@ pub async fn message_comments(
     req: Json<MessageCommentsReq>,
 ) -> Result<Json<Vec<MessageComment>>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     let accessible_message_ids =
         accessible_message_ids(&env.dbx, &login, &[req.message_id])
             .await
@@ -7013,7 +7189,7 @@ pub async fn message_draft_events(
     req: Json<DraftCommentEventsReq>,
 ) -> Result<HttpResponse, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
 
     let server_ts_ms = chrono::Utc::now().timestamp_millis();
     for event in req.events.iter() {
@@ -7050,7 +7226,10 @@ pub async fn activity_daily(
 ) -> Result<Json<crate::sigint::freq::types::FreqDailyActivityCount>, AppError>
 {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let accessible_groups =
         get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
             .await
@@ -7130,6 +7309,10 @@ pub async fn callsign_relations(
     AppError,
 > {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
@@ -7228,6 +7411,10 @@ pub async fn callsign_frequency_matches(
     req: Json<AnalysisCallsignFrequencyMatchesReq>,
 ) -> Result<Json<AnalysisCallsignFrequencyMatchesRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req.req)
+        .await
+        .c(h!())?;
     let selected_callsign_count = req
         .callsigns
         .iter()
@@ -7312,10 +7499,11 @@ async fn group_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<GroupStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let is_admin = has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
+    let login = login_id_from_identity(&user).c(h!())?;
+    let is_admin = has_role(&env.dbx, &login, "Admin").await.is_ok();
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
-        .is_ok();
-    let login = login_id_from_identity(&user)?;
+        .c(h!())?;
     let master_keys_noimport =
         get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
             .await
@@ -7475,7 +7663,10 @@ async fn sender_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<SenderStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys: Vec<String> = get_identity_sigint_groups(&env.dbx, &login)
         .await
         .context(h!())?;
@@ -7535,7 +7726,10 @@ async fn post_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<PostStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -7595,13 +7789,13 @@ async fn freq_stats(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<FreqStatsRsp>, AppError> {
-    has_any_role(
-        &env.dbx,
-        &login_id_from_identity(&user)?,
-        vec!["Rer", "Api"],
-    )
-    .await?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    has_any_role(&env.dbx, &login, vec!["Rer", "Api"])
+        .await
+        .c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
 
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -7657,7 +7851,10 @@ async fn callsign_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<CallsignStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -7718,7 +7915,10 @@ async fn metadata_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<MetadataStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -7779,7 +7979,10 @@ async fn tag_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<TagStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -7843,7 +8046,10 @@ async fn unit_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<UnitStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -7902,7 +8108,10 @@ async fn location_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<LocationStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -7979,7 +8188,10 @@ async fn aor_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<AreaOfResponsibilityStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -8083,7 +8295,10 @@ async fn network_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<NetworkStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -8202,7 +8417,10 @@ async fn count_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<CountStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
 
     let master_keys = get_identity_sigint_groups(&env.dbx, &login)
         .await
@@ -8214,7 +8432,8 @@ async fn count_stats(
         master_keys_noimport,
     };
     let analytics_config = env.config.analytics.as_ref();
-    let analytics = if analytics_count_request_supported(&req) {
+    let analytics_supported = analytics_count_request_supported(&req);
+    let analytics = if analytics_supported {
         env.analytics.as_ref()
     } else {
         trace!(
@@ -8266,14 +8485,25 @@ async fn count_stats(
         .map(AnalyticsConfig::retry_cooldown_ms)
         .unwrap_or(ANALYTICS_RETRY_COOLDOWN_MS_DEFAULT);
     let postgres_query = query_count_stats_postgres(&req, &user, &env, access);
+    let postgres_reason = if !analytics_supported {
+        "query_policy"
+    } else if env.analytics.is_none() {
+        if analytics_config.is_some() {
+            "analytics_unavailable"
+        } else {
+            "unconfigured"
+        }
+    } else {
+        "circuit_open"
+    };
     if analytics_query.is_none() {
-        info!(target: "analytics_route", "operation=\"analysis stats count\" route=postgres reason={}",
-            if analytics.is_none() { "unconfigured" } else { "circuit_open" });
+        info!(target: "analytics_route", "operation=\"analysis stats count\" route=postgres reason={postgres_reason}");
     }
     let response = with_count_stats_analytics_fallback(
         analytics_query,
         core::time::Duration::from_millis(timeout_ms),
         postgres_query,
+        postgres_reason,
         analytics_attempt.map(|(_, retry_attempt)| retry_attempt),
         core::time::Duration::from_millis(retry_cooldown_ms),
     )
@@ -8356,6 +8586,30 @@ struct AnalyticsRetryCancellationGuard<'a> {
     releases_half_open_attempt: bool,
 }
 
+pub(crate) struct AnalyticsReadOutcome<T> {
+    pub(crate) value: T,
+    pub(crate) postgres_reason: Option<&'static str>,
+    pub(crate) postgres_fallback_permit:
+        Option<tokio::sync::OwnedSemaphorePermit>,
+}
+
+pub(crate) fn postgres_pool_identity(db: &DatabaseConnection) -> usize {
+    let connect_options = db.get_postgres_connection_pool().connect_options();
+    Arc::as_ptr(&connect_options) as usize
+}
+
+static ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE: once_cell::sync::Lazy<
+    Arc<tokio::sync::Semaphore>,
+> = once_cell::sync::Lazy::new(|| {
+    Arc::new(tokio::sync::Semaphore::new(
+        ANALYTICS_POSTGRES_FALLBACK_MAX_CONCURRENT,
+    ))
+});
+
+#[derive(Debug, thiserror::Error)]
+#[error("analytics replication health is stale or unhealthy")]
+struct AnalyticsReplicationHealthError;
+
 impl Drop for AnalyticsRetryCancellationGuard<'_> {
     fn drop(&mut self) {
         if self.releases_half_open_attempt {
@@ -8407,6 +8661,7 @@ async fn with_count_stats_analytics_fallback<T, A, P>(
     analytics_query: Option<A>,
     timeout: core::time::Duration,
     postgres_query: P,
+    postgres_reason: &'static str,
     retry_attempt: Option<AnalyticsRetryAttempt<'_>>,
     retry_cooldown: core::time::Duration,
 ) -> Result<T, AppError>
@@ -8417,10 +8672,12 @@ where
     let _retry_cancellation_guard = retry_attempt
         .as_ref()
         .map(AnalyticsRetryAttempt::cancellation_guard);
-    let mut reason = "analytics_skipped";
+    let mut reason = postgres_reason;
     if let Some(analytics_query) = analytics_query {
         let started = std::time::Instant::now();
-        match tokio::time::timeout(timeout, analytics_query).await {
+        let open_circuit = match tokio::time::timeout(timeout, analytics_query)
+            .await
+        {
             Ok(Ok(response)) => {
                 if let Some(retry_attempt) = retry_attempt {
                     retry_attempt.record_success();
@@ -8429,12 +8686,18 @@ where
                 return Ok(response);
             }
             Ok(Err(err)) => {
-                reason = "analytics_error";
+                let open_circuit = analytics_failure_opens_circuit(&err);
+                reason = if open_circuit {
+                    "analytics_error"
+                } else {
+                    "analytics_unhealthy"
+                };
                 warn!(
                     "analysis stats count analytics query failed after {:?}, retrying via PostgreSQL: {:?}",
                     started.elapsed(),
                     err
                 );
+                open_circuit
             }
             Err(_) => {
                 reason = "analytics_timeout";
@@ -8442,13 +8705,29 @@ where
                     "analysis stats count analytics query timed out after {:?}, retrying via PostgreSQL",
                     started.elapsed()
                 );
+                true
             }
-        }
-        if let Some(retry_attempt) = retry_attempt {
-            retry_attempt.record_failure(retry_cooldown);
+        };
+        if open_circuit {
+            if let Some(retry_attempt) = retry_attempt {
+                retry_attempt.record_failure(retry_cooldown);
+            }
+        } else if let Some(retry_attempt) = retry_attempt {
+            retry_attempt.record_success();
         }
     }
 
+    let _fallback_permit = if analytics_fallback_needs_capacity(reason) {
+        Some(
+            acquire_analytics_postgres_fallback_capacity(
+                "analysis stats count",
+            )
+            .await
+            .context(h!())?,
+        )
+    } else {
+        None
+    };
     let started = std::time::Instant::now();
     let response = postgres_query.await.map_err(|error| {
         map_postgres_runtime_timeout(error, "analysis stats count")
@@ -8471,7 +8750,7 @@ where
     P: FnOnce(DatabaseConnection) -> PFut,
     PFut: std::future::Future<Output = Result<T, AppError>>,
 {
-    with_analytics_read_fallback_inner(
+    Ok(with_analytics_read_fallback_inner(
         env,
         operation,
         analytics_supported,
@@ -8480,6 +8759,33 @@ where
         postgres_query,
     )
     .await
+    .context(h!())?
+    .value)
+}
+
+pub(crate) async fn with_analytics_read_fallback_outcome<T, A, AFut, P, PFut>(
+    env: &Env,
+    operation: &str,
+    analytics_supported: bool,
+    analytics_query: A,
+    postgres_query: P,
+) -> Result<AnalyticsReadOutcome<T>, AppError>
+where
+    A: FnOnce(DatabaseConnection) -> AFut,
+    AFut: std::future::Future<Output = Result<T, AppError>>,
+    P: FnOnce(DatabaseConnection) -> PFut,
+    PFut: std::future::Future<Output = Result<T, AppError>>,
+{
+    Ok(with_analytics_read_fallback_inner(
+        env,
+        operation,
+        analytics_supported,
+        true,
+        analytics_query,
+        postgres_query,
+    )
+    .await
+    .context(h!())?)
 }
 
 pub(crate) async fn with_internally_timed_analytics_read_fallback<
@@ -8501,7 +8807,7 @@ where
     P: FnOnce(DatabaseConnection) -> PFut,
     PFut: std::future::Future<Output = Result<T, AppError>>,
 {
-    with_analytics_read_fallback_inner(
+    Ok(with_analytics_read_fallback_inner(
         env,
         operation,
         analytics_supported,
@@ -8510,6 +8816,8 @@ where
         postgres_query,
     )
     .await
+    .context(h!())?
+    .value)
 }
 
 async fn with_analytics_read_fallback_inner<T, A, AFut, P, PFut>(
@@ -8519,7 +8827,7 @@ async fn with_analytics_read_fallback_inner<T, A, AFut, P, PFut>(
     use_configured_timeout: bool,
     analytics_query: A,
     postgres_query: P,
-) -> Result<T, AppError>
+) -> Result<AnalyticsReadOutcome<T>, AppError>
 where
     A: FnOnce(DatabaseConnection) -> AFut,
     AFut: std::future::Future<Output = Result<T, AppError>>,
@@ -8542,7 +8850,11 @@ where
     let mut reason = if !analytics_supported {
         "query_policy"
     } else if env.analytics.is_none() {
-        "unconfigured"
+        if env.config.analytics.is_some() {
+            "analytics_unavailable"
+        } else {
+            "unconfigured"
+        }
     } else {
         "circuit_open"
     };
@@ -8570,44 +8882,117 @@ where
         } else {
             Some(query.await)
         };
-        match response {
+        let open_circuit = match response {
             Some(Ok(response)) => {
                 retry_attempt.record_success();
                 info!(target: "analytics_route", "operation={operation:?} route=analytics outcome=success elapsed_ms={}", started.elapsed().as_millis());
-                return Ok(response);
+                return Ok(AnalyticsReadOutcome {
+                    value: response,
+                    postgres_reason: None,
+                    postgres_fallback_permit: None,
+                });
             }
             Some(Err(err)) => {
-                reason = "analytics_error";
+                let open_circuit = analytics_failure_opens_circuit(&err);
+                reason = if open_circuit {
+                    "analytics_error"
+                } else {
+                    "analytics_unhealthy"
+                };
                 warn!(
                     "{operation} analytics query failed; retrying via PostgreSQL: {err:?}"
                 );
+                open_circuit
             }
             None => {
                 reason = "analytics_timeout";
                 warn!(
                     "{operation} analytics query timed out; retrying via PostgreSQL"
                 );
+                true
             }
+        };
+        if open_circuit {
+            let retry_cooldown = core::time::Duration::from_millis(
+                analytics_config
+                    .map(AnalyticsConfig::retry_cooldown_ms)
+                    .unwrap_or(ANALYTICS_RETRY_COOLDOWN_MS_DEFAULT),
+            );
+            retry_attempt.record_failure(retry_cooldown);
+        } else {
+            retry_attempt.record_success();
         }
-        let retry_cooldown = core::time::Duration::from_millis(
-            analytics_config
-                .map(AnalyticsConfig::retry_cooldown_ms)
-                .unwrap_or(ANALYTICS_RETRY_COOLDOWN_MS_DEFAULT),
-        );
-        retry_attempt.record_failure(retry_cooldown);
     } else if env.analytics.is_some() && !analytics_supported {
         trace!(
             "{operation} uses PostgreSQL for an unsupported analytics query"
         );
     }
 
+    let postgres_fallback_permit = if analytics_fallback_needs_capacity(reason)
+    {
+        Some(
+            acquire_analytics_postgres_fallback_capacity(operation)
+                .await
+                .context(h!())?,
+        )
+    } else {
+        None
+    };
     let started = std::time::Instant::now();
     let response = postgres_query(env.replica())
         .await
         .map_err(|error| map_postgres_runtime_timeout(error, operation));
     info!(target: "analytics_route", "operation={operation:?} route=postgres reason={reason} outcome={} elapsed_ms={}",
         if response.is_ok() { "success" } else { "error" }, started.elapsed().as_millis());
-    response
+    response.map(|value| AnalyticsReadOutcome {
+        value,
+        postgres_reason: Some(reason),
+        postgres_fallback_permit,
+    })
+}
+
+pub(crate) fn analytics_fallback_needs_capacity(reason: &str) -> bool {
+    matches!(
+        reason,
+        "analytics_error"
+            | "analytics_timeout"
+            | "analytics_unhealthy"
+            | "analytics_unavailable"
+            | "circuit_open"
+            | "candidate_ordering_incomplete"
+            | "candidate_revalidation_incomplete"
+            | "postgres_tail_error"
+            | "revalidation_error"
+    )
+}
+
+pub(crate) async fn acquire_analytics_postgres_fallback_capacity(
+    operation: &str,
+) -> Result<tokio::sync::OwnedSemaphorePermit, AppError> {
+    let timeout = core::time::Duration::from_millis(
+        ANALYTICS_POSTGRES_FALLBACK_QUEUE_TIMEOUT_MS,
+    );
+    match tokio::time::timeout(
+        timeout,
+        ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE
+            .clone()
+            .acquire_owned(),
+    )
+    .await
+    {
+        Ok(Ok(permit)) => Ok(permit),
+        Ok(Err(_)) | Err(_) => {
+            warn!(
+                target: "analytics_route",
+                "operation={operation:?} route=postgres outcome=rejected reason=fallback_saturated"
+            );
+            Err(AppError::ServiceUnavailable {
+                msg: "Аналітична система перевантажена. Спробуйте повторити запит."
+                    .to_string(),
+                retry_after_secs: 1,
+            })
+        }
+    }
 }
 
 pub(crate) fn map_postgres_runtime_timeout(
@@ -8658,6 +9043,20 @@ fn has_postgres_error_code(
         source = error.source();
     }
     false
+}
+
+fn analytics_failure_opens_circuit(error: &AppError) -> bool {
+    let mut source = Some(error as &(dyn StdError + 'static));
+    while let Some(error) = source {
+        if error
+            .downcast_ref::<AnalyticsReplicationHealthError>()
+            .is_some()
+        {
+            return false;
+        }
+        source = error.source();
+    }
+    true
 }
 
 fn analytics_retry_attempt(
@@ -8917,10 +9316,7 @@ WHERE singleton
         .c(h!())?;
     let is_fresh: bool = health.try_get("", "is_fresh").c(h!())?;
     if !is_fresh {
-        return Err(anyhow!(
-            "analytics replication health is stale or unhealthy"
-        )
-        .into());
+        return Err(anyhow::Error::new(AnalyticsReplicationHealthError).into());
     }
     Ok(())
 }
@@ -9232,6 +9628,10 @@ async fn group_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys_noimport =
         get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
             .await
@@ -9293,7 +9693,10 @@ async fn sender_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys: Vec<String> = get_identity_sigint_groups(&env.dbx, &login)
         .await
         .context(h!())?;
@@ -9354,7 +9757,10 @@ async fn post_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -9415,13 +9821,13 @@ async fn freq_stats_count(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
-    has_any_role(
-        &env.dbx,
-        &login_id_from_identity(&user)?,
-        vec!["Rer", "Api"],
-    )
-    .await?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    has_any_role(&env.dbx, &login, vec!["Rer", "Api"])
+        .await
+        .c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
 
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -9484,7 +9890,10 @@ async fn callsign_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -9546,7 +9955,10 @@ async fn tag_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -9610,7 +10022,10 @@ async fn unit_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -9669,7 +10084,10 @@ async fn location_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -9745,7 +10163,10 @@ async fn aor_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -9820,7 +10241,10 @@ async fn network_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -9887,7 +10311,10 @@ async fn stats_deprecated(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<AnalysisStatsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
 
     let instant = std::time::Instant::now();
 

@@ -37,7 +37,7 @@ import type {
   UpdateDeviceReq,
 } from '../../../../Bindings';
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
-import { postJson } from './client';
+import { getBytes, headResponse, postJson } from './client';
 import type { JsonBody, RequestOptions } from './client';
 
 export type CreateDeviceInput = {
@@ -211,6 +211,21 @@ export async function journalDeviceFiles(
 ): Promise<JournalDeviceFilesRsp> {
   const data = await postJson('/api/device/files/journal', transformCamelToSnake(req), options);
   return transformSnakeToCamel<JournalDeviceFilesRsp>(data);
+}
+
+export function deviceFileContentUrl(deviceId: string, fileId: string, revision: number): string {
+  return `/api/device/files/${encodeURIComponent(deviceId)}/${encodeURIComponent(fileId)}/revisions/${revision}/content`;
+}
+
+export function getDeviceFileContent(href: string, options?: RequestOptions) {
+  return getBytes(href, options);
+}
+
+export async function getDeviceFileContentSize(href: string, options?: RequestOptions) {
+  const response = await headResponse(href, options);
+  const length = response.headers.get('content-length');
+  const size = length === null ? null : Number(length);
+  return size !== null && Number.isSafeInteger(size) && size >= 0 ? size : null;
 }
 
 export async function listAnalyticsTags(

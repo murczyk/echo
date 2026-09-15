@@ -14,6 +14,10 @@ import {
   feedNewerSinceId,
   findAllAdjacentFreqs,
   parseStateFromUrl,
+  parseDutyMessageUidFromWindow,
+  pushStateToUrl,
+  stableStringify,
+  toQueryState,
 } from './utils';
 import type { MessageCursor, MessageFeedState } from './utils';
 import { useRerDutyFeedCrud } from './useRerDutyFeedCrud';
@@ -41,6 +45,7 @@ import { useRerDutyDeferredLanding, useRerDutyNavigation } from './useRerDutyNav
 import { useRerDutyPollingErrors } from './useRerDutyPollingErrors';
 import { useRerDutyPollingLifecycle } from './useRerDutyPollingLifecycle';
 import { useRerDutyInitialLoadTrigger } from './useRerDutyInitialLoadTrigger';
+import type { DeviceAccess } from './useRerDutyPageSettings';
 import { useRerDutyTailPollRequests } from './useRerDutyTailPollRequests';
 import { useRerDutyPollingCoordinator } from './useRerDutyPollingCoordinator';
 import { useRerDutyPollingFeedWork } from './useRerDutyPollingFeedWork';
@@ -48,14 +53,17 @@ import {
   DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS,
   withDutyFeedRequestDeadline,
 } from './dutyFeedRequestDeadline';
+import { buildPersistedDutyFilterState, persistDutyFilterState } from './duty-filter-persistence';
 
 export type FeedStateDeps = {
   freqs: string[];
+  freqsReady: boolean;
   setProfiles: Dispatch<SetStateAction<Record<string, SignalProfileEntry | null>>>;
   setGroupInfos: Dispatch<SetStateAction<Record<string, SignalGroupEntry>>>;
   pollIntervalSec: number;
   /** When true, duty page must not auto-scroll / follow new messages (user prefs). */
   disableAutoScroll: boolean;
+  deviceAccess: DeviceAccess;
   messageSortBy?: 'IMSTimestamp' | 'IMSCreatedAt';
   onFeedRemoved?: (feedId: string) => void;
 };
@@ -72,13 +80,30 @@ function getDutyPollIntervalMs(pollIntervalSec: number): number {
 }
 
 export function useRerDutyFeedState(deps: FeedStateDeps) {
+  const deviceAccess = deps.deviceAccess;
   const { freqs, setProfiles, setGroupInfos } = deps;
   const [messageFeeds, setMessageFeeds] = useState<MessageFeedState[]>(() => {
     const state = parseStateFromUrl();
-    return (state.messageFeeds ?? [['mf-0', emptyFilter()]]).map(([id, filter]) =>
-      createEmptyFeedState(id, filter),
+    return (state.messageFeeds ?? [['mf-0', emptyFilter()]]).map(([id, filter, options]) =>
+      createEmptyFeedState(id, filter, options),
     );
   });
+  const persistFiltersForThisPageRef = useRef(parseDutyMessageUidFromWindow() === null);
+  const hasDeviceFilters = messageFeeds.some(
+    (feed) =>
+      (feed.filter.selectedDeviceNames?.length ?? 0) > 0 ||
+      (feed.filter.deniedDeviceNames?.length ?? 0) > 0,
+  );
+  const deviceAccessAllowsRequests =
+    deviceAccess.status === 'allowed' ||
+    deviceAccess.status === 'denied' ||
+    (deviceAccess.status === 'error' && !hasDeviceFilters);
+  const needsFrequencyCatalog = messageFeeds.some(
+    (feed) =>
+      feed.adjacentFreqsRange > 0 &&
+      ((feed.filter.freqsSelected?.length ?? 0) > 0 || (feed.filter.freqsDenied?.length ?? 0) > 0),
+  );
+  const effectiveFiltersReady = deps.freqsReady || !needsFrequencyCatalog;
   const {
     error,
     errorNotificationVersion,
@@ -155,9 +180,25 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const atBottomByFeedIdRef = useRef<Record<string, boolean>>({});
   const {
     ready: shortStateReady,
+    filterPersistenceReady,
     shortStateIdRef,
     persistStateToUrl,
   } = useRerDutyShortState({ messageFeeds, messageFeedsRef, setMessageFeeds, setError });
+  const persistedFilterState = buildPersistedDutyFilterState(messageFeeds);
+  const persistedFilterStateRef = useRef(persistedFilterState);
+  persistedFilterStateRef.current = persistedFilterState;
+  const persistedFilterStateHash = stableStringify(persistedFilterState);
+
+  useEffect(() => {
+    if (!persistFiltersForThisPageRef.current) return;
+    if (!filterPersistenceReady) return;
+    if (shortStateIdRef.current && !shortStateReady) return;
+    const result = persistDutyFilterState(persistedFilterStateRef.current);
+    if (!result.ok) console.warn('Failed to persist Duty filters', result.error);
+    if (new URL(window.location.href).searchParams.has('state')) {
+      pushStateToUrl(toQueryState(messageFeedsRef.current));
+    }
+  }, [filterPersistenceReady, persistedFilterStateHash, shortStateIdRef, shortStateReady]);
 
   const {
     inboxCallsignInfoMap,
@@ -544,17 +585,51 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
               ...findAllAdjacentFreqs(freqs, feed.filter.freqsDenied ?? [], range),
             ]
           : undefined;
+      const filter =
+        deviceAccess.status === 'denied'
+          ? {
+              ...feed.filter,
+              selectedDeviceNames: null,
+              deniedDeviceNames: null,
+            }
+          : feed.filter;
       return buildInboxReq({
         ...opts,
         sortBy: deps.messageSortBy,
-        filter: feed.filter,
+        filter,
         expandedFreqsSelected: expandedSelected,
         expandedFreqsDenied: expandedDenied,
         highlightSignals: feed.highlightSignalsEnabled ?? false,
       });
     },
-    [deps.messageSortBy, freqs],
+    [deps.messageSortBy, deviceAccess.status, freqs],
   );
+
+  useEffect(() => {
+    if (deviceAccess.status !== 'denied') return;
+    setMessageFeeds((current) => {
+      let changed = false;
+      const next = current.map((feed) => {
+        if (feed.filter.selectedDeviceNames == null && feed.filter.deniedDeviceNames == null) {
+          return feed;
+        }
+        changed = true;
+        return {
+          ...feed,
+          filter: {
+            ...feed.filter,
+            selectedDeviceNames: null,
+            deniedDeviceNames: null,
+          },
+        };
+      });
+      if (changed) {
+        pushStateToUrl(toQueryState(next));
+        return next;
+      }
+      return current;
+    });
+  }, [deviceAccess.status]);
   const requestValidatedInboxCount = useCallback(
     (feedId: string) => {
       const existingPromise = countRequestPromiseByFeedIdRef.current[feedId];
@@ -1100,10 +1175,11 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     editReloadFeedIdsRef,
     loadGenerationByFeedIdRef,
     loadFeedInitialMessages,
+    deviceAccessResolved: deviceAccessAllowsRequests && effectiveFiltersReady,
   });
 
   useRerDutyPollingLifecycle({
-    ready: shortStateReady,
+    ready: shortStateReady && deviceAccessAllowsRequests && effectiveFiltersReady,
     hasShortState: Boolean(shortStateIdRef.current),
     pollIntervalMs,
     poll: pollCountThenLoadNewerIfNeeded,
@@ -1189,6 +1265,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     loadFeedNewerMessages,
     flushPendingNewerMessages,
     requestValidatedInboxCount,
+    pollNow: pollCountThenLoadNewerIfNeeded,
     catchUpFeedUnreadToTail,
     applyFilter: crud.applyFilter,
     toggleGroup: crud.toggleGroup,

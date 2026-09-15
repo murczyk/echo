@@ -1,12 +1,20 @@
 /**
  * @vitest-environment happy-dom
  */
-import { createRef } from 'react';
-import { act } from 'react';
+import { act, createRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('@mui/material', () => ({ CircularProgress: () => null }));
+vi.mock('@mui/material', () => ({
+  CircularProgress: () => null,
+  useTheme: () => ({
+    palette: {
+      mode: 'dark',
+      background: { default: '#121212' },
+      grey: { 100: '#f5f5f5' },
+    },
+  }),
+}));
 
 import { ImageEditorWorkspace } from '../ImageEditorWorkspace';
 

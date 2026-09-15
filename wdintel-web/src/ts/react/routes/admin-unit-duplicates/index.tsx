@@ -1,7 +1,7 @@
 import MergeIcon from '@mui/icons-material/Merge';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { Box, Link, Stack, Tooltip } from '@mui/material';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 
 import type { Unit, UnitDuplicate } from '../../../../Bindings';
@@ -17,6 +17,14 @@ import {
 } from '../../components/mui-customized/table/get-default-table-options';
 import { MrtOverflowText } from '../../components/mui-customized/table/mrt-overflow';
 import { getUnitDuplicates, mergeDuplicateUnit } from '../../services/api/units';
+import {
+  BgtaskFailedError,
+  clearPendingUnitMerge,
+  loadPendingUnitMerge,
+  savePendingUnitMerge,
+  waitForBgtaskCompletion,
+} from '../../services/api/bgtask';
+import type { PendingUnitMerge } from '../../services/api/bgtask';
 import { handleNavigateWithinSpaClick } from '../../utils/browser';
 import { hasRole } from '../../utils/roles';
 import { SettingsNeoTable } from '../settings-neo/SettingsNeoTable';
@@ -73,18 +81,25 @@ export function AdminUnitDuplicatesPage({
   const [status, setStatus] = useState<string | null>(null);
   const [mergeTarget, setMergeTarget] = useState<Unit | null>(null);
   const [mergeError, setMergeError] = useState<string | null>(null);
+  const [mergeProgress, setMergeProgress] = useState<number | null>(null);
+  const [mergeProgressLabel, setMergeProgressLabel] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const mergePollController = useRef<AbortController | null>(null);
+  const unitsLoadVersion = useRef(0);
   const canMerge = hasRole(authUserRoles, 'Rer') && hasRole(authUserRoles, 'UnitsEditor');
 
   const loadUnits = useCallback(async (signal?: AbortSignal) => {
+    const version = ++unitsLoadVersion.current;
+    const isCurrent = () => version === unitsLoadVersion.current && !signal?.aborted;
     setLoading(true);
     setLoadError(null);
     try {
-      setUnits(await getUnitDuplicates(signal ? { signal } : undefined));
+      const units = await getUnitDuplicates(signal ? { signal } : undefined);
+      if (isCurrent()) setUnits(units);
     } catch (error) {
-      if (!signal?.aborted) setLoadError(formatUnitError(error));
+      if (isCurrent()) setLoadError(formatUnitError(error));
     } finally {
-      if (!signal?.aborted) setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, []);
 
@@ -94,25 +109,85 @@ export function AdminUnitDuplicatesPage({
     return () => controller.abort();
   }, [loadUnits]);
 
+  async function trackMerge(pending: PendingUnitMerge) {
+    const controller = new AbortController();
+    mergePollController.current = controller;
+    try {
+      await waitForBgtaskCompletion(
+        pending.taskId,
+        (progress, logline) => {
+          setMergeError(null);
+          setMergeProgress((current) => Math.max(current ?? 0, progress));
+          if (logline !== null) setMergeProgressLabel(logline);
+        },
+        {
+          signal: controller.signal,
+          onStatusError: (error) =>
+            setMergeError(
+              `Не вдалося перевірити стан об’єднання: ${formatUnitError(error)}. Повторюємо спробу.`,
+            ),
+        },
+      );
+      if (controller.signal.aborted) return;
+      clearPendingUnitMerge(pending.taskId);
+      setMergeTarget(null);
+      setMergeProgress(null);
+      setMergeProgressLabel(null);
+      setStatus(`Підрозділ «${pending.duplicate.name}» об’єднано.`);
+      await loadUnits(controller.signal);
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      setMergeError(formatUnitError(error));
+      if (error instanceof BgtaskFailedError) {
+        clearPendingUnitMerge(pending.taskId);
+        await loadUnits(controller.signal);
+      }
+    } finally {
+      if (!controller.signal.aborted) setSubmitting(false);
+      if (mergePollController.current === controller) mergePollController.current = null;
+    }
+  }
+
   async function confirmMerge(duplicate: Unit) {
     if (mergeTarget === null) return;
     setSubmitting(true);
     setMergeError(null);
+    setMergeProgress(0);
+    setMergeProgressLabel(null);
     try {
-      const original = mergeTarget;
-      const merged = await mergeDuplicateUnit({
-        originalId: original.id,
-        cloneToDeleteId: duplicate.id,
-      });
-      setMergeTarget(null);
-      setStatus(`Підрозділ «${duplicate.name}» об’єднано з «${merged.name}».`);
-      await loadUnits();
+      let pending = loadPendingUnitMerge();
+      if (
+        pending !== null &&
+        (pending.original.id !== mergeTarget.id || pending.duplicate.id !== duplicate.id)
+      ) {
+        throw new Error('Інше об’єднання ще виконується. Завершіть його перед новим.');
+      }
+      if (pending === null) {
+        const taskId = await mergeDuplicateUnit({
+          originalId: mergeTarget.id,
+          cloneToDeleteId: duplicate.id,
+        });
+        pending = { taskId, original: mergeTarget, duplicate };
+        savePendingUnitMerge(pending);
+      }
+      await trackMerge(pending);
     } catch (error) {
       setMergeError(formatUnitError(error));
-    } finally {
       setSubmitting(false);
     }
   }
+
+  useEffect(() => {
+    const pending = loadPendingUnitMerge();
+    if (pending !== null) {
+      setMergeTarget(pending.original);
+      setSubmitting(true);
+      setMergeProgress(0);
+      setMergeProgressLabel(null);
+      void trackMerge(pending);
+    }
+    return () => mergePollController.current?.abort();
+  }, []);
 
   const columns = useMemo<AppMrtColumnDef<UnitDuplicate>[]>(
     () => [
@@ -232,6 +307,8 @@ export function AdminUnitDuplicatesPage({
                   disabled={submitting}
                   onClick={() => {
                     setMergeError(null);
+                    setMergeProgress(null);
+                    setMergeProgressLabel(null);
                     setMergeTarget(row.original.sigintUnit);
                   }}
                 />
@@ -244,10 +321,14 @@ export function AdminUnitDuplicatesPage({
         <MergeUnitDialog
           original={mergeTarget}
           submitting={submitting}
+          progress={mergeProgress}
+          progressLabel={mergeProgressLabel}
           error={mergeError}
           onClose={() => {
             setMergeTarget(null);
             setMergeError(null);
+            setMergeProgress(null);
+            setMergeProgressLabel(null);
           }}
           onConfirm={(duplicate) => void confirmMerge(duplicate)}
         />

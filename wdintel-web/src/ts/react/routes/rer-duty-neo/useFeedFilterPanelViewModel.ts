@@ -52,6 +52,8 @@ type FeedFilterSelectionViewModel<T> = {
 
 export type FeedFilterPanelViewModel = {
   isDarkMode: boolean;
+  hasActiveFilter: boolean;
+  onDiscardCurrentFilter: () => void;
   groups: FeedFilterSelectionViewModel<string>;
   senders: FeedFilterSelectionViewModel<{ id: string; label: string }>;
   freqs: FeedFilterSelectionViewModel<string> & {
@@ -66,6 +68,13 @@ export type FeedFilterPanelViewModel = {
     unitsExactMatchOnly: boolean;
     onUnitsExactMatchOnlyChange: (value: boolean) => void;
   };
+  devices?: {
+    selected: string[];
+    denied: string[];
+    onSelectedChange: (value: string[]) => void;
+    onDeniedChange: (value: string[]) => void;
+    onModeTransfer: NonNullable<FeedFilterPanelModel['devices']>['onModeTransfer'];
+  };
   advanced: {
     highlightSignalsEnabled?: boolean;
     onlyMyUnitTagsEnabled?: boolean;
@@ -78,7 +87,7 @@ export type FeedFilterPanelViewModel = {
 export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFilterPanelViewModel {
   const theme = useTheme();
   const isDarkMode = theme.palette.mode === 'dark';
-  const { filterState, sources, toggles, actions } = panel;
+  const { filterState, sources, toggles, actions, devices } = panel;
   const {
     groupsList,
     groupInfos,
@@ -244,6 +253,8 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
 
   return {
     isDarkMode,
+    hasActiveFilter: panel.hasActiveFilter,
+    onDiscardCurrentFilter: actions.onDiscardCurrentFilter,
     groups: {
       mode: groupsSelectionState.mode,
       value: groupsSelectionState.localValue,
@@ -351,6 +362,15 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
       getBulkPasteAliases: (value: string) =>
         unitLabelsById.has(value) ? [unitLabelsById.get(value)!] : [],
     },
+    devices: devices
+      ? {
+          selected: filterState.selectedDeviceNames ?? [],
+          denied: filterState.deniedDeviceNames ?? [],
+          onSelectedChange: devices.onSelectedChange,
+          onDeniedChange: devices.onDeniedChange,
+          onModeTransfer: devices.onModeTransfer,
+        }
+      : undefined,
     advanced: {
       highlightSignalsEnabled,
       onlyMyUnitTagsEnabled,

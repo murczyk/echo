@@ -105,6 +105,7 @@ type DutyMessageCardItemProps = {
   feedId: string;
   feedCount?: number;
   tagsLayout: TagsLayoutVariant;
+  hideBotTags: boolean;
   collapseMediaPreviews?: boolean;
   mediaSummaryEnabled?: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
@@ -145,6 +146,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
   feedId,
   feedCount,
   tagsLayout,
+  hideBotTags,
   collapseMediaPreviews = false,
   mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
   messageTextPreviewLines,
@@ -198,6 +200,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       analysisDestination="neo"
       feedCount={feedCount}
       tagsLayout={tagsLayout}
+      hideBotTags={hideBotTags}
       collapseMediaPreviews={collapseMediaPreviews}
       mediaSummaryEnabled={mediaSummaryEnabled}
       messageTextPreviewLines={messageTextPreviewLines}
@@ -285,6 +288,7 @@ type DutyMessageListProps = {
   feedId: string;
   feedCount?: number;
   tagsLayout: TagsLayoutVariant;
+  hideBotTags: boolean;
   collapseMediaPreviews?: boolean;
   mediaSummaryEnabled?: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
@@ -330,6 +334,7 @@ const DutyMessageList = memo(
     feedId,
     feedCount,
     tagsLayout,
+    hideBotTags,
     collapseMediaPreviews = false,
     mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
     messageTextPreviewLines,
@@ -386,6 +391,7 @@ const DutyMessageList = memo(
                   feedId={feedId}
                   feedCount={feedCount}
                   tagsLayout={tagsLayout}
+                  hideBotTags={hideBotTags}
                   collapseMediaPreviews={collapseMediaPreviews}
                   mediaSummaryEnabled={mediaSummaryEnabled}
                   messageTextPreviewLines={messageTextPreviewLines}
@@ -437,6 +443,7 @@ const DutyMessageList = memo(
     prev.feedId === next.feedId &&
     prev.feedCount === next.feedCount &&
     prev.tagsLayout === next.tagsLayout &&
+    prev.hideBotTags === next.hideBotTags &&
     prev.collapseMediaPreviews === next.collapseMediaPreviews &&
     prev.messageTextPreviewLines === next.messageTextPreviewLines &&
     prev.botTagAction === next.botTagAction &&
@@ -634,6 +641,7 @@ export const FeedColumnContent = memo(
       profiles,
       featureStrictNetworks,
       tagsLayout,
+      hideBotTags,
       collapseMediaPreviews = false,
       mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
       messageTextPreviewLines,
@@ -771,6 +779,7 @@ export const FeedColumnContent = memo(
           feedId={feed.id}
           feedCount={feedCount}
           tagsLayout={tagsLayout}
+          hideBotTags={hideBotTags}
           collapseMediaPreviews={collapseMediaPreviews}
           mediaSummaryEnabled={mediaSummaryEnabled}
           messageTextPreviewLines={messageTextPreviewLines}
@@ -830,6 +839,8 @@ export const FeedColumnContent = memo(
           borderTopLeftRadius: 0,
           borderTopRightRadius: 0,
           position: 'relative',
+          zIndex: 0,
+          isolation: 'isolate',
         }}
       >
         <Box
@@ -923,6 +934,7 @@ export const FeedColumnContent = memo(
       prevCard.profiles !== nextCard.profiles ||
       prevCard.featureStrictNetworks !== nextCard.featureStrictNetworks ||
       prevCard.tagsLayout !== nextCard.tagsLayout ||
+      prevCard.hideBotTags !== nextCard.hideBotTags ||
       prevCard.collapseMediaPreviews !== nextCard.collapseMediaPreviews ||
       prevCard.messageTextPreviewLines !== nextCard.messageTextPreviewLines ||
       prevCard.tagsMap !== nextCard.tagsMap ||

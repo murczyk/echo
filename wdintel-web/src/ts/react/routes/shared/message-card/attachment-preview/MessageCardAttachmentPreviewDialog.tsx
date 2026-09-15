@@ -269,10 +269,12 @@ export function MessageCardAttachmentPreviewDialog({
             onClose={closeDialog}
           />
         )}
-        <AttachmentPreviewStageCarouselNav
-          navigation={{ ...navigation, disabled: isEditing || navigation.disabled }}
-          visibleSide={hoveredStageNavigationSide}
-        />
+        {isEditing ? null : (
+          <AttachmentPreviewStageCarouselNav
+            navigation={navigation}
+            visibleSide={hoveredStageNavigationSide}
+          />
+        )}
       </div>
     </Dialog>
   );

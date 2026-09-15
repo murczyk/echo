@@ -95,6 +95,7 @@ function emptySystemSettingsResponse(enableAudioTranscription = false) {
     show_classic_analysis: false,
     show_peleng_distance_to_battleline: false,
     hide_orbit_data: false,
+    disable_bot_tags: false,
   };
 }
 

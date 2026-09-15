@@ -84,6 +84,7 @@ function buildFeedColumnModel(feed: MessageFeedState): FeedColumnModel {
     },
     filterPanel: {
       feedId: feed.id,
+      hasActiveFilter: false,
       filterState: {
         groupsSelected: [],
         deniedGroups: [],
@@ -138,6 +139,7 @@ function buildFeedColumnModel(feed: MessageFeedState): FeedColumnModel {
         onRenameSelectedSavedFilter: async () => true,
         onDeleteSelectedSavedFilter: async () => {},
         onApplySavedFilter: () => {},
+        onDiscardCurrentFilter: () => {},
       },
     },
     keywordsPanel: {
@@ -215,6 +217,7 @@ describe('RerDutyNeoWorkspace', () => {
       },
       filterPanel: {
         feedId: 'feed-1',
+        hasActiveFilter: false,
         filterState: {
           groupsSelected: [],
           deniedGroups: [],
@@ -269,6 +272,7 @@ describe('RerDutyNeoWorkspace', () => {
           onRenameSelectedSavedFilter: async () => true,
           onDeleteSelectedSavedFilter: async () => {},
           onApplySavedFilter: () => {},
+          onDiscardCurrentFilter: () => {},
         },
       },
       keywordsPanel: {

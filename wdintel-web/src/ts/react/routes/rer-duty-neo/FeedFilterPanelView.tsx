@@ -5,9 +5,11 @@ import { SavedFiltersControl } from '../../components/SavedFiltersControl';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
 import type { GroupCatalogError } from './useRerDutyFilterOptions';
+import type { FeedFilterModeTransfer } from './useFeedFilterSelectionState';
 import { FeedFilterAdvancedSection } from './FeedFilterAdvancedSection';
 import { FeedFilterFrequencySection } from './FeedFilterFrequencySection';
 import { FeedFilterSelectionSection } from './FeedFilterSelectionSection';
+import { FeedFilterDeviceNamesSection } from './FeedFilterDeviceNamesSection';
 
 type UnitsExactMatchSelectValue = 'exact' | 'not-exact';
 
@@ -76,6 +78,8 @@ type FeedFilterSavedFiltersConfig = {
 
 export type FeedFilterPanelViewProps = {
   isDarkMode: boolean;
+  hasActiveFilter: boolean;
+  onDiscardCurrentFilter: () => void;
   groups: FeedFilterSelectionConfig<string>;
   senders: FeedFilterSelectionConfig<{ id: string; label: string }>;
   freqs: FeedFilterSelectionConfig<string> & {
@@ -90,6 +94,13 @@ export type FeedFilterPanelViewProps = {
     unitsExactMatchOnly: boolean;
     onUnitsExactMatchOnlyChange: (value: boolean) => void;
   };
+  devices?: {
+    selected: string[];
+    denied: string[];
+    onSelectedChange: (value: string[]) => void;
+    onDeniedChange: (value: string[]) => void;
+    onModeTransfer: (next: FeedFilterModeTransfer) => void;
+  };
   advanced: {
     highlightSignalsEnabled?: boolean;
     onlyMyUnitTagsEnabled?: boolean;
@@ -101,11 +112,14 @@ export type FeedFilterPanelViewProps = {
 
 export function FeedFilterPanelView({
   isDarkMode,
+  hasActiveFilter,
+  onDiscardCurrentFilter,
   groups,
   senders,
   freqs,
   posts,
   units,
+  devices,
   advanced,
   savedFilters,
 }: FeedFilterPanelViewProps) {
@@ -339,12 +353,23 @@ export function FeedFilterPanelView({
           ) : null}
         </Box>
 
+        {devices ? <FeedFilterDeviceNamesSection {...devices} /> : null}
+
         <FeedFilterAdvancedSection
           highlightSignalsEnabled={advanced.highlightSignalsEnabled}
           onlyMyUnitTagsEnabled={advanced.onlyMyUnitTagsEnabled}
           onHighlightSignalsChange={advanced.onHighlightSignalsChange}
           onOnlyMyUnitTagsChange={advanced.onOnlyMyUnitTagsChange}
         />
+
+        <PowerButton
+          fullWidth
+          variant="outlined"
+          disabled={!hasActiveFilter}
+          onClick={onDiscardCurrentFilter}
+        >
+          Скинути поточний фільтр
+        </PowerButton>
 
         <SavedFiltersControl
           savedFilters={savedFilters.savedFilters}

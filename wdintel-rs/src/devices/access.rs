@@ -7,7 +7,7 @@ use crate::entities::login;
 use crate::error::AppError;
 use crate::h;
 use crate::system_settings::ensure_devices_section_enabled;
-use crate::types::{ShortContext, Uuid};
+use crate::types::{ShortContext, ShortContextErr, Uuid};
 use actix_identity::Identity;
 use sea_orm::{
     AccessMode, ConnectionTrait, DatabaseConnection, IsolationLevel,
@@ -28,10 +28,28 @@ pub(in crate::devices) fn organism_id(
     login.organism_id.ok_or_else(forbidden_device_operation)
 }
 
-pub(in crate::devices) fn require_read(
-    roles: &serde_json::Value,
+pub(crate) fn require_read(roles: &serde_json::Value) -> Result<(), AppError> {
+    require_any_role(roles, &[ROLE_CYBER, ROLE_ADMIN])
+}
+
+pub(crate) async fn require_message_devices(
+    dbx: &DatabaseConnection,
+    login_id: &Uuid,
 ) -> Result<(), AppError> {
-    require_any_role(roles, &[ROLE_CYBER, ROLE_DEVICE_SOURCE, ROLE_ADMIN])
+    ensure_devices_section_enabled(dbx).await.c(h!())?;
+    Ok(crate::users::has_role(dbx, login_id, ROLE_CYBER)
+        .await
+        .c(h!())?)
+}
+
+pub(crate) fn resolve_message_devices_access(
+    result: Result<(), AppError>,
+) -> Result<bool, AppError> {
+    match result {
+        Ok(()) => Ok(true),
+        Err(AppError::Forbidden(_)) => Ok(false),
+        Err(error) => Err(error.c(h!())),
+    }
 }
 
 pub(in crate::devices) fn require_create(

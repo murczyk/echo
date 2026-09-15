@@ -39,7 +39,7 @@ pub async fn report_docx_kind_tag(
     .await
     .context(h!())?;
 
-    write_tag_report_docx(outpath, &period, &data)?;
+    write_tag_report_docx(outpath, &period, data).context(h!())?;
     Ok(())
 }
 
@@ -49,28 +49,28 @@ struct TagReportPeriod {
 }
 
 struct TagReportData {
-    important_ids: BTreeSet<i64>,
     messages: Vec<TagReportMessage>,
 }
 
 struct TagReportSnapshot {
     important_ids: BTreeSet<i64>,
     candidates: Vec<TagReportMessageCandidate>,
-    signal_messages:
-        BTreeMap<i64, (signal_message::Model, datasource_group::Model)>,
-    inbox_items: BTreeMap<i64, sigint_inbox_item::Model>,
-    datasources: BTreeMap<i64, datasource::Model>,
+    signal_messages: BTreeMap<i64, TagReportSignalMessage>,
+    inbox_items: BTreeMap<i64, TagReportInboxItem>,
+    datasources: BTreeMap<i64, TagReportDatasource>,
     report_comments: BTreeMap<i64, String>,
     own_comments: BTreeMap<i64, String>,
 }
 
 struct TagReportMessage {
     message_id: i64,
-    signal_message: signal_message::Model,
-    inbox: sigint_inbox_item::Model,
-    datasource: datasource::Model,
+    freq: Option<String>,
+    datetime: Option<chrono::NaiveDateTime>,
+    created_at: Option<chrono::NaiveDateTime>,
+    full_text: String,
     report_comment: Option<String>,
-    own_comment: Option<String>,
+    has_own_comment: bool,
+    is_important: bool,
 }
 
 #[derive(FromQueryResult)]
@@ -79,6 +79,29 @@ struct TagReportMessageCandidate {
     freq: Option<String>,
     datetime: Option<chrono::NaiveDateTime>,
     created_at: Option<chrono::NaiveDateTime>,
+}
+
+#[derive(FromQueryResult)]
+struct TagReportSignalMessage {
+    id: i64,
+    body: Option<String>,
+    datasource_id: i64,
+}
+
+#[derive(FromQueryResult)]
+struct TagReportInboxItem {
+    id: i64,
+    date: Option<String>,
+    time: Option<String>,
+    freq: Option<String>,
+    unit: Option<String>,
+    location: Option<String>,
+}
+
+#[derive(FromQueryResult)]
+struct TagReportDatasource {
+    id: i64,
+    kind: String,
 }
 
 fn tag_report_period(
@@ -116,7 +139,6 @@ async fn load_tag_report_data(
     let chunks =
         inbox_report_period_chunks(req, report_settings.chunking_hours)
             .context(h!())?;
-    let mut important_ids = BTreeSet::new();
     let mut messages_by_id = BTreeMap::new();
     for (index, chunk) in chunks.iter().copied().enumerate() {
         info!(
@@ -146,11 +168,13 @@ async fn load_tag_report_data(
             tag_report_sort_by,
             creation_time_sorting,
             snapshot,
-        );
-        important_ids.extend(chunk_data.important_ids);
+        )
+        .context(h!())?;
         for message in chunk_data.messages {
             messages_by_id.entry(message.message_id).or_insert(message);
         }
+        crate::report_history::ensure_report_record_count(messages_by_id.len())
+            .context(h!())?;
     }
     let mut messages = messages_by_id.into_values().collect::<Vec<_>>();
     // Chunk aggregation rebuilds this list by message ID, so use the request basis again.
@@ -159,10 +183,7 @@ async fn load_tag_report_data(
         tag_report_sort_by,
         creation_time_sorting,
     );
-    Ok(TagReportData {
-        important_ids,
-        messages,
-    })
+    Ok(TagReportData { messages })
 }
 
 async fn load_tag_report_snapshot_txn(
@@ -222,7 +243,7 @@ fn collect_tag_report_data(
     tag_report_sort_by: TagReportSortBy,
     creation_time_sorting: bool,
     snapshot: TagReportSnapshot,
-) -> TagReportData {
+) -> Result<TagReportData, AppError> {
     let mut candidates = snapshot.candidates;
     sort_tag_report_candidates(
         &mut candidates,
@@ -237,11 +258,10 @@ fn collect_tag_report_data(
         snapshot.datasources,
         snapshot.report_comments,
         snapshot.own_comments,
-    );
-    TagReportData {
-        important_ids: snapshot.important_ids,
-        messages,
-    }
+        snapshot.important_ids,
+    )
+    .context(h!())?;
+    Ok(TagReportData { messages })
 }
 
 async fn load_tag_report_candidates(
@@ -278,11 +298,10 @@ fn sort_tag_report_messages(
             tag_report_message_time_order(left, right, creation_time_sorting)
         }
         TagReportSortBy::ByFreqThenTime => left
-            .inbox
             .freq
             .as_deref()
             .unwrap_or("")
-            .cmp(right.inbox.freq.as_deref().unwrap_or(""))
+            .cmp(right.freq.as_deref().unwrap_or(""))
             .then_with(|| {
                 tag_report_message_time_order(
                     left,
@@ -300,15 +319,15 @@ fn tag_report_message_time_order(
 ) -> std::cmp::Ordering {
     tag_report_time_order(
         if creation_time_sorting {
-            Some(left.signal_message.created_at)
+            left.created_at
         } else {
-            left.inbox.datetime
+            left.datetime
         },
         left.message_id,
         if creation_time_sorting {
-            Some(right.signal_message.created_at)
+            right.created_at
         } else {
-            right.inbox.datetime
+            right.datetime
         },
         right.message_id,
     )
@@ -413,40 +432,48 @@ async fn load_tag_report_important_ids(
 async fn load_tag_report_signal_messages(
     txn: &DatabaseTransaction,
     message_ids: &[i64],
-) -> Result<
-    BTreeMap<i64, (signal_message::Model, datasource_group::Model)>,
-    AppError,
-> {
+) -> Result<BTreeMap<i64, TagReportSignalMessage>, AppError> {
     if message_ids.is_empty() {
         return Ok(BTreeMap::new());
     }
     let messages = signal_message::Entity::find()
         .filter(signal_message::Column::Id.eq_any(message_ids.to_vec()))
         .filter(signal_message::Column::Deleted.eq(false))
-        .find_with_related(datasource_group::Entity)
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .select_only()
+        .column(signal_message::Column::Id)
+        .column(signal_message::Column::Body)
+        .column_as(datasource_group::Column::DatasourceId, "datasource_id")
+        .into_model::<TagReportSignalMessage>()
         .all(txn)
         .await
         .context(h!())?;
     Ok(messages
         .into_iter()
-        .filter_map(|(message, groups)| {
-            groups
-                .into_iter()
-                .next()
-                .map(|group| (message.id, (message, group)))
-        })
+        .map(|message| (message.id, message))
         .collect())
 }
 
 async fn load_tag_report_inbox_items(
     txn: &DatabaseTransaction,
     message_ids: &[i64],
-) -> Result<BTreeMap<i64, sigint_inbox_item::Model>, AppError> {
+) -> Result<BTreeMap<i64, TagReportInboxItem>, AppError> {
     if message_ids.is_empty() {
         return Ok(BTreeMap::new());
     }
     Ok(sigint_inbox_item::Entity::find()
         .filter(sigint_inbox_item::Column::Id.eq_any(message_ids.to_vec()))
+        .select_only()
+        .column(sigint_inbox_item::Column::Id)
+        .column(sigint_inbox_item::Column::Date)
+        .column(sigint_inbox_item::Column::Time)
+        .column(sigint_inbox_item::Column::Freq)
+        .column(sigint_inbox_item::Column::Unit)
+        .column(sigint_inbox_item::Column::Location)
+        .into_model::<TagReportInboxItem>()
         .all(txn)
         .await
         .context(h!())?
@@ -457,12 +484,10 @@ async fn load_tag_report_inbox_items(
 
 async fn load_tag_report_datasources<'a>(
     txn: &DatabaseTransaction,
-    messages: impl Iterator<
-        Item = &'a (signal_message::Model, datasource_group::Model),
-    >,
-) -> Result<BTreeMap<i64, datasource::Model>, AppError> {
+    messages: impl Iterator<Item = &'a TagReportSignalMessage>,
+) -> Result<BTreeMap<i64, TagReportDatasource>, AppError> {
     let datasource_ids: BTreeSet<i64> =
-        messages.map(|(_, group)| group.datasource_id).collect();
+        messages.map(|message| message.datasource_id).collect();
     if datasource_ids.is_empty() {
         return Ok(BTreeMap::new());
     }
@@ -471,6 +496,10 @@ async fn load_tag_report_datasources<'a>(
             datasource::Column::Id
                 .eq_any(datasource_ids.into_iter().collect::<Vec<_>>()),
         )
+        .select_only()
+        .column(datasource::Column::Id)
+        .column(datasource::Column::Kind)
+        .into_model::<TagReportDatasource>()
         .all(txn)
         .await
         .context(h!())?
@@ -503,15 +532,13 @@ async fn load_tag_report_comments(
 fn collect_tag_report_messages(
     req: &crate::rer_importer::types::InboxMessagesReq,
     candidates: Vec<TagReportMessageCandidate>,
-    signal_messages: BTreeMap<
-        i64,
-        (signal_message::Model, datasource_group::Model),
-    >,
-    inbox_items: BTreeMap<i64, sigint_inbox_item::Model>,
-    datasources: BTreeMap<i64, datasource::Model>,
-    report_comments: BTreeMap<i64, String>,
+    mut signal_messages: BTreeMap<i64, TagReportSignalMessage>,
+    mut inbox_items: BTreeMap<i64, TagReportInboxItem>,
+    datasources: BTreeMap<i64, TagReportDatasource>,
+    mut report_comments: BTreeMap<i64, String>,
     own_comments: BTreeMap<i64, String>,
-) -> Vec<TagReportMessage> {
+    important_ids: BTreeSet<i64>,
+) -> Result<Vec<TagReportMessage>, AppError> {
     let mut messages = vec![];
     for candidate in candidates {
         if req.report_tags_only_this_unit == Some(true)
@@ -519,34 +546,40 @@ fn collect_tag_report_messages(
         {
             continue;
         }
-        let Some((signal_message, datasource_group)) =
-            signal_messages.get(&candidate.id)
+        let Some(signal_message) = signal_messages.remove(&candidate.id) else {
+            continue;
+        };
+        let Some(inbox) = inbox_items.remove(&candidate.id) else {
+            continue;
+        };
+        let Some(datasource) = datasources.get(&signal_message.datasource_id)
         else {
             continue;
         };
-        let Some(inbox) = inbox_items.get(&candidate.id) else {
-            continue;
-        };
-        let Some(datasource) = datasources.get(&datasource_group.datasource_id)
-        else {
-            continue;
-        };
+        let full_text = message_full_text_nocomments(
+            signal_message.body,
+            &inbox,
+            &datasource.kind,
+        )
+        .context(h!())?;
         messages.push(TagReportMessage {
             message_id: candidate.id,
-            signal_message: signal_message.clone(),
-            inbox: inbox.clone(),
-            datasource: datasource.clone(),
-            report_comment: report_comments.get(&candidate.id).cloned(),
-            own_comment: own_comments.get(&candidate.id).cloned(),
+            freq: candidate.freq,
+            datetime: candidate.datetime,
+            created_at: candidate.created_at,
+            full_text: remove_non_recognized(&full_text),
+            report_comment: report_comments.remove(&candidate.id),
+            has_own_comment: own_comments.contains_key(&candidate.id),
+            is_important: important_ids.contains(&candidate.id),
         });
     }
-    messages
+    Ok(messages)
 }
 
 fn write_tag_report_docx(
     outpath: &PathBuf,
     period: &TagReportPeriod,
-    data: &TagReportData,
+    data: TagReportData,
 ) -> Result<(), AppError> {
     crate::report_history::ensure_report_record_count(data.messages.len())
         .context(h!())?;
@@ -600,16 +633,13 @@ fn write_tag_report_docx(
         )
         .add_paragraph(Paragraph::new());
 
-    let mut rows: Vec<Paragraph> = vec![];
-    for message in &data.messages {
-        let mut ps = vec![];
-        if let Some(extended_form) = message.report_comment.clone() {
-            let extended_form =
-                if data.important_ids.contains(&message.message_id) {
-                    format!("⚠️ {extended_form}")
-                } else {
-                    extended_form.clone()
-                };
+    for message in data.messages {
+        if let Some(extended_form) = message.report_comment {
+            let extended_form = if message.is_important {
+                format!("⚠️ {extended_form}")
+            } else {
+                extended_form
+            };
             let mut p = Paragraph::new()
                 .line_spacing(LineSpacing::new().before(0).after(0));
             for line in extended_form.lines() {
@@ -621,38 +651,22 @@ fn write_tag_report_docx(
                 // };
                 p = p.add_run(run);
             }
-            ps.push(p)
+            doc = doc.add_paragraph(p);
         }
-        let full_text = remove_non_recognized(
-            &message_full_text_nocomments(
-                &message.signal_message,
-                &message.inbox,
-                &message.datasource,
-            )
-            .context(h!())?,
-        );
-        let full_text = if message.own_comment.is_none()
-            && data.important_ids.contains(&message.message_id)
-        {
-            format!("⚠️ {full_text}")
+        let full_text = if !message.has_own_comment && message.is_important {
+            format!("⚠️ {}", message.full_text)
         } else {
-            full_text
+            message.full_text
         };
         for line in full_text.lines() {
             let run = Run::new().add_text(line).color("3faf46");
-            ps.push(
+            doc = doc.add_paragraph(
                 Paragraph::new()
                     .add_run(run)
                     .line_spacing(LineSpacing::new().before(0).after(0)),
             );
         }
-        ps.push(Paragraph::new());
-        for p in ps {
-            rows.push(p);
-        }
-    }
-    for row in rows {
-        doc = doc.add_paragraph(row);
+        doc = doc.add_paragraph(Paragraph::new());
     }
     doc.build().pack(file).context(h!())?;
     Ok(())
@@ -673,44 +687,43 @@ fn remove_non_recognized(inp: &str) -> String {
 }
 
 fn message_full_text_nocomments(
-    message: &signal_message::Model,
-    inbox: &sigint_inbox_item::Model,
-    datasource: &datasource::Model,
+    body: Option<String>,
+    inbox: &TagReportInboxItem,
+    datasource_kind: &str,
 ) -> Result<String, AppError> {
-    if datasource.kind == "signal"
-        || datasource.kind == "whatsapp"
-        || datasource.kind == "echo_operator"
+    if datasource_kind == "signal"
+        || datasource_kind == "whatsapp"
+        || datasource_kind == "echo_operator"
     {
-        Ok(message.body.clone().unwrap_or("".to_string()).to_string())
-    } else if datasource.kind == "api" {
-        let datetime_part = match (inbox.date.clone(), inbox.time.clone()) {
-            (Some(date), Some(time)) => format!("{} ", date + " " + &time),
+        Ok(body.unwrap_or_default())
+    } else if datasource_kind == "api" {
+        let datetime_part = match (inbox.date.as_deref(), inbox.time.as_deref())
+        {
+            (Some(date), Some(time)) => format!("{date} {time} "),
             (Some(date), None) => format!("{date} "),
             (None, Some(time)) => format!("{time} "),
             (None, None) => "".to_string(),
         };
-        let freq_part = match inbox.freq.clone() {
+        let freq_part = match inbox.freq.as_deref() {
             Some(freq) => format!("{freq} "),
             None => "".to_string(),
         };
-        let unit_part = match inbox.freq {
-            Some(_) => {
-                format!("{} ", inbox.unit.clone().unwrap_or("НВ".to_string()))
-            }
-            None => "".to_string(),
+        let unit_part = if inbox.freq.is_some() {
+            format!("{} ", inbox.unit.as_deref().unwrap_or("НВ"))
+        } else {
+            "".to_string()
         };
-        let location_part = match inbox.freq {
-            Some(_) => {
-                format!("{} ", inbox.location.clone().unwrap_or("".to_string()))
-            }
-            None => "".to_string(),
+        let location_part = if inbox.freq.is_some() {
+            format!("{} ", inbox.location.as_deref().unwrap_or(""))
+        } else {
+            "".to_string()
         };
         Ok(format!(
             "{datetime_part}{freq_part}\n{unit_part}{location_part}\n{}",
-            message.body.clone().unwrap_or("".to_string()),
+            body.unwrap_or_default()
         ))
     } else {
-        Err(format!("Unknown datasource kind: {:?}", datasource.kind).into())
+        Err(format!("Unknown datasource kind: {datasource_kind:?}").into())
     }
 }
 
@@ -910,7 +923,9 @@ mod tests {
         .await
         .unwrap();
 
-        assert!(data.important_ids.contains(&signal_message.id));
+        assert!(data.messages.iter().any(|message| {
+            message.message_id == signal_message.id && message.is_important
+        }));
     }
 
     async fn set_report_chunking_hours(db: &DatabaseConnection, hours: i32) {

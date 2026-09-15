@@ -57,6 +57,25 @@ SET checked_at = EXCLUDED.checked_at,
 SQL
 }
 
+record_probe_delay() {
+  local detail=$1
+  local source_lsn=${2:-}
+  local confirmed_flush_lsn=${3:-}
+
+  postgres_psql \
+    --dbname "$GATEWAY_DB" \
+    -v ON_ERROR_STOP=1 \
+    -v detail="$detail" \
+    -v source_lsn="$source_lsn" \
+    -v confirmed_flush_lsn="$confirmed_flush_lsn" <<'SQL' >/dev/null
+UPDATE public.echo_analytics_health
+SET source_lsn = NULLIF(:'source_lsn', '')::pg_lsn,
+    confirmed_flush_lsn = NULLIF(:'confirmed_flush_lsn', '')::pg_lsn,
+    detail = :'detail'
+WHERE singleton;
+SQL
+}
+
 fail_health() {
   local detail=$1
   local source_lsn=${2:-}
@@ -146,5 +165,9 @@ SQL
   sleep 2
 done
 
-fail_health "source heartbeat was not visible through ClickHouse within ${probe_timeout}s" \
-  "$source_lsn" "$confirmed_flush_lsn"
+detail="source heartbeat was not visible through ClickHouse within ${probe_timeout}s"
+# Preserve the last successful check time so each consumer's configured
+# freshness budget, rather than the shorter probe timeout, decides when to
+# reject analytics reads.
+record_probe_delay "$detail" "$source_lsn" "$confirmed_flush_lsn" || true
+die "$detail"

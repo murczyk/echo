@@ -204,6 +204,24 @@ describe('useRerDutyFilterOptions', () => {
     consoleError.mockRestore();
   });
 
+  it('keeps frequency-dependent loads blocked until a retry succeeds', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    api.frequencies.mockRejectedValueOnce(new Error('frequencies failed'));
+    mount();
+    await act(async () => {});
+
+    expect(current?.freqsReady).toBe(false);
+
+    api.frequencies.mockResolvedValueOnce(['155.5']);
+    await act(async () => {
+      await current?.reloadLatestFrequencies();
+    });
+
+    expect(current?.freqs).toEqual(['155.5']);
+    expect(current?.freqsReady).toBe(true);
+    warning.mockRestore();
+  });
+
   function mount() {
     act(() => root.render(<HookProbe onValue={(value) => (current = value)} />));
   }

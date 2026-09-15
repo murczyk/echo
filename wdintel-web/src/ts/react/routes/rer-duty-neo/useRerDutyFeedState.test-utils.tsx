@@ -8,6 +8,7 @@ import { expect, vi } from 'vitest';
 import type { InboxMessage, InboxMessagesRsp } from '../../../../Bindings';
 import { minimalInboxMessage } from './inbox-message-mocks';
 import { useRerDutyFeedState } from './useRerDutyFeedState';
+import type { DeviceAccess } from './useRerDutyPageSettings';
 
 const dutyApiMocks = vi.hoisted(() => ({
   fetchInboxMessages: vi.fn(),
@@ -102,12 +103,15 @@ export function DutyFeedStateHarness(props: {
   apiRef: DutyFeedStateApiRef;
   disableAutoScroll?: boolean;
   freqs?: string[];
+  freqsReady?: boolean;
   setProfiles?: Parameters<typeof useRerDutyFeedState>[0]['setProfiles'];
   setGroupInfos?: Parameters<typeof useRerDutyFeedState>[0]['setGroupInfos'];
+  deviceAccess?: DeviceAccess;
   messageSortBy?: Parameters<typeof useRerDutyFeedState>[0]['messageSortBy'];
 }) {
   const api = useRerDutyFeedState({
     freqs: props.freqs ?? [],
+    freqsReady: props.freqsReady ?? true,
     setProfiles: props.setProfiles ?? vi.fn(),
     setGroupInfos: props.setGroupInfos ?? vi.fn(),
     testEnabled: false,
@@ -115,6 +119,7 @@ export function DutyFeedStateHarness(props: {
     testLimit: 1,
     pollIntervalSec: 1,
     disableAutoScroll: props.disableAutoScroll ?? false,
+    deviceAccess: props.deviceAccess ?? { status: 'allowed' },
     messageSortBy: props.messageSortBy,
   });
   props.apiRef.current = new Proxy(api, {
@@ -225,6 +230,15 @@ export function createDutyFeedStateFixture() {
     dutyApiMocks.cancelDutyNotificationPollCycle.mockReset();
     dutyApiMocks.beginDutyNotificationPollCycle.mockImplementation(() => ({}));
     deferredRequests.clear();
+    const storage = new Map<string, string>();
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+        removeItem: (key: string) => storage.delete(key),
+      },
+    });
     window.history.replaceState({}, '', '/');
     dutyApiMocks.fetchInboxCount.mockResolvedValue({ quantity: 0, firstElementTs: null });
     dutyApiMocks.fetchInboxMessages.mockResolvedValue(

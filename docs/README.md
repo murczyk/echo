@@ -63,6 +63,18 @@ supported analytical reads fall back to PostgreSQL when analytics is stale or
 unavailable. The optional `wd_files` database stores device file metadata
 and content publication pointers independently from the main `wd` database.
 
+Web duplicate-unit merges run as detached tasks in the API process. Reference
+categories are moved in bounded, committed batches; the final transaction
+rechecks references, reconciles the survivor and parent activity, and marks the
+duplicate deleted. On API restart, unfinished merge tasks are marked failed
+unless that final transaction committed. An interrupted merge can be submitted
+again with the original survivor, or its verified successor after a completed
+survivor merge; already moved references follow that completed chain.
+Registrations serialize both units and reject an unfinished merge chain until
+the earlier merge completes, so rejected starts do not pin a duplicate.
+Each committed ORBIT-link batch reconciles duplicate and inconsistency state,
+and failed or recovered tasks publish a unit-change event for other clients.
+
 Analytics control scripts and units are deployed as one content-addressed
 release to both the application and its paired analytics container. Source
 operations refuse to cross a release mismatch. A dedicated serialized
@@ -210,10 +222,13 @@ The network maintenance worker owns the PostgreSQL-only
 `network_recalculation_task` queue. It calculates frequency `last_seen_dt` and
 the per-login last interception in a network AOR outside API requests. Pending
 work is deduplicated per frequency, calculation kind, and login where the
-result depends on data visibility. Successful work clears only its claimed
-request, so work queued during the calculation remains pending. The worker
-starts up to 100 pending recalculations per pass and stops starting new work
-after 50 seconds. It queues a final reconciliation after inbox-network
+result depends on data visibility. Per-login work clears only its claimed
+request. Frequency `last_seen_dt` work serializes per network, locks frequency
+rows in stable order, and recalculates up to 500 same-network requests in one
+grouped history scan. It atomically removes the captured batch, while work
+queued after the capture remains pending. The worker starts up to 500 queue
+work units per pass and stops starting new work after 50 seconds. It queues a
+final reconciliation after inbox-network
 invalidations update message assignments; broad group/AOR invalidations fan
 out to frequencies processed during that pass, and AOR invalidations also
 include non-deleted frequencies on networks currently linked to that AOR.
@@ -249,6 +264,26 @@ PostgreSQL into Redis. Legacy location facets remain text values split from
 canonical IDs from `sigint_inbox_item_settlement.settlement_id`. The
 `oneoff-calculate-historic-stats` command can rebuild only settlement buckets
 with `--only settlement`.
+
+Group-stat invalidations first enter the PostgreSQL
+`group_stats_recalculation_task` intake queue. The same worker compacts batches
+into one `group_stats_recalculation_day` row per affected Kyiv calendar day;
+each successful day calculation removes its row only if no newer invalidation
+arrived during the calculation. Today and the preceding local date are
+eligible at any hour; older days are processed outside the network history
+worker's configured night shift. During that period the worker alternates
+priority between recent and historical days. Both operational tables are
+excluded from analytics. The dirty-day migration clears the entire
+pre-existing intake queue, including requests less than a day old. After
+deployment, run `sudo systemctl stop wdintel-rs-bgworker`, then
+`sudo /usr/bin/wdintel-rs --mode=live oneoff-calculate-historic-stats`, then
+`sudo systemctl start wdintel-rs-bgworker`. The oneoff rebuilds all statistics
+families for the supported 366-day retention window. Stopping this service
+pauses all of its background jobs for the duration of the oneoff. Inbox changes
+received while the worker is stopped remain in the intake queue and are
+compacted after restart. If the oneoff fails, restart the worker for new work;
+stop it again and rerun the oneoff before treating historical statistics as
+complete.
 
 ## Credentials authentication storage
 

@@ -1,14 +1,25 @@
-use crate::config::SYSTEM_LOGIN_NAME;
+use crate::config::{IDENTITY_DURATION_HOURS, ROLE_ADMIN, SYSTEM_LOGIN_NAME};
+use crate::devices::ROLE_CYBER;
 use crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind;
+use crate::entities::{login, system_settings};
 use crate::functest::tests::*;
 use crate::h;
 use crate::rer_importer::analysis::*;
 use crate::rer_importer::*;
 use crate::{new_pg_runtime_pool_from_config, PgRuntimePoolRole};
+use actix_identity::{Identity, IdentityMiddleware};
+use actix_session::storage::RedisSessionStore;
+use actix_session::SessionMiddleware;
+use actix_web::cookie::{Cookie, Key};
 use actix_web::web::{Data, Json};
+use actix_web::{
+    http::StatusCode, test as actix_test, web, App, HttpMessage, HttpRequest,
+    HttpResponse,
+};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
-    DbBackend, EntityTrait, FromQueryResult, QueryFilter, Statement,
+    DbBackend, EntityTrait, FromQueryResult, IntoActiveModel, QueryFilter,
+    Statement,
 };
 use serial_test::serial;
 
@@ -49,6 +60,48 @@ struct AorFilterFixture {
     till_date_noninclusive_ms: i64,
 }
 
+async fn activity_daily_test_login(
+    request: HttpRequest,
+    login: web::Path<String>,
+) -> HttpResponse {
+    Identity::login(&request.extensions(), login.into_inner()).unwrap();
+    HttpResponse::NoContent().finish()
+}
+
+async fn set_login_roles(
+    db: &DatabaseConnection,
+    login_id: uuid::Uuid,
+    roles: serde_json::Value,
+) {
+    let login = login::Entity::find_by_id(login_id)
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut login = login.into_active_model();
+    login.roles = Set(roles);
+    login.update(db).await.unwrap();
+}
+
+async fn set_devices_section_enabled(db: &DatabaseConnection, enabled: bool) {
+    match system_settings::Entity::find().one(db).await.unwrap() {
+        Some(settings) => {
+            let mut settings = settings.into_active_model();
+            settings.devices_section_enabled = Set(enabled);
+            settings.update(db).await.unwrap();
+        }
+        None => {
+            system_settings::ActiveModel {
+                devices_section_enabled: Set(enabled),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .unwrap();
+        }
+    }
+}
+
 async fn test_identity_login_id(
     env: &Env,
     test_identity: &TestIdentity,
@@ -76,6 +129,41 @@ async fn fetch_correlated_inbox_count(
         .unwrap()
         .try_get("", "count")
         .unwrap()
+}
+
+async fn assign_message_device_name(
+    db: &DatabaseConnection,
+    message_id: i64,
+    device_name_id: Option<i64>,
+    datetime: NaiveDateTime,
+) {
+    let inbox_item = sigint_inbox_item::Entity::find_by_id(message_id)
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut inbox_item = inbox_item.into_active_model();
+    inbox_item.device_name_id = Set(device_name_id);
+    inbox_item.datetime = Set(Some(datetime));
+    inbox_item.update(db).await.unwrap();
+}
+
+async fn inbox_map_item_ids(
+    env: &Env,
+    login: &uuid::Uuid,
+    req: &InboxMessagesReq,
+) -> Vec<i64> {
+    let query =
+        crate::rer_importer::inbox::query::build_inbox_query(login, env, req)
+            .await
+            .unwrap();
+    env.dbx
+        .query_all_raw(Statement::from_string(DbBackend::Postgres, query))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| row.try_get("", "id").unwrap())
+        .collect()
 }
 
 fn test_dt(
@@ -107,6 +195,8 @@ fn short_state_filter(
         units_denied: None,
         selected_unit_ids: None,
         denied_unit_ids: None,
+        selected_device_names: None,
+        denied_device_names: None,
         units_exact_match_only: None,
         last_viewed_message_id: None,
         highlight_keywords_enabled: None,
@@ -1850,6 +1940,30 @@ fn postgres_senders_selected_networks_keep_correlated_filter() {
         !str::contains(&sql, "FROM \"signal_message_group\""),
         "{sql}"
     );
+}
+
+#[test]
+fn postgres_senders_creation_breakdown_qualifies_created_at() {
+    let mut req = mk_analysis_stats_req(0, 86_400_000);
+    req.message_time_basis =
+        Some(crate::user_settings::MessageTimeBasis::MessageCreation);
+    let query = stats::build_sender_breakdown_query(
+        &Json(req),
+        &uuid::Uuid::nil(),
+        test_dt(1970, 1, 1, 0, 0),
+        test_dt(1970, 1, 2, 0, 0),
+        vec!["group".to_string()],
+        None,
+        None,
+    )
+    .unwrap();
+    let sql = query.build(DbBackend::Postgres).to_string();
+
+    assert!(
+        sql.contains(r#""signal_message"."created_at" AT TIME ZONE"#),
+        "{sql}"
+    );
+    assert!(!sql.contains("(created_at AT TIME ZONE"), "{sql}");
 }
 
 #[test]
@@ -7775,6 +7889,7 @@ async fn count_stats_analytics_success_skips_postgres() {
         Some(analytics_query),
         core::time::Duration::from_secs(1),
         postgres_query,
+        "circuit_open",
         Some(retry_attempt),
         core::time::Duration::from_secs(30),
     )
@@ -7805,6 +7920,7 @@ async fn count_stats_analytics_error_retries_postgres_once() {
         Some(analytics_query),
         core::time::Duration::from_secs(1),
         postgres_query,
+        "circuit_open",
         Some(retry_attempt),
         core::time::Duration::from_secs(30),
     )
@@ -7829,6 +7945,7 @@ async fn count_stats_without_analytics_uses_postgres() {
         None::<std::future::Ready<Result<&str, AppError>>>,
         core::time::Duration::from_secs(1),
         async { Ok::<_, AppError>("postgres") },
+        "unconfigured",
         None,
         core::time::Duration::from_secs(30),
     )
@@ -7993,11 +8110,15 @@ fn analytical_inbox_candidates_support_latest_initial_duty_unit_filters() {
 
 #[tokio::test]
 #[serial]
-async fn analytics_read_without_pool_uses_postgres_path() {
+async fn analytics_read_outcome_distinguishes_unconfigured_and_unavailable() {
     let fixture = mk_rer_analysis_fixture().await.unwrap();
     assert!(fixture.env.analytics.is_none());
+    assert_eq!(
+        postgres_pool_identity(&fixture.env.dbx),
+        postgres_pool_identity(&fixture.env.dbx.clone())
+    );
 
-    let result = with_analytics_read_fallback(
+    let result = with_analytics_read_fallback_outcome(
         &fixture.env,
         "analytics fallback test",
         true,
@@ -8009,7 +8130,55 @@ async fn analytics_read_without_pool_uses_postgres_path() {
     .await
     .unwrap();
 
-    assert_eq!(result, "postgres");
+    assert_eq!(result.value, "postgres");
+    assert_eq!(result.postgres_reason, Some("unconfigured"));
+    assert!(result.postgres_fallback_permit.is_none());
+
+    let mut env = (*fixture.env).clone();
+    env.config.analytics = Some(AnalyticsConfig {
+        pg_host: "unavailable".to_string(),
+        pg_port: None,
+        pg_user: "unavailable".to_string(),
+        pg_password: "unavailable".to_string(),
+        pg_dbname: "unavailable".to_string(),
+        connect_timeout_ms: None,
+        max_connections: None,
+        query_timeout_ms: None,
+        freshness_max_age_ms: None,
+        retry_cooldown_ms: None,
+    });
+    let result = with_analytics_read_fallback_outcome(
+        &env,
+        "analytics unavailable fallback test",
+        true,
+        |_db| async { Ok::<_, AppError>("analytics") },
+        |_db| async { Ok::<_, AppError>("postgres") },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.value, "postgres");
+    assert_eq!(result.postgres_reason, Some("analytics_unavailable"));
+    assert!(result.postgres_fallback_permit.is_some());
+}
+
+#[test]
+fn fallback_capacity_only_limits_analytics_incident_routes() {
+    for reason in [
+        "analytics_error",
+        "analytics_timeout",
+        "analytics_unhealthy",
+        "analytics_unavailable",
+        "candidate_ordering_incomplete",
+        "candidate_revalidation_incomplete",
+        "circuit_open",
+        "postgres_tail_error",
+        "revalidation_error",
+    ] {
+        assert!(analytics_fallback_needs_capacity(reason));
+    }
+    assert!(!analytics_fallback_needs_capacity("query_policy"));
+    assert!(!analytics_fallback_needs_capacity("unconfigured"));
 }
 
 #[tokio::test]
@@ -8019,6 +8188,7 @@ async fn count_stats_analytics_timeout_retries_postgres() {
         Some(analytics_query),
         core::time::Duration::ZERO,
         async { Ok::<_, AppError>("postgres") },
+        "circuit_open",
         None,
         core::time::Duration::from_secs(30),
     )
@@ -8058,6 +8228,7 @@ async fn analytics_fallback_maps_capped_postgres_query_to_one_timeout_error() {
             db.execute_unprepared("select pg_sleep(2)").await.c(h!())?;
             Ok::<_, AppError>("postgres")
         },
+        "circuit_open",
         None,
         core::time::Duration::from_secs(30),
     )
@@ -8175,6 +8346,7 @@ async fn count_stats_analytics_closed_success_does_not_clear_concurrent_failure(
         Some(analytics_query),
         core::time::Duration::from_secs(1),
         async { Ok::<_, AppError>("postgres") },
+        "circuit_open",
         Some(retry_attempt),
         core::time::Duration::from_secs(30),
     )
@@ -8201,6 +8373,7 @@ async fn count_stats_analytics_half_open_failure_reopens_circuit() {
         }),
         core::time::Duration::from_secs(1),
         async { Ok::<_, AppError>("postgres") },
+        "circuit_open",
         Some(retry_attempt),
         core::time::Duration::from_secs(30),
     )
@@ -8211,6 +8384,44 @@ async fn count_stats_analytics_half_open_failure_reopens_circuit() {
     let retry_deadline = retry_state.load(std::sync::atomic::Ordering::Acquire);
     assert_ne!(retry_deadline, u64::MAX);
     assert!(retry_deadline > analytics_unix_ms());
+}
+
+#[tokio::test]
+async fn replication_health_failure_releases_half_open_circuit() {
+    let retry_state = std::sync::atomic::AtomicU64::new(1);
+    let retry_attempt = analytics_retry_attempt(&retry_state).unwrap();
+    let (postgres_started_tx, postgres_started_rx) =
+        tokio::sync::oneshot::channel();
+    let (release_postgres_tx, release_postgres_rx) =
+        tokio::sync::oneshot::channel();
+
+    let fallback = with_count_stats_analytics_fallback(
+        Some(async {
+            Err::<&str, AppError>(
+                anyhow::Error::new(AnalyticsReplicationHealthError).into(),
+            )
+        }),
+        core::time::Duration::from_secs(1),
+        async {
+            let _ = postgres_started_tx.send(());
+            let _ = release_postgres_rx.await;
+            Ok::<_, AppError>("postgres")
+        },
+        "circuit_open",
+        Some(retry_attempt),
+        core::time::Duration::from_secs(30),
+    );
+    let observe_retry_state = async {
+        postgres_started_rx.await.unwrap();
+        assert_eq!(retry_state.load(std::sync::atomic::Ordering::Acquire), 0);
+        release_postgres_tx.send(()).unwrap();
+    };
+    let (result, ()) = tokio::join!(fallback, observe_retry_state);
+    let result = result.unwrap();
+
+    assert_eq!(result, "postgres");
+    assert_eq!(retry_state.load(std::sync::atomic::Ordering::Acquire), 0);
+    assert!(analytics_retry_attempt(&retry_state).is_some());
 }
 
 fn callsign_aggregate_test_query(
@@ -8345,6 +8556,7 @@ fn correlated_and_new_callsign_queries_filter_by_creation_time() {
         req.till_date_noninclusive_ms,
         ReportPeriodEnd::NonInclusive,
         &["group-1".to_string()],
+        &None,
         false,
         crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres,
         None,
@@ -8655,4 +8867,384 @@ async fn analytics_candidates_preserve_unit_media_permissions_and_paging() {
         .unwrap()
         .is_empty()
     );
+}
+
+#[tokio::test]
+#[serial]
+async fn echo_3461_inbox_device_filters_include_exclude_and_keep_nulls() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let test_identity = mk_test_identity().await.unwrap();
+    let login_id = test_identity_login_id(&fixture.env, &test_identity).await;
+    let alpha = device_name::ActiveModel {
+        name: Set(Some("ECHO-3461 Alpha".to_string())),
+        login_id: Set(login_id),
+        created_at: Set(chrono::Utc::now().naive_utc()),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    let beta = device_name::ActiveModel {
+        name: Set(Some("ECHO-3461 Beta".to_string())),
+        login_id: Set(login_id),
+        created_at: Set(chrono::Utc::now().naive_utc()),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    let alpha_message = mk_analysis_message(
+        db,
+        "echo-3461-alpha",
+        "3461.1",
+        test_dt(2026, 3, 1, 8, 1),
+        &[&fixture.alpha],
+        &[],
+        true,
+    )
+    .await
+    .unwrap();
+    let beta_message = mk_analysis_message(
+        db,
+        "echo-3461-beta",
+        "3461.2",
+        test_dt(2026, 3, 1, 8, 2),
+        &[&fixture.alpha],
+        &[],
+        true,
+    )
+    .await
+    .unwrap();
+    let null_message = mk_analysis_message(
+        db,
+        "echo-3461-null",
+        "3461.3",
+        test_dt(2026, 3, 1, 8, 3),
+        &[&fixture.alpha],
+        &[],
+        true,
+    )
+    .await
+    .unwrap();
+    assign_message_device_name(
+        db,
+        alpha_message.id,
+        Some(alpha.id),
+        test_dt(2026, 3, 1, 8, 1),
+    )
+    .await;
+    assign_message_device_name(
+        db,
+        beta_message.id,
+        Some(beta.id),
+        test_dt(2026, 3, 1, 8, 2),
+    )
+    .await;
+    assign_message_device_name(
+        db,
+        null_message.id,
+        None,
+        test_dt(2026, 3, 1, 8, 3),
+    )
+    .await;
+
+    let base_req = InboxMessagesReq {
+        since_date_inclusive_ms: Some(fixture.since_date_inclusive_ms),
+        till_date_inclusive_ms: Some(fixture.till_date_noninclusive_ms),
+        nolimit: Some(true),
+        ..Default::default()
+    };
+    let unfiltered =
+        inbox_map_item_ids(&fixture.env, &login_id, &base_req).await;
+    let empty_lists = inbox_map_item_ids(
+        &fixture.env,
+        &login_id,
+        &InboxMessagesReq {
+            selected_device_names: Some(vec![]),
+            denied_device_names: Some(vec![]),
+            ..base_req.clone()
+        },
+    )
+    .await;
+    assert_eq!(empty_lists, unfiltered);
+
+    let included = inbox_map_item_ids(
+        &fixture.env,
+        &login_id,
+        &InboxMessagesReq {
+            selected_device_names: Some(vec![alpha.name.clone().unwrap()]),
+            ..base_req.clone()
+        },
+    )
+    .await;
+    assert_eq!(included, vec![alpha_message.id]);
+
+    let denied_alpha = inbox_map_item_ids(
+        &fixture.env,
+        &login_id,
+        &InboxMessagesReq {
+            denied_device_names: Some(vec![alpha.name.clone().unwrap()]),
+            ..base_req.clone()
+        },
+    )
+    .await;
+    assert!(!denied_alpha.contains(&alpha_message.id));
+    assert!(denied_alpha.contains(&beta_message.id));
+    assert!(denied_alpha.contains(&null_message.id));
+
+    let denied_both = inbox_map_item_ids(
+        &fixture.env,
+        &login_id,
+        &InboxMessagesReq {
+            denied_device_names: Some(vec![
+                alpha.name.clone().unwrap(),
+                beta.name.clone().unwrap(),
+            ]),
+            ..base_req.clone()
+        },
+    )
+    .await;
+    assert!(!denied_both.contains(&alpha_message.id));
+    assert!(!denied_both.contains(&beta_message.id));
+    assert!(denied_both.contains(&null_message.id));
+
+    let include_and_exclude = inbox_map_item_ids(
+        &fixture.env,
+        &login_id,
+        &InboxMessagesReq {
+            selected_device_names: Some(vec![alpha.name.unwrap()]),
+            denied_device_names: Some(vec![beta.name.unwrap()]),
+            ..base_req
+        },
+    )
+    .await;
+    assert_eq!(include_and_exclude, vec![alpha_message.id]);
+}
+
+#[actix_web::test]
+#[serial]
+async fn echo_3461_activity_daily_requires_device_filter_access() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let test_identity = mk_test_identity().await.unwrap();
+    let login_id = test_identity_login_id(&fixture.env, &test_identity).await;
+    let destructive_device_name = "ECHO-3461 destructive device".to_string();
+    let destructive_device = device_name::ActiveModel {
+        name: Set(Some(destructive_device_name.clone())),
+        login_id: Set(login_id),
+        created_at: Set(chrono::Utc::now().naive_utc()),
+        ..Default::default()
+    }
+    .insert(&fixture.env.dbx)
+    .await
+    .unwrap();
+    let destructive_datetime = dt_from_millis(fixture.since_date_inclusive_ms)
+        .unwrap()
+        + chrono::Duration::minutes(1);
+    assert!(
+        destructive_datetime
+            >= dt_from_millis(fixture.since_date_inclusive_ms).unwrap()
+    );
+    assert!(
+        destructive_datetime
+            < dt_from_millis(fixture.till_date_noninclusive_ms).unwrap()
+    );
+    let destructive_message = mk_analysis_message(
+        &fixture.env.dbx,
+        "echo-3461-destructive-unit-edit",
+        "3461.9",
+        destructive_datetime,
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    let destructive_inbox =
+        sigint_inbox_item::Entity::find_by_id(destructive_message.id)
+            .one(&fixture.env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+    let mut destructive_inbox = destructive_inbox.into_active_model();
+    destructive_inbox.device_name_id = Set(Some(destructive_device.id));
+    destructive_inbox.datetime = Set(Some(destructive_datetime));
+    destructive_inbox.unit = Set(Some("ECHO-3461 original unit".to_string()));
+    destructive_inbox.unit_v2 =
+        Set(Some("ECHO-3461 original unit".to_string()));
+    destructive_inbox.parsed_unit_v2 = Set(false);
+    let destructive_inbox =
+        destructive_inbox.update(&fixture.env.dbx).await.unwrap();
+    let redis_session_store = RedisSessionStore::new(
+        crate::redis_conn_string(&fixture.env.config).unwrap(),
+    )
+    .await
+    .unwrap();
+    let app = actix_test::init_service(
+        App::new()
+            .app_data(Data::from(fixture.env.clone()))
+            .wrap(
+                IdentityMiddleware::builder()
+                    .visit_deadline(Some(std::time::Duration::from_secs(
+                        IDENTITY_DURATION_HOURS * 60 * 60,
+                    )))
+                    .build(),
+            )
+            .wrap(SessionMiddleware::new(redis_session_store, Key::generate()))
+            .route(
+                "/test/activity-daily-login/{login}",
+                web::post().to(activity_daily_test_login),
+            )
+            .service(activity_daily)
+            .service(edit_freq_unit_name),
+    )
+    .await;
+    let login_response = actix_test::call_service(
+        &app,
+        actix_test::TestRequest::post()
+            .uri(&format!("/test/activity-daily-login/{login_id}"))
+            .to_request(),
+    )
+    .await;
+    let session_cookie: Cookie<'static> = login_response
+        .response()
+        .cookies()
+        .next()
+        .unwrap()
+        .into_owned();
+
+    let request = |selected_device_names: Option<Vec<String>>| {
+        let mut req = analysis_stats_req0(&fixture);
+        req.selected_device_names = selected_device_names;
+        req
+    };
+    let call = |req: AnalysisStatsReq| {
+        actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/rer/analysis/activity-daily")
+                .cookie(session_cookie.clone())
+                .set_json(req)
+                .to_request(),
+        )
+    };
+    let edit_request = || EditFreqUnitNameReq {
+        analysis_stats_req: request(Some(
+            vec![destructive_device_name.clone()],
+        )),
+        freq: "3461.9".to_string(),
+        unit: "ECHO-3461 original unit".to_string(),
+        unit_new: "ECHO-3461 updated unit".to_string(),
+        search: None,
+        filter_tags_option: None,
+        report_tags_only_this_unit: None,
+    };
+    set_devices_section_enabled(&fixture.env.dbx, true).await;
+    set_login_roles(&fixture.env.dbx, login_id, serde_json::json!(["Rer"]))
+        .await;
+    assert_eq!(
+        call(request(Some(vec!["ECHO-3461 Alpha".to_string()])))
+            .await
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/rer/analysis/freq-edit-unit-name")
+                .cookie(session_cookie.clone())
+                .set_json(edit_request())
+                .to_request(),
+        )
+        .await
+        .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        sigint_inbox_item::Entity::find_by_id(destructive_message.id)
+            .one(&fixture.env.dbx)
+            .await
+            .unwrap()
+            .unwrap(),
+        destructive_inbox
+    );
+    assert_ne!(call(request(None)).await.status(), StatusCode::FORBIDDEN);
+
+    set_login_roles(
+        &fixture.env.dbx,
+        login_id,
+        serde_json::json!(["Rer", ROLE_CYBER]),
+    )
+    .await;
+    assert!(actix_test::call_service(
+        &app,
+        actix_test::TestRequest::post()
+            .uri("/api/rer/analysis/freq-edit-unit-name")
+            .cookie(session_cookie.clone())
+            .set_json(edit_request())
+            .to_request(),
+    )
+    .await
+    .status()
+    .is_success());
+    let destructive_inbox =
+        sigint_inbox_item::Entity::find_by_id(destructive_message.id)
+            .one(&fixture.env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+    assert_eq!(
+        destructive_inbox.unit,
+        Some("ECHO-3461 updated unit".to_string())
+    );
+    assert_eq!(
+        destructive_inbox.unit_v2,
+        Some("ECHO-3461 updated unit".to_string())
+    );
+    assert!(destructive_inbox.parsed_unit_v2);
+    assert_eq!(
+        destructive_inbox.device_name_id,
+        Some(destructive_device.id)
+    );
+
+    set_login_roles(
+        &fixture.env.dbx,
+        login_id,
+        serde_json::json!(["Rer", "DeviceSource"]),
+    )
+    .await;
+    assert_eq!(
+        call(request(Some(vec!["ECHO-3461 Alpha".to_string()])))
+            .await
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+
+    for roles in [
+        serde_json::json!(["Rer", ROLE_CYBER]),
+        serde_json::json!([ROLE_ADMIN]),
+    ] {
+        set_login_roles(&fixture.env.dbx, login_id, roles).await;
+        assert_ne!(
+            call(request(Some(vec!["ECHO-3461 Alpha".to_string()])))
+                .await
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    set_devices_section_enabled(&fixture.env.dbx, false).await;
+    for roles in [
+        serde_json::json!(["Rer", ROLE_CYBER]),
+        serde_json::json!([ROLE_ADMIN]),
+    ] {
+        set_login_roles(&fixture.env.dbx, login_id, roles).await;
+        assert_eq!(
+            call(request(Some(vec!["ECHO-3461 Alpha".to_string()])))
+                .await
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+    }
 }

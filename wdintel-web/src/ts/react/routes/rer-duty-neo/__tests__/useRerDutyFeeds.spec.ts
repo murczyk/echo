@@ -6,6 +6,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  effectiveDutyPollIntervalSec,
   getPendingDutyCallsignLookups,
   mergeAvailableFrequencies,
   mergeKnownGroupKeys,
@@ -13,6 +14,7 @@ import {
 import { useRerDutyFeeds } from '../useRerDutyFeeds';
 
 const hoisted = vi.hoisted(() => ({
+  fetchOrganismKeywordSets: vi.fn(),
   fetchAnalysisCallsignInfos: vi.fn(),
   fetchMessagesByIds: vi.fn(),
   fetchUserSettings: vi.fn(),
@@ -23,6 +25,7 @@ const hoisted = vi.hoisted(() => ({
   mergeResolvedCallsigns: vi.fn(),
   setFeedErrorMock: vi.fn(),
   applyFilterMock: vi.fn(),
+  pollNow: vi.fn(),
   onInboxChangedMessageIds: vi.fn(),
   setMessageFeeds: null as null | React.Dispatch<
     React.SetStateAction<
@@ -41,6 +44,9 @@ const hoisted = vi.hoisted(() => ({
   }>,
   initialCallsignInfoMap: {} as Record<string, { callsign: string; res: unknown[] }>,
   initialInboxCallsignInfoMap: {} as Record<string, { callsign: string; res: unknown[] }>,
+}));
+vi.mock('../../../services/api/organism-keyword-sets', () => ({
+  fetchOrganismKeywordSets: hoisted.fetchOrganismKeywordSets,
 }));
 
 vi.mock('../../../services/api/analysis', () => ({
@@ -129,6 +135,7 @@ vi.mock('../../../services/api/inbox-messages', () => ({
 
 vi.mock('../useRerDutyFeedState', () => ({
   useRerDutyFeedState: () => {
+    const [error, setErrorState] = React.useState<string | null>(null);
     const [messageFeeds, setMessageFeeds] = React.useState(hoisted.messageFeeds);
     const [callsignInfoMap, setCallsignInfoMap] = React.useState<
       Record<string, { callsign: string; res: unknown[] }>
@@ -172,7 +179,10 @@ vi.mock('../useRerDutyFeedState', () => ({
         });
         setInboxCallsignInfoMap((current) => current);
       },
-      setError: hoisted.setFeedErrorMock,
+      setError: React.useCallback((message: string) => {
+        hoisted.setFeedErrorMock(message);
+        setErrorState(message);
+      }, []),
       setWatchModeByFeedId: vi.fn(),
       setMessageFeeds: (next) => {
         setMessageFeeds(next);
@@ -180,7 +190,7 @@ vi.mock('../useRerDutyFeedState', () => ({
       nearBottomByFeedIdRef: { current: {} },
       atBottomByFeedIdRef: { current: {} },
       columnRefsRef: { current: {} },
-      error: null,
+      error,
       createMessageFeed: vi.fn(),
       removeMessageFeed: vi.fn(),
       loadFeedInitialMessages: hoisted.loadFeedInitialMessages,
@@ -193,6 +203,7 @@ vi.mock('../useRerDutyFeedState', () => ({
       selectAllGroups: vi.fn(),
       loadFeedNewerMessages: vi.fn(),
       flushPendingNewerMessages: vi.fn(),
+      pollNow: hoisted.pollNow,
       getFeedLoadGeneration: (feedId: string) => hoisted.feedLoadGenerations[feedId] ?? 0,
       buildReqForFeed: vi.fn(
         (
@@ -225,8 +236,12 @@ vi.mock('../useRerDutyFeedState', () => ({
 
 let latest: ReturnType<typeof useRerDutyFeeds> | null = null;
 
-function TestHarness() {
-  latest = useRerDutyFeeds(null);
+function TestHarness({
+  deviceAccess,
+}: {
+  deviceAccess?: import('./useRerDutyPageSettings').DeviceAccess;
+}) {
+  latest = useRerDutyFeeds(null, null, deviceAccess);
   return null;
 }
 
@@ -238,6 +253,11 @@ async function flushMicrotasks(): Promise<void> {
 
 // @test-scope parser: preserves Duty group-key merging across loaded feed and filter data.
 describe('mergeKnownGroupKeys', () => {
+  it('keeps the safety poll aligned with the backend count cache', () => {
+    expect(effectiveDutyPollIntervalSec(1)).toBe(5);
+    expect(effectiveDutyPollIntervalSec(10)).toBe(10);
+  });
+
   it('keeps a group selected in one column available to other Duty columns', () => {
     const availableGroupKeys = mergeKnownGroupKeys(
       [],
@@ -420,7 +440,10 @@ describe('useRerDutyFeeds', () => {
     hoisted.fetchMessagesByIds.mockReset();
     hoisted.fetchAnalysisCallsignInfos.mockReset();
     hoisted.applyFilterMock.mockReset();
+    hoisted.pollNow.mockReset();
+    hoisted.pollNow.mockResolvedValue(undefined);
     hoisted.fetchUserSettings.mockResolvedValue({ disableAutoScroll: false });
+    hoisted.fetchOrganismKeywordSets.mockResolvedValue([]);
     hoisted.currentSystemSettings.mockResolvedValue({
       rerDutyTestEnabled: false,
       rerDutyTestSinceMs: 0,
@@ -443,6 +466,18 @@ describe('useRerDutyFeeds', () => {
     });
     latest = null;
     vi.useRealTimers();
+  });
+
+  it('exposes device-access lookup failures through its public error result', async () => {
+    await act(async () => {
+      root.render(
+        React.createElement(TestHarness, {
+          deviceAccess: { status: 'error', message: 'access lookup failed' },
+        }),
+      );
+      await flushMicrotasks();
+    });
+    expect(latest?.error).toBe('access lookup failed');
   });
 
   it('retries empty-result callsigns after the backoff expires even without unrelated rerenders', async () => {
@@ -620,6 +655,7 @@ describe('useRerDutyFeeds inbox refreshes', () => {
       });
 
       expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
+      expect(hoisted.pollNow).toHaveBeenCalledOnce();
     } finally {
       await act(async () => {
         localRoot.unmount();

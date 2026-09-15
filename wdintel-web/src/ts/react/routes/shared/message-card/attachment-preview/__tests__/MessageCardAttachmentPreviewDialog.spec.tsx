@@ -204,6 +204,33 @@ describe('MessageCardAttachmentPreviewDialog', () => {
     expect(onNext).toHaveBeenCalledOnce();
   });
 
+  it('does not render carousel arrows while editing #3448', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () =>
+      root?.render(
+        <MessageCardAttachmentPreviewDialog
+          item={items[0]!}
+          navigation={{ index: 0, count: 2, onPrevious: vi.fn(), onNext: vi.fn() }}
+          onClose={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(container.querySelectorAll('[data-attachment-preview-stage-nav]')).toHaveLength(2);
+    await act(async () =>
+      (container?.querySelector('[aria-label="Почати редагування"]') as HTMLButtonElement).click(),
+    );
+    expect(container.querySelectorAll('[data-attachment-preview-stage-nav]')).toHaveLength(0);
+    await act(async () =>
+      (
+        container?.querySelector('[aria-label="Завершити редагування"]') as HTMLButtonElement
+      ).click(),
+    );
+    expect(container.querySelectorAll('[data-attachment-preview-stage-nav]')).toHaveLength(2);
+  });
+
   it('does not replay initial Edit after mixed-media navigation #3294', async () => {
     container = document.createElement('div');
     document.body.appendChild(container);

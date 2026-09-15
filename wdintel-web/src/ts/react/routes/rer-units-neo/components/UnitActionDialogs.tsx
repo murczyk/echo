@@ -6,8 +6,10 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  LinearProgress,
   Stack,
   TextField,
+  Typography,
 } from '@mui/material';
 import { useEffect, useState } from 'react';
 
@@ -51,12 +53,16 @@ export function DeleteUnitDialog({
 export function MergeUnitDialog({
   original,
   submitting,
+  progress,
+  progressLabel,
   error,
   onClose,
   onConfirm,
 }: {
   original: Unit | null;
   submitting: boolean;
+  progress: number | null;
+  progressLabel: string | null;
   error: string | null;
   onClose: () => void;
   onConfirm: (duplicate: Unit) => void;
@@ -144,6 +150,14 @@ export function MergeUnitDialog({
           />
           {optionsError ? (
             <PowerAlert severity="error">Не вдалося знайти підрозділи: {optionsError}</PowerAlert>
+          ) : null}
+          {progress !== null ? (
+            <Stack spacing={0.5}>
+              <LinearProgress variant="determinate" value={progress} />
+              <Typography variant="body2" color="text.secondary">
+                {progressLabel ?? 'Перенесення прив’язок'} — {progress}%
+              </Typography>
+            </Stack>
           ) : null}
           {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
         </Stack>

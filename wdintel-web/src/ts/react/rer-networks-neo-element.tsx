@@ -20,10 +20,16 @@ function getAuthUserRolesFromShell(el: Element): string[] {
     .filter((role) => role.length > 0);
 }
 
-function RerNetworksNeoRoot({ authUserRoles }: { authUserRoles: string[] }) {
+function RerNetworksNeoRoot({
+  authUserRoles,
+  unitId,
+}: {
+  authUserRoles: string[];
+  unitId?: number;
+}) {
   return (
     <NeoMuiThemeProvider>
-      <RerNetworksNeoPage authUserRoles={authUserRoles} />
+      <RerNetworksNeoPage authUserRoles={authUserRoles} unitId={unitId} />
     </NeoMuiThemeProvider>
   );
 }
@@ -32,13 +38,19 @@ class RerNetworksNeoElement extends HTMLElement {
   private root: Root | null = null;
 
   static get observedAttributes() {
-    return ['data-auth-user-roles'];
+    return ['data-auth-user-roles', 'data-unit-id'];
   }
 
   private renderRoot() {
     if (!this.root) return;
     const authUserRoles = getAuthUserRolesFromShell(this);
-    this.root.render(<RerNetworksNeoRoot authUserRoles={authUserRoles} />);
+    const unitIdAttribute = this.getAttribute('data-unit-id');
+    const unitId = unitIdAttribute === null ? undefined : Number(unitIdAttribute);
+    if (unitId !== undefined && (!Number.isSafeInteger(unitId) || unitId <= 0)) {
+      this.root.render(<div role="alert">Некоректний ID підрозділу.</div>);
+      return;
+    }
+    this.root.render(<RerNetworksNeoRoot authUserRoles={authUserRoles} unitId={unitId} />);
   }
 
   connectedCallback() {
@@ -54,7 +66,7 @@ class RerNetworksNeoElement extends HTMLElement {
   }
 
   attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null) {
-    if (name === 'data-auth-user-roles' && oldValue !== newValue) {
+    if ((name === 'data-auth-user-roles' || name === 'data-unit-id') && oldValue !== newValue) {
       this.renderRoot();
     }
   }

@@ -382,6 +382,7 @@ function buildPage() {
     summaryLoaded: false,
     summaryRows: [],
     tagsLayout: 'compact',
+    hideBotTags: false,
     tagsMap: {},
     tagsOrder: [],
     topCallsigns: [],

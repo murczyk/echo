@@ -2848,3 +2848,207 @@ async fn acceptance_duration_boundaries_fail_closed_without_panicking() {
         now + Duration::seconds(60)
     );
 }
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn acceptance_content_read_requires_visible_device_and_current_publication(
+) {
+    let (mut env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    let bytes = "Текст для перегляду\n<script>read only</script>".as_bytes();
+    let file = fixture.file("звіт.txt").await;
+    let upload = fixture.upload(&file, bytes).await;
+    let locked = fixture.seed_bytes(&upload, bytes).await;
+    finalize(
+        &env,
+        &fixture.runtime,
+        fixture.login.id,
+        upload.clone(),
+        &locked,
+    )
+    .await
+    .unwrap();
+    let reader = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            login: Set(format!("content-reader-{}", Uuid::new_v4())),
+            roles: Set(json!([crate::devices::ROLE_CYBER])),
+            organism_id: Set(fixture.login.organism_id),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let other_organism =
+        mk_organism(&env.dbx, Default::default()).await.unwrap();
+    let outsider = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            login: Set(format!("content-outsider-{}", Uuid::new_v4())),
+            roles: Set(json!([crate::devices::ROLE_CYBER])),
+            organism_id: Set(Some(other_organism.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let env_mut = Arc::get_mut(&mut env).unwrap();
+    env_mut.s3 = Some(fixture.runtime.storage.clone());
+    env_mut.s3_config = Some(crate::storage::S3Config {
+        prefix: crate::config::S3_MEDIA_ROOT_PREFIX.to_string(),
+        ..fixture.runtime.storage_config.clone()
+    });
+    env_mut.config.s3_config = Some(crate::config::S3Config {
+        s3_access_key_id: String::new(),
+        s3_secret_access_key: String::new(),
+        s3_endpoint: String::new(),
+        s3_region: String::new(),
+        s3_bucket: fixture.runtime.storage_config.bucket.clone(),
+        strongbox_key: fixture.runtime.strongbox_key.clone(),
+    });
+    let app = app!(env);
+    let reader_cookie: Cookie<'static> = cookie!(app, reader.id);
+    let source_cookie: Cookie<'static> = cookie!(app, fixture.login.id);
+    let outsider_cookie: Cookie<'static> = cookie!(app, outsider.id);
+    let path = format!(
+        "/api/device/files/{}/{}/revisions/1/content",
+        fixture.device.id, file.id
+    );
+    for method in [Method::GET, Method::HEAD] {
+        for (cookie, status) in [
+            (None, StatusCode::UNAUTHORIZED),
+            (Some(source_cookie.clone()), StatusCode::FORBIDDEN),
+            (Some(outsider_cookie.clone()), StatusCode::NOT_FOUND),
+        ] {
+            let mut request = test::TestRequest::default()
+                .method(method.clone())
+                .uri(&path);
+            if let Some(cookie) = cookie {
+                request = request.cookie(cookie);
+            }
+            let response = test::call_service(&app, request.to_request()).await;
+            assert_eq!(response.status(), status);
+        }
+        let response = test::call_service(
+            &app,
+            test::TestRequest::default()
+                .method(method.clone())
+                .uri(&path)
+                .cookie(reader_cookie.clone())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get("content-length").unwrap(),
+            bytes.len().to_string().as_str()
+        );
+        assert_eq!(
+            response.headers().get("cache-control").unwrap(),
+            "private, no-store"
+        );
+        assert_eq!(
+            response.headers().get("x-content-type-options").unwrap(),
+            "nosniff"
+        );
+        assert!(response
+            .headers()
+            .get("content-disposition")
+            .unwrap()
+            .as_bytes()
+            .starts_with(b"attachment;"));
+        let body = test::read_body(response).await;
+        if method == Method::GET {
+            assert_eq!(body.as_ref(), bytes);
+        } else {
+            assert!(body.is_empty());
+        }
+    }
+    let missing = fixture.file("not-uploaded.txt").await;
+    for uri in [
+        path.replace("/revisions/1/", "/revisions/2/"),
+        path.replace(&file.id.to_string(), &missing.id.to_string()),
+        path.replace(
+            &fixture.device.id.to_string(),
+            &Uuid::new_v4().to_string(),
+        ),
+    ] {
+        let response = test::call_service(
+            &app,
+            test::TestRequest::get()
+                .uri(&uri)
+                .cookie(reader_cookie.clone())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+    resync_file(&env, &fixture, &file).await;
+    let response = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri(&path)
+            .cookie(reader_cookie)
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn acceptance_content_read_streams_plaintext_without_upload_runtime() {
+    let (mut env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    let mut reader = fixture.login.clone().into_active_model();
+    reader.roles = Set(json!([crate::devices::ROLE_CYBER]));
+    let reader = reader.update(&env.dbx).await.unwrap();
+    let env_mut = Arc::get_mut(&mut env).unwrap();
+    env_mut.s3 = Some(fixture.runtime.storage.clone());
+    env_mut.s3_config = Some(crate::storage::S3Config {
+        prefix: crate::config::S3_MEDIA_ROOT_PREFIX.to_string(),
+        ..fixture.runtime.storage_config.clone()
+    });
+    assert!(env_mut.device_file_content.is_none());
+    let app = app!(env);
+    let cookie: Cookie<'static> = cookie!(app, reader.id);
+    for bytes in [b"original plaintext bytes".as_slice(), b"".as_slice()] {
+        let file = fixture.file("plain.txt").await;
+        let upload = fixture.upload(&file, bytes).await;
+        fixture
+            .runtime
+            .storage
+            .write(
+                &fixture
+                    .runtime
+                    .storage_config
+                    .prefixed_key(&upload.object_key),
+                bytes.to_vec(),
+            )
+            .await
+            .unwrap();
+        repository::publish(
+            fixture.db(),
+            &upload,
+            false,
+            Utc::now().fixed_offset(),
+            None,
+        )
+        .await
+        .unwrap();
+        let path = format!(
+            "/api/device/files/{}/{}/revisions/1/content",
+            fixture.device.id, file.id
+        );
+        let response = test::call_service(
+            &app,
+            test::TestRequest::get()
+                .uri(&path)
+                .cookie(cookie.clone())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(test::read_body(response).await.as_ref(), bytes);
+    }
+}

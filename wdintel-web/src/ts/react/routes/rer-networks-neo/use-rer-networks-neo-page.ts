@@ -43,7 +43,10 @@ import { currentSystemSettings } from '../../services/api/system-settings';
 import { isUnauthorizedError } from '../../services/api/client';
 import { redirectToLogin } from '../../auth-redirect';
 
-export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: string[] } = {}) {
+export function useRerNetworksNeoPage({
+  authUserRoles = [],
+  unitId,
+}: { authUserRoles?: string[]; unitId?: number } = {}) {
   const tableStateContext = useTableStateContext();
   const shellPermissions = useMemo(
     () => getNetworkPermissionsFromRoles(authUserRoles),
@@ -127,6 +130,8 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
 
   useEffect(() => {
     return () => {
+      mainAbortRef.current?.abort();
+      loadMoreAbortRef.current?.abort();
       for (const controller of activityAbortControllersRef.current) controller.abort();
     };
   }, []);
@@ -232,6 +237,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
       },
       selectedSidebarUnitFilter,
       fullQueryKey: JSON.stringify({
+        unitId,
         globalFilter: tableStateContext.globalFilter,
         columnFilters,
         sorting: tableStateContext.sorting,
@@ -248,6 +254,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
       columnFilters,
       filters,
       selectedSidebarUnitFilter,
+      unitId,
       tableStateContext.globalFilter,
       tableStateContext.sorting,
     ],
@@ -279,6 +286,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
   const loadActions = useMemo(
     () =>
       createRerNetworksNeoLoadActions({
+        unitId,
         tableStateContext: tableStateContextRef.current,
         tableStateContextRef,
         filtersRef,
@@ -311,12 +319,13 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
         setLastActivityLoadStateByNetworkId,
         setBootstrapLoaded,
       }),
-    [],
+    [unitId],
   );
 
   const reportActions = useMemo(
     () =>
       createRerNetworksNeoReportActions({
+        unitId,
         rows,
         filters: {
           status: filters.status,
@@ -351,12 +360,14 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
       rows,
       tableStateContext.globalFilter,
       tableStateContext.sorting,
+      unitId,
     ],
   );
 
   const mutationActions = useMemo(
     () =>
       createRerNetworksNeoMutationActions({
+        unitId,
         networks,
         filters: {
           status: filters.status,
@@ -401,6 +412,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
       networks,
       querySnapshot,
       supportNonRerInterceptions,
+      unitId,
     ],
   );
 

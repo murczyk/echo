@@ -262,7 +262,7 @@ function renderAutocomplete(overrides: Record<string, unknown> = {}) {
   });
 
   rendered.push({ root, container });
-  return { onChange, onBulkPasteChange, onBulkPasteResolved, onClose, container };
+  return { onChange, onBulkPasteChange, onBulkPasteResolved, onClose, container, root };
 }
 
 function getBulkMenuButton(
@@ -420,6 +420,161 @@ describe('PowerAutocomplete', () => {
     act(() => submitButton.click());
 
     expect(onBulkPasteChange).toHaveBeenCalledWith([historicUnit]);
+  });
+
+  it('resolves pasted options outside the normal option page before allowing submission', async () => {
+    const canonicalDevice = { id: 'device-21', label: 'DEVICE-21' };
+    let completeResolution: ((options: readonly Option[]) => void) | undefined;
+    const resolveBulkPasteOptions = vi.fn(
+      () =>
+        new Promise<readonly Option[]>((resolve) => {
+          completeResolution = resolve;
+        }),
+    );
+    const { container, onBulkPasteChange } = renderAutocomplete({
+      bulkPaste: true,
+      options: [options[0]],
+      resolveBulkPasteOptions,
+    });
+
+    openBulkDialog(container);
+    typeDialogValue(container, 'device-21');
+    const submitButton = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Додати',
+    );
+    if (!submitButton || !completeResolution) throw new Error('Bulk resolution did not start');
+    expect(resolveBulkPasteOptions).toHaveBeenCalledWith(['device-21'], {
+      signal: expect.any(AbortSignal),
+    });
+    expect(submitButton.disabled).toBe(true);
+    expect(container.textContent).toContain('Перевіряємо значення…');
+
+    await act(async () => {
+      completeResolution?.([canonicalDevice]);
+      await Promise.resolve();
+    });
+    expect(submitButton.disabled).toBe(false);
+    act(() => submitButton.click());
+
+    expect(onBulkPasteChange).toHaveBeenCalledWith([canonicalDevice]);
+  });
+
+  it('does not reuse a successful batch after the normalized input batch changes', async () => {
+    const requests: Array<{
+      tokens: readonly string[];
+      signal: AbortSignal;
+      resolve: (options: readonly Option[]) => void;
+    }> = [];
+    const resolveBulkPasteOptions = vi.fn(
+      (tokens: readonly string[], { signal }: { signal: AbortSignal }) =>
+        new Promise<readonly Option[]>((resolve) => {
+          requests.push({ tokens, signal, resolve });
+        }),
+    );
+    const { container, onBulkPasteChange } = renderAutocomplete({
+      bulkPaste: true,
+      bulkPasteSeparators: ['\n'],
+      resolveBulkPasteOptions,
+    });
+
+    openBulkDialog(container);
+    typeDialogValue(container, 'DEVICE-A');
+    const submitButton = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Додати',
+    );
+    if (!submitButton) throw new Error('Submit button not found');
+    expect(requests.map((request) => request.tokens)).toEqual([['DEVICE-A']]);
+
+    await act(async () => {
+      requests[0]?.resolve([{ id: 'device-a', label: 'DEVICE-A' }]);
+      await Promise.resolve();
+    });
+    expect(submitButton.disabled).toBe(false);
+
+    typeDialogValue(container, 'DEVICE-A\nDEVICE-B');
+    expect(submitButton.disabled).toBe(true);
+    act(() => submitButton.click());
+    expect(onBulkPasteChange).not.toHaveBeenCalled();
+    expect(requests.map((request) => request.tokens)).toEqual([
+      ['DEVICE-A'],
+      ['DEVICE-A', 'DEVICE-B'],
+    ]);
+
+    await act(async () => {
+      requests[1]?.resolve([
+        { id: 'device-a', label: 'DEVICE-A' },
+        { id: 'device-b', label: 'DEVICE-B' },
+      ]);
+      await Promise.resolve();
+    });
+    expect(submitButton.disabled).toBe(false);
+    act(() => submitButton.click());
+    expect(onBulkPasteChange).toHaveBeenCalledWith([
+      { id: 'device-a', label: 'DEVICE-A' },
+      { id: 'device-b', label: 'DEVICE-B' },
+    ]);
+  });
+
+  it('keeps Add disabled when the current bulk resolution fails', async () => {
+    let rejectResolution: ((error: Error) => void) | undefined;
+    const onBulkPasteResolveError = vi.fn();
+    const resolveBulkPasteOptions = vi.fn(
+      () =>
+        new Promise<readonly Option[]>((_, reject) => {
+          rejectResolution = reject;
+        }),
+    );
+    const { container, onBulkPasteChange } = renderAutocomplete({
+      bulkPaste: true,
+      bulkPasteSeparators: ['\n'],
+      resolveBulkPasteOptions,
+      onBulkPasteResolveError,
+    });
+
+    openBulkDialog(container);
+    typeDialogValue(container, 'DEVICE-A\nDEVICE-B');
+    const submitButton = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Додати',
+    );
+    if (!submitButton || !rejectResolution) throw new Error('Bulk resolution did not start');
+
+    await act(async () => {
+      rejectResolution?.(new Error('resolver unavailable'));
+      await Promise.resolve();
+    });
+    expect(onBulkPasteResolveError).toHaveBeenCalledTimes(1);
+    expect(submitButton.disabled).toBe(true);
+    act(() => submitButton.click());
+    expect(onBulkPasteChange).not.toHaveBeenCalled();
+  });
+
+  it('does not report an aborted bulk resolver rejection after the dialog closes', async () => {
+    let rejectResolution: ((error: Error) => void) | undefined;
+    const onBulkPasteResolveError = vi.fn();
+    const resolveBulkPasteOptions = vi.fn(
+      () =>
+        new Promise<readonly Option[]>((_, reject) => {
+          rejectResolution = reject;
+        }),
+    );
+    const { container } = renderAutocomplete({
+      bulkPaste: true,
+      resolveBulkPasteOptions,
+      onBulkPasteResolveError,
+    });
+
+    openBulkDialog(container);
+    typeDialogValue(container, 'device');
+    const cancelButton = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Скасувати',
+    );
+    if (!cancelButton || !rejectResolution) throw new Error('Bulk resolution did not start');
+    act(() => cancelButton.click());
+    await act(async () => {
+      rejectResolution?.(new Error('aborted request'));
+      await Promise.resolve();
+    });
+    expect(onBulkPasteResolveError).not.toHaveBeenCalled();
   });
 
   it('opens the bulk dialog from the input menu', () => {

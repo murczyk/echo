@@ -23,6 +23,7 @@ export type GroupCatalogError =
 export function useRerDutyFilterOptions() {
   const [profiles, setProfiles] = useState<Record<string, SignalProfileEntry | null>>({});
   const [freqs, setFreqs] = useState<string[]>([]);
+  const [freqsReady, setFreqsReady] = useState(false);
   const [postsList, setPostsList] = useState<string[]>([]);
   const [groupInfos, setGroupInfos] = useState<Record<string, SignalGroupEntry>>({});
   const [groupsList, setGroupsList] = useState<string[]>([]);
@@ -55,7 +56,10 @@ export function useRerDutyFilterOptions() {
     setReloadFreqsLoading(true);
     try {
       const list = await getLatestFrequencies();
-      if (mountedRef.current) setFreqs(list);
+      if (mountedRef.current) {
+        setFreqs(list);
+        setFreqsReady(true);
+      }
     } finally {
       if (mountedRef.current) setReloadFreqsLoading(false);
     }
@@ -72,7 +76,10 @@ export function useRerDutyFilterOptions() {
       if (mountedRef.current) setProfiles(sendersResult.value.data ?? {});
     } else console.warn('loadFilterOptions: getLatestSenders failed', sendersResult.reason);
     if (freqsResult.status === 'fulfilled') {
-      if (mountedRef.current) setFreqs(freqsResult.value);
+      if (mountedRef.current) {
+        setFreqs(freqsResult.value);
+        setFreqsReady(true);
+      }
     } else console.warn('loadFilterOptions: getLatestFrequencies failed', freqsResult.reason);
     if (postsResult.status === 'fulfilled') {
       if (mountedRef.current) setPostsList(postsResult.value);
@@ -169,6 +176,7 @@ export function useRerDutyFilterOptions() {
     profiles,
     setProfiles,
     freqs,
+    freqsReady,
     postsList,
     groupInfos,
     setGroupInfos,

@@ -29,6 +29,8 @@ import {
   RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES,
 } from '../MessageCardMedia.tsx';
 import { AudioTranscriptionPreferencesProvider } from '../MessageCardAudioTranscription.tsx';
+import { MessageDeviceAccessProvider } from '../MessageDeviceAccess.tsx';
+import { MessageCardMetadata } from '../MessageCardHeader.tsx';
 import {
   normalizeLocationDisplayValue,
   resolveEtalonBindingDisplayValue,
@@ -43,6 +45,12 @@ const latestMenuProps: Array<{
   anchorPosition?: { top: number; left: number } | null;
   open?: boolean;
   id?: string;
+}> = [];
+const latestPopoverProps: Array<{
+  anchorEl?: HTMLElement | null;
+  anchorOrigin?: unknown;
+  transformOrigin?: unknown;
+  onClose?: () => void;
 }> = [];
 const latestDocumentDialogProps: Array<{
   currentIndex?: number;
@@ -303,8 +311,16 @@ vi.mock('@mui/material', () => ({
     children,
     open,
     ...props
-  }: { children?: ReactNode; open?: boolean } & Record<string, unknown>) =>
-    open ? <div {...omitMuiLayoutProps(props)}>{children}</div> : null,
+  }: { children?: ReactNode; open?: boolean } & Record<string, unknown>) => {
+    if (!open) return null;
+    latestPopoverProps.push({
+      anchorEl: (props.anchorEl as HTMLElement | null | undefined) ?? null,
+      anchorOrigin: props.anchorOrigin,
+      transformOrigin: props.transformOrigin,
+      onClose: props.onClose as (() => void) | undefined,
+    });
+    return <div {...omitMuiLayoutProps(props)}>{children}</div>;
+  },
   Menu: ({
     children,
     open,
@@ -636,6 +652,12 @@ async function renderHeader(
   document.body.appendChild(container);
   const root = createRoot(container);
   const msg = overrides.msg ?? buildMessage();
+  const metadataOverrides = overrides as Partial<{
+    canUseMessageDevices: boolean;
+    useMessageDeviceAccessProvider: boolean;
+    groupName: string | null;
+    senderName: string | null;
+  }>;
   const etalonDisplayModel = resolveMessageCardEtalonDisplayModel(msg, {
     featureStrictNetworks: false,
     networkDisplayMap: { 7: 'р/м Alpha' },
@@ -671,7 +693,26 @@ async function renderHeader(
   };
 
   await act(async () => {
-    root.render(<MessageCardHeader {...props} />);
+    const content = (
+      <div data-message-header-grid="true">
+        <MessageCardHeader {...props} />
+        <MessageCardMetadata
+          msg={msg}
+          groupName={metadataOverrides.groupName ?? "Куп'янськ пеленг"}
+          senderName={metadataOverrides.senderName ?? 'Dow_Jones_2'}
+          etalonDisplayModel={props.etalonDisplayModel}
+        />
+      </div>
+    );
+    root.render(
+      metadataOverrides.useMessageDeviceAccessProvider === false ? (
+        content
+      ) : (
+        <MessageDeviceAccessProvider allowed={metadataOverrides.canUseMessageDevices ?? true}>
+          {content}
+        </MessageDeviceAccessProvider>
+      ),
+    );
   });
 
   return { container, root, headerProps: props };
@@ -801,6 +842,7 @@ describe('MessageCard', () => {
     resizeObserverCallbacks.splice(0);
     resizeObserverTargets.clear();
     latestMenuProps.splice(0);
+    latestPopoverProps.splice(0);
     latestDocumentDialogProps.splice(0);
     if (typeof window.localStorage?.clear === 'function') {
       window.localStorage.clear();
@@ -893,6 +935,42 @@ describe('MessageCard', () => {
       card.style.containIntrinsicBlockSize ||
         card.style.getPropertyValue('contain-intrinsic-block-size'),
     ).toBe('auto 120px');
+  });
+
+  // @test-scope regression: https://github.com/echoua/echo/issues/3461
+  it('ECHO-3461 hides device metadata without device access', async () => {
+    const view = await renderHeader({
+      msg: buildMessage({ deviceName: 'Радіостанція' }),
+      canUseMessageDevices: false,
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('[title="Пристрій"]')).toBeNull();
+    expect(view.container.textContent).not.toContain('Радіостанція');
+  });
+
+  // @test-scope regression: https://github.com/echoua/echo/issues/3461
+  it('ECHO-3461 hides device metadata without a provider', async () => {
+    const view = await renderHeader({
+      msg: buildMessage({ deviceName: 'Радіостанція' }),
+      useMessageDeviceAccessProvider: false,
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('[title="Пристрій"]')).toBeNull();
+    expect(view.container.textContent).not.toContain('Радіостанція');
+  });
+
+  // @test-scope regression: https://github.com/echoua/echo/issues/3461
+  it('ECHO-3461 shows device metadata with an allowed provider', async () => {
+    const view = await renderHeader({
+      msg: buildMessage({ deviceName: 'Радіостанція' }),
+      canUseMessageDevices: true,
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('[title="Пристрій"]')).not.toBeNull();
+    expect(view.container.textContent).toContain('Радіостанція');
   });
 
   it.each(['duty', 'analysis'] as const)(
@@ -2308,6 +2386,117 @@ describe('MessageCard', () => {
     expect(view.container.textContent).toContain('BRAVO');
     expect(view.container.textContent).toContain('CHARLIE');
     expect(view.container.textContent).toContain('GHOST');
+  });
+
+  // @test-scope regression: https://github.com/echoua/echo/issues/3324
+  it('ECHO-3324 cancels the Popover anchored to the matching mixed-provenance tag', async () => {
+    const onToggleTag = vi.fn();
+    const onMarkBotTagWrong = vi.fn();
+    const onCancelBotTagAction = vi.fn();
+    const view = await renderCard({
+      msg: buildMessage({
+        inboxTags: [
+          { id: 1, tagId: 3, confidence: 1, login: 'tester', model: null, organismId: 1 },
+          { id: 2, tagId: 3, confidence: 0.92, login: null, model: 'bot', organismId: null },
+        ],
+      }),
+      botTagAction: { messageId: 42, tagId: 3 },
+      onToggleTag,
+      onMarkBotTagWrong,
+      onCancelBotTagAction,
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('.message-card-tag-provenance--mixed')).not.toBeNull();
+    expect(view.container.querySelector('[data-message-card-tag-id="3"] sup')).toBeNull();
+    const tagButton = getButton(view.container, 'переміщення');
+    const tipId = tagButton.getAttribute('aria-describedby');
+    expect(tipId).toMatch(/^message-card-tag-3-tip-/);
+    expect(tipId != null ? document.getElementById(tipId)?.textContent : null).toContain(
+      'Користувачі: tester',
+    );
+    expect(tipId != null ? document.getElementById(tipId)?.textContent : null).toContain(
+      'Боти: bot (92%)',
+    );
+    const popover = latestPopoverProps.at(-1);
+    expect(popover?.anchorEl).toBe(tagButton);
+    expect(popover?.anchorOrigin).toEqual({ vertical: 'bottom', horizontal: 'left' });
+    expect(popover?.transformOrigin).toEqual({ vertical: 'top', horizontal: 'left' });
+    const promptButtons = Array.from(view.container.querySelectorAll('[role="dialog"] button'));
+    expect(promptButtons.map((button) => button.textContent)).toEqual([
+      'СКАСУВАТИ',
+      'БОТ ПОМИЛИВСЯ',
+    ]);
+
+    await click(getButton(view.container, 'СКАСУВАТИ'));
+
+    expect(onCancelBotTagAction).toHaveBeenCalledTimes(1);
+    expect(onMarkBotTagWrong).not.toHaveBeenCalled();
+    expect(onToggleTag).not.toHaveBeenCalled();
+  });
+
+  // @test-scope regression: https://github.com/echoua/echo/issues/3324
+  it('ECHO-3324 confirms the matching bot action exactly once', async () => {
+    const onMarkBotTagWrong = vi.fn();
+    const onCancelBotTagAction = vi.fn();
+    const view = await renderCard({
+      botTagAction: { messageId: 42, tagId: 3 },
+      onMarkBotTagWrong,
+      onCancelBotTagAction,
+    });
+    rendered.push(view);
+
+    const promptButtons = Array.from(view.container.querySelectorAll('[role="dialog"] button'));
+    expect(promptButtons.map((button) => button.textContent)).toEqual([
+      'СКАСУВАТИ',
+      'БОТ ПОМИЛИВСЯ',
+    ]);
+    await click(getButton(view.container, 'БОТ ПОМИЛИВСЯ'));
+    expect(onMarkBotTagWrong).toHaveBeenCalledTimes(1);
+    expect(onMarkBotTagWrong).toHaveBeenCalledWith(42, 3);
+    expect(onCancelBotTagAction).not.toHaveBeenCalled();
+  });
+
+  // @test-scope regression: https://github.com/echoua/echo/issues/3324
+  it('ECHO-3324 retains the active tag anchor through unrelated card rerenders', async () => {
+    const onCancelBotTagAction = vi.fn();
+    const view = await renderCard({
+      botTagAction: { messageId: 42, tagId: 3 },
+      onCancelBotTagAction,
+      onMarkBotTagWrong: vi.fn(),
+    });
+    rendered.push(view);
+    const initialAnchor = latestPopoverProps.at(-1)?.anchorEl;
+
+    await act(async () => {
+      view.root.render(
+        <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
+          <MessageCard {...view.props} messageTextPreviewLines={40} />
+        </AudioTranscriptionPreferencesProvider>,
+      );
+    });
+
+    expect(latestPopoverProps.at(-1)?.anchorEl).toBe(initialAnchor);
+    expect(onCancelBotTagAction).not.toHaveBeenCalled();
+  });
+
+  // @test-scope regression: https://github.com/echoua/echo/issues/3324
+  it.each([
+    ['read-only card', { readOnly: true }],
+    ['disabled bot tags', { hideBotTags: true }],
+    ['different message', { botTagAction: { messageId: 43, tagId: 3 } }],
+    ['missing tag', { botTagAction: { messageId: 42, tagId: 99 } }],
+  ] as const)('ECHO-3324 does not show a bot Popover for a %s', async (_, overrides) => {
+    const view = await renderCard({
+      botTagAction: { messageId: 42, tagId: 3 },
+      onCancelBotTagAction: vi.fn(),
+      onMarkBotTagWrong: vi.fn(),
+      ...overrides,
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('[role="dialog"]')).toBeNull();
+    expect(latestPopoverProps).toHaveLength(0);
   });
 
   it('keeps contribution description ids unique across mounted cards with the same tag', async () => {

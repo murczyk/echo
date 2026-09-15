@@ -22,6 +22,7 @@ import {
   feedLoadedUnreadCount,
   feedPendingNewerUnreadCount,
 } from '../utils';
+import { persistDutyFilterState, readPersistedDutyFilterState } from '../duty-filter-persistence';
 
 const fixture = createDutyFeedStateFixture();
 const hoisted = getDutyApiMocks();
@@ -51,6 +52,370 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(1);
     expect(apiRef.current?.messageFeeds[0]?.items[0]?.[0]).toBe(1);
     expect(apiRef.current?.messageFeeds[0]?.loading).toBe(false);
+  });
+
+  it('persists applied filters in local storage', async () => {
+    const { apiRef } = await mountLoadedFeed();
+
+    apiRef.current!.setMessageFeeds((current) =>
+      current.map((feed) => ({
+        ...feed,
+        filter: { ...feed.filter, groupsSelected: ['group-a'] },
+        adjacentFreqsRange: 0.005,
+        highlightSignalsEnabled: true,
+        onlyMyUnitTagsEnabled: true,
+      })),
+    );
+    await act(async () => flushMicrotasks());
+
+    expect(readPersistedDutyFilterState()).toMatchObject({
+      messageFeeds: [
+        [
+          'mf-0',
+          expect.objectContaining({ groupsSelected: ['group-a'] }),
+          {
+            adjacentFreqsRange: 0.005,
+            highlightSignalsEnabled: true,
+            onlyMyUnitTagsEnabled: true,
+          },
+        ],
+      ],
+    });
+  });
+
+  it('restores every persisted filter option before the initial request', async () => {
+    persistDutyFilterState({
+      messageFeeds: [
+        [
+          'mf-stored',
+          { ...emptyFilter(), freqsSelected: ['155.5'] },
+          {
+            adjacentFreqsRange: 0.005,
+            highlightSignalsEnabled: true,
+            onlyMyUnitTagsEnabled: true,
+          },
+        ],
+      ],
+    });
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} freqs={['155.5', '155.504']} freqsReady={false} />);
+      await flushMicrotasks();
+    });
+
+    expect(apiRef.current?.messageFeeds[0]).toMatchObject({
+      id: 'mf-stored',
+      adjacentFreqsRange: 0.005,
+      highlightSignalsEnabled: true,
+      onlyMyUnitTagsEnabled: true,
+    });
+    expect(hoisted.fetchInboxMessages).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} freqs={['155.5', '155.504']} freqsReady />);
+      await flushMicrotasks();
+    });
+
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selectedFreqs: ['155.5', '155.504'],
+        highlightSignals: true,
+      }),
+    );
+  });
+
+  it('restores persisted options when hydrating a short link', async () => {
+    persistDutyFilterState({
+      messageFeeds: [
+        [
+          'mf-short',
+          { ...emptyFilter(), groupsSelected: ['stored-group'] },
+          {
+            adjacentFreqsRange: 0.005,
+            highlightSignalsEnabled: true,
+            onlyMyUnitTagsEnabled: true,
+          },
+        ],
+      ],
+    });
+    window.history.replaceState({}, '', '/rer-duty-neo?state-short=short-id');
+    hoisted.systemSettingsCurrent.mockResolvedValueOnce({
+      id: 1,
+      rerAnalysisUnitsExactMatchOnlyDefault: false,
+      rerDutyTestEnabled: false,
+      rerDutyInsertHistoricalInterceptions: false,
+      rerDutyTestSinceMs: 0,
+      rerDutyTestLimit: 1,
+      rerDutyPollIntervalSec: 1,
+      rerShortUrlEnabled: true,
+    });
+    hoisted.rerDutyShortStateGet.mockResolvedValueOnce({
+      state: {
+        waterfalls: [['mf-short', { ...emptyFilter(), freqsSelected: ['155.5'] }]] as Array<
+          [string, ReturnType<typeof emptyFilter>]
+        >,
+      },
+    });
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} freqs={['155.5', '155.504']} />);
+      await flushMicrotasks();
+    });
+
+    expect(apiRef.current?.messageFeeds[0]).toMatchObject({
+      id: 'mf-short',
+      adjacentFreqsRange: 0.005,
+      highlightSignalsEnabled: true,
+      onlyMyUnitTagsEnabled: true,
+    });
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selectedFreqs: ['155.5', '155.504'],
+        highlightSignals: true,
+      }),
+    );
+  });
+
+  it('keeps stored filters out of direct message navigation', async () => {
+    persistDutyFilterState({
+      messageFeeds: [
+        [
+          'mf-stored',
+          { ...emptyFilter(), groupsDenied: ['group-a'] },
+          {
+            adjacentFreqsRange: 0,
+            highlightSignalsEnabled: false,
+            onlyMyUnitTagsEnabled: false,
+          },
+        ],
+      ],
+    });
+    window.history.replaceState({}, '', '/rer-duty-neo?m=target-message');
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+      await flushMicrotasks();
+    });
+
+    expect(apiRef.current?.messageFeeds[0]).toMatchObject({
+      id: 'mf-0',
+      filter: emptyFilter(),
+    });
+    expect(readPersistedDutyFilterState()).toMatchObject({
+      messageFeeds: [
+        ['mf-stored', expect.objectContaining({ groupsDenied: ['group-a'] }), expect.any(Object)],
+      ],
+    });
+  });
+
+  it('preserves stored filters when a short link cannot be resolved', async () => {
+    persistDutyFilterState({
+      messageFeeds: [
+        [
+          'mf-stored',
+          { ...emptyFilter(), groupsSelected: ['stored-group'] },
+          {
+            adjacentFreqsRange: 0,
+            highlightSignalsEnabled: false,
+            onlyMyUnitTagsEnabled: false,
+          },
+        ],
+      ],
+    });
+    window.history.replaceState({}, '', '/rer-duty-neo?state-short=missing');
+    hoisted.systemSettingsCurrent.mockResolvedValueOnce({
+      id: 1,
+      rerAnalysisUnitsExactMatchOnlyDefault: false,
+      rerDutyTestEnabled: false,
+      rerDutyInsertHistoricalInterceptions: false,
+      rerDutyTestSinceMs: 0,
+      rerDutyTestLimit: 1,
+      rerDutyPollIntervalSec: 1,
+      rerShortUrlEnabled: true,
+    });
+    hoisted.rerDutyShortStateGet.mockRejectedValueOnce(new Error('short link unavailable'));
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+      await flushMicrotasks();
+    });
+
+    expect(readPersistedDutyFilterState()).toMatchObject({
+      messageFeeds: [
+        [
+          'mf-stored',
+          expect.objectContaining({ groupsSelected: ['stored-group'] }),
+          expect.any(Object),
+        ],
+      ],
+    });
+
+    apiRef.current!.setMessageFeeds((current) =>
+      current.map((feed) => ({
+        ...feed,
+        filter: { ...feed.filter, groupsSelected: ['user-group'] },
+      })),
+    );
+    await act(async () => flushMicrotasks());
+
+    expect(readPersistedDutyFilterState()).toMatchObject({
+      messageFeeds: [
+        ['mf-0', expect.objectContaining({ groupsSelected: ['user-group'] }), expect.any(Object)],
+      ],
+    });
+  });
+
+  it('keeps advanced-option edits made while a short link is loading', async () => {
+    window.history.replaceState({}, '', '/rer-duty-neo?state-short=delayed');
+    hoisted.systemSettingsCurrent.mockResolvedValueOnce({
+      id: 1,
+      rerAnalysisUnitsExactMatchOnlyDefault: false,
+      rerDutyTestEnabled: false,
+      rerDutyInsertHistoricalInterceptions: false,
+      rerDutyTestSinceMs: 0,
+      rerDutyTestLimit: 1,
+      rerDutyPollIntervalSec: 1,
+      rerShortUrlEnabled: true,
+    });
+    const shortStateRequest = deferred<{
+      state: {
+        waterfalls: Array<[string, ReturnType<typeof emptyFilter>]>;
+      };
+    }>('short-state hydration');
+    hoisted.rerDutyShortStateGet.mockReturnValueOnce(shortStateRequest.promise);
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+      await flushMicrotasks();
+    });
+    apiRef.current!.setMessageFeeds((current) =>
+      current.map((feed) => ({ ...feed, onlyMyUnitTagsEnabled: true })),
+    );
+    await act(async () => flushMicrotasks());
+
+    shortStateRequest.resolve({
+      state: {
+        waterfalls: [['mf-short', { ...emptyFilter(), groupsSelected: ['short-group'] }]],
+      },
+    });
+    await act(async () => flushMicrotasks());
+
+    expect(apiRef.current?.messageFeeds[0]).toMatchObject({
+      id: 'mf-0',
+      onlyMyUnitTagsEnabled: true,
+      filter: emptyFilter(),
+    });
+    expect(readPersistedDutyFilterState()).toMatchObject({
+      messageFeeds: [
+        ['mf-0', expect.any(Object), expect.objectContaining({ onlyMyUnitTagsEnabled: true })],
+      ],
+    });
+  });
+
+  it.each([
+    { status: 'loading' } as const,
+    { status: 'error', message: 'access lookup failed' } as const,
+  ])(
+    'preserves device filters without an unfiltered initial request while access is $status',
+    async (deviceAccess) => {
+      window.history.replaceState(
+        {},
+        '',
+        `/?state=${encodeURIComponent(JSON.stringify({ messageFeeds: [['mf-0', { ...emptyFilter(), selectedDeviceNames: ['selected'], deniedDeviceNames: ['denied'] }]] }))}`,
+      );
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+        current: null,
+      };
+      await act(async () => {
+        root.render(<TestHarness apiRef={apiRef} deviceAccess={deviceAccess} />);
+        await flushMicrotasks();
+      });
+      expect(apiRef.current?.messageFeeds[0]?.filter).toMatchObject({
+        selectedDeviceNames: ['selected'],
+        deniedDeviceNames: ['denied'],
+      });
+      expect(window.location.search).toContain('selected');
+      expect(hoisted.fetchInboxMessages).not.toHaveBeenCalled();
+    },
+  );
+
+  it('loads and polls an unfiltered feed when the device access lookup fails', async () => {
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          deviceAccess={{ status: 'error', message: 'access lookup failed' }}
+        />,
+      );
+      await flushMicrotasks();
+    });
+
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(1);
+
+    await startPoll();
+
+    expect(hoisted.fetchInboxCount).toHaveBeenCalled();
+  });
+
+  it('uses device filters after confirmed authorization and removes them only after confirmed denial', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      `/?state=${encodeURIComponent(JSON.stringify({ messageFeeds: [['mf-0', { ...emptyFilter(), selectedDeviceNames: ['selected'], deniedDeviceNames: ['denied'] }]] }))}`,
+    );
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} deviceAccess={{ status: 'allowed' }} />);
+      await flushMicrotasks();
+    });
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(1);
+    expect(hoisted.fetchInboxMessages).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ selectedDeviceNames: ['selected'], deniedDeviceNames: ['denied'] }),
+    );
+    expect(apiRef.current?.messageFeeds[0]?.filter).toMatchObject({
+      selectedDeviceNames: ['selected'],
+      deniedDeviceNames: ['denied'],
+    });
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} deviceAccess={{ status: 'denied' }} />);
+      await flushMicrotasks();
+    });
+    expect(apiRef.current?.messageFeeds[0]?.filter.selectedDeviceNames).toBeNull();
+    const state = JSON.parse(
+      decodeURIComponent(new URL(window.location.href).searchParams.get('state') ?? ''),
+    );
+    expect(state.messageFeeds[0][1]).toMatchObject({
+      selectedDeviceNames: null,
+      deniedDeviceNames: null,
+    });
+    hoisted.fetchInboxMessages.mockClear();
+    await act(async () => {
+      await apiRef.current!.loadFeedInitialMessages('mf-0');
+    });
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledWith(
+      expect.objectContaining({ selectedDeviceNames: null, deniedDeviceNames: null }),
+    );
   });
 
   it('notifies once when the first count after a successful load finds new mail', async () => {

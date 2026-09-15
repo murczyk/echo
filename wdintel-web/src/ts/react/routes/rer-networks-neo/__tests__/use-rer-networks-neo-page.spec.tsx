@@ -993,6 +993,7 @@ describe('useRerNetworksNeoPage', () => {
     expect(apiMock.launchNetworksEtalonkaReportTask).toHaveBeenCalledWith({
       req: {
         filterFreq: null,
+        filterUnitId: null,
         filterUnit: null,
         filterUnitArmyRegion: null,
         filterUnitMilitaryDistrict: null,
@@ -1188,6 +1189,7 @@ describe('useRerNetworksNeoPage', () => {
     expect(apiMock.listNetworks).toHaveBeenCalledWith(
       {
         filterFreq: null,
+        filterUnitId: null,
         filterUnit: null,
         filterUnitArmyRegion: null,
         filterUnitMilitaryDistrict: null,

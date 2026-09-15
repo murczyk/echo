@@ -24,10 +24,12 @@ export function DocxDocumentPreview({
   href,
   zoom,
   sizeBytes,
+  onError,
 }: {
   href: string;
   zoom: number;
   sizeBytes?: number | null;
+  onError?: (error: unknown) => void;
 }) {
   const theme = useTheme();
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -77,6 +79,7 @@ export function DocxDocumentPreview({
         setStatus('ready');
       } catch (error) {
         if (disposed || abortController.signal.aborted) return;
+        onError?.(error);
         setError(formatDocxPreviewErrorMessage(error instanceof Error ? error.message : null));
         setStatus('error');
       }
@@ -88,9 +91,12 @@ export function DocxDocumentPreview({
       disposed = true;
       abortController.abort();
     };
-  }, [href, sizeBytes]);
+  }, [href, sizeBytes, onError]);
 
-  const srcDoc = useMemo(() => buildDocxHtmlDocument(html, zoom), [html, zoom]);
+  const srcDoc = useMemo(
+    () => buildDocxHtmlDocument(html, zoom, theme.palette.mode),
+    [html, zoom, theme.palette.mode],
+  );
 
   if (status === 'error') {
     return (
@@ -139,6 +145,7 @@ export function DocxDocumentPreview({
             height: '100%',
             border: 0,
             background: 'transparent',
+            colorScheme: theme.palette.mode,
           }}
         />
       ) : null}

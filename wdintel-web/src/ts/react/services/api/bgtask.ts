@@ -1,5 +1,6 @@
-import { getJson } from './client';
+import { getJson, HttpRequestError, isAbortError } from './client';
 import { transformSnakeToCamel } from '../../../snake-to-camel';
+import type { Unit } from '../../../../Bindings';
 
 export type BgtaskStatusAndLogsRsp = {
   running: boolean;
@@ -8,6 +9,48 @@ export type BgtaskStatusAndLogsRsp = {
   finishedWithErrorCode: string | null;
   progress?: number;
 };
+
+export class BgtaskFailedError extends Error {}
+
+export type PendingUnitMerge = {
+  taskId: number;
+  original: Unit;
+  duplicate: Unit;
+};
+
+const PENDING_UNIT_MERGE_KEY = 'echo.pendingUnitMerge';
+
+export function loadPendingUnitMerge(): PendingUnitMerge | null {
+  try {
+    const value = window.sessionStorage.getItem(PENDING_UNIT_MERGE_KEY);
+    if (value === null) return null;
+    const pending = JSON.parse(value) as PendingUnitMerge;
+    if (
+      !Number.isSafeInteger(pending.taskId) ||
+      !Number.isSafeInteger(pending.original?.id) ||
+      !Number.isSafeInteger(pending.duplicate?.id) ||
+      typeof pending.original?.name !== 'string' ||
+      typeof pending.duplicate?.name !== 'string'
+    )
+      return null;
+    return pending;
+  } catch {
+    return null;
+  }
+}
+
+export function savePendingUnitMerge(pending: PendingUnitMerge): void {
+  try {
+    window.sessionStorage.setItem(PENDING_UNIT_MERGE_KEY, JSON.stringify(pending));
+  } catch {}
+}
+
+export function clearPendingUnitMerge(taskId: number): void {
+  try {
+    if (loadPendingUnitMerge()?.taskId === taskId)
+      window.sessionStorage.removeItem(PENDING_UNIT_MERGE_KEY);
+  } catch {}
+}
 
 export type BgtaskProgressStage = {
   index: number;
@@ -60,4 +103,50 @@ export async function fetchBgtaskStatusAndLogs(
     finishedWithErrorCode: rsp.finishedWithErrorCode ?? null,
     progress: rsp.progress ?? 0,
   };
+}
+
+export async function waitForBgtaskCompletion(
+  taskId: number,
+  onProgress: (progress: number, logline: string | null) => void,
+  options?: { signal?: AbortSignal; onStatusError?: (error: unknown) => void },
+): Promise<void> {
+  let skip = 0;
+  for (;;) {
+    let status: BgtaskStatusAndLogsRsp;
+    try {
+      status = await fetchBgtaskStatusAndLogs(taskId, skip, options);
+    } catch (error) {
+      if (
+        options?.signal?.aborted ||
+        isAbortError(error) ||
+        (error instanceof HttpRequestError && (error.status === 401 || error.status === 403))
+      )
+        throw error;
+      options?.onStatusError?.(error);
+      await waitForNextBgtaskPoll(options?.signal);
+      continue;
+    }
+    skip += status.loglines.length;
+    onProgress(status.progress ?? 0, status.loglines.at(-1) ?? null);
+    if (!status.running) {
+      if (status.finishedWithError !== null) throw new BgtaskFailedError(status.finishedWithError);
+      return;
+    }
+    await waitForNextBgtaskPoll(options?.signal);
+  }
+}
+
+function waitForNextBgtaskPoll(signal?: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const onAbort = () => {
+      window.clearTimeout(timeoutId);
+      reject(signal?.reason ?? new DOMException('Aborted', 'AbortError'));
+    };
+    const timeoutId = window.setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, 1000);
+    if (signal?.aborted) onAbort();
+    else signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }

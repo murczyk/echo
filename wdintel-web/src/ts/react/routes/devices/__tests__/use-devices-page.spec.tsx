@@ -15,26 +15,28 @@ const apiMock = vi.hoisted(() => ({
   updateDevice: vi.fn(),
 }));
 const sidebarReload = vi.hoisted(() => vi.fn(async () => undefined));
+const tableState = vi.hoisted(() => ({
+  globalFilter: '',
+  sorting: [],
+  columnFilters: [],
+  onChangeGlobalFilter: vi.fn(),
+  onColumnFiltersChange: vi.fn(),
+}));
+const sidebarResource = vi.hoisted(() => ({
+  units: [],
+  unitStats: [],
+  loading: false,
+  loaded: true,
+  error: null,
+  reload: sidebarReload,
+}));
 
 vi.mock('../../../services/api/devices', () => apiMock);
 vi.mock('../../../components/mui-customized/table/table-state-provider', () => ({
-  useTableStateContext: () => ({
-    globalFilter: '',
-    sorting: [],
-    columnFilters: [],
-    onChangeGlobalFilter: vi.fn(),
-    onColumnFiltersChange: vi.fn(),
-  }),
+  useTableStateContext: () => tableState,
 }));
 vi.mock('.././use-devices-sidebar-resource', () => ({
-  useDevicesSidebarResource: () => ({
-    units: [],
-    unitStats: [],
-    loading: false,
-    loaded: true,
-    error: null,
-    reload: sidebarReload,
-  }),
+  useDevicesSidebarResource: () => sidebarResource,
 }));
 
 let container: HTMLDivElement | null = null;
@@ -42,7 +44,7 @@ let root: Root | null = null;
 let latest: ReturnType<typeof useDevicesPage> | null = null;
 
 function Harness() {
-  latest = useDevicesPage({ authUserRoles: ['DeviceSource'] });
+  latest = useDevicesPage({ authUserRoles: ['Cyber'] });
   return null;
 }
 

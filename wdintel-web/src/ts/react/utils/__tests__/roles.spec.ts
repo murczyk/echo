@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { canReadDevices, hasAnyRole, hasRole, resolveDevicesCapabilities } from '../roles';
+import {
+  canReadDevices,
+  canUseMessageDevices,
+  hasAnyRole,
+  hasRole,
+  resolveDevicesCapabilities,
+} from '../roles';
 
 // @test-scope safeguard: prevents frontend role inheritance from granting unauthorized device or privileged mutations
 describe('roles', () => {
@@ -19,9 +25,13 @@ describe('roles', () => {
     expect(hasRole(['Full'], 'Cyber')).toBe(false);
     expect(hasRole(['Rer'], 'Cyber')).toBe(false);
     expect(canReadDevices(['Cyber'])).toBe(true);
-    expect(canReadDevices(['DeviceSource'])).toBe(true);
+    expect(canReadDevices(['DeviceSource'])).toBe(false);
     expect(canReadDevices(['Admin'])).toBe(true);
     expect(canReadDevices(['Api'])).toBe(false);
+    expect(canUseMessageDevices(['Cyber'], true)).toBe(true);
+    expect(canUseMessageDevices(['Admin'], true)).toBe(true);
+    expect(canUseMessageDevices(['DeviceSource'], true)).toBe(false);
+    expect(canUseMessageDevices(['Cyber'], false)).toBe(false);
     expect(hasRole(['Full'], 'DeleteMsg')).toBe(true);
     expect(hasRole(['Admin'], 'NoAutoLogout')).toBe(false);
     expect(hasRole(['No2FA'], 'No2FA')).toBe(true);
@@ -36,7 +46,7 @@ describe('roles', () => {
       canWriteAnalyticalData: false,
     });
     expect(resolveDevicesCapabilities(['DeviceSource'])).toEqual({
-      canRead: true,
+      canRead: false,
       canCreate: true,
       canWriteSourceData: true,
       canWriteAnalyticalData: true,

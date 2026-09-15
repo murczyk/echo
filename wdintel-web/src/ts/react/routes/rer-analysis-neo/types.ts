@@ -248,6 +248,7 @@ export type AnalysisPageState = {
   profiles: Record<string, SignalProfileEntry | null>;
   queryState: AnalysisQueryState;
   tagsLayout: TagsLayoutVariant;
+  hideBotTags: boolean;
   mediaSummaryEnabled?: boolean;
   collapseMediaPreviews: boolean;
   messageTextPreviewLines: 20 | 40 | null;

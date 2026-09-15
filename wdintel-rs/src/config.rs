@@ -37,6 +37,9 @@ pub const DEVICE_FILE_CONTENT_CLEANUP_BATCH_SIZE: usize = 100;
 pub const DEVICE_FILE_CONTENT_CLEANUP_POLL_INTERVAL_SECS: u64 = 30;
 pub const DEVICE_FILE_CONTENT_CLEANUP_RETRY_DELAY_SECS: u64 = 5 * 60;
 pub const DEVICE_FILE_CONTENT_ENCRYPTION_MAX_BYTES: u64 = 100 * 1024 * 1024;
+pub const DEVICE_FILE_CONTENT_DOWNLOAD_MAX_ENCRYPTED_BYTES: u64 =
+    DEVICE_FILE_CONTENT_ENCRYPTION_MAX_BYTES + 1024 * 1024;
+pub const DEVICE_FILE_CONTENT_DOWNLOAD_TIMEOUT_SECS: u64 = 60;
 pub const DEVICE_FILE_CONTENT_STREAM_CHUNK_BYTES: usize = 8 * 1024 * 1024;
 pub const DEVICE_FILE_CONTENT_LOCK_WAIT_MILLIS: u64 = 500;
 pub const DEVICE_FILE_CONTENT_LOCK_RETRY_MILLIS: u64 = 25;
@@ -505,6 +508,10 @@ pub const SIGINT_UNIT_CHANGELOG_LIMIT: u64 = 200;
 pub const SIGINT_UNIT_MERGE_ADVISORY_LOCK_NAMESPACE: &str =
     "sigint-unit-merge:";
 pub const SIGINT_UNIT_MERGE_ADVISORY_LOCK_POLL_MS: u64 = 100;
+pub const SIGINT_UNIT_MERGE_RESERVED_POOL_CONNECTIONS: u32 = 2;
+pub const SIGINT_UNIT_MERGE_BATCH_SIZE: u64 = 50;
+pub const SIGINT_UNIT_MERGE_TASK_MARKER: &str = "unit-merge:";
+pub const SIGINT_UNIT_MERGE_TASK_FINISH_RETRY_MS: u64 = 5_000;
 pub const SIGINT_UNIT_INCONSISTENCY_MULTIPLE_ORBIT_LINKS_REASON_UK: &str =
     "Кілька прив’язок ORBIT";
 pub const SIGINT_UNIT_INCONSISTENCY_LOWER_ORBIT_ECHELON_REASON_UK: &str =
@@ -525,7 +532,7 @@ pub const ANALYSIS_CALLSIGN_GRAPH_NODE_LIMIT: usize = 5_000;
 pub const ANALYSIS_CALLSIGN_GRAPH_EDGE_LIMIT: usize = 20_000;
 pub const ANALYSIS_STATS_UNDEFINED_UNIT_ID: i64 = 0;
 pub const ANALYSIS_STATS_UNDEFINED_UNIT_NAME: &str = "Не визначено";
-pub const CLEANUP_NETWORKS_WORKER_SLEEP_DURATION: u64 = 3600;
+pub const CLEANUP_NETWORKS_WORKER_SLEEP_DURATION: u64 = 600;
 pub const CLEANUP_NETWORKS_CUTOFF_TIME_DAYS: i64 = 10;
 pub const CLEANUP_NETWORKS_OTHER_BATCH_SIZE: i64 = 100;
 pub const CLEANUP_NETWORKS_OTHER_MAX_PER_PASS: usize = 500;
@@ -535,8 +542,10 @@ pub const NETWORK_RECALCULATION_WORKER_INTERVAL_SECS: u64 = 60;
 pub const NETWORK_RECALCULATION_TASK_STALE_MINUTES: i64 = 10;
 pub const NETWORK_RECALCULATION_STATEMENT_TIMEOUT_MS: u64 = 5 * 60 * 1_000;
 pub const NETWORK_RECALCULATION_TASK_ENQUEUE_CHUNK_SIZE: usize = 1_000;
-pub const NETWORK_RECALCULATION_TASKS_PER_RUN: usize = 100;
+pub const NETWORK_RECALCULATION_TASKS_PER_RUN: usize = 500;
+pub const NETWORK_RECALCULATION_LAST_SEEN_BATCH_SIZE: u64 = 500;
 pub const NETWORK_RECALCULATION_RUN_BUDGET_SECS: u64 = 50;
+pub const RER_DUTY_POLL_INTERVAL_MIN_SEC: i64 = 5;
 pub const NETWORK_FREQ_LAST_DATETIME_IN_AOR_CACHE_TTL_MINUTES: i64 = 10;
 pub const NETWORK_LAST_ACTIVITY_BATCH_MAX_NETWORKS: usize = 100;
 pub const NETWORK_LAST_ACTIVITY_REFRESH_INTERVAL_SECS: u64 = 5 * 60;
@@ -768,19 +777,24 @@ pub const INBOX_COUNT_SINGLEFLIGHT_STALE_SECS: u64 = 60;
 pub const INBOX_COUNT_SINGLEFLIGHT_MAX_ENTRIES: usize = 2_048;
 pub const INBOX_MESSAGES_PAGE_LIMIT: usize = 20;
 pub const ANALYTICS_INBOX_CANDIDATE_PAGE_SIZE: usize = 1_000;
+pub const ANALYTICS_INBOX_POSTGRES_BOUNDS_MAX_DAYS: i64 = 7;
+pub const ANALYTICS_INBOX_MESSAGE_ID_BOUNDS_CACHE_TTL_MS: u64 = 5_000;
+pub const ANALYTICS_INBOX_MESSAGE_ID_BOUNDS_CACHE_MAX_ENTRIES: usize = 2_048;
 pub const RER_ANALYSIS_ANALYTICS_FRESH_TAIL_MINUTES: i64 = 5;
 pub const RER_DUTY_PAGE_ID: &str = "rer-duty";
 pub const RER_DUTY_NEO_PAGE_ID: &str = "rer-duty-neo";
 pub const RER_DUTY_POSTGRES_FRESH_CURSOR_HOURS: i64 = 1;
+pub const RER_DUTY_POSTGRES_RECENT_INBOX_DAYS: i64 = 2;
 pub const RER_DUTY_NEO_ADAPTIVE_CUTOFF_TRAFFIC_LOOKBACK_HOURS: i64 = 72;
 pub const RER_DUTY_NEO_ADAPTIVE_CUTOFF_TRAFFIC_THRESHOLD: i64 = 100_000;
 pub const RER_DUTY_NEO_ADAPTIVE_CUTOFF_DAYS: i64 = 14;
 pub const RER_DUTY_ANALYTICS_FRESH_TAIL_MINUTES: i64 = 5;
 pub const GROUP_STATS_5MIN_TTL_DAYS: i64 = 14;
 pub const GROUP_STATS_DAY_TTL_DAYS: i64 = 365;
-pub const GROUP_STATS_RECALCULATION_TASK_CLAIM_LIMIT: i64 = 100;
+pub const GROUP_STATS_RECALCULATION_TASK_COMPACT_LIMIT: i64 = 5_000;
 pub const GROUP_STATS_RECALCULATION_TASK_STALE_MINUTES: i64 = 120;
-pub const GROUP_STATS_RECALCULATION_TASK_CHUNK_DAYS: i64 = 1;
+pub const GROUP_STATS_RECALCULATION_FAILURE_RETRY_MINUTES: i64 = 5;
+pub const GROUP_STATS_RECALCULATION_RECENT_DAYS: i64 = 1;
 pub const GROUP_STATS_RECALCULATION_TASK_FINALIZE_RETRY_INITIAL_MS: u64 = 100;
 pub const GROUP_STATS_RECALCULATION_TASK_FINALIZE_RETRY_MAX_MS: u64 = 3_000;
 /// Minimum time to keep a long-poll request open to accumulate events
@@ -857,6 +871,7 @@ pub const FEATURE_SIGINT_COMMENT_PARSING_ENV: &str =
     "ECHO_FEATURE_SIGINT_COMMENT_PARSING";
 pub const SIGINT_COMMENT_LEGACY_BLACKLIST_TEXT: &str = "Службовий радіообмін";
 pub const DEVICE_NAME_SEARCH_LIMIT: u64 = 20;
+pub const DEVICE_NAME_RESOLVE_LIMIT: usize = 500;
 pub const SETTLEMENTS_LEGACY_FILE: &str = "settlements.json";
 pub const SETTLEMENTS_REGIONS_DIR: &str = "settlements_json";
 pub const SETTLEMENTS_REGION_FILE_EXTENSION: &str = "json";
@@ -924,6 +939,7 @@ pub const SYSTEM_LOGIN_NAME: &str = "system";
 #[cfg(test)]
 pub const FUNCTEST_CLEANUP_SQL: &str = r#"
 LOCK TABLE signal_message IN SHARE MODE;
+DELETE FROM group_stats_recalculation_day;
 UPDATE ai_intel_report_settings
 SET quick_suggestion_enabled = false,
     quick_ai_engine_id = NULL,
@@ -1090,7 +1106,7 @@ pub const ORGANISM_KEYWORD_SET_MAX_WORD_LEN: usize = 64;
 pub const ORGANISM_KEYWORD_SET_INFLECT_MAX_LEMMAS: usize = 20;
 pub const NETWORK_INBOX_WORKER_DEFAULT_SLEEP: u64 = 30;
 pub const NETWORK_INBOX_FRESH_WORKER_CUTOFF_DAYS: i64 = 40; // to ensure month reports are valid at all times
-pub const NETWORK_INBOX_OLD_WORKER_CUTOFF_DAYS: i64 = 365;
+pub const NETWORK_INBOX_OLD_WORKER_CUTOFF_DAYS: i64 = 367;
 pub const SIGINT_NETWORK_ACTIVITY_EARLIEST_YEAR: i32 = 2000;
 pub const UNIT_TAG_RECALC_HISTORY_DAYS: i64 = 40;
 pub const UNIT_TAG_QUEUE_WORKER_SLEEP_SECS: u64 = 5;
@@ -1196,11 +1212,16 @@ pub const ENCRYPTION_KEY_DESCRIPTION_PLACEHOLDER: &str = "...";
 pub const NETWORKS_IMPORT_TUI_ROWS_NUM_PAGE_SIZE: usize = 10;
 
 pub const NETWORK_INVALIDATION_TASK_MAX_TASKS: u64 = 1_000_000;
-pub const NETWORK_INVALIDATION_TASK_WAIT_SLEEP_SEC: u64 = 600;
+pub const NETWORK_INVALIDATION_TASK_ERROR_SLEEP_SEC: u64 = 30;
 pub const NETWORK_INVALIDATION_TASK_TAG_OLD: &str = "old";
 pub const NETWORK_INVALIDATION_TASK_TAG_RECENT: &str = "recent";
 pub const NETWORK_INVALIDATION_TASK_TAG_UNASSIGNED: &str = "unassigned";
 pub const ANALYTICS_CONNECT_TIMEOUT_MS_DEFAULT: u64 = 5_000;
+pub const ANALYTICS_POOL_MAX_CONNECTIONS_DEFAULT: u32 = 8;
+pub const ANALYTICS_POSTGRES_FALLBACK_MAX_CONCURRENT: usize = 8;
+pub const ANALYTICS_POSTGRES_FALLBACK_QUEUE_TIMEOUT_MS: u64 = 250;
+pub const ANALYTICS_MESSAGE_ID_SCOPE_CACHE_TTL_MS: u64 = 5_000;
+pub const ANALYTICS_MESSAGE_ID_SCOPE_CACHE_MAX_ENTRIES: usize = 2_048;
 /// DUTY_FEED_COUNT_DEADLINE_SYNC: the frontend
 /// `DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS` in
 /// `dutyFeedRequestDeadline.ts` must cover this and
@@ -1221,6 +1242,9 @@ pub const ANALYTICS_LOCAL_EXCLUSIONS_PATH: &str = concat!(
 );
 pub const ANALYTICS_TABLE_RECONCILE_SERVICE: &str =
     "echo-peerdb-table-reconcile.service";
+pub const SIGNAL_MESSAGE_UUID_BACKFILL_BATCH_SIZE_DEFAULT: u64 = 500;
+pub const SIGNAL_MESSAGE_UUID_BACKFILL_BATCH_SIZE_MAX: u64 = 1_000;
+pub const SIGNAL_MESSAGE_UUID_BACKFILL_PAUSE_MS_DEFAULT: u64 = 250;
 
 /// Dynamic config that's different on different deployments
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -1594,6 +1618,7 @@ pub struct AnalyticsConfig {
     pub pg_password: String,
     pub pg_dbname: String,
     pub connect_timeout_ms: Option<u64>,
+    pub max_connections: Option<u32>,
     pub query_timeout_ms: Option<u64>,
     pub freshness_max_age_ms: Option<u64>,
     pub retry_cooldown_ms: Option<u64>,
@@ -1603,6 +1628,12 @@ impl AnalyticsConfig {
     pub fn connect_timeout_ms(&self) -> u64 {
         self.connect_timeout_ms
             .unwrap_or(ANALYTICS_CONNECT_TIMEOUT_MS_DEFAULT)
+    }
+
+    pub fn max_connections(&self) -> u32 {
+        self.max_connections
+            .unwrap_or(ANALYTICS_POOL_MAX_CONNECTIONS_DEFAULT)
+            .max(1)
     }
 
     pub fn query_timeout_ms(&self) -> u64 {
@@ -2020,6 +2051,10 @@ pg_dbname = "echo_analytics_gateway"
         .unwrap();
 
         assert_eq!(analytics.pg_port, None);
+        assert_eq!(
+            analytics.max_connections(),
+            ANALYTICS_POOL_MAX_CONNECTIONS_DEFAULT
+        );
         assert_eq!(
             analytics.connect_timeout_ms(),
             ANALYTICS_CONNECT_TIMEOUT_MS_DEFAULT

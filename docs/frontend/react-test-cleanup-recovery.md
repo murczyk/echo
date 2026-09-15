@@ -4,10 +4,10 @@
 
 Its final checkpoint is `e3f020aa1`; the current working tree is the authoritative AST source:
 
-- 2,460 retained React AST identities in the final tree;
+- 2,537 retained React AST identities in the final tree;
 - 1,465 relocation records with existing final targets;
 - 28 genuinely removed identities with explicit final-removal dispositions;
-- 466 incoming identities with an explicit admission decision.
+- 543 incoming identities with an explicit admission decision.
 
 Counters are derived by `test-ledger-check.mjs`: `current` is the unique AST
 identity count under `src/ts/react`; `incoming` is the number of unique

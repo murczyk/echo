@@ -1,4 +1,8 @@
-export function buildDocxHtmlDocument(bodyHtml: string, zoom: number): string {
+export function buildDocxHtmlDocument(
+  bodyHtml: string,
+  zoom: number,
+  colorScheme: 'light' | 'dark',
+): string {
   return `<!doctype html>
 <html>
   <head>
@@ -7,7 +11,7 @@ export function buildDocxHtmlDocument(bodyHtml: string, zoom: number): string {
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'" />
     <style>
       :root {
-        color-scheme: light dark;
+        color-scheme: ${colorScheme};
         --docx-preview-zoom: ${zoom}%;
       }
       html, body { margin: 0; padding: 0; background: transparent; color: #111827; }

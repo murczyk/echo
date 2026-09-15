@@ -92,6 +92,19 @@ fn raw_item(absolute_path: &str) -> RawSyncDeviceFileItem {
     }
 }
 
+async fn cleanup_injected_file_revision_trigger(file_db: &DatabaseConnection) {
+    file_db
+        .execute_unprepared(
+            r#"
+            drop trigger if exists test_fail_file_revision_insert_trg
+                on public.file_revision;
+            drop function if exists public.test_fail_file_revision_insert();
+            "#,
+        )
+        .await
+        .unwrap();
+}
+
 fn assert_conflict_code(error: AppError, expected: &str) {
     match error {
         AppError::ConflictJson { body } => {
@@ -1072,6 +1085,7 @@ async fn authorization_precedes_file_mutation_and_infrastructure_failure_rolls_b
         0
     );
 
+    cleanup_injected_file_revision_trigger(file_db).await;
     file_db
         .execute_unprepared(
             r#"
@@ -1092,29 +1106,18 @@ async fn authorization_precedes_file_mutation_and_infrastructure_failure_rolls_b
         .unwrap();
 
     let actor = access::login_with_roles(&owner, &[ROLE_DEVICE_SOURCE]);
-    assert!(matches!(
-        automatic(
-            &env.dbx,
-            file_registry,
-            &actor,
-            device_id,
-            vec![raw_item("C:\\rollback\\failure.log")],
-        )
-        .await
-        .unwrap_err(),
-        AppError::AnyhowError { .. }
-    ));
+    let result = automatic(
+        &env.dbx,
+        file_registry,
+        &actor,
+        device_id,
+        vec![raw_item("C:\\rollback\\failure.log")],
+    )
+    .await;
 
-    file_db
-        .execute_unprepared(
-            r#"
-            drop trigger test_fail_file_revision_insert_trg
-                on public.file_revision;
-            drop function public.test_fail_file_revision_insert();
-            "#,
-        )
-        .await
-        .unwrap();
+    cleanup_injected_file_revision_trigger(file_db).await;
+
+    assert!(matches!(result.unwrap_err(), AppError::AnyhowError { .. }));
 
     assert_eq!(
         file_sync_session::Entity::find()

@@ -8,7 +8,6 @@ import { PowerButton } from '../../../components/PowerButton';
 import { formatDeviceDateTime } from '../../devices/helpers';
 import type { DeviceFileLoadError } from '../types';
 import { DeviceAnalyticsTagBadges } from './DeviceAnalyticsTagBadges';
-import { DeviceFileContentMarker } from './DeviceFileContentMarker';
 
 type Props = {
   entries: DeviceFileTreeEntry[];
@@ -19,6 +18,7 @@ type Props = {
   error: DeviceFileLoadError | null;
   loadMoreError: DeviceFileLoadError | null;
   onOpenDirectory: (entryId: string) => void;
+  onSelectFile: (entry: DeviceFileTreeEntry) => void;
   onRetry: () => void;
   onLoadMore: () => void;
 };
@@ -37,15 +37,20 @@ function FileEntryMetadata({ entry }: { entry: DeviceFileTreeEntry }) {
 function DeviceFileSearchResultRow({
   entry,
   onOpenDirectory,
+  onSelectFile,
 }: {
   entry: DeviceFileTreeEntry;
   onOpenDirectory: (entryId: string) => void;
+  onSelectFile: (entry: DeviceFileTreeEntry) => void;
 }) {
   const directory = entry.kind === 'directory';
   const pathLabel = entry.absolutePath ?? (entry.pathComponents.join(' / ') || '—');
 
   return (
-    <li data-entry-id={entry.entryId} className="min-w-0 space-y-echo-xs px-echo-sm py-echo-md">
+    <li
+      data-entry-id={entry.entryId}
+      className={`min-w-0 space-y-echo-xs px-echo-sm py-echo-md ${directory || entry.hasContent ? '' : 'opacity-55'}`}
+    >
       <div className="flex min-w-0 items-start gap-echo-sm">
         {directory ? (
           <FolderOpenOutlinedIcon className="mt-echo-xs shrink-0 text-echo-primary" />
@@ -65,19 +70,19 @@ function DeviceFileSearchResultRow({
               {entry.name}
             </Link>
           ) : (
-            <span
+            <Link
+              component="button"
+              type="button"
+              underline="hover"
+              onClick={() => onSelectFile(entry)}
               className="block max-w-full truncate text-echo-sm font-semibold text-echo-text"
               title={entry.name}
+              aria-description={entry.hasContent ? undefined : 'Контент файлу відсутній'}
             >
               {entry.name}
-            </span>
+            </Link>
           )}
         </div>
-        {!directory ? (
-          <div className="flex shrink-0 items-center">
-            <DeviceFileContentMarker hasContent={entry.hasContent} />
-          </div>
-        ) : null}
       </div>
       <code className="block min-w-0 break-words text-echo-xs text-echo-text-muted [overflow-wrap:anywhere]">
         {pathLabel}
@@ -97,6 +102,7 @@ export function DeviceFileSearchResults({
   error,
   loadMoreError,
   onOpenDirectory,
+  onSelectFile,
   onRetry,
   onLoadMore,
 }: Props) {
@@ -134,6 +140,7 @@ export function DeviceFileSearchResults({
               key={entry.entryId}
               entry={entry}
               onOpenDirectory={onOpenDirectory}
+              onSelectFile={onSelectFile}
             />
           ))}
         </ul>

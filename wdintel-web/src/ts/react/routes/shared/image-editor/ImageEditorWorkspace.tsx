@@ -1,4 +1,4 @@
-import { CircularProgress } from '@mui/material';
+import { CircularProgress, useTheme } from '@mui/material';
 import {
   useEffect,
   useRef,
@@ -8,6 +8,7 @@ import {
   type RefObject,
 } from 'react';
 
+import { getAttachmentPreviewStageBg } from '../message-card/attachment-preview/message-card-attachment-preview';
 import type { EditorViewState } from './image-editor-viewport';
 import { calculateMagnifierSample } from './image-editor-magnifier';
 import { applyImageEditorSurfaceCursor, imageEditorCursor } from './image-editor-interaction-mode';
@@ -40,6 +41,7 @@ export function ImageEditorWorkspace({
   onZoom: (point: { x: number; y: number }, scale: number) => void;
   contextualToolbar?: ReactNode;
 }) {
+  const theme = useTheme();
   const dragRef = useRef<{ x: number; y: number; pointerId: number } | null>(null);
   const spaceDownRef = useRef(false);
   const lensCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -214,8 +216,11 @@ export function ImageEditorWorkspace({
       ref={workspaceRef as RefObject<HTMLDivElement>}
       data-image-editor-workspace
       aria-busy={busy}
-      className="relative min-h-0 flex-1 overflow-hidden bg-echo-surface touch-none"
-      style={{ cursor: busy ? 'wait' : panDragging ? 'grabbing' : imageEditorCursor(tool) }}
+      className="relative min-h-0 flex-1 touch-none overflow-hidden"
+      style={{
+        backgroundColor: getAttachmentPreviewStageBg(theme),
+        cursor: busy ? 'wait' : panDragging ? 'grabbing' : imageEditorCursor(tool),
+      }}
       onPointerDownCapture={beginPan}
       onPointerMoveCapture={movePan}
       onPointerMove={updateLens}
@@ -231,7 +236,7 @@ export function ImageEditorWorkspace({
       ) : null}
       <div
         data-image-editor-document
-        className="absolute left-1/2 top-1/2 origin-center border border-echo-border shadow-echo-lg"
+        className="absolute left-1/2 top-1/2 origin-center shadow-echo-lg"
         style={{
           transform: `translate(calc(-50% + ${view.pan.x}px), calc(-50% + ${view.pan.y}px))`,
           visibility: ready && !loading ? 'visible' : 'hidden',

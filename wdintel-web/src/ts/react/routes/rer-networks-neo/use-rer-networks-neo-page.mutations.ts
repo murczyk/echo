@@ -27,6 +27,7 @@ import { navigateWithinSpa } from '../../utils/browser';
 import type { NetworksQuerySnapshot, UiMessage } from './use-rer-networks-neo-page.types';
 
 type MutationArgs = {
+  unitId?: number;
   networks: Network[];
   filters: Pick<NetworksFilterState, 'status' | 'unitText' | 'showOnlyInvestigating'>;
   querySnapshot: NetworksQuerySnapshot;
@@ -67,7 +68,10 @@ export function createRerNetworksNeoMutationActions(args: MutationArgs) {
 
   function openCreateDialog() {
     args.setCreateError(null);
-    args.setCreateDialog(createDefaultNetworkUpsertForm());
+    args.setCreateDialog({
+      ...createDefaultNetworkUpsertForm(),
+      unitIds: args.unitId ? [args.unitId] : [],
+    });
   }
 
   function closeCreateDialog() {

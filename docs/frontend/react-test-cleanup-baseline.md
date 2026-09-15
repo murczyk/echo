@@ -52,7 +52,8 @@ No browser or Vitest test is removed solely because of this baseline. Replacemen
 ## Final checkpoint — 2026-09-09
 
 The final ledger reconciliation uses `e3f020aa1` and the current AST rather
-than inherited counters. It records 2,460 retained React identities, 466
+than inherited counters. After the 2026-09-15 merge reconciliation it records
+2,537 retained React identities, 543
 incoming decisions, 28 genuine removals, and 1,465 relocations.
 
 ### Ledger mutation proof
@@ -68,13 +69,16 @@ and a nonexistent behavior ID produced an unresolved-behavior-reference
 failure.
 
 - Scope debt: zero new debt and zero legacy debt.
-- Vitest gate passed 315 files and 2,622 tests; `just build-front` passed.
+- Vitest gate passed 324 files and 2,832 tests; `just build-front` passed.
   Local unavailable-API warnings remain expected Happy DOM noise when a test
   intentionally reaches the absent development API.
 - A fresh one-worker, no-retry smoke run passed all 30 browser tests. Static
   layout checks were removed; fixture responses now cover the required system
   settings and short-state feature configuration.
 - Linked browser regressions are selected with `@regression`.
+- The 2026-09-15 merge-conflict browser verification passed all 23 affected
+  Device Details, image-editor, and Duty panel-layering tests with one worker
+  and no retries.
 
 ### Playwright classification evidence
 

@@ -27,10 +27,10 @@ pub async fn run_recent_inbox_network_worker_nofail(env: Arc<Env>) {
             Err(e) => {
                 error!(
                     "run_recent_inbox_network_worker_nofail failed; retrying after {} seconds: {:#?}",
-                    NETWORK_INVALIDATION_TASK_WAIT_SLEEP_SEC,
+                    NETWORK_INVALIDATION_TASK_ERROR_SLEEP_SEC,
                     e
                 );
-                NETWORK_INVALIDATION_TASK_WAIT_SLEEP_SEC
+                NETWORK_INVALIDATION_TASK_ERROR_SLEEP_SEC
             }
         };
         tokio::time::sleep(Duration::from_secs(sleep_secs)).await;
@@ -114,10 +114,10 @@ pub async fn run_old_inbox_network_worker_nofail(env: Arc<Env>) {
             Err(e) => {
                 error!(
                     "run_old_inbox_network_worker_nofail failed; retrying after {} seconds: {:#?}",
-                    NETWORK_INVALIDATION_TASK_WAIT_SLEEP_SEC,
+                    NETWORK_INVALIDATION_TASK_ERROR_SLEEP_SEC,
                     e
                 );
-                NETWORK_INVALIDATION_TASK_WAIT_SLEEP_SEC
+                NETWORK_INVALIDATION_TASK_ERROR_SLEEP_SEC
             }
         };
         tokio::time::sleep(Duration::from_secs(sleep_secs)).await;
@@ -346,7 +346,8 @@ async fn run_inbox_network_worker_once(
         debug!(
             "[{tag} worker] run_network_invalidation_tasks: processing next tasks batch - {counter}/{total_counter}"
         );
-        let processed_tasks = run_network_invalidation_tasks(
+        let started_index = started_tasks.len();
+        let processed_tasks = match run_network_invalidation_tasks(
             next_tasks,
             &signal_group_aors,
             &mut processed_items,
@@ -354,11 +355,20 @@ async fn run_inbox_network_worker_once(
             db,
         )
         .await
-        .c(h!())?;
-        for task in &processed_tasks {
-            stats_invalidation.add_task(task).c(h!())?;
-        }
+        {
+            Ok(processed_tasks) => processed_tasks,
+            Err(error) => {
+                reset_tasks_started_at(&started_tasks, db).await;
+                return Err(error).c(h!());
+            }
+        };
         started_tasks.extend(processed_tasks);
+        for task in &started_tasks[started_index..] {
+            if let Err(error) = stats_invalidation.add_task(task) {
+                reset_tasks_started_at(&started_tasks, db).await;
+                return Err(error).c(h!());
+            }
+        }
     }
     finish_network_invalidation_tasks(
         started_tasks,
@@ -907,25 +917,41 @@ async fn run_network_invalidation_tasks(
     processed_frequencies: &mut HashSet<String>,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<network_invalidation_task::Model>> {
-    let mut started_tasks = vec![];
-    let mut task_filters = Vec::new();
-    for task in tasks {
+    for task in &tasks {
         if task.started_at.is_some() {
             warn!("task {} was already started!", task.id);
         }
-        let task = mark_task_started(&task, dbx).await.c(h!())?;
-        started_tasks.push(task.clone());
-        task_filters.extend(build_task_filters(&task, signal_group_aors));
+    }
+    let started_at = Utc::now().naive_utc();
+    let started_tasks = tasks
+        .into_iter()
+        .map(|mut task| {
+            task.started_at = Some(started_at);
+            task
+        })
+        .collect::<Vec<_>>();
+    if let Err(error) =
+        set_tasks_started_at(&started_tasks, Some(started_at), dbx).await
+    {
+        reset_tasks_started_at(&started_tasks, dbx).await;
+        return Err(error).c(h!());
+    }
+    let mut task_filters = Vec::new();
+    for task in &started_tasks {
+        task_filters.extend(build_task_filters(task, signal_group_aors));
     }
 
-    process_task_filters(
+    if let Err(error) = process_task_filters(
         task_filters,
         processed_items,
         processed_frequencies,
         dbx,
     )
     .await
-    .c(h!())?;
+    {
+        reset_tasks_started_at(&started_tasks, dbx).await;
+        return Err(error).c(h!());
+    }
 
     Ok(started_tasks)
 }
@@ -1003,44 +1029,45 @@ async fn finish_network_invalidation_tasks(
     dbx: &DatabaseConnection,
     stats_redis: &crate::stats::redis::GroupStatsRedis,
 ) -> anyhow::Result<()> {
-    for (date, scope) in stats_invalidation.scopes_by_date {
-        let since_ts = crate::stats::start_of_day(date).c(h!())?;
-        let till_ts =
-            crate::stats::start_of_day(date.succ_opt().c(h!())?).c(h!())?;
-        crate::stats::recalculate_network_stats(
+    let result = async {
+        for (date, scope) in stats_invalidation.scopes_by_date {
+            let since_ts = crate::stats::start_of_day(date).c(h!())?;
+            let till_ts = crate::stats::start_of_day(
+                date.succ_opt().c(h!())?,
+            )
+            .c(h!())?;
+            crate::stats::recalculate_network_stats(
+                dbx,
+                stats_redis,
+                since_ts,
+                till_ts,
+                scope.network_ids(),
+            )
+            .await
+            .c(h!())?;
+        }
+
+        crate::sigint::network::recalculation::enqueue_for_network_invalidations(
             dbx,
-            stats_redis,
-            since_ts,
-            till_ts,
-            scope.network_ids(),
+            &started_tasks,
+            processed_frequencies,
         )
         .await
         .c(h!())?;
-    }
 
-    crate::sigint::network::recalculation::enqueue_for_network_invalidations(
-        dbx,
-        &started_tasks,
-        processed_frequencies,
-    )
-    .await
-    .c(h!())?;
-
-    let completed_at = Some(Utc::now().naive_utc());
-    mark_tasks_completed(started_tasks, completed_at, dbx)
+        mark_tasks_completed(
+            &started_tasks,
+            Some(Utc::now().naive_utc()),
+            dbx,
+        )
         .await
-        .c(h!())?;
-    Ok(())
-}
-
-async fn mark_task_started(
-    task: &network_invalidation_task::Model,
-    dbx: &DatabaseConnection,
-) -> anyhow::Result<network_invalidation_task::Model> {
-    let mut task_rec = task.clone().into_active_model();
-    task_rec.started_at = Set(Some(Utc::now().naive_utc()));
-    let task = task_rec.update(dbx).await.c(h!())?;
-    Ok(task)
+        .c(h!())
+    }
+    .await;
+    if result.is_err() {
+        reset_tasks_started_at(&started_tasks, dbx).await;
+    }
+    result
 }
 
 struct TaskFilter {
@@ -1318,17 +1345,13 @@ async fn process_invalidation_filter(
         )
         .await
         .c(h!())?;
-        for item_id in stats_recalculation_item_ids {
-            crate::stats::enqueue_group_stats_recalculation_for_message(
-                &txn,
-                item_id,
-                format!(
-                    "recalculated network unit links for inbox message {item_id}"
-                ),
-            )
-            .await
-            .c(h!())?;
-        }
+        crate::stats::enqueue_group_stats_recalculation_for_messages(
+            &txn,
+            &stats_recalculation_item_ids,
+            "recalculated network unit links for inbox messages",
+        )
+        .await
+        .c(h!())?;
         txn.commit().await.c(h!())?;
         for id in new_processed_item_ids {
             processed_items.insert(id);
@@ -1339,21 +1362,127 @@ async fn process_invalidation_filter(
 }
 
 async fn mark_tasks_completed(
-    started_tasks: Vec<network_invalidation_task::Model>,
+    started_tasks: &[network_invalidation_task::Model],
     completed_at: Option<NaiveDateTime>,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<()> {
+    let mut task_ids_by_started_at = BTreeMap::new();
     for task in started_tasks {
-        let mut task_rec = task.clone().into_active_model();
-        task_rec.completed_at = Set(completed_at);
-        task_rec.update(dbx).await.c(h!())?;
+        let started_at = task.started_at.c(h!())?;
+        task_ids_by_started_at
+            .entry(started_at)
+            .or_insert_with(Vec::new)
+            .push(task.id);
+    }
+    for (started_at, task_ids) in task_ids_by_started_at {
+        for task_ids in task_ids.chunks(NETWORK_INVALIDATION_DELETE_MAX_IDS) {
+            let result = network_invalidation_task::Entity::update_many()
+                .col_expr(
+                    network_invalidation_task::Column::CompletedAt,
+                    Expr::value(completed_at),
+                )
+                .filter(
+                    network_invalidation_task::Column::Id
+                        .is_in(task_ids.iter().copied()),
+                )
+                .filter(
+                    network_invalidation_task::Column::StartedAt.eq(started_at),
+                )
+                .filter(
+                    network_invalidation_task::Column::CompletedAt.is_null(),
+                )
+                .exec(dbx)
+                .await
+                .c(h!())?;
+            if result.rows_affected != task_ids.len() as u64 {
+                warn!(
+                    "completed {} of {} network invalidation tasks still owned by this attempt",
+                    result.rows_affected,
+                    task_ids.len()
+                );
+            }
+        }
     }
     Ok(())
+}
+
+async fn set_tasks_started_at(
+    tasks: &[network_invalidation_task::Model],
+    started_at: Option<NaiveDateTime>,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<()> {
+    for tasks in tasks.chunks(NETWORK_INVALIDATION_DELETE_MAX_IDS) {
+        network_invalidation_task::Entity::update_many()
+            .col_expr(
+                network_invalidation_task::Column::StartedAt,
+                Expr::value(started_at),
+            )
+            .filter(
+                network_invalidation_task::Column::Id
+                    .is_in(tasks.iter().map(|task| task.id)),
+            )
+            .filter(network_invalidation_task::Column::CompletedAt.is_null())
+            .exec(dbx)
+            .await
+            .c(h!())?;
+    }
+    Ok(())
+}
+
+async fn reset_tasks_started_at(
+    tasks: &[network_invalidation_task::Model],
+    dbx: &DatabaseConnection,
+) {
+    let mut task_ids_by_started_at = BTreeMap::new();
+    for task in tasks {
+        if let Some(started_at) = task.started_at {
+            task_ids_by_started_at
+                .entry(started_at)
+                .or_insert_with(Vec::new)
+                .push(task.id);
+        }
+    }
+    let result = async {
+        for (started_at, task_ids) in task_ids_by_started_at {
+            for task_ids in task_ids.chunks(NETWORK_INVALIDATION_DELETE_MAX_IDS)
+            {
+                network_invalidation_task::Entity::update_many()
+                    .col_expr(
+                        network_invalidation_task::Column::StartedAt,
+                        Expr::value(Option::<NaiveDateTime>::None),
+                    )
+                    .filter(
+                        network_invalidation_task::Column::Id
+                            .is_in(task_ids.iter().copied()),
+                    )
+                    .filter(
+                        network_invalidation_task::Column::StartedAt
+                            .eq(started_at),
+                    )
+                    .filter(
+                        network_invalidation_task::Column::CompletedAt
+                            .is_null(),
+                    )
+                    .exec(dbx)
+                    .await
+                    .c(h!())?;
+            }
+        }
+        anyhow::Ok(())
+    }
+    .await;
+    if let Err(error) = result {
+        warn!(
+            "failed to reset network invalidation task retry state: {error:#}"
+        );
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::functest::tests::cleanup;
+    use serial_test::serial;
     use std::borrow::Cow;
     use std::fmt;
 
@@ -1375,6 +1504,66 @@ mod tests {
             group_master_key: None,
             tag: NETWORK_INVALIDATION_TASK_TAG_RECENT.to_string(),
         }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn stale_attempt_cannot_complete_or_reset_reclaimed_task() {
+        let env = cleanup().await.unwrap();
+        let claimed_at = Utc::now().naive_utc().with_nanosecond(0).unwrap()
+            - chrono::Duration::minutes(2);
+        let reclaimed_at = claimed_at + chrono::Duration::minutes(1);
+        let stale_task = network_invalidation_task::ActiveModel {
+            id: NotSet,
+            frequency: Set(None),
+            since_ts: Set(claimed_at),
+            till_ts: Set(reclaimed_at),
+            completed_at: Set(None),
+            created_at: NotSet,
+            sigint_network_id: Set(None),
+            started_at: Set(Some(claimed_at)),
+            aor_id: Set(None),
+            group_master_key: Set(None),
+            tag: Set(NETWORK_INVALIDATION_TASK_TAG_RECENT.to_string()),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let mut reclaimed_task = stale_task.clone().into_active_model();
+        reclaimed_task.started_at = Set(Some(reclaimed_at));
+        let reclaimed_task = reclaimed_task.update(&env.dbx).await.unwrap();
+
+        mark_tasks_completed(
+            std::slice::from_ref(&stale_task),
+            Some(Utc::now().naive_utc()),
+            &env.dbx,
+        )
+        .await
+        .unwrap();
+        reset_tasks_started_at(std::slice::from_ref(&stale_task), &env.dbx)
+            .await;
+
+        let task =
+            network_invalidation_task::Entity::find_by_id(reclaimed_task.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(task.started_at, Some(reclaimed_at));
+        assert_eq!(task.completed_at, None);
+
+        mark_tasks_completed(&[task], Some(Utc::now().naive_utc()), &env.dbx)
+            .await
+            .unwrap();
+        assert!(network_invalidation_task::Entity::find_by_id(
+            reclaimed_task.id
+        )
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap()
+        .completed_at
+        .is_some());
     }
 
     #[test]

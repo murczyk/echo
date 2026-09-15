@@ -1,10 +1,10 @@
 use self::types::{
-    CreateDeviceNameReq, CreateDeviceNameRsp, DeviceNameSearchReq,
-    DeviceNameSearchRsp,
+    CreateDeviceNameReq, CreateDeviceNameRsp, DeviceNameResolveReq,
+    DeviceNameResolveRsp, DeviceNameSearchReq, DeviceNameSearchRsp,
 };
 use crate::error::AppError;
 use crate::types::*;
-use crate::users::{has_any_role, login_id_from_identity};
+use crate::users::{ensure_rer_role, login_id_from_identity};
 use actix_web::post;
 use actix_web::web::Json;
 
@@ -18,10 +18,11 @@ pub async fn device_name_create(
     env: actix_web::web::Data<Env>,
     req: Json<CreateDeviceNameReq>,
 ) -> Result<Json<CreateDeviceNameRsp>, AppError> {
-    has_any_role(&env.dbx, &login_id_from_identity(&user)?, vec!["Rer"])
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    crate::devices::access::require_message_devices(&env.dbx, &login)
         .await
         .c(h!())?;
-    let login = login_id_from_identity(&user)?;
 
     let rsp = bl::create_device_name(&env.dbx, login, req.into_inner())
         .await
@@ -36,7 +37,9 @@ pub async fn device_name_search(
     env: actix_web::web::Data<Env>,
     req: Json<DeviceNameSearchReq>,
 ) -> Result<Json<DeviceNameSearchRsp>, AppError> {
-    has_any_role(&env.dbx, &login_id_from_identity(&user)?, vec!["Rer"])
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    crate::devices::access::require_message_devices(&env.dbx, &login)
         .await
         .c(h!())?;
 
@@ -44,5 +47,22 @@ pub async fn device_name_search(
         .await
         .c(h!())?;
 
+    Ok(Json(rsp))
+}
+
+#[post("/api/sigint/device-name/resolve")]
+pub async fn device_name_resolve(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<DeviceNameResolveReq>,
+) -> Result<Json<DeviceNameResolveRsp>, AppError> {
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    crate::devices::access::require_message_devices(&env.dbx, &login)
+        .await
+        .c(h!())?;
+    let rsp = bl::resolve_device_names(&env.dbx, req.into_inner())
+        .await
+        .c(h!())?;
     Ok(Json(rsp))
 }

@@ -36,6 +36,7 @@ import type { SelectedSidebarUnitFilter } from '../rer-callsigns-neo/types';
 import type { ReportHistoryRow } from '../../../../Bindings';
 
 type ReportArgs = {
+  unitId?: number;
   rows: Array<{ id: number }>;
   filters: Pick<NetworksFilterState, 'status' | 'unitText' | 'showOnlyInvestigating'>;
   selectedSidebarUnitFilter: SelectedSidebarUnitFilter | null;
@@ -234,6 +235,7 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
     args.setReportTargetNetworkIds(null);
     args.setReportTargetRequest(
       buildNetworksReportReq({
+        unitId: args.unitId,
         searchText: args.tableGlobalFilter,
         selectedSidebarUnitFilter: args.selectedSidebarUnitFilter,
         selectedUnitLabel:

@@ -415,6 +415,28 @@ fn network_unit_filter(
     query.filter(Expr::exists(unit_exists))
 }
 
+fn network_unit_id_filter(
+    query: Select<sigint_network::Entity>,
+    unit_id: Option<i64>,
+) -> Select<sigint_network::Entity> {
+    let Some(unit_id) = unit_id else {
+        return query;
+    };
+
+    let unit_exists = sigint_network_unit::Entity::find()
+        .select_only()
+        .expr(Expr::value(1))
+        .filter(
+            sigint_network_unit::Column::NetworkId
+                .into_simple_expr()
+                .eq(sigint_network::Column::Id.into_simple_expr()),
+        )
+        .filter(sigint_network_unit::Column::UnitId.eq(unit_id))
+        .into_query();
+
+    query.filter(Expr::exists(unit_exists))
+}
+
 fn network_unit_hierarchy_filter(
     query: Select<sigint_network::Entity>,
     req: &ListNetworksReq,
@@ -663,6 +685,7 @@ pub(crate) fn apply_network_list_filters_with_text_search_mode(
 
     query = network_status_filter(query, req, include_status_filter);
     query = network_ids_filter(query, req.ids.as_ref());
+    query = network_unit_id_filter(query, req.filter_unit_id);
     query = network_unit_filter(query, req.filter_unit.as_deref());
     query = network_unit_hierarchy_filter(query, req);
     query = network_further_investigation_filter(

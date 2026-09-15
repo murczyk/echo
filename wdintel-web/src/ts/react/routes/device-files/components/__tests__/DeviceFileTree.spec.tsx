@@ -37,6 +37,7 @@ function buildFiles(
     scopeNotice: null,
     searchScope: null,
     selectSearchScope: vi.fn(),
+    selectFile: vi.fn(),
     reloadRoots: vi.fn(),
     refreshVisible: vi.fn(),
     counts: {

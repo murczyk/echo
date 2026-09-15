@@ -14,6 +14,7 @@ import {
   buildAnalysisMapHrefWithSearch,
   buildSenderOptions,
   buildInboxReq,
+  clearActiveFeedFilter,
   createMasterUnitText,
   emptyFilter,
   etalonFallbackWhenNoNetworks,
@@ -31,6 +32,7 @@ import {
   shouldBufferNewerMessages,
   getPointEtalonsFromMessage,
   getShortStateIdFromUrl,
+  hasActiveFeedFilter,
   isMessageEntityExcluded,
   messageHasPalitraTag,
   normalizeFeed,
@@ -42,10 +44,16 @@ import {
   pushShortStateToUrl,
   pushStateToUrl,
   resolveDutyTargetMessageIds,
+  toQueryState,
   toRerDutyStateFromShort,
   toShortQueryState,
   windowInitialMessageItems,
 } from '../utils';
+import {
+  clearPersistedDutyFilterState,
+  persistDutyFilterState,
+  setDutyFilterPersistenceDisabled,
+} from '../duty-filter-persistence';
 import type { MessageFeedState } from '../utils';
 import type { InboxMessage, Network, SignalProfileEntry, Tag, Unit } from '../../../../../Bindings';
 
@@ -200,6 +208,8 @@ describe('rer-duty utils', () => {
       freqsDenied: ['200.0'],
       postsSelected: ['post-a'],
       postsDenied: ['post-b'],
+      selectedDeviceNames: ['device-a'],
+      deniedDeviceNames: ['device-b'],
       lastViewedMessageId: 42,
     };
 
@@ -213,6 +223,8 @@ describe('rer-duty utils', () => {
         freqsDenied: ['200.0'],
         postsSelected: ['post-a'],
         postsDenied: ['post-b'],
+        selectedDeviceNames: ['device-a'],
+        deniedDeviceNames: ['device-b'],
         lastViewedMessageId: 42,
       }),
     ).toEqual(expected);
@@ -227,6 +239,8 @@ describe('rer-duty utils', () => {
         freqs_denied: ['200.0'],
         posts_selected: ['post-a'],
         posts_denied: ['post-b'],
+        selected_device_names: ['device-a'],
+        denied_device_names: ['device-b'],
         last_viewed_message_id: 42,
       }),
     ).toEqual(expected);
@@ -298,6 +312,31 @@ describe('rer-duty utils', () => {
         { ...emptyFilter(), freqsSelected: ['100.1'] },
       ),
     ).toBe(true);
+  });
+
+  it('detects active message filters without treating highlighting as filtering', () => {
+    expect(hasActiveFeedFilter(emptyFilter())).toBe(false);
+    expect(hasActiveFeedFilter({ ...emptyFilter(), groupsDenied: ['group-a'] })).toBe(true);
+    expect(hasActiveFeedFilter({ ...emptyFilter(), selectedDeviceNames: ['device-a'] })).toBe(true);
+    expect(hasActiveFeedFilter({ ...emptyFilter(), unitsExactMatchOnly: true })).toBe(true);
+    expect(hasActiveFeedFilter({ ...emptyFilter(), highlightKeywordSetId: 5 })).toBe(false);
+  });
+
+  it('clears active filters without discarding keyword highlighting state', () => {
+    expect(
+      clearActiveFeedFilter({
+        ...emptyFilter(),
+        groupsSelected: ['group-a'],
+        lastViewedMessageId: 42,
+        highlightKeywordsEnabled: true,
+        highlightKeywordSetId: 5,
+      }),
+    ).toEqual({
+      ...emptyFilter(),
+      lastViewedMessageId: 42,
+      highlightKeywordsEnabled: true,
+      highlightKeywordSetId: 5,
+    });
   });
 
   it('compares keyword highlight by set id in filtersEqual', () => {
@@ -461,7 +500,13 @@ describe('rer-duty utils', () => {
 
   it('builds inbox requests with expanded frequencies and shared defaults', () => {
     const req = buildInboxReq({
-      filter: { ...emptyFilter(), groupsSelected: ['g1'], freqsSelected: ['100.0'] },
+      filter: {
+        ...emptyFilter(),
+        groupsSelected: ['g1'],
+        freqsSelected: ['100.0'],
+        selectedDeviceNames: ['device-a'],
+        deniedDeviceNames: ['device-b'],
+      },
       expandedFreqsSelected: ['100.0', '100.1'],
       expandedFreqsDenied: ['200.0'],
       highlightSignals: true,
@@ -472,6 +517,8 @@ describe('rer-duty utils', () => {
     expect(req.selectedGroups).toEqual(['g1']);
     expect(req.selectedFreqs).toEqual(['100.0', '100.1']);
     expect(req.deniedFreqs).toEqual(['200.0']);
+    expect(req.selectedDeviceNames).toEqual(['device-a']);
+    expect(req.deniedDeviceNames).toEqual(['device-b']);
     expect(req.highlightSignals).toBe(true);
     expect(req.highlightCallsigns).toBe(true);
     expect(req.pageId).toBe(PAGE_ID);
@@ -518,6 +565,93 @@ describe('rer-duty utils', () => {
   it('falls back to default when url state is corrupted', () => {
     window.history.replaceState({}, '', '/?state=%7Bbad-json');
     expect(parseStateFromUrl()).toEqual({ messageFeeds: [['mf-0', emptyFilter()]] });
+  });
+
+  it('restores persisted filters without merging their options into url state', () => {
+    const storage = new Map<string, string>();
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+        removeItem: (key: string) => storage.delete(key),
+      },
+    });
+    setDutyFilterPersistenceDisabled(false);
+    persistDutyFilterState({
+      messageFeeds: [
+        [
+          'mf-stored',
+          { ...emptyFilter(), freqsSelected: ['155.5'] },
+          {
+            adjacentFreqsRange: 0.005,
+            highlightSignalsEnabled: true,
+            onlyMyUnitTagsEnabled: true,
+          },
+        ],
+      ],
+    });
+    window.history.replaceState({}, '', '/rer-duty-neo');
+
+    expect(parseStateFromUrl()).toEqual({
+      messageFeeds: [
+        [
+          'mf-stored',
+          { ...emptyFilter(), freqsSelected: ['155.5'] },
+          {
+            adjacentFreqsRange: 0.005,
+            highlightSignalsEnabled: true,
+            onlyMyUnitTagsEnabled: true,
+          },
+        ],
+      ],
+    });
+
+    const state = {
+      messageFeeds: [
+        ['mf-other', { ...emptyFilter(), groupsSelected: ['group-a'] }],
+        ['mf-stored', { ...emptyFilter(), freqsSelected: ['166.6'] }],
+      ],
+    };
+    window.history.replaceState(
+      {},
+      '',
+      `/rer-duty-neo?state=${encodeURIComponent(JSON.stringify(state))}`,
+    );
+
+    expect(parseStateFromUrl()).toEqual({
+      messageFeeds: [
+        ['mf-other', { ...emptyFilter(), groupsSelected: ['group-a'] }],
+        ['mf-stored', { ...emptyFilter(), freqsSelected: ['166.6'] }],
+      ],
+    });
+
+    clearPersistedDutyFilterState();
+  });
+
+  it('round-trips feed options through long state urls', () => {
+    const feed = indicatorFeed({
+      filter: { ...emptyFilter(), freqsSelected: ['166.6'] },
+      adjacentFreqsRange: 0.005,
+      highlightSignalsEnabled: true,
+      onlyMyUnitTagsEnabled: true,
+    });
+
+    pushStateToUrl(toQueryState([feed]));
+
+    expect(parseStateFromUrl()).toEqual({
+      messageFeeds: [
+        [
+          'mf-0',
+          { ...emptyFilter(), freqsSelected: ['166.6'] },
+          {
+            adjacentFreqsRange: 0.005,
+            highlightSignalsEnabled: true,
+            onlyMyUnitTagsEnabled: true,
+          },
+        ],
+      ],
+    });
   });
 
   it('builds map search hrefs from deduplicated etalons and extracts point etalons', () => {

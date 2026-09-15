@@ -6,12 +6,25 @@ import type { ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { minimalInboxMessage } from '../inbox-message-mocks';
+import { clearActiveFeedFilter, emptyFilter } from '../utils';
 
 const useRerDutyFeedsMock = vi.hoisted(() => vi.fn());
 const notifyMock = vi.hoisted(() => vi.fn());
+const fetchInboxItemContextMock = vi.hoisted(() => vi.fn());
+const fetchMessagesByIdsMock = vi.hoisted(() => vi.fn());
 const nextCreatedResponse = vi.hoisted(() => ({
   value: null as null | { signal_message_id: number },
 }));
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
 
 vi.mock('../../../services/api/user-settings', () => ({
   USER_SETTINGS_UPDATED_EVENT: 'user-settings-updated',
@@ -24,6 +37,10 @@ vi.mock('../../../services/api/system-settings', () => ({
   currentSystemSettings: vi
     .fn()
     .mockResolvedValue({ devicesSectionEnabled: false, enableAudioTranscription: true }),
+}));
+vi.mock('../../../services/api/inbox-messages', () => ({
+  fetchInboxItemContext: fetchInboxItemContextMock,
+  fetchMessagesByIds: fetchMessagesByIdsMock,
 }));
 vi.mock('../useRerDutyFeeds', () => ({
   useRerDutyFeeds: useRerDutyFeedsMock,
@@ -80,6 +97,22 @@ vi.mock('../RerDutyNeoWorkspace', () => ({
           })
         }
       />
+      <button
+        type="button"
+        aria-label="Скинути поточний фільтр"
+        onClick={() =>
+          buildFeedColumnModel(messageFeeds[0]).filterPanel.actions.onDiscardCurrentFilter()
+        }
+      />
+      <button
+        type="button"
+        aria-label="Змінити діапазон частот"
+        onClick={() =>
+          buildFeedColumnModel(messageFeeds[0]).filterPanel.actions.onAdjacentFreqsRangeChange(
+            0.005,
+          )
+        }
+      />
       {messageFeeds[0]?.items[0] ? (
         <>
           <button
@@ -89,6 +122,11 @@ vi.mock('../RerDutyNeoWorkspace', () => ({
               const [id, message] = messageFeeds[0].items[0];
               buildFeedColumnModel(messageFeeds[0]).actions.onMessageEdit(id, message);
             }}
+          />
+          <button
+            type="button"
+            aria-label="Редагувати розвіддонесення"
+            onClick={() => buildFeedColumnModel(messageFeeds[0]).actions.onMessageEditReport(91)}
           />
           <button
             type="button"
@@ -110,6 +148,7 @@ vi.mock('../../shared/manage-message/ManageMessageDrawer', () => ({
     onCreated,
     editTarget,
     editAsReport,
+    editTargetLoadState,
     reportSource,
     onSubmitEdit,
     onEditSuccess,
@@ -120,6 +159,7 @@ vi.mock('../../shared/manage-message/ManageMessageDrawer', () => ({
     onCreated?: (result: { signal_message_id: number }) => Promise<void> | void;
     editTarget?: { id: number; message: any } | null;
     editAsReport?: boolean;
+    editTargetLoadState?: { status: string; reportId?: number };
     reportSource?: { id: number; message: any } | null;
     onSubmitEdit?: (id: number, message: any) => Promise<void> | void;
     onEditSuccess?: (result: { signal_message_id: number }) => Promise<void> | void;
@@ -130,6 +170,8 @@ vi.mock('../../shared/manage-message/ManageMessageDrawer', () => ({
         role="dialog"
         data-testid="composer"
         data-edit-as-report={editAsReport ? 'true' : 'false'}
+        data-edit-target-load-status={editTargetLoadState?.status ?? ''}
+        data-edit-target-id={editTarget?.id ?? ''}
         data-report-source-id={reportSource?.id ?? ''}
       >
         <button type="button" aria-label="Закрити повідомлення" onClick={onClose}>
@@ -373,12 +415,13 @@ function buildFeedsState() {
   };
 }
 
-async function renderPage() {
+async function renderPage(configureState?: (state: ReturnType<typeof buildFeedsState>) => void) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
 
   const state = buildFeedsState();
+  configureState?.(state);
   useRerDutyFeedsMock.mockReturnValue(state as never);
 
   await act(async () => {
@@ -400,6 +443,8 @@ describe('RerDutyNeoPage creation workflow', () => {
   beforeEach(() => {
     useRerDutyFeedsMock.mockReset();
     notifyMock.mockReset();
+    fetchInboxItemContextMock.mockReset();
+    fetchMessagesByIdsMock.mockReset();
     nextCreatedResponse.value = null;
     vi.useFakeTimers();
     vi.stubGlobal('requestAnimationFrame', undefined);
@@ -621,6 +666,115 @@ describe('RerDutyNeoPage creation workflow', () => {
       freqsDenied: ['153.6250', '154.0000'],
     });
 
+    root.unmount();
+  });
+
+  it('discards the current filter and its saved-filter selection', async () => {
+    const { container, root, state } = await renderPage();
+
+    await click(container.querySelector('button[aria-label="Скинути поточний фільтр"]'));
+
+    expect(state.setSelectedSavedIdByFeedId).toHaveBeenCalledOnce();
+    expect(state.setSaveFilterNameByFeedId).toHaveBeenCalledOnce();
+    expect(state.applyFilter).toHaveBeenCalledWith(
+      'feed-1',
+      clearActiveFeedFilter(state.messageFeeds[0].filter),
+    );
+    const updateFeeds = state.setMessageFeeds.mock.calls[0]?.[0];
+    const updatedFeeds = updateFeeds(
+      state.messageFeeds.map((feed) => ({
+        ...feed,
+        adjacentFreqsRange: 0.005,
+        highlightSignalsEnabled: true,
+        onlyMyUnitTagsEnabled: true,
+      })),
+    );
+    expect(updatedFeeds[0]).toMatchObject({
+      adjacentFreqsRange: 0,
+      highlightSignalsEnabled: false,
+      onlyMyUnitTagsEnabled: false,
+    });
+    expect(updatedFeeds[1]).toMatchObject({
+      adjacentFreqsRange: 0.005,
+      highlightSignalsEnabled: true,
+      onlyMyUnitTagsEnabled: true,
+    });
+
+    root.unmount();
+  });
+
+  it('reloads when discarding signal highlighting as the only active option', async () => {
+    const { container, root, state } = await renderPage((feedState) => {
+      feedState.messageFeeds[0].filter = emptyFilter();
+      feedState.messageFeeds[0].highlightSignalsEnabled = true;
+    });
+
+    await click(container.querySelector('button[aria-label="Скинути поточний фільтр"]'));
+
+    expect(state.applyFilter).toHaveBeenCalledWith('feed-1', emptyFilter(), true);
+
+    root.unmount();
+  });
+
+  it('reloads the feed when adjacent-frequency expansion changes', async () => {
+    const { container, root, state } = await renderPage((feedState) => {
+      feedState.messageFeeds[0].filter.freqsSelected = ['153.6250'];
+    });
+
+    await click(container.querySelector('button[aria-label="Змінити діапазон частот"]'));
+
+    expect(state.applyFilter).toHaveBeenCalledWith('feed-1', state.messageFeeds[0].filter, true);
+    const updateFeeds = state.setMessageFeeds.mock.calls[0]?.[0];
+    expect(updateFeeds(state.messageFeeds)[0].adjacentFreqsRange).toBe(0.005);
+    expect(updateFeeds(state.messageFeeds)[1].adjacentFreqsRange).toBe(0);
+
+    root.unmount();
+  });
+
+  it('opens and dismisses a loading report editor without applying a stale result', async () => {
+    const request = deferred<Array<[number, any]>>();
+    fetchMessagesByIdsMock.mockReturnValueOnce(request.promise);
+    const { container, root } = await renderPage();
+
+    await click(container.querySelector('button[aria-label="Редагувати розвіддонесення"]'));
+    const drawer = container.querySelector('[data-testid="composer"]');
+    expect(drawer).not.toBeNull();
+    expect(drawer?.getAttribute('data-edit-target-load-status')).toBe('loading');
+    expect(drawer?.getAttribute('data-edit-as-report')).toBe('true');
+    expect(drawer?.getAttribute('data-edit-target-id')).toBe('');
+    const signal = fetchMessagesByIdsMock.mock.calls[0]?.[2]?.signal as AbortSignal;
+    expect(signal).toBeInstanceOf(AbortSignal);
+
+    await click(container.querySelector('button[aria-label="Закрити повідомлення"]'));
+    expect(signal.aborted).toBe(true);
+    expect(container.querySelector('[data-testid="composer"]')).toBeNull();
+
+    await act(async () => {
+      request.resolve([[91, minimalInboxMessage({ text: 'stale' })]]);
+      await request.promise;
+    });
+    expect(container.querySelector('[data-testid="composer"]')).toBeNull();
+    root.unmount();
+  });
+
+  it('keeps a regular editor active when a stale report load resolves', async () => {
+    const request = deferred<Array<[number, any]>>();
+    fetchMessagesByIdsMock.mockReturnValueOnce(request.promise);
+    const { container, root } = await renderPage();
+    await click(container.querySelector('button[aria-label="Редагувати розвіддонесення"]'));
+    const signal = fetchMessagesByIdsMock.mock.calls[0]?.[2]?.signal as AbortSignal;
+    await click(container.querySelector('button[aria-label="Редагувати повідомлення"]'));
+    const drawer = container.querySelector('[data-testid="composer"]');
+    expect(signal.aborted).toBe(true);
+    expect(drawer?.getAttribute('data-edit-target-load-status')).toBe('idle');
+    expect(drawer?.getAttribute('data-edit-target-id')).toBe('42');
+
+    await act(async () => {
+      request.resolve([[91, minimalInboxMessage({ text: 'stale' })]]);
+      await request.promise;
+    });
+    expect(drawer?.getAttribute('data-edit-target-id')).toBe('42');
+    expect(drawer?.getAttribute('data-edit-target-load-status')).toBe('idle');
     root.unmount();
   });
 });

@@ -334,11 +334,7 @@ async fn stage_eight_read_service_authorizes_and_composes_roots_browse_search()
     insert_device(&env.dbx, tree.device_id, &owner, timestamp).await;
     archive_device(&env.dbx, tree.device_id, timestamp).await;
 
-    for roles in [
-        &[ROLE_CYBER][..],
-        &[ROLE_DEVICE_SOURCE][..],
-        &[ROLE_ADMIN][..],
-    ] {
+    for roles in [&[ROLE_CYBER][..], &[ROLE_ADMIN][..]] {
         let actor = access::login_with_roles(&owner, roles);
         assert_stage_eight_actor_reads(
             &env.dbx,
@@ -349,6 +345,19 @@ async fn stage_eight_read_service_authorizes_and_composes_roots_browse_search()
         )
         .await;
     }
+
+    let source = access::login_with_roles(&owner, &[ROLE_DEVICE_SOURCE]);
+    assert!(matches!(
+        bl::list_roots(
+            &env.dbx,
+            env.file_registry_db().unwrap(),
+            &source,
+            tree.device_id,
+        )
+        .await
+        .unwrap_err(),
+        AppError::Forbidden(_),
+    ));
 
     let admin = access::login_with_roles(&owner, &[ROLE_ADMIN]);
     assert_stage_eight_browse_composition(

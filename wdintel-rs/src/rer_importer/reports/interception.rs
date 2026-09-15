@@ -854,6 +854,9 @@ async fn build_inbox_messages_report_sql(
         &req.units_exact_match_only,
     )?;
     let q = filter_denied_unit_ids(q, &req.denied_unit_ids);
+    let q =
+        filter_selected_device_names(q, &req.selected_device_names).c(h!())?;
+    let q = filter_denied_device_names(q, &req.denied_device_names).c(h!())?;
     let q = filter_selected_tags(
         q,
         &req.selected_tags,
@@ -1313,14 +1316,22 @@ mod tests {
         eject_body_from_message, interception_analytics_scan_filters,
         interception_report_chunks, interception_report_newest_first,
         linked_intel_product_message_ids_query,
+        load_interception_report_chunk_postgres,
         merge_interception_report_chunk, select_report_message_body,
         sort_interception_report_messages, InboxMessage, PostgresQueryBuilder,
     };
-    use crate::entities::prelude::SignalMessage;
+    use crate::entities::{
+        datasource_group, device_name, prelude::SignalMessage,
+        sigint_inbox_item, signal_message, signal_message_group,
+    };
+    use crate::functest::tests::*;
     use crate::rer_importer::report_chunking::ReportPeriodEnd;
     use crate::rer_importer::types::{InboxMessagesReq, InboxMessagesSortBy};
     use chrono::NaiveDateTime;
-    use sea_orm::{DbBackend, EntityTrait, QueryTrait};
+    use sea_orm::{
+        ActiveModelTrait, ActiveValue::Set, DbBackend, EntityTrait, QueryTrait,
+    };
+    use serial_test::serial;
     use std::collections::HashSet;
 
     const HOUR_MS: i64 = 60 * 60 * 1_000;
@@ -1757,5 +1768,193 @@ y:73-71279
         let output = select_report_message_body(input, true).unwrap();
 
         assert_eq!(output, input.to_string());
+    }
+
+    async fn seed_interception_device_message(
+        env: &crate::types::Env,
+        datasource_group: &datasource_group::Model,
+        device_name_id: Option<i64>,
+        body: &str,
+        dt: NaiveDateTime,
+    ) -> i64 {
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some(body.to_string())),
+                created_at: Set(dt),
+                timestamp: Set(Some(dt)),
+                message_uid: Set(Some(body.to_string())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_message_group(
+            &env.dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(message.id),
+                group_master_key: Set(Some(
+                    datasource_group.group_master_key.clone(),
+                )),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                message_uid: Set(Some(body.to_string())),
+                created_at: Set(dt),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                date: Set(Some(dt.date().to_string())),
+                time: Set(Some(dt.time().format("%H:%M:%S").to_string())),
+                device_name_id: Set(device_name_id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        message.id
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn interception_custom_query_applies_device_name_filters() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let dt = chrono::NaiveDate::from_ymd_opt(2026, 4, 1)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
+        let device_a = device_name::ActiveModel {
+            name: Set(Some("ECHO-3461 interception Device A".to_string())),
+            login_id: Set(login.id),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let device_b = device_name::ActiveModel {
+            name: Set(Some("ECHO-3461 interception Device B".to_string())),
+            login_id: Set(login.id),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let message_a = seed_interception_device_message(
+            &env,
+            &datasource_group,
+            Some(device_a.id),
+            "ECHO-3461 interception device A",
+            dt,
+        )
+        .await;
+        let message_b = seed_interception_device_message(
+            &env,
+            &datasource_group,
+            Some(device_b.id),
+            "ECHO-3461 interception device B",
+            dt,
+        )
+        .await;
+        let message_without_device = seed_interception_device_message(
+            &env,
+            &datasource_group,
+            None,
+            "ECHO-3461 interception no device",
+            dt,
+        )
+        .await;
+        let req = InboxMessagesReq {
+            since_date_inclusive_ms: Some(
+                (dt - chrono::Duration::days(1))
+                    .and_utc()
+                    .timestamp_millis(),
+            ),
+            till_date_inclusive_ms: Some(
+                (dt + chrono::Duration::days(1))
+                    .and_utc()
+                    .timestamp_millis(),
+            ),
+            nolimit: Some(true),
+            ..Default::default()
+        };
+
+        let ids = |messages: Vec<InboxMessage>| {
+            messages
+                .into_iter()
+                .map(|message| message.message_id)
+                .collect::<HashSet<_>>()
+        };
+        let unfiltered = ids(load_interception_report_chunk_postgres(
+            &login.id,
+            &env,
+            &req,
+            ReportPeriodEnd::Inclusive,
+            None,
+        )
+        .await
+        .unwrap());
+        assert!(unfiltered.contains(&message_a));
+        assert!(unfiltered.contains(&message_b));
+        assert!(unfiltered.contains(&message_without_device));
+
+        let denied = ids(load_interception_report_chunk_postgres(
+            &login.id,
+            &env,
+            &InboxMessagesReq {
+                denied_device_names: Some(vec![
+                    "ECHO-3461 interception Device A".to_string(),
+                ]),
+                ..req.clone()
+            },
+            ReportPeriodEnd::Inclusive,
+            None,
+        )
+        .await
+        .unwrap());
+        assert!(!denied.contains(&message_a));
+        assert!(denied.contains(&message_b));
+        assert!(denied.contains(&message_without_device));
+
+        let candidate_ids = [message_a, message_b];
+        let selected = ids(load_interception_report_chunk_postgres(
+            &login.id,
+            &env,
+            &InboxMessagesReq {
+                selected_device_names: Some(vec![
+                    "ECHO-3461 interception Device A".to_string(),
+                ]),
+                ..req.clone()
+            },
+            ReportPeriodEnd::Inclusive,
+            Some(&candidate_ids),
+        )
+        .await
+        .unwrap());
+        assert!(selected.contains(&message_a));
+        assert!(!selected.contains(&message_b));
+
+        let empty = ids(load_interception_report_chunk_postgres(
+            &login.id,
+            &env,
+            &InboxMessagesReq {
+                selected_device_names: Some(Vec::new()),
+                denied_device_names: Some(Vec::new()),
+                ..req
+            },
+            ReportPeriodEnd::Inclusive,
+            None,
+        )
+        .await
+        .unwrap());
+        assert!(empty.contains(&message_a));
+        assert!(empty.contains(&message_b));
     }
 }
