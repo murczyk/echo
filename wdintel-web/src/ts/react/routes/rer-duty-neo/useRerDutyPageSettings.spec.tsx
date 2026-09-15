@@ -28,9 +28,10 @@ function deferred<T>() {
   });
   return { promise, resolve, reject };
 }
-const settings = (devicesSectionEnabled = true) => ({
+const settings = (devicesSectionEnabled = true, disableBotTags = false) => ({
   devicesSectionEnabled,
   enableAudioTranscription: false,
+  disableBotTags,
 });
 let root: Root;
 let container: HTMLDivElement;
@@ -126,5 +127,12 @@ describe('useRerDutyPageSettings device access', () => {
     render();
     await flush();
     expect(latest?.deviceAccess.status).toBe('denied');
+  });
+  it('exposes the bot tag visibility setting', async () => {
+    mocks.currentSystemSettings.mockResolvedValue(settings(true, true));
+    mocks.fetchCurrentUser.mockResolvedValue({ roles: ['Rer'] } as User);
+    render();
+    await flush();
+    expect(latest?.hideBotTags).toBe(true);
   });
 });

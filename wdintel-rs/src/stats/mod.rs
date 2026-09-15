@@ -2572,6 +2572,7 @@ async fn recalculate_group_stats_redis(
                 since_ts,
                 till_ts,
                 None,
+                true,
                 &mut batches_map,
             )
             .await
@@ -2866,6 +2867,7 @@ async fn recalculate_network_stats_redis(
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
     network_ids: Option<&HashSet<i64>>,
+    update_last_seen: bool,
     batches_map: &mut HashMap<String, i64>,
 ) -> Result<(), AppError> {
     let since_date = get_local_date(since_ts);
@@ -2889,9 +2891,11 @@ async fn recalculate_network_stats_redis(
     )
     .await
     .c(h!())?;
-    update_network_freq_last_seen(dbx, &rows, calculated_network_ids)
-        .await
-        .c(h!())?;
+    if update_last_seen {
+        update_network_freq_last_seen(dbx, &rows, calculated_network_ids)
+            .await
+            .c(h!())?;
+    }
     let mut buckets = redis::build_network_days(dbx, &rows, batches_map)
         .await
         .c(h!())?;
@@ -3047,6 +3051,7 @@ pub async fn recalculate_network_stats(
         since_ts,
         till_ts,
         network_ids,
+        false,
         &mut batches_map,
     )
     .await

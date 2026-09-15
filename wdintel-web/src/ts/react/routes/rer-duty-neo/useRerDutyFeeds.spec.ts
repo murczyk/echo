@@ -6,6 +6,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  effectiveDutyPollIntervalSec,
   getPendingDutyCallsignLookups,
   mergeAvailableFrequencies,
   mergeKnownGroupKeys,
@@ -24,6 +25,7 @@ const hoisted = vi.hoisted(() => ({
   mergeResolvedCallsigns: vi.fn(),
   setFeedErrorMock: vi.fn(),
   applyFilterMock: vi.fn(),
+  pollNow: vi.fn(),
   onInboxChangedMessageIds: vi.fn(),
   setMessageFeeds: null as null | React.Dispatch<
     React.SetStateAction<
@@ -201,6 +203,7 @@ vi.mock('./useRerDutyFeedState', () => ({
       selectAllGroups: vi.fn(),
       loadFeedNewerMessages: vi.fn(),
       flushPendingNewerMessages: vi.fn(),
+      pollNow: hoisted.pollNow,
       getFeedLoadGeneration: (feedId: string) => hoisted.feedLoadGenerations[feedId] ?? 0,
       buildReqForFeed: vi.fn(
         (
@@ -249,6 +252,11 @@ async function flushMicrotasks(): Promise<void> {
 }
 
 describe('mergeKnownGroupKeys', () => {
+  it('keeps the safety poll aligned with the backend count cache', () => {
+    expect(effectiveDutyPollIntervalSec(1)).toBe(5);
+    expect(effectiveDutyPollIntervalSec(10)).toBe(10);
+  });
+
   it('keeps a group selected in one column available to other Duty columns', () => {
     const availableGroupKeys = mergeKnownGroupKeys(
       [],
@@ -428,6 +436,8 @@ describe('useRerDutyFeeds', () => {
     hoisted.fetchMessagesByIds.mockReset();
     hoisted.fetchAnalysisCallsignInfos.mockReset();
     hoisted.applyFilterMock.mockReset();
+    hoisted.pollNow.mockReset();
+    hoisted.pollNow.mockResolvedValue(undefined);
     hoisted.fetchUserSettings.mockResolvedValue({ disableAutoScroll: false });
     hoisted.fetchOrganismKeywordSets.mockResolvedValue([]);
     hoisted.currentSystemSettings.mockResolvedValue({
@@ -640,6 +650,7 @@ describe('useRerDutyFeeds inbox refreshes', () => {
       });
 
       expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
+      expect(hoisted.pollNow).toHaveBeenCalledOnce();
     } finally {
       await act(async () => {
         localRoot.unmount();

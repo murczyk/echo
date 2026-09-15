@@ -15,6 +15,10 @@ import { useGlobalSetting } from './use-global-settings';
 import { useDutySettings } from '../../hooks/use-duty-settings';
 import type { UserDutySettings } from '../../services/api/user-settings';
 import { listMyAdminGroups } from '../../services/api/zones';
+import {
+  isDutyFilterPersistenceDisabled,
+  setDutyFilterPersistenceDisabled,
+} from '../rer-duty-neo/duty-filter-persistence';
 
 export type SettingsSection = 'myGroups' | 'myOrganism' | 'duty' | 'analysis' | 'myReports';
 
@@ -88,6 +92,10 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   );
 
   const dutySettings = useDutySettings();
+  const [dutyFilterPersistenceDisabled, setDutyFilterPersistenceDisabledState] = useState(
+    isDutyFilterPersistenceDisabled,
+  );
+  const [dutyFilterPersistenceError, setDutyFilterPersistenceError] = useState<string | null>(null);
   const scheduleDutySettingsSave = (overrides: Partial<UserDutySettings>) => {
     dutySettings.scheduleSave({
       tagsLayout: dutySettings.tagsLayout,
@@ -251,7 +259,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
             <SettingsDutySection
               loadInProgress={globalSettings.loadInProgress || dutySettings.loadInProgress}
               prefsLoadError={dutySettings.loadError}
-              saveError={dutySettings.saveError}
+              saveError={dutySettings.saveError ?? dutyFilterPersistenceError}
               tagsLayout={dutySettings.tagsLayout}
               onTagsLayoutChange={(layout) => {
                 dutySettings.setTagsLayout(layout);
@@ -276,6 +284,14 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               onDisableAutoScrollChange={(value) => {
                 dutySettings.setDisableAutoScroll(value);
                 scheduleDutySettingsSave({ disableAutoScroll: value });
+              }}
+              doNotPersistCurrentFilter={dutyFilterPersistenceDisabled}
+              onDoNotPersistCurrentFilterChange={(value) => {
+                const result = setDutyFilterPersistenceDisabled(value);
+                setDutyFilterPersistenceDisabledState(isDutyFilterPersistenceDisabled());
+                setDutyFilterPersistenceError(
+                  result.ok ? null : `Не вдалося змінити збереження фільтра: ${result.error}`,
+                );
               }}
               audioTranscriptionCollapsed={dutySettings.dutyAudioTranscriptionCollapsed}
               showAudioTranscriptionSettings={globalSettings.audioTranscriptionEnabled}

@@ -6,8 +6,10 @@ import type {
 import type { FeedColumnModel } from './types';
 import { useDutyFeedColumnActions, type RerDutyFeedsBundle } from './useDutyFeedColumnActions';
 import {
+  clearActiveFeedFilter,
   feedIndicatorUnreadCount,
   feedNeedsUnreadPrefetch,
+  hasActiveFeedFilter,
   type MessageFeedState,
   type TagsLayoutVariant,
 } from './utils';
@@ -19,6 +21,7 @@ export type DutyFeedColumnModelDeps = {
   currentUser: User | null;
   canUseMessageDevices: boolean;
   tagsLayout: TagsLayoutVariant;
+  hideBotTags: boolean;
   collapseMediaPreviews: boolean;
   mediaSummaryEnabled: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
@@ -108,6 +111,11 @@ function buildFeedFilterPanel(
 
   return {
     feedId: feed.id,
+    hasActiveFilter:
+      hasActiveFeedFilter(feed.filter) ||
+      feed.adjacentFreqsRange !== 0 ||
+      feed.highlightSignalsEnabled ||
+      feed.onlyMyUnitTagsEnabled,
     filterState: {
       groupsSelected: feed.filter.groupsSelected ?? [],
       deniedGroups: feed.filter.groupsDenied ?? [],
@@ -213,10 +221,18 @@ function buildFeedFilterPanel(
         }),
       onUnitsExactMatchOnlyChange: (v: boolean) =>
         applyFilter(feed.id, { ...feed.filter, unitsExactMatchOnly: v }),
-      onAdjacentFreqsRangeChange: (v: number) =>
+      onAdjacentFreqsRangeChange: (v: number) => {
+        if (v === feed.adjacentFreqsRange) return;
+        if (
+          (feed.filter.freqsSelected?.length ?? 0) > 0 ||
+          (feed.filter.freqsDenied?.length ?? 0) > 0
+        ) {
+          applyFilter(feed.id, feed.filter, true);
+        }
         setMessageFeeds((prev) =>
           prev.map((f) => (f.id === feed.id ? { ...f, adjacentFreqsRange: v } : f)),
-        ),
+        );
+      },
       onHighlightSignalsChange: (v: boolean) => {
         setMessageFeeds((prev) =>
           prev.map((f) => (f.id === feed.id ? { ...f, highlightSignalsEnabled: v } : f)),
@@ -239,6 +255,28 @@ function buildFeedFilterPanel(
       onRenameSelectedSavedFilter: handleRenameSelectedSavedFilter,
       onDeleteSelectedSavedFilter: handleDeleteSelectedSavedFilter,
       onApplySavedFilter: (saved) => handleApplySavedFilter(feed.id, saved),
+      onDiscardCurrentFilter: () => {
+        setSelectedSavedIdByFeedId((prev) => ({ ...prev, [feed.id]: null }));
+        setSaveFilterNameByFeedId((prev) => ({ ...prev, [feed.id]: '' }));
+        const clearedFilter = clearActiveFeedFilter(feed.filter);
+        if (feed.highlightSignalsEnabled) {
+          applyFilter(feed.id, clearedFilter, true);
+        } else {
+          applyFilter(feed.id, clearedFilter);
+        }
+        setMessageFeeds((prev) =>
+          prev.map((item) =>
+            item.id === feed.id
+              ? {
+                  ...item,
+                  adjacentFreqsRange: 0,
+                  highlightSignalsEnabled: false,
+                  onlyMyUnitTagsEnabled: false,
+                }
+              : item,
+          ),
+        );
+      },
     },
   };
 }
@@ -278,6 +316,7 @@ function buildFeedMessageCard(
     profiles,
     featureStrictNetworks,
     tagsLayout: deps.tagsLayout,
+    hideBotTags: deps.hideBotTags,
     collapseMediaPreviews: deps.collapseMediaPreviews,
     mediaSummaryEnabled: deps.mediaSummaryEnabled,
     messageTextPreviewLines: deps.messageTextPreviewLines,

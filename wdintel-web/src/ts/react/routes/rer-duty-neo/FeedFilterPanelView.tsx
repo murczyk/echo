@@ -78,6 +78,8 @@ type FeedFilterSavedFiltersConfig = {
 
 export type FeedFilterPanelViewProps = {
   isDarkMode: boolean;
+  hasActiveFilter: boolean;
+  onDiscardCurrentFilter: () => void;
   groups: FeedFilterSelectionConfig<string>;
   senders: FeedFilterSelectionConfig<{ id: string; label: string }>;
   freqs: FeedFilterSelectionConfig<string> & {
@@ -110,6 +112,8 @@ export type FeedFilterPanelViewProps = {
 
 export function FeedFilterPanelView({
   isDarkMode,
+  hasActiveFilter,
+  onDiscardCurrentFilter,
   groups,
   senders,
   freqs,
@@ -357,6 +361,15 @@ export function FeedFilterPanelView({
           onHighlightSignalsChange={advanced.onHighlightSignalsChange}
           onOnlyMyUnitTagsChange={advanced.onOnlyMyUnitTagsChange}
         />
+
+        <PowerButton
+          fullWidth
+          variant="outlined"
+          disabled={!hasActiveFilter}
+          onClick={onDiscardCurrentFilter}
+        >
+          Скинути поточний фільтр
+        </PowerButton>
 
         <SavedFiltersControl
           savedFilters={savedFilters.savedFilters}

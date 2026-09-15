@@ -114,6 +114,7 @@ function MessageCardTagsComponent({
   tagsMap,
   tagsOrder,
   tagContributionsOrganismId,
+  hideBotTags = false,
   onToggleTag,
   tagsLayout,
   interactive = true,
@@ -125,6 +126,7 @@ function MessageCardTagsComponent({
   tagsMap: Record<number, Tag>;
   tagsOrder?: number[];
   tagContributionsOrganismId?: number;
+  hideBotTags?: boolean;
   onToggleTag?: (tagId: number) => void;
   tagsLayout: TagsLayoutVariant;
   interactive?: boolean;
@@ -155,8 +157,8 @@ function MessageCardTagsComponent({
   /** Natural chip widths from a full (unpacked) render; never update from the overflow-hidden row. */
   const measuredChipWidthsRef = useRef<Map<number, number>>(new Map());
   const rows = useMemo(
-    () => buildMessageCardTagRows(msg, tagsMap, tagsOrder, tagContributionsOrganismId),
-    [msg, tagsMap, tagsOrder, tagContributionsOrganismId],
+    () => buildMessageCardTagRows(msg, tagsMap, tagsOrder, tagContributionsOrganismId, hideBotTags),
+    [msg, tagsMap, tagsOrder, tagContributionsOrganismId, hideBotTags],
   );
   const rowsById = useMemo(() => new Map(rows.map((row) => [row.tagId, row] as const)), [rows]);
   const activeBotTagId = botTagAction?.tagId ?? null;

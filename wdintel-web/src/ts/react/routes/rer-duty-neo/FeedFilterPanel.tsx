@@ -11,6 +11,7 @@ import { useFeedFilterPanelViewModel } from './useFeedFilterPanelViewModel';
 
 export type FeedFilterPanelModel = {
   feedId: string;
+  hasActiveFilter: boolean;
   filterState: {
     groupsSelected: string[];
     deniedGroups: string[];
@@ -83,6 +84,7 @@ export type FeedFilterPanelModel = {
     onRenameSelectedSavedFilter: (feedId: string, name: string) => Promise<boolean>;
     onDeleteSelectedSavedFilter: (feedId: string) => Promise<void>;
     onApplySavedFilter: (saved: SavedFilterDuty) => void;
+    onDiscardCurrentFilter: () => void;
   };
 };
 

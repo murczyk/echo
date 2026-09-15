@@ -58,6 +58,7 @@ vi.mock('../../../shared/message-card/MessageCard', () => ({
     messageComments?: Array<{ id: number; login: string; comment: string }>;
     senderName?: string | null;
     tagsLayout?: string;
+    hideBotTags?: boolean;
     analysisCallsignActions?: { onAddCallsign: () => void; onRemoveCallsign: () => void };
   }) => (
     <div
@@ -67,6 +68,7 @@ vi.mock('../../../shared/message-card/MessageCard', () => ({
     >
       <span data-testid={`sender-${props.id}`}>{props.senderName ?? ''}</span>
       <span data-testid={`tags-layout-${props.id}`}>{props.tagsLayout ?? 'unset'}</span>
+      <span data-testid={`hide-bot-tags-${props.id}`}>{String(props.hideBotTags ?? false)}</span>
       <span data-testid={`comments-${props.id}`}>
         {(props.messageComments ?? [])
           .map((comment) => `${comment.login}:${comment.comment}`)
@@ -200,6 +202,7 @@ function buildProps(
     tagsOrder: [],
     tagsLoading: false,
     tagsLayout: 'full',
+    hideBotTags: false,
     showCallsignAddForm: false,
     directMessageNavigation: null,
     ...overrides,
@@ -482,6 +485,20 @@ describe('AnalysisMessagesPane', () => {
 
     expect(view.container.querySelector('[data-testid="tags-layout-7"]')?.textContent).toBe(
       'hidden',
+    );
+  });
+
+  it('ECHO-3501 passes the bot tag setting through to analysis message cards', async () => {
+    const view = await renderComponent(
+      buildProps({
+        messages: [[7, buildMessage()]],
+        hideBotTags: true,
+      }),
+    );
+    rendered.push(view);
+
+    expect(view.container.querySelector('[data-testid="hide-bot-tags-7"]')?.textContent).toBe(
+      'true',
     );
   });
 

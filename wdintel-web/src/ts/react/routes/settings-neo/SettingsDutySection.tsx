@@ -32,6 +32,8 @@ export type SettingsDutySectionProps = {
   /** When true, duty feed does not auto-scroll / follow new messages. */
   disableAutoScroll: boolean;
   onDisableAutoScrollChange: (value: boolean) => void;
+  doNotPersistCurrentFilter: boolean;
+  onDoNotPersistCurrentFilterChange: (value: boolean) => void;
   audioTranscriptionCollapsed: boolean;
   onAudioTranscriptionCollapsedChange: (value: boolean) => void;
   showAudioTranscriptionSettings: boolean;
@@ -56,6 +58,8 @@ export function SettingsDutySection({
   onMediaSummaryEnabledChange,
   disableAutoScroll,
   onDisableAutoScrollChange,
+  doNotPersistCurrentFilter,
+  onDoNotPersistCurrentFilterChange,
   audioTranscriptionCollapsed,
   onAudioTranscriptionCollapsedChange,
   showAudioTranscriptionSettings,
@@ -150,6 +154,31 @@ export function SettingsDutySection({
                       Якщо перемикач увімкнено, автопрокрутка працює лише внизу стрічки з невеликим
                       зазором. Якщо прокрутити вгору, вона зупиняється і відновлюється після
                       повернення вниз.
+                    </Typography>
+                  </Stack>
+                }
+              />
+              <FormControlLabel
+                sx={{
+                  alignItems: 'flex-start',
+                  m: 0,
+                  gap: 1.5,
+                  '& .MuiFormControlLabel-label': { width: '100%' },
+                }}
+                control={
+                  <Switch
+                    checked={doNotPersistCurrentFilter}
+                    onChange={(_, checked) => onDoNotPersistCurrentFilterChange(checked)}
+                  />
+                }
+                label={
+                  <Stack spacing={0.75} sx={{ pt: 0.25 }}>
+                    <Typography variant="body1" sx={{ fontWeight: 600, lineHeight: 1.35 }}>
+                      Не зберігати поточний фільтр
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
+                      Поточні фільтри буде видалено з цього браузера, а нові не зберігатимуться
+                      після виходу зі сторінки.
                     </Typography>
                   </Stack>
                 }

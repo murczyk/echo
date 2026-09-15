@@ -36,6 +36,7 @@ use sea_query::*;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::error::Error as StdError;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use tempfile::TempDir;
 
 pub(in crate::rer_importer) mod analytics_unit;
@@ -8431,7 +8432,8 @@ async fn count_stats(
         master_keys_noimport,
     };
     let analytics_config = env.config.analytics.as_ref();
-    let analytics = if analytics_count_request_supported(&req) {
+    let analytics_supported = analytics_count_request_supported(&req);
+    let analytics = if analytics_supported {
         env.analytics.as_ref()
     } else {
         trace!(
@@ -8483,14 +8485,25 @@ async fn count_stats(
         .map(AnalyticsConfig::retry_cooldown_ms)
         .unwrap_or(ANALYTICS_RETRY_COOLDOWN_MS_DEFAULT);
     let postgres_query = query_count_stats_postgres(&req, &user, &env, access);
+    let postgres_reason = if !analytics_supported {
+        "query_policy"
+    } else if env.analytics.is_none() {
+        if analytics_config.is_some() {
+            "analytics_unavailable"
+        } else {
+            "unconfigured"
+        }
+    } else {
+        "circuit_open"
+    };
     if analytics_query.is_none() {
-        info!(target: "analytics_route", "operation=\"analysis stats count\" route=postgres reason={}",
-            if analytics.is_none() { "unconfigured" } else { "circuit_open" });
+        info!(target: "analytics_route", "operation=\"analysis stats count\" route=postgres reason={postgres_reason}");
     }
     let response = with_count_stats_analytics_fallback(
         analytics_query,
         core::time::Duration::from_millis(timeout_ms),
         postgres_query,
+        postgres_reason,
         analytics_attempt.map(|(_, retry_attempt)| retry_attempt),
         core::time::Duration::from_millis(retry_cooldown_ms),
     )
@@ -8573,6 +8586,30 @@ struct AnalyticsRetryCancellationGuard<'a> {
     releases_half_open_attempt: bool,
 }
 
+pub(crate) struct AnalyticsReadOutcome<T> {
+    pub(crate) value: T,
+    pub(crate) postgres_reason: Option<&'static str>,
+    pub(crate) postgres_fallback_permit:
+        Option<tokio::sync::OwnedSemaphorePermit>,
+}
+
+pub(crate) fn postgres_pool_identity(db: &DatabaseConnection) -> usize {
+    let connect_options = db.get_postgres_connection_pool().connect_options();
+    Arc::as_ptr(&connect_options) as usize
+}
+
+static ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE: once_cell::sync::Lazy<
+    Arc<tokio::sync::Semaphore>,
+> = once_cell::sync::Lazy::new(|| {
+    Arc::new(tokio::sync::Semaphore::new(
+        ANALYTICS_POSTGRES_FALLBACK_MAX_CONCURRENT,
+    ))
+});
+
+#[derive(Debug, thiserror::Error)]
+#[error("analytics replication health is stale or unhealthy")]
+struct AnalyticsReplicationHealthError;
+
 impl Drop for AnalyticsRetryCancellationGuard<'_> {
     fn drop(&mut self) {
         if self.releases_half_open_attempt {
@@ -8624,6 +8661,7 @@ async fn with_count_stats_analytics_fallback<T, A, P>(
     analytics_query: Option<A>,
     timeout: core::time::Duration,
     postgres_query: P,
+    postgres_reason: &'static str,
     retry_attempt: Option<AnalyticsRetryAttempt<'_>>,
     retry_cooldown: core::time::Duration,
 ) -> Result<T, AppError>
@@ -8634,10 +8672,12 @@ where
     let _retry_cancellation_guard = retry_attempt
         .as_ref()
         .map(AnalyticsRetryAttempt::cancellation_guard);
-    let mut reason = "analytics_skipped";
+    let mut reason = postgres_reason;
     if let Some(analytics_query) = analytics_query {
         let started = std::time::Instant::now();
-        match tokio::time::timeout(timeout, analytics_query).await {
+        let open_circuit = match tokio::time::timeout(timeout, analytics_query)
+            .await
+        {
             Ok(Ok(response)) => {
                 if let Some(retry_attempt) = retry_attempt {
                     retry_attempt.record_success();
@@ -8646,12 +8686,18 @@ where
                 return Ok(response);
             }
             Ok(Err(err)) => {
-                reason = "analytics_error";
+                let open_circuit = analytics_failure_opens_circuit(&err);
+                reason = if open_circuit {
+                    "analytics_error"
+                } else {
+                    "analytics_unhealthy"
+                };
                 warn!(
                     "analysis stats count analytics query failed after {:?}, retrying via PostgreSQL: {:?}",
                     started.elapsed(),
                     err
                 );
+                open_circuit
             }
             Err(_) => {
                 reason = "analytics_timeout";
@@ -8659,13 +8705,29 @@ where
                     "analysis stats count analytics query timed out after {:?}, retrying via PostgreSQL",
                     started.elapsed()
                 );
+                true
             }
-        }
-        if let Some(retry_attempt) = retry_attempt {
-            retry_attempt.record_failure(retry_cooldown);
+        };
+        if open_circuit {
+            if let Some(retry_attempt) = retry_attempt {
+                retry_attempt.record_failure(retry_cooldown);
+            }
+        } else if let Some(retry_attempt) = retry_attempt {
+            retry_attempt.record_success();
         }
     }
 
+    let _fallback_permit = if analytics_fallback_needs_capacity(reason) {
+        Some(
+            acquire_analytics_postgres_fallback_capacity(
+                "analysis stats count",
+            )
+            .await
+            .context(h!())?,
+        )
+    } else {
+        None
+    };
     let started = std::time::Instant::now();
     let response = postgres_query.await.map_err(|error| {
         map_postgres_runtime_timeout(error, "analysis stats count")
@@ -8688,7 +8750,7 @@ where
     P: FnOnce(DatabaseConnection) -> PFut,
     PFut: std::future::Future<Output = Result<T, AppError>>,
 {
-    with_analytics_read_fallback_inner(
+    Ok(with_analytics_read_fallback_inner(
         env,
         operation,
         analytics_supported,
@@ -8697,6 +8759,33 @@ where
         postgres_query,
     )
     .await
+    .context(h!())?
+    .value)
+}
+
+pub(crate) async fn with_analytics_read_fallback_outcome<T, A, AFut, P, PFut>(
+    env: &Env,
+    operation: &str,
+    analytics_supported: bool,
+    analytics_query: A,
+    postgres_query: P,
+) -> Result<AnalyticsReadOutcome<T>, AppError>
+where
+    A: FnOnce(DatabaseConnection) -> AFut,
+    AFut: std::future::Future<Output = Result<T, AppError>>,
+    P: FnOnce(DatabaseConnection) -> PFut,
+    PFut: std::future::Future<Output = Result<T, AppError>>,
+{
+    Ok(with_analytics_read_fallback_inner(
+        env,
+        operation,
+        analytics_supported,
+        true,
+        analytics_query,
+        postgres_query,
+    )
+    .await
+    .context(h!())?)
 }
 
 pub(crate) async fn with_internally_timed_analytics_read_fallback<
@@ -8718,7 +8807,7 @@ where
     P: FnOnce(DatabaseConnection) -> PFut,
     PFut: std::future::Future<Output = Result<T, AppError>>,
 {
-    with_analytics_read_fallback_inner(
+    Ok(with_analytics_read_fallback_inner(
         env,
         operation,
         analytics_supported,
@@ -8727,6 +8816,8 @@ where
         postgres_query,
     )
     .await
+    .context(h!())?
+    .value)
 }
 
 async fn with_analytics_read_fallback_inner<T, A, AFut, P, PFut>(
@@ -8736,7 +8827,7 @@ async fn with_analytics_read_fallback_inner<T, A, AFut, P, PFut>(
     use_configured_timeout: bool,
     analytics_query: A,
     postgres_query: P,
-) -> Result<T, AppError>
+) -> Result<AnalyticsReadOutcome<T>, AppError>
 where
     A: FnOnce(DatabaseConnection) -> AFut,
     AFut: std::future::Future<Output = Result<T, AppError>>,
@@ -8759,7 +8850,11 @@ where
     let mut reason = if !analytics_supported {
         "query_policy"
     } else if env.analytics.is_none() {
-        "unconfigured"
+        if env.config.analytics.is_some() {
+            "analytics_unavailable"
+        } else {
+            "unconfigured"
+        }
     } else {
         "circuit_open"
     };
@@ -8787,44 +8882,117 @@ where
         } else {
             Some(query.await)
         };
-        match response {
+        let open_circuit = match response {
             Some(Ok(response)) => {
                 retry_attempt.record_success();
                 info!(target: "analytics_route", "operation={operation:?} route=analytics outcome=success elapsed_ms={}", started.elapsed().as_millis());
-                return Ok(response);
+                return Ok(AnalyticsReadOutcome {
+                    value: response,
+                    postgres_reason: None,
+                    postgres_fallback_permit: None,
+                });
             }
             Some(Err(err)) => {
-                reason = "analytics_error";
+                let open_circuit = analytics_failure_opens_circuit(&err);
+                reason = if open_circuit {
+                    "analytics_error"
+                } else {
+                    "analytics_unhealthy"
+                };
                 warn!(
                     "{operation} analytics query failed; retrying via PostgreSQL: {err:?}"
                 );
+                open_circuit
             }
             None => {
                 reason = "analytics_timeout";
                 warn!(
                     "{operation} analytics query timed out; retrying via PostgreSQL"
                 );
+                true
             }
+        };
+        if open_circuit {
+            let retry_cooldown = core::time::Duration::from_millis(
+                analytics_config
+                    .map(AnalyticsConfig::retry_cooldown_ms)
+                    .unwrap_or(ANALYTICS_RETRY_COOLDOWN_MS_DEFAULT),
+            );
+            retry_attempt.record_failure(retry_cooldown);
+        } else {
+            retry_attempt.record_success();
         }
-        let retry_cooldown = core::time::Duration::from_millis(
-            analytics_config
-                .map(AnalyticsConfig::retry_cooldown_ms)
-                .unwrap_or(ANALYTICS_RETRY_COOLDOWN_MS_DEFAULT),
-        );
-        retry_attempt.record_failure(retry_cooldown);
     } else if env.analytics.is_some() && !analytics_supported {
         trace!(
             "{operation} uses PostgreSQL for an unsupported analytics query"
         );
     }
 
+    let postgres_fallback_permit = if analytics_fallback_needs_capacity(reason)
+    {
+        Some(
+            acquire_analytics_postgres_fallback_capacity(operation)
+                .await
+                .context(h!())?,
+        )
+    } else {
+        None
+    };
     let started = std::time::Instant::now();
     let response = postgres_query(env.replica())
         .await
         .map_err(|error| map_postgres_runtime_timeout(error, operation));
     info!(target: "analytics_route", "operation={operation:?} route=postgres reason={reason} outcome={} elapsed_ms={}",
         if response.is_ok() { "success" } else { "error" }, started.elapsed().as_millis());
-    response
+    response.map(|value| AnalyticsReadOutcome {
+        value,
+        postgres_reason: Some(reason),
+        postgres_fallback_permit,
+    })
+}
+
+pub(crate) fn analytics_fallback_needs_capacity(reason: &str) -> bool {
+    matches!(
+        reason,
+        "analytics_error"
+            | "analytics_timeout"
+            | "analytics_unhealthy"
+            | "analytics_unavailable"
+            | "circuit_open"
+            | "candidate_ordering_incomplete"
+            | "candidate_revalidation_incomplete"
+            | "postgres_tail_error"
+            | "revalidation_error"
+    )
+}
+
+pub(crate) async fn acquire_analytics_postgres_fallback_capacity(
+    operation: &str,
+) -> Result<tokio::sync::OwnedSemaphorePermit, AppError> {
+    let timeout = core::time::Duration::from_millis(
+        ANALYTICS_POSTGRES_FALLBACK_QUEUE_TIMEOUT_MS,
+    );
+    match tokio::time::timeout(
+        timeout,
+        ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE
+            .clone()
+            .acquire_owned(),
+    )
+    .await
+    {
+        Ok(Ok(permit)) => Ok(permit),
+        Ok(Err(_)) | Err(_) => {
+            warn!(
+                target: "analytics_route",
+                "operation={operation:?} route=postgres outcome=rejected reason=fallback_saturated"
+            );
+            Err(AppError::ServiceUnavailable {
+                msg: "Аналітична система перевантажена. Спробуйте повторити запит."
+                    .to_string(),
+                retry_after_secs: 1,
+            })
+        }
+    }
 }
 
 pub(crate) fn map_postgres_runtime_timeout(
@@ -8875,6 +9043,20 @@ fn has_postgres_error_code(
         source = error.source();
     }
     false
+}
+
+fn analytics_failure_opens_circuit(error: &AppError) -> bool {
+    let mut source = Some(error as &(dyn StdError + 'static));
+    while let Some(error) = source {
+        if error
+            .downcast_ref::<AnalyticsReplicationHealthError>()
+            .is_some()
+        {
+            return false;
+        }
+        source = error.source();
+    }
+    true
 }
 
 fn analytics_retry_attempt(
@@ -9134,10 +9316,7 @@ WHERE singleton
         .c(h!())?;
     let is_fresh: bool = health.try_get("", "is_fresh").c(h!())?;
     if !is_fresh {
-        return Err(anyhow!(
-            "analytics replication health is stale or unhealthy"
-        )
-        .into());
+        return Err(anyhow::Error::new(AnalyticsReplicationHealthError).into());
     }
     Ok(())
 }

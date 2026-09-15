@@ -2995,6 +2995,7 @@ describe('MessageCard', () => {
 
   it.each([
     ['read-only card', { readOnly: true }],
+    ['disabled bot tags', { hideBotTags: true }],
     ['different message', { botTagAction: { messageId: 43, tagId: 3 } }],
     ['missing tag', { botTagAction: { messageId: 42, tagId: 99 } }],
   ] as const)('ECHO-3324 does not show a bot Popover for a %s', async (_, overrides) => {

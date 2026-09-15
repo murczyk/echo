@@ -74,17 +74,22 @@ export function buildMessageCardTagRows(
   tagsMap: Record<number, Tag>,
   tagsOrder?: number[],
   tagContributionsOrganismId?: number,
+  hideBotTags = false,
 ): MessageCardTagRow[] {
-  const inboxTagList = (msg.inboxTags ?? []).filter(
+  const inboxTagEntries = msg.inboxTags ?? [];
+  const inboxTagList = inboxTagEntries.filter(
     (tagEntry) =>
-      tagContributionsOrganismId == null ||
-      (tagEntry.organismId === tagContributionsOrganismId && tagEntry.model == null),
+      (!hideBotTags || tagEntry.model == null) &&
+      (tagContributionsOrganismId == null ||
+        (tagEntry.organismId === tagContributionsOrganismId && tagEntry.model == null)),
   );
+  const hasHiddenBotTags =
+    hideBotTags && inboxTagEntries.some((tagEntry) => tagEntry.model != null);
   return resolveTagDisplayOrder(tagsMap, tagsOrder).map((numericTagId) => {
     const tag = tagsMap[numericTagId];
     const label = tag?.label ?? `#${numericTagId}`;
     const isSet =
-      tagContributionsOrganismId != null || inboxTagList.length > 0
+      tagContributionsOrganismId != null || inboxTagList.length > 0 || hasHiddenBotTags
         ? inboxTagList.some((tagEntry) => tagEntry.tagId === numericTagId)
         : (msg.tags ?? []).includes(numericTagId);
     const contribs = inboxTagList.filter((tagEntry) => tagEntry.tagId === numericTagId);

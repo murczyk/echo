@@ -297,6 +297,7 @@ init route _ =
             , systemSettingsLoaded = False
             , audioTranscriptionEnabled = False
             , analysisAudioTranscriptionCollapsed = False
+            , disableBotTags = False
             , withoutModelTags = False
             , editSidebar = Nothing
             , eventLastId = Nothing
@@ -1202,6 +1203,7 @@ update user shared route msg model =
                         { model
                             | systemSettingsLoaded = True
                             , audioTranscriptionEnabled = rsp.enableAudioTranscription
+                            , disableBotTags = rsp.disableBotTags
                         }
 
                     else
@@ -1209,6 +1211,7 @@ update user shared route msg model =
                             | unitsExactMatchOnly = rsp.rerAnalysisUnitsExactMatchOnlyDefault
                             , systemSettingsLoaded = True
                             , audioTranscriptionEnabled = rsp.enableAudioTranscription
+                            , disableBotTags = rsp.disableBotTags
                         }
 
                 ( m3, eff3 ) =
@@ -1873,6 +1876,7 @@ update user shared route msg model =
                     , pointTokenClickUrlFor = RerAnalysisUtils.buildPointTokenClickUrlFor model.tags route
                     , audioTranscriptionEnabled = model.audioTranscriptionEnabled
                     , audioTranscriptionCollapsed = model.analysisAudioTranscriptionCollapsed
+                    , disableBotTags = model.disableBotTags
                     }
 
                 res =

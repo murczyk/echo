@@ -11,7 +11,7 @@ swapp_alt_app_dir := "/etc/swapp-alt"
 messengers_justfile := repo_dir + "/echo-messengers/justfile"
 goi_version := "1.6.2"
 goi_node_version := "24.19.0"
-goi_servers := "goi-stg goi-jf goi-prod-01 goi-prod-02 goi-prod-03 goi-prod-04 goi-prod-05 goi-prod-06 goi-prod-07 goi-prod-08 goi-prod-10 goi-tsur goi-prod-210oshp goi-prod-225oshp goi-159ombr goi-129ovmbr goi-22ombr goi-prod-gorilla goi-25opdbr goi-istar goi-32ombr goi-80odshbr goi-144ombr goi-475oshb goi-152orub goi-154ombr goi-65ombr goi-1kngu goi-41ombr goi-41pbps goi-71center-pep goi-120orppep goi-etalon goi-5oshbr goi-5oshbr-pep goi-prod-3ak goi-prod-143ombr goi-prod-412op"
+goi_servers := "goi-stg goi-jf goi-prod-01 goi-prod-02 goi-prod-03 goi-prod-04 goi-prod-05 goi-prod-06 goi-prod-07 goi-prod-08 goi-prod-10 goi-tsur goi-prod-210oshp goi-prod-225oshp goi-159ombr goi-129ovmbr goi-22ombr goi-prod-gorilla goi-25opdbr goi-istar goi-32ombr goi-80odshbr goi-144ombr goi-475oshb goi-152orub goi-154ombr goi-65ombr goi-1kngu goi-41ombr goi-41pbps goi-71center-pep goi-120orppep goi-etalon goi-5oshbr goi-5oshbr-pep goi-prod-3ak goi-prod-143ombr goi-prod-412op goi-prod-artan"
 
 default:
     @just --list

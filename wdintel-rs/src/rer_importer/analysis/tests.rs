@@ -1943,6 +1943,30 @@ fn postgres_senders_selected_networks_keep_correlated_filter() {
 }
 
 #[test]
+fn postgres_senders_creation_breakdown_qualifies_created_at() {
+    let mut req = mk_analysis_stats_req(0, 86_400_000);
+    req.message_time_basis =
+        Some(crate::user_settings::MessageTimeBasis::MessageCreation);
+    let query = stats::build_sender_breakdown_query(
+        &Json(req),
+        &uuid::Uuid::nil(),
+        test_dt(1970, 1, 1, 0, 0),
+        test_dt(1970, 1, 2, 0, 0),
+        vec!["group".to_string()],
+        None,
+        None,
+    )
+    .unwrap();
+    let sql = query.build(DbBackend::Postgres).to_string();
+
+    assert!(
+        sql.contains(r#""signal_message"."created_at" AT TIME ZONE"#),
+        "{sql}"
+    );
+    assert!(!sql.contains("(created_at AT TIME ZONE"), "{sql}");
+}
+
+#[test]
 fn postgres_tags_exact_unit_query_only_uses_linked_candidates() {
     let mut req = mk_analysis_stats_req(0, 1);
     req.selected_units = Some(vec!["unit".to_string()]);
@@ -7865,6 +7889,7 @@ async fn count_stats_analytics_success_skips_postgres() {
         Some(analytics_query),
         core::time::Duration::from_secs(1),
         postgres_query,
+        "circuit_open",
         Some(retry_attempt),
         core::time::Duration::from_secs(30),
     )
@@ -7895,6 +7920,7 @@ async fn count_stats_analytics_error_retries_postgres_once() {
         Some(analytics_query),
         core::time::Duration::from_secs(1),
         postgres_query,
+        "circuit_open",
         Some(retry_attempt),
         core::time::Duration::from_secs(30),
     )
@@ -7919,6 +7945,7 @@ async fn count_stats_without_analytics_uses_postgres() {
         None::<std::future::Ready<Result<&str, AppError>>>,
         core::time::Duration::from_secs(1),
         async { Ok::<_, AppError>("postgres") },
+        "unconfigured",
         None,
         core::time::Duration::from_secs(30),
     )
@@ -8083,11 +8110,15 @@ fn analytical_inbox_candidates_support_latest_initial_duty_unit_filters() {
 
 #[tokio::test]
 #[serial]
-async fn analytics_read_without_pool_uses_postgres_path() {
+async fn analytics_read_outcome_distinguishes_unconfigured_and_unavailable() {
     let fixture = mk_rer_analysis_fixture().await.unwrap();
     assert!(fixture.env.analytics.is_none());
+    assert_eq!(
+        postgres_pool_identity(&fixture.env.dbx),
+        postgres_pool_identity(&fixture.env.dbx.clone())
+    );
 
-    let result = with_analytics_read_fallback(
+    let result = with_analytics_read_fallback_outcome(
         &fixture.env,
         "analytics fallback test",
         true,
@@ -8099,7 +8130,55 @@ async fn analytics_read_without_pool_uses_postgres_path() {
     .await
     .unwrap();
 
-    assert_eq!(result, "postgres");
+    assert_eq!(result.value, "postgres");
+    assert_eq!(result.postgres_reason, Some("unconfigured"));
+    assert!(result.postgres_fallback_permit.is_none());
+
+    let mut env = (*fixture.env).clone();
+    env.config.analytics = Some(AnalyticsConfig {
+        pg_host: "unavailable".to_string(),
+        pg_port: None,
+        pg_user: "unavailable".to_string(),
+        pg_password: "unavailable".to_string(),
+        pg_dbname: "unavailable".to_string(),
+        connect_timeout_ms: None,
+        max_connections: None,
+        query_timeout_ms: None,
+        freshness_max_age_ms: None,
+        retry_cooldown_ms: None,
+    });
+    let result = with_analytics_read_fallback_outcome(
+        &env,
+        "analytics unavailable fallback test",
+        true,
+        |_db| async { Ok::<_, AppError>("analytics") },
+        |_db| async { Ok::<_, AppError>("postgres") },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.value, "postgres");
+    assert_eq!(result.postgres_reason, Some("analytics_unavailable"));
+    assert!(result.postgres_fallback_permit.is_some());
+}
+
+#[test]
+fn fallback_capacity_only_limits_analytics_incident_routes() {
+    for reason in [
+        "analytics_error",
+        "analytics_timeout",
+        "analytics_unhealthy",
+        "analytics_unavailable",
+        "candidate_ordering_incomplete",
+        "candidate_revalidation_incomplete",
+        "circuit_open",
+        "postgres_tail_error",
+        "revalidation_error",
+    ] {
+        assert!(analytics_fallback_needs_capacity(reason));
+    }
+    assert!(!analytics_fallback_needs_capacity("query_policy"));
+    assert!(!analytics_fallback_needs_capacity("unconfigured"));
 }
 
 #[tokio::test]
@@ -8109,6 +8188,7 @@ async fn count_stats_analytics_timeout_retries_postgres() {
         Some(analytics_query),
         core::time::Duration::ZERO,
         async { Ok::<_, AppError>("postgres") },
+        "circuit_open",
         None,
         core::time::Duration::from_secs(30),
     )
@@ -8148,6 +8228,7 @@ async fn analytics_fallback_maps_capped_postgres_query_to_one_timeout_error() {
             db.execute_unprepared("select pg_sleep(2)").await.c(h!())?;
             Ok::<_, AppError>("postgres")
         },
+        "circuit_open",
         None,
         core::time::Duration::from_secs(30),
     )
@@ -8265,6 +8346,7 @@ async fn count_stats_analytics_closed_success_does_not_clear_concurrent_failure(
         Some(analytics_query),
         core::time::Duration::from_secs(1),
         async { Ok::<_, AppError>("postgres") },
+        "circuit_open",
         Some(retry_attempt),
         core::time::Duration::from_secs(30),
     )
@@ -8291,6 +8373,7 @@ async fn count_stats_analytics_half_open_failure_reopens_circuit() {
         }),
         core::time::Duration::from_secs(1),
         async { Ok::<_, AppError>("postgres") },
+        "circuit_open",
         Some(retry_attempt),
         core::time::Duration::from_secs(30),
     )
@@ -8301,6 +8384,44 @@ async fn count_stats_analytics_half_open_failure_reopens_circuit() {
     let retry_deadline = retry_state.load(std::sync::atomic::Ordering::Acquire);
     assert_ne!(retry_deadline, u64::MAX);
     assert!(retry_deadline > analytics_unix_ms());
+}
+
+#[tokio::test]
+async fn replication_health_failure_releases_half_open_circuit() {
+    let retry_state = std::sync::atomic::AtomicU64::new(1);
+    let retry_attempt = analytics_retry_attempt(&retry_state).unwrap();
+    let (postgres_started_tx, postgres_started_rx) =
+        tokio::sync::oneshot::channel();
+    let (release_postgres_tx, release_postgres_rx) =
+        tokio::sync::oneshot::channel();
+
+    let fallback = with_count_stats_analytics_fallback(
+        Some(async {
+            Err::<&str, AppError>(
+                anyhow::Error::new(AnalyticsReplicationHealthError).into(),
+            )
+        }),
+        core::time::Duration::from_secs(1),
+        async {
+            let _ = postgres_started_tx.send(());
+            let _ = release_postgres_rx.await;
+            Ok::<_, AppError>("postgres")
+        },
+        "circuit_open",
+        Some(retry_attempt),
+        core::time::Duration::from_secs(30),
+    );
+    let observe_retry_state = async {
+        postgres_started_rx.await.unwrap();
+        assert_eq!(retry_state.load(std::sync::atomic::Ordering::Acquire), 0);
+        release_postgres_tx.send(()).unwrap();
+    };
+    let (result, ()) = tokio::join!(fallback, observe_retry_state);
+    let result = result.unwrap();
+
+    assert_eq!(result, "postgres");
+    assert_eq!(retry_state.load(std::sync::atomic::Ordering::Acquire), 0);
+    assert!(analytics_retry_attempt(&retry_state).is_some());
 }
 
 fn callsign_aggregate_test_query(
