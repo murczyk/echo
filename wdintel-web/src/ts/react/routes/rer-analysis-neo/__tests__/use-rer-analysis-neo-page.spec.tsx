@@ -326,6 +326,7 @@ describe('useRerAnalysisNeoPage', () => {
       rerDutyPollIntervalSec: 1,
       rerShortUrlEnabled: false,
       enableAudioTranscription: true,
+      disableBotTags: false,
     });
     currentUserMock.fetchCurrentUser.mockReset();
     currentUserMock.fetchCurrentUser.mockResolvedValue({ name: 'tester' } as User);
@@ -985,6 +986,25 @@ describe('useRerAnalysisNeoPage', () => {
     await flushEffects();
 
     expect(latest?.error).toBe('Не вдалося завантажити системні налаштування.');
+  });
+
+  it('ECHO-3501 exposes disabled bot tags from system settings', async () => {
+    systemSettingsMock.currentSystemSettings.mockResolvedValueOnce({
+      id: 7,
+      rerAnalysisUnitsExactMatchOnlyDefault: false,
+      rerDutyTestEnabled: false,
+      rerDutyInsertHistoricalInterceptions: false,
+      rerDutyTestSinceMs: 0,
+      rerDutyTestLimit: 1,
+      rerDutyPollIntervalSec: 1,
+      rerShortUrlEnabled: false,
+      disableBotTags: true,
+    });
+
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.hideBotTags).toBe(true);
   });
 
   it('keeps the direct-link error when the regular message list clears its error', async () => {

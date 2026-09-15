@@ -90,6 +90,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const [devicesSectionEnabled, setDevicesSectionEnabled] = useState(false);
   const [audioTranscriptionEnabled, setAudioTranscriptionEnabled] = useState(false);
   const [showPelengDistanceToBattleline, setShowPelengDistanceToBattleline] = useState(false);
+  const [hideBotTags, setHideBotTags] = useState(false);
   const [lastResetState, setLastResetState] = useState<AnalysisQueryState>(() =>
     hasMeaningfulUiFiltersBeyondDateRange(initialQueryState)
       ? createResetQueryState()
@@ -645,6 +646,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
         setDevicesSectionEnabled(settings.devicesSectionEnabled);
         setAudioTranscriptionEnabled(settings.enableAudioTranscription ?? false);
         setShowPelengDistanceToBattleline(settings.showPelengDistanceToBattleline);
+        setHideBotTags(settings.disableBotTags ?? false);
         setSystemSettingsStatus('success');
       })
       .catch(() => {
@@ -1099,6 +1101,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     profiles,
     queryState,
     tagsLayout: dutySettings.tagsLayout,
+    hideBotTags,
     mediaSummaryEnabled: dutySettings.mediaSummaryEnabled,
     collapseMediaPreviews: dutySettings.dutyCollapseMediaPreviews,
     messageTextPreviewLines: dutySettings.messageTextPreviewLines,

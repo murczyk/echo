@@ -540,3 +540,56 @@ async fn do_refresh_models(
 
     Ok(updated)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::functest::tests::cleanup;
+    use serial_test::serial;
+
+    #[tokio::test]
+    #[serial]
+    async fn echo_3501_disabled_bot_tags_leave_suggestion_queue_untouched() {
+        let env = cleanup().await.unwrap();
+        system_settings::Entity::insert(system_settings::ActiveModel {
+            disable_bot_tags: Set(Some(true)),
+            ..Default::default()
+        })
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+        tag_suggestion_worker_queue::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        tag_suggestion_worker_queue::Entity::insert(
+            tag_suggestion_worker_queue::ActiveModel {
+                sigint_inbox_item_id: Set(-1),
+            },
+        )
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+        let mut redis = env.redis.clone();
+
+        let processed = process_suggest_message_tags(
+            &env.rq,
+            &env.dbx,
+            &mut redis,
+            &env.tag_keyword_regex_cache,
+        )
+        .await
+        .unwrap();
+
+        assert!(!processed);
+        assert!(tag_suggestion_worker_queue::Entity::find_by_id(-1)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_some());
+        tag_suggestion_worker_queue::Entity::delete_by_id(-1)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+    }
+}

@@ -1612,7 +1612,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                     ]
                 , case model.botTagAction of
                     Just action ->
-                        if action.messageId == msgId then
+                        if not vps.disableBotTags && action.messageId == msgId then
                             div
                                 [ class "flex gap-2 items-center text-xs bg-card border border-border rounded px-3 py-2 shadow-sm" ]
                                 [ button
