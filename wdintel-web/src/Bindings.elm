@@ -11850,6 +11850,7 @@ type alias SystemSettingsCurrentRsp =
     , showClassicAnalysis : Bool
     , showPelengDistanceToBattleline : Bool
     , hideOrbitData : Bool
+    , disableBotTags : Bool
     }
 
 
@@ -11884,6 +11885,7 @@ systemSettingsCurrentRspEncoder struct =
         , ( "show_classic_analysis", (Json.Encode.bool) struct.showClassicAnalysis )
         , ( "show_peleng_distance_to_battleline", (Json.Encode.bool) struct.showPelengDistanceToBattleline )
         , ( "hide_orbit_data", (Json.Encode.bool) struct.hideOrbitData )
+        , ( "disable_bot_tags", (Json.Encode.bool) struct.disableBotTags )
         ]
 
 
@@ -11920,6 +11922,7 @@ type alias SystemSettingsItem =
     , showClassicDuty : Bool
     , showClassicAnalysis : Bool
     , showPelengDistanceToBattleline : Bool
+    , disableBotTags : Bool
     }
 
 
@@ -11958,6 +11961,7 @@ systemSettingsItemEncoder struct =
         , ( "show_classic_duty", (Json.Encode.bool) struct.showClassicDuty )
         , ( "show_classic_analysis", (Json.Encode.bool) struct.showClassicAnalysis )
         , ( "show_peleng_distance_to_battleline", (Json.Encode.bool) struct.showPelengDistanceToBattleline )
+        , ( "disable_bot_tags", (Json.Encode.bool) struct.disableBotTags )
         ]
 
 
@@ -12001,6 +12005,7 @@ type alias CreateSystemSettingsReq =
     , showClassicDuty : Bool
     , showClassicAnalysis : Bool
     , showPelengDistanceToBattleline : Bool
+    , disableBotTags : Bool
     }
 
 
@@ -12034,6 +12039,7 @@ createSystemSettingsReqEncoder struct =
         , ( "show_classic_duty", (Json.Encode.bool) struct.showClassicDuty )
         , ( "show_classic_analysis", (Json.Encode.bool) struct.showClassicAnalysis )
         , ( "show_peleng_distance_to_battleline", (Json.Encode.bool) struct.showPelengDistanceToBattleline )
+        , ( "disable_bot_tags", (Json.Encode.bool) struct.disableBotTags )
         ]
 
 
@@ -22072,6 +22078,7 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_analysis" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_peleng_distance_to_battleline" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hide_orbit_data" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_bot_tags" (Json.Decode.bool)))
 
 
 systemSettingsItemDecoder : Json.Decode.Decoder SystemSettingsItem
@@ -22109,6 +22116,7 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_duty" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_analysis" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_peleng_distance_to_battleline" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_bot_tags" (Json.Decode.bool)))
 
 
 systemSettingsListRspDecoder : Json.Decode.Decoder SystemSettingsListRsp
@@ -22147,6 +22155,7 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_duty" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_analysis" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_peleng_distance_to_battleline" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_bot_tags" (Json.Decode.bool)))
 
 
 activateSystemSettingsReqDecoder : Json.Decode.Decoder ActivateSystemSettingsReq

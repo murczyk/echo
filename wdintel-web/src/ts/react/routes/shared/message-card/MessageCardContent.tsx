@@ -275,6 +275,7 @@ export function MessageCardMessageBody({
   tagsMap,
   tagsOrder,
   tagContributionsOrganismId,
+  hideBotTags = false,
   tagsLoading = false,
   onToggleTag,
   readOnly = false,
@@ -307,6 +308,7 @@ export function MessageCardMessageBody({
   tagsMap: Record<number, Tag>;
   tagsOrder?: number[];
   tagContributionsOrganismId?: number;
+  hideBotTags?: boolean;
   tagsLoading?: boolean;
   readOnly?: boolean;
   onToggleTag?: (tagId: number) => void;
@@ -677,7 +679,7 @@ export function MessageCardMessageBody({
     coordinatePreviewPoints.length > 0 ? coordinatePreviewPoints.length : coordinateSummaryCount;
   const hasTags = tagsLayout !== 'hidden' && Object.keys(tagsMap).length > 0;
   const visibleBotTagAction =
-    !readOnly && botTagAction?.messageId === messageId ? botTagAction : null;
+    !hideBotTags && !readOnly && botTagAction?.messageId === messageId ? botTagAction : null;
   const reports = getIntelligenceReports(msg);
   const parents = getParentMessages(msg);
   const hasCallsignControls = !readOnly && isPresent(analysisCallsignActions);
@@ -842,6 +844,7 @@ export function MessageCardMessageBody({
       tagsMap={tagsMap}
       tagsOrder={tagsOrder}
       tagContributionsOrganismId={tagContributionsOrganismId}
+      hideBotTags={hideBotTags}
       onToggleTag={onToggleTag}
       tagsLayout={tagsLayout}
       interactive={!readOnly && onToggleTag != null}

@@ -33,6 +33,7 @@ pub struct SystemSettingsCurrentRsp {
     pub show_classic_analysis: bool,
     pub show_peleng_distance_to_battleline: bool,
     pub hide_orbit_data: bool,
+    pub disable_bot_tags: bool,
 }
 
 #[derive(
@@ -71,6 +72,7 @@ pub struct SystemSettingsItem {
     pub show_classic_duty: bool,
     pub show_classic_analysis: bool,
     pub show_peleng_distance_to_battleline: bool,
+    pub disable_bot_tags: bool,
 }
 
 #[derive(
@@ -127,6 +129,8 @@ pub struct CreateSystemSettingsReq {
     pub show_classic_analysis: bool,
     #[serde(default)]
     pub show_peleng_distance_to_battleline: bool,
+    #[serde(default)]
+    pub disable_bot_tags: bool,
 }
 
 fn default_true() -> bool {
@@ -187,6 +191,7 @@ mod tests {
         assert!(!req.limit_big_reports);
         assert!(!req.enable_audio_transcription);
         assert!(!req.show_peleng_distance_to_battleline);
+        assert!(!req.disable_bot_tags);
         assert_eq!(req.rer_duty_test_replay_interval_sec, 1);
     }
 }

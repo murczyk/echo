@@ -54,6 +54,7 @@ function emptySystemSettingsResponse() {
     rer_duty_poll_interval_sec: 1,
     default_neo_analysis: false,
     do_not_store_duplicate_echoim_failures: false,
+    disable_bot_tags: false,
   };
 }
 

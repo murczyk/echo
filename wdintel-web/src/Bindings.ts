@@ -4593,6 +4593,7 @@ export type SystemSettingsCurrentRsp = {
   showClassicAnalysis: boolean;
   showPelengDistanceToBattleline: boolean;
   hideOrbitData: boolean;
+  disableBotTags: boolean;
 };
 
 export type SystemSettingsItem = {
@@ -4628,6 +4629,7 @@ export type SystemSettingsItem = {
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
   showPelengDistanceToBattleline: boolean;
+  disableBotTags: boolean;
 };
 
 export type SystemSettingsListRsp = {
@@ -4662,6 +4664,7 @@ export type CreateSystemSettingsReq = {
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
   showPelengDistanceToBattleline: boolean;
+  disableBotTags: boolean;
 };
 
 export type ActivateSystemSettingsReq = {

@@ -108,6 +108,7 @@ export type MessageCardProps = {
   analysisDestination?: 'classic' | 'neo';
   /** Tag chips section visual density mode. */
   tagsLayout?: TagsLayoutVariant;
+  hideBotTags?: boolean;
   tagsLoading?: boolean;
   /** Baseline "now" when the card is off-screen; while visible, relative time updates every second. */
   referenceTimeMs: number | null;
@@ -174,6 +175,7 @@ function MessageCardComponent({
   displayMode = 'duty',
   analysisDestination = 'classic',
   tagsLayout = 'full',
+  hideBotTags = false,
   tagsLoading = false,
   referenceTimeMs,
   authUserName,
@@ -407,6 +409,7 @@ function MessageCardComponent({
           tagsMap={tagsMap}
           tagsOrder={tagsOrder}
           tagContributionsOrganismId={tagContributionsOrganismId}
+          hideBotTags={hideBotTags}
           tagsLoading={tagsLoading}
           onToggleTag={onToggleTag}
           readOnly={readOnly}

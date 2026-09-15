@@ -1,5 +1,10 @@
 {
   "migrations": {
+    "echo:m20260915_105452_disable_bot_tags": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_backfill" }
+      ]
+    },
     "echo:m20260914_234219_group_stats_dirty_days": {
       "changes": [
         { "table": "public.group_stats_recalculation_day", "strategy": "excluded" }

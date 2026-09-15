@@ -107,6 +107,13 @@ async fn process_suggest_message_tags(
     redis: &mut redis::aio::ConnectionManager,
     tag_keyword_regex_cache: &Arc<RwLock<TagKeywordRegexCache>>,
 ) -> Result<bool, AppError> {
+    if crate::system_settings::bot_tags_disabled(dbx)
+        .await
+        .c(h!())?
+    {
+        return Ok(false);
+    }
+
     let txn = dbx.begin().await.c(h!())?;
 
     let message_ids = get_messages(&txn).await.c(h!())?;
@@ -117,6 +124,13 @@ async fn process_suggest_message_tags(
             process_messages(message_ids, rq, &txn, tag_keyword_regex_cache)
                 .await
                 .c(h!())?;
+        if crate::system_settings::bot_tags_disabled(&txn)
+            .await
+            .c(h!())?
+        {
+            txn.rollback().await.c(h!())?;
+            return Ok(false);
+        }
         txn.commit().await.c(h!())?;
         if result.inserted_count > 0
             && !result.message_ids_for_events.is_empty()

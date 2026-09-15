@@ -127,6 +127,7 @@ mainBody user model shared route =
                         , pointTokenClickUrlFor = Pages_.RerAnalysis.Utils.buildPointTokenClickUrlFor model.tags route
                         , audioTranscriptionEnabled = model.audioTranscriptionEnabled
                         , audioTranscriptionCollapsed = model.analysisAudioTranscriptionCollapsed
+                        , disableBotTags = model.disableBotTags
                         }
 
                     renderPs =

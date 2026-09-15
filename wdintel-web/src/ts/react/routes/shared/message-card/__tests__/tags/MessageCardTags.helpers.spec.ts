@@ -198,6 +198,41 @@ describe('buildMessageCardTagRows', () => {
     expect(rows[0]).toMatchObject({ tagId: 99, isSet: true, provenance: 'robot' });
   });
 
+  it('hides bot contributions without hiding human contributions', () => {
+    const rows = buildMessageCardTagRows(
+      buildMessage({
+        tags: [2, 99],
+        inboxTags: [
+          {
+            id: 1,
+            tagId: 99,
+            confidence: 0.86,
+            login: null,
+            model: 'classifier-v2',
+            organismId: null,
+          },
+          { id: 2, tagId: 2, confidence: 1, login: 'delta1', model: null, organismId: 7 },
+          {
+            id: 3,
+            tagId: 2,
+            confidence: 0.72,
+            login: null,
+            model: 'classifier-v2',
+            organismId: null,
+          },
+        ],
+      }),
+      tagsMap,
+      [99, 2],
+      undefined,
+      true,
+    );
+
+    expect(rows[0]).toMatchObject({ tagId: 99, isSet: false, provenance: 'none', tip: null });
+    expect(rows[1]).toMatchObject({ tagId: 2, isSet: true, provenance: 'human' });
+    expect(rows[1]?.tip).toBe('Користувачі: delta1');
+  });
+
   it('shows only human tag contributions from the selected organism', () => {
     const rows = buildMessageCardTagRows(
       buildMessage({

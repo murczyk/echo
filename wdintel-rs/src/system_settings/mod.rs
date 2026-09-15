@@ -109,6 +109,7 @@ fn map_system_settings_item(
         show_classic_analysis: settings.show_classic_analysis,
         show_peleng_distance_to_battleline: settings
             .show_peleng_distance_to_battleline,
+        disable_bot_tags: settings.disable_bot_tags.unwrap_or(false),
     })
 }
 
@@ -289,6 +290,17 @@ where
         .await
         .c(h!())?
         .map(|settings| settings.enable_audio_transcription)
+        .unwrap_or(false))
+}
+
+pub async fn bot_tags_disabled<C>(dbx: &C) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(get_active_system_settings(dbx)
+        .await
+        .c(h!())?
+        .and_then(|settings| settings.disable_bot_tags)
         .unwrap_or(false))
 }
 
@@ -601,6 +613,7 @@ fn system_settings_active_model(
         limit_big_reports: Set(req.limit_big_reports),
         enable_audio_transcription: Set(req.enable_audio_transcription),
         hide_orbit_data: Set(hide_orbit_data),
+        disable_bot_tags: Set(Some(req.disable_bot_tags)),
     })
 }
 
@@ -758,6 +771,7 @@ pub async fn current_system_settings(
             show_peleng_distance_to_battleline: settings
                 .show_peleng_distance_to_battleline,
             hide_orbit_data: settings.hide_orbit_data,
+            disable_bot_tags: settings.disable_bot_tags.unwrap_or(false),
         },
         None => SystemSettingsCurrentRsp {
             id: None,
@@ -789,6 +803,7 @@ pub async fn current_system_settings(
             show_classic_analysis: true,
             show_peleng_distance_to_battleline: false,
             hide_orbit_data: false,
+            disable_bot_tags: false,
         },
     }))
 }
@@ -883,6 +898,20 @@ mod tests {
         settings.enable_audio_transcription = Set(true);
         settings.update(&env.dbx).await.unwrap();
         assert!(audio_transcription_enabled(&env.dbx).await.unwrap());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn bot_tags_are_enabled_by_default_and_use_active_setting() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+        assert!(!bot_tags_disabled(&env.dbx).await.unwrap());
+
+        let settings = insert_settings(&env.dbx, old_ts(), false).await;
+        let mut settings: system_settings::ActiveModel = settings.into();
+        settings.disable_bot_tags = Set(Some(true));
+        settings.update(&env.dbx).await.unwrap();
+        assert!(bot_tags_disabled(&env.dbx).await.unwrap());
     }
 
     #[tokio::test]
@@ -1140,6 +1169,7 @@ mod tests {
             show_classic_duty: true,
             show_classic_analysis: true,
             show_peleng_distance_to_battleline: false,
+            disable_bot_tags: false,
         }
     }
 
@@ -1204,6 +1234,7 @@ mod tests {
             show_classic_analysis: Set(true),
             show_peleng_distance_to_battleline: Set(false),
             hide_orbit_data: Set(false),
+            disable_bot_tags: Set(None),
         }
         .insert(dbx)
         .await

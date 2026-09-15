@@ -49,6 +49,7 @@ pub struct Model {
     pub rer_duty_test_replay_interval_sec: i64,
     pub hide_orbit_data: bool,
     pub show_peleng_distance_to_battleline: bool,
+    pub disable_bot_tags: Option<bool>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
