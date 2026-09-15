@@ -307,7 +307,13 @@ export function MessageReferenceLink({
         onFocus={() => void resolveMessageReference()}
         onClick={openMessageReference}
         onAuxClick={(event) => {
-          if (event.button === 1) void openMessageReference(event);
+          if (event.button !== 1) return;
+          if (getCachedResolution()?.kind === MessageReferenceResolutionKind.Available) {
+            event.preventDefault();
+            openMessageReferenceWindow();
+            return;
+          }
+          void openMessageReference(event);
         }}
         style={{
           color: 'var(--color-action)',

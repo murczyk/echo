@@ -127,7 +127,7 @@ function buildMessageCardMediaPreviewMessage({
 
   return {
     messageUid: 'e2e-message-card-preview',
-    text: 'E2E message-card media preview fixture',
+    text: messageText ?? 'E2E message-card media preview fixture',
     media: [
       ...(withPartialCoordinateError || withCompleteCoordinateError || coordinateLabel != null
         ? [
@@ -399,7 +399,7 @@ async function installMessageCardMediaPreviewHostFixture(
     });
   }
 
-  if (host === 'duty' && messageReferenceResponse !== undefined) {
+  if (messageReferenceResponse !== undefined) {
     await page.route('**/api/rer-importer/inbox-item-context', async (route) => {
       if (messageReferenceDelayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, messageReferenceDelayMs));
