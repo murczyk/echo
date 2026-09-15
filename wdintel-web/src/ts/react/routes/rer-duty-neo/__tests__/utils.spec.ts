@@ -564,7 +564,7 @@ describe('rer-duty utils', () => {
     expect(parseStateFromUrl()).toEqual({ messageFeeds: [['mf-0', emptyFilter()]] });
   });
 
-  it('restores the current filters from local storage when the url has no state', () => {
+  it('restores persisted filters and merges their options into url state', () => {
     const storage = new Map<string, string>();
     Object.defineProperty(window, 'localStorage', {
       configurable: true,
@@ -595,6 +595,33 @@ describe('rer-duty utils', () => {
         [
           'mf-stored',
           { ...emptyFilter(), freqsSelected: ['155.5'] },
+          {
+            adjacentFreqsRange: 0.005,
+            highlightSignalsEnabled: true,
+            onlyMyUnitTagsEnabled: true,
+          },
+        ],
+      ],
+    });
+
+    const state = {
+      messageFeeds: [
+        ['mf-other', { ...emptyFilter(), groupsSelected: ['group-a'] }],
+        ['mf-stored', { ...emptyFilter(), freqsSelected: ['166.6'] }],
+      ],
+    };
+    window.history.replaceState(
+      {},
+      '',
+      `/rer-duty-neo?state=${encodeURIComponent(JSON.stringify(state))}`,
+    );
+
+    expect(parseStateFromUrl()).toEqual({
+      messageFeeds: [
+        ['mf-other', { ...emptyFilter(), groupsSelected: ['group-a'] }],
+        [
+          'mf-stored',
+          { ...emptyFilter(), freqsSelected: ['166.6'] },
           {
             adjacentFreqsRange: 0.005,
             highlightSignalsEnabled: true,

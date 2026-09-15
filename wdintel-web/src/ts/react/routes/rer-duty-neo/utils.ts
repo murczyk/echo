@@ -463,7 +463,13 @@ export function parseStateFromUrl(): InitialRerDutyState {
     const raw = JSON.parse(decodeURIComponent(stateStr)) as Record<string, unknown>;
     if (!raw || typeof raw !== 'object') return { messageFeeds: [['mf-0', emptyFilter()]] };
     const wfs = raw.messageFeeds ?? raw.waterfalls ?? raw.waterfall;
-    return { messageFeeds: normalizeFeedEntries(wfs) };
+    const persistedOptionsById = readPersistedDutyFeedOptionsById();
+    return {
+      messageFeeds: normalizeFeedEntries(wfs).map(([id, filter]) => {
+        const options = persistedOptionsById.get(id);
+        return options ? [id, filter, options] : [id, filter];
+      }),
+    };
   } catch {
     return { messageFeeds: [['mf-0', emptyFilter()]] };
   }
