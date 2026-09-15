@@ -1,6 +1,8 @@
 use crate::config::{
     ANALYSIS_CALLSIGN_FREQUENCY_MATCH_LIMIT, ANALYSIS_STATS_UNDEFINED_UNIT_ID,
     ANALYSIS_STATS_UNDEFINED_UNIT_NAME,
+    ANALYTICS_MESSAGE_ID_SCOPE_CACHE_MAX_ENTRIES,
+    ANALYTICS_MESSAGE_ID_SCOPE_CACHE_TTL_MS,
 };
 use crate::rer_importer::types::SenderFrequencyBreakdown;
 use crate::sigint::network::types::NetworkCallsignRelationMessage;
@@ -126,13 +128,16 @@ pub(super) enum AnalysisFacet {
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 struct AnalyticsMessageIdScopeKey {
+    pool_identity: usize,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     freshness_max_age_ms: u64,
 }
 
 struct AnalyticsMessageIdScopeFlight {
-    result: std::sync::Mutex<Option<Result<AnalyticsMessageIdScope, String>>>,
+    result: std::sync::Mutex<
+        Option<(std::time::Instant, Result<AnalyticsMessageIdScope, String>)>,
+    >,
     finished: Notify,
 }
 
@@ -251,6 +256,7 @@ pub(in crate::rer_importer) async fn resolve_analytics_message_id_scope_for_rang
     freshness_max_age_ms: u64,
 ) -> Result<AnalyticsMessageIdScope, AppError> {
     let key = AnalyticsMessageIdScopeKey {
+        pool_identity: postgres_pool_identity(db),
         dt_since,
         dt_till,
         freshness_max_age_ms,
@@ -281,36 +287,79 @@ where
     let mut resolve = Some(resolve);
     let flight = {
         let mut flights = ANALYTICS_MESSAGE_ID_SCOPE_FLIGHTS.lock().await;
-        if let Some(flight) = flights.get(&key) {
-            flight.clone()
-        } else {
-            let flight = Arc::new(AnalyticsMessageIdScopeFlight {
-                result: std::sync::Mutex::new(None),
-                finished: Notify::new(),
-            });
-            flights.insert(key, flight.clone());
-            let runner_flight = flight.clone();
-            let resolve = resolve.take().context(h!())?;
-            tokio::spawn(async move {
-                let result = resolve().await.map_err(|err| format!("{err:?}"));
-                {
-                    let mut flights =
-                        ANALYTICS_MESSAGE_ID_SCOPE_FLIGHTS.lock().await;
-                    if flights.get(&key).is_some_and(|current| {
-                        Arc::ptr_eq(current, &runner_flight)
-                    }) {
-                        flights.remove(&key);
-                    }
+        let cache_ttl = core::time::Duration::from_millis(
+            ANALYTICS_MESSAGE_ID_SCOPE_CACHE_TTL_MS,
+        );
+        flights.retain(|_, flight| {
+            let result = flight
+                .result
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            match result.as_ref() {
+                Some((completed_at, Ok(_))) => {
+                    completed_at.elapsed() < cache_ttl
                 }
-                *runner_flight
-                    .result
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner()) =
-                    Some(result);
-                runner_flight.finished.notify_waiters();
-            });
-            flight
+                Some((_, Err(_))) => false,
+                None => true,
+            }
+        });
+        if let Some(flight) = flights.get(&key) {
+            Some(flight.clone())
+        } else {
+            if flights.len() >= ANALYTICS_MESSAGE_ID_SCOPE_CACHE_MAX_ENTRIES {
+                let oldest_completed_key = flights
+                    .iter()
+                    .filter_map(|(key, flight)| {
+                        flight
+                            .result
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner())
+                            .as_ref()
+                            .map(|(completed_at, _)| (*key, *completed_at))
+                    })
+                    .min_by_key(|(_, completed_at)| *completed_at)
+                    .map(|(key, _)| key);
+                if let Some(key) = oldest_completed_key {
+                    flights.remove(&key);
+                }
+            }
+            if flights.len() >= ANALYTICS_MESSAGE_ID_SCOPE_CACHE_MAX_ENTRIES {
+                None
+            } else {
+                let flight = Arc::new(AnalyticsMessageIdScopeFlight {
+                    result: std::sync::Mutex::new(None),
+                    finished: Notify::new(),
+                });
+                flights.insert(key, flight.clone());
+                let runner_flight = flight.clone();
+                let resolve = resolve.take().context(h!())?;
+                tokio::spawn(async move {
+                    let result =
+                        resolve().await.map_err(|err| format!("{err:?}"));
+                    let cache_result = result.is_ok();
+                    *runner_flight
+                        .result
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+                        Some((std::time::Instant::now(), result));
+                    runner_flight.finished.notify_waiters();
+                    if !cache_result {
+                        let mut flights =
+                            ANALYTICS_MESSAGE_ID_SCOPE_FLIGHTS.lock().await;
+                        if flights.get(&key).is_some_and(|current| {
+                            Arc::ptr_eq(current, &runner_flight)
+                        }) {
+                            flights.remove(&key);
+                        }
+                    }
+                });
+                Some(flight)
+            }
         }
+    };
+    let Some(flight) = flight else {
+        let resolve = resolve.take().context(h!())?;
+        return Ok(resolve().await.context(h!())?);
     };
 
     loop {
@@ -320,7 +369,7 @@ where
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone();
-        if let Some(result) = result {
+        if let Some((_, result)) = result {
             return result.map_err(Into::into);
         }
         finished.await;
@@ -7717,9 +7766,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn analytics_message_id_scope_singleflight_only_coalesces_in_flight()
-    {
+    async fn analytics_message_id_scope_caches_successful_result() {
         let key = AnalyticsMessageIdScopeKey {
+            pool_identity: 0,
             dt_since: NaiveDate::from_ymd_opt(2099, 1, 1)
                 .unwrap()
                 .and_hms_opt(0, 0, 0)
@@ -7764,8 +7813,8 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(third, AnalyticsMessageIdScope::From(9));
-        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert_eq!(third, AnalyticsMessageIdScope::From(7));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 
     fn assert_bounded_analytics_access(name: &str, sql: &str) {

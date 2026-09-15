@@ -222,10 +222,13 @@ The network maintenance worker owns the PostgreSQL-only
 `network_recalculation_task` queue. It calculates frequency `last_seen_dt` and
 the per-login last interception in a network AOR outside API requests. Pending
 work is deduplicated per frequency, calculation kind, and login where the
-result depends on data visibility. Successful work clears only its claimed
-request, so work queued during the calculation remains pending. The worker
-starts up to 100 pending recalculations per pass and stops starting new work
-after 50 seconds. It queues a final reconciliation after inbox-network
+result depends on data visibility. Per-login work clears only its claimed
+request. Frequency `last_seen_dt` work serializes per network, locks frequency
+rows in stable order, and recalculates up to 500 same-network requests in one
+grouped history scan. It atomically removes the captured batch, while work
+queued after the capture remains pending. The worker starts up to 500 queue
+work units per pass and stops starting new work after 50 seconds. It queues a
+final reconciliation after inbox-network
 invalidations update message assignments; broad group/AOR invalidations fan
 out to frequencies processed during that pass, and AOR invalidations also
 include non-deleted frequencies on networks currently linked to that AOR.

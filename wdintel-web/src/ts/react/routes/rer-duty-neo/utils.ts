@@ -40,8 +40,8 @@ export function createMasterUnitText(network: Network, unitsMap: Record<number, 
 }
 
 export const PAGE_ID = 'rer-duty-neo';
-/** Poll get-inbox-count every 2s; load newer (get-inbox) only when count > 0. */
-export const INBOX_COUNT_POLL_INTERVAL_MS = 1000;
+/** Safety poll; inbox-change events trigger an immediate coalesced check. */
+export const INBOX_COUNT_POLL_INTERVAL_MS = 5000;
 export const MAX_MESSAGE_FEEDS = 4;
 
 export type TagsLayoutVariant = 'full' | 'compact' | 'hidden';
