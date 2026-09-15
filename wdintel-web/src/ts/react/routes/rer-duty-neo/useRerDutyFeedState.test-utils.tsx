@@ -103,6 +103,7 @@ export function DutyFeedStateHarness(props: {
   apiRef: DutyFeedStateApiRef;
   disableAutoScroll?: boolean;
   freqs?: string[];
+  freqsReady?: boolean;
   setProfiles?: Parameters<typeof useRerDutyFeedState>[0]['setProfiles'];
   setGroupInfos?: Parameters<typeof useRerDutyFeedState>[0]['setGroupInfos'];
   deviceAccess?: DeviceAccess;
@@ -110,6 +111,7 @@ export function DutyFeedStateHarness(props: {
 }) {
   const api = useRerDutyFeedState({
     freqs: props.freqs ?? [],
+    freqsReady: props.freqsReady ?? true,
     setProfiles: props.setProfiles ?? vi.fn(),
     setGroupInfos: props.setGroupInfos ?? vi.fn(),
     testEnabled: false,
@@ -228,6 +230,15 @@ export function createDutyFeedStateFixture() {
     dutyApiMocks.cancelDutyNotificationPollCycle.mockReset();
     dutyApiMocks.beginDutyNotificationPollCycle.mockImplementation(() => ({}));
     deferredRequests.clear();
+    const storage = new Map<string, string>();
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+        removeItem: (key: string) => storage.delete(key),
+      },
+    });
     window.history.replaceState({}, '', '/');
     dutyApiMocks.fetchInboxCount.mockResolvedValue({ quantity: 0, firstElementTs: null });
     dutyApiMocks.fetchInboxMessages.mockResolvedValue(

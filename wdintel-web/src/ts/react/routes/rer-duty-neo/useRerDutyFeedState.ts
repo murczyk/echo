@@ -14,7 +14,10 @@ import {
   feedNewerSinceId,
   findAllAdjacentFreqs,
   parseStateFromUrl,
+  parseDutyMessageUidFromWindow,
   pushStateToUrl,
+  stableStringify,
+  toQueryState,
 } from './utils';
 import type { MessageCursor, MessageFeedState } from './utils';
 import { useRerDutyFeedCrud } from './useRerDutyFeedCrud';
@@ -50,9 +53,11 @@ import {
   DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS,
   withDutyFeedRequestDeadline,
 } from './dutyFeedRequestDeadline';
+import { buildPersistedDutyFilterState, persistDutyFilterState } from './duty-filter-persistence';
 
 export type FeedStateDeps = {
   freqs: string[];
+  freqsReady: boolean;
   setProfiles: Dispatch<SetStateAction<Record<string, SignalProfileEntry | null>>>;
   setGroupInfos: Dispatch<SetStateAction<Record<string, SignalGroupEntry>>>;
   pollIntervalSec: number;
@@ -79,10 +84,11 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const { freqs, setProfiles, setGroupInfos } = deps;
   const [messageFeeds, setMessageFeeds] = useState<MessageFeedState[]>(() => {
     const state = parseStateFromUrl();
-    return (state.messageFeeds ?? [['mf-0', emptyFilter()]]).map(([id, filter]) =>
-      createEmptyFeedState(id, filter),
+    return (state.messageFeeds ?? [['mf-0', emptyFilter()]]).map(([id, filter, options]) =>
+      createEmptyFeedState(id, filter, options),
     );
   });
+  const persistFiltersForThisPageRef = useRef(parseDutyMessageUidFromWindow() === null);
   const hasDeviceFilters = messageFeeds.some(
     (feed) =>
       (feed.filter.selectedDeviceNames?.length ?? 0) > 0 ||
@@ -92,6 +98,12 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     deviceAccess.status === 'allowed' ||
     deviceAccess.status === 'denied' ||
     (deviceAccess.status === 'error' && !hasDeviceFilters);
+  const needsFrequencyCatalog = messageFeeds.some(
+    (feed) =>
+      feed.adjacentFreqsRange > 0 &&
+      ((feed.filter.freqsSelected?.length ?? 0) > 0 || (feed.filter.freqsDenied?.length ?? 0) > 0),
+  );
+  const effectiveFiltersReady = deps.freqsReady || !needsFrequencyCatalog;
   const {
     error,
     errorNotificationVersion,
@@ -168,9 +180,25 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const atBottomByFeedIdRef = useRef<Record<string, boolean>>({});
   const {
     ready: shortStateReady,
+    filterPersistenceReady,
     shortStateIdRef,
     persistStateToUrl,
   } = useRerDutyShortState({ messageFeeds, messageFeedsRef, setMessageFeeds, setError });
+  const persistedFilterState = buildPersistedDutyFilterState(messageFeeds);
+  const persistedFilterStateRef = useRef(persistedFilterState);
+  persistedFilterStateRef.current = persistedFilterState;
+  const persistedFilterStateHash = stableStringify(persistedFilterState);
+
+  useEffect(() => {
+    if (!persistFiltersForThisPageRef.current) return;
+    if (!filterPersistenceReady) return;
+    if (shortStateIdRef.current && !shortStateReady) return;
+    const result = persistDutyFilterState(persistedFilterStateRef.current);
+    if (!result.ok) console.warn('Failed to persist Duty filters', result.error);
+    if (new URL(window.location.href).searchParams.has('state')) {
+      pushStateToUrl(toQueryState(messageFeedsRef.current));
+    }
+  }, [filterPersistenceReady, persistedFilterStateHash, shortStateIdRef, shortStateReady]);
 
   const {
     inboxCallsignInfoMap,
@@ -596,7 +624,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         };
       });
       if (changed) {
-        pushStateToUrl({ messageFeeds: next.map((feed) => [feed.id, feed.filter]) });
+        pushStateToUrl(toQueryState(next));
         return next;
       }
       return current;
@@ -1147,11 +1175,11 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     editReloadFeedIdsRef,
     loadGenerationByFeedIdRef,
     loadFeedInitialMessages,
-    deviceAccessResolved: deviceAccessAllowsRequests,
+    deviceAccessResolved: deviceAccessAllowsRequests && effectiveFiltersReady,
   });
 
   useRerDutyPollingLifecycle({
-    ready: shortStateReady && deviceAccessAllowsRequests,
+    ready: shortStateReady && deviceAccessAllowsRequests && effectiveFiltersReady,
     hasShortState: Boolean(shortStateIdRef.current),
     pollIntervalMs,
     poll: pollCountThenLoadNewerIfNeeded,

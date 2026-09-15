@@ -1,4 +1,4 @@
-import { Box, Button, IconButton, Tooltip } from '@mui/material';
+import { Badge, Box, Button, IconButton, Tooltip } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
@@ -91,6 +91,7 @@ type HeaderPanelToggleProps = {
   iconOnly: boolean;
   label: string;
   icon?: ReactNode;
+  ariaLabel?: string;
   expanded: boolean;
   onClick: () => void;
   borderLeft?: boolean;
@@ -101,6 +102,7 @@ function HeaderPanelToggle({
   iconOnly,
   label,
   icon,
+  ariaLabel = label,
   expanded,
   onClick,
   borderLeft = false,
@@ -120,7 +122,7 @@ function HeaderPanelToggle({
         <IconButton
           className="duty-header-panel-toggle"
           size="small"
-          aria-label={label}
+          aria-label={ariaLabel}
           aria-expanded={expanded}
           onClick={onClick}
           sx={{
@@ -147,7 +149,7 @@ function HeaderPanelToggle({
         endIcon={expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
         onClick={onClick}
         aria-expanded={expanded}
-        aria-label={label}
+        aria-label={ariaLabel}
         sx={{
           borderRadius: 0,
           width: '100%',
@@ -209,6 +211,7 @@ export function FeedColumnHeader({
   onNotificationStatusChanged,
 }: FeedColumnHeaderProps) {
   const iconOnlyHeader = feedCount >= DUTY_ICON_ONLY_COLUMN_HEADER_MIN_FEEDS;
+  const hasActiveFilter = filterPanel.hasActiveFilter;
 
   return (
     <Box
@@ -260,7 +263,17 @@ export function FeedColumnHeader({
             <HeaderPanelToggle
               iconOnly={iconOnlyHeader}
               label="Фільтри"
-              icon={<SettingsOutlinedIcon />}
+              ariaLabel={hasActiveFilter ? 'Фільтри (активні)' : 'Фільтри'}
+              icon={
+                <Badge
+                  color="error"
+                  variant="dot"
+                  invisible={!hasActiveFilter}
+                  data-duty-active-filter-indicator={hasActiveFilter ? '' : undefined}
+                >
+                  <SettingsOutlinedIcon />
+                </Badge>
+              }
               expanded={showFilters}
               onClick={onToggleFilters}
             />

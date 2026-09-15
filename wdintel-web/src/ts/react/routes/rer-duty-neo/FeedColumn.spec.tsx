@@ -126,6 +126,7 @@ function buildProps(): FeedColumnProps {
       },
       filterPanel: {
         feedId: 'feed-1',
+        hasActiveFilter: false,
         filterState: {
           groupsSelected: [],
           deniedGroups: [],
@@ -180,6 +181,7 @@ function buildProps(): FeedColumnProps {
           onRenameSelectedSavedFilter: vi.fn(async () => true),
           onDeleteSelectedSavedFilter: vi.fn(async () => {}),
           onApplySavedFilter: vi.fn(),
+          onDiscardCurrentFilter: vi.fn(),
         },
       },
       keywordsPanel: {
@@ -337,6 +339,29 @@ describe('FeedColumn', () => {
           ?.getAttribute('data-message-text-preview-lines'),
       ).toBe(renderedValue);
     }
+  });
+
+  it('shows an indicator only while a feed filter is active', async () => {
+    const props = buildProps();
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+    expect(container.querySelector('[data-duty-active-filter-indicator]')).toBeNull();
+    expect(container.querySelector('button[aria-label="Фільтри"]')).not.toBeNull();
+
+    const filteredColumn = {
+      ...props.column,
+      feed: {
+        ...props.column.feed,
+        filter: { ...props.column.feed.filter, groupsSelected: ['group-1'] },
+      },
+      filterPanel: { ...props.column.filterPanel, hasActiveFilter: true },
+    };
+    await act(async () => {
+      root.render(<FeedColumn column={filteredColumn} />);
+    });
+    expect(container.querySelector('[data-duty-active-filter-indicator]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Фільтри (активні)"]')).not.toBeNull();
   });
 
   it('shows waterfall debug info after eight quick bell presses', async () => {

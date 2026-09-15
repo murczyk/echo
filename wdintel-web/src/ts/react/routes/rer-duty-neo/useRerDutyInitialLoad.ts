@@ -16,12 +16,13 @@ import {
   messageOrderCursor,
   windowInitialMessageItems,
 } from './utils';
-import type { MessageFeedState } from './utils';
+import type { DutyFeedFilterOptions, MessageFeedState } from './utils';
 import type { MessageCursor } from './utils';
 
 export function createEmptyFeedState(
   id: string,
   filter: MessageFeedState['filter'],
+  options: Partial<DutyFeedFilterOptions> = {},
 ): MessageFeedState {
   return {
     id,
@@ -35,9 +36,9 @@ export function createEmptyFeedState(
     readIds: new Set<number>(),
     windowedUnreadItems: new Map<number, number>(),
     unreadCount: 0,
-    adjacentFreqsRange: 0,
-    highlightSignalsEnabled: false,
-    onlyMyUnitTagsEnabled: false,
+    adjacentFreqsRange: options.adjacentFreqsRange ?? 0,
+    highlightSignalsEnabled: options.highlightSignalsEnabled ?? false,
+    onlyMyUnitTagsEnabled: options.onlyMyUnitTagsEnabled ?? false,
   };
 }
 

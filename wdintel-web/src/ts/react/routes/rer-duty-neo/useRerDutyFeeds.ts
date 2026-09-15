@@ -176,6 +176,7 @@ export function useRerDutyFeeds(
   const isUnmountedRef = useRef(false);
   const feedState = useRerDutyFeedState({
     freqs: filterOpts.freqs,
+    freqsReady: filterOpts.freqsReady,
     setProfiles: filterOpts.setProfiles,
     setGroupInfos: filterOpts.setGroupInfos,
     pollIntervalSec: effectiveDutyPollIntervalSec(pollIntervalSec),
