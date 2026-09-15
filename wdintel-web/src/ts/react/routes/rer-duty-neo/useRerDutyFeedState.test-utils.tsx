@@ -103,6 +103,7 @@ export function DutyFeedStateHarness(props: {
   apiRef: DutyFeedStateApiRef;
   disableAutoScroll?: boolean;
   freqs?: string[];
+  freqsReady?: boolean;
   setProfiles?: Parameters<typeof useRerDutyFeedState>[0]['setProfiles'];
   setGroupInfos?: Parameters<typeof useRerDutyFeedState>[0]['setGroupInfos'];
   deviceAccess?: DeviceAccess;
@@ -110,6 +111,7 @@ export function DutyFeedStateHarness(props: {
 }) {
   const api = useRerDutyFeedState({
     freqs: props.freqs ?? [],
+    freqsReady: props.freqsReady ?? true,
     setProfiles: props.setProfiles ?? vi.fn(),
     setGroupInfos: props.setGroupInfos ?? vi.fn(),
     testEnabled: false,

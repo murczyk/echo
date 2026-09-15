@@ -14,6 +14,7 @@ import {
   buildAnalysisMapHrefWithSearch,
   buildSenderOptions,
   buildInboxReq,
+  clearActiveFeedFilter,
   createMasterUnitText,
   emptyFilter,
   etalonFallbackWhenNoNetworks,
@@ -318,6 +319,23 @@ describe('rer-duty utils', () => {
     expect(hasActiveFeedFilter({ ...emptyFilter(), highlightKeywordSetId: 5 })).toBe(false);
   });
 
+  it('clears active filters without discarding keyword highlighting state', () => {
+    expect(
+      clearActiveFeedFilter({
+        ...emptyFilter(),
+        groupsSelected: ['group-a'],
+        lastViewedMessageId: 42,
+        highlightKeywordsEnabled: true,
+        highlightKeywordSetId: 5,
+      }),
+    ).toEqual({
+      ...emptyFilter(),
+      lastViewedMessageId: 42,
+      highlightKeywordsEnabled: true,
+      highlightKeywordSetId: 5,
+    });
+  });
+
   it('compares keyword highlight by set id in filtersEqual', () => {
     const base = emptyFilter();
     expect(
@@ -558,12 +576,32 @@ describe('rer-duty utils', () => {
     });
     setDutyFilterPersistenceDisabled(false);
     persistDutyFilterState({
-      messageFeeds: [['mf-stored', { ...emptyFilter(), freqsSelected: ['155.5'] }]],
+      messageFeeds: [
+        [
+          'mf-stored',
+          { ...emptyFilter(), freqsSelected: ['155.5'] },
+          {
+            adjacentFreqsRange: 0.005,
+            highlightSignalsEnabled: true,
+            onlyMyUnitTagsEnabled: true,
+          },
+        ],
+      ],
     });
     window.history.replaceState({}, '', '/rer-duty-neo');
 
     expect(parseStateFromUrl()).toEqual({
-      messageFeeds: [['mf-stored', { ...emptyFilter(), freqsSelected: ['155.5'] }]],
+      messageFeeds: [
+        [
+          'mf-stored',
+          { ...emptyFilter(), freqsSelected: ['155.5'] },
+          {
+            adjacentFreqsRange: 0.005,
+            highlightSignalsEnabled: true,
+            onlyMyUnitTagsEnabled: true,
+          },
+        ],
+      ],
     });
 
     clearPersistedDutyFilterState();

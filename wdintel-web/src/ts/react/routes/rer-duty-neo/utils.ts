@@ -23,6 +23,16 @@ export type RerDutyState = {
   messageFeeds: [string, RerDutyFeedFilterState][];
 };
 
+export type DutyFeedFilterOptions = {
+  adjacentFreqsRange: number;
+  highlightSignalsEnabled: boolean;
+  onlyMyUnitTagsEnabled: boolean;
+};
+
+type InitialRerDutyState = {
+  messageFeeds: [string, RerDutyFeedFilterState, DutyFeedFilterOptions?][];
+};
+
 /** Network display text: "р/м " + name + " " + unit names + optional " (LOCATION)". */
 export function createMasterUnitText(network: Network, unitsMap: Record<number, Unit>): string {
   const unitIds = network.unitIds ?? [];
@@ -216,15 +226,52 @@ export function hasActiveFeedFilter(filter: RerDutyFeedFilterState): boolean {
   );
 }
 
+export function clearActiveFeedFilter(filter: RerDutyFeedFilterState): RerDutyFeedFilterState {
+  return {
+    ...emptyFilter(),
+    lastViewedMessageId: filter.lastViewedMessageId,
+    highlightKeywordsEnabled: filter.highlightKeywordsEnabled,
+    highlightKeywordSetId: filter.highlightKeywordSetId,
+  };
+}
+
+function normalizeFeedEntry(entry: unknown): [string, RerDutyFeedFilterState] {
+  if (Array.isArray(entry) && entry.length >= 2) {
+    const id = String(entry[0]);
+    const filter = normalizeFeed((entry[1] as Record<string, unknown>) ?? {});
+    return [id, filter];
+  }
+  return [`mf-${Math.random().toString(36).slice(2, 7)}`, emptyFilter()];
+}
+
 function normalizeFeedEntries(entries: unknown): [string, RerDutyFeedFilterState][] {
   if (!Array.isArray(entries) || entries.length === 0) return [['mf-0', emptyFilter()]];
-  return entries.map((entry: unknown) => {
-    if (Array.isArray(entry) && entry.length >= 2) {
-      const id = String(entry[0]);
-      const f = normalizeFeed((entry[1] as Record<string, unknown>) ?? {});
-      return [id, f];
-    }
-    return [`mf-${Math.random().toString(36).slice(2, 7)}`, emptyFilter()];
+  return entries.map(normalizeFeedEntry);
+}
+
+function normalizePersistedFeedOptions(value: unknown): DutyFeedFilterOptions | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const raw = value as Record<string, unknown>;
+  const adjacentFreqsRange =
+    typeof raw.adjacentFreqsRange === 'number' &&
+    (ADJACENT_FREQS_RANGE_OPTIONS as readonly number[]).includes(raw.adjacentFreqsRange)
+      ? raw.adjacentFreqsRange
+      : 0;
+  return {
+    adjacentFreqsRange,
+    highlightSignalsEnabled: raw.highlightSignalsEnabled === true,
+    onlyMyUnitTagsEnabled: raw.onlyMyUnitTagsEnabled === true,
+  };
+}
+
+function normalizePersistedFeedEntries(
+  entries: unknown,
+): [string, RerDutyFeedFilterState, DutyFeedFilterOptions?][] {
+  if (!Array.isArray(entries) || entries.length === 0) return [['mf-0', emptyFilter()]];
+  return entries.map((entry) => {
+    const [id, filter] = normalizeFeedEntry(entry);
+    const options = Array.isArray(entry) ? normalizePersistedFeedOptions(entry[2]) : undefined;
+    return options ? [id, filter, options] : [id, filter];
   });
 }
 
@@ -380,16 +427,19 @@ export function buildInboxReq(opts: {
 
 export const normalizeFeed = normalizeRerDutyQueryStateWf;
 
-export function parseStateFromUrl(): RerDutyState {
+export function parseStateFromUrl(): InitialRerDutyState {
   const params = new URLSearchParams(window.location.search);
   const stateStr = params.get('state');
   if (!stateStr) {
     if (params.has('state-short')) return { messageFeeds: [['mf-0', emptyFilter()]] };
+    if (parseDutyMessageUidFromWindow() !== null) {
+      return { messageFeeds: [['mf-0', emptyFilter()]] };
+    }
     const persistedState = readPersistedDutyFilterState();
     if (persistedState && typeof persistedState === 'object' && !Array.isArray(persistedState)) {
       const raw = persistedState as Record<string, unknown>;
       const wfs = raw.messageFeeds ?? raw.waterfalls ?? raw.waterfall;
-      if (wfs != null) return { messageFeeds: normalizeFeedEntries(wfs) };
+      if (wfs != null) return { messageFeeds: normalizePersistedFeedEntries(wfs) };
     }
     return { messageFeeds: [['mf-0', emptyFilter()]] };
   }
@@ -935,11 +985,11 @@ export type MessageFeedState = {
    */
   pendingNewerItems?: MessageItem[];
   /** Auto-add freqs in range (MHz); 0 = off. */
-  adjacentFreqsRange: number;
+  adjacentFreqsRange: DutyFeedFilterOptions['adjacentFreqsRange'];
   /** Підсвічувати сигнали (додатково). */
-  highlightSignalsEnabled: boolean;
+  highlightSignalsEnabled: DutyFeedFilterOptions['highlightSignalsEnabled'];
   /** Лише теги мого підрозділу (додатково). */
-  onlyMyUnitTagsEnabled: boolean;
+  onlyMyUnitTagsEnabled: DutyFeedFilterOptions['onlyMyUnitTagsEnabled'];
 };
 
 /** Single source of truth for displayed unread count on a feed. */

@@ -1,4 +1,4 @@
-import { Box, Button, IconButton, Tooltip } from '@mui/material';
+import { Badge, Box, Button, IconButton, Tooltip } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
@@ -91,6 +91,7 @@ type HeaderPanelToggleProps = {
   iconOnly: boolean;
   label: string;
   icon?: ReactNode;
+  ariaLabel?: string;
   expanded: boolean;
   onClick: () => void;
   borderLeft?: boolean;
@@ -101,6 +102,7 @@ function HeaderPanelToggle({
   iconOnly,
   label,
   icon,
+  ariaLabel = label,
   expanded,
   onClick,
   borderLeft = false,
@@ -120,7 +122,7 @@ function HeaderPanelToggle({
         <IconButton
           className="duty-header-panel-toggle"
           size="small"
-          aria-label={label}
+          aria-label={ariaLabel}
           aria-expanded={expanded}
           onClick={onClick}
           sx={{
@@ -147,7 +149,7 @@ function HeaderPanelToggle({
         endIcon={expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
         onClick={onClick}
         aria-expanded={expanded}
-        aria-label={label}
+        aria-label={ariaLabel}
         sx={{
           borderRadius: 0,
           width: '100%',
@@ -261,27 +263,16 @@ export function FeedColumnHeader({
             <HeaderPanelToggle
               iconOnly={iconOnlyHeader}
               label="Фільтри"
+              ariaLabel={hasActiveFilter ? 'Фільтри (активні)' : 'Фільтри'}
               icon={
-                <Box
-                  component="span"
-                  sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}
+                <Badge
+                  color="error"
+                  variant="dot"
+                  invisible={!hasActiveFilter}
+                  data-duty-active-filter-indicator={hasActiveFilter ? '' : undefined}
                 >
-                  {hasActiveFilter ? (
-                    <Box
-                      component="span"
-                      data-duty-active-filter-indicator
-                      aria-hidden="true"
-                      sx={{
-                        width: 6,
-                        height: 6,
-                        flexShrink: 0,
-                        borderRadius: '50%',
-                        bgcolor: 'primary.main',
-                      }}
-                    />
-                  ) : null}
                   <SettingsOutlinedIcon />
-                </Box>
+                </Badge>
               }
               expanded={showFilters}
               onClick={onToggleFilters}

@@ -1,8 +1,28 @@
+import type { RerDutyQueryStateWf as RerDutyFeedFilterState } from '../../../../Bindings';
+import type { DutyFeedFilterOptions } from './utils';
+
 const DUTY_FILTER_STATE_STORAGE_KEY = 'rer-duty-neo-current-filter';
 const DUTY_FILTER_PERSISTENCE_DISABLED_STORAGE_KEY =
   'rer-duty-neo-current-filter-persistence-disabled';
 
 export type DutyFilterStorageResult = { ok: true } | { ok: false; error: string };
+
+type PersistableDutyFeed = DutyFeedFilterOptions & {
+  id: string;
+  filter: RerDutyFeedFilterState;
+};
+
+export function buildPersistedDutyFilterState(messageFeeds: readonly PersistableDutyFeed[]) {
+  return {
+    messageFeeds: messageFeeds.map(
+      ({ id, filter, adjacentFreqsRange, highlightSignalsEnabled, onlyMyUnitTagsEnabled }) => [
+        id,
+        filter,
+        { adjacentFreqsRange, highlightSignalsEnabled, onlyMyUnitTagsEnabled },
+      ],
+    ),
+  };
+}
 
 function storageError(error: unknown): DutyFilterStorageResult {
   return { ok: false, error: error instanceof Error ? error.message : String(error) };
@@ -58,6 +78,7 @@ export function setDutyFilterPersistenceDisabled(disabled: boolean): DutyFilterS
       window.localStorage.setItem(DUTY_FILTER_PERSISTENCE_DISABLED_STORAGE_KEY, 'true');
       window.localStorage.removeItem(DUTY_FILTER_STATE_STORAGE_KEY);
     } else {
+      window.localStorage.removeItem(DUTY_FILTER_STATE_STORAGE_KEY);
       window.localStorage.removeItem(DUTY_FILTER_PERSISTENCE_DISABLED_STORAGE_KEY);
     }
     return { ok: true };

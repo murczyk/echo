@@ -347,6 +347,7 @@ describe('FeedColumn', () => {
       root.render(<FeedColumn column={props.column} />);
     });
     expect(container.querySelector('[data-duty-active-filter-indicator]')).toBeNull();
+    expect(container.querySelector('button[aria-label="Фільтри"]')).not.toBeNull();
 
     const filteredColumn = {
       ...props.column,
@@ -360,6 +361,7 @@ describe('FeedColumn', () => {
       root.render(<FeedColumn column={filteredColumn} />);
     });
     expect(container.querySelector('[data-duty-active-filter-indicator]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Фільтри (активні)"]')).not.toBeNull();
   });
 
   it('shows waterfall debug info after eight quick bell presses', async () => {

@@ -14,6 +14,7 @@ import {
 } from './utils';
 import type { MessageFeedState } from './utils';
 import { createEmptyFeedState } from './useRerDutyInitialLoad';
+import { buildPersistedDutyFilterState } from './duty-filter-persistence';
 
 type Params = {
   messageFeeds: MessageFeedState[];
@@ -37,14 +38,22 @@ export function useRerDutyShortState(params: Params) {
   });
   const mountedRef = useRef(true);
   const shortStateIdRef = useRef(getShortStateIdFromUrl());
-  const initialFeedsHashRef = useRef(stableStringify(toShortQueryState(params.messageFeeds)));
+  const [filterPersistenceReady, setFilterPersistenceReady] = useState(
+    shortStateIdRef.current === null,
+  );
+  const initialFeedsHashRef = useRef(
+    stableStringify(buildPersistedDutyFilterState(params.messageFeeds)),
+  );
   const blockHydrationRef = useRef(false);
 
   useEffect(() => {
-    if (ready) return;
-    const currentHash = stableStringify(toShortQueryState(params.messageFeeds));
-    if (currentHash !== initialFeedsHashRef.current) blockHydrationRef.current = true;
-  }, [params.messageFeeds, ready]);
+    if (filterPersistenceReady) return;
+    const currentHash = stableStringify(buildPersistedDutyFilterState(params.messageFeeds));
+    if (currentHash !== initialFeedsHashRef.current) {
+      blockHydrationRef.current = true;
+      setFilterPersistenceReady(true);
+    }
+  }, [filterPersistenceReady, params.messageFeeds]);
 
   useEffect(() => {
     let cancelled = false;
@@ -58,12 +67,22 @@ export function useRerDutyShortState(params: Params) {
         if (enabled && shortId) {
           try {
             const response = await rerDutyShortStateGet(shortId);
-            if (cancelled || blockHydrationRef.current) return;
+            if (cancelled) return;
+            if (blockHydrationRef.current) {
+              setFilterPersistenceReady(true);
+              return;
+            }
             const current = paramsRef.current;
-            const currentHash = stableStringify(toShortQueryState(current.messageFeedsRef.current));
-            if (currentHash !== initialFeedsHashRef.current) return;
+            const currentHash = stableStringify(
+              buildPersistedDutyFilterState(current.messageFeedsRef.current),
+            );
+            if (currentHash !== initialFeedsHashRef.current) {
+              setFilterPersistenceReady(true);
+              return;
+            }
             const state = toRerDutyStateFromShort(response.state);
             cachedStateRef.current = { id: shortId, hash: stableStringify(response.state) };
+            setFilterPersistenceReady(true);
             current.setMessageFeeds(
               (state.messageFeeds ?? [['mf-0', emptyFilter()]]).map(([id, filter]) =>
                 createEmptyFeedState(id, filter),
@@ -136,5 +155,5 @@ export function useRerDutyShortState(params: Params) {
     [featureEnabled, ready],
   );
 
-  return { ready, shortStateIdRef, persistStateToUrl };
+  return { ready, filterPersistenceReady, shortStateIdRef, persistStateToUrl };
 }

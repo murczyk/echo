@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { minimalInboxMessage } from '../inbox-message-mocks';
-import { emptyFilter } from '../utils';
+import { clearActiveFeedFilter, emptyFilter } from '../utils';
 
 const useRerDutyFeedsMock = vi.hoisted(() => vi.fn());
 const notifyMock = vi.hoisted(() => vi.fn());
@@ -100,6 +100,15 @@ vi.mock('../RerDutyNeoWorkspace', () => ({
         aria-label="Скинути поточний фільтр"
         onClick={() =>
           buildFeedColumnModel(messageFeeds[0]).filterPanel.actions.onDiscardCurrentFilter()
+        }
+      />
+      <button
+        type="button"
+        aria-label="Змінити діапазон частот"
+        onClick={() =>
+          buildFeedColumnModel(messageFeeds[0]).filterPanel.actions.onAdjacentFreqsRangeChange(
+            0.005,
+          )
         }
       />
       {messageFeeds[0]?.items[0] ? (
@@ -405,12 +414,13 @@ function buildFeedsState() {
   };
 }
 
-async function renderPage() {
+async function renderPage(configureState?: (state: ReturnType<typeof buildFeedsState>) => void) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
 
   const state = buildFeedsState();
+  configureState?.(state);
   useRerDutyFeedsMock.mockReturnValue(state as never);
 
   await act(async () => {
@@ -705,7 +715,10 @@ describe('RerDutyNeoPage creation workflow', () => {
 
     expect(state.setSelectedSavedIdByFeedId).toHaveBeenCalledOnce();
     expect(state.setSaveFilterNameByFeedId).toHaveBeenCalledOnce();
-    expect(state.applyFilter).toHaveBeenCalledWith('feed-1', emptyFilter());
+    expect(state.applyFilter).toHaveBeenCalledWith(
+      'feed-1',
+      clearActiveFeedFilter(state.messageFeeds[0].filter),
+    );
     const updateFeeds = state.setMessageFeeds.mock.calls[0]?.[0];
     const updatedFeeds = updateFeeds(
       state.messageFeeds.map((feed) => ({
@@ -725,6 +738,34 @@ describe('RerDutyNeoPage creation workflow', () => {
       highlightSignalsEnabled: true,
       onlyMyUnitTagsEnabled: true,
     });
+
+    root.unmount();
+  });
+
+  it('reloads when discarding signal highlighting as the only active option', async () => {
+    const { container, root, state } = await renderPage((feedState) => {
+      feedState.messageFeeds[0].filter = emptyFilter();
+      feedState.messageFeeds[0].highlightSignalsEnabled = true;
+    });
+
+    await click(container.querySelector('button[aria-label="Скинути поточний фільтр"]'));
+
+    expect(state.applyFilter).toHaveBeenCalledWith('feed-1', emptyFilter(), true);
+
+    root.unmount();
+  });
+
+  it('reloads the feed when adjacent-frequency expansion changes', async () => {
+    const { container, root, state } = await renderPage((feedState) => {
+      feedState.messageFeeds[0].filter.freqsSelected = ['153.6250'];
+    });
+
+    await click(container.querySelector('button[aria-label="Змінити діапазон частот"]'));
+
+    expect(state.applyFilter).toHaveBeenCalledWith('feed-1', state.messageFeeds[0].filter, true);
+    const updateFeeds = state.setMessageFeeds.mock.calls[0]?.[0];
+    expect(updateFeeds(state.messageFeeds)[0].adjacentFreqsRange).toBe(0.005);
+    expect(updateFeeds(state.messageFeeds)[1].adjacentFreqsRange).toBe(0);
 
     root.unmount();
   });
