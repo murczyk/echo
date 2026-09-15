@@ -231,14 +231,16 @@ interception in a network AOR outside API requests. Pending work is deduplicated
 per frequency, calculation kind, and login where the result depends on data
 visibility. Per-login work clears only its claimed request. Frequency
 `last_seen_dt` work serializes per network, locks frequency rows in stable
-order, and recalculates up to 500 same-network requests in one grouped history
-scan. It atomically removes the captured batch, while work queued after the
-capture remains pending. The worker starts up to 500 queue work units per pass
-and stops starting new work after 50 seconds. It queues a final reconciliation
-after inbox-network
-invalidations update message assignments; broad group/AOR invalidations fan
-out to frequencies processed during that pass, and AOR invalidations also
-include non-deleted frequencies on networks currently linked to that AOR.
+order, captures up to 500 same-network requests in a short transaction, and
+then recalculates them in one grouped history scan. Committing the capture
+before the scan keeps new queue inserts from waiting on the pending-task unique
+index. The worker removes only the captured batch, while work queued after the
+capture remains pending. It starts up to 500 queue work units per pass and stops
+starting new work after 50 seconds. It queues a final reconciliation after
+inbox-network invalidations update message assignments; broad group/AOR
+invalidations fan out to frequencies processed during that pass, and AOR
+invalidations also include non-deleted frequencies on networks currently linked
+to that AOR.
 The per-login AOR cache is scoped to the login's current visible group keys,
 expires after 10 minutes, and is not served while inbox-network invalidation or
 recalculation is pending. Expired entries are evicted alongside the pre-existing
