@@ -5,12 +5,12 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { USER_SETTINGS_UPDATED_EVENT } from '../services/api/user-settings';
-import { useDutySettings } from './use-duty-settings';
+import { USER_SETTINGS_UPDATED_EVENT } from '../../services/api/user-settings';
+import { useDutySettings } from '../use-duty-settings';
 
 const fetchUserSettingsMock = vi.hoisted(() => vi.fn());
 
-vi.mock('../services/api/user-settings', () => ({
+vi.mock('../../services/api/user-settings', () => ({
   USER_SETTINGS_UPDATED_EVENT: 'user-settings-updated',
   fetchUserSettings: fetchUserSettingsMock,
   saveUserSettings: vi.fn(),

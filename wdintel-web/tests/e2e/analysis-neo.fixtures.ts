@@ -1,6 +1,6 @@
 import type { Page, Route } from '@playwright/test';
 import type { InboxMessagesRspRaw } from '../../src/ts/react/services/api/inbox-messages';
-import { networkSettingsResponse } from './fixture-responses';
+import { networkSettingsResponse, systemSettingsCurrentResponse } from './fixture-responses';
 
 type AnalysisNeoMockOptions = {
   enableAudioTranscription?: boolean;
@@ -206,39 +206,6 @@ function emptyUserSettingsResponse() {
   };
 }
 
-function emptySystemSettingsResponse(enableAudioTranscription = false) {
-  return {
-    id: null,
-    rer_analysis_units_exact_match_only_default: false,
-    rer_duty_test_enabled: false,
-    rer_duty_insert_historical_interceptions: false,
-    rer_duty_test_since_ms: 0,
-    rer_duty_test_limit: 1,
-    rer_duty_poll_interval_sec: 1,
-    rer_duty_test_replay_interval_sec: 1,
-    short_url_enabled: false,
-    support_non_rer_interceptions: false,
-    default_neo_analysis: false,
-    autofix_echoim_missing_messages: false,
-    peleng_bounds_enabled: false,
-    peleng_bounds_top_left_lat: null,
-    peleng_bounds_top_left_lng: null,
-    peleng_bounds_bottom_right_lat: null,
-    peleng_bounds_bottom_right_lng: null,
-    devices_section_enabled: false,
-    sigint_comment_parsing_enabled: false,
-    do_not_store_duplicate_echoim_failures: false,
-    goi_association_message_uid_worker_enabled: false,
-    report_chunking_hours: 1,
-    limit_big_reports: false,
-    enable_audio_transcription: enableAudioTranscription,
-    show_classic_duty: false,
-    show_classic_analysis: false,
-    show_peleng_distance_to_battleline: false,
-    hide_orbit_data: false,
-  };
-}
-
 function emptyCallsignInfoBatchResponse() {
   return [];
 }
@@ -283,7 +250,12 @@ export async function installAnalysisNeoApiMocks(
     }
 
     if (pathname === '/api/system-settings/current') {
-      await fulfillJson(route, emptySystemSettingsResponse(options.enableAudioTranscription));
+      await fulfillJson(
+        route,
+        systemSettingsCurrentResponse({
+          enableAudioTranscription: options.enableAudioTranscription,
+        }),
+      );
       return;
     }
 

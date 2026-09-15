@@ -45,14 +45,15 @@ test.describe('@smoke @regression', () => {
       },
     );
 
+    await page.clock.install();
     await page.goto('/rer-duty-neo');
+    await page.clock.runFor(5000);
     await expect.poll(() => countRequests).toBeGreaterThan(0);
     blocked = true;
     releaseLongPoll();
     await expect(page).toHaveURL(/\/login(?:\?|$)/);
-    await expect(page.locator('form')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'увійти' })).toBeVisible();
     const requestsAfterLogout = backgroundRequests;
-    await page.clock.install();
     await page.clock.runFor(5000);
 
     expect(backgroundRequests).toBe(requestsAfterLogout);

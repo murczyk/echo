@@ -1,5 +1,5 @@
 import type { Page, Route } from '@playwright/test';
-import { networkSettingsResponse } from './fixture-responses';
+import { networkSettingsResponse, systemSettingsCurrentResponse } from './fixture-responses';
 
 export type RouteLoadSuite = 'callsigns' | 'palitra' | 'messenger' | 'duty';
 
@@ -40,21 +40,6 @@ function emptyUserSettingsResponse() {
   return {
     tagsLayout: 'compact',
     disableAutoScroll: false,
-  };
-}
-
-function emptySystemSettingsResponse() {
-  return {
-    id: null,
-    rer_analysis_units_exact_match_only_default: false,
-    rer_duty_test_enabled: false,
-    rer_duty_insert_historical_interceptions: false,
-    rer_duty_test_since_ms: 0,
-    rer_duty_test_limit: 1,
-    rer_duty_poll_interval_sec: 1,
-    default_neo_analysis: false,
-    do_not_store_duplicate_echoim_failures: false,
-    disable_bot_tags: false,
   };
 }
 
@@ -285,7 +270,7 @@ async function routeDutyApi(route: Route, pathname: string, delayMs: number): Pr
   }
 
   if (pathname === '/api/system-settings/current') {
-    await fulfillJson(route, emptySystemSettingsResponse());
+    await fulfillJson(route, systemSettingsCurrentResponse());
     return true;
   }
 

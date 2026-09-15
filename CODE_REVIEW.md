@@ -29,10 +29,8 @@ tree and migration rules.
 
 React Vitest specs under `src/ts/react` belong in the nearest production-owned
 `__tests__` directory, with exactly one `__tests__` path segment. Do not accept
-recovery, characterization, nested-test, or temporary holding paths. The five
-legacy exceptions are defined only in
-`wdintel-web/scripts/react-test-packing-exceptions.mjs`; new exceptions are
-prohibited. Use descriptive names for collisions and preserve resolved imports
+recovery, characterization, nested-test, temporary holding paths, or placement
+exceptions. Use descriptive names for collisions and preserve resolved imports
 and `vi.mock` targets when relocating tests. Playwright remains in `tests/e2e`.
 
 ## Query performance

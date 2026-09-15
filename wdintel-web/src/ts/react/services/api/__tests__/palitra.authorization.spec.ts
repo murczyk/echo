@@ -12,7 +12,7 @@ import {
   getPalitraHighlightBlacklist,
   listPalitras,
   resolvePalitraNames,
-} from './palitra';
+} from '../palitra';
 
 // @test-scope safeguard: preserves the login redirect for an unauthorized multipart upload.
 describe('palitra API 401 handling', () => {

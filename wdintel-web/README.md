@@ -36,7 +36,6 @@ elm-spa watch  # runs build as you code (without the server)
 ```bash
 npm run test:ts                 # complete React Vitest migration suite
 npm run test:ts:scope-check     # annotations and empty legacy-debt baseline
-npm run test:ts:ledger-check    # final placement and ledger integrity
 npm run test:ts:gate            # admission checks plus Vitest
 npm run test:ts:all             # same complete migration suite
 ```

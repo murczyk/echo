@@ -108,9 +108,8 @@ npm run test:ts:all
 ```
 
 `test:ts:scope-check` validates annotations with an empty legacy-debt baseline.
-`test:ts:ledger-check` verifies final paths, identities, dispositions, and
-inventory totals. `test:ts:gate` and `test:ts:all` run both checks before the
-complete Vitest suite.
+`test:ts:gate` and `test:ts:all` run this admission check before the complete
+Vitest suite.
 
 Frontend end-to-end checks:
 
@@ -138,6 +137,10 @@ For the slower loading comparisons, use:
 ```bash
 npm run e2e:perf
 ```
+
+Its non-blocking disposition and the historical result (three passing checks and
+three unavailable classic-route headings) are recorded in
+[the React performance test disposition](docs/frontend/react-performance-test-disposition.md).
 
 To run only the direct-link group and sender reference tests, use:
 

@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   postVoid: vi.fn(),
 }));
 
-vi.mock('./client', () => ({
+vi.mock('../client', () => ({
   getJson: mocks.getJson,
   postJson: mocks.postJson,
   postVoid: mocks.postVoid,
@@ -22,7 +22,7 @@ import {
   streamAiAgentEvents,
   testAiAgentDispatcher,
   updateAiAgentConversation,
-} from './ai-agent';
+} from '../ai-agent';
 
 beforeEach(() => vi.clearAllMocks());
 

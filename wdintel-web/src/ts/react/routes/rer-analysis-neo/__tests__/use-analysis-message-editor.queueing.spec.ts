@@ -5,24 +5,24 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { InboxMessage } from '../../../../Bindings';
+import type { InboxMessage } from '../../../../../Bindings';
 import {
   buildMessageDraftMap,
   enqueueMessageSave,
   prepareQueuedMessageUpdate,
   useAnalysisMessageEditor,
-} from './use-analysis-message-editor';
+} from '../use-analysis-message-editor';
 
 const hoisted = vi.hoisted(() => ({
   fetchMessagesByIds: vi.fn(),
   onInboxChangedMessageIds: vi.fn(),
 }));
 
-vi.mock('../../services/api/inbox-messages', () => ({
+vi.mock('../../../services/api/inbox-messages', () => ({
   fetchMessagesByIds: hoisted.fetchMessagesByIds,
 }));
 
-vi.mock('../shared/useInboxChangedMessageIds', () => ({
+vi.mock('../../shared/useInboxChangedMessageIds', () => ({
   useInboxChangedMessageIds: ({
     onMessageIds,
   }: {

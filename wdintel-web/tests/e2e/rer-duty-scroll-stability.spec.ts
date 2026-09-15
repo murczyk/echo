@@ -176,10 +176,12 @@ test('keeps an OFF reading anchor stable while a long snackbar error is shown @s
     await route.fulfill({ status: 500, contentType: 'text/plain', body: longError });
   });
 
+  await page.clock.install();
   await page.goto('/rer-duty-neo?state-short=short-1');
   const scroller = page.locator('[data-duty-feed-scroller="true"]');
   const list = page.locator('[data-duty-feed-list="true"]');
   await expect(list.locator('[data-duty-message-id="1"]')).toBeAttached();
+  await page.clock.runFor(5000);
   const anchorBefore = await readVisibleAnchor(scroller);
   await expect(page.getByText(longError)).toBeVisible();
   const snackbar = page.locator('.MuiSnackbar-root');
@@ -228,9 +230,11 @@ test('keeps an unbroken snackbar error within the narrow viewport @regression', 
     await route.fulfill({ status: 500, contentType: 'text/plain', body: longError });
   });
 
+  await page.clock.install();
   await page.goto('/rer-duty-neo?state-short=short-1');
   const scroller = page.locator('[data-duty-feed-scroller="true"]');
   await expect(page.locator('[data-duty-message-id="1"]')).toBeAttached();
+  await page.clock.runFor(5000);
   const scrollerBox = await scroller.boundingBox();
   await expect(page.getByText(longError)).toBeVisible();
   const snackbar = page.locator('.MuiSnackbar-root');

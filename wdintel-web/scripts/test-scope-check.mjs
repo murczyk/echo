@@ -1,7 +1,6 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import ts from 'typescript';
-import { reactTestPackingExceptions } from './react-test-packing-exceptions.mjs';
 
 const webRoot = new URL('..', import.meta.url).pathname;
 const repoRoot = new URL('../..', import.meta.url).pathname;
@@ -11,11 +10,11 @@ const echoLinkPattern = /^https:\/\/github\.com\/echoua\/echo\/(?:issues|pull)\/
 const baselinePath = join(webRoot, 'test-scope-baseline.json');
 const updateBaseline = process.argv.includes('--update-baseline');
 
-function walk(directory) {
+function walk(directory, pattern = testFilePattern) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name);
-    if (entry.isDirectory()) return entry.name === 'node_modules' ? [] : walk(path);
-    return testFilePattern.test(entry.name) ? [path] : [];
+    if (entry.isDirectory()) return entry.name === 'node_modules' ? [] : walk(path, pattern);
+    return pattern.test(entry.name) ? [path] : [];
   });
 }
 
@@ -123,11 +122,7 @@ function collectReferencedTestFiles() {
     for (const entry of entries) {
       const entryPath = join(path, entry.name);
       if (entry.isDirectory()) visit(entryPath);
-      else if (
-        /\.(?:md|ya?ml|json)$/.test(entry.name) &&
-        entry.name !== 'react-test-removal-dispositions.json'
-      )
-        references.push(entryPath);
+      else if (/\.(?:md|ya?ml|json)$/.test(entry.name)) references.push(entryPath);
     }
   };
   for (const candidate of candidates) {
@@ -157,11 +152,12 @@ function modulePath(fromFile, moduleSpecifier) {
   if (!moduleSpecifier.startsWith('.')) return null;
   const basePath = join(fromFile, '..', moduleSpecifier);
   const candidates = [
-    basePath,
     `${basePath}.ts`,
     `${basePath}.tsx`,
+    `${basePath}.mts`,
     join(basePath, 'index.ts'),
     join(basePath, 'index.tsx'),
+    join(basePath, 'index.mts'),
   ];
   return candidates.find(existsSync) ?? null;
 }
@@ -171,20 +167,47 @@ function importedSymbols(file) {
   const sourceFile = ts.createSourceFile(file, sourceText, ts.ScriptTarget.Latest, true);
   const imports = [];
   for (const statement of sourceFile.statements) {
-    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier))
-      continue;
-    const target = modulePath(file, statement.moduleSpecifier.text);
-    if (!target || !statement.importClause) continue;
-    const symbols = new Set();
-    if (statement.importClause.name) symbols.add('default');
-    const bindings = statement.importClause.namedBindings;
-    if (bindings && ts.isNamedImports(bindings)) {
-      for (const element of bindings.elements)
-        symbols.add(element.propertyName?.text ?? element.name.text);
+    if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)) {
+      const target = modulePath(file, statement.moduleSpecifier.text);
+      if (!target || !statement.importClause) continue;
+      const symbols = new Set();
+      if (statement.importClause.name) symbols.add('default');
+      const bindings = statement.importClause.namedBindings;
+      if (bindings && ts.isNamedImports(bindings)) {
+        for (const element of bindings.elements)
+          symbols.add(element.propertyName?.text ?? element.name.text);
+      }
+      if (bindings && ts.isNamespaceImport(bindings)) symbols.add('*');
+      imports.push({ target, symbols });
     }
-    if (bindings && ts.isNamespaceImport(bindings)) symbols.add('*');
-    imports.push({ target, symbols });
+    if (
+      ts.isExportDeclaration(statement) &&
+      statement.moduleSpecifier &&
+      ts.isStringLiteral(statement.moduleSpecifier)
+    ) {
+      const target = modulePath(file, statement.moduleSpecifier.text);
+      if (!target) continue;
+      const symbols = new Set();
+      if (!statement.exportClause) symbols.add('*');
+      if (statement.exportClause && ts.isNamedExports(statement.exportClause)) {
+        for (const element of statement.exportClause.elements)
+          symbols.add(element.propertyName?.text ?? element.name.text);
+      }
+      imports.push({ target, symbols });
+    }
   }
+  const visit = (node) => {
+    if (
+      ts.isCallExpression(node) &&
+      node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+      ts.isStringLiteral(node.arguments[0])
+    ) {
+      const target = modulePath(file, node.arguments[0].text);
+      if (target) imports.push({ target, symbols: new Set(['*']) });
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(sourceFile, visit);
   return imports;
 }
 
@@ -216,8 +239,32 @@ function exportedSymbols(file) {
   return symbols;
 }
 
+function isUsedWithinFile(file, symbol) {
+  const sourceText = readFileSync(file, 'utf8');
+  const sourceFile = ts.createSourceFile(file, sourceText, ts.ScriptTarget.Latest, true);
+  let uses = 0;
+  const visit = (node) => {
+    if (ts.isIdentifier(node) && node.text === symbol && !isDeclarationName(node)) uses += 1;
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(sourceFile, visit);
+  return uses > 0;
+}
+
+function isDeclarationName(node) {
+  const parent = node.parent;
+  return (
+    (ts.isDeclaration(parent) && parent.name === node) ||
+    (ts.isImportSpecifier(parent) && parent.name === node) ||
+    (ts.isExportSpecifier(parent) && parent.name === node)
+  );
+}
+
 function testOnlyProductionExports(testFiles) {
-  const productionFiles = walk(join(webRoot, 'src', 'ts', 'react')).filter(
+  const productionFiles = walk(join(webRoot, 'src', 'ts', 'react'), /\.(?:tsx?|mts)$/).filter(
+    (file) => !testFilePattern.test(file),
+  );
+  const sourceFiles = walk(join(webRoot, 'src'), /\.(?:tsx?|mts)$/).filter(
     (file) => !testFilePattern.test(file),
   );
   const testImports = new Map();
@@ -229,7 +276,7 @@ function testOnlyProductionExports(testFiles) {
       testImports.set(target, imported);
     }
   }
-  for (const file of productionFiles) {
+  for (const file of sourceFiles) {
     for (const { target, symbols } of importedSymbols(file)) {
       const imported = productionImports.get(target) ?? new Set();
       symbols.forEach((symbol) => imported.add(symbol));
@@ -245,7 +292,8 @@ function testOnlyProductionExports(testFiles) {
         (symbol) =>
           (usedByTests.has('*') || usedByTests.has(symbol)) &&
           !usedByProduction.has('*') &&
-          !usedByProduction.has(symbol),
+          !usedByProduction.has(symbol) &&
+          !isUsedWithinFile(file, symbol),
       )
       .map((symbol) => `${relative(webRoot, file)} exports ${symbol} for test-only use`);
   });
@@ -262,11 +310,11 @@ for (const file of testFiles) {
     const testDirectoryCount = path.split('/').filter((segment) => segment === '__tests__').length;
     if (path.includes('/recovery/') || path.includes('/characterization/'))
       placementProblems.push(`${path} uses a prohibited recovery or characterization directory.`);
-    else if (testDirectoryCount !== 1 && !reactTestPackingExceptions.has(path))
+    else if (testDirectoryCount !== 1)
       placementProblems.push(
         `${path} must be in the nearest production-owned __tests__ directory (found ${testDirectoryCount}).`,
       );
-    else if (testDirectoryCount === 0 && !reactTestPackingExceptions.has(path))
+    else if (testDirectoryCount === 0)
       placementProblems.push(
         `${path} is unpacked; place it in the nearest production-owned __tests__ directory.`,
       );
@@ -296,6 +344,7 @@ for (const file of testFiles) {
 invalidAnnotations.push(...referencedTestPathProblems());
 invalidAnnotations.push(...placementProblems);
 const testOnlyExports = testOnlyProductionExports(testFiles);
+invalidAnnotations.push(...testOnlyExports);
 
 const sortedUnclassified = [...new Set(unclassified)].sort();
 const baseline = existsSync(baselinePath)
@@ -339,8 +388,3 @@ if (invalidAnnotations.length > 0 || newDebt.length > 0) {
 
 console.log(`Remaining legacy test debt: ${sortedUnclassified.length}.`);
 console.log(`Resolved legacy test debt: ${resolvedDebt.length}.`);
-
-if (testOnlyExports.length > 0) {
-  console.warn('React test-only production exports to review:');
-  console.warn(testOnlyExports.map((entry) => `- ${entry}`).join('\n'));
-}

@@ -156,7 +156,7 @@
 - **Responsive and keyboard requirements:** card actions, attachment controls, tag controls, and comments remain reachable by keyboard; media dialogs close with Escape without moving focus to an unrelated card control.
 - **Known race/idempotency constraints:** a message refresh or action response cannot replace the card's newer message identity, selected attachment, comment set, tag state, or active report result.
 - **Source implementation:** `src/ts/react/routes/shared/message-card/MessageCard.tsx`, `MessageCardContent.tsx`, `MessageCardIntelligenceReports.tsx`, and attachment-preview components.
-- **Current retained test(s):** browser preview safeguards in `wdintel-web/tests/e2e/message-card-media-preview.spec.ts`; focused React safety tests are recorded in the disposition ledger.
+- **Current retained test(s):** browser preview safeguards in `wdintel-web/tests/e2e/message-card-media-preview.spec.ts` and focused React safety tests co-located with their production boundaries.
 
 ## Audio, transcription, and document evidence
 
@@ -166,7 +166,7 @@
 - **Expected observable result:** each supported evidence type has a truthful presentation: audio exposes playback/transcription state, documents expose safe preview/download/open actions, coordinates preserve their source and map meaning, and image/video previews retain carousel order. Unsupported or unavailable media remains an explicit unavailable state rather than a fabricated preview.
 - **Loading/empty/error/success behavior:** pending transcription/preview processing remains visible; completed results remain associated with their media revision; archive/download actions remain available only when the corresponding artifact exists.
 - **Source implementation:** `src/ts/react/routes/shared/message-card/attachment-preview/`, `renderers/`, and coordinate components.
-- **Current retained test(s):** `wdintel-web/tests/e2e/message-card-media-preview.spec.ts` plus retained parser and stale-response safeguards in the disposition ledger.
+- **Current retained test(s):** `wdintel-web/tests/e2e/message-card-media-preview.spec.ts` plus co-located parser and stale-response safeguards.
 
 ## Manage Message draft and coordinate safeguards
 
@@ -176,7 +176,7 @@
 - **Expected observable result:** coordinate entry and previews preserve the entered coordinate list and its selected interpretation; a draft cannot submit until required message fields are satisfied. Closing or reopening a drawer preserves only the session behavior explicitly owned by its caller and does not silently submit incomplete data.
 - **Known race/idempotency constraints:** coordinate parsing, map preview, and submit eligibility remain tied to the current draft; stale validation cannot enable a superseded draft.
 - **Source implementation:** `src/ts/react/routes/shared/manage-message/ManageMessageDrawer.tsx`, `drawer-sections/CoordinateListInput.tsx`, and `CoordinateInputPreview.tsx`.
-- **Current retained test(s):** `src/ts/react/routes/shared/manage-message/__tests__/ManageMessageDrawer.edit.spec.tsx` and recovered parser/safety records in the disposition ledger.
+- **Current retained test(s):** `src/ts/react/routes/shared/manage-message/__tests__/ManageMessageDrawer.edit.spec.tsx` and co-located parser/safety safeguards.
 
 ## Browser message-card regressions
 
