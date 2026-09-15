@@ -262,6 +262,26 @@ canonical IDs from `sigint_inbox_item_settlement.settlement_id`. The
 `oneoff-calculate-historic-stats` command can rebuild only settlement buckets
 with `--only settlement`.
 
+Group-stat invalidations first enter the PostgreSQL
+`group_stats_recalculation_task` intake queue. The same worker compacts batches
+into one `group_stats_recalculation_day` row per affected Kyiv calendar day;
+each successful day calculation removes its row only if no newer invalidation
+arrived during the calculation. Today and the preceding local date are
+eligible at any hour; older days are processed outside the network history
+worker's configured night shift. During that period the worker alternates
+priority between recent and historical days. Both operational tables are
+excluded from analytics. The dirty-day migration clears the entire
+pre-existing intake queue, including requests less than a day old. After
+deployment, run `sudo systemctl stop wdintel-rs-bgworker`, then
+`sudo /usr/bin/wdintel-rs --mode=live oneoff-calculate-historic-stats`, then
+`sudo systemctl start wdintel-rs-bgworker`. The oneoff rebuilds all statistics
+families for the supported 366-day retention window. Stopping this service
+pauses all of its background jobs for the duration of the oneoff. Inbox changes
+received while the worker is stopped remain in the intake queue and are
+compacted after restart. If the oneoff fails, restart the worker for new work;
+stop it again and rerun the oneoff before treating historical statistics as
+complete.
+
 ## Credentials authentication storage
 
 Password login 2FA is owned by the `wdintel-rs` API process. Durable TOTP

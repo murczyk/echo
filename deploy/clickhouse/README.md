@@ -193,6 +193,17 @@ password stays in `echo-peerdb-<source-hostname>`.
 Exclusions may name optional tables that are absent on an instance; if such a
 table is created later, it remains excluded automatically.
 
+`group_stats_recalculation_day` is a PostgreSQL-only compaction queue. For a
+manual deployment, stop `wdintel-rs-bgworker` before applying
+`m20260914_234219_group_stats_dirty_days`. On an instance with ClickHouse, run
+`/opt/echo-peerdb/bin/source-sync-exclusions.sh --yes` before the migration so
+the new table is excluded before it is created. Apply the migration and new
+binary, run the full group-statistics oneoff documented in the changelog, then
+start the worker. Run `/opt/echo-peerdb/bin/source-verify-deploy.sh` and confirm
+that `public.group_stats_recalculation_day` is absent from raw/current/gateway.
+Standard Echo deployment stops the worker, syncs the packaged exclusion list
+before migrations, and performs deployment verification afterward.
+
 `battle_line_version` and `battle_line_aor_geometry` are PostgreSQL-only and
 intentionally excluded from analytics. Before applying
 `m20260818_130237_battle_line_and_inbox_settlement`, deploy and reconcile the

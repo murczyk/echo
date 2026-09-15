@@ -784,9 +784,10 @@ pub const RER_DUTY_NEO_ADAPTIVE_CUTOFF_DAYS: i64 = 14;
 pub const RER_DUTY_ANALYTICS_FRESH_TAIL_MINUTES: i64 = 5;
 pub const GROUP_STATS_5MIN_TTL_DAYS: i64 = 14;
 pub const GROUP_STATS_DAY_TTL_DAYS: i64 = 365;
-pub const GROUP_STATS_RECALCULATION_TASK_CLAIM_LIMIT: i64 = 100;
+pub const GROUP_STATS_RECALCULATION_TASK_COMPACT_LIMIT: i64 = 5_000;
 pub const GROUP_STATS_RECALCULATION_TASK_STALE_MINUTES: i64 = 120;
-pub const GROUP_STATS_RECALCULATION_TASK_CHUNK_DAYS: i64 = 1;
+pub const GROUP_STATS_RECALCULATION_FAILURE_RETRY_MINUTES: i64 = 5;
+pub const GROUP_STATS_RECALCULATION_RECENT_DAYS: i64 = 1;
 pub const GROUP_STATS_RECALCULATION_TASK_FINALIZE_RETRY_INITIAL_MS: u64 = 100;
 pub const GROUP_STATS_RECALCULATION_TASK_FINALIZE_RETRY_MAX_MS: u64 = 3_000;
 /// Minimum time to keep a long-poll request open to accumulate events
@@ -931,6 +932,7 @@ pub const SYSTEM_LOGIN_NAME: &str = "system";
 #[cfg(test)]
 pub const FUNCTEST_CLEANUP_SQL: &str = r#"
 LOCK TABLE signal_message IN SHARE MODE;
+DELETE FROM group_stats_recalculation_day;
 UPDATE ai_intel_report_settings
 SET quick_suggestion_enabled = false,
     quick_ai_engine_id = NULL,

@@ -10,6 +10,7 @@
 
 ## NEXT
 
+- [#3113](https://github.com/echoua/echo/issues/3113) 🐞👷🚨 Статистика: повторні запити перерахунку об'єднуються за добою, історичні дні обробляються поза нічною зміною; міграція очищає всі наявні завдання, тому після деплою виконати `sudo systemctl stop wdintel-rs-bgworker`, `sudo /usr/bin/wdintel-rs --mode=live oneoff-calculate-historic-stats`, `sudo systemctl start wdintel-rs-bgworker`; на інстансах із ClickHouse перед ручним застосуванням міграції виконати `/opt/echo-peerdb/bin/source-sync-exclusions.sh --yes`, а після неї — `/opt/echo-peerdb/bin/source-verify-deploy.sh` і підтвердити відсутність `public.group_stats_recalculation_day` у raw/current/gateway.
 - [#3461](https://github.com/echoua/echo/issues/3461) ✅🐞 Оперативний: додано фільтр пристроїв. Впорядковано доступи до функціоналу пристроїв.
 - [#3455](https://github.com/echoua/echo/issues/3455) ✅👷 Оперативний, Аналіз: додано можливість сортування повідомлень за датою створення. Після міграції стандартне розгортання виконає точковий resnapshot `public.user_settings` без повної ресинхронізації дзеркала.
 - [#3448](https://github.com/echoua/echo/issues/3448) ✅ Оперативний, Аналіз: покращено редактор зображень.
