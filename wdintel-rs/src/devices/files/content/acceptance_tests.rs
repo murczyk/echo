@@ -242,7 +242,7 @@ macro_rules! app {
                 .wrap(IdentityMiddleware::default())
                 .wrap(SessionMiddleware::new(session, Key::generate()))
                 .route("/test/login/{login}", web::post().to(sign_in))
-                .service(super::routes()),
+                .service(crate::devices::files::content::routes()),
         )
         .await
     }};
@@ -261,6 +261,9 @@ macro_rules! cookie {
         response.response().cookies().next().unwrap().into_owned()
     }};
 }
+
+#[path = "reuse/acceptance_tests.rs"]
+mod reuse_tests;
 
 async fn assert_error(
     error: protocol::ContentError,

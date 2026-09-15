@@ -20,9 +20,11 @@ pub struct Model {
         unique_key = "file_content_current_pointer_key"
     )]
     pub revision: i64,
-    #[sea_orm(unique)]
     pub upload_id: Uuid,
-    #[sea_orm(column_type = "Text", unique)]
+    #[sea_orm(
+        column_type = "Text",
+        unique_key = "file_content_current_pointer_key"
+    )]
     pub object_key: String,
     pub source_size_bytes: i64,
     #[sea_orm(column_type = "VarBinary(StringLen::None)")]
@@ -35,8 +37,8 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(
         belongs_to = "super::file_content_upload::Entity",
-        from = "(Column::UploadId, Column::FileId, Column::Revision, Column::ObjectKey, Column::SourceSizeBytes, Column::SourceSha256)",
-        to = "(super::file_content_upload::Column::Id, super::file_content_upload::Column::FileId, super::file_content_upload::Column::Revision, super::file_content_upload::Column::ObjectKey, super::file_content_upload::Column::UploadLength, super::file_content_upload::Column::ExpectedSha256)",
+        from = "(Column::UploadId, Column::FileId, Column::ObjectKey, Column::SourceSizeBytes, Column::SourceSha256)",
+        to = "(super::file_content_upload::Column::Id, super::file_content_upload::Column::FileId, super::file_content_upload::Column::ObjectKey, super::file_content_upload::Column::UploadLength, super::file_content_upload::Column::ExpectedSha256)",
         on_update = "NoAction",
         on_delete = "Restrict"
     )]

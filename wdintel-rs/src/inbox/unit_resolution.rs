@@ -43,8 +43,12 @@ enum StructuralResolution {
     Blocked(String),
 }
 
+fn collapse_unit_label_whitespace(value: &str) -> String {
+    value.split_whitespace().join(" ")
+}
+
 pub(crate) fn normalize_unit_label(value: &str) -> String {
-    value.split_whitespace().join(" ").trim().to_lowercase()
+    collapse_unit_label_whitespace(value).to_lowercase()
 }
 
 fn nonempty(value: Option<&str>) -> Option<&str> {
@@ -706,7 +710,8 @@ async fn upsert_failure_inner<C>(
 where
     C: ConnectionTrait,
 {
-    let normalized_unit_txt = normalize_unit_label(unit_txt);
+    let unit_txt = collapse_unit_label_whitespace(unit_txt);
+    let normalized_unit_txt = normalize_unit_label(&unit_txt);
     let group_metadata = if let Some(group_metadata) = cache
         .as_deref()
         .and_then(|cache| cache.get(&normalized_unit_txt))
@@ -725,14 +730,14 @@ where
     };
     let (is_bad_data, note) =
         group_metadata.as_ref().cloned().unwrap_or_default();
-    let is_bad_data = is_bad_data || should_auto_archive_failed_unit(unit_txt);
+    let is_bad_data = is_bad_data || should_auto_archive_failed_unit(&unit_txt);
     if let Some(cache) = cache {
         cache.insert(normalized_unit_txt.clone(), (is_bad_data, note.clone()));
     }
     failed_unit_label::Entity::insert(failed_unit_label::ActiveModel {
             id: NotSet,
             created_at: NotSet,
-            unit_txt: Set(unit_txt.trim().to_string()),
+            unit_txt: Set(unit_txt),
             is_bad_data: Set(is_bad_data),
             note: Set(note),
         })
@@ -1937,6 +1942,32 @@ mod tests {
             .unwrap();
         assert_eq!(failures.len(), 1);
         assert!(!failures[0].deleted);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn unresolved_unit_with_non_breaking_spaces_is_synced() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let label = "УКХ р/м НВ підрозділу\u{a0}448.500\u{a0}МГц";
+        let item = insert_inbox_item(&env.dbx, Some(label), None, None).await;
+
+        assert_eq!(
+            resolve_and_sync_inbox_item(
+                &env.dbx,
+                item.id,
+                item.id_uuid,
+                item.unit_v2.as_deref(),
+                None,
+            )
+            .await
+            .unwrap(),
+            None
+        );
+
+        let failures = failure_rows(&env.dbx, item.id).await;
+        assert_eq!(failures.len(), 1);
+        assert_eq!(failures[0].1.unit_txt, "УКХ р/м НВ підрозділу 448.500 МГц");
     }
 
     #[tokio::test]

@@ -20,6 +20,7 @@ mod m20260819_100659_rename_file_metadata_revision_to_file_revision;
 mod m20260819_103638_optional_source_file_state_settled_by;
 mod m20260819_103954_update_file_entry_analysis_guard;
 mod m20260905_160446_device_file_content;
+mod m20260915_212032_reuse_verified_file_content;
 
 pub struct Migrator;
 
@@ -63,6 +64,7 @@ impl MigratorTrait for Migrator {
                 m20260819_103954_update_file_entry_analysis_guard::Migration,
             ),
             Box::new(m20260905_160446_device_file_content::Migration),
+            Box::new(m20260915_212032_reuse_verified_file_content::Migration),
         ]
     }
 }
