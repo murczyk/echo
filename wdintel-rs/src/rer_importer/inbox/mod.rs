@@ -13,6 +13,7 @@ use crate::rer_importer::analysis::{
     analytics_inbox_candidates_supported, analytics_inbox_request_supported,
     filter_denied_device_names, filter_selected_device_names,
     map_postgres_runtime_timeout, with_analytics_read_fallback,
+    with_analytics_read_fallback_outcome,
 };
 use crate::rer_importer::inbox::bl::*;
 use crate::rer_importer::inbox::query::*;
@@ -85,7 +86,12 @@ struct HybridInboxCandidateIds {
 enum AnalyticsInboxCandidateIds {
     Available(Vec<i64>),
     EmptyScope,
-    Unavailable,
+    Unavailable(&'static str),
+}
+
+enum HybridInboxCandidateLoad {
+    Available(HybridInboxCandidateIds),
+    Fallback(&'static str),
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -3671,28 +3677,33 @@ async fn get_inbox_messages_with_analytics_candidates_inner(
             return Ok(messages);
         }
     } else {
-        if let AnalyticsInboxCandidateIds::Available(candidate_ids) =
-            load_analytics_inbox_candidate_ids(login, env, req)
-                .await
-                .context(h!())?
-        {
-            if let Some(messages) = hydrate_analytics_inbox_candidates(
-                login,
-                logins,
-                env,
-                req,
-                &candidate_ids,
-                diagnostics,
-            )
+        match load_analytics_inbox_candidate_ids(login, env, req)
             .await
             .context(h!())?
-            {
-                diagnostics.route = "analytics_candidates";
-                diagnostics.reason = "none";
-                return Ok(messages);
+        {
+            AnalyticsInboxCandidateIds::Available(candidate_ids) => {
+                if let Some(messages) = hydrate_analytics_inbox_candidates(
+                    login,
+                    logins,
+                    env,
+                    req,
+                    &candidate_ids,
+                    diagnostics,
+                )
+                .await
+                .context(h!())?
+                {
+                    diagnostics.route = "analytics_candidates";
+                    diagnostics.reason = "none";
+                    return Ok(messages);
+                }
             }
-        } else {
-            diagnostics.fallback("candidates_unavailable");
+            AnalyticsInboxCandidateIds::EmptyScope => {
+                diagnostics.fallback("analytics_empty_scope");
+            }
+            AnalyticsInboxCandidateIds::Unavailable(reason) => {
+                diagnostics.fallback(reason);
+            }
         }
     }
     diagnostics.start_postgres();
@@ -3837,9 +3848,9 @@ async fn try_load_rer_analysis_inbox_hybrid(
     )
     .await
     {
-        Ok(Some(candidates)) => candidates,
-        Ok(None) => {
-            diagnostics.fallback("candidates_unavailable");
+        Ok(HybridInboxCandidateLoad::Available(candidates)) => candidates,
+        Ok(HybridInboxCandidateLoad::Fallback(reason)) => {
+            diagnostics.fallback(reason);
             warn!(
                 target: "rer_analysis_inbox_route",
                 "rer_analysis_inbox_route route=postgres_fallback analytics_candidates_available=false elapsed_ms={}",
@@ -3911,9 +3922,9 @@ async fn try_load_rer_duty_inbox_hybrid(
     )
     .await
     {
-        Ok(Some(candidates)) => candidates,
-        Ok(None) => {
-            diagnostics.fallback("candidates_unavailable");
+        Ok(HybridInboxCandidateLoad::Available(candidates)) => candidates,
+        Ok(HybridInboxCandidateLoad::Fallback(reason)) => {
+            diagnostics.fallback(reason);
             warn!(
                 target: "rer_duty_inbox_route",
                 "rer_duty_inbox_route route=postgres_fallback analytics_candidates_available=false elapsed_ms={}",
@@ -3974,7 +3985,7 @@ async fn load_hybrid_inbox_candidate_ids(
     req: &InboxMessagesReq,
     minimum_tail_minutes: i64,
     empty_scope_policy: AnalyticsEmptyScopePolicy,
-) -> Result<Option<HybridInboxCandidateIds>, AppError> {
+) -> Result<HybridInboxCandidateLoad, AppError> {
     let created_at_lower_bound = analytics_fresh_tail_lower_bound(
         Utc::now().naive_utc(),
         analytics_freshness_max_age_ms(env),
@@ -3992,8 +4003,14 @@ async fn load_hybrid_inbox_candidate_ids(
             {
                 Vec::new()
             }
-            AnalyticsInboxCandidateIds::EmptyScope
-            | AnalyticsInboxCandidateIds::Unavailable => return Ok(None),
+            AnalyticsInboxCandidateIds::EmptyScope => {
+                return Ok(HybridInboxCandidateLoad::Fallback(
+                    "analytics_empty_scope",
+                ));
+            }
+            AnalyticsInboxCandidateIds::Unavailable(reason) => {
+                return Ok(HybridInboxCandidateLoad::Fallback(reason));
+            }
         };
     let tail_started = Instant::now();
     let fresh_tail_ids = load_postgres_fresh_tail_candidate_ids(
@@ -4007,12 +4024,14 @@ async fn load_hybrid_inbox_candidate_ids(
     let postgres_tail_ms = tail_started.elapsed().as_millis();
     let analytics_count = analytics_ids.len();
     let postgres_tail_count = fresh_tail_ids.len();
-    Ok(Some(HybridInboxCandidateIds {
-        ids: merge_inbox_candidate_ids(analytics_ids, fresh_tail_ids),
-        analytics_count,
-        postgres_tail_count,
-        postgres_tail_ms,
-    }))
+    Ok(HybridInboxCandidateLoad::Available(
+        HybridInboxCandidateIds {
+            ids: merge_inbox_candidate_ids(analytics_ids, fresh_tail_ids),
+            analytics_count,
+            postgres_tail_count,
+            postgres_tail_ms,
+        },
+    ))
 }
 
 async fn load_postgres_fresh_tail_candidate_ids(
@@ -4071,7 +4090,7 @@ async fn load_analytics_inbox_candidate_ids(
     let analytics_env = env.clone();
     let analytics_req = req.clone();
     let login_value = *login;
-    Ok(with_analytics_read_fallback(
+    let outcome = with_analytics_read_fallback_outcome(
         env,
         "inbox message candidates",
         analytics_inbox_candidates_supported(req),
@@ -4090,10 +4109,14 @@ async fn load_analytics_inbox_candidate_ids(
                 None => Ok(AnalyticsInboxCandidateIds::EmptyScope),
             }
         },
-        |_db| async { Ok(AnalyticsInboxCandidateIds::Unavailable) },
+        |_db| async { Ok(AnalyticsInboxCandidateIds::Unavailable("unknown")) },
     )
     .await
-    .context(h!())?)
+    .context(h!())?;
+    if let Some(reason) = outcome.postgres_reason {
+        return Ok(AnalyticsInboxCandidateIds::Unavailable(reason));
+    }
+    Ok(outcome.value)
 }
 
 fn analytics_freshness_max_age_ms(env: &Env) -> u64 {

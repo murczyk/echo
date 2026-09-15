@@ -1237,6 +1237,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     loadFeedNewerMessages,
     flushPendingNewerMessages,
     requestValidatedInboxCount,
+    pollNow: pollCountThenLoadNewerIfNeeded,
     catchUpFeedUnreadToTail,
     applyFilter: crud.applyFilter,
     toggleGroup: crud.toggleGroup,

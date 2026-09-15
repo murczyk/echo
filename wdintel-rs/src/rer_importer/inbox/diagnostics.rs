@@ -34,11 +34,6 @@ impl InboxReadDiagnostics {
     }
 
     pub(super) fn fallback(&mut self, reason: &'static str) {
-        if reason == "candidates_unavailable"
-            && matches!(self.reason, "unconfigured" | "query_policy")
-        {
-            return;
-        }
         self.route = "postgres_fallback";
         self.reason = reason;
         self.failed_stage = self.stage;

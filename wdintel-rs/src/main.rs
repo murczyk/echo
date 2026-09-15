@@ -318,8 +318,14 @@ pub struct OneoffBackfillSignalMessageAuthorLoginPs {
 #[derive(clap::Parser, Debug)]
 pub struct OneoffBackfillSignalMessageUuidPs {
     /// Number of rows read in each batch.
-    #[arg(long, default_value_t = 10_000)]
+    #[arg(
+        long,
+        default_value_t = SIGNAL_MESSAGE_UUID_BACKFILL_BATCH_SIZE_DEFAULT
+    )]
     pub batch_size: u64,
+    /// Pause between committed batches to protect interactive traffic.
+    #[arg(long, default_value_t = SIGNAL_MESSAGE_UUID_BACKFILL_PAUSE_MS_DEFAULT)]
+    pub pause_ms: u64,
     /// Start the UUID backfill from the beginning instead of the stored checkpoint.
     #[arg(long, action)]
     pub reset_checkpoint: bool,
@@ -1244,6 +1250,7 @@ pub async fn new_pg_pool_from_analytics(
     let conn_string = mk_analytics_conn_string(analytics);
     new_pg_pool_from_conn_string_with_timeout(
         conn_string,
+        analytics.max_connections(),
         Some(core::time::Duration::from_millis(
             analytics.connect_timeout_ms(),
         )),
@@ -1272,12 +1279,13 @@ async fn new_pg_pool_from_conn_string_with_runtime_config(
 
 async fn new_pg_pool_from_conn_string_with_timeout(
     conn_string: String,
+    max_connections: u32,
     connect_timeout: Option<core::time::Duration>,
     connect_lazy: bool,
 ) -> Result<sea_orm::DatabaseConnection, AppError> {
     Ok(new_pg_pool_from_conn_string_with_options(
         conn_string,
-        pg_pool_max_connections(),
+        max_connections,
         connect_timeout,
         connect_lazy,
         None,

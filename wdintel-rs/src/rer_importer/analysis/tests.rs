@@ -8107,11 +8107,15 @@ fn analytical_inbox_candidates_support_latest_initial_duty_unit_filters() {
 
 #[tokio::test]
 #[serial]
-async fn analytics_read_without_pool_uses_postgres_path() {
+async fn analytics_read_outcome_reports_unconfigured_postgres_path() {
     let fixture = mk_rer_analysis_fixture().await.unwrap();
     assert!(fixture.env.analytics.is_none());
+    assert_eq!(
+        postgres_pool_identity(&fixture.env.dbx),
+        postgres_pool_identity(&fixture.env.dbx.clone())
+    );
 
-    let result = with_analytics_read_fallback(
+    let result = with_analytics_read_fallback_outcome(
         &fixture.env,
         "analytics fallback test",
         true,
@@ -8123,7 +8127,22 @@ async fn analytics_read_without_pool_uses_postgres_path() {
     .await
     .unwrap();
 
-    assert_eq!(result, "postgres");
+    assert_eq!(result.value, "postgres");
+    assert_eq!(result.postgres_reason, Some("unconfigured"));
+}
+
+#[test]
+fn fallback_capacity_only_limits_analytics_incident_routes() {
+    for reason in [
+        "analytics_error",
+        "analytics_timeout",
+        "analytics_unhealthy",
+        "circuit_open",
+    ] {
+        assert!(analytics_fallback_needs_capacity(reason));
+    }
+    assert!(!analytics_fallback_needs_capacity("query_policy"));
+    assert!(!analytics_fallback_needs_capacity("unconfigured"));
 }
 
 #[tokio::test]
@@ -8325,6 +8344,43 @@ async fn count_stats_analytics_half_open_failure_reopens_circuit() {
     let retry_deadline = retry_state.load(std::sync::atomic::Ordering::Acquire);
     assert_ne!(retry_deadline, u64::MAX);
     assert!(retry_deadline > analytics_unix_ms());
+}
+
+#[tokio::test]
+async fn replication_health_failure_releases_half_open_circuit() {
+    let retry_state = std::sync::atomic::AtomicU64::new(1);
+    let retry_attempt = analytics_retry_attempt(&retry_state).unwrap();
+    let (postgres_started_tx, postgres_started_rx) =
+        tokio::sync::oneshot::channel();
+    let (release_postgres_tx, release_postgres_rx) =
+        tokio::sync::oneshot::channel();
+
+    let fallback = with_count_stats_analytics_fallback(
+        Some(async {
+            Err::<&str, AppError>(
+                anyhow::Error::new(AnalyticsReplicationHealthError).into(),
+            )
+        }),
+        core::time::Duration::from_secs(1),
+        async {
+            let _ = postgres_started_tx.send(());
+            let _ = release_postgres_rx.await;
+            Ok::<_, AppError>("postgres")
+        },
+        Some(retry_attempt),
+        core::time::Duration::from_secs(30),
+    );
+    let observe_retry_state = async {
+        postgres_started_rx.await.unwrap();
+        assert_eq!(retry_state.load(std::sync::atomic::Ordering::Acquire), 0);
+        release_postgres_tx.send(()).unwrap();
+    };
+    let (result, ()) = tokio::join!(fallback, observe_retry_state);
+    let result = result.unwrap();
+
+    assert_eq!(result, "postgres");
+    assert_eq!(retry_state.load(std::sync::atomic::Ordering::Acquire), 0);
+    assert!(analytics_retry_attempt(&retry_state).is_some());
 }
 
 fn callsign_aggregate_test_query(

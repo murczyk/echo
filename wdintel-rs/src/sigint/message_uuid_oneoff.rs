@@ -218,11 +218,7 @@ pub async fn oneoff_backfill_signal_message_uuid(
     mode: Mode,
     ps: &OneoffBackfillSignalMessageUuidPs,
 ) -> Result<(), AppError> {
-    if ps.batch_size == 0 {
-        return Err(AppError::BL {
-            msg: "batch-size must be greater than zero".to_string(),
-        });
-    }
+    validate_batch_size(ps.batch_size)?;
     let db = crate::new_pg_maintenance_connection_from_mode(mode)
         .await
         .c(h!())?;
@@ -262,12 +258,30 @@ pub async fn oneoff_backfill_signal_message_uuid(
         crate::kv::put_kv(&db, CHECKPOINT_KEY, checkpoint.clone())
             .await
             .c(h!())?;
+        if processed > 0 && ps.pause_ms > 0 {
+            tokio::time::sleep(core::time::Duration::from_millis(ps.pause_ms))
+                .await;
+        }
     }
     progress.finish_with_message(format!(
         "signal-message UUID backfill completed: {}/{} messages scanned",
         progress.position(),
         total_messages
     ));
+    Ok(())
+}
+
+fn validate_batch_size(batch_size: u64) -> Result<(), AppError> {
+    if !(1..=crate::config::SIGNAL_MESSAGE_UUID_BACKFILL_BATCH_SIZE_MAX)
+        .contains(&batch_size)
+    {
+        return Err(AppError::BL {
+            msg: format!(
+                "batch-size must be between 1 and {}",
+                crate::config::SIGNAL_MESSAGE_UUID_BACKFILL_BATCH_SIZE_MAX
+            ),
+        });
+    }
     Ok(())
 }
 
@@ -643,4 +657,23 @@ where
         .await
         .c(h!())?
         .rows_affected as usize)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn uuid_backfill_batch_size_is_bounded() {
+        assert!(validate_batch_size(1).is_ok());
+        assert!(validate_batch_size(
+            crate::config::SIGNAL_MESSAGE_UUID_BACKFILL_BATCH_SIZE_MAX
+        )
+        .is_ok());
+        assert!(validate_batch_size(0).is_err());
+        assert!(validate_batch_size(
+            crate::config::SIGNAL_MESSAGE_UUID_BACKFILL_BATCH_SIZE_MAX + 1
+        )
+        .is_err());
+    }
 }

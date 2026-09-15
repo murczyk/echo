@@ -40,6 +40,10 @@ pub struct EchoImSyncCursor {
     pub inbox_message_id: i32,
 }
 
+fn effective_rer_duty_poll_interval_sec(interval_sec: i64) -> i64 {
+    interval_sec.max(crate::config::RER_DUTY_POLL_INTERVAL_MIN_SEC)
+}
+
 impl PelengBounds {
     fn from_corners(
         top_left_lat: f64,
@@ -75,7 +79,9 @@ fn map_system_settings_item(
             .rer_duty_insert_historical_interceptions,
         rer_duty_test_since_ms: settings.rer_duty_test_since_ms,
         rer_duty_test_limit: settings.rer_duty_test_limit,
-        rer_duty_poll_interval_sec: settings.rer_duty_poll_interval_sec,
+        rer_duty_poll_interval_sec: effective_rer_duty_poll_interval_sec(
+            settings.rer_duty_poll_interval_sec,
+        ),
         rer_duty_test_replay_interval_sec: settings
             .rer_duty_test_replay_interval_sec,
         created_at: settings.created_at.and_utc().timestamp_millis(),
@@ -565,7 +571,9 @@ fn system_settings_active_model(
         rer_duty_insert_historical_interceptions: Set(req.rer_duty_test_enabled),
         rer_duty_test_since_ms: Set(req.rer_duty_test_since_ms),
         rer_duty_test_limit: Set(req.rer_duty_test_limit),
-        rer_duty_poll_interval_sec: Set(req.rer_duty_poll_interval_sec.max(1)),
+        rer_duty_poll_interval_sec: Set(effective_rer_duty_poll_interval_sec(
+            req.rer_duty_poll_interval_sec,
+        )),
         rer_duty_test_replay_interval_sec: Set(
             req.rer_duty_test_replay_interval_sec
         ),
@@ -740,7 +748,9 @@ pub async fn current_system_settings(
                 .rer_duty_insert_historical_interceptions,
             rer_duty_test_since_ms: settings.rer_duty_test_since_ms,
             rer_duty_test_limit: settings.rer_duty_test_limit,
-            rer_duty_poll_interval_sec: settings.rer_duty_poll_interval_sec,
+            rer_duty_poll_interval_sec: effective_rer_duty_poll_interval_sec(
+                settings.rer_duty_poll_interval_sec,
+            ),
             rer_duty_test_replay_interval_sec: settings
                 .rer_duty_test_replay_interval_sec,
             short_url_enabled: settings.short_url_enabled,
@@ -780,7 +790,8 @@ pub async fn current_system_settings(
             rer_duty_insert_historical_interceptions: false,
             rer_duty_test_since_ms: 0,
             rer_duty_test_limit: 1,
-            rer_duty_poll_interval_sec: 1,
+            rer_duty_poll_interval_sec:
+                crate::config::RER_DUTY_POLL_INTERVAL_MIN_SEC,
             rer_duty_test_replay_interval_sec: 1,
             short_url_enabled: false,
             support_non_rer_interceptions: false,
@@ -879,6 +890,12 @@ mod tests {
 
     static TEST_LOCK: tokio::sync::Mutex<()> =
         tokio::sync::Mutex::const_new(());
+
+    #[test]
+    fn rer_duty_poll_interval_matches_count_cache_freshness() {
+        assert_eq!(effective_rer_duty_poll_interval_sec(1), 5);
+        assert_eq!(effective_rer_duty_poll_interval_sec(10), 10);
+    }
 
     async fn test_login_id(env: &Env) -> uuid::Uuid {
         crate::users::login_id_by_name(&env.dbx, "Tester")

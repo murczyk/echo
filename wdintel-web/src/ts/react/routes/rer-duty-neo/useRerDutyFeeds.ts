@@ -5,7 +5,7 @@ import { fetchAnalysisCallsignInfos } from '../../services/api/analysis';
 import { fetchMessagesByIds } from '../../services/api/inbox-messages';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { mergeUpdatedDutyFeedMessages } from '../shared/message-card/message-card-message-updates';
-import { sortMessageItemsByTime } from './utils';
+import { INBOX_COUNT_POLL_INTERVAL_MS, sortMessageItemsByTime } from './utils';
 import { attachDutyNotificationAudioPrimingListeners } from './notifications';
 import { isNullOrUndefined, sortFrequenciesNumerically } from '../../utils/misc';
 import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
@@ -21,6 +21,13 @@ import type { DeviceAccess } from './useRerDutyPageSettings';
 const CALLSIGN_LOOKUP_RETRY_BACKOFF_MS = 30_000;
 
 export { MAX_MESSAGE_FEEDS };
+
+export function effectiveDutyPollIntervalSec(configuredIntervalSec: number): number {
+  return Math.max(
+    INBOX_COUNT_POLL_INTERVAL_MS / 1000,
+    Math.floor(configuredIntervalSec) || INBOX_COUNT_POLL_INTERVAL_MS / 1000,
+  );
+}
 
 export function getPendingDutyCallsignLookups(params: {
   messageFeeds: Parameters<typeof collectUniqueCallsignsFromMessages>[0];
@@ -149,9 +156,10 @@ export function useRerDutyFeeds(
     setKeywordSets(sets);
   }, []);
   const filterOpts = useRerDutyFilterOptions();
-  const [pollIntervalSec, setPollIntervalSec] = useState(1);
+  const [pollIntervalSec, setPollIntervalSec] = useState(INBOX_COUNT_POLL_INTERVAL_MS / 1000);
   const dutySettings = useDutySettings();
   const messageSortByRef = useRef(dutySettings.messageSortBy);
+  const lastInboxEventPollAtRef = useRef(Number.NEGATIVE_INFINITY);
   // Until the persisted preference is known (or after it fails), Duty must not make an
   // automatic positioning decision from the optimistic default.
   const dutyDisableAutoScroll =
@@ -170,7 +178,7 @@ export function useRerDutyFeeds(
     freqs: filterOpts.freqs,
     setProfiles: filterOpts.setProfiles,
     setGroupInfos: filterOpts.setGroupInfos,
-    pollIntervalSec,
+    pollIntervalSec: effectiveDutyPollIntervalSec(pollIntervalSec),
     disableAutoScroll: dutyDisableAutoScroll,
     deviceAccess,
     messageSortBy: dutySettings.messageSortBy === 'creation' ? 'IMSCreatedAt' : 'IMSTimestamp',
@@ -237,6 +245,14 @@ export function useRerDutyFeeds(
 
   useInboxChangedMessageIds({
     onMessageIds: async (messageIds) => {
+      const now = Date.now();
+      const poll =
+        now - lastInboxEventPollAtRef.current >= INBOX_COUNT_POLL_INTERVAL_MS
+          ? (() => {
+              lastInboxEventPollAtRef.current = now;
+              return feedState.pollNow();
+            })()
+          : Promise.resolve();
       const refreshes = feedState.messageFeeds.flatMap((feed) => {
         const visibleMessageIds = new Set(feed.items.map(([messageId]) => messageId));
         const visibleChangedMessageIds = Array.from(
@@ -255,10 +271,14 @@ export function useRerDutyFeeds(
         ];
       });
 
-      if (refreshes.length === 0) return;
+      if (refreshes.length === 0) {
+        await poll;
+        return;
+      }
 
-      await Promise.all(
-        refreshes.map(
+      await Promise.all([
+        poll,
+        ...refreshes.map(
           async ({
             feedId,
             messageIds: visibleChangedMessageIds,
@@ -293,7 +313,7 @@ export function useRerDutyFeeds(
             }
           },
         ),
-      );
+      ]);
     },
   });
 

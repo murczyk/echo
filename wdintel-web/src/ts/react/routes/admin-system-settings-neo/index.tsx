@@ -102,6 +102,8 @@ type SystemSettingsPayload = {
   echoRestapiErrorDiscordWebhookUrl: string | null;
 };
 
+const DUTY_POLL_INTERVAL_SEC_MIN = 5;
+
 const EMPTY_FORM: SystemSettingsForm = {
   exactMatchOnlyDefault: true,
   supportNonRerInterceptions: false,
@@ -113,7 +115,7 @@ const EMPTY_FORM: SystemSettingsForm = {
   dutyTestEnabled: false,
   dutyTestSinceMs: 0,
   dutyTestLimit: 1,
-  dutyPollIntervalSec: 1,
+  dutyPollIntervalSec: DUTY_POLL_INTERVAL_SEC_MIN,
   dutyTestReplayIntervalSec: 1,
   shortUrlEnabled: false,
   autofixEchoimMissingMessages: false,
@@ -145,7 +147,7 @@ const DUTY_TEST_SINCE_TOOLTIP =
   'Початок історії, з якого буде вибрано наступні повідомлення. Дата й час указуються за київським часом.';
 const DUTY_TEST_LIMIT_TOOLTIP = 'Кількість послідовних історичних повідомлень у циклі відтворення.';
 const DUTY_POLL_INTERVAL_TOOLTIP =
-  'Пауза між перевірками справжніх нових повідомлень в Оперативному.';
+  'Резервна перевірка нових повідомлень; події надходять одразу між перевірками.';
 const DUTY_TEST_REPLAY_INTERVAL_TOOLTIP =
   'Пауза між тестовими повідомленнями. Перше повідомлення надходить одразу, після останнього цикл починається знову.';
 const DISABLE_BOT_TAGS_TOOLTIP =
@@ -195,7 +197,10 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     dutyTestEnabled: item?.rerDutyTestEnabled ?? false,
     dutyTestSinceMs: item?.rerDutyTestSinceMs ?? 0,
     dutyTestLimit: item?.rerDutyTestLimit ?? 1,
-    dutyPollIntervalSec: item?.rerDutyPollIntervalSec ?? 1,
+    dutyPollIntervalSec: Math.max(
+      DUTY_POLL_INTERVAL_SEC_MIN,
+      item?.rerDutyPollIntervalSec ?? DUTY_POLL_INTERVAL_SEC_MIN,
+    ),
     dutyTestReplayIntervalSec: item?.rerDutyTestReplayIntervalSec ?? 1,
     shortUrlEnabled: item?.rerShortUrlEnabled ?? false,
     autofixEchoimMissingMessages: item?.autofixEchoimMissingMessages ?? false,
@@ -286,7 +291,10 @@ function normalizeForm(form: SystemSettingsForm): SystemSettingsForm {
     ...form,
     dutyTestSinceMs: Math.max(0, Math.floor(form.dutyTestSinceMs) || 0),
     dutyTestLimit: Math.max(1, Math.min(DUTY_TEST_SOURCE_MAX, Math.floor(form.dutyTestLimit) || 1)),
-    dutyPollIntervalSec: Math.max(1, Math.floor(form.dutyPollIntervalSec) || 1),
+    dutyPollIntervalSec: Math.max(
+      DUTY_POLL_INTERVAL_SEC_MIN,
+      Math.floor(form.dutyPollIntervalSec) || DUTY_POLL_INTERVAL_SEC_MIN,
+    ),
     dutyTestReplayIntervalSec: Math.max(
       1,
       Math.min(DUTY_TEST_REPLAY_INTERVAL_SEC_MAX, Math.floor(form.dutyTestReplayIntervalSec) || 1),
@@ -676,9 +684,11 @@ function DutySettingsSection({
         value={form.dutyPollIntervalSec}
         onChange={(event) => {
           const next = Number(event.target.value);
-          patchForm({ dutyPollIntervalSec: Number.isFinite(next) ? next : 1 });
+          patchForm({
+            dutyPollIntervalSec: Number.isFinite(next) ? next : DUTY_POLL_INTERVAL_SEC_MIN,
+          });
         }}
-        inputProps={{ min: 1, step: 1 }}
+        inputProps={{ min: DUTY_POLL_INTERVAL_SEC_MIN, step: 1 }}
         helperText="Як часто перевіряти нові повідомлення"
       />
 

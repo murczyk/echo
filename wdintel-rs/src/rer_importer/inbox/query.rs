@@ -1,5 +1,7 @@
 use crate::config::{
     ANALYTICS_INBOX_CANDIDATE_PAGE_SIZE,
+    ANALYTICS_INBOX_MESSAGE_ID_BOUNDS_CACHE_MAX_ENTRIES,
+    ANALYTICS_INBOX_MESSAGE_ID_BOUNDS_CACHE_TTL_MS,
     ANALYTICS_INBOX_POSTGRES_BOUNDS_MAX_DAYS, INBOX_COUNT_INDEXED_MAX_DAYS,
     INBOX_MESSAGES_PAGE_LIMIT, TAG_MINIMUM_CONFIDENCE,
 };
@@ -19,7 +21,10 @@ use crate::utils::*;
 use chrono::{Duration, NaiveDateTime, Utc};
 use sea_orm::{sea_query::PostgresQueryBuilder, *};
 use sea_query::{Alias, Expr, ExprTrait, Query, SelectStatement, SimpleExpr};
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
+use std::sync::Arc;
+use std::time::Instant;
+use tokio::sync::Mutex;
 
 fn since_id_null_bucket_filter(
     since_id_noninclusive: i64,
@@ -1720,13 +1725,142 @@ async fn resolve_analytics_inbox_message_id_scope(
     }
 }
 
-#[derive(FromQueryResult)]
+#[derive(Clone, FromQueryResult)]
 struct MessageIdBounds {
     min_id: Option<i64>,
     max_id: Option<i64>,
 }
 
+struct AnalyticsInboxMessageIdBoundsCacheEntry {
+    gate: Arc<Mutex<()>>,
+    cached: Option<(Instant, MessageIdBounds)>,
+    last_used: Instant,
+}
+
+static ANALYTICS_INBOX_MESSAGE_ID_BOUNDS_CACHE: once_cell::sync::Lazy<
+    Mutex<HashMap<String, AnalyticsInboxMessageIdBoundsCacheEntry>>,
+> = once_cell::sync::Lazy::new(|| Mutex::new(HashMap::new()));
+
 async fn load_inbox_message_id_bounds(
+    db: &DatabaseConnection,
+    sort_by: InboxMessagesSortBy,
+    since_date: Option<NaiveDateTime>,
+    till_date: Option<NaiveDateTime>,
+    use_source_bounds: bool,
+) -> Result<MessageIdBounds, AppError> {
+    let pool_identity = postgres_pool_identity(db);
+    let cache_key = format!(
+        "{pool_identity}:{sort_by:?}:{since_date:?}:{till_date:?}:{use_source_bounds}"
+    );
+    let gate = analytics_inbox_message_id_bounds_cache_gate(&cache_key).await;
+    let Some(gate) = gate else {
+        return load_inbox_message_id_bounds_uncached(
+            db,
+            sort_by,
+            since_date,
+            till_date,
+            use_source_bounds,
+        )
+        .await;
+    };
+    let _permit = gate.lock().await;
+    if let Some(bounds) =
+        cached_analytics_inbox_message_id_bounds(&cache_key, &gate).await
+    {
+        return Ok(bounds);
+    }
+    let result = load_inbox_message_id_bounds_uncached(
+        db,
+        sort_by,
+        since_date,
+        till_date,
+        use_source_bounds,
+    )
+    .await;
+    record_analytics_inbox_message_id_bounds(&cache_key, &gate, &result).await;
+    result
+}
+
+async fn analytics_inbox_message_id_bounds_cache_gate(
+    cache_key: &str,
+) -> Option<Arc<Mutex<()>>> {
+    let cache_ttl = core::time::Duration::from_millis(
+        ANALYTICS_INBOX_MESSAGE_ID_BOUNDS_CACHE_TTL_MS,
+    );
+    let now = Instant::now();
+    let mut cache = ANALYTICS_INBOX_MESSAGE_ID_BOUNDS_CACHE.lock().await;
+    cache.retain(|_, entry| {
+        entry
+            .cached
+            .as_ref()
+            .is_some_and(|(completed_at, _)| completed_at.elapsed() < cache_ttl)
+            || entry.last_used.elapsed() < cache_ttl
+            || entry.gate.try_lock().is_err()
+    });
+    if cache.len() >= ANALYTICS_INBOX_MESSAGE_ID_BOUNDS_CACHE_MAX_ENTRIES {
+        let oldest_key = cache
+            .iter()
+            .filter(|(_, entry)| entry.cached.is_some())
+            .min_by_key(|(_, entry)| entry.last_used)
+            .map(|(key, _)| key.clone())?;
+        cache.remove(&oldest_key);
+    }
+    let entry = cache.entry(cache_key.to_string()).or_insert_with(|| {
+        AnalyticsInboxMessageIdBoundsCacheEntry {
+            gate: Arc::new(Mutex::new(())),
+            cached: None,
+            last_used: now,
+        }
+    });
+    entry.last_used = now;
+    Some(entry.gate.clone())
+}
+
+async fn cached_analytics_inbox_message_id_bounds(
+    cache_key: &str,
+    gate: &Arc<Mutex<()>>,
+) -> Option<MessageIdBounds> {
+    let cache_ttl = core::time::Duration::from_millis(
+        ANALYTICS_INBOX_MESSAGE_ID_BOUNDS_CACHE_TTL_MS,
+    );
+    let mut cache = ANALYTICS_INBOX_MESSAGE_ID_BOUNDS_CACHE.lock().await;
+    let entry = cache
+        .get_mut(cache_key)
+        .filter(|entry| Arc::ptr_eq(&entry.gate, gate))?;
+    entry.last_used = Instant::now();
+    entry
+        .cached
+        .as_ref()
+        .filter(|(completed_at, _)| completed_at.elapsed() < cache_ttl)
+        .map(|(_, bounds)| bounds.clone())
+}
+
+async fn record_analytics_inbox_message_id_bounds(
+    cache_key: &str,
+    gate: &Arc<Mutex<()>>,
+    result: &Result<MessageIdBounds, AppError>,
+) {
+    let mut cache = ANALYTICS_INBOX_MESSAGE_ID_BOUNDS_CACHE.lock().await;
+    let remove = if let Some(entry) = cache
+        .get_mut(cache_key)
+        .filter(|entry| Arc::ptr_eq(&entry.gate, gate))
+    {
+        entry.last_used = Instant::now();
+        if let Ok(bounds) = result {
+            entry.cached = Some((Instant::now(), bounds.clone()));
+            false
+        } else {
+            true
+        }
+    } else {
+        false
+    };
+    if remove {
+        cache.remove(cache_key);
+    }
+}
+
+async fn load_inbox_message_id_bounds_uncached(
     db: &DatabaseConnection,
     sort_by: InboxMessagesSortBy,
     since_date: Option<NaiveDateTime>,
@@ -1765,20 +1899,17 @@ async fn load_inbox_message_id_bounds(
             filters.join(" AND ")
         )
     };
-    Ok(
-        MessageIdBounds::find_by_statement(Statement::from_sql_and_values(
-            DbBackend::Postgres,
-            query,
-            values,
-        ))
-        .one(db)
-        .await
-        .context(h!())?
-        .unwrap_or(MessageIdBounds {
-            min_id: None,
-            max_id: None,
-        }),
+    let bounds = MessageIdBounds::find_by_statement(
+        Statement::from_sql_and_values(DbBackend::Postgres, query, values),
     )
+    .one(db)
+    .await
+    .context(h!())?
+    .unwrap_or(MessageIdBounds {
+        min_id: None,
+        max_id: None,
+    });
+    Ok(bounds)
 }
 
 fn analytics_inbox_scope_is_closed(
@@ -2741,6 +2872,35 @@ pub fn build_inbox_metadata_lateral_query() -> SelectStatement {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn analytics_inbox_bounds_cache_coalesces_and_reuses_success() {
+        let key = format!("bounds-cache-test-{}", uuid::Uuid::new_v4());
+        let first_gate = analytics_inbox_message_id_bounds_cache_gate(&key)
+            .await
+            .unwrap();
+        let second_gate = analytics_inbox_message_id_bounds_cache_gate(&key)
+            .await
+            .unwrap();
+        assert!(Arc::ptr_eq(&first_gate, &second_gate));
+
+        let bounds = MessageIdBounds {
+            min_id: Some(1),
+            max_id: Some(2),
+        };
+        record_analytics_inbox_message_id_bounds(
+            &key,
+            &first_gate,
+            &Ok(bounds),
+        )
+        .await;
+        let cached =
+            cached_analytics_inbox_message_id_bounds(&key, &first_gate)
+                .await
+                .unwrap();
+        assert_eq!(cached.min_id, Some(1));
+        assert_eq!(cached.max_id, Some(2));
+    }
 
     #[test]
     fn joined_creation_time_filters_and_ordering_are_qualified() {
