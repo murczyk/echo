@@ -1943,6 +1943,30 @@ fn postgres_senders_selected_networks_keep_correlated_filter() {
 }
 
 #[test]
+fn postgres_senders_creation_breakdown_qualifies_created_at() {
+    let mut req = mk_analysis_stats_req(0, 86_400_000);
+    req.message_time_basis =
+        Some(crate::user_settings::MessageTimeBasis::MessageCreation);
+    let query = stats::build_sender_breakdown_query(
+        &Json(req),
+        &uuid::Uuid::nil(),
+        test_dt(1970, 1, 1, 0, 0),
+        test_dt(1970, 1, 2, 0, 0),
+        vec!["group".to_string()],
+        None,
+        None,
+    )
+    .unwrap();
+    let sql = query.build(DbBackend::Postgres).to_string();
+
+    assert!(
+        sql.contains(r#""signal_message"."created_at" AT TIME ZONE"#),
+        "{sql}"
+    );
+    assert!(!sql.contains("(created_at AT TIME ZONE"), "{sql}");
+}
+
+#[test]
 fn postgres_tags_exact_unit_query_only_uses_linked_candidates() {
     let mut req = mk_analysis_stats_req(0, 1);
     req.selected_units = Some(vec!["unit".to_string()]);

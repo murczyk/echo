@@ -1630,8 +1630,16 @@ pub(super) fn build_sender_breakdown_query(
         "to_char(($1 AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date, 'DD.MM.YYYY')",
         [match req.message_time_basis {
             Some(crate::user_settings::MessageTimeBasis::MessageCreation) =>
-                Expr::col(signal_message::Column::CreatedAt).into_simple_expr(),
-            _ => Expr::col(sigint_inbox_item::Column::Datetime).into_simple_expr(),
+                Expr::col((
+                    signal_message::Entity,
+                    signal_message::Column::CreatedAt,
+                ))
+                .into_simple_expr(),
+            _ => Expr::col((
+                sigint_inbox_item::Entity,
+                sigint_inbox_item::Column::Datetime,
+            ))
+            .into_simple_expr(),
         }],
     );
     let breakdown_query =
