@@ -1,5 +1,6 @@
 import { Box, Paper, Tab, Tabs } from '@mui/material';
 
+import type { DeviceFileTreeEntry } from '../../../../../Bindings';
 import { DeviceFileContentPane } from '../../device-files';
 import { DeviceFileJournal } from '../../device-files/components/DeviceFileJournal';
 import type { DeviceAnalyticsTagFilter } from '../../device-files/types';
@@ -11,6 +12,7 @@ export type DeviceDetailsTab = 'analytical' | 'files' | 'journal';
 
 export function DeviceDetailsTabPanel({
   activeTab,
+  selectedFile,
   journal,
   deviceId,
   isAdmin,
@@ -20,6 +22,7 @@ export function DeviceDetailsTabPanel({
   onTabChange,
 }: {
   activeTab: DeviceDetailsTab;
+  selectedFile: DeviceFileTreeEntry | null;
   journal: DeviceFileJournalState;
   deviceId: string;
   isAdmin: boolean;
@@ -98,7 +101,7 @@ export function DeviceDetailsTabPanel({
             aria-labelledby="device-details-files-tab"
             sx={{ height: '100%', minHeight: 0, minWidth: 0 }}
           >
-            <DeviceFileContentPane />
+            <DeviceFileContentPane deviceId={deviceId} file={selectedFile ?? null} />
           </Box>
         ) : null}
         {activeTab === 'journal' ? (

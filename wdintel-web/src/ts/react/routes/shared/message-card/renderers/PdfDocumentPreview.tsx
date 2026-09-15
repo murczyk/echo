@@ -29,10 +29,12 @@ export function PdfDocumentPreview({
   href,
   zoom,
   sizeBytes,
+  onError,
 }: {
   href: string;
   zoom: number;
   sizeBytes?: number | null;
+  onError?: (error: unknown) => void;
 }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -105,6 +107,7 @@ export function PdfDocumentPreview({
         setPdfBlobUrl(objectUrl);
       } catch (loadError) {
         if (disposed || abortController.signal.aborted) return;
+        onError?.(loadError);
         setError(
           formatPdfPreviewErrorMessage(loadError instanceof Error ? loadError.message : null),
         );
@@ -120,7 +123,7 @@ export function PdfDocumentPreview({
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [href, sizeBytes]);
+  }, [href, sizeBytes, onError]);
 
   const renderedPageCount = Math.min(pageCount ?? 0, PDF_PAGE_RENDER_LIMIT);
   const isPreviewLimited = pageCount != null && pageCount > PDF_PAGE_RENDER_LIMIT;
@@ -183,9 +186,10 @@ export function PdfDocumentPreview({
               })
               .catch(() => {});
           }}
-          onLoadError={(loadError) =>
-            setError(loadError instanceof Error ? loadError.message : 'Не вдалося відкрити PDF')
-          }
+          onLoadError={(loadError) => {
+            onError?.(loadError);
+            setError(loadError instanceof Error ? loadError.message : 'Не вдалося відкрити PDF');
+          }}
           renderMode="canvas"
           options={PDF_DOCUMENT_OPTIONS}
         >

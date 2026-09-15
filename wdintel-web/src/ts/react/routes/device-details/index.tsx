@@ -206,7 +206,9 @@ export function DeviceDetailsPage({
           overflow: 'auto',
           [echoLgMediaQuery]: {
             gridTemplateColumns: leftPanelVisible
-              ? 'minmax(360px, 420px) minmax(0, 1fr)'
+              ? activeTab === 'files'
+                ? '320px minmax(0, 1fr)'
+                : 'minmax(360px, 420px) minmax(0, 1fr)'
               : 'minmax(0, 1fr)',
             gridTemplateRows: 'minmax(0, 1fr)',
             overflow: 'hidden',
@@ -242,6 +244,7 @@ export function DeviceDetailsPage({
             <Box sx={{ minHeight: 0, minWidth: 0, display: 'flex', overflow: 'hidden' }}>
               <DeviceDetailsTabPanel
                 activeTab={activeTab}
+                selectedFile={files.selectedFile}
                 journal={journal}
                 deviceId={deviceId}
                 isAdmin={hasRole(authUserRoles, 'Admin')}

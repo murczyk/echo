@@ -21,6 +21,7 @@ type TextDocumentPreviewProps = {
   kindLabel: 'TXT' | 'Markdown';
   renderText: (text: string) => ReactNode;
   sizeBytes?: number | null;
+  onError?: (error: unknown) => void;
 };
 
 function formatTextPreviewErrorMessage(
@@ -262,6 +263,7 @@ export function TextDocumentPreview({
   kindLabel,
   renderText,
   sizeBytes,
+  onError,
 }: TextDocumentPreviewProps) {
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [text, setText] = useState('');
@@ -308,6 +310,7 @@ export function TextDocumentPreview({
         setStatus('ready');
       } catch (loadError) {
         if (disposed || abortController.signal.aborted) return;
+        onError?.(loadError);
         setError(loadError instanceof Error ? loadError.message : null);
         setStatus('error');
       }
@@ -319,7 +322,7 @@ export function TextDocumentPreview({
       disposed = true;
       abortController.abort();
     };
-  }, [href, sizeBytes]);
+  }, [href, sizeBytes, onError]);
 
   if (status === 'error') {
     return (
@@ -367,14 +370,17 @@ export function TextDocumentPreview({
 export function TxtDocumentPreview({
   href,
   sizeBytes,
+  onError,
 }: {
   href: string;
   sizeBytes?: number | null;
+  onError?: (error: unknown) => void;
 }) {
   return (
     <TextDocumentPreview
       href={href}
       sizeBytes={sizeBytes}
+      onError={onError}
       kindLabel="TXT"
       renderText={(text) => (
         <Box

@@ -22,7 +22,6 @@ import { PowerButton } from '../../../components/PowerButton';
 import { PowerChip } from '../../../components/PowerChip';
 import { PowerIconButton } from '../../../components/PowerIconButton';
 import { DeviceAnalyticsTagBadges } from './DeviceAnalyticsTagBadges';
-import { DeviceFileContentMarker } from './DeviceFileContentMarker';
 import type { DeviceFilesState } from '../use-device-files';
 import type { DeviceFileTreeBranch } from '../use-device-file-tree';
 
@@ -79,7 +78,16 @@ function toDirectoryNode(entry: DeviceFileTreeEntry, parent: DirectoryNode): Dir
   };
 }
 
-function DeviceFileRow({ entry, depth }: { entry: DeviceFileTreeEntry; depth: number }) {
+function DeviceFileRow({
+  entry,
+  depth,
+  files,
+}: {
+  entry: DeviceFileTreeEntry;
+  depth: number;
+  files: DeviceFilesState;
+}) {
+  const selected = files.selectedFile?.entryId === entry.entryId;
   return (
     <Box
       component="li"
@@ -92,22 +100,38 @@ function DeviceFileRow({ entry, depth }: { entry: DeviceFileTreeEntry; depth: nu
         py: 0.25,
       }}
     >
-      <Box sx={{ width: 36, flexShrink: 0 }} />
-      <InsertDriveFileOutlinedIcon fontSize="small" color="action" sx={{ mr: 1 }} />
-      <ListItemText
-        primary={
-          <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
-            <Typography variant="body2" noWrap title={entry.name} sx={{ minWidth: 0 }}>
-              {entry.name}
-            </Typography>
-            <DeviceAnalyticsTagBadges tags={entry.tags} />
-          </Stack>
-        }
-        sx={{ minWidth: 0, my: 0 }}
-      />
-      <Box sx={{ ml: 1, display: 'inline-flex', alignItems: 'center' }}>
-        <DeviceFileContentMarker hasContent={entry.hasContent} />
-      </Box>
+      <ListItemButton
+        component="button"
+        selected={selected}
+        aria-pressed={selected}
+        aria-description={entry.hasContent ? undefined : 'Контент файлу відсутній'}
+        onClick={() => files.selectFile(entry)}
+        className={`min-h-echo-control-md min-w-0 rounded-echo-sm! ${selected ? 'bg-echo-primary/15!' : ''} ${entry.hasContent ? '' : 'opacity-55'}`}
+      >
+        <Box sx={{ width: 36, flexShrink: 0 }} />
+        <InsertDriveFileOutlinedIcon
+          fontSize="small"
+          color={selected ? 'primary' : 'action'}
+          sx={{ mr: 1 }}
+        />
+        <ListItemText
+          primary={
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+              <Typography
+                variant="body2"
+                color={selected ? 'primary' : 'text.primary'}
+                noWrap
+                title={entry.name}
+                sx={{ minWidth: 0 }}
+              >
+                {entry.name}
+              </Typography>
+              <DeviceAnalyticsTagBadges tags={entry.tags} />
+            </Stack>
+          }
+          sx={{ minWidth: 0, my: 0 }}
+        />
+      </ListItemButton>
     </Box>
   );
 }
@@ -190,16 +214,19 @@ function DeviceFileDirectory({ node, depth, files }: DirectoryProps) {
         <ListItemButton
           selected={selected}
           aria-pressed={selected}
+          aria-expanded={expanded}
+          aria-controls={childrenId}
           aria-label={`Вибрати каталог ${node.name} як область пошуку${
             subtreeFileCountDescription === null ? '' : `; ${subtreeFileCountDescription}`
           }`}
-          onClick={() =>
+          onClick={() => {
+            files.tree.toggleDirectory(node.entryId);
             files.selectSearchScope({
               entryId: node.entryId,
               rootEntryId: node.rootEntryId,
               label: node.scopeLabel,
-            })
-          }
+            });
+          }}
           sx={{ minWidth: 0, py: 0.5, px: 0.75, borderRadius: 1 }}
         >
           <ListItemIcon sx={{ minWidth: 32 }}>
@@ -235,7 +262,7 @@ function DeviceFileDirectory({ node, depth, files }: DirectoryProps) {
                 files={files}
               />
             ) : (
-              <DeviceFileRow key={entry.entryId} entry={entry} depth={depth + 1} />
+              <DeviceFileRow key={entry.entryId} entry={entry} depth={depth + 1} files={files} />
             ),
           )}
           {branch?.loadMoreError ? (

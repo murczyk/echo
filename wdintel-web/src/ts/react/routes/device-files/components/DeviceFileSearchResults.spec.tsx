@@ -51,6 +51,7 @@ afterEach(() => {
 describe('DeviceFileSearchResults', () => {
   it('renders duplicate paths as separate ID-keyed rows and navigates by entry ID', () => {
     const onOpenDirectory = vi.fn();
+    const onSelectFile = vi.fn();
     const directory = buildEntry(DIRECTORY_ID, 'directory');
     const firstFile = buildEntry('018f0000-0000-7000-8000-000000000010', 'file');
     const secondFile = buildEntry('018f0000-0000-7000-8000-000000000011', 'file');
@@ -66,6 +67,7 @@ describe('DeviceFileSearchResults', () => {
           error={null}
           loadMoreError={null}
           onOpenDirectory={onOpenDirectory}
+          onSelectFile={onSelectFile}
           onRetry={vi.fn()}
           onLoadMore={vi.fn()}
         />,
@@ -74,13 +76,19 @@ describe('DeviceFileSearchResults', () => {
 
     expect(container?.querySelectorAll('[data-entry-id]')).toHaveLength(3);
     expect(container?.textContent?.match(/C:\\duplicate\.log/g)).toHaveLength(2);
-    expect(container?.querySelector('[aria-label="Контент файлу відсутній"]')).not.toBeNull();
+    expect(container?.querySelector('[aria-description="Контент файлу відсутній"]')).not.toBeNull();
 
     const directoryButton = Array.from(container?.querySelectorAll('button') ?? []).find(
       (button) => button.textContent === 'nested',
     );
     act(() => directoryButton?.click());
     expect(onOpenDirectory).toHaveBeenCalledWith(DIRECTORY_ID);
+    act(() => {
+      container
+        ?.querySelector<HTMLButtonElement>(`[data-entry-id="${firstFile.entryId}"] button`)
+        ?.click();
+    });
+    expect(onSelectFile).toHaveBeenCalledWith(firstFile);
   });
 
   it('renders a local empty search state without a retry action', () => {
@@ -95,6 +103,7 @@ describe('DeviceFileSearchResults', () => {
           error={null}
           loadMoreError={null}
           onOpenDirectory={vi.fn()}
+          onSelectFile={vi.fn()}
           onRetry={vi.fn()}
           onLoadMore={vi.fn()}
         />,

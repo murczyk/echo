@@ -1,3 +1,6 @@
+import { emitUnauthorizedEvent } from '../../../auth-redirect';
+import { HttpRequestError } from '../../../services/api/client';
+
 export const DOCUMENT_PREVIEW_ZOOM_MIN = 50;
 export const DOCUMENT_PREVIEW_ZOOM_MAX = 300;
 export const DOCUMENT_PREVIEW_ZOOM_STEP = 25;
@@ -89,7 +92,8 @@ export async function fetchCachedDocumentResponse(
 
   const response = await fetch(href, { signal });
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
+    if (response.status === 401) emitUnauthorizedEvent();
+    throw new HttpRequestError(response.status, `HTTP ${response.status}`);
   }
 
   const contentType = response.headers.get('content-type');
@@ -119,7 +123,9 @@ export async function fetchCachedDocumentResponse(
     contentLength,
   };
 
-  cacheDocumentResponse(href, entry);
+  if (!response.headers.get('cache-control')?.includes('no-store')) {
+    cacheDocumentResponse(href, entry);
+  }
 
   return {
     buffer: buffer.slice(0),

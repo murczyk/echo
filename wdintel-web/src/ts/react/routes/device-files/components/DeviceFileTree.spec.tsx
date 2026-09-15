@@ -57,6 +57,7 @@ function buildFiles(
     scopeNotice: null,
     searchScope: null,
     selectSearchScope: vi.fn(),
+    selectFile: vi.fn(),
     reloadRoots: vi.fn(),
     refreshVisible: vi.fn(),
     counts: {
@@ -143,7 +144,7 @@ describe('DeviceFileTree counters', () => {
     expect(retryCounts).toHaveBeenCalledTimes(1);
   });
 
-  it('renders content availability markers for tree files', () => {
+  it('keeps files without content selectable with an accessible explanation', () => {
     const availableFile = buildFileEntry(
       '018f0000-0000-7000-8000-000000000002',
       'available.log',
@@ -155,12 +156,18 @@ describe('DeviceFileTree counters', () => {
       false,
     );
 
+    const files = buildFiles({}, [availableFile, missingFile]);
     act(() => {
-      root?.render(<DeviceFileTree files={buildFiles({}, [availableFile, missingFile])} />);
+      root?.render(<DeviceFileTree files={files} />);
     });
 
-    expect(container?.querySelector('[aria-label="Контент файлу наявний"]')).not.toBeNull();
-    expect(container?.querySelector('[aria-label="Контент файлу відсутній"]')).not.toBeNull();
+    const missingButton = container?.querySelector<HTMLButtonElement>(
+      '[aria-description="Контент файлу відсутній"]',
+    );
+    expect(missingButton).not.toBeNull();
+    expect(missingButton?.disabled).toBe(false);
+    act(() => missingButton?.click());
+    expect(files.selectFile).toHaveBeenCalledWith(missingFile);
   });
 
   it('does not render file metadata beneath the filename', () => {

@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import { createServer, request as proxyRequest } from 'node:http';
 import { expect, test, type Page, type Route } from '@playwright/test';
 
 const DEVICE_ID = '018f0000-0000-7000-8000-000000000000';
@@ -474,9 +476,7 @@ test('@smoke device details uses tabs, an IDE-style Files sidebar, and a synchro
   await expect(fileTree).toBeVisible();
   await expect(contentPane).toBeVisible();
   await expect(contentPane.getByRole('heading', { name: 'Вміст файлу' })).toBeVisible();
-  await expect(contentPane).toContainText(
-    'Тут відображатиметься вміст вибраного файлу, коли перегляд контенту стане доступним.',
-  );
+  await expect(contentPane).toContainText('Виберіть файл у дереві або результатах пошуку.');
   await expect(contentPane.getByRole('button')).toHaveCount(0);
   await expect(contentPane.getByRole('textbox')).toHaveCount(0);
   await expect.poll(() => tracker.rootsRequestCount).toBe(1);
@@ -676,4 +676,251 @@ test('@smoke device creation requires and submits a name for DeviceSource', asyn
   await expect.poll(() => tracker.submittedCreateName).toBe('Device Bravo');
   await expect(page.getByRole('textbox', { name: 'Назва', exact: true })).toBeHidden();
   expect(browserFailures).toEqual([]);
+});
+
+test('@smoke device files previews read only, explains unavailable states and downloads original bytes', async ({
+  page,
+  baseURL,
+}) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  const tracker = await installMocks(page);
+  tracker.releaseSubtreeCounts();
+  await page.setViewportSize({ width: 1440, height: 1024 });
+  await page.addInitScript(() => {
+    if (window === window.top) localStorage.setItem('echo-theme-mode', 'dark');
+  });
+  const samples = [
+    { name: 'звіт.TXT', bytes: Buffer.from('Український текст\n<script>read only</script>') },
+    {
+      name: 'report.pdf',
+      bytes: await readFile(new URL('./fixtures/device-file-content.pdf', import.meta.url)),
+    },
+    {
+      name: 'report.docx',
+      bytes: await readFile(new URL('./fixtures/device-file-content.docx', import.meta.url)),
+    },
+    { name: 'archive.zip', bytes: Buffer.from('UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==', 'base64') },
+  ];
+  const files = samples.map((sample, index) => ({
+    ...entry({
+      entryId: `018f0000-0000-7000-8000-00000000002${index}`,
+      parentEntryId: POSIX_ROOT_ID,
+      kind: 'file',
+      name: sample.name,
+      absolutePath: `C:\\Users\\analyst\\Documents\\${sample.name}`,
+    }),
+    file_id: `018f0000-0000-7000-8000-00000000002${index}`,
+    revision: 1,
+  }));
+  const missingFile = {
+    ...entry({
+      entryId: '018f0000-0000-7000-8000-000000000030',
+      parentEntryId: POSIX_ROOT_ID,
+      kind: 'file',
+      name: 'Журнал.txt',
+      absolutePath: 'C:\\Users\\analyst\\Documents\\Журнал.txt',
+    }),
+    revision: 2,
+    has_content: false,
+  };
+  const contentRequests: string[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.endsWith('/content')) contentRequests.push(request.url());
+  });
+  let downloadCount = 0;
+  page.on('download', () => downloadCount++);
+  let downloadResponse: 'ok' | 'error' | 'interrupted' | 'pending' = 'ok';
+  let finishDownload: (() => void) | null = null;
+  // Real HTTP exercises interrupted and incomplete download response bodies.
+  const server = createServer((request, response) => {
+    const pathname = new URL(request.url!, 'http://localhost').pathname;
+    if (pathname.endsWith('/revisions/1/content')) {
+      const sample = samples[files.findIndex((file) => file.file_id === pathname.split('/')[5])];
+      if (!sample) {
+        response.writeHead(404).end();
+        return;
+      }
+      if (request.method === 'GET' && downloadResponse === 'error') {
+        response.writeHead(500, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ message: 'Не вдалося розшифрувати файл' }));
+        return;
+      }
+      response.writeHead(200, {
+        'content-type': 'application/octet-stream',
+        'content-disposition': `attachment; filename="${Buffer.from(sample.name).toString('latin1')}"; filename*=UTF-8''${encodeURIComponent(sample.name)}`,
+        'content-length': String(sample.bytes.length),
+        'cache-control': 'private, no-store',
+      });
+      if (request.method === 'GET' && downloadResponse === 'interrupted') {
+        response.write(sample.bytes.subarray(0, 1), () => response.destroy());
+        return;
+      }
+      if (request.method === 'GET' && downloadResponse === 'pending') {
+        response.write(sample.bytes.subarray(0, 1));
+        finishDownload = () => response.end(sample.bytes.subarray(1));
+        return;
+      }
+      response.end(request.method === 'HEAD' ? undefined : sample.bytes);
+      return;
+    }
+    const proxy = proxyRequest(
+      new URL(request.url!, baseURL),
+      { method: request.method, headers: request.headers },
+      (upstream) => {
+        response.writeHead(upstream.statusCode!, upstream.headers);
+        upstream.pipe(response);
+      },
+    );
+    proxy.on('error', () => response.writeHead(502).end());
+    request.pipe(proxy);
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address() as { port: number };
+  try {
+    await page.route('**/api/device/files/browse', (route) =>
+      fulfillJson(route, {
+        breadcrumbs: [],
+        entries:
+          route.request().postDataJSON().parent_entry_id === POSIX_ROOT_ID
+            ? [...files, missingFile]
+            : [],
+        next_cursor: null,
+      }),
+    );
+    await page.route('**/api/device/files/*/*/revisions/1/content', (route) => route.continue());
+    await page.goto(`http://127.0.0.1:${address.port}/devices/${DEVICE_ID}`, {
+      waitUntil: 'domcontentloaded',
+    });
+    await page.getByRole('tab', { name: 'Файли', exact: true }).click();
+    const pane = page.getByTestId('device-file-content-pane');
+    const tree = page.getByTestId('device-files-tree');
+    await expect(page.getByTestId('device-files-sidebar')).toHaveCSS('width', '320px');
+    for (const sample of samples) {
+      await tree.getByRole('button', { name: sample.name, exact: true }).click();
+      await expect(
+        pane.getByRole('heading', { name: `C:\\Users\\analyst\\Documents\\${sample.name}` }),
+      ).toBeVisible();
+      await expect(pane.locator('header')).toHaveCSS('height', '48px');
+      await expect(pane.locator('header h2')).toHaveCSS('font-size', '14px');
+      await expect(pane.locator('header')).toContainText('Ревізія 1 · Поточна');
+      if (sample.name.endsWith('TXT')) {
+        await expect(pane.locator('pre')).toHaveText(sample.bytes.toString());
+        await expect(pane.locator('script')).toHaveCount(0);
+      } else if (sample.name.endsWith('pdf')) {
+        await expect(pane.locator('.react-pdf__Page__canvas')).toBeVisible();
+        await expect(pane).toContainText('Device PDF content');
+      } else if (sample.name.endsWith('docx')) {
+        await expect(
+          pane
+            .frameLocator('iframe[title="DOCX preview"]')
+            .getByText('Device DOCX content — тільки читання'),
+        ).toBeVisible();
+        await expect(pane.locator('iframe')).toHaveAttribute('sandbox', '');
+      } else {
+        await expect(
+          pane.getByRole('heading', { name: 'Перегляд формату ZIP не підтримується' }),
+        ).toBeVisible();
+        await expect(pane.getByRole('button', { name: 'Скачати файл' })).toBeEnabled();
+        await expect(pane.locator('pre, canvas, iframe')).toHaveCount(0);
+      }
+      await expect(pane.locator('textarea, input, [contenteditable="true"]')).toHaveCount(0);
+      await page.screenshot({
+        path: test.info().outputPath(`${sample.name}.png`),
+        animations: 'disabled',
+      });
+      const downloaded = page.waitForEvent('download');
+      await pane.getByRole('button', { name: 'Скачати файл' }).click();
+      const download = await downloaded;
+      expect(download.suggestedFilename()).toBe(sample.name);
+      expect(await readFile((await download.path())!)).toEqual(sample.bytes);
+    }
+    await test.step('PR #3500: observes GET failures and waits for the complete download body', async () => {
+      const downloadButton = pane.getByRole('button', { name: 'Скачати файл' });
+      const archive = samples[3];
+      const archiveUrl = `/api/device/files/${DEVICE_ID}/${files[3].file_id}/revisions/1/content`;
+      await tree.getByRole('button', { name: missingFile.name, exact: true }).click();
+      await tree.getByRole('button', { name: archive.name, exact: true }).click();
+      for (const failure of ['error', 'interrupted'] as const) {
+        downloadResponse = failure;
+        expect((await page.request.head(new URL(archiveUrl, page.url()).href)).status()).toBe(200);
+        await downloadButton.click();
+        const alert = page.getByRole('alert').filter({ hasText: 'Помилка скачування файлу' });
+        await expect(alert).toBeVisible();
+        if (failure === 'error') await expect(alert).toContainText('Не вдалося розшифрувати файл');
+        else await expect(alert).toContainText('Перевірте мережу та спробуйте ще раз.');
+        await expect(downloadButton).toBeEnabled();
+        expect(downloadCount).toBe(samples.length);
+        await tree.getByRole('button', { name: missingFile.name, exact: true }).click();
+        await tree.getByRole('button', { name: archive.name, exact: true }).click();
+      }
+      downloadResponse = 'pending';
+      const downloaded = page.waitForEvent('download');
+      await downloadButton.click();
+      await expect.poll(() => finishDownload !== null).toBe(true);
+      await expect(downloadButton).toBeDisabled();
+      expect(downloadCount).toBe(samples.length);
+      finishDownload!();
+      const download = await downloaded;
+      expect(download.suggestedFilename()).toBe(archive.name);
+      expect(await readFile((await download.path())!)).toEqual(archive.bytes);
+      await expect(downloadButton).toBeEnabled();
+      downloadResponse = 'ok';
+    });
+    const requestsBeforeMissing = contentRequests.length;
+    const missingButton = tree.getByRole('button', { name: missingFile.name, exact: true });
+    await expect(missingButton).toHaveCSS('opacity', '0.55');
+    await missingButton.click();
+    await expect(missingButton).toHaveAttribute('aria-pressed', 'true');
+    await expect(pane.getByRole('heading', { name: 'Контент файлу відсутній' })).toBeVisible();
+    await expect(pane.locator('header')).toContainText(missingFile.absolute_path!);
+    await expect(pane.locator('header')).toContainText('Ревізія 2 · Поточна');
+    await expect(pane.getByRole('button', { name: 'Скачати файл' })).toBeDisabled();
+    await expect(pane.locator('pre, canvas, iframe')).toHaveCount(0);
+    expect(contentRequests).toHaveLength(requestsBeforeMissing);
+    await page.screenshot({
+      path: test.info().outputPath('missing-content.png'),
+      animations: 'disabled',
+    });
+    await page.evaluate(() => document.documentElement.setAttribute('data-bs-theme', 'light'));
+    await page.screenshot({
+      path: test.info().outputPath('missing-content-light.png'),
+      animations: 'disabled',
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    const headerBounds = await pane.locator('header').boundingBox();
+    const downloadBounds = await pane.getByRole('button', { name: 'Скачати файл' }).boundingBox();
+    expect(downloadBounds!.x + downloadBounds!.width).toBeLessThanOrEqual(
+      headerBounds!.x + headerBounds!.width,
+    );
+    await page.screenshot({
+      path: test.info().outputPath('missing-content-mobile.png'),
+      animations: 'disabled',
+    });
+    await page.setViewportSize({ width: 1440, height: 1024 });
+    await page.evaluate(() => document.documentElement.setAttribute('data-bs-theme', 'dark'));
+    files[0].revision = 2;
+    files[0].has_content = false;
+    await page.getByRole('button', { name: 'Оновити файлові дані' }).click();
+    await expect(pane.getByRole('heading', { name: 'Вміст файлу' })).toBeVisible();
+    await tree.getByRole('button', { name: samples[0].name, exact: true }).click();
+    await expect(pane.locator('header')).toContainText('Ревізія 2 · Поточна');
+    await expect(pane.getByRole('heading', { name: 'Контент файлу відсутній' })).toBeVisible();
+    await expect(pane.locator('pre')).toHaveCount(0);
+    await expect(pane.getByRole('button', { name: 'Скачати файл' })).toBeDisabled();
+    await page.route(
+      `**/api/device/files/${DEVICE_ID}/${files[1].file_id}/revisions/1/content`,
+      (route) => route.fulfill({ status: 404 }),
+    );
+    await tree.getByRole('button', { name: samples[1].name, exact: true }).click();
+    await expect(pane.getByRole('alert')).toContainText('Помилка завантаження вмісту файлу');
+    await expect(pane.locator('pre, canvas')).toHaveCount(0);
+    await expect(
+      page.getByRole('alert').filter({ hasText: 'Помилка завантаження вмісту файлу' }),
+    ).toHaveCount(2);
+    expect(pageErrors).toEqual([]);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
 });

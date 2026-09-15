@@ -5,7 +5,7 @@ type JsonObject = { [key: string]: JsonValue };
 type JsonRequestObject = { [key: string]: JsonValue | undefined };
 export type JsonBody = JsonValue | JsonObject | JsonRequestObject;
 
-type HttpMethod = 'POST' | 'PUT' | 'DELETE' | 'GET';
+type HttpMethod = 'POST' | 'PUT' | 'DELETE' | 'GET' | 'HEAD';
 export type RequestOptions = {
   headers?: Record<string, string>;
   signal?: AbortSignal;
@@ -139,7 +139,7 @@ async function requestJson<T>(
   }
 }
 
-async function requestBytes(
+async function requestResponse(
   method: HttpMethod,
   url: string,
   body?: JsonBody,
@@ -155,7 +155,7 @@ async function requestBytes(
     signal: options?.signal,
   };
 
-  if (method !== 'GET') {
+  if (method !== 'GET' && method !== 'HEAD') {
     init.body = body === undefined ? undefined : JSON.stringify(body);
   }
 
@@ -177,7 +177,7 @@ async function requestBytes(
     throw new HttpRequestError(response.status, message);
   }
 
-  return response.blob();
+  return response;
 }
 
 export async function postJson<T>(url: string, body?: JsonBody, options?: RequestOptions) {
@@ -185,7 +185,21 @@ export async function postJson<T>(url: string, body?: JsonBody, options?: Reques
 }
 
 export async function postBytes(url: string, body?: JsonBody, options?: RequestOptions) {
-  return requestBytes('POST', url, body, options);
+  return (await requestResponse('POST', url, body, options)).blob();
+}
+
+export async function getBytes(url: string, options?: RequestOptions) {
+  const response = await requestResponse('GET', url, undefined, options);
+  try {
+    return await response.blob();
+  } catch (error) {
+    if (isAbortError(error)) throw error;
+    throw new HttpRequestError(0, NETWORK_REQUEST_ERROR_MESSAGE);
+  }
+}
+
+export async function headResponse(url: string, options?: RequestOptions) {
+  return requestResponse('HEAD', url, undefined, options);
 }
 
 export async function getJson<T>(url: string, options?: RequestOptions) {
