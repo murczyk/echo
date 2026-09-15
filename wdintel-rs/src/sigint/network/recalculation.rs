@@ -770,7 +770,7 @@ async fn run_once(db: &DatabaseConnection) -> anyhow::Result<bool> {
     Ok(true)
 }
 
-pub(super) async fn run_pending(db: &DatabaseConnection) -> anyhow::Result<()> {
+pub(crate) async fn run_pending(db: &DatabaseConnection) -> anyhow::Result<()> {
     let started_at = std::time::Instant::now();
     for _ in 0..NETWORK_RECALCULATION_TASKS_PER_RUN {
         if started_at.elapsed()

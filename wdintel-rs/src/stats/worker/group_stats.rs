@@ -2,37 +2,62 @@ use crate::config::*;
 use crate::types::*;
 use chrono::*;
 use sea_orm::DatabaseConnection;
-use tokio::time::{sleep, Duration};
+use tokio::time::{sleep_until, Duration, Instant};
 
-pub async fn worker_calculate_group_stats(env: Arc<Env>) {
-    info!("worker_calculate_group_stats started");
+pub async fn worker_calculate_group_stats_and_network_recalculations(
+    env: Arc<Env>,
+) {
+    info!("group stats and network recalculation worker started");
     let mut last_calculated =
         Utc::now().naive_utc() - chrono::Duration::days(1);
     let mut prefer_historical = false;
     let stats_redis =
         crate::stats::redis::GroupStatsRedis::new(env.stats_redis.clone());
+    let mut group_stats_at = Instant::now();
+    let mut network_recalculation_at = Instant::now();
     loop {
-        match worker_calculate_group_stats_inner(
-            &env.dbx,
-            &stats_redis,
-            last_calculated,
-            &env.config,
-            &mut prefer_historical,
-        )
-        .await
-        {
-            Ok(ts) => {
-                last_calculated = ts;
+        tokio::select! {
+            biased;
+            _ = sleep_until(group_stats_at) => {
+                match worker_calculate_group_stats_inner(
+                    &env.dbx,
+                    &stats_redis,
+                    last_calculated,
+                    &env.config,
+                    &mut prefer_historical,
+                )
+                .await
+                {
+                    Ok(ts) => {
+                        last_calculated = ts;
+                    }
+                    Err(e) => {
+                        error!(
+                            "worker_calculate_group_stats_inner encountered an error: {:#?}",
+                            e
+                        );
+                    }
+                }
+                group_stats_at = Instant::now()
+                    + Duration::from_secs(
+                        WORKER_CALCULATE_GROUP_STATS_SLEEP_SEC,
+                    );
             }
-            Err(e) => {
-                error!(
-                    "worker_calculate_group_stats_inner encountered an error: {:#?}",
-                    e
-                );
+            _ = sleep_until(network_recalculation_at) => {
+                let started_at = Instant::now();
+                if let Err(e) = crate::sigint::network::recalculation::run_pending(
+                    &env.dbx,
+                )
+                .await
+                {
+                    error!("network recalculation encountered an error: {e:#?}");
+                }
+                network_recalculation_at = started_at
+                    + Duration::from_secs(
+                        NETWORK_RECALCULATION_WORKER_INTERVAL_SECS,
+                    );
             }
         }
-        sleep(Duration::from_secs(WORKER_CALCULATE_GROUP_STATS_SLEEP_SEC))
-            .await;
     }
 }
 
