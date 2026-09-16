@@ -682,7 +682,7 @@ test('@smoke device creation requires and submits a name for DeviceSource', asyn
 });
 
 // @test-scope regression: https://github.com/echoua/echo/pull/3500
-test('@smoke device files previews read only, explains unavailable states and downloads original bytes', async ({
+test('@smoke @regression device files previews read only, explains unavailable states and downloads original bytes', async ({
   page,
   baseURL,
 }) => {

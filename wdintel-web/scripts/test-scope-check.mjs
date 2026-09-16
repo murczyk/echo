@@ -55,7 +55,15 @@ function isTestDeclaration(node) {
     ts.isCallExpression(node) &&
     ['it', 'test'].includes(testCallName(node.expression) ?? '') &&
     node.arguments[0] != null &&
-    ts.isStringLiteralLike(node.arguments[0])
+    !isEachBuilderCall(node)
+  );
+}
+
+function isEachBuilderCall(node) {
+  return (
+    ts.isPropertyAccessExpression(node.expression) &&
+    node.expression.name.text === 'each' &&
+    ['it', 'test'].includes(testCallName(node.expression.expression) ?? '')
   );
 }
 
@@ -111,18 +119,66 @@ function testDeclarations(sourceFile) {
 }
 
 function declarationIdentity(sourceFile, node, file) {
-  const title = node.arguments[0].text;
+  const title = declarationTitle(sourceFile, node);
   const ancestors = [];
   for (let parent = node.parent; parent; parent = parent.parent) {
-    if (
-      ts.isCallExpression(parent) &&
-      testCallName(parent.expression) === 'describe' &&
-      ts.isStringLiteralLike(parent.arguments[0])
-    ) {
-      ancestors.unshift(parent.arguments[0].text);
-    }
+    if (ts.isCallExpression(parent) && isDescribeCall(parent))
+      ancestors.unshift(declarationTitle(sourceFile, parent));
   }
   return `${relative(webRoot, file)}::${[...ancestors, title].join(' > ')}`;
+}
+
+function isDescribeCall(node) {
+  return (
+    ts.isPropertyAccessExpression(node.expression) &&
+    node.expression.name.text === 'describe' &&
+    ['it', 'test'].includes(testCallName(node.expression.expression) ?? '') &&
+    node.arguments[0] != null
+  );
+}
+
+function declarationTitle(sourceFile, node) {
+  const title = node.arguments[0];
+  if (ts.isStringLiteralLike(title) || ts.isNoSubstitutionTemplateLiteral(title)) return title.text;
+  const location = sourceFile.getLineAndCharacterOfPosition(title.getStart(sourceFile));
+  return `dynamic title at line ${location.line + 1}: ${title.getText(sourceFile)}`;
+}
+
+function hasRegressionSelector(sourceFile, node) {
+  for (let current = node; current; current = current.parent) {
+    if (
+      ts.isCallExpression(current) &&
+      (isTestDeclaration(current) || isDescribeCall(current)) &&
+      current.arguments[0]?.getText(sourceFile).includes('@regression')
+    )
+      return true;
+  }
+  return false;
+}
+
+function declarationScopeProblems(sourceText, file, playwright = false) {
+  const sourceFile = ts.createSourceFile(file, sourceText, ts.ScriptTarget.Latest, true);
+  const fileScope = fileAnnotation(sourceText);
+  const problems = [];
+  for (const node of testDeclarations(sourceFile)) {
+    const annotation = ancestorAnnotation(sourceText, node) ?? fileScope;
+    const location = sourceFile.getLineAndCharacterOfPosition(node.getStart());
+    const label = `${relative(webRoot, file)}:${location.line + 1} (${declarationTitle(sourceFile, node)})`;
+    if (!annotation) problems.push(`${label} is unclassified`);
+    else if (!validateAnnotation(annotation)) problems.push(`${label} has an invalid annotation`);
+    if (!playwright) continue;
+    const selected = hasRegressionSelector(sourceFile, node);
+    if (annotation?.category === 'regression' && validateAnnotation(annotation) && !selected)
+      problems.push(`${label} has a regression annotation without an @regression selector tag`);
+    if (
+      selected &&
+      (!annotation || annotation.category !== 'regression' || !validateAnnotation(annotation))
+    )
+      problems.push(
+        `${label} has an @regression selector tag without a valid regression annotation`,
+      );
+  }
+  return problems;
 }
 
 function collectReferencedTestFiles() {
@@ -398,6 +454,79 @@ function runGateSelfValidation() {
       behaviorContractTestReferenceProblemsAt(join(root, 'docs'), root).length === 0,
       'canonical path failed',
     );
+
+    const dynamicFile = join(web, 'tests/e2e/dynamic.spec.ts');
+    const dynamicTitle = 'const host = "duty"; test(`${host} title`, () => {});';
+    expect(
+      declarationScopeProblems(dynamicTitle, dynamicFile, true).some((problem) =>
+        problem.includes('is unclassified'),
+      ),
+      'unannotated template title passed',
+    );
+    const annotatedDynamic =
+      '// @test-scope safeguard: prevents the dynamic title from hiding an admitted failure.\n' +
+      'const host = "duty"; test(`${host} title`, () => {});';
+    expect(
+      declarationScopeProblems(annotatedDynamic, dynamicFile, true).length === 0,
+      'annotated template title failed',
+    );
+    const identifierTitle = 'const title = "title"; test(title, () => {});';
+    expect(
+      declarationScopeProblems(identifierTitle, dynamicFile, true).some((problem) =>
+        problem.includes('dynamic title'),
+      ),
+      'identifier title was skipped',
+    );
+    const eachSource =
+      '// @test-scope safeguard: prevents each declarations from bypassing admission.\n' +
+      'test.each(["a"])(`title`, () => {});';
+    const eachFile = ts.createSourceFile(dynamicFile, eachSource, ts.ScriptTarget.Latest, true);
+    expect(testDeclarations(eachFile).length === 1, 'test.each was not counted exactly once');
+    expect(
+      declarationScopeProblems(eachSource, dynamicFile, true).length === 0,
+      'test.each failed admission',
+    );
+    const regressionWithoutTag =
+      '// @test-scope regression: https://github.com/echoua/echo/issues/1\n' +
+      'test("title", () => {});';
+    expect(
+      declarationScopeProblems(regressionWithoutTag, dynamicFile, true).some((problem) =>
+        problem.includes('without an @regression selector tag'),
+      ),
+      'regression without selector tag passed',
+    );
+    const tagWithoutRegression =
+      '// @test-scope safeguard: prevents selector misuse from hiding a safety failure.\n' +
+      'test("title @regression", () => {});';
+    expect(
+      declarationScopeProblems(tagWithoutRegression, dynamicFile, true).some((problem) =>
+        problem.includes('without a valid regression annotation'),
+      ),
+      'selector tag without regression passed',
+    );
+    const matchingRegression =
+      '// @test-scope regression: https://github.com/echoua/echo/issues/1\n' +
+      'test.describe("group @regression", () => { test("title", () => {}); });';
+    expect(
+      declarationScopeProblems(matchingRegression, dynamicFile, true).length === 0,
+      'matching regression annotation and selector tag failed',
+    );
+    const safeguardUnderRegression =
+      '// @test-scope regression: https://github.com/echoua/echo/issues/1\n' +
+      'test.describe("group @regression", () => {\n' +
+      '  // @test-scope safeguard: prevents the child safety failure.\n' +
+      '  test("title", () => {});\n' +
+      '});';
+    expect(
+      declarationScopeProblems(safeguardUnderRegression, dynamicFile, true).some((problem) =>
+        problem.includes('without a valid regression annotation'),
+      ),
+      'safeguard under regression ancestor passed',
+    );
+    expect(
+      declarationScopeProblems(regressionWithoutTag, dynamicFile).length === 0,
+      'Vitest regression required a Playwright selector tag',
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -643,6 +772,20 @@ for (const file of testFiles) {
       invalidAnnotations.push(
         `${label} has an invalid ${annotation.category} annotation: ${annotation.detail}`,
       );
+    }
+    if (path.startsWith('tests/e2e/')) {
+      const selected = hasRegressionSelector(sourceFile, node);
+      if (annotation?.category === 'regression' && validateAnnotation(annotation) && !selected)
+        invalidAnnotations.push(
+          `${label} (${declarationTitle(sourceFile, node)}) has a regression annotation without an @regression selector tag.`,
+        );
+      if (
+        selected &&
+        (!annotation || annotation.category !== 'regression' || !validateAnnotation(annotation))
+      )
+        invalidAnnotations.push(
+          `${label} (${declarationTitle(sourceFile, node)}) has an @regression selector tag without a valid regression annotation.`,
+        );
     }
   }
 }

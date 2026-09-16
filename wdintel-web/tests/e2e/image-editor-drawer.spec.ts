@@ -139,7 +139,10 @@ async function openSecondPendingImageEditor(page: import('@playwright/test').Pag
 
 test.describe('image editor drawer integration #3448', () => {
   for (const host of ['duty', 'analysis'] as const satisfies ImageEditorDrawerHost[]) {
-    test(`${host} opens from preview and saves one pending replacement`, async ({ page }) => {
+    // @test-scope regression: https://github.com/echoua/echo/issues/3448
+    test(`${host} opens from preview and saves one pending replacement @regression`, async ({
+      page,
+    }) => {
       const pageErrors = capturePageErrors(page);
       const submitted = await observeImageEditorSubmission(page);
       const { editor, preview } = await openPendingImageEditor(page, host);
@@ -260,7 +263,7 @@ test.describe('image editor drawer integration #3448', () => {
   });
 
   // @test-scope regression: https://github.com/echoua/echo/issues/3448
-  test('finishes text editing on an empty-canvas click without creating a second label #3448', async ({
+  test('finishes text editing on an empty-canvas click without creating a second label #3448 @regression', async ({
     page,
   }) => {
     const { editor } = await openPendingImageEditor(page, 'duty');
@@ -283,7 +286,9 @@ test.describe('image editor drawer integration #3448', () => {
   });
 
   // @test-scope regression: https://github.com/echoua/echo/issues/3448
-  test('selects the clicked annotation after ending another text edit #3448', async ({ page }) => {
+  test('selects the clicked annotation after ending another text edit #3448 @regression', async ({
+    page,
+  }) => {
     const { editor } = await openPendingImageEditor(page, 'duty');
     const surface = editor.locator('canvas').last();
     const box = await surface.boundingBox();
@@ -314,7 +319,7 @@ test.describe('image editor drawer integration #3448', () => {
   });
 
   // @test-scope regression: https://github.com/echoua/echo/issues/3448
-  test('moves text frames without changing their transforms at non-default zoom #3448', async ({
+  test('moves text frames without changing their transforms at non-default zoom #3448 @regression', async ({
     page,
   }) => {
     const { editor } = await openPendingImageEditor(page, 'duty');
@@ -386,7 +391,9 @@ test.describe('image editor drawer integration #3448', () => {
   });
 
   // @test-scope regression: https://github.com/echoua/echo/issues/3448
-  test('cancels an active text-frame move without committing it #3448', async ({ page }) => {
+  test('cancels an active text-frame move without committing it #3448 @regression', async ({
+    page,
+  }) => {
     const pageErrors = capturePageErrors(page);
     const { editor } = await openPendingImageEditor(page, 'duty');
     await editor.getByRole('button', { name: 'Текст' }).click();
@@ -425,7 +432,9 @@ test.describe('image editor drawer integration #3448', () => {
   });
 
   // @test-scope regression: https://github.com/echoua/echo/issues/3448
-  test('tears down an editor with an active text-frame pointer gesture #3448', async ({ page }) => {
+  test('tears down an editor with an active text-frame pointer gesture #3448 @regression', async ({
+    page,
+  }) => {
     const pageErrors = capturePageErrors(page);
     const { editor } = await openPendingImageEditor(page, 'duty');
     await editor.getByRole('button', { name: 'Текст' }).click();
@@ -565,7 +574,7 @@ test('TUS preserves a busy upload while resuming after a lost accepted chunk res
 });
 
 // @test-scope regression: https://github.com/echoua/echo/issues/3448
-test('keeps editor actions reachable at representative viewports', async ({ page }) => {
+test('keeps editor actions reachable at representative viewports @regression', async ({ page }) => {
   const { editor } = await openPendingImageEditor(page, 'duty');
   for (const viewport of [
     { width: 1440, height: 900 },
@@ -583,7 +592,9 @@ test('keeps editor actions reachable at representative viewports', async ({ page
 });
 
 // @test-scope regression: https://github.com/echoua/echo/issues/3448
-test('presents shortcut help across desktop and mobile controls #3448', async ({ page }) => {
+test('presents shortcut help across desktop and mobile controls #3448 @regression', async ({
+  page,
+}) => {
   const { editor } = await openPendingImageEditor(page, 'duty');
   await page.setViewportSize({ width: 360, height: 800 });
   await editor.getByRole('button', { name: 'Ще' }).click();
@@ -596,7 +607,9 @@ test('presents shortcut help across desktop and mobile controls #3448', async ({
 });
 
 // @test-scope regression: https://github.com/echoua/echo/issues/3448
-test('keeps standalone-arrow toolbar styles combined after each edit #3448', async ({ page }) => {
+test('keeps standalone-arrow toolbar styles combined after each edit #3448 @regression', async ({
+  page,
+}) => {
   const { editor } = await openPendingImageEditor(page, 'duty');
   await editor.getByRole('button', { name: 'Стрілка' }).click();
   const surface = editor.locator('canvas').last();
@@ -625,7 +638,7 @@ test('keeps standalone-arrow toolbar styles combined after each edit #3448', asy
 });
 
 // @test-scope regression: https://github.com/echoua/echo/issues/3294
-test('large single-IDAT PNG remains editable within image source limits #3294', async ({
+test('large single-IDAT PNG remains editable within image source limits #3294 @regression', async ({
   page,
 }, info) => {
   const image = createImageEditorNoisePng();

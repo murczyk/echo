@@ -238,7 +238,7 @@ test.describe('@smoke @regression', () => {
 
 test.describe('message card media preview contract', () => {
   // @test-scope regression: https://github.com/echoua/echo/issues/3368
-  test('ECHO-3368 centres every primary image-click zoom', async ({ page }) => {
+  test('ECHO-3368 centres every primary image-click zoom @regression', async ({ page }) => {
     for (const host of ['duty', 'analysis'] as const) {
       await openMessageCardPreviewHost(page, host);
       const dialog = await openImagePreview(page);
@@ -270,7 +270,7 @@ test.describe('message card media preview contract', () => {
   });
 
   // @test-scope regression: https://github.com/echoua/echo/issues/3368
-  test('ECHO-3368 zooms image clicks and dismisses only exposed image-stage background', async ({
+  test('ECHO-3368 zooms image clicks and dismisses only exposed image-stage background @regression', async ({
     page,
   }) => {
     for (const host of ['duty', 'analysis'] as const) {
@@ -351,7 +351,9 @@ test.describe('message card media preview contract', () => {
   });
 
   // @test-scope regression: https://github.com/echoua/echo/issues/3368
-  test('ECHO-3368 preserves content interactions for non-image previews', async ({ page }) => {
+  test('ECHO-3368 preserves content interactions for non-image previews @regression', async ({
+    page,
+  }) => {
     await openMessageCardPreviewHost(page, 'duty');
 
     const videoFixture = await createPlayableVideoFixture(page);
@@ -401,7 +403,7 @@ test.describe('message card media preview contract', () => {
   });
 
   // @test-scope regression: https://github.com/echoua/echo/issues/3368
-  test('ECHO-3368 keeps audio content protected and dismisses its outer stage background', async ({
+  test('ECHO-3368 keeps audio content protected and dismisses its outer stage background @regression', async ({
     page,
   }) => {
     await openMessageCardPreviewHost(page, 'duty', { enableAudioTranscription: true });
@@ -423,7 +425,7 @@ test.describe('message card media preview contract', () => {
   });
 
   // @test-scope regression: https://github.com/echoua/echo/issues/3368
-  test('ECHO-3368 protects completed OCR and summary panels', async ({ page }) => {
+  test('ECHO-3368 protects completed OCR and summary panels @regression', async ({ page }) => {
     await openMessageCardPreviewHost(page, 'duty', { withCompletedOcrAndSummary: true });
     const dialog = await openImagePreview(page);
     await dialog.getByRole('button', { name: 'Переглянути OCR' }).click();
@@ -460,7 +462,7 @@ test.describe('message card media preview contract', () => {
   });
 
   // @test-scope regression: https://github.com/echoua/echo/issues/3368
-  test.describe('ECHO-3368 touch gestures', () => {
+  test.describe('ECHO-3368 touch gestures @regression', () => {
     test.use({ hasTouch: true });
 
     test('restores carousel swiping after a completed pinch and reset', async ({
@@ -677,7 +679,9 @@ test.describe('message card media preview contract', () => {
   });
 
   // @test-scope regression: https://github.com/echoua/echo/issues/3324
-  test('ECHO-3324 keeps exactly one collapsed attachment section open', async ({ page }) => {
+  test('ECHO-3324 keeps exactly one collapsed attachment section open @regression', async ({
+    page,
+  }) => {
     await openMessageCardPreviewHost(page, 'duty');
 
     const media = page.getByRole('button', { name: /^(Розгорнути|Згорнути) медіа:/ });
@@ -704,7 +708,7 @@ test.describe('message card media preview contract', () => {
   });
 
   // @test-scope regression: https://github.com/echoua/echo/issues/3324
-  test('ECHO-3324 aligns coordinate tiles with media tiles at wide and narrow card widths', async ({
+  test('ECHO-3324 aligns coordinate tiles with media tiles at wide and narrow card widths @regression', async ({
     page,
   }) => {
     for (const host of ['duty', 'analysis'] as const) {
@@ -779,7 +783,7 @@ test.describe('message card media preview contract', () => {
   });
 
   // @test-scope regression: https://github.com/echoua/echo/issues/3324
-  test('ECHO-3324 keeps complete coordinate failures square and retries into a map', async ({
+  test('ECHO-3324 keeps complete coordinate failures square and retries into a map @regression', async ({
     page,
   }) => {
     await openMessageCardPreviewHost(page, 'duty', {
@@ -829,7 +833,7 @@ test.describe('message card media preview contract', () => {
   });
 
   // @test-scope regression: https://github.com/echoua/echo/issues/3324
-  test('ECHO-3324 renders numeric coordinate counts inside shared Duty and Analysis tiles', async ({
+  test('ECHO-3324 renders numeric coordinate counts inside shared Duty and Analysis tiles @regression', async ({
     page,
   }) => {
     const coordinateLabel = '50.45044, 30.52355 — сектор Північний';
@@ -927,7 +931,7 @@ test.describe('message card media preview contract', () => {
   });
 
   // @test-scope regression: https://github.com/echoua/echo/issues/3380
-  test('ECHO-3380 keeps the coordinate hover preview tile-driven, side by side, and non-scrollable', async ({
+  test('ECHO-3380 keeps the coordinate hover preview tile-driven, side by side, and non-scrollable @regression', async ({
     page,
   }) => {
     test.setTimeout(90_000);
@@ -1057,7 +1061,7 @@ test.describe('message card media preview contract', () => {
   });
 
   // @test-scope regression: https://github.com/echoua/echo/issues/3453
-  test('resolves a Palitra coordinate into the fullscreen MGRS map in both hosts', async ({
+  test('resolves a Palitra coordinate into the fullscreen MGRS map in both hosts @regression', async ({
     page,
   }) => {
     for (const host of ['duty', 'analysis'] as const) {
@@ -1164,7 +1168,7 @@ test.describe('message card media preview contract', () => {
   });
 
   // @test-scope regression: https://github.com/echoua/echo/issues/3460
-  test('ECHO-3460 reveals stage navigation only beside the hovered desktop edge', async ({
+  test('ECHO-3460 reveals stage navigation only beside the hovered desktop edge @regression', async ({
     page,
   }) => {
     await openMessageCardPreviewHost(page, 'duty');

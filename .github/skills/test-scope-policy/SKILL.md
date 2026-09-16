@@ -33,6 +33,10 @@ must name the harmful outcome, not only a mechanism such as a timer or abort
 call. File-level annotations are allowed only for homogeneous parser fixtures.
 `describe` annotations are inherited, so use one only when every descendant
 truthfully shares the same admission category and failure mode.
+Dynamic titles and `.each` declarations are classified at their actual test
+invocation. For Playwright, every Echo-linked regression annotation requires a
+literal `@regression` title or describe tag, and every such tag requires that
+annotation: `e2e:regression` selects tags, not comments.
 
 Add or retain a test only when it protects at least one category accepted by `CODE_REVIEW.md`:
 

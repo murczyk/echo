@@ -119,7 +119,8 @@ npm run e2e
 
 This runs the Playwright smoke suite for the current React/Elm hybrid frontend.
 The disabled browser workflow must be restored and stabilized before browser
-coverage replaces Vitest coverage. Run linked browser regressions with:
+coverage replaces Vitest coverage. Run browser regressions selected by their
+`@regression` Playwright title tag with:
 
 ```bash
 npm run e2e:regression

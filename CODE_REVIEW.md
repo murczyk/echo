@@ -36,6 +36,10 @@ and `vi.mock` targets when relocating tests. Playwright remains in `tests/e2e`.
 Behavior contracts must name complete, existing repository-relative test paths,
 or use `No direct default-suite test; behavior is preserved by this contract.`.
 Removing a nonqualifying test must not leave user-visible behavior undocumented.
+Dynamic test titles and `.each` declarations remain subject to admission at the
+actual test invocation. For Playwright, an Echo-linked regression annotation
+and the literal `@regression` title tag must agree; `e2e:regression` selects
+title tags, not source comments.
 
 ## Query performance
 

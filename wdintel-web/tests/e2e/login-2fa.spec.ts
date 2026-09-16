@@ -45,7 +45,7 @@ function needs2faSetup() {
 }
 
 // @test-scope regression: https://github.com/echoua/echo/issues/3464
-test('@smoke ECHO-3464 guides first-time 2FA setup and preserves confirmation data', async ({
+test('@smoke @regression ECHO-3464 guides first-time 2FA setup and preserves confirmation data', async ({
   page,
 }) => {
   await installLoginMocks(page, needs2faSetup());
@@ -79,7 +79,9 @@ test('@smoke ECHO-3464 guides first-time 2FA setup and preserves confirmation da
 });
 
 // @test-scope regression: https://github.com/echoua/echo/issues/3464
-test('ECHO-3464 keeps returning-user verification concise and focused', async ({ page }) => {
+test('ECHO-3464 keeps returning-user verification concise and focused @regression', async ({
+  page,
+}) => {
   await installLoginMocks(page, { Needs2fa: { challenge_id: CHALLENGE_ID } });
 
   await submitCredentials(page);
@@ -97,7 +99,7 @@ test('ECHO-3464 keeps returning-user verification concise and focused', async ({
 });
 
 // @test-scope regression: https://github.com/echoua/echo/issues/3464
-test('ECHO-3464 keeps first-time 2FA controls reachable on a short mobile screen', async ({
+test('ECHO-3464 keeps first-time 2FA controls reachable on a short mobile screen @regression', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 360, height: 640 });
