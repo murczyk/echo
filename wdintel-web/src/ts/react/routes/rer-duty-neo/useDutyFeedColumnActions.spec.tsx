@@ -34,6 +34,8 @@ describe('useDutyFeedColumnActions', () => {
     const ensureFollowTail = vi.fn(() => 7);
     const setWatchModeByFeedId = vi.fn();
     const handleVisibleMessageIds = vi.fn(() => vi.fn());
+    const loadFeedNewerMessages = vi.fn();
+    const flushPendingNewerMessages = vi.fn();
     const feed = {
       id: 'mf-0',
       messageSortBy: 'IMSTimestamp',
@@ -56,8 +58,8 @@ describe('useDutyFeedColumnActions', () => {
       feeds: {
         messageFeeds: [feed],
         loadFeedOlderMessages: vi.fn(),
-        loadFeedNewerMessages: vi.fn(),
-        flushPendingNewerMessages: vi.fn(),
+        loadFeedNewerMessages,
+        flushPendingNewerMessages,
         removeMessageFeed: vi.fn(),
         handleMessageBookmark: vi.fn(),
         handleMessageImportant: vi.fn(),
@@ -103,5 +105,17 @@ describe('useDutyFeedColumnActions', () => {
     );
     expect(cancelFollowTail).toHaveBeenCalledWith('mf-0');
     expect(setWatchModeByFeedId).toHaveBeenCalledTimes(2);
+
+    vi.clearAllMocks();
+    feed.pendingNewerItems = [[60, minimalInboxMessage()]];
+    expect(actions!.onReachedBottom?.({ hasSeenNotAtBottom: true, navigationIntent: null })).toBe(
+      false,
+    );
+    expect(cancelFollowTail).not.toHaveBeenCalled();
+    expect(flushPendingNewerMessages).toHaveBeenCalledWith('mf-0', { urgent: true });
+    expect(loadFeedNewerMessages).toHaveBeenCalledWith(
+      'mf-0',
+      expect.objectContaining({ scrollToEndAfterLoad: true }),
+    );
   });
 });

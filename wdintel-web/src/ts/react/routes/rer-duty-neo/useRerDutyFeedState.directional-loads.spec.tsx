@@ -19,6 +19,7 @@ import {
   DUTY_FEED_MESSAGE_WINDOW_LIMIT,
   emptyFilter,
   feedIndicatorUnreadCount,
+  feedHasUnloadedEvictedNewerTail,
   feedLoadedUnreadCount,
   feedNeedsUnreadPrefetch,
   feedPendingNewerUnreadCount,
@@ -163,6 +164,62 @@ describe('useRerDutyFeedState — directional loading and races', () => {
         await flushMicrotasks();
       });
       expect(apiRef.current!.messageFeeds[0]).toMatchObject({ evictedNewerTailId: null });
+    });
+
+    it('#3496 clears a deleted evicted-tail boundary after newer catch-up is exhausted', async () => {
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+        current: null,
+      };
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(21, 60));
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(1, 20));
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(41, 59));
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
+      await act(async () => root.render(<TestHarness apiRef={apiRef} />));
+      await act(async () => flushMicrotasks());
+
+      await act(async () => {
+        await apiRef.current!.loadFeedOlderMessages('mf-0');
+        await flushMicrotasks();
+      });
+      expect(apiRef.current!.messageFeeds[0]).toMatchObject({ evictedNewerTailId: 60 });
+
+      await act(async () => {
+        await apiRef.current!.loadFeedNewerMessages('mf-0');
+        await flushMicrotasks();
+      });
+      await act(async () => {
+        await apiRef.current!.loadFeedNewerMessages('mf-0');
+        await flushMicrotasks();
+      });
+
+      const feed = apiRef.current!.messageFeeds[0];
+      expect(feed.evictedNewerTailId).toBeNull();
+      expect(feedHasUnloadedEvictedNewerTail(feed)).toBe(false);
+    });
+
+    it('#3496 clears a deleted evicted-tail boundary after an exhaustive newer request', async () => {
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+        current: null,
+      };
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(21, 60));
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(1, 20));
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(41, 59));
+      await act(async () => root.render(<TestHarness apiRef={apiRef} />));
+      await act(async () => flushMicrotasks());
+
+      await act(async () => {
+        await apiRef.current!.loadFeedOlderMessages('mf-0');
+        await flushMicrotasks();
+      });
+      await act(async () => {
+        await apiRef.current!.loadFeedNewerMessages('mf-0', { nolimit: true });
+        await flushMicrotasks();
+      });
+
+      const feed = apiRef.current!.messageFeeds[0];
+      expect(feed.pendingNewerItems?.at(-1)?.[0]).toBe(59);
+      expect(feed.evictedNewerTailId).toBeNull();
+      expect(feedHasUnloadedEvictedNewerTail(feed)).toBe(false);
     });
 
     it('ignores an older-load failure after a filter reload invalidates the request', async () => {

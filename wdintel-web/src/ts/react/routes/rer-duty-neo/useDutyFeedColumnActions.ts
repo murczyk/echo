@@ -4,6 +4,7 @@ import type { FeedColumnModel } from './types';
 import type { useRerDutyFeeds } from './useRerDutyFeeds';
 import {
   excludeMessageEntityFromFilters,
+  feedHasUnloadedEvictedNewerTail,
   feedIndicatorUnreadCount,
   type MessageFeedState,
 } from './utils';
@@ -100,7 +101,7 @@ export function useDutyFeedColumnActions(
           cancelFollowTail(feedId);
           return false;
         }
-        if (feed.evictedNewerTailId != null && navigationIntent === null) {
+        if (feedHasUnloadedEvictedNewerTail(feed) && navigationIntent === null) {
           cancelFollowTail(feedId);
           setWatchModeByFeedId((prev) => ({ ...prev, [feedId]: false }));
           return false;

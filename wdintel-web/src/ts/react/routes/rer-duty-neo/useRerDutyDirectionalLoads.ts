@@ -543,6 +543,13 @@ export function useRerDutyDirectionalLoads(params: Params) {
           const newestItem = bufferNewer
             ? (nextPending.at(-1) ?? null)
             : (liveAppendPreview?.items.at(-1) ?? null);
+          const responseIncludesEvictedNewerTail =
+            latestFeed.evictedNewerTailId != null &&
+            response.inboxItems.some(([id]) => id === latestFeed.evictedNewerTailId);
+          const resolvesEvictedNewerTail =
+            latestFeed.evictedNewerTailId != null &&
+            (response.inboxItems.length === 0 ||
+              (requestNolimit && !responseIncludesEvictedNewerTail));
           operation.newerResult = {
             ok: true,
             addedCount,
@@ -609,7 +616,15 @@ export function useRerDutyDirectionalLoads(params: Params) {
                 feed.readIds.forEach((id) => localUnreadIds.delete(id));
                 const nextLocal = localUnreadIds.size + (feed.unresolvedUnreadCount ?? 0);
                 localUnread = nextLocal;
-                return nextLocal === feed.unreadCount ? feed : { ...feed, unreadCount: nextLocal };
+                const evictedNewerTailId =
+                  resolvesEvictedNewerTail &&
+                  feed.evictedNewerTailId === latestFeed.evictedNewerTailId
+                    ? null
+                    : feed.evictedNewerTailId;
+                return nextLocal === feed.unreadCount &&
+                  evictedNewerTailId === feed.evictedNewerTailId
+                  ? feed
+                  : { ...feed, unreadCount: nextLocal, evictedNewerTailId };
               }),
             );
             const tailItem = latestFeed.items.at(-1);
@@ -649,7 +664,15 @@ export function useRerDutyDirectionalLoads(params: Params) {
                 const next = previous.map((feed) => {
                   if (feed.id !== feedId) return feed;
                   const pendingNewerItems = mergePendingNewerItems(feed, response.inboxItems);
-                  if (pendingNewerItems.length === (feed.pendingNewerItems?.length ?? 0)) {
+                  const evictedNewerTailId =
+                    resolvesEvictedNewerTail &&
+                    feed.evictedNewerTailId === latestFeed.evictedNewerTailId
+                      ? null
+                      : feed.evictedNewerTailId;
+                  if (
+                    pendingNewerItems.length === (feed.pendingNewerItems?.length ?? 0) &&
+                    evictedNewerTailId === feed.evictedNewerTailId
+                  ) {
                     return feed;
                   }
                   const pendingUnreadCount = pendingNewerItems.filter(
@@ -662,6 +685,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
                     loadedUnreadCount + (feed.windowedUnreadItems?.size ?? 0) + pendingUnreadCount;
                   return {
                     ...feed,
+                    evictedNewerTailId,
                     pendingNewerItems,
                     unreadCount: Math.max(feed.unreadCount, localUnreadCount),
                   };
@@ -683,9 +707,14 @@ export function useRerDutyDirectionalLoads(params: Params) {
               commit(runParams.setMessageFeeds, (previous) => {
                 const next = previous.map((feed) => {
                   if (feed.id !== feedId) return feed;
+                  const appendFeed =
+                    resolvesEvictedNewerTail &&
+                    feed.evictedNewerTailId === latestFeed.evictedNewerTailId
+                      ? { ...feed, evictedNewerTailId: null }
+                      : feed;
                   return appendNewerItemsToFeed(
-                    feed,
-                    [...feedPendingNewerItems(feed), ...response.inboxItems],
+                    appendFeed,
+                    [...feedPendingNewerItems(appendFeed), ...response.inboxItems],
                     { markAllRead },
                   );
                 });

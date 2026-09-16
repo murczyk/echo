@@ -149,13 +149,17 @@ test('#3496 lets the arrow land on a newest chunk evicted by history paging', as
   await page.setViewportSize({ width: 1280, height: 900 });
   const arrowRequestStarted = createDeferred<void>();
   const arrowResponse = createDeferred<InboxMessagesRspRaw>();
+  const newerRequests: Array<{ sinceId: number; nolimit: boolean }> = [];
   await installRerDutyShortStateMocks(page, {
     inboxCountResponseForRequest: () => ({ quantity: 0, first_element_ts: null }),
     inboxResponseForRequest: (requestBody) => {
       const beforeId = readBeforeId(requestBody);
       const sinceId = readSinceId(requestBody);
-      if (beforeId === 41) return buildInboxResponse(Array.from({ length: 40 }, (_, i) => i + 1));
-      if (sinceId === 40 && readNoLimit(requestBody)) {
+      const nolimit = readNoLimit(requestBody);
+      if (sinceId != null) newerRequests.push({ sinceId, nolimit });
+      if (beforeId === 41) return buildInboxResponse(Array.from({ length: 20 }, (_, i) => i + 21));
+      if (beforeId === 21) return buildInboxResponse(Array.from({ length: 20 }, (_, i) => i + 1));
+      if (sinceId === 40 && nolimit) {
         arrowRequestStarted.resolve();
         return arrowResponse.promise;
       }
@@ -173,15 +177,22 @@ test('#3496 lets the arrow land on a newest chunk evicted by history paging', as
     element.scrollTop = 0;
     element.dispatchEvent(new Event('scroll', { bubbles: true }));
   });
+  await expect(list.locator('[data-duty-message-id="21"]')).toBeAttached();
+  await scroller.evaluate((element) => {
+    element.scrollTop = 0;
+    element.dispatchEvent(new Event('scroll', { bubbles: true }));
+  });
   await expect(list.locator('[data-duty-message-id="1"]')).toBeAttached();
   await expect(list.locator('[data-duty-message-id="80"]')).toHaveCount(0);
 
+  newerRequests.length = 0;
   await page.getByRole('button', { name: 'Завантажити нові та перейти вниз' }).click();
   await arrowRequestStarted.promise;
   arrowResponse.resolve(buildInboxResponse(Array.from({ length: 40 }, (_, i) => i + 41)));
 
   await expect(list.locator('[data-duty-message-id="80"]')).toBeAttached();
   await expect.poll(() => readBottomDistance(scroller)).toBeLessThanOrEqual(1);
+  expect(newerRequests).toEqual([{ sinceId: 40, nolimit: true }]);
 });
 
 test('#3360 lands initially when ON settings resolve before the inbox', async ({ page }) => {
