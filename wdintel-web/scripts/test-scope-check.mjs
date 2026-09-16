@@ -527,6 +527,54 @@ function runGateSelfValidation() {
       declarationScopeProblems(regressionWithoutTag, dynamicFile).length === 0,
       'Vitest regression required a Playwright selector tag',
     );
+
+    const expectSymbols = (source, expected, message) => {
+      const actual = [...exportedSymbolsFromText(dynamicFile, source)].sort();
+      expect(JSON.stringify(actual) === JSON.stringify(expected), message);
+    };
+    expectSymbols(
+      'export default function Named() {}',
+      ['default'],
+      'named default function leaked',
+    );
+    expectSymbols(
+      'export default function () {}',
+      ['default'],
+      'anonymous default function failed',
+    );
+    expectSymbols('export default class Named {}', ['default'], 'named default class leaked');
+    expectSymbols('export default class {}', ['default'], 'anonymous default class failed');
+    expectSymbols(
+      'const value = 1; export default value;',
+      ['default'],
+      'default identifier failed',
+    );
+    expectSymbols('export default 1 + 2;', ['default'], 'default expression failed');
+    expectSymbols(
+      'const value = 1; export { value as default };',
+      ['default'],
+      'default re-export failed',
+    );
+    expectSymbols(
+      'export function named() {} export class Named {} export const value = 1;',
+      ['Named', 'named', 'value'],
+      'ordinary named exports changed',
+    );
+    expectSymbols(
+      'const value = 1; export = value;',
+      [],
+      'export assignment became a default export',
+    );
+    const defaultOwner = join(web, 'src/ts/react/default-owner/DefaultOwner.ts');
+    const defaultSpec = join(web, 'src/ts/react/default-owner/__tests__/DefaultOwner.spec.ts');
+    write(defaultOwner, 'export default function DefaultOwner() {}');
+    write(defaultSpec, "import DefaultOwner from '../DefaultOwner.ts';\nvoid DefaultOwner;");
+    const importedDefault = importedSymbols(defaultSpec)[0]?.symbols;
+    const exportedDefault = exportedSymbols(defaultOwner);
+    expect(
+      importedDefault?.has('default') && exportedDefault.has('default'),
+      'default imports and exports did not intersect',
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -585,6 +633,14 @@ function exportedSymbolsFromText(file, sourceText) {
   const sourceFile = ts.createSourceFile(file, sourceText, ts.ScriptTarget.Latest, true);
   const symbols = new Set();
   for (const statement of sourceFile.statements) {
+    if (ts.isExportAssignment(statement)) {
+      if (!statement.isExportEquals) symbols.add('default');
+      continue;
+    }
+    if (statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword)) {
+      symbols.add('default');
+      continue;
+    }
     const exported = statement.modifiers?.some(
       (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
     );
