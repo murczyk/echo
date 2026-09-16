@@ -77,6 +77,7 @@ pub enum StartAction {
     FixLinkedUnitEchelonNumbers,
     MarkLinkedSigintUnitsPresentInOrbit,
     FixMisplacedUnitEchelons,
+    ReviewEchelonConflicts,
     MergeUnitDuplicates,
     ReviewSigintDuplicateCandidates,
     ResolveUnparsedUnits,
@@ -218,6 +219,30 @@ pub(super) struct EchelonMoveDiff {
     pub attribute: &'static str,
     pub current: String,
     pub proposed: String,
+}
+
+pub(super) struct EchelonConflictReviewUnit {
+    pub sigint_unit_id: i64,
+    pub sigint_unit_name: String,
+    pub active: bool,
+    pub hierarchy: Vec<(&'static str, String)>,
+}
+
+pub(super) struct EchelonConflictReview {
+    pub shared_echelon: &'static str,
+    pub first_shared_value: String,
+    pub second_shared_value: String,
+    pub conflicting_echelon: &'static str,
+    pub first: EchelonConflictReviewUnit,
+    pub second: EchelonConflictReviewUnit,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum EchelonConflictReviewDecision {
+    UseFirstInSecond,
+    UseSecondInFirst,
+    Skip,
+    Quit,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -819,6 +844,53 @@ pub(super) fn review_echelon_move_changes(
     }
 }
 
+pub(super) fn review_echelon_conflict(
+    terminal: &mut OrbitTerminal,
+    review: &EchelonConflictReview,
+    anchor_current: usize,
+    anchor_total: usize,
+    reviewed_count: usize,
+) -> Result<EchelonConflictReviewDecision, AppError> {
+    let poll = Duration::from_millis(ORBIT_TUI_EVENT_POLL_MS);
+    let mut scroll = 0_u16;
+    loop {
+        terminal
+            .draw(|frame| {
+                draw_echelon_conflict(
+                    frame,
+                    review,
+                    anchor_current,
+                    anchor_total,
+                    reviewed_count,
+                    scroll,
+                )
+            })
+            .c(h!())?;
+        if !event::poll(poll).c(h!())? {
+            continue;
+        }
+        let Event::Key(key) = event::read().c(h!())? else {
+            continue;
+        };
+        if let Some(decision) = echelon_conflict_decision_for_key(key) {
+            if decision != EchelonConflictReviewDecision::Quit
+                || confirm_test_link_exit(terminal).c(h!())?
+            {
+                return Ok(decision);
+            }
+            continue;
+        }
+        match key.code {
+            KeyCode::Up => scroll = scroll.saturating_sub(1),
+            KeyCode::Down => scroll = scroll.saturating_add(1),
+            KeyCode::PageUp => scroll = scroll.saturating_sub(10),
+            KeyCode::PageDown => scroll = scroll.saturating_add(10),
+            KeyCode::Home => scroll = 0,
+            _ => {}
+        }
+    }
+}
+
 fn restore_stdout_state() -> io::Result<()> {
     let mut first_error = None;
     record_cleanup_error(&mut first_error, disable_raw_mode());
@@ -912,6 +984,7 @@ fn run_start_menu(
         StartAction::FixLinkedUnitEchelonNumbers,
         StartAction::MarkLinkedSigintUnitsPresentInOrbit,
         StartAction::FixMisplacedUnitEchelons,
+        StartAction::ReviewEchelonConflicts,
         StartAction::MergeUnitDuplicates,
         StartAction::ReviewSigintDuplicateCandidates,
         StartAction::ResolveUnparsedUnits,
@@ -1185,6 +1258,36 @@ fn unit_name_review_decision_for_key(
             Some(UnitNameReviewDecision::Skip)
         }
         KeyCode::Char('q') => Some(UnitNameReviewDecision::Quit),
+        _ => None,
+    }
+}
+
+fn echelon_conflict_decision_for_key(
+    key: KeyEvent,
+) -> Option<EchelonConflictReviewDecision> {
+    if key.kind != KeyEventKind::Press {
+        return None;
+    }
+    if key.code == KeyCode::Esc
+        || key.code == KeyCode::Char('c')
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+    {
+        return Some(EchelonConflictReviewDecision::Quit);
+    }
+    if !key.modifiers.is_empty() {
+        return None;
+    }
+    match key.code {
+        KeyCode::Char('1') => {
+            Some(EchelonConflictReviewDecision::UseFirstInSecond)
+        }
+        KeyCode::Char('2') => {
+            Some(EchelonConflictReviewDecision::UseSecondInFirst)
+        }
+        KeyCode::Char('0') | KeyCode::Char('n') => {
+            Some(EchelonConflictReviewDecision::Skip)
+        }
+        KeyCode::Char('q') => Some(EchelonConflictReviewDecision::Quit),
         _ => None,
     }
 }
@@ -1957,7 +2060,7 @@ fn orbit_sigint_link_decision_for_key(
 }
 
 fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
-    let area = centered_area(frame, 86, 16);
+    let area = centered_area(frame, 86, 17);
     let options = [
         "IMPORT NEW ORBIT DATA REVISION",
         "Sync ORBIT units",
@@ -1966,6 +2069,7 @@ fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
         "Replace linked SIGINT echelon values with mismatched ORBIT numbers",
         "Mark linked SIGINT units as present in ORBIT",
         "Fix misplaced and unknown SIGINT echelon values",
+        "Review conflicting SIGINT higher-echelon values",
         "Merge duplicate SIGINT units linked to one ORBIT unit",
         "Review all SIGINT duplicate candidates pair by pair",
         "Resolve unparsed unit labels through ORBIT links",
@@ -2168,6 +2272,123 @@ fn draw_echelon_move_changes(
         ),
         sections[2],
     );
+}
+
+fn draw_echelon_conflict(
+    frame: &mut Frame<'_>,
+    review: &EchelonConflictReview,
+    anchor_current: usize,
+    anchor_total: usize,
+    reviewed_count: usize,
+    scroll: u16,
+) {
+    let sections = test_link_sections(frame.size());
+    frame.render_widget(
+        Paragraph::new(format!(
+            "Hierarchy name {anchor_current} / {anchor_total} | conflicts reviewed: {reviewed_count}"
+        )),
+        sections[0],
+    );
+    frame.render_widget(
+        Paragraph::new(Text::from(echelon_conflict_review_lines(review)))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Conflicting SIGINT higher-echelon value"),
+            )
+            .scroll((scroll, 0))
+            .wrap(Wrap { trim: false }),
+        sections[1],
+    );
+    frame.render_widget(
+        Paragraph::new(format!(
+            "1: use UNIT 1 {} in UNIT 2 | 2: use UNIT 2 {} in UNIT 1 | 0/n: skip\n↑/↓/PgUp/PgDn: scroll | q/Esc/Ctrl-C: stop",
+            review.conflicting_echelon, review.conflicting_echelon,
+        )),
+        sections[2],
+    );
+}
+
+fn echelon_conflict_review_lines(
+    review: &EchelonConflictReview,
+) -> Vec<Line<'static>> {
+    let mut lines = vec![
+        Line::styled(
+            format!("Shared {} (case-insensitive)", review.shared_echelon),
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
+        Line::from(format!(
+            "  UNIT 1: {}",
+            display_echelon_value(&review.first_shared_value)
+        )),
+        Line::from(format!(
+            "  UNIT 2: {}",
+            display_echelon_value(&review.second_shared_value)
+        )),
+        Line::default(),
+    ];
+    lines.extend(echelon_conflict_unit_lines("UNIT 1", &review.first));
+    lines.extend(echelon_conflict_unit_lines("UNIT 2", &review.second));
+    lines.push(Line::styled(
+        format!("Conflicting {}", review.conflicting_echelon),
+        Style::default().add_modifier(Modifier::BOLD),
+    ));
+    let first_value = review
+        .first
+        .hierarchy
+        .iter()
+        .find(|(echelon, _)| *echelon == review.conflicting_echelon)
+        .map(|(_, value)| display_echelon_value(value))
+        .unwrap_or_else(|| "<empty>".to_string());
+    let second_value = review
+        .second
+        .hierarchy
+        .iter()
+        .find(|(echelon, _)| *echelon == review.conflicting_echelon)
+        .map(|(_, value)| display_echelon_value(value))
+        .unwrap_or_else(|| "<empty>".to_string());
+    let [first_diff, second_diff] = word_diff_lines(
+        "  UNIT 1: ",
+        "  UNIT 2: ",
+        &first_value,
+        &second_value,
+    );
+    lines.extend([first_diff, second_diff]);
+    lines
+}
+
+fn echelon_conflict_unit_lines(
+    label: &str,
+    unit: &EchelonConflictReviewUnit,
+) -> Vec<Line<'static>> {
+    let hierarchy = unit
+        .hierarchy
+        .iter()
+        .filter(|(_, value)| !value.trim().is_empty())
+        .map(|(echelon, value)| format!("{echelon}: {}", value.trim()))
+        .collect::<Vec<_>>()
+        .join(" / ");
+    vec![
+        Line::styled(
+            format!(
+                "{label} | SIGINT ID: {} | active: {} | name: {}",
+                unit.sigint_unit_id, unit.active, unit.sigint_unit_name,
+            ),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Line::from(format!("  hierarchy: {hierarchy}")),
+        Line::default(),
+    ]
+}
+
+fn display_echelon_value(value: &str) -> String {
+    if value.trim().is_empty() {
+        "<empty>".to_string()
+    } else {
+        value.to_string()
+    }
 }
 
 fn draw_unchanged_archive_warning(
@@ -2507,6 +2728,33 @@ mod tests {
                 false
             ),
             Some(Decision::Quit)
+        );
+    }
+
+    #[test]
+    fn echelon_conflict_keys_choose_copy_direction() {
+        let plain = KeyModifiers::NONE;
+
+        assert_eq!(
+            echelon_conflict_decision_for_key(KeyEvent::new(
+                KeyCode::Char('1'),
+                plain,
+            )),
+            Some(EchelonConflictReviewDecision::UseFirstInSecond),
+        );
+        assert_eq!(
+            echelon_conflict_decision_for_key(KeyEvent::new(
+                KeyCode::Char('2'),
+                plain,
+            )),
+            Some(EchelonConflictReviewDecision::UseSecondInFirst),
+        );
+        assert_eq!(
+            echelon_conflict_decision_for_key(KeyEvent::new(
+                KeyCode::Char('n'),
+                plain,
+            )),
+            Some(EchelonConflictReviewDecision::Skip),
         );
     }
 

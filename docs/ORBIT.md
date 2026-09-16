@@ -87,7 +87,7 @@ sudo wdintel-rs --mode=live tui-import-orbit-units
 The synchronization actions download and unpack the newest timestamped
 snapshot and fail if no snapshot exists. Database-mutating import sessions are
 serialized, so a second importer waits until the active import releases its
-PostgreSQL advisory lock. The first screen offers fourteen workflows.
+PostgreSQL advisory lock. The first screen offers fifteen workflows.
 
 ### TUI workflow conventions
 
@@ -206,6 +206,20 @@ affected fields. Before update, the ORBIT revision, activity scope, and current
 SIGINT values are reloaded under the advisory lock; stale manual proposals are
 not applied. Quitting manual review stops the remaining passes after saving
 already accepted changes.
+
+### Review conflicting SIGINT higher-echelon values
+
+This manual workflow treats brigade, division, corps, army, army region, and
+military district names as case-insensitive unique identities. It processes
+those echelons from lower to higher and their names alphabetically. For every
+pair of units sharing one identity, it reviews differing higher-echelon fields
+one at a time, including a populated value versus an empty value.
+
+The operator can copy the displayed higher-echelon value from unit 1 to unit 2,
+copy it from unit 2 to unit 1, skip the conflict, or stop. The workflow can
+target active units, inactive units, or both. Accepted changes are reloaded
+under the ORBIT advisory lock; a concurrent change to either displayed unit or
+its activity scope makes that choice stale and leaves it untouched.
 
 ### Merge duplicate SIGINT units linked to one ORBIT unit
 
