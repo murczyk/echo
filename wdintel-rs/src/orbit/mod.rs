@@ -20,6 +20,7 @@ use uuid::Uuid;
 mod dictionary;
 mod duplicate_candidate_review;
 mod duplicate_units;
+mod echelon_conflict_review;
 mod echelon_move_fix;
 mod echelon_number_fix;
 mod generated_unit_names;
@@ -506,6 +507,9 @@ async fn run_selected_action(mode: Mode) -> anyhow::Result<()> {
         }
         Some(tui::StartAction::FixMisplacedUnitEchelons) => {
             echelon_move_fix::run(mode).await.c(h!())
+        }
+        Some(tui::StartAction::ReviewEchelonConflicts) => {
+            echelon_conflict_review::run(mode).await.c(h!())
         }
         Some(tui::StartAction::MergeUnitDuplicates) => {
             duplicate_units::run(mode, false).await.c(h!())
