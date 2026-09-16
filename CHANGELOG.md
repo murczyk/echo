@@ -10,6 +10,7 @@
 
 ## NEXT
 
+- [#3496](https://github.com/echoua/echo/issues/3496) 🐞 Оперативний: виправлено помилку прокрутки в оперативному.
 - [#3495](https://github.com/echoua/echo/issues/3495) ✅ Пристрої, Файли: додано перегляд TXT, PDF і DOCX без редагування та скачування поточної ревізії файлу; папки розгортаються й згортаються натисканням на назву.
 - [#3113](https://github.com/echoua/echo/issues/3113) 🐞👷🚨 Статистика: повторні запити перерахунку об'єднуються за добою, історичні дні обробляються поза нічною зміною; міграція очищає всі наявні завдання, тому після деплою виконати `sudo systemctl stop wdintel-rs-bgworker`, `sudo /usr/bin/wdintel-rs --mode=live oneoff-calculate-historic-stats`, `sudo systemctl start wdintel-rs-bgworker`; на інстансах із ClickHouse перед ручним застосуванням міграції виконати `/opt/echo-peerdb/bin/source-sync-exclusions.sh --yes`, а після неї — `/opt/echo-peerdb/bin/source-verify-deploy.sh` і підтвердити відсутність `public.group_stats_recalculation_day` у raw/current/gateway.
 - [#3501](https://github.com/echoua/echo/issues/3501) ✅ Оперативний Neo, Аналіз: додано системне налаштування для приховування тегів бота та призупинення їх автоматичного створення.
