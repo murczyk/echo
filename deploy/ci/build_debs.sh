@@ -71,6 +71,24 @@ else
 fi
 cargo deb -p echo-install --no-build || true
 
+shopt -s nullglob
+wdintel_debs=(target/debian/wdintel-rs_*_*.deb)
+if [ "${#wdintel_debs[@]}" -eq 0 ]; then
+  echo "wdintel-rs Debian package was not found in target/debian" >&2
+  exit 1
+fi
+
+wdintel_deb="${wdintel_debs[0]}"
+wdintel_contents="$(dpkg-deb --contents "$wdintel_deb" | awk '{ print $6 }')"
+for font_path in \
+  ./usr/share/echo/fonts/open-sans-cyrillic-400.ttf \
+  ./usr/share/echo/fonts/open-sans-cyrillic-700.ttf; do
+  if ! grep -Fqx "$font_path" <<<"$wdintel_contents"; then
+    echo "wdintel-rs Debian package is missing required font: $font_path" >&2
+    exit 1
+  fi
+done
+
 # Build deb packages for non-workspace crates and copy them to root target/debian
 doc_version_epoch=""
 if [ -f "docs/echo-docs/Cargo.toml" ]; then
