@@ -1889,16 +1889,36 @@ pub(crate) async fn activate_unit_for_login<C>(
 where
     C: ConnectionTrait,
 {
-    if unit.active {
-        return Ok(unit.clone());
+    let mut activated_units =
+        activate_units_for_login(dbx, login, std::slice::from_ref(unit))
+            .await
+            .context(h!())?;
+    Ok(activated_units.pop().unwrap_or_else(|| unit.clone()))
+}
+
+pub(crate) async fn activate_units_for_login<C>(
+    dbx: &C,
+    login: &uuid::Uuid,
+    units: &[sigint_unit::Model],
+) -> Result<Vec<sigint_unit::Model>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let mut activated_units = Vec::new();
+    for unit in units.iter().filter(|unit| !unit.active) {
+        activated_units.push(
+            set_unit_activity(dbx, login, unit, true)
+                .await
+                .context(h!())?,
+        );
     }
-    let unit = set_unit_activity(dbx, login, unit, true)
+    if activated_units.is_empty() {
+        return Ok(activated_units);
+    }
+    reconcile_parent_unit_activity(dbx, login, &activated_units)
         .await
         .context(h!())?;
-    reconcile_parent_unit_activity(dbx, login, std::slice::from_ref(&unit))
-        .await
-        .context(h!())?;
-    Ok(unit)
+    Ok(activated_units)
 }
 
 fn unit_hierarchy_level(unit: &sigint_unit::Model) -> Option<usize> {

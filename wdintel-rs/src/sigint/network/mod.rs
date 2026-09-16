@@ -1205,25 +1205,14 @@ pub async fn create_network(
         }
     }
 
-    if let Some(unit_ids) = req.unit_ids.clone() {
-        let network_units: Vec<sigint_network_unit::ActiveModel> = unit_ids
-            .into_iter()
-            .map(|unit_id| sigint_network_unit::ActiveModel {
-                id: NotSet,
-                network_id: Set(network.id),
-                unit_id: Set(unit_id),
-                created_at: NotSet,
-                sigint_origin_id: NotSet,
-                original_id: NotSet,
-            })
-            .collect();
-        if !network_units.is_empty() {
-            sigint_network_unit::Entity::insert_many(network_units)
-                .exec(&txn)
-                .await
-                .context(h!())?;
-        }
-    }
+    let units_activated = save_network_units(
+        &txn,
+        &user_id,
+        network.id,
+        &req.unit_ids.clone().unwrap_or_default(),
+    )
+    .await
+    .context(h!())?;
 
     let network_posts: Vec<sigint_network_post::ActiveModel> = req
         .post_ids
@@ -1269,6 +1258,11 @@ pub async fn create_network(
     txn.commit().await.context(h!())?;
 
     fanout_network_changed(&env).await.context(h!())?;
+    if units_activated {
+        sigint::unit::fanout_unit_changed_data(&env)
+            .await
+            .context(h!())?;
+    }
     if has_unit_mask {
         crate::sigint::unit_tag::enqueue_recent_non_rer_unit_tag_recalculation(
             &env.dbx,
@@ -1285,6 +1279,47 @@ pub async fn create_network(
         .context(h!())?;
 
     Ok(Json(res))
+}
+
+async fn save_network_units<C>(
+    dbx: &C,
+    login: &uuid::Uuid,
+    network_id: i64,
+    unit_ids: &[i64],
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    if unit_ids.is_empty() {
+        return Ok(false);
+    }
+    let units = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Id.is_in(unit_ids.iter().copied()))
+        .order_by_asc(sigint_unit::Column::Id)
+        .lock_exclusive()
+        .all(dbx)
+        .await
+        .context(h!())?;
+    let units_activated =
+        !sigint::unit::activate_units_for_login(dbx, login, &units)
+            .await
+            .context(h!())?
+            .is_empty();
+    let network_units = unit_ids.iter().copied().map(|unit_id| {
+        sigint_network_unit::ActiveModel {
+            id: NotSet,
+            network_id: Set(network_id),
+            unit_id: Set(unit_id),
+            created_at: NotSet,
+            sigint_origin_id: NotSet,
+            original_id: NotSet,
+        }
+    });
+    sigint_network_unit::Entity::insert_many(network_units)
+        .exec(dbx)
+        .await
+        .context(h!())?;
+    Ok(units_activated)
 }
 
 #[post("/api/sigint/update-network")]
@@ -5900,8 +5935,8 @@ pub async fn network_search(
 mod tests {
     use super::*;
     use crate::functest::tests::{
-        cleanup, find_test_datasource_group, mk_sigint_inbox_item,
-        mk_sigint_inbox_item_network, mk_sigint_network,
+        cleanup, find_test_datasource_group, find_test_login,
+        mk_sigint_inbox_item, mk_sigint_inbox_item_network, mk_sigint_network,
         mk_sigint_network_freq, mk_sigint_network_unit, mk_sigint_unit,
         mk_signal_message,
     };
@@ -5914,6 +5949,38 @@ mod tests {
             .unwrap()
             .and_hms_opt(0, 0, 0)
             .unwrap()
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn saving_network_units_activates_inactive_units() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                active: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let txn = env.dbx.begin().await.unwrap();
+        assert!(save_network_units(&txn, &login.id, network.id, &[unit.id])
+            .await
+            .unwrap());
+        txn.commit().await.unwrap();
+
+        let unit = sigint_unit::Entity::find_by_id(unit.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(unit.active);
     }
 
     #[test]
