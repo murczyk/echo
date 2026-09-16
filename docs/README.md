@@ -223,25 +223,29 @@ location extraction. The worker preserves every existing `location_v2` value,
 appends only missing settlements, and reconciles the settlement-link queue in
 the same transaction. It is disabled by default.
 
-The network maintenance worker owns the PostgreSQL-only
-`network_recalculation_task` queue. It calculates frequency `last_seen_dt` and
-the per-login last interception in a network AOR outside API requests. Pending
-work is deduplicated per frequency, calculation kind, and login where the
-result depends on data visibility. Per-login work clears only its claimed
-request. Frequency `last_seen_dt` work serializes per network, locks frequency
-rows in stable order, and recalculates up to 500 same-network requests in one
-grouped history scan. It atomically removes the captured batch, while work
-queued after the capture remains pending. The worker starts up to 500 queue
-work units per pass and stops starting new work after 50 seconds. It queues a
-final reconciliation after inbox-network
-invalidations update message assignments; broad group/AOR invalidations fan
-out to frequencies processed during that pass, and AOR invalidations also
-include non-deleted frequencies on networks currently linked to that AOR.
+The combined group-stat and network-recalculation worker owns the
+PostgreSQL-only `network_recalculation_task` queue. It switches between network
+recalculation passes and group-stat calculations so they cannot update
+frequency `last_seen_dt` concurrently. It also calculates the per-login last
+interception in a network AOR outside API requests. Pending work is deduplicated
+per frequency, calculation kind, and login where the result depends on data
+visibility. Per-login work clears only its claimed request. Frequency
+`last_seen_dt` work serializes per network, locks frequency rows in stable
+order, captures up to 500 same-network requests in a short transaction, and
+then recalculates them in one grouped history scan. Committing the capture
+before the scan keeps new queue inserts from waiting on the pending-task unique
+index. The worker removes only the captured batch, while work queued after the
+capture remains pending. It starts up to 500 queue work units per pass and stops
+starting new work after 50 seconds. It queues a final reconciliation after
+inbox-network invalidations update message assignments; broad group/AOR
+invalidations fan out to frequencies processed during that pass, and AOR
+invalidations also include non-deleted frequencies on networks currently linked
+to that AOR.
 The per-login AOR cache is scoped to the login's current visible group keys,
 expires after 10 minutes, and is not served while inbox-network invalidation or
-recalculation is pending. Expired entries are evicted hourly alongside the
-pre-existing network cleanup in the same worker. The cache and its queue are
-excluded from the optional analytics replica.
+recalculation is pending. Expired entries are evicted alongside the pre-existing
+network cleanup in the separate network maintenance worker. The cache and its
+queue are excluded from the optional analytics replica.
 
 The separate `network_last_activity_worker` refreshes
 `sigint_network.last_active_at` every five minutes in bounded network-ID batches

@@ -763,14 +763,11 @@ async fn run_once(db: &DatabaseConnection) -> anyhow::Result<bool> {
         "recalculating network frequency task id={} kind={:?} network_freq_id={} login_id={:?}",
         task.id, task.task_kind, task.network_freq_id, task.login_id
     );
-    if let Err(error) = calculate_task(db, &task).await {
-        requeue_failed_task(db, &task).await.c(h!())?;
-        return Err(error);
-    }
+    calculate_task(db, &task).await.c(h!())?;
     Ok(true)
 }
 
-pub(super) async fn run_pending(db: &DatabaseConnection) -> anyhow::Result<()> {
+pub(crate) async fn run_pending(db: &DatabaseConnection) -> anyhow::Result<()> {
     let started_at = std::time::Instant::now();
     for _ in 0..NETWORK_RECALCULATION_TASKS_PER_RUN {
         if started_at.elapsed()
@@ -824,17 +821,26 @@ async fn calculate_task(
     db: &DatabaseConnection,
     task: &network_recalculation_task::Model,
 ) -> anyhow::Result<()> {
+    if task.task_kind == NetworkRecalculationTaskKind::NetworkFreqLastSeen {
+        return calculate_last_seen_task(db, task).await.c(h!());
+    }
+    if let Err(error) = calculate_granular_task(db, task).await {
+        requeue_failed_task(db, task).await.c(h!())?;
+        return Err(error);
+    }
+    Ok(())
+}
+
+async fn calculate_granular_task(
+    db: &DatabaseConnection,
+    task: &network_recalculation_task::Model,
+) -> anyhow::Result<()> {
     let txn = db.begin().await.c(h!())?;
     txn.execute_unprepared(&format!(
         "set local statement_timeout = {NETWORK_RECALCULATION_STATEMENT_TIMEOUT_MS}"
     ))
     .await
     .c(h!())?;
-    if task.task_kind == NetworkRecalculationTaskKind::NetworkFreqLastSeen {
-        calculate_last_seen_tasks(&txn, task).await.c(h!())?;
-        txn.commit().await.c(h!())?;
-        return Ok(());
-    }
     if !lock_network_freq_recalculation_target(&txn, task.network_freq_id)
         .await
         .c(h!())?
@@ -914,36 +920,53 @@ struct NetworkLastSeenTask {
     network_freq_id: i64,
 }
 
-async fn calculate_last_seen_tasks(
-    txn: &DatabaseTransaction,
+struct NetworkLastSeenTaskBatch {
+    network_id: i64,
+    tasks: Vec<NetworkLastSeenTask>,
+}
+
+async fn calculate_last_seen_task(
+    db: &DatabaseConnection,
     claimed_task: &network_recalculation_task::Model,
 ) -> anyhow::Result<()> {
+    let batch = match claim_network_last_seen_task_batch(db, claimed_task).await
+    {
+        Ok(batch) => batch,
+        Err(error) => {
+            requeue_failed_task(db, claimed_task).await.c(h!())?;
+            return Err(error);
+        }
+    };
+    let Some(batch) = batch else {
+        return Ok(());
+    };
+    if let Err(error) = calculate_last_seen_task_batch(db, &batch).await {
+        requeue_failed_last_seen_task_batch(db, &batch)
+            .await
+            .c(h!())?;
+        return Err(error);
+    }
+    Ok(())
+}
+
+async fn claim_network_last_seen_task_batch(
+    db: &DatabaseConnection,
+    claimed_task: &network_recalculation_task::Model,
+) -> anyhow::Result<Option<NetworkLastSeenTaskBatch>> {
+    let txn = db.begin().await.c(h!())?;
     let network_id =
         sigint_network_freq::Entity::find_by_id(claimed_task.network_freq_id)
             .select_only()
             .column(sigint_network_freq::Column::NetworkId)
             .into_tuple::<i64>()
-            .one(txn)
+            .one(&txn)
             .await
             .c(h!())?;
     let Some(network_id) = network_id else {
-        delete_claimed_task(txn, claimed_task.id).await.c(h!())?;
-        return Ok(());
+        delete_claimed_task(&txn, claimed_task.id).await.c(h!())?;
+        txn.commit().await.c(h!())?;
+        return Ok(None);
     };
-    lock_network_last_seen_recalculation(txn, network_id)
-        .await
-        .c(h!())?;
-    if network_recalculation_task::Entity::find_by_id(claimed_task.id)
-        .select_only()
-        .column(network_recalculation_task::Column::Id)
-        .into_tuple::<i64>()
-        .one(txn)
-        .await
-        .c(h!())?
-        .is_none()
-    {
-        return Ok(());
-    }
     let tasks =
         NetworkLastSeenTask::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
@@ -954,8 +977,10 @@ async fn calculate_last_seen_tasks(
                   on nf.id = task.network_freq_id
                 where task.task_kind = 'network_freq_last_seen'
                   and nf.network_id = $1
+                  and (task.id = $3 or task.started_at is null)
                 order by (task.id = $3) desc, task.created_at, task.id
                 limit $2
+                for update of task skip locked
             "#,
             vec![
                 network_id.into(),
@@ -963,14 +988,54 @@ async fn calculate_last_seen_tasks(
                 claimed_task.id.into(),
             ],
         ))
-        .all(txn)
+        .all(&txn)
         .await
         .c(h!())?;
-    let network_freq_ids = tasks
+    if !tasks.iter().any(|task| task.id == claimed_task.id) {
+        txn.commit().await.c(h!())?;
+        return Ok(None);
+    }
+    mark_network_last_seen_task_batch_started(&txn, &tasks)
+        .await
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(Some(NetworkLastSeenTaskBatch { network_id, tasks }))
+}
+
+async fn calculate_last_seen_task_batch(
+    db: &DatabaseConnection,
+    batch: &NetworkLastSeenTaskBatch,
+) -> anyhow::Result<()> {
+    let txn = db.begin().await.c(h!())?;
+    txn.execute_unprepared(&format!(
+        "set local statement_timeout = {NETWORK_RECALCULATION_STATEMENT_TIMEOUT_MS}"
+    ))
+    .await
+    .c(h!())?;
+    lock_network_last_seen_recalculation(&txn, batch.network_id)
+        .await
+        .c(h!())?;
+    let existing_task_ids = network_recalculation_task::Entity::find()
+        .select_only()
+        .column(network_recalculation_task::Column::Id)
+        .filter(
+            network_recalculation_task::Column::Id
+                .is_in(batch.tasks.iter().map(|task| task.id)),
+        )
+        .into_tuple::<i64>()
+        .all(&txn)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect::<HashSet<_>>();
+    let network_freq_ids = batch
+        .tasks
         .iter()
+        .filter(|task| existing_task_ids.contains(&task.id))
         .map(|task| task.network_freq_id)
         .collect::<Vec<_>>();
     if network_freq_ids.is_empty() {
+        txn.commit().await.c(h!())?;
         return Ok(());
     }
     sigint_network_freq::Entity::find()
@@ -980,32 +1045,28 @@ async fn calculate_last_seen_tasks(
         .order_by_asc(sigint_network_freq::Column::Id)
         .lock(LockType::NoKeyUpdate)
         .into_tuple::<i64>()
-        .all(txn)
+        .all(&txn)
         .await
         .c(h!())?;
-    lock_network_freq_recalculations(txn, &network_freq_ids)
+    lock_network_freq_recalculations(&txn, &network_freq_ids)
         .await
         .c(h!())?;
-    // Enqueue transactions may take frequency locks before contending on the
-    // pending-task index, so claim task rows only after those locks.
-    claim_network_last_seen_task_batch(txn, &tasks)
-        .await
-        .c(h!())?;
-    recalculate_last_seen(txn, &network_freq_ids)
+    recalculate_last_seen(&txn, &network_freq_ids)
         .await
         .c(h!())?;
     network_recalculation_task::Entity::delete_many()
         .filter(
             network_recalculation_task::Column::Id
-                .is_in(tasks.iter().map(|task| task.id)),
+                .is_in(batch.tasks.iter().map(|task| task.id)),
         )
-        .exec(txn)
+        .exec(&txn)
         .await
         .c(h!())?;
+    txn.commit().await.c(h!())?;
     Ok(())
 }
 
-async fn claim_network_last_seen_task_batch(
+async fn mark_network_last_seen_task_batch_started(
     txn: &DatabaseTransaction,
     tasks: &[NetworkLastSeenTask],
 ) -> anyhow::Result<()> {
@@ -1314,6 +1375,35 @@ async fn requeue_failed_task(
     Ok(())
 }
 
+async fn requeue_failed_last_seen_task_batch(
+    db: &DatabaseConnection,
+    batch: &NetworkLastSeenTaskBatch,
+) -> anyhow::Result<()> {
+    let txn = db.begin().await.c(h!())?;
+    enqueue_tasks(
+        &txn,
+        batch.tasks.iter().map(|task| {
+            (
+                NetworkRecalculationTaskKind::NetworkFreqLastSeen,
+                task.network_freq_id,
+                None,
+            )
+        }),
+    )
+    .await
+    .c(h!())?;
+    network_recalculation_task::Entity::delete_many()
+        .filter(
+            network_recalculation_task::Column::Id
+                .is_in(batch.tasks.iter().map(|task| task.id)),
+        )
+        .exec(&txn)
+        .await
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1610,7 +1700,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn concurrent_enqueue_survives_captured_task_deletion() {
+    async fn enqueue_does_not_wait_for_claimed_last_seen_batch() {
         let env = cleanup().await.unwrap();
         let fixture = setup_queue_fixture(&env.dbx).await;
         enqueue_task(
@@ -1630,37 +1720,43 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let txn = env.dbx.begin().await.unwrap();
-        claim_network_last_seen_task_batch(
-            &txn,
-            &[NetworkLastSeenTask {
-                id: task.id,
-                network_freq_id: task.network_freq_id,
-            }],
-        )
-        .await
-        .unwrap();
-        let db = env.dbx.clone();
-        let network_freq_id = fixture.network_freq.id;
-        let enqueue = tokio::spawn(async move {
-            enqueue_task(
-                &db,
-                NetworkRecalculationTaskKind::NetworkFreqLastSeen,
-                network_freq_id,
-                None,
-            )
-            .await
-            .unwrap();
-        });
-        tokio::task::yield_now().await;
-
-        delete_claimed_task(&txn, task.id).await.unwrap();
-        txn.commit().await.unwrap();
-        tokio::time::timeout(std::time::Duration::from_secs(5), enqueue)
+        let batch = claim_network_last_seen_task_batch(&env.dbx, &task)
             .await
             .unwrap()
             .unwrap();
 
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            enqueue_task(
+                &env.dbx,
+                NetworkRecalculationTaskKind::NetworkFreqLastSeen,
+                fixture.network_freq.id,
+                None,
+            )
+            .await
+            .unwrap();
+        })
+        .await
+        .unwrap();
+
+        let tasks = network_recalculation_task::Entity::find()
+            .filter(
+                network_recalculation_task::Column::TaskKind
+                    .eq(NetworkRecalculationTaskKind::NetworkFreqLastSeen),
+            )
+            .filter(
+                network_recalculation_task::Column::NetworkFreqId
+                    .eq(fixture.network_freq.id),
+            )
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(tasks.len(), 2);
+        assert!(tasks.iter().any(|task| task.started_at.is_some()));
+        assert!(tasks.iter().any(|task| task.started_at.is_none()));
+
+        requeue_failed_last_seen_task_batch(&env.dbx, &batch)
+            .await
+            .unwrap();
         let remaining = network_recalculation_task::Entity::find()
             .filter(
                 network_recalculation_task::Column::TaskKind

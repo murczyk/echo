@@ -3601,7 +3601,6 @@ async fn network_maintenance_worker_iteration(
     last_maintenance_started_at: &mut Option<std::time::Instant>,
     synthetic_repair_after_id: &mut i64,
 ) -> anyhow::Result<()> {
-    let recalculation_result = recalculation::run_pending(dbx).await.c(h!());
     let maintenance_due = last_maintenance_started_at
         .map(|started_at| {
             started_at.elapsed()
@@ -3621,7 +3620,6 @@ async fn network_maintenance_worker_iteration(
     } else {
         Ok(())
     };
-    recalculation_result.context(h!())?;
     maintenance_result.c(h!())?;
     Ok(())
 }

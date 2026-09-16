@@ -430,11 +430,17 @@ fn should_start_bgworkers_in_server(_mode: Mode, no_bgworker: bool) -> bool {
     !no_bgworker
 }
 
-fn spawn_group_stats_worker(bg_set: &mut JoinSet<()>, env: Arc<Env>) {
-    spawn_named_worker("worker_calculate_group_stats", bg_set, async move {
-        crate::stats::worker::group_stats::worker_calculate_group_stats(env)
-            .await;
-    });
+fn spawn_group_stats_and_network_recalculation_worker(
+    bg_set: &mut JoinSet<()>,
+    env: Arc<Env>,
+) {
+    spawn_named_worker(
+        "group_stats_and_network_recalculation_worker",
+        bg_set,
+        async move {
+            crate::stats::worker::group_stats::worker_calculate_group_stats_and_network_recalculations(env).await;
+        },
+    );
 }
 
 fn spawn_goi_sync_worker_pool(bg_set: &mut JoinSet<()>, env: Arc<Env>) {
@@ -531,7 +537,7 @@ fn spawn_background_workers(
     env: Arc<Env>,
     cancel_token: CancellationToken,
     shutdown_handle: Handle,
-    should_spawn_group_stats_worker: bool,
+    should_spawn_group_stats_and_network_recalculation_worker: bool,
     should_spawn_goi_workers: bool,
     bg_set: &mut JoinSet<()>,
 ) {
@@ -684,8 +690,8 @@ fn spawn_background_workers(
             crate::sigint::network::etalon_calc::worker::run_inbox_network_daily_consistency_worker_nofail(daily_network_env).await;
         },
     );
-    if should_spawn_group_stats_worker {
-        spawn_group_stats_worker(bg_set, env.clone());
+    if should_spawn_group_stats_and_network_recalculation_worker {
+        spawn_group_stats_and_network_recalculation_worker(bg_set, env.clone());
     }
     let rq2 = env.rq.clone();
     let tag_keyword_regex_cache = env.tag_keyword_regex_cache.clone();
