@@ -7,6 +7,7 @@ import {
   addPalitraHighlightBlacklistEntry,
   analyzePalitraKmz,
   deletePalitraHighlightBlacklistEntry,
+  downloadPalitras,
   fetchPalitraReferenceData,
   getPalitraHighlightBlacklist,
   listPalitras,
@@ -123,6 +124,28 @@ describe('palitra list normalization', () => {
     await expect(listPalitras()).resolves.toEqual([
       expect.objectContaining({ id: 7, highlightBlacklistCount: 3 }),
     ]);
+  });
+});
+
+// @test-scope parser: Palitra download API request mapping fixture.
+describe('palitra downloads', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('uses the Delta split endpoint when requested', async () => {
+    const requestedUrls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        requestedUrls.push(String(input));
+        return new Response(new Blob(['zip']), { status: 200 });
+      }),
+    );
+
+    await downloadPalitras([42], { splitForDelta: true });
+
+    expect(requestedUrls).toEqual(['/api/palitra/download-delta-split']);
   });
 });
 

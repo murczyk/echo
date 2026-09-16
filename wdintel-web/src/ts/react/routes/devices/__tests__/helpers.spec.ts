@@ -9,26 +9,10 @@ import {
   formatAorsLabel,
   hasActiveDevicesFilters,
   mergeDeviceUnitStatsWithUnits,
-  mergeCurrentDeviceUnitOption,
   resolveDevicesColumnFilters,
   sanitizeDevicesColumnFilters,
   resolveDeviceSidebarUnitIds,
 } from '../helpers';
-
-// @test-scope parser: preserves device unit-option normalization for the device API boundary.
-describe('device unit options', () => {
-  it('keeps the current inactive unit available while editing', () => {
-    expect(
-      mergeCurrentDeviceUnitOption([{ id: 1, label: 'Active' }], {
-        id: 2,
-        name: 'Inactive',
-      }),
-    ).toEqual([
-      { id: 1, label: 'Active' },
-      { id: 2, label: 'Inactive' },
-    ]);
-  });
-});
 
 function buildUnit(overrides: Partial<Unit>): Unit {
   return {

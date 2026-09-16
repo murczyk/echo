@@ -9,13 +9,14 @@ Read the **Test scope** section of `CODE_REVIEW.md` before adding or expanding t
 
 ## React Vitest placement
 
-Place every new `*.spec.*` or `*.test.*` under `src/ts/react` in the nearest
-production-owned `__tests__` directory. A React Vitest path has exactly one
-`__tests__` segment: never use recovery, characterization, nested test,
-temporary holding directories, or placement exceptions. Resolve collisions with
-a descriptive filename inside the correct directory, and preserve resolved
-production imports and `vi.mock` targets during relocation. Playwright belongs
-in `tests/e2e` and is not subject to this React placement rule.
+Place every new `*.spec.*` or `*.test.*` under `src/ts/react` as a direct child
+of the nearest production-owned `__tests__` directory. A React Vitest path has
+exactly one `__tests__` segment and no directory below it: never use recovery,
+characterization, nested test, temporary holding directories, or placement
+exceptions. Resolve collisions with a descriptive filename inside the correct
+directory, and preserve resolved production imports and `vi.mock` targets during
+relocation. Playwright belongs in `tests/e2e` and is not subject to this React
+placement rule.
 
 ## Admission gate
 
@@ -30,6 +31,8 @@ Use a co-located annotation for every retained default-suite test:
 Regression annotations require an Echo issue or PR URL. Safeguard annotations
 must name the harmful outcome, not only a mechanism such as a timer or abort
 call. File-level annotations are allowed only for homogeneous parser fixtures.
+`describe` annotations are inherited, so use one only when every descendant
+truthfully shares the same admission category and failure mode.
 
 Add or retain a test only when it protects at least one category accepted by `CODE_REVIEW.md`:
 

@@ -4,7 +4,7 @@ import {
   DOCUMENT_CACHE_LIMIT,
   DOCUMENT_CACHE_MAX_BYTES,
   fetchCachedDocumentResponse,
-} from '../../document-preview-utils';
+} from '../document-preview-utils';
 
 function createResponse(byteLength: number): Response {
   const buffer = new ArrayBuffer(byteLength);

@@ -103,14 +103,14 @@ import {
   getOcrInfoSeverity,
   OcrPreviewAction,
   OcrSplitPreview,
-} from '../../attachment-preview/OcrPreview';
+} from '../OcrPreview';
 import {
   clearMediaSummaryCache,
   MEDIA_SUMMARY_CACHE_LIMIT,
   MediaSummaryOverlay,
   MessageCardMediaSummary,
   MessageCardMediaSummaryCarousel,
-} from '../../attachment-preview/MediaSummaryPreview';
+} from '../MediaSummaryPreview';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;

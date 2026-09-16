@@ -1,5 +1,5 @@
 /** @vitest-environment happy-dom */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getJson: vi.fn(),
@@ -19,11 +19,17 @@ import {
   getAiAgentSettings,
   saveAiAgentDispatcher,
   saveAiAgentSettings,
+  streamAiAgentEvents,
   testAiAgentDispatcher,
   updateAiAgentConversation,
 } from '../ai-agent';
 
 beforeEach(() => vi.clearAllMocks());
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 describe('AI agent API mapping', () => {
   // @test-scope safeguard: prevents runtime profiles for disallowed AI engines from being submitted
@@ -239,6 +245,31 @@ describe('AI agent API mapping', () => {
       'completed',
       'completed',
     ]);
+  });
+
+  // @test-scope safeguard: prevents an inactive AI event stream from retaining a client request forever.
+  it('aborts an inactive event stream after 15 seconds', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(new ReadableStream<Uint8Array>({ start() {} }), {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+        }),
+      ),
+    );
+
+    const stream = streamAiAgentEvents({
+      requestId: 'request-1',
+      afterSequence: 0,
+      signal: new AbortController().signal,
+      onEvent: vi.fn(),
+    });
+    const result = expect(stream).rejects.toThrow('Потік подій неактивний понад 15 секунд.');
+    await vi.advanceTimersByTimeAsync(15_001);
+
+    await result;
   });
 
   // @test-scope safeguard: prevents dispatcher saves from sending non-editable sensitive host-file settings

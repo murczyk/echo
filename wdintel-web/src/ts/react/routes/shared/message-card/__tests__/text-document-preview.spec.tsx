@@ -5,7 +5,7 @@ import { createRoot } from 'react-dom/client';
 import { act } from 'react-dom/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { MarkdownDocumentPreview, TxtDocumentPreview } from '../../text-document-preview';
+import { MarkdownDocumentPreview, TxtDocumentPreview } from '../text-document-preview';
 
 function buildReaderResponse(
   chunks: Uint8Array[],

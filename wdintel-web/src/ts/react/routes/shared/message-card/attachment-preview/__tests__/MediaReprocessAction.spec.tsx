@@ -42,7 +42,7 @@ vi.mock('../../../../../components/PowerSnackbar', () => ({
   useOptionalPowerSnackbar: () => ({ notify: mocks.notify }),
 }));
 
-import { MediaReprocessAction } from '../../attachment-preview/MediaReprocessAction';
+import { MediaReprocessAction } from '../MediaReprocessAction';
 
 const completedOcr = {
   state: 'completed',

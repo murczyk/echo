@@ -98,7 +98,7 @@ import {
   clearMediaSummaryCache,
   MessageCardMediaSummary,
   MessageCardMediaSummaryCarousel,
-} from '../../attachment-preview/MediaSummaryPreview';
+} from '../MediaSummaryPreview';
 
 describe('MessageCardMediaSummary', () => {
   let container: HTMLDivElement | null = null;

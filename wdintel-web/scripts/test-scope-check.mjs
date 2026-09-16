@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import ts from 'typescript';
 
@@ -166,14 +166,52 @@ function modulePath(fromFile, moduleSpecifier) {
   if (!moduleSpecifier.startsWith('.')) return null;
   const basePath = join(fromFile, '..', moduleSpecifier);
   const candidates = [
+    basePath,
     `${basePath}.ts`,
     `${basePath}.tsx`,
     `${basePath}.mts`,
+    `${basePath}.js`,
+    `${basePath}.jsx`,
+    `${basePath}.mjs`,
+    `${basePath}.cjs`,
+    `${basePath}.json`,
     join(basePath, 'index.ts'),
     join(basePath, 'index.tsx'),
     join(basePath, 'index.mts'),
+    join(basePath, 'index.js'),
+    join(basePath, 'index.jsx'),
+    join(basePath, 'index.mjs'),
+    join(basePath, 'index.cjs'),
+    join(basePath, 'index.json'),
   ];
-  return candidates.find(existsSync) ?? null;
+  return (
+    candidates.find((candidate) => existsSync(candidate) && statSync(candidate).isFile()) ?? null
+  );
+}
+
+function relativeMockProblems(file) {
+  const sourceText = readFileSync(file, 'utf8');
+  const sourceFile = ts.createSourceFile(file, sourceText, ts.ScriptTarget.Latest, true);
+  const problems = [];
+  const visit = (node) => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      ['vi', 'jest'].includes(node.expression.expression.getText(sourceFile)) &&
+      ['mock', 'doMock'].includes(node.expression.name.text) &&
+      ts.isStringLiteralLike(node.arguments[0]) &&
+      node.arguments[0].text.startsWith('.') &&
+      !modulePath(file, node.arguments[0].text)
+    ) {
+      const location = sourceFile.getLineAndCharacterOfPosition(node.arguments[0].getStart());
+      problems.push(
+        `${relative(webRoot, file)}:${location.line + 1} has unresolved relative mock ${node.arguments[0].text}`,
+      );
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(sourceFile, visit);
+  return problems;
 }
 
 function importedSymbols(file) {
@@ -395,19 +433,23 @@ const placementProblems = [];
 for (const file of testFiles) {
   const path = relative(webRoot, file);
   if (path.startsWith('src/ts/react/')) {
-    const testDirectoryCount = path.split('/').filter((segment) => segment === '__tests__').length;
-    const prohibitedDirectory = path
-      .split('/')
-      .find((segment) => prohibitedTestDirectories.has(segment));
+    const pathSegments = path.split('/');
+    const testDirectoryIndexes = pathSegments.flatMap((segment, index) =>
+      segment === '__tests__' ? [index] : [],
+    );
+    const testDirectoryCount = testDirectoryIndexes.length;
+    const prohibitedDirectory = pathSegments.find((segment) =>
+      prohibitedTestDirectories.has(segment),
+    );
     if (prohibitedDirectory)
       placementProblems.push(`${path} uses prohibited ${prohibitedDirectory} test placement.`);
     else if (testDirectoryCount !== 1)
       placementProblems.push(
         `${path} must be in the nearest production-owned __tests__ directory (found ${testDirectoryCount}).`,
       );
-    else if (testDirectoryCount === 0)
+    else if (testDirectoryIndexes[0] !== pathSegments.length - 2)
       placementProblems.push(
-        `${path} is unpacked; place it in the nearest production-owned __tests__ directory.`,
+        `${path} must be an immediate child of its nearest production-owned __tests__ directory.`,
       );
   }
   if (file.includes('/characterization/')) continue;
@@ -434,6 +476,7 @@ for (const file of testFiles) {
 }
 invalidAnnotations.push(...referencedTestPathProblems());
 invalidAnnotations.push(...playwrightTestPathProblems());
+invalidAnnotations.push(...testFiles.flatMap(relativeMockProblems));
 invalidAnnotations.push(...placementProblems);
 let inheritedTestOnlyExports = 0;
 if (exportBase) {

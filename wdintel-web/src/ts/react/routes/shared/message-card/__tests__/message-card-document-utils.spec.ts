@@ -4,7 +4,7 @@
 // @test-scope parser: document attachment type, MIME-parameter, and filename derivation fixtures
 import { describe, expect, it } from 'vitest';
 
-import type { InboxMessage, MessageMediaInfo } from '../../../../../../../Bindings';
+import type { InboxMessage, MessageMediaInfo } from '../../../../../../Bindings';
 import {
   collectMessageDocuments,
   deriveDocumentDownloadName,
@@ -16,7 +16,7 @@ import {
   isTxtAttachment,
   isXlsxAttachment,
   isCsvAttachment,
-} from '../../message-card-document-utils';
+} from '../message-card-document-utils';
 
 describe('message-card document utils', () => {
   it('detects supported document attachments by MIME type and extension', () => {

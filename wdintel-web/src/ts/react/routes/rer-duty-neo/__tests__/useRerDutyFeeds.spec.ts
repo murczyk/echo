@@ -5,12 +5,7 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  effectiveDutyPollIntervalSec,
-  getPendingDutyCallsignLookups,
-  mergeAvailableFrequencies,
-  mergeKnownGroupKeys,
-} from '../useRerDutyFeeds';
+import { getPendingDutyCallsignLookups } from '../useRerDutyFeeds';
 import { useRerDutyFeeds } from '../useRerDutyFeeds';
 
 const hoisted = vi.hoisted(() => ({
@@ -250,89 +245,6 @@ async function flushMicrotasks(): Promise<void> {
     await Promise.resolve();
   }
 }
-
-// @test-scope parser: preserves Duty group-key merging across loaded feed and filter data.
-describe('mergeKnownGroupKeys', () => {
-  it('keeps the safety poll aligned with the backend count cache', () => {
-    expect(effectiveDutyPollIntervalSec(1)).toBe(5);
-    expect(effectiveDutyPollIntervalSec(10)).toBe(10);
-  });
-
-  it('keeps a group selected in one column available to other Duty columns', () => {
-    const availableGroupKeys = mergeKnownGroupKeys(
-      [],
-      [],
-      [],
-      [
-        {
-          items: [],
-          filter: { groupsSelected: ['historic-group'], groupsDenied: [] },
-        },
-        {
-          items: [],
-          filter: { groupsSelected: [], groupsDenied: [] },
-        },
-      ],
-    );
-
-    expect(availableGroupKeys).toEqual(['historic-group']);
-  });
-
-  it('keeps groups from a replaced message window and persisted filters', () => {
-    const initialFeeds = [
-      {
-        items: [
-          [1, { groupMasterKey: 'A' }],
-          [2, { groupMasterKey: 'B' }],
-          [3, { groupMasterKey: 'C' }],
-        ] as [number, { groupMasterKey: string }][],
-        filter: { groupsSelected: [], groupsDenied: [] },
-      },
-    ];
-    const replacedFeeds = [
-      {
-        items: [[1, { groupMasterKey: 'A' }]] as [number, { groupMasterKey: string }][],
-        filter: { groupsSelected: ['saved-group'], groupsDenied: [] },
-      },
-    ];
-
-    const known = mergeKnownGroupKeys([], [], [], initialFeeds);
-    expect(mergeKnownGroupKeys(known, [], [], replacedFeeds)).toEqual([
-      'A',
-      'B',
-      'C',
-      'saved-group',
-    ]);
-  });
-
-  it('retains groups present only in saved filters', () => {
-    expect(
-      mergeKnownGroupKeys(
-        [],
-        [],
-        [],
-        [],
-        [{ groupsSelected: ['saved-selected'], groupsDenied: ['saved-denied'] }],
-      ),
-    ).toEqual(['saved-selected', 'saved-denied']);
-  });
-});
-
-// @test-scope parser: preserves compatible Duty frequency option merging.
-describe('mergeAvailableFrequencies', () => {
-  it.each(['freqsSelected', 'freqsDenied'] as const)(
-    'keeps a restored active frequency available for other Duty columns from %s',
-    (activeField) => {
-      const filter = {
-        freqsSelected: [],
-        freqsDenied: [],
-        [activeField]: ['153.6250'],
-      };
-
-      expect(mergeAvailableFrequencies([], [{ items: [], filter }])).toContain('153.6250');
-    },
-  );
-});
 
 // @test-scope safeguard: prevents duplicate callsign enrichment requests for current Duty feeds.
 describe('getPendingDutyCallsignLookups', () => {

@@ -191,7 +191,7 @@ vi.mock('../use-analysis-sidebar-data', () => ({
   }),
 }));
 
-vi.mock('./use-analysis-filter-sections', () => ({
+vi.mock('../use-analysis-data-filter-sections', () => ({
   useAnalysisFilterSections: () => ({
     filterSectionLoadStates: {},
     isFilterSectionEmptyLoading: vi.fn(),

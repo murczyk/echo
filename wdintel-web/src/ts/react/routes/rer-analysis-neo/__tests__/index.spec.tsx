@@ -264,10 +264,6 @@ vi.mock('../../shared/manage-message/ManageMessageDrawer', () => ({
   },
 }));
 
-vi.mock('.././use-min-duration-busy', () => ({
-  useMinDurationBusy: (value: boolean) => value,
-}));
-
 vi.mock('@mui/icons-material/BarChartOutlined', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/ChevronLeftOutlined', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/ChevronRightOutlined', () => ({ default: () => <span /> }));

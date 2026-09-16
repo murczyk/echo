@@ -219,7 +219,6 @@ vi.mock('../../shared/manage-message/ManageMessageDrawer', () => ({
       </div>
     ) : null,
 }));
-vi.mock('./DeleteConfirmDialog', () => ({ DeleteConfirmDialog: () => null }));
 vi.mock('../dialogs', () => ({ DeleteConfirmDialog: () => null }));
 vi.mock('../../../components/PowerAlert', () => ({
   PowerAlert: ({

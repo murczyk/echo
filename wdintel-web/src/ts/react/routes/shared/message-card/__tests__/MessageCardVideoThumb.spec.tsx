@@ -6,13 +6,13 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { MessageMediaInfo } from '../../../../../../../Bindings';
+import type { MessageMediaInfo } from '../../../../../../Bindings';
 
 const authRedirectMocks = vi.hoisted(() => ({
   emitUnauthorizedEvent: vi.fn(),
 }));
 
-vi.mock('../../../../../auth-redirect', () => authRedirectMocks);
+vi.mock('../../../../auth-redirect', () => authRedirectMocks);
 
 vi.mock('@mui/material', () => ({
   Box: ({
@@ -78,7 +78,7 @@ vi.mock('@mui/icons-material/PlayArrow', () => ({
   default: () => <span data-play-icon />,
 }));
 
-import { MessageCardVideoThumb } from '../../MessageCardVideoThumb';
+import { MessageCardVideoThumb } from '../MessageCardVideoThumb';
 
 function buildAttachment(overrides: Partial<MessageMediaInfo> = {}): MessageMediaInfo {
   return {

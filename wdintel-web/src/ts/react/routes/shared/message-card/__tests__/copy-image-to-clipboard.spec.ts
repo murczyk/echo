@@ -3,7 +3,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { canCopyImageToClipboard, copyImageToClipboard } from '../../copy-image-to-clipboard';
+import { canCopyImageToClipboard, copyImageToClipboard } from '../copy-image-to-clipboard';
 
 class FakeClipboardItem {
   static supports = vi.fn((type: string) => type.startsWith('image/'));

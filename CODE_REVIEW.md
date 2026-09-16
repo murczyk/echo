@@ -27,9 +27,10 @@ See `.github/skills/test-scope-policy/SKILL.md` and
 `docs/frontend/react-behavior-contracts/README.md` for the contributor decision
 tree and migration rules.
 
-React Vitest specs under `src/ts/react` belong in the nearest production-owned
-`__tests__` directory, with exactly one `__tests__` path segment. Do not accept
-recovery, characterization, nested-test, temporary holding paths, or placement
+React Vitest specs under `src/ts/react` are direct children of the nearest
+production-owned `__tests__` directory, with exactly one `__tests__` path
+segment and no test-owned directory below it. Do not accept recovery,
+characterization, nested-test, temporary holding paths, or placement
 exceptions. Use descriptive names for collisions and preserve resolved imports
 and `vi.mock` targets when relocating tests. Playwright remains in `tests/e2e`.
 
