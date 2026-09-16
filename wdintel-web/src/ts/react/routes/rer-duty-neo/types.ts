@@ -16,6 +16,7 @@ import type { AddPointHighlightBlacklistRequest } from '../shared/message-card/p
 import type { DutyWorkspaceFabAvoidance } from './duty-scroll-fab-position';
 import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
 import type { MessageTimeBasis } from '../../services/api/user-settings';
+import type { ReachedBottomContext } from './windowed-feed-scroll-shared';
 
 export type TailAvailability = 'unknown' | 'checking' | 'loading' | 'available' | 'exhausted';
 
@@ -100,7 +101,7 @@ export type FeedColumnModel = {
     onCreateFeed?: () => void;
     onScrollToTop?: () => void;
     /** Called at the physical bottom. Return false to preserve the current anchor instead of following an unread pending tail. */
-    onReachedBottom?: (context: { hasSeenNotAtBottom: boolean }) => boolean | void;
+    onReachedBottom?: (context: ReachedBottomContext) => boolean | void;
     /** Called when user scrolls away from bottom; use to disable watch mode so we don't load new messages. */
     onLeftBottom?: () => void;
     /** Called when the scroller enters or leaves the near-bottom pixel zone. Used so polling can load newer messages while the user follows the tail. */

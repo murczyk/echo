@@ -94,6 +94,7 @@ test('#3496 reloads the newest chunk after it was evicted by history paging @smo
   await page.setViewportSize({ width: 1280, height: 900 });
   const newerSinceIds: number[] = [];
   const countSinceIds: Array<number | null> = [];
+  const newerResponse = createDeferred<InboxMessagesRspRaw>();
   await installRerDutyShortStateMocks(page, {
     inboxCountResponseForRequest: (requestBody) => {
       countSinceIds.push(readSinceId(requestBody));
@@ -105,7 +106,7 @@ test('#3496 reloads the newest chunk after it was evicted by history paging @smo
       if (beforeId === 21) return buildInboxResponse(Array.from({ length: 20 }, (_, i) => i + 1));
       if (sinceId === 40) {
         newerSinceIds.push(sinceId);
-        return buildInboxResponse(Array.from({ length: 20 }, (_, i) => i + 41));
+        return newerResponse.promise;
       }
       if (beforeId != null || sinceId != null) return buildInboxResponse([]);
       return buildInboxResponse(Array.from({ length: 40 }, (_, i) => i + 21));
@@ -128,8 +129,54 @@ test('#3496 reloads the newest chunk after it was evicted by history paging @smo
   await expect.poll(() => countSinceIds).toContain(60);
 
   await setBottomDistance(scroller, 0);
+  await expect.poll(() => newerSinceIds).toContain(40);
+  const anchorBefore = await readVisibleAnchor(scroller);
+  newerResponse.resolve(buildInboxResponse(Array.from({ length: 20 }, (_, i) => i + 41)));
   await expect(list.locator('[data-duty-message-id="60"]')).toBeAttached();
+  await page.waitForTimeout(1000);
+  const anchorAfter = await readVisibleAnchor(scroller);
+  expect(anchorAfter.id).toBe(anchorBefore.id);
+  expect(Math.abs(anchorAfter.offsetTop - anchorBefore.offsetTop)).toBeLessThanOrEqual(1);
   expect(newerSinceIds).toContain(40);
+});
+
+test('#3496 lets the arrow land on a newest chunk evicted by history paging', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const arrowRequestStarted = createDeferred<void>();
+  const arrowResponse = createDeferred<InboxMessagesRspRaw>();
+  await installRerDutyShortStateMocks(page, {
+    inboxCountResponseForRequest: () => ({ quantity: 20, first_element_ts: null }),
+    inboxResponseForRequest: (requestBody) => {
+      const beforeId = readBeforeId(requestBody);
+      const sinceId = readSinceId(requestBody);
+      if (beforeId === 21) return buildInboxResponse(Array.from({ length: 20 }, (_, i) => i + 1));
+      if (sinceId === 40) {
+        arrowRequestStarted.resolve();
+        return arrowResponse.promise;
+      }
+      if (beforeId != null || sinceId != null) return buildInboxResponse([]);
+      return buildInboxResponse(Array.from({ length: 40 }, (_, i) => i + 21));
+    },
+  });
+
+  await page.goto('/rer-duty-neo?state-short=short-1');
+  const scroller = page.locator('[data-duty-feed-scroller="true"]');
+  const list = page.locator('[data-duty-feed-list="true"]');
+  await expect(list.locator('[data-duty-message-id="60"]')).toBeAttached();
+
+  await scroller.evaluate((element) => {
+    element.scrollTop = 0;
+    element.dispatchEvent(new Event('scroll', { bubbles: true }));
+  });
+  await expect(list.locator('[data-duty-message-id="1"]')).toBeAttached();
+  await expect(list.locator('[data-duty-message-id="60"]')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Завантажити нові та перейти вниз' }).click();
+  await arrowRequestStarted.promise;
+  arrowResponse.resolve(buildInboxResponse(Array.from({ length: 20 }, (_, i) => i + 41)));
+
+  await expect(list.locator('[data-duty-message-id="60"]')).toBeAttached();
+  await expect.poll(() => readBottomDistance(scroller)).toBeLessThanOrEqual(1);
 });
 
 test('#3360 lands initially when ON settings resolve before the inbox', async ({ page }) => {

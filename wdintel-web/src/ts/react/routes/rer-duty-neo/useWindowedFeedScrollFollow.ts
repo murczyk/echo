@@ -152,6 +152,7 @@ export function useWindowedFeedScrollFollow(args: {
                 const shouldFollow =
                   refs.callbacksRef.current.onReachedBottom?.({
                     hasSeenNotAtBottom: refs.hasSeenNotAtBottomRef.current,
+                    navigationIntent: intent,
                   }) !== false;
                 refs.liveBottomFollowRef.current = shouldFollow;
                 recordDutyScrollDebugEvent(
@@ -287,6 +288,7 @@ export function useWindowedFeedScrollFollow(args: {
         allowLoadOlder: !canScroll,
         allowLoadNewer: false,
         allowTopReached: false,
+        navigationIntent: intent,
       });
       captureAnchorSnapshot();
       confirmLanding(scroller);

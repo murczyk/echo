@@ -95,9 +95,14 @@ export function useDutyFeedColumnActions(
         cancelFollowTail(feedId);
         setWatchModeByFeedId((prev) => ({ ...prev, [feedId]: false }));
       },
-      onReachedBottom: ({ hasSeenNotAtBottom }) => {
+      onReachedBottom: ({ hasSeenNotAtBottom, navigationIntent }) => {
         if (dutyDisableAutoScroll) {
           cancelFollowTail(feedId);
+          return false;
+        }
+        if (feed.evictedNewerTailId != null && navigationIntent === null) {
+          cancelFollowTail(feedId);
+          setWatchModeByFeedId((prev) => ({ ...prev, [feedId]: false }));
           return false;
         }
         const tailAvailability = tailAvailabilityByFeedId[feedId] ?? 'unknown';

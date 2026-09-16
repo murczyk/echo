@@ -148,6 +148,7 @@ export function useWindowedFeedScrollTracking(args: {
       refs.physicallyAtBottomRef.current = false;
       refs.nearBottomRef.current = false;
       refs.liveBottomFollowRef.current = false;
+      refs.preserveBottomAnchorRef.current = false;
       refs.loadOlderTriggeredRef.current = false;
       refs.loadNewerTriggeredRef.current = false;
     },
@@ -207,15 +208,21 @@ export function useWindowedFeedScrollTracking(args: {
             refs.liveBottomFollowRef.current = false;
           } else {
             const shouldFollow =
-              onReachedBottom?.({ hasSeenNotAtBottom: refs.hasSeenNotAtBottomRef.current }) !==
-              false;
+              onReachedBottom?.({
+                hasSeenNotAtBottom: refs.hasSeenNotAtBottomRef.current,
+                navigationIntent: opts.navigationIntent ?? null,
+              }) !== false;
             refs.liveBottomFollowRef.current = shouldFollow;
+            refs.preserveBottomAnchorRef.current =
+              !shouldFollow && opts.navigationIntent === undefined;
             recordDutyScrollDebugEvent(
               debugFeedId,
               shouldFollow ? 'follow:enable' : 'follow:blocked',
               `physical bottom reached; returned=${refs.hasSeenNotAtBottomRef.current}`,
             );
           }
+        } else {
+          refs.preserveBottomAnchorRef.current = false;
         }
       }
 
