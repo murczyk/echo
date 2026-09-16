@@ -9,6 +9,7 @@ import {
   buildInboxReq,
   emptyFilter,
   DUTY_FEED_UNREAD_PREFETCH_MIN,
+  feedHasUnloadedEvictedNewerTail,
   feedLoadedUnreadCount,
   feedPendingNewerUnreadCount,
   feedNewerSinceId,
@@ -961,9 +962,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           }
           const quantity = entry.quantity ?? 0;
           const loadedTailId = currentFeed.items.at(-1)?.[0] ?? null;
-          const exhaustedAtTail =
-            loadedTailId != null &&
-            newestExhaustedCursorByFeedIdRef.current[feedId] === loadedTailId;
+          const hasUnloadedEvictedNewerTail = feedHasUnloadedEvictedNewerTail(currentFeed);
           const nearBottom = nearBottomByFeedIdRef.current[feedId] === true;
           // Inbox count is assist-only near the tail: never write the badge from it while
           // near-bottom. Scrolled-up polls may still seed beyond-tail pending.
@@ -987,8 +986,17 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           }
           if (entry.quantity <= 0) {
             invalidateTailPreview(feedId);
-            setTailAvailability(feedId, currentFeed.items.length > 0 ? 'exhausted' : 'unknown');
-            if (loadedTailId != null) {
+            setTailAvailability(
+              feedId,
+              hasUnloadedEvictedNewerTail
+                ? 'available'
+                : currentFeed.items.length > 0
+                  ? 'exhausted'
+                  : 'unknown',
+            );
+            if (hasUnloadedEvictedNewerTail) {
+              delete newestExhaustedCursorByFeedIdRef.current[feedId];
+            } else if (loadedTailId != null) {
               newestExhaustedCursorByFeedIdRef.current[feedId] = loadedTailId;
             }
             setMessageFeeds((prev) =>

@@ -10,6 +10,7 @@ import {
   buildVisibleExcludeMenuOptions,
   excludeMessageEntityFromFilters,
   PAGE_ID,
+  appendNewerItemsToFeed,
   appendWindowedMessageItems,
   buildAnalysisMapHrefWithSearch,
   buildSenderOptions,
@@ -21,6 +22,7 @@ import {
   filtersEqual,
   findAllAdjacentFreqs,
   feedIndicatorUnreadCount,
+  feedHasUnloadedEvictedNewerTail,
   feedUnreadDisplayCount,
   feedLoadedUnreadCount,
   feedNeedsUnreadPrefetch,
@@ -883,6 +885,37 @@ describe('rer-duty utils', () => {
     expect(flushed.items.map(([id]) => id)).toEqual([1, 2, 3, 4]);
     expect(flushed.pendingNewerItems).toEqual([]);
     expect(flushed.unreadCount).toBe(2);
+  });
+
+  it('#3496 clears the evicted tail when a nolimit page restores it before trimming', () => {
+    const feed = indicatorFeed({
+      items: Array.from({ length: 40 }, (_, index) => [
+        index + 1,
+        { timestamp: (index + 1) * 100 } as InboxMessage,
+      ]),
+      evictedNewerTailId: 60,
+    });
+    const restored = appendNewerItemsToFeed(
+      feed,
+      Array.from({ length: 60 }, (_, index) => [
+        index + 41,
+        { timestamp: (index + 41) * 100 } as InboxMessage,
+      ]),
+    );
+
+    expect(restored.items.at(0)?.[0]).toBe(61);
+    expect(restored.items.at(-1)?.[0]).toBe(100);
+    expect(restored.evictedNewerTailId).toBeNull();
+  });
+
+  it('#3496 does not treat a higher older ID as the evicted chronological tail', () => {
+    const feed = indicatorFeed({
+      items: [[100, { timestamp: 100 } as InboxMessage]],
+      evictedNewerTailId: 60,
+      pendingNewerItems: [[101, { timestamp: 200 } as InboxMessage]],
+    });
+
+    expect(feedHasUnloadedEvictedNewerTail(feed)).toBe(true);
   });
 
   it('includes pending unread in the indicator when residual is used', () => {

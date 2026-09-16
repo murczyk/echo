@@ -41,6 +41,14 @@ function readSinceId(requestBody: unknown): number | null {
   return request.since_id_noninclusive ?? request.sinceIdNoninclusive ?? null;
 }
 
+function readBeforeId(requestBody: unknown): number | null {
+  const request = requestBody as {
+    before_id_noninclusive?: number | null;
+    beforeIdNoninclusive?: number | null;
+  };
+  return request.before_id_noninclusive ?? request.beforeIdNoninclusive ?? null;
+}
+
 async function setBottomDistance(scroller: Locator, distance: number) {
   await scroller.evaluate((element, requestedDistance) => {
     element.scrollTop = element.scrollHeight - element.clientHeight - requestedDistance;
@@ -79,6 +87,50 @@ async function readBottomDistance(scroller: Locator) {
 }
 
 const initialInboxIds = Array.from({ length: 40 }, (_, index) => index + 1);
+
+test('#3496 reloads the newest chunk after it was evicted by history paging @smoke', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const newerSinceIds: number[] = [];
+  const countSinceIds: Array<number | null> = [];
+  await installRerDutyShortStateMocks(page, {
+    inboxCountResponseForRequest: (requestBody) => {
+      countSinceIds.push(readSinceId(requestBody));
+      return { quantity: 0, first_element_ts: null };
+    },
+    inboxResponseForRequest: (requestBody) => {
+      const beforeId = readBeforeId(requestBody);
+      const sinceId = readSinceId(requestBody);
+      if (beforeId === 21) return buildInboxResponse(Array.from({ length: 20 }, (_, i) => i + 1));
+      if (sinceId === 40) {
+        newerSinceIds.push(sinceId);
+        return buildInboxResponse(Array.from({ length: 20 }, (_, i) => i + 41));
+      }
+      if (beforeId != null || sinceId != null) return buildInboxResponse([]);
+      return buildInboxResponse(Array.from({ length: 40 }, (_, i) => i + 21));
+    },
+  });
+
+  await page.goto('/rer-duty-neo?state-short=short-1');
+  const scroller = page.locator('[data-duty-feed-scroller="true"]');
+  const list = page.locator('[data-duty-feed-list="true"]');
+  await expect(list.locator('[data-duty-message-id="60"]')).toBeAttached();
+
+  await scroller.evaluate((element) => {
+    element.scrollTop = 0;
+    element.dispatchEvent(new Event('scroll', { bubbles: true }));
+  });
+  await expect(list.locator('[data-duty-message-id="1"]')).toBeAttached();
+  await expect(list.locator('[data-duty-message-id="60"]')).toHaveCount(0);
+
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect.poll(() => countSinceIds).toContain(60);
+
+  await setBottomDistance(scroller, 0);
+  await expect(list.locator('[data-duty-message-id="60"]')).toBeAttached();
+  expect(newerSinceIds).toContain(40);
+});
 
 test('#3360 lands initially when ON settings resolve before the inbox', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });

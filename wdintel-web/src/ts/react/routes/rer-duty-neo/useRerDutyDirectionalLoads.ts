@@ -279,10 +279,9 @@ export function useRerDutyDirectionalLoads(params: Params) {
             // The operation was accepted against `latestFeed`; decide follow-up
             // invalidation from that same snapshot rather than mutating outer state
             // from React's deferred updater.
-            const discardedPendingTail =
-              acceptedWindow.removedItems.some(([id]) =>
-                latestFeed.items.some(([existingId]) => existingId === id),
-              ) && feedPendingNewerItems(latestFeed).length > 0;
+            const droppedNewerEnd = acceptedWindow.removedItems.some(([id]) =>
+              latestFeed.items.some(([existingId]) => existingId === id),
+            );
             commitFeedWindowUpdate(runParams.setMessageFeeds, (previous) =>
               previous.map((feed) => {
                 if (feed.id !== feedId) return feed;
@@ -300,9 +299,13 @@ export function useRerDutyDirectionalLoads(params: Params) {
                 const droppedNewerEnd = windowed.removedItems.some(([id]) =>
                   feed.items.some(([existingId]) => existingId === id),
                 );
+                const evictedNewerTailId = droppedNewerEnd
+                  ? (feed.evictedNewerTailId ?? feedNewerSinceId(feed))
+                  : feed.evictedNewerTailId;
                 return {
                   ...feed,
                   items: windowed.items,
+                  evictedNewerTailId,
                   readIds: new Set<number>([
                     ...feed.readIds,
                     ...windowed.addedItems.map(([id]) => id),
@@ -314,7 +317,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
                 };
               }),
             );
-            if (discardedPendingTail) {
+            if (droppedNewerEnd) {
               delete runParams.newestExhaustedCursorByFeedIdRef.current[feedId];
               runParams.invalidateTailPreview(feedId);
               runParams.setTailAvailability(feedId, 'unknown');

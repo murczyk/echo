@@ -20,6 +20,7 @@ import {
   emptyFilter,
   feedIndicatorUnreadCount,
   feedLoadedUnreadCount,
+  feedNeedsUnreadPrefetch,
   feedPendingNewerUnreadCount,
 } from './utils';
 
@@ -117,6 +118,51 @@ describe('useRerDutyFeedState — directional loading and races', () => {
         await flushMicrotasks();
       });
       expect(apiRef.current!.messageFeeds[0].items[0]?.[0]).toBe(1);
+    });
+
+    it('#3496 keeps an evicted newer chunk eligible for loading with a full unread runway', async () => {
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+        current: null,
+      };
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(21, 60));
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(1, 20));
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(41, 60));
+      await act(async () => root.render(<TestHarness apiRef={apiRef} />));
+      await act(async () => flushMicrotasks());
+      await act(async () => {
+        apiRef.current!.setMessageFeeds((feeds) =>
+          feeds.map((feed) => ({ ...feed, readIds: new Set<number>(), unreadCount: 40 })),
+        );
+        await flushMicrotasks();
+      });
+
+      await act(async () => {
+        await apiRef.current!.loadFeedOlderMessages('mf-0');
+        await flushMicrotasks();
+      });
+
+      const feed = apiRef.current!.messageFeeds[0];
+      expect(feed.items.map(([id]) => id)).toEqual(
+        Array.from({ length: 40 }, (_, index) => index + 1),
+      );
+      expect(feed).toMatchObject({ evictedNewerTailId: 60 });
+      expect(feedNeedsUnreadPrefetch(feed)).toBe(true);
+
+      await act(async () => {
+        await apiRef.current!.loadFeedNewerMessages('mf-0');
+        await flushMicrotasks();
+      });
+      expect(apiRef.current!.messageFeeds[0].pendingNewerItems?.at(-1)?.[0]).toBe(60);
+      expect(feedNeedsUnreadPrefetch(apiRef.current!.messageFeeds[0])).toBe(false);
+
+      await act(async () => {
+        apiRef.current!.flushPendingNewerMessages('mf-0', {
+          urgent: true,
+          allowWindowTrim: true,
+        });
+        await flushMicrotasks();
+      });
+      expect(apiRef.current!.messageFeeds[0]).toMatchObject({ evictedNewerTailId: null });
     });
 
     it('ignores an older-load failure after a filter reload invalidates the request', async () => {
