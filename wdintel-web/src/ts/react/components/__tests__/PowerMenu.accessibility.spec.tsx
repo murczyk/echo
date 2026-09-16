@@ -15,7 +15,7 @@ vi.mock('@mui/material', () => ({
   },
 }));
 
-import { PowerMenu } from '../../PowerMenu.tsx';
+import { PowerMenu } from '../PowerMenu.tsx';
 
 type Rendered = {
   container: HTMLDivElement;
@@ -23,7 +23,7 @@ type Rendered = {
 };
 
 // @test-scope safeguard: preserves menu labelling required for assistive technology to identify the invoking control
-describe('Menu', () => {
+describe('PowerMenu accessibility', () => {
   const rendered: Rendered[] = [];
 
   afterEach(() => {

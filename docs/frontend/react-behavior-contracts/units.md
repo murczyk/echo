@@ -16,7 +16,7 @@
 - **Responsive and keyboard requirements:** none at this API boundary.
 - **Known race/idempotency constraints:** duplicate checks must be evaluated against the current server candidates before an irreversible create action.
 - **Source implementation:** `src/ts/react/services/api/units.ts`
-- **Existing test(s):** `src/ts/react/services/api/__tests__/units.spec.ts`, `routes/rer-units-neo/components/__tests__/UnitFormDrawer.spec.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/services/api/__tests__/units.spec.ts`, `wdintel-web/src/ts/react/routes/rer-units-neo/components/__tests__/UnitFormDrawer.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational parser and compatibility coverage.
 
 ## ORBIT presence and duplicate selection

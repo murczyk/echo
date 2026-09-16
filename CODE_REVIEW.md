@@ -33,6 +33,9 @@ segment and no test-owned directory below it. Do not accept recovery,
 characterization, nested-test, temporary holding paths, or placement
 exceptions. Use descriptive names for collisions and preserve resolved imports
 and `vi.mock` targets when relocating tests. Playwright remains in `tests/e2e`.
+Behavior contracts must name complete, existing repository-relative test paths,
+or use `No direct default-suite test; behavior is preserved by this contract.`.
+Removing a nonqualifying test must not leave user-visible behavior undocumented.
 
 ## Query performance
 

@@ -16,7 +16,7 @@
 - **Responsive and keyboard requirements:** none at the API boundary.
 - **Known race/idempotency constraints:** caller-owned abort signals are forwarded to relation-message requests.
 - **Source implementation:** `src/ts/react/services/api/networks.ts`
-- **Existing test(s):** `networks.spec.ts`
+- **Existing test(s):** `wdintel-web/src/ts/react/services/api/__tests__/networks.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational compatibility coverage.
 
 ## Network route state normalization
@@ -35,7 +35,7 @@
 - **Responsive and keyboard requirements:** none at the helper boundary.
 - **Known race/idempotency constraints:** stale restored column state cannot introduce unknown filter identifiers.
 - **Source implementation:** `routes/rer-networks-neo/helpers.ts`
-- **Existing test(s):** `helpers.spec.ts`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-networks-neo/__tests__/use-rer-networks-neo-page.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational parser coverage.
 
 ## Network activity pagination and state
@@ -54,7 +54,7 @@
 - **Responsive and keyboard requirements:** none.
 - **Known race/idempotency constraints:** an earlier query response must not settle the replacement query, while concurrent pagination activity remains independently settleable.
 - **Source implementation:** routes/rer-networks-neo/use-rer-networks-neo-page.load.ts and routes/rer-networks-neo/components/NetworkCells.tsx
-- **Existing test(s):** use-rer-networks-neo-page.spec.tsx, index.spec.tsx
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-networks-neo/__tests__/use-rer-networks-neo-page.spec.tsx`
 - **Original Echo issue/PR, if known:** [#3329](https://github.com/echoua/echo/issues/3329).
 
 ## Network details workspace interaction integrity
@@ -66,5 +66,5 @@
 - **Expected observable result:** actions stay associated with the selected network, frequency, callsign, and tab; drawers preserve their intended edit/create behavior; detail, graph, table, map, and activity panels retain their visible controls and error states.
 - **Known race/idempotency constraints:** route/tab changes and refreshes cannot apply a prior entity’s action to the current network.
 - **Source implementation:** `routes/rer-network-details-neo/`.
-- **Existing test(s):** Network Details Neo route and component interaction suites.
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded; retained as user-visible operational safeguards.

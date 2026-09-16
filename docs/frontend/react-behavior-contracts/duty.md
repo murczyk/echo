@@ -16,7 +16,7 @@
 - **Responsive and keyboard requirements:** none.
 - **Known race/idempotency constraints:** none.
 - **Source implementation:** `routes/rer-duty-neo/utils.ts`
-- **Existing test(s):** `routes/rer-duty-neo/utils.spec.ts`
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded.
 
 ## Message preview preference
@@ -35,7 +35,7 @@
 - **Responsive and keyboard requirements:** none.
 - **Known race/idempotency constraints:** a later user-settings event must not lose the Off value.
 - **Source implementation:** `hooks/use-duty-settings.ts`
-- **Existing test(s):** `hooks/use-duty-settings.spec.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/hooks/__tests__/use-duty-settings.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded.
 
 ## Live-feed scrolling and viewport offload
@@ -54,7 +54,7 @@
 - **Responsive and keyboard requirements:** scrolling must not override a reader’s deliberate movement.
 - **Known race/idempotency constraints:** queued layout work and resize handling must not publish stale physical-bottom or unread state.
 - **Source implementation:** `routes/rer-duty-neo/useWindowedFeedScroll.ts`, `useFeedIdleViewportOffload.ts`
-- **Existing test(s):** `useWindowedFeedScroll.spec.tsx`, `useFeedIdleViewportOffload.spec.tsx`, `index.spec.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useWindowedFeedScroll.spec.tsx`, `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useFeedIdleViewportOffload.spec.tsx`, `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/index.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded.
 
 ## Keyword-set selection
@@ -73,7 +73,7 @@
 - **Responsive and keyboard requirements:** none specific to this shared logic.
 - **Known race/idempotency constraints:** deleted sets must not remain selected after a refresh.
 - **Source implementation:** `src/ts/react/services/api/organism-keyword-sets.ts`, `routes/rer-duty-neo/FeedKeywordsPanel.tsx`
-- **Existing test(s):** `services/api/organism-keyword-sets.spec.ts` retains the operational ACL normalization fixture.
+- **Existing test(s):** `wdintel-web/src/ts/react/services/api/__tests__/organism-keyword-sets.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded.
 
 ## Own-report edit routing
@@ -85,5 +85,5 @@
 - **Expected observable result:** the editor uses report mode and reloads the feed after save, rather than applying the regular-message update path.
 - **Known race/idempotency constraints:** the report-mode decision remains tied to the selected card.
 - **Source implementation:** `routes/rer-duty-neo/index.tsx`.
-- **Existing test(s):** own-report edit case in `index.spec.tsx`.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/index.spec.tsx`.
 - **Original Echo issue/PR, if known:** none recorded; retained as a data-integrity safeguard.

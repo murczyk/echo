@@ -15,7 +15,7 @@
 - **Responsive and keyboard requirements:** native date/time controls preserve their existing keyboard behavior.
 - **Known race/idempotency constraints:** none.
 - **Source implementation:** `utils/misc.ts`
-- **Existing test(s):** `utils/misc.spec.ts`
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded.
 
 ## Snackbar exit ordering
@@ -33,7 +33,7 @@
 - **Responsive and keyboard requirements:** existing alert role and dismissal controls remain available.
 - **Known race/idempotency constraints:** a stale exit callback must not replace the currently owned queued notification.
 - **Source implementation:** `src/ts/react/components/PowerSnackbar.tsx`
-- **Existing test(s):** `PowerSnackbar.spec.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/components/__tests__/PowerSnackbar.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded; retained as a notification-ordering safeguard.
 
 ## Date and time draft ownership
@@ -51,7 +51,7 @@
 - **Responsive and keyboard requirements:** collapsed typing debounces the latest complete value and keyboard editing retains its active draft.
 - **Known race/idempotency constraints:** pending typing and stale rerenders must not overwrite a newer user edit or submit an obsolete value.
 - **Source implementation:** `PowerDateTimePicker.tsx`, `DateTimeRangeControl.tsx`
-- **Existing test(s):** `PowerDateTimePicker.spec.tsx`, `DateTimeRangeControl.spec.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/components/__tests__/PowerDateTimePicker.spec.tsx`, `wdintel-web/src/ts/react/components/__tests__/DateTimeRangeControl.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded; retained as a form-data-loss safeguard.
 
 ## Navbar capability navigation and operator notices
@@ -64,7 +64,7 @@
 - **Loading/empty/error/success behavior:** while identity is loading, the profile control does not present an anonymous identity. A maintenance notice is shown once per deployment window and closes when that window ends.
 - **Responsive and keyboard requirements:** mobile navigation can be opened and closed without changing the available route set; flyout and dropdown actions remain reachable.
 - **Source implementation:** `src/ts/react/components/app-navbar/AppNavbar.tsx`, `menu-items.ts`, `ProfileDropdown.tsx`, and `ChangelogDropdown.tsx`.
-- **Current retained test(s):** none; the recovered mocked rendering/configuration checks were removed after this contract captured the behavior.
+- **Current retained test(s):** No direct default-suite test; behavior is preserved by this contract.
 
 ## Shared MRT table state, filters, and overflow
 
@@ -76,7 +76,7 @@
 - **Responsive and keyboard requirements:** overflowing values keep whole items and usable links intact, disclose hidden content without extra tab stops, and keep focus valid after a disclosure closes. Resizing and virtualization cannot expose stale measurement content.
 - **Known race/idempotency constraints:** measurement work is bounded, shared among equivalent cells, abort-safe on unmount, and invalidated when fonts, visibility, virtualized row signatures, or widths change. Deferred offscreen work cannot block visible cells.
 - **Source implementation:** `src/ts/react/components/mui-customized/table/get-default-table-options.tsx`, `mrt-overflow.tsx`, `table-state-provider.tsx`, and toolbar internal-action components.
-- **Recovered test inventory:** `src/ts/react/components/mui-customized/table/**/__tests__/recovery/`.
+- **Existing test(s):** `wdintel-web/src/ts/react/components/mui-customized/table/__tests__/table-state-provider.spec.ts`, `wdintel-web/src/ts/react/components/mui-customized/table/__tests__/mrt-overflow.spec.ts`, `wdintel-web/src/ts/react/components/__tests__/MrtRowActionButton.spec.tsx`, `wdintel-web/tests/e2e/mrt-overflow.spec.ts`
 
 ## Shared chip semantics
 
@@ -85,6 +85,15 @@
 - **Affected route/component:** `src/ts/react/components/EchoChip.tsx`.
 - **Expected observable result:** chips distinguish tag, table, read-only, link, and button meanings through their native semantics; a read-only chip is not presented as a keyboard action.
 - **Source implementation:** `src/ts/react/components/EchoChip.tsx`.
+
+## PowerMenu accessibility label ownership
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-power-menu-accessibility-label`
+- **Affected route/component:** `src/ts/react/components/PowerMenu.tsx`.
+- **Expected observable result:** caller-provided menu labels remain associated with their invoking control.
+- **Responsive and keyboard requirements:** assistive technology can identify the menu's invoking control.
+- **Existing test(s):** `wdintel-web/src/ts/react/components/__tests__/PowerMenu.accessibility.spec.tsx`
 
 ## Bulk autocomplete selection
 
@@ -101,7 +110,7 @@
 - **Responsive and keyboard requirements:** closing the dialog returns focus to its menu trigger.
 - **Known race/idempotency constraints:** option scanning is deferred until interaction and merged submission is idempotent for duplicate tokens.
 - **Source implementation:** `PowerAutocomplete.tsx`
-- **Existing test(s):** `PowerAutocomplete.spec.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/components/__tests__/PowerAutocomplete.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded; retained as a selection/data-loss safeguard.
 
 ## Alert dismissal policy
@@ -119,7 +128,7 @@
 - **Responsive and keyboard requirements:** dismissible alerts retain the underlying MUI alert control semantics.
 - **Known race/idempotency constraints:** replacing alert content resets an earlier timeout instead of retaining a stale closed state.
 - **Source implementation:** `PowerAlert.tsx`
-- **Existing test(s):** no default-suite test; prior isolated timeout/default-render checks were removed.
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded.
 
 ## Searchable option selection
@@ -137,7 +146,7 @@
 - **Responsive and keyboard requirements:** the underlying MUI autocomplete owns keyboard navigation.
 - **Known race/idempotency constraints:** none.
 - **Source implementation:** `SearchableOptionAutocomplete.tsx`
-- **Existing test(s):** no default-suite test; prior mocked selection-sequencing checks were removed.
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded.
 
 ## Saved-filter failure recovery
@@ -155,7 +164,7 @@
 - **Responsive and keyboard requirements:** existing dialog controls retain their normal semantics.
 - **Known race/idempotency constraints:** a failed completion cannot clear or commit the current draft.
 - **Source implementation:** `SavedFiltersControl.tsx`
-- **Existing test(s):** `SavedFiltersControl.spec.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/components/__tests__/SavedFiltersControl.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded; retained as a draft-loss safeguard.
 
 ## Message-form keyboard submit
@@ -173,7 +182,7 @@
 - **Responsive and keyboard requirements:** keyboard ownership remains with the active input and unsupported controls retain native behavior.
 - **Known race/idempotency constraints:** a qualifying key event must issue one form submission only.
 - **Source implementation:** `utils/formKeyboardSubmit.ts`, `PowerForm.tsx`.
-- **Existing test(s):** `utils/formKeyboardSubmit.spec.ts`, `PowerForm.spec.tsx`.
+- **Existing test(s):** `wdintel-web/src/ts/react/utils/__tests__/formKeyboardSubmit.spec.ts`, `wdintel-web/src/ts/react/components/__tests__/PowerForm.spec.tsx`.
 - **Original Echo issue/PR, if known:** [#2746](https://github.com/echoua/echo/issues/2746).
 
 ## Frontend role hierarchy
@@ -191,7 +200,7 @@
 - **Responsive and keyboard requirements:** none.
 - **Known race/idempotency constraints:** none.
 - **Source implementation:** utils/roles.ts.
-- **Existing test(s):** utils/roles.spec.ts.
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded; retained as an authorization safeguard.
 
 ## AI-managed login selection
@@ -209,7 +218,7 @@
 - **Responsive and keyboard requirements:** keyboard removal cannot bypass the managed-selection rule.
 - **Known race/idempotency constraints:** none.
 - **Source implementation:** utils/login-options.ts.
-- **Existing test(s):** utils/login-options.spec.ts.
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded; retained as a data-loss safeguard.
 
 ## Clipboard fallback
@@ -228,7 +237,7 @@
 - **Responsive and keyboard requirements:** copy remains available to all existing keyboard-triggered controls.
 - **Known race/idempotency constraints:** no false success may be reported after both copy mechanisms fail.
 - **Source implementation:** `src/ts/copy-to-clipboard.ts`
-- **Existing test(s):** `src/ts/copy-to-clipboard.spec.ts`
+- **Existing test(s):** `wdintel-web/src/ts/copy-to-clipboard.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as a browser-failure safeguard.
 
 ## Image clipboard conversion
@@ -247,7 +256,7 @@
 - **Responsive and keyboard requirements:** existing copy controls retain their keyboard behavior.
 - **Known race/idempotency constraints:** activation-sensitive clipboard write is issued before asynchronous canvas completion.
 - **Source implementation:** `copy-image-to-clipboard.ts`
-- **Existing test(s):** `copy-image-to-clipboard.spec.ts`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/copy-image-to-clipboard.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as browser/resource safeguards.
 
 ## Manage-message attachment and edit safety
@@ -259,7 +268,7 @@
 - **Expected observable result:** regular linked-message edits do not mutate accessible parents; report edits do not copy inaccessible parents; a recoverable upload failure falls back to multipart and preserves its uploaded URL, while authentication failures are not retried through another transport.
 - **Known race/idempotency constraints:** removing a file clears its tracked failure; terminal authentication failures remain terminal.
 - **Source implementation:** `routes/shared/manage-message/ManageMessageDrawer.tsx`, `message-upload-fallback.ts`.
-- **Existing test(s):** edit and upload-fallback safeguards in `ManageMessageDrawer.edit.spec.tsx` and `message-upload-fallback.spec.ts`.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/manage-message/__tests__/ManageMessageDrawer.edit.spec.tsx` and `wdintel-web/src/ts/react/routes/shared/manage-message/__tests__/message-upload-fallback.spec.ts`.
 - **Original Echo issue/PR, if known:** none recorded; retained as data and attachment integrity safeguards.
 
 ## Portal-aware outside dismissal
@@ -278,5 +287,5 @@
 - **Responsive and keyboard requirements:** portal click handling must not interfere with native dialog interaction.
 - **Known race/idempotency constraints:** an in-progress portal action must not lose its parent panel through the capture-phase click listener.
 - **Source implementation:** `src/ts/react/hooks/use-document-click-away.ts`
-- **Existing test(s):** `use-document-click-away.spec.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/hooks/__tests__/use-document-click-away.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded; retained as a dismissal safeguard.

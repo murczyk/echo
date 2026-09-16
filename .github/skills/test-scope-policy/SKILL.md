@@ -42,6 +42,11 @@ Add or retain a test only when it protects at least one category accepted by `CO
 - a critical migration, authorization, concurrency, idempotency, or destructive-data safeguard
 
 If none applies, do not add the test. Removing a nonqualifying test does not require replacing it.
+Record any user-visible behavior left without a direct default-suite test in its
+behavior contract; contract references must use complete, existing
+repository-relative test paths or `No direct default-suite test; behavior is
+preserved by this contract.` Do not create recovery, holding, or temporary
+test/disposition artifacts.
 
 ## Reject by default
 

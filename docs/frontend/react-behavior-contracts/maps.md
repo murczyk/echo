@@ -16,7 +16,7 @@
 - **Responsive and keyboard requirements:** pasted values must be accepted without a browser-specific interaction.
 - **Known race/idempotency constraints:** none.
 - **Source implementation:** `src/ts/maps/coordinate-format.ts`, `coordinate-search.ts`, `coordinate-parser.ts`
-- **Existing test(s):** `coordinate-format.spec.ts`, `coordinate-search.spec.ts`, `coordinate-parser.spec.ts`
+- **Existing test(s):** `wdintel-web/src/ts/maps/coordinate-format.spec.ts`, `wdintel-web/src/ts/maps/coordinate-search.spec.ts`, `wdintel-web/src/ts/maps/coordinate-parser.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational parser coverage.
 
 ## Palette search grammar
@@ -35,7 +35,7 @@
 - **Responsive and keyboard requirements:** none.
 - **Known race/idempotency constraints:** none.
 - **Source implementation:** `src/ts/maps/palitra-search.ts`
-- **Existing test(s):** `palitra-search.spec.ts`
+- **Existing test(s):** `wdintel-web/src/ts/maps/palitra-search.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational parser coverage.
 
 ## Palette access and blacklist safety
@@ -54,7 +54,7 @@
 - **Responsive and keyboard requirements:** none.
 - **Known race/idempotency constraints:** an atomic blacklist mutation must not target another palette or source message.
 - **Source implementation:** `src/ts/react/services/api/palitra.ts`
-- **Existing test(s):** `src/ts/react/services/api/__tests__/palitra.spec.ts`
+- **Existing test(s):** `wdintel-web/src/ts/react/services/api/__tests__/palitra.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as authorization, safeguard, and parser coverage.
 
 ## Persisted analysis-map feature state
@@ -73,7 +73,7 @@
 - **Responsive and keyboard requirements:** none.
 - **Known race/idempotency constraints:** migration is idempotent once canonical state is written.
 - **Source implementation:** `src/ts/maps/analysis-map-state.ts`
-- **Existing test(s):** `analysis-map-state.spec.ts`
+- **Existing test(s):** `wdintel-web/src/ts/maps/analysis-map-state.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as persisted-state parser coverage.
 
 ## RER Palette access and flat-folder safety
@@ -92,7 +92,7 @@
 - **Responsive and keyboard requirements:** none at the helper boundary.
 - **Known race/idempotency constraints:** a bulk selection must not acquire mutation permission from a stale row/access scope.
 - **Source implementation:** `routes/rer-palitra-neo/helpers.ts`
-- **Existing test(s):** access, permission, and flat-folder cases in `helpers.spec.ts`; isolated preview/summary formatting tests were removed.
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded; retained as authorization/safety/parser coverage.
 
 ## Coordinate locality label
@@ -111,5 +111,5 @@
 - **Responsive and keyboard requirements:** none.
 - **Known race/idempotency constraints:** none.
 - **Source implementation:** `src/ts/maps/coordinate-locality.ts`
-- **Existing test(s):** previously `coordinate-locality.spec.ts`; removed as a trivial formatting-only assertion.
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded.

@@ -16,7 +16,7 @@
 - **Responsive and keyboard requirements:** preview limits keep documents usable without unbounded DOM growth.
 - **Known race/idempotency constraints:** parsing must not expose unsanitized HTML or exceed configured resource limits.
 - **Source implementation:** message-card CSV, XLSX, and DOCX preview utilities
-- **Existing test(s):** `csv-preview-utils.spec.ts`, `xlsx-preview-utils.spec.ts`, `xlsx-preview-utils.fallback.spec.ts`, `sanitize-docx-html.spec.ts`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/csv/__tests__/csv-preview-utils.spec.ts`, `wdintel-web/src/ts/react/routes/shared/message-card/xlsx/__tests__/xlsx-preview-utils.spec.ts`, `wdintel-web/src/ts/react/routes/shared/message-card/xlsx/__tests__/xlsx-preview-utils.fallback.spec.ts`, `wdintel-web/src/ts/react/routes/shared/message-card/docx/__tests__/sanitize-docx-html.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational parser and security coverage.
 
 ## Workbook metadata and copied selection
@@ -35,7 +35,7 @@
 - **Responsive and keyboard requirements:** selection copying follows the existing keyboard/copy action boundary.
 - **Known race/idempotency constraints:** none.
 - **Source implementation:** `xlsx-preview-metadata.ts`, `copy-xlsx-selection.ts`
-- **Existing test(s):** `xlsx-preview-metadata.spec.ts`; the isolated TSV formatting assertion was removed.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/xlsx/__tests__/xlsx-preview-metadata.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded.
 
 ## Attachment type recognition
@@ -54,7 +54,7 @@
 - **Responsive and keyboard requirements:** none.
 - **Known race/idempotency constraints:** none.
 - **Source implementation:** `message-card-document-utils.ts`
-- **Existing test(s):** `message-card-document-utils.spec.ts`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/message-card-document-utils.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational attachment parser coverage.
 
 ## Text and Markdown preview safety
@@ -73,5 +73,5 @@
 - **Responsive and keyboard requirements:** bounded attachment previews remain usable without unbounded memory retention.
 - **Known race/idempotency constraints:** cache limits prevent repeated preview loads from retaining stale responses indefinitely.
 - **Source implementation:** `text-document-preview.tsx`, `document-preview-utils.ts`
-- **Existing test(s):** `text-document-preview.spec.tsx`, `document-preview-utils.spec.ts`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/text-document-preview.spec.tsx`, `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/document-preview-utils.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as parser and resource/security safeguards.

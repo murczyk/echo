@@ -17,7 +17,7 @@
 - **Responsive and keyboard requirements:** tab controls retain their standard keyboard selection behavior.
 - **Known race/idempotency constraints:** selecting the active tab must not create another history entry.
 - **Source implementation:** `wdintel-web/src/ts/react/routes/admin-battle-line/index.tsx`.
-- **Existing test:** page-level click/history/popstate regression.
+- **Existing test:** `wdintel-web/src/ts/react/routes/admin-battle-line/__tests__/index.spec.tsx`
 - **Original Echo issue/PR:** https://github.com/echoua/echo/pull/3268.
 
 ## Device Analytics tabs
@@ -37,7 +37,7 @@
 - **Responsive and keyboard requirements:** tabs retain their standard keyboard selection behavior.
 - **Known race/idempotency constraints:** canonicalization must run on `popstate` even when React state is already General.
 - **Source implementation:** `wdintel-web/src/ts/react/routes/admin-device-analytics/index.tsx`.
-- **Existing tests:** behavior is temporarily documented while its former mocked URL tests are under migration; a faithful browser-history regression requires enabled Playwright.
+- **Existing tests:** No direct default-suite test; behavior is preserved by this contract.
 
 ## Profile navigation menu
 
@@ -54,7 +54,7 @@
 - **Responsive and keyboard requirements:** the native menu trigger exposes its expanded state; responsive visibility remains owned by navbar styling.
 - **Known race/idempotency constraints:** none.
 - **Source implementation:** `components/app-navbar/ProfileDropdown.tsx`
-- **Existing test(s):** no default-suite test; prior callback/render tests were removed.
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded.
 
 ## Navbar menu composition
@@ -72,7 +72,7 @@
 - **Responsive and keyboard requirements:** desktop/mobile menu rendering owns interaction semantics; the static tree does not.
 - **Known race/idempotency constraints:** none.
 - **Source implementation:** `components/app-navbar/menu-items.ts`, `AppNavbar.tsx`
-- **Existing test(s):** no default-suite test; prior direct tree/default assertions were removed.
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded.
 
 ## Changelog and maintenance notice
@@ -90,5 +90,5 @@
 - **Responsive and keyboard requirements:** the native notification trigger exposes its expanded state.
 - **Known race/idempotency constraints:** repeated renders of the same maintenance ID do not repeatedly reopen the dropdown.
 - **Source implementation:** `components/app-navbar/ChangelogDropdown.tsx`
-- **Existing test(s):** no default-suite test; prior callback/timer/render checks were removed.
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded.

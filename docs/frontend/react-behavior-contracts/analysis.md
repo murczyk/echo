@@ -16,7 +16,7 @@
 - **Responsive and keyboard requirements:** none at the API boundary.
 - **Known race/idempotency constraints:** none in the mapper itself.
 - **Source implementation:** `src/ts/react/services/api/analysis.ts`
-- **Existing test(s):** `analysis.spec.ts`
+- **Existing test(s):** `wdintel-web/src/ts/react/services/api/__tests__/analysis.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational compatibility coverage.
 
 ## AI-agent API compatibility
@@ -35,7 +35,7 @@
 - **Responsive and keyboard requirements:** none.
 - **Known race/idempotency constraints:** the latest cancellation state returned by the server wins.
 - **Source implementation:** `src/ts/react/services/api/ai-agent.ts`
-- **Existing test(s):** `ai-agent.spec.ts`; the isolated inactivity-timer assertion was removed.
+- **Existing test(s):** `wdintel-web/src/ts/react/services/api/__tests__/ai-agent.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded.
 
 ## Analysis query state normalization
@@ -54,7 +54,7 @@
 - **Responsive and keyboard requirements:** none at the helper boundary.
 - **Known race/idempotency constraints:** applying a saved filter resets stale adjacent-frequency expansion.
 - **Source implementation:** `routes/rer-analysis-neo/helpers.ts`
-- **Existing test(s):** `helpers.spec.ts`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/helpers.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational parser coverage.
 
 ## Callsign hint resolution
@@ -73,7 +73,7 @@
 - **Responsive and keyboard requirements:** tooltip text remains concise for the existing accessible hint control.
 - **Known race/idempotency constraints:** message context must not mix rows from another network/region after data refresh.
 - **Source implementation:** `routes/rer-analysis-neo/callsign-hints.ts`
-- **Existing test(s):** `callsign-hints.spec.ts`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/callsign-hints.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational parser coverage.
 
 ## Analysis message-list stale-response safety
@@ -92,7 +92,7 @@
 - **Responsive and keyboard requirements:** none.
 - **Known race/idempotency constraints:** response ordering and invalidation must win over stale async completion.
 - **Source implementation:** `use-analysis-message-list.ts`
-- **Existing test(s):** stale-response and invalidation cases in `use-analysis-message-list.spec.ts`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-analysis-message-list.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as concurrency safeguards.
 
 ## Analysis filter-facet invalidation
@@ -111,7 +111,7 @@
 - **Responsive and keyboard requirements:** none at the loader boundary.
 - **Known race/idempotency constraints:** request-version invalidation wins over late facet completions, including before React has propagated loading state.
 - **Source implementation:** `routes/rer-analysis-neo/use-analysis-data-filter-sections.ts`
-- **Existing test(s):** targeted invalidation/retry cases in `use-analysis-data-filter-sections.spec.ts`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-analysis-data-filter-sections.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as concurrency safeguards.
 
 ## Analysis reload orchestration
@@ -130,7 +130,7 @@
 - **Responsive and keyboard requirements:** none at the orchestration boundary.
 - **Known race/idempotency constraints:** the latest reload key owns the abort controller and timer; cleanup must prevent post-unmount work.
 - **Source implementation:** `routes/rer-analysis-neo/use-analysis-reload-orchestrator.ts`
-- **Existing test(s):** debounce, abort, and unmount cases in `use-analysis-reload-orchestrator.spec.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-analysis-reload-orchestrator.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded; retained as concurrency safeguards.
 
 ## Targeted inbox reconciliation
@@ -149,7 +149,7 @@
 - **Responsive and keyboard requirements:** none at the reconciliation boundary.
 - **Known race/idempotency constraints:** per-message version ownership wins over earlier batches.
 - **Source implementation:** `routes/rer-analysis-neo/use-targeted-inbox-reconciliation.ts`
-- **Existing test(s):** `use-targeted-inbox-reconciliation.spec.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-targeted-inbox-reconciliation.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded; retained as concurrency safeguards.
 
 ## Analysis comment hydration ordering
@@ -168,7 +168,7 @@
 - **Responsive and keyboard requirements:** none at the loader boundary.
 - **Known race/idempotency constraints:** request-version ownership wins over late comment hydration.
 - **Source implementation:** `routes/rer-analysis-neo/use-analysis-data.comments.ts`
-- **Existing test(s):** stale-version case in `use-analysis-data.comments.load.spec.ts`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-analysis-data.comments.load.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as a concurrency safeguard.
 
 ## Analysis message mutation integrity
@@ -187,7 +187,7 @@
 - **Responsive and keyboard requirements:** none at the mutation boundary.
 - **Known race/idempotency constraints:** event-origin reconciliation and blacklist request keys prevent stale or duplicate local state changes.
 - **Source implementation:** `routes/rer-analysis-neo/use-analysis-data.message-actions.ts`
-- **Existing test(s):** mutation failure, race, duplicate, and 401 cases in `use-analysis-data.message-actions.spec.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-analysis-data.message-actions.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded; retained as integrity and authorization safeguards.
 
 ## Analysis linked-message edit ownership
@@ -199,7 +199,7 @@
 - **Expected observable result:** the message opens in regular edit mode and saves only that message; it is not converted into a report edit or copied from its parent.
 - **Known race/idempotency constraints:** the chosen edit mode must remain associated with the selected message.
 - **Source implementation:** `routes/rer-analysis-neo/index.tsx`.
-- **Existing test(s):** linked-message case in `index.spec.tsx`.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/index.spec.tsx`.
 - **Original Echo issue/PR, if known:** none recorded; retained as a data-integrity safeguard.
 
 ## Analysis workspace interaction integrity
@@ -213,5 +213,5 @@
 - **URL, localStorage, or user-settings persistence:** route-owned analysis state remains the source of truth.
 - **Known race/idempotency constraints:** panel refreshes and pagination must not apply actions to a stale selection.
 - **Source implementation:** `routes/rer-analysis-neo/index.tsx` and `routes/rer-analysis-neo/components/`.
-- **Existing test(s):** component interaction suites under `routes/rer-analysis-neo/components/__tests__/` and the page suite.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/components/__tests__/AnalysisMessagesPane.spec.tsx`, `wdintel-web/src/ts/react/routes/rer-analysis-neo/components/__tests__/AnalysisFiltersPanel.spec.tsx`, `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/index.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded; retained as user-visible operational safeguards.

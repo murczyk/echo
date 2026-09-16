@@ -15,7 +15,7 @@
 - **Responsive and keyboard requirements:** the overflow menu and confirmation dialog remain accessible.
 - **Known race/idempotency constraints:** the confirmation action must remain associated with the selected row.
 - **Source implementation:** `src/ts/react/routes/admin-api-integrations/index.tsx`
-- **Existing test(s):** `admin-api-integrations/index.spec.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/admin-api-integrations/__tests__/index.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded; retained as a destructive-action safeguard.
 
 ## GOI integration drawer lifecycle
@@ -35,7 +35,7 @@
 - **Responsive and keyboard requirements:** the right drawer scrolls its form independently; its fixed footer stacks full-width actions at `xs` and is right-aligned at `sm`.
 - **Known race/idempotency constraints:** save/check/setup disable dismissal while in flight; a failed worker setup must not advance the baseline.
 - **Source implementation:** `wdintel-web/src/ts/react/routes/admin-goi-integrations-neo/index.tsx`.
-- **Existing tests:** `index.spec.tsx` dirty dismissal, worker baseline, in-flight check, and overflow-delete safeguards.
+- **Existing tests:** `wdintel-web/src/ts/react/routes/admin-goi-integrations-neo/__tests__/index.spec.tsx`.
 - **Original Echo issue/PR:** https://github.com/echoua/echo/pull/3268.
 
 ## Report task polling lifecycle
@@ -53,7 +53,7 @@
 - **Responsive and keyboard requirements:** none at the polling boundary.
 - **Known race/idempotency constraints:** completed tasks must not schedule another poll or replay their existing log lines.
 - **Source implementation:** `src/ts/react/routes/admin-report-details/use-admin-report-details.ts`
-- **Existing test(s):** `use-admin-report-details.spec.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/admin-report-details/__tests__/use-admin-report-details.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded; retained as a polling safeguard.
 
 ## Report-history download refresh
@@ -71,7 +71,7 @@
 - **Responsive and keyboard requirements:** none.
 - **Known race/idempotency constraints:** a completed download must not leave a stale batch-history row visible.
 - **Source implementation:** `routes/settings-neo/SettingsMyReportsSection.tsx`
-- **Existing test(s):** `SettingsMyReportsSection.spec.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/settings-neo/__tests__/SettingsMyReportsSection.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded.
 
 ## Transcription results pagination
@@ -89,13 +89,20 @@
 - **Responsive and keyboard requirements:** existing table pagination controls remain accessible.
 - **Known race/idempotency constraints:** each page request uses the cursor returned for the current result set.
 - **Source implementation:** `src/ts/react/routes/admin-transcription-settings/TranscriptionResultsTab.tsx`
-- **Existing test(s):** pagination, filter isolation, and failure cases in `index.spec.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/admin-transcription-settings/__tests__/index.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational compatibility and query-safety coverage.
 
 ## AI settlement evaluation result ownership
 
 - **Status:** inferred characterization
 - **Behavior ID:** `admin-ai-settlement-evaluation-result-ownership`
+- **Affected route/component:** AI settlement prompt, result, and worker settings page.
+- **User action or external event:** an evaluation finishes after its prompt changes or a source message is deleted; the user saves a prompt, results, or worker configuration.
+- **Expected observable result:** only results matching the current prompt and messages can be saved; resetting the prompt or saving worker settings cannot restore stale local state.
+- **Known race/idempotency constraints:** an obsolete evaluation completion is discarded before it can update the saved payload.
+- **Source implementation:** `routes/admin-ai-settlements/index.tsx`.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/admin-ai-settlements/__tests__/index.spec.tsx`.
+- **Original Echo issue/PR, if known:** none recorded; retained as persistence safeguards.
 
 ## Administration workspace interaction integrity
 
@@ -106,12 +113,5 @@
 - **Expected observable result:** actions remain bound to the selected entity and role; drawers, confirmation flows, retries, loading/empty states, and table actions remain reachable and do not apply stale state.
 - **Known race/idempotency constraints:** late loads or repeated actions cannot overwrite the current selected entity or duplicate a mutation.
 - **Source implementation:** `routes/admin-*/` and related RER maintenance routes.
-- **Existing test(s):** administration and maintenance interaction suites under `src/ts/react/routes/`.
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded; retained as operational safeguards.
-- **Affected route/component:** AI settlement prompt, result, and worker settings page.
-- **User action or external event:** an evaluation finishes after its prompt changes or a source message is deleted; the user saves a prompt, results, or worker configuration.
-- **Expected observable result:** only results matching the current prompt and messages can be saved; resetting the prompt or saving worker settings cannot restore stale local state.
-- **Known race/idempotency constraints:** an obsolete evaluation completion is discarded before it can update the saved payload.
-- **Source implementation:** `routes/admin-ai-settlements/index.tsx`.
-- **Existing test(s):** stale-result and settings cases in `index.spec.tsx`.
-- **Original Echo issue/PR, if known:** none recorded; retained as persistence safeguards.

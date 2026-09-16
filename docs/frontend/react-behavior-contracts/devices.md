@@ -15,7 +15,7 @@
 - **Responsive and keyboard requirements:** none at the element boundary.
 - **Known race/idempotency constraints:** switching device IDs invalidates older detail requests.
 - **Source implementation:** `src/ts/react/device-details-page-element.tsx`
-- **Existing test(s):** `device-details-page-element.spec.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/__tests__/device-details-page-element.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded; retained as a stale-response safeguard.
 
 ## Device-file search response ordering
@@ -33,7 +33,7 @@
 - **Responsive and keyboard requirements:** none at the loader boundary.
 - **Known race/idempotency constraints:** a response must be associated with its initiating scope before committing state.
 - **Source implementation:** `src/ts/react/routes/device-files/use-device-files.load.ts`
-- **Existing test(s):** `use-device-files.load.spec.tsx` stale-response and duplicate-path pagination cases
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/device-files/__tests__/use-device-files.load.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded; retained as a stale-response safeguard.
 
 ## Device Analytics tag archival
@@ -51,7 +51,7 @@
 - **Responsive and keyboard requirements:** the existing menu remains accessible.
 - **Known race/idempotency constraints:** the action must remain associated with the selected menu row through the confirmation flow.
 - **Source implementation:** `src/ts/react/routes/admin-device-analytics/DeviceTagsSettingsPanel.tsx`
-- **Existing test(s):** `admin-device-analytics/index.spec.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/admin-device-analytics/__tests__/index.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded; retained as a destructive-action safeguard.
 
 ## Global file reanalysis confirmation
@@ -69,7 +69,7 @@
 - **Responsive and keyboard requirements:** the existing confirmation control remains accessible.
 - **Known race/idempotency constraints:** a dismissed confirmation must not produce a background reanalysis request.
 - **Source implementation:** `src/ts/react/routes/admin-device-analytics/DeviceTagsSettingsPanel.tsx`
-- **Existing test(s):** `admin-device-analytics/index.spec.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/admin-device-analytics/__tests__/index.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded; retained as a destructive-action safeguard.
 
 ## Missing file-registry configuration
@@ -89,7 +89,7 @@
 - **Responsive and keyboard requirements:** disabled actions remain visibly and semantically unavailable.
 - **Known race/idempotency constraints:** a retry of an unrelated 503 must not be permanently classified as missing configuration.
 - **Source implementation:** `wdintel-web/src/ts/react/routes/devices/helpers.ts`, `admin-device-analytics/DeviceTagsSettingsPanel.tsx`.
-- **Existing tests:** Device Analytics warning and normal device-file-tree localized error.
+- **Existing tests:** `wdintel-web/src/ts/react/routes/admin-device-analytics/__tests__/index.spec.tsx`, `wdintel-web/src/ts/react/routes/device-files/__tests__/use-device-file-tree.spec.tsx`
 - **Original Echo issue/PR:** https://github.com/echoua/echo/pull/3268.
 
 ## Device file and analysis API compatibility
@@ -109,7 +109,7 @@
 - **Responsive and keyboard requirements:** none at the API boundary.
 - **Known race/idempotency constraints:** synchronization must target the exact path identity supplied by the current file view; an in-flight submission freezes its row snapshot, never retries an uncertain transport failure automatically, and rejects mutation after capability revocation.
 - **Source implementation:** `wdintel-web/src/ts/react/services/api/devices.ts`.
-- **Existing test(s):** `wdintel-web/src/ts/react/services/api/__tests__/devices.spec.ts`, `routes/device-files/use-device-files.sync.spec.tsx`.
+- **Existing test(s):** `wdintel-web/src/ts/react/services/api/__tests__/devices.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational compatibility coverage.
 
 ## Device workspace interaction integrity
@@ -121,7 +121,7 @@
 - **Expected observable result:** selection, pagination, tree expansion, synchronization, and result actions remain associated with the intended device/path and retain visible loading, empty, error, and success states.
 - **Known race/idempotency constraints:** a refresh or route change cannot apply a prior device/path operation to the current view.
 - **Source implementation:** `routes/devices/`, `routes/device-details/`, and `routes/device-files/`.
-- **Existing test(s):** route and component interaction suites under those directories.
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded; retained as user-visible operational safeguards.
 
 ## Retired manual Device Files synchronization

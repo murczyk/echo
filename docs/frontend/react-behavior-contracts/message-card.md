@@ -16,7 +16,7 @@
 - **Responsive and keyboard requirements:** none at the API boundary.
 - **Known race/idempotency constraints:** request context must remain associated with the returned messages so a response is rendered using the initiating filters.
 - **Source implementation:** `src/ts/react/services/api/inbox.ts`, `inbox-messages.ts`
-- **Existing test(s):** `inbox.spec.ts`, `inbox-messages.spec.ts`
+- **Existing test(s):** `wdintel-web/src/ts/react/services/api/__tests__/inbox.spec.ts`, `wdintel-web/src/ts/react/services/api/__tests__/inbox-messages.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational compatibility coverage.
 
 ## Attachment preview interaction contract
@@ -35,7 +35,7 @@
 - **Responsive and keyboard requirements:** focus, Escape, zoom, and pan require browser-level verification when linked to a real regression.
 - **Known race/idempotency constraints:** selecting an attachment must keep the preview carousel aligned with that attachment's ordered mixed-media collection.
 - **Source implementation:** attachment preview configuration and image preview utilities
-- **Existing test(s):** `message-card-media-preview.spec.ts`; isolated helper/config tests removed as static implementation coverage.
+- **Existing test(s):** `wdintel-web/tests/e2e/message-card-media-preview.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded.
 
 ## Message text and media-summary previews
@@ -54,7 +54,7 @@
 - **Responsive and keyboard requirements:** expand/collapse controls remain operable for overflowing content.
 - **Known race/idempotency constraints:** summary state and expansion must remain associated with the currently selected media ID.
 - **Source implementation:** `MessageCard.tsx`, `attachment-preview/MediaSummaryPreview.tsx`
-- **Existing test(s):** `MessageCard.spec.tsx`, `MediaSummaryPreview.spec.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx`, `wdintel-web/src/ts/react/routes/shared/message-card/attachment-preview/__tests__/MediaSummaryPreview.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded.
 
 ## Video thumbnail loading safety
@@ -73,7 +73,7 @@
 - **Responsive and keyboard requirements:** none at the loading boundary.
 - **Known race/idempotency constraints:** leaving the viewport cancels future polling until re-entry; terminal and unauthorized responses cannot schedule another retry.
 - **Source implementation:** `MessageCardVideoThumb.tsx`
-- **Existing test(s):** `MessageCardVideoThumb.spec.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCardVideoThumb.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded.
 
 ## OCR and media-summary response safety
@@ -92,7 +92,7 @@
 - **Responsive and keyboard requirements:** none at the response boundary.
 - **Known race/idempotency constraints:** late responses must not overwrite state for a newly selected attachment; cache growth remains bounded.
 - **Source implementation:** `attachment-preview/OcrPreview.tsx`, `attachment-preview/MediaSummaryPreview.tsx`
-- **Existing test(s):** `OcrPreview.spec.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/attachment-preview/__tests__/OcrPreview.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded.
 
 ## Attachment swipe navigation
@@ -111,7 +111,7 @@
 - **Responsive and keyboard requirements:** touch behavior must coexist with independently scrollable content.
 - **Known race/idempotency constraints:** one gesture must not both scroll a document and change the current attachment.
 - **Source implementation:** `useAttachmentPreviewSwipe.ts`
-- **Existing test(s):** `useAttachmentPreviewSwipe.spec.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/attachment-preview/__tests__/useAttachmentPreviewSwipe.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded; retained as gesture-conflict safeguards.
 
 ## Message coordinate preview extraction
@@ -130,7 +130,7 @@
 - **Responsive and keyboard requirements:** none at the parser boundary.
 - **Known race/idempotency constraints:** a failed document lookup must not overwrite already resolved coordinates.
 - **Source implementation:** `message-coordinate-preview.ts`
-- **Existing test(s):** `message-coordinate-preview.spec.ts`; isolated plural-formatting and mocked component-prop coverage were removed.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/message-coordinate-preview.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational coordinate parser coverage.
 
 ## Compact tag expansion continuity
@@ -142,7 +142,7 @@
 - **Expected observable result:** checked tags remain visible and the first compact row repacks using current metadata.
 - **Known race/idempotency constraints:** metadata refresh cannot restore stale compact geometry or collapse an active selection.
 - **Source implementation:** `routes/shared/message-card/MessageCard.tsx`.
-- **Existing test(s):** compact-tag cases in `__tests__/card/MessageCard.spec.tsx`.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx`.
 - **Original Echo issue/PR, if known:** none recorded; retained as interaction safeguards.
 
 ## Message-card evidence hierarchy and actions
@@ -156,7 +156,7 @@
 - **Responsive and keyboard requirements:** card actions, attachment controls, tag controls, and comments remain reachable by keyboard; media dialogs close with Escape without moving focus to an unrelated card control.
 - **Known race/idempotency constraints:** a message refresh or action response cannot replace the card's newer message identity, selected attachment, comment set, tag state, or active report result.
 - **Source implementation:** `src/ts/react/routes/shared/message-card/MessageCard.tsx`, `MessageCardContent.tsx`, `MessageCardIntelligenceReports.tsx`, and attachment-preview components.
-- **Current retained test(s):** browser preview safeguards in `wdintel-web/tests/e2e/message-card-media-preview.spec.ts` and focused React safety tests co-located with their production boundaries.
+- **Current retained test(s):** `wdintel-web/tests/e2e/message-card-media-preview.spec.ts`
 
 ## Audio, transcription, and document evidence
 
@@ -166,7 +166,7 @@
 - **Expected observable result:** each supported evidence type has a truthful presentation: audio exposes playback/transcription state, documents expose safe preview/download/open actions, coordinates preserve their source and map meaning, and image/video previews retain carousel order. Unsupported or unavailable media remains an explicit unavailable state rather than a fabricated preview.
 - **Loading/empty/error/success behavior:** pending transcription/preview processing remains visible; completed results remain associated with their media revision; archive/download actions remain available only when the corresponding artifact exists.
 - **Source implementation:** `src/ts/react/routes/shared/message-card/attachment-preview/`, `renderers/`, and coordinate components.
-- **Current retained test(s):** `wdintel-web/tests/e2e/message-card-media-preview.spec.ts` plus co-located parser and stale-response safeguards.
+- **Current retained test(s):** `wdintel-web/tests/e2e/message-card-media-preview.spec.ts`
 
 ## Manage Message draft and coordinate safeguards
 
@@ -176,7 +176,7 @@
 - **Expected observable result:** coordinate entry and previews preserve the entered coordinate list and its selected interpretation; a draft cannot submit until required message fields are satisfied. Closing or reopening a drawer preserves only the session behavior explicitly owned by its caller and does not silently submit incomplete data.
 - **Known race/idempotency constraints:** coordinate parsing, map preview, and submit eligibility remain tied to the current draft; stale validation cannot enable a superseded draft.
 - **Source implementation:** `src/ts/react/routes/shared/manage-message/ManageMessageDrawer.tsx`, `drawer-sections/CoordinateListInput.tsx`, and `CoordinateInputPreview.tsx`.
-- **Current retained test(s):** `src/ts/react/routes/shared/manage-message/__tests__/ManageMessageDrawer.edit.spec.tsx` and co-located parser/safety safeguards.
+- **Current retained test(s):** `wdintel-web/src/ts/react/routes/shared/manage-message/__tests__/ManageMessageDrawer.edit.spec.tsx`.
 
 ## Browser message-card regressions
 
@@ -184,5 +184,5 @@
 - **Behavior ID:** `react-message-card-browser-regressions`
 - **Expected observable result:** message references become available and navigate correctly (#3092 / PR #3482); attachment and coordinate tiles remain aligned (#3324); preview gestures preserve protected OCR and summary content (#3368); coordinate hover previews remain stable (#3380); MGRS and Palitra points remain visible in thumbnail and fullscreen maps (#3453); and navigation-edge controls remain revealed (#3460).
 - **Source implementation:** `routes/shared/message-card/` and attachment-preview/coordinate components.
-- **Existing test(s):** `wdintel-web/tests/e2e/message-card-media-preview.spec.ts` and focused React regression tests.
+- **Existing test(s):** `wdintel-web/tests/e2e/message-card-media-preview.spec.ts`
 - **Original Echo issue/PR, if known:** [#3092](https://github.com/echoua/echo/issues/3092), [PR #3482](https://github.com/echoua/echo/pull/3482), [#3324](https://github.com/echoua/echo/issues/3324), [#3368](https://github.com/echoua/echo/issues/3368), [#3380](https://github.com/echoua/echo/issues/3380), [#3453](https://github.com/echoua/echo/issues/3453), [#3460](https://github.com/echoua/echo/issues/3460).

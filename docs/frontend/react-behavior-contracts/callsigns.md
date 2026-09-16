@@ -16,5 +16,5 @@
 - **Responsive and keyboard requirements:** paste behavior remains available from the existing keyboard input control.
 - **Known race/idempotency constraints:** ambiguous input must not create duplicate or shifted callsign records.
 - **Source implementation:** `routes/rer-callsigns-neo/helpers.ts`
-- **Existing test(s):** the TSV cases in `helpers.spec.ts`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-callsigns-neo/__tests__/helpers.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational parser coverage.

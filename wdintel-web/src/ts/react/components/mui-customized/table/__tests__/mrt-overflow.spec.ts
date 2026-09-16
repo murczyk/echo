@@ -15,7 +15,6 @@ import {
   calculateVisibleItemCount,
   MrtOverflowItems,
   MrtOverflowText,
-  formatValueCount,
   resetMrtOverflowMeasurementCacheForTests,
 } from '../mrt-overflow.tsx';
 import {
@@ -42,29 +41,6 @@ function destroy(view: Rendered) {
 
 // @test-scope safeguard: prevents virtualized table overflow from hiding data, breaking links or focus, or applying stale shared measurement results
 describe('MRT overflow policies', () => {
-  it('formats Ukrainian value counts across grammatical boundaries', () => {
-    expect(
-      Object.fromEntries(
-        [1, 2, 4, 5, 10, 11, 14, 21, 22, 25, 101, 111].map((count) => [
-          count,
-          formatValueCount(count),
-        ]),
-      ),
-    ).toEqual({
-      1: '1 значення',
-      2: '2 значення',
-      4: '4 значення',
-      5: '5 значень',
-      10: '10 значень',
-      11: '11 значень',
-      14: '14 значень',
-      21: '21 значення',
-      22: '22 значення',
-      25: '25 значень',
-      101: '101 значення',
-      111: '111 значень',
-    });
-  });
   it('fits only whole items including gaps and the dynamic trigger width', () => {
     expect(
       calculateVisibleItemCount({

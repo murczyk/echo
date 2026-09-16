@@ -19,7 +19,7 @@ See [the frontend MRT skill](../../../.github/skills/frontend-mrt-tables/SKILL.m
 - **Responsive and keyboard requirements:** internal controls retain MRT's keyboard-accessible behavior.
 - **Known race/idempotency constraints:** normalization must not repeatedly rewrite already canonical saved state.
 - **Source implementation:** `wdintel-web/src/ts/react/components/mui-customized/table/`.
-- **Existing test(s):** focused MRT state/overflow coverage is being classified under the admission migration.
+- **Existing test(s):** `wdintel-web/src/ts/react/components/mui-customized/table/__tests__/table-state-provider.spec.ts`, `wdintel-web/src/ts/react/components/mui-customized/table/__tests__/mrt-overflow.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded.
 
 ## Row-action overflow
@@ -35,7 +35,7 @@ See [the frontend MRT skill](../../../.github/skills/frontend-mrt-tables/SKILL.m
 - **Responsive and keyboard requirements:** trigger/menu remain screen-reader labelled and keyboard operable.
 - **Known race/idempotency constraints:** opening a modal action must not leave focus trapped in a closing overflow menu.
 - **Source implementation:** `MrtRowActionButton.tsx` and route action columns.
-- **Existing test(s):** MrtRowActionButton.spec.tsx protects modal-focus and disabled destructive-action safeguards; browser MRT overflow coverage protects disclosure behavior.
+- **Existing test(s):** `wdintel-web/src/ts/react/components/__tests__/MrtRowActionButton.spec.tsx`, `wdintel-web/tests/e2e/mrt-overflow.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded.
 
 ## Table frame layout
@@ -53,7 +53,7 @@ See [the frontend MRT skill](../../../.github/skills/frontend-mrt-tables/SKILL.m
 - **Responsive and keyboard requirements:** scroll ownership stays with the visible table frame.
 - **Known race/idempotency constraints:** none.
 - **Source implementation:** `custom-styles.ts`
-- **Existing test(s):** verified through route-level table interaction coverage; isolated style-object assertions were removed.
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded.
 
 ## Active-filter summary
@@ -71,5 +71,5 @@ See [the frontend MRT skill](../../../.github/skills/frontend-mrt-tables/SKILL.m
 - **Responsive and keyboard requirements:** filter controls remain accessible through their existing menu semantics.
 - **Known race/idempotency constraints:** a stale prop snapshot cannot override current MRT filter state.
 - **Source implementation:** `active-filters-button.tsx`, `active-filters-utils.ts`
-- **Existing test(s):** `active-filters-button.spec.tsx`; isolated helper-formatting coverage was removed.
+- **Existing test(s):** `wdintel-web/src/ts/react/components/mui-customized/table/components/table-top-toolbar/components/internal-actions/components/__tests__/active-filters-button.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded.

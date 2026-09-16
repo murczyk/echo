@@ -15,7 +15,7 @@
 - **Responsive and keyboard requirements:** workspace wheel zoom uses one non-passive listener; Escape resolves the active text, crop, confirmation, or editor layer without closing an outer dialog incorrectly.
 - **Known race/idempotency constraints:** repeated pointer completion commits one drawing/history action; stale canvas references do not replace the current document state.
 - **Source implementation:** routes/shared/image-editor/ImageEditor.tsx, ImageEditorWorkspace.tsx, and image-editor-*.ts helpers.
-- **Existing test(s):** ImageEditor.spec.tsx, ImageEditorWorkspace.spec.tsx, image-editor-arrow.spec.ts, image-editor-crop.spec.ts, image-editor-magnifier.spec.ts, image-editor-pointer.spec.ts, image-editor-text.spec.ts, image-editor-viewport.spec.ts, use-image-editor-canvas.spec.ts, use-image-editor-drawing-gestures.spec.ts.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/ImageEditor.spec.tsx`, `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/ImageEditorWorkspace.spec.tsx`, `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/image-editor-arrow.spec.ts`, `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/image-editor-crop.spec.ts`, `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/image-editor-magnifier.spec.ts`, `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/image-editor-pointer.spec.ts`, `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/image-editor-text.spec.ts`, `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/image-editor-viewport.spec.ts`, `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/use-image-editor-canvas.spec.ts`, `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/use-image-editor-drawing-gestures.spec.ts`.
 - **Original Echo issue/PR, if known:** [#3099](https://github.com/echoua/echo/issues/3099).
 
 ## Export, history, and raster safety
@@ -33,7 +33,7 @@
 - **Responsive and keyboard requirements:** none.
 - **Known race/idempotency constraints:** a duplicate pointer-up records one history entry; queued raster operations serialize so earlier failure cannot corrupt a later replacement.
 - **Source implementation:** routes/shared/image-editor/image-editor-export.ts, image-editor-raster.ts, use-image-editor-history.ts, and use-image-editor-raster-queue.ts.
-- **Existing test(s):** image-editor-export.spec.ts, image-editor-raster.spec.ts, use-image-editor-history.spec.tsx, use-image-editor-raster-queue.spec.tsx.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/image-editor-export.spec.ts`, `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/image-editor-raster.spec.ts`, `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/use-image-editor-history.spec.tsx`, `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/use-image-editor-raster-queue.spec.tsx`.
 - **Original Echo issue/PR, if known:** [#3099](https://github.com/echoua/echo/issues/3099).
 
 ## Source validation and attachment replacement
@@ -51,7 +51,7 @@
 - **Responsive and keyboard requirements:** none.
 - **Known race/idempotency constraints:** failed fingerprint cleanup cannot replace attachment bytes; a source/replacement from one carousel item cannot be applied to another item.
 - **Source implementation:** routes/shared/image-editor/image-editor-source-validation.ts, image-editor-upload.ts, image-editor-supported-image.ts, and ImageEditor.tsx.
-- **Existing test(s):** ImageEditor.spec.tsx, image-editor-source-validation.spec.ts, image-editor-supported-image.spec.ts, image-editor-upload.spec.ts.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/ImageEditor.spec.tsx`, `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/image-editor-source-validation.spec.ts`, `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/image-editor-supported-image.spec.ts`, `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/image-editor-upload.spec.ts`.
 - **Original Echo issue/PR, if known:** [#3294](https://github.com/echoua/echo/issues/3294).
 
 ## Text controls and padded annotations
@@ -69,7 +69,7 @@
 - **Responsive and keyboard requirements:** controls expose native accessible names and preserve Escape ownership.
 - **Known race/idempotency constraints:** none.
 - **Source implementation:** routes/shared/image-editor/ImageEditorContextControls.tsx and image-editor-padded-text.ts.
-- **Existing test(s):** ImageEditorContextControls.spec.tsx and image-editor-padded-text.spec.ts.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/ImageEditorContextControls.spec.tsx` and `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/image-editor-padded-text.spec.ts`.
 - **Original Echo issue/PR, if known:** [#3099](https://github.com/echoua/echo/issues/3099), [#3294](https://github.com/echoua/echo/issues/3294).
 
 ## Selection styles and reachable controls
@@ -79,5 +79,5 @@
 - **Affected route/component:** shared image-editor selection toolbar and drawer controls.
 - **Expected observable result:** changing a standalone arrow's color, dash, or width preserves the other selected styles. Width changes recalculate dashed rectangle, ellipse, and line spacing, while solid annotations remain solid. Editor actions remain reachable at representative viewport sizes and shortcut help is available from desktop and mobile controls.
 - **Source implementation:** `routes/shared/image-editor/ImageEditor.tsx` and selection-style helpers.
-- **Existing test(s):** `use-image-editor-selection-style.spec.tsx`; `tests/e2e/image-editor-drawer.spec.ts`.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/use-image-editor-selection-style.spec.tsx`; `wdintel-web/tests/e2e/image-editor-drawer.spec.ts`.
 - **Original Echo issue/PR, if known:** [#3448](https://github.com/echoua/echo/issues/3448).

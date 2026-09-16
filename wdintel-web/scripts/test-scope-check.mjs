@@ -1,6 +1,16 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { basename, join, relative } from 'node:path';
+import { tmpdir } from 'node:os';
 import ts from 'typescript';
 
 const webRoot = new URL('..', import.meta.url).pathname;
@@ -155,6 +165,60 @@ function referencedTestPathProblems() {
   return problems;
 }
 
+function behaviorContractTestReferenceProblems() {
+  const contractsRoot = join(repoRoot, 'docs/frontend/react-behavior-contracts');
+  return behaviorContractTestReferenceProblemsAt(contractsRoot, repoRoot);
+}
+
+const noDirectTestStatement =
+  'No direct default-suite test; behavior is preserved by this contract.';
+const coverageFieldPattern =
+  /^\s*-\s+\*\*(?:Existing test(?:\(s\))?|Existing tests|Current retained test(?:\(s\))?|Recovered test inventory):\*\*\s*(.*)$/i;
+const canonicalTestPathPattern =
+  /^wdintel-web\/(?:src\/|tests\/)[^\s`*?]+\.(?:spec|test)\.(?:ts|tsx|mts)$/;
+
+function markdownOutsideFencedCodeBlocks(text) {
+  let fenced = false;
+  return text
+    .split('\n')
+    .filter((line) => {
+      if (/^\s*```/.test(line)) {
+        fenced = !fenced;
+        return false;
+      }
+      return !fenced;
+    })
+    .join('\n');
+}
+
+function behaviorContractTestReferenceProblemsAt(contractsRoot, root) {
+  const problems = [];
+  for (const file of walk(contractsRoot, /\.md$/)) {
+    for (const [index, line] of markdownOutsideFencedCodeBlocks(readFileSync(file, 'utf8'))
+      .split('\n')
+      .entries()) {
+      const match = line.match(coverageFieldPattern);
+      if (!match) continue;
+      const value = match[1].trim();
+      const label = `${relative(root, file)}:${index + 1}`;
+      if (value === noDirectTestStatement) continue;
+      const references = [...value.matchAll(/`([^`]+)`/g)].map((reference) => reference[1]);
+      const remaining = value.replace(/`[^`]+`/g, '').trim();
+      if (references.length === 0 || !/^(?:(?:,|;|and)\s*)*\.?$/.test(remaining)) {
+        problems.push(`${label} must use canonical test paths or the exact no-direct statement`);
+        continue;
+      }
+      for (const reference of references) {
+        if (!canonicalTestPathPattern.test(reference))
+          problems.push(`${label} uses incomplete test reference ${reference}`);
+        else if (!existsSync(join(root, reference)))
+          problems.push(`${label} references missing ${reference}`);
+      }
+    }
+  }
+  return problems;
+}
+
 function playwrightTestPathProblems() {
   return walk(webRoot)
     .filter((file) => readFileSync(file, 'utf8').includes('@playwright/test'))
@@ -212,6 +276,131 @@ function relativeMockProblems(file) {
   };
   ts.forEachChild(sourceFile, visit);
   return problems;
+}
+
+function productionOwnedTestDirectory(pathSegments, testDirectoryIndex, root = webRoot) {
+  const owner = join(root, ...pathSegments.slice(0, testDirectoryIndex));
+  return readdirSync(owner, { withFileTypes: true }).some(
+    (entry) =>
+      entry.isFile() &&
+      /\.(?:ts|tsx|js|jsx)$/.test(entry.name) &&
+      !testFilePattern.test(entry.name),
+  );
+}
+
+function uniquelyMatchesDescendantProductionModule(
+  pathSegments,
+  testDirectoryIndex,
+  file,
+  root = webRoot,
+) {
+  const owner = join(root, ...pathSegments.slice(0, testDirectoryIndex));
+  const moduleName = basename(file).replace(/\.(?:spec|test)\.(?:ts|tsx|mts)$/, '');
+  const matches = walk(owner, /\.(?:ts|tsx|js|jsx)$/).filter(
+    (candidate) =>
+      !candidate.includes('/__tests__/') &&
+      basename(candidate).replace(/\.(?:ts|tsx|js|jsx)$/, '') === moduleName,
+  );
+  return matches.length === 1 && join(matches[0], '..') !== owner;
+}
+
+function placementProblemsFor(file, root = webRoot) {
+  const path = relative(root, file);
+  if (!path.startsWith('src/ts/react/')) return [];
+  const pathSegments = path.split('/');
+  const testDirectoryIndexes = pathSegments.flatMap((segment, index) =>
+    segment === '__tests__' ? [index] : [],
+  );
+  const prohibitedDirectory = pathSegments.find((segment) =>
+    prohibitedTestDirectories.has(segment),
+  );
+  if (prohibitedDirectory)
+    return [`${path} uses prohibited ${prohibitedDirectory} test placement.`];
+  if (testDirectoryIndexes.length !== 1)
+    return [
+      `${path} must be in the nearest production-owned __tests__ directory (found ${testDirectoryIndexes.length}).`,
+    ];
+  if (testDirectoryIndexes[0] !== pathSegments.length - 2)
+    return [
+      `${path} must be an immediate child of its nearest production-owned __tests__ directory.`,
+    ];
+  if (!productionOwnedTestDirectory(pathSegments, testDirectoryIndexes[0], root))
+    return [`${path} has a test-created __tests__ owner directory.`];
+  if (uniquelyMatchesDescendantProductionModule(pathSegments, testDirectoryIndexes[0], file, root))
+    return [`${path} must be under the uniquely matching production module's __tests__ directory.`];
+  return [];
+}
+
+function runGateSelfValidation() {
+  const root = mkdtempSync(join(tmpdir(), 'echo-test-scope-'));
+  const write = (path, content = '') => {
+    mkdirSync(join(path, '..'), { recursive: true });
+    writeFileSync(path, content);
+  };
+  const expect = (condition, message) => {
+    if (!condition) throw new Error(`React test-scope self-validation failed: ${message}`);
+  };
+  const web = join(root, 'wdintel-web');
+  try {
+    const mockSpec = join(web, 'src/ts/react/mock-owner/__tests__/MockOwner.spec.ts');
+    write(join(web, 'src/ts/react/mock-owner/MockOwner.ts'), 'export {};');
+    write(mockSpec, "vi.mock('./missing');");
+    expect(relativeMockProblems(mockSpec).length === 1, 'unresolved relative mock passed');
+
+    const nestedSpec = join(web, 'src/ts/react/nested-owner/__tests__/nested/Nested.spec.ts');
+    write(join(web, 'src/ts/react/nested-owner/Nested.ts'), 'export {};');
+    write(nestedSpec);
+    expect(placementProblemsFor(nestedSpec, web).length === 1, 'nested __tests__ content passed');
+
+    const descendantSpec = join(web, 'src/ts/react/descendant-owner/__tests__/Owner.spec.ts');
+    write(join(web, 'src/ts/react/descendant-owner/child/Owner.ts'), 'export {};');
+    write(descendantSpec);
+    expect(
+      placementProblemsFor(descendantSpec, web).length === 1,
+      'descendant-only production ownership passed',
+    );
+
+    const broadSpec = join(web, 'src/ts/react/broad-owner/__tests__/Child.spec.ts');
+    write(join(web, 'src/ts/react/broad-owner/BroadOwner.ts'), 'export {};');
+    write(join(web, 'src/ts/react/broad-owner/child/Child.tsx'), 'export {};');
+    write(broadSpec);
+    expect(placementProblemsFor(broadSpec, web).length === 1, 'broader parent placement passed');
+
+    const validSpec = join(web, 'src/ts/react/valid-owner/__tests__/ValidOwner.spec.ts');
+    write(join(web, 'src/ts/react/valid-owner/ValidOwner.tsx'), 'export {};');
+    write(validSpec);
+    expect(placementProblemsFor(validSpec, web).length === 0, 'valid owner placement failed');
+
+    const contract = join(root, 'docs/frontend/react-behavior-contracts/self-check.md');
+    const actualPath = 'wdintel-web/src/ts/react/valid-owner/__tests__/ValidOwner.spec.ts';
+    write(contract, `- **Existing test(s):** \`wdintel-web/src/ts/react/missing.spec.ts\`\n`);
+    expect(
+      behaviorContractTestReferenceProblemsAt(join(root, 'docs'), root).length === 1,
+      'stale path passed',
+    );
+    write(contract, '- **Existing test(s):** `ValidOwner.spec.ts`\n');
+    expect(
+      behaviorContractTestReferenceProblemsAt(join(root, 'docs'), root).length === 1,
+      'bare path passed',
+    );
+    write(contract, '- **Existing test(s):** focused coverage\n');
+    expect(
+      behaviorContractTestReferenceProblemsAt(join(root, 'docs'), root).length === 1,
+      'prose coverage passed',
+    );
+    write(contract, `- **Existing test(s):** ${noDirectTestStatement}\n`);
+    expect(
+      behaviorContractTestReferenceProblemsAt(join(root, 'docs'), root).length === 0,
+      'no-direct statement failed',
+    );
+    write(contract, `- **Existing test(s):** \`${actualPath}\`\n`);
+    expect(
+      behaviorContractTestReferenceProblemsAt(join(root, 'docs'), root).length === 0,
+      'canonical path failed',
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 }
 
 function importedSymbols(file) {
@@ -433,24 +622,7 @@ const placementProblems = [];
 for (const file of testFiles) {
   const path = relative(webRoot, file);
   if (path.startsWith('src/ts/react/')) {
-    const pathSegments = path.split('/');
-    const testDirectoryIndexes = pathSegments.flatMap((segment, index) =>
-      segment === '__tests__' ? [index] : [],
-    );
-    const testDirectoryCount = testDirectoryIndexes.length;
-    const prohibitedDirectory = pathSegments.find((segment) =>
-      prohibitedTestDirectories.has(segment),
-    );
-    if (prohibitedDirectory)
-      placementProblems.push(`${path} uses prohibited ${prohibitedDirectory} test placement.`);
-    else if (testDirectoryCount !== 1)
-      placementProblems.push(
-        `${path} must be in the nearest production-owned __tests__ directory (found ${testDirectoryCount}).`,
-      );
-    else if (testDirectoryIndexes[0] !== pathSegments.length - 2)
-      placementProblems.push(
-        `${path} must be an immediate child of its nearest production-owned __tests__ directory.`,
-      );
+    placementProblems.push(...placementProblemsFor(file));
   }
   if (file.includes('/characterization/')) continue;
   const text = readFileSync(file, 'utf8');
@@ -474,7 +646,9 @@ for (const file of testFiles) {
     }
   }
 }
+runGateSelfValidation();
 invalidAnnotations.push(...referencedTestPathProblems());
+invalidAnnotations.push(...behaviorContractTestReferenceProblems());
 invalidAnnotations.push(...playwrightTestPathProblems());
 invalidAnnotations.push(...testFiles.flatMap(relativeMockProblems));
 invalidAnnotations.push(...placementProblems);

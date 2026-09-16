@@ -16,7 +16,7 @@
 - **Responsive and keyboard requirements:** none.
 - **Known race/idempotency constraints:** redirect is a terminal authorization transition; a 401 must not be swallowed as an ordinary empty response.
 - **Source implementation:** `src/ts/react/services/api/client.ts`, `src/ts/react/auth-redirect.ts`
-- **Existing test(s):** `src/ts/react/services/api/__tests__/client.spec.ts`
+- **Existing test(s):** `wdintel-web/src/ts/react/services/api/__tests__/client.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as an authorization safeguard.
 
 ## Direct-submit error presentation
@@ -35,7 +35,7 @@
 - **Responsive and keyboard requirements:** none.
 - **Known race/idempotency constraints:** none.
 - **Source implementation:** `src/ts/react/services/api/direct-submit.ts`
-- **Existing test(s):** `src/ts/react/services/api/__tests__/direct-submit.spec.ts` retains response compatibility fixtures; isolated string-format tests were removed.
+- **Existing test(s):** `wdintel-web/src/ts/react/services/api/__tests__/direct-submit.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded.
 
 ## Legacy API compatibility
@@ -54,7 +54,7 @@
 - **Responsive and keyboard requirements:** none.
 - **Known race/idempotency constraints:** cancellation classification must not turn an unrelated late failure into a successful cancellation.
 - **Source implementation:** `services/api/location.ts`, `messenger.ts`, `report-history.ts`
-- **Existing test(s):** `location.spec.ts`, `messenger.spec.ts`, `report-history.spec.ts`
+- **Existing test(s):** `wdintel-web/src/ts/react/services/api/__tests__/location.spec.ts`, `wdintel-web/src/ts/react/services/api/__tests__/messenger.spec.ts`, `wdintel-web/src/ts/react/services/api/__tests__/report-history.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational compatibility coverage.
 
 ## Shared response-key normalization
@@ -73,7 +73,7 @@
 - **Responsive and keyboard requirements:** none.
 - **Known race/idempotency constraints:** none.
 - **Source implementation:** `src/ts/snake-to-camel.ts`
-- **Existing test(s):** `src/ts/snake-to-camel.spec.ts`
+- **Existing test(s):** `wdintel-web/src/ts/snake-to-camel.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational parser coverage.
 
 ## Administrative API optional fields and rules
@@ -92,5 +92,5 @@
 - **Responsive and keyboard requirements:** none at the API boundary.
 - **Known race/idempotency constraints:** none in the mapper itself.
 - **Source implementation:** corresponding modules in `src/ts/react/services/api/`.
-- **Existing test(s):** Battle Line, Device Analytics, GOI Admin, Settlements, System Settings, Tags, User Settings, and saved Duty filter API specs.
+- **Existing test(s):** `wdintel-web/src/ts/react/services/api/__tests__/battle-line.spec.ts`, `wdintel-web/src/ts/react/services/api/__tests__/device-analytics.spec.ts`, `wdintel-web/src/ts/react/services/api/__tests__/goi-admin.spec.ts`, `wdintel-web/src/ts/react/services/api/__tests__/settlements.spec.ts`, `wdintel-web/src/ts/react/services/api/__tests__/system-settings.spec.ts`, `wdintel-web/src/ts/react/services/api/__tests__/tags.spec.ts`, `wdintel-web/src/ts/react/services/api/__tests__/user-settings.spec.ts`, `wdintel-web/src/ts/react/services/api/__tests__/rer-duty-saved-filters.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational compatibility coverage.
