@@ -553,6 +553,51 @@ describe('useRerDutyFeedState — directional loading and races', () => {
       await act(async () => automatic);
       expect(apiRef.current!.messageFeeds[0].unreadCount).toBe(0);
     });
+
+    it('queues a nolimit arrow request behind an active bounded newer request', async () => {
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+        current: null,
+      };
+      const bounded = deferred<InboxMessagesRsp>('bounded');
+      const nolimit = deferred<InboxMessagesRsp>('nolimit');
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(1, 2));
+      hoisted.fetchInboxMessages.mockImplementationOnce(() => bounded.promise);
+      hoisted.fetchInboxMessages.mockImplementationOnce(() => nolimit.promise);
+      await act(async () => root.render(<TestHarness apiRef={apiRef} />));
+      await act(async () => flushMicrotasks());
+
+      const automatic = apiRef.current!.loadFeedNewerMessages('mf-0');
+      const followGeneration = apiRef.current!.beginFollowTail('mf-0');
+      const arrow = apiRef.current!.loadFeedNewerMessages('mf-0', {
+        nolimit: true,
+        scrollToEndAfterLoad: true,
+        explicitNavigation: true,
+        followGeneration,
+      });
+
+      expect(arrow).not.toBe(automatic);
+      expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(2);
+      expect(hoisted.fetchInboxMessages.mock.calls[1][0]).not.toEqual(
+        expect.objectContaining({ nolimit: true }),
+      );
+
+      bounded.resolve(rangeRsp(3, 4));
+      await act(async () => {
+        await automatic;
+        await flushMicrotasks();
+      });
+
+      expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(3);
+      expect(hoisted.fetchInboxMessages.mock.calls[2][0]).toEqual(
+        expect.objectContaining({ sinceIdNoninclusive: 4, nolimit: true }),
+      );
+      nolimit.resolve(rangeRsp(5, 8));
+      await act(async () => {
+        await arrow;
+        await flushMicrotasks();
+      });
+      expect(apiRef.current!.messageFeeds[0].items.at(-1)?.[0]).toBe(8);
+    });
   });
   describe('poll autoscroll (scrollToEndAfterLoad)', () => {
     it('shares one queued older promise for duplicate older calls', async () => {

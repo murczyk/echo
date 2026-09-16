@@ -53,6 +53,8 @@ type DirectionalOperation = {
   promise: Promise<void>;
   resolve: () => void;
   newerOptions: Required<NewerLoadOptions>;
+  dispatchedNewerNolimit: boolean | null;
+  committedNewerTailId: number | null;
   newerResult: NewerLoadResult;
   newerResultPromise?: Promise<NewerLoadResult>;
   commitExpected: boolean;
@@ -161,6 +163,8 @@ function createOperation(
       explicitOperation: options?.explicitOperation ?? null,
       confirmedTailAvailable: options?.confirmedTailAvailable ?? false,
     },
+    dispatchedNewerNolimit: null,
+    committedNewerTailId: null,
     commitExpected: false,
     // Default false until a successful run path sets otherwise (invalidate must not look like success).
     newerResult: { ok: false, addedCount: 0 },
@@ -184,8 +188,15 @@ export function useRerDutyDirectionalLoads(params: Params) {
   useLayoutEffect(() => {
     params.messageFeedsRef.current = params.messageFeeds;
     Object.entries(lanesRef.current).forEach(([feedId, lane]) => {
-      if (lane.active?.phase === 'awaitingCommit') {
-        lane.active.resolve();
+      const active = lane.active;
+      const committedNewerTailId = active?.committedNewerTailId ?? null;
+      const newerCommitVisible =
+        committedNewerTailId === null ||
+        params.messageFeeds.some(
+          (feed) => feed.id === feedId && feedNewerSinceId(feed) === committedNewerTailId,
+        );
+      if (active?.phase === 'awaitingCommit' && newerCommitVisible) {
+        active.resolve();
         lane.active = null;
       }
       startOperationRef.current(feedId);
@@ -361,7 +372,10 @@ export function useRerDutyDirectionalLoads(params: Params) {
       const lane = getLane(feedId);
       const activeNewer = lane.active?.direction === 'newer' ? lane.active : null;
       const queuedNewer = lane.queued.find((operation) => operation.direction === 'newer');
-      const existing = activeNewer?.phase === 'running' ? activeNewer : queuedNewer;
+      const requiresDedicatedNolimit =
+        options?.nolimit === true && activeNewer?.dispatchedNewerNolimit === false;
+      const existing =
+        activeNewer?.phase === 'running' && !requiresDedicatedNolimit ? activeNewer : queuedNewer;
       if (existing) {
         existing.newerOptions.nolimit ||= options?.nolimit === true;
         existing.newerOptions.scrollToEndAfterLoad ||= options?.scrollToEndAfterLoad === true;
@@ -437,6 +451,8 @@ export function useRerDutyDirectionalLoads(params: Params) {
         if (operation.newerOptions.confirmedTailAvailable) {
           runParams.setTailAvailability(feedId, 'loading');
         }
+        const requestNolimit = operation.newerOptions.nolimit;
+        operation.dispatchedNewerNolimit = requestNolimit;
         const finishDebugActivity = beginDutyScrollDebugActivity(
           feedId,
           'newerMessages',
@@ -449,7 +465,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
               fetchInboxMessages(
                 runParams.buildReqForFeed(currentFeed, {
                   sinceIdNoninclusive: requestedSinceId,
-                  nolimit: operation.newerOptions.nolimit || undefined,
+                  nolimit: requestNolimit || undefined,
                 }),
                 { signal },
               ),
@@ -626,6 +642,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
           }
           if (addedCount > 0 || markAllRead || followTail) {
             operation.commitExpected = true;
+            if (addedCount > 0) operation.committedNewerTailId = newestItem?.[0] ?? null;
             if (bufferNewer) {
               // Off-DOM buffer: keep `items` identity stable (no MessageCard remount).
               runParams.setMessageFeeds((previous) => {

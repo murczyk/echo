@@ -49,6 +49,11 @@ function readBeforeId(requestBody: unknown): number | null {
   return request.before_id_noninclusive ?? request.beforeIdNoninclusive ?? null;
 }
 
+function readNoLimit(requestBody: unknown): boolean {
+  const request = requestBody as { nolimit?: boolean | null };
+  return request.nolimit === true;
+}
+
 async function setBottomDistance(scroller: Locator, distance: number) {
   await scroller.evaluate((element, requestedDistance) => {
     element.scrollTop = element.scrollHeight - element.clientHeight - requestedDistance;
@@ -145,37 +150,37 @@ test('#3496 lets the arrow land on a newest chunk evicted by history paging', as
   const arrowRequestStarted = createDeferred<void>();
   const arrowResponse = createDeferred<InboxMessagesRspRaw>();
   await installRerDutyShortStateMocks(page, {
-    inboxCountResponseForRequest: () => ({ quantity: 20, first_element_ts: null }),
+    inboxCountResponseForRequest: () => ({ quantity: 0, first_element_ts: null }),
     inboxResponseForRequest: (requestBody) => {
       const beforeId = readBeforeId(requestBody);
       const sinceId = readSinceId(requestBody);
-      if (beforeId === 21) return buildInboxResponse(Array.from({ length: 20 }, (_, i) => i + 1));
-      if (sinceId === 40) {
+      if (beforeId === 41) return buildInboxResponse(Array.from({ length: 40 }, (_, i) => i + 1));
+      if (sinceId === 40 && readNoLimit(requestBody)) {
         arrowRequestStarted.resolve();
         return arrowResponse.promise;
       }
       if (beforeId != null || sinceId != null) return buildInboxResponse([]);
-      return buildInboxResponse(Array.from({ length: 40 }, (_, i) => i + 21));
+      return buildInboxResponse(Array.from({ length: 40 }, (_, i) => i + 41));
     },
   });
 
   await page.goto('/rer-duty-neo?state-short=short-1');
   const scroller = page.locator('[data-duty-feed-scroller="true"]');
   const list = page.locator('[data-duty-feed-list="true"]');
-  await expect(list.locator('[data-duty-message-id="60"]')).toBeAttached();
+  await expect(list.locator('[data-duty-message-id="80"]')).toBeAttached();
 
   await scroller.evaluate((element) => {
     element.scrollTop = 0;
     element.dispatchEvent(new Event('scroll', { bubbles: true }));
   });
   await expect(list.locator('[data-duty-message-id="1"]')).toBeAttached();
-  await expect(list.locator('[data-duty-message-id="60"]')).toHaveCount(0);
+  await expect(list.locator('[data-duty-message-id="80"]')).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Завантажити нові та перейти вниз' }).click();
   await arrowRequestStarted.promise;
-  arrowResponse.resolve(buildInboxResponse(Array.from({ length: 20 }, (_, i) => i + 41)));
+  arrowResponse.resolve(buildInboxResponse(Array.from({ length: 40 }, (_, i) => i + 41)));
 
-  await expect(list.locator('[data-duty-message-id="60"]')).toBeAttached();
+  await expect(list.locator('[data-duty-message-id="80"]')).toBeAttached();
   await expect.poll(() => readBottomDistance(scroller)).toBeLessThanOrEqual(1);
 });
 
