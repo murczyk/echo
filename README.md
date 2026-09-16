@@ -103,13 +103,12 @@ React test-admission commands are available from `wdintel-web`:
 
 ```bash
 npm run test:ts:scope-check
-npm run test:ts:gate
-npm run test:ts:all
+npm run test:ts
 ```
 
-`test:ts:scope-check` validates annotations with an empty legacy-debt baseline.
-`test:ts:gate` and `test:ts:all` run this admission check before the complete
-Vitest suite.
+`test:ts:scope-check` validates admission annotations. `test:ts` runs token
+validation and this gate before the complete Vitest suite. Test-only production
+exports are rejected when newly introduced relative to the PR merge base.
 
 Frontend end-to-end checks:
 
@@ -138,15 +137,8 @@ For the slower loading comparisons, use:
 npm run e2e:perf
 ```
 
-Its non-blocking disposition and the historical result (three passing checks and
-three unavailable classic-route headings) are recorded in
-[the React performance test disposition](docs/frontend/react-performance-test-disposition.md).
-
-To run only the direct-link group and sender reference tests, use:
-
-```bash
-npm run e2e:analysis-references
-```
+This is a non-blocking local inspection: it has no controlled environment or
+stable performance budget and is not a CI gate.
 
 Before running Playwright locally for the first time, install the browser once:
 

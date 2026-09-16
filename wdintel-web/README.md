@@ -35,15 +35,14 @@ elm-spa watch  # runs build as you code (without the server)
 
 ```bash
 npm run test:ts                 # complete React Vitest migration suite
-npm run test:ts:scope-check     # annotations and empty legacy-debt baseline
-npm run test:ts:gate            # admission checks plus Vitest
-npm run test:ts:all             # same complete migration suite
+npm run test:ts:scope-check     # admission validation only
 ```
 
 Default React tests must carry a co-located `@test-scope` annotation for
 operational parser coverage, a concrete safeguard, or an Echo-linked
-regression. The legacy-debt baseline is empty; new unclassified tests fail the
-scope check immediately.
+regression. Unclassified tests fail the scope check immediately. Newly
+introduced test-only production exports also fail relative to the PR merge
+base; inherited exports are informational.
 
 Browser commands are intentionally separate:
 

@@ -24,10 +24,10 @@ Each entry identifies its production boundary, observable outcome, persistence r
 
 ## Migration status
 
-The React suite is classified and the legacy-debt baseline is empty. New tests
-remain subject to the admission gate: they must carry a truthful parser,
-concrete safeguard, or Echo issue/PR regression annotation. `npm run test:ts`
-remains the complete migration suite.
+All current React tests remain subject to the admission gate: they must carry a
+truthful parser, concrete safeguard, or Echo issue/PR regression annotation.
+`npm run test:ts` remains the complete migration suite; newly introduced
+test-only production exports are also rejected relative to the PR merge base.
 
 ## Entry template
 

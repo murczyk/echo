@@ -65,7 +65,7 @@ For token or theme work run, at minimum:
 ```bash
 cd wdintel-web
 npm run tokens:check
-npm run test:ts:gate
+npm run test:ts
 npm run test:ts:ci
 just build-front
 ```

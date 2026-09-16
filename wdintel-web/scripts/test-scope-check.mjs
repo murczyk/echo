@@ -1,4 +1,5 @@
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import ts from 'typescript';
 
@@ -7,8 +8,14 @@ const repoRoot = new URL('../..', import.meta.url).pathname;
 const testFilePattern = /\.(?:spec|test)\.(?:tsx?|mts)$/;
 const scopePattern = /@test-scope\s+(parser|safeguard|regression):\s*(.+)/;
 const echoLinkPattern = /^https:\/\/github\.com\/echoua\/echo\/(?:issues|pull)\/\d+$/;
-const baselinePath = join(webRoot, 'test-scope-baseline.json');
-const updateBaseline = process.argv.includes('--update-baseline');
+const prohibitedTestDirectories = new Set([
+  'characterization',
+  'holding',
+  'placement-exception',
+  'placement-exceptions',
+  'recovery',
+  'temporary',
+]);
 
 function walk(directory, pattern = testFilePattern) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -148,6 +155,13 @@ function referencedTestPathProblems() {
   return problems;
 }
 
+function playwrightTestPathProblems() {
+  return walk(webRoot)
+    .filter((file) => readFileSync(file, 'utf8').includes('@playwright/test'))
+    .filter((file) => !relative(webRoot, file).startsWith('tests/e2e/'))
+    .map((file) => `${relative(webRoot, file)} must be under tests/e2e.`);
+}
+
 function modulePath(fromFile, moduleSpecifier) {
   if (!moduleSpecifier.startsWith('.')) return null;
   const basePath = join(fromFile, '..', moduleSpecifier);
@@ -211,8 +225,7 @@ function importedSymbols(file) {
   return imports;
 }
 
-function exportedSymbols(file) {
-  const sourceText = readFileSync(file, 'utf8');
+function exportedSymbolsFromText(file, sourceText) {
   const sourceFile = ts.createSourceFile(file, sourceText, ts.ScriptTarget.Latest, true);
   const symbols = new Set();
   for (const statement of sourceFile.statements) {
@@ -239,6 +252,75 @@ function exportedSymbols(file) {
   return symbols;
 }
 
+function exportedSymbols(file) {
+  return exportedSymbolsFromText(file, readFileSync(file, 'utf8'));
+}
+
+function gitOutput(args) {
+  try {
+    return execFileSync('git', args, {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
+function githubEventBaseRef() {
+  if (!process.env.GITHUB_EVENT_PATH || !existsSync(process.env.GITHUB_EVENT_PATH)) return null;
+  try {
+    return (
+      JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8')).pull_request?.base?.sha ??
+      null
+    );
+  } catch {
+    return null;
+  }
+}
+
+function mergeBase(reference) {
+  if (!gitOutput(['rev-parse', '--verify', `${reference}^{commit}`])) return null;
+  return gitOutput(['merge-base', 'HEAD', reference]);
+}
+
+function exportComparisonBase() {
+  const explicitReference = process.env.TEST_SCOPE_BASE_REF;
+  if (explicitReference) {
+    const base = mergeBase(explicitReference);
+    if (base) return base;
+    throw new Error(
+      `Cannot resolve TEST_SCOPE_BASE_REF=${explicitReference}. Provide a reachable commit or ref.`,
+    );
+  }
+
+  const eventReference = githubEventBaseRef();
+  if (eventReference) {
+    const base = mergeBase(eventReference);
+    if (base) return base;
+    throw new Error(
+      `Cannot resolve the GitHub PR base ${eventReference}. Provide TEST_SCOPE_BASE_REF explicitly.`,
+    );
+  }
+
+  if (process.env.GITHUB_BASE_REF) {
+    const base = mergeBase(`origin/${process.env.GITHUB_BASE_REF}`);
+    if (base) return base;
+  }
+
+  const base = mergeBase('origin/main');
+  if (base) return base;
+  throw new Error(
+    'Cannot resolve a merge base for the test-only export check. Provide TEST_SCOPE_BASE_REF.',
+  );
+}
+
+function baseExportedSymbols(file, base) {
+  const sourceText = gitOutput(['show', `${base}:${relative(repoRoot, file)}`]);
+  return sourceText === null ? new Set() : exportedSymbolsFromText(file, sourceText);
+}
+
 function isUsedWithinFile(file, symbol) {
   const sourceText = readFileSync(file, 'utf8');
   const sourceFile = ts.createSourceFile(file, sourceText, ts.ScriptTarget.Latest, true);
@@ -260,7 +342,7 @@ function isDeclarationName(node) {
   );
 }
 
-function testOnlyProductionExports(testFiles) {
+function testOnlyProductionExports(testFiles, base) {
   const productionFiles = walk(join(webRoot, 'src', 'ts', 'react'), /\.(?:tsx?|mts)$/).filter(
     (file) => !testFilePattern.test(file),
   );
@@ -295,11 +377,17 @@ function testOnlyProductionExports(testFiles) {
           !usedByProduction.has(symbol) &&
           !isUsedWithinFile(file, symbol),
       )
-      .map((symbol) => `${relative(webRoot, file)} exports ${symbol} for test-only use`);
+      .map((symbol) => ({ file, symbol }));
   });
 }
 
 const invalidAnnotations = [];
+let exportBase;
+try {
+  exportBase = exportComparisonBase();
+} catch (error) {
+  invalidAnnotations.push(error.message);
+}
 const testRoots = [join(webRoot, 'src', 'ts', 'react'), join(webRoot, 'tests', 'e2e')];
 const testFiles = testRoots.flatMap((root) => (existsSync(root) ? walk(root) : []));
 const unclassified = [];
@@ -308,8 +396,11 @@ for (const file of testFiles) {
   const path = relative(webRoot, file);
   if (path.startsWith('src/ts/react/')) {
     const testDirectoryCount = path.split('/').filter((segment) => segment === '__tests__').length;
-    if (path.includes('/recovery/') || path.includes('/characterization/'))
-      placementProblems.push(`${path} uses a prohibited recovery or characterization directory.`);
+    const prohibitedDirectory = path
+      .split('/')
+      .find((segment) => prohibitedTestDirectories.has(segment));
+    if (prohibitedDirectory)
+      placementProblems.push(`${path} uses prohibited ${prohibitedDirectory} test placement.`);
     else if (testDirectoryCount !== 1)
       placementProblems.push(
         `${path} must be in the nearest production-owned __tests__ directory (found ${testDirectoryCount}).`,
@@ -342,40 +433,27 @@ for (const file of testFiles) {
   }
 }
 invalidAnnotations.push(...referencedTestPathProblems());
+invalidAnnotations.push(...playwrightTestPathProblems());
 invalidAnnotations.push(...placementProblems);
-const testOnlyExports = testOnlyProductionExports(testFiles);
-invalidAnnotations.push(...testOnlyExports);
-
-const sortedUnclassified = [...new Set(unclassified)].sort();
-const baseline = existsSync(baselinePath)
-  ? JSON.parse(readFileSync(baselinePath, 'utf8'))
-  : { version: 1, unclassified: [] };
-const baselineDebt = new Set(baseline.unclassified ?? []);
-const currentDebt = new Set(sortedUnclassified);
-let newDebt = sortedUnclassified.filter((identity) => !baselineDebt.has(identity));
-let resolvedDebt = [...baselineDebt].filter((identity) => !currentDebt.has(identity)).sort();
-
-if (updateBaseline) {
-  if (existsSync(baselinePath) && newDebt.length > 0) {
-    console.error('Refusing to expand the legacy test-scope baseline: classify new tests first.');
-    console.error(newDebt.map((identity) => `- ${identity}`).join('\n'));
-    process.exitCode = 1;
-  } else {
-    writeFileSync(
-      baselinePath,
-      `${JSON.stringify({ version: 1, unclassified: sortedUnclassified }, null, 2)}\n`,
-    );
-    console.log(`Updated legacy test-scope baseline with ${sortedUnclassified.length} entries.`);
-    newDebt = [];
-    resolvedDebt = [];
+let inheritedTestOnlyExports = 0;
+if (exportBase) {
+  const testOnlyExports = testOnlyProductionExports(testFiles, exportBase);
+  for (const { file, symbol } of testOnlyExports) {
+    if (baseExportedSymbols(file, exportBase).has(symbol)) inheritedTestOnlyExports += 1;
+    else invalidAnnotations.push(`${relative(webRoot, file)} exports ${symbol} for test-only use`);
   }
 }
 
-if (invalidAnnotations.length > 0 || newDebt.length > 0) {
+if (invalidAnnotations.length > 0 || unclassified.length > 0) {
   console.error('React test-scope check failed:');
-  if (newDebt.length > 0) {
-    console.error('New unclassified test debt:');
-    console.error(newDebt.map((identity) => `- ${identity}`).join('\n'));
+  if (unclassified.length > 0) {
+    console.error('Unclassified tests:');
+    console.error(
+      [...new Set(unclassified)]
+        .sort()
+        .map((identity) => `- ${identity}`)
+        .join('\n'),
+    );
   }
   if (invalidAnnotations.length > 0) {
     console.error('Invalid annotations or references:');
@@ -386,5 +464,5 @@ if (invalidAnnotations.length > 0 || newDebt.length > 0) {
   console.log('React test-scope check passed.');
 }
 
-console.log(`Remaining legacy test debt: ${sortedUnclassified.length}.`);
-console.log(`Resolved legacy test debt: ${resolvedDebt.length}.`);
+if (inheritedTestOnlyExports > 0)
+  console.log(`Ignored ${inheritedTestOnlyExports} inherited test-only exports.`);
