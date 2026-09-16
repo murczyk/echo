@@ -1014,6 +1014,11 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           }
           let confirmedTailAvailable = tailAvailabilityByFeedIdRef.current[feedId] === 'available';
           if (!nearBottom) {
+            if (currentFeed.evictedNewerTailId != null) {
+              invalidateTailPreview(feedId);
+              setTailAvailability(feedId, 'available');
+              return;
+            }
             let preview: ConfirmedTailPreview | null;
             try {
               preview = await tailPolling.requestValidatedTailPreview(feedId);
