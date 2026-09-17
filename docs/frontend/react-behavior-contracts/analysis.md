@@ -47,15 +47,69 @@
 - **User role or permission:** users allowed to run analysis queries
 - **Preconditions:** URL parameters, saved-filter state, or a query form provides analysis selections
 - **User action or external event:** the user restores/shares a URL, applies a saved filter, changes filters, or submits a query
-- **Expected observable result:** managed URL state wins over unsupported legacy state; selected tag/callsign/unit/device/media/coordinate selections normalize into the correct request surface; date bounds default, validate, and reject malformed/inverted ranges; duty map deep links preserve their intent.
+- **Expected observable result:** managed URL state wins over unsupported legacy state; selected tag/callsign/unit/device/media/coordinate selections normalize into the correct request surface; malformed or inverted bounds produce no request.
 - **Loading/empty/error/success behavior:** invalid time bounds produce no request rather than a misleading date range.
 - **URL, localStorage, or user-settings persistence:** saved filters intentionally omit inbox-only selections while URL state retains managed selections.
 - **API endpoint and compatibility requirements:** null/default request values preserve backend defaults and legacy unit aliases normalize before use.
 - **Responsive and keyboard requirements:** none at the helper boundary.
-- **Known race/idempotency constraints:** applying a saved filter resets stale adjacent-frequency expansion.
+- **Known race/idempotency constraints:** none.
 - **Source implementation:** `routes/rer-analysis-neo/helpers.ts`
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/helpers.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational parser coverage.
+
+## Analysis query defaults and interaction state
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-analysis-query-defaults-and-interaction-state`
+- **Affected route/component:** RER Analysis query state and direct-link handling.
+- **User role or permission:** users allowed to view or run analysis queries.
+- **Preconditions:** the analysis route initializes, a saved filter is applied, or a direct message link opens.
+- **User action or external event:** the user changes filters, opens a direct message, follows a map link, or restores query state.
+- **Expected observable result:** date-only differences do not mark a saved filter dirty, non-date differences do, `onlyWithMedia` affects UI dirty state but not saved-filter equality, initial `unitsExactMatchOnly` is null, defaults span today through tomorrow in the application timezone, direct links extend the interception or creation range as applicable and do not fall back when creation time is unavailable, saved filters reset adjacent-frequency expansion, and only `showMap=true` enables the map.
+- **Loading/empty/error/success behavior:** unavailable creation time leaves the current direct-link range unchanged.
+- **URL, localStorage, or user-settings persistence:** URL `showMap` is accepted only for the literal value `true`; saved-filter equality intentionally excludes `onlyWithMedia`.
+- **API endpoint and compatibility requirements:** initial null unit matching preserves the backend default.
+- **Responsive and keyboard requirements:** none.
+- **Known race/idempotency constraints:** applying a saved filter clears stale adjacent-frequency expansion.
+- **Source implementation:** `routes/rer-analysis-neo/helpers.ts`.
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
+- **Original Echo issue/PR, if known:** none recorded.
+
+## Analysis report request compatibility
+
+- **Status:** operational compatibility
+- **Behavior ID:** `react-analysis-report-request-compatibility`
+- **Affected route/component:** RER Analysis report request builder.
+- **User role or permission:** users allowed to generate analysis reports.
+- **Preconditions:** a report template and analysis request are selected.
+- **User action or external event:** the user submits a report request.
+- **Expected observable result:** report template 1.2.5 uses the compatible report kind, tag sorting is sent only for tag reports, and a trimmed Sposob unit name is sent only for Sposob reports.
+- **Loading/empty/error/success behavior:** unsupported optional template fields are omitted rather than sent on another report kind.
+- **URL, localStorage, or user-settings persistence:** none.
+- **API endpoint and compatibility requirements:** preserves report request `kind`, `tagReportSortBy`, and `sposobUnitName` wire compatibility.
+- **Responsive and keyboard requirements:** none.
+- **Known race/idempotency constraints:** none.
+- **Source implementation:** `routes/rer-analysis-neo/report-helpers.ts`.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/report-helpers.spec.ts`
+- **Original Echo issue/PR, if known:** none recorded; retained as operational parser coverage.
+
+## Analysis report presentation and defaults
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-analysis-report-presentation-defaults`
+- **Affected route/component:** RER Analysis report dialog helpers.
+- **User role or permission:** users allowed to configure analysis reports.
+- **Preconditions:** the report dialog renders a selected template.
+- **User action or external event:** the user views report hints, titles, download options, or default report settings.
+- **Expected observable result:** report hints and titles identify the selected template; KMZ, GeoJSON, and DOCX downloads retain appropriate metadata; default tag sorting remains available.
+- **Loading/empty/error/success behavior:** missing optional report metadata does not prevent the dialog from rendering its default state.
+- **URL, localStorage, or user-settings persistence:** none.
+- **API endpoint and compatibility requirements:** none beyond the established report request representation.
+- **Responsive and keyboard requirements:** report labels remain available to the existing dialog controls.
+- **Known race/idempotency constraints:** none.
+- **Source implementation:** `routes/rer-analysis-neo/report-helpers.ts`.
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
+- **Original Echo issue/PR, if known:** none recorded.
 
 ## Callsign hint resolution
 

@@ -1,14 +1,6 @@
-// @test-scope parser: direct-submit response compatibility fixtures
 import { describe, expect, it, vi } from 'vitest';
 
-import { HttpRequestError } from '../client';
-import {
-  copyDirectSubmit,
-  editDirectSubmit,
-  formatDirectSubmitError,
-  resolveDeviceNames,
-  submitDirect,
-} from '../direct-submit';
+import { editDirectSubmit, submitDirect } from '../direct-submit';
 
 const apiMocks = vi.hoisted(() => ({
   postJson: vi.fn(),
@@ -37,42 +29,8 @@ const rawMessage = {
   media: [{ content_type: 'image/jpeg', file_name: 'photo.jpg', size_bytes: 123 }],
 };
 
+// @test-scope parser: normalizes supported snake-case and optional inline direct-submit responses.
 describe('direct-submit response normalization', () => {
-  it('resolves a device-name batch through the dedicated endpoint', async () => {
-    apiMocks.postJson.mockResolvedValueOnce({ devices: [{ id: 7, name: 'DEVICE-A' }] });
-    const options = { signal: new AbortController().signal };
-
-    await expect(resolveDeviceNames([' device-a ', 'DEVICE-B'], options)).resolves.toEqual([
-      { id: 7, name: 'DEVICE-A' },
-    ]);
-    expect(apiMocks.postJson).toHaveBeenCalledWith(
-      '/api/sigint/device-name/resolve',
-      { names: [' device-a ', 'DEVICE-B'] },
-      options,
-    );
-  });
-
-  it('loads the report-copy payload from the message endpoint', async () => {
-    const response = {
-      payloads: [
-        {
-          full_body: 'original',
-          signal_group_master_key: null,
-          retained_media_ids: ['media-1'],
-          parent_signal_message_ids: [42],
-        },
-      ],
-    };
-    apiMocks.postJson.mockResolvedValueOnce(response);
-
-    await expect(copyDirectSubmit([42])).resolves.toEqual(response);
-    expect(apiMocks.postJson).toHaveBeenCalledWith(
-      '/api/1.1/messages/copy',
-      { message_ids: [42] },
-      undefined,
-    );
-  });
-
   it('normalizes an inline snake_case create message', async () => {
     apiMocks.postJson.mockResolvedValueOnce({ signal_message_id: 101, message: rawMessage });
 

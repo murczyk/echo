@@ -569,24 +569,134 @@ function runGateSelfValidation() {
     const defaultSpec = join(web, 'src/ts/react/default-owner/__tests__/DefaultOwner.spec.ts');
     write(defaultOwner, 'export default function DefaultOwner() {}');
     write(defaultSpec, "import DefaultOwner from '../DefaultOwner.ts';\nvoid DefaultOwner;");
-    const importedDefault = importedSymbols(defaultSpec)[0]?.symbols;
+    const importedDefault = consumedSymbols(defaultSpec)[0]?.symbols;
     const exportedDefault = exportedSymbols(defaultOwner);
     expect(
       importedDefault?.has('default') && exportedDefault.has('default'),
       'default imports and exports did not intersect',
+    );
+
+    const barrelRoot = join(web, 'src/ts/react/barrel-self-check');
+    const leaf = join(barrelRoot, 'leaf.ts');
+    const barrel = join(barrelRoot, 'barrel.ts');
+    const top = join(barrelRoot, 'top.ts');
+    const named = join(barrelRoot, 'named.ts');
+    const namespace = join(barrelRoot, 'namespace.ts');
+    const cycleA = join(barrelRoot, 'cycle-a.ts');
+    const cycleB = join(barrelRoot, 'cycle-b.ts');
+    const missing = join(barrelRoot, 'missing.ts');
+    const barrelSpec = join(barrelRoot, '__tests__/barrel.spec.ts');
+    const barrelConsumer = join(barrelRoot, 'barrel-consumer.ts');
+    const topConsumer = join(barrelRoot, 'top-consumer.ts');
+    write(leaf, 'export const inherited = 1; export const branchOnly = 2; export default 3;');
+    write(barrel, "export * from './leaf';");
+    write(top, "export * from './barrel';");
+    write(named, 'const value = 1; export { value as renamed };');
+    write(namespace, "export * as api from './leaf';");
+    write(cycleA, "export * from './cycle-b'; export const a = 1;");
+    write(cycleB, "export * from './cycle-a'; export const b = 1;");
+    write(missing, "export * from './absent';");
+    const readCurrent = (candidate) =>
+      existsSync(candidate) && statSync(candidate).isFile()
+        ? readFileSync(candidate, 'utf8')
+        : null;
+    const resolveBarrel = (file) => effectiveExportedSymbols(file, readCurrent);
+    expect(
+      JSON.stringify([...resolveBarrel(barrel)].sort()) ===
+        JSON.stringify(['branchOnly', 'inherited']),
+      'one-level wildcard export failed',
+    );
+    expect(
+      JSON.stringify([...resolveBarrel(top)].sort()) ===
+        JSON.stringify(['branchOnly', 'inherited']),
+      'transitive wildcard export failed',
+    );
+    expect(!resolveBarrel(top).has('default'), 'wildcard export propagated default');
+    expect(resolveBarrel(named).has('renamed'), 'named re-export failed');
+    expect(resolveBarrel(namespace).has('api'), 'namespace re-export failed');
+    expect(
+      JSON.stringify([...resolveBarrel(cycleA)].sort()) === JSON.stringify(['a', 'b']),
+      'circular barrels did not terminate deterministically',
+    );
+    expect(
+      (() => {
+        try {
+          resolveBarrel(missing);
+          return false;
+        } catch {
+          return true;
+        }
+      })(),
+      'missing wildcard target passed',
+    );
+    const productionFiles = [leaf, barrel, top, named, namespace, cycleA, cycleB, missing];
+    const sourceFiles = () =>
+      productionFiles.concat([barrelConsumer, topConsumer].filter((file) => existsSync(file)));
+    const classify = () =>
+      testOnlyProductionExportsFor({
+        testFiles: [barrelSpec],
+        productionFiles,
+        sourceFiles: sourceFiles(),
+        readSource: readCurrent,
+        resolveModule: modulePath,
+      });
+    const baseSources = new Map([
+      [leaf, 'export const inherited = 1; export default 3;'],
+      [barrel, "export * from './leaf';"],
+      [top, "export * from './barrel';"],
+    ]);
+    const baseExports = (file) =>
+      effectiveExportedSymbols(file, (candidate) => baseSources.get(candidate) ?? null);
+    const introducedExports = (file) =>
+      classify().filter(
+        ({ file: exportFile, symbol }) => exportFile === file && !baseExports(file).has(symbol),
+      );
+    write(
+      barrelSpec,
+      "import { inherited, branchOnly } from '../barrel';\nvoid inherited; void branchOnly;",
+    );
+    expect(baseExports(barrel).has('inherited'), 'base barrel export was not inherited');
+    expect(
+      JSON.stringify(
+        introducedExports(barrel).map(({ file, symbol }) => `${basename(file, '.ts')}::${symbol}`),
+      ) === JSON.stringify(['barrel::branchOnly']),
+      `test-only barrel export was not classified as introduced: ${JSON.stringify(
+        introducedExports(barrel).map(({ file, symbol }) => `${basename(file, '.ts')}::${symbol}`),
+      )}`,
+    );
+    write(barrelConsumer, "import { branchOnly } from './barrel';\nvoid branchOnly;");
+    expect(
+      !classify().some(({ file, symbol }) => file === barrel && symbol === 'branchOnly'),
+      'production barrel consumer did not clear test-only export',
+    );
+    rmSync(barrelConsumer);
+    write(
+      barrelSpec,
+      "import { inherited, branchOnly } from '../top';\nvoid inherited; void branchOnly;",
+    );
+    expect(baseExports(top).has('inherited'), 'base top-barrel export was not inherited');
+    expect(
+      JSON.stringify(
+        introducedExports(top).map(({ file, symbol }) => `${basename(file, '.ts')}::${symbol}`),
+      ) === JSON.stringify(['top::branchOnly']),
+      'test-only top-barrel export was not classified as introduced',
+    );
+    write(topConsumer, "import { branchOnly } from './top';\nvoid branchOnly;");
+    expect(
+      !classify().some(({ file, symbol }) => file === top && symbol === 'branchOnly'),
+      'production top-barrel consumer did not clear test-only export',
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 }
 
-function importedSymbols(file) {
-  const sourceText = readFileSync(file, 'utf8');
+function consumedSymbolsFromText(file, sourceText, resolveModule) {
   const sourceFile = ts.createSourceFile(file, sourceText, ts.ScriptTarget.Latest, true);
   const imports = [];
   for (const statement of sourceFile.statements) {
     if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)) {
-      const target = modulePath(file, statement.moduleSpecifier.text);
+      const target = resolveModule(file, statement.moduleSpecifier.text);
       if (!target || !statement.importClause) continue;
       const symbols = new Set();
       if (statement.importClause.name) symbols.add('default');
@@ -598,21 +708,6 @@ function importedSymbols(file) {
       if (bindings && ts.isNamespaceImport(bindings)) symbols.add('*');
       imports.push({ target, symbols });
     }
-    if (
-      ts.isExportDeclaration(statement) &&
-      statement.moduleSpecifier &&
-      ts.isStringLiteral(statement.moduleSpecifier)
-    ) {
-      const target = modulePath(file, statement.moduleSpecifier.text);
-      if (!target) continue;
-      const symbols = new Set();
-      if (!statement.exportClause) symbols.add('*');
-      if (statement.exportClause && ts.isNamedExports(statement.exportClause)) {
-        for (const element of statement.exportClause.elements)
-          symbols.add(element.propertyName?.text ?? element.name.text);
-      }
-      imports.push({ target, symbols });
-    }
   }
   const visit = (node) => {
     if (
@@ -620,7 +715,7 @@ function importedSymbols(file) {
       node.expression.kind === ts.SyntaxKind.ImportKeyword &&
       ts.isStringLiteral(node.arguments[0])
     ) {
-      const target = modulePath(file, node.arguments[0].text);
+      const target = resolveModule(file, node.arguments[0].text);
       if (target) imports.push({ target, symbols: new Set(['*']) });
     }
     ts.forEachChild(node, visit);
@@ -629,9 +724,14 @@ function importedSymbols(file) {
   return imports;
 }
 
-function exportedSymbolsFromText(file, sourceText) {
+function consumedSymbols(file) {
+  return consumedSymbolsFromText(file, readFileSync(file, 'utf8'), modulePath);
+}
+
+function directExportsFromText(file, sourceText) {
   const sourceFile = ts.createSourceFile(file, sourceText, ts.ScriptTarget.Latest, true);
   const symbols = new Set();
+  const wildcardSpecifiers = [];
   for (const statement of sourceFile.statements) {
     if (ts.isExportAssignment(statement)) {
       if (!statement.isExportEquals) symbols.add('default');
@@ -653,6 +753,9 @@ function exportedSymbolsFromText(file, sourceText) {
         if (ts.isIdentifier(declaration.name)) symbols.add(declaration.name.text);
       }
     }
+    if (ts.isExportDeclaration(statement) && !statement.exportClause && statement.moduleSpecifier) {
+      wildcardSpecifiers.push(statement.moduleSpecifier.text);
+    }
     if (
       ts.isExportDeclaration(statement) &&
       statement.exportClause &&
@@ -660,12 +763,72 @@ function exportedSymbolsFromText(file, sourceText) {
     ) {
       for (const element of statement.exportClause.elements) symbols.add(element.name.text);
     }
+    if (
+      ts.isExportDeclaration(statement) &&
+      statement.exportClause &&
+      ts.isNamespaceExport(statement.exportClause)
+    )
+      symbols.add(statement.exportClause.name.text);
   }
-  return symbols;
+  return { symbols, wildcardSpecifiers };
+}
+
+function exportedSymbolsFromText(file, sourceText) {
+  return directExportsFromText(file, sourceText).symbols;
+}
+
+function moduleCandidates(fromFile, moduleSpecifier) {
+  if (!moduleSpecifier.startsWith('.')) return [];
+  const basePath = join(fromFile, '..', moduleSpecifier);
+  return [
+    basePath,
+    `${basePath}.ts`,
+    `${basePath}.tsx`,
+    `${basePath}.mts`,
+    `${basePath}.js`,
+    `${basePath}.jsx`,
+    join(basePath, 'index.ts'),
+    join(basePath, 'index.tsx'),
+    join(basePath, 'index.mts'),
+    join(basePath, 'index.js'),
+    join(basePath, 'index.jsx'),
+  ];
+}
+
+function effectiveExportedSymbols(file, readSource) {
+  const cache = new Map();
+  const resolving = new Set();
+  const resolve = (current) => {
+    if (cache.has(current)) return cache.get(current);
+    if (resolving.has(current)) return new Set();
+    const sourceText = readSource(current);
+    if (sourceText === null)
+      throw new Error(`Cannot resolve export source ${relative(repoRoot, current)}`);
+    resolving.add(current);
+    const { symbols, wildcardSpecifiers } = directExportsFromText(current, sourceText);
+    for (const specifier of wildcardSpecifiers) {
+      const target = moduleCandidates(current, specifier).find(
+        (candidate) => readSource(candidate) !== null,
+      );
+      if (!target)
+        throw new Error(
+          `${relative(repoRoot, current)} has unresolved relative wildcard export ${specifier}`,
+        );
+      const inherited = new Set(resolve(target));
+      inherited.delete('default');
+      inherited.forEach((symbol) => symbols.add(symbol));
+    }
+    resolving.delete(current);
+    cache.set(current, symbols);
+    return symbols;
+  };
+  return resolve(file);
 }
 
 function exportedSymbols(file) {
-  return exportedSymbolsFromText(file, readFileSync(file, 'utf8'));
+  return effectiveExportedSymbols(file, (candidate) =>
+    existsSync(candidate) && statSync(candidate).isFile() ? readFileSync(candidate, 'utf8') : null,
+  );
 }
 
 function gitOutput(args) {
@@ -729,12 +892,13 @@ function exportComparisonBase() {
 }
 
 function baseExportedSymbols(file, base) {
-  const sourceText = gitOutput(['show', `${base}:${relative(repoRoot, file)}`]);
-  return sourceText === null ? new Set() : exportedSymbolsFromText(file, sourceText);
+  if (gitOutput(['show', `${base}:${relative(repoRoot, file)}`]) === null) return new Set();
+  return effectiveExportedSymbols(file, (candidate) =>
+    gitOutput(['show', `${base}:${relative(repoRoot, candidate)}`]),
+  );
 }
 
-function isUsedWithinFile(file, symbol) {
-  const sourceText = readFileSync(file, 'utf8');
+function isUsedWithinText(file, sourceText, symbol) {
   const sourceFile = ts.createSourceFile(file, sourceText, ts.ScriptTarget.Latest, true);
   let uses = 0;
   const visit = (node) => {
@@ -743,6 +907,10 @@ function isUsedWithinFile(file, symbol) {
   };
   ts.forEachChild(sourceFile, visit);
   return uses > 0;
+}
+
+function isUsedWithinFile(file, symbol) {
+  return isUsedWithinText(file, readFileSync(file, 'utf8'), symbol);
 }
 
 function isDeclarationName(node) {
@@ -754,24 +922,32 @@ function isDeclarationName(node) {
   );
 }
 
-function testOnlyProductionExports(testFiles, base) {
-  const productionFiles = walk(join(webRoot, 'src', 'ts', 'react'), /\.(?:tsx?|mts)$/).filter(
-    (file) => !testFilePattern.test(file),
-  );
-  const sourceFiles = walk(join(webRoot, 'src'), /\.(?:tsx?|mts)$/).filter(
-    (file) => !testFilePattern.test(file),
-  );
+function testOnlyProductionExportsFor({
+  testFiles,
+  productionFiles,
+  sourceFiles,
+  readSource,
+  resolveModule,
+}) {
   const testImports = new Map();
   const productionImports = new Map();
   for (const file of testFiles) {
-    for (const { target, symbols } of importedSymbols(file)) {
+    for (const { target, symbols } of consumedSymbolsFromText(
+      file,
+      readSource(file),
+      resolveModule,
+    )) {
       const imported = testImports.get(target) ?? new Set();
       symbols.forEach((symbol) => imported.add(symbol));
       testImports.set(target, imported);
     }
   }
   for (const file of sourceFiles) {
-    for (const { target, symbols } of importedSymbols(file)) {
+    for (const { target, symbols } of consumedSymbolsFromText(
+      file,
+      readSource(file),
+      resolveModule,
+    )) {
       const imported = productionImports.get(target) ?? new Set();
       symbols.forEach((symbol) => imported.add(symbol));
       productionImports.set(target, imported);
@@ -781,15 +957,32 @@ function testOnlyProductionExports(testFiles, base) {
     const usedByTests = testImports.get(file);
     if (!usedByTests) return [];
     const usedByProduction = productionImports.get(file) ?? new Set();
-    return [...exportedSymbols(file)]
+    return [...effectiveExportedSymbols(file, readSource)]
       .filter(
         (symbol) =>
           (usedByTests.has('*') || usedByTests.has(symbol)) &&
           !usedByProduction.has('*') &&
           !usedByProduction.has(symbol) &&
-          !isUsedWithinFile(file, symbol),
+          !isUsedWithinText(file, readSource(file), symbol),
       )
       .map((symbol) => ({ file, symbol }));
+  });
+}
+
+function testOnlyProductionExports(testFiles) {
+  const productionFiles = walk(join(webRoot, 'src', 'ts', 'react'), /\.(?:tsx?|mts)$/).filter(
+    (file) => !testFilePattern.test(file),
+  );
+  const sourceFiles = walk(join(webRoot, 'src'), /\.(?:tsx?|mts)$/).filter(
+    (file) => !testFilePattern.test(file),
+  );
+  return testOnlyProductionExportsFor({
+    testFiles,
+    productionFiles,
+    sourceFiles,
+    readSource: (file) =>
+      existsSync(file) && statSync(file).isFile() ? readFileSync(file, 'utf8') : null,
+    resolveModule: modulePath,
   });
 }
 
@@ -853,10 +1046,15 @@ invalidAnnotations.push(...testFiles.flatMap(relativeMockProblems));
 invalidAnnotations.push(...placementProblems);
 let inheritedTestOnlyExports = 0;
 if (exportBase) {
-  const testOnlyExports = testOnlyProductionExports(testFiles, exportBase);
-  for (const { file, symbol } of testOnlyExports) {
-    if (baseExportedSymbols(file, exportBase).has(symbol)) inheritedTestOnlyExports += 1;
-    else invalidAnnotations.push(`${relative(webRoot, file)} exports ${symbol} for test-only use`);
+  try {
+    const testOnlyExports = testOnlyProductionExports(testFiles, exportBase);
+    for (const { file, symbol } of testOnlyExports) {
+      if (baseExportedSymbols(file, exportBase).has(symbol)) inheritedTestOnlyExports += 1;
+      else
+        invalidAnnotations.push(`${relative(webRoot, file)} exports ${symbol} for test-only use`);
+    }
+  } catch (error) {
+    invalidAnnotations.push(error.message);
   }
 }
 

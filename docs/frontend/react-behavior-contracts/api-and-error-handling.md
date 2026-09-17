@@ -19,6 +19,24 @@
 - **Existing test(s):** `wdintel-web/src/ts/react/services/api/__tests__/client.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as an authorization safeguard.
 
+## Direct-submit inline response normalization
+
+- **Status:** operational compatibility
+- **Behavior ID:** `react-direct-submit-inline-response-normalization`
+- **Affected route/component:** direct message create and edit API boundary.
+- **User role or permission:** users permitted to submit or edit a direct report.
+- **Preconditions:** the create or edit endpoint returns a successful response with an optional inline message.
+- **User action or external event:** the user submits or edits a direct report.
+- **Expected observable result:** snake-case and camel-case inline messages normalize for React consumers; missing or null inline messages remain absent; request options are preserved for edits.
+- **Loading/empty/error/success behavior:** a successful response without an inline message remains a successful response.
+- **URL, localStorage, or user-settings persistence:** none.
+- **API endpoint and compatibility requirements:** create uses `/api/1.1/submit-direct`; edit uses `/api/1.1/message/:id/edit`; supported message fields normalize without changing request options.
+- **Responsive and keyboard requirements:** none.
+- **Known race/idempotency constraints:** none.
+- **Source implementation:** `src/ts/react/services/api/direct-submit.ts`
+- **Existing test(s):** `wdintel-web/src/ts/react/services/api/__tests__/direct-submit.spec.ts`
+- **Original Echo issue/PR, if known:** none recorded; retained as operational parser coverage.
+
 ## Direct-submit error presentation
 
 - **Status:** inferred characterization
@@ -31,11 +49,29 @@
 - **Expected observable result:** explicit backend validation/business detail remains visible; internal server errors are replaced with an actionable Ukrainian save/delete message.
 - **Loading/empty/error/success behavior:** an error leaves the action unsuccessful and communicates a user-safe explanation.
 - **URL, localStorage, or user-settings persistence:** none.
-- **API endpoint and compatibility requirements:** inline response messages may be snake case, camel case, null, or absent; normalized output must preserve supported message content and request options.
+- **API endpoint and compatibility requirements:** backend validation/business detail remains available to the existing error formatter; internal server failures use an actionable Ukrainian fallback.
 - **Responsive and keyboard requirements:** none.
 - **Known race/idempotency constraints:** none.
 - **Source implementation:** `src/ts/react/services/api/direct-submit.ts`
-- **Existing test(s):** `wdintel-web/src/ts/react/services/api/__tests__/direct-submit.spec.ts`
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
+- **Original Echo issue/PR, if known:** none recorded.
+
+## Direct-submit device and report-copy endpoint compatibility
+
+- **Status:** operational compatibility
+- **Behavior ID:** `react-direct-submit-device-and-report-copy-endpoints`
+- **Affected route/component:** direct-submit device-name resolution and report-copy actions.
+- **User role or permission:** users permitted to submit direct reports or copy report content.
+- **Preconditions:** the caller supplies device identifiers or a source message for report copying.
+- **User action or external event:** the user resolves device names or copies a report.
+- **Expected observable result:** device names resolve through the established batch endpoint and report copies use the message-copy endpoint with the expected request shape.
+- **Loading/empty/error/success behavior:** unavailable optional device names or copy results are handled by the existing caller error paths.
+- **URL, localStorage, or user-settings persistence:** none.
+- **API endpoint and compatibility requirements:** preserves established batch device-name lookup and message-copy endpoint paths and payload fields.
+- **Responsive and keyboard requirements:** none.
+- **Known race/idempotency constraints:** none.
+- **Source implementation:** `src/ts/react/services/api/direct-submit.ts`
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded.
 
 ## Legacy API compatibility

@@ -264,12 +264,36 @@
 - **Status:** inferred characterization
 - **Behavior ID:** `react-manage-message-attachment-and-edit-safety`
 - **Affected route/component:** Manage Message drawer and its failed-upload fallback.
+- **User role or permission:** users permitted to create or edit messages and reports.
+- **Preconditions:** an editable linked/report message has attachments or an upload attempt.
 - **User action or external event:** the user edits a linked/report message, removes an attachment, or a TUS upload fails.
 - **Expected observable result:** regular linked-message edits do not mutate accessible parents; report edits do not copy inaccessible parents; a recoverable upload failure falls back to multipart and preserves its uploaded URL, while authentication failures are not retried through another transport.
+- **Loading/empty/error/success behavior:** recoverable uploads continue through multipart; terminal authentication failures remain visible failures.
+- **URL, localStorage, or user-settings persistence:** none.
+- **API endpoint and compatibility requirements:** attachment removal and fallback uploads preserve the established message and multipart request contracts.
+- **Responsive and keyboard requirements:** drawer attachment controls retain their existing keyboard behavior.
 - **Known race/idempotency constraints:** removing a file clears its tracked failure; terminal authentication failures remain terminal.
 - **Source implementation:** `routes/shared/manage-message/ManageMessageDrawer.tsx`, `message-upload-fallback.ts`.
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/manage-message/__tests__/ManageMessageDrawer.edit.spec.tsx` and `wdintel-web/src/ts/react/routes/shared/manage-message/__tests__/message-upload-fallback.spec.ts`.
 - **Original Echo issue/PR, if known:** none recorded; retained as data and attachment integrity safeguards.
+
+## Manage-message required report content
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-manage-message-required-report-content`
+- **Affected route/component:** Manage Message report submission form.
+- **User role or permission:** users permitted to create or edit report messages.
+- **Preconditions:** the drawer is configured for a report message.
+- **User action or external event:** the user attempts to submit without report text.
+- **Expected observable result:** report submission requires non-empty report text.
+- **Loading/empty/error/success behavior:** an empty report remains unsubmitted until content is provided.
+- **URL, localStorage, or user-settings persistence:** none.
+- **API endpoint and compatibility requirements:** no report submission request is made without required content.
+- **Responsive and keyboard requirements:** the existing form validation remains available to keyboard users.
+- **Known race/idempotency constraints:** none.
+- **Source implementation:** `routes/shared/manage-message/ManageMessageDrawer.tsx`.
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
+- **Original Echo issue/PR, if known:** none recorded.
 
 ## Portal-aware outside dismissal
 

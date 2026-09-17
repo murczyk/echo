@@ -1,27 +1,19 @@
-// @test-scope parser: analysis URL, saved-filter, request, and date-range normalization fixtures
 import { describe, expect, it } from 'vitest';
 
 import type { SavedFilter } from '../../../../../Bindings';
 import {
   buildAnalysisReq,
   buildSavedFilterReq,
-  createInitialQueryState,
   createResetQueryState,
   buildInboxReq,
   buildInboxOverallCountReq,
-  extendQueryDateRangeForDirectMessage,
-  hasMeaningfulFiltersBeyondDateRange,
-  hasMeaningfulUiFiltersBeyondDateRange,
   parseQueryStateFromWindow,
   emptyQueryState,
   normalizeQueryState,
   queryStateComparisonKey,
-  queryStateReloadKey,
-  queryStateUiComparisonKey,
   queryStateFromSavedFilter,
   queryStateMatchesSavedFilter,
   pushQueryStateToUrl,
-  shouldOpenAnalysisMapFromSearchParams,
 } from '../helpers';
 import type { AnalysisQueryState } from '../types';
 
@@ -50,6 +42,7 @@ function createSavedFilter(reqState: AnalysisQueryState): SavedFilter {
 }
 
 describe('rer-analysis-neo helpers', () => {
+  // @test-scope parser: preserves managed analysis URL query normalization.
   it('treats managed url params as authoritative', () => {
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
@@ -69,6 +62,7 @@ describe('rer-analysis-neo helpers', () => {
     delete (globalThis as { window?: Window }).window;
   });
 
+  // @test-scope parser: rejects unsupported legacy analysis URL state.
   it('ignores unsupported legacy state params when managed url params are absent', () => {
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
@@ -84,6 +78,7 @@ describe('rer-analysis-neo helpers', () => {
     delete (globalThis as { window?: Window }).window;
   });
 
+  // @test-scope parser: preserves URL and request-wire normalization for hidden analysis selections.
   it('writes hidden selections only to the url while request normalization still excludes them', () => {
     let currentUrl = 'https://example.test/rer-analysis-neo';
     Object.defineProperty(globalThis, 'window', {
@@ -150,6 +145,7 @@ describe('rer-analysis-neo helpers', () => {
     delete (globalThis as { window?: Window }).window;
   });
 
+  // @test-scope parser: preserves analysis and inbox request time-basis wire values.
   it('sends the creation date basis to analysis and inbox requests', () => {
     const state = createQueryState({
       messageTimeBasis: 'creation',
@@ -171,39 +167,7 @@ describe('rer-analysis-neo helpers', () => {
     expect(buildInboxOverallCountReq(createQueryState())?.sortBy).toBeNull();
   });
 
-  it('keeps the saved filter clean when only the date range differs', () => {
-    const savedFilter = createSavedFilter(createQueryState());
-    const currentState = createQueryState({
-      fromDateTimeStr: '2026-03-31T10:30',
-      toDateTimeStr: '2026-03-31T12:30',
-    });
-
-    expect(queryStateMatchesSavedFilter(currentState, savedFilter)).toBe(true);
-    expect(queryStateComparisonKey(currentState)).toBe(queryStateComparisonKey(createQueryState()));
-    expect(queryStateReloadKey(currentState)).not.toBe(queryStateReloadKey(createQueryState()));
-  });
-
-  it('treats non-date filter changes as dirty', () => {
-    const savedFilter = createSavedFilter(createQueryState());
-    const changedState = createQueryState({ groupsSelected: ['Bravo'] });
-
-    expect(queryStateMatchesSavedFilter(changedState, savedFilter)).toBe(false);
-    expect(queryStateComparisonKey(changedState)).not.toBe(
-      queryStateComparisonKey(createQueryState()),
-    );
-  });
-
-  it('includes onlyWithMedia in the ui comparison key and dirty state while ignoring it for saved filters', () => {
-    const baseState = createResetQueryState();
-    const savedFilter = createSavedFilter(baseState);
-    const mediaState = { ...baseState, onlyWithMedia: true };
-
-    expect(queryStateUiComparisonKey(mediaState)).not.toBe(queryStateUiComparisonKey(baseState));
-    expect(queryStateMatchesSavedFilter(mediaState, savedFilter)).toBe(true);
-    expect(hasMeaningfulFiltersBeyondDateRange(mediaState)).toBe(false);
-    expect(hasMeaningfulUiFiltersBeyondDateRange(mediaState)).toBe(true);
-  });
-
+  // @test-scope parser: preserves server-default unit matching request values.
   it('preserves null unitsExactMatchOnly for server-default requests', () => {
     const state = createQueryState({ unitsExactMatchOnly: null, unitsSelected: ['Unit A'] });
     const analysisReq = buildAnalysisReq(state);
@@ -213,6 +177,7 @@ describe('rer-analysis-neo helpers', () => {
     expect(inboxReq?.unitsExactMatchOnly).toBeNull();
   });
 
+  // @test-scope parser: normalizes numeric unit selections onto request identifiers.
   it('routes numeric unit selections through stable id fields', () => {
     const state = createQueryState({
       unitsSelected: ['unit-id:42', 'Legacy unit'],
@@ -233,6 +198,7 @@ describe('rer-analysis-neo helpers', () => {
     });
   });
 
+  // @test-scope parser: preserves supported legacy unit selection values.
   it('preserves undefined and numeric-looking legacy unit selections', () => {
     const req = buildAnalysisReq(
       createQueryState({ unitsSelected: ['', '01', '123', '1e3'], unitsExactMatchOnly: true }),
@@ -245,6 +211,7 @@ describe('rer-analysis-neo helpers', () => {
     });
   });
 
+  // @test-scope parser: normalizes legacy unit matching request compatibility.
   it('disables legacy exact matching for id-only unit selections', () => {
     const state = createQueryState({
       unitsSelected: ['unit-id:42'],
@@ -255,6 +222,7 @@ describe('rer-analysis-neo helpers', () => {
     expect(buildInboxReq(state)?.unitsExactMatchOnly).toBeNull();
   });
 
+  // @test-scope parser: separates inbox-only media filtering from analysis request fields.
   it('keeps inbox-only media filtering out of the analysis request while passing it to the inbox request', () => {
     const state = createQueryState({ onlyWithMedia: true });
 
@@ -265,10 +233,7 @@ describe('rer-analysis-neo helpers', () => {
     expect(buildInboxReq(state, [], true)?.onlyWithMedia).toBe(true);
   });
 
-  it('starts neo query state with unitsExactMatchOnly unset', () => {
-    expect(emptyQueryState().unitsExactMatchOnly).toBeNull();
-  });
-
+  // @test-scope parser: maps included tags to the analysis request wire field.
   it('routes selected tags to selectedTags in include mode', () => {
     const state = createQueryState({ tags: [3, 7], tagsExcludeMode: false });
     const analysisReq = buildAnalysisReq(state);
@@ -280,6 +245,7 @@ describe('rer-analysis-neo helpers', () => {
     expect(inboxReq?.deniedTags).toBeNull();
   });
 
+  // @test-scope parser: maps excluded tags to the analysis request wire field.
   it('routes selected tags to deniedTags in exclude mode', () => {
     const state = createQueryState({ tags: [3, 7], tagsExcludeMode: true });
     const analysisReq = buildAnalysisReq(state);
@@ -291,6 +257,7 @@ describe('rer-analysis-neo helpers', () => {
     expect(inboxReq?.deniedTags).toEqual([3, 7]);
   });
 
+  // @test-scope parser: preserves excluded-tag mode through saved-filter request normalization.
   it('round-trips exclude mode through saved filters', () => {
     const state = createQueryState({
       tags: [3, 7],
@@ -303,6 +270,7 @@ describe('rer-analysis-neo helpers', () => {
     expect(restored.tagsExcludeMode).toBe(true);
   });
 
+  // @test-scope parser: normalizes callsign request values for backend filtering.
   it('normalizes selected callsigns for case-sensitive backend filtering', () => {
     expect(
       normalizeQueryState(createQueryState({ callsignsSelected: ['alpha', 'Bravo', ' BRAVO '] }))
@@ -310,6 +278,7 @@ describe('rer-analysis-neo helpers', () => {
     ).toEqual(['alpha', 'bravo']);
   });
 
+  // @test-scope parser: preserves device-name selections in request and saved-filter wire values.
   it('persists device-name selections in requests and saved filters', () => {
     const state = createQueryState({ deviceNamesSelected: ['cyber-echo-01'] });
     const savedFilter = createSavedFilter(state);
@@ -320,6 +289,7 @@ describe('rer-analysis-neo helpers', () => {
     expect(restored.deviceNamesSelected).toEqual(['cyber-echo-01']);
   });
 
+  // @test-scope parser: normalizes legacy unit aliases at the analysis request boundary.
   it('normalizes legacy unit aliases in query state normalization', () => {
     expect(
       normalizeQueryState(createQueryState({ unitsSelected: ['Не визначено', 'Unit A', ''] }))
@@ -327,6 +297,7 @@ describe('rer-analysis-neo helpers', () => {
     ).toEqual(['', 'Unit A']);
   });
 
+  // @test-scope parser: preserves coordinate filter request flags through normalization.
   it('preserves standalone without-coords and with-coords flags through normalization and request building', () => {
     const withoutCoordsState = createQueryState({ orWithoutCoords: true });
     const withCoordsState = createQueryState({ orWithCoords: true });
@@ -345,6 +316,7 @@ describe('rer-analysis-neo helpers', () => {
     expect(buildAnalysisReq(withCoordsState)?.orWithoutCoords).toBe(false);
   });
 
+  // @test-scope parser: normalizes conflicting coordinate filter request flags.
   it('clears both coordinate flags only when both are set', () => {
     expect(
       normalizeQueryState(
@@ -359,94 +331,7 @@ describe('rer-analysis-neo helpers', () => {
     });
   });
 
-  it('derives default analysis dates from today to tomorrow in the app timezone', () => {
-    const state = createInitialQueryState(
-      emptyQueryState(),
-      new Date(Date.UTC(2026, 0, 15, 22, 30, 0)),
-    );
-
-    expect(state.fromDateTimeStr).toBe('2026-01-16T00:00');
-    expect(state.toDateTimeStr).toBe('2026-01-17T00:00');
-  });
-
-  it('extends a direct-link range from the day before the message through today', () => {
-    const state = createQueryState({
-      fromDateTimeStr: '2026-08-28T00:00',
-      toDateTimeStr: '2026-08-29T00:00',
-    });
-
-    const next = extendQueryDateRangeForDirectMessage(
-      state,
-      { date: '2026-08-20', timestamp: null },
-      new Date(Date.UTC(2026, 7, 28, 12)),
-    );
-
-    expect(next.fromDateTimeStr).toBe('2026-08-19T00:00');
-    expect(next.toDateTimeStr).toBe('2026-08-29T00:00');
-  });
-
-  it('uses creation time rather than interception time for creation-mode direct links', () => {
-    const state = createQueryState({
-      messageTimeBasis: 'creation',
-      fromDateTimeStr: '2026-08-28T00:00',
-      toDateTimeStr: '2026-08-29T00:00',
-    });
-    const next = extendQueryDateRangeForDirectMessage(
-      state,
-      { date: '2026-01-01', timestamp: Date.UTC(2026, 0, 1), createdAt: Date.UTC(2026, 7, 29) },
-      new Date(Date.UTC(2026, 7, 29, 12)),
-    );
-
-    expect(next.fromDateTimeStr).toBe('2026-08-28T00:00');
-    expect(next.toDateTimeStr).toBe('2026-08-30T00:00');
-  });
-
-  it('does not widen a creation-mode direct-link range from interception time when creation time is unavailable', () => {
-    const state = createQueryState({
-      messageTimeBasis: 'creation',
-      fromDateTimeStr: '2026-08-28T00:00',
-      toDateTimeStr: '2026-08-29T00:00',
-    });
-
-    expect(
-      extendQueryDateRangeForDirectMessage(
-        state,
-        { date: '2026-01-01', timestamp: Date.UTC(2026, 0, 1), createdAt: null },
-        new Date(Date.UTC(2026, 7, 29, 12)),
-      ),
-    ).toEqual(state);
-  });
-
-  it('keeps earlier bounds and extends a direct-link range forward through today', () => {
-    const state = createQueryState({
-      fromDateTimeStr: '2026-08-18T00:00',
-      toDateTimeStr: '2026-08-21T00:00',
-    });
-
-    const next = extendQueryDateRangeForDirectMessage(
-      state,
-      { date: '2026-08-20', timestamp: null },
-      new Date(Date.UTC(2026, 7, 28, 12)),
-    );
-
-    expect(next.fromDateTimeStr).toBe('2026-08-18T00:00');
-    expect(next.toDateTimeStr).toBe('2026-08-29T00:00');
-  });
-
-  it('fills missing datetime bounds when only analysis dates are restored', () => {
-    const state = createInitialQueryState(
-      createQueryState({
-        fromDateTimeStr: '',
-        toDateTimeStr: '',
-      }),
-      new Date(Date.UTC(2026, 0, 16, 10, 30, 0)),
-    );
-
-    expect(state.fromDateTimeStr).toBe('2026-01-16T00:00');
-    expect(state.toDateTimeStr).toBe('2026-01-17T00:00');
-    expect(buildAnalysisReq(state)).not.toBeNull();
-  });
-
+  // @test-scope parser: rejects malformed analysis request date-time wire values.
   it('rejects malformed time bounds instead of building a date range', () => {
     expect(
       buildAnalysisReq(
@@ -465,6 +350,7 @@ describe('rer-analysis-neo helpers', () => {
     ).toBeNull();
   });
 
+  // @test-scope parser: rejects inverted analysis request date-time wire values.
   it('rejects inverted analysis date ranges but allows equal bounds', () => {
     expect(
       buildAnalysisReq(
@@ -485,20 +371,7 @@ describe('rer-analysis-neo helpers', () => {
     ).toBeNull();
   });
 
-  it('resets adjacent frequency expansion when applying a saved filter', () => {
-    const savedFilter = createSavedFilter(createQueryState({ freqsSelected: ['123.4'] }));
-    const currentState = createQueryState({
-      adjacentFreqsRange: 0.002,
-      freqsSelected: ['999.9'],
-    });
-
-    const nextState = queryStateFromSavedFilter(savedFilter, currentState);
-
-    expect(nextState.freqsSelected).toEqual(['123.4']);
-    expect(nextState.adjacentFreqsRange).toBe(0);
-  });
-
-  // https://github.com/echoua/echo/issues/3455
+  // @test-scope regression: https://github.com/echoua/echo/issues/3455
   it('keeps the active creation-time preference when applying a saved filter', () => {
     const savedFilter = createSavedFilter(createQueryState({ freqsSelected: ['123.4'] }));
     const currentState = createQueryState({
@@ -512,7 +385,7 @@ describe('rer-analysis-neo helpers', () => {
     expect(nextState.freqsSelected).toEqual(['123.4']);
   });
 
-  // https://github.com/echoua/echo/issues/3455
+  // @test-scope regression: https://github.com/echoua/echo/issues/3455
   it('ignores the active time preference when matching saved filters', () => {
     const interception = createQueryState({ messageTimeBasis: 'interception' });
     const creation = createQueryState({ messageTimeBasis: 'creation' });
@@ -522,18 +395,11 @@ describe('rer-analysis-neo helpers', () => {
     expect(queryStateMatchesSavedFilter(creation, savedFilter)).toBe(true);
   });
 
-  // https://github.com/echoua/echo/issues/3455
+  // @test-scope regression: https://github.com/echoua/echo/issues/3455
   it('does not persist the active time preference in saved-filter requests', () => {
     const req = buildSavedFilterReq(createQueryState({ messageTimeBasis: 'creation' }));
 
     expect(req).not.toBeNull();
     expect(req?.messageTimeBasis).toBeNull();
-  });
-
-  it('detects showMap deep link for duty → analysis map tab', () => {
-    expect(shouldOpenAnalysisMapFromSearchParams(new URLSearchParams('showMap=true'))).toBe(true);
-    expect(shouldOpenAnalysisMapFromSearchParams(new URLSearchParams('showMap=1'))).toBe(false);
-    expect(shouldOpenAnalysisMapFromSearchParams(new URLSearchParams(''))).toBe(false);
-    expect(shouldOpenAnalysisMapFromSearchParams(new URLSearchParams('showMap=false'))).toBe(false);
   });
 });
