@@ -1,6 +1,8 @@
 import type {
   ArchiveUnresolvedUnitLabelReq,
   ClassifyUnresolvedUnitLabelReq,
+  ListUnresolvedUnitMessagesReq,
+  ListUnresolvedUnitMessagesRsp,
   ListUnresolvedUnitLabelsReq,
   ListUnresolvedUnitLabelsRsp,
   ResolveUnresolvedUnitLabelReq,
@@ -21,6 +23,18 @@ export async function listUnresolvedUnitLabels(
     options,
   );
   return transformSnakeToCamel<ListUnresolvedUnitLabelsRsp>(raw);
+}
+
+export async function listUnresolvedUnitMessages(
+  req: ListUnresolvedUnitMessagesReq,
+  options?: RequestOptions,
+): Promise<ListUnresolvedUnitMessagesRsp> {
+  const raw = await postJson<unknown>(
+    '/api/admin/unresolved-unit-label/messages',
+    transformCamelToSnake(req),
+    options,
+  );
+  return transformSnakeToCamel<ListUnresolvedUnitMessagesRsp>(raw);
 }
 
 export async function classifyUnresolvedUnitLabel(
@@ -55,10 +69,12 @@ export async function updateUnresolvedUnitLabelNote(
 
 export async function resolveUnresolvedUnitLabel(
   req: ResolveUnresolvedUnitLabelReq,
+  options?: RequestOptions,
 ): Promise<UpdateUnresolvedUnitLabelsRsp> {
   const raw = await postJson<unknown>(
     '/api/admin/unresolved-unit-label/resolve',
     transformCamelToSnake(req),
+    options,
   );
   return transformSnakeToCamel<UpdateUnresolvedUnitLabelsRsp>(raw);
 }

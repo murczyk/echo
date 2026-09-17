@@ -1243,6 +1243,9 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
                 crate::inbox::unresolved_units::list_unresolved_unit_labels,
             )
             .service(
+                crate::inbox::unresolved_units::list_unresolved_unit_messages,
+            )
+            .service(
                 crate::inbox::unresolved_units::classify_unresolved_unit_label,
             )
             .service(

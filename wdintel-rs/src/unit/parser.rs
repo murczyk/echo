@@ -24,6 +24,25 @@ pub fn extract_unit_with_aor(
     m_aor_id: Option<i64>,
 ) -> Result<UnitAndLoc, AppError> {
     // trace!("> extract_unit: inp={inp}");
+    lazy_static! {
+        static ref RE_DATED_UNIT_HEADER: Regex = Regex::new(
+            r#"^\s*(?P<unit>[^|]+?)\s*\|\s*[0-9]{4}-[0-9]{2}-[0-9]{2}(?:_[0-9]{2}-[0-9]{2}-[0-9]{2})?\s*$"#
+        )
+        .unwrap();
+    }
+    if let Some(unit) = inp
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .and_then(|line| RE_DATED_UNIT_HEADER.captures(line))
+        .and_then(|captures| m_cap_s(&captures, "unit"))
+        .filter(|unit| !unit.trim().eq_ignore_ascii_case("audio"))
+    {
+        return Ok(UnitAndLoc {
+            unit: Some(unit.trim().to_string()),
+            locality: None,
+            locality_v2: None,
+        });
+    }
     if let Some(zp_peleng) =
         crate::rer_importer::zp_peleng_extended_format::parse(inp)
     {
@@ -972,6 +991,30 @@ mod tests {
             )
             .unwrap(),
         ))
+    }
+
+    #[test]
+    fn extract_unit_dated_label_header() {
+        for date in ["2026-09-16", "2026-09-16_17-45-00"] {
+            let body =
+                format!("24 обБпС рБпЛА вБпЛА КТ  | {date}\n17-45\n- С тест");
+            let parsed =
+                extract_unit(test_settlements(), &body, vec![]).unwrap();
+            assert_eq!(parsed.unit.as_deref(), Some("24 обБпС рБпЛА вБпЛА КТ"));
+            assert_eq!(parsed.locality, None);
+        }
+    }
+
+    #[test]
+    fn extract_unit_ignores_kraken_audio_header() {
+        let body = "audio | 2026-07-01_14-47-03\nУКХ р/м гсабатр гсадн 70 мсп 42 мсд 58 А (ТАРАСІВКА - ПОЛОГИ)";
+        let parsed = extract_unit(test_settlements(), body, vec![]).unwrap();
+
+        assert_eq!(
+            parsed.unit.as_deref(),
+            Some("УКХ р/м гсабатр гсадн 70 мсп 42 мсд 58 А")
+        );
+        assert_eq!(parsed.locality.as_deref(), Some("ТАРАСІВКА - ПОЛОГИ"));
     }
 
     #[test]

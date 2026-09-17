@@ -19,10 +19,16 @@ function getAuthUserRolesFromShell(el: Element): string[] {
     .filter(Boolean);
 }
 
-function RerUnitsNeoRoot({ authUserRoles }: { authUserRoles: string[] }) {
+function RerUnitsNeoRoot({
+  authUserRoles,
+  openCreate,
+}: {
+  authUserRoles: string[];
+  openCreate: boolean;
+}) {
   return (
     <NeoMuiThemeProvider>
-      <RerUnitsNeoPage authUserRoles={authUserRoles} />
+      <RerUnitsNeoPage authUserRoles={authUserRoles} openCreate={openCreate} />
     </NeoMuiThemeProvider>
   );
 }
@@ -31,12 +37,17 @@ class RerUnitsNeoElement extends HTMLElement {
   private root: Root | null = null;
 
   static get observedAttributes() {
-    return ['data-auth-user-roles'];
+    return ['data-auth-user-roles', 'data-open-create'];
   }
 
   private renderRoot() {
     if (!this.root) return;
-    this.root.render(<RerUnitsNeoRoot authUserRoles={getAuthUserRolesFromShell(this)} />);
+    this.root.render(
+      <RerUnitsNeoRoot
+        authUserRoles={getAuthUserRolesFromShell(this)}
+        openCreate={this.getAttribute('data-open-create') === 'true'}
+      />,
+    );
   }
 
   connectedCallback() {
@@ -51,7 +62,7 @@ class RerUnitsNeoElement extends HTMLElement {
   }
 
   attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null) {
-    if (name === 'data-auth-user-roles' && oldValue !== newValue) {
+    if ((name === 'data-auth-user-roles' || name === 'data-open-create') && oldValue !== newValue) {
       this.renderRoot();
     }
   }
