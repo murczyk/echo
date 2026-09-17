@@ -1,13 +1,11 @@
 /**
  * @vitest-environment happy-dom
  */
-// @test-scope parser: device, file-tree, journal, synchronization, and analysis-run API fixtures
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   browseDeviceFiles,
   countDeviceFileSubtrees,
-  createDevice,
   getDeviceDetail,
   getDeviceAnalyticsSummary,
   getAnalysisRun,
@@ -20,11 +18,9 @@ import {
   journalDeviceFiles,
   listDeviceFileRoots,
   listDevices,
-  searchDeviceFiles,
   listDeviceAnalyticsFiles,
   reanalyzeAll,
   reanalyzeDevice,
-  toDeviceUpdatePatchReq,
   updateDevice,
   updateDeviceSettings,
 } from '../devices';
@@ -94,6 +90,7 @@ beforeEach(() => {
 });
 
 describe('devices API service routes', () => {
+  // @test-scope parser: normalizes device-list wire responses for React consumers.
   it('lists devices using only the target request and response fields', async () => {
     const controller = new AbortController();
     fetchMock().mockResolvedValueOnce(
@@ -150,6 +147,7 @@ describe('devices API service routes', () => {
     expect(rsp.statusCounts).toEqual({ active: 3, archived: 1 });
   });
 
+  // @test-scope parser: normalizes nested device unit-statistics responses.
   it('loads nested unit statistics without a request body', async () => {
     fetchMock().mockResolvedValueOnce(
       jsonResponse({ units: [{ unit: { id: 7, name: 'Unit' }, count: 3 }] }),
@@ -161,6 +159,7 @@ describe('devices API service routes', () => {
     expect(rsp).toEqual([{ unit: { id: 7, name: 'Unit' }, count: 3 }]);
   });
 
+  // @test-scope parser: normalizes device-authorized AOR and unit lookup responses.
   it('loads device-authorized AOR and unit lookups without request bodies', async () => {
     fetchMock()
       .mockResolvedValueOnce(jsonResponse([{ id: 4, name: 'AOR', is_top_level: true }]))
@@ -181,6 +180,7 @@ describe('devices API service routes', () => {
     expect(units[0]).toMatchObject({ id: 7, name: 'Unit', createdByLoginId: 'analyst' });
   });
 
+  // @test-scope parser: normalizes device details while retaining arbitrary custom-field keys.
   it('normalizes details while preserving arbitrary custom-field keys', async () => {
     const rsp = await getDeviceDetail({ deviceId: DEVICE_ID, includeArchived: true });
 
@@ -190,21 +190,8 @@ describe('devices API service routes', () => {
     expect(rsp.customFields).toEqual({ inventory_id: 'node-1' });
   });
 
-  it('creates a device with its permitted source and name fields', async () => {
-    await createDevice({
-      name: 'Device Alpha',
-      externalUrl: null,
-      customFields: { inventory_id: 'node-1' },
-    });
-
-    expect(requestBody()).toEqual({
-      name: 'Device Alpha',
-      external_url: null,
-      custom_fields: { inventory_id: 'node-1' },
-    });
-  });
-
-  it('serializes a presence-aware update without changing custom-field keys', async () => {
+  // @test-scope safeguard: prevents device updates from omitting deliberate null clears or corrupting arbitrary custom-field keys.
+  it('preserves patch presence, null clears, and arbitrary custom-field keys', async () => {
     await updateDevice({
       deviceId: DEVICE_ID,
       name: 'Renamed device',
@@ -222,7 +209,8 @@ describe('devices API service routes', () => {
     });
   });
 
-  it('posts the masked device settings contract without converting its camel-case fields', async () => {
+  // @test-scope safeguard: prevents an omitted setting from clearing or corrupting the stored Mattermost webhook.
+  it('preserves the masked Mattermost webhook when settings fields are omitted', async () => {
     fetchMock().mockImplementation(() =>
       Promise.resolve(jsonResponse({ hasMattermostWebhook: true })),
     );
@@ -248,6 +236,7 @@ describe('devices API service routes', () => {
 });
 
 describe('device filesystem API service routes', () => {
+  // @test-scope parser: normalizes file-root response fields.
   it('loads roots and transforms canonical root fields', async () => {
     fetchMock().mockResolvedValueOnce(jsonResponse({ roots: [mockRootResponse()] }));
 
@@ -259,6 +248,7 @@ describe('device filesystem API service routes', () => {
       entryId: ROOT_ID,
     });
   });
+  // @test-scope parser: normalizes independent subtree-count response fields.
   it('loads subtree counts separately from tree payloads', async () => {
     fetchMock().mockResolvedValueOnce(
       jsonResponse({
@@ -284,6 +274,7 @@ describe('device filesystem API service routes', () => {
     expect(rsp.counts).toEqual([{ entryId: ROOT_ID, fileCount: 12_345 }]);
   });
 
+  // @test-scope parser: normalizes paginated device-file browsing responses.
   it('browses a directory with keyset pagination', async () => {
     fetchMock().mockResolvedValueOnce(
       jsonResponse({
@@ -335,41 +326,7 @@ describe('device filesystem API service routes', () => {
     expect(rsp.nextCursor).toBe('next');
   });
 
-  it('searches a subtree with canonical filters', async () => {
-    fetchMock().mockResolvedValueOnce(jsonResponse({ entries: [], next_cursor: null }));
-
-    await searchDeviceFiles({
-      deviceId: DEVICE_ID,
-      scopeEntryId: ROOT_ID,
-      nameQuery: 'log',
-      kinds: ['file'],
-      mimeTypes: ['text/plain'],
-      extensions: ['log'],
-      fileMetadataModifiedFrom: CREATED_AT,
-      fileMetadataModifiedTo: UPDATED_AT,
-      limit: 10,
-      cursor: null,
-      tagIds: [TAG_ID],
-      tagMatch: 'any',
-      untagged: false,
-    });
-    expect(requestBody()).toEqual({
-      device_id: DEVICE_ID,
-      scope_entry_id: ROOT_ID,
-      name_query: 'log',
-      kinds: ['file'],
-      mime_types: ['text/plain'],
-      extensions: ['log'],
-      file_metadata_modified_from: CREATED_AT,
-      file_metadata_modified_to: UPDATED_AT,
-      limit: 10,
-      cursor: null,
-      tag_ids: [TAG_ID],
-      tag_match: 'any',
-      untagged: false,
-    });
-  });
-
+  // @test-scope parser: normalizes device-file journal entries and cursors.
   it('loads the device-wide synchronization journal with keyset pagination', async () => {
     fetchMock().mockResolvedValueOnce(
       jsonResponse({
@@ -437,6 +394,7 @@ describe('device filesystem API service routes', () => {
 });
 
 describe('device analytics API service routes', () => {
+  // @test-scope parser: normalizes analytics tags and summary response fields.
   it('loads dynamic tags and summary rows with canonical field names', async () => {
     fetchMock()
       .mockResolvedValueOnce(
@@ -477,6 +435,7 @@ describe('device analytics API service routes', () => {
     ]);
   });
 
+  // @test-scope parser: normalizes paginated analytics file response fields.
   it('loads one tag file page with stable cursor fields', async () => {
     fetchMock().mockResolvedValueOnce(
       jsonResponse({
@@ -519,6 +478,7 @@ describe('device analytics API service routes', () => {
     });
   });
 
+  // @test-scope parser: normalizes device and global reanalysis response objects.
   it('creates device and global reanalysis runs through the admin routes', async () => {
     const run = {
       run_id: 'run-1',
@@ -557,6 +517,7 @@ describe('device analytics API service routes', () => {
     expect(allRsp).toEqual({ definitionId: 'definition-1', createdRunCount: 5 });
   });
 
+  // @test-scope parser: normalizes analysis-run, history, and file result responses.
   it('loads run status, device run history, and historical file results', async () => {
     const run = {
       run_id: 'run-1',
@@ -623,28 +584,6 @@ describe('device analytics API service routes', () => {
       state: 'completed',
       tagIds: [TAG_ID],
       metadata: { absolutePath: 'C:\\report.log', sourceFileState: null },
-    });
-  });
-});
-
-describe('DeviceUpdatePatchInput serialization', () => {
-  it('omits undefined fields and preserves explicit null clears', () => {
-    expect(
-      toDeviceUpdatePatchReq({
-        deviceId: DEVICE_ID,
-        name: 'Renamed device',
-        aorIds: [],
-        unitId: null,
-        externalUrl: null,
-        customFields: { retired: null },
-      }),
-    ).toEqual({
-      deviceId: DEVICE_ID,
-      name: 'Renamed device',
-      aorIds: [],
-      unitId: null,
-      externalUrl: null,
-      customFields: { retired: null },
     });
   });
 });

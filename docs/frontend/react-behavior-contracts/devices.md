@@ -102,10 +102,10 @@
 - **User role or permission:** users authorized for the target device and its files.
 - **Preconditions:** a device detail, file page, journal page, synchronization request, or analysis-run page is requested.
 - **User action or external event:** browsing/searching files, loading journal entries, synchronizing a path, or reviewing dynamic-tag and run results.
-- **Expected observable result:** canonical device fields and arbitrary custom fields are retained; keyset cursors, explicit null clears, Windows paths, sync outcome details, dynamic tag pages, and analysis-run history normalize without losing wire compatibility.
+- **Expected observable result:** canonical device fields and arbitrary custom fields are retained; create and update requests preserve arbitrary custom-field keys, omitted patch fields remain omitted, and explicit null values remain intentional clears; keyset cursors, Windows paths, sync outcome details, dynamic tag pages, and analysis-run history normalize without losing wire compatibility.
 - **Loading/empty/error/success behavior:** roots, subtree counts, and paginated pages remain separate; empty optional response collections are usable by their consumers.
 - **URL, localStorage, or user-settings persistence:** cursors belong to the route state, not the shared API mapper.
-- **API endpoint and compatibility requirements:** request bodies preserve canonical field casing and omit only undefined values; legacy snake-case response fields normalize for React.
+- **API endpoint and compatibility requirements:** create/update request bodies preserve canonical field casing and omit only undefined values; search and pagination request compatibility remains part of this contract even without isolated request-shape tests; legacy snake-case response fields normalize for React.
 - **Responsive and keyboard requirements:** none at the API boundary.
 - **Known race/idempotency constraints:** synchronization must target the exact path identity supplied by the current file view; an in-flight submission freezes its row snapshot, never retries an uncertain transport failure automatically, and rejects mutation after capability revocation.
 - **Source implementation:** `wdintel-web/src/ts/react/services/api/devices.ts`.

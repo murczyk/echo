@@ -15,7 +15,8 @@ import ts from 'typescript';
 
 const webRoot = new URL('..', import.meta.url).pathname;
 const repoRoot = new URL('../..', import.meta.url).pathname;
-const testFilePattern = /\.(?:spec|test)\.(?:tsx?|mts)$/;
+const testFilePattern = /\.(?:spec|test)\.(?:tsx?|mts|[cm]?js|jsx)$/;
+const sourceModulePattern = /\.(?:tsx?|mts|[cm]?js|jsx)$/;
 const scopePattern = /@test-scope\s+(parser|safeguard|regression):\s*(.+)/;
 const echoLinkPattern = /^https:\/\/github\.com\/echoua\/echo\/(?:issues|pull)\/\d+$/;
 const prohibitedTestDirectories = new Set([
@@ -294,7 +295,6 @@ function modulePath(fromFile, moduleSpecifier) {
     `${basePath}.jsx`,
     `${basePath}.mjs`,
     `${basePath}.cjs`,
-    `${basePath}.json`,
     join(basePath, 'index.ts'),
     join(basePath, 'index.tsx'),
     join(basePath, 'index.mts'),
@@ -302,10 +302,14 @@ function modulePath(fromFile, moduleSpecifier) {
     join(basePath, 'index.jsx'),
     join(basePath, 'index.mjs'),
     join(basePath, 'index.cjs'),
-    join(basePath, 'index.json'),
   ];
   return (
-    candidates.find((candidate) => existsSync(candidate) && statSync(candidate).isFile()) ?? null
+    candidates.find(
+      (candidate) =>
+        sourceModulePattern.test(candidate) &&
+        existsSync(candidate) &&
+        statSync(candidate).isFile(),
+    ) ?? null
   );
 }
 
@@ -657,10 +661,8 @@ function runGateSelfValidation() {
     );
     expect(baseExports(barrel).has('inherited'), 'base barrel export was not inherited');
     expect(
-      JSON.stringify(
-        introducedExports(barrel).map(({ file, symbol }) => `${basename(file, '.ts')}::${symbol}`),
-      ) === JSON.stringify(['barrel::branchOnly']),
-      `test-only barrel export was not classified as introduced: ${JSON.stringify(
+      introducedExports(barrel).length === 0,
+      `production top-barrel re-export did not clear barrel exports: ${JSON.stringify(
         introducedExports(barrel).map(({ file, symbol }) => `${basename(file, '.ts')}::${symbol}`),
       )}`,
     );
@@ -685,6 +687,253 @@ function runGateSelfValidation() {
     expect(
       !classify().some(({ file, symbol }) => file === top && symbol === 'branchOnly'),
       'production top-barrel consumer did not clear test-only export',
+    );
+
+    const indirectRoot = join(web, 'src/ts/react/indirect-self-check');
+    const indirectOwner = join(indirectRoot, 'owner.ts');
+    const fixture = join(indirectRoot, '__tests__/fixture.ts');
+    const nestedFixture = join(indirectRoot, '__tests__/nested-fixture.ts');
+    const indirectCycleA = join(indirectRoot, '__tests__/cycle-a.ts');
+    const indirectCycleB = join(indirectRoot, '__tests__/cycle-b.ts');
+    const indirectSpec = join(indirectRoot, '__tests__/owner.spec.ts');
+    const indirectConsumer = join(indirectRoot, 'consumer.ts');
+    write(
+      indirectOwner,
+      'export function internallyUsed() { return 1; } internallyUsed(); export function recursive() { return recursive(); }',
+    );
+    write(
+      fixture,
+      "import { internallyUsed, recursive } from '../owner'; export const fixtureValue = [internallyUsed, recursive];",
+    );
+    write(nestedFixture, "import { fixtureValue } from './fixture'; export { fixtureValue };");
+    write(
+      indirectCycleA,
+      "import { cycleBValue } from './cycle-b'; export const cycleAValue = cycleBValue;",
+    );
+    write(
+      indirectCycleB,
+      "import { internallyUsed } from '../owner'; import { cycleAValue } from './cycle-a'; export const cycleBValue = [internallyUsed, cycleAValue];",
+    );
+    const indirectSupportFiles = new Set([fixture, nestedFixture, indirectCycleA, indirectCycleB]);
+    const classifyIndirect = () =>
+      testOnlyProductionExportsFor({
+        testFiles: [indirectSpec],
+        productionFiles: [indirectOwner],
+        sourceFiles: [indirectOwner, ...indirectSupportFiles, indirectConsumer].filter((file) =>
+          existsSync(file),
+        ),
+        readSource: readCurrent,
+        resolveModule: modulePath,
+        testSupportFiles: indirectSupportFiles,
+      });
+    const expectIndirectSymbols = (expected, message) =>
+      expect(
+        JSON.stringify(
+          classifyIndirect()
+            .map(({ symbol }) => symbol)
+            .sort(),
+        ) === JSON.stringify(expected),
+        message,
+      );
+    write(indirectSpec, "import { fixtureValue } from './fixture';\nvoid fixtureValue;");
+    expectIndirectSymbols(
+      ['internallyUsed', 'recursive'],
+      'spec through fixture did not detect production exports',
+    );
+    write(indirectSpec, "import { fixtureValue } from './nested-fixture';\nvoid fixtureValue;");
+    expectIndirectSymbols(
+      ['internallyUsed', 'recursive'],
+      'spec through nested fixture did not detect production exports',
+    );
+    write(indirectSpec, "import { cycleAValue } from './cycle-a';\nvoid cycleAValue;");
+    expect(
+      testDependencyDemands([indirectSpec], readCurrent, modulePath).size === 4,
+      'cyclic fixture imports did not terminate deterministically',
+    );
+    expectIndirectSymbols(
+      ['internallyUsed'],
+      'cyclic fixture import did not detect production export',
+    );
+    write(indirectSpec, "import { fixtureValue } from './fixture';\nvoid fixtureValue;");
+    write(indirectConsumer, "import { internallyUsed } from './owner';\nvoid internallyUsed;");
+    expectIndirectSymbols(
+      ['recursive'],
+      'production consumer did not clear only its consumed export',
+    );
+
+    const reExportRoot = join(web, 'src/ts/react/re-export-self-check');
+    const reExportOwner = join(reExportRoot, 'owner.ts');
+    const reExportFixture = join(reExportRoot, '__tests__/fixture.ts');
+    const aliasFixture = join(reExportRoot, '__tests__/alias-fixture.ts');
+    const wildcardFixture = join(reExportRoot, '__tests__/wildcard-fixture.ts');
+    const namespaceFixture = join(reExportRoot, '__tests__/namespace-fixture.ts');
+    const nestedFixtureA = join(reExportRoot, '__tests__/nested-a.ts');
+    const nestedFixtureB = join(reExportRoot, '__tests__/nested-b.ts');
+    const reExportCycleA = join(reExportRoot, '__tests__/cycle-a.ts');
+    const reExportCycleB = join(reExportRoot, '__tests__/cycle-b.ts');
+    const assetFixture = join(reExportRoot, '__tests__/asset-fixture.ts');
+    const asset = join(reExportRoot, '__tests__/fixture.css');
+    const reExportSpec = join(reExportRoot, '__tests__/owner.spec.ts');
+    const reExportConsumer = join(reExportRoot, 'consumer.ts');
+    write(reExportOwner, 'export const helper = 1; export const unusedHelper = 2;');
+    write(reExportFixture, "export { helper } from '../owner';");
+    write(aliasFixture, "export { helper as fixtureHelper } from '../owner';");
+    write(wildcardFixture, "export * from '../owner';");
+    write(namespaceFixture, "export * as helpers from '../owner';");
+    write(nestedFixtureA, "export { helper } from './nested-b';");
+    write(nestedFixtureB, "export { helper } from '../owner';");
+    write(reExportCycleA, "export { helper } from './cycle-b';");
+    write(reExportCycleB, "export { helper } from '../owner'; export * from './cycle-a';");
+    write(asset, 'fixture asset');
+    write(assetFixture, "import './fixture.css'; export { helper } from '../owner';");
+    const reExportSupportFiles = new Set([
+      reExportFixture,
+      aliasFixture,
+      wildcardFixture,
+      namespaceFixture,
+      nestedFixtureA,
+      nestedFixtureB,
+      reExportCycleA,
+      reExportCycleB,
+      assetFixture,
+    ]);
+    const classifyReExport = () =>
+      testOnlyProductionExportsFor({
+        testFiles: [reExportSpec],
+        productionFiles: [reExportOwner],
+        sourceFiles: [reExportOwner, ...reExportSupportFiles, reExportConsumer].filter((file) =>
+          existsSync(file),
+        ),
+        readSource: readCurrent,
+        resolveModule: modulePath,
+        testSupportFiles: reExportSupportFiles,
+      });
+    const expectReExportSymbols = (expected, message) =>
+      expect(
+        JSON.stringify(
+          classifyReExport()
+            .map(({ symbol }) => symbol)
+            .sort(),
+        ) === JSON.stringify(expected),
+        message,
+      );
+    write(reExportSpec, "import { helper } from './fixture';\nvoid helper;");
+    expectReExportSymbols(['helper'], 'direct fixture re-export did not detect production helper');
+    write(reExportSpec, "import { fixtureHelper } from './alias-fixture';\nvoid fixtureHelper;");
+    expectReExportSymbols(['helper'], 'aliased fixture re-export did not preserve helper identity');
+    write(reExportSpec, "import { helper } from './wildcard-fixture';\nvoid helper;");
+    expectReExportSymbols(['helper'], 'wildcard fixture re-export included unrelated exports');
+    write(reExportSpec, "import * as helpers from './namespace-fixture';\nvoid helpers;");
+    expectReExportSymbols(
+      ['helper', 'unusedHelper'],
+      'namespace fixture re-export did not propagate wildcard demand',
+    );
+    write(reExportSpec, "import { helper } from './nested-a';\nvoid helper;");
+    expectReExportSymbols(['helper'], 'nested fixture re-exports did not detect production helper');
+    write(reExportSpec, "import { helper } from './cycle-a';\nvoid helper;");
+    expectReExportSymbols(['helper'], 'cyclic fixture re-exports did not propagate helper');
+    write(reExportSpec, "import { helper } from './asset-fixture';\nvoid helper;");
+    expect(
+      !testDependencyDemands([reExportSpec], readCurrent, modulePath).has(asset),
+      'relative asset import was traversed as source',
+    );
+    expectReExportSymbols(['helper'], 'asset fixture re-export did not detect production helper');
+    write(reExportConsumer, "import { helper } from './owner';\nvoid helper;");
+    expectReExportSymbols([], 'production consumer did not clear re-exported helper');
+
+    const productionReExportRoot = join(web, 'src/ts/react/production-re-export-self-check');
+    const productionOwner = join(productionReExportRoot, 'owner.ts');
+    const productionSpec = join(productionReExportRoot, '__tests__/owner.spec.ts');
+    const namedBarrel = join(productionReExportRoot, 'named-barrel.ts');
+    const aliasBarrel = join(productionReExportRoot, 'alias-barrel.ts');
+    const defaultBarrel = join(productionReExportRoot, 'default-barrel.ts');
+    const defaultAliasBarrel = join(productionReExportRoot, 'default-alias-barrel.ts');
+    const wildcardBarrel = join(productionReExportRoot, 'wildcard-barrel.ts');
+    const namespaceBarrel = join(productionReExportRoot, 'namespace-barrel.ts');
+    const nestedInnerBarrel = join(productionReExportRoot, 'nested-inner-barrel.ts');
+    const nestedOuterBarrel = join(productionReExportRoot, 'nested-outer-barrel.ts');
+    const localExport = join(productionReExportRoot, 'local-export.ts');
+    const supportBarrel = join(productionReExportRoot, '__tests__/support-barrel.ts');
+    write(
+      productionOwner,
+      'export const helper = 1; export const unusedHelper = 2; export default function owner() {}',
+    );
+    write(namedBarrel, "export { helper } from './owner';");
+    write(aliasBarrel, "export { helper as publicHelper } from './owner';");
+    write(defaultBarrel, "export { default } from './owner';");
+    write(defaultAliasBarrel, "export { default as PublicOwner } from './owner';");
+    write(wildcardBarrel, "export * from './owner';");
+    write(namespaceBarrel, "export * as ownerApi from './owner';");
+    write(nestedInnerBarrel, "export { helper } from './owner';");
+    write(nestedOuterBarrel, "export { helper } from './nested-inner-barrel';");
+    write(localExport, 'const helper = 1; export { helper };');
+    write(supportBarrel, "export { helper } from '../owner';");
+    const classifyProductionReExport = (specText, sourceFiles, testSupportFiles = new Set()) => {
+      write(productionSpec, specText);
+      return testOnlyProductionExportsFor({
+        testFiles: [productionSpec],
+        productionFiles: [productionOwner],
+        sourceFiles,
+        readSource: readCurrent,
+        resolveModule: modulePath,
+        testSupportFiles,
+      });
+    };
+    const reportsProductionSymbol = (specText, sourceFiles, symbol, testSupportFiles) =>
+      classifyProductionReExport(specText, sourceFiles, testSupportFiles).some(
+        ({ file, symbol: exported }) => file === productionOwner && exported === symbol,
+      );
+    const helperSpec = "import { helper } from '../owner';\nvoid helper;";
+    const defaultSpecText = "import Owner from '../owner';\nvoid Owner;";
+    expect(
+      !reportsProductionSymbol(helperSpec, [productionOwner, namedBarrel], 'helper'),
+      'production named re-export did not clear helper',
+    );
+    expect(
+      !reportsProductionSymbol(helperSpec, [productionOwner, aliasBarrel], 'helper'),
+      'production alias re-export did not clear original helper',
+    );
+    expect(
+      !reportsProductionSymbol(defaultSpecText, [productionOwner, defaultBarrel], 'default'),
+      'production default re-export did not clear default',
+    );
+    expect(
+      !reportsProductionSymbol(defaultSpecText, [productionOwner, defaultAliasBarrel], 'default'),
+      'production default alias re-export did not clear default',
+    );
+    expect(
+      !reportsProductionSymbol(helperSpec, [productionOwner, wildcardBarrel], 'helper') &&
+        reportsProductionSymbol(defaultSpecText, [productionOwner, wildcardBarrel], 'default'),
+      'production wildcard re-export did not preserve default exclusion',
+    );
+    expect(
+      !reportsProductionSymbol(defaultSpecText, [productionOwner, namespaceBarrel], 'default'),
+      'production namespace re-export did not clear target API',
+    );
+    expect(
+      !reportsProductionSymbol(
+        helperSpec,
+        [productionOwner, nestedInnerBarrel, nestedOuterBarrel],
+        'helper',
+      ),
+      'nested production re-exports did not clear helper',
+    );
+    expect(
+      reportsProductionSymbol(helperSpec, [productionOwner, localExport], 'helper'),
+      'local export without module specifier cleared production helper',
+    );
+    expect(
+      reportsProductionSymbol(
+        helperSpec,
+        [productionOwner, supportBarrel],
+        'helper',
+        new Set([supportBarrel]),
+      ),
+      'test-support re-export cleared production helper',
+    );
+    expect(
+      reportsProductionSymbol(helperSpec, [productionOwner], 'helper'),
+      'removing production re-export did not restore helper finding',
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -722,6 +971,36 @@ function consumedSymbolsFromText(file, sourceText, resolveModule) {
   };
   ts.forEachChild(sourceFile, visit);
   return imports;
+}
+
+function reExportDependenciesFromText(file, sourceText, resolveModule) {
+  const sourceFile = ts.createSourceFile(file, sourceText, ts.ScriptTarget.Latest, true);
+  const dependencies = [];
+  for (const statement of sourceFile.statements) {
+    if (
+      !ts.isExportDeclaration(statement) ||
+      !statement.moduleSpecifier ||
+      !ts.isStringLiteral(statement.moduleSpecifier)
+    )
+      continue;
+    const target = resolveModule(file, statement.moduleSpecifier.text);
+    if (!target) continue;
+    if (!statement.exportClause) {
+      dependencies.push({ target, type: 'wildcard' });
+      continue;
+    }
+    if (ts.isNamespaceExport(statement.exportClause)) {
+      dependencies.push({ target, type: 'namespace', exposed: statement.exportClause.name.text });
+      continue;
+    }
+    if (ts.isNamedExports(statement.exportClause)) {
+      const symbols = new Map();
+      for (const element of statement.exportClause.elements)
+        symbols.set(element.name.text, element.propertyName?.text ?? element.name.text);
+      dependencies.push({ target, type: 'named', symbols });
+    }
+  }
+  return dependencies;
 }
 
 function consumedSymbols(file) {
@@ -787,11 +1066,15 @@ function moduleCandidates(fromFile, moduleSpecifier) {
     `${basePath}.mts`,
     `${basePath}.js`,
     `${basePath}.jsx`,
+    `${basePath}.mjs`,
+    `${basePath}.cjs`,
     join(basePath, 'index.ts'),
     join(basePath, 'index.tsx'),
     join(basePath, 'index.mts'),
     join(basePath, 'index.js'),
     join(basePath, 'index.jsx'),
+    join(basePath, 'index.mjs'),
+    join(basePath, 'index.cjs'),
   ];
 }
 
@@ -808,7 +1091,7 @@ function effectiveExportedSymbols(file, readSource) {
     const { symbols, wildcardSpecifiers } = directExportsFromText(current, sourceText);
     for (const specifier of wildcardSpecifiers) {
       const target = moduleCandidates(current, specifier).find(
-        (candidate) => readSource(candidate) !== null,
+        (candidate) => sourceModulePattern.test(candidate) && readSource(candidate) !== null,
       );
       if (!target)
         throw new Error(
@@ -898,28 +1181,74 @@ function baseExportedSymbols(file, base) {
   );
 }
 
-function isUsedWithinText(file, sourceText, symbol) {
-  const sourceFile = ts.createSourceFile(file, sourceText, ts.ScriptTarget.Latest, true);
-  let uses = 0;
-  const visit = (node) => {
-    if (ts.isIdentifier(node) && node.text === symbol && !isDeclarationName(node)) uses += 1;
-    ts.forEachChild(node, visit);
+function testDependencyDemands(rootFiles, readSource, resolveModule) {
+  const demandsByFile = new Map();
+  const queued = new Set();
+  const queue = [];
+  const enqueue = (file, symbols = []) => {
+    const demands = demandsByFile.get(file) ?? new Set();
+    const isNewFile = !demandsByFile.has(file);
+    const size = demands.size;
+    symbols.forEach((symbol) => demands.add(symbol));
+    demandsByFile.set(file, demands);
+    if (!queued.has(file) && (isNewFile || demands.size !== size)) {
+      queued.add(file);
+      queue.push(file);
+    }
   };
-  ts.forEachChild(sourceFile, visit);
-  return uses > 0;
+  rootFiles.forEach((file) => enqueue(file));
+  while (queue.length > 0) {
+    const file = queue.shift();
+    queued.delete(file);
+    const sourceText = readSource(file);
+    if (sourceText === null) continue;
+    for (const { target, symbols } of consumedSymbolsFromText(file, sourceText, resolveModule))
+      enqueue(target, symbols);
+    const demands = demandsByFile.get(file) ?? new Set();
+    for (const dependency of reExportDependenciesFromText(file, sourceText, resolveModule)) {
+      if (dependency.type === 'wildcard') {
+        enqueue(
+          dependency.target,
+          [...demands].filter((symbol) => symbol !== 'default'),
+        );
+      }
+      if (dependency.type === 'namespace' && (demands.has('*') || demands.has(dependency.exposed)))
+        enqueue(dependency.target, ['*']);
+      if (dependency.type === 'named') {
+        enqueue(
+          dependency.target,
+          [...dependency.symbols]
+            .filter(([exposed]) => demands.has('*') || demands.has(exposed))
+            .map(([, original]) => original),
+        );
+      }
+    }
+  }
+  return demandsByFile;
 }
 
-function isUsedWithinFile(file, symbol) {
-  return isUsedWithinText(file, readFileSync(file, 'utf8'), symbol);
+function addConsumedImports(importsByFile, importsByTarget) {
+  for (const imports of importsByFile.values()) {
+    for (const { target, symbols } of imports) {
+      const imported = importsByTarget.get(target) ?? new Set();
+      symbols.forEach((symbol) => imported.add(symbol));
+      importsByTarget.set(target, imported);
+    }
+  }
 }
 
-function isDeclarationName(node) {
-  const parent = node.parent;
-  return (
-    (ts.isDeclaration(parent) && parent.name === node) ||
-    (ts.isImportSpecifier(parent) && parent.name === node) ||
-    (ts.isExportSpecifier(parent) && parent.name === node)
-  );
+function productionReExportSymbols(file, sourceText, resolveModule, readSource) {
+  const imports = [];
+  for (const dependency of reExportDependenciesFromText(file, sourceText, resolveModule)) {
+    if (dependency.type === 'named') {
+      imports.push({ target: dependency.target, symbols: new Set(dependency.symbols.values()) });
+      continue;
+    }
+    const symbols = effectiveExportedSymbols(dependency.target, readSource);
+    if (dependency.type === 'wildcard') symbols.delete('default');
+    imports.push({ target: dependency.target, symbols });
+  }
+  return imports;
 }
 
 function testOnlyProductionExportsFor({
@@ -928,30 +1257,28 @@ function testOnlyProductionExportsFor({
   sourceFiles,
   readSource,
   resolveModule,
+  testSupportFiles = new Set(),
 }) {
   const testImports = new Map();
   const productionImports = new Map();
-  for (const file of testFiles) {
-    for (const { target, symbols } of consumedSymbolsFromText(
-      file,
-      readSource(file),
-      resolveModule,
-    )) {
-      const imported = testImports.get(target) ?? new Set();
-      symbols.forEach((symbol) => imported.add(symbol));
-      testImports.set(target, imported);
-    }
-  }
+  testDependencyDemands(testFiles, readSource, resolveModule).forEach((symbols, file) => {
+    if (symbols.size > 0) testImports.set(file, symbols);
+  });
   for (const file of sourceFiles) {
-    for (const { target, symbols } of consumedSymbolsFromText(
-      file,
-      readSource(file),
-      resolveModule,
-    )) {
-      const imported = productionImports.get(target) ?? new Set();
-      symbols.forEach((symbol) => imported.add(symbol));
-      productionImports.set(target, imported);
-    }
+    if (testSupportFiles.has(file)) continue;
+    const sourceText = readSource(file);
+    addConsumedImports(
+      new Map([
+        [
+          file,
+          [
+            ...consumedSymbolsFromText(file, sourceText, resolveModule),
+            ...productionReExportSymbols(file, sourceText, resolveModule, readSource),
+          ],
+        ],
+      ]),
+      productionImports,
+    );
   }
   return productionFiles.flatMap((file) => {
     const usedByTests = testImports.get(file);
@@ -962,18 +1289,22 @@ function testOnlyProductionExportsFor({
         (symbol) =>
           (usedByTests.has('*') || usedByTests.has(symbol)) &&
           !usedByProduction.has('*') &&
-          !usedByProduction.has(symbol) &&
-          !isUsedWithinText(file, readSource(file), symbol),
+          !usedByProduction.has(symbol),
       )
       .map((symbol) => ({ file, symbol }));
   });
 }
 
 function testOnlyProductionExports(testFiles) {
-  const productionFiles = walk(join(webRoot, 'src', 'ts', 'react'), /\.(?:tsx?|mts)$/).filter(
-    (file) => !testFilePattern.test(file),
+  const allProductionFiles = walk(
+    join(webRoot, 'src', 'ts', 'react'),
+    /\.(?:tsx?|mts|[cm]?js|jsx)$/,
+  ).filter((file) => !testFilePattern.test(file));
+  const testSupportFiles = new Set(
+    allProductionFiles.filter((file) => file.includes('/__tests__/')),
   );
-  const sourceFiles = walk(join(webRoot, 'src'), /\.(?:tsx?|mts)$/).filter(
+  const productionFiles = allProductionFiles.filter((file) => !testSupportFiles.has(file));
+  const sourceFiles = walk(join(webRoot, 'src'), /\.(?:tsx?|mts|[cm]?js|jsx)$/).filter(
     (file) => !testFilePattern.test(file),
   );
   return testOnlyProductionExportsFor({
@@ -983,6 +1314,7 @@ function testOnlyProductionExports(testFiles) {
     readSource: (file) =>
       existsSync(file) && statSync(file).isFile() ? readFileSync(file, 'utf8') : null,
     resolveModule: modulePath,
+    testSupportFiles,
   });
 }
 

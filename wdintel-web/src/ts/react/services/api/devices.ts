@@ -59,7 +59,7 @@ export type DeviceSettingsInput = Partial<DeviceSettingsReq>;
 
 type DeviceUpdatePatchReq = DeviceUpdatePatchInput;
 
-export function toDeviceUpdatePatchReq(input: DeviceUpdatePatchInput): DeviceUpdatePatchReq {
+function toDeviceUpdatePatchReq(input: DeviceUpdatePatchInput): DeviceUpdatePatchReq {
   const req: DeviceUpdatePatchReq = { deviceId: input.deviceId };
 
   if (input.externalUrl !== undefined) req.externalUrl = input.externalUrl;
