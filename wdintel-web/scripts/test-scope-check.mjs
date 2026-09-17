@@ -273,6 +273,13 @@ function validateAnnotation(annotation) {
   return annotation.detail.length > 0;
 }
 
+function parseDiagnosticProblems(file, sourceFile, root = webRoot) {
+  return sourceFile.parseDiagnostics.map((diagnostic) => {
+    const position = sourceFile.getLineAndCharacterOfPosition(diagnostic.start ?? 0);
+    return `${relative(root, file)}:${position.line + 1}:${position.character + 1} ${ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ')}`;
+  });
+}
+
 function testDeclarations(sourceFile) {
   const bindings = testApiBindings(sourceFile);
   const declarations = [];
@@ -853,6 +860,26 @@ function runGateSelfValidation() {
     );
     const declarationProblems = (text, playwright = false) =>
       declarationScopeProblems(text, declarationFile, playwright);
+    const malformedSource = ts.createSourceFile(
+      declarationFile,
+      "import { test } from 'vitest'; test('broken', () => {",
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    expect(
+      parseDiagnosticProblems(declarationFile, malformedSource, web).length === 1,
+      'malformed test source passed parsing',
+    );
+    const validSource = ts.createSourceFile(
+      declarationFile,
+      "import { test } from 'vitest'; test('valid', () => {});",
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    expect(
+      parseDiagnosticProblems(declarationFile, validSource, web).length === 0,
+      'valid test source failed parsing',
+    );
     expect(
       declarationProblems("import { test as check } from 'vitest'; check('missing', () => {});")
         .length === 1,
@@ -2114,6 +2141,7 @@ for (const file of testFiles) {
   if (file.includes('/characterization/')) continue;
   const text = readFileSync(file, 'utf8');
   const sourceFile = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+  invalidAnnotations.push(...parseDiagnosticProblems(file, sourceFile));
   const fileScope = fileAnnotation(text);
   if (fileScope && fileScope.category !== 'parser') {
     invalidAnnotations.push(
@@ -2155,6 +2183,20 @@ invalidAnnotations.push(...testFiles.flatMap(relativeMockProblems));
 invalidAnnotations.push(...placementProblems);
 const allSourceFiles = walk(join(webRoot, 'src', 'ts', 'react'), /\.(?:tsx?|mts|[cm]?js|jsx)$/);
 const testSupportFiles = new Set(allSourceFiles.filter(isTestSupportModule));
+const playwrightSupportFiles = existsSync(join(webRoot, 'tests', 'e2e'))
+  ? walk(join(webRoot, 'tests', 'e2e'), sourceModulePattern).filter(
+      (file) => !testFilePattern.test(file),
+    )
+  : [];
+for (const file of [...testSupportFiles, ...playwrightSupportFiles]) {
+  const sourceFile = ts.createSourceFile(
+    file,
+    readFileSync(file, 'utf8'),
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  invalidAnnotations.push(...parseDiagnosticProblems(file, sourceFile));
+}
 invalidAnnotations.push(...productionToTestSupportProblems(allSourceFiles, testSupportFiles));
 let inheritedTestOnlyExports = 0;
 if (exportBase) {

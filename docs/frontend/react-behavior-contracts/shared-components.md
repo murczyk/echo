@@ -103,8 +103,8 @@
 - **User role or permission:** any user editing a multi-value filter or selection.
 - **Preconditions:** bulk paste is enabled and options may have inactive records, duplicate display labels, or already-selected values.
 - **User action or external event:** the user copies selected values, pastes newline/comma-delimited input, cancels the dialog, or submits the resolved selection.
-- **Expected observable result:** canonical values round-trip; inactive bulk-only options remain selectable; ambiguous or missing entries are never silently chosen; duplicates are previewed without duplicate submission.
-- **Loading/empty/error/success behavior:** an all-missing paste remains editable and cannot submit; the dialog opens only when requested.
+- **Expected observable result:** selected values can be copied through the caller-provided copy action and pasted into another compatible bulk flow. Canonical values round-trip; inactive bulk-only options remain selectable; ambiguous or missing entries are never silently chosen; duplicates and already-selected entries are previewed without duplicate submission. Newline-delimited free-form values retain embedded commas.
+- **Loading/empty/error/success behavior:** an all-missing paste remains editable and cannot submit; a failed current resolution keeps submission disabled.
 - **URL, localStorage, or user-settings persistence:** callers own persistence.
 - **API endpoint and compatibility requirements:** none.
 - **Responsive and keyboard requirements:** closing the dialog returns focus to its menu trigger.
@@ -112,6 +112,24 @@
 - **Source implementation:** `PowerAutocomplete.tsx`
 - **Existing test(s):** `wdintel-web/src/ts/react/components/__tests__/PowerAutocomplete.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded; retained as a selection/data-loss safeguard.
+
+## Bulk autocomplete interaction shell
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-shared-bulk-autocomplete-interaction`
+- **Affected route/component:** `PowerAutocomplete` bulk-action menu and dialog.
+- **User role or permission:** any user editing a multi-value filter or selection.
+- **Preconditions:** bulk paste or copy is enabled.
+- **User action or external event:** the user opens the bulk menu, opens or cancels the dialog, or enters bulk input.
+- **Expected observable result:** the dialog opens only when requested, identifies values already selected, and leaves ordinary autocomplete options unchanged. Copy is disabled when no values are selected.
+- **Loading/empty/error/success behavior:** option scanning begins only after the dialog opens and input is entered; cancellation does not surface an aborted resolver as an error.
+- **URL, localStorage, or user-settings persistence:** none.
+- **API endpoint and compatibility requirements:** none.
+- **Responsive and keyboard requirements:** closing the dialog returns focus to its bulk-menu trigger.
+- **Known race/idempotency constraints:** closing an in-flight bulk-resolution session prevents its aborted completion from reporting an error into the next session.
+- **Source implementation:** `PowerAutocomplete.tsx`.
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
+- **Original Echo issue/PR, if known:** none recorded.
 
 ## Alert dismissal policy
 

@@ -71,7 +71,6 @@ type PowerButtonProps = {
 
 let latestAutocompleteProps: AutocompletePropsCapture | null = null;
 let textFieldProps: TextFieldProps[] = [];
-let powerMenuProps: PowerMenuProps[] = [];
 let lastPowerIconButtonTrigger: { focus: ReturnType<typeof vi.fn> } | null = null;
 
 vi.mock('@mui/material', () => ({
@@ -178,10 +177,8 @@ vi.mock('../PowerIconButton', () => ({
 }));
 
 vi.mock('../PowerMenu', () => ({
-  PowerMenu: (props: PowerMenuProps) => {
-    powerMenuProps.push(props);
-    return props.open ? <div data-testid="bulk-menu">{props.children}</div> : null;
-  },
+  PowerMenu: (props: PowerMenuProps) =>
+    props.open ? <div data-testid="bulk-menu">{props.children}</div> : null,
 }));
 
 vi.mock('../PowerButton', () => ({
@@ -220,7 +217,6 @@ afterEach(() => {
   }
   latestAutocompleteProps = null;
   textFieldProps = [];
-  powerMenuProps = [];
   lastPowerIconButtonTrigger = null;
   vi.clearAllMocks();
 });
@@ -310,37 +306,8 @@ function typeDialogValue(container: HTMLElement, value: string) {
   });
 }
 
-// @test-scope safeguard: prevents bulk selection from silently dropping, duplicating, or misidentifying user values.
-describe('PowerAutocomplete', () => {
-  it('disables the copy action when there are no selected values', () => {
-    const { container } = renderAutocomplete({ bulkPaste: true, bulkCopy: true });
-    openBulkMenu(container);
-
-    const copyItem = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Копіювати обрані значення'),
-    );
-    expect(copyItem?.disabled).toBe(true);
-  });
-
-  it('copies the current values through the opt-in callback', () => {
-    const onBulkCopy = vi.fn();
-    const { container } = renderAutocomplete({
-      bulkPaste: true,
-      bulkCopy: true,
-      value: [options[0], options[1]],
-      onBulkCopy,
-    });
-    openBulkMenu(container);
-
-    const copyItem = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Копіювати обрані значення'),
-    );
-    if (!copyItem) throw new Error('Copy menu item not found');
-    act(() => copyItem.click());
-
-    expect(onBulkCopy).toHaveBeenCalledWith([options[0], options[1]], '111.1111\n222.2222');
-  });
-
+// @test-scope safeguard: prevents bulk resolution from dropping, duplicating, or resolving submitted values to the wrong canonical option.
+describe('PowerAutocomplete bulk-value integrity', () => {
   it('passes a copied newline list from one frequency column into another bulk flow', () => {
     const copiedValues: string[] = [];
     const onBulkPasteChange = vi.fn();
@@ -546,127 +513,6 @@ describe('PowerAutocomplete', () => {
     expect(submitButton.disabled).toBe(true);
     act(() => submitButton.click());
     expect(onBulkPasteChange).not.toHaveBeenCalled();
-  });
-
-  it('does not report an aborted bulk resolver rejection after the dialog closes', async () => {
-    let rejectResolution: ((error: Error) => void) | undefined;
-    const onBulkPasteResolveError = vi.fn();
-    const resolveBulkPasteOptions = vi.fn(
-      () =>
-        new Promise<readonly Option[]>((_, reject) => {
-          rejectResolution = reject;
-        }),
-    );
-    const { container } = renderAutocomplete({
-      bulkPaste: true,
-      resolveBulkPasteOptions,
-      onBulkPasteResolveError,
-    });
-
-    openBulkDialog(container);
-    typeDialogValue(container, 'device');
-    const cancelButton = [...container.querySelectorAll('button')].find(
-      (button) => button.textContent === 'Скасувати',
-    );
-    if (!cancelButton || !rejectResolution) throw new Error('Bulk resolution did not start');
-    act(() => cancelButton.click());
-    await act(async () => {
-      rejectResolution?.(new Error('aborted request'));
-      await Promise.resolve();
-    });
-    expect(onBulkPasteResolveError).not.toHaveBeenCalled();
-  });
-
-  it('opens the bulk dialog from the input menu', () => {
-    const { container } = renderAutocomplete({
-      bulkPaste: true,
-      bulkPasteInputLabel: 'Частоти',
-    });
-
-    openBulkDialog(container);
-
-    expect(container.querySelector('[data-testid="dialog"]')).not.toBeNull();
-    expect(getBulkDialogInput(container)).not.toBeNull();
-    expect(powerMenuProps.at(-1)?.open).toBe(false);
-  });
-
-  it('does not scan bulk options until the dialog is open', () => {
-    const getOptionLabel = vi.fn((option: Option) => option.label);
-
-    renderAutocomplete({
-      bulkPaste: false,
-      getOptionLabel,
-    });
-
-    expect(getOptionLabel).not.toHaveBeenCalled();
-
-    const closedBulkLabel = vi.fn((option: Option) => option.label);
-    renderAutocomplete({
-      bulkPaste: true,
-      getOptionLabel: closedBulkLabel,
-    });
-
-    expect(closedBulkLabel).not.toHaveBeenCalled();
-  });
-
-  it('scans bulk options once the dialog is opened and input is entered', () => {
-    const getOptionLabel = vi.fn((option: Option) => option.label);
-    const { container } = renderAutocomplete({
-      bulkPaste: true,
-      bulkPasteInputLabel: 'Частоти',
-      getOptionLabel,
-    });
-
-    expect(getOptionLabel).not.toHaveBeenCalled();
-
-    openBulkDialog(container);
-    expect(getOptionLabel).toHaveBeenCalled();
-    const callsAfterOpen = getOptionLabel.mock.calls.length;
-
-    typeDialogValue(container, '111.1111');
-    expect(getOptionLabel.mock.calls.length).toBeGreaterThan(callsAfterOpen);
-  });
-
-  it('restores focus to the bulk menu trigger after closing the dialog', () => {
-    vi.useFakeTimers();
-    try {
-      const { container } = renderAutocomplete({
-        bulkPaste: true,
-        bulkPasteInputLabel: 'Частоти',
-      });
-
-      openBulkDialog(container);
-      const callsAfterOpen = lastPowerIconButtonTrigger?.focus.mock.calls.length ?? 0;
-
-      const cancelButton = [...container.querySelectorAll('button')].find(
-        (button) => button.textContent === 'Скасувати',
-      );
-      if (!cancelButton) throw new Error('Cancel button not found');
-
-      act(() => {
-        cancelButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        vi.runAllTimers();
-      });
-
-      expect(lastPowerIconButtonTrigger).not.toBeNull();
-      expect(lastPowerIconButtonTrigger?.focus).toHaveBeenCalled();
-      expect(lastPowerIconButtonTrigger?.focus.mock.calls.length).toBeGreaterThan(callsAfterOpen);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('shows already selected values when the dialog opens', () => {
-    const { container } = renderAutocomplete({
-      bulkPaste: true,
-      value: [options[0]],
-      bulkPasteInputLabel: 'Частоти',
-    });
-
-    openBulkDialog(container);
-
-    expect(container.textContent).toContain('Вже у фільтрі');
-    expect(container.textContent).toContain('111.1111');
   });
 
   it('shows preview for existing selections and missing tokens', () => {

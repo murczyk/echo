@@ -135,7 +135,7 @@
 - **Status:** inferred characterization
 - **Behavior ID:** `react-analysis-filter-and-map-loading`
 - **Affected route/component:** RER Analysis lazy filter sections and map message loading.
-- **Expected observable result:** initial loads include required filter facets and selected lazy facets; later loads reuse loaded or targeted facets. Filter labels retain returned statistics and hydrated network/unit names. Map message IDs are filtered before fetches, and messages absent from a map response are not rendered as map points. A backend page shorter than its supplied limit ends pagination; no exhaustion is inferred when that limit is absent.
+- **Expected observable result:** initial loads include required filter facets and selected lazy facets; later loads reuse loaded or targeted facets. An opened lazy section shows loading rather than a false empty state. Filter labels retain returned statistics and hydrated network/unit names; duplicate group labels merge without losing selected master keys, callsign labels are displayed in uppercase without changing submitted values, and networks use their statistics labels and ordering. The device filter appears only when Cyber Echo is enabled, while frequency bulk input accepts comma and newline separators. While facets are loading, counters use an em dash; once loaded, they show section-specific selected and total counts. Exact-match controls appear only for applicable selected values, reflect an explicit query value or the loaded default, and map their checked state to the corresponding query mode without changing while counts load. Disabling peleng also clears the dependent without-coordinates option. Map message IDs are filtered before fetches, and messages absent from a map response are not rendered as map points. A backend page shorter than its supplied limit ends pagination; no exhaustion is inferred when that limit is absent.
 - **Known race/idempotency constraints:** invalidated or stale filter and map responses cannot replace current state.
 - **Source implementation:** `routes/rer-analysis-neo/use-analysis-data-filter-sections.ts`, `use-analysis-data.loaders.ts`, and `use-analysis-data.shared.ts`.
 - **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
@@ -279,3 +279,19 @@
 - **Source implementation:** `routes/rer-analysis-neo/index.tsx` and `routes/rer-analysis-neo/components/`.
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/components/__tests__/AnalysisMessagesPane.spec.tsx`, `wdintel-web/src/ts/react/routes/rer-analysis-neo/components/__tests__/AnalysisFiltersPanel.spec.tsx`, `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/index.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded; retained as user-visible operational safeguards.
+
+## Analysis filter-panel presentation and error states
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-analysis-filter-panel-presentation`
+- **Affected route/component:** RER Analysis filter panel and route-level error presentation.
+- **User action or external event:** the user opens analysis, changes filter modes, restores a saved filter, resets active criteria, or a supporting request fails.
+- **Expected observable result:** filter sections begin collapsed in their established order, expose their own counts, and show the loaded saved filter above the primary section. Saved-filter creation follows whether the current query can be reset. Metadata and tag mode controls update the corresponding query mode, while ordinary checkbox and switch changes update only their owned criteria. On narrow layouts, the filter panel begins folded until opened by the user. Server-backed filter controls remain usable during a background reload. Reset remains available during initial loading when active criteria exist and is otherwise disabled when the query matches its reset state. System-settings, callsign-graph, and direct-link request failures are exposed through the page error state.
+- **Loading/empty/error/success behavior:** loading facets retain their controls and placeholders without presenting stale values as current; route-level supporting-request failures remain visible.
+- **URL, localStorage, or user-settings persistence:** route-owned query and panel state remain the source of truth.
+- **API endpoint and compatibility requirements:** none beyond the established analysis filter and settings responses.
+- **Responsive and keyboard requirements:** the narrow filter panel starts folded without removing access to its controls.
+- **Known race/idempotency constraints:** a background reload cannot disable active server-backed controls or remove reset while active criteria remain.
+- **Source implementation:** `routes/rer-analysis-neo/components/AnalysisFiltersPanel.tsx` and `routes/rer-analysis-neo/use-rer-analysis-neo-page.ts`.
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
+- **Original Echo issue/PR, if known:** none recorded.
