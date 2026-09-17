@@ -95,7 +95,8 @@ export function useWindowedFeedScrollFollow(args: {
         if (navigation) abandonExplicitNavigation(navigation);
         return;
       }
-      if (intent !== ScrollNavigationIntent.Explicit && !refs.autoScrollAllowedRef.current) return;
+      if (intent === ScrollNavigationIntent.AutomaticFollow && !refs.autoScrollAllowedRef.current)
+        return;
       const scroller = refs.scrollerRef.current;
       if (!scroller) {
         if (navigation) abandonExplicitNavigation(navigation);
@@ -211,7 +212,10 @@ export function useWindowedFeedScrollFollow(args: {
             detachExplicitNavigation(navigation);
             return;
           }
-          if (intent !== ScrollNavigationIntent.Explicit && !refs.autoScrollAllowedRef.current) {
+          if (
+            intent === ScrollNavigationIntent.AutomaticFollow &&
+            !refs.autoScrollAllowedRef.current
+          ) {
             refs.followAnimatingRef.current = false;
             refs.smoothFollowUntilMsRef.current = 0;
             return;
@@ -285,7 +289,7 @@ export function useWindowedFeedScrollFollow(args: {
       const canScroll =
         scroller.scrollHeight > scroller.clientHeight || scroller.scrollHeight === 0;
       updateScrollState({
-        allowLoadOlder: !canScroll,
+        allowLoadOlder: options?.enableFollow !== false && !canScroll,
         allowLoadNewer: false,
         allowTopReached: false,
         navigationIntent: intent,
@@ -363,7 +367,8 @@ export function useWindowedFeedScrollFollow(args: {
       navigation?: ExplicitScrollNavigation,
     ) => {
       const enableFollow = options?.enableFollow !== false;
-      if (intent !== ScrollNavigationIntent.Explicit && !refs.autoScrollAllowedRef.current) return;
+      if (intent === ScrollNavigationIntent.AutomaticFollow && !refs.autoScrollAllowedRef.current)
+        return;
       const now = nowMs();
       const scroller = refs.scrollerRef.current;
       const height = scroller?.scrollHeight ?? 0;

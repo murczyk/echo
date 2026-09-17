@@ -581,7 +581,7 @@ describe('useWindowedFeedScroll', () => {
     expect(onVisibleMessageIds).toHaveBeenCalledTimes(1);
   });
 
-  it('retains the native initial position without synthetic bottom reporting', async () => {
+  it('lands at the bottom when an OFF feed becomes enabled', async () => {
     const onAtBottomChange = vi.fn();
     const onVisibleMessageIds = vi.fn();
 
@@ -597,7 +597,7 @@ describe('useWindowedFeedScroll', () => {
     });
 
     const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
-    setScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 240 });
+    setClampedScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 240 });
 
     await act(async () => {
       root.render(
@@ -610,9 +610,8 @@ describe('useWindowedFeedScroll', () => {
       );
     });
 
-    expect(scroller.scrollTop).toBe(0);
-    expect(onAtBottomChange).not.toHaveBeenCalledWith(true);
-    expect(onVisibleMessageIds).not.toHaveBeenCalled();
+    expect(scroller.scrollTop).toBe(140);
+    expect(onAtBottomChange).toHaveBeenCalledWith(true);
   });
 
   it('restores bottom state when reopening an unchanged feed without scrolling', async () => {
@@ -1372,26 +1371,27 @@ describe('useWindowedFeedScroll', () => {
     expect(scroller.scrollTop).toBe(75);
   });
 
-  it('#3360 does not pin the initial render while layout height settles with auto-scroll off', async () => {
+  it('lands an OFF initial render once without following later layout growth', async () => {
     await act(async () => {
       root.render(<TestScroller ids={[]} autoScrollAllowed={false} />);
     });
 
     const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
-    setScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 240 });
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 240 };
+    setClampedScrollMetrics(scroller, metrics);
 
     await act(async () => {
       root.render(<TestScroller ids={[1, 2, 3, 4]} autoScrollAllowed={false} />);
     });
 
-    expect(scroller.scrollTop).toBe(0);
+    expect(scroller.scrollTop).toBe(140);
 
-    Object.defineProperty(scroller, 'scrollHeight', { value: 290, configurable: true });
+    metrics.scrollHeight = 290;
     await act(async () => {
       await waitForAnimationFrame();
     });
 
-    expect(scroller.scrollTop).toBe(0);
+    expect(scroller.scrollTop).toBe(140);
   });
 
   it('uses the latest scroll position when a newer window commits before the next frame', async () => {
@@ -1836,9 +1836,7 @@ describe('useWindowedFeedScroll', () => {
     await act(async () => {
       root.render(<TestScroller ids={ids} isWatchMode={false} autoScrollAllowed={false} />);
     });
-    expect(scroller.scrollTop).toBe(0);
-    scroller.scrollTop = 100;
-    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
+    expect(scroller.scrollTop).toBe(100);
 
     const nextIds = [1, 2, 3, 4, 5];
     metrics.scrollHeight = 250;
@@ -1873,9 +1871,7 @@ describe('useWindowedFeedScroll', () => {
     await act(async () => {
       root.render(<TestScroller ids={ids} isWatchMode={false} autoScrollAllowed={false} />);
     });
-    expect(scroller.scrollTop).toBe(0);
-    scroller.scrollTop = 100;
-    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
+    expect(scroller.scrollTop).toBe(100);
 
     const nextIds = [1, 2, 3, 4, 5];
     metrics.scrollHeight = 250;

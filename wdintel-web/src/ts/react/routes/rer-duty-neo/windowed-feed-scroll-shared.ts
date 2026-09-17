@@ -93,9 +93,9 @@ export type UseWindowedFeedScrollOptions = {
   atBottomThresholdPx?: number;
   resetKey?: string | number | null;
   isWatchMode?: boolean;
-  /** Global authorization for automatic positioning. Explicit arrow navigation bypasses this. */
+  /** Authorization for continued automatic following. Initial and explicit landings bypass this. */
   autoScrollAllowed?: boolean;
-  /** The persisted auto-scroll preference has resolved (including a safe failed-OFF result). */
+  /** The persisted auto-scroll preference has loaded successfully. */
   initialPositioningReady?: boolean;
   enabled?: boolean;
   debugFeedId?: string;

@@ -361,8 +361,10 @@ export function useWindowedFeedScroll({
         return;
       }
       refs.hasInitialScrolledRef.current = true;
+      follow.scrollToBottom('auto', ScrollNavigationIntent.Initial, {
+        enableFollow: refs.autoScrollAllowedRef.current,
+      });
       if (refs.autoScrollAllowedRef.current) {
-        follow.scrollToBottom('auto', ScrollNavigationIntent.Initial);
         follow.startBottomSettle();
       }
       anchors.captureAnchorSnapshot();

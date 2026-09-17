@@ -166,7 +166,7 @@ export function useRerDutyFeeds(
     dutySettings.loadInProgress ||
     dutySettings.loadError !== null ||
     dutySettings.disableAutoScroll;
-  const initialPositioningReady = !dutySettings.loadInProgress;
+  const initialPositioningReady = !dutySettings.loadInProgress && dutySettings.loadError === null;
   const [callsignRetryVersion, setCallsignRetryVersion] = useState(0);
   const [knownGroupKeys, setKnownGroupKeys] = useState<string[]>([]);
   const loadingCallsignsRef = useRef<Set<string>>(new Set());
