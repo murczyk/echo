@@ -238,7 +238,13 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
   return debouncedValue;
 }
 
-function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
+function RerUnitsNeoPageBody({
+  authUserRoles,
+  openCreate,
+}: {
+  authUserRoles: string[];
+  openCreate: boolean;
+}) {
   const tableState = useTableStateContext();
   const theme = useTheme();
   const isSmallScreen = useMediaQuery(theme.breakpoints.down('lg'));
@@ -273,7 +279,18 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
     ],
   );
   const page = useRerUnitsPage(authUserRoles, listReq);
+  const createRequestHandled = useRef(false);
   const orbitTransitionTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!openCreate) {
+      createRequestHandled.current = false;
+      return;
+    }
+    if (createRequestHandled.current || !page.canEdit || !page.settingsReady) return;
+    createRequestHandled.current = true;
+    page.openCreateDialog();
+  }, [openCreate, page.canEdit, page.openCreateDialog, page.settingsReady]);
 
   const clearOrbitTransitionTimer = () => {
     if (orbitTransitionTimerRef.current === null) return;
@@ -502,7 +519,10 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
   );
 }
 
-export function RerUnitsNeoPage({ authUserRoles = [] }: { authUserRoles?: string[] } = {}) {
+export function RerUnitsNeoPage({
+  authUserRoles = [],
+  openCreate = false,
+}: { authUserRoles?: string[]; openCreate?: boolean } = {}) {
   return (
     <TableStateProvider
       tableId="rer-units-neo"
@@ -511,7 +531,7 @@ export function RerUnitsNeoPage({ authUserRoles = [] }: { authUserRoles?: string
       defaultSorting={[{ id: 'name', desc: false }]}
       defaultEnableColumnOrdering={false}
     >
-      <RerUnitsNeoPageBody authUserRoles={authUserRoles} />
+      <RerUnitsNeoPageBody authUserRoles={authUserRoles} openCreate={openCreate} />
     </TableStateProvider>
   );
 }
