@@ -17,6 +17,7 @@ import type { DutyWorkspaceFabAvoidance } from './duty-scroll-fab-position';
 import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
 import type { MessageTimeBasis } from '../../services/api/user-settings';
 import type { ReachedBottomContext } from './windowed-feed-scroll-shared';
+import type { MessageCardEtalonDisplayModel } from '../shared/message-card/message-card.utils';
 
 export type TailAvailability = 'unknown' | 'checking' | 'loading' | 'available' | 'exhausted';
 
@@ -93,7 +94,11 @@ export type FeedColumnModel = {
     onMessageBookmark: (msgId: number, currentlyBookmarked: boolean) => void;
     onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;
     onMessageCopy: (text: string, feedbackId: string) => void;
-    onMessageCreateReport: (msgId: number, message: InboxMessage) => void;
+    onMessageCreateReport: (
+      msgId: number,
+      message: InboxMessage,
+      etalonDisplayModel: MessageCardEtalonDisplayModel,
+    ) => void;
     onMessageEditReport: (reportId: number) => void;
     onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
     onMessageToggleTag: (msgId: number, tagId: number) => void;

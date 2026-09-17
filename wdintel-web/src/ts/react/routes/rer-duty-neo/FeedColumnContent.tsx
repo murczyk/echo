@@ -38,6 +38,7 @@ import {
   buildCopyTextWithNetworkAndNote,
   buildCopyTextWithNetworkName,
   resolveMessageCardEtalonDisplayModel,
+  type MessageCardEtalonDisplayModel,
 } from '../shared/message-card/message-card.utils';
 import type { MessageEntityFilterKind, TagsLayoutVariant } from './utils';
 import { feedListRenderStateEqual } from './utils';
@@ -131,7 +132,11 @@ type DutyMessageCardItemProps = {
   onMessageBookmark: (msgId: number, currentlyBookmarked: boolean) => void;
   onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;
   onMessageCopy: (text: string, feedbackId: string) => void;
-  onMessageCreateReport: (msgId: number, message: InboxMessage) => void;
+  onMessageCreateReport: (
+    msgId: number,
+    message: InboxMessage,
+    etalonDisplayModel: MessageCardEtalonDisplayModel,
+  ) => void;
   onMessageEditReport: (reportId: number) => void;
   onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
   onMessageToggleTag: (msgId: number, tagId: number) => void;
@@ -268,7 +273,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
           ? undefined
           : () => onMessageCopy(etalonDisplayModel.copyLocationValue ?? '', `location-${id}`)
       }
-      onCreateReport={() => onMessageCreateReport(id, msg)}
+      onCreateReport={() => onMessageCreateReport(id, msg, etalonDisplayModel)}
       onEditReport={onMessageEditReport}
       onExcludeMessageEntity={(entity, value) => onMessageExcludeEntity(entity, value)}
       onToggleTag={(tagId) => onMessageToggleTag(id, tagId)}
@@ -314,7 +319,11 @@ type DutyMessageListProps = {
   onMessageBookmark: (msgId: number, currentlyBookmarked: boolean) => void;
   onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;
   onMessageCopy: (text: string, feedbackId: string) => void;
-  onMessageCreateReport: (msgId: number, message: InboxMessage) => void;
+  onMessageCreateReport: (
+    msgId: number,
+    message: InboxMessage,
+    etalonDisplayModel: MessageCardEtalonDisplayModel,
+  ) => void;
   onMessageEditReport: (reportId: number) => void;
   onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
   onMessageToggleTag: (msgId: number, tagId: number) => void;
