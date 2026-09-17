@@ -569,6 +569,37 @@ function runGateSelfValidation() {
       [],
       'export assignment became a default export',
     );
+    expectSymbols('export enum Status { Active }', ['Status'], 'exported enum was not collected');
+    expectSymbols(
+      'export interface Contract { id: string }',
+      ['Contract'],
+      'interface was not collected',
+    );
+    expectSymbols(
+      'export type Identifier = string;',
+      ['Identifier'],
+      'type alias was not collected',
+    );
+    expectSymbols(
+      'export namespace Api { export const version = 1; }',
+      ['Api'],
+      'namespace was not collected',
+    );
+    expectSymbols(
+      'export declare enum DeclaredEnum { Value } export declare interface DeclaredInterface {} export declare type DeclaredType = string;',
+      ['DeclaredEnum', 'DeclaredInterface', 'DeclaredType'],
+      'declared exports were not collected',
+    );
+    expectSymbols(
+      'export default enum DefaultStatus { Active }',
+      ['default'],
+      'default enum leaked',
+    );
+    expectSymbols(
+      'const value = { first: 1, nested: { second: 2 } }; export const { first, nested: { second } } = value; export const [third, fourth] = [3, 4];',
+      ['first', 'fourth', 'second', 'third'],
+      'destructured exported variables were not collected',
+    );
     const defaultOwner = join(web, 'src/ts/react/default-owner/DefaultOwner.ts');
     const defaultSpec = join(web, 'src/ts/react/default-owner/__tests__/DefaultOwner.spec.ts');
     write(defaultOwner, 'export default function DefaultOwner() {}');
@@ -935,6 +966,64 @@ function runGateSelfValidation() {
       reportsProductionSymbol(helperSpec, [productionOwner], 'helper'),
       'removing production re-export did not restore helper finding',
     );
+
+    const typeRoot = join(web, 'src/ts/react/type-self-check');
+    const typeOwner = join(typeRoot, 'owner.ts');
+    const typeSpec = join(typeRoot, '__tests__/owner.spec.ts');
+    const typeConsumer = join(typeRoot, 'consumer.ts');
+    const typeNamedBarrel = join(typeRoot, 'named-barrel.ts');
+    const typeWildcardBarrel = join(typeRoot, 'wildcard-barrel.ts');
+    write(
+      typeOwner,
+      'export interface Contract { id: string } export type Alias = string; export enum Kind { One } export namespace Api { export const version = 1; }',
+    );
+    write(
+      typeSpec,
+      "import type { Contract } from '../owner';\nconst value: Contract = { id: '1' }; void value;",
+    );
+    const classifyTypeExports = (sourceFiles) =>
+      testOnlyProductionExportsFor({
+        testFiles: [typeSpec],
+        productionFiles: [typeOwner],
+        sourceFiles,
+        readSource: readCurrent,
+        resolveModule: modulePath,
+      });
+    expect(
+      classifyTypeExports([typeOwner]).some(({ symbol }) => symbol === 'Contract'),
+      'type-only test import did not detect interface export',
+    );
+    write(
+      typeConsumer,
+      "import type { Contract } from './owner';\nconst value: Contract = { id: '1' }; void value;",
+    );
+    expect(
+      !classifyTypeExports([typeOwner, typeConsumer]).some(({ symbol }) => symbol === 'Contract'),
+      'production type-only import did not clear interface export',
+    );
+    rmSync(typeConsumer);
+    write(typeNamedBarrel, "export type { Contract } from './owner';");
+    expect(
+      !classifyTypeExports([typeOwner, typeNamedBarrel]).some(
+        ({ symbol }) => symbol === 'Contract',
+      ),
+      'named production type re-export did not clear interface export',
+    );
+    write(typeWildcardBarrel, "export * from './owner';");
+    expect(
+      !classifyTypeExports([typeOwner, typeWildcardBarrel]).some(
+        ({ symbol }) => symbol === 'Contract',
+      ),
+      'wildcard production type re-export did not clear interface export',
+    );
+    const baseTypeSources = new Map([[typeOwner, 'export interface Contract { id: string }']]);
+    expect(
+      effectiveExportedSymbols(
+        typeOwner,
+        (candidate) => baseTypeSources.get(candidate) ?? null,
+      ).has('Contract'),
+      'base type export was not preserved as inherited debt',
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -1023,14 +1112,20 @@ function directExportsFromText(file, sourceText) {
     const exported = statement.modifiers?.some(
       (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
     );
-    if (exported && ts.isFunctionDeclaration(statement) && statement.name)
-      symbols.add(statement.name.text);
-    if (exported && ts.isClassDeclaration(statement) && statement.name)
+    if (
+      exported &&
+      (ts.isFunctionDeclaration(statement) ||
+        ts.isClassDeclaration(statement) ||
+        ts.isEnumDeclaration(statement) ||
+        ts.isInterfaceDeclaration(statement) ||
+        ts.isTypeAliasDeclaration(statement) ||
+        ts.isModuleDeclaration(statement)) &&
+      statement.name
+    )
       symbols.add(statement.name.text);
     if (exported && ts.isVariableStatement(statement)) {
-      for (const declaration of statement.declarationList.declarations) {
-        if (ts.isIdentifier(declaration.name)) symbols.add(declaration.name.text);
-      }
+      for (const declaration of statement.declarationList.declarations)
+        bindingIdentifiers(declaration.name).forEach((name) => symbols.add(name));
     }
     if (ts.isExportDeclaration(statement) && !statement.exportClause && statement.moduleSpecifier) {
       wildcardSpecifiers.push(statement.moduleSpecifier.text);
@@ -1050,6 +1145,17 @@ function directExportsFromText(file, sourceText) {
       symbols.add(statement.exportClause.name.text);
   }
   return { symbols, wildcardSpecifiers };
+}
+
+function bindingIdentifiers(name) {
+  if (ts.isIdentifier(name)) return [name.text];
+  if (ts.isObjectBindingPattern(name))
+    return name.elements.flatMap((element) => bindingIdentifiers(element.name));
+  if (ts.isArrayBindingPattern(name))
+    return name.elements.flatMap((element) =>
+      ts.isBindingElement(element) ? bindingIdentifiers(element.name) : [],
+    );
+  return [];
 }
 
 function exportedSymbolsFromText(file, sourceText) {
