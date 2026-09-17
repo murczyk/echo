@@ -35,10 +35,16 @@ pub fn extract_unit_with_aor(
         .find(|line| !line.trim().is_empty())
         .and_then(|line| RE_DATED_UNIT_HEADER.captures(line))
         .and_then(|captures| m_cap_s(&captures, "unit"))
-        .filter(|unit| !unit.trim().eq_ignore_ascii_case("audio"))
+        .map(|unit| {
+            unit.split_once('[')
+                .map_or(unit.as_str(), |(unit, _)| unit)
+                .trim()
+                .to_string()
+        })
+        .filter(|unit| !unit.eq_ignore_ascii_case("audio"))
     {
         return Ok(UnitAndLoc {
-            unit: Some(unit.trim().to_string()),
+            unit: Some(unit),
             locality: None,
             locality_v2: None,
         });
@@ -1003,6 +1009,14 @@ mod tests {
             assert_eq!(parsed.unit.as_deref(), Some("24 обБпС рБпЛА вБпЛА КТ"));
             assert_eq!(parsed.locality, None);
         }
+    }
+
+    #[test]
+    fn extract_unit_dated_label_header_strips_machine_id() {
+        let body = "50 обрБпС [33hhfg50d] | 2026-06-26_08-13-12";
+        let parsed = extract_unit(test_settlements(), body, vec![]).unwrap();
+
+        assert_eq!(parsed.unit.as_deref(), Some("50 обрБпС"));
     }
 
     #[test]
