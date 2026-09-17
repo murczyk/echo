@@ -69,10 +69,12 @@ export async function updateUnresolvedUnitLabelNote(
 
 export async function resolveUnresolvedUnitLabel(
   req: ResolveUnresolvedUnitLabelReq,
+  options?: RequestOptions,
 ): Promise<UpdateUnresolvedUnitLabelsRsp> {
   const raw = await postJson<unknown>(
     '/api/admin/unresolved-unit-label/resolve',
     transformCamelToSnake(req),
+    options,
   );
   return transformSnakeToCamel<UpdateUnresolvedUnitLabelsRsp>(raw);
 }

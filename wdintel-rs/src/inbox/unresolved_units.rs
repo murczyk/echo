@@ -7,6 +7,7 @@ use crate::users::{
 };
 use actix_web::post;
 use actix_web::web::{Data, Json};
+use anyhow::Context;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
@@ -291,7 +292,7 @@ where
         values.push(cursor.id.into());
         let id_placeholder = values.len();
         format!(
-            " and (message.created_at, message.id) < \
+            " and (link.signal_message_created_at, link.inbox_item_id) < \
              (${created_at_placeholder}, ${id_placeholder})"
         )
     } else {
@@ -308,12 +309,22 @@ where
          coalesce({sender}, message.sender) as sender, \
          coalesce(message.body, '') as body, message.created_at \
          from failed_unit_label \
-         join sigint_inbox_item_failed_unit_label link \
-             on link.failed_unit_label_id = failed_unit_label.id \
-             and link.deleted = false \
-         join sigint_inbox_item inbox_item on inbox_item.id = link.inbox_item_id \
-         join signal_message message on message.id = inbox_item.id \
-             and message.deleted = false \
+         join lateral (\
+             select source_message.id, source_message.datasource_group_id, \
+                 source_message.sender, source_message.body, \
+                 source_message.login_id, \
+                 link.signal_message_created_at as created_at \
+             from sigint_inbox_item_failed_unit_label link \
+             join signal_message source_message \
+                 on source_message.id = link.inbox_item_id \
+                 and source_message.deleted = false \
+             where link.failed_unit_label_id = failed_unit_label.id \
+                 and link.deleted = false \
+                 and link.signal_message_created_at is not null{cursor_sql} \
+             order by link.signal_message_created_at desc, \
+                 link.inbox_item_id desc \
+             limit ${limit_placeholder}\
+         ) message on true \
          left join lateral (\
              select coalesce(signal_group.name, datasource_group.name, \
                  message_group.group_master_key) as group_name \
@@ -330,9 +341,8 @@ where
              on direct_datasource_group.id = message.datasource_group_id \
          left join signal_group direct_group \
              on direct_group.master_key = direct_datasource_group.group_master_key \
-         where {normalized} = $1{cursor_sql} \
-         order by message.created_at desc, message.id desc \
-         limit ${limit_placeholder}"
+         where {normalized} = $1 \
+         order by message.created_at desc, message.id desc"
     );
     let mut rows = UnresolvedUnitMessageRow::find_by_statement(
         Statement::from_sql_and_values(DatabaseBackend::Postgres, sql, values),
@@ -468,7 +478,8 @@ pub async fn list_unresolved_unit_messages(
         .cursor
         .as_deref()
         .map(parse_message_cursor)
-        .transpose()?;
+        .transpose()
+        .context(h!())?;
     Ok(Json(
         list_message_rows(&env.dbx, &req.title, cursor)
             .await
@@ -767,9 +778,11 @@ mod tests {
             .unwrap()
             .and_hms_opt(12, 0, 0)
             .unwrap();
+        let mut inbox_item_ids = Vec::new();
         for index in 0..6 {
             let inbox_item =
                 insert_failure(&env.dbx, "Example Label", false, false).await;
+            inbox_item_ids.push(inbox_item.id);
             signal_message::Entity::update_many()
                 .col_expr(
                     signal_message::Column::Body,
@@ -792,6 +805,15 @@ mod tests {
                 .await
                 .unwrap();
         }
+        signal_message::Entity::update_many()
+            .col_expr(
+                signal_message::Column::CreatedAt,
+                Expr::value(base_time + chrono::Duration::minutes(10)),
+            )
+            .filter(signal_message::Column::Id.eq(inbox_item_ids[0]))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
 
         let first_page = list_message_rows(&env.dbx, " example   label ", None)
             .await
@@ -800,8 +822,8 @@ mod tests {
         let cursor =
             parse_message_cursor(first_page.next_cursor.as_deref().unwrap())
                 .unwrap();
-        assert_eq!(first_page.messages[0].body, "body 5");
-        assert_eq!(first_page.messages[0].sender.as_deref(), Some("sender 5"));
+        assert_eq!(first_page.messages[0].body, "body 0");
+        assert_eq!(first_page.messages[0].sender.as_deref(), Some("sender 0"));
         assert_eq!(
             first_page.messages[0].group_name.as_deref(),
             Some("Вухо-Тест")
@@ -827,7 +849,7 @@ mod tests {
                 .unwrap();
         assert_eq!(second_page.messages.len(), 1);
         assert!(second_page.next_cursor.is_none());
-        assert_eq!(second_page.messages[0].body, "body 0");
+        assert_eq!(second_page.messages[0].body, "body 1");
     }
 
     #[tokio::test]

@@ -1,7 +1,7 @@
 import AddIcon from '@mui/icons-material/Add';
 import LinkIcon from '@mui/icons-material/Link';
 import { Box, Button, CircularProgress, Paper, Stack, Typography } from '@mui/material';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { UnresolvedUnitMessage } from '../../../../Bindings';
 import { PageHeader } from '../../components/PageHeader';
@@ -78,6 +78,8 @@ export function AdminUnparsedUnitsPage({
   const [linking, setLinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const loadMoreControllerRef = useRef<AbortController | null>(null);
+  const linkControllerRef = useRef<AbortController | null>(null);
   const canResolve =
     hasRole(authUserRoles, 'Admin') &&
     hasRole(authUserRoles, 'Rer') &&
@@ -85,9 +87,17 @@ export function AdminUnparsedUnitsPage({
   const canCreate = hasRole(authUserRoles, 'Rer') && hasRole(authUserRoles, 'UnitsEditor');
 
   useEffect(() => {
+    loadMoreControllerRef.current?.abort();
+    loadMoreControllerRef.current = null;
+    linkControllerRef.current?.abort();
+    linkControllerRef.current = null;
     setMessages([]);
     setCursor(null);
+    setLoadingMore(false);
+    setLinkOpen(false);
+    setLinking(false);
     setError(null);
+    setStatus(null);
     if (!normalizedTitle) {
       setLoading(false);
       setError('Не вказано мітку підрозділу.');
@@ -111,42 +121,68 @@ export function AdminUnparsedUnitsPage({
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      loadMoreControllerRef.current?.abort();
+      loadMoreControllerRef.current = null;
+      linkControllerRef.current?.abort();
+      linkControllerRef.current = null;
+    };
   }, [normalizedTitle]);
 
   const loadMore = useCallback(async () => {
     if (cursor === null) return;
+    loadMoreControllerRef.current?.abort();
+    const controller = new AbortController();
+    loadMoreControllerRef.current = controller;
     setLoadingMore(true);
     setError(null);
     try {
-      const response = await listUnresolvedUnitMessages({
-        title: normalizedTitle,
-        cursor,
-      });
+      const response = await listUnresolvedUnitMessages(
+        {
+          title: normalizedTitle,
+          cursor,
+        },
+        { signal: controller.signal },
+      );
+      if (controller.signal.aborted) return;
       setMessages((current) => sortMessagesNewestFirst([...current, ...response.messages]));
       setCursor(response.nextCursor);
     } catch (error) {
-      setError(formatError(error));
+      if (!controller.signal.aborted) setError(formatError(error));
     } finally {
-      setLoadingMore(false);
+      if (loadMoreControllerRef.current === controller) {
+        loadMoreControllerRef.current = null;
+        setLoadingMore(false);
+      }
     }
   }, [cursor, normalizedTitle]);
 
   async function linkUnit(sigintUnitId: number) {
+    linkControllerRef.current?.abort();
+    const controller = new AbortController();
+    linkControllerRef.current = controller;
     setLinking(true);
     setError(null);
     try {
-      await resolveUnresolvedUnitLabel({
-        unitTxt: normalizedTitle,
-        label: normalizedTitle,
-        sigintUnitId,
-      });
+      await resolveUnresolvedUnitLabel(
+        {
+          unitTxt: normalizedTitle,
+          label: normalizedTitle,
+          sigintUnitId,
+        },
+        { signal: controller.signal },
+      );
+      if (controller.signal.aborted) return;
       setLinkOpen(false);
       setStatus(`Синонім для «${normalizedTitle}» збережено.`);
     } catch (requestError) {
-      setError(formatError(requestError));
+      if (!controller.signal.aborted) setError(formatError(requestError));
     } finally {
-      setLinking(false);
+      if (linkControllerRef.current === controller) {
+        linkControllerRef.current = null;
+        setLinking(false);
+      }
     }
   }
 

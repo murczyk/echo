@@ -426,6 +426,7 @@ mod m20260914_234219_group_stats_dirty_days;
 mod m20260915_105452_disable_bot_tags;
 mod m20260915_151525_network_recalculation_last_seen_batch_index;
 mod m20260916_130029_activate_sigint_network_units;
+mod m20260917_123830_unresolved_unit_message_order;
 
 pub struct Migrator;
 
@@ -1014,6 +1015,9 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(
                 m20260916_130029_activate_sigint_network_units::Migration,
+            ),
+            Box::new(
+                m20260917_123830_unresolved_unit_message_order::Migration,
             ),
         ]
     }

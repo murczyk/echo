@@ -775,6 +775,7 @@ where
             created_at: NotSet,
             inbox_item_id: Set(inbox_item_id),
             inbox_item_uuid: Set(inbox_item_uuid),
+            signal_message_created_at: NotSet,
             failed_unit_label_id: Set(label.id),
             deleted: Set(false),
             deleted_at: Set(None),
@@ -788,6 +789,7 @@ where
         .update_columns([
             sigint_inbox_item_failed_unit_label::Column::Deleted,
             sigint_inbox_item_failed_unit_label::Column::DeletedAt,
+            sigint_inbox_item_failed_unit_label::Column::SignalMessageCreatedAt,
         ])
         .to_owned(),
     )

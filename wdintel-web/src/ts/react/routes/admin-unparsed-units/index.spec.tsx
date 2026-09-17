@@ -79,17 +79,16 @@ function buttonContaining(text: string): HTMLButtonElement {
   return found;
 }
 
-async function renderPage(): Promise<Root> {
+function page(title = '1 пдб 777 дшп') {
+  return <AdminUnparsedUnitsPage title={title} authUserRoles={['Admin', 'Rer', 'UnitsEditor']} />;
+}
+
+async function renderPage(title?: string): Promise<Root> {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
   await act(async () => {
-    root.render(
-      <AdminUnparsedUnitsPage
-        title="1 пдб 777 дшп"
-        authUserRoles={['Admin', 'Rer', 'UnitsEditor']}
-      />,
-    );
+    root.render(page(title));
   });
   return root;
 }
@@ -133,10 +132,13 @@ describe('AdminUnparsedUnitsPage', () => {
 
     await act(async () => button('Завантажити ще').click());
 
-    expect(mocks.list).toHaveBeenLastCalledWith({
-      title: '1 пдб 777 дшп',
-      cursor: 'cursor-after-five',
-    });
+    expect(mocks.list).toHaveBeenLastCalledWith(
+      {
+        title: '1 пдб 777 дшп',
+        cursor: 'cursor-after-five',
+      },
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
     expect(document.body.textContent).toContain('Текст 0');
     expect(
       Array.from(document.body.querySelectorAll('button')).some(
@@ -161,11 +163,14 @@ describe('AdminUnparsedUnitsPage', () => {
     act(() => buttonContaining('1 пдб 777 дшп').click());
     await act(async () => button("Прив'язати").click());
 
-    expect(mocks.resolve).toHaveBeenCalledWith({
-      unitTxt: '1 пдб 777 дшп',
-      label: '1 пдб 777 дшп',
-      sigintUnitId: 35729,
-    });
+    expect(mocks.resolve).toHaveBeenCalledWith(
+      {
+        unitTxt: '1 пдб 777 дшп',
+        label: '1 пдб 777 дшп',
+        sigintUnitId: 35729,
+      },
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
     expect(document.body.textContent).toContain('Синонім для «1 пдб 777 дшп» збережено.');
 
     act(() => root.unmount());
@@ -178,6 +183,37 @@ describe('AdminUnparsedUnitsPage', () => {
       (candidate) => candidate.textContent?.trim() === 'Створити підрозділ',
     );
     expect(link?.getAttribute('href')).toBe('/rer-units-neo?create=true');
+
+    act(() => root.unmount());
+  });
+
+  it('discards an in-flight page when the title changes', async () => {
+    let resolveOldPage:
+      ((response: { messages: UnresolvedUnitMessage[]; nextCursor: null }) => void) | undefined;
+    mocks.list.mockImplementation(({ title, cursor }: { title: string; cursor: string | null }) => {
+      if (title === 'Стара мітка' && cursor !== null) {
+        return new Promise((resolve) => {
+          resolveOldPage = resolve;
+        });
+      }
+      if (title === 'Нова мітка') {
+        return Promise.resolve({ messages: [message(8)], nextCursor: null });
+      }
+      return Promise.resolve({ messages: [message(1)], nextCursor: 'old-cursor' });
+    });
+    const root = await renderPage('Стара мітка');
+
+    act(() => button('Завантажити ще').click());
+    await act(async () => root.render(page('Нова мітка')));
+    await act(async () => resolveOldPage?.({ messages: [message(0)], nextCursor: null }));
+
+    expect(document.body.textContent).toContain('Нова мітка');
+    expect(document.body.textContent).toContain('Текст 8');
+    expect(document.body.textContent).not.toContain('Текст 0');
+    const oldPageCall = mocks.list.mock.calls.find(
+      ([req]) => req.title === 'Стара мітка' && req.cursor === 'old-cursor',
+    );
+    expect(oldPageCall?.[1].signal.aborted).toBe(true);
 
     act(() => root.unmount());
   });
