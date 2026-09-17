@@ -35,6 +35,7 @@ pub fn extract_unit_with_aor(
         .find(|line| !line.trim().is_empty())
         .and_then(|line| RE_DATED_UNIT_HEADER.captures(line))
         .and_then(|captures| m_cap_s(&captures, "unit"))
+        .filter(|unit| !unit.trim().eq_ignore_ascii_case("audio"))
     {
         return Ok(UnitAndLoc {
             unit: Some(unit.trim().to_string()),
@@ -1002,6 +1003,18 @@ mod tests {
             assert_eq!(parsed.unit.as_deref(), Some("24 обБпС рБпЛА вБпЛА КТ"));
             assert_eq!(parsed.locality, None);
         }
+    }
+
+    #[test]
+    fn extract_unit_ignores_kraken_audio_header() {
+        let body = "audio | 2026-07-01_14-47-03\nУКХ р/м гсабатр гсадн 70 мсп 42 мсд 58 А (ТАРАСІВКА - ПОЛОГИ)";
+        let parsed = extract_unit(test_settlements(), body, vec![]).unwrap();
+
+        assert_eq!(
+            parsed.unit.as_deref(),
+            Some("УКХ р/м гсабатр гсадн 70 мсп 42 мсд 58 А")
+        );
+        assert_eq!(parsed.locality.as_deref(), Some("ТАРАСІВКА - ПОЛОГИ"));
     }
 
     #[test]
