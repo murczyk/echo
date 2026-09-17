@@ -38,24 +38,23 @@
 - **Existing test(s):** `wdintel-web/tests/e2e/message-card-media-preview.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded.
 
-## Message text and media-summary previews
+## Message text preview behavior
 
 - **Status:** inferred characterization
+- **Behavior ID:** `react-message-card-text-preview`
+- **Affected route/component:** message card text preview
+- **Expected observable result:** configured line limits fold long message text; Off displays the complete text; changing the limit resets stale expansion.
+- **Source implementation:** `MessageCard.tsx`
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 
-- **Behavior ID:** `react-message-card-preview-continuity`
-- **Affected route/component:** message card text preview and attachment media-summary carousel
-- **User role or permission:** users able to view a message and its attachments
-- **Preconditions:** message text has a configured preview limit or an attachment has a completed/loading summary
-- **User action or external event:** the user changes a preview preference, expands a long summary, or moves between carousel media
-- **Expected observable result:** Off shows the complete message text; a changed limit resets stale expansion; only overflowing media summaries offer expansion; loading summaries show placeholders; changing media resets expansion and carousel items are prefetched.
-- **Loading/empty/error/success behavior:** loading remains visibly pending rather than an empty completed summary.
-- **URL, localStorage, or user-settings persistence:** message-text limit follows the user setting, including Off.
-- **API endpoint and compatibility requirements:** media-summary requests retain the established messenger access context for each carousel item.
-- **Responsive and keyboard requirements:** expand/collapse controls remain operable for overflowing content.
-- **Known race/idempotency constraints:** summary state and expansion must remain associated with the currently selected media ID.
-- **Source implementation:** `MessageCard.tsx`, `attachment-preview/MediaSummaryPreview.tsx`
-- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx`, `wdintel-web/src/ts/react/routes/shared/message-card/attachment-preview/__tests__/MediaSummaryPreview.spec.tsx`
-- **Original Echo issue/PR, if known:** none recorded.
+## Media-summary preview continuity
+
+- **Status:** operational compatibility
+- **Behavior ID:** `react-message-card-media-summary-preview`
+- **Affected route/component:** attachment media-summary carousel
+- **Expected observable result:** only overflowing summaries expand; loading remains visible; selecting another media item resets summary state; requests retain their media context and carousel items are prefetched.
+- **Source implementation:** `attachment-preview/MediaSummaryPreview.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/attachment-preview/__tests__/MediaSummaryPreview.spec.tsx`
 
 ## Video thumbnail loading safety
 
@@ -142,7 +141,7 @@
 - **Expected observable result:** checked tags remain visible and the first compact row repacks using current metadata.
 - **Known race/idempotency constraints:** metadata refresh cannot restore stale compact geometry or collapse an active selection.
 - **Source implementation:** `routes/shared/message-card/MessageCard.tsx`.
-- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx`.
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded; retained as interaction safeguards.
 
 ## Message-card evidence hierarchy and actions
@@ -177,6 +176,34 @@
 - **Known race/idempotency constraints:** coordinate parsing, map preview, and submit eligibility remain tied to the current draft; stale validation cannot enable a superseded draft.
 - **Source implementation:** `src/ts/react/routes/shared/manage-message/ManageMessageDrawer.tsx`, `drawer-sections/CoordinateListInput.tsx`, and `CoordinateInputPreview.tsx`.
 - **Current retained test(s):** `wdintel-web/src/ts/react/routes/shared/manage-message/__tests__/ManageMessageDrawer.edit.spec.tsx`.
+
+## Issue-linked MessageCard regressions
+
+- **Status:** issue-backed regressions
+- **Behavior ID:** `react-message-card-issue-regressions`
+- **Affected route/component:** `MessageCard.tsx`, `MessageCardHeader.tsx`, and bot-tag controls
+- **Expected observable result:** Echo #3461 exposes device metadata only through an allowed device-access provider. Echo #3324 scopes bot-tag confirmation/cancellation to the matching message and tag, preserves its Popover anchor through unrelated rerenders, and suppresses the action for read-only cards, disabled bot tags, and different message/tag targets.
+- **Source implementation:** `wdintel-web/src/ts/react/routes/shared/message-card/MessageCard.tsx`, `MessageCardHeader.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx`
+- **Original Echo issue/PR, if known:** [#3461](https://github.com/echoua/echo/issues/3461), [#3324](https://github.com/echoua/echo/issues/3324)
+
+## Retained media parsing and safety
+
+- **Status:** operational compatibility
+- **Behavior ID:** `react-message-card-media-parsing-safety`
+- **Affected route/component:** MessageCard media handling
+- **Expected observable result:** ambiguous MIME/extension metadata selects the right audio/video handler; snake-case oversized audio avoids derived-image processing; each attachment has an independent download cooldown; legacy image ordering preserves the matching metadata identity; archive count/size rejection leaves individual downloads available while valid multi-attachment collections retain archive access.
+- **Source implementation:** `wdintel-web/src/ts/react/routes/shared/message-card/MessageCard.tsx`, `MessageCardMedia.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx`
+
+## Documented MessageCard presentation and workflows
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-message-card-presentation-workflows`
+- **Affected route/component:** MessageCard and supporting presentation children
+- **Expected observable result:** Duty and Analysis expose their respective actions and navigation; text folding, headers, timestamps, missing-value fallbacks, comment authorship/disclosure, callsign/tag/report/transcription visibility, and ordinary loading/empty presentation follow the current component behavior.
+- **Source implementation:** `wdintel-web/src/ts/react/routes/shared/message-card/`
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 
 ## Browser message-card regressions
 
