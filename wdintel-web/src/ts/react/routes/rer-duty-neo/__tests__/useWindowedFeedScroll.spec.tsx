@@ -6,6 +6,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWindowedFeedScroll } from '../useWindowedFeedScroll';
 import { useRerDutyNavigation } from '../useRerDutyNavigation';
+import { ScrollNavigationIntent, type ReachedBottomContext } from '../windowed-feed-scroll-shared';
 
 const renderedItemRefs = new Map<number, (node: HTMLDivElement | null) => void>();
 let latestScrollHandle: ReturnType<typeof useWindowedFeedScroll> | null = null;
@@ -23,7 +24,7 @@ function TestScroller(props: {
   onNearBottomChange?: (near: boolean) => void;
   onAtBottomChange?: (atBottom: boolean) => void;
   onPhysicalBottomChange?: (atBottom: boolean) => void;
-  onReachedBottom?: (context: { hasSeenNotAtBottom: boolean }) => boolean | void;
+  onReachedBottom?: (context: ReachedBottomContext) => boolean | void;
   onLeftBottom?: () => void;
   onVisibleMessageIds?: (lastVisibleId: number, opts?: { atBottom?: boolean }) => void;
   enabled?: boolean;
@@ -580,7 +581,7 @@ describe('useWindowedFeedScroll', () => {
     expect(onVisibleMessageIds).toHaveBeenCalledTimes(1);
   });
 
-  it('retains the native initial position without synthetic bottom reporting', async () => {
+  it('lands at the bottom when an OFF feed becomes enabled', async () => {
     const onAtBottomChange = vi.fn();
     const onVisibleMessageIds = vi.fn();
 
@@ -596,7 +597,7 @@ describe('useWindowedFeedScroll', () => {
     });
 
     const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
-    setScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 240 });
+    setClampedScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 240 });
 
     await act(async () => {
       root.render(
@@ -609,9 +610,8 @@ describe('useWindowedFeedScroll', () => {
       );
     });
 
-    expect(scroller.scrollTop).toBe(0);
-    expect(onAtBottomChange).not.toHaveBeenCalledWith(true);
-    expect(onVisibleMessageIds).not.toHaveBeenCalled();
+    expect(scroller.scrollTop).toBe(140);
+    expect(onAtBottomChange).toHaveBeenCalledWith(true);
   });
 
   it('restores bottom state when reopening an unchanged feed without scrolling', async () => {
@@ -1371,26 +1371,27 @@ describe('useWindowedFeedScroll', () => {
     expect(scroller.scrollTop).toBe(75);
   });
 
-  it('#3360 does not pin the initial render while layout height settles with auto-scroll off', async () => {
+  it('lands an OFF initial render once without following later layout growth', async () => {
     await act(async () => {
       root.render(<TestScroller ids={[]} autoScrollAllowed={false} />);
     });
 
     const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
-    setScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 240 });
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 240 };
+    setClampedScrollMetrics(scroller, metrics);
 
     await act(async () => {
       root.render(<TestScroller ids={[1, 2, 3, 4]} autoScrollAllowed={false} />);
     });
 
-    expect(scroller.scrollTop).toBe(0);
+    expect(scroller.scrollTop).toBe(140);
 
-    Object.defineProperty(scroller, 'scrollHeight', { value: 290, configurable: true });
+    metrics.scrollHeight = 290;
     await act(async () => {
       await waitForAnimationFrame();
     });
 
-    expect(scroller.scrollTop).toBe(0);
+    expect(scroller.scrollTop).toBe(140);
   });
 
   it('uses the latest scroll position when a newer window commits before the next frame', async () => {
@@ -1462,8 +1463,76 @@ describe('useWindowedFeedScroll', () => {
       root.render(<TestScroller ids={nextIds} onReachedBottom={onReachedBottom} />);
     });
 
-    expect(onReachedBottom).toHaveBeenLastCalledWith({ hasSeenNotAtBottom: true });
+    expect(onReachedBottom).toHaveBeenLastCalledWith({
+      hasSeenNotAtBottom: true,
+      navigationIntent: null,
+    });
     expect(scroller.scrollTop).toBe(100);
+  });
+
+  it('#3496 preserves the visible anchor when an older load settles before the next intermediate window', async () => {
+    const initialIds = [1, 2, 3, 4, 5, 6];
+    const nextIds = [3, 4, 5, 6, 7, 8];
+    const onReachedBottom = vi.fn(() => false);
+    await act(async () => {
+      root.render(<TestScroller ids={[]} isWatchMode={false} onReachedBottom={onReachedBottom} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 300 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(initialIds) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(
+        <TestScroller ids={initialIds} isWatchMode={false} onReachedBottom={onReachedBottom} />,
+      );
+    });
+    scroller.scrollTop = 100;
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    scroller.scrollTop = 200;
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    expect(onReachedBottom).toHaveBeenLastCalledWith({
+      hasSeenNotAtBottom: true,
+      navigationIntent: null,
+    });
+
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={initialIds}
+          isWatchMode={false}
+          loadingOlder
+          onReachedBottom={onReachedBottom}
+        />,
+      );
+    });
+    await act(async () => {
+      root.render(
+        <TestScroller ids={initialIds} isWatchMode={false} onReachedBottom={onReachedBottom} />,
+      );
+    });
+
+    layout.items = createItemLayouts(nextIds);
+    await act(async () => {
+      root.render(
+        <TestScroller ids={nextIds} isWatchMode={false} onReachedBottom={onReachedBottom} />,
+      );
+    });
+    await waitForFollowEase();
+
+    expect(scroller.scrollTop).toBe(100);
+    expect(
+      (container.querySelector('[data-testid="item-5"]') as HTMLElement).getBoundingClientRect()
+        .top,
+    ).toBe(0);
   });
 
   it('preserves the visible anchor when the top loading status changes', async () => {
@@ -1767,9 +1836,7 @@ describe('useWindowedFeedScroll', () => {
     await act(async () => {
       root.render(<TestScroller ids={ids} isWatchMode={false} autoScrollAllowed={false} />);
     });
-    expect(scroller.scrollTop).toBe(0);
-    scroller.scrollTop = 100;
-    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
+    expect(scroller.scrollTop).toBe(100);
 
     const nextIds = [1, 2, 3, 4, 5];
     metrics.scrollHeight = 250;
@@ -1804,9 +1871,7 @@ describe('useWindowedFeedScroll', () => {
     await act(async () => {
       root.render(<TestScroller ids={ids} isWatchMode={false} autoScrollAllowed={false} />);
     });
-    expect(scroller.scrollTop).toBe(0);
-    scroller.scrollTop = 100;
-    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
+    expect(scroller.scrollTop).toBe(100);
 
     const nextIds = [1, 2, 3, 4, 5];
     metrics.scrollHeight = 250;
@@ -1930,6 +1995,45 @@ describe('useWindowedFeedScroll', () => {
 
     expect(scroller.scrollTop).toBe(200);
     expect(onPhysicalBottomChange).toHaveBeenCalledWith(true);
+  });
+
+  it('reports explicit navigation intent when a programmatic landing reaches bottom', async () => {
+    const onReachedBottom = vi.fn(() => true);
+    const ids = [1, 2, 3, 4, 5, 6];
+    await act(async () => {
+      root.render(<TestScroller ids={[]} onReachedBottom={onReachedBottom} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 300 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(ids) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(<TestScroller ids={ids} onReachedBottom={onReachedBottom} />);
+    });
+    scroller.scrollTop = 50;
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    onReachedBottom.mockClear();
+
+    Object.defineProperty(scroller, 'scrollTo', {
+      configurable: true,
+      value: () => {
+        scroller.scrollTop = scroller.scrollHeight - scroller.clientHeight;
+      },
+    });
+    act(() => {
+      latestScrollHandle?.scrollToBottom('auto', ScrollNavigationIntent.Explicit);
+    });
+
+    expect(onReachedBottom).toHaveBeenLastCalledWith({
+      hasSeenNotAtBottom: true,
+      navigationIntent: ScrollNavigationIntent.Explicit,
+    });
   });
 
   it('#3360 confirms explicit landing only after the rendered target reaches the physical bottom', async () => {

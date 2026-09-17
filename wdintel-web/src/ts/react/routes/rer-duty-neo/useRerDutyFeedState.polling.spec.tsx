@@ -1205,6 +1205,88 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     hoisted.notifyDutyNewMessages.mockReset();
   });
 
+  it('#3496 does not count an evicted read chunk when one new message arrives', async () => {
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(41, 60));
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+      await flushMicrotasks();
+    });
+
+    hoisted.fetchInboxMessages
+      .mockResolvedValueOnce(rangeRsp(21, 40))
+      .mockResolvedValueOnce(rangeRsp(1, 20));
+    await act(async () => {
+      await apiRef.current!.loadFeedOlderMessages('mf-0');
+      await flushMicrotasks();
+    });
+    await act(async () => {
+      await apiRef.current!.loadFeedOlderMessages('mf-0');
+      await flushMicrotasks();
+    });
+
+    expect(apiRef.current!.messageFeeds[0]).toMatchObject({ evictedNewerTailId: 60 });
+    apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = false;
+    apiRef.current!.physicallyAtBottomByFeedIdRef.current['mf-0'] = false;
+    apiRef.current!.cancelFollowTail('mf-0');
+    hoisted.fetchInboxCount.mockImplementation(
+      async (request: { sinceIdNoninclusive?: number }) => ({
+        quantity: request.sinceIdNoninclusive === 60 ? 1 : 21,
+        firstElementTs: null,
+      }),
+    );
+
+    await startPoll();
+    await act(async () => flushMicrotasks());
+
+    const feed = apiRef.current!.messageFeeds[0];
+    expect(feed.unreadCount).toBe(1);
+    expect(
+      feedIndicatorUnreadCount(feed, apiRef.current!.confirmedTailPreviewByFeedId['mf-0']),
+    ).toBe(1);
+  });
+
+  it('#3496 does not exhaust an evicted newer tail after a zero count poll', async () => {
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(21, 60));
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+      await flushMicrotasks();
+    });
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) => ({ ...feed, readIds: new Set<number>(), unreadCount: 40 })),
+      );
+      await flushMicrotasks();
+    });
+
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(1, 20));
+    await act(async () => {
+      await apiRef.current!.loadFeedOlderMessages('mf-0');
+      await flushMicrotasks();
+    });
+    expect(apiRef.current!.messageFeeds[0]).toMatchObject({ evictedNewerTailId: 60 });
+
+    hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 0, firstElementTs: null });
+    await startPoll();
+
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(41, 60));
+    await act(async () => {
+      await apiRef.current!.loadFeedNewerMessages('mf-0', { skipIfNewestExhausted: true });
+      await flushMicrotasks();
+    });
+
+    expect(hoisted.fetchInboxMessages).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sinceIdNoninclusive: 40 }),
+      expect.objectContaining({ signal: expect.anything() }),
+    );
+    expect(apiRef.current!.messageFeeds[0].pendingNewerItems?.at(-1)?.[0]).toBe(60);
+  });
+
   it('applies each feed count immediately even while another feed poll is still pending', async () => {
     window.history.replaceState(
       {},

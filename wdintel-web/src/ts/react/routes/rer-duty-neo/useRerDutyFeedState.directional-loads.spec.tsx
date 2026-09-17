@@ -19,7 +19,9 @@ import {
   DUTY_FEED_MESSAGE_WINDOW_LIMIT,
   emptyFilter,
   feedIndicatorUnreadCount,
+  feedHasUnloadedEvictedNewerTail,
   feedLoadedUnreadCount,
+  feedNeedsUnreadPrefetch,
   feedPendingNewerUnreadCount,
 } from './utils';
 
@@ -117,6 +119,107 @@ describe('useRerDutyFeedState — directional loading and races', () => {
         await flushMicrotasks();
       });
       expect(apiRef.current!.messageFeeds[0].items[0]?.[0]).toBe(1);
+    });
+
+    it('#3496 keeps an evicted newer chunk eligible for loading with a full unread runway', async () => {
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+        current: null,
+      };
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(21, 60));
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(1, 20));
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(41, 60));
+      await act(async () => root.render(<TestHarness apiRef={apiRef} />));
+      await act(async () => flushMicrotasks());
+      await act(async () => {
+        apiRef.current!.setMessageFeeds((feeds) =>
+          feeds.map((feed) => ({ ...feed, readIds: new Set<number>(), unreadCount: 40 })),
+        );
+        await flushMicrotasks();
+      });
+
+      await act(async () => {
+        await apiRef.current!.loadFeedOlderMessages('mf-0');
+        await flushMicrotasks();
+      });
+
+      const feed = apiRef.current!.messageFeeds[0];
+      expect(feed.items.map(([id]) => id)).toEqual(
+        Array.from({ length: 40 }, (_, index) => index + 1),
+      );
+      expect(feed).toMatchObject({ evictedNewerTailId: 60 });
+      expect(feedNeedsUnreadPrefetch(feed)).toBe(true);
+
+      await act(async () => {
+        await apiRef.current!.loadFeedNewerMessages('mf-0');
+        await flushMicrotasks();
+      });
+      expect(apiRef.current!.messageFeeds[0].pendingNewerItems?.at(-1)?.[0]).toBe(60);
+      expect(feedNeedsUnreadPrefetch(apiRef.current!.messageFeeds[0])).toBe(false);
+
+      await act(async () => {
+        apiRef.current!.flushPendingNewerMessages('mf-0', {
+          urgent: true,
+          allowWindowTrim: true,
+        });
+        await flushMicrotasks();
+      });
+      expect(apiRef.current!.messageFeeds[0]).toMatchObject({ evictedNewerTailId: null });
+    });
+
+    it('#3496 clears a deleted evicted-tail boundary after newer catch-up is exhausted', async () => {
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+        current: null,
+      };
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(21, 60));
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(1, 20));
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(41, 59));
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
+      await act(async () => root.render(<TestHarness apiRef={apiRef} />));
+      await act(async () => flushMicrotasks());
+
+      await act(async () => {
+        await apiRef.current!.loadFeedOlderMessages('mf-0');
+        await flushMicrotasks();
+      });
+      expect(apiRef.current!.messageFeeds[0]).toMatchObject({ evictedNewerTailId: 60 });
+
+      await act(async () => {
+        await apiRef.current!.loadFeedNewerMessages('mf-0');
+        await flushMicrotasks();
+      });
+      await act(async () => {
+        await apiRef.current!.loadFeedNewerMessages('mf-0');
+        await flushMicrotasks();
+      });
+
+      const feed = apiRef.current!.messageFeeds[0];
+      expect(feed.evictedNewerTailId).toBeNull();
+      expect(feedHasUnloadedEvictedNewerTail(feed)).toBe(false);
+    });
+
+    it('#3496 clears a deleted evicted-tail boundary after an exhaustive newer request', async () => {
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+        current: null,
+      };
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(21, 60));
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(1, 20));
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(41, 59));
+      await act(async () => root.render(<TestHarness apiRef={apiRef} />));
+      await act(async () => flushMicrotasks());
+
+      await act(async () => {
+        await apiRef.current!.loadFeedOlderMessages('mf-0');
+        await flushMicrotasks();
+      });
+      await act(async () => {
+        await apiRef.current!.loadFeedNewerMessages('mf-0', { nolimit: true });
+        await flushMicrotasks();
+      });
+
+      const feed = apiRef.current!.messageFeeds[0];
+      expect(feed.pendingNewerItems?.at(-1)?.[0]).toBe(59);
+      expect(feed.evictedNewerTailId).toBeNull();
+      expect(feedHasUnloadedEvictedNewerTail(feed)).toBe(false);
     });
 
     it('ignores an older-load failure after a filter reload invalidates the request', async () => {
@@ -506,6 +609,51 @@ describe('useRerDutyFeedState — directional loading and races', () => {
       response.resolve(rangeRsp(3, 4));
       await act(async () => automatic);
       expect(apiRef.current!.messageFeeds[0].unreadCount).toBe(0);
+    });
+
+    it('queues a nolimit arrow request behind an active bounded newer request', async () => {
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+        current: null,
+      };
+      const bounded = deferred<InboxMessagesRsp>('bounded');
+      const nolimit = deferred<InboxMessagesRsp>('nolimit');
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(1, 2));
+      hoisted.fetchInboxMessages.mockImplementationOnce(() => bounded.promise);
+      hoisted.fetchInboxMessages.mockImplementationOnce(() => nolimit.promise);
+      await act(async () => root.render(<TestHarness apiRef={apiRef} />));
+      await act(async () => flushMicrotasks());
+
+      const automatic = apiRef.current!.loadFeedNewerMessages('mf-0');
+      const followGeneration = apiRef.current!.beginFollowTail('mf-0');
+      const arrow = apiRef.current!.loadFeedNewerMessages('mf-0', {
+        nolimit: true,
+        scrollToEndAfterLoad: true,
+        explicitNavigation: true,
+        followGeneration,
+      });
+
+      expect(arrow).not.toBe(automatic);
+      expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(2);
+      expect(hoisted.fetchInboxMessages.mock.calls[1][0]).not.toEqual(
+        expect.objectContaining({ nolimit: true }),
+      );
+
+      bounded.resolve(rangeRsp(3, 4));
+      await act(async () => {
+        await automatic;
+        await flushMicrotasks();
+      });
+
+      expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(3);
+      expect(hoisted.fetchInboxMessages.mock.calls[2][0]).toEqual(
+        expect.objectContaining({ sinceIdNoninclusive: 4, nolimit: true }),
+      );
+      nolimit.resolve(rangeRsp(5, 8));
+      await act(async () => {
+        await arrow;
+        await flushMicrotasks();
+      });
+      expect(apiRef.current!.messageFeeds[0].items.at(-1)?.[0]).toBe(8);
     });
   });
   describe('poll autoscroll (scrollToEndAfterLoad)', () => {

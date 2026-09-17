@@ -53,6 +53,8 @@ type DirectionalOperation = {
   promise: Promise<void>;
   resolve: () => void;
   newerOptions: Required<NewerLoadOptions>;
+  dispatchedNewerNolimit: boolean | null;
+  committedNewerTailId: number | null;
   newerResult: NewerLoadResult;
   newerResultPromise?: Promise<NewerLoadResult>;
   commitExpected: boolean;
@@ -161,6 +163,8 @@ function createOperation(
       explicitOperation: options?.explicitOperation ?? null,
       confirmedTailAvailable: options?.confirmedTailAvailable ?? false,
     },
+    dispatchedNewerNolimit: null,
+    committedNewerTailId: null,
     commitExpected: false,
     // Default false until a successful run path sets otherwise (invalidate must not look like success).
     newerResult: { ok: false, addedCount: 0 },
@@ -184,8 +188,15 @@ export function useRerDutyDirectionalLoads(params: Params) {
   useLayoutEffect(() => {
     params.messageFeedsRef.current = params.messageFeeds;
     Object.entries(lanesRef.current).forEach(([feedId, lane]) => {
-      if (lane.active?.phase === 'awaitingCommit') {
-        lane.active.resolve();
+      const active = lane.active;
+      const committedNewerTailId = active?.committedNewerTailId ?? null;
+      const newerCommitVisible =
+        committedNewerTailId === null ||
+        params.messageFeeds.some(
+          (feed) => feed.id === feedId && feedNewerSinceId(feed) === committedNewerTailId,
+        );
+      if (active?.phase === 'awaitingCommit' && newerCommitVisible) {
+        active.resolve();
         lane.active = null;
       }
       startOperationRef.current(feedId);
@@ -279,10 +290,9 @@ export function useRerDutyDirectionalLoads(params: Params) {
             // The operation was accepted against `latestFeed`; decide follow-up
             // invalidation from that same snapshot rather than mutating outer state
             // from React's deferred updater.
-            const discardedPendingTail =
-              acceptedWindow.removedItems.some(([id]) =>
-                latestFeed.items.some(([existingId]) => existingId === id),
-              ) && feedPendingNewerItems(latestFeed).length > 0;
+            const droppedNewerEnd = acceptedWindow.removedItems.some(([id]) =>
+              latestFeed.items.some(([existingId]) => existingId === id),
+            );
             commitFeedWindowUpdate(runParams.setMessageFeeds, (previous) =>
               previous.map((feed) => {
                 if (feed.id !== feedId) return feed;
@@ -300,9 +310,13 @@ export function useRerDutyDirectionalLoads(params: Params) {
                 const droppedNewerEnd = windowed.removedItems.some(([id]) =>
                   feed.items.some(([existingId]) => existingId === id),
                 );
+                const evictedNewerTailId = droppedNewerEnd
+                  ? (feed.evictedNewerTailId ?? feedNewerSinceId(feed))
+                  : feed.evictedNewerTailId;
                 return {
                   ...feed,
                   items: windowed.items,
+                  evictedNewerTailId,
                   readIds: new Set<number>([
                     ...feed.readIds,
                     ...windowed.addedItems.map(([id]) => id),
@@ -314,7 +328,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
                 };
               }),
             );
-            if (discardedPendingTail) {
+            if (droppedNewerEnd) {
               delete runParams.newestExhaustedCursorByFeedIdRef.current[feedId];
               runParams.invalidateTailPreview(feedId);
               runParams.setTailAvailability(feedId, 'unknown');
@@ -358,7 +372,10 @@ export function useRerDutyDirectionalLoads(params: Params) {
       const lane = getLane(feedId);
       const activeNewer = lane.active?.direction === 'newer' ? lane.active : null;
       const queuedNewer = lane.queued.find((operation) => operation.direction === 'newer');
-      const existing = activeNewer?.phase === 'running' ? activeNewer : queuedNewer;
+      const requiresDedicatedNolimit =
+        options?.nolimit === true && activeNewer?.dispatchedNewerNolimit === false;
+      const existing =
+        activeNewer?.phase === 'running' && !requiresDedicatedNolimit ? activeNewer : queuedNewer;
       if (existing) {
         existing.newerOptions.nolimit ||= options?.nolimit === true;
         existing.newerOptions.scrollToEndAfterLoad ||= options?.scrollToEndAfterLoad === true;
@@ -434,6 +451,8 @@ export function useRerDutyDirectionalLoads(params: Params) {
         if (operation.newerOptions.confirmedTailAvailable) {
           runParams.setTailAvailability(feedId, 'loading');
         }
+        const requestNolimit = operation.newerOptions.nolimit;
+        operation.dispatchedNewerNolimit = requestNolimit;
         const finishDebugActivity = beginDutyScrollDebugActivity(
           feedId,
           'newerMessages',
@@ -446,7 +465,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
               fetchInboxMessages(
                 runParams.buildReqForFeed(currentFeed, {
                   sinceIdNoninclusive: requestedSinceId,
-                  nolimit: operation.newerOptions.nolimit || undefined,
+                  nolimit: requestNolimit || undefined,
                 }),
                 { signal },
               ),
@@ -524,6 +543,13 @@ export function useRerDutyDirectionalLoads(params: Params) {
           const newestItem = bufferNewer
             ? (nextPending.at(-1) ?? null)
             : (liveAppendPreview?.items.at(-1) ?? null);
+          const responseIncludesEvictedNewerTail =
+            latestFeed.evictedNewerTailId != null &&
+            response.inboxItems.some(([id]) => id === latestFeed.evictedNewerTailId);
+          const resolvesEvictedNewerTail =
+            latestFeed.evictedNewerTailId != null &&
+            (response.inboxItems.length === 0 ||
+              (requestNolimit && !responseIncludesEvictedNewerTail));
           operation.newerResult = {
             ok: true,
             addedCount,
@@ -590,7 +616,15 @@ export function useRerDutyDirectionalLoads(params: Params) {
                 feed.readIds.forEach((id) => localUnreadIds.delete(id));
                 const nextLocal = localUnreadIds.size + (feed.unresolvedUnreadCount ?? 0);
                 localUnread = nextLocal;
-                return nextLocal === feed.unreadCount ? feed : { ...feed, unreadCount: nextLocal };
+                const evictedNewerTailId =
+                  resolvesEvictedNewerTail &&
+                  feed.evictedNewerTailId === latestFeed.evictedNewerTailId
+                    ? null
+                    : feed.evictedNewerTailId;
+                return nextLocal === feed.unreadCount &&
+                  evictedNewerTailId === feed.evictedNewerTailId
+                  ? feed
+                  : { ...feed, unreadCount: nextLocal, evictedNewerTailId };
               }),
             );
             const tailItem = latestFeed.items.at(-1);
@@ -623,13 +657,22 @@ export function useRerDutyDirectionalLoads(params: Params) {
           }
           if (addedCount > 0 || markAllRead || followTail) {
             operation.commitExpected = true;
+            if (addedCount > 0) operation.committedNewerTailId = newestItem?.[0] ?? null;
             if (bufferNewer) {
               // Off-DOM buffer: keep `items` identity stable (no MessageCard remount).
               runParams.setMessageFeeds((previous) => {
                 const next = previous.map((feed) => {
                   if (feed.id !== feedId) return feed;
                   const pendingNewerItems = mergePendingNewerItems(feed, response.inboxItems);
-                  if (pendingNewerItems.length === (feed.pendingNewerItems?.length ?? 0)) {
+                  const evictedNewerTailId =
+                    resolvesEvictedNewerTail &&
+                    feed.evictedNewerTailId === latestFeed.evictedNewerTailId
+                      ? null
+                      : feed.evictedNewerTailId;
+                  if (
+                    pendingNewerItems.length === (feed.pendingNewerItems?.length ?? 0) &&
+                    evictedNewerTailId === feed.evictedNewerTailId
+                  ) {
                     return feed;
                   }
                   const pendingUnreadCount = pendingNewerItems.filter(
@@ -642,6 +685,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
                     loadedUnreadCount + (feed.windowedUnreadItems?.size ?? 0) + pendingUnreadCount;
                   return {
                     ...feed,
+                    evictedNewerTailId,
                     pendingNewerItems,
                     unreadCount: Math.max(feed.unreadCount, localUnreadCount),
                   };
@@ -663,9 +707,14 @@ export function useRerDutyDirectionalLoads(params: Params) {
               commit(runParams.setMessageFeeds, (previous) => {
                 const next = previous.map((feed) => {
                   if (feed.id !== feedId) return feed;
+                  const appendFeed =
+                    resolvesEvictedNewerTail &&
+                    feed.evictedNewerTailId === latestFeed.evictedNewerTailId
+                      ? { ...feed, evictedNewerTailId: null }
+                      : feed;
                   return appendNewerItemsToFeed(
-                    feed,
-                    [...feedPendingNewerItems(feed), ...response.inboxItems],
+                    appendFeed,
+                    [...feedPendingNewerItems(appendFeed), ...response.inboxItems],
                     { markAllRead },
                   );
                 });
