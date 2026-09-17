@@ -41,35 +41,194 @@ function walk(
   });
 }
 
-function testCallName(expression) {
-  if (ts.isIdentifier(expression)) return expression.text;
+function testApiBindings(sourceFile) {
+  const named = new Map();
+  const namespaces = new Map();
+  for (const statement of sourceFile.statements) {
+    if (
+      !ts.isImportDeclaration(statement) ||
+      !ts.isStringLiteralLike(statement.moduleSpecifier) ||
+      !['vitest', '@playwright/test'].includes(statement.moduleSpecifier.text) ||
+      !statement.importClause ||
+      statement.importClause.isTypeOnly
+    )
+      continue;
+    const bindings = statement.importClause.namedBindings;
+    if (bindings && ts.isNamedImports(bindings)) {
+      for (const element of bindings.elements) {
+        const imported = element.propertyName?.text ?? element.name.text;
+        if (['it', 'test'].includes(imported) && !element.isTypeOnly)
+          named.set(element.name.text, element);
+      }
+    }
+    if (bindings && ts.isNamespaceImport(bindings)) namespaces.set(bindings.name.text, bindings);
+  }
+  return { named, namespaces };
+}
+
+function declarationNames(node) {
+  if (ts.isVariableDeclaration(node)) return bindingIdentifiers(node.name);
+  if (ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node) || ts.isEnumDeclaration(node))
+    return node.name ? [node.name.text] : [];
+  return [];
+}
+
+function variableDeclarationListNames(declarationList) {
+  return declarationList.declarations.flatMap(declarationNames);
+}
+
+function directScopeDeclarations(statements, includeFunctionScopedVariables) {
+  return statements.flatMap((statement) => {
+    if (ts.isVariableStatement(statement)) {
+      const blockScoped = (statement.declarationList.flags & ts.NodeFlags.BlockScoped) !== 0;
+      return includeFunctionScopedVariables || blockScoped
+        ? variableDeclarationListNames(statement.declarationList)
+        : [];
+    }
+    return declarationNames(statement);
+  });
+}
+
+function functionScopedVariableDeclarations(scope) {
+  const names = [];
+  const root = ts.isSourceFile(scope) ? scope : scope.body;
+  if (!root) return names;
+  const visit = (node) => {
+    if (
+      node !== root &&
+      (ts.isFunctionLike(node) ||
+        ts.isClassDeclaration(node) ||
+        ts.isClassExpression(node) ||
+        ts.isModuleDeclaration(node))
+    )
+      return;
+    if (ts.isVariableDeclarationList(node) && (node.flags & ts.NodeFlags.BlockScoped) === 0)
+      names.push(...variableDeclarationListNames(node));
+    ts.forEachChild(node, visit);
+  };
+  visit(root);
+  return names;
+}
+
+function scopeDeclarations(scope) {
+  if (ts.isSourceFile(scope))
+    return [
+      ...directScopeDeclarations(scope.statements, true),
+      ...functionScopedVariableDeclarations(scope),
+    ];
+  if (ts.isBlock(scope) || ts.isCaseBlock(scope))
+    return directScopeDeclarations(scope.statements, false);
+  if (ts.isFunctionLike(scope))
+    return [
+      ...scope.parameters.flatMap((parameter) => bindingIdentifiers(parameter.name)),
+      ...(scope.name && ts.isIdentifier(scope.name) ? [scope.name.text] : []),
+      ...functionScopedVariableDeclarations(scope),
+    ];
+  if (ts.isCatchClause(scope))
+    return scope.variableDeclaration ? bindingIdentifiers(scope.variableDeclaration.name) : [];
+  if (ts.isForStatement(scope)) {
+    const initializer = scope.initializer;
+    return initializer &&
+      ts.isVariableDeclarationList(initializer) &&
+      (initializer.flags & ts.NodeFlags.BlockScoped) !== 0
+      ? variableDeclarationListNames(initializer)
+      : [];
+  }
+  if (ts.isForInStatement(scope) || ts.isForOfStatement(scope)) {
+    const initializer = scope.initializer;
+    return ts.isVariableDeclarationList(initializer) &&
+      (initializer.flags & ts.NodeFlags.BlockScoped) !== 0
+      ? variableDeclarationListNames(initializer)
+      : [];
+  }
+  return [];
+}
+
+function sourceImportBinding(sourceFile, name) {
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !statement.importClause) continue;
+    if (statement.importClause.name?.text === name) return statement.importClause.name;
+    const bindings = statement.importClause.namedBindings;
+    if (bindings && ts.isNamespaceImport(bindings) && bindings.name.text === name) return bindings;
+    if (bindings && ts.isNamedImports(bindings)) {
+      const element = bindings.elements.find((candidate) => candidate.name.text === name);
+      if (element) return element;
+    }
+  }
+  return null;
+}
+
+function isShadowedAt(identifier, sourceFile, importBinding) {
+  for (let current = identifier.parent; current; current = current.parent) {
+    if (ts.isSourceFile(current)) {
+      const imported = sourceImportBinding(sourceFile, identifier.text);
+      if (imported && imported !== importBinding) return true;
+    }
+    if (
+      (ts.isSourceFile(current) ||
+        ts.isBlock(current) ||
+        ts.isCaseBlock(current) ||
+        ts.isFunctionLike(current) ||
+        ts.isCatchClause(current) ||
+        ts.isForStatement(current) ||
+        ts.isForInStatement(current) ||
+        ts.isForOfStatement(current)) &&
+      scopeDeclarations(current).includes(identifier.text)
+    )
+      return true;
+    if (current === sourceFile) break;
+  }
+  return false;
+}
+
+function isTestApiIdentifier(identifier, sourceFile, bindings) {
+  const importBinding = bindings.named.get(identifier.text);
+  if (importBinding) return !isShadowedAt(identifier, sourceFile, importBinding);
+  return ['it', 'test'].includes(identifier.text) && !isShadowedAt(identifier, sourceFile);
+}
+
+function isTestApiNamespace(identifier, sourceFile, bindings) {
+  const importBinding = bindings.namespaces.get(identifier.text);
+  return importBinding && !isShadowedAt(identifier, sourceFile, importBinding);
+}
+
+function testCallName(expression, sourceFile, bindings) {
+  if (ts.isIdentifier(expression))
+    return isTestApiIdentifier(expression, sourceFile, bindings) ? expression.text : null;
   if (ts.isPropertyAccessExpression(expression)) {
+    if (
+      ts.isIdentifier(expression.expression) &&
+      isTestApiNamespace(expression.expression, sourceFile, bindings) &&
+      ['it', 'test'].includes(expression.name.text)
+    )
+      return expression.name.text;
     if (
       !['each', 'only', 'skip', 'skipIf', 'runIf', 'todo', 'fails', 'concurrent'].includes(
         expression.name.text,
       )
     )
       return null;
-    return testCallName(expression.expression);
+    return testCallName(expression.expression, sourceFile, bindings);
   }
-  if (ts.isCallExpression(expression)) return testCallName(expression.expression);
+  if (ts.isCallExpression(expression))
+    return testCallName(expression.expression, sourceFile, bindings);
   return null;
 }
 
-function isTestDeclaration(node) {
+function isTestDeclaration(node, sourceFile, bindings) {
   return (
     ts.isCallExpression(node) &&
-    ['it', 'test'].includes(testCallName(node.expression) ?? '') &&
+    testCallName(node.expression, sourceFile, bindings) !== null &&
     node.arguments[0] != null &&
-    !isEachBuilderCall(node)
+    !isEachBuilderCall(node, sourceFile, bindings)
   );
 }
 
-function isEachBuilderCall(node) {
+function isEachBuilderCall(node, sourceFile, bindings) {
   return (
     ts.isPropertyAccessExpression(node.expression) &&
     node.expression.name.text === 'each' &&
-    ['it', 'test'].includes(testCallName(node.expression.expression) ?? '')
+    testCallName(node.expression.expression, sourceFile, bindings) !== null
   );
 }
 
@@ -115,9 +274,10 @@ function validateAnnotation(annotation) {
 }
 
 function testDeclarations(sourceFile) {
+  const bindings = testApiBindings(sourceFile);
   const declarations = [];
   const visit = (node) => {
-    if (isTestDeclaration(node)) declarations.push(node);
+    if (isTestDeclaration(node, sourceFile, bindings)) declarations.push(node);
     ts.forEachChild(node, visit);
   };
   visit(sourceFile);
@@ -128,17 +288,20 @@ function declarationIdentity(sourceFile, node, file) {
   const title = declarationTitle(sourceFile, node);
   const ancestors = [];
   for (let parent = node.parent; parent; parent = parent.parent) {
-    if (ts.isCallExpression(parent) && isDescribeCall(parent))
+    if (
+      ts.isCallExpression(parent) &&
+      isDescribeCall(parent, sourceFile, testApiBindings(sourceFile))
+    )
       ancestors.unshift(declarationTitle(sourceFile, parent));
   }
   return `${relative(webRoot, file)}::${[...ancestors, title].join(' > ')}`;
 }
 
-function isDescribeCall(node) {
+function isDescribeCall(node, sourceFile, bindings) {
   return (
     ts.isPropertyAccessExpression(node.expression) &&
     node.expression.name.text === 'describe' &&
-    ['it', 'test'].includes(testCallName(node.expression.expression) ?? '') &&
+    testCallName(node.expression.expression, sourceFile, bindings) !== null &&
     node.arguments[0] != null
   );
 }
@@ -151,10 +314,12 @@ function declarationTitle(sourceFile, node) {
 }
 
 function hasRegressionSelector(sourceFile, node) {
+  const bindings = testApiBindings(sourceFile);
   for (let current = node; current; current = current.parent) {
     if (
       ts.isCallExpression(current) &&
-      (isTestDeclaration(current) || isDescribeCall(current)) &&
+      (isTestDeclaration(current, sourceFile, bindings) ||
+        isDescribeCall(current, sourceFile, bindings)) &&
       current.arguments[0]?.getText(sourceFile).includes('@regression')
     )
       return true;
@@ -164,6 +329,7 @@ function hasRegressionSelector(sourceFile, node) {
 
 function declarationScopeProblems(sourceText, file, playwright = false) {
   const sourceFile = ts.createSourceFile(file, sourceText, ts.ScriptTarget.Latest, true);
+  const bindings = testApiBindings(sourceFile);
   const fileScope = fileAnnotation(sourceText);
   const problems = [];
   for (const node of testDeclarations(sourceFile)) {
@@ -365,6 +531,15 @@ function modulePath(fromFile, moduleSpecifier) {
   );
 }
 
+function isTestSupportModule(file) {
+  return (
+    file.includes('/__tests__/') ||
+    /(?:\.(?:test-utils|test-helpers|fixtures?|mocks?)|-+(?:test-utils|test-helpers|fixtures?|mocks?))\.(?:tsx?|mts|[cm]?js|jsx)$/.test(
+      file,
+    )
+  );
+}
+
 function relativeMockProblems(file) {
   const sourceText = readFileSync(file, 'utf8');
   const sourceFile = ts.createSourceFile(file, sourceText, ts.ScriptTarget.Latest, true);
@@ -527,6 +702,280 @@ function runGateSelfValidation() {
     write(join(web, 'src/ts/react/valid-owner/ValidOwner.tsx'), 'export {};');
     write(validSpec);
     expect(placementProblemsFor(validSpec, web).length === 0, 'valid owner placement failed');
+
+    const adjacentSupportRoot = join(web, 'src/ts/react/adjacent-support-self-check');
+    const adjacentOwner = join(adjacentSupportRoot, 'owner.ts');
+    const adjacentSpec = join(adjacentSupportRoot, '__tests__/owner.spec.ts');
+    const adjacentUtils = join(adjacentSupportRoot, 'owner.test-utils.ts');
+    const adjacentMocks = join(adjacentSupportRoot, 'owner-mocks.ts');
+    const adjacentFixtures = join(adjacentSupportRoot, 'owner.fixtures.ts');
+    const adjacentConsumer = join(adjacentSupportRoot, 'consumer.ts');
+    const adjacentCycleA = join(adjacentSupportRoot, 'owner.mock.ts');
+    const adjacentCycleB = join(adjacentSupportRoot, 'owner.fixture.ts');
+    write(adjacentOwner, 'export const helper = 1;');
+    write(adjacentUtils, "import { helper } from './owner'; export { helper };");
+    write(adjacentMocks, "export { helper } from './owner.test-utils';");
+    write(adjacentFixtures, "export { helper } from './owner';");
+    write(adjacentCycleA, "export { value } from './owner.fixture';");
+    write(
+      adjacentCycleB,
+      "export { helper as value } from './owner'; export * from './owner.mock';",
+    );
+    const adjacentSources = [
+      adjacentOwner,
+      adjacentUtils,
+      adjacentMocks,
+      adjacentFixtures,
+      adjacentCycleA,
+      adjacentCycleB,
+    ];
+    const adjacentSupportFiles = new Set(adjacentSources.filter(isTestSupportModule));
+    const classifyAdjacentSupport = () =>
+      testOnlyProductionExportsFor({
+        testFiles: [adjacentSpec],
+        productionFiles: adjacentSources.filter((file) => !adjacentSupportFiles.has(file)),
+        sourceFiles: adjacentSources,
+        readSource: (candidate) => (existsSync(candidate) ? readFileSync(candidate, 'utf8') : null),
+        resolveModule: modulePath,
+        testSupportFiles: adjacentSupportFiles,
+      });
+    write(adjacentSpec, "import { helper } from '../owner.test-utils'; void helper;");
+    expect(
+      classifyAdjacentSupport().some(
+        ({ file, symbol }) => file === adjacentOwner && symbol === 'helper',
+      ),
+      'adjacent test utility blessed a production export',
+    );
+    write(adjacentSpec, "import { helper } from '../owner-mocks'; void helper;");
+    expect(
+      classifyAdjacentSupport().some(
+        ({ file, symbol }) => file === adjacentOwner && symbol === 'helper',
+      ),
+      'transitive adjacent mock did not preserve test demand',
+    );
+    write(adjacentSpec, "import { helper } from '../owner.fixtures'; void helper;");
+    expect(
+      classifyAdjacentSupport().some(
+        ({ file, symbol }) => file === adjacentOwner && symbol === 'helper',
+      ),
+      'adjacent fixture blessed a production export',
+    );
+    write(adjacentConsumer, "import { helper } from './owner'; void helper;");
+    adjacentSources.push(adjacentConsumer);
+    expect(
+      !testOnlyProductionExportsFor({
+        testFiles: [adjacentSpec],
+        productionFiles: adjacentSources.filter((file) => !isTestSupportModule(file)),
+        sourceFiles: adjacentSources,
+        readSource: (candidate) => (existsSync(candidate) ? readFileSync(candidate, 'utf8') : null),
+        resolveModule: modulePath,
+        testSupportFiles: new Set(adjacentSources.filter(isTestSupportModule)),
+      }).some(({ file, symbol }) => file === adjacentOwner && symbol === 'helper'),
+      'genuine production consumer did not clear adjacent support finding',
+    );
+    expect(
+      productionToTestSupportProblems(
+        [adjacentOwner, adjacentConsumer, adjacentUtils],
+        new Set([adjacentUtils]),
+      ).length === 0,
+      'clean production-to-support dependencies failed',
+    );
+    write(adjacentConsumer, "import { helper } from './owner.test-utils'; void helper;");
+    expect(
+      productionToTestSupportProblems(
+        [adjacentOwner, adjacentConsumer, adjacentUtils],
+        new Set([adjacentUtils]),
+      ).length === 1,
+      'production-to-test-support dependency passed',
+    );
+    const supportDependencyProblems = (text) => {
+      write(adjacentConsumer, text);
+      return productionToTestSupportProblems(
+        [
+          adjacentOwner,
+          adjacentConsumer,
+          adjacentUtils,
+          adjacentMocks,
+          adjacentFixtures,
+          adjacentCycleA,
+          adjacentCycleB,
+        ],
+        new Set([adjacentUtils, adjacentMocks, adjacentFixtures, adjacentCycleA, adjacentCycleB]),
+      );
+    };
+    for (const [text, message] of [
+      ["import { helper } from './owner-mocks'; void helper;", 'named support import passed'],
+      ["import './owner-mocks';", 'side-effect support import passed'],
+      ["import type { helper } from './owner.test-utils';", 'type-only support import passed'],
+      ["void import('./owner.fixture');", 'dynamic support import passed'],
+      ["export { helper } from './owner-mocks';", 'named support re-export passed'],
+      ["export * from './owner.fixtures';", 'wildcard support re-export passed'],
+      ["export * as fixtures from './owner.fixtures';", 'namespace support re-export passed'],
+    ])
+      expect(supportDependencyProblems(text).length === 1, message);
+    write(adjacentConsumer, "import { helper } from './owner'; void helper;");
+    expect(
+      productionToTestSupportProblems(
+        [adjacentOwner, adjacentConsumer, adjacentUtils],
+        new Set([adjacentUtils]),
+      ).length === 0,
+      'clean production dependency failed',
+    );
+    write(
+      adjacentUtils,
+      "import { helper } from './owner'; import './owner-mocks'; export { helper };",
+    );
+    expect(
+      productionToTestSupportProblems(
+        [adjacentOwner, adjacentConsumer, adjacentUtils, adjacentMocks],
+        new Set([adjacentUtils, adjacentMocks]),
+      ).length === 0,
+      'test-support dependency failed',
+    );
+    write(adjacentConsumer, "import './owner-mocks'; export { helper } from './owner-mocks';");
+    expect(
+      supportDependencyProblems(readFileSync(adjacentConsumer, 'utf8')).length === 1,
+      'duplicate support dependency was not deduplicated',
+    );
+    write(adjacentSpec, "import { value } from '../owner.mock'; void value;");
+    expect(
+      testDependencyDemands(
+        [adjacentSpec],
+        (candidate) => (existsSync(candidate) ? readFileSync(candidate, 'utf8') : null),
+        modulePath,
+      ).has(adjacentOwner),
+      'adjacent support cycle did not terminate deterministically',
+    );
+
+    const declarationFile = join(
+      web,
+      'src/ts/react/declaration-self-check/__tests__/declarations.spec.ts',
+    );
+    const declarationProblems = (text, playwright = false) =>
+      declarationScopeProblems(text, declarationFile, playwright);
+    expect(
+      declarationProblems("import { test as check } from 'vitest'; check('missing', () => {});")
+        .length === 1,
+      'unannotated aliased Vitest test passed',
+    );
+    expect(
+      declarationProblems(
+        "import { test as check } from 'vitest'; // @test-scope parser: fixture\ncheck('ok', () => {});",
+      ).length === 0,
+      'annotated aliased Vitest test failed',
+    );
+    expect(
+      declarationProblems(
+        "import { it as verify, test as check } from 'vitest'; // @test-scope parser: fixture\nverify.only('one', () => {}); check.skip('two', () => {}); check.each([1])('three', () => {});",
+      ).length === 0,
+      'aliased test modifiers were not discovered',
+    );
+    const aliasedEachSource = ts.createSourceFile(
+      declarationFile,
+      "import { test as check } from 'vitest'; check.each([1])('one', () => {});",
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    expect(
+      testDeclarations(aliasedEachSource).length === 1,
+      'aliased .each was counted more than once',
+    );
+    expect(
+      declarationProblems(
+        "import * as vitest from 'vitest'; // @test-scope parser: fixture\nvitest.test('one', () => {}); vitest.it('two', () => {});",
+      ).length === 0,
+      'namespace Vitest tests were not discovered',
+    );
+    expect(
+      declarationProblems(
+        "import { test as scenario } from '@playwright/test'; // @test-scope regression: https://github.com/echoua/echo/issues/1\nscenario.describe('@regression suite', () => scenario('one', () => {}));",
+        true,
+      ).length === 0,
+      'aliased Playwright describe ancestry was not discovered',
+    );
+    expect(
+      declarationProblems(
+        "import * as playwright from '@playwright/test'; // @test-scope regression: https://github.com/echoua/echo/issues/1\nplaywright.test('@regression one', () => {});",
+        true,
+      ).length === 0,
+      'namespace Playwright test was not discovered',
+    );
+    expect(
+      declarationProblems(
+        "import { test as check } from 'vitest'; // @test-scope parser: fixture\ncheck('outside', () => {}); (() => { const check = () => {}; check('inside'); })();",
+      ).length === 0,
+      'block-local alias shadow was classified as a test',
+    );
+    expect(
+      testDeclarations(
+        ts.createSourceFile(
+          declarationFile,
+          "import { test as check } from 'vitest'; check('outside', () => {}); function run(check) { check('inside'); }",
+          ts.ScriptTarget.Latest,
+          true,
+        ),
+      ).length === 1,
+      'parameter-shadowed alias was classified as a test',
+    );
+    expect(
+      testDeclarations(
+        ts.createSourceFile(
+          declarationFile,
+          "import * as vitest from 'vitest'; vitest.test('outside', () => {}); { const vitest = {}; vitest.test('inside', () => {}); }",
+          ts.ScriptTarget.Latest,
+          true,
+        ),
+      ).length === 1,
+      'shadowed namespace was classified as a test',
+    );
+    expect(
+      testDeclarations(
+        ts.createSourceFile(
+          declarationFile,
+          "import { test as check } from 'vitest'; for (const check of [() => {}]) { check('inside'); } check('outside', () => {});",
+          ts.ScriptTarget.Latest,
+          true,
+        ),
+      ).length === 1,
+      'loop-shadowed alias was classified as a test',
+    );
+    expect(
+      testDeclarations(
+        ts.createSourceFile(
+          declarationFile,
+          "import { test as check } from 'vitest'; check('outside', () => {}); function run() { if (true) { var check = () => {}; } check('inside'); }",
+          ts.ScriptTarget.Latest,
+          true,
+        ),
+      ).length === 1,
+      'function-scoped var alias was classified as a test',
+    );
+    expect(
+      testDeclarations(
+        ts.createSourceFile(
+          declarationFile,
+          "if (true) { var test = () => {}; } test('not a test');",
+          ts.ScriptTarget.Latest,
+          true,
+        ),
+      ).length === 0,
+      'source-scoped var was classified as a global test API',
+    );
+    expect(
+      testDeclarations(
+        ts.createSourceFile(
+          declarationFile,
+          "import { test } from 'other-package'; import type { it } from 'vitest'; test('no'); it('no');",
+          ts.ScriptTarget.Latest,
+          true,
+        ),
+      ).length === 0,
+      'unrelated or type-only test import was classified as a test',
+    );
+    expect(
+      declarationProblems("const check = () => {}; check('not a test');").length === 0,
+      'unrelated local alias was classified as a test',
+    );
 
     const mixedOwnerSpec = join(web, 'src/ts/react/mixed-owner/__tests__/helpers.spec.ts');
     const mixedOwnerComponent = join(
@@ -1234,6 +1683,24 @@ function consumedSymbolsFromText(file, sourceText, resolveModule) {
   return imports;
 }
 
+function localModuleDependenciesFromText(file, sourceText, resolveModule) {
+  const sourceFile = ts.createSourceFile(file, sourceText, ts.ScriptTarget.Latest, true);
+  const targets = new Set();
+  const add = (specifier) => {
+    if (!specifier || !ts.isStringLiteralLike(specifier)) return;
+    const target = resolveModule(file, specifier.text);
+    if (target) targets.add(target);
+  };
+  const visit = (node) => {
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) add(node.moduleSpecifier);
+    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword)
+      add(node.arguments[0]);
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return targets;
+}
+
 function reExportDependenciesFromText(file, sourceText, resolveModule) {
   const sourceFile = ts.createSourceFile(file, sourceText, ts.ScriptTarget.Latest, true);
   const dependencies = [];
@@ -1578,9 +2045,7 @@ function testOnlyProductionExports(testFiles) {
     join(webRoot, 'src', 'ts', 'react'),
     /\.(?:tsx?|mts|[cm]?js|jsx)$/,
   ).filter((file) => !testFilePattern.test(file));
-  const testSupportFiles = new Set(
-    allProductionFiles.filter((file) => file.includes('/__tests__/')),
-  );
+  const testSupportFiles = new Set(allProductionFiles.filter(isTestSupportModule));
   const productionFiles = allProductionFiles.filter((file) => !testSupportFiles.has(file));
   const sourceFiles = walk(join(webRoot, 'src'), /\.(?:tsx?|mts|[cm]?js|jsx)$/).filter(
     (file) => !testFilePattern.test(file),
@@ -1594,6 +2059,40 @@ function testOnlyProductionExports(testFiles) {
     resolveModule: modulePath,
     testSupportFiles,
   });
+}
+
+function inheritedTestOnlyExportBaseline(testFiles, base) {
+  const allReactFiles = walk(
+    join(webRoot, 'src', 'ts', 'react'),
+    /\.(?:tsx?|mts|[cm]?js|jsx)$/,
+  ).filter((file) => !testFilePattern.test(file));
+  const testSupportFiles = new Set(allReactFiles.filter((file) => file.includes('/__tests__/')));
+  const productionFiles = allReactFiles.filter((file) => !testSupportFiles.has(file));
+  return testOnlyProductionExportsFor({
+    testFiles,
+    productionFiles,
+    sourceFiles: allReactFiles,
+    readSource: (file) =>
+      existsSync(file) && statSync(file).isFile() ? readFileSync(file, 'utf8') : null,
+    resolveModule: modulePath,
+    testSupportFiles,
+  }).filter(({ file, symbol }) => baseExportedSymbols(file, base).has(symbol)).length;
+}
+
+function productionToTestSupportProblems(sourceFiles, testSupportFiles) {
+  const problems = new Set();
+  for (const file of sourceFiles) {
+    if (testSupportFiles.has(file)) continue;
+    const sourceText = existsSync(file) ? readFileSync(file, 'utf8') : null;
+    if (sourceText === null) continue;
+    for (const target of localModuleDependenciesFromText(file, sourceText, modulePath)) {
+      if (testSupportFiles.has(target))
+        problems.add(
+          `${relative(webRoot, file)} must not import test-support module ${relative(webRoot, target)}.`,
+        );
+    }
+  }
+  return [...problems];
 }
 
 const invalidAnnotations = [];
@@ -1654,13 +2153,16 @@ invalidAnnotations.push(...behaviorContractTestReferenceProblems());
 invalidAnnotations.push(...playwrightTestPathProblems());
 invalidAnnotations.push(...testFiles.flatMap(relativeMockProblems));
 invalidAnnotations.push(...placementProblems);
+const allSourceFiles = walk(join(webRoot, 'src', 'ts', 'react'), /\.(?:tsx?|mts|[cm]?js|jsx)$/);
+const testSupportFiles = new Set(allSourceFiles.filter(isTestSupportModule));
+invalidAnnotations.push(...productionToTestSupportProblems(allSourceFiles, testSupportFiles));
 let inheritedTestOnlyExports = 0;
 if (exportBase) {
   try {
     const testOnlyExports = testOnlyProductionExports(testFiles, exportBase);
+    inheritedTestOnlyExports = inheritedTestOnlyExportBaseline(testFiles, exportBase);
     for (const { file, symbol } of testOnlyExports) {
-      if (baseExportedSymbols(file, exportBase).has(symbol)) inheritedTestOnlyExports += 1;
-      else
+      if (!baseExportedSymbols(file, exportBase).has(symbol))
         invalidAnnotations.push(`${relative(webRoot, file)} exports ${symbol} for test-only use`);
     }
   } catch (error) {

@@ -52,6 +52,11 @@ repository-relative test paths or `No direct default-suite test; behavior is
 preserved by this contract.` Do not create recovery, holding, or temporary
 test/disposition artifacts.
 
+Adjacent test-support modules must use a recognized explicit support suffix
+(`.test-utils`, `.test-helpers`, `.fixture(s)`, or `.mock(s)`, including their
+hyphenated forms); they are test consumers rather than production consumers,
+and production modules must not import, dynamically import, or re-export them.
+
 ## Reject by default
 
 - Direct input/output restatements of trivial helpers, formatters, defaults, or small branch maps.
