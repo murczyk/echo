@@ -8,6 +8,14 @@
         }
       ]
     },
+    "echo:m20260917_150626_signal_message_media_conversion_job": {
+      "changes": [
+        {
+          "table": "public.signal_message_media_conversion_job",
+          "strategy": "excluded"
+        }
+      ]
+    },
     "echo:m20260916_130029_activate_sigint_network_units": {
       "changes": []
     },

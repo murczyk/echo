@@ -1,0 +1,325 @@
+use crate::config::{
+    KMZ_CONTENT_TYPE, SIGINT_MEDIA_CONVERSION_STATUS_DONE,
+    SIGINT_MEDIA_CONVERSION_STATUS_PENDING,
+    SIGINT_MEDIA_KMZ_CONVERSION_EXTENSIONS,
+};
+use crate::entities::{
+    signal_message_media, signal_message_media_conversion_job,
+};
+use crate::error::AppError;
+use crate::h;
+use crate::logging::warn;
+use crate::messenger::media::MediaUploadInput;
+use crate::types::{Env, ShortContext};
+use crate::users::{ensure_rer_role, login_id_from_identity};
+use actix_web::http::header;
+use actix_web::{get, web, HttpResponse};
+use md5::{Digest, Md5};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, NotSet,
+    QueryFilter, Set,
+};
+use std::collections::HashMap;
+use std::path::Path;
+use tokio::io::AsyncReadExt;
+use uuid::Uuid;
+
+pub mod types;
+pub mod worker;
+
+use types::{
+    SignalMediaKmzConversionStatusRsp, SignalMediaKmzPreviewLineString,
+    SignalMediaKmzPreviewRsp,
+};
+
+pub async fn schedule_uploaded_media<C>(
+    dbx: &C,
+    signal_message_id: i64,
+    media: &[signal_message_media::Model],
+    uploads: &[MediaUploadInput],
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    anyhow::ensure!(
+        media.len() == uploads.len(),
+        "stored media count does not match upload count"
+    );
+    for (media, upload) in media.iter().zip(uploads) {
+        if !is_supported_source(media) {
+            continue;
+        }
+        let source_file_md5 =
+            file_md5(&upload.path, media.size_bytes).await.c(h!())?;
+        let source_file_name = media
+            .file_name
+            .clone()
+            .or_else(|| upload.name.clone())
+            .unwrap_or_else(|| {
+                format!("{}.{}", media.id, source_extension(media))
+            });
+        signal_message_media_conversion_job::ActiveModel {
+            id: NotSet,
+            signal_message_id: Set(signal_message_id),
+            source_media_id: Set(media.id),
+            source_file_md5: Set(source_file_md5),
+            source_file_name: Set(source_file_name),
+            source_content_type: Set(Some(media.content_type.clone())),
+            status: Set(SIGINT_MEDIA_CONVERSION_STATUS_PENDING.to_string()),
+            conversion_receipt: Set(None),
+            converted_storage_key: Set(None),
+            converted_file_name: Set(None),
+            converted_size_bytes: Set(None),
+            created_at: NotSet,
+            last_attempt_at: Set(None),
+            attempt_count: Set(0),
+            last_error: Set(None),
+        }
+        .insert(dbx)
+        .await
+        .c(h!())?;
+    }
+    Ok(())
+}
+
+pub async fn load_statuses<C>(
+    dbx: &C,
+    media: &[signal_message_media::Model],
+) -> anyhow::Result<HashMap<Uuid, String>>
+where
+    C: ConnectionTrait,
+{
+    if media.is_empty() {
+        return Ok(HashMap::new());
+    }
+    Ok(signal_message_media_conversion_job::Entity::find()
+        .filter(
+            signal_message_media_conversion_job::Column::SourceMediaId
+                .is_in(media.iter().map(|media| media.id)),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|job| (job.source_media_id, job.status))
+        .collect())
+}
+
+pub async fn load_converted_storage_keys<C>(
+    dbx: &C,
+    media_ids: &[Uuid],
+) -> anyhow::Result<Vec<String>>
+where
+    C: ConnectionTrait,
+{
+    if media_ids.is_empty() {
+        return Ok(vec![]);
+    }
+    Ok(signal_message_media_conversion_job::Entity::find()
+        .filter(
+            signal_message_media_conversion_job::Column::SourceMediaId
+                .is_in(media_ids.iter().copied()),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .filter_map(|job| job.converted_storage_key)
+        .collect())
+}
+
+pub async fn delete_stored_results_best_effort(env: &Env, keys: &[String]) {
+    let (Some(s3), Some(s3_config)) = (&env.s3, &env.s3_config) else {
+        return;
+    };
+    for key in keys {
+        let remote_key = s3_config.prefixed_key(key);
+        if let Err(err) = s3.delete(&remote_key).await {
+            warn!(
+                "failed to delete converted media object {remote_key}: {err:#?}"
+            );
+        }
+    }
+}
+
+#[get("/api/messenger/media/{media_id}/kmz-conversion/status")]
+pub async fn status(
+    user: actix_identity::Identity,
+    env: web::Data<Env>,
+    path: web::Path<(Uuid,)>,
+) -> Result<web::Json<SignalMediaKmzConversionStatusRsp>, AppError> {
+    let (_, job) = authorized_job(&user, env.as_ref(), path.0).await.c(h!())?;
+    Ok(web::Json(SignalMediaKmzConversionStatusRsp {
+        status: job.status,
+        error: job.last_error,
+        converted_file_name: job.converted_file_name,
+    }))
+}
+
+#[get("/api/messenger/media/{media_id}/kmz-conversion/preview")]
+pub async fn preview(
+    user: actix_identity::Identity,
+    env: web::Data<Env>,
+    path: web::Path<(Uuid,)>,
+) -> Result<web::Json<SignalMediaKmzPreviewRsp>, AppError> {
+    let (_, job) = authorized_job(&user, env.as_ref(), path.0).await.c(h!())?;
+    let (storage_key, file_name) = completed_result(&job).c(h!())?;
+    let bytes = crate::messenger::media::fetch_media_bytes_by_key(
+        env.as_ref(),
+        storage_key,
+    )
+    .await
+    .c(h!())?;
+    let preview =
+        crate::palitra::kmz::parse_coordinates_from_file(file_name, &bytes)
+            .await
+            .c(h!())?;
+    Ok(web::Json(SignalMediaKmzPreviewRsp {
+        points: preview.points,
+        line_strings: preview
+            .line_strings
+            .into_iter()
+            .map(|line| SignalMediaKmzPreviewLineString {
+                coords: line.coords,
+                color: line.color,
+            })
+            .collect(),
+    }))
+}
+
+#[get("/api/messenger/media/{media_id}/kmz-conversion/download")]
+pub async fn download(
+    user: actix_identity::Identity,
+    env: web::Data<Env>,
+    path: web::Path<(Uuid,)>,
+) -> Result<HttpResponse, AppError> {
+    let (_, job) = authorized_job(&user, env.as_ref(), path.0).await.c(h!())?;
+    let (storage_key, file_name) = completed_result(&job).c(h!())?;
+    let bytes = crate::messenger::media::fetch_media_bytes_by_key(
+        env.as_ref(),
+        storage_key,
+    )
+    .await
+    .c(h!())?;
+    let content_disposition = header::ContentDisposition {
+        disposition: header::DispositionType::Attachment,
+        parameters: vec![header::DispositionParam::FilenameExt(
+            header::ExtendedValue {
+                charset: header::Charset::Ext("UTF-8".into()),
+                language_tag: None,
+                value: file_name.as_bytes().to_vec(),
+            },
+        )],
+    };
+    Ok(HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, KMZ_CONTENT_TYPE))
+        .insert_header(content_disposition)
+        .body(bytes))
+}
+
+async fn authorized_job(
+    user: &actix_identity::Identity,
+    env: &Env,
+    media_id: Uuid,
+) -> Result<
+    (
+        signal_message_media::Model,
+        signal_message_media_conversion_job::Model,
+    ),
+    AppError,
+> {
+    ensure_rer_role(&env.dbx, user).await.c(h!())?;
+    let login = login_id_from_identity(user).c(h!())?;
+    let media = signal_message_media::Entity::find_by_id(media_id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
+        .c(h!())?;
+    crate::messenger::media::ensure_media_access(
+        &env.dbx,
+        &login,
+        media.signal_message_id,
+    )
+    .await
+    .c(h!())?;
+    let job = signal_message_media_conversion_job::Entity::find()
+        .filter(
+            signal_message_media_conversion_job::Column::SourceMediaId
+                .eq(media.id),
+        )
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
+        .c(h!())?;
+    if job.signal_message_id != media.signal_message_id {
+        return Err(AppError::NotFound);
+    }
+    Ok((media, job))
+}
+
+fn completed_result(
+    job: &signal_message_media_conversion_job::Model,
+) -> anyhow::Result<(&str, &str)> {
+    if job.status != SIGINT_MEDIA_CONVERSION_STATUS_DONE {
+        anyhow::bail!(
+            "{}",
+            job.last_error
+                .as_deref()
+                .unwrap_or("KMZ conversion is not complete")
+        );
+    }
+    Ok((
+        job.converted_storage_key.as_deref().c(h!())?,
+        job.converted_file_name.as_deref().c(h!())?,
+    ))
+}
+
+fn is_supported_source(media: &signal_message_media::Model) -> bool {
+    SIGINT_MEDIA_KMZ_CONVERSION_EXTENSIONS.contains(&source_extension(media))
+}
+
+fn source_extension(media: &signal_message_media::Model) -> &str {
+    media.file_ext.as_deref().unwrap_or_default()
+}
+
+async fn file_md5(path: &str, expected_size: i64) -> anyhow::Result<String> {
+    let mut file = tokio::fs::File::options()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+        .await
+        .c(h!())?;
+    anyhow::ensure!(file.metadata().await.c(h!())?.is_file());
+    let mut md5 = Md5::new();
+    let mut read_bytes = 0i64;
+    let mut buffer = vec![0u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer).await.c(h!())?;
+        if read == 0 {
+            break;
+        }
+        read_bytes = read_bytes
+            .checked_add(i64::try_from(read).c(h!())?)
+            .c(h!())?;
+        md5.update(&buffer[..read]);
+    }
+    anyhow::ensure!(
+        read_bytes == expected_size,
+        "attachment changed while calculating MD5: expected {expected_size} bytes, read {read_bytes}"
+    );
+    Ok(format!("{:x}", md5.finalize()))
+}
+
+pub(super) fn converted_file_name(source_file_name: &str) -> String {
+    let safe_name =
+        crate::palitra::kmz::sanitize_upload_filename(source_file_name);
+    let stem = Path::new(&safe_name)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .map(str::trim)
+        .filter(|stem| !stem.is_empty())
+        .unwrap_or("file");
+    format!("{stem}_converted.kmz")
+}

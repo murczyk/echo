@@ -364,6 +364,7 @@ async fn save_signal_message(
     signal_message_id: Option<i64>,
     payload: DirectSubmitPayload,
 ) -> Result<DirectSubmitRsp, AppError> {
+    let is_new_message = signal_message_id.is_none();
     let upload_urls = payload.upload_urls.clone().unwrap_or_default();
     let delete_uploaded_attachments = env
         .config
@@ -583,6 +584,7 @@ async fn save_signal_message(
         copy_source_signal_message_ids,
         &payload,
         is_intelligence_report,
+        is_new_message,
     )
     .await
     .c(h!())?;
@@ -964,6 +966,7 @@ async fn finish_direct_submit(
     copy_source_signal_message_ids: &[i64],
     payload: &DirectSubmitPayload,
     is_intelligence_report: bool,
+    schedule_media_conversion: bool,
 ) -> Result<DirectSubmitRsp, AppError> {
     let signal_message_id = submitted.signal_message_id;
     let inbox_item_id = submitted.inbox_id;
@@ -993,6 +996,17 @@ async fn finish_direct_submit(
     .await
     .c(h!())?;
 
+    if schedule_media_conversion {
+        crate::sigint::media_conversion::schedule_uploaded_media(
+            &txn,
+            signal_message_id,
+            &upload_result.media,
+            &upload_result.stored_uploads,
+        )
+        .await
+        .c(h!())?;
+    }
+
     let media_to_delete_ids = media_to_delete
         .iter()
         .map(|media| media.id)
@@ -1001,6 +1015,13 @@ async fn finish_direct_submit(
         crate::ocr::load_result_keys(&txn, &media_to_delete_ids)
             .await
             .c(h!())?;
+    let converted_result_keys =
+        crate::sigint::media_conversion::load_converted_storage_keys(
+            &txn,
+            &media_to_delete_ids,
+        )
+        .await
+        .c(h!())?;
 
     if !media_to_delete.is_empty() {
         crate::entities::signal_message_media::Entity::delete_many()
@@ -1102,6 +1123,11 @@ async fn finish_direct_submit(
         )
         .await;
     }
+    crate::sigint::media_conversion::delete_stored_results_best_effort(
+        env,
+        &converted_result_keys,
+    )
+    .await;
     let mut redis = env.redis.clone();
     if is_intelligence_report {
         let mut changed_message_ids = parent_signal_message_ids.to_vec();

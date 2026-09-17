@@ -333,6 +333,7 @@ export function AttachmentsSection({
           transcription: null,
           ocr: null,
           summary: null,
+          kmzConversionStatus: null,
           href: previewUrl,
         });
         if (docKind !== 'unsupported') {

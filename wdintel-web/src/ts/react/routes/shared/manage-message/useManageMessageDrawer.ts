@@ -355,6 +355,7 @@ export function useManageMessageDrawer({
         transcription: m.transcription ?? (raw as any).transcription ?? null,
         ocr: m.ocr ?? (raw as any).ocr ?? null,
         summary: m.summary ?? (raw as any).summary ?? null,
+        kmzConversionStatus: m.kmzConversionStatus ?? (raw as any).kmz_conversion_status ?? null,
       };
     });
   }, [isEditMode, editTarget?.message.media, reportSource?.message.media]);
