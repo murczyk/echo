@@ -1286,7 +1286,18 @@ async fn acceptance_open_http_error_matrix_and_concurrent_patch_recovery() {
     .await;
     let mut accepted = 0;
     let mut conflicts = 0;
+    let mut busy_retries = 0;
     for response in responses {
+        let response = if response.status() == StatusCode::SERVICE_UNAVAILABLE {
+            assert_eq!(
+                test::read_body_json::<Value, _>(response).await["code"],
+                "upload_busy"
+            );
+            busy_retries += 1;
+            test::call_service(&app, make_patch()).await
+        } else {
+            response
+        };
         match response.status() {
             StatusCode::NO_CONTENT => accepted += 1,
             StatusCode::CONFLICT => conflicts += 1,
@@ -1352,7 +1363,7 @@ async fn acceptance_open_http_error_matrix_and_concurrent_patch_recovery() {
         .unwrap()
         .is_none());
     eprintln!(
-        "UPLOAD_METRIC open_error_cases={request_count} concurrent_patch_requests=8 accepted=1 offset_conflicts=7 concurrent_elapsed_ms={} bytes_after_resume=6 unexpected_publications=0",
+        "UPLOAD_METRIC open_error_cases={request_count} concurrent_patch_requests=8 busy_retries={busy_retries} accepted=1 offset_conflicts=7 concurrent_elapsed_ms={} bytes_after_resume=6 unexpected_publications=0",
         started.elapsed().as_millis()
     );
 }

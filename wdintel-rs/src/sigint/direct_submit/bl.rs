@@ -268,6 +268,24 @@ where
         Some(unit) => crate::inbox::parse_unit_v2(dbx, unit).await.c(h!())?,
         None => None,
     };
+    let unit_v2 = match crate::inbox::unit_resolution::resolve_sigint_unit_id(
+        dbx,
+        None,
+        unit.as_deref(),
+    )
+    .await
+    .c(h!())?
+    {
+        Some(unit_id) => {
+            crate::entities::sigint_unit::Entity::find_by_id(unit_id)
+                .one(dbx)
+                .await
+                .c(h!())?
+                .map(|unit| unit.name)
+                .or(unit_v2)
+        }
+        None => unit_v2,
+    };
     let text =
         if crate::system_settings::sigint_comment_parsing_enabled(&env.dbx)
             .await
@@ -1297,6 +1315,28 @@ mod tests {
         assert_eq!(parsed.to, vec!["ярус".to_string(), "светлый".to_string()]);
         assert!(parsed.text.contains("Текст повідомлення"));
         assert!(parsed.timestamp.is_some());
+
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            crate::entities::sigint_unit::ActiveModel {
+                name: Set("взвБпЛА КТ рБпЛА 24 обБпС 7 дшд".to_string()),
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let label = "24 обБпС рБпЛА вБпЛА КТ";
+        crate::sigint::unit::labels::insert_label(&env.dbx, unit.id, label)
+            .await
+            .unwrap();
+        let body = format!("{label}  | 2026-09-16\n17-45\n- С тест");
+        let parsed =
+            parse_signal_message_body(&env, &env.dbx, &body, None, false)
+                .await
+                .unwrap();
+        assert_eq!(parsed.unit.as_deref(), Some(label));
+        assert_eq!(parsed.unit_v2.as_deref(), Some(unit.name.as_str()));
     }
 
     #[tokio::test]
