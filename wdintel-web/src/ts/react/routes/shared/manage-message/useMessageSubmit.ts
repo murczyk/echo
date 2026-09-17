@@ -24,7 +24,8 @@ type SubmitOptions = {
   isReportMode: boolean;
   isReportCreateMode: boolean;
   editTarget: { id: number; message: InboxMessage } | null | undefined;
-  reportSource: { id: number; message: InboxMessage } | null | undefined;
+  reportSource:
+    { id: number; message: InboxMessage; senderName?: string | null } | null | undefined;
   existingMedia: InboxMessage['media'];
   onSubmitEdit: ((id: number, message: InboxMessage) => void | Promise<void>) | undefined;
   tagsLoaded: boolean;

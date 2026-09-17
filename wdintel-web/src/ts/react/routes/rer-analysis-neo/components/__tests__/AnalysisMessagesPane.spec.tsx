@@ -536,7 +536,8 @@ describe('AnalysisMessagesPane', () => {
     const onEditReport = vi.fn();
     const view = await renderComponent(
       buildProps({
-        messages: [[7, buildMessage()]],
+        messages: [[7, buildMessage({ networkIds: [3], networkName: 'Застаріла мережа' })]],
+        networkDisplayMap: { 3: 'р/м Актуальна мережа' },
         onCreateReport,
         onEditReport,
       }),
@@ -546,7 +547,15 @@ describe('AnalysisMessagesPane', () => {
     await click(getButton(view.container, 'report-7'));
     await click(getButton(view.container, 'edit-report-7'));
 
-    expect(onCreateReport).toHaveBeenCalledWith(7);
+    expect(onCreateReport).toHaveBeenCalledWith(7, {
+      primaryKind: 'network',
+      displayValue: 'р/м Актуальна мережа',
+      copyEtalonValue: 'р/м Актуальна мережа',
+      copyLocationValue: null,
+      renderedNetworks: [{ networkId: 3, label: 'р/м Актуальна мережа', badge: false }],
+      showInlineLocationTooltip: false,
+      locationDisplayValue: null,
+    });
     expect(onEditReport).toHaveBeenCalledWith(91);
   });
 

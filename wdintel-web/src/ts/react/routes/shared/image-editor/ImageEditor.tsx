@@ -66,7 +66,7 @@ export function ImageEditor({
   const [applying, setApplying] = useState(false);
   const applyingRef = useRef(false);
   const [canvasReady, setCanvasReady] = useState(false);
-  const [concealMode, setConcealMode] = useState<ConcealMode>(ConcealMode.Blur);
+  const [concealMode, setConcealMode] = useState<ConcealMode>(ConcealMode.Pixelate);
   const [magnification, setMagnification] = useState(2);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);

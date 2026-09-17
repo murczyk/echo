@@ -45,6 +45,7 @@ import { isManageMessageSubmitEligible } from './manage-message-submit-eligibili
 import { getAccessibleParentMessages, summarizeIntelligenceMessage } from '../intelligence-reports';
 import { quickIntelReportSuggestion } from '../../../services/api/ai-intel-report';
 import { isAbortError } from '../../../services/api/client';
+import type { MessageCardEtalonDisplayModel } from '../message-card/message-card.utils';
 
 export type QuickIntelReportSuggestionState =
   | { status: 'idle' | 'loading' | 'applied' }
@@ -68,7 +69,12 @@ export type UseManageMessageDrawerProps = {
     result: import('../../../services/api/direct-submit').DirectSubmitResponse,
   ) => void | Promise<void>;
   editTarget?: { id: number; message: InboxMessage } | null;
-  reportSource?: { id: number; message: InboxMessage } | null;
+  reportSource?: {
+    id: number;
+    message: InboxMessage;
+    senderName?: string | null;
+    etalonDisplayModel?: MessageCardEtalonDisplayModel;
+  } | null;
   editAsReport?: boolean;
   editTargetLoadState?: ReportEditLoadState;
   editSaveInFlight?: boolean;

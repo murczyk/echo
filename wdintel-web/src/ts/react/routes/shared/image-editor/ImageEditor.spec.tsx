@@ -187,6 +187,40 @@ describe('ImageEditor initialization', () => {
     act(() => root.unmount());
   });
 
+  it('selects pixelation as the default concealment mode', async () => {
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    document.body.appendChild(container);
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe = vi.fn();
+        disconnect = vi.fn();
+      },
+    );
+
+    await act(async () => {
+      root.render(
+        <ImageEditor
+          source={{ blob: new Blob(['source']), fileName: 'photo.jpg', mimeType: 'image/jpeg' }}
+          onCancel={vi.fn()}
+          onSaveReplacement={vi.fn()}
+          onSaveAsNew={vi.fn()}
+        />,
+      );
+    });
+    const conceal = container.querySelector('button[aria-label="Розмиття"]') as HTMLButtonElement;
+    await vi.waitFor(() => expect(conceal.disabled).toBe(false));
+    await act(async () => conceal.click());
+
+    const pixelate = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Пікселізація',
+    );
+    expect(pixelate?.getAttribute('aria-pressed')).toBe('true');
+
+    act(() => root.unmount());
+  });
+
   it('stops initialization when unmounted while fonts load #3448', async () => {
     let resolveFonts!: () => void;
     mocks.loadImageEditorFonts.mockImplementation(
