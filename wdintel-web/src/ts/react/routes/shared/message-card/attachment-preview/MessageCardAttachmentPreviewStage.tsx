@@ -97,8 +97,10 @@ export const MessageCardAttachmentPreviewStage = forwardRef<
   activationEnabledRef.current = activationEnabled;
   const isDocument = kind === 'document';
   const isScrollable = isDocument || kind === 'audio';
-  const getRegion = (event: PointerEvent, stage: HTMLDivElement) =>
-    getPrimaryPointerRegion?.(event, stage) ?? getDefaultRegion(event.target);
+  const getRegion = (event: PointerEvent, stage: HTMLDivElement) => {
+    if (event.target instanceof Node && !stage.contains(event.target)) return 'protected';
+    return getPrimaryPointerRegion?.(event, stage) ?? getDefaultRegion(event.target);
+  };
 
   useEffect(() => {
     gestureRef.current = null;
