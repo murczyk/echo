@@ -1,4 +1,4 @@
-import type { InboxMessage } from '../../../../Bindings';
+import type { InboxMessage, SignalProfileEntry } from '../../../../Bindings';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { isNullOrUndefined } from '../../utils/misc';
 
@@ -8,9 +8,11 @@ import { useInboxChangedMessageIds } from '../shared/useInboxChangedMessageIds';
 import { isIntelligenceReport } from '../shared/intelligence-reports';
 import { isAbortError } from '../../services/api/client';
 import type { ReportEditLoadState } from '../shared/manage-message/useManageMessageDrawer';
+import { buildMessageCardDisplayLabels } from '../shared/message-card/message-card-labels';
 
 type Props = {
   messages: Array<[number, InboxMessage]>;
+  profiles: Record<string, SignalProfileEntry | null>;
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
   onUpdateLocalMessage: (
@@ -22,7 +24,11 @@ type Props = {
 type Result = {
   editorMessage: { id: number; message: InboxMessage } | null;
   editorEditAsReport: boolean;
-  reportSource: { id: number; message: InboxMessage } | null;
+  reportSource: {
+    id: number;
+    message: InboxMessage;
+    senderName?: string | null;
+  } | null;
   editTargetLoadState: ReportEditLoadState;
   editorSaveInFlight: boolean;
   closeEditor: () => void;
@@ -83,6 +89,7 @@ export function enqueueMessageSave<T>(
 
 export function useAnalysisMessageEditor({
   messages,
+  profiles,
   onError,
   onUnauthorized,
   onUpdateLocalMessage,
@@ -94,9 +101,11 @@ export function useAnalysisMessageEditor({
   const [editTargetLoadState, setEditTargetLoadState] = useState<ReportEditLoadState>({
     status: 'idle',
   });
-  const [reportSource, setReportSource] = useState<{ id: number; message: InboxMessage } | null>(
-    null,
-  );
+  const [reportSource, setReportSource] = useState<{
+    id: number;
+    message: InboxMessage;
+    senderName?: string | null;
+  } | null>(null);
   const editorSaveInFlight = false;
   const messagesRef = useRef(messages);
   const messageDraftsRef = useRef(buildMessageDraftMap(messages));
@@ -163,9 +172,13 @@ export function useAnalysisMessageEditor({
       cancelReportEditLoad();
       setEditorMessage(null);
       setEditorEditAsReport(false);
-      setReportSource({ id: entry[0], message: entry[1] });
+      const { senderName } = buildMessageCardDisplayLabels(entry[1], {
+        groupInfos: {},
+        profiles,
+      });
+      setReportSource({ id: entry[0], message: entry[1], senderName });
     },
-    [cancelReportEditLoad, messages],
+    [cancelReportEditLoad, messages, profiles],
   );
 
   const openReportEditor = useCallback(

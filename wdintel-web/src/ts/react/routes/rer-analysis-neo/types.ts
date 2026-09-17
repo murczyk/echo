@@ -189,7 +189,11 @@ export type AnalysisPageState = {
   editorMessage: { id: number; message: InboxMessage } | null;
   editorEditAsReport: boolean;
   editTargetLoadState: ReportEditLoadState;
-  reportSource: { id: number; message: InboxMessage } | null;
+  reportSource: {
+    id: number;
+    message: InboxMessage;
+    senderName?: string | null;
+  } | null;
   editorSaveInFlight: boolean;
   currentUser: User | null;
   filtersLoading: boolean;

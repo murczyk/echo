@@ -28,7 +28,11 @@ export type DutyFeedColumnModelDeps = {
   messageTimeBasis: MessageTimeBasis;
   openReportEditor: (reportId: number) => void;
   openMessageEditor: (target: { id: number; message: InboxMessage }) => void;
-  openReportComposer: (source: { id: number; message: InboxMessage }) => void;
+  openReportComposer: (source: {
+    id: number;
+    message: InboxMessage;
+    senderName?: string | null;
+  }) => void;
 };
 
 function dutyFeedColumnMaxWidth(feedCount: number, narrow: boolean): string {

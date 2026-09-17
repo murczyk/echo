@@ -57,9 +57,11 @@ export function RerDutyNeoPage({
     reportLoadControllerRef.current = null;
     setEditTargetLoadState({ status: 'idle' });
   }, []);
-  const [reportSource, setReportSource] = useState<{ id: number; message: InboxMessage } | null>(
-    null,
-  );
+  const [reportSource, setReportSource] = useState<{
+    id: number;
+    message: InboxMessage;
+    senderName?: string | null;
+  } | null>(null);
   const { notify } = usePowerSnackbar();
   const {
     currentUser,
@@ -117,7 +119,7 @@ export function RerDutyNeoPage({
     [cancelReportEditLoad],
   );
   const openReportComposer = useCallback(
-    (source: { id: number; message: InboxMessage }) => {
+    (source: { id: number; message: InboxMessage; senderName?: string | null }) => {
       cancelReportEditLoad();
       setCreateMessageOpen(false);
       setEditAsReport(false);

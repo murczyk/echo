@@ -8,6 +8,7 @@ import {
   feedIndicatorUnreadCount,
   type MessageFeedState,
 } from './utils';
+import { buildMessageCardDisplayLabels } from '../shared/message-card/message-card-labels';
 
 export type RerDutyFeedsBundle = ReturnType<typeof useRerDutyFeeds>;
 
@@ -15,7 +16,11 @@ export type DutyFeedColumnActionsDeps = {
   feeds: RerDutyFeedsBundle;
   openReportEditor: (reportId: number) => void;
   openMessageEditor: (target: { id: number; message: InboxMessage }) => void;
-  openReportComposer: (source: { id: number; message: InboxMessage }) => void;
+  openReportComposer: (source: {
+    id: number;
+    message: InboxMessage;
+    senderName?: string | null;
+  }) => void;
 };
 
 /**
@@ -81,7 +86,11 @@ export function useDutyFeedColumnActions(
         handleMessageImportant(feedId, msgId, currentlyImportant),
       onMessageCopy: handleMessageCopy,
       onMessageCreateReport: (messageId, message) => {
-        deps.openReportComposer({ id: messageId, message });
+        const { senderName } = buildMessageCardDisplayLabels(message, {
+          groupInfos: deps.feeds.groupInfos,
+          profiles: deps.feeds.profiles,
+        });
+        deps.openReportComposer({ id: messageId, message, senderName });
       },
       onMessageEditReport: (reportId) => {
         deps.openReportEditor(reportId);

@@ -1020,8 +1020,8 @@ describe('ManageMessageDrawer edit mode', () => {
       container.querySelector('textarea[aria-label="Текст розвіддонесення"]'),
     );
     const reportTextRow = container.querySelector('[data-testid="report-text-row"]');
-    expect(reportTextRow?.textContent).toContain('Оригінальний текст');
-    expect(reportTextRow?.textContent).toContain('Розвіддонесення');
+    expect(reportTextRow?.textContent).not.toContain('Оригінальний текст');
+    expect(reportTextRow?.textContent).not.toContain('Розвіддонесення');
     expect(reportTextRow?.parentElement?.firstElementChild).toBe(reportTextRow);
     expect(drawerSlotProps?.paper?.sx?.width).toBe('100vw');
     expect(container.querySelector('textarea[aria-label="Коментар"]')).toBeNull();
@@ -1052,6 +1052,63 @@ describe('ManageMessageDrawer edit mode', () => {
         comment: undefined,
       }),
     );
+
+    root.unmount();
+  });
+
+  it('shows the source card header above the original message when creating a report', async () => {
+    setRecentValues({});
+    referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
+    referenceDataMocks.getGroupInfosBatch.mockResolvedValue([
+      { masterKey: 'g-1', name: 'Група джерела' },
+    ]);
+    directSubmitMocks.copyDirectSubmit.mockResolvedValue({
+      payloads: [{ full_body: 'original copied body' }],
+    });
+    const source = buildMessage({
+      sender: 'sender-id',
+      deviceName: 'device-1',
+      unit: 'Підрозділ 1',
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled
+          currentUser={null}
+          onClose={vi.fn()}
+          reportSource={{ id: 42, message: source, senderName: 'Імʼя Відправника' }}
+        />,
+      );
+    });
+
+    const sourceHeader = container.querySelector('[data-testid="report-source-header"]');
+    const originalMessage = container.querySelector(
+      'textarea[aria-label="Текст оригінального повідомлення"]',
+    );
+    expect(sourceHeader).not.toBeNull();
+    expect(sourceHeader?.textContent).toContain('13:45');
+    expect(sourceHeader?.textContent).toContain('1.07');
+    expect(sourceHeader?.textContent).toContain('Група джерела');
+    expect(sourceHeader?.textContent).toContain('Імʼя Відправника');
+    expect(sourceHeader?.textContent).not.toContain('sender-id');
+    expect(sourceHeader?.textContent).toContain('149.500');
+    expect(sourceHeader?.textContent).toContain('device-1');
+    expect(sourceHeader?.textContent).toContain('Підрозділ 1');
+    expect(sourceHeader?.textContent).toContain('Київ');
+    expect(sourceHeader?.compareDocumentPosition(originalMessage!)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(sourceHeader?.parentElement).toBe(
+      container.querySelector('[data-testid="report-text-row"]'),
+    );
+    expect(sourceHeader?.querySelector('[title="Час"]')).not.toBeNull();
+    expect(sourceHeader?.querySelector('[title="Дата"]')).not.toBeNull();
+    expect(sourceHeader?.querySelector('[title="Відправник"]')).not.toBeNull();
 
     root.unmount();
   });

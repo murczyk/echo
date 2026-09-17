@@ -123,6 +123,9 @@ describe('useAnalysisMessageEditor', () => {
   function Harness() {
     latest = useAnalysisMessageEditor({
       messages: harnessMessages,
+      profiles: {
+        'sender-1': { givenName: 'Імʼя', familyName: 'Відправника' },
+      },
       onError: vi.fn(),
       onUnauthorized: vi.fn().mockReturnValue(false),
       onUpdateLocalMessage: vi.fn(),
@@ -176,12 +179,27 @@ describe('useAnalysisMessageEditor', () => {
     expect(latest?.editorMessage).toEqual({ id: 91, message: report });
   });
 
+  it('keeps the card sender name when opening the report creator', async () => {
+    const message = { sender: 'sender-1' } as InboxMessage;
+    harnessMessages = [[42, message]];
+    await act(async () => root.render(React.createElement(Harness)));
+
+    act(() => latest?.openReportCreator(42));
+
+    expect(latest?.reportSource).toEqual({
+      id: 42,
+      message,
+      senderName: 'Імʼя Відправника',
+    });
+  });
+
   it('keeps a failed report editor load open and retryable', async () => {
     const onError = vi.fn();
     root.unmount();
     function ErrorHarness() {
       latest = useAnalysisMessageEditor({
         messages: [],
+        profiles: {},
         onError,
         onUnauthorized: vi.fn().mockReturnValue(false),
         onUpdateLocalMessage: vi.fn(),

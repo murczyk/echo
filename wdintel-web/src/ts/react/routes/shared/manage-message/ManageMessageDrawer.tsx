@@ -16,6 +16,8 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
+import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined';
 
 import type { User, InboxMessage } from '../../../../../Bindings';
 import { ConfirmDangerDialog } from '../../../components/ConfirmDangerDialog';
@@ -39,6 +41,10 @@ import type {
   QuickIntelReportSuggestionState,
   ReportEditLoadState,
 } from './useManageMessageDrawer';
+import { MessageCardMetadata } from '../message-card/MessageCardHeader';
+import { MessageDeviceAccessProvider } from '../message-card/MessageDeviceAccess';
+import { resolveMessageCardEtalonDisplayModel } from '../message-card/message-card.utils';
+import { formatDateNoYear, formatTime } from '../../rer-duty-neo/utils';
 
 export type Props = {
   open: boolean;
@@ -53,7 +59,7 @@ export type Props = {
   ) => void | Promise<void>;
   onDeleteSuccess?: (messageId: number) => void | Promise<void>;
   editTarget?: { id: number; message: InboxMessage } | null;
-  reportSource?: { id: number; message: InboxMessage } | null;
+  reportSource?: { id: number; message: InboxMessage; senderName?: string | null } | null;
   editAsReport?: boolean;
   editTargetLoadState?: ReportEditLoadState;
   onRetryEditTargetLoad?: () => void;
@@ -63,6 +69,10 @@ export type Props = {
 
 function ReportTextRow({
   originalText,
+  sourceMessage,
+  sourceGroupName,
+  sourceSenderName,
+  deviceAccess,
   busy,
   quickSuggestion,
   onApplyQuickSuggestion,
@@ -70,6 +80,10 @@ function ReportTextRow({
   onRetryQuickSuggestion,
 }: {
   originalText: string;
+  sourceMessage: InboxMessage | null;
+  sourceGroupName: string | null;
+  sourceSenderName: string | null;
+  deviceAccess: boolean;
   busy: boolean;
   quickSuggestion: QuickIntelReportSuggestionState;
   onApplyQuickSuggestion: () => void;
@@ -96,17 +110,23 @@ function ReportTextRow({
         minWidth: 0,
       }}
     >
-      <FormSectionWrapper title="Оригінальний текст">
-        <TextField
-          label="Текст оригінального повідомлення"
-          value={originalText}
-          fullWidth
-          multiline
-          rows={6}
-          slotProps={{ input: { readOnly: true } }}
+      {sourceMessage ? (
+        <ReportSourceHeader
+          message={sourceMessage}
+          groupName={sourceGroupName}
+          senderName={sourceSenderName}
+          deviceAccess={deviceAccess}
         />
-      </FormSectionWrapper>
-      <FormSectionWrapper title="Розвіддонесення">
+      ) : null}
+      <TextField
+        label="Текст оригінального повідомлення"
+        value={originalText}
+        fullWidth
+        multiline
+        rows={6}
+        slotProps={{ input: { readOnly: true } }}
+      />
+      <Stack spacing={2}>
         <Controller
           name="full_body"
           control={control}
@@ -233,7 +253,90 @@ function ReportTextRow({
             ) : null}
           </Box>
         ) : null}
-      </FormSectionWrapper>
+      </Stack>
+    </Box>
+  );
+}
+
+function ReportSourceHeader({
+  message,
+  groupName,
+  senderName,
+  deviceAccess,
+}: {
+  message: InboxMessage;
+  groupName: string | null;
+  senderName: string | null;
+  deviceAccess: boolean;
+}) {
+  const networkName = message.networkName?.trim() ?? '';
+  const networkIds = message.networkIds ?? [];
+  const hasSingleNamedNetwork = networkName !== '' && networkIds.length === 1;
+  const sourceMessage = hasSingleNamedNetwork
+    ? message
+    : {
+        ...message,
+        networkIds: null,
+        unit: networkName || message.unit,
+      };
+  const etalonDisplayModel = resolveMessageCardEtalonDisplayModel(sourceMessage, {
+    networkDisplayMap: hasSingleNamedNetwork ? { [networkIds[0]]: networkName } : undefined,
+  });
+  const time = message.time?.trim() ? formatTime(message.time) : null;
+  const date = message.date?.trim() ? formatDateNoYear(message.date) : null;
+
+  return (
+    <Box
+      data-testid="report-source-header"
+      sx={{
+        gridColumn: '1 / -1',
+        display: 'flex',
+        alignItems: 'center',
+        flexWrap: 'nowrap',
+        gap: 2,
+        minWidth: 0,
+        overflowX: 'auto',
+        pb: 0.5,
+        '& .message-card-header-meta__icon': {
+          color: 'text.secondary',
+          opacity: 0.72,
+        },
+        '& .message-card-header-meta__icon > .message-card-header-icon': {
+          color: 'inherit',
+        },
+        '& .report-source-metadata > div > div': {
+          flexWrap: 'nowrap',
+        },
+      }}
+    >
+      <div className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap">
+        {time ? (
+          <div className="message-card-timestamp-item" title={time}>
+            <span className="message-card-header-meta__icon" title="Час">
+              <ScheduleOutlinedIcon className="message-card-header-icon message-card-timestamp-icon" />
+            </span>
+            <span className="message-card-text">{time}</span>
+          </div>
+        ) : null}
+        {date ? (
+          <div className="message-card-timestamp-item" title={date}>
+            <span className="message-card-header-meta__icon" title="Дата">
+              <CalendarTodayOutlinedIcon className="message-card-header-icon message-card-timestamp-icon" />
+            </span>
+            <span className="message-card-text">{date}</span>
+          </div>
+        ) : null}
+      </div>
+      <div className="report-source-metadata shrink-0 whitespace-nowrap">
+        <MessageDeviceAccessProvider allowed={deviceAccess}>
+          <MessageCardMetadata
+            msg={message}
+            groupName={groupName}
+            senderName={senderName}
+            etalonDisplayModel={etalonDisplayModel}
+          />
+        </MessageDeviceAccessProvider>
+      </div>
     </Box>
   );
 }
@@ -286,6 +389,10 @@ export function ManageMessageDrawer(props: Props) {
   const isReportEditIntent =
     Boolean(props.editAsReport) && (isEditMode || props.editTargetLoadState?.status !== 'idle');
   const reportDeleteId = isEditMode && isReportMode ? (props.editTarget?.id ?? null) : null;
+  const reportSourceGroupName = props.reportSource?.message.groupMasterKey
+    ? (signalGroups.find((group) => group.masterKey === props.reportSource?.message.groupMasterKey)
+        ?.name ?? props.reportSource.message.groupMasterKey)
+    : null;
 
   const handleDeleteConfirm = async () => {
     if (reportDeleteId == null || deleteInFlight) return;
@@ -396,6 +503,14 @@ export function ManageMessageDrawer(props: Props) {
                     {isReportMode ? (
                       <ReportTextRow
                         originalText={originalReportText}
+                        sourceMessage={props.reportSource?.message ?? null}
+                        sourceGroupName={reportSourceGroupName}
+                        sourceSenderName={
+                          props.reportSource?.senderName ??
+                          props.reportSource?.message.sender ??
+                          null
+                        }
+                        deviceAccess={props.cyberEchoEnabled}
                         busy={busy}
                         quickSuggestion={quickSuggestion}
                         onApplyQuickSuggestion={applyQuickSuggestion}

@@ -573,6 +573,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
 
   const editor = useAnalysisMessageEditor({
     messages: data.messages,
+    profiles: data.profiles,
     onError: setPageError,
     onUnauthorized: handleUnauthorized,
     onUpdateLocalMessage: data.onUpdateLocalMessage,

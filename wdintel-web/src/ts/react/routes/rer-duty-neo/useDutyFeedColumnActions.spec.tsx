@@ -118,4 +118,42 @@ describe('useDutyFeedColumnActions', () => {
       expect.objectContaining({ scrollToEndAfterLoad: true }),
     );
   });
+
+  it('keeps the card sender name when opening the report composer', async () => {
+    const message = minimalInboxMessage({ sender: 'sender-1' });
+    const feed = {
+      id: 'mf-0',
+      filter: {},
+      items: [[40, message]],
+    } as unknown as MessageFeedState;
+    const openReportComposer = vi.fn();
+    const deps = {
+      feeds: {
+        messageFeeds: [feed],
+        profiles: {
+          'sender-1': { givenName: 'Імʼя', familyName: 'Відправника' },
+        },
+        groupInfos: {},
+        handleVisibleMessageIds: vi.fn(() => vi.fn()),
+      },
+      openReportEditor: vi.fn(),
+      openMessageEditor: vi.fn(),
+      openReportComposer,
+    } as unknown as DutyFeedColumnActionsDeps;
+    let actions: FeedColumnModel['actions'] | null = null;
+
+    function Harness() {
+      actions = useDutyFeedColumnActions(deps)(feed);
+      return null;
+    }
+
+    await act(async () => root.render(<Harness />));
+    act(() => actions!.onMessageCreateReport(40, message));
+
+    expect(openReportComposer).toHaveBeenCalledWith({
+      id: 40,
+      message,
+      senderName: 'Імʼя Відправника',
+    });
+  });
 });

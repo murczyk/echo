@@ -68,7 +68,7 @@ export type UseManageMessageDrawerProps = {
     result: import('../../../services/api/direct-submit').DirectSubmitResponse,
   ) => void | Promise<void>;
   editTarget?: { id: number; message: InboxMessage } | null;
-  reportSource?: { id: number; message: InboxMessage } | null;
+  reportSource?: { id: number; message: InboxMessage; senderName?: string | null } | null;
   editAsReport?: boolean;
   editTargetLoadState?: ReportEditLoadState;
   editSaveInFlight?: boolean;
