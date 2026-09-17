@@ -8374,7 +8374,7 @@ unresolvedUnitMessageEncoder struct =
 
 type alias ListUnresolvedUnitMessagesReq =
     { title : String
-    , page : Maybe (Int)
+    , cursor : Maybe (String)
     }
 
 
@@ -8382,13 +8382,13 @@ listUnresolvedUnitMessagesReqEncoder : ListUnresolvedUnitMessagesReq -> Json.Enc
 listUnresolvedUnitMessagesReqEncoder struct =
     Json.Encode.object
         [ ( "title", (Json.Encode.string) struct.title )
-        , ( "page", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.page )
+        , ( "cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.cursor )
         ]
 
 
 type alias ListUnresolvedUnitMessagesRsp =
     { messages : List (UnresolvedUnitMessage)
-    , hasMore : Bool
+    , nextCursor : Maybe (String)
     }
 
 
@@ -8396,7 +8396,7 @@ listUnresolvedUnitMessagesRspEncoder : ListUnresolvedUnitMessagesRsp -> Json.Enc
 listUnresolvedUnitMessagesRspEncoder struct =
     Json.Encode.object
         [ ( "messages", (Json.Encode.list (unresolvedUnitMessageEncoder)) struct.messages )
-        , ( "has_more", (Json.Encode.bool) struct.hasMore )
+        , ( "next_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.nextCursor )
         ]
 
 
@@ -20000,14 +20000,14 @@ listUnresolvedUnitMessagesReqDecoder : Json.Decode.Decoder ListUnresolvedUnitMes
 listUnresolvedUnitMessagesReqDecoder =
     Json.Decode.succeed ListUnresolvedUnitMessagesReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "title" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cursor" (Json.Decode.nullable (Json.Decode.string))))
 
 
 listUnresolvedUnitMessagesRspDecoder : Json.Decode.Decoder ListUnresolvedUnitMessagesRsp
 listUnresolvedUnitMessagesRspDecoder =
     Json.Decode.succeed ListUnresolvedUnitMessagesRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messages" (Json.Decode.list (unresolvedUnitMessageDecoder))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_more" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_cursor" (Json.Decode.nullable (Json.Decode.string))))
 
 
 classifyUnresolvedUnitLabelReqDecoder : Json.Decode.Decoder ClassifyUnresolvedUnitLabelReq

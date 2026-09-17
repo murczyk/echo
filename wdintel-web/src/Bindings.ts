@@ -3236,12 +3236,12 @@ export type UnresolvedUnitMessage = {
 
 export type ListUnresolvedUnitMessagesReq = {
   title: string;
-  page: number | null;
+  cursor: string | null;
 };
 
 export type ListUnresolvedUnitMessagesRsp = {
   messages: Array<UnresolvedUnitMessage>;
-  hasMore: boolean;
+  nextCursor: string | null;
 };
 
 export type ClassifyUnresolvedUnitLabelReq = {

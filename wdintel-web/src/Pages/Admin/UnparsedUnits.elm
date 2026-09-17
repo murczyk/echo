@@ -19,7 +19,7 @@ page user _ route =
         { init = init
         , update = update
         , subscriptions = subscriptions
-        , view = view route
+        , view = view user route
         }
         |> Page.withLayout (toLayout user)
 
@@ -52,8 +52,8 @@ subscriptions _ =
     Sub.none
 
 
-view : Route () -> Model -> View Msg
-view route _ =
+view : Auth.User -> Route () -> Model -> View Msg
+view user route _ =
     let
         title =
             Dict.get "title" route.query
@@ -73,6 +73,7 @@ view route _ =
                 [ node "admin-unparsed-units"
                     [ class "react-fill-host block w-full h-full"
                     , attribute "data-title" title
+                    , attribute "data-auth-user-roles" (String.join "," user.roles)
                     ]
                     []
                 ]

@@ -1,10 +1,17 @@
+import AddIcon from '@mui/icons-material/Add';
+import LinkIcon from '@mui/icons-material/Link';
 import { Box, Button, CircularProgress, Paper, Stack, Typography } from '@mui/material';
 import { useCallback, useEffect, useState } from 'react';
 
 import type { UnresolvedUnitMessage } from '../../../../Bindings';
 import { PageHeader } from '../../components/PageHeader';
 import { PowerAlert } from '../../components/PowerAlert';
-import { listUnresolvedUnitMessages } from '../../services/api/unresolved-unit-labels';
+import {
+  listUnresolvedUnitMessages,
+  resolveUnresolvedUnitLabel,
+} from '../../services/api/unresolved-unit-labels';
+import { hasRole } from '../../utils/roles';
+import { UnresolvedUnitLinkDialog } from '../admin-unit-unparsed/UnresolvedUnitLinkDialog';
 
 function formatError(error: unknown): string {
   if (error instanceof Error && error.message.trim()) return error.message;
@@ -13,6 +20,12 @@ function formatError(error: unknown): string {
 
 function formatCreatedAt(createdAt: number): string {
   return new Date(createdAt).toLocaleString('uk-UA');
+}
+
+function sortMessagesNewestFirst(messages: UnresolvedUnitMessage[]): UnresolvedUnitMessage[] {
+  return [...messages].sort(
+    (left, right) => right.createdAt - left.createdAt || right.id - left.id,
+  );
 }
 
 function UnresolvedUnitMessageCard({ message }: { message: UnresolvedUnitMessage }) {
@@ -49,19 +62,31 @@ function UnresolvedUnitMessageCard({ message }: { message: UnresolvedUnitMessage
   );
 }
 
-export function AdminUnparsedUnitsPage({ title }: { title: string }) {
+export function AdminUnparsedUnitsPage({
+  title,
+  authUserRoles,
+}: {
+  title: string;
+  authUserRoles: string[];
+}) {
   const normalizedTitle = title.trim();
   const [messages, setMessages] = useState<UnresolvedUnitMessage[]>([]);
-  const [page, setPage] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
+  const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linking, setLinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const canResolve =
+    hasRole(authUserRoles, 'Admin') &&
+    hasRole(authUserRoles, 'Rer') &&
+    hasRole(authUserRoles, 'UnitsEditor');
+  const canCreate = hasRole(authUserRoles, 'Rer') && hasRole(authUserRoles, 'UnitsEditor');
 
   useEffect(() => {
     setMessages([]);
-    setPage(0);
-    setHasMore(false);
+    setCursor(null);
     setError(null);
     if (!normalizedTitle) {
       setLoading(false);
@@ -72,13 +97,13 @@ export function AdminUnparsedUnitsPage({ title }: { title: string }) {
     const controller = new AbortController();
     setLoading(true);
     void listUnresolvedUnitMessages(
-      { title: normalizedTitle, page: 0 },
+      { title: normalizedTitle, cursor: null },
       { signal: controller.signal },
     )
       .then((response) => {
         if (controller.signal.aborted) return;
-        setMessages(response.messages);
-        setHasMore(response.hasMore);
+        setMessages(sortMessagesNewestFirst(response.messages));
+        setCursor(response.nextCursor);
       })
       .catch((error) => {
         if (!controller.signal.aborted) setError(formatError(error));
@@ -90,30 +115,79 @@ export function AdminUnparsedUnitsPage({ title }: { title: string }) {
   }, [normalizedTitle]);
 
   const loadMore = useCallback(async () => {
-    const nextPage = page + 1;
+    if (cursor === null) return;
     setLoadingMore(true);
     setError(null);
     try {
       const response = await listUnresolvedUnitMessages({
         title: normalizedTitle,
-        page: nextPage,
+        cursor,
       });
-      setMessages((current) => [...current, ...response.messages]);
-      setPage(nextPage);
-      setHasMore(response.hasMore);
+      setMessages((current) => sortMessagesNewestFirst([...current, ...response.messages]));
+      setCursor(response.nextCursor);
     } catch (error) {
       setError(formatError(error));
     } finally {
       setLoadingMore(false);
     }
-  }, [normalizedTitle, page]);
+  }, [cursor, normalizedTitle]);
+
+  async function linkUnit(sigintUnitId: number) {
+    setLinking(true);
+    setError(null);
+    try {
+      await resolveUnresolvedUnitLabel({
+        unitTxt: normalizedTitle,
+        label: normalizedTitle,
+        sigintUnitId,
+      });
+      setLinkOpen(false);
+      setStatus(`Синонім для «${normalizedTitle}» збережено.`);
+    } catch (requestError) {
+      setError(formatError(requestError));
+    } finally {
+      setLinking(false);
+    }
+  }
 
   return (
     <Stack spacing={2} sx={{ height: '100%', minHeight: 0, p: 2 }}>
-      <PageHeader title={normalizedTitle || 'Приклади перехоплень'} />
+      <PageHeader
+        title={normalizedTitle || 'Приклади перехоплень'}
+        actions={
+          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
+            <Button
+              variant="outlined"
+              startIcon={<LinkIcon />}
+              disabled={!canResolve || !normalizedTitle || linking}
+              onClick={() => {
+                setError(null);
+                setStatus(null);
+                setLinkOpen(true);
+              }}
+            >
+              Прив'язати до підрозділу
+            </Button>
+            <Button
+              component="a"
+              variant="contained"
+              startIcon={<AddIcon />}
+              disabled={!canCreate}
+              href="/rer-units-neo?create=true"
+            >
+              Створити підрозділ
+            </Button>
+          </Stack>
+        }
+      />
       {error ? (
         <PowerAlert severity="error" onClose={() => setError(null)}>
           {error}
+        </PowerAlert>
+      ) : null}
+      {status ? (
+        <PowerAlert severity="success" onClose={() => setStatus(null)}>
+          {status}
         </PowerAlert>
       ) : null}
       {loading ? (
@@ -129,7 +203,7 @@ export function AdminUnparsedUnitsPage({ title }: { title: string }) {
             {messages.map((message) => (
               <UnresolvedUnitMessageCard key={message.id} message={message} />
             ))}
-            {hasMore ? (
+            {cursor !== null ? (
               <Box sx={{ alignSelf: 'center', pb: 1 }}>
                 <Button variant="outlined" disabled={loadingMore} onClick={() => void loadMore()}>
                   {loadingMore ? 'Завантаження…' : 'Завантажити ще'}
@@ -139,6 +213,13 @@ export function AdminUnparsedUnitsPage({ title }: { title: string }) {
           </Stack>
         </Box>
       )}
+      <UnresolvedUnitLinkDialog
+        open={linkOpen}
+        unitTxt={normalizedTitle}
+        processing={linking}
+        onClose={() => setLinkOpen(false)}
+        onSubmit={(sigintUnitId) => void linkUnit(sigintUnitId)}
+      />
     </Stack>
   );
 }

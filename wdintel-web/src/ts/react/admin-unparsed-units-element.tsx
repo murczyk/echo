@@ -3,17 +3,31 @@ import { createRoot, Root } from 'react-dom/client';
 import { NeoMuiThemeProvider } from './mui-theme';
 import { AdminUnparsedUnitsPage } from './routes/admin-unparsed-units';
 
+function getAuthUserRoles(element: Element): string[] {
+  const raw =
+    element.getAttribute('data-auth-user-roles') ??
+    element.closest('.app-shell')?.getAttribute('data-auth-user-roles') ??
+    '';
+  return raw
+    .split(',')
+    .map((role) => role.trim())
+    .filter(Boolean);
+}
+
 class AdminUnparsedUnitsElement extends HTMLElement {
   private root: Root | null = null;
 
   static get observedAttributes() {
-    return ['data-title'];
+    return ['data-title', 'data-auth-user-roles'];
   }
 
   private renderRoot() {
     this.root?.render(
       <NeoMuiThemeProvider>
-        <AdminUnparsedUnitsPage title={this.getAttribute('data-title') ?? ''} />
+        <AdminUnparsedUnitsPage
+          title={this.getAttribute('data-title') ?? ''}
+          authUserRoles={getAuthUserRoles(this)}
+        />
       </NeoMuiThemeProvider>,
     );
   }
@@ -30,7 +44,9 @@ class AdminUnparsedUnitsElement extends HTMLElement {
   }
 
   attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null) {
-    if (name === 'data-title' && oldValue !== newValue) this.renderRoot();
+    if ((name === 'data-title' || name === 'data-auth-user-roles') && oldValue !== newValue) {
+      this.renderRoot();
+    }
   }
 
   disconnectedCallback() {

@@ -2,6 +2,7 @@ module Pages.RerUnitsNeo exposing (Model, Msg, page)
 
 import Auth
 import Core.Auth
+import Dict
 import Effect as E exposing (Effect)
 import Html exposing (div, node)
 import Html.Attributes exposing (attribute, class)
@@ -32,12 +33,12 @@ type Msg
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
-page user _ _ =
+page user _ route =
     Page.new
         { init = init user
         , update = update
         , subscriptions = subscriptions
-        , view = view user
+        , view = view user route
         }
         |> Page.withLayout (toLayout user)
 
@@ -62,14 +63,25 @@ subscriptions _ =
     Sub.none
 
 
-view : Auth.User -> Model -> View Msg
-view user _ =
+view : Auth.User -> Route () -> Model -> View Msg
+view user route _ =
+    let
+        openCreate =
+            Dict.get "create" route.query == Just "true"
+    in
     { title = "Підрозділи противника"
     , body =
         [ div [ class "app-shell-fill-height box-border min-h-0 px-6 pt-6 pb-6 w-full flex flex-col gap-6 overflow-visible lg:overflow-hidden" ]
             [ div [ class "flex-1 min-h-0 w-full" ]
                 [ node "rer-units-neo"
                     [ attribute "data-auth-user-roles" (String.join "," user.roles)
+                    , attribute "data-open-create"
+                        (if openCreate then
+                            "true"
+
+                         else
+                            "false"
+                        )
                     , class "block w-full h-full"
                     ]
                     []

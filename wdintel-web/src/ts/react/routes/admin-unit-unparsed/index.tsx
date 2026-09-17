@@ -6,8 +6,6 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import {
   Box,
   Button,
-  Chip,
-  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -16,15 +14,10 @@ import {
   Stack,
   TextField,
   Tooltip,
-  Typography,
 } from '@mui/material';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import type {
-  Unit,
-  UnresolvedUnitLabel,
-  UnresolvedUnitLabelArchiveFilter,
-} from '../../../../Bindings';
+import type { UnresolvedUnitLabel, UnresolvedUnitLabelArchiveFilter } from '../../../../Bindings';
 import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowActionButton';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerIconButton } from '../../components/PowerIconButton';
@@ -34,11 +27,6 @@ import { TableStateProvider } from '../../components/mui-customized/table/table-
 import type { AppMrtColumnDef } from '../../components/mui-customized/table/get-default-table-options';
 import { HttpRequestError } from '../../services/api/client';
 import {
-  DEFAULT_LIST_UNITS_REQ,
-  searchUnitsByMatchTier,
-  type UnitSearchMatches,
-} from '../../services/api/units';
-import {
   archiveUnresolvedUnitLabel,
   listUnresolvedUnitLabels,
   resolveUnresolvedUnitLabel,
@@ -46,6 +34,7 @@ import {
 } from '../../services/api/unresolved-unit-labels';
 import { hasRole } from '../../utils/roles';
 import { SettingsNeoTable } from '../settings-neo/SettingsNeoTable';
+import { UnresolvedUnitLinkDialog } from './UnresolvedUnitLinkDialog';
 
 const DEFAULT_COLUMN_ORDER = [
   'mrt-row-actions',
@@ -62,7 +51,6 @@ const DEFAULT_COLUMN_VISIBILITY = {
   messageExamples: true,
   'mrt-row-actions': true,
 };
-const UNIT_SEARCH_DEBOUNCE_MS = 300;
 
 type ArchiveFilter = 'all' | 'new' | 'archived';
 
@@ -76,68 +64,6 @@ function formatError(error: unknown): string {
   if (error instanceof HttpRequestError && error.message.trim()) return error.message;
   if (error instanceof Error && error.message.trim()) return error.message;
   return 'Помилка запиту до сервера.';
-}
-
-function unitSegments(unit: Unit): string {
-  return [
-    unit.other,
-    unit.teamOrCrew,
-    unit.section,
-    unit.squad,
-    unit.platoon,
-    unit.company,
-    unit.battalion,
-    unit.regiment,
-    unit.brigade,
-    unit.division,
-    unit.corps,
-    unit.army,
-    unit.militaryDistrict,
-    unit.armyRegion,
-  ]
-    .map((segment) => segment.trim())
-    .filter(Boolean)
-    .join(' ');
-}
-
-function unitTitle(unit: Unit): string {
-  const segments = unitSegments(unit);
-  return segments ? `${unit.name} — ${segments}` : unit.name;
-}
-
-function unitEchelon(unit: Unit): number {
-  return [
-    unit.other,
-    unit.teamOrCrew,
-    unit.section,
-    unit.squad,
-    unit.platoon,
-    unit.company,
-    unit.battalion,
-    unit.regiment,
-    unit.brigade,
-    unit.division,
-    unit.corps,
-    unit.army,
-    unit.militaryDistrict,
-    unit.armyRegion,
-  ].findIndex((segment) => segment.trim().length > 0);
-}
-
-type UnitOption = {
-  unit: Unit;
-  strict: boolean;
-};
-
-function sortUnitsByDescendingEchelon(units: Unit[]): Unit[] {
-  return [...units].sort((left, right) => unitEchelon(right) - unitEchelon(left));
-}
-
-function sortUnitMatches(matches: UnitSearchMatches): UnitOption[] {
-  return [
-    ...sortUnitsByDescendingEchelon(matches.strict).map((unit) => ({ unit, strict: true })),
-    ...sortUnitsByDescendingEchelon(matches.relaxed).map((unit) => ({ unit, strict: false })),
-  ];
 }
 
 function ArchiveFilterChips({
@@ -174,66 +100,6 @@ function ArchiveFilterChips({
   );
 }
 
-function UnitCandidateButton({
-  unit,
-  strict,
-  selected,
-  disabled,
-  onClick,
-}: {
-  unit: Unit;
-  strict: boolean;
-  selected: boolean;
-  disabled: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <Button
-      variant={selected ? 'contained' : 'outlined'}
-      color={unit.active ? 'primary' : 'warning'}
-      disabled={disabled}
-      onClick={onClick}
-      sx={{ justifyContent: 'flex-start', textAlign: 'left', py: 1 }}
-    >
-      <Stack
-        direction="row"
-        spacing={1}
-        alignItems="flex-start"
-        sx={{ minWidth: 0, width: '100%' }}
-      >
-        {strict ? (
-          <Box component="span" aria-label="Точний збіг" sx={{ lineHeight: 1.5 }}>
-            ⭐
-          </Box>
-        ) : null}
-        <Stack spacing={0.5} sx={{ minWidth: 0, width: '100%' }}>
-          <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0 }}>
-            <Typography variant="body2" sx={{ fontWeight: 600, overflowWrap: 'anywhere' }}>
-              {unit.name || `#${unit.id}`}
-            </Typography>
-            <Chip
-              size="small"
-              label={unit.active ? 'Активний' : 'Неактивний'}
-              color={unit.active ? 'success' : 'warning'}
-              variant={selected ? 'filled' : 'outlined'}
-            />
-          </Stack>
-          {unitSegments(unit) ? (
-            <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
-              {unitSegments(unit)}
-            </Typography>
-          ) : null}
-        </Stack>
-      </Stack>
-    </Button>
-  );
-}
-
-type ResolveState = {
-  row: UnresolvedUnitLabel;
-  sigintUnit: Unit | null;
-};
-
 type NoteState = {
   row: UnresolvedUnitLabel;
   note: string;
@@ -258,16 +124,11 @@ export function AdminUnitUnparsedPage({
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [noteState, setNoteState] = useState<NoteState | null>(null);
-  const [resolveState, setResolveState] = useState<ResolveState | null>(null);
-  const [unitSearch, setUnitSearch] = useState('');
-  const [unitOptions, setUnitOptions] = useState<UnitOption[]>([]);
-  const [unitLoading, setUnitLoading] = useState(false);
-  const [unitSearchError, setUnitSearchError] = useState<string | null>(null);
+  const [resolveRow, setResolveRow] = useState<UnresolvedUnitLabel | null>(null);
   const canResolve =
     hasRole(authUserRoles, 'Admin') &&
     hasRole(authUserRoles, 'Rer') &&
     hasRole(authUserRoles, 'UnitsEditor');
-  const resolveRowText = resolveState?.row.unitTxt ?? null;
 
   const loadRows = useCallback(
     async (signal?: AbortSignal) => {
@@ -299,50 +160,6 @@ export function AdminUnitUnparsedPage({
     void loadRows(controller.signal);
     return () => controller.abort();
   }, [loadRows]);
-
-  useEffect(() => {
-    if (resolveRowText === null) {
-      setUnitOptions([]);
-      setUnitSearchError(null);
-      setUnitLoading(false);
-      return;
-    }
-
-    const controller = new AbortController();
-    const search = unitSearch.trim() || resolveRowText;
-    setUnitLoading(true);
-    setUnitSearchError(null);
-    setUnitOptions([]);
-    const timeout = window.setTimeout(() => {
-      void searchUnitsByMatchTier(
-        {
-          ...DEFAULT_LIST_UNITS_REQ,
-          sortBy: 'UnitNameLengthAsc',
-          includeInactive: true,
-          filterText: search,
-          limit: 50,
-          offset: 0,
-        },
-        { signal: controller.signal },
-      )
-        .then((matches) => {
-          if (!controller.signal.aborted) {
-            setUnitOptions(sortUnitMatches(matches));
-          }
-        })
-        .catch((error) => {
-          if (!controller.signal.aborted) setUnitSearchError(formatError(error));
-        })
-        .finally(() => {
-          if (!controller.signal.aborted) setUnitLoading(false);
-        });
-    }, UNIT_SEARCH_DEBOUNCE_MS);
-
-    return () => {
-      window.clearTimeout(timeout);
-      controller.abort();
-    };
-  }, [resolveRowText, unitSearch]);
 
   async function refreshAfterAction() {
     if (rows.length <= 1 && pageIndex > 0) {
@@ -394,18 +211,19 @@ export function AdminUnitUnparsedPage({
     }
   }, []);
 
-  async function resolveGroup() {
-    if (!resolveState?.sigintUnit) return;
+  async function resolveGroup(sigintUnitId: number) {
+    if (resolveRow === null) return;
+    const row = resolveRow;
     setProcessing(true);
     setError(null);
     try {
       await resolveUnresolvedUnitLabel({
-        unitTxt: resolveState.row.unitTxt,
-        label: resolveState.row.unitTxt,
-        sigintUnitId: resolveState.sigintUnit.id,
+        unitTxt: row.unitTxt,
+        label: row.unitTxt,
+        sigintUnitId,
       });
-      setStatus(`Синонім для «${resolveState.row.unitTxt}» збережено.`);
-      setResolveState(null);
+      setStatus(`Синонім для «${row.unitTxt}» збережено.`);
+      setResolveRow(null);
       await refreshAfterAction();
     } catch (error) {
       setError(formatError(error));
@@ -547,13 +365,7 @@ export function AdminUnitUnparsedPage({
                     disabled={!canResolve || processing}
                     onClick={() => {
                       setError(null);
-                      setUnitSearch(row.original.unitTxt);
-                      setUnitOptions([]);
-                      setUnitSearchError(null);
-                      setResolveState({
-                        row: row.original,
-                        sigintUnit: null,
-                      });
+                      setResolveRow(row.original);
                     }}
                   />
                 ) : null}
@@ -618,94 +430,13 @@ export function AdminUnitUnparsedPage({
         </DialogActions>
       </Dialog>
 
-      <Dialog
-        open={resolveState !== null}
-        fullWidth
-        maxWidth="md"
-        onClose={processing ? undefined : () => setResolveState(null)}
-      >
-        <DialogTitle>Прив'язати до підрозділу {resolveState?.row.unitTxt}</DialogTitle>
-        <DialogContent>
-          {resolveState ? (
-            <Stack spacing={2} sx={{ pt: 1 }}>
-              {unitOptions.length > 0 ? (
-                <Stack spacing={1}>
-                  <Typography variant="subtitle2">Топ кандидатів</Typography>
-                  {unitOptions.slice(0, 3).map(({ unit, strict }) => (
-                    <UnitCandidateButton
-                      key={unit.id}
-                      unit={unit}
-                      strict={strict}
-                      selected={resolveState.sigintUnit?.id === unit.id}
-                      disabled={processing}
-                      onClick={() =>
-                        setResolveState((current) =>
-                          current ? { ...current, sigintUnit: unit } : current,
-                        )
-                      }
-                    />
-                  ))}
-                </Stack>
-              ) : null}
-              <TextField
-                fullWidth
-                label="Пошук підрозділу SIGINT"
-                value={unitSearch}
-                disabled={processing}
-                helperText="Пошук включає неактивні підрозділи. Неактивний підрозділ буде активовано після збереження синоніму."
-                onChange={(event) => setUnitSearch(event.target.value)}
-              />
-              {unitSearchError ? <PowerAlert severity="error">{unitSearchError}</PowerAlert> : null}
-              <Stack spacing={1}>
-                {unitLoading ? (
-                  <Stack direction="row" alignItems="center" spacing={1}>
-                    <CircularProgress size={18} />
-                    <Typography variant="body2" color="text.secondary">
-                      Пошук підрозділів…
-                    </Typography>
-                  </Stack>
-                ) : null}
-                {!unitLoading && unitOptions.length === 0 ? (
-                  <Typography variant="body2" color="text.secondary">
-                    Підрозділів не знайдено.
-                  </Typography>
-                ) : null}
-                {unitOptions.slice(3).map(({ unit, strict }) => (
-                  <UnitCandidateButton
-                    key={unit.id}
-                    unit={unit}
-                    strict={strict}
-                    selected={resolveState.sigintUnit?.id === unit.id}
-                    disabled={processing}
-                    onClick={() =>
-                      setResolveState((current) =>
-                        current ? { ...current, sigintUnit: unit } : current,
-                      )
-                    }
-                  />
-                ))}
-              </Stack>
-              <Typography variant="body2">
-                {resolveState.sigintUnit
-                  ? `Обрано: ${unitTitle(resolveState.sigintUnit)}`
-                  : 'Підрозділ SIGINT не обрано.'}
-              </Typography>
-            </Stack>
-          ) : null}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setResolveState(null)} disabled={processing}>
-            Скасувати
-          </Button>
-          <Button
-            variant="contained"
-            disabled={processing || resolveState === null || resolveState.sigintUnit === null}
-            onClick={() => void resolveGroup()}
-          >
-            {processing ? 'Збереження…' : "Прив'язати"}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <UnresolvedUnitLinkDialog
+        open={resolveRow !== null}
+        unitTxt={resolveRow?.unitTxt ?? ''}
+        processing={processing}
+        onClose={() => setResolveRow(null)}
+        onSubmit={(sigintUnitId) => void resolveGroup(sigintUnitId)}
+      />
     </TableStateProvider>
   );
 }

@@ -12,6 +12,7 @@ use sea_orm::sea_query::Expr;
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait,
     FromQueryResult, QueryFilter, QuerySelect, Statement, TransactionTrait,
+    Value,
 };
 use serde::{Deserialize, Serialize};
 
@@ -71,7 +72,7 @@ pub struct UnresolvedUnitMessage {
 )]
 pub struct ListUnresolvedUnitMessagesReq {
     pub title: String,
-    pub page: Option<u64>,
+    pub cursor: Option<String>,
 }
 
 #[derive(
@@ -79,7 +80,7 @@ pub struct ListUnresolvedUnitMessagesReq {
 )]
 pub struct ListUnresolvedUnitMessagesRsp {
     pub messages: Vec<UnresolvedUnitMessage>,
-    pub has_more: bool,
+    pub next_cursor: Option<String>,
 }
 
 #[derive(
@@ -140,10 +141,46 @@ struct UnresolvedUnitMessageRow {
     created_at: chrono::NaiveDateTime,
 }
 
+#[derive(Clone, Copy)]
+struct UnresolvedUnitMessageCursor {
+    created_at: chrono::NaiveDateTime,
+    id: i64,
+}
+
 fn normalized_text_sql(table: &str) -> String {
     format!(
         "lower(regexp_replace(btrim({table}.unit_txt), '[[:space:]]+', ' ', 'g'))"
     )
+}
+
+fn invalid_message_cursor() -> AppError {
+    AppError::BL {
+        msg: "invalid unresolved-unit-message cursor".to_string(),
+    }
+}
+
+fn parse_message_cursor(
+    value: &str,
+) -> Result<UnresolvedUnitMessageCursor, AppError> {
+    let Some((created_at, id)) = value.split_once(':') else {
+        return Err(invalid_message_cursor());
+    };
+    let Ok(created_at) = created_at.parse::<i64>() else {
+        return Err(invalid_message_cursor());
+    };
+    let Some(created_at) = chrono::DateTime::from_timestamp_micros(created_at)
+        .map(|created_at| created_at.naive_utc())
+    else {
+        return Err(invalid_message_cursor());
+    };
+    let Ok(id) = id.parse::<i64>() else {
+        return Err(invalid_message_cursor());
+    };
+    Ok(UnresolvedUnitMessageCursor { created_at, id })
+}
+
+fn encode_message_cursor(row: &UnresolvedUnitMessageRow) -> String {
+    format!("{}:{}", row.created_at.and_utc().timestamp_micros(), row.id)
 }
 
 fn archive_filter_sql(
@@ -237,7 +274,7 @@ where
 async fn list_message_rows<C>(
     db: &C,
     title: &str,
-    page: u64,
+    cursor: Option<UnresolvedUnitMessageCursor>,
 ) -> Result<ListUnresolvedUnitMessagesRsp, AppError>
 where
     C: ConnectionTrait,
@@ -246,6 +283,22 @@ where
     let normalized = normalized_text_sql("failed_unit_label");
     let sender =
         crate::sigint::sender::preferred_sender_sql_snippet(Some("message"));
+    let mut values: Vec<Value> =
+        vec![super::unit_resolution::normalize_unit_label(title).into()];
+    let cursor_sql = if let Some(cursor) = cursor {
+        values.push(cursor.created_at.into());
+        let created_at_placeholder = values.len();
+        values.push(cursor.id.into());
+        let id_placeholder = values.len();
+        format!(
+            " and (message.created_at, message.id) < \
+             (${created_at_placeholder}, ${id_placeholder})"
+        )
+    } else {
+        String::new()
+    };
+    values.push(i64::try_from(page_size + 1).c(h!())?.into());
+    let limit_placeholder = values.len();
     let sql = format!(
         "select message.id, \
          coalesce(linked_group.group_name, direct_group.name, \
@@ -277,22 +330,12 @@ where
              on direct_datasource_group.id = message.datasource_group_id \
          left join signal_group direct_group \
              on direct_group.master_key = direct_datasource_group.group_master_key \
-         where {normalized} = $1 \
+         where {normalized} = $1{cursor_sql} \
          order by message.created_at desc, message.id desc \
-         limit $2 offset $3"
+         limit ${limit_placeholder}"
     );
     let mut rows = UnresolvedUnitMessageRow::find_by_statement(
-        Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            sql,
-            [
-                super::unit_resolution::normalize_unit_label(title).into(),
-                i64::try_from(page_size + 1).c(h!())?.into(),
-                i64::try_from(page.saturating_mul(page_size))
-                    .c(h!())?
-                    .into(),
-            ],
-        ),
+        Statement::from_sql_and_values(DatabaseBackend::Postgres, sql, values),
     )
     .all(db)
     .await
@@ -300,6 +343,9 @@ where
     let page_size = usize::try_from(page_size).c(h!())?;
     let has_more = rows.len() > page_size;
     rows.truncate(page_size);
+    let next_cursor = has_more
+        .then(|| rows.last().map(encode_message_cursor))
+        .flatten();
     Ok(ListUnresolvedUnitMessagesRsp {
         messages: rows
             .into_iter()
@@ -312,7 +358,7 @@ where
                 created_at: row.created_at.and_utc().timestamp_millis(),
             })
             .collect(),
-        has_more,
+        next_cursor,
     })
 }
 
@@ -418,8 +464,13 @@ pub async fn list_unresolved_unit_messages(
     req: Json<ListUnresolvedUnitMessagesReq>,
 ) -> Result<Json<ListUnresolvedUnitMessagesRsp>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let cursor = req
+        .cursor
+        .as_deref()
+        .map(parse_message_cursor)
+        .transpose()?;
     Ok(Json(
-        list_message_rows(&env.dbx, &req.title, req.page.unwrap_or(0))
+        list_message_rows(&env.dbx, &req.title, cursor)
             .await
             .c(h!())?,
     ))
@@ -704,7 +755,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn message_list_loads_five_newest_messages_per_page() {
+    async fn message_list_loads_five_newest_messages_with_stable_cursor() {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
         let datasource_group = datasource_group::Entity::find()
@@ -742,11 +793,13 @@ mod tests {
                 .unwrap();
         }
 
-        let first_page = list_message_rows(&env.dbx, " example   label ", 0)
+        let first_page = list_message_rows(&env.dbx, " example   label ", None)
             .await
             .unwrap();
         assert_eq!(first_page.messages.len(), 5);
-        assert!(first_page.has_more);
+        let cursor =
+            parse_message_cursor(first_page.next_cursor.as_deref().unwrap())
+                .unwrap();
         assert_eq!(first_page.messages[0].body, "body 5");
         assert_eq!(first_page.messages[0].sender.as_deref(), Some("sender 5"));
         assert_eq!(
@@ -755,11 +808,25 @@ mod tests {
         );
         assert_eq!(first_page.messages[0].label, "Example Label");
 
-        let second_page = list_message_rows(&env.dbx, "Example Label", 1)
+        let inbox_item =
+            insert_failure(&env.dbx, "Example Label", false, false).await;
+        signal_message::Entity::update_many()
+            .col_expr(signal_message::Column::Body, Expr::value("body 6"))
+            .col_expr(
+                signal_message::Column::CreatedAt,
+                Expr::value(base_time + chrono::Duration::minutes(6)),
+            )
+            .filter(signal_message::Column::Id.eq(inbox_item.id))
+            .exec(&env.dbx)
             .await
             .unwrap();
+
+        let second_page =
+            list_message_rows(&env.dbx, "Example Label", Some(cursor))
+                .await
+                .unwrap();
         assert_eq!(second_page.messages.len(), 1);
-        assert!(!second_page.has_more);
+        assert!(second_page.next_cursor.is_none());
         assert_eq!(second_page.messages[0].body, "body 0");
     }
 
