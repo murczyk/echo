@@ -220,6 +220,9 @@ copy it from unit 2 to unit 1, skip the conflict, or stop. The workflow can
 target active units, inactive units, or both. Accepted changes are reloaded
 under the ORBIT advisory lock; a concurrent change to either displayed unit or
 its activity scope makes that choice stale and leaves it untouched.
+For each compared SIGINT unit, the review also lists every linked ORBIT unit's
+structural (generative) hierarchy from low to high and highlights the
+conflicting echelon in cyan. Operational hierarchies are not included.
 
 ### Merge duplicate SIGINT units linked to one ORBIT unit
 
