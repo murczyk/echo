@@ -1,7 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import type { ReactNode, Ref } from 'react';
+import type { ComponentProps, ReactNode, Ref } from 'react';
 import { act, forwardRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -1109,6 +1109,51 @@ describe('ManageMessageDrawer edit mode', () => {
     expect(sourceHeader?.querySelector('[title="Час"]')).not.toBeNull();
     expect(sourceHeader?.querySelector('[title="Дата"]')).not.toBeNull();
     expect(sourceHeader?.querySelector('[title="Відправник"]')).not.toBeNull();
+
+    root.unmount();
+  });
+
+  it('keeps the card network label when the source message has a stale legacy name', async () => {
+    setRecentValues({});
+    directSubmitMocks.copyDirectSubmit.mockResolvedValue({
+      payloads: [{ full_body: 'original copied body' }],
+    });
+    const source = buildMessage({
+      networkIds: [7],
+      networkName: 'Застаріла мережа',
+    });
+    const reportSource = {
+      id: 42,
+      message: source,
+      etalonDisplayModel: {
+        primaryKind: 'network',
+        displayValue: 'р/м Актуальна мережа',
+        copyEtalonValue: 'р/м Актуальна мережа',
+        copyLocationValue: 'Київ',
+        renderedNetworks: [{ networkId: 7, label: 'р/м Актуальна мережа', badge: false }],
+        showInlineLocationTooltip: false,
+        locationDisplayValue: 'Київ',
+      },
+    } as unknown as NonNullable<ComponentProps<typeof ManageMessageDrawer>['reportSource']>;
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled
+          currentUser={null}
+          onClose={vi.fn()}
+          reportSource={reportSource}
+        />,
+      );
+    });
+
+    const sourceHeader = container.querySelector('[data-testid="report-source-header"]');
+    expect(sourceHeader?.textContent).toContain('р/м Актуальна мережа');
+    expect(sourceHeader?.textContent).not.toContain('Застаріла мережа');
 
     root.unmount();
   });

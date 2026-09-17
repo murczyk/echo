@@ -9,6 +9,7 @@ import { isIntelligenceReport } from '../shared/intelligence-reports';
 import { isAbortError } from '../../services/api/client';
 import type { ReportEditLoadState } from '../shared/manage-message/useManageMessageDrawer';
 import { buildMessageCardDisplayLabels } from '../shared/message-card/message-card-labels';
+import type { MessageCardEtalonDisplayModel } from '../shared/message-card/message-card.utils';
 
 type Props = {
   messages: Array<[number, InboxMessage]>;
@@ -28,12 +29,13 @@ type Result = {
     id: number;
     message: InboxMessage;
     senderName?: string | null;
+    etalonDisplayModel: MessageCardEtalonDisplayModel;
   } | null;
   editTargetLoadState: ReportEditLoadState;
   editorSaveInFlight: boolean;
   closeEditor: () => void;
   openEditor: (messageId: number) => void;
-  openReportCreator: (messageId: number) => void;
+  openReportCreator: (messageId: number, etalonDisplayModel: MessageCardEtalonDisplayModel) => void;
   openReportEditor: (messageId: number) => void;
   retryEditTargetLoad: () => void;
   saveEditor: (message: InboxMessage) => Promise<void>;
@@ -105,6 +107,7 @@ export function useAnalysisMessageEditor({
     id: number;
     message: InboxMessage;
     senderName?: string | null;
+    etalonDisplayModel: MessageCardEtalonDisplayModel;
   } | null>(null);
   const editorSaveInFlight = false;
   const messagesRef = useRef(messages);
@@ -166,7 +169,7 @@ export function useAnalysisMessageEditor({
   useEffect(() => () => cancelReportEditLoad(), [cancelReportEditLoad]);
 
   const openReportCreator = useCallback(
-    (messageId: number) => {
+    (messageId: number, etalonDisplayModel: MessageCardEtalonDisplayModel) => {
       const entry = messages.find(([id]) => id === messageId) ?? null;
       if (isNullOrUndefined(entry)) return;
       cancelReportEditLoad();
@@ -176,7 +179,7 @@ export function useAnalysisMessageEditor({
         groupInfos: {},
         profiles,
       });
-      setReportSource({ id: entry[0], message: entry[1], senderName });
+      setReportSource({ id: entry[0], message: entry[1], senderName, etalonDisplayModel });
     },
     [cancelReportEditLoad, messages, profiles],
   );

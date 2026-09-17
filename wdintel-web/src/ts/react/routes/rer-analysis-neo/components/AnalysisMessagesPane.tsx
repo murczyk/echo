@@ -21,6 +21,7 @@ import {
   buildCopyTextWithNetworkName,
   buildMessageLinkFullUrl,
   scrollToAndHighlightMessage,
+  type MessageCardEtalonDisplayModel,
 } from '../../shared/message-card/message-card.utils';
 import { buildMessageCardDisplayLabels } from '../../shared/message-card/message-card-labels';
 import { blurActiveElement } from '../../../utils/focus';
@@ -104,7 +105,7 @@ type Props = {
   onCancelBotTagAction?: () => void;
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void;
   onOpenEditor: (messageId: number) => void;
-  onCreateReport: (messageId: number) => void;
+  onCreateReport: (messageId: number, etalonDisplayModel: MessageCardEtalonDisplayModel) => void;
   onEditReport: (messageId: number) => void | Promise<void>;
   onLoadMoreMessages: () => Promise<boolean>;
   onVisiblePageChange: (pageIndex: number) => void;
@@ -307,7 +308,7 @@ type AnalysisMessageCardItemProps = {
   messageComments: MessageComment[];
   networkDisplayMap: Record<number, string>;
   botTagAction?: BotTagAction | null;
-  onCreateReport: (id: number) => void;
+  onCreateReport: (id: number, etalonDisplayModel: MessageCardEtalonDisplayModel) => void;
   onEditReport: (id: number) => void | Promise<void>;
   onCopyFeedback: (value: string) => void;
   onDeleteOpen: (messageId: number) => void;
@@ -487,7 +488,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
               });
             }
       }
-      onCreateReport={() => onCreateReport(id)}
+      onCreateReport={() => onCreateReport(id, etalonDisplayModel)}
       onEditReport={onEditReport}
       onDelete={() => onDeleteOpen(id)}
       onEditDetails={() => onOpenEditor(id)}

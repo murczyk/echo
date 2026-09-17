@@ -26,6 +26,7 @@ import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
 import type { ReportEditLoadState } from '../shared/manage-message/useManageMessageDrawer';
 import type { MessageTimeBasis } from '../../services/api/user-settings';
+import type { MessageCardEtalonDisplayModel } from '../shared/message-card/message-card.utils';
 
 export type AnalysisReportTaskRun = {
   id: number;
@@ -193,6 +194,7 @@ export type AnalysisPageState = {
     id: number;
     message: InboxMessage;
     senderName?: string | null;
+    etalonDisplayModel: MessageCardEtalonDisplayModel;
   } | null;
   editorSaveInFlight: boolean;
   currentUser: User | null;
@@ -330,7 +332,7 @@ export type AnalysisPageActions = {
   closeEditor: () => void;
   openReport: () => void;
   openEditor: (messageId: number) => void;
-  openReportCreator: (messageId: number) => void;
+  openReportCreator: (messageId: number, etalonDisplayModel: MessageCardEtalonDisplayModel) => void;
   openReportEditor: (messageId: number) => void;
   retryEditTargetLoad: () => void;
   refreshMapDateRange: (range: { startDate: number; endDate: number }) => void;

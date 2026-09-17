@@ -9,6 +9,7 @@ import {
   type MessageFeedState,
 } from './utils';
 import { buildMessageCardDisplayLabels } from '../shared/message-card/message-card-labels';
+import type { MessageCardEtalonDisplayModel } from '../shared/message-card/message-card.utils';
 
 export type RerDutyFeedsBundle = ReturnType<typeof useRerDutyFeeds>;
 
@@ -20,6 +21,7 @@ export type DutyFeedColumnActionsDeps = {
     id: number;
     message: InboxMessage;
     senderName?: string | null;
+    etalonDisplayModel: MessageCardEtalonDisplayModel;
   }) => void;
 };
 
@@ -85,12 +87,12 @@ export function useDutyFeedColumnActions(
       onMessageImportant: (msgId, currentlyImportant) =>
         handleMessageImportant(feedId, msgId, currentlyImportant),
       onMessageCopy: handleMessageCopy,
-      onMessageCreateReport: (messageId, message) => {
+      onMessageCreateReport: (messageId, message, etalonDisplayModel) => {
         const { senderName } = buildMessageCardDisplayLabels(message, {
           groupInfos: deps.feeds.groupInfos,
           profiles: deps.feeds.profiles,
         });
-        deps.openReportComposer({ id: messageId, message, senderName });
+        deps.openReportComposer({ id: messageId, message, senderName, etalonDisplayModel });
       },
       onMessageEditReport: (reportId) => {
         deps.openReportEditor(reportId);
@@ -191,7 +193,8 @@ export function useDutyFeedColumnActions(
       onMessageImportant: (msgId, currentlyImportant) =>
         latest().onMessageImportant(msgId, currentlyImportant),
       onMessageCopy: (text, feedbackId) => latest().onMessageCopy(text, feedbackId),
-      onMessageCreateReport: (msgId, message) => latest().onMessageCreateReport(msgId, message),
+      onMessageCreateReport: (msgId, message, etalonDisplayModel) =>
+        latest().onMessageCreateReport(msgId, message, etalonDisplayModel),
       onMessageEditReport: (reportId) => latest().onMessageEditReport(reportId),
       onMessageExcludeEntity: (entity, value) => latest().onMessageExcludeEntity(entity, value),
       onMessageToggleTag: (msgId, tagId) => latest().onMessageToggleTag(msgId, tagId),

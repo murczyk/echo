@@ -179,17 +179,31 @@ describe('useAnalysisMessageEditor', () => {
     expect(latest?.editorMessage).toEqual({ id: 91, message: report });
   });
 
-  it('keeps the card sender name when opening the report creator', async () => {
+  it('keeps the card display data when opening the report creator', async () => {
     const message = { sender: 'sender-1' } as InboxMessage;
+    const etalonDisplayModel = {
+      primaryKind: 'network',
+      displayValue: 'р/м Актуальна мережа',
+      copyEtalonValue: 'р/м Актуальна мережа',
+      copyLocationValue: null,
+      renderedNetworks: [{ networkId: 7, label: 'р/м Актуальна мережа', badge: false }],
+      showInlineLocationTooltip: false,
+      locationDisplayValue: null,
+    } as const;
     harnessMessages = [[42, message]];
     await act(async () => root.render(React.createElement(Harness)));
 
-    act(() => latest?.openReportCreator(42));
+    const openReportCreator = latest?.openReportCreator as (
+      messageId: number,
+      etalonDisplayModel: typeof etalonDisplayModel,
+    ) => void;
+    act(() => openReportCreator(42, etalonDisplayModel));
 
     expect(latest?.reportSource).toEqual({
       id: 42,
       message,
       senderName: 'Імʼя Відправника',
+      etalonDisplayModel,
     });
   });
 

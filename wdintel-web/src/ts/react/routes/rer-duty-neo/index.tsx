@@ -26,7 +26,10 @@ import { isAbortError } from '../../services/api/client';
 import { isIntelligenceReport } from '../shared/intelligence-reports';
 import { PointBlacklistPaletteNamesCacheProvider } from '../shared/message-card/PointBlacklistPaletteNamesCache';
 import { MessageDeviceAccessProvider } from '../shared/message-card/MessageDeviceAccess';
-import { scrollToAndHighlightMessage } from '../shared/message-card/message-card.utils';
+import {
+  scrollToAndHighlightMessage,
+  type MessageCardEtalonDisplayModel,
+} from '../shared/message-card/message-card.utils';
 
 export type RerDutyNeoPageProps = {
   /** Auth user display name from the host page (avoids duplicate /api/user request). */
@@ -61,6 +64,7 @@ export function RerDutyNeoPage({
     id: number;
     message: InboxMessage;
     senderName?: string | null;
+    etalonDisplayModel: MessageCardEtalonDisplayModel;
   } | null>(null);
   const { notify } = usePowerSnackbar();
   const {
@@ -119,7 +123,12 @@ export function RerDutyNeoPage({
     [cancelReportEditLoad],
   );
   const openReportComposer = useCallback(
-    (source: { id: number; message: InboxMessage; senderName?: string | null }) => {
+    (source: {
+      id: number;
+      message: InboxMessage;
+      senderName?: string | null;
+      etalonDisplayModel: MessageCardEtalonDisplayModel;
+    }) => {
       cancelReportEditLoad();
       setCreateMessageOpen(false);
       setEditAsReport(false);

@@ -4,6 +4,7 @@ import type {
   MessageTimeBasis,
 } from '../../services/api/user-settings';
 import type { FeedColumnModel } from './types';
+import type { MessageCardEtalonDisplayModel } from '../shared/message-card/message-card.utils';
 import { useDutyFeedColumnActions, type RerDutyFeedsBundle } from './useDutyFeedColumnActions';
 import {
   clearActiveFeedFilter,
@@ -32,6 +33,7 @@ export type DutyFeedColumnModelDeps = {
     id: number;
     message: InboxMessage;
     senderName?: string | null;
+    etalonDisplayModel: MessageCardEtalonDisplayModel;
   }) => void;
 };
 

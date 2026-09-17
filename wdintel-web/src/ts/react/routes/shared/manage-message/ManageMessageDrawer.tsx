@@ -43,7 +43,10 @@ import type {
 } from './useManageMessageDrawer';
 import { MessageCardMetadata } from '../message-card/MessageCardHeader';
 import { MessageDeviceAccessProvider } from '../message-card/MessageDeviceAccess';
-import { resolveMessageCardEtalonDisplayModel } from '../message-card/message-card.utils';
+import {
+  resolveMessageCardEtalonDisplayModel,
+  type MessageCardEtalonDisplayModel,
+} from '../message-card/message-card.utils';
 import { formatDateNoYear, formatTime } from '../../rer-duty-neo/utils';
 
 export type Props = {
@@ -59,7 +62,12 @@ export type Props = {
   ) => void | Promise<void>;
   onDeleteSuccess?: (messageId: number) => void | Promise<void>;
   editTarget?: { id: number; message: InboxMessage } | null;
-  reportSource?: { id: number; message: InboxMessage; senderName?: string | null } | null;
+  reportSource?: {
+    id: number;
+    message: InboxMessage;
+    senderName?: string | null;
+    etalonDisplayModel?: MessageCardEtalonDisplayModel;
+  } | null;
   editAsReport?: boolean;
   editTargetLoadState?: ReportEditLoadState;
   onRetryEditTargetLoad?: () => void;
@@ -72,6 +80,7 @@ function ReportTextRow({
   sourceMessage,
   sourceGroupName,
   sourceSenderName,
+  sourceEtalonDisplayModel,
   deviceAccess,
   busy,
   quickSuggestion,
@@ -83,6 +92,7 @@ function ReportTextRow({
   sourceMessage: InboxMessage | null;
   sourceGroupName: string | null;
   sourceSenderName: string | null;
+  sourceEtalonDisplayModel: MessageCardEtalonDisplayModel | null;
   deviceAccess: boolean;
   busy: boolean;
   quickSuggestion: QuickIntelReportSuggestionState;
@@ -115,6 +125,7 @@ function ReportTextRow({
           message={sourceMessage}
           groupName={sourceGroupName}
           senderName={sourceSenderName}
+          etalonDisplayModel={sourceEtalonDisplayModel}
           deviceAccess={deviceAccess}
         />
       ) : null}
@@ -262,26 +273,17 @@ function ReportSourceHeader({
   message,
   groupName,
   senderName,
+  etalonDisplayModel,
   deviceAccess,
 }: {
   message: InboxMessage;
   groupName: string | null;
   senderName: string | null;
+  etalonDisplayModel: MessageCardEtalonDisplayModel | null;
   deviceAccess: boolean;
 }) {
-  const networkName = message.networkName?.trim() ?? '';
-  const networkIds = message.networkIds ?? [];
-  const hasSingleNamedNetwork = networkName !== '' && networkIds.length === 1;
-  const sourceMessage = hasSingleNamedNetwork
-    ? message
-    : {
-        ...message,
-        networkIds: null,
-        unit: networkName || message.unit,
-      };
-  const etalonDisplayModel = resolveMessageCardEtalonDisplayModel(sourceMessage, {
-    networkDisplayMap: hasSingleNamedNetwork ? { [networkIds[0]]: networkName } : undefined,
-  });
+  const sourceEtalonDisplayModel =
+    etalonDisplayModel ?? resolveMessageCardEtalonDisplayModel(message);
   const time = message.time?.trim() ? formatTime(message.time) : null;
   const date = message.date?.trim() ? formatDateNoYear(message.date) : null;
 
@@ -333,7 +335,7 @@ function ReportSourceHeader({
             msg={message}
             groupName={groupName}
             senderName={senderName}
-            etalonDisplayModel={etalonDisplayModel}
+            etalonDisplayModel={sourceEtalonDisplayModel}
           />
         </MessageDeviceAccessProvider>
       </div>
@@ -510,6 +512,7 @@ export function ManageMessageDrawer(props: Props) {
                           props.reportSource?.message.sender ??
                           null
                         }
+                        sourceEtalonDisplayModel={props.reportSource?.etalonDisplayModel ?? null}
                         deviceAccess={props.cyberEchoEnabled}
                         busy={busy}
                         quickSuggestion={quickSuggestion}

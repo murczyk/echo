@@ -119,8 +119,17 @@ describe('useDutyFeedColumnActions', () => {
     );
   });
 
-  it('keeps the card sender name when opening the report composer', async () => {
+  it('keeps the card display data when opening the report composer', async () => {
     const message = minimalInboxMessage({ sender: 'sender-1' });
+    const etalonDisplayModel = {
+      primaryKind: 'network',
+      displayValue: 'р/м Актуальна мережа',
+      copyEtalonValue: 'р/м Актуальна мережа',
+      copyLocationValue: null,
+      renderedNetworks: [{ networkId: 7, label: 'р/м Актуальна мережа', badge: false }],
+      showInlineLocationTooltip: false,
+      locationDisplayValue: null,
+    } as const;
     const feed = {
       id: 'mf-0',
       filter: {},
@@ -148,12 +157,18 @@ describe('useDutyFeedColumnActions', () => {
     }
 
     await act(async () => root.render(<Harness />));
-    act(() => actions!.onMessageCreateReport(40, message));
+    const createReport = actions!.onMessageCreateReport as (
+      messageId: number,
+      message: typeof message,
+      etalonDisplayModel: typeof etalonDisplayModel,
+    ) => void;
+    act(() => createReport(40, message, etalonDisplayModel));
 
     expect(openReportComposer).toHaveBeenCalledWith({
       id: 40,
       message,
       senderName: 'Імʼя Відправника',
+      etalonDisplayModel,
     });
   });
 });
