@@ -504,7 +504,7 @@ export function AttachmentsSection({
         onFileSelect={handleFileSelect}
         onDrop={handleDrop}
         onKeyDown={handleDropzoneKeyDown}
-        helperText="До 20 файлів, до 2 ГБ кожен"
+        helperText="До 20 файлів, до 6 ГіБ кожен"
       />
 
       {errorMsg ? (
