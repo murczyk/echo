@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { InboxMessage } from '../../../../../../Bindings';
-import {
-  pointBlacklistLabelKey,
-  removePointHighlightSourceFromMessage,
-} from '../point-highlight-blacklist';
+import { removePointHighlightSourceFromMessage } from '../point-highlight-blacklist';
 
 function message(overrides: Partial<InboxMessage>): InboxMessage {
   return {
@@ -13,18 +10,6 @@ function message(overrides: Partial<InboxMessage>): InboxMessage {
     ...overrides,
   } as InboxMessage;
 }
-
-// @test-scope parser: preserves point-highlight source identity keys used by the backend mutation boundary.
-describe('pointBlacklistLabelKey', () => {
-  it.each([
-    ['  Bravo  ', 'bravo'],
-    ['БРАВО', 'браво'],
-    ['Їжак', 'їжак'],
-    ['  Ґрунт\u00a0', 'ґрунт'],
-  ])('matches backend identity for %s', (value, expected) => {
-    expect(pointBlacklistLabelKey(value)).toBe(expected);
-  });
-});
 
 // @test-scope safeguard: prevents removing one point highlight source from corrupting unrelated marked-message tokens.
 describe('removePointHighlightSourceFromMessage', () => {

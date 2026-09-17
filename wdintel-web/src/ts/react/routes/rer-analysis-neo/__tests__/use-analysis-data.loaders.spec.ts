@@ -5,11 +5,7 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  missingMapMessageIds,
-  normalizeMapMessageIds,
-  shouldClearMapOpenMessages,
-} from '../use-analysis-data.loaders';
+import { shouldClearMapOpenMessages } from '../use-analysis-data.loaders';
 import { emptyQueryState } from '../helpers';
 import { useAnalysisDataLoaders } from '../use-analysis-data.loaders';
 
@@ -129,22 +125,6 @@ afterEach(() => {
   container?.remove();
   container = null;
   latest = null;
-});
-
-// @test-scope parser: preserves map message-ID normalization for the map data boundary.
-describe('normalizeMapMessageIds', () => {
-  it('filters nullish and duplicate ids', () => {
-    expect(
-      normalizeMapMessageIds([1, null, 2, undefined, 2, Number.NaN, Number.POSITIVE_INFINITY, 3]),
-    ).toEqual([1, 2, 3]);
-  });
-});
-
-// @test-scope parser: preserves missing map message-ID detection for incremental loading.
-describe('missingMapMessageIds', () => {
-  it('returns requested ids that are absent from the fetched messages', () => {
-    expect(missingMapMessageIds([1, 2, 3], [[2, { networkIds: [] }]])).toEqual([1, 3]);
-  });
 });
 
 // @test-scope safeguard: prevents stale map-open messages from surviving an incompatible refresh.

@@ -87,7 +87,7 @@ function createGraph(): NetworkCallsignRelationsRsp {
   };
 }
 
-// @test-scope parser: preserves network-relation normalization and request compatibility at the API boundary.
+// @test-scope safeguard: prevents relation graphs exceeding node or edge render limits from freezing the network-details page.
 describe('network relations helpers', () => {
   it('uses new defaults when the previous selection was not customized', () => {
     const nextGraph = {

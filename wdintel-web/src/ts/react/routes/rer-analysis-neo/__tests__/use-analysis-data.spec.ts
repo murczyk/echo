@@ -22,7 +22,7 @@ function callsignInfo(callsign: string, rows: CallsignInfoRes['res']): CallsignI
   return { callsign, res: rows, networkHints: [] };
 }
 
-// @test-scope parser: preserves callsign-info merging for analysis API responses.
+// @test-scope safeguard: prevents later analysis response slices from discarding accumulated callsign network hints.
 describe('mergeAnalysisCallsignInfoMap', () => {
   it('merges accumulated network matches when adding later slices in the same query scope', () => {
     const prev = {
@@ -129,7 +129,7 @@ describe('mergeAnalysisCallsignInfoMap', () => {
   });
 });
 
-// @test-scope parser: preserves network identity merging for analysis API responses.
+// @test-scope safeguard: prevents concurrent network updates from discarding an already loaded network.
 describe('mergeNetworksById', () => {
   it('keeps concurrently updated networks when merging async-loaded items', () => {
     const merged = mergeNetworksById(

@@ -111,7 +111,6 @@ function makeRow(
   };
 }
 
-// @test-scope parser: preserves Palitra API field normalization and mutation payload compatibility.
 describe('rer-palitra helpers', () => {
   // @test-scope safeguard: prevents unavailable palette access scopes from being offered to the current role
   it('derives available access types from roles and scope', () => {
@@ -167,14 +166,6 @@ describe('rer-palitra helpers', () => {
     expect(
       canModifyPalitra(makeUser({ name: 'other', roles: ['Rer', 'UnitsEditor'] }), palitra),
     ).toBe(false);
-  });
-
-  // @test-scope parser: palette login-access normalization fixture
-  it('normalizes login access by trimming, deduplicating, and preserving order', () => {
-    expect(normalizeLogins(['  alpha ', '', 'beta', 'alpha', ' beta '])).toEqual(['alpha', 'beta']);
-    expect(toPalitraAccess(makeForm({ logins: ['  alpha ', 'beta', 'alpha'] }))).toEqual({
-      ByLogins: { logins: ['alpha', 'beta'] },
-    });
   });
 
   // @test-scope safeguard: prevents non-admin palette forms from starting outside the current scope
@@ -327,30 +318,6 @@ describe('rer-palitra helpers', () => {
     ).toEqual([]);
   });
 
-  it('renders access summaries using visible names for admins and scoped users', () => {
-    const palitra = {
-      author: 'operator',
-      accessLogins: [],
-      accessOrganismIds: [5, 99],
-      accessAorId: [],
-    } as Palitra;
-    const organisms = [{ id: 5, name: 'Scope Unit' }] as Organism[];
-
-    expect(
-      getAccessSummary(palitra, makeUser({ roles: ['Admin'] }), makeScope(), organisms, []),
-    ).toBe('Підрозділи: Scope Unit');
-
-    expect(
-      getAccessSummary(
-        palitra,
-        makeUser({ name: 'operator', roles: ['UnitsEditor'] }),
-        makeScope(),
-        organisms,
-        [],
-      ),
-    ).toBe('Підрозділи: Scope Unit');
-  });
-
   // @test-scope safeguard: prevents root palette rows from being skipped before a target folder is selected
   it('does not mark root palitras as already in target folder before a folder is chosen', () => {
     const preview = buildAssignFolderPreview([makeRow(1, null), makeRow(2, '')], [1, 2], '');
@@ -360,20 +327,6 @@ describe('rer-palitra helpers', () => {
     expect(preview.unchangedCount).toBe(0);
   });
 
-  it('builds flat folder nodes for rer-palitra-neo folder UI', () => {
-    expect(normalizeFolderPathForUi('  North  ')).toBe('North');
-
-    const tree = buildFolderTree(
-      [makePalitra(1, 'North'), makePalitra(2, 'South'), makePalitra(3, 'Bravo', 'other')],
-      makeUser({ name: 'operator', roles: ['Admin'] }),
-    );
-
-    expect(tree.map((node) => node.path)).toEqual(['Bravo', 'North', 'South']);
-    expect(tree.find((node) => node.path === 'North')?.allPalitraIds).toEqual([1]);
-    expect(tree.find((node) => node.path === 'South')?.allPalitraIds).toEqual([2]);
-    expect(tree.every((node) => node.depth === 0)).toBe(true);
-  });
-
   // @test-scope safeguard: prevents nested folder paths from being submitted to the flat-folder palette UI
   it('rejects slash in folder names because this UI supports only flat folders', () => {
     expect(validateFolderPath('North')).toBe(null);
@@ -381,76 +334,6 @@ describe('rer-palitra helpers', () => {
     expect(validateFolderPath('')).toBe('Вкажіть назву папки.');
     expect(validateFolderPath('North/Alpha')).toBe('Назва папки не може містити символ /.');
     expect(validateFolderPath('North / Alpha')).toBe('Назва папки не може містити символ /.');
-  });
-
-  it('builds grouped table rows for MRT without nesting support', () => {
-    const rows = buildTableRows({
-      palitras: [
-        makePalitra(1, null, 'operator', 50),
-        makePalitra(2, 'North', 'operator', 40),
-        makePalitra(3, 'North/Sub', 'operator', 30),
-        makePalitra(4, 'North', 'other', 20),
-      ],
-      user: makeUser({ name: 'operator', roles: ['Rer', 'UnitsEditor'] }),
-      myScope: null,
-      organisms: [],
-      aors: [],
-      inFlightArchiveId: null,
-      inFlightDeleteId: null,
-      inFlightDownloadId: null,
-      inFlightUploadId: null,
-      expandedFolderPaths: new Set(['North']),
-    });
-
-    expect(
-      rows.map((row) =>
-        row.kind === 'folder' ? 'folder:' + row.folderPath : 'palitra:' + String(row.id),
-      ),
-    ).toEqual([
-      'folder:North',
-      'palitra:2',
-      'palitra:4',
-      'folder:North/Sub',
-      'palitra:3',
-      'palitra:1',
-    ]);
-
-    const folderRow = rows.find((row) => row.kind === 'folder' && row.folderPath === 'North');
-    expect(folderRow).toMatchObject({
-      totalCount: 2,
-      modifiableCount: 1,
-      isExpanded: true,
-    });
-
-    const nestedPalitraRow = rows.find((row) => row.kind === 'palitra' && row.id === 3);
-    expect(nestedPalitraRow).toMatchObject({ hiddenByCollapsedFolder: true });
-  });
-
-  it('builds assign previews and human preview lines', () => {
-    const preview = buildAssignFolderPreview(
-      [
-        makeRow(1, 'North/Alpha', true),
-        makeRow(2, 'North/Alpha', false),
-        makeRow(3, 'North/Beta', true),
-      ],
-      [1, 2, 3],
-      'North/Alpha',
-    );
-
-    expect(preview.requestedIds).toEqual([1, 2, 3]);
-    expect(preview.modifiableIds).toEqual([1, 3]);
-    expect(preview.skippedIds).toEqual([2]);
-    expect(preview.unchangedIds).toEqual([1]);
-
-    expect(
-      formatFolderActionPreviewLines({
-        kind: 'assign',
-        folderPath: '',
-        nextFolderPath: 'North/Alpha',
-        targetPalitraIds: preview.modifiableIds,
-        preview,
-      }),
-    ).toEqual(['Обрано палітр: 3', 'Уже в цій папці: 1', 'Недоступно для зміни: 1']);
   });
 
   // @test-scope safeguard: prevents GOI-owned palettes from being exposed as mutable selections
@@ -511,14 +394,5 @@ describe('rer-palitra helpers', () => {
       1, 2,
     ]);
     expect(getSelectedModifiablePalitras(rows, [1, 2]).map((palitra) => palitra.id)).toEqual([1]);
-  });
-
-  it('builds bulk result summaries', () => {
-    const summary = buildBulkActionResultSummary([1, 3], [3]);
-    expect(summary.changedIds).toEqual([3]);
-    expect(summary.skippedIds).toEqual([1]);
-    expect(formatFolderActionSuccessMessage('assign', summary)).toBe(
-      'Палітри переміщено в папку: змінено 1 з 2.',
-    );
   });
 });

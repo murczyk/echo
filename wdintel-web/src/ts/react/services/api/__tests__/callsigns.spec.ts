@@ -3,7 +3,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { downloadCallsignsCsv, downloadCallsignsXlsx, listCallsigns } from '../callsigns';
+import { downloadCallsignsCsv } from '../callsigns';
 
 describe('callsigns API', () => {
   beforeEach(() => {
@@ -29,42 +29,5 @@ describe('callsigns API', () => {
     expect(window.location.href).toContain(
       '/login?redirect=%2Fsigint%2Fcallsigns%3Ffilter%3Dalpha%23panel',
     );
-  });
-
-  // @test-scope parser: callsign list and export filter wire-format fixture
-  it('serializes region and district filters for list and exports', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockImplementation((url: string) =>
-        Promise.resolve(
-          new Response(
-            url.endsWith('/callsigns')
-              ? JSON.stringify({ callsigns: [], show_load_more: false })
-              : '',
-            { status: 200, headers: { 'Content-Type': 'application/json' } },
-          ),
-        ),
-      );
-    vi.stubGlobal('fetch', fetchMock);
-    const request = {
-      filterUnitArmyRegion: 'R1',
-      filterUnitMilitaryDistrict: 'D1',
-      filterUnitBrigade: 'BR',
-      filterUnitTeamOrCrew: 'T',
-    } as Parameters<typeof listCallsigns>[0];
-
-    await listCallsigns(request);
-    await downloadCallsignsCsv(request);
-    await downloadCallsignsXlsx(request);
-
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    for (const [, options] of fetchMock.mock.calls) {
-      expect(JSON.parse(String(options?.body))).toMatchObject({
-        filter_unit_army_region: 'R1',
-        filter_unit_military_district: 'D1',
-        filter_unit_brigade: 'BR',
-        filter_unit_team_or_crew: 'T',
-      });
-    }
   });
 });

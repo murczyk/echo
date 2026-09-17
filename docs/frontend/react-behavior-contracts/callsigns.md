@@ -23,7 +23,7 @@
 - **URL, localStorage, or user-settings persistence:** none.
 - **API endpoint and compatibility requirements:** preserves legacy three-column import compatibility while supporting four-column input.
 - **Responsive and keyboard requirements:** paste behavior remains available from the existing keyboard input control.
-- **Known race/idempotency constraints:** ambiguous input must not create duplicate or shifted callsign records.
+- **Known race/idempotency constraints:** ambiguous input must not create duplicate or shifted callsign records; duplicate-hint lookup values normalize whitespace and casing before comparison.
 - **Source implementation:** `routes/rer-callsigns-neo/helpers.ts`
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-callsigns-neo/__tests__/helpers.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational parser coverage.

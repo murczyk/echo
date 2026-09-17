@@ -1,5 +1,29 @@
 # API and error handling
 
+## User-settings save payload
+
+- **Status:** operational compatibility
+- **Behavior ID:** `user-settings-save-payload`
+- **Expected observable result:** saving user settings sends the current preference values using the API wire representation, including the message-preview selection.
+- **Source implementation:** `wdintel-web/src/ts/react/services/api/user-settings.ts`
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
+
+## System settings create payload
+
+- **Status:** operational compatibility
+- **Behavior ID:** `system-settings-create-payload`
+- **Expected observable result:** create requests preserve audio-transcription, replay-interval, battleline-distance, and bot-tag settings using backend snake-case fields.
+- **Source implementation:** `wdintel-web/src/ts/react/services/api/system-settings.ts`
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
+
+## Media summary endpoint selection
+
+- **Status:** operational compatibility
+- **Behavior ID:** `media-summary-endpoint-selection`
+- **Expected observable result:** coordinate summaries use the authorized media endpoint and OCR evaluation uses the administrator summary endpoint with the caller's abort signal.
+- **Source implementation:** `wdintel-web/src/ts/react/services/api/media-summary.ts`
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
+
 ## Authentication redirect
 
 - **Status:** inferred characterization
@@ -128,5 +152,5 @@
 - **Responsive and keyboard requirements:** none at the API boundary.
 - **Known race/idempotency constraints:** none in the mapper itself.
 - **Source implementation:** corresponding modules in `src/ts/react/services/api/`.
-- **Existing test(s):** `wdintel-web/src/ts/react/services/api/__tests__/battle-line.spec.ts`, `wdintel-web/src/ts/react/services/api/__tests__/device-analytics.spec.ts`, `wdintel-web/src/ts/react/services/api/__tests__/goi-admin.spec.ts`, `wdintel-web/src/ts/react/services/api/__tests__/settlements.spec.ts`, `wdintel-web/src/ts/react/services/api/__tests__/system-settings.spec.ts`, `wdintel-web/src/ts/react/services/api/__tests__/tags.spec.ts`, `wdintel-web/src/ts/react/services/api/__tests__/user-settings.spec.ts`, `wdintel-web/src/ts/react/services/api/__tests__/rer-duty-saved-filters.spec.ts`
+- **Existing test(s):** `wdintel-web/src/ts/react/services/api/__tests__/battle-line.spec.ts`, `wdintel-web/src/ts/react/services/api/__tests__/device-analytics.spec.ts`, `wdintel-web/src/ts/react/services/api/__tests__/goi-admin.spec.ts`, `wdintel-web/src/ts/react/services/api/__tests__/system-settings.spec.ts`, `wdintel-web/src/ts/react/services/api/__tests__/tags.spec.ts`, `wdintel-web/src/ts/react/services/api/__tests__/user-settings.spec.ts`, `wdintel-web/src/ts/react/services/api/__tests__/rer-duty-saved-filters.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational compatibility coverage.

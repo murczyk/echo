@@ -1,15 +1,10 @@
-// @test-scope parser: system-settings API optional-field compatibility fixtures
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ postJson: vi.fn() }));
 
 vi.mock('../client', () => ({ postJson: mocks.postJson }));
 
-import {
-  createSystemSettings,
-  getRerDutyTestReplayStatus,
-  listSystemSettings,
-} from '../system-settings';
+import { getRerDutyTestReplayStatus, listSystemSettings } from '../system-settings';
 
 const rawSettings = {
   id: 1,
@@ -28,6 +23,7 @@ const rawSettings = {
 describe('system settings audio transcription mapping', () => {
   beforeEach(() => mocks.postJson.mockReset());
 
+  // @test-scope parser: defaults missing optional backend flags from a system-settings response
   it('defaults an absent backend flag to false', async () => {
     mocks.postJson.mockResolvedValue({ items: [rawSettings] });
     const settings = await listSystemSettings();
@@ -36,46 +32,7 @@ describe('system settings audio transcription mapping', () => {
     expect(settings[0].disableBotTags).toBe(false);
   });
 
-  it('writes the audio transcription flag in create requests', async () => {
-    mocks.postJson.mockResolvedValue({
-      ...rawSettings,
-      enable_audio_transcription: true,
-    });
-    await createSystemSettings({
-      rerAnalysisUnitsExactMatchOnlyDefault: true,
-      rerDutyTestEnabled: false,
-      rerDutyInsertHistoricalInterceptions: false,
-      rerDutyTestSinceMs: 0,
-      rerDutyTestLimit: 1,
-      rerDutyPollIntervalSec: 1,
-      rerDutyTestReplayIntervalSec: 3,
-      rerDutyShortUrl: false,
-      supportNonRerInterceptions: false,
-      defaultNeoAnalysis: false,
-      disableBotTags: true,
-      autofixEchoimMissingMessages: false,
-      devicesSectionEnabled: false,
-      sigintCommentParsingEnabled: false,
-      doNotStoreDuplicateEchoimFailures: false,
-      enableAudioTranscription: true,
-      pelengBoundsEnabled: false,
-      pelengBoundsTopLeftLat: null,
-      pelengBoundsTopLeftLng: null,
-      pelengBoundsBottomRightLat: null,
-      pelengBoundsBottomRightLng: null,
-      echoRestapiErrorDiscordWebhookUrl: null,
-    });
-    expect(mocks.postJson).toHaveBeenCalledWith(
-      '/api/admin/system-settings/create',
-      expect.objectContaining({
-        enable_audio_transcription: true,
-        rer_duty_test_replay_interval_sec: 3,
-        show_peleng_distance_to_battleline: false,
-        disable_bot_tags: true,
-      }),
-    );
-  });
-
+  // @test-scope parser: normalizes replay-status fields from a backend response
   it('maps replay status', async () => {
     mocks.postJson.mockResolvedValue({
       status: 'running',

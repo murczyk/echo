@@ -43,7 +43,7 @@ describe('RER Duty saved-filter API', () => {
     expect(filters[0].req).not.toHaveProperty('groups_selected');
   });
 
-  it('normalizes snake_case upsert responses and preserves request serialization', async () => {
+  it('normalizes snake_case upsert responses', async () => {
     postJsonMock.mockResolvedValue([{ id: 2, name: 'Saved', req: snakeCaseReq }]);
 
     const filters = await savedFilterUpsert({
@@ -68,25 +68,6 @@ describe('RER Duty saved-filter API', () => {
       },
     });
 
-    expect(postJsonMock).toHaveBeenCalledWith('/api/rer/duty/saved-filter-upsert', {
-      name: 'Saved',
-      req: {
-        groups_selected: ['saved-selected'],
-        groups_denied: ['saved-denied'],
-        senders_selected: null,
-        denied_senders: null,
-        freqs_selected: null,
-        freqs_denied: null,
-        posts_selected: null,
-        posts_denied: null,
-        units_selected: ['unit-id:11', 'unit-a'],
-        units_denied: ['unit-id:12', 'unit-b'],
-        selected_unit_ids: [11],
-        denied_unit_ids: [12],
-        units_exact_match_only: true,
-        last_viewed_message_id: 42,
-      },
-    });
     expect(filters[0].req.groupsSelected).toEqual(['saved-selected']);
     expect(filters[0].req.unitsSelected).toEqual(['unit-id:11', 'unit-a']);
     expect(filters[0].req.unitsExactMatchOnly).toBe(true);

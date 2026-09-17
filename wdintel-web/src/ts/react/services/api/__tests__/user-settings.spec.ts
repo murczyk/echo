@@ -1,4 +1,3 @@
-// @test-scope parser: user-settings API optional-field compatibility fixtures
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -11,7 +10,7 @@ vi.mock('../client', () => ({
   putJson: (...args: unknown[]) => mocks.putJson(...args),
 }));
 
-import { fetchUserSettings, saveUserSettings } from '../user-settings';
+import { fetchUserSettings } from '../user-settings';
 
 describe('user-settings api', () => {
   beforeEach(() => {
@@ -19,6 +18,7 @@ describe('user-settings api', () => {
     mocks.putJson.mockReset();
   });
 
+  // @test-scope parser: defaults optional fields omitted by older user-settings responses
   it('defaults optional settings when the backend omits them', async () => {
     mocks.getJson.mockResolvedValueOnce({
       tagsLayout: 'compact',
@@ -42,6 +42,7 @@ describe('user-settings api', () => {
     });
   });
 
+  // @test-scope parser: normalizes nullable media-preview fields from user-settings responses
   it.each([
     ['null', null, true],
     ['explicit false', false, false],
@@ -58,6 +59,7 @@ describe('user-settings api', () => {
     });
   });
 
+  // @test-scope parser: normalizes nullable media-summary fields from user-settings responses
   it.each([
     ['null', null, false],
     ['explicit false', false, false],
@@ -74,94 +76,7 @@ describe('user-settings api', () => {
     });
   });
 
-  it.each([
-    [20, 'twenty'],
-    [40, 'forty'],
-    [null, 'off'],
-  ] as const)('serializes message preview value %s', async (value, wireValue) => {
-    mocks.putJson.mockResolvedValueOnce({
-      tagsLayout: 'compact',
-      disableAutoScroll: false,
-      messageTextPreviewLines: wireValue,
-      messageSortBy: 'interception',
-    });
-
-    await saveUserSettings({
-      tagsLayout: 'compact',
-      messageTextPreviewLines: value,
-      messageSortBy: 'interception',
-      disableAutoScroll: false,
-      analysisMapInSidebar: false,
-      dutyAudioTranscriptionCollapsed: false,
-      analysisAudioTranscriptionCollapsed: false,
-      showAnalysisCallsignAddForm: false,
-      showClassicDuty: false,
-      showClassicAnalysis: false,
-      dutyCollapseMediaPreviews: false,
-      mediaSummaryEnabled: true,
-    });
-
-    expect(mocks.putJson).toHaveBeenCalledWith(
-      '/api/user/settings',
-      expect.objectContaining({
-        messageTextPreviewLines: wireValue,
-        messageSortBy: 'interception',
-      }),
-      { signal: undefined },
-    );
-  });
-
-  it('serializes duty settings when saving', async () => {
-    mocks.putJson.mockResolvedValueOnce({
-      tagsLayout: 'compact',
-      disableAutoScroll: true,
-      analysisMapInSidebar: false,
-      dutyAudioTranscriptionCollapsed: true,
-      analysisAudioTranscriptionCollapsed: false,
-      showAnalysisCallsignAddForm: false,
-      showClassicDuty: false,
-      showClassicAnalysis: false,
-      dutyCollapseMediaPreviews: false,
-      mediaSummaryEnabled: true,
-      messageTextPreviewLines: 'twenty',
-      messageSortBy: 'interception',
-    });
-
-    await saveUserSettings({
-      tagsLayout: 'full',
-      disableAutoScroll: true,
-      analysisMapInSidebar: false,
-      dutyAudioTranscriptionCollapsed: true,
-      analysisAudioTranscriptionCollapsed: false,
-      showAnalysisCallsignAddForm: false,
-      showClassicDuty: false,
-      showClassicAnalysis: false,
-      dutyCollapseMediaPreviews: false,
-      mediaSummaryEnabled: true,
-      messageTextPreviewLines: 20,
-      messageSortBy: 'interception',
-    });
-
-    expect(mocks.putJson).toHaveBeenCalledWith(
-      '/api/user/settings',
-      {
-        tagsLayout: 'full',
-        disableAutoScroll: true,
-        analysisMapInSidebar: false,
-        dutyAudioTranscriptionCollapsed: true,
-        analysisAudioTranscriptionCollapsed: false,
-        showAnalysisCallsignAddForm: false,
-        showClassicDuty: false,
-        showClassicAnalysis: false,
-        dutyCollapseMediaPreviews: false,
-        mediaSummaryEnabled: true,
-        messageTextPreviewLines: 'twenty',
-        messageSortBy: 'interception',
-      },
-      { signal: undefined },
-    );
-  });
-
+  // @test-scope parser: normalizes legacy message-preview values from user-settings responses
   it.each([
     ['twenty', 20],
     ['Twenty', 20],
@@ -182,35 +97,5 @@ describe('user-settings api', () => {
       messageTextPreviewLines: expected,
       messageSortBy: 'interception',
     });
-  });
-
-  it('serializes an enabled media-preview preference', async () => {
-    mocks.putJson.mockResolvedValueOnce({
-      tagsLayout: 'compact',
-      disableAutoScroll: false,
-      dutyCollapseMediaPreviews: true,
-      mediaSummaryEnabled: false,
-    });
-
-    await saveUserSettings({
-      tagsLayout: 'compact',
-      disableAutoScroll: false,
-      analysisMapInSidebar: false,
-      dutyAudioTranscriptionCollapsed: false,
-      analysisAudioTranscriptionCollapsed: false,
-      showAnalysisCallsignAddForm: false,
-      showClassicDuty: false,
-      showClassicAnalysis: false,
-      dutyCollapseMediaPreviews: true,
-      mediaSummaryEnabled: false,
-      messageTextPreviewLines: 20,
-      messageSortBy: 'interception',
-    });
-
-    expect(mocks.putJson).toHaveBeenCalledWith(
-      '/api/user/settings',
-      expect.objectContaining({ dutyCollapseMediaPreviews: true, mediaSummaryEnabled: false }),
-      { signal: undefined },
-    );
   });
 });

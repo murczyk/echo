@@ -6,10 +6,8 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Unit } from '../../../../../Bindings';
-import type { AnalysisFilterSectionId } from '../types';
 import { buildAnalysisReq, emptyQueryState } from '../helpers';
 import {
-  buildFilterSectionsToLoad,
   filterSectionsToInvalidateForPatch,
   useAnalysisFilterSections,
 } from '../use-analysis-data-filter-sections';
@@ -38,19 +36,6 @@ vi.mock('../../../services/api/analysis', () => ({
   getLatestSenders: analysisApiMocks.getLatestSenders,
   getTagsForDisplay: analysisApiMocks.getTagsForDisplay,
 }));
-
-const ALL_OPTION_SECTIONS = [
-  'tags',
-  'aors',
-  'groups',
-  'senders',
-  'callsigns',
-  'units',
-  'locations',
-  'posts',
-  'networks',
-  'metadata',
-] as const;
 
 type HookApi = ReturnType<typeof useAnalysisFilterSections>;
 
@@ -126,125 +111,6 @@ afterEach(() => {
   container = null;
   latest = null;
   vi.clearAllMocks();
-});
-
-// @test-scope parser: preserves the requested analysis filter-section set across lazy and initial loads.
-describe('buildFilterSectionsToLoad', () => {
-  it('keeps the initial default sections for a normal load', () => {
-    expect(
-      buildFilterSectionsToLoad({
-        mode: 'full',
-        sectionsToReload: ['tags', 'groups', 'senders'],
-        selectedSections: [],
-        loadedSections: [],
-      }),
-    ).toEqual(['tags', 'groups', 'senders']);
-  });
-
-  it('loads selected sections on the first pass when nothing is cached yet', () => {
-    const sections = buildFilterSectionsToLoad({
-      mode: 'full',
-      sectionsToReload: ['tags', 'groups', 'senders'],
-      selectedSections: ['units', 'callsigns'],
-      loadedSections: [],
-    });
-
-    expect(sections).toEqual(
-      expect.arrayContaining(['tags', 'groups', 'senders', 'units', 'callsigns']),
-    );
-  });
-
-  it('reloads previously loaded lazy sections on a forced reload', () => {
-    const sections = buildFilterSectionsToLoad({
-      mode: 'full',
-      sectionsToReload: ['tags', 'groups', 'senders'],
-      selectedSections: [],
-      loadedSections: ['units', 'locations', 'posts'],
-    });
-
-    expect(sections).toEqual(
-      expect.arrayContaining(['tags', 'groups', 'senders', 'units', 'locations', 'posts']),
-    );
-    expect(sections).toHaveLength(6);
-  });
-
-  it('does not re-add selected sections on a reload when cached sections already exist', () => {
-    const sections = buildFilterSectionsToLoad({
-      mode: 'targeted',
-      sectionsToReload: ['callsigns'],
-    });
-
-    expect(sections).toEqual(['callsigns']);
-  });
-
-  it.each([
-    [
-      'tags',
-      { tags: [1] },
-      [
-        'aors',
-        'groups',
-        'senders',
-        'callsigns',
-        'units',
-        'locations',
-        'posts',
-        'networks',
-        'metadata',
-      ],
-    ],
-    [
-      'callsignsSelected',
-      { callsignsSelected: ['a'] },
-      ['tags', 'aors', 'groups', 'senders', 'units', 'locations', 'posts', 'networks', 'metadata'],
-    ],
-    [
-      'unitsSelected',
-      { unitsSelected: ['u1'] },
-      [
-        'tags',
-        'aors',
-        'groups',
-        'senders',
-        'callsigns',
-        'locations',
-        'posts',
-        'networks',
-        'metadata',
-      ],
-    ],
-    [
-      'networksSelected',
-      { networksSelected: ['1'] },
-      ['tags', 'aors', 'groups', 'senders', 'callsigns', 'units', 'locations', 'posts', 'metadata'],
-    ],
-    ['unitsExactMatchOnly', { unitsExactMatchOnly: true }, [...ALL_OPTION_SECTIONS]],
-    [
-      'metadataCc',
-      { metadataCc: ['cc-1'] },
-      ['tags', 'aors', 'groups', 'senders', 'callsigns', 'units', 'locations', 'posts', 'networks'],
-    ],
-    [
-      'onlyWithMetadata',
-      { onlyWithMetadata: true },
-      ['tags', 'aors', 'groups', 'senders', 'callsigns', 'units', 'locations', 'posts', 'networks'],
-    ],
-    [
-      'withoutMetadata',
-      { withoutMetadata: true },
-      ['tags', 'aors', 'groups', 'senders', 'callsigns', 'units', 'locations', 'posts', 'networks'],
-    ],
-    ['orWithoutCoords', { orWithoutCoords: true }, [...ALL_OPTION_SECTIONS]],
-    ['filterTagsOption', { filterTagsOption: 'AllTags' }, [...ALL_OPTION_SECTIONS]],
-    ['withoutModelTags', { withoutModelTags: true }, [...ALL_OPTION_SECTIONS]],
-    ['reportTagsOnlyThisUnit', { reportTagsOnlyThisUnit: true }, [...ALL_OPTION_SECTIONS]],
-    ['includePelengLocations', { includePelengLocations: false }, [...ALL_OPTION_SECTIONS]],
-  ] as const)(
-    'invalidates the expected option sections for %s changes',
-    (_name, patch, expected) => {
-      expect(filterSectionsToInvalidateForPatch(patch)).toEqual(expected);
-    },
-  );
 });
 
 // @test-scope safeguard: prevents stale or failed filter-section loads from replacing current selectable options.

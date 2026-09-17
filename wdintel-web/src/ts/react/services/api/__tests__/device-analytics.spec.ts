@@ -1,14 +1,12 @@
 /**
  * @vitest-environment happy-dom
  */
-// @test-scope parser: device-analytics rule expression API compatibility fixtures
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 import type { RuleExpression } from '../../../../../Bindings';
 import {
   listAdminAnalyticsTags,
   listAnalyticsTagTestFiles,
-  saveAnalyticsTagRule,
   testAnalyticsTagRule,
 } from '../device-analytics';
 
@@ -93,6 +91,7 @@ beforeEach(() => {
 });
 
 describe('device analytics API service', () => {
+  // @test-scope parser: normalizes strict tagged rule expressions from admin API responses
   it('normalizes the strict tagged rule expression returned by the admin API', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ tags: [wireTag()] }));
 
@@ -102,15 +101,7 @@ describe('device analytics API service', () => {
     expect(rsp.tags[0]).toMatchObject({ id: TAG_ID, name: 'Звіти', ruleExpression: expression });
   });
 
-  it('serializes the editor expression to the strict tagged rule DSL on save', async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(wireTag()));
-
-    const saved = await saveAnalyticsTagRule({ id: TAG_ID, ruleExpression: expression });
-
-    expect(requestBody()).toEqual({ id: TAG_ID, rule_expression: wireExpression });
-    expect(saved.ruleExpression).toEqual(expression);
-  });
-
+  // @test-scope parser: normalizes reusable test files from admin API responses
   it('lists reusable test files for a tag', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
@@ -125,10 +116,6 @@ describe('device analytics API service', () => {
 
     const rsp = await listAnalyticsTagTestFiles({ id: TAG_ID });
 
-    expect(fetchMock.mock.calls[0][0]).toBe(
-      '/api/admin/device-analytics/tags/rule/test-files/list',
-    );
-    expect(requestBody()).toEqual({ id: TAG_ID });
     expect(rsp.files).toEqual([
       {
         absolutePath: 'C:\\reports\\report.pdf',
@@ -137,7 +124,8 @@ describe('device analytics API service', () => {
     ]);
   });
 
-  it('tests the local expression and stores its reusable files', async () => {
+  // @test-scope parser: normalizes local-expression test results from admin API responses
+  it('normalizes local-expression test results', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({ results: [{ index: 0, matched: true, passed: true }] }),
     );
@@ -148,11 +136,6 @@ describe('device analytics API service', () => {
       files: [{ absolutePath: 'C:\\reports\\report.pdf', expectedMatch: true }],
     });
 
-    expect(requestBody()).toEqual({
-      id: TAG_ID,
-      rule_expression: wireExpression,
-      files: [{ absolute_path: 'C:\\reports\\report.pdf', expected_match: true }],
-    });
     expect(rsp.results).toEqual([{ index: 0, matched: true, passed: true }]);
   });
 });

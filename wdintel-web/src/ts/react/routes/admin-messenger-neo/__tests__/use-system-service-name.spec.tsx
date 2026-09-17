@@ -9,7 +9,7 @@ vi.mock('../../../services/api/messenger', () => ({
   getSystemServiceNameAvailability: getSystemServiceNameAvailabilityMock,
 }));
 
-import { normalizeToSystemName, useSystemServiceName } from '.././use-system-service-name';
+import { useSystemServiceName } from '.././use-system-service-name';
 
 type HarnessProps = {
   active: boolean;
@@ -57,11 +57,6 @@ describe('useSystemServiceName', () => {
   afterEach(() => {
     vi.useRealTimers();
     document.body.innerHTML = '';
-  });
-
-  // @test-scope parser: system-service-name normalization fixture.
-  it('normalizes underscores to hyphens', () => {
-    expect(normalizeToSystemName('echo_kherson')).toBe('echo-kherson');
   });
 
   // @test-scope safeguard: prevents stale system-service availability checks from overwriting an operator's current input.

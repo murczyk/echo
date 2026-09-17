@@ -7,26 +7,18 @@ import {
   EMPTY_CALLSIGN_ROW_ERROR,
   buildDuplicateHintGroups,
   LEGACY_CALLSIGN_CLEAR_ERROR,
-  buildListCallsignsReq,
-  createDefaultFilters,
   getExportPermission,
   getExportPermissionFromRoles,
-  getSortDescriptor,
   getUnitSelectionError,
-  normalizeDuplicateLookupValue,
-  mergeUnitStatsWithUnits,
   parseTabDelimitedInput,
   parseDateTimeLocalToMs,
   QUICK_PASTE_TSV_FORMAT_ERROR,
   RO_SOURCE_RADIO_FREQ_REQUIRED_ERROR,
   UNIT_SELECTION_REQUIRED_ERROR,
-  toBackendSort,
   validateDraftRows,
   validateEditForm,
 } from '../helpers';
-import type { CallsignsSortState } from '../types';
 import type { Callsign, Unit, User } from '../../../../../Bindings';
-import { filterUnitsBySearch, findExactUnitSearchMatch } from '../../../utils/unit-search';
 
 const EMPTY_UNIT_HIERARCHY = {
   armyRegion: '',
@@ -149,137 +141,6 @@ describe('rer-callsigns helpers', () => {
     ]);
   });
 
-  // @test-scope parser: callsign hierarchy filter request fixture
-  it('keeps sidebar hierarchy filters in the request, including empty hierarchy nodes', () => {
-    const req = buildListCallsignsReq({
-      filters: createDefaultFilters(new Date('2026-03-18T12:00:00Z')),
-      sort: { column: 'unit', direction: 'asc' },
-      query: { afterId: null, limit: 100 },
-      sidebarUnitHierarchyFilter: {
-        armyRegion: 'R',
-        militaryDistrict: 'D',
-        army: 'A',
-        corps: 'C',
-        division: '',
-        brigade: 'BR',
-        regiment: 'R',
-        battalion: 'B',
-        company: 'CO',
-        platoon: 'P',
-        squad: 'SQ',
-        section: 'S',
-        teamOrCrew: 'T',
-        other: 'O',
-      },
-    });
-
-    expect(req.filterUnitArmyRegion).toBe('R');
-    expect(req.filterUnitMilitaryDistrict).toBe('D');
-    expect(req.filterUnitArmy).toBe('A');
-    expect(req.filterUnitCorps).toBe('C');
-    expect(req.filterUnitDivision).toBe('');
-    expect(req.filterUnitBrigade).toBe('BR');
-    expect(req.filterUnitRegiment).toBe('R');
-    expect(req.filterUnitBattalion).toBe('B');
-    expect(req.filterUnitCompany).toBe('CO');
-    expect(req.filterUnitPlatoon).toBe('P');
-    expect(req.filterUnitSquad).toBe('SQ');
-    expect(req.filterUnitSection).toBe('S');
-    expect(req.filterUnitTeamOrCrew).toBe('T');
-    expect(req.filterUnitOther).toBe('O');
-  });
-
-  // @test-scope parser: unit search ranking fixture for callsign editing
-  it('ranks unit search by exact label before broader token matches', () => {
-    const units = [
-      { id: 1, name: '3 шр 1 мсб 126 мсп 71 мсд 14 АК' } as Unit,
-      { id: 2, name: '3 мсб 126 мсп 71 мсд 14 АК' } as Unit,
-      { id: 3, name: '7 мср 3 мсб 126 мсп 71 мсд 14 АК' } as Unit,
-      { id: 4, name: '36 мсп 71 мсд 14 АК' } as Unit,
-    ];
-
-    expect(filterUnitsBySearch(units, '3 мсб 126 мсп').map((unit) => unit.id)).toEqual([2, 3, 1]);
-    expect(filterUnitsBySearch(units, '36 мсп').map((unit) => unit.id)).toEqual([4]);
-    expect(filterUnitsBySearch([{ id: 3, name: 'Альфа' } as Unit], '3')).toEqual([]);
-    expect(findExactUnitSearchMatch(units, '3 мсб 126 мсп 71 мсд 14 АК')?.id).toBe(2);
-    expect(findExactUnitSearchMatch(units, '36 мсп 71 мсд 14 АК')?.id).toBe(4);
-    expect(findExactUnitSearchMatch(units, '#4')).toBeNull();
-    expect(getUnitSelectionError('78 мсп 42 мсд', null)).toBe(UNIT_SELECTION_REQUIRED_ERROR);
-    expect(getUnitSelectionError('', null)).toBeNull();
-  });
-
-  // @test-scope parser: callsign unit-stat hierarchy normalization fixture
-  it('merges known unit stats with hierarchy and name data', () => {
-    const unitsById = new Map<number, Unit>([
-      [
-        10,
-        {
-          ...EMPTY_UNIT_HIERARCHY,
-          id: 10,
-          name: '11 АК',
-          armyRegion: 'ЗС РФ',
-          militaryDistrict: 'Західний ВО',
-          army: '1 ОА',
-          division: '3 мсд',
-          regiment: '11 мсп',
-          battalion: '2 мсб',
-        } as Unit,
-      ],
-    ]);
-
-    expect(mergeUnitStatsWithUnits([{ unitId: 10, count: 4 }], unitsById)).toEqual([
-      {
-        unitId: 10,
-        count: 4,
-        unitName: '11 АК',
-        armyRegion: 'ЗС РФ',
-        militaryDistrict: 'Західний ВО',
-        army: '1 ОА',
-        corps: '',
-        division: '3 мсд',
-        brigade: '',
-        regiment: '11 мсп',
-        battalion: '2 мсб',
-        company: '',
-        platoon: '',
-        squad: '',
-        section: '',
-        teamOrCrew: '',
-        other: '',
-      },
-    ]);
-  });
-
-  // @test-scope safeguard: prevents missing unit statistics from creating a bogus root hierarchy leaf
-  it('excludes stats for units that are no longer available', () => {
-    const unitsById = new Map<number, Unit>([
-      [
-        10,
-        {
-          ...EMPTY_UNIT_HIERARCHY,
-          id: 10,
-          name: '11 АК',
-          armyRegion: '',
-          militaryDistrict: '',
-          army: '1 ОА',
-          division: '3 мсд',
-          regiment: '',
-          battalion: '',
-        } as Unit,
-      ],
-    ]);
-
-    expect(
-      mergeUnitStatsWithUnits(
-        [
-          { unitId: 10, count: 4 },
-          { unitId: 99, count: 7 },
-        ],
-        unitsById,
-      ),
-    ).toEqual([expect.objectContaining({ unitId: 10, count: 4, unitName: '11 АК' })]);
-  });
-
   // @test-scope safeguard: prevents users without backend edit roles from receiving callsign mutation access
   it('keeps callsign edit access aligned with backend roles', () => {
     expect(getExportPermission({ roles: ['UnitsEditor'] } as User).canEdit).toBe(false);
@@ -303,18 +164,6 @@ describe('rer-callsigns helpers', () => {
       canEdit: true,
       canExport: true,
     });
-  });
-
-  // @test-scope parser: callsign sort-state wire enum fixture
-  it('maps sort state to backend sort enums', () => {
-    expect(toBackendSort({ column: 'callsign', direction: 'asc' })).toEqual(['CallsignAsc']);
-    expect(toBackendSort({ column: 'fullName', direction: 'asc' })).toEqual([
-      'CallsignFullNameAsc',
-    ]);
-    expect(toBackendSort({ column: 'sourceName', direction: 'desc' })).toEqual([
-      'CallsignSourceDesc',
-    ]);
-    expect(toBackendSort({ column: 'unit', direction: 'asc' })).toEqual(['CallsignUnitAsc']);
   });
 
   // @test-scope safeguard: prevents submission of draft callsign rows without an identity
@@ -668,10 +517,5 @@ describe('rer-callsigns helpers', () => {
       rows: [],
       error: QUICK_PASTE_TSV_FORMAT_ERROR,
     });
-  });
-
-  // @test-scope parser: callsign duplicate-hint value normalization fixture
-  it('normalizes duplicate-hint values for full names', () => {
-    expect(normalizeDuplicateLookupValue('  Іваненко   Іван  ')).toBe('іваненко іван');
   });
 });

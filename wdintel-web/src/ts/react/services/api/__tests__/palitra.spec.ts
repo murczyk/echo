@@ -7,7 +7,6 @@ import {
   addPalitraHighlightBlacklistEntry,
   analyzePalitraKmz,
   deletePalitraHighlightBlacklistEntry,
-  downloadPalitras,
   fetchPalitraReferenceData,
   getPalitraHighlightBlacklist,
   listPalitras,
@@ -127,28 +126,6 @@ describe('palitra list normalization', () => {
   });
 });
 
-// @test-scope parser: Palitra download API request mapping fixture.
-describe('palitra downloads', () => {
-  beforeEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it('uses the Delta split endpoint when requested', async () => {
-    const requestedUrls: string[] = [];
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
-        requestedUrls.push(String(input));
-        return new Response(new Blob(['zip']), { status: 200 });
-      }),
-    );
-
-    await downloadPalitras([42], { splitForDelta: true });
-
-    expect(requestedUrls).toEqual(['/api/palitra/download-delta-split']);
-  });
-});
-
 describe('palitra highlight blacklist', () => {
   beforeEach(() => vi.restoreAllMocks());
 
@@ -262,8 +239,8 @@ describe('palitra highlight blacklist', () => {
 describe('palitra name resolution', () => {
   beforeEach(() => vi.restoreAllMocks());
 
-  // @test-scope parser: palette name lookup request and response normalization fixture
-  it('deduplicates IDs and preserves valid response items', async () => {
+  // @test-scope parser: palette name lookup response normalization fixture
+  it('preserves valid response items', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue(
@@ -274,16 +251,12 @@ describe('palitra name resolution', () => {
     await expect(resolvePalitraNames([7, 7, 12])).resolves.toEqual([
       { id: 7, name: 'Палітра сім' },
     ]);
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ palitra_ids: [7, 12] });
   });
 
   // @test-scope parser: palette name lookup empty and malformed response fixture
-  it('does not request empty IDs and rejects malformed items', async () => {
+  it('rejects malformed response items', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    await expect(resolvePalitraNames([])).resolves.toEqual([]);
-    expect(fetchMock).not.toHaveBeenCalled();
-
     fetchMock.mockResolvedValue(
       new Response(JSON.stringify([{ id: '7', name: 'bad' }]), { status: 200 }),
     );

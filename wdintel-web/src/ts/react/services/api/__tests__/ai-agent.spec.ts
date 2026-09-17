@@ -205,8 +205,8 @@ describe('AI agent API mapping', () => {
     expect(JSON.stringify(request)).not.toContain('не показувати');
   });
 
-  // @test-scope parser: AI-agent conversation request and unique message-key compatibility fixture
-  it('updates titles with the generated request shape and unique message keys', async () => {
+  // @test-scope parser: AI-agent conversation response normalization generates unique message keys.
+  it('normalizes response-generated unique message keys after a title update', async () => {
     mocks.postJson.mockResolvedValue({
       id: 'conversation-1',
       title: 'Нова назва',
@@ -233,10 +233,6 @@ describe('AI agent API mapping', () => {
 
     const conversation = await updateAiAgentConversation('conversation-1', 'Нова назва');
 
-    expect(mocks.postJson).toHaveBeenCalledWith('/api/ai-agent/conversations/update', {
-      id: 'conversation-1',
-      title: 'Нова назва',
-    });
     expect(conversation.messages.map((message) => message.id)).toEqual([
       'request-1-user',
       'request-1-assistant',

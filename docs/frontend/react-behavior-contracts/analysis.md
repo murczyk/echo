@@ -16,7 +16,7 @@
 - **Responsive and keyboard requirements:** none at the API boundary.
 - **Known race/idempotency constraints:** none in the mapper itself.
 - **Source implementation:** `src/ts/react/services/api/analysis.ts`
-- **Existing test(s):** `wdintel-web/src/ts/react/services/api/__tests__/analysis.spec.ts`
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded; retained as operational compatibility coverage.
 
 ## AI-agent API compatibility
@@ -90,7 +90,7 @@
 - **Responsive and keyboard requirements:** none.
 - **Known race/idempotency constraints:** none.
 - **Source implementation:** `routes/rer-analysis-neo/report-helpers.ts`.
-- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/report-helpers.spec.ts`
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded; retained as operational parser coverage.
 
 ## Analysis report presentation and defaults
@@ -129,6 +129,16 @@
 - **Source implementation:** `routes/rer-analysis-neo/callsign-hints.ts`
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/callsign-hints.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational parser coverage.
+
+## Analysis filter and map loading behavior
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-analysis-filter-and-map-loading`
+- **Affected route/component:** RER Analysis lazy filter sections and map message loading.
+- **Expected observable result:** initial loads include required filter facets and selected lazy facets; later loads reuse loaded or targeted facets. Filter labels retain returned statistics and hydrated network/unit names. Map message IDs are filtered before fetches, and messages absent from a map response are not rendered as map points. A backend page shorter than its supplied limit ends pagination; no exhaustion is inferred when that limit is absent.
+- **Known race/idempotency constraints:** invalidated or stale filter and map responses cannot replace current state.
+- **Source implementation:** `routes/rer-analysis-neo/use-analysis-data-filter-sections.ts`, `use-analysis-data.loaders.ts`, and `use-analysis-data.shared.ts`.
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 
 ## Analysis message-list stale-response safety
 

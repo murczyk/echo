@@ -19,6 +19,11 @@ SQL, trivial helpers, defaults, formatting, or mocks without protecting a
 real failure mode. Prefer a focused fixture in an existing functional or
 parser test over adding another isolated unit test.
 
+Do not classify outbound serializers, request builders, defaults, local
+validation, eligibility maps, merging/deduplication, sorting, or formatting as
+parser coverage. A parser fixture consumes operational API, URL,
+pasted/user-entered structured-text, or file-format input.
+
 For React tests, every retained default-suite test must carry a truthful
 `@test-scope` admission annotation: an operational parser fixture, a safeguard
 that names its concrete harmful outcome, or an Echo issue/PR-linked regression.

@@ -205,6 +205,15 @@
 - **Source implementation:** `wdintel-web/src/ts/react/routes/shared/message-card/`
 - **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 
+## Message edit mapping
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-message-edit-mapping`
+- **Affected route/component:** Manage Message drawer.
+- **Expected observable result:** form fields map to editable message fields; null/default/date/tag values remain usable in the form. Saving an edit preserves every untouched persisted field, including media, tokens, network IDs, callsigns, and coordinates.
+- **Source implementation:** `routes/shared/manage-message/manage-message-drawer.mappers.ts`.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/manage-message/__tests__/manage-message-drawer.mappers.spec.ts`
+
 ## Browser message-card regressions
 
 - **Status:** issue-backed regressions

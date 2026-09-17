@@ -3,14 +3,12 @@ import { describe, expect, it } from 'vitest';
 import {
   AI_AGENT_GATEWAY_TOKEN_NOTICE,
   AI_AGENT_TOKEN_WARNING,
-  getAiAgentEngineCompatibility,
   getAiAgentTokenNotice,
-  getAiReviewerEngineCompatibility,
   isAiAgentEligibleEngine,
 } from '.././engine-eligibility';
 
-// @test-scope parser: AI-engine endpoint compatibility fixtures.
 describe('isAiAgentEligibleEngine', () => {
+  // @test-scope safeguard: prevents endpoint authorization from selecting malformed, credential-bearing, query-bearing, or untrusted provider URLs
   it('allows the same internal HTTP /v1 upstreams as the backend', () => {
     expect(
       isAiAgentEligibleEngine({
@@ -76,33 +74,7 @@ describe('isAiAgentEligibleEngine', () => {
     );
   });
 
-  it('does not treat a token as an incompatibility', () => {
-    expect(
-      getAiAgentEngineCompatibility({
-        enabled: true,
-        hasToken: true,
-        url: 'http://vllm.example:8000/v1',
-      }),
-    ).toEqual({ compatible: true, explanation: 'Доступний для ШІ агентів.' });
-    expect(
-      getAiAgentEngineCompatibility({
-        enabled: true,
-        hasToken: true,
-        url: 'https://api.openai.com/v1',
-      }),
-    ).toEqual({ compatible: true, explanation: 'Доступний через захищений шлюз Echo.' });
-    expect(
-      getAiAgentEngineCompatibility({
-        enabled: true,
-        hasToken: false,
-        url: 'https://api.openai.com/v1',
-      }),
-    ).toEqual({
-      compatible: false,
-      explanation: 'Шлюз Echo для OpenAI потребує токен провайдера.',
-    });
-  });
-
+  // @test-scope safeguard: prevents credential disclosure messaging from confusing direct-container token transport with the Echo gateway
   it('shows token handling according to the provider transport', () => {
     expect(
       getAiAgentTokenNotice({
@@ -118,17 +90,5 @@ describe('isAiAgentEligibleEngine', () => {
         url: 'https://api.openai.com/v1',
       }),
     ).toEqual({ message: AI_AGENT_GATEWAY_TOKEN_NOTICE, severity: 'info' });
-  });
-
-  it('allows enabled HTTPS token providers for trusted backend reviews', () => {
-    expect(
-      getAiReviewerEngineCompatibility({
-        enabled: true,
-        url: 'https://api.openai.com/v1',
-      }),
-    ).toEqual({
-      compatible: true,
-      explanation: 'Доступний для безпекової перевірки.',
-    });
   });
 });

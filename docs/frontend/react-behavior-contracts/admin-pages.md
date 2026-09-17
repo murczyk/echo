@@ -1,5 +1,24 @@
 # Admin page contracts
 
+## Admin Unparsed Units
+
+- **Status:** inferred characterization
+- **Behavior ID:** `admin-unparsed-units-workflow`
+- **Affected route/component:** Admin Unparsed Units.
+- **Expected observable result:** messages are paginated five at a time and “Load more” disappears after the final page. The label can be linked through the shared unit-selection workflow; unit creation opens `/rer-units-neo?create=true`; a successful resolution produces visible confirmation.
+- **Known race/idempotency constraints:** a stale response cannot replace the current result.
+- **Source implementation:** `routes/admin-unparsed-units/index.tsx`.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/admin-unparsed-units/__tests__/index.spec.tsx`
+- **Other behavior coverage:** Pagination, linking, create navigation, and success confirmation: No direct default-suite test; behavior is preserved by this contract.
+
+## AI engine eligibility and token transport
+
+- **Status:** security compatibility
+- **Behavior ID:** `admin-ai-engine-eligibility`
+- **Expected observable result:** direct internal providers require an allowed HTTP `/v1` URL without credentials, query, or fragment; trusted gateway providers require their token and explain the difference between gateway and direct-container transport.
+- **Source implementation:** `wdintel-web/src/ts/react/routes/admin-ai-agent/engine-eligibility.ts`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/admin-ai-agent/__tests__/engine-eligibility.spec.ts`
+
 ## API integration deletion
 
 - **Status:** inferred characterization
