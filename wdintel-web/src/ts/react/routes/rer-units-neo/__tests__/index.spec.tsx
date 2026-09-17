@@ -123,8 +123,10 @@ function buildPageValue(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function renderPage() {
-  act(() => root.render(<RerUnitsNeoPage authUserRoles={['UnitsEditor']} />));
+function renderPage(openCreate = false) {
+  act(() =>
+    root.render(<RerUnitsNeoPage authUserRoles={['UnitsEditor']} openCreate={openCreate} />),
+  );
 }
 
 beforeEach(() => {
@@ -188,5 +190,18 @@ describe('RerUnitsNeoPage search and pagination controls', () => {
 
     expect(searchInput?.disabled).toBe(false);
     expect(document.activeElement).toBe(searchInput);
+  });
+
+  it('opens the create drawer from a deep link after settings are ready', () => {
+    const openCreateDialog = vi.fn();
+    pageMock.value = buildPageValue({ settingsReady: false, openCreateDialog });
+    renderPage(true);
+    expect(openCreateDialog).not.toHaveBeenCalled();
+
+    pageMock.value = buildPageValue({ settingsReady: true, openCreateDialog });
+    renderPage(true);
+    renderPage(true);
+
+    expect(openCreateDialog).toHaveBeenCalledTimes(1);
   });
 });

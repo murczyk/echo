@@ -1,5 +1,13 @@
 {
   "migrations": {
+    "echo:m20260917_123830_unresolved_unit_message_order": {
+      "changes": [
+        {
+          "table": "public.sigint_inbox_item_failed_unit_label",
+          "strategy": "excluded"
+        }
+      ]
+    },
     "echo:m20260916_130029_activate_sigint_network_units": {
       "changes": []
     },

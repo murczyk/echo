@@ -48,6 +48,7 @@ import './ts/react/admin-report-details-element';
 import './ts/react/admin-unit-duplicates-element';
 import './ts/react/admin-unit-inconsistent-element';
 import './ts/react/admin-unit-unparsed-element';
+import './ts/react/admin-unparsed-units-element';
 import './ts/react/admin-units-element';
 import './ts/react/admin-ai-callsigns-element';
 import './ts/react/admin-device-analytics-element';
