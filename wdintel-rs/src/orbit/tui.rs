@@ -226,6 +226,17 @@ pub(super) struct EchelonConflictReviewUnit {
     pub sigint_unit_name: String,
     pub active: bool,
     pub hierarchy: Vec<(&'static str, String)>,
+    pub linked_orbit_units: Vec<EchelonConflictOrbitUnit>,
+}
+
+pub(super) struct EchelonConflictOrbitUnit {
+    pub orbit_unit_id: uuid::Uuid,
+    pub structural_hierarchy: Vec<EchelonConflictOrbitHierarchyLevel>,
+}
+
+pub(super) struct EchelonConflictOrbitHierarchyLevel {
+    pub name: String,
+    pub is_conflicting: bool,
 }
 
 pub(super) struct EchelonConflictReview {
@@ -2327,8 +2338,16 @@ fn echelon_conflict_review_lines(
         )),
         Line::default(),
     ];
-    lines.extend(echelon_conflict_unit_lines("UNIT 1", &review.first));
-    lines.extend(echelon_conflict_unit_lines("UNIT 2", &review.second));
+    lines.extend(echelon_conflict_unit_lines(
+        "UNIT 1",
+        &review.first,
+        review.conflicting_echelon,
+    ));
+    lines.extend(echelon_conflict_unit_lines(
+        "UNIT 2",
+        &review.second,
+        review.conflicting_echelon,
+    ));
     lines.push(Line::styled(
         format!("Conflicting {}", review.conflicting_echelon),
         Style::default().add_modifier(Modifier::BOLD),
@@ -2360,6 +2379,7 @@ fn echelon_conflict_review_lines(
 fn echelon_conflict_unit_lines(
     label: &str,
     unit: &EchelonConflictReviewUnit,
+    conflicting_echelon: &str,
 ) -> Vec<Line<'static>> {
     let hierarchy = unit
         .hierarchy
@@ -2368,7 +2388,7 @@ fn echelon_conflict_unit_lines(
         .map(|(echelon, value)| format!("{echelon}: {}", value.trim()))
         .collect::<Vec<_>>()
         .join(" / ");
-    vec![
+    let mut lines = vec![
         Line::styled(
             format!(
                 "{label} | SIGINT ID: {} | active: {} | name: {}",
@@ -2379,8 +2399,68 @@ fn echelon_conflict_unit_lines(
                 .add_modifier(Modifier::BOLD),
         ),
         Line::from(format!("  hierarchy: {hierarchy}")),
-        Line::default(),
-    ]
+        Line::styled(
+            "  linked ORBIT structural hierarchies:",
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
+    ];
+    if unit.linked_orbit_units.is_empty() {
+        lines.push(Line::from("    none"));
+    } else {
+        lines.extend(unit.linked_orbit_units.iter().map(|orbit_unit| {
+            echelon_conflict_orbit_unit_line(orbit_unit, conflicting_echelon)
+        }));
+    }
+    lines.push(Line::default());
+    lines
+}
+
+fn echelon_conflict_orbit_unit_line(
+    orbit_unit: &EchelonConflictOrbitUnit,
+    conflicting_echelon: &str,
+) -> Line<'static> {
+    let mut spans = vec![Span::raw(format!(
+        "    ORBIT {}: ",
+        orbit_unit.orbit_unit_id
+    ))];
+    if orbit_unit.structural_hierarchy.is_empty() {
+        spans.push(Span::styled(
+            "<structural hierarchy unavailable>",
+            Style::default().fg(Color::Yellow),
+        ));
+        spans.push(missing_orbit_echelon_span(conflicting_echelon));
+        return Line::from(spans);
+    }
+    for (index, level) in orbit_unit.structural_hierarchy.iter().enumerate() {
+        if index > 0 {
+            spans.push(Span::raw(" / "));
+        }
+        let style = if level.is_conflicting {
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        spans.push(Span::styled(level.name.clone(), style));
+    }
+    if !orbit_unit
+        .structural_hierarchy
+        .iter()
+        .any(|level| level.is_conflicting)
+    {
+        spans.push(missing_orbit_echelon_span(conflicting_echelon));
+    }
+    Line::from(spans)
+}
+
+fn missing_orbit_echelon_span(conflicting_echelon: &str) -> Span<'static> {
+    Span::styled(
+        format!("  [{conflicting_echelon}: absent]"),
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    )
 }
 
 fn display_echelon_value(value: &str) -> String {
@@ -2756,6 +2836,55 @@ mod tests {
             )),
             Some(EchelonConflictReviewDecision::Skip),
         );
+    }
+
+    #[test]
+    fn echelon_conflict_orbit_hierarchy_highlights_conflicting_level() {
+        let orbit_unit = EchelonConflictOrbitUnit {
+            orbit_unit_id: uuid::Uuid::nil(),
+            structural_hierarchy: vec![
+                EchelonConflictOrbitHierarchyLevel {
+                    name: "74 омсбр".to_string(),
+                    is_conflicting: false,
+                },
+                EchelonConflictOrbitHierarchyLevel {
+                    name: "47 тд".to_string(),
+                    is_conflicting: true,
+                },
+                EchelonConflictOrbitHierarchyLevel {
+                    name: "1 ТА".to_string(),
+                    is_conflicting: false,
+                },
+            ],
+        };
+
+        let line = echelon_conflict_orbit_unit_line(&orbit_unit, "division");
+
+        assert_eq!(
+            line_text(&line),
+            "    ORBIT 00000000-0000-0000-0000-000000000000: 74 омсбр / 47 тд / 1 ТА"
+        );
+        assert!(line.spans.iter().any(|span| {
+            span.content == "47 тд" && span.style.fg == Some(Color::Cyan)
+        }));
+    }
+
+    #[test]
+    fn echelon_conflict_orbit_hierarchy_marks_absent_level() {
+        let orbit_unit = EchelonConflictOrbitUnit {
+            orbit_unit_id: uuid::Uuid::nil(),
+            structural_hierarchy: vec![EchelonConflictOrbitHierarchyLevel {
+                name: "74 омсбр".to_string(),
+                is_conflicting: false,
+            }],
+        };
+
+        let line = echelon_conflict_orbit_unit_line(&orbit_unit, "division");
+
+        assert!(line.spans.iter().any(|span| {
+            span.content == "  [division: absent]"
+                && span.style.fg == Some(Color::Cyan)
+        }));
     }
 
     #[test]
