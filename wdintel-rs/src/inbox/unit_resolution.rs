@@ -2393,7 +2393,7 @@ mod tests {
         .is_empty());
         let failures = failure_rows(&env.dbx, inbox_item.id).await;
         assert_eq!(failures.len(), 1);
-        assert_eq!(failures[0].1.unit_txt, "невідомий   сирий підрозділ");
+        assert_eq!(failures[0].1.unit_txt, "невідомий сирий підрозділ");
         assert!(!failures[0].0.deleted);
     }
 

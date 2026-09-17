@@ -186,30 +186,57 @@ enum CopyDirection {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+enum ConflictResolution {
+    Copy(CopyDirection),
+    UseOrbitValue(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ReviewedConflictChange {
     first: HierarchyUnit,
     second: HierarchyUnit,
     conflicting_echelon: UniqueEchelon,
-    direction: CopyDirection,
+    resolution: ConflictResolution,
 }
 
 impl ReviewedConflictChange {
-    fn source_and_target(&self) -> (&HierarchyUnit, &HierarchyUnit) {
-        match self.direction {
-            CopyDirection::FirstIntoSecond => (&self.first, &self.second),
-            CopyDirection::SecondIntoFirst => (&self.second, &self.first),
-        }
-    }
-
-    fn hierarchy_change(&self) -> OrbitUnitHierarchyChange {
-        let (source, target) = self.source_and_target();
+    fn hierarchy_change(
+        &self,
+        target: &HierarchyUnit,
+        proposed: String,
+    ) -> OrbitUnitHierarchyChange {
         OrbitUnitHierarchyChange {
             sigint_unit_id: target.id,
             attributes: vec![OrbitUnitAttributeChange {
                 attribute: self.conflicting_echelon.attribute(),
                 current: self.conflicting_echelon.value(target).to_string(),
-                proposed: self.conflicting_echelon.value(source).to_string(),
+                proposed,
             }],
+        }
+    }
+
+    fn hierarchy_changes(&self) -> Vec<OrbitUnitHierarchyChange> {
+        match &self.resolution {
+            ConflictResolution::Copy(direction) => {
+                let (source, target) = match direction {
+                    CopyDirection::FirstIntoSecond => {
+                        (&self.first, &self.second)
+                    }
+                    CopyDirection::SecondIntoFirst => {
+                        (&self.second, &self.first)
+                    }
+                };
+                vec![self.hierarchy_change(
+                    target,
+                    self.conflicting_echelon.value(source).to_string(),
+                )]
+            }
+            ConflictResolution::UseOrbitValue(value) => {
+                [&self.first, &self.second]
+                    .into_iter()
+                    .map(|target| self.hierarchy_change(target, value.clone()))
+                    .collect()
+            }
         }
     }
 }
@@ -574,14 +601,27 @@ fn review_manually_inner(
                         review.selected.push(apply_reviewed_choice(
                             units,
                             &conflict,
-                            CopyDirection::FirstIntoSecond,
+                            ConflictResolution::Copy(
+                                CopyDirection::FirstIntoSecond,
+                            ),
                         ));
                     }
                     tui::EchelonConflictReviewDecision::UseSecondInFirst => {
                         review.selected.push(apply_reviewed_choice(
                             units,
                             &conflict,
-                            CopyDirection::SecondIntoFirst,
+                            ConflictResolution::Copy(
+                                CopyDirection::SecondIntoFirst,
+                            ),
+                        ));
+                    }
+                    tui::EchelonConflictReviewDecision::UseOrbitValue(
+                        value,
+                    ) => {
+                        review.selected.push(apply_reviewed_choice(
+                            units,
+                            &conflict,
+                            ConflictResolution::UseOrbitValue(value),
                         ));
                     }
                     tui::EchelonConflictReviewDecision::Skip => {
@@ -602,22 +642,61 @@ fn make_tui_review(
 ) -> tui::EchelonConflictReview {
     let first = &units[conflict.first_index];
     let second = &units[conflict.second_index];
+    let first_review = make_tui_review_unit(
+        first,
+        conflict.conflicting_echelon,
+        linked_orbit_hierarchies,
+    );
+    let second_review = make_tui_review_unit(
+        second,
+        conflict.conflicting_echelon,
+        linked_orbit_hierarchies,
+    );
+    let orbit_values = additional_orbit_values(
+        [&first_review, &second_review],
+        [
+            conflict.conflicting_echelon.value(first),
+            conflict.conflicting_echelon.value(second),
+        ],
+    );
     tui::EchelonConflictReview {
         shared_echelon: conflict.shared_echelon.attribute(),
         first_shared_value: conflict.shared_echelon.value(first).to_string(),
         second_shared_value: conflict.shared_echelon.value(second).to_string(),
         conflicting_echelon: conflict.conflicting_echelon.attribute(),
-        first: make_tui_review_unit(
-            first,
-            conflict.conflicting_echelon,
-            linked_orbit_hierarchies,
-        ),
-        second: make_tui_review_unit(
-            second,
-            conflict.conflicting_echelon,
-            linked_orbit_hierarchies,
-        ),
+        first: first_review,
+        second: second_review,
+        orbit_values,
     }
+}
+
+fn additional_orbit_values(
+    units: [&tui::EchelonConflictReviewUnit; 2],
+    sigint_values: [&str; 2],
+) -> Vec<String> {
+    let sigint_values = sigint_values
+        .into_iter()
+        .map(normalized_name)
+        .collect::<HashSet<_>>();
+    let mut orbit_values = BTreeMap::new();
+    for unit in units {
+        for level in unit
+            .linked_orbit_units
+            .iter()
+            .flat_map(|unit| &unit.structural_hierarchy)
+            .filter(|level| level.is_conflicting)
+        {
+            let normalized_name = normalized_name(&level.name);
+            if !normalized_name.is_empty()
+                && !sigint_values.contains(&normalized_name)
+            {
+                orbit_values
+                    .entry(normalized_name)
+                    .or_insert_with(|| level.name.clone());
+            }
+        }
+    }
+    orbit_values.into_values().collect()
 }
 
 fn make_tui_review_unit(
@@ -683,30 +762,42 @@ fn orbit_hierarchy_for_review(
 fn apply_reviewed_choice(
     units: &mut [HierarchyUnit],
     conflict: &HierarchyConflict,
-    direction: CopyDirection,
+    resolution: ConflictResolution,
 ) -> ReviewedConflictChange {
     let first = units[conflict.first_index].clone();
     let second = units[conflict.second_index].clone();
-    let (source_index, target_index) = match direction {
-        CopyDirection::FirstIntoSecond => {
-            (conflict.first_index, conflict.second_index)
+    match &resolution {
+        ConflictResolution::Copy(direction) => {
+            let (source_index, target_index) = match direction {
+                CopyDirection::FirstIntoSecond => {
+                    (conflict.first_index, conflict.second_index)
+                }
+                CopyDirection::SecondIntoFirst => {
+                    (conflict.second_index, conflict.first_index)
+                }
+            };
+            let proposed = conflict
+                .conflicting_echelon
+                .value(&units[source_index])
+                .to_string();
+            conflict
+                .conflicting_echelon
+                .set_value(&mut units[target_index], proposed);
         }
-        CopyDirection::SecondIntoFirst => {
-            (conflict.second_index, conflict.first_index)
+        ConflictResolution::UseOrbitValue(value) => {
+            conflict
+                .conflicting_echelon
+                .set_value(&mut units[conflict.first_index], value.clone());
+            conflict
+                .conflicting_echelon
+                .set_value(&mut units[conflict.second_index], value.clone());
         }
-    };
-    let proposed = conflict
-        .conflicting_echelon
-        .value(&units[source_index])
-        .to_string();
-    conflict
-        .conflicting_echelon
-        .set_value(&mut units[target_index], proposed);
+    }
     ReviewedConflictChange {
         first,
         second,
         conflicting_echelon: conflict.conflicting_echelon,
-        direction,
+        resolution,
     }
 }
 
@@ -758,16 +849,22 @@ async fn persist_change_batch(
             summary.stale += 1;
             continue;
         }
-        let outcome = crate::sigint::unit::orbit::reconcile_sigint_unit_orbit_with_reviewed_change(
-            &transaction,
-            &login,
-            &reviewed.hierarchy_change(),
-        )
-        .await
-        .c(h!())?;
-        if outcome.hierarchy_updated {
-            summary.changed += 1;
-        } else {
+        let mut all_updated = true;
+        for change in reviewed.hierarchy_changes() {
+            let outcome = crate::sigint::unit::orbit::reconcile_sigint_unit_orbit_with_reviewed_change(
+                &transaction,
+                &login,
+                &change,
+            )
+            .await
+            .c(h!())?;
+            if outcome.hierarchy_updated {
+                summary.changed += 1;
+            } else {
+                all_updated = false;
+            }
+        }
+        if !all_updated {
             summary.stale += 1;
         }
     }
@@ -839,7 +936,7 @@ mod tests {
         apply_reviewed_choice(
             &mut units,
             &division,
-            CopyDirection::FirstIntoSecond,
+            ConflictResolution::Copy(CopyDirection::FirstIntoSecond),
         );
 
         let corps =
@@ -875,18 +972,64 @@ mod tests {
         let reviewed = apply_reviewed_choice(
             &mut units,
             &conflict,
-            CopyDirection::FirstIntoSecond,
+            ConflictResolution::Copy(CopyDirection::FirstIntoSecond),
         );
 
         assert_eq!(units[1].division, "");
         assert_eq!(
-            reviewed.hierarchy_change().attributes,
-            vec![OrbitUnitAttributeChange {
-                attribute: "division",
-                current: "A".to_string(),
-                proposed: String::new(),
+            reviewed.hierarchy_changes(),
+            vec![OrbitUnitHierarchyChange {
+                sigint_unit_id: 2,
+                attributes: vec![OrbitUnitAttributeChange {
+                    attribute: "division",
+                    current: "A".to_string(),
+                    proposed: String::new(),
+                }],
             }]
         );
+    }
+
+    #[test]
+    fn offers_distinct_orbit_values_not_already_available_from_sigint() {
+        let first = tui_review_unit_with_orbit_values(&["SIGINT A", "ORBIT C"]);
+        let second =
+            tui_review_unit_with_orbit_values(&["sigint b", "orbit c"]);
+
+        assert_eq!(
+            additional_orbit_values(
+                [&first, &second],
+                ["SIGINT A", "SIGINT B"],
+            ),
+            vec!["ORBIT C".to_string()],
+        );
+    }
+
+    #[test]
+    fn orbit_value_overwrites_both_conflicting_units() {
+        let mut units = vec![
+            unit(1, true, ["X", "A", "", "", "", ""]),
+            unit(2, true, ["x", "B", "", "", "", ""]),
+        ];
+        let conflict = HierarchyConflict {
+            first_index: 0,
+            second_index: 1,
+            shared_echelon: UniqueEchelon::Brigade,
+            conflicting_echelon: UniqueEchelon::Division,
+        };
+
+        let reviewed = apply_reviewed_choice(
+            &mut units,
+            &conflict,
+            ConflictResolution::UseOrbitValue("ORBIT C".to_string()),
+        );
+
+        assert_eq!(units[0].division, "ORBIT C");
+        assert_eq!(units[1].division, "ORBIT C");
+        assert_eq!(reviewed.hierarchy_changes().len(), 2);
+        assert!(reviewed
+            .hierarchy_changes()
+            .iter()
+            .all(|change| change.attributes[0].proposed == "ORBIT C"));
     }
 
     #[test]
@@ -1132,7 +1275,7 @@ mod tests {
         let reviewed = apply_reviewed_choice(
             &mut units,
             &conflict,
-            CopyDirection::FirstIntoSecond,
+            ConflictResolution::UseOrbitValue("division ORBIT".to_string()),
         );
 
         let summary = persist_change_batch(
@@ -1143,7 +1286,7 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(summary.changed, 1);
+        assert_eq!(summary.changed, 2);
         assert_eq!(summary.stale, 0);
         let first = sigint_unit::Entity::find_by_id(first.id)
             .one(&env.dbx)
@@ -1160,8 +1303,32 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(first.division, second.division);
+        assert_eq!(first.division, "division ORBIT");
+        assert_eq!(second.division, "division ORBIT");
         assert_eq!(inactive.division, "division C");
+    }
+
+    fn tui_review_unit_with_orbit_values(
+        values: &[&str],
+    ) -> tui::EchelonConflictReviewUnit {
+        tui::EchelonConflictReviewUnit {
+            sigint_unit_id: 1,
+            sigint_unit_name: "unit".to_string(),
+            active: true,
+            hierarchy: Vec::new(),
+            linked_orbit_units: values
+                .iter()
+                .map(|value| tui::EchelonConflictOrbitUnit {
+                    orbit_unit_id: Uuid::nil(),
+                    structural_hierarchy: vec![
+                        tui::EchelonConflictOrbitHierarchyLevel {
+                            name: (*value).to_string(),
+                            is_conflicting: true,
+                        },
+                    ],
+                })
+                .collect(),
+        }
     }
 
     fn unit(id: i64, active: bool, hierarchy: [&str; 6]) -> HierarchyUnit {
