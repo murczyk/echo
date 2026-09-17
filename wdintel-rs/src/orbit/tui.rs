@@ -246,12 +246,14 @@ pub(super) struct EchelonConflictReview {
     pub conflicting_echelon: &'static str,
     pub first: EchelonConflictReviewUnit,
     pub second: EchelonConflictReviewUnit,
+    pub orbit_values: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum EchelonConflictReviewDecision {
     UseFirstInSecond,
     UseSecondInFirst,
+    UseOrbitValue(String),
     Skip,
     Quit,
 }
@@ -883,6 +885,18 @@ pub(super) fn review_echelon_conflict(
         let Event::Key(key) = event::read().c(h!())? else {
             continue;
         };
+        if key.kind == KeyEventKind::Press
+            && key.modifiers.is_empty()
+            && key.code == KeyCode::Char('o')
+            && !review.orbit_values.is_empty()
+        {
+            if let Some(value) =
+                prompt_echelon_conflict_orbit_value(terminal, review).c(h!())?
+            {
+                return Ok(EchelonConflictReviewDecision::UseOrbitValue(value));
+            }
+            continue;
+        }
         if let Some(decision) = echelon_conflict_decision_for_key(key) {
             if decision != EchelonConflictReviewDecision::Quit
                 || confirm_test_link_exit(terminal).c(h!())?
@@ -900,6 +914,25 @@ pub(super) fn review_echelon_conflict(
             _ => {}
         }
     }
+}
+
+fn prompt_echelon_conflict_orbit_value(
+    terminal: &mut OrbitTerminal,
+    review: &EchelonConflictReview,
+) -> Result<Option<String>, AppError> {
+    let options = review
+        .orbit_values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| (value.as_str(), index))
+        .collect::<Vec<_>>();
+    let title = format!(
+        "Use ORBIT {} in both SIGINT units",
+        review.conflicting_echelon
+    );
+    Ok(run_option_menu(terminal, &title, &options)
+        .c(h!())?
+        .map(|index| review.orbit_values[index].clone()))
 }
 
 fn restore_stdout_state() -> io::Result<()> {
@@ -2312,12 +2345,21 @@ fn draw_echelon_conflict(
         sections[1],
     );
     frame.render_widget(
-        Paragraph::new(format!(
-            "1: use UNIT 1 {} in UNIT 2 | 2: use UNIT 2 {} in UNIT 1 | 0/n: skip\n↑/↓/PgUp/PgDn: scroll | q/Esc/Ctrl-C: stop",
-            review.conflicting_echelon, review.conflicting_echelon,
-        )),
+        Paragraph::new(echelon_conflict_controls(review)),
         sections[2],
     );
+}
+
+fn echelon_conflict_controls(review: &EchelonConflictReview) -> String {
+    let orbit_control = if review.orbit_values.is_empty() {
+        String::new()
+    } else {
+        " | o: choose ORBIT value for BOTH".to_string()
+    };
+    format!(
+        "1: use UNIT 1 {} in UNIT 2 | 2: use UNIT 2 {} in UNIT 1{orbit_control}\n0/n: skip | ↑/↓/PgUp/PgDn: scroll | q/Esc/Ctrl-C: stop",
+        review.conflicting_echelon, review.conflicting_echelon,
+    )
 }
 
 fn echelon_conflict_review_lines(
@@ -2373,6 +2415,26 @@ fn echelon_conflict_review_lines(
         &second_value,
     );
     lines.extend([first_diff, second_diff]);
+    if !review.orbit_values.is_empty() {
+        lines.extend([
+            Line::default(),
+            Line::styled(
+                format!(
+                    "Additional ORBIT {} values (o: assign one to BOTH):",
+                    review.conflicting_echelon
+                ),
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+        ]);
+        lines.extend(review.orbit_values.iter().map(|value| {
+            Line::styled(
+                format!("  {value}"),
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
+            )
+        }));
+    }
     lines
 }
 
@@ -2437,7 +2499,7 @@ fn echelon_conflict_orbit_unit_line(
         }
         let style = if level.is_conflicting {
             Style::default()
-                .fg(Color::Cyan)
+                .fg(Color::Magenta)
                 .add_modifier(Modifier::BOLD)
         } else {
             Style::default()
@@ -2458,7 +2520,7 @@ fn missing_orbit_echelon_span(conflicting_echelon: &str) -> Span<'static> {
     Span::styled(
         format!("  [{conflicting_echelon}: absent]"),
         Style::default()
-            .fg(Color::Cyan)
+            .fg(Color::Magenta)
             .add_modifier(Modifier::BOLD),
     )
 }
@@ -2865,7 +2927,7 @@ mod tests {
             "    ORBIT 00000000-0000-0000-0000-000000000000: 74 омсбр / 47 тд / 1 ТА"
         );
         assert!(line.spans.iter().any(|span| {
-            span.content == "47 тд" && span.style.fg == Some(Color::Cyan)
+            span.content == "47 тд" && span.style.fg == Some(Color::Magenta)
         }));
     }
 
@@ -2883,7 +2945,7 @@ mod tests {
 
         assert!(line.spans.iter().any(|span| {
             span.content == "  [division: absent]"
-                && span.style.fg == Some(Color::Cyan)
+                && span.style.fg == Some(Color::Magenta)
         }));
     }
 
