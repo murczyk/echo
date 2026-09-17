@@ -12,7 +12,11 @@ import {
   type DirectSubmitResponse,
 } from '../../../services/api/direct-submit';
 import type { RecentValues } from './useRecentValues';
-import { parseCoords, type MessageFormData } from './manage-message-drawer.schema';
+import {
+  DO_NOT_SEND_GROUP_VALUE,
+  parseCoords,
+  type MessageFormData,
+} from './manage-message-drawer.schema';
 import { combineDateTimeToMs, formatDateInputValueInTimeZone } from '../../../utils/misc';
 import { MAX_MESSAGE_ATTACHMENTS } from './useMessageUppy';
 import { fallbackFailedMessageUploads, messageUploadFailure } from './message-upload-fallback';
@@ -187,7 +191,10 @@ export function useMessageSubmit({
         full_body: data.full_body?.trim() || undefined,
         text: shortBodyForSubmit(data, isEditMode ? editTarget : null),
         comment: data.comment?.trim() || undefined,
-        signal_group_master_key: data.signalGroupMasterKey?.trim() || (isReportMode ? null : ''),
+        signal_group_master_key:
+          data.signalGroupMasterKey === DO_NOT_SEND_GROUP_VALUE
+            ? null
+            : data.signalGroupMasterKey?.trim() || (isReportMode ? null : ''),
         device_name_id: deviceNameId,
         upload_urls: uploadUrls.length > 0 ? uploadUrls : null,
         freq: data.freq || undefined,
@@ -319,7 +326,10 @@ function buildRecentValues(
   }>,
 ): Partial<RecentValues> {
   return {
-    group: data.signalGroupMasterKey ? [data.signalGroupMasterKey] : [],
+    group:
+      data.signalGroupMasterKey && data.signalGroupMasterKey !== DO_NOT_SEND_GROUP_VALUE
+        ? [data.signalGroupMasterKey]
+        : [],
     post: data.post ? [data.post] : [],
     freq: data.freq ? [data.freq] : [],
     unit: data.unit ? [data.unit] : [],

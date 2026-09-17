@@ -1,16 +1,24 @@
 import React from 'react';
 import { Box, TextField, Autocomplete, CircularProgress } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { useFormContext, Controller } from 'react-hook-form';
 import { FormSectionWrapper } from './FormSectionWrapper';
 import type { SignalGroupEntry } from '../../../../../../Bindings';
-import type { MessageFormData } from '../manage-message-drawer.schema';
+import { DO_NOT_SEND_GROUP_VALUE, type MessageFormData } from '../manage-message-drawer.schema';
+
+const DO_NOT_SEND_GROUP_OPTION = {
+  masterKey: DO_NOT_SEND_GROUP_VALUE,
+  name: 'Не відправляти',
+};
+
+type SignalGroupOption = Pick<SignalGroupEntry, 'masterKey' | 'name'>;
 
 type Props = {
   signalGroups: SignalGroupEntry[];
   groupsLoading: boolean;
   busy: boolean;
   isEditMode: boolean;
-  groupOptional?: boolean;
+  isReportMode?: boolean;
   groupEditable?: boolean;
   cyberEchoEnabled: boolean;
   deviceNameOptions: string[];
@@ -24,7 +32,7 @@ export function SystemSection({
   groupsLoading,
   busy,
   isEditMode,
-  groupOptional = false,
+  isReportMode = false,
   groupEditable = false,
   cyberEchoEnabled,
   deviceNameOptions,
@@ -32,6 +40,7 @@ export function SystemSection({
   setDeviceNameInput,
   recentValues,
 }: Props) {
+  const theme = useTheme();
   const {
     control,
     formState: { errors },
@@ -50,6 +59,9 @@ export function SystemSection({
       return indexA - indexB;
     });
   }, [signalGroups, recentValues?.group]);
+  const signalGroupOptions: SignalGroupOption[] = isReportMode
+    ? [DO_NOT_SEND_GROUP_OPTION, ...sortedSignalGroups]
+    : sortedSignalGroups;
 
   return (
     <FormSectionWrapper title="Системні">
@@ -65,33 +77,45 @@ export function SystemSection({
           control={control}
           render={({ field }) => (
             <Autocomplete
-              options={sortedSignalGroups}
+              options={signalGroupOptions}
               noOptionsText="Немає варіантів"
               getOptionLabel={(option) => option.name || option.masterKey}
               isOptionEqualToValue={(option, value) => option.masterKey === value.masterKey}
               renderOption={(props, option) => {
                 const { key, ...restProps } = props as any;
+                const isDoNotSend = option.masterKey === DO_NOT_SEND_GROUP_VALUE;
                 return (
-                  <li key={option.masterKey} {...restProps}>
+                  <li
+                    key={option.masterKey}
+                    {...restProps}
+                    style={isDoNotSend ? { color: theme.palette.error.main } : undefined}
+                  >
                     {option.name || option.masterKey}
                   </li>
                 );
               }}
               loading={groupsLoading}
               disabled={busy || (isEditMode && !groupEditable)}
-              value={signalGroups.find((g) => g.masterKey === field.value) || null}
+              value={signalGroupOptions.find((group) => group.masterKey === field.value) || null}
               onChange={(_, newValue) => field.onChange(newValue?.masterKey || '')}
               renderInput={(params) => (
                 <TextField
                   {...params}
-                  label="Група"
+                  label={isReportMode ? 'Відправити в групу' : 'Група'}
                   size="small"
                   fullWidth
-                  required={!groupOptional}
+                  required
                   error={!!errors.signalGroupMasterKey}
                   helperText={errors.signalGroupMasterKey?.message}
                   disabled={busy || (isEditMode && !groupEditable) || groupsLoading}
                   slotProps={{
+                    htmlInput: {
+                      ...params.inputProps,
+                      style:
+                        field.value === DO_NOT_SEND_GROUP_VALUE
+                          ? { ...params.inputProps.style, color: theme.palette.error.main }
+                          : params.inputProps.style,
+                    },
                     input: {
                       ...params.InputProps,
                       endAdornment: (

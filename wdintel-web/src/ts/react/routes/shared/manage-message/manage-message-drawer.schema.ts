@@ -10,6 +10,7 @@ export {
 } from '../../../components/attachment-files';
 
 export const FREQ_FORMAT_REGEX = /^\d+([.,]\d+)?$/;
+export const DO_NOT_SEND_GROUP_VALUE = '__do_not_send__';
 
 export function parseCoordLine(line: string): { lat: number; lon: number } | null {
   const parsed = parseCoordinateBlock(line)[0];
