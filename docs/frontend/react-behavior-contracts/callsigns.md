@@ -1,5 +1,14 @@
 # Callsigns
 
+## Unit statistics hierarchy
+
+- **Status:** inferred characterization
+- **Behavior ID:** `callsigns-unit-stats-hierarchy`
+- **Affected route/component:** Callsigns unit-stat sidebar
+- **Expected observable result:** unavailable unit IDs are excluded before hierarchy rendering. Empty hierarchy levels are skipped; the supported echelon order is army region, military district, army, corps, division, brigade, regiment, battalion, company, platoon, squad, section, team/crew, and other; terminal singleton paths collapse into the unit leaf. Identical labels remain separated by their full hierarchy path.
+- **Source implementation:** `wdintel-web/src/ts/react/routes/rer-callsigns-neo/helpers-rows.ts`, `wdintel-web/src/ts/react/routes/rer-callsigns-neo/components/UnitStatsSidebar.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-callsigns-neo/__tests__/helpers.spec.ts`, `wdintel-web/src/ts/react/routes/rer-callsigns-neo/components/__tests__/UnitStatsSidebar.spec.ts`
+
 ## Quick-paste TSV parsing
 
 - **Status:** operational compatibility

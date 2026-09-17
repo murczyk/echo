@@ -11,7 +11,6 @@ import {
   createDefaultFilters,
   getExportPermission,
   getExportPermissionFromRoles,
-  getSidebarGroupLabel,
   getSortDescriptor,
   getUnitSelectionError,
   normalizeDuplicateLookupValue,
@@ -25,7 +24,6 @@ import {
   validateDraftRows,
   validateEditForm,
 } from '../helpers';
-import { buildUnitTree } from '../components/UnitStatsSidebar';
 import type { CallsignsSortState } from '../types';
 import type { Callsign, Unit, User } from '../../../../../Bindings';
 import { filterUnitsBySearch, findExactUnitSearchMatch } from '../../../utils/unit-search';
@@ -46,18 +44,6 @@ const EMPTY_UNIT_HIERARCHY = {
   teamOrCrew: '',
   other: '',
 } as const;
-
-function firstBranchLabels(tree: ReturnType<typeof buildUnitTree>): string[] {
-  const labels: string[] = [];
-  let nodes = tree;
-  while (nodes.length > 0) {
-    const node = nodes[0];
-    labels.push(node.label);
-    if (node.kind === 'leaf') break;
-    nodes = node.children;
-  }
-  return labels;
-}
 
 describe('rer-callsigns helpers', () => {
   // @test-scope safeguard: prevents duplicate hints from being assigned to the wrong draft callsign row
@@ -265,7 +251,7 @@ describe('rer-callsigns helpers', () => {
   });
 
   // @test-scope safeguard: prevents missing unit statistics from creating a bogus root hierarchy leaf
-  it('ignores missing unit stats so the tree never gets a root #id leaf', () => {
+  it('excludes stats for units that are no longer available', () => {
     const unitsById = new Map<number, Unit>([
       [
         10,
@@ -283,7 +269,7 @@ describe('rer-callsigns helpers', () => {
       ],
     ]);
 
-    const tree = buildUnitTree(
+    expect(
       mergeUnitStatsWithUnits(
         [
           { unitId: 10, count: 4 },
@@ -291,163 +277,7 @@ describe('rer-callsigns helpers', () => {
         ],
         unitsById,
       ),
-    );
-
-    expect(tree).toHaveLength(1);
-    expect(tree[0]).toMatchObject({
-      kind: 'group',
-      label: '1 ОА',
-      count: 4,
-    });
-    expect('children' in tree[0] ? tree[0].children : []).toEqual([
-      expect.objectContaining({
-        kind: 'leaf',
-        label: '3 мсд',
-        unitName: '11 АК',
-        count: 4,
-      }),
-    ]);
-    expect(JSON.stringify(tree)).not.toContain('#99');
-  });
-
-  // @test-scope parser: callsign unit hierarchy normalization fixture with empty echelons.
-  it('skips empty hierarchy groups while preserving exact hierarchy paths', () => {
-    const tree = buildUnitTree([
-      {
-        ...EMPTY_UNIT_HIERARCHY,
-        unitId: 1,
-        count: 2,
-        unitName: 'Unit 1',
-        armyRegion: '',
-        militaryDistrict: '',
-        army: 'A',
-        division: '',
-        regiment: 'R',
-        battalion: '',
-      },
-      {
-        ...EMPTY_UNIT_HIERARCHY,
-        unitId: 2,
-        count: 3,
-        unitName: 'Unit 2',
-        armyRegion: '',
-        militaryDistrict: '',
-        army: 'A',
-        division: '',
-        regiment: 'R',
-        battalion: '',
-      },
-    ]);
-
-    expect(tree).toEqual([
-      expect.objectContaining({
-        kind: 'group',
-        label: 'A',
-        children: [
-          expect.objectContaining({
-            kind: 'group',
-            label: 'R',
-            hierarchy: expect.objectContaining({ army: 'A', division: '', regiment: 'R' }),
-          }),
-        ],
-      }),
-    ]);
-    expect(JSON.stringify(tree)).not.toContain('Без ');
-    expect(
-      getSidebarGroupLabel({
-        armyRegion: null,
-        militaryDistrict: null,
-        army: 'A',
-        corps: null,
-        division: '',
-        brigade: null,
-        regiment: null,
-        battalion: null,
-        company: null,
-        platoon: null,
-        squad: null,
-        section: null,
-        teamOrCrew: null,
-        other: null,
-      }),
-    ).toBe('A');
-  });
-
-  // @test-scope parser: callsign unit hierarchy normalization fixture with every supported echelon.
-  it('uses every echelon and makes the terminal singleton the unit leaf', () => {
-    const tree = buildUnitTree([
-      {
-        ...EMPTY_UNIT_HIERARCHY,
-        unitId: 1,
-        count: 2,
-        unitName: 'Full unit name',
-        armyRegion: 'Army region',
-        militaryDistrict: 'Military district',
-        army: 'A',
-        corps: 'Corps',
-        division: 'Division',
-        brigade: 'Brigade',
-        regiment: 'Regiment',
-        battalion: 'Battalion',
-        company: 'Company',
-        platoon: 'Platoon',
-        squad: 'Squad',
-        section: 'Section',
-        teamOrCrew: 'Team',
-        other: 'Other',
-      },
-    ]);
-
-    expect(firstBranchLabels(tree)).toEqual([
-      'Army region',
-      'Military district',
-      'A',
-      'Corps',
-      'Division',
-      'Brigade',
-      'Regiment',
-      'Battalion',
-      'Company',
-      'Platoon',
-      'Squad',
-      'Section',
-      'Team',
-      'Other',
-    ]);
-    expect(tree[0]).toMatchObject({ kind: 'group' });
-    expect(JSON.stringify(tree)).toContain('"unitName":"Full unit name"');
-  });
-
-  // @test-scope parser: callsign unit hierarchy regional disambiguation fixture.
-  it('separates same-named armies by region and district', () => {
-    const tree = buildUnitTree([
-      {
-        ...EMPTY_UNIT_HIERARCHY,
-        unitId: 1,
-        count: 2,
-        unitName: 'A D1 R1',
-        armyRegion: 'R1',
-        militaryDistrict: 'D1',
-        army: 'A',
-        division: '',
-        regiment: '',
-        battalion: '',
-      },
-      {
-        ...EMPTY_UNIT_HIERARCHY,
-        unitId: 2,
-        count: 3,
-        unitName: 'A D1 R2',
-        armyRegion: 'R2',
-        militaryDistrict: 'D1',
-        army: 'A',
-        division: '',
-        regiment: '',
-        battalion: '',
-      },
-    ]);
-
-    expect(tree.map((node) => ('label' in node ? node.label : null))).toEqual(['R1', 'R2']);
+    ).toEqual([expect.objectContaining({ unitId: 10, count: 4, unitName: '11 АК' })]);
   });
 
   // @test-scope safeguard: prevents users without backend edit roles from receiving callsign mutation access

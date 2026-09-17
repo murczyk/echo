@@ -28,10 +28,15 @@ const prohibitedTestDirectories = new Set([
   'temporary',
 ]);
 
-function walk(directory, pattern = testFilePattern) {
+function walk(
+  directory,
+  pattern = testFilePattern,
+  ignoredDirectories = new Set(['node_modules']),
+) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name);
-    if (entry.isDirectory()) return entry.name === 'node_modules' ? [] : walk(path, pattern);
+    if (entry.isDirectory())
+      return ignoredDirectories.has(entry.name) ? [] : walk(path, pattern, ignoredDirectories);
     return pattern.test(entry.name) ? [path] : [];
   });
 }
@@ -276,11 +281,58 @@ function behaviorContractTestReferenceProblemsAt(contractsRoot, root) {
   return problems;
 }
 
-function playwrightTestPathProblems() {
-  return walk(webRoot)
-    .filter((file) => readFileSync(file, 'utf8').includes('@playwright/test'))
-    .filter((file) => !relative(webRoot, file).startsWith('tests/e2e/'))
-    .map((file) => `${relative(webRoot, file)} must be under tests/e2e.`);
+function importsPlaywrightTest(file) {
+  const sourceFile = ts.createSourceFile(
+    file,
+    readFileSync(file, 'utf8'),
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  let found = false;
+  const isPlaywrightSpecifier = (node) =>
+    ts.isStringLiteralLike(node) && node.text === '@playwright/test';
+  const visit = (node) => {
+    if (
+      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+      node.moduleSpecifier &&
+      isPlaywrightSpecifier(node.moduleSpecifier)
+    )
+      found = true;
+    if (
+      ts.isCallExpression(node) &&
+      node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+      isPlaywrightSpecifier(node.arguments[0])
+    )
+      found = true;
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'require' &&
+      isPlaywrightSpecifier(node.arguments[0])
+    )
+      found = true;
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return found;
+}
+
+function playwrightTestPathProblems(root = webRoot) {
+  const ignoredDirectories = new Set([
+    'node_modules',
+    'dist',
+    'coverage',
+    'playwright-report',
+    'test-results',
+    '.elm-land',
+  ]);
+  return walk(root, sourceModulePattern, ignoredDirectories)
+    .filter(importsPlaywrightTest)
+    .filter((file) => {
+      const path = relative(root, file);
+      return path !== 'playwright.config.ts' && !path.startsWith('tests/e2e/');
+    })
+    .map((file) => `${relative(root, file)} must be under tests/e2e.`);
 }
 
 function modulePath(fromFile, moduleSpecifier) {
@@ -364,6 +416,51 @@ function uniquelyMatchesDescendantProductionModule(
   return matches.length === 1 && join(matches[0], '..') !== owner;
 }
 
+function importHasValueBinding(importClause) {
+  if (!importClause || importClause.isTypeOnly) return false;
+  if (importClause.name) return true;
+  const bindings = importClause.namedBindings;
+  if (!bindings) return false;
+  if (ts.isNamespaceImport(bindings)) return true;
+  return bindings.elements.some((element) => !element.isTypeOnly);
+}
+
+function mixedOwnerImportProblems(file, pathSegments, testDirectoryIndex, root = webRoot) {
+  const owner = join(root, ...pathSegments.slice(0, testDirectoryIndex));
+  const ownerModuleName = basename(file).replace(/\.(?:spec|test)\.(?:tsx?|mts|[cm]?js|jsx)$/, '');
+  const ownsMatchingModule = readdirSync(owner, { withFileTypes: true }).some(
+    (entry) =>
+      entry.isFile() &&
+      sourceModulePattern.test(entry.name) &&
+      basename(entry.name).replace(/\.(?:tsx?|mts|[cm]?js|jsx)$/, '') === ownerModuleName,
+  );
+  if (!ownsMatchingModule) return [];
+
+  const sourceFile = ts.createSourceFile(
+    file,
+    readFileSync(file, 'utf8'),
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  const problems = [];
+  for (const statement of sourceFile.statements) {
+    if (
+      !ts.isImportDeclaration(statement) ||
+      !ts.isStringLiteralLike(statement.moduleSpecifier) ||
+      !importHasValueBinding(statement.importClause)
+    )
+      continue;
+    const target = modulePath(file, statement.moduleSpecifier.text);
+    if (!target || target.includes('/__tests__/')) continue;
+    const targetDirectory = relative(owner, join(target, '..'));
+    if (targetDirectory !== '' && !targetDirectory.startsWith('..'))
+      problems.push(
+        `${relative(root, file)} must not value-import descendant production module ${relative(root, target)}.`,
+      );
+  }
+  return problems;
+}
+
 function placementProblemsFor(file, root = webRoot) {
   const path = relative(root, file);
   if (!path.startsWith('src/ts/react/')) return [];
@@ -388,7 +485,7 @@ function placementProblemsFor(file, root = webRoot) {
     return [`${path} has a test-created __tests__ owner directory.`];
   if (uniquelyMatchesDescendantProductionModule(pathSegments, testDirectoryIndexes[0], file, root))
     return [`${path} must be under the uniquely matching production module's __tests__ directory.`];
-  return [];
+  return mixedOwnerImportProblems(file, pathSegments, testDirectoryIndexes[0], root);
 }
 
 function runGateSelfValidation() {
@@ -430,6 +527,81 @@ function runGateSelfValidation() {
     write(join(web, 'src/ts/react/valid-owner/ValidOwner.tsx'), 'export {};');
     write(validSpec);
     expect(placementProblemsFor(validSpec, web).length === 0, 'valid owner placement failed');
+
+    const mixedOwnerSpec = join(web, 'src/ts/react/mixed-owner/__tests__/helpers.spec.ts');
+    const mixedOwnerComponent = join(
+      web,
+      'src/ts/react/mixed-owner/components/UnitStatsSidebar.tsx',
+    );
+    const mixedOwnerSupport = join(web, 'src/ts/react/mixed-owner/__tests__/fixture.ts');
+    write(join(web, 'src/ts/react/mixed-owner/helpers.ts'), 'export {};');
+    write(mixedOwnerComponent, 'export const UnitStatsSidebar = null;');
+    write(mixedOwnerSupport, 'export const fixture = null;');
+    write(mixedOwnerSpec, "import { UnitStatsSidebar } from '../components/UnitStatsSidebar';");
+    expect(
+      placementProblemsFor(mixedOwnerSpec, web).length === 1,
+      'owner-level spec importing a descendant production component passed',
+    );
+    write(
+      mixedOwnerSpec,
+      "import type { UnitStatsSidebar } from '../components/UnitStatsSidebar';",
+    );
+    expect(
+      placementProblemsFor(mixedOwnerSpec, web).length === 0,
+      'type-only descendant import failed placement',
+    );
+    write(mixedOwnerSpec, "import { fixture } from './fixture'; void fixture;");
+    expect(
+      placementProblemsFor(mixedOwnerSpec, web).length === 0,
+      'test-support import failed placement',
+    );
+    const componentSpec = join(
+      web,
+      'src/ts/react/mixed-owner/components/__tests__/UnitStatsSidebar.spec.tsx',
+    );
+    write(
+      componentSpec,
+      "import { UnitStatsSidebar } from '../UnitStatsSidebar'; void UnitStatsSidebar;",
+    );
+    expect(
+      placementProblemsFor(componentSpec, web).length === 0,
+      'descendant component-owned spec failed placement',
+    );
+
+    const playwrightOutsideFixture = join(web, 'src/ts/react/playwright.fixture.ts');
+    const playwrightOutsideHelper = join(web, 'src/ts/react/playwright-helper.mjs');
+    const playwrightE2eFixture = join(web, 'tests/e2e/support/fixture.ts');
+    const playwrightConfig = join(web, 'playwright.config.ts');
+    const playwrightMention = join(web, 'src/ts/react/playwright-mention.js');
+    write(playwrightOutsideFixture, "import { test } from '@playwright/test'; void test;");
+    write(playwrightOutsideHelper, "const test = require('@playwright/test'); void test;");
+    write(playwrightE2eFixture, "export { test } from '@playwright/test';");
+    write(playwrightConfig, "void import('@playwright/test');");
+    write(
+      playwrightMention,
+      "// @playwright/test\nconst packageName = '@playwright/test'; void packageName;",
+    );
+    const playwrightProblems = playwrightTestPathProblems(web);
+    expect(
+      playwrightProblems.some((problem) => problem.includes('playwright.fixture.ts')),
+      'outside-E2E fixture Playwright import passed',
+    );
+    expect(
+      playwrightProblems.some((problem) => problem.includes('playwright-helper.mjs')),
+      'outside-E2E helper Playwright require passed',
+    );
+    expect(
+      !playwrightProblems.some((problem) => problem.includes('tests/e2e/support/fixture.ts')),
+      'E2E fixture Playwright import failed',
+    );
+    expect(
+      !playwrightProblems.some((problem) => problem.includes('playwright.config.ts')),
+      'Playwright config import failed',
+    );
+    expect(
+      !playwrightProblems.some((problem) => problem.includes('playwright-mention.js')),
+      'Playwright comment or string literal failed',
+    );
 
     const contract = join(root, 'docs/frontend/react-behavior-contracts/self-check.md');
     const actualPath = 'wdintel-web/src/ts/react/valid-owner/__tests__/ValidOwner.spec.ts';

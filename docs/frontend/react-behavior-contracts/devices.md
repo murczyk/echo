@@ -132,3 +132,21 @@
 - **Expected observable result:** no manual React synchronization dialog, row-freezing/retry flow, or synchronization authorization action remains in the current Device Files client.
 - **Current behavior:** Device Files provides the file workspace, tree, search, journal, and analytics functionality. The removed synchronization-specific invariants are historical and no longer client behavior.
 - **Source implementation:** current `routes/device-files/` workspace only; the manual synchronization components and hooks were removed upstream.
+
+## Device form mutation safeguards
+
+- **Status:** inferred characterization
+- **Behavior ID:** `device-form-mutation-safeguards`
+- **Affected route/component:** device create and update form request helpers
+- **Expected observable result:** create requests include the source fields used by the create workflow; the analytical name is included only with analytical-data permission. Update requests gate `externalUrl` and `customFields` behind source-data permission, and gate `name`, `aorIds`, and `unitId` behind analytical-data permission. Blank external URLs become explicit `null` clears; removed custom-field keys become `null`, while changed and new keys retain their values. Unchanged and unauthorized fields are omitted. Recognized backend snake-case field errors map to editable fields; malformed and unknown errors remain generic.
+- **Source implementation:** `wdintel-web/src/ts/react/routes/devices/device-form.ts`, `wdintel-web/src/ts/react/routes/devices/use-devices-page.ts`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/devices/__tests__/device-form.spec.ts`
+
+## Device form presentation and local validation
+
+- **Status:** inferred characterization
+- **Behavior ID:** `device-form-defaults-and-validation`
+- **Affected route/component:** device create and update form presentation
+- **Expected observable result:** new forms start with an empty name, AOR list, external URL, and custom fields, with no selected unit; a nullable existing device name appears as an empty editable value. Only field groups available to the current permission set are validated. Analytical validation requires a trimmed, non-empty name with a 255-character maximum. Source validation accepts an empty external URL or an absolute HTTP/HTTPS URL, with the existing 4096-character maximum. Custom fields are limited to 50 rows; trimmed keys must be non-empty, unique, and at most 128 characters; values are limited to 4096 characters. Request construction trims names, external URLs, and custom-field keys while preserving custom-field values. An unchanged edit produces no mutation payload beyond device identity and is not submitted as an update.
+- **Source implementation:** `wdintel-web/src/ts/react/routes/devices/device-form.ts`, `wdintel-web/src/ts/react/routes/devices/use-devices-page.ts`
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
