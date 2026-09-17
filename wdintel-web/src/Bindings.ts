@@ -3225,6 +3225,25 @@ export type ListUnresolvedUnitLabelsRsp = {
   pageSize: number;
 };
 
+export type UnresolvedUnitMessage = {
+  id: number;
+  groupName: string | null;
+  label: string;
+  sender: string | null;
+  body: string;
+  createdAt: number;
+};
+
+export type ListUnresolvedUnitMessagesReq = {
+  title: string;
+  page: number | null;
+};
+
+export type ListUnresolvedUnitMessagesRsp = {
+  messages: Array<UnresolvedUnitMessage>;
+  hasMore: boolean;
+};
+
 export type ClassifyUnresolvedUnitLabelReq = {
   unitTxt: string;
 };

@@ -47,11 +47,19 @@ import {
 import { hasRole } from '../../utils/roles';
 import { SettingsNeoTable } from '../settings-neo/SettingsNeoTable';
 
-const DEFAULT_COLUMN_ORDER = ['mrt-row-actions', 'mrt-row-numbers', 'unitTxt', 'quantity', 'note'];
+const DEFAULT_COLUMN_ORDER = [
+  'mrt-row-actions',
+  'mrt-row-numbers',
+  'unitTxt',
+  'quantity',
+  'note',
+  'messageExamples',
+];
 const DEFAULT_COLUMN_VISIBILITY = {
   unitTxt: true,
   quantity: true,
   note: true,
+  messageExamples: true,
   'mrt-row-actions': true,
 };
 const UNIT_SEARCH_DEBOUNCE_MS = 300;
@@ -434,6 +442,23 @@ export function AdminUnitUnparsedPage({
           <Box sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
             {String(cell.getValue() || '—')}
           </Box>
+        ),
+      },
+      {
+        id: 'messageExamples',
+        header: 'Приклади перехоплень',
+        size: 200,
+        enableSorting: false,
+        meta: { overflowMode: 'none' },
+        Cell: ({ row }) => (
+          <Button
+            component="a"
+            variant="outlined"
+            size="small"
+            href={`/admin/unparsed-units?title=${encodeURIComponent(row.original.unitTxt)}`}
+          >
+            Перейти
+          </Button>
         ),
       },
     ],

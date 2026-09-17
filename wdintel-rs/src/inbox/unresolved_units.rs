@@ -57,6 +57,34 @@ pub struct ListUnresolvedUnitLabelsRsp {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct UnresolvedUnitMessage {
+    pub id: i64,
+    pub group_name: Option<String>,
+    pub label: String,
+    pub sender: Option<String>,
+    pub body: String,
+    pub created_at: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct ListUnresolvedUnitMessagesReq {
+    pub title: String,
+    pub page: Option<u64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct ListUnresolvedUnitMessagesRsp {
+    pub messages: Vec<UnresolvedUnitMessage>,
+    pub has_more: bool,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct ClassifyUnresolvedUnitLabelReq {
     pub unit_txt: String,
 }
@@ -100,6 +128,16 @@ struct UnresolvedUnitLabelRow {
     quantity: i64,
     note: String,
     is_archived: bool,
+}
+
+#[derive(Debug, sea_orm::FromQueryResult)]
+struct UnresolvedUnitMessageRow {
+    id: i64,
+    group_name: Option<String>,
+    label: String,
+    sender: Option<String>,
+    body: String,
+    created_at: chrono::NaiveDateTime,
 }
 
 fn normalized_text_sql(table: &str) -> String {
@@ -196,6 +234,88 @@ where
     })
 }
 
+async fn list_message_rows<C>(
+    db: &C,
+    title: &str,
+    page: u64,
+) -> Result<ListUnresolvedUnitMessagesRsp, AppError>
+where
+    C: ConnectionTrait,
+{
+    let page_size = crate::config::UNRESOLVED_UNIT_MESSAGES_PAGE_SIZE;
+    let normalized = normalized_text_sql("failed_unit_label");
+    let sender =
+        crate::sigint::sender::preferred_sender_sql_snippet(Some("message"));
+    let sql = format!(
+        "select message.id, \
+         coalesce(linked_group.group_name, direct_group.name, \
+             direct_datasource_group.name, direct_datasource_group.group_master_key) \
+             as group_name, \
+         failed_unit_label.unit_txt as label, \
+         coalesce({sender}, message.sender) as sender, \
+         coalesce(message.body, '') as body, message.created_at \
+         from failed_unit_label \
+         join sigint_inbox_item_failed_unit_label link \
+             on link.failed_unit_label_id = failed_unit_label.id \
+             and link.deleted = false \
+         join sigint_inbox_item inbox_item on inbox_item.id = link.inbox_item_id \
+         join signal_message message on message.id = inbox_item.id \
+             and message.deleted = false \
+         left join lateral (\
+             select coalesce(signal_group.name, datasource_group.name, \
+                 message_group.group_master_key) as group_name \
+             from signal_message_group message_group \
+             left join signal_group \
+                 on signal_group.master_key = message_group.group_master_key \
+             left join datasource_group \
+                 on datasource_group.id = message_group.datasource_group_id \
+             where message_group.signal_message_id = message.id \
+             order by message_group.id asc \
+             limit 1\
+         ) linked_group on true \
+         left join datasource_group direct_datasource_group \
+             on direct_datasource_group.id = message.datasource_group_id \
+         left join signal_group direct_group \
+             on direct_group.master_key = direct_datasource_group.group_master_key \
+         where {normalized} = $1 \
+         order by message.created_at desc, message.id desc \
+         limit $2 offset $3"
+    );
+    let mut rows = UnresolvedUnitMessageRow::find_by_statement(
+        Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            sql,
+            [
+                super::unit_resolution::normalize_unit_label(title).into(),
+                i64::try_from(page_size + 1).c(h!())?.into(),
+                i64::try_from(page.saturating_mul(page_size))
+                    .c(h!())?
+                    .into(),
+            ],
+        ),
+    )
+    .all(db)
+    .await
+    .c(h!())?;
+    let page_size = usize::try_from(page_size).c(h!())?;
+    let has_more = rows.len() > page_size;
+    rows.truncate(page_size);
+    Ok(ListUnresolvedUnitMessagesRsp {
+        messages: rows
+            .into_iter()
+            .map(|row| UnresolvedUnitMessage {
+                id: row.id,
+                group_name: row.group_name,
+                label: row.label,
+                sender: row.sender,
+                body: row.body,
+                created_at: row.created_at.and_utc().timestamp_millis(),
+            })
+            .collect(),
+        has_more,
+    })
+}
+
 pub(crate) async fn load_new_unresolved_unit_labels<C>(
     db: &C,
 ) -> anyhow::Result<Vec<UnresolvedUnitLabel>>
@@ -288,6 +408,20 @@ pub async fn list_unresolved_unit_labels(
         )
         .await
         .c(h!())?,
+    ))
+}
+
+#[post("/api/admin/unresolved-unit-label/messages")]
+pub async fn list_unresolved_unit_messages(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+    req: Json<ListUnresolvedUnitMessagesReq>,
+) -> Result<Json<ListUnresolvedUnitMessagesRsp>, AppError> {
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    Ok(Json(
+        list_message_rows(&env.dbx, &req.title, req.page.unwrap_or(0))
+            .await
+            .c(h!())?,
     ))
 }
 
@@ -480,8 +614,8 @@ where
 mod tests {
     use super::*;
     use crate::entities::{
-        failed_unit_label, sigint_inbox_item,
-        sigint_inbox_item_failed_unit_label,
+        datasource_group, failed_unit_label, sigint_inbox_item,
+        sigint_inbox_item_failed_unit_label, signal_message,
     };
     use sea_orm::ActiveValue::Set;
     use serial_test::serial;
@@ -491,7 +625,7 @@ mod tests {
         unit_txt: &str,
         deleted: bool,
         is_bad_data: bool,
-    ) {
+    ) -> sigint_inbox_item::Model {
         let inbox_item = crate::functest::tests::mk_sigint_inbox_item(
             db,
             sigint_inbox_item::ActiveModel {
@@ -530,6 +664,7 @@ mod tests {
             .await
             .unwrap();
         }
+        inbox_item
     }
 
     #[tokio::test]
@@ -565,6 +700,67 @@ mod tests {
             "group alpha"
         );
         assert_eq!(response.rows[1].quantity, 2);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn message_list_loads_five_newest_messages_per_page() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let datasource_group = datasource_group::Entity::find()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let base_time = chrono::NaiveDate::from_ymd_opt(2026, 9, 17)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
+        for index in 0..6 {
+            let inbox_item =
+                insert_failure(&env.dbx, "Example Label", false, false).await;
+            signal_message::Entity::update_many()
+                .col_expr(
+                    signal_message::Column::Body,
+                    Expr::value(format!("body {index}")),
+                )
+                .col_expr(
+                    signal_message::Column::Sender,
+                    Expr::value(format!("sender {index}")),
+                )
+                .col_expr(
+                    signal_message::Column::DatasourceGroupId,
+                    Expr::value(datasource_group.id),
+                )
+                .col_expr(
+                    signal_message::Column::CreatedAt,
+                    Expr::value(base_time + chrono::Duration::minutes(index)),
+                )
+                .filter(signal_message::Column::Id.eq(inbox_item.id))
+                .exec(&env.dbx)
+                .await
+                .unwrap();
+        }
+
+        let first_page = list_message_rows(&env.dbx, " example   label ", 0)
+            .await
+            .unwrap();
+        assert_eq!(first_page.messages.len(), 5);
+        assert!(first_page.has_more);
+        assert_eq!(first_page.messages[0].body, "body 5");
+        assert_eq!(first_page.messages[0].sender.as_deref(), Some("sender 5"));
+        assert_eq!(
+            first_page.messages[0].group_name.as_deref(),
+            Some("Вухо-Тест")
+        );
+        assert_eq!(first_page.messages[0].label, "Example Label");
+
+        let second_page = list_message_rows(&env.dbx, "Example Label", 1)
+            .await
+            .unwrap();
+        assert_eq!(second_page.messages.len(), 1);
+        assert!(!second_page.has_more);
+        assert_eq!(second_page.messages[0].body, "body 0");
     }
 
     #[tokio::test]

@@ -8350,6 +8350,56 @@ listUnresolvedUnitLabelsRspEncoder struct =
         ]
 
 
+type alias UnresolvedUnitMessage =
+    { id : Int
+    , groupName : Maybe (String)
+    , label : String
+    , sender : Maybe (String)
+    , body : String
+    , createdAt : Int
+    }
+
+
+unresolvedUnitMessageEncoder : UnresolvedUnitMessage -> Json.Encode.Value
+unresolvedUnitMessageEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "group_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.groupName )
+        , ( "label", (Json.Encode.string) struct.label )
+        , ( "sender", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.sender )
+        , ( "body", (Json.Encode.string) struct.body )
+        , ( "created_at", (Json.Encode.int) struct.createdAt )
+        ]
+
+
+type alias ListUnresolvedUnitMessagesReq =
+    { title : String
+    , page : Maybe (Int)
+    }
+
+
+listUnresolvedUnitMessagesReqEncoder : ListUnresolvedUnitMessagesReq -> Json.Encode.Value
+listUnresolvedUnitMessagesReqEncoder struct =
+    Json.Encode.object
+        [ ( "title", (Json.Encode.string) struct.title )
+        , ( "page", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.page )
+        ]
+
+
+type alias ListUnresolvedUnitMessagesRsp =
+    { messages : List (UnresolvedUnitMessage)
+    , hasMore : Bool
+    }
+
+
+listUnresolvedUnitMessagesRspEncoder : ListUnresolvedUnitMessagesRsp -> Json.Encode.Value
+listUnresolvedUnitMessagesRspEncoder struct =
+    Json.Encode.object
+        [ ( "messages", (Json.Encode.list (unresolvedUnitMessageEncoder)) struct.messages )
+        , ( "has_more", (Json.Encode.bool) struct.hasMore )
+        ]
+
+
 type alias ClassifyUnresolvedUnitLabelReq =
     { unitTxt : String
     }
@@ -19933,6 +19983,31 @@ listUnresolvedUnitLabelsRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total_count" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page_size" (Json.Decode.int)))
+
+
+unresolvedUnitMessageDecoder : Json.Decode.Decoder UnresolvedUnitMessage
+unresolvedUnitMessageDecoder =
+    Json.Decode.succeed UnresolvedUnitMessage
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_name" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "body" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
+
+
+listUnresolvedUnitMessagesReqDecoder : Json.Decode.Decoder ListUnresolvedUnitMessagesReq
+listUnresolvedUnitMessagesReqDecoder =
+    Json.Decode.succeed ListUnresolvedUnitMessagesReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "title" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page" (Json.Decode.nullable (Json.Decode.int))))
+
+
+listUnresolvedUnitMessagesRspDecoder : Json.Decode.Decoder ListUnresolvedUnitMessagesRsp
+listUnresolvedUnitMessagesRspDecoder =
+    Json.Decode.succeed ListUnresolvedUnitMessagesRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messages" (Json.Decode.list (unresolvedUnitMessageDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_more" (Json.Decode.bool)))
 
 
 classifyUnresolvedUnitLabelReqDecoder : Json.Decode.Decoder ClassifyUnresolvedUnitLabelReq

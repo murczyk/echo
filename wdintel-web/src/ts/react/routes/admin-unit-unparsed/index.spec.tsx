@@ -69,6 +69,7 @@ vi.mock('../settings-neo/SettingsNeoTable', () => ({
     columns: Array<{
       accessorKey?: keyof UnresolvedUnitLabel;
       id?: string;
+      header?: ReactNode;
       Cell?: (args: {
         cell: { getValue: () => unknown };
         row: { original: UnresolvedUnitLabel };
@@ -78,6 +79,7 @@ vi.mock('../settings-neo/SettingsNeoTable', () => ({
     renderRowActions: (args: { row: { original: UnresolvedUnitLabel } }) => ReactNode;
   }) => (
     <div>
+      <div>{columns.map((column) => column.header)}</div>
       {data.map((row) => (
         <section key={`${row.unitTxt}-${row.isArchived ? 'archived' : 'new'}`}>
           {columns.map((column, index) => {
@@ -349,8 +351,23 @@ describe('AdminUnitUnparsedPage', () => {
       'unitTxt',
       'quantity',
       'note',
+      'messageExamples',
     ]);
     expect(mocks.defaultColumnOrder?.slice(0, 2)).toEqual(['mrt-row-actions', 'mrt-row-numbers']);
+    act(() => root.unmount());
+  });
+
+  it('links each row to its interception examples', async () => {
+    const root = await renderPage();
+
+    expect(document.body.textContent).toContain('Приклади перехоплень');
+    const link = Array.from(document.body.querySelectorAll('a')).find(
+      (candidate) => candidate.textContent?.trim() === 'Перейти',
+    );
+    expect(link?.getAttribute('href')).toBe(
+      `/admin/unparsed-units?title=${encodeURIComponent('123 омсбр')}`,
+    );
+
     act(() => root.unmount());
   });
 });
