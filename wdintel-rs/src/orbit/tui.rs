@@ -930,7 +930,8 @@ fn prompt_echelon_conflict_orbit_value(
         "Use ORBIT {} in both SIGINT units",
         review.conflicting_echelon
     );
-    Ok(run_option_menu(terminal, &title, &options)?
+    Ok(run_option_menu(terminal, &title, &options)
+        .c(h!())?
         .map(|index| review.orbit_values[index].clone()))
 }
 

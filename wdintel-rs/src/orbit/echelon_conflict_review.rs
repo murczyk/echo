@@ -843,8 +843,26 @@ async fn persist_change_batch(
             current.iter().find(|unit| unit.id == reviewed.first.id);
         let current_second =
             current.iter().find(|unit| unit.id == reviewed.second.id);
-        if current_first != Some(&reviewed.first)
-            || current_second != Some(&reviewed.second)
+        let (Some(current_first), Some(current_second)) =
+            (current_first, current_second)
+        else {
+            summary.stale += 1;
+            continue;
+        };
+        if current_first != &reviewed.first
+            || current_second != &reviewed.second
+        {
+            summary.stale += 1;
+            continue;
+        }
+        if !reviewed_orbit_value_is_current(
+            &transaction,
+            reviewed,
+            current_first,
+            current_second,
+        )
+        .await
+        .c(h!())?
         {
             summary.stale += 1;
             continue;
@@ -870,6 +888,44 @@ async fn persist_change_batch(
     }
     transaction.commit().await.c(h!())?;
     Ok(summary)
+}
+
+async fn reviewed_orbit_value_is_current<C>(
+    db: &C,
+    reviewed: &ReviewedConflictChange,
+    first: &HierarchyUnit,
+    second: &HierarchyUnit,
+) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
+    let ConflictResolution::UseOrbitValue(selected_value) =
+        &reviewed.resolution
+    else {
+        return Ok(true);
+    };
+    let linked_orbit_hierarchies =
+        load_linked_orbit_hierarchies(db, &[first.id, second.id])
+            .await
+            .c(h!())?;
+    let first_review = make_tui_review_unit(
+        first,
+        reviewed.conflicting_echelon,
+        &linked_orbit_hierarchies,
+    );
+    let second_review = make_tui_review_unit(
+        second,
+        reviewed.conflicting_echelon,
+        &linked_orbit_hierarchies,
+    );
+    Ok(additional_orbit_values(
+        [&first_review, &second_review],
+        [
+            reviewed.conflicting_echelon.value(first),
+            reviewed.conflicting_echelon.value(second),
+        ],
+    )
+    .contains(selected_value))
 }
 
 #[cfg(test)]
@@ -1259,6 +1315,8 @@ mod tests {
         )
         .await
         .unwrap();
+        insert_linked_orbit_division(&env.dbx, first.id, "division ORBIT")
+            .await;
         let mut units =
             load_units(&env.dbx, None, false, tui::UnitActivityScope::Active)
                 .await
@@ -1306,6 +1364,124 @@ mod tests {
         assert_eq!(first.division, "division ORBIT");
         assert_eq!(second.division, "division ORBIT");
         assert_eq!(inactive.division, "division C");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn skips_orbit_value_removed_before_persistence() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let brigade = uuid::Uuid::new_v4().simple().to_string();
+        let first = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                brigade: Set(brigade.to_uppercase()),
+                division: Set("division A".to_string()),
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let second = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                brigade: Set(brigade.clone()),
+                division: Set("division B".to_string()),
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let link =
+            insert_linked_orbit_division(&env.dbx, first.id, "division ORBIT")
+                .await;
+        let mut units =
+            load_units(&env.dbx, None, false, tui::UnitActivityScope::Active)
+                .await
+                .unwrap();
+        let anchor = collect_anchors(&units, UniqueEchelon::Brigade)
+            .into_iter()
+            .find(|anchor| anchor.normalized_name == brigade)
+            .unwrap();
+        let conflict =
+            next_conflict_for_anchor(&units, &anchor, &HashSet::new()).unwrap();
+        let linked_orbit_hierarchies =
+            load_linked_orbit_hierarchies(&env.dbx, &[first.id, second.id])
+                .await
+                .unwrap();
+        assert_eq!(
+            make_tui_review(&units, &conflict, &linked_orbit_hierarchies)
+                .orbit_values,
+            vec!["division ORBIT".to_string()],
+        );
+        let reviewed = apply_reviewed_choice(
+            &mut units,
+            &conflict,
+            ConflictResolution::UseOrbitValue("division ORBIT".to_string()),
+        );
+        orbit_unit_sigint_unit::Entity::delete_by_id((
+            link.orbit_unit_id,
+            link.sigint_unit_id,
+        ))
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+
+        let summary = persist_change_batch(
+            &env.dbx,
+            &[reviewed],
+            tui::UnitActivityScope::Active,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(summary.changed, 0);
+        assert_eq!(summary.stale, 1);
+        let first = sigint_unit::Entity::find_by_id(first.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let second = sigint_unit::Entity::find_by_id(second.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(first.division, "division A");
+        assert_eq!(second.division, "division B");
+    }
+
+    async fn insert_linked_orbit_division(
+        db: &sea_orm::DatabaseConnection,
+        sigint_unit_id: i64,
+        name: &str,
+    ) -> orbit_unit_sigint_unit::Model {
+        let division_echelon_id = orbit_unit_echelon::Entity::find()
+            .filter(orbit_unit_echelon::Column::Key.eq("division"))
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let orbit_unit = orbit_unit::ActiveModel {
+            unit_id: Set(Uuid::new_v4()),
+            unit_name_short: Set(Some(name.to_string())),
+            unit_echelon_id: Set(Some(division_echelon_id)),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        orbit_unit_sigint_unit::ActiveModel {
+            orbit_unit_id: Set(orbit_unit.unit_id),
+            sigint_unit_id: Set(sigint_unit_id),
+            is_manual: Set(true),
+            is_suppressed: Set(false),
+        }
+        .insert(db)
+        .await
+        .unwrap()
     }
 
     fn tui_review_unit_with_orbit_values(
