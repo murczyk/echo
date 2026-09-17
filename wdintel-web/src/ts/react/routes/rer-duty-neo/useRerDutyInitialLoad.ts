@@ -32,6 +32,7 @@ export function createEmptyFeedState(
     loading: true,
     loadingOlder: false,
     hasReachedStart: false,
+    evictedNewerTailId: null,
     referenceTimeMs: null,
     readIds: new Set<number>(),
     windowedUnreadItems: new Map<number, number>(),
@@ -250,6 +251,7 @@ export function useRerDutyInitialLoad(params: Params) {
                   loading: false,
                   referenceTimeMs: Date.now(),
                   pendingNewerItems: [],
+                  evictedNewerTailId: null,
                   ...(preserveUnread && previousFeed
                     ? preserveUnreadState(previousFeed, items)
                     : {

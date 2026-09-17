@@ -327,6 +327,7 @@ export function useWindowedFeedScroll({
       refs.hasInitialScrolledRef.current = false;
       refs.hasSeenNotAtBottomRef.current = false;
       refs.anchorSnapshotRef.current = null;
+      refs.preserveBottomAnchorRef.current = false;
       follow.stopBottomSettle();
       // A wait/ease armed for the previous feed would land on the reset result and
       // fight its initial positioning.
@@ -346,6 +347,7 @@ export function useWindowedFeedScroll({
       refs.hasInitialScrolledRef.current = false;
       refs.hasSeenNotAtBottomRef.current = false;
       refs.previousItemIdsRef.current = currentItemIds;
+      refs.preserveBottomAnchorRef.current = false;
       follow.stopBottomSettle();
       follow.clearFollowScroll();
       stopDirectItemTracking();
@@ -359,8 +361,10 @@ export function useWindowedFeedScroll({
         return;
       }
       refs.hasInitialScrolledRef.current = true;
+      follow.scrollToBottom('auto', ScrollNavigationIntent.Initial, {
+        enableFollow: refs.autoScrollAllowedRef.current,
+      });
       if (refs.autoScrollAllowedRef.current) {
-        follow.scrollToBottom('auto', ScrollNavigationIntent.Initial);
         follow.startBottomSettle();
       }
       anchors.captureAnchorSnapshot();
@@ -392,6 +396,7 @@ export function useWindowedFeedScroll({
         anchors.captureAnchorSnapshot();
         return;
       } else if (
+        !refs.preserveBottomAnchorRef.current &&
         refs.physicallyAtBottomRef.current === true &&
         refs.isWatchModeRef.current === false &&
         refs.autoScrollAllowedRef.current
@@ -425,6 +430,7 @@ export function useWindowedFeedScroll({
       // A pure append does not move any existing row; restoring a stale measured
       // anchor here can itself create the prohibited watch-off navigation.
       if (!itemsChanged || !isPureAppend) anchors.restoreAnchorPosition();
+      if (itemsChanged) refs.preserveBottomAnchorRef.current = false;
       refs.previousItemIdsRef.current = currentItemIds;
       anchors.captureAnchorSnapshot();
       // Re-check near-bottom so catch-up can arm another newer load.

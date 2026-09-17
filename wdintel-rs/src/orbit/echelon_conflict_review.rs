@@ -7,10 +7,11 @@ use crate::sigint::unit::orbit::{
 use crate::types::{Mode, ShortContext};
 use crate::{h, new_pg_pool_from_mode};
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder,
-    QuerySelect,
+    ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait,
+    FromQueryResult, QueryFilter, QueryOrder, QuerySelect, Statement,
 };
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
+use uuid::Uuid;
 
 const UNIQUE_ECHELONS: [UniqueEchelon; 6] = [
     UniqueEchelon::Brigade,
@@ -54,6 +55,17 @@ impl UniqueEchelon {
         }
     }
 
+    fn orbit_echelon(self) -> super::EchoEchelon {
+        match self {
+            Self::Brigade => super::EchoEchelon::Brigade,
+            Self::Division => super::EchoEchelon::Division,
+            Self::Corps => super::EchoEchelon::Corps,
+            Self::Army => super::EchoEchelon::Army,
+            Self::ArmyRegion => super::EchoEchelon::ArmyRegion,
+            Self::MilitaryDistrict => super::EchoEchelon::MilitaryDistrict,
+        }
+    }
+
     fn value(self, unit: &HierarchyUnit) -> &str {
         match self {
             Self::Brigade => &unit.brigade,
@@ -89,6 +101,31 @@ struct HierarchyUnit {
     army_region: String,
     military_district: String,
 }
+
+#[derive(Debug, FromQueryResult)]
+struct LinkedOrbitHierarchyRow {
+    sigint_unit_id: i64,
+    orbit_unit_id: Uuid,
+    structural_name_full: Option<String>,
+    depth: i32,
+    echelon_key: Option<String>,
+    preferred_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LinkedOrbitHierarchyLevel {
+    echelon: Option<super::EchoEchelon>,
+    name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LinkedOrbitHierarchy {
+    orbit_unit_id: Uuid,
+    structural_name_full: Option<String>,
+    levels: Vec<LinkedOrbitHierarchyLevel>,
+}
+
+type LinkedOrbitHierarchies = BTreeMap<i64, Vec<LinkedOrbitHierarchy>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct HierarchyAnchor {
@@ -149,30 +186,57 @@ enum CopyDirection {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+enum ConflictResolution {
+    Copy(CopyDirection),
+    UseOrbitValue(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ReviewedConflictChange {
     first: HierarchyUnit,
     second: HierarchyUnit,
     conflicting_echelon: UniqueEchelon,
-    direction: CopyDirection,
+    resolution: ConflictResolution,
 }
 
 impl ReviewedConflictChange {
-    fn source_and_target(&self) -> (&HierarchyUnit, &HierarchyUnit) {
-        match self.direction {
-            CopyDirection::FirstIntoSecond => (&self.first, &self.second),
-            CopyDirection::SecondIntoFirst => (&self.second, &self.first),
-        }
-    }
-
-    fn hierarchy_change(&self) -> OrbitUnitHierarchyChange {
-        let (source, target) = self.source_and_target();
+    fn hierarchy_change(
+        &self,
+        target: &HierarchyUnit,
+        proposed: String,
+    ) -> OrbitUnitHierarchyChange {
         OrbitUnitHierarchyChange {
             sigint_unit_id: target.id,
             attributes: vec![OrbitUnitAttributeChange {
                 attribute: self.conflicting_echelon.attribute(),
                 current: self.conflicting_echelon.value(target).to_string(),
-                proposed: self.conflicting_echelon.value(source).to_string(),
+                proposed,
             }],
+        }
+    }
+
+    fn hierarchy_changes(&self) -> Vec<OrbitUnitHierarchyChange> {
+        match &self.resolution {
+            ConflictResolution::Copy(direction) => {
+                let (source, target) = match direction {
+                    CopyDirection::FirstIntoSecond => {
+                        (&self.first, &self.second)
+                    }
+                    CopyDirection::SecondIntoFirst => {
+                        (&self.second, &self.first)
+                    }
+                };
+                vec![self.hierarchy_change(
+                    target,
+                    self.conflicting_echelon.value(source).to_string(),
+                )]
+            }
+            ConflictResolution::UseOrbitValue(value) => {
+                [&self.first, &self.second]
+                    .into_iter()
+                    .map(|target| self.hierarchy_change(target, value.clone()))
+                    .collect()
+            }
         }
     }
 }
@@ -208,7 +272,12 @@ async fn run_with_database(
     activity_scope: tui::UnitActivityScope,
 ) -> anyhow::Result<()> {
     let units = load_units(db, None, false, activity_scope).await.c(h!())?;
-    let review = review_manually(units).c(h!())?;
+    let review_context_unit_ids = review_context_unit_ids(&units);
+    let linked_orbit_hierarchies =
+        load_linked_orbit_hierarchies(db, &review_context_unit_ids)
+            .await
+            .c(h!())?;
+    let review = review_manually(units, &linked_orbit_hierarchies).c(h!())?;
     let accepted = review.selected.len();
     let persisted = persist_changes(db, &review.selected, activity_scope)
         .await
@@ -262,6 +331,124 @@ where
         units = units.lock_exclusive();
     }
     units.into_model::<HierarchyUnit>().all(db).await.c(h!())
+}
+
+async fn load_linked_orbit_hierarchies<C>(
+    db: &C,
+    sigint_unit_ids: &[i64],
+) -> anyhow::Result<LinkedOrbitHierarchies>
+where
+    C: ConnectionTrait,
+{
+    if sigint_unit_ids.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let sql = r#"
+        with recursive linked_hierarchy as (
+            select
+                link.sigint_unit_id,
+                link.orbit_unit_id,
+                nullif(btrim(unit.generative_unit_name_full), '')
+                    as structural_name_full,
+                unit.unit_id as hierarchy_unit_id,
+                unit.generative_parent_unit_id,
+                0::integer as depth,
+                array[unit.unit_id]::uuid[] as visited
+            from orbit_unit_sigint_unit link
+            inner join orbit_unit unit
+                on unit.unit_id = link.orbit_unit_id
+                and unit.deleted = false
+            where link.sigint_unit_id = any($1::bigint[])
+              and link.is_suppressed = false
+
+            union all
+
+            select
+                hierarchy.sigint_unit_id,
+                hierarchy.orbit_unit_id,
+                hierarchy.structural_name_full,
+                parent.unit_id,
+                parent.generative_parent_unit_id,
+                hierarchy.depth + 1,
+                hierarchy.visited || parent.unit_id
+            from linked_hierarchy hierarchy
+            inner join orbit_unit parent
+                on parent.unit_id = hierarchy.generative_parent_unit_id
+                and parent.deleted = false
+            where not parent.unit_id = any(hierarchy.visited)
+        )
+        select
+            hierarchy.sigint_unit_id,
+            hierarchy.orbit_unit_id,
+            hierarchy.structural_name_full,
+            hierarchy.depth,
+            echelon.key as echelon_key,
+            coalesce(
+                nullif(btrim(unit.unit_name_short), ''),
+                nullif(btrim(unit.unit_name), ''),
+                nullif(btrim(unit.unit_name_original), ''),
+                nullif(btrim(unit.unit_number), ''),
+                unit.unit_id::text
+            ) as preferred_name
+        from linked_hierarchy hierarchy
+        inner join orbit_unit unit
+            on unit.unit_id = hierarchy.hierarchy_unit_id
+        left join orbit_unit_echelon echelon
+            on echelon.id = unit.unit_echelon_id
+        order by
+            hierarchy.sigint_unit_id,
+            hierarchy.orbit_unit_id,
+            hierarchy.depth
+    "#;
+    let rows = LinkedOrbitHierarchyRow::find_by_statement(
+        Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            sql,
+            [sigint_unit_ids.to_vec().into()],
+        ),
+    )
+    .all(db)
+    .await
+    .c(h!())?;
+    Ok(group_linked_orbit_hierarchies(rows))
+}
+
+fn group_linked_orbit_hierarchies(
+    rows: Vec<LinkedOrbitHierarchyRow>,
+) -> LinkedOrbitHierarchies {
+    let mut hierarchy_by_unit = BTreeMap::<
+        (i64, Uuid),
+        (Option<String>, Vec<(i32, LinkedOrbitHierarchyLevel)>),
+    >::new();
+    for row in rows {
+        let hierarchy = hierarchy_by_unit
+            .entry((row.sigint_unit_id, row.orbit_unit_id))
+            .or_insert_with(|| (row.structural_name_full.clone(), Vec::new()));
+        hierarchy.1.push((
+            row.depth,
+            LinkedOrbitHierarchyLevel {
+                echelon: row
+                    .echelon_key
+                    .as_deref()
+                    .and_then(super::echo_echelon),
+                name: row.preferred_name,
+            },
+        ));
+    }
+    let mut hierarchies = LinkedOrbitHierarchies::new();
+    for ((sigint_unit_id, orbit_unit_id), (structural_name_full, mut levels)) in
+        hierarchy_by_unit
+    {
+        levels.sort_by_key(|(depth, _)| *depth);
+        hierarchies.entry(sigint_unit_id).or_default().push(
+            LinkedOrbitHierarchy {
+                orbit_unit_id,
+                structural_name_full,
+                levels: levels.into_iter().map(|(_, level)| level).collect(),
+            },
+        );
+    }
+    hierarchies
 }
 
 fn normalized_name(value: &str) -> String {
@@ -342,8 +529,24 @@ fn next_conflict_for_anchor(
     None
 }
 
+fn review_context_unit_ids(units: &[HierarchyUnit]) -> Vec<i64> {
+    let mut unit_ids = BTreeSet::new();
+    for echelon in UNIQUE_ECHELONS {
+        for anchor in collect_anchors(units, echelon) {
+            unit_ids.extend(
+                anchor
+                    .unit_indexes
+                    .into_iter()
+                    .map(|unit_index| units[unit_index].id),
+            );
+        }
+    }
+    unit_ids.into_iter().collect()
+}
+
 fn review_manually(
     mut units: Vec<HierarchyUnit>,
+    linked_orbit_hierarchies: &LinkedOrbitHierarchies,
 ) -> anyhow::Result<ManualReview> {
     let handled = HashSet::new();
     if !UNIQUE_ECHELONS.into_iter().any(|echelon| {
@@ -354,7 +557,12 @@ fn review_manually(
         return Ok(ManualReview::default());
     }
     let mut terminal = tui::setup_terminal().c(h!())?;
-    let result = review_manually_inner(&mut terminal, &mut units).c(h!());
+    let result = review_manually_inner(
+        &mut terminal,
+        &mut units,
+        linked_orbit_hierarchies,
+    )
+    .c(h!());
     tui::restore_terminal(&mut terminal).c(h!())?;
     result
 }
@@ -362,6 +570,7 @@ fn review_manually(
 fn review_manually_inner(
     terminal: &mut tui::OrbitTerminal,
     units: &mut [HierarchyUnit],
+    linked_orbit_hierarchies: &LinkedOrbitHierarchies,
 ) -> anyhow::Result<ManualReview> {
     let mut review = ManualReview::default();
     let mut handled = HashSet::new();
@@ -371,7 +580,8 @@ fn review_manually_inner(
             while let Some(conflict) =
                 next_conflict_for_anchor(units, anchor, &handled)
             {
-                let tui_review = make_tui_review(units, &conflict);
+                let tui_review =
+                    make_tui_review(units, &conflict, linked_orbit_hierarchies);
                 let decision = tui::review_echelon_conflict(
                     terminal,
                     &tui_review,
@@ -391,14 +601,27 @@ fn review_manually_inner(
                         review.selected.push(apply_reviewed_choice(
                             units,
                             &conflict,
-                            CopyDirection::FirstIntoSecond,
+                            ConflictResolution::Copy(
+                                CopyDirection::FirstIntoSecond,
+                            ),
                         ));
                     }
                     tui::EchelonConflictReviewDecision::UseSecondInFirst => {
                         review.selected.push(apply_reviewed_choice(
                             units,
                             &conflict,
-                            CopyDirection::SecondIntoFirst,
+                            ConflictResolution::Copy(
+                                CopyDirection::SecondIntoFirst,
+                            ),
+                        ));
+                    }
+                    tui::EchelonConflictReviewDecision::UseOrbitValue(
+                        value,
+                    ) => {
+                        review.selected.push(apply_reviewed_choice(
+                            units,
+                            &conflict,
+                            ConflictResolution::UseOrbitValue(value),
                         ));
                     }
                     tui::EchelonConflictReviewDecision::Skip => {
@@ -415,21 +638,71 @@ fn review_manually_inner(
 fn make_tui_review(
     units: &[HierarchyUnit],
     conflict: &HierarchyConflict,
+    linked_orbit_hierarchies: &LinkedOrbitHierarchies,
 ) -> tui::EchelonConflictReview {
     let first = &units[conflict.first_index];
     let second = &units[conflict.second_index];
+    let first_review = make_tui_review_unit(
+        first,
+        conflict.conflicting_echelon,
+        linked_orbit_hierarchies,
+    );
+    let second_review = make_tui_review_unit(
+        second,
+        conflict.conflicting_echelon,
+        linked_orbit_hierarchies,
+    );
+    let orbit_values = additional_orbit_values(
+        [&first_review, &second_review],
+        [
+            conflict.conflicting_echelon.value(first),
+            conflict.conflicting_echelon.value(second),
+        ],
+    );
     tui::EchelonConflictReview {
         shared_echelon: conflict.shared_echelon.attribute(),
         first_shared_value: conflict.shared_echelon.value(first).to_string(),
         second_shared_value: conflict.shared_echelon.value(second).to_string(),
         conflicting_echelon: conflict.conflicting_echelon.attribute(),
-        first: make_tui_review_unit(first),
-        second: make_tui_review_unit(second),
+        first: first_review,
+        second: second_review,
+        orbit_values,
     }
+}
+
+fn additional_orbit_values(
+    units: [&tui::EchelonConflictReviewUnit; 2],
+    sigint_values: [&str; 2],
+) -> Vec<String> {
+    let sigint_values = sigint_values
+        .into_iter()
+        .map(normalized_name)
+        .collect::<HashSet<_>>();
+    let mut orbit_values = BTreeMap::new();
+    for unit in units {
+        for level in unit
+            .linked_orbit_units
+            .iter()
+            .flat_map(|unit| &unit.structural_hierarchy)
+            .filter(|level| level.is_conflicting)
+        {
+            let normalized_name = normalized_name(&level.name);
+            if !normalized_name.is_empty()
+                && !sigint_values.contains(&normalized_name)
+            {
+                orbit_values
+                    .entry(normalized_name)
+                    .or_insert_with(|| level.name.clone());
+            }
+        }
+    }
+    orbit_values.into_values().collect()
 }
 
 fn make_tui_review_unit(
     unit: &HierarchyUnit,
+    conflicting_echelon: UniqueEchelon,
+    linked_orbit_hierarchies: &LinkedOrbitHierarchies,
 ) -> tui::EchelonConflictReviewUnit {
     tui::EchelonConflictReviewUnit {
         sigint_unit_id: unit.id,
@@ -441,36 +714,90 @@ fn make_tui_review_unit(
                 (echelon.attribute(), echelon.value(unit).to_string())
             })
             .collect(),
+        linked_orbit_units: linked_orbit_hierarchies
+            .get(&unit.id)
+            .into_iter()
+            .flatten()
+            .map(|orbit_unit| tui::EchelonConflictOrbitUnit {
+                orbit_unit_id: orbit_unit.orbit_unit_id,
+                structural_hierarchy: orbit_hierarchy_for_review(
+                    orbit_unit,
+                    conflicting_echelon,
+                ),
+            })
+            .collect(),
     }
+}
+
+fn orbit_hierarchy_for_review(
+    orbit_unit: &LinkedOrbitHierarchy,
+    conflicting_echelon: UniqueEchelon,
+) -> Vec<tui::EchelonConflictOrbitHierarchyLevel> {
+    let full_name_levels = orbit_unit
+        .structural_name_full
+        .as_deref()
+        .map(|full_name| {
+            full_name
+                .split(" / ")
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .filter(|levels| levels.len() == orbit_unit.levels.len());
+    orbit_unit
+        .levels
+        .iter()
+        .enumerate()
+        .map(|(index, level)| tui::EchelonConflictOrbitHierarchyLevel {
+            name: full_name_levels
+                .as_ref()
+                .map(|levels| levels[index].to_string())
+                .unwrap_or_else(|| level.name.clone()),
+            is_conflicting: level.echelon
+                == Some(conflicting_echelon.orbit_echelon()),
+        })
+        .collect()
 }
 
 fn apply_reviewed_choice(
     units: &mut [HierarchyUnit],
     conflict: &HierarchyConflict,
-    direction: CopyDirection,
+    resolution: ConflictResolution,
 ) -> ReviewedConflictChange {
     let first = units[conflict.first_index].clone();
     let second = units[conflict.second_index].clone();
-    let (source_index, target_index) = match direction {
-        CopyDirection::FirstIntoSecond => {
-            (conflict.first_index, conflict.second_index)
+    match &resolution {
+        ConflictResolution::Copy(direction) => {
+            let (source_index, target_index) = match direction {
+                CopyDirection::FirstIntoSecond => {
+                    (conflict.first_index, conflict.second_index)
+                }
+                CopyDirection::SecondIntoFirst => {
+                    (conflict.second_index, conflict.first_index)
+                }
+            };
+            let proposed = conflict
+                .conflicting_echelon
+                .value(&units[source_index])
+                .to_string();
+            conflict
+                .conflicting_echelon
+                .set_value(&mut units[target_index], proposed);
         }
-        CopyDirection::SecondIntoFirst => {
-            (conflict.second_index, conflict.first_index)
+        ConflictResolution::UseOrbitValue(value) => {
+            conflict
+                .conflicting_echelon
+                .set_value(&mut units[conflict.first_index], value.clone());
+            conflict
+                .conflicting_echelon
+                .set_value(&mut units[conflict.second_index], value.clone());
         }
-    };
-    let proposed = conflict
-        .conflicting_echelon
-        .value(&units[source_index])
-        .to_string();
-    conflict
-        .conflicting_echelon
-        .set_value(&mut units[target_index], proposed);
+    }
     ReviewedConflictChange {
         first,
         second,
         conflicting_echelon: conflict.conflicting_echelon,
-        direction,
+        resolution,
     }
 }
 
@@ -516,22 +843,46 @@ async fn persist_change_batch(
             current.iter().find(|unit| unit.id == reviewed.first.id);
         let current_second =
             current.iter().find(|unit| unit.id == reviewed.second.id);
-        if current_first != Some(&reviewed.first)
-            || current_second != Some(&reviewed.second)
+        let (Some(current_first), Some(current_second)) =
+            (current_first, current_second)
+        else {
+            summary.stale += 1;
+            continue;
+        };
+        if current_first != &reviewed.first
+            || current_second != &reviewed.second
         {
             summary.stale += 1;
             continue;
         }
-        let outcome = crate::sigint::unit::orbit::reconcile_sigint_unit_orbit_with_reviewed_change(
+        if !reviewed_orbit_value_is_current(
             &transaction,
-            &login,
-            &reviewed.hierarchy_change(),
+            reviewed,
+            current_first,
+            current_second,
         )
         .await
-        .c(h!())?;
-        if outcome.hierarchy_updated {
-            summary.changed += 1;
-        } else {
+        .c(h!())?
+        {
+            summary.stale += 1;
+            continue;
+        }
+        let mut all_updated = true;
+        for change in reviewed.hierarchy_changes() {
+            let outcome = crate::sigint::unit::orbit::reconcile_sigint_unit_orbit_with_reviewed_change(
+                &transaction,
+                &login,
+                &change,
+            )
+            .await
+            .c(h!())?;
+            if outcome.hierarchy_updated {
+                summary.changed += 1;
+            } else {
+                all_updated = false;
+            }
+        }
+        if !all_updated {
             summary.stale += 1;
         }
     }
@@ -539,10 +890,51 @@ async fn persist_change_batch(
     Ok(summary)
 }
 
+async fn reviewed_orbit_value_is_current<C>(
+    db: &C,
+    reviewed: &ReviewedConflictChange,
+    first: &HierarchyUnit,
+    second: &HierarchyUnit,
+) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
+    let ConflictResolution::UseOrbitValue(selected_value) =
+        &reviewed.resolution
+    else {
+        return Ok(true);
+    };
+    let linked_orbit_hierarchies =
+        load_linked_orbit_hierarchies(db, &[first.id, second.id])
+            .await
+            .c(h!())?;
+    let first_review = make_tui_review_unit(
+        first,
+        reviewed.conflicting_echelon,
+        &linked_orbit_hierarchies,
+    );
+    let second_review = make_tui_review_unit(
+        second,
+        reviewed.conflicting_echelon,
+        &linked_orbit_hierarchies,
+    );
+    Ok(additional_orbit_values(
+        [&first_review, &second_review],
+        [
+            reviewed.conflicting_echelon.value(first),
+            reviewed.conflicting_echelon.value(second),
+        ],
+    )
+    .contains(selected_value))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sea_orm::ActiveValue::Set;
+    use crate::entities::{
+        orbit_unit, orbit_unit_echelon, orbit_unit_sigint_unit,
+    };
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set};
     use serial_test::serial;
 
     #[test]
@@ -600,12 +992,23 @@ mod tests {
         apply_reviewed_choice(
             &mut units,
             &division,
-            CopyDirection::FirstIntoSecond,
+            ConflictResolution::Copy(CopyDirection::FirstIntoSecond),
         );
 
         let corps =
             next_conflict_for_anchor(&units, &anchor, &handled).unwrap();
         assert_eq!(corps.conflicting_echelon, UniqueEchelon::Corps);
+    }
+
+    #[test]
+    fn loads_context_for_units_that_can_join_a_later_conflict() {
+        let units = vec![
+            unit(1, true, ["X", "A", "C", "", "", ""]),
+            unit(2, true, ["x", "B", "D", "", "", ""]),
+            unit(3, true, ["Z", "a", "C", "", "", ""]),
+        ];
+
+        assert_eq!(review_context_unit_ids(&units), vec![1, 2, 3]);
     }
 
     #[test]
@@ -625,18 +1028,250 @@ mod tests {
         let reviewed = apply_reviewed_choice(
             &mut units,
             &conflict,
-            CopyDirection::FirstIntoSecond,
+            ConflictResolution::Copy(CopyDirection::FirstIntoSecond),
         );
 
         assert_eq!(units[1].division, "");
         assert_eq!(
-            reviewed.hierarchy_change().attributes,
-            vec![OrbitUnitAttributeChange {
-                attribute: "division",
-                current: "A".to_string(),
-                proposed: String::new(),
+            reviewed.hierarchy_changes(),
+            vec![OrbitUnitHierarchyChange {
+                sigint_unit_id: 2,
+                attributes: vec![OrbitUnitAttributeChange {
+                    attribute: "division",
+                    current: "A".to_string(),
+                    proposed: String::new(),
+                }],
             }]
         );
+    }
+
+    #[test]
+    fn offers_distinct_orbit_values_not_already_available_from_sigint() {
+        let first = tui_review_unit_with_orbit_values(&["SIGINT A", "ORBIT C"]);
+        let second =
+            tui_review_unit_with_orbit_values(&["sigint b", "orbit c"]);
+
+        assert_eq!(
+            additional_orbit_values(
+                [&first, &second],
+                ["SIGINT A", "SIGINT B"],
+            ),
+            vec!["ORBIT C".to_string()],
+        );
+    }
+
+    #[test]
+    fn orbit_value_overwrites_both_conflicting_units() {
+        let mut units = vec![
+            unit(1, true, ["X", "A", "", "", "", ""]),
+            unit(2, true, ["x", "B", "", "", "", ""]),
+        ];
+        let conflict = HierarchyConflict {
+            first_index: 0,
+            second_index: 1,
+            shared_echelon: UniqueEchelon::Brigade,
+            conflicting_echelon: UniqueEchelon::Division,
+        };
+
+        let reviewed = apply_reviewed_choice(
+            &mut units,
+            &conflict,
+            ConflictResolution::UseOrbitValue("ORBIT C".to_string()),
+        );
+
+        assert_eq!(units[0].division, "ORBIT C");
+        assert_eq!(units[1].division, "ORBIT C");
+        assert_eq!(reviewed.hierarchy_changes().len(), 2);
+        assert!(reviewed
+            .hierarchy_changes()
+            .iter()
+            .all(|change| change.attributes[0].proposed == "ORBIT C"));
+    }
+
+    #[test]
+    fn groups_linked_orbit_hierarchies_from_low_to_high() {
+        let first_orbit_unit_id = Uuid::new_v4();
+        let second_orbit_unit_id = Uuid::new_v4();
+        let hierarchies = group_linked_orbit_hierarchies(vec![
+            LinkedOrbitHierarchyRow {
+                sigint_unit_id: 1,
+                orbit_unit_id: first_orbit_unit_id,
+                structural_name_full: Some(
+                    "74th brigade / 47th division".to_string(),
+                ),
+                depth: 1,
+                echelon_key: Some("division".to_string()),
+                preferred_name: "47 тд".to_string(),
+            },
+            LinkedOrbitHierarchyRow {
+                sigint_unit_id: 1,
+                orbit_unit_id: first_orbit_unit_id,
+                structural_name_full: Some(
+                    "74th brigade / 47th division".to_string(),
+                ),
+                depth: 0,
+                echelon_key: Some("brigade".to_string()),
+                preferred_name: "74 омсбр".to_string(),
+            },
+            LinkedOrbitHierarchyRow {
+                sigint_unit_id: 1,
+                orbit_unit_id: second_orbit_unit_id,
+                structural_name_full: None,
+                depth: 0,
+                echelon_key: None,
+                preferred_name: "unknown echelon".to_string(),
+            },
+        ]);
+
+        let orbit_units = &hierarchies[&1];
+        let first = orbit_units
+            .iter()
+            .find(|unit| unit.orbit_unit_id == first_orbit_unit_id)
+            .unwrap();
+        assert_eq!(
+            first.levels,
+            vec![
+                LinkedOrbitHierarchyLevel {
+                    echelon: Some(super::super::EchoEchelon::Brigade),
+                    name: "74 омсбр".to_string(),
+                },
+                LinkedOrbitHierarchyLevel {
+                    echelon: Some(super::super::EchoEchelon::Division),
+                    name: "47 тд".to_string(),
+                },
+            ]
+        );
+        assert_eq!(
+            orbit_hierarchy_for_review(first, UniqueEchelon::Division)
+                .into_iter()
+                .map(|level| (level.name, level.is_conflicting))
+                .collect::<Vec<_>>(),
+            vec![
+                ("74th brigade".to_string(), false),
+                ("47th division".to_string(), true),
+            ],
+        );
+        assert!(orbit_units.iter().any(|unit| {
+            unit.orbit_unit_id == second_orbit_unit_id
+                && unit.levels[0].echelon.is_none()
+        }));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn loads_every_linked_structural_hierarchy_without_operational_parents(
+    ) {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let brigade_echelon_id = orbit_unit_echelon::Entity::find()
+            .filter(orbit_unit_echelon::Column::Key.eq("brigade"))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let division_echelon_id = orbit_unit_echelon::Entity::find()
+            .filter(orbit_unit_echelon::Column::Key.eq("division"))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let army_echelon_id = orbit_unit_echelon::Entity::find()
+            .filter(orbit_unit_echelon::Column::Key.eq("fieldArmy"))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let structural_parent = orbit_unit::ActiveModel {
+            unit_id: Set(Uuid::new_v4()),
+            unit_name_short: Set(Some("47 тд".to_string())),
+            unit_echelon_id: Set(Some(division_echelon_id)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let operational_parent = orbit_unit::ActiveModel {
+            unit_id: Set(Uuid::new_v4()),
+            unit_name_short: Set(Some("1 ТА".to_string())),
+            unit_echelon_id: Set(Some(army_echelon_id)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let first_orbit_unit = orbit_unit::ActiveModel {
+            unit_id: Set(Uuid::new_v4()),
+            unit_name_short: Set(Some("74 омсбр".to_string())),
+            unit_echelon_id: Set(Some(brigade_echelon_id)),
+            generative_parent_unit_id: Set(Some(structural_parent.unit_id)),
+            operational_parent_unit_id: Set(Some(operational_parent.unit_id)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let second_orbit_unit = orbit_unit::ActiveModel {
+            unit_id: Set(Uuid::new_v4()),
+            unit_name_short: Set(Some("75 омсбр".to_string())),
+            unit_echelon_id: Set(Some(brigade_echelon_id)),
+            generative_parent_unit_id: Set(Some(structural_parent.unit_id)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let sigint_unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for orbit_unit_id in
+            [first_orbit_unit.unit_id, second_orbit_unit.unit_id]
+        {
+            orbit_unit_sigint_unit::ActiveModel {
+                orbit_unit_id: Set(orbit_unit_id),
+                sigint_unit_id: Set(sigint_unit.id),
+                is_manual: Set(true),
+                is_suppressed: Set(false),
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+
+        let hierarchies =
+            load_linked_orbit_hierarchies(&env.dbx, &[sigint_unit.id])
+                .await
+                .unwrap();
+
+        let orbit_units = &hierarchies[&sigint_unit.id];
+        assert_eq!(orbit_units.len(), 2);
+        for orbit_unit in orbit_units {
+            assert_eq!(
+                orbit_unit
+                    .levels
+                    .iter()
+                    .map(|level| level.name.as_str())
+                    .collect::<Vec<_>>(),
+                vec![
+                    if orbit_unit.orbit_unit_id == first_orbit_unit.unit_id {
+                        "74 омсбр"
+                    } else {
+                        "75 омсбр"
+                    },
+                    "47 тд",
+                ]
+            );
+            assert!(!orbit_unit
+                .levels
+                .iter()
+                .any(|level| level.name == "1 ТА"));
+        }
     }
 
     #[tokio::test]
@@ -680,6 +1315,8 @@ mod tests {
         )
         .await
         .unwrap();
+        insert_linked_orbit_division(&env.dbx, first.id, "division ORBIT")
+            .await;
         let mut units =
             load_units(&env.dbx, None, false, tui::UnitActivityScope::Active)
                 .await
@@ -696,7 +1333,7 @@ mod tests {
         let reviewed = apply_reviewed_choice(
             &mut units,
             &conflict,
-            CopyDirection::FirstIntoSecond,
+            ConflictResolution::UseOrbitValue("division ORBIT".to_string()),
         );
 
         let summary = persist_change_batch(
@@ -707,7 +1344,7 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(summary.changed, 1);
+        assert_eq!(summary.changed, 2);
         assert_eq!(summary.stale, 0);
         let first = sigint_unit::Entity::find_by_id(first.id)
             .one(&env.dbx)
@@ -724,8 +1361,150 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(first.division, second.division);
+        assert_eq!(first.division, "division ORBIT");
+        assert_eq!(second.division, "division ORBIT");
         assert_eq!(inactive.division, "division C");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn skips_orbit_value_removed_before_persistence() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let brigade = uuid::Uuid::new_v4().simple().to_string();
+        let first = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                brigade: Set(brigade.to_uppercase()),
+                division: Set("division A".to_string()),
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let second = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                brigade: Set(brigade.clone()),
+                division: Set("division B".to_string()),
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let link =
+            insert_linked_orbit_division(&env.dbx, first.id, "division ORBIT")
+                .await;
+        let mut units =
+            load_units(&env.dbx, None, false, tui::UnitActivityScope::Active)
+                .await
+                .unwrap();
+        let anchor = collect_anchors(&units, UniqueEchelon::Brigade)
+            .into_iter()
+            .find(|anchor| anchor.normalized_name == brigade)
+            .unwrap();
+        let conflict =
+            next_conflict_for_anchor(&units, &anchor, &HashSet::new()).unwrap();
+        let linked_orbit_hierarchies =
+            load_linked_orbit_hierarchies(&env.dbx, &[first.id, second.id])
+                .await
+                .unwrap();
+        assert_eq!(
+            make_tui_review(&units, &conflict, &linked_orbit_hierarchies)
+                .orbit_values,
+            vec!["division ORBIT".to_string()],
+        );
+        let reviewed = apply_reviewed_choice(
+            &mut units,
+            &conflict,
+            ConflictResolution::UseOrbitValue("division ORBIT".to_string()),
+        );
+        orbit_unit_sigint_unit::Entity::delete_by_id((
+            link.orbit_unit_id,
+            link.sigint_unit_id,
+        ))
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+
+        let summary = persist_change_batch(
+            &env.dbx,
+            &[reviewed],
+            tui::UnitActivityScope::Active,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(summary.changed, 0);
+        assert_eq!(summary.stale, 1);
+        let first = sigint_unit::Entity::find_by_id(first.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let second = sigint_unit::Entity::find_by_id(second.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(first.division, "division A");
+        assert_eq!(second.division, "division B");
+    }
+
+    async fn insert_linked_orbit_division(
+        db: &sea_orm::DatabaseConnection,
+        sigint_unit_id: i64,
+        name: &str,
+    ) -> orbit_unit_sigint_unit::Model {
+        let division_echelon_id = orbit_unit_echelon::Entity::find()
+            .filter(orbit_unit_echelon::Column::Key.eq("division"))
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let orbit_unit = orbit_unit::ActiveModel {
+            unit_id: Set(Uuid::new_v4()),
+            unit_name_short: Set(Some(name.to_string())),
+            unit_echelon_id: Set(Some(division_echelon_id)),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        orbit_unit_sigint_unit::ActiveModel {
+            orbit_unit_id: Set(orbit_unit.unit_id),
+            sigint_unit_id: Set(sigint_unit_id),
+            is_manual: Set(true),
+            is_suppressed: Set(false),
+        }
+        .insert(db)
+        .await
+        .unwrap()
+    }
+
+    fn tui_review_unit_with_orbit_values(
+        values: &[&str],
+    ) -> tui::EchelonConflictReviewUnit {
+        tui::EchelonConflictReviewUnit {
+            sigint_unit_id: 1,
+            sigint_unit_name: "unit".to_string(),
+            active: true,
+            hierarchy: Vec::new(),
+            linked_orbit_units: values
+                .iter()
+                .map(|value| tui::EchelonConflictOrbitUnit {
+                    orbit_unit_id: Uuid::nil(),
+                    structural_hierarchy: vec![
+                        tui::EchelonConflictOrbitHierarchyLevel {
+                            name: (*value).to_string(),
+                            is_conflicting: true,
+                        },
+                    ],
+                })
+                .collect(),
+        }
     }
 
     fn unit(id: i64, active: bool, hierarchy: [&str; 6]) -> HierarchyUnit {

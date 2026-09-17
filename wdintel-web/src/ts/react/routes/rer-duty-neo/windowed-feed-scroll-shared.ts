@@ -49,6 +49,13 @@ export type ScrollStateOpts = {
   allowTopReached?: boolean;
   /** Buffered arrivals are consumed only in response to reader scroll input. */
   allowPendingFlush?: boolean;
+  navigationIntent?: ScrollNavigationIntent;
+};
+
+export type ReachedBottomContext = {
+  hasSeenNotAtBottom: boolean;
+  /** Null means the reader reached bottom by scrolling, rather than programmatic navigation. */
+  navigationIntent: ScrollNavigationIntent | null;
 };
 
 export type WindowedFeedScrollCallbacks = {
@@ -59,7 +66,7 @@ export type WindowedFeedScrollCallbacks = {
     visibleAnchorIds: readonly number[];
   }) => void;
   onScrollToTop?: () => void;
-  onReachedBottom?: (context: { hasSeenNotAtBottom: boolean }) => boolean | void;
+  onReachedBottom?: (context: ReachedBottomContext) => boolean | void;
   onLeftBottom?: () => void;
   onNearBottomChange?: (near: boolean) => void;
   onAtBottomChange?: (atBottom: boolean) => void;
@@ -75,7 +82,7 @@ export type UseWindowedFeedScrollOptions = {
   onLoadOlder: () => void;
   onLoadNewer?: () => void;
   onScrollToTop?: () => void;
-  onReachedBottom?: (context: { hasSeenNotAtBottom: boolean }) => boolean | void;
+  onReachedBottom?: (context: ReachedBottomContext) => boolean | void;
   onLeftBottom?: () => void;
   onNearBottomChange?: (near: boolean) => void;
   onAtBottomChange?: (atBottom: boolean) => void;
@@ -86,9 +93,9 @@ export type UseWindowedFeedScrollOptions = {
   atBottomThresholdPx?: number;
   resetKey?: string | number | null;
   isWatchMode?: boolean;
-  /** Global authorization for automatic positioning. Explicit arrow navigation bypasses this. */
+  /** Authorization for continued automatic following. Initial and explicit landings bypass this. */
   autoScrollAllowed?: boolean;
-  /** The persisted auto-scroll preference has resolved (including a safe failed-OFF result). */
+  /** The persisted auto-scroll preference has loaded successfully. */
   initialPositioningReady?: boolean;
   enabled?: boolean;
   debugFeedId?: string;
@@ -142,6 +149,7 @@ export type WindowedFeedScrollRefs = {
   bottomSettleTimeoutRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
   bottomSettleResizeObserverRef: MutableRefObject<ResizeObserver | null>;
   liveBottomFollowRef: MutableRefObject<boolean>;
+  preserveBottomAnchorRef: MutableRefObject<boolean>;
   smoothFollowUntilMsRef: MutableRefObject<number>;
   followScrollRafRef: MutableRefObject<number | null>;
   followAnimatingRef: MutableRefObject<boolean>;

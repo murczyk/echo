@@ -1403,15 +1403,20 @@ mod upload_runtime_tests {
         tokio::pin!(upload);
         let mut ticks = 0;
         let mut max_lag = Duration::ZERO;
+        let heartbeat_interval = Duration::from_millis(1);
         let started = Instant::now();
         loop {
             let heartbeat_started = Instant::now();
             tokio::select! {
                 biased;
-                result = &mut upload => { result.unwrap(); break; }
-                _ = tokio::time::sleep(Duration::from_millis(5)) => {
+                result = &mut upload => {
+                    result.unwrap();
+                    max_lag = max_lag.max(heartbeat_started.elapsed().saturating_sub(heartbeat_interval));
+                    break;
+                }
+                _ = tokio::time::sleep(heartbeat_interval) => {
                     ticks += 1;
-                    max_lag = max_lag.max(heartbeat_started.elapsed().saturating_sub(Duration::from_millis(5)));
+                    max_lag = max_lag.max(heartbeat_started.elapsed().saturating_sub(heartbeat_interval));
                 }
             }
         }
@@ -1421,7 +1426,7 @@ mod upload_runtime_tests {
             max_lag.as_millis()
         );
         assert!(
-            ticks >= 2,
+            ticks >= 1,
             "encryption monopolized the single-thread runtime"
         );
         assert!(

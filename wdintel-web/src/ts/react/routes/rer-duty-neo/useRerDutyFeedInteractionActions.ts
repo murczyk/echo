@@ -3,6 +3,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
 import {
   compareMessageTuple,
+  feedHasUnloadedEvictedNewerTail,
   messageOrderCursor,
   messageOrderTimestamp,
   type MessageFeedState,
@@ -177,6 +178,7 @@ export function useRerDutyFeedInteractionActions(params: Params) {
       registerExplicitLoading(explicitOperation, releaseLoading);
       try {
         if (feed.items.length > 0) {
+          const hasUnloadedEvictedNewerTail = feedHasUnloadedEvictedNewerTail(feed);
           const result = await requestValidatedInboxCount(feedId);
           if (!isCurrent()) return;
           if (!result) {
@@ -184,7 +186,7 @@ export function useRerDutyFeedInteractionActions(params: Params) {
             return;
           }
           const { quantity } = result;
-          if (quantity === 0) {
+          if (quantity === 0 && !hasUnloadedEvictedNewerTail) {
             if (!capturedCursor) {
               showArrowResult(feedId, 'Немає нових повідомлень');
               return;

@@ -513,6 +513,51 @@ describe('useRerDutyMessageActions', () => {
     expect(hoisted.loadFeedNewerMessages).not.toHaveBeenCalled();
   });
 
+  it('#3496 loads an evicted newer tail directly even when unread count is zero', async () => {
+    hoisted.loadFeedNewerMessages.mockResolvedValueOnce({
+      ok: true,
+      addedCount: 40,
+      target: { id: 80, timestamp: 180 },
+    });
+    const scrollToEnd = vi.fn();
+    const columnRefsRef = { current: { 'mf-0': { scrollToEnd } } };
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          columnRefsRef={columnRefsRef}
+          initialFeeds={[
+            buildFeed({
+              messageSortBy: 'IMSTimestamp',
+              items: [[40, minimalInboxMessage({ timestamp: 140 })]],
+              evictedNewerTailId: 80,
+              readIds: new Set([40]),
+              unreadCount: 0,
+            }),
+          ]}
+        />,
+      );
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      await apiRef.current!.handleArrowClick('mf-0');
+      await vi.advanceTimersByTimeAsync(20);
+    });
+
+    expect(hoisted.requestValidatedInboxCount).toHaveBeenCalledWith('mf-0');
+    expect(hoisted.loadFeedNewerMessages).toHaveBeenCalledWith(
+      'mf-0',
+      expect.objectContaining({
+        nolimit: true,
+        scrollToEndAfterLoad: true,
+        explicitNavigation: true,
+      }),
+    );
+    expect(scrollToEnd).toHaveBeenCalledTimes(1);
+  });
+
   it('shows a busy result when the shared count request resolves stale for the arrow button', async () => {
     hoisted.requestValidatedInboxCount.mockResolvedValueOnce(null);
 
@@ -529,7 +574,12 @@ describe('useRerDutyMessageActions', () => {
         <TestHarness
           apiRef={apiRef}
           columnRefsRef={columnRefsRef}
-          initialFeeds={[buildFeed({ items: [[10, minimalInboxMessage({ timestamp: null })]] })]}
+          initialFeeds={[
+            buildFeed({
+              items: [[10, minimalInboxMessage({ timestamp: null })]],
+              evictedNewerTailId: 20,
+            }),
+          ]}
         />,
       );
     });

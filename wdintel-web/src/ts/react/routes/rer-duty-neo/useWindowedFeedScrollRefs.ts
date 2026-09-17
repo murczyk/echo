@@ -42,6 +42,7 @@ export function useWindowedFeedScrollRefs(args: {
   const bottomSettleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bottomSettleResizeObserverRef = useRef<ResizeObserver | null>(null);
   const liveBottomFollowRef = useRef(false);
+  const preserveBottomAnchorRef = useRef(false);
   const smoothFollowUntilMsRef = useRef(0);
   const followScrollRafRef = useRef<number | null>(null);
   const followAnimatingRef = useRef(false);
@@ -90,6 +91,7 @@ export function useWindowedFeedScrollRefs(args: {
       bottomSettleTimeoutRef,
       bottomSettleResizeObserverRef,
       liveBottomFollowRef,
+      preserveBottomAnchorRef,
       smoothFollowUntilMsRef,
       followScrollRafRef,
       followAnimatingRef,

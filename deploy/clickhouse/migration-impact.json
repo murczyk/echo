@@ -1,5 +1,8 @@
 {
   "migrations": {
+    "echo:m20260916_130029_activate_sigint_network_units": {
+      "changes": []
+    },
     "echo:m20260915_151525_network_recalculation_last_seen_batch_index": {
       "changes": []
     },

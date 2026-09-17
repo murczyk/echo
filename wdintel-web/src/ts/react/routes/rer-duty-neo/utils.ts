@@ -981,6 +981,8 @@ export type MessageFeedState = {
   loadingOlder: boolean;
   /** True after "load older" returned 0 new items — nothing older to fetch */
   hasReachedStart: boolean;
+  /** Last known newer edge evicted while prepending older pages. */
+  evictedNewerTailId?: number | null;
   /** Reference time (ms) for relative "time ago" in message cards; set when feed items are loaded. */
   referenceTimeMs: number | null;
   /** Message IDs that have been "read" (entered viewport). Unread count = items not in this set. */
@@ -1051,6 +1053,12 @@ export function feedNewerSinceId(feed: MessageFeedState): number | null {
   return feed.items.at(-1)?.[0] ?? null;
 }
 
+export function feedHasUnloadedEvictedNewerTail(feed: MessageFeedState): boolean {
+  const evictedNewerTailId = feed.evictedNewerTailId ?? null;
+  if (evictedNewerTailId === null) return false;
+  return ![...feed.items, ...feedPendingNewerItems(feed)].some(([id]) => id === evictedNewerTailId);
+}
+
 /**
  * True when a newer page should stay off the DOM (near-bottom ManualScroll / not following).
  * Follow / mark-all-read apply immediately. Physical bottom also applies immediately —
@@ -1091,6 +1099,11 @@ export function appendNewerItemsToFeed(
   options?: { markAllRead?: boolean },
 ): MessageFeedState {
   const markAllRead = options?.markAllRead === true;
+  const evictedNewerTailId =
+    feed.evictedNewerTailId != null &&
+    [...feed.items, ...incomingNewer].some(([id]) => id === feed.evictedNewerTailId)
+      ? null
+      : feed.evictedNewerTailId;
   const windowed = appendWindowedMessageItems(
     feed.items,
     incomingNewer,
@@ -1101,6 +1114,7 @@ export function appendNewerItemsToFeed(
     if (markAllRead) {
       return {
         ...feed,
+        evictedNewerTailId,
         readIds: new Set<number>([...feed.readIds, ...feed.items.map(([id]) => id)]),
         windowedUnreadItems: new Map<number, number>(),
         unresolvedUnreadIds: new Set<number>(),
@@ -1109,8 +1123,12 @@ export function appendNewerItemsToFeed(
         pendingNewerItems: [],
       };
     }
-    if ((feed.pendingNewerItems?.length ?? 0) === 0) return feed;
-    return { ...feed, pendingNewerItems: [] };
+    if ((feed.pendingNewerItems?.length ?? 0) === 0) {
+      return evictedNewerTailId === feed.evictedNewerTailId
+        ? feed
+        : { ...feed, evictedNewerTailId };
+    }
+    return { ...feed, evictedNewerTailId, pendingNewerItems: [] };
   }
   const previousIds = new Set(feed.items.map(([id]) => id));
   const trimmedPreviousUnreadIds = windowed.removedItems
@@ -1129,6 +1147,7 @@ export function appendNewerItemsToFeed(
   return {
     ...feed,
     items: windowed.items,
+    evictedNewerTailId,
     readIds: markAllRead
       ? new Set<number>([...readIds, ...windowed.items.map(([id]) => id)])
       : readIds,
@@ -1159,6 +1178,7 @@ export function flushPendingNewerItems(
 /** True when the window still needs newer pages to refill the unread runway after last-seen. */
 export function feedNeedsUnreadPrefetch(feed: MessageFeedState): boolean {
   return (
+    feedHasUnloadedEvictedNewerTail(feed) ||
     feedLoadedUnreadCount(feed) + feedPendingNewerUnreadCount(feed) < DUTY_FEED_UNREAD_PREFETCH_MIN
   );
 }
