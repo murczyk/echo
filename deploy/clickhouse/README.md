@@ -638,7 +638,7 @@ that file it does nothing. Operators can also run
 Copy [app-analytics.toml.example](env/app-analytics.toml.example) into the
 source Echo config, using `GATEWAY_PASSWORD`. Restart Echo only after an
 operator compares PostgreSQL and gateway counts. The application initializes
-analytics best-effort. Its dedicated pool defaults to eight connections per
+analytics best-effort. Its dedicated pool defaults to 16 connections per
 application process and retries each complete analytical operation through
 PostgreSQL when analytics fails. Incident fallbacks share an eight-request
 per-process PostgreSQL capacity limit; after 250 ms of saturation they return a
@@ -656,9 +656,9 @@ queryable ClickHouse also falls back. A heartbeat visibility timeout updates
 probe diagnostics but preserves the last successful health decision, allowing
 that freshness budget to decide when reads stop. Hard service, mirror, slot,
 and desired-state failures mark health false immediately. Replication-health
-rejections do not open a query circuit; actual query failures and timeouts open
-a short per-process cooldown instead of making every request wait for the
-unavailable gateway.
+rejections and local pool saturation do not open a query circuit; actual query
+failures and timeouts open a short per-process cooldown instead of making every
+request wait for the unavailable gateway.
 Keep `ANALYTICS_HEALTH_STALE_AFTER_SECONDS` and `freshness_max_age_ms` aligned;
 the supplied values are 90 seconds.
 

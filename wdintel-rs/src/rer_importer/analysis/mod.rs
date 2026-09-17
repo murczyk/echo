@@ -8686,12 +8686,8 @@ where
                 return Ok(response);
             }
             Ok(Err(err)) => {
-                let open_circuit = analytics_failure_opens_circuit(&err);
-                reason = if open_circuit {
-                    "analytics_error"
-                } else {
-                    "analytics_unhealthy"
-                };
+                reason = analytics_failure_reason(&err);
+                let open_circuit = reason == "analytics_error";
                 warn!(
                     "analysis stats count analytics query failed after {:?}, retrying via PostgreSQL: {:?}",
                     started.elapsed(),
@@ -8893,12 +8889,8 @@ where
                 });
             }
             Some(Err(err)) => {
-                let open_circuit = analytics_failure_opens_circuit(&err);
-                reason = if open_circuit {
-                    "analytics_error"
-                } else {
-                    "analytics_unhealthy"
-                };
+                reason = analytics_failure_reason(&err);
+                let open_circuit = reason == "analytics_error";
                 warn!(
                     "{operation} analytics query failed; retrying via PostgreSQL: {err:?}"
                 );
@@ -8956,6 +8948,7 @@ pub(crate) fn analytics_fallback_needs_capacity(reason: &str) -> bool {
         reason,
         "analytics_error"
             | "analytics_timeout"
+            | "analytics_saturated"
             | "analytics_unhealthy"
             | "analytics_unavailable"
             | "circuit_open"
@@ -9045,18 +9038,32 @@ fn has_postgres_error_code(
     false
 }
 
-fn analytics_failure_opens_circuit(error: &AppError) -> bool {
+fn analytics_failure_reason(error: &AppError) -> &'static str {
+    let mut pool_saturated = false;
     let mut source = Some(error as &(dyn StdError + 'static));
     while let Some(error) = source {
         if error
             .downcast_ref::<AnalyticsReplicationHealthError>()
             .is_some()
         {
-            return false;
+            return "analytics_unhealthy";
+        }
+        if matches!(
+            error.downcast_ref::<DbErr>(),
+            Some(DbErr::ConnectionAcquire(ConnAcquireErr::Timeout))
+        ) || matches!(
+            error.downcast_ref::<sqlx::Error>(),
+            Some(sqlx::Error::PoolTimedOut)
+        ) {
+            pool_saturated = true;
         }
         source = error.source();
     }
-    true
+    if pool_saturated {
+        "analytics_saturated"
+    } else {
+        "analytics_error"
+    }
 }
 
 fn analytics_retry_attempt(

@@ -8167,6 +8167,7 @@ fn fallback_capacity_only_limits_analytics_incident_routes() {
     for reason in [
         "analytics_error",
         "analytics_timeout",
+        "analytics_saturated",
         "analytics_unhealthy",
         "analytics_unavailable",
         "candidate_ordering_incomplete",
@@ -8399,6 +8400,47 @@ async fn replication_health_failure_releases_half_open_circuit() {
         Some(async {
             Err::<&str, AppError>(
                 anyhow::Error::new(AnalyticsReplicationHealthError).into(),
+            )
+        }),
+        core::time::Duration::from_secs(1),
+        async {
+            let _ = postgres_started_tx.send(());
+            let _ = release_postgres_rx.await;
+            Ok::<_, AppError>("postgres")
+        },
+        "circuit_open",
+        Some(retry_attempt),
+        core::time::Duration::from_secs(30),
+    );
+    let observe_retry_state = async {
+        postgres_started_rx.await.unwrap();
+        assert_eq!(retry_state.load(std::sync::atomic::Ordering::Acquire), 0);
+        release_postgres_tx.send(()).unwrap();
+    };
+    let (result, ()) = tokio::join!(fallback, observe_retry_state);
+    let result = result.unwrap();
+
+    assert_eq!(result, "postgres");
+    assert_eq!(retry_state.load(std::sync::atomic::Ordering::Acquire), 0);
+    assert!(analytics_retry_attempt(&retry_state).is_some());
+}
+
+#[tokio::test]
+async fn analytics_pool_saturation_releases_half_open_circuit() {
+    let retry_state = std::sync::atomic::AtomicU64::new(1);
+    let retry_attempt = analytics_retry_attempt(&retry_state).unwrap();
+    let (postgres_started_tx, postgres_started_rx) =
+        tokio::sync::oneshot::channel();
+    let (release_postgres_tx, release_postgres_rx) =
+        tokio::sync::oneshot::channel();
+
+    let fallback = with_count_stats_analytics_fallback(
+        Some(async {
+            Err::<&str, AppError>(
+                anyhow::Error::new(DbErr::ConnectionAcquire(
+                    ConnAcquireErr::Timeout,
+                ))
+                .into(),
             )
         }),
         core::time::Duration::from_secs(1),
