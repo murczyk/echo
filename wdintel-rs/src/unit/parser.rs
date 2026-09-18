@@ -35,12 +35,7 @@ pub fn extract_unit_with_aor(
         .find(|line| !line.trim().is_empty())
         .and_then(|line| RE_DATED_UNIT_HEADER.captures(line))
         .and_then(|captures| m_cap_s(&captures, "unit"))
-        .map(|unit| {
-            unit.split_once('[')
-                .map_or(unit.as_str(), |(unit, _)| unit)
-                .trim()
-                .to_string()
-        })
+        .map(|unit| strip_trailing_machine_id(&unit).to_string())
         .filter(|unit| !unit.eq_ignore_ascii_case("audio"))
     {
         return Ok(UnitAndLoc {
@@ -178,6 +173,23 @@ pub fn extract_unit_with_aor(
         locality_v2,
     };
     Ok(unit_and_loc)
+}
+
+fn strip_trailing_machine_id(unit: &str) -> &str {
+    let unit = unit.trim();
+    let Some((unit_without_id, machine_id)) = unit.rsplit_once(" [") else {
+        return unit;
+    };
+    let Some(machine_id) = machine_id.strip_suffix(']') else {
+        return unit;
+    };
+    if machine_id.is_empty()
+        || machine_id.contains('[')
+        || machine_id.contains(']')
+    {
+        return unit;
+    }
+    unit_without_id.trim_end()
 }
 
 fn try_lookup_next_line_loc_with_prefix(
@@ -1017,6 +1029,14 @@ mod tests {
         let parsed = extract_unit(test_settlements(), body, vec![]).unwrap();
 
         assert_eq!(parsed.unit.as_deref(), Some("50 обрБпС"));
+    }
+
+    #[test]
+    fn extract_unit_dated_bracketed_label_header() {
+        let body = "[УКХ р/м] | 2026-06-26";
+        let parsed = extract_unit(test_settlements(), body, vec![]).unwrap();
+
+        assert_eq!(parsed.unit.as_deref(), Some("[УКХ р/м]"));
     }
 
     #[test]
