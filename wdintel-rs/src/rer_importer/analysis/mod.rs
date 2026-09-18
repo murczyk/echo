@@ -8501,6 +8501,7 @@ async fn count_stats(
     }
     let response = with_count_stats_analytics_fallback(
         analytics_query,
+        analytics.map(|analytics| &analytics.conn),
         core::time::Duration::from_millis(timeout_ms),
         postgres_query,
         postgres_reason,
@@ -8659,6 +8660,7 @@ impl AnalyticsRetryAttempt<'_> {
 
 async fn with_count_stats_analytics_fallback<T, A, P>(
     analytics_query: Option<A>,
+    analytics_conn: Option<&DatabaseConnection>,
     timeout: core::time::Duration,
     postgres_query: P,
     postgres_reason: &'static str,
@@ -8686,12 +8688,8 @@ where
                 return Ok(response);
             }
             Ok(Err(err)) => {
-                let open_circuit = analytics_failure_opens_circuit(&err);
-                reason = if open_circuit {
-                    "analytics_error"
-                } else {
-                    "analytics_unhealthy"
-                };
+                reason = analytics_failure_reason(&err, analytics_conn);
+                let open_circuit = reason == "analytics_error";
                 warn!(
                     "analysis stats count analytics query failed after {:?}, retrying via PostgreSQL: {:?}",
                     started.elapsed(),
@@ -8893,12 +8891,8 @@ where
                 });
             }
             Some(Err(err)) => {
-                let open_circuit = analytics_failure_opens_circuit(&err);
-                reason = if open_circuit {
-                    "analytics_error"
-                } else {
-                    "analytics_unhealthy"
-                };
+                reason = analytics_failure_reason(&err, Some(&analytics.conn));
+                let open_circuit = reason == "analytics_error";
                 warn!(
                     "{operation} analytics query failed; retrying via PostgreSQL: {err:?}"
                 );
@@ -8956,6 +8950,7 @@ pub(crate) fn analytics_fallback_needs_capacity(reason: &str) -> bool {
         reason,
         "analytics_error"
             | "analytics_timeout"
+            | "analytics_saturated"
             | "analytics_unhealthy"
             | "analytics_unavailable"
             | "circuit_open"
@@ -9045,18 +9040,42 @@ fn has_postgres_error_code(
     false
 }
 
-fn analytics_failure_opens_circuit(error: &AppError) -> bool {
+fn analytics_failure_reason(
+    error: &AppError,
+    analytics_conn: Option<&DatabaseConnection>,
+) -> &'static str {
+    let mut acquire_timed_out = false;
     let mut source = Some(error as &(dyn StdError + 'static));
     while let Some(error) = source {
         if error
             .downcast_ref::<AnalyticsReplicationHealthError>()
             .is_some()
         {
-            return false;
+            return "analytics_unhealthy";
+        }
+        if matches!(
+            error.downcast_ref::<DbErr>(),
+            Some(DbErr::ConnectionAcquire(ConnAcquireErr::Timeout))
+        ) || matches!(
+            error.downcast_ref::<sqlx::Error>(),
+            Some(sqlx::Error::PoolTimedOut)
+        ) {
+            acquire_timed_out = true;
         }
         source = error.source();
     }
-    true
+    if acquire_timed_out
+        && analytics_conn.is_some_and(analytics_pool_is_at_capacity)
+    {
+        "analytics_saturated"
+    } else {
+        "analytics_error"
+    }
+}
+
+fn analytics_pool_is_at_capacity(analytics_conn: &DatabaseConnection) -> bool {
+    let pool = analytics_conn.get_postgres_connection_pool();
+    pool.num_idle() == 0 && pool.size() >= pool.options().get_max_connections()
 }
 
 fn analytics_retry_attempt(
