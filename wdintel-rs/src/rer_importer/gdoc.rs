@@ -1,6 +1,9 @@
 use crate::config::RER_CALLSIGN_QUERY_PARAM_CHUNK_SIZE;
 use crate::entities::*;
 use crate::error::AppError;
+use crate::rer_importer::callsigns::{
+    callsign_match_key, callsign_query_variants,
+};
 use crate::rer_importer::types::*;
 use crate::types::*;
 use crate::users::ensure_rer_role;
@@ -31,7 +34,10 @@ async fn rer_callsign_info_single(
 ) -> Result<Vec<CallsignInfo>, AppError> {
     let callsigns_data = sigint_callsign::Entity::find()
         .find_also_related(sigint_unit::Entity)
-        .filter(sigint_callsign::Column::Callsign.eq(callsign.to_lowercase()))
+        .filter(
+            sigint_callsign::Column::Callsign
+                .is_in(callsign_query_variants(callsign)),
+        )
         .filter(sigint_unit::Column::Deleted.eq(false))
         .filter(sigint_unit::Column::Active.eq(true))
         .filter(sigint_callsign::Column::Deleted.eq(false))
@@ -203,7 +209,7 @@ fn prepare_callsign_requests(
             network_ids.sort_unstable();
             network_ids.dedup();
             CallsignRequest {
-                normalized_callsign: item.callsign.to_lowercase(),
+                normalized_callsign: callsign_match_key(&item.callsign),
                 callsign: item.callsign,
                 network_ids,
             }
@@ -214,7 +220,7 @@ fn prepare_callsign_requests(
 fn requested_callsigns(requests: &[CallsignRequest]) -> Vec<String> {
     requests
         .iter()
-        .map(|request| request.normalized_callsign.clone())
+        .flat_map(|request| callsign_query_variants(&request.callsign))
         .unique()
         .collect_vec()
 }
@@ -228,15 +234,17 @@ struct NetworkCallsignQueryGroup {
 fn network_callsign_query_groups(
     requests: &[CallsignRequest],
 ) -> Vec<NetworkCallsignQueryGroup> {
-    let unscoped_callsigns = requests
+    let unscoped_callsign_keys = requests
         .iter()
         .filter(|request| request.network_ids.is_empty())
         .map(|request| request.normalized_callsign.clone())
         .unique()
         .collect_vec();
-    let unscoped_callsign_set =
-        unscoped_callsigns.iter().cloned().collect::<HashSet<_>>();
-    let scoped_callsigns = requests
+    let unscoped_callsign_set = unscoped_callsign_keys
+        .iter()
+        .cloned()
+        .collect::<HashSet<_>>();
+    let scoped_callsign_keys = requests
         .iter()
         .filter(|request| {
             !request.network_ids.is_empty()
@@ -246,7 +254,7 @@ fn network_callsign_query_groups(
         .unique()
         .collect_vec();
     let scoped_callsign_set =
-        scoped_callsigns.iter().cloned().collect::<HashSet<_>>();
+        scoped_callsign_keys.iter().cloned().collect::<HashSet<_>>();
     let network_scope = requests
         .iter()
         .filter(|request| {
@@ -258,15 +266,23 @@ fn network_callsign_query_groups(
         .collect_vec();
 
     let mut groups = Vec::new();
-    if !unscoped_callsigns.is_empty() {
+    if !unscoped_callsign_keys.is_empty() {
         groups.push(NetworkCallsignQueryGroup {
-            callsigns: unscoped_callsigns,
+            callsigns: unscoped_callsign_keys
+                .iter()
+                .flat_map(|callsign| callsign_query_variants(callsign))
+                .unique()
+                .collect_vec(),
             network_scope: None,
         });
     }
-    if !scoped_callsigns.is_empty() {
+    if !scoped_callsign_keys.is_empty() {
         groups.push(NetworkCallsignQueryGroup {
-            callsigns: scoped_callsigns,
+            callsigns: scoped_callsign_keys
+                .iter()
+                .flat_map(|callsign| callsign_query_variants(callsign))
+                .unique()
+                .collect_vec(),
             network_scope: Some(network_scope),
         });
     }
@@ -507,7 +523,7 @@ impl CatalogLookup {
             let Some(unit) = unit else {
                 continue;
             };
-            let normalized_callsign = callsign.callsign.to_lowercase();
+            let normalized_callsign = callsign_match_key(&callsign.callsign);
             ids_by_callsign
                 .entry(normalized_callsign.clone())
                 .or_default()
@@ -552,7 +568,9 @@ impl CatalogLookup {
     fn catalog_ids_for_callsigns(&self, callsigns: &[String]) -> Vec<i64> {
         callsigns
             .iter()
-            .filter_map(|callsign| self.ids_by_callsign.get(callsign))
+            .filter_map(|callsign| {
+                self.ids_by_callsign.get(&callsign_match_key(callsign))
+            })
             .flatten()
             .copied()
             .unique()
@@ -576,7 +594,7 @@ impl NetworkCallsignLookup {
         for network_callsign in network_callsigns {
             let id = network_callsign.id;
             ids_by_callsign
-                .entry(network_callsign.sigint_callsign.to_lowercase())
+                .entry(callsign_match_key(&network_callsign.sigint_callsign))
                 .or_default()
                 .push(id);
             if let Some(catalog_id) = network_callsign.sigint_callsign_id {
@@ -806,6 +824,17 @@ mod tests {
         assert_eq!(requests[0].normalized_callsign, "ветер");
         assert_eq!(requests[0].network_ids, vec![10, 20]);
         assert_eq!(requested_callsigns(&requests), vec!["ветер"]);
+    }
+
+    #[test]
+    fn prepares_space_and_hyphen_callsign_query_variants() {
+        let requests = vec![request("САКСОФОН КОНТРОЛЬ", vec![])];
+
+        assert_eq!(requests[0].normalized_callsign, "саксофон-контроль");
+        assert_eq!(
+            requested_callsigns(&requests),
+            vec!["саксофон-контроль", "саксофон контроль"]
+        );
     }
 
     #[test]
@@ -1057,6 +1086,36 @@ mod tests {
 
         assert_eq!(response.res.len(), 1);
         assert_eq!(response.res[0].callsign, "ВЕТЕР");
+    }
+
+    #[test]
+    fn catalog_rows_match_space_and_hyphen_callsign_variants() {
+        let catalog = CatalogLookup {
+            info_by_callsign: HashMap::from([(
+                "саксофон-контроль".to_string(),
+                vec![CallsignInfo {
+                    id: 7,
+                    callsign: "саксофон-контроль".to_string(),
+                    position: String::new(),
+                    comment: String::new(),
+                    unit_1: "unit".to_string(),
+                    unit_2: String::new(),
+                    unit_id: Some(1),
+                    network_ids_reported_in: vec![],
+                }],
+            )]),
+            hint_by_id: HashMap::new(),
+            ids_by_callsign: HashMap::new(),
+        };
+        let response = build_callsign_response(
+            request("САКСОФОН КОНТРОЛЬ", vec![]),
+            &catalog,
+            &NetworkCallsignLookup::new(vec![]),
+            &HashMap::new(),
+        );
+
+        assert_eq!(response.res.len(), 1);
+        assert_eq!(response.res[0].callsign, "саксофон-контроль");
     }
 
     #[test]

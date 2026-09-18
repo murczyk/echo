@@ -451,6 +451,122 @@ fn normalize_callsign_header_value(callsign: &str) -> String {
         .collect()
 }
 
+fn is_callsign_separator(char_: char) -> bool {
+    char_.is_whitespace()
+        || matches!(
+            char_,
+            '-' | '\u{2010}'
+                | '\u{2011}'
+                | '\u{2012}'
+                | '\u{2013}'
+                | '\u{2014}'
+                | '\u{2015}'
+        )
+}
+
+pub(crate) fn callsign_match_key(callsign: &str) -> String {
+    let mut key = String::new();
+    let mut pending_separator = false;
+    for char_ in callsign.trim().to_lowercase().chars() {
+        if is_callsign_separator(char_) {
+            pending_separator = !key.is_empty();
+            continue;
+        }
+        if pending_separator {
+            key.push('-');
+            pending_separator = false;
+        }
+        key.push(char_);
+    }
+    key
+}
+
+pub(crate) fn callsign_query_variants(callsign: &str) -> Vec<String> {
+    let key = callsign_match_key(callsign);
+    let spaced = key.replace('-', " ");
+    let original = callsign.trim().to_lowercase();
+    [key, spaced, original]
+        .into_iter()
+        .filter(|callsign| !callsign.is_empty())
+        .fold(Vec::new(), |mut callsigns, callsign| {
+            if !callsigns.contains(&callsign) {
+                callsigns.push(callsign);
+            }
+            callsigns
+        })
+}
+
+fn callsign_form_token_len(callsign: &str) -> usize {
+    let mut token_len = 0;
+    let mut in_alphanumeric_token = false;
+    for char_ in callsign.chars() {
+        if char_.is_alphanumeric() {
+            if !in_alphanumeric_token {
+                token_len += 1;
+                in_alphanumeric_token = true;
+            }
+        } else {
+            in_alphanumeric_token = false;
+            if !char_.is_whitespace() {
+                token_len += 1;
+            }
+        }
+    }
+    token_len
+}
+
+fn highlight_callsign_token_windows(
+    body: &str,
+    tokens: &[crate::nlp::types::WordToken],
+    callsign_forms: &BTreeMap<String, String>,
+) -> Vec<CNCallsign> {
+    let max_ngram_len = callsign_forms
+        .keys()
+        .map(|callsign| callsign_form_token_len(callsign))
+        .max()
+        .unwrap_or(1)
+        .max(2);
+    let mut res = vec![];
+
+    for n in 1..=max_ngram_len {
+        for i in 0..tokens.len().saturating_sub(n - 1) {
+            let slice = &tokens[i..i + n];
+            let (Some(first), Some(last)) = (slice.first(), slice.last())
+            else {
+                continue;
+            };
+            if first.text.chars().all(is_callsign_separator)
+                || last.text.chars().all(is_callsign_separator)
+            {
+                continue;
+            }
+            let text = slice
+                .iter()
+                .map(|token| token.text.clone())
+                .collect::<Vec<_>>()
+                .join(" ");
+            let Some(etalon) = callsign_forms.get(&callsign_match_key(&text))
+            else {
+                continue;
+            };
+            res.push(CNCallsign {
+                begin: first.start,
+                end: last.end,
+                etalon: etalon.clone(),
+                text: body
+                    .chars()
+                    .skip(first.start)
+                    .take(last.end - first.start)
+                    .collect(),
+            });
+        }
+    }
+
+    res.sort();
+    res.dedup();
+    res
+}
+
 pub async fn highlight_callsigns(
     rq: &reqwest::Client,
     body: &str,
@@ -458,68 +574,21 @@ pub async fn highlight_callsigns(
 ) -> Result<Vec<CNCallsign>, AppError> {
     let mut res = vec![];
     let tokens = crate::nlp::tokenize_words(rq, body).await.c(h!())?;
-    // println!("> tokens: {tokens:?}");
     let mut callsign_forms = BTreeMap::new();
     for callsign in callsigns.iter() {
-        callsign_forms.insert(callsign.clone(), callsign.clone());
+        callsign_forms.insert(callsign_match_key(callsign), callsign.clone());
         for callsign_form in
             crate::nlp::token_lexemes(rq, callsign).await.c(h!())?
         {
-            callsign_forms.insert(callsign_form, callsign.clone());
+            callsign_forms
+                .insert(callsign_match_key(&callsign_form), callsign.clone());
         }
     }
-    // println!("> callsign_forms: {callsign_forms:?}");
-
-    let mut substrings_to_highlight: Vec<(String, String, usize, usize)> =
-        vec![];
-
-    // 🔹 Scan n-grams of length 1..=2 (single word, two-word)
-    for n in 1..=2 {
-        for i in 0..tokens.len().saturating_sub(n - 1) {
-            let slice = &tokens[i..i + n];
-
-            // Join token texts with spaces
-            let text = slice
-                .iter()
-                .map(|t| t.text.clone())
-                .collect::<Vec<_>>()
-                .join(" ");
-            let text_lc = text.to_lowercase();
-
-            if let Some(etalon) = callsign_forms.get(&text_lc) {
-                if let (Some(first), Some(last)) = (slice.first(), slice.last())
-                {
-                    substrings_to_highlight.push((
-                        etalon.clone(),
-                        slice
-                            .iter()
-                            .map(|t| t.text.clone())
-                            .collect::<Vec<_>>()
-                            .join(" "),
-                        first.start,
-                        last.end,
-                    ));
-                }
-            }
-        }
-    }
-
-    // println!("> substrings_to_highlight: {substrings_to_highlight:?}");
-
-    for (etalon, sub, start, end) in substrings_to_highlight {
-        res.push(CNCallsign {
-            begin: start,
-            end,
-            etalon: etalon.clone(),
-            text: sub.clone(),
-        });
-    }
-
-    // Deduplicate and sort
-    let mut res = res.clone();
-    res.sort();
-    res.dedup();
-
+    res.extend(highlight_callsign_token_windows(
+        body,
+        &tokens,
+        &callsign_forms,
+    ));
     Ok(res)
 }
 
@@ -1248,11 +1317,12 @@ fn extract_avia_callsigns_for_group(
     const LITERAL_CALLSIGN_STR: &str =
         r"[\p{Cyrillic}]+((-[\p{Cyrillic}]+)|(\s+\d{1,2}))?";
     const DIGITAL_CALLSIGN_STR: &str = r"(\d{1,3}[\s-]?[Йй])|(\d{2,})";
+    const AIRCRAFT_REGISTRATION_CALLSIGN_STR: &str = r"[A-Za-z]{1,4}-\d{2,6}";
 
     lazy_static! {
         // Regex for matching a single callsign
         static ref CALLSIGN_REGEX: Regex = Regex::new(&format!(
-            r"^\s*(?P<callsign>(({LITERAL_CALLSIGN_STR})|({DIGITAL_CALLSIGN_STR})))\s*$"
+            r"^\s*(?P<callsign>(({LITERAL_CALLSIGN_STR})|({DIGITAL_CALLSIGN_STR})|({AIRCRAFT_REGISTRATION_CALLSIGN_STR})))\s*$"
         )).unwrap();
     }
 
@@ -3199,6 +3269,77 @@ mod tests {
         assert_eq!(res[0].end, 100);
     }
 
+    #[test]
+    fn highlights_hyphenated_callsign_token_windows() {
+        use crate::nlp::types::WordToken;
+
+        let body = "RA-73810\nСАКСОФОН-КОНТРОЛЬ";
+        let tokens = vec![
+            WordToken {
+                text: "RA".to_string(),
+                start: 0,
+                end: 2,
+            },
+            WordToken {
+                text: "-".to_string(),
+                start: 2,
+                end: 3,
+            },
+            WordToken {
+                text: "73810".to_string(),
+                start: 3,
+                end: 8,
+            },
+            WordToken {
+                text: "САКСОФОН".to_string(),
+                start: 9,
+                end: 17,
+            },
+            WordToken {
+                text: "-".to_string(),
+                start: 17,
+                end: 18,
+            },
+            WordToken {
+                text: "КОНТРОЛЬ".to_string(),
+                start: 18,
+                end: 26,
+            },
+        ];
+        let callsign_forms = BTreeMap::from([
+            (callsign_match_key("ra-73810"), "ra-73810".to_string()),
+            (callsign_match_key("саксофон"), "саксофон".to_string()),
+            (
+                callsign_match_key("саксофон-контроль"),
+                "саксофон-контроль".to_string(),
+            ),
+        ]);
+
+        assert_eq!(
+            highlight_callsign_token_windows(body, &tokens, &callsign_forms),
+            vec![
+                CNCallsign {
+                    begin: 0,
+                    end: 8,
+                    etalon: "ra-73810".to_string(),
+                    text: "RA-73810".to_string(),
+                },
+                CNCallsign {
+                    begin: 9,
+                    end: 17,
+                    etalon: "саксофон".to_string(),
+                    text: "САКСОФОН".to_string(),
+                },
+                CNCallsign {
+                    begin: 9,
+                    end: 26,
+                    etalon: "саксофон-контроль".to_string(),
+                    text: "САКСОФОН-КОНТРОЛЬ".to_string(),
+                },
+            ]
+        );
+    }
+
     //     #[tokio::test]
     //     async fn find_known_callsigns_sever() {
     //         let dbx = crate::new_p g_pool_x(Mode::Debug).await.unwrap();
@@ -3890,6 +4031,26 @@ async fn test_extract_callsigns_avia_format_callsign_with_defis() {
         vec!["321Й".to_string(), "Саксофон-контроль".to_string()];
     let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
     assert_eq!(ress, expected);
+}
+
+#[test]
+fn extract_callsigns_avia_format_aircraft_registration() {
+    let body = r#"Отримано з поста "34"
+--------------------------------------
+18.09.2026, 10:40:39
+128.5000
+🟠 УКХ р/м Єдиної системи управління повітряним рухом ПКС зс рф
+RA-73810
+СТУЛ
+
+— RA-73810, Стул, прием."#;
+    let res = extract_avia_callsigns(body).unwrap();
+    let ress = res
+        .into_iter()
+        .map(|callsign| callsign.text)
+        .collect::<Vec<_>>();
+
+    assert_eq!(ress, vec!["RA-73810", "СТУЛ"]);
 }
 
 #[tokio::test]

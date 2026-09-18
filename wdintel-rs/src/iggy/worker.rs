@@ -1,5 +1,8 @@
 use crate::entities::{api_integration, sigint_callsign, sigint_unit};
 use crate::error::AppError;
+use crate::rer_importer::callsigns::{
+    callsign_match_key, callsign_query_variants,
+};
 use crate::rer_importer::types::{InboxMessage, InboxMessagesReq};
 use crate::sigint::etalonka::query::{
     build_open_ended_network_freq_join_condition, SigintInboxItem,
@@ -228,7 +231,7 @@ async fn load_callsign_ids(
     env: &Env,
     inbox_messages: &[(i64, InboxMessage)],
 ) -> Result<HashMap<String, BTreeSet<i64>>, AppError> {
-    let callsigns = inbox_messages
+    let callsign_keys = inbox_messages
         .iter()
         .flat_map(|(_, inbox_message)| {
             inbox_message
@@ -236,7 +239,14 @@ async fn load_callsign_ids(
                 .iter()
                 .chain(&inbox_message.callsigns_alg2)
         })
-        .map(|callsign| callsign.to_lowercase())
+        .map(|callsign| callsign_match_key(callsign))
+        .filter(|callsign| !callsign.is_empty())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let callsigns = callsign_keys
+        .iter()
+        .flat_map(|callsign| callsign_query_variants(callsign))
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
@@ -264,7 +274,7 @@ async fn load_callsign_ids(
             .c(h!())?;
         for callsign in callsigns {
             callsign_ids
-                .entry(callsign.callsign.to_lowercase())
+                .entry(callsign_match_key(&callsign.callsign))
                 .or_default()
                 .insert(callsign.id);
         }
@@ -281,7 +291,7 @@ fn enrich_inbox_message(
         .callsigns
         .iter()
         .chain(&inbox_message.callsigns_alg2)
-        .filter_map(|callsign| callsign_ids.get(&callsign.to_lowercase()))
+        .filter_map(|callsign| callsign_ids.get(&callsign_match_key(callsign)))
         .flatten()
         .copied()
         .collect::<BTreeSet<_>>()
@@ -701,7 +711,7 @@ mod tests {
         let mut inbox_message: InboxMessage = InboxInsertPayload {
             text: "interception".to_string(),
             freq: Some("123.45".to_string()),
-            callsigns: vec!["IGGY-TEST-CALLSIGN".to_string()],
+            callsigns: vec!["IGGY TEST CALLSIGN".to_string()],
             network_ids: Some(vec![network_id]),
             ..Default::default()
         }
