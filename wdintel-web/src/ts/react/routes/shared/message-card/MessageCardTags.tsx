@@ -71,6 +71,7 @@ const MessageCardTagChip = memo(function MessageCardTagChip({
           'aria-describedby': tipId,
         }
       : {};
+  const isHuman = row.provenance === 'human';
 
   return (
     <span
@@ -94,7 +95,8 @@ const MessageCardTagChip = memo(function MessageCardTagChip({
           }
           tone="tag"
           selected={row.isSet}
-          className="message-card-tag-chip"
+          className={`message-card-tag-chip${isHuman ? ' message-card-tag-chip--human' : ''}`}
+          data-provenance={row.provenance}
           ref={chipRef}
           onClick={canToggle ? () => onToggleTag(Number(row.tagId)) : undefined}
           {...tipProps}

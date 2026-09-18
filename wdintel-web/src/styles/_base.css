@@ -1032,7 +1032,7 @@ html[data-bs-theme='dark'] .message-card-root {
   min-height: 24px;
   padding: 0 6px;
   border-radius: 20px;
-  background: var(--message-card-tag-background);
+  background: transparent;
   border-color: var(--message-card-tag-border);
   color: var(--echo-color-text);
   font-size: 12px;
@@ -1041,10 +1041,32 @@ html[data-bs-theme='dark'] .message-card-root {
   opacity: 1;
 }
 
+.message-card-root .message-card-tag-chip[data-selected='false'] {
+  background: transparent;
+}
+
+.message-card-root .message-card-tag-chip[data-selected='false'][data-interactive='true']:hover {
+  background: color-mix(in srgb, var(--echo-color-text) 6%, transparent);
+}
+
 .message-card-root .message-card-tag-chip[data-selected='true'] {
   background: var(--message-card-tag-background);
   border-color: var(--message-card-tag-selected-border);
   color: var(--echo-color-text);
+}
+
+.message-card-root .message-card-tag-chip--human[data-selected='true'],
+.message-card-root .message-card-tag-chip[data-provenance='human'][data-selected='true'] {
+  background: color-mix(in srgb, var(--message-card-tag-provenance-human) 16%, transparent);
+  border-color: var(--message-card-tag-provenance-human);
+  color: var(--echo-color-text);
+}
+
+.message-card-root
+  .message-card-tag-chip--human[data-selected='true'][data-interactive='true']:hover,
+.message-card-root
+  .message-card-tag-chip[data-provenance='human'][data-selected='true'][data-interactive='true']:hover {
+  background: color-mix(in srgb, var(--message-card-tag-provenance-human) 24%, transparent);
 }
 
 .message-card-root .message-card-tag-chip[data-selected='false'] .echo-chip__label {
