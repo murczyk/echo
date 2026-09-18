@@ -87,3 +87,21 @@
 - **Source implementation:** `routes/rer-duty-neo/index.tsx`.
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/index.spec.tsx`.
 - **Original Echo issue/PR, if known:** none recorded; retained as a data-integrity safeguard.
+
+## Duty message analysis links
+
+- **Status:** normative
+- **Behavior ID:** `react-duty-message-analysis-link`
+- **Affected route/component:** Duty message cards in `FeedColumnContent`
+- **User role or permission:** users allowed to view the Duty feed and copy message actions
+- **Preconditions:** a Duty card represents a message with a stable message UID
+- **User action or external event:** the user chooses the card action that copies its message link
+- **Expected observable result:** the clipboard receives an absolute `/rer-analysis-neo?m=<message-uid>` URL that opens the same message in Analysis; copy feedback remains associated with that card's `link-<message-id>` action.
+- **Loading/empty/error/success behavior:** clipboard success and failure use the existing Duty copy-action feedback.
+- **URL, localStorage, or user-settings persistence:** the copied URL uses the current origin and preserves the message UID in the `m` query parameter.
+- **API endpoint and compatibility requirements:** none.
+- **Responsive and keyboard requirements:** the copy action remains available through the shared keyboard-accessible message-card action menu.
+- **Known race/idempotency constraints:** copying one card must not report feedback against another card.
+- **Source implementation:** `wdintel-web/src/ts/react/routes/rer-duty-neo/FeedColumnContent.tsx`, `wdintel-web/src/ts/react/routes/shared/message-card/message-card.utils.ts`
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
+- **Original Echo issue/PR, if known:** [#3541](https://github.com/echoua/echo/pull/3541)

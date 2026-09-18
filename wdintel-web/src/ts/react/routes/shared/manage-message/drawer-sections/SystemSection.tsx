@@ -88,7 +88,16 @@ export function SystemSection({
                   <li
                     key={option.masterKey}
                     {...restProps}
-                    style={isDoNotSend ? { color: theme.palette.error.main } : undefined}
+                    style={{
+                      ...restProps.style,
+                      ...(isDoNotSend
+                        ? {
+                            color: theme.palette.text.secondary,
+                            borderBottom: `1px solid ${theme.palette.divider}`,
+                            marginBottom: 4,
+                          }
+                        : undefined),
+                    }}
                   >
                     {option.name || option.masterKey}
                   </li>

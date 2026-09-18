@@ -200,7 +200,7 @@
 - **Status:** issue-backed regressions
 - **Behavior ID:** `react-message-card-issue-regressions`
 - **Affected route/component:** `MessageCard.tsx`, `MessageCardHeader.tsx`, and bot-tag controls
-- **Expected observable result:** Echo #3461 exposes device metadata only through an allowed device-access provider. Echo #3324 scopes bot-tag confirmation/cancellation to the matching message and tag, preserves its Popover anchor through unrelated rerenders, and suppresses the action for read-only cards, disabled bot tags, and different message/tag targets. Echo #3515 keeps date-only messages free of generated noon times and renders creation and event dates independently in Analysis.
+- **Expected observable result:** Echo #3461 exposes device metadata only through an allowed device-access provider. Echo #3324 scopes bot-tag confirmation/cancellation to the matching message and tag, preserves its Popover anchor through unrelated rerenders, and suppresses the action for read-only cards, disabled bot tags, and different message/tag targets. Echo #3515 keeps date-only messages free of generated noon times; an interception-basis card renders the interception date, while a creation-basis card renders creation and interception dates independently.
 - **Source implementation:** `wdintel-web/src/ts/react/routes/shared/message-card/MessageCard.tsx`, `MessageCardHeader.tsx`
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx`
 - **Original Echo issue/PR, if known:** [#3461](https://github.com/echoua/echo/issues/3461), [#3324](https://github.com/echoua/echo/issues/3324), [#3515](https://github.com/echoua/echo/issues/3515)
@@ -219,7 +219,7 @@
 - **Status:** inferred characterization
 - **Behavior ID:** `react-message-card-presentation-workflows`
 - **Affected route/component:** MessageCard and supporting presentation children
-- **Expected observable result:** Duty and Analysis expose their respective actions and navigation; text folding, headers, timestamps, missing-value fallbacks, comment authorship/disclosure, callsign/tag/report/transcription visibility, and ordinary loading/empty presentation follow the current component behavior.
+- **Expected observable result:** Duty and Analysis expose their respective actions and navigation; text folding, headers, timestamps, missing-value fallbacks, comment authorship/disclosure, callsign/tag/report/transcription visibility, and ordinary loading/empty presentation follow the current component behavior. The header owns date/time presentation in both modes: interception metadata is not prepended to message body text, interception time uses its labeled calendar item, creation-basis cards add a separate muted creation timestamp, and Duty cards do not show the former relative-time counter.
 - **Source implementation:** `wdintel-web/src/ts/react/routes/shared/message-card/`
 - **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 

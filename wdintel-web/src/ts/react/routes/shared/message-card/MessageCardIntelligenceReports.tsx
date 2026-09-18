@@ -75,18 +75,38 @@ export function hasVisibleMessageCardIntelligenceReports(
 
 function MessageSummaryDetails({
   summary,
-  editable,
+  onEdit,
+  isParent = false,
 }: {
   summary: IntelligenceReportSummary;
-  editable: boolean;
+  onEdit?: () => void;
+  isParent?: boolean;
 }) {
   const textToShow = getSummaryDisplayText(summary);
 
   return (
-    <span className="flex min-w-0 items-center gap-1 text-xs font-semibold text-(--color-action)">
-      {editable ? <EditIcon sx={{ fontSize: 15, flexShrink: 0 }} aria-hidden /> : null}
-      <span className="truncate min-w-0">{textToShow}</span>
-    </span>
+    <div
+      className={`flex min-w-0 items-start gap-1 text-base font-normal leading-[1.43] ${
+        isParent ? 'text-(--color-action)' : 'text-(--echo-color-text)'
+      }`}
+    >
+      {onEdit ? (
+        <button
+          type="button"
+          className="message-card-intelligence-report-edit"
+          aria-label="Редагувати розвіддонесення"
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit();
+          }}
+        >
+          <EditIcon aria-hidden />
+        </button>
+      ) : null}
+      <span className="line-clamp-3 min-w-0 whitespace-pre-wrap wrap-break-word overflow-hidden">
+        {textToShow}
+      </span>
+    </div>
   );
 }
 
@@ -169,7 +189,7 @@ export function MessageCardIntelligenceReports({
               aria-label="Оригінальне повідомлення"
               tabIndex={0}
             >
-              <MessageSummaryDetails summary={currentParent} editable={false} />
+              <MessageSummaryDetails summary={currentParent} isParent />
             </article>
           )}
         </RefreshableMessageSummaryPreview>
@@ -190,20 +210,12 @@ export function MessageCardIntelligenceReports({
                 <article
                   className="message-card-intelligence-report"
                   data-message-card-intelligence-report="true"
-                  tabIndex={!editReport ? 0 : undefined}
+                  tabIndex={0}
                 >
-                  {editReport ? (
-                    <button
-                      type="button"
-                      className="block w-full min-w-0 cursor-pointer border-0 bg-transparent p-0 text-left text-inherit"
-                      aria-label="Редагувати розвіддонесення"
-                      onClick={() => editReport(currentReport.id)}
-                    >
-                      <MessageSummaryDetails summary={currentReport} editable />
-                    </button>
-                  ) : (
-                    <MessageSummaryDetails summary={currentReport} editable={false} />
-                  )}
+                  <MessageSummaryDetails
+                    summary={currentReport}
+                    onEdit={editReport ? () => editReport(currentReport.id) : undefined}
+                  />
                 </article>
               );
             }}
