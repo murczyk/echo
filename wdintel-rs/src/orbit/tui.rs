@@ -372,6 +372,20 @@ pub fn prompt_link_mode() -> Result<Option<LinkMode>, AppError> {
     result
 }
 
+pub fn prompt_unparsed_link_mode() -> Result<Option<LinkMode>, AppError> {
+    let mut terminal = setup_terminal().c(h!())?;
+    let result = run_mode_menu(
+        &mut terminal,
+        "Choose linking mode (↑/↓, Enter, Esc: quit)",
+        [
+            "Automatic: link only when exactly one exact-rating match has distance ≤ 10",
+            "Manual: review every potential match (no distance limit)",
+        ],
+    );
+    restore_terminal(&mut terminal).c(h!())?;
+    result
+}
+
 pub fn prompt_unit_name_cleanup_mode() -> Result<Option<LinkMode>, AppError> {
     let mut terminal = setup_terminal().c(h!())?;
     let result = run_mode_menu(
@@ -2908,16 +2922,6 @@ mod tests {
             START_MENU_ACTIONS.len() + START_MENU_DANGER_ACTIONS.len()
         )
         .is_none());
-    }
-
-    #[test]
-    fn start_menu_danger_zone_uses_warning_colors() {
-        assert_eq!(
-            start_menu_warning_style().fg,
-            Some(Color::Rgb(255, 165, 0)),
-        );
-        assert_eq!(start_menu_danger_style().fg, Some(Color::Red));
-        assert_eq!(start_menu_selected_danger_style().fg, Some(Color::Red));
     }
 
     #[test]

@@ -130,7 +130,7 @@ pub async fn run(mode: Mode, dry_run: bool) -> anyhow::Result<()> {
         let db = new_pg_pool_from_mode(mode).await.c(h!())?;
         return print_dry_run_report(&db).await.c(h!());
     }
-    let Some(link_mode) = tui::prompt_link_mode().c(h!())? else {
+    let Some(link_mode) = tui::prompt_unparsed_link_mode().c(h!())? else {
         return Ok(());
     };
     let db = new_pg_pool_from_mode(mode).await.c(h!())?;
