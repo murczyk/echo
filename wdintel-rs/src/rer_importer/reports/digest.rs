@@ -1313,6 +1313,7 @@ mod tests {
     #[test]
     fn extract_form_1217_callsigns_treats_placeholder_as_recipient_only() {
         let message = InboxMessage {
+            is_time_null: None,
             parent_messages: vec![],
             intelligence_reports: vec![],
             message_uuid: None,
@@ -1374,6 +1375,7 @@ mod tests {
     #[test]
     fn extract_form_1217_callsigns_keeps_unknown_placeholder_unknown() {
         let message = InboxMessage {
+            is_time_null: None,
             parent_messages: vec![],
             intelligence_reports: vec![],
             message_uuid: None,
@@ -1436,6 +1438,7 @@ mod tests {
         (
             id,
             InboxMessage {
+                is_time_null: None,
                 parent_messages: vec![],
                 intelligence_reports: vec![],
                 message_uuid: None,

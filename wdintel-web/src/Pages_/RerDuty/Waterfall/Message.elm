@@ -251,41 +251,45 @@ computeDateTimeRenderParts message ps =
             , date = message.date
             }
     in
-    case message.date of
-        Nothing ->
-            defVal
+    if message.isTimeNull == Just True then
+        { time = "", date = message.date }
 
-        Just _ ->
-            case Utils.Time.parseDateParts (def "" message.date) of
-                Err _ ->
-                    defVal
+    else
+        case message.date of
+            Nothing ->
+                defVal
 
-                Ok prts ->
-                    case ps.time of
-                        Nothing ->
-                            defVal
+            Just _ ->
+                case Utils.Time.parseDateParts (def "" message.date) of
+                    Err _ ->
+                        defVal
 
-                        Just time ->
-                            let
-                                timeS =
-                                    message.timestamp
-                                        |> mmap Time.millisToPosix
-                                        |> mmap (Utils.Time.renderTimeF4 ps.zone)
-                                        |> def (message.time |> def "")
-                            in
-                            if
-                                Utils.Time.partsAreSameDay
-                                    (Time.Extra.posixToParts ps.zone time)
-                                    prts
-                            then
-                                { time = timeS
-                                , date = Nothing
-                                }
+                    Ok prts ->
+                        case ps.time of
+                            Nothing ->
+                                defVal
 
-                            else
-                                { time = timeS
-                                , date = Just (Utils.Time.renderPartsF1 prts)
-                                }
+                            Just time ->
+                                let
+                                    timeS =
+                                        message.timestamp
+                                            |> mmap Time.millisToPosix
+                                            |> mmap (Utils.Time.renderTimeF4 ps.zone)
+                                            |> def (message.time |> def "")
+                                in
+                                if
+                                    Utils.Time.partsAreSameDay
+                                        (Time.Extra.posixToParts ps.zone time)
+                                        prts
+                                then
+                                    { time = timeS
+                                    , date = Nothing
+                                    }
+
+                                else
+                                    { time = timeS
+                                    , date = Just (Utils.Time.renderPartsF1 prts)
+                                    }
 
 
 type InternalMsg
@@ -746,7 +750,8 @@ leftColumn ( messageId, message ) ps model =
                 [ class "flex justify-around w-full text-center mb-1"
                 , style "font-size" ".75rem"
                 ]
-                [ span [] [ i [ class "bi bi-clock mr-1 text-icons" ] [], text a.time ]
+                [ HtmlX.viewIf (message.isTimeNull /= Just True) <|
+                    span [] [ i [ class "bi bi-clock mr-1 text-icons" ] [], text a.time ]
                 , flip HtmlX.viewMaybe a.date <|
                     \date -> span [] [ i [ class "bi bi-calendar mr-1 text-icons" ] [], text date ]
                 ]
@@ -1169,7 +1174,13 @@ rightColumn ( messageId, message ) ps model =
                                         []
 
                                     Just now ->
-                                        case message.timestamp of
+                                        case
+                                            if message.isTimeNull == Just True then
+                                                Nothing
+
+                                            else
+                                                message.timestamp
+                                        of
                                             Nothing ->
                                                 []
 

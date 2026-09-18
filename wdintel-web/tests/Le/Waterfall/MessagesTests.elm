@@ -51,6 +51,7 @@ messageStub =
     , networkIds = Nothing
     , inboxTags = Nothing
     , messageUuid = Nothing
+    , isTimeNull = Nothing
     , messageUid = Nothing
     , metadata = []
     , parentMessages = []

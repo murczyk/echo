@@ -572,6 +572,7 @@ async fn get_inbox_messages_report_chunk_postgres(
                 timestamp: m.timestamp,
                 created_at: m.created_at,
                 message: InboxMessage {
+                    is_time_null: None,
                     parent_messages: vec![],
                     intelligence_reports: vec![],
                     message_uuid: None,

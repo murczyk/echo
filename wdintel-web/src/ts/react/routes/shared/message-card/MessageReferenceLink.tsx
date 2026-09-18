@@ -20,6 +20,7 @@ const EMPTY_SUMMARY: IntelligenceReportSummary = {
   timestamp: null,
   date: null,
   time: null,
+  isTimeNull: null,
   groupName: null,
   groupMasterKey: null,
   coords: null,
@@ -49,6 +50,14 @@ type CachedMessageReferenceResolution = {
 };
 
 function summaryTime(summary: IntelligenceReportSummary): string | null {
+  if (summary.isTimeNull === true) {
+    return (
+      summary.date ??
+      (summary.timestamp == null
+        ? null
+        : dayjs(summary.timestamp).tz(APP_TIME_ZONE).format('DD.MM.YYYY'))
+    );
+  }
   if (summary.timestamp != null) {
     return dayjs(summary.timestamp).tz(APP_TIME_ZONE).format('DD.MM.YYYY HH:mm');
   }

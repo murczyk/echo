@@ -62,7 +62,10 @@ export function mapInboxMessageToForm(
 ): MessageFormValues {
   const timestamp = message.timestamp == null ? null : dayjs(message.timestamp).tz(APP_TIME_ZONE);
   const date = parseDay(message.date, 'YYYY-MM-DD') ?? (timestamp?.isValid() ? timestamp : null);
-  const time = parseDay(message.time, 'HH:mm') ?? (timestamp?.isValid() ? timestamp : null);
+  const time =
+    message.isTimeNull === true
+      ? null
+      : (parseDay(message.time, 'HH:mm') ?? (timestamp?.isValid() ? timestamp : null));
   return {
     full_body: message.text ?? '',
     comment: message.extendedForm ?? '',
@@ -95,7 +98,7 @@ export function mapDirectSubmitCopyToForm(payload: DirectSubmitRequest): Message
     callsigns: normalizeMultiValue((payload.to ?? []).map(normalizeCallsign)),
     tags: payload.tags ?? [],
     date: timestamp?.isValid() ? timestamp : null,
-    time: timestamp?.isValid() ? timestamp : null,
+    time: payload.is_time_null === true ? null : timestamp?.isValid() ? timestamp : null,
     full_body: payload.full_body ?? payload.text ?? '',
     comment: payload.comment ?? '',
     post: payload.post ?? '',
@@ -130,6 +133,7 @@ export function mapFormToInboxMessage(
     extendedForm: nullableTrim(values.comment),
     date: values.date?.isValid() ? values.date.format('YYYY-MM-DD') : null,
     time: values.time?.isValid() ? values.time.format('HH:mm') : null,
+    isTimeNull: values.time == null,
     freq: nullableTrim(values.freq),
     coords: nullableTrim(values.coords),
     callsigns: values.callsigns,

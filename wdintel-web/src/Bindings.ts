@@ -399,6 +399,7 @@ export type InboxMessage = {
   imageRecognized: Array<string>;
   date: string | null;
   time: string | null;
+  isTimeNull: boolean | null;
   freq: string | null;
   coords: string | null;
   coordsWithLocality: Array<CoordinateWithLocality>;
@@ -446,6 +447,7 @@ export type InboxMessageSummary = {
   timestamp: number | null;
   date: string | null;
   time: string | null;
+  isTimeNull: boolean | null;
   groupName: string | null;
   groupMasterKey: string | null;
   coords: string | null;

@@ -415,6 +415,7 @@ where
         end: comment.len(),
     };
     sigint_inbox_item::ActiveModel {
+        is_time_null: sea_orm::NotSet,
         id: Set(signal_message_id),
         id_uuid: Set(signal_message.id_uuid),
         date: Set(None),
@@ -612,6 +613,7 @@ async fn migrate_comment_batch(
             end: comment.comment.len(),
         };
         inbox_items.push(sigint_inbox_item::ActiveModel {
+            is_time_null: sea_orm::NotSet,
             id: Set(signal_message.id),
             id_uuid: Set(signal_message.id_uuid),
             date: Set(None),

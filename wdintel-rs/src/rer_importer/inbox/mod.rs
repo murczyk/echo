@@ -2217,6 +2217,7 @@ fn generic_submit_item_to_inbox_message(
             }
         });
     let message = InboxMessage {
+        is_time_null: None,
         parent_messages: vec![],
         intelligence_reports: vec![],
         message_uuid: None,

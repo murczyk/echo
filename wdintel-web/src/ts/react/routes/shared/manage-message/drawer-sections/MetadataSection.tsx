@@ -81,7 +81,7 @@ export function MetadataSection({
           <Controller
             name="time"
             control={control}
-            render={({ field }) => (
+            render={({ field, fieldState }) => (
               <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale="uk">
                 <TimePicker
                   label="Час перехоплення"
@@ -89,7 +89,16 @@ export function MetadataSection({
                   ampm={false}
                   onChange={(newValue) => field.onChange(newValue)}
                   disabled={busy}
-                  slotProps={{ textField: { size: 'small', fullWidth: true } }}
+                  slotProps={{
+                    field: { clearable: true },
+                    clearButton: { title: 'Очистити час', 'aria-label': 'Очистити час' },
+                    textField: {
+                      size: 'small',
+                      fullWidth: true,
+                      error: Boolean(fieldState.error),
+                      helperText: fieldState.error?.message,
+                    },
+                  }}
                 />
               </LocalizationProvider>
             )}

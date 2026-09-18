@@ -1504,6 +1504,39 @@ describe('MessageCard', () => {
     ).toBeNull();
   });
 
+  it.each(['interception', 'creation'] as const)(
+    '#3515 hides all generated times for a date-only message (%s)',
+    async (messageTimeBasis) => {
+      const view = await renderCard({
+        messageTimeBasis,
+        msg: buildMessage({
+          text: 'Повідомлення без часу',
+          textMarked: [],
+          timestamp: Date.UTC(2026, 6, 15, 9),
+          createdAt: Date.UTC(2026, 6, 15, 10),
+          date: '15.07.2026',
+          time: '12:00:00',
+          isTimeNull: true,
+          hasDateInHeader: false,
+        }),
+      });
+      rendered.push(view);
+      expect(view.container.textContent).toContain('15.07');
+      expect(view.container.textContent).not.toMatch(/12:00|13:00/);
+      expect(view.container.querySelector('.message-card-relative-time')).toBeNull();
+      expect(
+        view.container.querySelectorAll('[data-message-card-timestamp-item="true"]'),
+      ).toHaveLength(1);
+      expect(
+        formatMessageCardTooltipTime({
+          time: '12:00',
+          timestamp: Date.UTC(2026, 6, 15, 9),
+          isTimeNull: true,
+        }),
+      ).not.toContain('12:00');
+    },
+  );
+
   it('uses creation time and keeps a separately rendered interception header', async () => {
     const view = await renderCard({
       messageTimeBasis: 'creation',

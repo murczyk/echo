@@ -2144,6 +2144,7 @@ mod tests {
 
     fn message_with_callsigns(callsigns: Vec<&str>) -> InboxMessage {
         InboxMessage {
+            is_time_null: None,
             parent_messages: vec![],
             intelligence_reports: vec![],
             message_uuid: None,

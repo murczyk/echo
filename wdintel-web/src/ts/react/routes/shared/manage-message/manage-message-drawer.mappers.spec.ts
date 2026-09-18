@@ -4,6 +4,7 @@ import type { InboxMessage, Tag } from '../../../../../Bindings';
 import {
   mapFormToInboxMessage,
   mapInboxMessageToForm,
+  mapDirectSubmitCopyToForm,
   type MessageFormValues,
 } from './manage-message-drawer.mappers';
 
@@ -144,6 +145,20 @@ describe('mapInboxMessageToForm', () => {
     expect(values.time?.format('HH:mm')).toBe('07:50');
   });
 
+  it('#3515 keeps date-only edit time empty despite the noon timestamp', () => {
+    const values = mapInboxMessageToForm(
+      buildMessage({
+        date: '2026-07-15',
+        time: '12:00:00',
+        timestamp: Date.parse('2026-07-15T09:00:00Z'),
+        isTimeNull: true,
+      }),
+      {},
+    );
+    expect(values.date?.format('YYYY-MM-DD')).toBe('2026-07-15');
+    expect(values.time).toBeNull();
+  });
+
   it('falls back to the UTC timestamp when parsed date and time are missing', () => {
     const values = mapInboxMessageToForm(
       buildMessage({
@@ -211,4 +226,14 @@ describe('mapFormToInboxMessage', () => {
     expect(next.location).toBeNull();
     expect(next.tags).toEqual([7]);
   });
+});
+
+it('#3515 preserves a date-only copied message without restoring noon in the form', () => {
+  const values = mapDirectSubmitCopyToForm({
+    timestamp: '2026-07-15T09:00:00Z',
+    is_time_null: true,
+    signal_group_master_key: 'g-1',
+  });
+  expect(values.date?.format('YYYY-MM-DD')).toBe('2026-07-15');
+  expect(values.time).toBeNull();
 });

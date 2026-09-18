@@ -626,6 +626,7 @@ where
     }
 
     sigint_inbox_item::ActiveModel {
+        is_time_null: sea_orm::NotSet,
         id: Set(inserted.id),
         id_uuid: Set(inserted.id_uuid),
         date: Set(Some(date)),

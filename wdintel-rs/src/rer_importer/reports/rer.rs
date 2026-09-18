@@ -1601,6 +1601,7 @@ mod tests {
         body_noheader: Option<serde_json::Value>,
     ) -> sigint_inbox_item::Model {
         sigint_inbox_item::Model {
+            is_time_null: None,
             id,
             id_uuid: Some(uuid::Uuid::now_v7()),
             date: None,
@@ -1928,6 +1929,7 @@ mod tests {
     #[test]
     fn parse_points_uses_coords_and_pipe_delimited_location_v2() {
         let item = sigint_inbox_item::Model {
+            is_time_null: None,
             id: 1,
             id_uuid: Some(uuid::Uuid::now_v7()),
             date: None,
@@ -2403,6 +2405,7 @@ mod tests {
     #[test]
     fn report_message_timestamp_falls_back_to_signal_timestamp() {
         let item = sigint_inbox_item::Model {
+            is_time_null: None,
             id: 1,
             id_uuid: Some(uuid::Uuid::now_v7()),
             date: None,
@@ -2454,6 +2457,7 @@ mod tests {
     #[test]
     fn report_message_timestamp_converts_item_datetime_to_kyiv() {
         let item = sigint_inbox_item::Model {
+            is_time_null: None,
             id: 1,
             id_uuid: Some(uuid::Uuid::now_v7()),
             date: None,

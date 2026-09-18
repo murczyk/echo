@@ -154,7 +154,7 @@ export function useMessageSubmit({
       let timestamp: string | undefined;
       if (dateValue || timeValue) {
         const date = dateValue?.format('YYYY-MM-DD') ?? formatDateInputValueInTimeZone(new Date());
-        const time = timeValue?.format('HH:mm') ?? '00:00';
+        const time = timeValue?.format('HH:mm') ?? '12:00';
         const timestampMs = combineDateTimeToMs(date, time);
         if (timestampMs != null) timestamp = new Date(timestampMs).toISOString();
       }
@@ -202,6 +202,13 @@ export function useMessageSubmit({
         to: data.callsigns || [],
         tags: isEditMode && !tagsLoaded ? undefined : (data.tags ?? []),
         timestamp,
+        is_time_null:
+          dateValue ||
+          timeValue ||
+          editTarget?.message.timestamp != null ||
+          (!isEditMode && !isReportCreateMode)
+            ? timeValue == null
+            : undefined,
         post: data.post || undefined,
         unit: data.unit || undefined,
         locations: data.locations || [],

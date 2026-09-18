@@ -79,6 +79,33 @@ update sample set enabled = false;
         )
         self.assertTrue(any("may be empty" in error for error in errors))
 
+    def test_3515_additive_cdc_requires_reviewed_add_column_dml(self) -> None:
+        declaration = {"changes": [{"table": "public.sample", "strategy": "cdc_additive"}]}
+        ddl = "alter table sample add column is_time_null boolean;"
+        for contents, valid in (
+            (ddl + "update sample set is_time_null = false where id = 1;", True),
+            (ddl, False),
+            ("alter table sample drop column old;" + ddl, False),
+        ):
+            with self.subTest(contents=contents):
+                errors = MODULE.validate_change(
+                    "echo:m3515", contents, MODULE.detect_ddl(contents), declaration, set()
+                )
+                self.assertEqual(not errors, valid)
+
+    def test_3515_additive_cdc_rejects_defaults_and_not_null(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            before = Path(directory) / "before.tsv"
+            after = Path(directory) / "after.tsv"
+            before.write_text("public.sample\tid\tbigint\tt\t\n")
+            for nullable, default, invalid in (("f", "", False), ("t", "", True), ("f", "false", True)):
+                with self.subTest(nullable=nullable, default=default):
+                    after.write_text(before.read_text() + f"public.sample\tis_time_null\tboolean\t{nullable}\t{default}\n")
+                    self.assertEqual(
+                        bool(MODULE.invalid_cdc_added_catalog_tables(before, after, {"public.sample"})),
+                        invalid,
+                    )
+
     def test_cdc_backfill_accepts_guaranteed_nonempty_table(self) -> None:
         contents = """
 alter table system_settings add column enabled boolean default false;

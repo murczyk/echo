@@ -991,11 +991,25 @@ investigation rather than repeated deployment attempts. Override the bounded
 retry only through `ANALYTICS_RECONCILE_DEPLOY_RETRY_ATTEMPTS` and
 `ANALYTICS_RECONCILE_DEPLOY_RETRY_DELAY_SECONDS` in `source.env`.
 
+The optional message-time migration (#3515) uses `cdc_additive` for
+`public.sigint_inbox_item.is_time_null`: a nullable boolean without a default.
+`NULL` and `false` both retain known-time behavior. The migration changes only
+one primary-key-selected row to `false`; the table has no user UPDATE triggers,
+and this event lets PeerDB publish the column without a historical backfill.
+Deployment waits up to `ANALYTICS_DEPLOY_HEALTH_TIMEOUT_SECONDS` (default 300)
+for populated tables. A timeout stops deployment without removing the mapping,
+dropping raw data, or starting a resnapshot. Investigate CDC lag, then rerun
+`/opt/echo-peerdb/bin/source-verify-deploy.sh`. Only an empty table may take the
+existing targeted resnapshot path; emptiness is checked again before mutation.
+Confirm the new column in raw ClickHouse, current-state views, and the gateway,
+and require the analytics health check to pass before the next server.
+
 Migration pull requests are checked against
 `migration-impact.json`. New tables declare `excluded` or
 `replicated_snapshot`; additive replicated columns declare `cdc_backfill` with
 reviewed post-DDL DML only for the guaranteed-nonempty `system_settings`
-singleton. Additive columns on a table expected to remain empty may declare
+singleton. Nullable additions without defaults may use `cdc_additive` with
+reviewed bounded DML and the empty-table fallback. Additive columns on a table expected to remain empty may declare
 `empty_table_resnapshot`. After migrations, deployment validates that the table
 is still empty and has only source-side additive column drift, then uses
 PeerDB's paused-mirror table editing to remove and re-add only that preserved

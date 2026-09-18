@@ -309,6 +309,7 @@ function normalizeInboxMessage(
   return {
     ...m,
     messageUuid,
+    isTimeNull: m.isTimeNull ?? null,
     groupMasterKey,
     networkIds,
     networkName,

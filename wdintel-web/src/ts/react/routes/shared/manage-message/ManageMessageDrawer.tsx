@@ -284,7 +284,8 @@ function ReportSourceHeader({
 }) {
   const sourceEtalonDisplayModel =
     etalonDisplayModel ?? resolveMessageCardEtalonDisplayModel(message);
-  const time = message.time?.trim() ? formatTime(message.time) : null;
+  const time =
+    message.isTimeNull !== true && message.time?.trim() ? formatTime(message.time) : null;
   const date = message.date?.trim() ? formatDateNoYear(message.date) : null;
 
   return (
