@@ -7,7 +7,6 @@ import BookmarkBorderOutlinedIcon from '@mui/icons-material/BookmarkBorderOutlin
 import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
 import DevicesIcon from '@mui/icons-material/Devices';
-import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined';
 import ChatBubbleOutlineOutlinedIcon from '@mui/icons-material/ChatBubbleOutlineOutlined';
 import NoteAddIcon from '@mui/icons-material/NoteAdd';
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
@@ -27,7 +26,7 @@ import PeopleOutlineOutlinedIcon from '@mui/icons-material/PeopleOutlineOutlined
 import PlaceIcon from '@mui/icons-material/Place';
 import PlaceOutlinedIcon from '@mui/icons-material/PlaceOutlined';
 import RemoveIcon from '@mui/icons-material/Remove';
-import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
+import TodayOutlinedIcon from '@mui/icons-material/TodayOutlined';
 import SettingsInputAntennaIcon from '@mui/icons-material/SettingsInputAntenna';
 import SettingsInputAntennaOutlinedIcon from '@mui/icons-material/SettingsInputAntennaOutlined';
 import { Menu, MenuItem } from '@mui/material';
@@ -51,6 +50,7 @@ import {
   type MessageCardRenderedNetwork,
 } from './message-card.utils';
 import { useMessageDeviceAccess } from './MessageDeviceAccess';
+import type { MessageTimeBasis } from '../../../services/api/user-settings';
 
 dayjs.extend(customParseFormat);
 
@@ -892,6 +892,7 @@ export type MessageCardHeaderProps = {
   id: number;
   msg: InboxMessage;
   displayTimestamp?: number | null;
+  messageTimeBasis?: MessageTimeBasis;
   copiedFeedbackId: string | null;
   etalonDisplayModel: MessageCardEtalonDisplayModel;
   mapHref?: string;
@@ -983,7 +984,7 @@ function formatAnalysisEventDateTime(msg: InboxMessage): string {
       : msg.time?.trim()
         ? formatTime(msg.time)
         : timestamp?.format('HH:mm');
-  return [date, time].filter(Boolean).join(' ') || '—';
+  return [date, time].filter(Boolean).join(', ') || '—';
 }
 
 // Hot path: preserve native structural layout and conditional menu mounting.
@@ -996,6 +997,7 @@ function MessageCardHeaderComponent({
   id,
   msg,
   displayTimestamp,
+  messageTimeBasis,
   copiedFeedbackId,
   etalonDisplayModel,
   mapHref,
@@ -1026,60 +1028,34 @@ function MessageCardHeaderComponent({
     mapHref,
     analysisHref,
   );
-  const dateTimeBlock =
-    displayMode === 'analysis' ? (
-      <div className="inline-flex flex-wrap items-center gap-2">
+  const dateTimeBlock = (
+    <div className="inline-flex flex-wrap items-center gap-2">
+      {messageTimeBasis === 'creation' ? (
         <div
           className="message-card-timestamp-item"
           data-message-card-timestamp-item="true"
-          title="Час створення"
+          title="Дата і час створення повідомлення"
         >
-          <CalendarTodayOutlinedIcon
-            className="message-card-header-icon message-card-timestamp-icon"
-            titleAccess="Час створення"
-          />
-          <HeaderText>
+          <HeaderText className="opacity-50">
             {msg.createdAt == null
               ? '—'
-              : dayjs(msg.createdAt).tz(APP_TIME_ZONE).format('DD.MM HH:mm')}
+              : dayjs(msg.createdAt).tz(APP_TIME_ZONE).format('DD.MM, HH:mm')}
           </HeaderText>
         </div>
-        <div
-          className="message-card-timestamp-item"
-          data-message-card-timestamp-item="true"
-          title="Час події"
-        >
-          <CalendarTodayOutlinedIcon
-            className="message-card-header-icon message-card-timestamp-icon"
-            titleAccess="Час події"
-          />
-          <HeaderText>{formatAnalysisEventDateTime(msg)}</HeaderText>
-        </div>
+      ) : null}
+      <div
+        className="message-card-timestamp-item"
+        data-message-card-timestamp-item="true"
+        title="Дата і час перехоплення"
+      >
+        <TodayOutlinedIcon
+          className="message-card-header-icon"
+          titleAccess="Дата і час перехоплення"
+        />
+        <HeaderText>{formatAnalysisEventDateTime(msg)}</HeaderText>
       </div>
-    ) : (
-      <div className="inline-flex flex-wrap items-center gap-2">
-        {msg.isTimeNull !== true ? (
-          <div className="message-card-timestamp-item" data-message-card-timestamp-item="true">
-            <ScheduleOutlinedIcon className="message-card-header-icon message-card-timestamp-icon" />
-            <HeaderText>
-              {displayTimestamp == null
-                ? formatTime(msg.time)
-                : dayjs(displayTimestamp).tz(APP_TIME_ZONE).format('HH:mm')}
-            </HeaderText>
-          </div>
-        ) : null}
-        {isPresent(displayTimestamp) || isPresent(msg.date) ? (
-          <div className="message-card-timestamp-item" data-message-card-timestamp-item="true">
-            <CalendarTodayOutlinedIcon className="message-card-header-icon message-card-timestamp-icon" />
-            <HeaderText>
-              {displayTimestamp == null
-                ? formatDateNoYear(msg.date)
-                : dayjs(displayTimestamp).tz(APP_TIME_ZONE).format('DD.MM')}
-            </HeaderText>
-          </div>
-        ) : null}
-      </div>
-    );
+    </div>
+  );
 
   const row1 = (
     <div

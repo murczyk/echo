@@ -1209,7 +1209,7 @@ describe('MessageCard', () => {
       if (metadataText == null) throw new Error('metadata text not found');
 
       const expectedValues = [
-        ...(displayMode === 'analysis' ? ['23.03 02:45'] : ['02:45', '23.03']),
+        '23.03 02:45',
         '153.6250',
         'Група A',
         'Відправник B',
@@ -1521,11 +1521,11 @@ describe('MessageCard', () => {
       });
       rendered.push(view);
       expect(view.container.textContent).toContain('15.07');
-      expect(view.container.textContent).not.toMatch(/12:00|13:00/);
+      expect(view.container.textContent).not.toContain('12:00');
       expect(view.container.querySelector('.message-card-relative-time')).toBeNull();
       expect(
         view.container.querySelectorAll('[data-message-card-timestamp-item="true"]'),
-      ).toHaveLength(1);
+      ).toHaveLength(messageTimeBasis === 'creation' ? 2 : 1);
       expect(
         formatMessageCardTooltipTime({
           time: '12:00',
@@ -1557,24 +1557,33 @@ describe('MessageCard', () => {
         const timestamps = view.container.querySelectorAll(
           '[data-message-card-timestamp-item="true"]',
         );
-        expect(timestamps).toHaveLength(2);
-        expect(timestamps[0]?.textContent).toContain('17.07 00:30');
-        expect(timestamps[0]?.getAttribute('title')).toBe('Час створення');
-        expect(timestamps[1]?.getAttribute('title')).toBe('Час події');
-        expect(timestamps[1]?.textContent).toContain(isTimeNull ? '14.07' : '14.07 08:45');
-        if (isTimeNull) expect(timestamps[1]?.textContent).not.toContain(':');
-        for (const timestamp of timestamps) {
-          expect(
-            timestamp.querySelector('[data-testid="CalendarTodayOutlinedIcon"]'),
-          ).not.toBeNull();
+        if (messageTimeBasis === 'creation') {
+          expect(timestamps).toHaveLength(2);
+          expect(timestamps[0]?.textContent).toContain('17.07, 00:30');
+          expect(timestamps[0]?.getAttribute('title')).toBe('Дата і час створення повідомлення');
+          expect(timestamps[1]?.getAttribute('title')).toBe('Дата і час перехоплення');
+          expect(timestamps[1]?.textContent).toContain(isTimeNull ? '14.07' : '14.07, 08:45');
+          if (isTimeNull) expect(timestamps[1]?.textContent).not.toContain(':');
+          expect(timestamps[0]?.querySelector('svg')).toBeNull();
+          expect(timestamps[1]?.querySelector('[data-testid="TodayOutlinedIcon"]')).not.toBeNull();
+          expect(timestamps[1]?.querySelector('.message-card-header-icon')).not.toBeNull();
+          expect(timestamps[1]?.querySelector('.message-card-timestamp-icon')).toBeNull();
+        } else {
+          expect(timestamps).toHaveLength(1);
+          expect(timestamps[0]?.getAttribute('title')).toBe('Дата і час перехоплення');
+          expect(timestamps[0]?.textContent).toContain(isTimeNull ? '14.07' : '14.07, 08:45');
+          if (isTimeNull) expect(timestamps[0]?.textContent).not.toContain(':');
+          expect(timestamps[0]?.querySelector('[data-testid="TodayOutlinedIcon"]')).not.toBeNull();
+          expect(timestamps[0]?.querySelector('.message-card-header-icon')).not.toBeNull();
+          expect(timestamps[0]?.querySelector('.message-card-timestamp-icon')).toBeNull();
         }
       }
     },
   );
 
   it.each([
-    { date: '2026-07-14', time: '08:45:00', isTimeNull: false, expected: '14.07 08:45' },
-    { date: null, time: null, isTimeNull: false, expected: '15.07 12:00' },
+    { date: '2026-07-14', time: '08:45:00', isTimeNull: false, expected: '14.07, 08:45' },
+    { date: null, time: null, isTimeNull: false, expected: '15.07, 12:00' },
     { date: null, time: null, isTimeNull: true, expected: '15.07' },
   ])(
     '#3515 formats analysis event dates with timestamp fallback ($expected)',
@@ -1584,14 +1593,18 @@ describe('MessageCard', () => {
         msg: buildMessage({ ...fields, timestamp: Date.UTC(2026, 6, 15, 9) }),
       });
       rendered.push(view);
-      expect(view.container.querySelector('[title="Час події"]')?.textContent).toContain(expected);
+      expect(
+        view.container.querySelector('[title="Дата і час перехоплення"]')?.textContent,
+      ).toContain(expected);
       if (fields.isTimeNull) {
-        expect(view.container.querySelector('[title="Час події"]')?.textContent).not.toContain(':');
+        expect(
+          view.container.querySelector('[title="Дата і час перехоплення"]')?.textContent,
+        ).not.toContain(':');
       }
     },
   );
 
-  it('uses creation time and keeps a separately rendered interception header', async () => {
+  it('uses creation time and does not duplicate interception date in text', async () => {
     const view = await renderCard({
       messageTimeBasis: 'creation',
       msg: buildMessage({
@@ -1605,7 +1618,7 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('15.08.2026, 08:55:41');
+    expect(view.container.textContent).not.toContain('15.08.2026, 08:55:41');
     expect(
       view.container.querySelectorAll('[data-message-card-timestamp-item="true"]')[0]?.textContent,
     ).toContain('11:55');
@@ -1627,7 +1640,7 @@ describe('MessageCard', () => {
   });
 
   // https://github.com/echoua/echo/issues/3455
-  it('keeps a date-only source header but prepends metadata for a time-only header', async () => {
+  it('does not prepend interception metadata to message text in creation basis', async () => {
     const dated = await renderCard({
       messageTimeBasis: 'creation',
       msg: buildMessage({
@@ -1651,12 +1664,12 @@ describe('MessageCard', () => {
     rendered.push(dated, timed);
 
     expect(dated.container.textContent).not.toContain('15.08.2026, 08:55:41');
-    expect(timed.container.textContent).toContain('15.08.2026, 08:55:41');
+    expect(timed.container.textContent).not.toContain('15.08.2026, 08:55:41');
     expect(timed.container.textContent).toContain('08:55\nРядок повідомлення');
   });
 
   // https://github.com/echoua/echo/issues/3455
-  it('adds interception metadata for headerless text even when it mentions a dialogue date', async () => {
+  it('keeps dialogue text clean without prepended metadata in creation basis', async () => {
     const view = await renderCard({
       messageTimeBasis: 'creation',
       msg: buildMessage({
@@ -1669,12 +1682,12 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('14.08.2026, 08:55:41');
+    expect(view.container.textContent).not.toContain('14.08.2026, 08:55:41');
     expect(view.container.textContent).toContain('Зустріч буде 15.08.2026');
   });
 
   // https://github.com/echoua/echo/issues/3455
-  it('keeps a headerless attachment card truthful when interception metadata is absent', async () => {
+  it('does not render an interception text header for headerless cards', async () => {
     const view = await renderCard({
       messageTimeBasis: 'creation',
       msg: buildMessage({
@@ -1687,7 +1700,7 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('Дата перехоплення недоступна');
+    expect(view.container.textContent).not.toContain('Дата перехоплення недоступна');
   });
 
   // https://github.com/echoua/echo/issues/3455
@@ -1696,23 +1709,26 @@ describe('MessageCard', () => {
     ['date-only metadata', '15.08.2026', null, '15.08.2026, 11:55:41'],
     ['no metadata', null, null, '15.08.2026, 11:55:41'],
     ['complete metadata', '15.08.2026', '08:55:41', '15.08.2026, 08:55:41'],
-  ])('completes %s from the canonical interception timestamp', async (_, date, time, expected) => {
-    const view = await renderCard({
-      messageTimeBasis: 'creation',
-      msg: buildMessage({
-        text: '',
-        textMarked: [],
-        date,
-        time,
-        timestamp: Date.UTC(2026, 7, 15, 8, 55, 41),
-        images: ['https://example.test/files/attachment.png'],
-        hasDateInHeader: false,
-      }),
-    });
-    rendered.push(view);
+  ])(
+    'does not inject %s into card body text in creation basis',
+    async (_, date, time, expected) => {
+      const view = await renderCard({
+        messageTimeBasis: 'creation',
+        msg: buildMessage({
+          text: '',
+          textMarked: [],
+          date,
+          time,
+          timestamp: Date.UTC(2026, 7, 15, 8, 55, 41),
+          images: ['https://example.test/files/attachment.png'],
+          hasDateInHeader: false,
+        }),
+      });
+      rendered.push(view);
 
-    expect(view.container.textContent).toContain(expected);
-  });
+      expect(view.container.textContent).not.toContain(expected);
+    },
+  );
 
   it('resets expanded message text when the preview limit changes', async () => {
     const rows = Array.from({ length: 41 }, (_, index) => `Рядок ${index + 1}`);
@@ -1755,11 +1771,11 @@ describe('MessageCard', () => {
     expect(networkLabel?.textContent).toBe('р/м Alpha');
   });
 
-  it('renders duty actions with timer and the shared navigation menu button', async () => {
+  it('renders duty actions and the shared navigation menu button', async () => {
     const view = await renderCard();
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('1 хв');
+    expect(view.container.textContent).not.toContain('1 хв');
     expect(view.container.textContent).not.toContain('Відкрити аналіз');
     expect(view.container.textContent).not.toContain('Відкрити мапу');
     expect(view.container.querySelector(`button[aria-label="${NAVIGATE_TITLE}"]`)).not.toBeNull();

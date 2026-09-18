@@ -1732,7 +1732,7 @@ describe('ManageMessageDrawer edit mode', () => {
     });
 
     expect(pickerValuesByLabel.get('Дата перехоплення')).toBeTruthy();
-    expect(pickerValuesByLabel.get('Час перехоплення')).toBeTruthy();
+    expect(pickerValuesByLabel.get('Час перехоплення')).toBeNull();
     expect(autocompleteValuesByLabel.get('Група')).toMatchObject({ masterKey: 'g-1' });
     expect(autocompleteValuesByLabel.get('Підрозділ')).toBe('u-1');
     expect(autocompleteValuesByLabel.get('Назва пристрою')).toBe('device-1');
