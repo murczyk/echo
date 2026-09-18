@@ -56,6 +56,11 @@ flowchart LR
     vector -.-> observability["Optional observability\nSigNoz"]
 ```
 
+ClickHouse diagnostic storage uses an explicit 1–7 day retention policy for
+both analytics and SigNoz, including archived system logs. See the
+[maintenance runbook](../deploy/clickhouse/README.md#bounded-clickhouse-diagnostic-logs)
+for provisioning, expiry, and upgrade checks.
+
 The application container uses native systemd services; deployment tooling
 does not create its LXC container. Optional analytics runs in a separate
 container and stores only derived data. PostgreSQL remains authoritative, and

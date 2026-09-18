@@ -801,73 +801,105 @@ bin/finish-resync.sh
 
 ### Bounded ClickHouse diagnostic logs
 
-Initial provisioning installs a fleet-wide policy with `information` server
-and `system.text_log` levels. It retains `system.text_log` for 3 days,
-`system.query_log` for 7 days, and `system.trace_log` plus
-`system.processors_profile_log` for 1 day. Existing hosts receive the same
-policy through the fail-fast maintenance command without rerunning the whole
-`02-configure-analytics.sh` step.
+Provisioning and `bin/manage-system-logs.sh` use the same explicit policy:
 
-Install the updated day-two command from the synced analytics bundle, then run
-the read-only check as root. The check authenticates with
-`/etc/echo-analytics/clickhouse.env`, prints effective levels, table TTLs, row
-counts, and compressed sizes, and exits nonzero on drift:
+| Diagnostic tables | Retention |
+| --- | --- |
+| `trace_log`, `processors_profile_log` | 1 day |
+| `text_log`, `asynchronous_insert_log` | 3 days |
+| `query_log`, `part_log`, `metric_log`, `asynchronous_metric_log`, `query_metric_log`, `query_views_log`, `background_schedule_pool_log`, `error_log`, `aggregated_zookeeper_log`, `zookeeper_connection_log` | 7 days |
+
+Server and `text_log` verbosity is `information`. Only existing enabled logs
+receive XML entries; absent optional logs are not enabled. Numeric archives
+such as `text_log_0` receive their base table's TTL. The read-only check reports
+sizes and TTL drift and rejects unknown persisted diagnostic logs so upgrades
+cannot silently introduce an unmanaged log table.
+
+These are calendar-day TTLs on `event_date`, not byte quotas. ClickHouse
+expires data asynchronously during merges; allow for cleanup lag and monitor
+free space. `max_size_rows` controls the logging buffer, not retained table
+size. Application/CDC data is outside this policy.
+
+For existing analytics hosts, sync the updated bundle and install its commands:
 
 ```bash
 bin/03-install-services.sh --no-start
 sudo /opt/echo-analytics/bin/manage-system-logs.sh --check
+sudo /opt/echo-analytics/bin/manage-system-logs.sh --apply --expire --yes
 ```
 
-Before each apply, record `df -h / /var/lib/clickhouse`, `bin/status.sh`, all
-`echo-analytics.target` service states, and the corresponding Proxmox
-`pvesm status`/`zpool list` output. Do not create a ZFS snapshot on `pve-hz-1`:
-it does not have safe snapshot headroom, and the existing February snapshots
-must remain untouched.
+Before apply, record `df -h / /var/lib/clickhouse`, `bin/status.sh`, service
+states, and the corresponding Proxmox pool usage. Configuration and original
+diagnostic table DDL are backed up under
+`/var/backups/echo-clickhouse-system-logs/<UTC timestamp>-<pid>/` with mode 0700.
+Do not create storage snapshots as part of this operation.
 
-Apply only with all three explicit mutation flags:
+Apply validates the complete inventory and merged XML, flushes logs, aligns
+live and archived TTLs without immediate bulk materialization, installs the
+XML atomically, and restarts ClickHouse once. It verifies authenticated health,
+logging levels, TTLs, and unchanged table UUIDs before cleanup. It drops only
+fully expired diagnostic partitions and fully expired numeric archive tables;
+mixed-age partitions receive sequential, synchronous TTL materialization.
+Recent history survives. An unfinished mutation or any failed operation stops
+the command; inspect the error before rerunning. No application tables or
+ClickHouse files are deleted directly.
+
+The legacy `--apply --truncate --yes` command remains available for deliberate
+loss of **all** rows in the original four tables (`text_log`, `query_log`,
+`trace_log`, `processors_profile_log`). It installs the expanded retention
+policy but does not clean other tables immediately. Prefer `--expire`.
+
+Maintenance-tool validation from the Echo repository root:
 
 ```bash
-sudo /opt/echo-analytics/bin/manage-system-logs.sh --apply --truncate --yes
+bash deploy/clickhouse/tests/test-manage-system-logs.sh
+CLICKHOUSE_TEST_BINARY=/path/to/clickhouse bash deploy/clickhouse/tests/test-system-log-expiry.sh
 ```
 
-The command validates the ClickHouse XML, flushes the current log buffers and
-aligns the four live table TTLs to prevent ClickHouse from rolling them aside,
-atomically installs the XML, restarts ClickHouse, waits for an authenticated
-health response, and synchronously truncates only these four diagnostic
-tables:
+The integration test starts an isolated local ClickHouse process with temporary
+data and configuration, verifies expiry boundaries and restart identities, and
+cleans up afterward. It never connects to the production database.
 
-- `system.text_log`
-- `system.query_log`
-- `system.trace_log`
-- `system.processors_profile_log`
+### SigNoz ClickHouse maintenance
 
-TTL alignment disables immediate TTL materialization because the same four
-tables are truncated later in the command. Each allowlisted truncate also
-disables ClickHouse's per-query table-size drop limit so oversized diagnostic
-logs do not fail after configuration and restart have already succeeded.
+`signoz-echo` runs native services and has no analytics instance configuration.
+From the Echo repository root, install the standalone maintenance files:
 
-It never truncates replicated application tables, touches ZFS snapshots, or
-restarts any other service. A failed health, configuration, truncate, or TTL
-operation aborts immediately; do not continue the fleet rollout after a
-failure.
+```bash
+tar -C deploy/clickhouse/bin -cf - lib.sh clickhouse-system-log-policy.sh \
+  clickhouse-system-log-cleanup.sh manage-system-logs.sh signoz-clickhouse-client.py \
+  | ssh signoz-echo 'sudo install -d -m 0755 /opt/echo-clickhouse-maintenance/bin && sudo tar -xf - -C /opt/echo-clickhouse-maintenance/bin'
+ssh signoz-echo 'sudo bash /opt/echo-clickhouse-maintenance/bin/manage-system-logs.sh --profile=signoz --check'
+ssh signoz-echo 'sudo bash /opt/echo-clickhouse-maintenance/bin/manage-system-logs.sh --profile=signoz --apply --expire --yes'
+```
 
-Canary `echo-kharkiv2-clickhouse` first. For 15 minutes after apply, require
-all analytics services to remain active, `bin/check-analytics-health.sh` and
-`bin/status.sh` to pass, the CDC heartbeat and gateway query path to remain
-fresh, `--check` to report the expected levels/TTLs, and all four tables to
-resume normal inserts without a trace-level `text_log` flood. Then apply one
-production node at a time in this order, repeating the same checks and
-checking its Proxmox pool before continuing:
+Run the same installation and apply steps when provisioning a new SigNoz
+server, after its enabled ClickHouse diagnostic tables have been initialized.
+The SigNoz profile reads the local native ClickHouse DSN from
+`/opt/signoz/conf/systemd.env`, passing credentials through the client
+environment without logging them. It does not require `/etc/echo-analytics`.
 
-1. `echo-pivnich-clickhouse`
-2. `echo-zp2-clickhouse`
-3. `echo-skhid-clickhouse`
-4. `echo-siversk-clickhouse`
+SigNoz application logs retain their existing 15 days and metrics their
+30 days. ZooKeeper's filesystem snapshot/transaction-log cleanup is a separate
+operation; this policy manages only ClickHouse's ZooKeeper diagnostic tables.
+Only `clickhouse-server` is restarted. Allow a brief ingestion interruption;
+verify collector recovery and fresh application logs afterward.
 
-Expected aggregate recovery is approximately 547 GiB on `pve-hz-1` and
-418 GiB on `pve-hz-3`. Recheck diagnostic-table sizes and pool growth after
-one hour and 24 hours; production acceptance requires both pools to stay on a
-bounded growth trajectory for the full 24 hours.
+Before apply and immediately, one hour, and 24 hours afterward, record:
+
+```bash
+ssh signoz-echo 'df -h /; systemctl is-active clickhouse-server signoz signoz-otel-collector zookeeper'
+ssh signoz-echo 'sudo bash /opt/echo-clickhouse-maintenance/bin/manage-system-logs.sh --profile=signoz --check'
+ssh signoz-echo 'sudo python3 /opt/echo-clickhouse-maintenance/bin/signoz-clickhouse-client.py --query "SELECT database, table, latest_fail_reason FROM system.mutations WHERE NOT is_done"'
+ssh signoz-echo 'sudo python3 /opt/echo-clickhouse-maintenance/bin/signoz-clickhouse-client.py --query "SELECT count() FROM signoz_logs.logs_v2 WHERE timestamp > toUnixTimestamp64Nano(now64(9) - INTERVAL 5 MINUTE)"'
+```
+
+Require fresh ingestion, healthy services, expected TTLs, no failed/pending
+cleanup mutations, and decreased allocated disk usage. Table `bytes_on_disk`
+and filesystem allocation can differ because of filesystem compression.
+Re-run `--check` after ClickHouse upgrades to detect new diagnostic tables and
+archived history. Do not interpret continuing application-log growth within
+its retention window as a diagnostic retention failure.
 
 ### The correct day-two table-selection solution
 
@@ -1162,12 +1194,15 @@ unchanged. Stop the analytics target afterward if desired. Keep the source
 slot only while planning to resume; otherwise deliberately drop the mirror
 and verify the slot is gone so WAL is no longer retained.
 
-To roll back only the diagnostic-log policy without rolling the current tables
-aside, authenticate with `/etc/echo-analytics/clickhouse.env`, run `SYSTEM
-FLUSH LOGS`, remove the TTL from `text_log`, `query_log`, and `trace_log`, and
-restore the package-default 30-day TTL on `processors_profile_log`. Then move
-`/etc/clickhouse-server/config.d/echo-system-logs.xml` to a non-XML backup and
-restart ClickHouse. Run the analytics health check; the policy `--check` is
-expected to report drift after this intentional rollback. Previously truncated
-diagnostic rows cannot be recovered; replicated application data, MinIO,
-PostgreSQL, and ZFS snapshots are unaffected.
+To roll back the diagnostic-log policy, use the root-only backup printed by
+`manage-system-logs.sh`. For each surviving managed table, restore its prior
+TTL from the saved `SHOW CREATE TABLE` definition using `ALTER TABLE ... MODIFY
+TTL ... SETTINGS materialize_ttl_after_modify = 0`, or `ALTER TABLE ... REMOVE
+TTL` when the original had none. Flush diagnostic logs, restore the saved
+configuration directory, and restart ClickHouse. Align table TTLs before the
+restart to avoid creating more archives. Remove `echo-system-logs.xml` when
+it was absent from the saved directory; copying old files over the current
+directory alone does not remove it. Verify service health and fresh data;
+`--check` will report intentional drift. Expired or truncated rows cannot be
+recovered by a configuration rollback. Do not recreate dropped expired
+archives. Application data and ZFS snapshots are unaffected.

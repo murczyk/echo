@@ -244,7 +244,8 @@ sudo chown root:clickhouse \
 sudo systemctl restart clickhouse-server
 wait_for_command ClickHouse clickhouse_admin --query 'SELECT 1'
 # Keep the existing system-log table identities when the configured TTLs become active.
-clickhouse_admin --query 'SYSTEM FLUSH LOGS'
+prepare_clickhouse_system_logs
+discover_clickhouse_system_logs
 apply_clickhouse_system_log_ttls
 install_clickhouse_system_log_config
 sudo systemctl restart clickhouse-server

@@ -130,6 +130,23 @@ while (($# > 0)); do
 done
 printf '%s\n' "$query" >>"$ECHO_TEST_OPERATIONS"
 case $query in
+  *"SELECT name, engine, toString(uuid)"*)
+    printf 'text_log\tMergeTree\ttext-uuid\nquery_log\tMergeTree\tquery-uuid\ntrace_log\tMergeTree\ttrace-uuid\nprocessors_profile_log\tMergeTree\tprofile-uuid\n'
+    if [[ ${ECHO_TEST_SCENARIO:-} == unknown_table ]]; then
+      printf 'unknown_log\tMergeTree\tunknown-uuid\n'
+    fi
+    ;;
+  *"SELECT count() FROM system.columns"*)
+    printf '1\n'
+    ;;
+  *"SELECT toString(uuid) FROM system.tables"*)
+    case $query in
+      *"name = 'text_log'"*) printf 'text-uuid\n' ;;
+      *"name = 'query_log'"*) printf 'query-uuid\n' ;;
+      *"name = 'trace_log'"*) printf 'trace-uuid\n' ;;
+      *"name = 'processors_profile_log'"*) printf 'profile-uuid\n' ;;
+    esac
+    ;;
   'SELECT 1')
     if [[ ${ECHO_TEST_SCENARIO:-} == pre_health_failure ]]; then
       exit 1
@@ -178,10 +195,12 @@ run_command() {
   PATH="$fake_bin:/usr/bin:/bin" \
   ECHO_ANALYTICS_INSTANCE_FILE="$instance_file" \
   ECHO_ANALYTICS_CLICKHOUSE_SECRETS_FILE="$secrets_file" \
+  ECHO_CLICKHOUSE_SYSTEM_LOG_BACKUP_DIR="$case_dir/backup" \
   ECHO_CLICKHOUSE_CONFIG_DIR="$config_dir" \
   ECHO_CLICKHOUSE_SERVER_CONFIG_FILE="$server_config" \
   ECHO_CLICKHOUSE_SYSTEM_LOG_HEALTH_ATTEMPTS=1 \
   ECHO_CLICKHOUSE_SYSTEM_LOG_HEALTH_INTERVAL_SECONDS=0 \
+  ECHO_SIGNOZ_ENV_FILE="$case_dir/signoz.env" \
   ECHO_TEST_OPERATIONS="$operations" \
   ECHO_TEST_SCENARIO="$scenario" \
   ECHO_TEST_STATE="$state_dir" \
@@ -208,6 +227,25 @@ assert_not_logged() {
   local pattern=$1
   if grep -q "$pattern" "$operations"; then
     printf 'unexpected operation matching %s\n' "$pattern" >&2
+    return 1
+  fi
+}
+
+test_signoz_credentials() {
+  setup_case
+  printf 'SIGNOZ_TELEMETRYSTORE_CLICKHOUSE_DSN="tcp://localhost:9000?password=test%%2Dsecret"\n' >"$case_dir/signoz.env"
+  rm -f "$instance_file" "$secrets_file"
+  run_command healthy --profile=signoz --check
+  assert_success
+  if grep -q 'test-secret' "$case_dir/stdout" "$case_dir/stderr" "$operations"; then
+    return 1
+  fi
+  printf 'SIGNOZ_TELEMETRYSTORE_CLICKHOUSE_DSN=tcp://remote.example:9000?password=test-secret\n' >"$case_dir/signoz.env"
+  : >"$operations"
+  run_command healthy --profile=signoz --check
+  assert_failure
+  [[ ! -s "$operations" ]]
+  if grep -q 'test-secret' "$case_dir/stdout" "$case_dir/stderr"; then
     return 1
   fi
 }
@@ -239,7 +277,10 @@ test_confirmation_requirements() {
     '--apply --truncate' \
     '--apply --yes' \
     '--truncate --yes' \
-    '--check --yes'
+    '--check --yes' \
+    '--apply --expire' \
+    '--apply --expire --truncate --yes' \
+    '--check --expire'
   do
     read -r -a arguments <<<"$test_case"
     run_command healthy "${arguments[@]}"
@@ -261,7 +302,7 @@ test_apply_and_idempotency() {
   grep -q '<ttl>event_date + INTERVAL 7 DAY DELETE</ttl>' "$config_file"
   [[ $(grep -c '^TRUNCATE TABLE system\.' "$operations") -eq 4 ]]
   [[ $(grep -c '^ALTER TABLE system\.' "$operations") -eq 4 ]]
-  [[ $(grep -c '^SYSTEM FLUSH LOGS$' "$operations") -eq 2 ]]
+  [[ $(grep -c '^SYSTEM FLUSH LOGS ' "$operations") -eq 4 ]]
   for table in text_log query_log trace_log processors_profile_log; do
     grep -q "^TRUNCATE TABLE system.$table SYNC SETTINGS max_table_size_to_drop = 0$" \
       "$operations"
@@ -294,6 +335,12 @@ test_apply_and_idempotency() {
 }
 
 test_fail_fast() {
+  setup_case
+  run_command unknown_table --apply --expire --yes
+  assert_failure
+  assert_not_logged '^ALTER TABLE '
+  assert_not_logged '^sudo '
+
   setup_case
   run_command pre_health_failure --apply --truncate --yes
   assert_failure
@@ -332,6 +379,7 @@ test_fail_fast() {
   assert_not_logged '^TRUNCATE TABLE system.trace_log SYNC SETTINGS max_table_size_to_drop = 0$'
 }
 
+test_signoz_credentials
 test_check_mode
 test_confirmation_requirements
 test_apply_and_idempotency
