@@ -290,6 +290,18 @@ export function useWindowedFeedScrollAnchors(args: {
         while (Math.abs(residualDelta) > 0.5 && correctionCount < maxCorrections) {
           const targetScrollTop = scroller.scrollTop + residualDelta;
           const maxScrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+          if (targetScrollTop < -0.5) {
+            refs.isRestoringAnchorRef.current = true;
+            scroller.scrollTop = 0;
+            refs.previousScrollTopRef.current = scroller.scrollTop;
+            refs.isRestoringAnchorRef.current = false;
+            recordDutyScrollDebugEvent(
+              debugFeedId,
+              'anchor:restore',
+              `id=${id}; reason=${reason}; target=${targetScrollTop.toFixed(1)}; clamped=lower; outcome=restored`,
+            );
+            return 'restored';
+          }
           if (targetScrollTop > maxScrollTop + 0.5) {
             recordDutyScrollDebugEvent(
               debugFeedId,
