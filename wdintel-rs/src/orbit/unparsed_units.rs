@@ -60,7 +60,7 @@ impl UnitTextSigintResolver {
             return Ok(None);
         };
         let Some((_, orbit_unit_id)) =
-            test_link::automatically_approved_link(&review_unit)
+            automatically_approved_unparsed_link(&review_unit)
         else {
             return Ok(None);
         };
@@ -317,7 +317,7 @@ fn classify_unparsed_label(
         });
     };
     let automatically_approved =
-        test_link::automatically_approved_link(&automatic);
+        automatically_approved_unparsed_link(&automatic);
     let blocker = match automatically_approved {
         None if automatic_match_is_ambiguous(&automatic) => {
             UnparsedBlocker::AmbiguousOrbitMatch
@@ -340,26 +340,27 @@ fn classify_unparsed_label(
 }
 
 fn automatic_match_is_ambiguous(unit: &test_link::ReviewUnit) -> bool {
-    let minimum_distance = unit
-        .matches
-        .iter()
-        .filter(|candidate| {
-            candidate.rating == ORBIT_TEST_LINK_UNITS_MAX_RATING
-                && candidate.distance
-                    <= ORBIT_AUTO_LINK_MAX_LEVENSHTEIN_DISTANCE
-        })
-        .map(|candidate| candidate.distance)
-        .min();
-    minimum_distance.is_some_and(|minimum_distance| {
-        unit.matches
-            .iter()
-            .filter(|candidate| {
-                candidate.rating == ORBIT_TEST_LINK_UNITS_MAX_RATING
-                    && candidate.distance == minimum_distance
-            })
-            .count()
-            > 1
+    automatic_unparsed_candidates(unit).count() > 1
+}
+
+fn automatic_unparsed_candidates(
+    unit: &test_link::ReviewUnit,
+) -> impl Iterator<Item = &test_link::ReviewMatch> {
+    unit.matches.iter().filter(|candidate| {
+        candidate.rating == ORBIT_TEST_LINK_UNITS_MAX_RATING
+            && candidate.distance <= ORBIT_AUTO_LINK_MAX_LEVENSHTEIN_DISTANCE
     })
+}
+
+fn automatically_approved_unparsed_link(
+    unit: &test_link::ReviewUnit,
+) -> Option<(i64, Uuid)> {
+    let mut candidates = automatic_unparsed_candidates(unit);
+    let candidate = candidates.next()?;
+    if candidates.next().is_some() {
+        return None;
+    }
+    Some((unit.sigint_unit_id, candidate.unit_id))
 }
 
 fn format_report_candidates(
@@ -458,7 +459,7 @@ fn prepare_review_unit(
         return Ok(None);
     };
     let automatically_approved = (link_mode == tui::LinkMode::Automatic)
-        .then(|| test_link::automatically_approved_link(&review_unit))
+        .then(|| automatically_approved_unparsed_link(&review_unit))
         .flatten();
     review_unit.matches.retain(|candidate| {
         let link_count = link_inventory
@@ -617,7 +618,7 @@ async fn persist_selection_batch(
                 .iter()
                 .any(|candidate| candidate.unit_id == selection.orbit_unit_id),
             tui::LinkMode::Automatic => {
-                test_link::automatically_approved_link(&review_unit)
+                automatically_approved_unparsed_link(&review_unit)
                     == Some((selection.subject_id, selection.orbit_unit_id))
             }
         };
@@ -786,9 +787,47 @@ mod tests {
     }
 
     #[test]
+    fn automatic_resolution_requires_exactly_one_rating_100_match() {
+        let first_id = Uuid::from_u128(1);
+        let second_id = Uuid::from_u128(2);
+        let mut review_unit = test_link::ReviewUnit {
+            sigint_unit_id: 17,
+            sigint_unit_name: "4 мсб".to_string(),
+            subject_kind: test_link::ReviewSubjectKind::UnparsedUnit,
+            echelons: vec!["4 мсб".to_string()],
+            matches: vec![
+                test_link::ReviewMatch {
+                    unit_id: first_id,
+                    rating: ORBIT_TEST_LINK_UNITS_MAX_RATING,
+                    distance: 2,
+                    orbit_name: "first".to_string(),
+                },
+                test_link::ReviewMatch {
+                    unit_id: second_id,
+                    rating: ORBIT_TEST_LINK_UNITS_MAX_RATING,
+                    distance: 8,
+                    orbit_name: "second".to_string(),
+                },
+            ],
+            would_automatically_resolve: None,
+        };
+
+        assert!(automatic_match_is_ambiguous(&review_unit));
+        assert_eq!(automatically_approved_unparsed_link(&review_unit), None);
+
+        review_unit.matches.pop();
+
+        assert_eq!(
+            automatically_approved_unparsed_link(&review_unit),
+            Some((17, first_id)),
+        );
+    }
+
+    #[test]
     fn automatic_resolution_preserves_ambiguity_before_link_filtering() {
         let first = source_unit("4 мсб");
-        let second = source_unit("4 мсб");
+        let mut second = source_unit("4 мсб");
+        second.operational_unit_name_full = Some("4 мсб alt".to_string());
         let first_id = first.unit_id;
         let matcher =
             matching::TestLinkMatcher::from_units(vec![first, second]);
@@ -814,6 +853,15 @@ mod tests {
         .unwrap()
         .unwrap();
         assert_eq!(review_unit.would_automatically_resolve, Some(false));
+        assert_eq!(
+            review_unit
+                .matches
+                .iter()
+                .map(|candidate| candidate.distance)
+                .collect::<BTreeSet<_>>()
+                .len(),
+            2,
+        );
     }
 
     #[test]
