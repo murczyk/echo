@@ -15,6 +15,7 @@ import {
 // Keep synchronized with `SIGINT_MESSAGE_MAX_ATTACHMENTS` and
 // `RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES` in `wdintel-rs/src/config.rs`.
 export const MAX_MESSAGE_ATTACHMENTS = 20;
+export const MAX_MESSAGE_ATTACHMENT_BYTES = 6 * 1024 * 1024 * 1024;
 
 const EXTENSION_BY_MIME: Record<string, string> = {
   'image/png': 'png',
@@ -36,7 +37,7 @@ let pasteNameCounter = 0;
 function translateAttachmentError(msg: string): string {
   if (msg.toLowerCase().includes('duplicate')) return 'Цей файл вже додано';
   if (msg.toLowerCase().includes('exceeds maximum allowed size'))
-    return 'Файл занадто великий (максимум 2 ГБ)';
+    return 'Файл занадто великий (максимум 6 ГіБ)';
   if (msg.toLowerCase().includes('exceeds maximum number of files'))
     return `Перевищено максимальну кількість файлів (${MAX_MESSAGE_ATTACHMENTS})`;
   return msg;
@@ -64,7 +65,7 @@ export function useMessageUppy(busy: boolean, occupiedAttachmentCount = 0) {
     new Uppy({
       restrictions: {
         maxNumberOfFiles: MAX_MESSAGE_ATTACHMENTS,
-        maxFileSize: 2 * 1024 * 1024 * 1024, // 2GB
+        maxFileSize: MAX_MESSAGE_ATTACHMENT_BYTES,
       },
       autoProceed: false,
     }).use(Tus, {
