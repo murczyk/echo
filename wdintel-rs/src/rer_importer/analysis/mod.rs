@@ -8501,6 +8501,7 @@ async fn count_stats(
     }
     let response = with_count_stats_analytics_fallback(
         analytics_query,
+        analytics.map(|analytics| &analytics.conn),
         core::time::Duration::from_millis(timeout_ms),
         postgres_query,
         postgres_reason,
@@ -8659,6 +8660,7 @@ impl AnalyticsRetryAttempt<'_> {
 
 async fn with_count_stats_analytics_fallback<T, A, P>(
     analytics_query: Option<A>,
+    analytics_conn: Option<&DatabaseConnection>,
     timeout: core::time::Duration,
     postgres_query: P,
     postgres_reason: &'static str,
@@ -8686,7 +8688,7 @@ where
                 return Ok(response);
             }
             Ok(Err(err)) => {
-                reason = analytics_failure_reason(&err);
+                reason = analytics_failure_reason(&err, analytics_conn);
                 let open_circuit = reason == "analytics_error";
                 warn!(
                     "analysis stats count analytics query failed after {:?}, retrying via PostgreSQL: {:?}",
@@ -8889,7 +8891,7 @@ where
                 });
             }
             Some(Err(err)) => {
-                reason = analytics_failure_reason(&err);
+                reason = analytics_failure_reason(&err, Some(&analytics.conn));
                 let open_circuit = reason == "analytics_error";
                 warn!(
                     "{operation} analytics query failed; retrying via PostgreSQL: {err:?}"
@@ -9038,8 +9040,11 @@ fn has_postgres_error_code(
     false
 }
 
-fn analytics_failure_reason(error: &AppError) -> &'static str {
-    let mut pool_saturated = false;
+fn analytics_failure_reason(
+    error: &AppError,
+    analytics_conn: Option<&DatabaseConnection>,
+) -> &'static str {
+    let mut acquire_timed_out = false;
     let mut source = Some(error as &(dyn StdError + 'static));
     while let Some(error) = source {
         if error
@@ -9055,15 +9060,22 @@ fn analytics_failure_reason(error: &AppError) -> &'static str {
             error.downcast_ref::<sqlx::Error>(),
             Some(sqlx::Error::PoolTimedOut)
         ) {
-            pool_saturated = true;
+            acquire_timed_out = true;
         }
         source = error.source();
     }
-    if pool_saturated {
+    if acquire_timed_out
+        && analytics_conn.is_some_and(analytics_pool_is_at_capacity)
+    {
         "analytics_saturated"
     } else {
         "analytics_error"
     }
+}
+
+fn analytics_pool_is_at_capacity(analytics_conn: &DatabaseConnection) -> bool {
+    let pool = analytics_conn.get_postgres_connection_pool();
+    pool.num_idle() == 0 && pool.size() >= pool.options().get_max_connections()
 }
 
 fn analytics_retry_attempt(

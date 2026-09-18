@@ -7887,6 +7887,7 @@ async fn count_stats_analytics_success_skips_postgres() {
 
     let result = with_count_stats_analytics_fallback(
         Some(analytics_query),
+        None,
         core::time::Duration::from_secs(1),
         postgres_query,
         "circuit_open",
@@ -7918,6 +7919,7 @@ async fn count_stats_analytics_error_retries_postgres_once() {
 
     let result = with_count_stats_analytics_fallback(
         Some(analytics_query),
+        None,
         core::time::Duration::from_secs(1),
         postgres_query,
         "circuit_open",
@@ -7943,6 +7945,7 @@ async fn count_stats_analytics_error_retries_postgres_once() {
 async fn count_stats_without_analytics_uses_postgres() {
     let result = with_count_stats_analytics_fallback(
         None::<std::future::Ready<Result<&str, AppError>>>,
+        None,
         core::time::Duration::from_secs(1),
         async { Ok::<_, AppError>("postgres") },
         "unconfigured",
@@ -8187,6 +8190,7 @@ async fn count_stats_analytics_timeout_retries_postgres() {
     let analytics_query = std::future::pending::<Result<&str, AppError>>();
     let result = with_count_stats_analytics_fallback(
         Some(analytics_query),
+        None,
         core::time::Duration::ZERO,
         async { Ok::<_, AppError>("postgres") },
         "circuit_open",
@@ -8222,6 +8226,7 @@ async fn analytics_fallback_maps_capped_postgres_query_to_one_timeout_error() {
                 anyhow::anyhow!("analytics unavailable").into(),
             )
         }),
+        None,
         core::time::Duration::from_secs(1),
         async move {
             postgres_attempts_query
@@ -8345,6 +8350,7 @@ async fn count_stats_analytics_closed_success_does_not_clear_concurrent_failure(
 
     let result = with_count_stats_analytics_fallback(
         Some(analytics_query),
+        None,
         core::time::Duration::from_secs(1),
         async { Ok::<_, AppError>("postgres") },
         "circuit_open",
@@ -8372,6 +8378,7 @@ async fn count_stats_analytics_half_open_failure_reopens_circuit() {
                 anyhow::anyhow!("analytics unavailable").into(),
             )
         }),
+        None,
         core::time::Duration::from_secs(1),
         async { Ok::<_, AppError>("postgres") },
         "circuit_open",
@@ -8402,6 +8409,7 @@ async fn replication_health_failure_releases_half_open_circuit() {
                 anyhow::Error::new(AnalyticsReplicationHealthError).into(),
             )
         }),
+        None,
         core::time::Duration::from_secs(1),
         async {
             let _ = postgres_started_tx.send(());
@@ -8426,7 +8434,60 @@ async fn replication_health_failure_releases_half_open_circuit() {
 }
 
 #[tokio::test]
+async fn analytics_connection_timeout_reopens_half_open_circuit() {
+    let config = crate::config::read_config(crate::types::Mode::Test).unwrap();
+    let analytics_conn =
+        crate::new_pg_pool_from_conn_string_with_max_connections(
+            crate::mk_conn_string(&config),
+            2,
+        )
+        .await
+        .unwrap();
+    assert!(!analytics_pool_is_at_capacity(&analytics_conn));
+    let retry_state = std::sync::atomic::AtomicU64::new(1);
+    let retry_attempt = analytics_retry_attempt(&retry_state).unwrap();
+
+    let result = with_count_stats_analytics_fallback(
+        Some(async {
+            Err::<&str, AppError>(
+                anyhow::Error::new(DbErr::ConnectionAcquire(
+                    ConnAcquireErr::Timeout,
+                ))
+                .into(),
+            )
+        }),
+        Some(&analytics_conn),
+        core::time::Duration::from_secs(1),
+        async { Ok::<_, AppError>("postgres") },
+        "circuit_open",
+        Some(retry_attempt),
+        core::time::Duration::from_secs(30),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result, "postgres");
+    let retry_deadline = retry_state.load(std::sync::atomic::Ordering::Acquire);
+    assert_ne!(retry_deadline, u64::MAX);
+    assert!(retry_deadline > analytics_unix_ms());
+}
+
+#[tokio::test]
 async fn analytics_pool_saturation_releases_half_open_circuit() {
+    let config = crate::config::read_config(crate::types::Mode::Test).unwrap();
+    let analytics_conn =
+        crate::new_pg_pool_from_conn_string_with_max_connections(
+            crate::mk_conn_string(&config),
+            1,
+        )
+        .await
+        .unwrap();
+    let _connection = analytics_conn
+        .get_postgres_connection_pool()
+        .acquire()
+        .await
+        .unwrap();
+    assert!(analytics_pool_is_at_capacity(&analytics_conn));
     let retry_state = std::sync::atomic::AtomicU64::new(1);
     let retry_attempt = analytics_retry_attempt(&retry_state).unwrap();
     let (postgres_started_tx, postgres_started_rx) =
@@ -8443,6 +8504,7 @@ async fn analytics_pool_saturation_releases_half_open_circuit() {
                 .into(),
             )
         }),
+        Some(&analytics_conn),
         core::time::Duration::from_secs(1),
         async {
             let _ = postgres_started_tx.send(());
