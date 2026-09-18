@@ -562,6 +562,26 @@ fn validate_attachment_metadata_sizes(
     Ok(total_bytes)
 }
 
+fn validate_converted_attachment_metadata_sizes(
+    mut total_bytes: u64,
+    jobs: &[signal_message_media_conversion_job::Model],
+) -> Result<u64, AppError> {
+    for job in jobs {
+        let size_bytes =
+            job.converted_size_bytes.ok_or_else(|| AppError::BL {
+                msg: format!("Converted attachment {} has no size", job.id),
+            })?;
+        let size_bytes =
+            u64::try_from(size_bytes).map_err(|_| AppError::BL {
+                msg: format!(
+                    "Invalid converted attachment size: {size_bytes} bytes"
+                ),
+            })?;
+        total_bytes = checked_attachment_size_total(total_bytes, size_bytes)?;
+    }
+    Ok(total_bytes)
+}
+
 fn message_attachments_archive_name_from_parts(
     message_uuid: Option<&str>,
     timestamp: chrono::NaiveDateTime,
@@ -626,7 +646,51 @@ async fn rer_message_attachments_zip(
             ),
         });
     }
-    validate_attachment_metadata_sizes(&media)?;
+    let media_ids = media.iter().map(|media| media.id).collect::<Vec<_>>();
+    let converted_jobs = if media_ids.is_empty() {
+        vec![]
+    } else {
+        signal_message_media_conversion_job::Entity::find()
+            .filter(
+                signal_message_media_conversion_job::Column::SignalMessageId
+                    .eq(message_id),
+            )
+            .filter(
+                signal_message_media_conversion_job::Column::SourceMediaId
+                    .is_in(media_ids),
+            )
+            .filter(
+                signal_message_media_conversion_job::Column::Status.eq(
+                    crate::config::SIGINT_MEDIA_CONVERSION_STATUS_DONE,
+                ),
+            )
+            .filter(
+                signal_message_media_conversion_job::Column::ConvertedStorageKey
+                    .is_not_null(),
+            )
+            .filter(
+                signal_message_media_conversion_job::Column::ConvertedFileName
+                    .is_not_null(),
+            )
+            .filter(
+                signal_message_media_conversion_job::Column::ConvertedSizeBytes
+                    .is_not_null(),
+            )
+            .all(&env.dbx)
+            .await
+            .c(h!())?
+    };
+    let source_total_bytes =
+        validate_attachment_metadata_sizes(&media).context(h!())?;
+    validate_converted_attachment_metadata_sizes(
+        source_total_bytes,
+        &converted_jobs,
+    )
+    .context(h!())?;
+    let converted_jobs = converted_jobs
+        .iter()
+        .map(|job| (job.source_media_id, job))
+        .collect::<HashMap<_, _>>();
     let archive_timestamp = Utc::now().naive_utc();
 
     let zip_file = tempfile::tempfile().c(h!())?;
@@ -635,6 +699,8 @@ async fn rer_message_attachments_zip(
         .compression_method(zip::CompressionMethod::Deflated);
     let mut used_names = HashSet::new();
     let mut total_bytes = 0u64;
+    let source_count = media.len();
+    let mut converted_index = 0usize;
     for (index, media) in media.iter().enumerate() {
         let name = safe_zip_entry_name(
             media.file_name.as_deref(),
@@ -664,6 +730,31 @@ async fn rer_message_attachments_zip(
             )
             .await?;
         }
+        let Some(job) = converted_jobs.get(&media.id) else {
+            continue;
+        };
+        let storage_key = job.converted_storage_key.as_deref().c(h!())?;
+        let data =
+            crate::sigint::media_conversion::fetch_completed_result_bytes(
+                env.as_ref(),
+                media,
+                storage_key,
+            )
+            .await
+            .c(h!())?;
+        total_bytes = checked_attachment_size_total(
+            total_bytes,
+            u64::try_from(data.len()).c(h!())?,
+        )
+        .context(h!())?;
+        let name = safe_zip_entry_name(
+            job.converted_file_name.as_deref(),
+            Some("kmz"),
+            source_count + converted_index,
+            &mut used_names,
+        );
+        converted_index += 1;
+        write_zip_entry(&mut archive, &options, name, &data).context(h!())?;
     }
     let mut zip_file = archive.finish().c(h!())?.into_inner().c(h!())?;
     let zip_size = zip_file.metadata().c(h!())?.len();
@@ -1760,10 +1851,11 @@ mod messenger_media_tests {
         message_attachments_archive_name_from_parts,
         parse_oneoff_reprocess_unit_names_since_ts, parse_single_byte_range,
         safe_zip_entry_name, validate_attachment_metadata_sizes,
-        write_zip_entry,
+        validate_converted_attachment_metadata_sizes, write_zip_entry,
     };
     use crate::entities::signal_message;
     use crate::entities::signal_message_media;
+    use crate::entities::signal_message_media_conversion_job;
     use crate::error::AppError;
     use crate::functest::tests::{cleanup, mk_signal_message};
     use actix_web::http::{header, StatusCode};
@@ -1775,6 +1867,29 @@ mod messenger_media_tests {
     use std::io::{Cursor, Read};
     use std::iter;
     use zip::write::SimpleFileOptions;
+
+    fn converted_job(
+        converted_size_bytes: Option<i64>,
+    ) -> signal_message_media_conversion_job::Model {
+        signal_message_media_conversion_job::Model {
+            id: 1,
+            signal_message_id: 1,
+            source_media_id: uuid::Uuid::nil(),
+            source_file_md5: String::new(),
+            source_file_name: "route.geojson".to_string(),
+            source_content_type: None,
+            status: crate::config::SIGINT_MEDIA_CONVERSION_STATUS_DONE
+                .to_string(),
+            conversion_receipt: Some("receipt".to_string()),
+            converted_storage_key: Some("test/route.kmz".to_string()),
+            converted_file_name: Some("route_converted.kmz".to_string()),
+            converted_size_bytes,
+            created_at: chrono::Utc::now().fixed_offset(),
+            last_attempt_at: None,
+            attempt_count: 1,
+            last_error: None,
+        }
+    }
 
     #[test]
     fn parse_byte_range_from_start() {
@@ -2008,6 +2123,31 @@ mod messenger_media_tests {
     #[test]
     fn attachment_size_validation_rejects_integer_overflow() {
         assert!(checked_attachment_size_total(u64::MAX, 1).is_err());
+    }
+
+    #[test]
+    fn archive_size_validation_includes_ready_converted_attachments() {
+        let jobs = [converted_job(Some(7))];
+        assert_eq!(
+            validate_converted_attachment_metadata_sizes(5, &jobs).unwrap(),
+            12
+        );
+        assert!(validate_converted_attachment_metadata_sizes(
+            crate::config::RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES,
+            &jobs,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn archive_size_validation_rejects_invalid_converted_metadata() {
+        for size in [None, Some(-1)] {
+            assert!(validate_converted_attachment_metadata_sizes(
+                0,
+                &[converted_job(size)],
+            )
+            .is_err());
+        }
     }
 
     #[tokio::test]

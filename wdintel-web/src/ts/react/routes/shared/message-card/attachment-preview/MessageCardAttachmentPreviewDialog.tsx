@@ -16,6 +16,7 @@ import type {
 import { CoordinateAttachmentPreviewRenderer } from '../renderers/CoordinateAttachmentPreviewRenderer';
 import { DocumentAttachmentPreviewRenderer } from '../renderers/DocumentAttachmentPreviewRenderer';
 import { ImageAttachmentPreviewRenderer } from '../renderers/ImageAttachmentPreviewRenderer';
+import { KmzAttachmentPreviewRenderer } from '../renderers/KmzAttachmentPreviewRenderer';
 import { VideoAttachmentPreviewRenderer } from '../renderers/VideoAttachmentPreviewRenderer';
 import { AudioAttachmentPreviewRenderer } from '../renderers/AudioAttachmentPreviewRenderer';
 import type { AttachmentPreviewReportDraft } from './ReportTextPreview';
@@ -61,6 +62,7 @@ function getStoredReportVisibility() {
 
 function getPreviewKind(item: MessageCardPreviewItem) {
   if (item.type === 'document') return item.value.kind;
+  if (item.type === 'kmz') return 'kmz-map';
   return item.type === 'coordinate' ? 'coordinate-map' : item.type;
 }
 
@@ -69,6 +71,7 @@ function getPreviewDialogLabel(previewKind: string) {
   if (previewKind === 'video') return 'Перегляд відео';
   if (previewKind === 'audio') return 'Перегляд аудіо';
   if (previewKind === 'coordinate-map') return 'Перегляд координат';
+  if (previewKind === 'kmz-map') return 'Попередній перегляд KMZ';
   return 'Перегляд документа';
 }
 
@@ -262,6 +265,8 @@ export function MessageCardAttachmentPreviewDialog({
             onReportVisibleChange={onReportVisibleChange}
             {...rendererProps}
           />
+        ) : item.type === 'kmz' ? (
+          <KmzAttachmentPreviewRenderer source={item.value} {...rendererProps} />
         ) : (
           <CoordinateAttachmentPreviewRenderer
             points={item.points}

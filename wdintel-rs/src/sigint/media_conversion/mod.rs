@@ -3,6 +3,7 @@ use crate::config::{
     SIGINT_MEDIA_CONVERSION_STATUS_PENDING,
     SIGINT_MEDIA_KMZ_CONVERSION_EXTENSIONS,
     SIGINT_MEDIA_KMZ_CONVERSION_MAX_SOURCE_BYTES,
+    SIGINT_MEDIA_KMZ_PASSTHROUGH_EXTENSIONS,
 };
 use crate::entities::{
     signal_message_media, signal_message_media_conversion_job,
@@ -98,7 +99,7 @@ where
     if media.is_empty() {
         return Ok(HashMap::new());
     }
-    Ok(signal_message_media_conversion_job::Entity::find()
+    let mut statuses = signal_message_media_conversion_job::Entity::find()
         .filter(
             signal_message_media_conversion_job::Column::SourceMediaId
                 .is_in(media.iter().map(|media| media.id)),
@@ -108,7 +109,15 @@ where
         .c(h!())?
         .into_iter()
         .map(|job| (job.source_media_id, job.status))
-        .collect())
+        .collect::<HashMap<_, _>>();
+    for media in media {
+        if is_eligible_source(media) {
+            statuses.entry(media.id).or_insert_with(|| {
+                SIGINT_MEDIA_CONVERSION_STATUS_PENDING.to_string()
+            });
+        }
+    }
+    Ok(statuses)
 }
 
 pub async fn lock_and_load_converted_storage_keys(
@@ -166,14 +175,12 @@ pub async fn preview(
     env: web::Data<Env>,
     path: web::Path<(Uuid,)>,
 ) -> Result<web::Json<SignalMediaKmzPreviewRsp>, AppError> {
-    let (_, job) = authorized_job(&user, env.as_ref(), path.0).await.c(h!())?;
+    let (media, job) =
+        authorized_job(&user, env.as_ref(), path.0).await.c(h!())?;
     let (storage_key, file_name) = completed_result(&job).c(h!())?;
-    let bytes = crate::messenger::media::fetch_media_bytes_by_key(
-        env.as_ref(),
-        storage_key,
-    )
-    .await
-    .c(h!())?;
+    let bytes = fetch_completed_result_bytes(env.as_ref(), &media, storage_key)
+        .await
+        .c(h!())?;
     let preview =
         crate::palitra::kmz::parse_coordinates_from_file(file_name, &bytes)
             .await
@@ -197,14 +204,12 @@ pub async fn download(
     env: web::Data<Env>,
     path: web::Path<(Uuid,)>,
 ) -> Result<HttpResponse, AppError> {
-    let (_, job) = authorized_job(&user, env.as_ref(), path.0).await.c(h!())?;
+    let (media, job) =
+        authorized_job(&user, env.as_ref(), path.0).await.c(h!())?;
     let (storage_key, file_name) = completed_result(&job).c(h!())?;
-    let bytes = crate::messenger::media::fetch_media_bytes_by_key(
-        env.as_ref(),
-        storage_key,
-    )
-    .await
-    .c(h!())?;
+    let bytes = fetch_completed_result_bytes(env.as_ref(), &media, storage_key)
+        .await
+        .c(h!())?;
     let content_disposition = header::ContentDisposition {
         disposition: header::DispositionType::Attachment,
         parameters: vec![header::DispositionParam::FilenameExt(
@@ -254,9 +259,14 @@ async fn authorized_job(
         )
         .one(&env.dbx)
         .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)
         .c(h!())?;
+    let job = match job {
+        Some(job) => job,
+        None if is_eligible_source(&media) => {
+            schedule_stored_media(env, &media).await.c(h!())?
+        }
+        None => return Err(AppError::NotFound),
+    };
     if job.signal_message_id != media.signal_message_id {
         return Err(AppError::NotFound);
     }
@@ -281,7 +291,83 @@ fn completed_result(
 }
 
 fn is_supported_source(media: &signal_message_media::Model) -> bool {
-    SIGINT_MEDIA_KMZ_CONVERSION_EXTENSIONS.contains(&source_extension(media))
+    SIGINT_MEDIA_KMZ_CONVERSION_EXTENSIONS
+        .iter()
+        .any(|extension| {
+            source_extension(media).eq_ignore_ascii_case(extension)
+        })
+}
+
+fn is_eligible_source(media: &signal_message_media::Model) -> bool {
+    is_supported_source(media)
+        && usize::try_from(media.size_bytes).is_ok_and(|size_bytes| {
+            size_bytes <= SIGINT_MEDIA_KMZ_CONVERSION_MAX_SOURCE_BYTES
+        })
+}
+
+pub(crate) fn source_is_ready_kmz(media: &signal_message_media::Model) -> bool {
+    SIGINT_MEDIA_KMZ_PASSTHROUGH_EXTENSIONS
+        .iter()
+        .any(|extension| {
+            source_extension(media).eq_ignore_ascii_case(extension)
+        })
+}
+
+pub(crate) async fn fetch_completed_result_bytes(
+    env: &Env,
+    media: &signal_message_media::Model,
+    storage_key: &str,
+) -> anyhow::Result<Vec<u8>> {
+    if source_is_ready_kmz(media) {
+        worker::fetch_source_bytes(env, media).await.c(h!())
+    } else {
+        crate::messenger::media::fetch_media_bytes_by_key(env, storage_key)
+            .await
+            .c(h!())
+    }
+}
+
+async fn schedule_stored_media(
+    env: &Env,
+    media: &signal_message_media::Model,
+) -> anyhow::Result<signal_message_media_conversion_job::Model> {
+    let source = worker::fetch_source_bytes(env, media).await.c(h!())?;
+    let source_file_name = media
+        .file_name
+        .clone()
+        .unwrap_or_else(|| format!("{}.{}", media.id, source_extension(media)));
+    signal_message_media_conversion_job::Entity::insert(
+        signal_message_media_conversion_job::ActiveModel {
+            id: NotSet,
+            signal_message_id: Set(media.signal_message_id),
+            source_media_id: Set(media.id),
+            source_file_md5: Set(format!("{:x}", Md5::digest(&source))),
+            source_file_name: Set(source_file_name),
+            source_content_type: Set(Some(media.content_type.clone())),
+            status: Set(SIGINT_MEDIA_CONVERSION_STATUS_PENDING.to_string()),
+            conversion_receipt: Set(None),
+            converted_storage_key: Set(None),
+            converted_file_name: Set(None),
+            converted_size_bytes: Set(None),
+            created_at: NotSet,
+            last_attempt_at: Set(None),
+            attempt_count: Set(0),
+            last_error: Set(None),
+        },
+    )
+    .on_conflict_do_nothing()
+    .exec_without_returning(&env.dbx)
+    .await
+    .c(h!())?;
+    signal_message_media_conversion_job::Entity::find()
+        .filter(
+            signal_message_media_conversion_job::Column::SourceMediaId
+                .eq(media.id),
+        )
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .c(h!())
 }
 
 fn source_extension(media: &signal_message_media::Model) -> &str {
@@ -334,6 +420,29 @@ mod tests {
     use crate::functest::tests::{cleanup, mk_signal_message};
     use sea_orm::{ActiveModelTrait, ActiveValue::Set};
     use serial_test::serial;
+
+    fn media_with_extension(extension: &str) -> signal_message_media::Model {
+        signal_message_media::Model {
+            id: Uuid::nil(),
+            signal_message_id: 1,
+            signal_message_uuid: None,
+            content_type: "application/octet-stream".to_string(),
+            file_ext: Some(extension.to_string()),
+            file_name: Some(format!("route.{extension}")),
+            size_bytes: 1,
+            created_at: chrono::Utc::now().naive_utc(),
+            is_encrypted: true,
+            storage_key: Some("test/route".to_string()),
+        }
+    }
+
+    #[test]
+    fn recognizes_kmz_and_geojson_sources_case_insensitively() {
+        for extension in ["kmz", "KMZ", "geojson", "GEOJSON"] {
+            assert!(is_eligible_source(&media_with_extension(extension)));
+        }
+        assert!(!is_eligible_source(&media_with_extension("txt")));
+    }
 
     #[serial]
     #[tokio::test]
@@ -407,6 +516,8 @@ mod tests {
         .insert(&env.dbx)
         .await
         .unwrap();
+        let ignored_media_id = ignored_media.id;
+        let oversized_media_id = oversized_media.id;
         let media =
             vec![supported_media.clone(), ignored_media, oversized_media];
         let uploads = vec![
@@ -430,6 +541,14 @@ mod tests {
                 content_type: Some("application/gpx+xml".to_string()),
             },
         ];
+
+        let statuses = load_statuses(&env.dbx, &media).await.unwrap();
+        assert_eq!(
+            statuses.get(&supported_media.id).map(String::as_str),
+            Some(SIGINT_MEDIA_CONVERSION_STATUS_PENDING)
+        );
+        assert!(!statuses.contains_key(&ignored_media_id));
+        assert!(!statuses.contains_key(&oversized_media_id));
 
         schedule_uploaded_media(&env.dbx, message.id, &media, &uploads)
             .await

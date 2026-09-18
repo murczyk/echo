@@ -29,10 +29,8 @@ function findButton(label: string): HTMLButtonElement | undefined {
   );
 }
 
-function findLink(label: string): HTMLAnchorElement | undefined {
-  return Array.from(document.body.querySelectorAll('a')).find(
-    (link) => link.textContent?.trim() === label,
-  );
+function findLink(label: string): HTMLAnchorElement | null {
+  return document.body.querySelector(`a[aria-label="${label}"]`);
 }
 
 beforeEach(() => {
@@ -63,7 +61,7 @@ afterEach(() => {
 });
 
 describe('KmzAttachmentPreviewLink', () => {
-  it('opens the converted preview with both downloads above it', async () => {
+  it('opens the converted preview in the shared viewer with both downloads', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -104,5 +102,28 @@ describe('KmzAttachmentPreviewLink', () => {
     expect(
       (original?.compareDocumentPosition(preview as Node) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it('delegates opening to the parent attachment carousel when provided', async () => {
+    const onPreview = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root?.render(
+        <KmzAttachmentPreviewLink
+          mediaId="media-1"
+          originalHref="/api/messenger/media/media-1"
+          fileName="route.geojson"
+          initialStatus="done"
+          onPreview={onPreview}
+        />,
+      );
+    });
+
+    await act(async () => findButton('route.geojson')?.click());
+
+    expect(onPreview).toHaveBeenCalledOnce();
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
   });
 });

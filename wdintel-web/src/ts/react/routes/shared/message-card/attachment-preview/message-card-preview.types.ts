@@ -13,6 +13,14 @@ export type AudioPreviewSource = {
   mediaId?: string | null;
 };
 
+export type KmzAttachmentPreviewSource = {
+  id?: string;
+  mediaId: string;
+  originalHref: string;
+  fileName: string;
+  initialStatus: string;
+};
+
 export type MessageCardPreviewNavigation = {
   index: number;
   count: number;
@@ -36,4 +44,5 @@ export type MessageCardPreviewItem =
   | { type: 'video'; value: VideoPreviewSource }
   | { type: 'audio'; value: AudioPreviewSource }
   | { type: 'document'; value: MessageCardDocument }
+  | { type: 'kmz'; value: KmzAttachmentPreviewSource }
   | { type: 'coordinate'; points: CoordinatePreviewPoint[] };

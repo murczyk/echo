@@ -81,6 +81,10 @@ vi.mock('../../renderers/DocumentAttachmentPreviewRenderer', () => ({
   ),
 }));
 
+vi.mock('../../renderers/KmzAttachmentPreviewRenderer', () => ({
+  KmzAttachmentPreviewRenderer: () => <div data-renderer="kmz" />,
+}));
+
 vi.mock('../../renderers/CoordinateAttachmentPreviewRenderer', () => ({
   CoordinateAttachmentPreviewRenderer: () => <div data-renderer="coordinate" />,
 }));
@@ -89,6 +93,15 @@ const items: MessageCardPreviewItem[] = [
   { type: 'image', value: { href: '/image.png' } },
   { type: 'video', value: { id: 'video', name: 'video.mp4', source: '/video.mp4' } },
   { type: 'document', value: { href: '/document.pdf', kind: 'pdf' } },
+  {
+    type: 'kmz',
+    value: {
+      mediaId: 'route',
+      originalHref: '/route.geojson',
+      fileName: 'route.geojson',
+      initialStatus: 'done',
+    },
+  },
   {
     type: 'coordinate',
     points: [{ source: 'direct', lat: 50.45, lng: 30.52, label: 'point' }],
