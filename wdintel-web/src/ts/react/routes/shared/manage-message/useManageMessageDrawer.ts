@@ -520,7 +520,7 @@ export function useManageMessageDrawer({
       reset({
         ...EMPTY_FORM_VALUES,
         date: dayjs(),
-        time: dayjs(),
+        time: null,
       });
     } else {
       // Pre-fill the last-used values (MRU head) so repeated message creation
@@ -531,7 +531,7 @@ export function useManageMessageDrawer({
       reset({
         ...EMPTY_FORM_VALUES,
         date: dayjs(),
-        time: dayjs(),
+        time: null,
         signalGroupMasterKey: recentValues.group[0] ?? '',
         deviceName: cyberEchoEnabled ? (recentValues.deviceName[0] ?? '') : '',
         unit: recentValues.unit[0] ?? '',

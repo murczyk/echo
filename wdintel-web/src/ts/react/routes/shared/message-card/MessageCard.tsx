@@ -24,7 +24,6 @@ import {
 } from './MessageCardHeader';
 import { MessageCardDmrMetadataPopover } from './MessageCardDmrMetadataPopover';
 import { hasVisibleDmrMetadata } from './message-card-metadata';
-import { useRelativeTimeDisplayMs } from './useRelativeTimeDisplayMs';
 import { APP_TIME_ZONE, isPresent, NO_DATA_LABEL } from '../../../utils/misc';
 import {
   buildClassicAnalysisHref,
@@ -34,7 +33,6 @@ import {
   buildVisibleExcludeMenuOptions,
   emptyFilter,
   getPointEtalonsFromMessage,
-  messageRenderDistance,
   type MessageEntityExcludeMenuOption,
   type MessageEntityFilterKind,
   type TagsLayoutVariant,
@@ -225,10 +223,6 @@ function MessageCardComponent({
   messageTimeBasis = 'interception',
 }: MessageCardProps) {
   const displayTimestamp = messageTimeBasis === 'creation' ? msg.createdAt : msg.timestamp;
-  const [messageRootRef, relativeTimeMs] = useRelativeTimeDisplayMs(
-    referenceTimeMs,
-    displayTimestamp,
-  );
   const downloadGuard = useMessageCardDownloadGuard();
   const compactLayout = feedCount >= 3;
   const derivedNetworkMap = useMemo(() => {
@@ -280,36 +274,6 @@ function MessageCardComponent({
     [analysisDestination, displayMode, pointEtalons, msg],
   );
   const watermarkUserName = authUserName?.trim() ?? '';
-  const timeDistance =
-    msg.isTimeNull !== true && isPresent(displayTimestamp) && isPresent(relativeTimeMs)
-      ? messageRenderDistance(displayTimestamp, relativeTimeMs)
-      : null;
-  const tooltipTime = useMemo(
-    () =>
-      formatMessageCardTooltipTime(
-        { ...msg, timestamp: displayTimestamp },
-        messageTimeBasis === 'creation',
-      ),
-    [displayTimestamp, messageTimeBasis, msg],
-  );
-
-  const topRight =
-    displayMode === 'duty' ? (
-      isPresent(timeDistance) ? (
-        <div className="flex-1 min-w-0 flex justify-end">
-          <span
-            className="message-card-relative-time"
-            title={tooltipTime === NO_DATA_LABEL ? undefined : tooltipTime}
-          >
-            {timeDistance}
-          </span>
-        </div>
-      ) : (
-        <div className="min-h-[28px]" />
-      )
-    ) : (
-      <div className="min-h-[28px]" />
-    );
 
   const analysisHref = useMemo(
     () =>
@@ -352,12 +316,12 @@ function MessageCardComponent({
     id,
     msg,
     displayTimestamp: messageTimeBasis === 'creation' ? displayTimestamp : undefined,
+    messageTimeBasis,
     copiedFeedbackId,
     etalonDisplayModel,
     mapHref,
     analysisHref,
     rightInsetPx: rightHeaderInsetPx,
-    topRight,
     onBookmark,
     onImportant,
     onCreateReport,
@@ -379,7 +343,6 @@ function MessageCardComponent({
 
   return (
     <li
-      ref={messageRootRef as React.RefObject<HTMLLIElement>}
       data-message-id={id}
       data-message-uid={msg.messageUid ?? undefined}
       className="message-card-item list-none flex flex-col px-0 pb-[12px] mb-0"
