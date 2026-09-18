@@ -597,7 +597,7 @@ export function ManageMessageDrawer(props: Props) {
                         groupsLoading={groupsLoading}
                         busy={busy}
                         isEditMode={isEditMode}
-                        groupOptional={isReportMode}
+                        isReportMode={isReportMode}
                         groupEditable={isReportMode}
                         cyberEchoEnabled={props.cyberEchoEnabled}
                         deviceNameOptions={deviceNameOptions}

@@ -1,7 +1,11 @@
 import { Box, TextField, Autocomplete, CircularProgress, Typography } from '@mui/material';
 import { useFormContext, Controller, useWatch } from 'react-hook-form';
 import { FormSectionWrapper } from './FormSectionWrapper';
-import { normalizeMultiValue, type MessageFormData } from '../manage-message-drawer.schema';
+import {
+  DO_NOT_SEND_GROUP_VALUE,
+  normalizeMultiValue,
+  type MessageFormData,
+} from '../manage-message-drawer.schema';
 import type { SettlementDetails } from '../../../../services/api/settlements';
 import { useSettlementAutocomplete } from './useSettlementAutocomplete';
 import { CoordinateInputPreview } from './CoordinateInputPreview';
@@ -39,12 +43,16 @@ export function LocationsSection({ busy, recentValues, open, onError }: Props) {
   } = useFormContext<MessageFormData>();
   const coordsText = useWatch({ control, name: 'coords' });
   const signalGroupMasterKey = useWatch({ control, name: 'signalGroupMasterKey' });
+  const settlementGroupMasterKey = signalGroupMasterKey?.trim();
   const { settlementOptions, loading, hasLocationQuery, onInputChange } = useSettlementAutocomplete(
     {
       open,
       busy,
       coordsText,
-      signalGroupMasterKey: signalGroupMasterKey?.trim() || null,
+      signalGroupMasterKey:
+        settlementGroupMasterKey && settlementGroupMasterKey !== DO_NOT_SEND_GROUP_VALUE
+          ? settlementGroupMasterKey
+          : null,
       onError,
     },
   );

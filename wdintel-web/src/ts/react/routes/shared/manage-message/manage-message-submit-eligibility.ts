@@ -4,6 +4,7 @@ export type ManageMessageSubmitEligibilityInput = {
   schemaValid: boolean;
   isEditMode: boolean;
   groupOptional?: boolean;
+  allowMissingGroup?: boolean;
   reportTextRequired?: boolean;
   groupsLoading: boolean;
   selectedGroupKey: string;
@@ -22,6 +23,7 @@ export function isManageMessageSubmitEligible({
   schemaValid,
   isEditMode,
   groupOptional = false,
+  allowMissingGroup = false,
   reportTextRequired = false,
   groupsLoading,
   selectedGroupKey,
@@ -42,7 +44,9 @@ export function isManageMessageSubmitEligible({
   const hasAccessibleGroup = groupOptional
     ? selectedGroupKey === '' ||
       (!groupsLoading && accessibleGroupKeys.some((key) => key === selectedGroupKey))
-    : isEditMode || (!groupsLoading && accessibleGroupKeys.some((key) => key === selectedGroupKey));
+    : isEditMode ||
+      (allowMissingGroup && selectedGroupKey === '') ||
+      (!groupsLoading && accessibleGroupKeys.some((key) => key === selectedGroupKey));
 
   return (
     !busy &&
