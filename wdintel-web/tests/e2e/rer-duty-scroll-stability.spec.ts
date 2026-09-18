@@ -25,6 +25,30 @@ function buildInboxResponse(ids: number[]): InboxMessagesRspRaw {
   };
 }
 
+const compactTagIds = Array.from({ length: 18 }, (_, index) => index + 1);
+const compactTagsResponse = compactTagIds.map((id) => [
+  id,
+  {
+    id,
+    label: `Довгий тег ${id} для перевірки щільного режиму`,
+    is_palitra: false,
+  },
+]);
+
+function buildCompactTaggedInboxResponse(ids: number[]): InboxMessagesRspRaw {
+  return {
+    ...buildInboxResponse([]),
+    inbox_items: ids.map((id) => [
+      id,
+      {
+        ...buildInboxMessage(id),
+        tags: compactTagIds,
+        inboxTags: [],
+      } as never,
+    ]),
+  };
+}
+
 function createDeferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((settle) => {
@@ -92,6 +116,85 @@ async function readBottomDistance(scroller: Locator) {
 }
 
 const initialInboxIds = Array.from({ length: 40 }, (_, index) => index + 1);
+
+test('keeps a compact-tag reading anchor stable while prepending an older chunk', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 900, height: 900 });
+  const olderRequestStarted = createDeferred<void>();
+  const olderResponse = createDeferred<InboxMessagesRspRaw>();
+  await installRerDutyShortStateMocks(page, {
+    userSettingsResponse: { tagsLayout: 'compact', disableAutoScroll: true },
+    tagsResponse: compactTagsResponse,
+    inboxResponseForRequest: (requestBody) => {
+      const beforeId = readBeforeId(requestBody);
+      if (beforeId === 21) {
+        olderRequestStarted.resolve();
+        return olderResponse.promise;
+      }
+      if (beforeId != null) return buildCompactTaggedInboxResponse([]);
+      return buildCompactTaggedInboxResponse(Array.from({ length: 20 }, (_, index) => index + 21));
+    },
+  });
+
+  await page.goto('/rer-duty-neo?state-short=short-1');
+  const scroller = page.locator('[data-duty-feed-scroller="true"]');
+  const list = page.locator('[data-duty-feed-list="true"]');
+  await expect(list.locator('[data-duty-message-id="40"]')).toBeAttached();
+  await expect(page.getByRole('button', { name: 'Показати додаткові теги' })).toHaveCount(20);
+
+  await scroller.evaluate((element) => {
+    element.scrollTop = 0;
+    element.dispatchEvent(new Event('scroll', { bubbles: true }));
+  });
+  await olderRequestStarted.promise;
+  const anchorBefore = await readVisibleAnchor(scroller);
+  expect(anchorBefore.id).toBe(21);
+
+  await page.evaluate((anchorId) => {
+    const state = window as unknown as {
+      compactAnchorSamples: number[];
+      stopCompactAnchorSampling: () => void;
+    };
+    state.compactAnchorSamples = [];
+    let running = true;
+    state.stopCompactAnchorSampling = () => {
+      running = false;
+    };
+    const sample = () => {
+      const sampleScroller = document.querySelector<HTMLElement>(
+        '[data-duty-feed-scroller="true"]',
+      );
+      const anchor = document.querySelector<HTMLElement>(`[data-duty-message-id="${anchorId}"]`);
+      if (sampleScroller && anchor) {
+        state.compactAnchorSamples.push(
+          anchor.getBoundingClientRect().top - sampleScroller.getBoundingClientRect().top,
+        );
+      }
+      if (running) requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  }, anchorBefore.id);
+
+  olderResponse.resolve(
+    buildCompactTaggedInboxResponse(Array.from({ length: 20 }, (_, index) => index + 1)),
+  );
+  await expect(list.locator('[data-duty-message-id="1"]')).toBeAttached();
+  await page.waitForTimeout(500);
+
+  const samples = await page.evaluate(() => {
+    const state = window as unknown as {
+      compactAnchorSamples: number[];
+      stopCompactAnchorSampling: () => void;
+    };
+    state.stopCompactAnchorSampling();
+    return state.compactAnchorSamples;
+  });
+  expect(samples.length).toBeGreaterThan(0);
+  expect(
+    Math.max(...samples.map((offset) => Math.abs(offset - anchorBefore.offsetTop))),
+  ).toBeLessThanOrEqual(1);
+});
 
 test('#3496 reloads the newest chunk after it was evicted by history paging @smoke', async ({
   page,
