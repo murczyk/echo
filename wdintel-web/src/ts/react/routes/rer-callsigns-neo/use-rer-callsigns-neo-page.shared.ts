@@ -69,9 +69,14 @@ export function readInitialCallsignsSortFromUrl(): CallsignsSortState {
     column === 'sourceName' ||
     column === 'radioFreq'
       ? column
-      : DEFAULT_SORT.column;
+      : null;
+  if (!validColumn) return DEFAULT_SORT;
   const validDirection =
-    direction === 'asc' || direction === 'desc' ? direction : DEFAULT_SORT.direction;
+    direction === 'asc' || direction === 'desc'
+      ? direction
+      : validColumn === 'createdAt'
+        ? 'desc'
+        : 'asc';
 
   return {
     column: validColumn,
@@ -217,6 +222,7 @@ export function areCallsignSortStatesEqual(
   left: CallsignsSortState,
   right: CallsignsSortState,
 ): boolean {
+  if (!left || !right) return left === right;
   return left.column === right.column && left.direction === right.direction;
 }
 
@@ -354,14 +360,11 @@ export function syncCallsignsStateToUrl(
       params.delete('to');
     }
 
-    if (sort.column !== DEFAULT_SORT.column) {
+    if (sort) {
       params.set('sort_col', sort.column);
-    } else {
-      params.delete('sort_col');
-    }
-    if (sort.direction !== DEFAULT_SORT.direction) {
       params.set('sort_dir', sort.direction);
     } else {
+      params.delete('sort_col');
       params.delete('sort_dir');
     }
 

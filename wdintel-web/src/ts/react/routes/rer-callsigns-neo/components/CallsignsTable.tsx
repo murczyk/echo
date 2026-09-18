@@ -150,6 +150,7 @@ export function getCallsignsTableContainerOverflowY({
 }
 
 function toMrtSorting(sort: CallsignsSortState): MRT_SortingState {
+  if (!sort) return [];
   return [{ id: sort.column, desc: sort.direction === 'desc' }];
 }
 
@@ -465,7 +466,7 @@ function CallsignsTableComponent({
     columns,
     data: rows,
     enableSorting: true,
-    enableSortingRemoval: false,
+    enableSortingRemoval: true,
     manualSorting: true,
     manualFiltering: true,
     enableColumnActions: true,
@@ -501,7 +502,10 @@ function CallsignsTableComponent({
     onSortingChange: (updater) => {
       const nextSorting = resolveUpdater(updater, toMrtSorting(sort));
       const next = nextSorting[0];
-      if (!next) return;
+      if (!next) {
+        if (sort) onSort(null);
+        return;
+      }
       const nextColumn =
         next.id === 'callsign' ||
         next.id === 'position' ||
@@ -512,9 +516,10 @@ function CallsignsTableComponent({
         next.id === 'radioFreq' ||
         next.id === 'createdAt'
           ? next.id
-          : sort.column;
+          : null;
+      if (!nextColumn) return;
       const nextDirection = next.desc ? 'desc' : 'asc';
-      if (nextColumn === sort.column && nextDirection === sort.direction) return;
+      if (nextColumn === sort?.column && nextDirection === sort?.direction) return;
       onSort(nextColumn, nextDirection);
     },
     onColumnFiltersChange: (updater) => {
@@ -813,8 +818,8 @@ function areCallsignsTablePropsEqual(prev: Props, next: Props): boolean {
     prev.inFlightDeleteId === next.inFlightDeleteId &&
     prev.bulkDeleteInFlight === next.bulkDeleteInFlight &&
     prev.selectedCallsignIds === next.selectedCallsignIds &&
-    prev.sort.column === next.sort.column &&
-    prev.sort.direction === next.sort.direction &&
+    ((prev.sort === null && next.sort === null) ||
+      (prev.sort?.column === next.sort?.column && prev.sort?.direction === next.sort?.direction)) &&
     prev.statusFilter === next.statusFilter
   );
 }

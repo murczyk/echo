@@ -20,6 +20,8 @@ import type {
   DownloadKind,
   ExportPermission,
   SelectedSidebarUnitFilter,
+  SortColumn,
+  SortDirection,
   UiStatus,
 } from './types';
 
@@ -175,8 +177,8 @@ export function useRerCallsignsNeoPageActions({
   );
 
   const onSort = useCallback(
-    (column: CallsignsSortState['column'], direction?: CallsignsSortState['direction']) => {
-      setSort((prev) => nextSortState(prev, column, direction));
+    (column: SortColumn | null, direction?: SortDirection) => {
+      setSort((prev) => (column ? nextSortState(prev, column, direction) : null));
     },
     [setSort],
   );

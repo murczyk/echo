@@ -6,8 +6,12 @@ import type { ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { CallsignRowView } from '../types';
+import type { CallsignRowView, CallsignsSortState, OnSort } from '../types';
 import { CallsignsTable, getCallsignsTableContainerOverflowY } from './CallsignsTable';
+
+const tableMockState = vi.hoisted(() => ({
+  options: null as Record<string, any> | null,
+}));
 
 vi.mock('@mui/material', () => ({
   Box: ({ children, ...props }: { children?: ReactNode }) => <div {...props}>{children}</div>,
@@ -107,11 +111,14 @@ vi.mock('../../../components/mui-customized/table/get-default-table-options', ()
         </>
       );
     },
-  useAppMaterialReactTable: (options: Record<string, unknown>) => ({
-    ...options,
-    options,
-    getState: () => ({ isFullScreen: false }),
-  }),
+  useAppMaterialReactTable: (options: Record<string, any>) => {
+    tableMockState.options = options;
+    return {
+      ...options,
+      options,
+      getState: () => ({ isFullScreen: false }),
+    };
+  },
   buildExplicitSingleSelectColumnFilter: () => () => null,
   getFilterModeHelperText: () => '',
   withExplicitSelectAllOption: (options: unknown[]) => options,
@@ -158,7 +165,11 @@ function buildRow(id = 1): CallsignRowView {
   } as CallsignRowView;
 }
 
-function renderTable(rows: CallsignRowView[]) {
+function renderTable(
+  rows: CallsignRowView[],
+  sort: CallsignsSortState = null,
+  onSort: OnSort = vi.fn(),
+) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -183,9 +194,9 @@ function renderTable(rows: CallsignRowView[]) {
         inFlightDeleteId={null}
         bulkDeleteInFlight={false}
         selectedCallsignIds={[]}
-        sort={{ column: 'callsign', direction: 'asc' }}
+        sort={sort}
         statusFilter="All"
-        onSort={vi.fn()}
+        onSort={onSort}
         onStatusFilterChange={vi.fn()}
         onTextColumnFiltersChange={vi.fn()}
         onClearFilters={vi.fn()}
@@ -201,10 +212,24 @@ function renderTable(rows: CallsignRowView[]) {
 }
 
 afterEach(() => {
+  tableMockState.options = null;
   document.body.innerHTML = '';
 });
 
 describe('CallsignsTable', () => {
+  it('supports clearing the selected sort for every sortable column', () => {
+    const onSort = vi.fn();
+    const { root } = renderTable([buildRow()], { column: 'unit', direction: 'asc' }, onSort);
+
+    expect(tableMockState.options?.enableSortingRemoval).toBe(true);
+    act(() => {
+      tableMockState.options?.onSortingChange([]);
+    });
+    expect(onSort).toHaveBeenCalledWith(null);
+
+    root.unmount();
+  });
+
   it('marks edit and delete row actions as modal actions', () => {
     const { container, root } = renderTable([buildRow()]);
 
