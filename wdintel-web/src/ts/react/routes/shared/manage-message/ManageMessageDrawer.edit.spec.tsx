@@ -961,7 +961,7 @@ describe('ManageMessageDrawer edit mode', () => {
     root.unmount();
   });
 
-  it('requires an explicit report destination and submits the red no-send option as null', async () => {
+  it('requires an explicit report destination and submits the no-send option as null', async () => {
     referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
     referenceDataMocks.getGroupInfosBatch.mockResolvedValue([
       { masterKey: 'g-1', name: 'Group 1' },
@@ -1105,7 +1105,7 @@ describe('ManageMessageDrawer edit mode', () => {
       await Promise.resolve();
     });
     expect(groupInput.value).toBe('Не відправляти');
-    expect(groupInput.style.color).toBe('#d32f2f');
+    expect(groupInput.style.color).toBe('');
 
     await act(async () => {
       form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
@@ -1287,7 +1287,7 @@ describe('ManageMessageDrawer edit mode', () => {
     ) as HTMLInputElement;
     expect(groupInput.value).toBe('Не відправляти');
     expect(groupInput.required).toBe(true);
-    expect(groupInput.style.color).toBe('#d32f2f');
+    expect(groupInput.style.color).toBe('');
 
     const form = container.querySelector('form') as HTMLFormElement;
     await act(async () => {

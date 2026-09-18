@@ -109,13 +109,6 @@ export function SystemSection({
                   helperText={errors.signalGroupMasterKey?.message}
                   disabled={busy || (isEditMode && !groupEditable) || groupsLoading}
                   slotProps={{
-                    htmlInput: {
-                      ...params.inputProps,
-                      style:
-                        field.value === DO_NOT_SEND_GROUP_VALUE
-                          ? { ...params.inputProps.style, color: theme.palette.error.main }
-                          : params.inputProps.style,
-                    },
                     input: {
                       ...params.InputProps,
                       endAdornment: (
