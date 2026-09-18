@@ -505,6 +505,111 @@ mod tests {
         .unwrap()
     }
 
+    async fn wait_until_blocked_by(env: &Env, blocker_pid: i32) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let waiting: bool = env
+                    .dbx
+                    .query_one_raw(Statement::from_sql_and_values(
+                        DatabaseBackend::Postgres,
+                        "select exists (select 1 from pg_stat_activity where datname = current_database() and $1 = any(pg_blocking_pids(pid))) as waiting",
+                        [blocker_pid.into()],
+                    ))
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .try_get("", "waiting")
+                    .unwrap();
+                if waiting {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("job completion did not wait for the cleanup lock");
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn cleanup_lock_prevents_concurrent_job_completion() {
+        let env = cleanup().await.unwrap();
+        let message = mk_signal_message(
+            &env.dbx,
+            crate::entities::signal_message::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        insert_job(&env, message.id, message.id_uuid, "route.gpx").await;
+        let claim_txn = env.dbx.begin().await.unwrap();
+        let job = take_next_job(
+            &claim_txn,
+            SIGINT_MEDIA_CONVERSION_STALE_PROCESSING_SEC,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        claim_txn.commit().await.unwrap();
+
+        let cleanup_txn = env.dbx.begin().await.unwrap();
+        let keys = crate::sigint::media_conversion::lock_and_load_converted_storage_keys(
+            &cleanup_txn,
+            &[job.source_media_id],
+        )
+        .await
+        .unwrap();
+        assert!(keys.is_empty());
+        let blocker_pid: i32 = cleanup_txn
+            .query_one_raw(Statement::from_string(
+                DatabaseBackend::Postgres,
+                "select pg_backend_pid() as pid",
+            ))
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get("", "pid")
+            .unwrap();
+        let attempt = ConversionAttempt {
+            id: job.id,
+            attempt_count: job.attempt_count,
+        };
+        let completion_dbx = env.dbx.clone();
+        let completion = tokio::spawn(async move {
+            finish_job(
+                &completion_dbx,
+                attempt,
+                "receipt".to_string(),
+                "test/route.kmz".to_string(),
+                "route_converted.kmz".to_string(),
+                1,
+            )
+            .await
+        });
+        wait_until_blocked_by(&env, blocker_pid).await;
+
+        signal_message_media::Entity::delete_by_id(job.source_media_id)
+            .exec(&cleanup_txn)
+            .await
+            .unwrap();
+        cleanup_txn.commit().await.unwrap();
+
+        let applied = tokio::time::timeout(Duration::from_secs(5), completion)
+            .await
+            .expect("job completion remained blocked after cleanup committed")
+            .unwrap()
+            .unwrap();
+        assert!(!applied);
+        assert!(signal_message_media_conversion_job::Entity::find_by_id(
+            job.id
+        )
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .is_none());
+    }
+
     #[serial]
     #[tokio::test]
     async fn worker_lease_and_attempt_guard_keep_claims_sequential() {

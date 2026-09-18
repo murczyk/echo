@@ -17,8 +17,8 @@ use actix_web::http::header;
 use actix_web::{get, web, HttpResponse};
 use md5::{Digest, Md5};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, NotSet,
-    QueryFilter, Set,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction,
+    EntityTrait, NotSet, QueryFilter, QuerySelect, Set,
 };
 use std::collections::HashMap;
 use std::path::Path;
@@ -111,13 +111,10 @@ where
         .collect())
 }
 
-pub async fn load_converted_storage_keys<C>(
-    dbx: &C,
+pub async fn lock_and_load_converted_storage_keys(
+    txn: &DatabaseTransaction,
     media_ids: &[Uuid],
-) -> anyhow::Result<Vec<String>>
-where
-    C: ConnectionTrait,
-{
+) -> anyhow::Result<Vec<String>> {
     if media_ids.is_empty() {
         return Ok(vec![]);
     }
@@ -126,7 +123,8 @@ where
             signal_message_media_conversion_job::Column::SourceMediaId
                 .is_in(media_ids.iter().copied()),
         )
-        .all(dbx)
+        .lock_exclusive()
+        .all(txn)
         .await
         .c(h!())?
         .into_iter()

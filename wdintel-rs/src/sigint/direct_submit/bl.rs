@@ -1016,7 +1016,7 @@ async fn finish_direct_submit(
             .await
             .c(h!())?;
     let converted_result_keys =
-        crate::sigint::media_conversion::load_converted_storage_keys(
+        crate::sigint::media_conversion::lock_and_load_converted_storage_keys(
             &txn,
             &media_to_delete_ids,
         )
