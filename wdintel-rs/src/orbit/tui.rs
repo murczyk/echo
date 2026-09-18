@@ -88,6 +88,80 @@ pub enum StartAction {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct StartMenuEntry {
+    label: &'static str,
+    action: StartAction,
+}
+
+const START_MENU_ACTIONS: [StartMenuEntry; 11] = [
+    StartMenuEntry {
+        label: "Link unlinked SIGINT units to ORBIT units",
+        action: StartAction::LinkSigintUnitsToOrbit,
+    },
+    StartMenuEntry {
+        label: "Link unlinked ORBIT units to SIGINT units",
+        action: StartAction::LinkOrbitUnitsToSigint,
+    },
+    StartMenuEntry {
+        label: "Replace linked SIGINT echelon values with mismatched ORBIT numbers",
+        action: StartAction::FixLinkedUnitEchelonNumbers,
+    },
+    StartMenuEntry {
+        label: "Mark linked SIGINT units as present in ORBIT",
+        action: StartAction::MarkLinkedSigintUnitsPresentInOrbit,
+    },
+    StartMenuEntry {
+        label: "Fix misplaced and unknown SIGINT echelon values",
+        action: StartAction::FixMisplacedUnitEchelons,
+    },
+    StartMenuEntry {
+        label: "Review conflicting SIGINT higher-echelon values",
+        action: StartAction::ReviewEchelonConflicts,
+    },
+    StartMenuEntry {
+        label: "Merge duplicate SIGINT units linked to one ORBIT unit",
+        action: StartAction::MergeUnitDuplicates,
+    },
+    StartMenuEntry {
+        label: "Review all SIGINT duplicate candidates pair by pair",
+        action: StartAction::ReviewSigintDuplicateCandidates,
+    },
+    StartMenuEntry {
+        label: "Resolve unparsed unit labels through ORBIT links",
+        action: StartAction::ResolveUnparsedUnits,
+    },
+    StartMenuEntry {
+        label: "Remove invalid army/corps and higher echelons from SIGINT unit names",
+        action: StartAction::FixUnitNames,
+    },
+    StartMenuEntry {
+        label: "Review SIGINT unit names generated from echelons",
+        action: StartAction::ReviewGeneratedUnitNames,
+    },
+];
+
+const START_MENU_DANGER_ACTIONS: [StartMenuEntry; 4] = [
+    StartMenuEntry {
+        label: "Sync ORBIT units",
+        action: StartAction::Import,
+    },
+    StartMenuEntry {
+        label: "Remove junk SIGINT units",
+        action: StartAction::DeleteJunkUnits,
+    },
+    StartMenuEntry {
+        label: "IMPORT NEW ORBIT DATA REVISION",
+        action: StartAction::PrepareImport,
+    },
+    StartMenuEntry {
+        label: "Erase and reimport all ORBIT data",
+        action: StartAction::Reimport,
+    },
+];
+
+const START_MENU_WARNING: &str = "WARNING: DANGER ZONE";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LinkMode {
     Automatic,
     Manual,
@@ -291,6 +365,20 @@ pub fn prompt_link_mode() -> Result<Option<LinkMode>, AppError> {
         "Choose linking mode (↑/↓, Enter, Esc: quit)",
         [
             "Automatic: link unique closest exact-rating match with distance ≤ 10",
+            "Manual: review every potential match (no distance limit)",
+        ],
+    );
+    restore_terminal(&mut terminal).c(h!())?;
+    result
+}
+
+pub fn prompt_unparsed_link_mode() -> Result<Option<LinkMode>, AppError> {
+    let mut terminal = setup_terminal().c(h!())?;
+    let result = run_mode_menu(
+        &mut terminal,
+        "Choose linking mode (↑/↓, Enter, Esc: quit)",
+        [
+            "Automatic: link only when exactly one exact-rating match has distance ≤ 10",
             "Manual: review every potential match (no distance limit)",
         ],
     );
@@ -1016,27 +1104,20 @@ pub fn review(
     }
 }
 
+fn start_menu_entry(index: usize) -> Option<&'static StartMenuEntry> {
+    START_MENU_ACTIONS.get(index).or_else(|| {
+        index
+            .checked_sub(START_MENU_ACTIONS.len())
+            .and_then(|index| START_MENU_DANGER_ACTIONS.get(index))
+    })
+}
+
 fn run_start_menu(
     terminal: &mut OrbitTerminal,
 ) -> Result<Option<StartAction>, AppError> {
     let poll = Duration::from_millis(ORBIT_TUI_EVENT_POLL_MS);
-    let actions = [
-        StartAction::PrepareImport,
-        StartAction::Import,
-        StartAction::LinkSigintUnitsToOrbit,
-        StartAction::LinkOrbitUnitsToSigint,
-        StartAction::FixLinkedUnitEchelonNumbers,
-        StartAction::MarkLinkedSigintUnitsPresentInOrbit,
-        StartAction::FixMisplacedUnitEchelons,
-        StartAction::ReviewEchelonConflicts,
-        StartAction::MergeUnitDuplicates,
-        StartAction::ReviewSigintDuplicateCandidates,
-        StartAction::ResolveUnparsedUnits,
-        StartAction::FixUnitNames,
-        StartAction::ReviewGeneratedUnitNames,
-        StartAction::DeleteJunkUnits,
-        StartAction::Reimport,
-    ];
+    let action_count =
+        START_MENU_ACTIONS.len() + START_MENU_DANGER_ACTIONS.len();
     let mut selected = 0;
     loop {
         terminal
@@ -1059,13 +1140,13 @@ fn run_start_menu(
                 return Ok(None);
             }
             KeyCode::Enter if key.modifiers.is_empty() => {
-                return Ok(Some(actions[selected]));
+                return Ok(start_menu_entry(selected).map(|entry| entry.action));
             }
             KeyCode::Up if key.modifiers.is_empty() => {
                 selected = selected.saturating_sub(1)
             }
             KeyCode::Down if key.modifiers.is_empty() => {
-                selected = (selected + 1).min(actions.len() - 1)
+                selected = (selected + 1).min(action_count - 1)
             }
             _ => {}
         }
@@ -2104,41 +2185,68 @@ fn orbit_sigint_link_decision_for_key(
 }
 
 fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
-    let area = centered_area(frame, 86, 17);
-    let options = [
-        "IMPORT NEW ORBIT DATA REVISION",
-        "Sync ORBIT units",
-        "Link unlinked SIGINT units to ORBIT units",
-        "Link unlinked ORBIT units to SIGINT units",
-        "Replace linked SIGINT echelon values with mismatched ORBIT numbers",
-        "Mark linked SIGINT units as present in ORBIT",
-        "Fix misplaced and unknown SIGINT echelon values",
-        "Review conflicting SIGINT higher-echelon values",
-        "Merge duplicate SIGINT units linked to one ORBIT unit",
-        "Review all SIGINT duplicate candidates pair by pair",
-        "Resolve unparsed unit labels through ORBIT links",
-        "Remove invalid army/corps and higher echelons from SIGINT unit names",
-        "Review SIGINT unit names generated from echelons",
-        "Remove junk SIGINT units",
-        "Erase and reimport all ORBIT data",
-    ];
-    let items = options.into_iter().map(ListItem::new);
-    let list = List::new(items)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Choose an action (↑/↓, Enter, Esc: quit)"),
-        )
-        .highlight_style(
-            Style::default()
-                .fg(Color::Black)
-                .bg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol("> ");
+    let menu_height = u16::try_from(
+        START_MENU_ACTIONS.len() + START_MENU_DANGER_ACTIONS.len() + 4,
+    )
+    .expect("start menu height must fit in u16");
+    let area = centered_area(frame, 86, menu_height);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title("Choose an action (↑/↓, Enter, Esc: quit)");
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(START_MENU_ACTIONS.len() as u16),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(START_MENU_DANGER_ACTIONS.len() as u16),
+        ])
+        .split(inner);
+    let list = List::new(
+        START_MENU_ACTIONS
+            .iter()
+            .map(|entry| ListItem::new(entry.label)),
+    )
+    .highlight_style(
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    )
+    .highlight_symbol("> ");
     let mut state = ListState::default();
-    state.select(Some(selected));
-    frame.render_stateful_widget(list, area, &mut state);
+    state.select((selected < START_MENU_ACTIONS.len()).then_some(selected));
+    frame.render_stateful_widget(list, sections[0], &mut state);
+    frame.render_widget(
+        Paragraph::new(START_MENU_WARNING).style(start_menu_warning_style()),
+        sections[2],
+    );
+    let list = List::new(START_MENU_DANGER_ACTIONS.iter().map(|entry| {
+        ListItem::new(entry.label).style(start_menu_danger_style())
+    }))
+    .highlight_style(start_menu_selected_danger_style())
+    .highlight_symbol("> ");
+    let mut state = ListState::default();
+    state.select(selected.checked_sub(START_MENU_ACTIONS.len()));
+    frame.render_stateful_widget(list, sections[3], &mut state);
+}
+
+fn start_menu_warning_style() -> Style {
+    Style::default()
+        .fg(Color::Rgb(255, 165, 0))
+        .add_modifier(Modifier::BOLD)
+}
+
+fn start_menu_danger_style() -> Style {
+    Style::default().fg(Color::Red)
+}
+
+fn start_menu_selected_danger_style() -> Style {
+    start_menu_danger_style()
+        .bg(Color::DarkGray)
+        .add_modifier(Modifier::BOLD)
 }
 
 fn draw_option_menu<T>(
@@ -2789,6 +2897,31 @@ mod tests {
             .iter()
             .map(|span| span.content.as_ref())
             .collect()
+    }
+
+    #[test]
+    fn start_menu_places_requested_actions_in_the_danger_zone() {
+        assert_eq!(
+            START_MENU_DANGER_ACTIONS
+                .iter()
+                .map(|entry| (entry.action, entry.label))
+                .collect::<Vec<_>>(),
+            vec![
+                (StartAction::Import, "Sync ORBIT units"),
+                (StartAction::DeleteJunkUnits, "Remove junk SIGINT units"),
+                (StartAction::PrepareImport, "IMPORT NEW ORBIT DATA REVISION",),
+                (StartAction::Reimport, "Erase and reimport all ORBIT data",),
+            ],
+        );
+        assert_eq!(
+            start_menu_entry(START_MENU_ACTIONS.len())
+                .map(|entry| entry.action),
+            Some(StartAction::Import),
+        );
+        assert!(start_menu_entry(
+            START_MENU_ACTIONS.len() + START_MENU_DANGER_ACTIONS.len()
+        )
+        .is_none());
     }
 
     #[test]
