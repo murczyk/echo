@@ -52,6 +52,7 @@ struct Report125Row {
     inbox_item_id: i64,
     peleng_id: i64,
     datetime: NaiveDateTime,
+    is_time_null: bool,
     mgrs: String,
     rls_type: String,
 }
@@ -62,6 +63,7 @@ struct Report125MessageRow {
     timestamp: Option<NaiveDateTime>,
     date: Option<String>,
     time: Option<String>,
+    is_time_null: Option<bool>,
     datetime: Option<NaiveDateTime>,
     unit: Option<String>,
 }
@@ -72,6 +74,7 @@ struct Report125Message {
     timestamp: Option<NaiveDateTime>,
     date: Option<String>,
     time: Option<String>,
+    is_time_null: Option<bool>,
     datetime: Option<NaiveDateTime>,
     unit: Option<String>,
     datasource_id: Option<i64>,
@@ -217,6 +220,7 @@ async fn load_report_125_messages(
     .column_as(signal_message::Column::Timestamp, "timestamp")
     .column_as(sigint_inbox_item::Column::Date, "date")
     .column_as(sigint_inbox_item::Column::Time, "time")
+    .column_as(sigint_inbox_item::Column::IsTimeNull, "is_time_null")
     .column_as(sigint_inbox_item::Column::Datetime, "datetime")
     .column_as(sigint_inbox_item::Column::Unit, "unit")
     .into_model::<Report125MessageRow>()
@@ -239,6 +243,7 @@ async fn load_report_125_messages(
                 timestamp: row.timestamp,
                 date: row.date,
                 time: row.time,
+                is_time_null: row.is_time_null,
                 datetime: row.datetime,
                 unit: row.unit,
                 datasource_id: group_info.and_then(|group| group.datasource_id),
@@ -321,6 +326,7 @@ fn build_report_125_data(
                 inbox_item_id: message.id,
                 peleng_id: peleng.id,
                 datetime,
+                is_time_null: message.is_time_null == Some(true),
                 mgrs,
                 rls_type: peleng
                     .pelengation_object
@@ -410,8 +416,13 @@ fn non_empty_text(value: Option<&str>) -> Option<&str> {
     value.map(str::trim).filter(|value| !value.is_empty())
 }
 
-fn format_report_125_datetime(datetime: NaiveDateTime) -> String {
-    datetime.format("%d.%m.%Y %H:%M:%S").to_string()
+fn format_report_125_datetime(row: &Report125Row) -> String {
+    let format = if row.is_time_null {
+        "%d.%m.%Y"
+    } else {
+        "%d.%m.%Y %H:%M:%S"
+    };
+    row.datetime.format(format).to_string()
 }
 
 fn build_report_125_docx_to_path(
@@ -475,10 +486,7 @@ fn build_report_125_table(report_data: &Report125Data) -> Table {
     for (index, row) in report_data.rows.iter().enumerate() {
         rows.push(TableRow::new(vec![
             text_cell(&format!("{}.", index + 1), CELL_NUM_WIDTH),
-            text_cell(
-                &format_report_125_datetime(row.datetime),
-                CELL_DATETIME_WIDTH,
-            ),
+            text_cell(&format_report_125_datetime(row), CELL_DATETIME_WIDTH),
             text_cell(&row.mgrs, CELL_MGRS_WIDTH),
             text_cell(&row.rls_type, CELL_TYPE_WIDTH),
             text_cell("", CELL_RECON_WIDTH),
@@ -744,6 +752,15 @@ mod tests {
         .await
         .unwrap();
 
+        sigint_inbox_item::ActiveModel {
+            id: Set(first_id),
+            is_time_null: Set(Some(true)),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+
         let req = report_req();
         let logins = vec![login.id];
         let report_data =
@@ -753,6 +770,7 @@ mod tests {
 
         assert_eq!(report_data.rows.len(), 3);
         assert_eq!(report_data.rows[0].inbox_item_id, first_id);
+        assert!(report_data.rows[0].is_time_null);
         assert_eq!(report_data.rows[0].datetime, test_dt(16, 11, 34, 32));
         assert_eq!(report_data.rows[0].mgrs, mgrs_from_latlng(48.1, 37.1));
         assert_eq!(
@@ -768,6 +786,7 @@ mod tests {
         let messages = vec![Report125Message {
             id: 1,
             timestamp: None,
+            is_time_null: None,
             date: Some("2026-07-16".to_string()),
             time: Some("12:14:31".to_string()),
             datetime: None,
@@ -794,6 +813,7 @@ mod tests {
         let messages = vec![Report125Message {
             id: 1,
             timestamp: None,
+            is_time_null: None,
             date: Some("2026-07-16".to_string()),
             time: Some("12:14:31".to_string()),
             datetime: None,
@@ -868,6 +888,7 @@ mod tests {
         Report125Message {
             id: 1,
             timestamp: None,
+            is_time_null: None,
             date: None,
             time: None,
             datetime: None,
@@ -902,6 +923,7 @@ mod tests {
                 inbox_item_id: 1,
                 peleng_id: 7,
                 datetime: test_dt(16, 11, 34, 32),
+                is_time_null: false,
                 mgrs: "37UDR3251505505".to_string(),
                 rls_type: "А-50 (А-50У) РЛС з РТК «Шмєль-М»".to_string(),
             }],
@@ -921,6 +943,15 @@ mod tests {
         assert!(xml.contains("37UDR3251505505"));
         assert!(xml.contains(REPORT_125_FOOTER));
         assert!(xml.contains(DOCX_FONT));
+        assert_eq!(xml.matches("<w:tr>").count(), 2);
+
+        let mut report_data = report_data;
+        report_data.rows[0].is_time_null = true;
+        build_report_125_docx_to_path(&report_data, tmp.path()).unwrap();
+        let xml = document_xml(tmp.path());
+        assert!(xml.contains("16.07.2026"));
+        assert!(!xml.contains("11:34:32"));
+        assert!(xml.contains("37UDR3251505505"));
         assert_eq!(xml.matches("<w:tr>").count(), 2);
     }
 
