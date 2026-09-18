@@ -2,6 +2,7 @@ use crate::config::{
     KMZ_CONTENT_TYPE, SIGINT_MEDIA_CONVERSION_STATUS_DONE,
     SIGINT_MEDIA_CONVERSION_STATUS_PENDING,
     SIGINT_MEDIA_KMZ_CONVERSION_EXTENSIONS,
+    SIGINT_MEDIA_KMZ_CONVERSION_MAX_SOURCE_BYTES,
 };
 use crate::entities::{
     signal_message_media, signal_message_media_conversion_job,
@@ -47,6 +48,11 @@ where
     );
     for (media, upload) in media.iter().zip(uploads) {
         if !is_supported_source(media) {
+            continue;
+        }
+        if usize::try_from(media.size_bytes).c(h!())?
+            > SIGINT_MEDIA_KMZ_CONVERSION_MAX_SOURCE_BYTES
+        {
             continue;
         }
         let source_file_md5 =
@@ -333,7 +339,7 @@ mod tests {
 
     #[serial]
     #[tokio::test]
-    async fn schedules_supported_upload_with_source_identity() {
+    async fn schedules_only_eligible_uploads_with_source_identity() {
         let env = cleanup().await.unwrap();
         let message = mk_signal_message(
             &env.dbx,
@@ -384,7 +390,27 @@ mod tests {
         .insert(&env.dbx)
         .await
         .unwrap();
-        let media = vec![supported_media.clone(), ignored_media];
+        let oversized_size =
+            i64::try_from(SIGINT_MEDIA_KMZ_CONVERSION_MAX_SOURCE_BYTES)
+                .unwrap()
+                + 1;
+        let oversized_media = signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
+            content_type: Set("application/gpx+xml".to_string()),
+            file_ext: Set(Some("gpx".to_string())),
+            file_name: Set(Some("oversized.gpx".to_string())),
+            size_bytes: Set(oversized_size),
+            created_at: Set(chrono::Utc::now().naive_utc()),
+            is_encrypted: Set(true),
+            storage_key: Set(Some("test/oversized.gpx".to_string())),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let media =
+            vec![supported_media.clone(), ignored_media, oversized_media];
         let uploads = vec![
             MediaUploadInput {
                 path: supported_path.to_string_lossy().into_owned(),
@@ -395,6 +421,15 @@ mod tests {
                 path: ignored_path.to_string_lossy().into_owned(),
                 name: Some("notes.txt".to_string()),
                 content_type: Some("text/plain".to_string()),
+            },
+            MediaUploadInput {
+                path: directory
+                    .path()
+                    .join("missing-oversized.gpx")
+                    .to_string_lossy()
+                    .into_owned(),
+                name: Some("oversized.gpx".to_string()),
+                content_type: Some("application/gpx+xml".to_string()),
             },
         ];
 

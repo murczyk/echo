@@ -1,5 +1,11 @@
 use sea_orm_migration::prelude::*;
 
+macro_rules! h {
+    () => {
+        concat!("at ", file!(), " line ", line!(), " column ", column!())
+    };
+}
+
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
@@ -34,7 +40,8 @@ impl MigrationTrait for Migration {
                 on signal_message_media_conversion_job (status, created_at);
             "#,
         )
-        .await?;
+        .await
+        .map_err(|error| DbErr::Migration(format!("{}: {error}", h!())))?;
         Ok(())
     }
 
@@ -46,7 +53,8 @@ impl MigrationTrait for Migration {
             drop table if exists signal_message_media_conversion_job;
             "#,
         )
-        .await?;
+        .await
+        .map_err(|error| DbErr::Migration(format!("{}: {error}", h!())))?;
         Ok(())
     }
 }
