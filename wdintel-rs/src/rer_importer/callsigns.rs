@@ -537,6 +537,9 @@ fn highlight_callsign_token_windows(
             };
             if first.text.chars().all(is_callsign_separator)
                 || last.text.chars().all(is_callsign_separator)
+                || slice.iter().any(|token| {
+                    token.text.chars().any(|char_| matches!(char_, '\n' | '\r'))
+                })
             {
                 continue;
             }
@@ -3338,6 +3341,41 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn does_not_highlight_callsign_token_windows_across_lines() {
+        use crate::nlp::types::WordToken;
+
+        let body = "САКСОФОН\nКОНТРОЛЬ";
+        let tokens = vec![
+            WordToken {
+                text: "САКСОФОН".to_string(),
+                start: 0,
+                end: 8,
+            },
+            WordToken {
+                text: "\n".to_string(),
+                start: 8,
+                end: 9,
+            },
+            WordToken {
+                text: "КОНТРОЛЬ".to_string(),
+                start: 9,
+                end: 17,
+            },
+        ];
+        let callsign_forms = BTreeMap::from([(
+            callsign_match_key("саксофон-контроль"),
+            "саксофон-контроль".to_string(),
+        )]);
+
+        assert!(highlight_callsign_token_windows(
+            body,
+            &tokens,
+            &callsign_forms
+        )
+        .is_empty());
     }
 
     //     #[tokio::test]
