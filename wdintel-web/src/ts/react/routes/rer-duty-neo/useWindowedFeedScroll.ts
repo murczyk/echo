@@ -195,7 +195,6 @@ export function useWindowedFeedScroll({
     stopPendingAnchorRestore();
     const scroller = refs.scrollerRef.current;
     if (!refs.enabledRef.current || !scroller) return;
-    const scheduledScrollTop = scroller.scrollTop;
     let lastHeight = scroller.scrollHeight;
     let stableFrames = 0;
 
@@ -203,10 +202,6 @@ export function useWindowedFeedScroll({
       pendingAnchorRestoreRafRef.current = null;
       const active = refs.scrollerRef.current;
       if (!refs.enabledRef.current || !active) return;
-      if (Math.abs(active.scrollTop - scheduledScrollTop) > 0.5) {
-        recordDutyScrollDebugEvent(debugFeedId, 'anchor:settle-cancelled', 'scrollTop changed');
-        return;
-      }
       if (Math.abs(active.scrollHeight - lastHeight) <= 0.5) {
         stableFrames += 1;
       } else {
@@ -361,7 +356,10 @@ export function useWindowedFeedScroll({
     if (!enabled) return;
     const scroller = refs.scrollerRef.current;
     if (!scroller) return;
-    const stopTrackingForUserInteraction = () => stopDirectItemTracking();
+    const stopTrackingForUserInteraction = () => {
+      stopDirectItemTracking();
+      stopPendingAnchorRestore();
+    };
     scroller.addEventListener('wheel', stopTrackingForUserInteraction, { passive: true });
     scroller.addEventListener('touchstart', stopTrackingForUserInteraction, { passive: true });
     scroller.addEventListener('pointerdown', stopTrackingForUserInteraction);
@@ -372,7 +370,7 @@ export function useWindowedFeedScroll({
       scroller.removeEventListener('pointerdown', stopTrackingForUserInteraction);
       scroller.removeEventListener('keydown', stopTrackingForUserInteraction);
     };
-  }, [enabled, refs, stopDirectItemTracking]);
+  }, [enabled, refs, stopDirectItemTracking, stopPendingAnchorRestore]);
 
   const clearReportedScrollTrackingStateRef = useRef(tracking.clearReportedScrollTrackingState);
   clearReportedScrollTrackingStateRef.current = tracking.clearReportedScrollTrackingState;
@@ -610,7 +608,7 @@ export function useWindowedFeedScroll({
   const handleScroll = useCallback<UIEventHandler<HTMLDivElement>>(() => {
     if (!refs.enabledRef.current) return;
     if (refs.isRestoringAnchorRef.current) return;
-    stopPendingAnchorRestore();
+    if (pendingAnchorRestoreRafRef.current !== null) return;
     if (!initialPositioningReady && !refs.hasInitialScrolledRef.current) {
       refs.hasInitialScrolledRef.current = true;
     }
@@ -699,7 +697,6 @@ export function useWindowedFeedScroll({
     initialPositioningReady,
     refs,
     scheduleTrackedItemCenter,
-    stopPendingAnchorRestore,
     topLoadBufferPx,
     tracking,
   ]);
