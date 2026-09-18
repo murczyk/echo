@@ -50,6 +50,7 @@ vi.mock('../shared/message-card/MessageCard', () => ({
     botTagAction?: { messageId: number; tagId: number } | null;
     onCopyEtalon?: () => void;
     onCopyLocation?: () => void;
+    onCopyMessageLink?: () => void;
     onEditDetails?: () => void;
   }) => (
     <div
@@ -59,6 +60,9 @@ vi.mock('../shared/message-card/MessageCard', () => ({
       <span data-testid={`bot-action-${props.id}`}>{props.botTagAction?.messageId ?? ''}</span>
       {props.onCopyEtalon != null ? <span data-testid="copy-etalon">copy-etalon</span> : null}
       {props.onCopyLocation != null ? <span data-testid="copy-location">copy-location</span> : null}
+      {props.onCopyMessageLink != null ? (
+        <button type="button" data-testid="copy-message-link" onClick={props.onCopyMessageLink} />
+      ) : null}
       {props.onEditDetails != null ? (
         <button type="button" data-testid="edit-message" onClick={props.onEditDetails} />
       ) : null}
@@ -924,6 +928,27 @@ describe('FeedColumn', () => {
     });
 
     expect(container.querySelector('[data-testid="copy-location"]')).not.toBeNull();
+  });
+
+  it('copies an analysis link for a duty message', async () => {
+    const props = buildProps();
+    const onMessageCopy = vi.fn();
+    props.column.feed.items = [[7, minimalInboxMessage({ messageUid: 'uid-7' })]];
+    props.column.actions.onMessageCopy = onMessageCopy;
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+
+    await act(async () => {
+      container
+        .querySelector('[data-testid="copy-message-link"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(onMessageCopy).toHaveBeenCalledWith(
+      `${window.location.origin}/rer-analysis-neo?m=uid-7`,
+      'link-7',
+    );
   });
 
   it('closes the notifications panel when clicking its trigger again', async () => {
