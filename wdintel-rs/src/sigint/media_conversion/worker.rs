@@ -2,6 +2,7 @@ use super::{converted_file_name, delete_stored_results_best_effort};
 use crate::config::{
     SIGINT_MEDIA_CONVERSION_ADVISORY_LOCK_KEY,
     SIGINT_MEDIA_CONVERSION_HEARTBEAT_SEC,
+    SIGINT_MEDIA_CONVERSION_JOB_TIMEOUT_SEC,
     SIGINT_MEDIA_CONVERSION_STALE_PROCESSING_SEC,
     SIGINT_MEDIA_CONVERSION_STATUS_DONE, SIGINT_MEDIA_CONVERSION_STATUS_ERROR,
     SIGINT_MEDIA_CONVERSION_STATUS_PENDING,
@@ -238,13 +239,23 @@ async fn process_job(
         format!("{:x}", Md5::digest(&source)) == job.source_file_md5,
         "conversion source MD5 does not match the queued file"
     );
-    let converted = crate::alpine::convert_bytes_to_kmz(
-        env,
-        source,
-        Some(job.source_file_name.clone()),
-        job.source_content_type.clone(),
+    let converted = tokio::time::timeout(
+        Duration::from_secs(SIGINT_MEDIA_CONVERSION_JOB_TIMEOUT_SEC),
+        crate::alpine::convert_bytes_to_kmz(
+            env,
+            source,
+            Some(job.source_file_name.clone()),
+            job.source_content_type.clone(),
+        ),
     )
     .await
+    .map_err(|_| {
+        anyhow::anyhow!(
+            "signal media conversion timed out after {} seconds",
+            SIGINT_MEDIA_CONVERSION_JOB_TIMEOUT_SEC
+        )
+    })
+    .c(h!())?
     .c(h!())?;
     anyhow::ensure!(
         !converted.body.is_empty(),
