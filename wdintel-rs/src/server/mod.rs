@@ -532,6 +532,15 @@ fn spawn_palitra_conversion_worker(bg_set: &mut JoinSet<()>, env: Arc<Env>) {
     });
 }
 
+fn spawn_signal_media_conversion_worker(
+    bg_set: &mut JoinSet<()>,
+    env: Arc<Env>,
+) {
+    spawn_named_worker("signal_media_conversion_worker", bg_set, async move {
+        crate::sigint::media_conversion::worker::run_nofail(env).await;
+    });
+}
+
 fn spawn_background_workers(
     mode: Mode,
     env: Arc<Env>,
@@ -856,7 +865,8 @@ fn spawn_background_workers(
             );
         }
     }
-    spawn_palitra_conversion_worker(bg_set, env);
+    spawn_palitra_conversion_worker(bg_set, env.clone());
+    spawn_signal_media_conversion_worker(bg_set, env);
 }
 
 fn spawn_vault_background_workers(env: Arc<Env>, bg_set: &mut JoinSet<()>) {
@@ -900,6 +910,9 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::delta::login::fetch_redirect_url)
             .service(crate::delta::login::handle_redirect)
             .service(crate::rer_importer::messenger_media)
+            .service(crate::sigint::media_conversion::status)
+            .service(crate::sigint::media_conversion::preview)
+            .service(crate::sigint::media_conversion::download)
             .service(crate::ocr::messenger_media_ocr)
             .service(crate::ocr::messenger_media_ocr_download)
             .service(crate::ocr::messenger_media_ocr_status)
