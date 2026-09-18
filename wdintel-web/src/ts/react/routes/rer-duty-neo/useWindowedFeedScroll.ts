@@ -429,9 +429,16 @@ export function useWindowedFeedScroll({
         previousIds.every((id, index) => currentItemIds[index] === id);
       // A pure append does not move any existing row; restoring a stale measured
       // anchor here can itself create the prohibited watch-off navigation.
-      if (!itemsChanged || !isPureAppend) anchors.restoreAnchorPosition();
+      const restoreOutcome =
+        !itemsChanged || !isPureAppend
+          ? anchors.restoreAnchorPosition({ settleSynchronousLayout: true })
+          : 'restored';
       if (itemsChanged) refs.preserveBottomAnchorRef.current = false;
       refs.previousItemIdsRef.current = currentItemIds;
+      if (restoreOutcome === 'pending') {
+        recordDutyScrollDebugEvent(debugFeedId, 'items:anchor-retry-pending');
+        return;
+      }
       anchors.captureAnchorSnapshot();
       // Re-check near-bottom so catch-up can arm another newer load.
       tracking.updateScrollState({ allowLoadOlder: false, allowTopReached: false });
@@ -493,7 +500,11 @@ export function useWindowedFeedScroll({
         return;
       }
       recordDutyScrollDebugEvent(debugFeedId, 'resize:preserve-anchor');
-      anchors.restoreAnchorPosition();
+      const restoreOutcome = anchors.restoreAnchorPosition();
+      if (restoreOutcome === 'pending') {
+        recordDutyScrollDebugEvent(debugFeedId, 'resize:anchor-retry-pending');
+        return;
+      }
       tracking.updateScrollState({
         allowLoadOlder: false,
         allowLoadNewer: false,

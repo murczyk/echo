@@ -11,6 +11,14 @@ import {
   type WindowedFeedScrollRefs,
 } from './windowed-feed-scroll-shared';
 
+const MAX_SYNC_ANCHOR_CORRECTIONS = 5;
+
+type AnchorRestoreOutcome = 'restored' | 'pending' | 'missing';
+
+type AnchorRestoreOptions = {
+  settleSynchronousLayout?: boolean;
+};
+
 export function useWindowedFeedScrollAnchors(args: {
   refs: WindowedFeedScrollRefs;
   debugFeedId?: string;
@@ -261,79 +269,103 @@ export function useWindowedFeedScrollAnchors(args: {
     [collectVisibleAnchors, refs],
   );
 
-  const restoreAnchorPosition = useCallback(() => {
-    const scroller = refs.scrollerRef.current;
-    const snapshot = refs.anchorSnapshotRef.current;
-    if (!scroller || !snapshot) return false;
+  const restoreAnchorPosition = useCallback(
+    (options?: AnchorRestoreOptions): AnchorRestoreOutcome => {
+      const scroller = refs.scrollerRef.current;
+      const snapshot = refs.anchorSnapshotRef.current;
+      if (!scroller || !snapshot) return 'missing';
+      const maxCorrections = options?.settleSynchronousLayout ? MAX_SYNC_ANCHOR_CORRECTIONS : 1;
 
-    const applyDelta = (id: number, expectedOffsetTop: number, reason: string) => {
-      const node = refs.itemRefsRef.current.get(id);
-      if (!node) return false;
-      const scrollerTop = scroller.getBoundingClientRect().top;
-      const currentOffsetTop = node.getBoundingClientRect().top - scrollerTop;
-      const delta = currentOffsetTop - expectedOffsetTop;
-      if (Math.abs(delta) > 0.5) {
-        refs.isRestoringAnchorRef.current = true;
-        scroller.scrollTop += delta;
-        refs.previousScrollTopRef.current = scroller.scrollTop;
-        refs.isRestoringAnchorRef.current = false;
-      }
-      recordDutyScrollDebugEvent(
-        debugFeedId,
-        'anchor:restore',
-        `id=${id}; reason=${reason}; offset=${expectedOffsetTop.toFixed(1)}; current=${currentOffsetTop.toFixed(1)}; delta=${delta.toFixed(1)}`,
-      );
-      return true;
-    };
-
-    for (const anchor of snapshot.anchors) {
-      if (applyDelta(anchor.id, anchor.offsetTop, 'visible')) return true;
-    }
-
-    for (const id of snapshot.itemIds) {
-      const expectedOffsetTop = snapshot.itemOffsets.get(id);
-      if (expectedOffsetTop == null) continue;
-      if (applyDelta(id, expectedOffsetTop, 'common')) return true;
-    }
-
-    const firstCurrentId = refs.itemIdsRef.current[0];
-    if (firstCurrentId != null) {
-      const trimmedPrefix = snapshot.itemIds.indexOf(firstCurrentId);
-      if (trimmedPrefix > 0) {
-        let removedHeight = 0;
-        for (let i = 0; i < trimmedPrefix; i++) {
-          const id = snapshot.itemIds[i];
-          const nextId = snapshot.itemIds[i + 1];
-          const top = snapshot.itemOffsets.get(id);
-          const nextTop = snapshot.itemOffsets.get(nextId);
-          if (top == null || nextTop == null) {
-            removedHeight = 0;
-            break;
+      const applyDelta = (
+        id: number,
+        expectedOffsetTop: number,
+        reason: string,
+      ): AnchorRestoreOutcome | null => {
+        const node = refs.itemRefsRef.current.get(id);
+        if (!node) return null;
+        const scrollerTop = scroller.getBoundingClientRect().top;
+        const initialOffsetTop = node.getBoundingClientRect().top - scrollerTop;
+        let residualDelta = initialOffsetTop - expectedOffsetTop;
+        let correctionCount = 0;
+        while (Math.abs(residualDelta) > 0.5 && correctionCount < maxCorrections) {
+          const targetScrollTop = scroller.scrollTop + residualDelta;
+          const maxScrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+          if (targetScrollTop > maxScrollTop + 0.5) {
+            recordDutyScrollDebugEvent(
+              debugFeedId,
+              'anchor:restore-pending',
+              `id=${id}; reason=${reason}; target=${targetScrollTop.toFixed(1)}; range=0..${maxScrollTop.toFixed(1)}`,
+            );
+            return 'pending';
           }
-          removedHeight += nextTop - top;
-        }
-        if (removedHeight > 0.5) {
           refs.isRestoringAnchorRef.current = true;
-          scroller.scrollTop = Math.max(0, snapshot.scrollTop - removedHeight);
+          scroller.scrollTop += residualDelta;
           refs.previousScrollTopRef.current = scroller.scrollTop;
           refs.isRestoringAnchorRef.current = false;
-          recordDutyScrollDebugEvent(
-            debugFeedId,
-            'anchor:restore',
-            `reason=prefix-height; removed=${removedHeight.toFixed(1)}; scrollTop=${scroller.scrollTop.toFixed(1)}`,
-          );
-          return true;
+          correctionCount += 1;
+          residualDelta = node.getBoundingClientRect().top - scrollerTop - expectedOffsetTop;
+        }
+        const outcome = Math.abs(residualDelta) <= 0.5 ? 'restored' : 'pending';
+        recordDutyScrollDebugEvent(
+          debugFeedId,
+          'anchor:restore',
+          `id=${id}; reason=${reason}; offset=${expectedOffsetTop.toFixed(1)}; current=${initialOffsetTop.toFixed(1)}; corrections=${correctionCount}; residual=${residualDelta.toFixed(1)}; outcome=${outcome}`,
+        );
+        return outcome;
+      };
+
+      for (const anchor of snapshot.anchors) {
+        const outcome = applyDelta(anchor.id, anchor.offsetTop, 'visible');
+        if (outcome !== null) return outcome;
+      }
+
+      for (const id of snapshot.itemIds) {
+        const expectedOffsetTop = snapshot.itemOffsets.get(id);
+        if (expectedOffsetTop == null) continue;
+        const outcome = applyDelta(id, expectedOffsetTop, 'common');
+        if (outcome !== null) return outcome;
+      }
+
+      const firstCurrentId = refs.itemIdsRef.current[0];
+      if (firstCurrentId != null) {
+        const trimmedPrefix = snapshot.itemIds.indexOf(firstCurrentId);
+        if (trimmedPrefix > 0) {
+          let removedHeight = 0;
+          for (let i = 0; i < trimmedPrefix; i++) {
+            const id = snapshot.itemIds[i];
+            const nextId = snapshot.itemIds[i + 1];
+            const top = snapshot.itemOffsets.get(id);
+            const nextTop = snapshot.itemOffsets.get(nextId);
+            if (top == null || nextTop == null) {
+              removedHeight = 0;
+              break;
+            }
+            removedHeight += nextTop - top;
+          }
+          if (removedHeight > 0.5) {
+            refs.isRestoringAnchorRef.current = true;
+            scroller.scrollTop = Math.max(0, snapshot.scrollTop - removedHeight);
+            refs.previousScrollTopRef.current = scroller.scrollTop;
+            refs.isRestoringAnchorRef.current = false;
+            recordDutyScrollDebugEvent(
+              debugFeedId,
+              'anchor:restore',
+              `reason=prefix-height; removed=${removedHeight.toFixed(1)}; scrollTop=${scroller.scrollTop.toFixed(1)}`,
+            );
+            return 'restored';
+          }
         }
       }
-    }
 
-    recordDutyScrollDebugEvent(
-      debugFeedId,
-      'anchor:missing',
-      `visible=${snapshot.anchors.map((anchor) => anchor.id).join(',')}; snapshotMounted=${snapshot.itemIds.join(',')}; liveMounted=${[...refs.itemRefsRef.current.keys()].join(',')}; unmountedAnchor=${snapshot.anchors.some((anchor) => !refs.itemRefsRef.current.has(anchor.id))}`,
-    );
-    return false;
-  }, [debugFeedId, refs]);
+      recordDutyScrollDebugEvent(
+        debugFeedId,
+        'anchor:missing',
+        `visible=${snapshot.anchors.map((anchor) => anchor.id).join(',')}; snapshotMounted=${snapshot.itemIds.join(',')}; liveMounted=${[...refs.itemRefsRef.current.keys()].join(',')}; unmountedAnchor=${snapshot.anchors.some((anchor) => !refs.itemRefsRef.current.has(anchor.id))}`,
+      );
+      return 'missing';
+    },
+    [debugFeedId, refs],
+  );
 
   return useMemo(
     () => ({

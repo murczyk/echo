@@ -1647,6 +1647,119 @@ describe('useWindowedFeedScroll', () => {
     ).toBe(-1);
   });
 
+  it('keeps the current position until a compact-card anchor can be restored', async () => {
+    const triggerResize = installResizeObserverMock();
+    const initialIds = [3, 4, 5, 6];
+    const prependedIds = [1, 2, 3, 4, 5, 6];
+    await act(async () => {
+      root.render(<TestScroller ids={[]} isWatchMode={false} unreadPrefetchNeeded={false} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 200 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(initialIds) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(
+        <TestScroller ids={initialIds} isWatchMode={false} unreadPrefetchNeeded={false} />,
+      );
+    });
+    scroller.scrollTop = 0;
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+
+    metrics.scrollHeight = 300;
+    layout.items = new Map([
+      [1, { top: 0, height: 200 }],
+      [2, { top: 200, height: 200 }],
+      [3, { top: 400, height: 50 }],
+      [4, { top: 450, height: 50 }],
+      [5, { top: 500, height: 50 }],
+      [6, { top: 550, height: 50 }],
+    ]);
+    await act(async () => {
+      root.render(
+        <TestScroller ids={prependedIds} isWatchMode={false} unreadPrefetchNeeded={false} />,
+      );
+    });
+    expect(scroller.scrollTop).toBe(0);
+
+    layout.items = createItemLayouts(prependedIds);
+    act(() => triggerResize(container.querySelector('[data-testid="list"]')!));
+
+    expect(scroller.scrollTop).toBe(100);
+    expect(
+      (container.querySelector('[data-testid="item-3"]') as HTMLElement).getBoundingClientRect()
+        .top,
+    ).toBe(0);
+  });
+
+  it('does not request a newer page while a prepended anchor correction is clamped', async () => {
+    const onLoadNewer = vi.fn();
+    const initialIds = [3, 4, 5, 6];
+    const prependedIds = [1, 2, 3, 4, 5, 6];
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={[]}
+          isWatchMode={false}
+          onLoadNewer={onLoadNewer}
+          bottomLoadBufferPx={20}
+        />,
+      );
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 200 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(initialIds) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={initialIds}
+          isWatchMode={false}
+          onLoadNewer={onLoadNewer}
+          bottomLoadBufferPx={20}
+        />,
+      );
+    });
+    scroller.scrollTop = 0;
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    onLoadNewer.mockClear();
+
+    metrics.scrollHeight = 300;
+    layout.items = new Map([
+      [1, { top: 0, height: 200 }],
+      [2, { top: 200, height: 200 }],
+      [3, { top: 400, height: 50 }],
+      [4, { top: 450, height: 50 }],
+      [5, { top: 500, height: 50 }],
+      [6, { top: 550, height: 50 }],
+    ]);
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={prependedIds}
+          isWatchMode={false}
+          onLoadNewer={onLoadNewer}
+          bottomLoadBufferPx={20}
+        />,
+      );
+    });
+    await flushLoadNewerIdle();
+
+    expect(onLoadNewer).not.toHaveBeenCalled();
+  });
+
   it('keeps live follow pinned to the bottom after a later card resize', async () => {
     const triggerResize = installResizeObserverMock();
     const ids = [1, 2, 3, 4];
