@@ -231,7 +231,7 @@ async fn load_callsign_ids(
     env: &Env,
     inbox_messages: &[(i64, InboxMessage)],
 ) -> Result<HashMap<String, BTreeSet<i64>>, AppError> {
-    let callsign_keys = inbox_messages
+    let callsigns = inbox_messages
         .iter()
         .flat_map(|(_, inbox_message)| {
             inbox_message
@@ -239,13 +239,6 @@ async fn load_callsign_ids(
                 .iter()
                 .chain(&inbox_message.callsigns_alg2)
         })
-        .map(|callsign| callsign_match_key(callsign))
-        .filter(|callsign| !callsign.is_empty())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
-    let callsigns = callsign_keys
-        .iter()
         .flat_map(|callsign| callsign_query_variants(callsign))
         .collect::<BTreeSet<_>>()
         .into_iter()
@@ -547,7 +540,7 @@ mod tests {
         intercepted_at: NaiveDateTime,
     ) -> i64 {
         sigint_callsign::ActiveModel {
-            callsign: Set("Iggy-Test-Callsign".to_string()),
+            callsign: Set("Iggy\u{2011}Test\u{2011}Callsign".to_string()),
             position: Set(String::new()),
             comment: Set(String::new()),
             unit_id: Set(unit_id),
@@ -711,7 +704,7 @@ mod tests {
         let mut inbox_message: InboxMessage = InboxInsertPayload {
             text: "interception".to_string(),
             freq: Some("123.45".to_string()),
-            callsigns: vec!["IGGY TEST CALLSIGN".to_string()],
+            callsigns: vec!["IGGY\u{2011}TEST\u{2011}CALLSIGN".to_string()],
             network_ids: Some(vec![network_id]),
             ..Default::default()
         }

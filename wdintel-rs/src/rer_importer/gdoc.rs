@@ -231,6 +231,18 @@ struct NetworkCallsignQueryGroup {
     network_scope: Option<Vec<i64>>,
 }
 
+fn callsign_query_variants_for_keys(
+    requests: &[CallsignRequest],
+    callsign_keys: &HashSet<String>,
+) -> Vec<String> {
+    requests
+        .iter()
+        .filter(|request| callsign_keys.contains(&request.normalized_callsign))
+        .flat_map(|request| callsign_query_variants(&request.callsign))
+        .unique()
+        .collect_vec()
+}
+
 fn network_callsign_query_groups(
     requests: &[CallsignRequest],
 ) -> Vec<NetworkCallsignQueryGroup> {
@@ -268,21 +280,19 @@ fn network_callsign_query_groups(
     let mut groups = Vec::new();
     if !unscoped_callsign_keys.is_empty() {
         groups.push(NetworkCallsignQueryGroup {
-            callsigns: unscoped_callsign_keys
-                .iter()
-                .flat_map(|callsign| callsign_query_variants(callsign))
-                .unique()
-                .collect_vec(),
+            callsigns: callsign_query_variants_for_keys(
+                requests,
+                &unscoped_callsign_set,
+            ),
             network_scope: None,
         });
     }
     if !scoped_callsign_keys.is_empty() {
         groups.push(NetworkCallsignQueryGroup {
-            callsigns: scoped_callsign_keys
-                .iter()
-                .flat_map(|callsign| callsign_query_variants(callsign))
-                .unique()
-                .collect_vec(),
+            callsigns: callsign_query_variants_for_keys(
+                requests,
+                &scoped_callsign_set,
+            ),
             network_scope: Some(network_scope),
         });
     }
@@ -834,6 +844,27 @@ mod tests {
         assert_eq!(
             requested_callsigns(&requests),
             vec!["саксофон-контроль", "саксофон контроль"]
+        );
+    }
+
+    #[test]
+    fn preserves_unicode_separators_in_network_query_groups() {
+        let requests = vec![
+            request("САКСОФОН\u{2011}КОНТРОЛЬ", vec![10]),
+            request("САКСОФОН\u{a0}КОНТРОЛЬ", vec![]),
+        ];
+
+        assert_eq!(
+            network_callsign_query_groups(&requests),
+            vec![NetworkCallsignQueryGroup {
+                callsigns: vec![
+                    "саксофон-контроль".to_string(),
+                    "саксофон контроль".to_string(),
+                    "саксофон\u{2011}контроль".to_string(),
+                    "саксофон\u{a0}контроль".to_string(),
+                ],
+                network_scope: None,
+            }]
         );
     }
 
