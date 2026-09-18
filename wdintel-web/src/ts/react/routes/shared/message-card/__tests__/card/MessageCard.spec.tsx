@@ -1209,7 +1209,7 @@ describe('MessageCard', () => {
       if (metadataText == null) throw new Error('metadata text not found');
 
       const expectedValues = [
-        '23.03 02:45',
+        '23.03, 02:45',
         '153.6250',
         'Група A',
         'Відправник B',

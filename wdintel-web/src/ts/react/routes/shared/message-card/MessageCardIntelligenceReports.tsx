@@ -1,5 +1,4 @@
 import EditIcon from '@mui/icons-material/Edit';
-import IconButton from '@mui/material/IconButton';
 import dayjs from 'dayjs';
 import { useEffect, useState, type ReactElement } from 'react';
 
@@ -92,24 +91,17 @@ function MessageSummaryDetails({
       }`}
     >
       {onEdit ? (
-        <IconButton
-          size="small"
+        <button
+          type="button"
+          className="message-card-intelligence-report-edit"
           aria-label="Редагувати розвіддонесення"
           onClick={(e) => {
             e.stopPropagation();
             onEdit();
           }}
-          sx={{
-            p: '2px',
-            color: 'var(--color-action)',
-            flexShrink: 0,
-            '&:hover': {
-              backgroundColor: 'color-mix(in srgb, var(--color-action) 16%, transparent)',
-            },
-          }}
         >
-          <EditIcon sx={{ fontSize: 18 }} aria-hidden />
-        </IconButton>
+          <EditIcon aria-hidden />
+        </button>
       ) : null}
       <span className="line-clamp-3 min-w-0 whitespace-pre-wrap wrap-break-word overflow-hidden">
         {textToShow}

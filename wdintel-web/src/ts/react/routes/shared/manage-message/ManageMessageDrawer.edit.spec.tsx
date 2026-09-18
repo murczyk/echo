@@ -1068,7 +1068,7 @@ describe('ManageMessageDrawer edit mode', () => {
       Array.from(container.querySelectorAll('li')).find(
         (option) => option.textContent === 'Не відправляти',
       )?.style.color,
-    ).toBe('#d32f2f');
+    ).toBe('rgba(0, 0, 0, 0.6)');
     expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.autoFocus).toBe(true);
     await act(async () => {
       await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));

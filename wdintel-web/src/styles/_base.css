@@ -807,6 +807,34 @@ html[data-bs-theme='dark'] .message-card-root {
   padding: 4px;
 }
 
+.message-card-intelligence-report-edit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 50%;
+  padding: 2px;
+  color: var(--color-action);
+  background-color: transparent;
+  line-height: 0;
+  cursor: pointer;
+}
+
+.message-card-intelligence-report-edit:hover {
+  background-color: color-mix(in srgb, var(--color-action) 16%, transparent);
+}
+
+.message-card-intelligence-report-edit:focus-visible {
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}
+
+.message-card-intelligence-report-edit svg {
+  font-size: 18px;
+}
+
 .message-card-header-meta__icon {
   display: inline-flex;
   align-items: center;
