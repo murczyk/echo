@@ -1814,6 +1814,68 @@ describe('useWindowedFeedScroll', () => {
     expect(onLoadNewer).not.toHaveBeenCalled();
   });
 
+  it('settles a permanently upper-clamped anchor after a bounded prepend stabilizes', async () => {
+    const triggerResize = installResizeObserverMock();
+    const initialIds = [5, 6, 7, 8];
+    const boundedIds = [1, 2, 3, 4, 5, 6];
+    await act(async () => {
+      root.render(<TestScroller ids={[]} isWatchMode={false} unreadPrefetchNeeded={false} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 200 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(initialIds) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(
+        <TestScroller ids={initialIds} isWatchMode={false} unreadPrefetchNeeded={false} />,
+      );
+    });
+    scroller.scrollTop = 51;
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+
+    metrics.scrollHeight = 300;
+    layout.items = createItemLayouts(boundedIds);
+    await act(async () => {
+      root.render(
+        <TestScroller ids={boundedIds} isWatchMode={false} unreadPrefetchNeeded={false} />,
+      );
+    });
+    expect(scroller.scrollTop).toBe(51);
+
+    await act(async () => {
+      for (let frame = 0; frame < 4; frame += 1) await waitForAnimationFrame();
+    });
+
+    expect(scroller.scrollTop).toBe(200);
+    expect(
+      (container.querySelector('[data-testid="item-6"]') as HTMLElement).getBoundingClientRect()
+        .top,
+    ).toBe(50);
+
+    metrics.scrollHeight = 330;
+    layout.items = new Map([
+      [1, { top: 0, height: 80 }],
+      [2, { top: 80, height: 50 }],
+      [3, { top: 130, height: 50 }],
+      [4, { top: 180, height: 50 }],
+      [5, { top: 230, height: 50 }],
+      [6, { top: 280, height: 50 }],
+    ]);
+    act(() => triggerResize(container.querySelector('[data-testid="list"]')!));
+
+    expect(scroller.scrollTop).toBe(230);
+    expect(
+      (container.querySelector('[data-testid="item-6"]') as HTMLElement).getBoundingClientRect()
+        .top,
+    ).toBe(50);
+  });
+
   it('keeps live follow pinned to the bottom after a later card resize', async () => {
     const triggerResize = installResizeObserverMock();
     const ids = [1, 2, 3, 4];

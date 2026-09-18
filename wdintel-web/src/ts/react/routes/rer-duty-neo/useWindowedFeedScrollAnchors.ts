@@ -17,6 +17,7 @@ type AnchorRestoreOutcome = 'restored' | 'pending' | 'missing';
 
 type AnchorRestoreOptions = {
   settleSynchronousLayout?: boolean;
+  settleUpperClamp?: boolean;
 };
 
 export function useWindowedFeedScrollAnchors(args: {
@@ -303,6 +304,18 @@ export function useWindowedFeedScrollAnchors(args: {
             return 'restored';
           }
           if (targetScrollTop > maxScrollTop + 0.5) {
+            if (options?.settleUpperClamp) {
+              refs.isRestoringAnchorRef.current = true;
+              scroller.scrollTop = maxScrollTop;
+              refs.previousScrollTopRef.current = scroller.scrollTop;
+              refs.isRestoringAnchorRef.current = false;
+              recordDutyScrollDebugEvent(
+                debugFeedId,
+                'anchor:restore',
+                `id=${id}; reason=${reason}; target=${targetScrollTop.toFixed(1)}; clamped=upper; outcome=restored`,
+              );
+              return 'restored';
+            }
             recordDutyScrollDebugEvent(
               debugFeedId,
               'anchor:restore-pending',
