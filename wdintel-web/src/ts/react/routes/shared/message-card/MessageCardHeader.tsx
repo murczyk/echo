@@ -32,6 +32,7 @@ import SettingsInputAntennaIcon from '@mui/icons-material/SettingsInputAntenna';
 import SettingsInputAntennaOutlinedIcon from '@mui/icons-material/SettingsInputAntennaOutlined';
 import { Menu, MenuItem } from '@mui/material';
 import dayjs from 'dayjs';
+import customParseFormat from 'dayjs/plugin/customParseFormat';
 import { memo, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { ButtonHTMLAttributes, CSSProperties, MouseEvent, ReactNode, RefObject } from 'react';
 import { APP_TIME_ZONE, ELLIPSIS, isPresent } from '../../../utils/misc';
@@ -50,6 +51,8 @@ import {
   type MessageCardRenderedNetwork,
 } from './message-card.utils';
 import { useMessageDeviceAccess } from './MessageDeviceAccess';
+
+dayjs.extend(customParseFormat);
 
 const COPY_TITLE = `Копіювати${ELLIPSIS}`;
 const NAVIGATE_TITLE = `Перейти${ELLIPSIS}`;
@@ -968,6 +971,21 @@ export function MessageCardMetadata({
   );
 }
 
+function formatAnalysisEventDateTime(msg: InboxMessage): string {
+  const timestamp = msg.timestamp == null ? null : dayjs(msg.timestamp).tz(APP_TIME_ZONE);
+  const parsedDate = dayjs(msg.date?.trim() ?? '', ['YYYY-MM-DD', 'DD.MM.YYYY'], true);
+  const date = parsedDate.isValid()
+    ? parsedDate.format('DD.MM')
+    : msg.date?.trim() || timestamp?.format('DD.MM');
+  const time =
+    msg.isTimeNull === true
+      ? null
+      : msg.time?.trim()
+        ? formatTime(msg.time)
+        : timestamp?.format('HH:mm');
+  return [date, time].filter(Boolean).join(' ') || '—';
+}
+
 // Hot path: preserve native structural layout and conditional menu mounting.
 // Leaf MUI components remain intentional; see ./AGENTS.md.
 function MessageCardHeaderComponent({
@@ -1008,30 +1026,60 @@ function MessageCardHeaderComponent({
     mapHref,
     analysisHref,
   );
-  const dateTimeBlock = (
-    <div className="inline-flex flex-wrap items-center gap-2">
-      {msg.isTimeNull !== true ? (
-        <div className="message-card-timestamp-item" data-message-card-timestamp-item="true">
-          <ScheduleOutlinedIcon className="message-card-header-icon message-card-timestamp-icon" />
+  const dateTimeBlock =
+    displayMode === 'analysis' ? (
+      <div className="inline-flex flex-wrap items-center gap-2">
+        <div
+          className="message-card-timestamp-item"
+          data-message-card-timestamp-item="true"
+          title="Час створення"
+        >
+          <CalendarTodayOutlinedIcon
+            className="message-card-header-icon message-card-timestamp-icon"
+            titleAccess="Час створення"
+          />
           <HeaderText>
-            {displayTimestamp == null
-              ? formatTime(msg.time)
-              : dayjs(displayTimestamp).tz(APP_TIME_ZONE).format('HH:mm')}
+            {msg.createdAt == null
+              ? '—'
+              : dayjs(msg.createdAt).tz(APP_TIME_ZONE).format('DD.MM HH:mm')}
           </HeaderText>
         </div>
-      ) : null}
-      {isPresent(displayTimestamp) || isPresent(msg.date) ? (
-        <div className="message-card-timestamp-item" data-message-card-timestamp-item="true">
-          <CalendarTodayOutlinedIcon className="message-card-header-icon message-card-timestamp-icon" />
-          <HeaderText>
-            {displayTimestamp == null
-              ? formatDateNoYear(msg.date)
-              : dayjs(displayTimestamp).tz(APP_TIME_ZONE).format('DD.MM')}
-          </HeaderText>
+        <div
+          className="message-card-timestamp-item"
+          data-message-card-timestamp-item="true"
+          title="Час події"
+        >
+          <CalendarTodayOutlinedIcon
+            className="message-card-header-icon message-card-timestamp-icon"
+            titleAccess="Час події"
+          />
+          <HeaderText>{formatAnalysisEventDateTime(msg)}</HeaderText>
         </div>
-      ) : null}
-    </div>
-  );
+      </div>
+    ) : (
+      <div className="inline-flex flex-wrap items-center gap-2">
+        {msg.isTimeNull !== true ? (
+          <div className="message-card-timestamp-item" data-message-card-timestamp-item="true">
+            <ScheduleOutlinedIcon className="message-card-header-icon message-card-timestamp-icon" />
+            <HeaderText>
+              {displayTimestamp == null
+                ? formatTime(msg.time)
+                : dayjs(displayTimestamp).tz(APP_TIME_ZONE).format('HH:mm')}
+            </HeaderText>
+          </div>
+        ) : null}
+        {isPresent(displayTimestamp) || isPresent(msg.date) ? (
+          <div className="message-card-timestamp-item" data-message-card-timestamp-item="true">
+            <CalendarTodayOutlinedIcon className="message-card-header-icon message-card-timestamp-icon" />
+            <HeaderText>
+              {displayTimestamp == null
+                ? formatDateNoYear(msg.date)
+                : dayjs(displayTimestamp).tz(APP_TIME_ZONE).format('DD.MM')}
+            </HeaderText>
+          </div>
+        ) : null}
+      </div>
+    );
 
   const row1 = (
     <div

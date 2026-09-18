@@ -1209,8 +1209,7 @@ describe('MessageCard', () => {
       if (metadataText == null) throw new Error('metadata text not found');
 
       const expectedValues = [
-        '02:45',
-        '23.03',
+        ...(displayMode === 'analysis' ? ['23.03 02:45'] : ['02:45', '23.03']),
         '153.6250',
         'Група A',
         'Відправник B',
@@ -1534,6 +1533,61 @@ describe('MessageCard', () => {
           isTimeNull: true,
         }),
       ).not.toContain('12:00');
+    },
+  );
+
+  it.each(['interception', 'creation'] as const)(
+    '#3515 shows creation and event dates independently in analysis (%s)',
+    async (messageTimeBasis) => {
+      for (const isTimeNull of [true, false, null]) {
+        const view = await renderCard({
+          displayMode: 'analysis',
+          messageTimeBasis,
+          msg: buildMessage({
+            text: 'Повідомлення',
+            textMarked: [],
+            createdAt: Date.UTC(2026, 6, 16, 21, 30),
+            timestamp: Date.UTC(2026, 6, 15, 9),
+            date: '14.07.2026',
+            time: '08:45:00',
+            isTimeNull,
+          }),
+        });
+        rendered.push(view);
+        const timestamps = view.container.querySelectorAll(
+          '[data-message-card-timestamp-item="true"]',
+        );
+        expect(timestamps).toHaveLength(2);
+        expect(timestamps[0]?.textContent).toContain('17.07 00:30');
+        expect(timestamps[0]?.getAttribute('title')).toBe('Час створення');
+        expect(timestamps[1]?.getAttribute('title')).toBe('Час події');
+        expect(timestamps[1]?.textContent).toContain(isTimeNull ? '14.07' : '14.07 08:45');
+        if (isTimeNull) expect(timestamps[1]?.textContent).not.toContain(':');
+        for (const timestamp of timestamps) {
+          expect(
+            timestamp.querySelector('[data-testid="CalendarTodayOutlinedIcon"]'),
+          ).not.toBeNull();
+        }
+      }
+    },
+  );
+
+  it.each([
+    { date: '2026-07-14', time: '08:45:00', isTimeNull: false, expected: '14.07 08:45' },
+    { date: null, time: null, isTimeNull: false, expected: '15.07 12:00' },
+    { date: null, time: null, isTimeNull: true, expected: '15.07' },
+  ])(
+    '#3515 formats analysis event dates with timestamp fallback ($expected)',
+    async ({ expected, ...fields }) => {
+      const view = await renderCard({
+        displayMode: 'analysis',
+        msg: buildMessage({ ...fields, timestamp: Date.UTC(2026, 6, 15, 9) }),
+      });
+      rendered.push(view);
+      expect(view.container.querySelector('[title="Час події"]')?.textContent).toContain(expected);
+      if (fields.isTimeNull) {
+        expect(view.container.querySelector('[title="Час події"]')?.textContent).not.toContain(':');
+      }
     },
   );
 
