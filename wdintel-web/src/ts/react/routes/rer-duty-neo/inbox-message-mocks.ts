@@ -32,6 +32,7 @@ export function mockImageMediaEntry(overrides: Partial<MessageMediaInfo> = {}): 
     transcription: null,
     ocr: null,
     summary: null,
+    kmzConversionStatus: null,
     ...overrides,
   };
 }

@@ -14,6 +14,14 @@ import {
 import { MessageSummaryPreview } from './MessageSummaryPreview';
 
 function reportTime(report: IntelligenceReportSummary): string | null {
+  if (report.isTimeNull === true) {
+    return (
+      report.date ??
+      (report.timestamp == null
+        ? null
+        : dayjs(report.timestamp).tz(APP_TIME_ZONE).format('DD.MM.YYYY'))
+    );
+  }
   if (report.timestamp != null) {
     return dayjs(report.timestamp).tz(APP_TIME_ZONE).format('DD.MM.YYYY HH:mm');
   }

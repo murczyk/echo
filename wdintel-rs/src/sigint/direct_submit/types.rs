@@ -36,6 +36,8 @@ pub struct DirectSubmitPayload {
     #[serde(default)]
     pub timestamp: Option<String>,
     #[serde(default)]
+    pub is_time_null: Option<bool>,
+    #[serde(default)]
     pub post: Option<String>,
     #[serde(default)]
     pub unit: Option<String>,

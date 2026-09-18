@@ -43,6 +43,7 @@ struct MouseReportMessageRow {
     coords: Option<String>,
     date: Option<String>,
     time: Option<String>,
+    is_time_null: Option<bool>,
     unit: Option<String>,
 }
 
@@ -469,6 +470,14 @@ fn build_mouse_report(
             dt_zoned_from_millis(earliest_timestamp)?.format("%H:%M:%S");
         let time_to =
             dt_zoned_from_millis(latest_timestamp)?.format("%H:%M:%S");
+        let time_range = if freq_msgs
+            .iter()
+            .any(|(_, message)| message.is_time_null == Some(true))
+        {
+            String::new()
+        } else {
+            format!("{time_from}-{time_to}")
+        };
         let unit_with_max_count = match per_freq_units_counted.get(freq) {
             None => "УКХ НВ".to_string(),
             Some(units_with_count) => units_with_count
@@ -503,10 +512,7 @@ fn build_mouse_report(
                 .vertical_merge(VMergeType::Restart)
                 .add_paragraph(
                     Paragraph::new()
-                        .add_run(
-                            Run::new()
-                                .add_text(format!("{time_from}-{time_to}")),
-                        )
+                        .add_run(Run::new().add_text(time_range))
                         .align(docx_rs::alignment_type::AlignmentType::Center),
                 ),
             TableCell::new()
@@ -794,9 +800,10 @@ fn build_mouse_report(
                             )
                             .add_run(
                                 Run::new().add_text(
-                                    dt_zoned_from_millis(*timestamp)?
-                                        .format("%H:%M:%S")
-                                        .to_string(),
+                                    mouse_report_timestamp(
+                                        message, *timestamp, false,
+                                    )
+                                    .context(h!())?,
                                 ),
                             ),
                     ),
@@ -921,7 +928,7 @@ fn build_mouse_report(
         };
         // parse date from format like 2023-12-22
         let date = NaiveDate::parse_from_str(date, "%Y-%m-%d").context(h!())?;
-        let Some(time) = message.time.as_ref() else {
+        let Some(time) = mouse_report_time(message) else {
             continue;
         };
         let Some(freq) = message.freq.as_ref() else {
@@ -942,7 +949,7 @@ fn build_mouse_report(
             TableCell::new().add_paragraph(
                 Paragraph::new()
                     .align(docx_rs::alignment_type::AlignmentType::Center)
-                    .add_run(Run::new().add_text(time.clone())),
+                    .add_run(Run::new().add_text(time.to_string())),
             ),
             TableCell::new().add_paragraph(
                 Paragraph::new()
@@ -1045,11 +1052,10 @@ fn build_mouse_report(
             if let Some(extended_form) = m_comment.map(|x| &x.comment) {
                 let paragraph =
                     Paragraph::new().add_run(Run::new().add_text(format!(
-                        "- {date} {time}: {freq} {extended_form}",
-                        date = dt_zoned_from_millis(*timestamp)?
-                            .format("%d.%m.%Y"),
-                        time = dt_zoned_from_millis(*timestamp)?
-                            .format("%H:%M:%S"),
+                        "- {datetime}: {freq} {extended_form}",
+                        datetime =
+                            mouse_report_timestamp(message, *timestamp, true)
+                                .context(h!())?,
                         extended_form = extended_form
                     )));
                 docx = docx.add_paragraph(paragraph);
@@ -1395,6 +1401,7 @@ fn mouse_report_message_projection(
         .column_as(sigint_inbox_item::Column::Coords, "coords")
         .column_as(sigint_inbox_item::Column::Date, "date")
         .column_as(sigint_inbox_item::Column::Time, "time")
+        .column_as(sigint_inbox_item::Column::IsTimeNull, "is_time_null")
         .column_as(sigint_inbox_item::Column::UnitV2, "unit")
 }
 
@@ -1460,6 +1467,7 @@ async fn assemble_mouse_report_messages(
             message.callsigns = callsigns;
             message.date = row.date;
             message.time = row.time;
+            message.is_time_null = row.is_time_null;
             message.unit = row.unit;
             message.inbox_tags = tags_by_message.remove(&row.id);
             Ok((row.id, message))
@@ -1671,7 +1679,7 @@ pub async fn report_xlsx_kind_pelengs(
         };
         // parse date from format like 2023-12-22
         let date = NaiveDate::parse_from_str(date, "%Y-%m-%d").context(h!())?;
-        let Some(time) = message.time.as_ref() else {
+        let Some(time) = mouse_report_time(message) else {
             continue;
         };
         let Some(freq) = message.freq.as_ref() else {
@@ -1688,7 +1696,7 @@ pub async fn report_xlsx_kind_pelengs(
             .write_string(i as u32 + 1, 1, format!("{}", date.format("%d.%m")))
             .context(h!())?;
         sheet1
-            .write_string(i as u32 + 1, 2, time.clone())
+            .write_string(i as u32 + 1, 2, time.to_string())
             .context(h!())?;
         sheet1
             .write_string(i as u32 + 1, 3, freq.clone())
@@ -1709,6 +1717,31 @@ pub async fn report_xlsx_kind_pelengs(
     Ok(())
 }
 
+fn mouse_report_time(message: &InboxMessage) -> Option<&str> {
+    if message.is_time_null == Some(true) {
+        Some("")
+    } else {
+        message.time.as_deref()
+    }
+}
+
+fn mouse_report_timestamp(
+    message: &InboxMessage,
+    timestamp: i64,
+    include_date: bool,
+) -> anyhow::Result<String> {
+    let format = match (include_date, message.is_time_null == Some(true)) {
+        (true, true) => "%d.%m.%Y",
+        (true, false) => "%d.%m.%Y %H:%M:%S",
+        (false, true) => return Ok(String::new()),
+        (false, false) => "%H:%M:%S",
+    };
+    Ok(dt_zoned_from_millis(timestamp)
+        .context(h!())?
+        .format(format)
+        .to_string())
+}
+
 fn message_full_text(
     message: &signal_message::Model,
     inbox: &sigint_inbox_item::Model,
@@ -1726,7 +1759,12 @@ fn message_full_text(
             extended_form.unwrap_or("")
         ))
     } else if datasource.kind == "api" {
-        let datetime_part = match (inbox.date.clone(), inbox.time.clone()) {
+        let time = if inbox.is_time_null == Some(true) {
+            None
+        } else {
+            inbox.time.clone()
+        };
+        let datetime_part = match (inbox.date.clone(), time) {
             (Some(date), Some(time)) => format!("{} ", date + " " + &time),
             (Some(date), None) => format!("{date} "),
             (None, Some(time)) => format!("{time} "),
@@ -1768,7 +1806,7 @@ mod tests {
     use crate::functest::tests::{
         cleanup, find_test_datasource_group, find_test_login,
         mk_sigint_bookmark, mk_sigint_important, mk_sigint_inbox_item,
-        mk_signal_message,
+        mk_signal_message, mk_signal_message_group,
     };
     use crate::rer_importer::reports::types::ReportPreviewReq;
     use sea_orm::prelude::Expr;
@@ -1952,7 +1990,10 @@ mod tests {
         let login = find_test_login(&env.dbx).await.unwrap();
         let datasource_group =
             find_test_datasource_group(&env.dbx).await.unwrap();
-        let first = Utc::now().naive_utc() - chrono::Duration::hours(2);
+        let first = NaiveDate::from_ymd_opt(2026, 7, 16)
+            .unwrap()
+            .and_hms_opt(9, 0, 0)
+            .unwrap();
         let second = first + chrono::Duration::hours(2);
         for (index, datetime) in [first, second].into_iter().enumerate() {
             let inbox_datetime = if index == 0 { second } else { datetime };
@@ -1970,15 +2011,33 @@ mod tests {
             )
             .await
             .unwrap();
+            mk_signal_message_group(
+                &env.dbx,
+                signal_message_group::ActiveModel {
+                    signal_message_id: Set(message.id),
+                    group_master_key: Set(Some(
+                        datasource_group.group_master_key.clone(),
+                    )),
+                    datasource_group_id: Set(Some(datasource_group.id)),
+                    created_at: Set(datetime),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
             let inbox_item = mk_sigint_inbox_item(
                 &env.dbx,
                 sigint_inbox_item::ActiveModel {
                     id: Set(message.id),
                     freq: Set(Some(format!("12{index}.45"))),
+                    is_time_null: Set(Some(index == 0)),
+                    coords: Set(Some("48.1, 37.2".to_string())),
                     date: Set(Some(inbox_datetime.date().to_string())),
-                    time: Set(Some(
-                        inbox_datetime.time().format("%H:%M:%S").to_string(),
-                    )),
+                    time: Set(Some(if index == 0 {
+                        "12:00:00".to_string()
+                    } else {
+                        "14:00:00".to_string()
+                    })),
                     unit_v2: Set(Some(format!("MouseUnit{index}"))),
                     checked: Set(Some(true)),
                     reviewed: Set(Some(true)),
@@ -2040,6 +2099,30 @@ mod tests {
             .await
             .unwrap();
 
+        assert!(single
+            .messages
+            .iter()
+            .any(|(_, message)| message.is_time_null == Some(true)));
+        let docx = tempfile::NamedTempFile::new().unwrap();
+        build_mouse_report(&single, docx.path()).unwrap();
+        let xml = report_archive_xml(docx.path(), "word/document.xml");
+        assert!(xml.contains("16.07"));
+        assert!(!xml.contains("12:00:00"));
+        assert!(xml.contains("14:00:00"));
+        let xlsx = tempfile::NamedTempFile::new().unwrap();
+        report_xlsx_kind_pelengs(
+            &login.id,
+            &env,
+            &req,
+            &xlsx.path().to_path_buf(),
+        )
+        .await
+        .unwrap();
+        let xml = report_archive_xml(xlsx.path(), "xl/sharedStrings.xml");
+        assert!(xml.contains("16.07"));
+        assert!(!xml.contains("12:00:00"));
+        assert!(xml.contains("14:00:00"));
+
         assert_eq!(chunked.messages, single.messages);
         assert_eq!(chunked.date_to, single.date_to);
         assert_eq!(
@@ -2059,6 +2142,19 @@ mod tests {
         assert_eq!(chunked.inbox_map, single.inbox_map);
         assert_eq!(chunked.comments_map, single.comments_map);
         assert_eq!(chunked.group_datasources_map, single.group_datasources_map);
+    }
+
+    fn report_archive_xml(path: &Path, entry: &str) -> String {
+        use std::io::Read;
+        let file = std::fs::File::open(path).unwrap();
+        let mut archive = ::zip::ZipArchive::new(file).unwrap();
+        let mut xml = String::new();
+        archive
+            .by_name(entry)
+            .unwrap()
+            .read_to_string(&mut xml)
+            .unwrap();
+        xml
     }
 
     async fn set_report_chunking_hours(db: &DatabaseConnection, hours: i32) {

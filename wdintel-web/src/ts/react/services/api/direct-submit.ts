@@ -213,6 +213,7 @@ export type DirectSubmitRequest = {
   to?: string[];
   tags?: string[];
   timestamp?: string;
+  is_time_null?: InboxMessage['isTimeNull'];
   post?: string;
   unit?: string;
   locations?: string[];

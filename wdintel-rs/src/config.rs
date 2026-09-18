@@ -381,6 +381,7 @@ pub const SIGINT_SIGNAL_TIMEOUT_MS: u64 = 1000;
 /// `RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES`, frontend
 /// `MAX_MESSAGE_ATTACHMENTS` in `useMessageUppy.ts`, and
 /// `RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES` in `MessageCardMedia.tsx`.
+pub const SIGINT_MESSAGE_DATE_ONLY_HOUR: u32 = 12;
 pub const SIGINT_MESSAGE_MAX_ATTACHMENTS: usize = 20;
 pub const SIGINT_FILE_UPLOAD_MAX_BYTES: u64 = 6 * 1024 * 1024 * 1024;
 pub const SIGINT_FILE_UPLOAD_FALLBACK_CHANNEL_CAPACITY: usize = 1;
@@ -1049,6 +1050,22 @@ pub const PALITRA_CONVERSION_JOB_STATUS_PENDING: &str = "pending";
 pub const PALITRA_CONVERSION_JOB_STATUS_PROCESSING: &str = "processing";
 pub const PALITRA_CONVERSION_JOB_STATUS_DONE: &str = "done";
 pub const PALITRA_CONVERSION_JOB_STATUS_ERROR: &str = "error";
+pub const SIGINT_MEDIA_CONVERSION_WORKER_SLEEP_SEC: u64 = 5;
+pub const SIGINT_MEDIA_CONVERSION_HEARTBEAT_SEC: u64 = 60;
+pub const SIGINT_MEDIA_CONVERSION_STALE_PROCESSING_SEC: u64 = 5 * 60;
+pub const SIGINT_MEDIA_CONVERSION_JOB_TIMEOUT_SEC: u64 = 30 * 60;
+pub const SIGINT_MEDIA_CONVERSION_ADVISORY_LOCK_KEY: i64 =
+    0x4543_484f_4b4d_5a31;
+pub const SIGINT_MEDIA_KMZ_CONVERSION_MAX_SOURCE_BYTES: usize =
+    200 * 1024 * 1024;
+pub const SIGINT_MEDIA_CONVERSION_STATUS_PENDING: &str = "pending";
+pub const SIGINT_MEDIA_CONVERSION_STATUS_PROCESSING: &str = "processing";
+pub const SIGINT_MEDIA_CONVERSION_STATUS_DONE: &str = "done";
+pub const SIGINT_MEDIA_CONVERSION_STATUS_ERROR: &str = "error";
+pub const SIGINT_MEDIA_KMZ_CONVERSION_EXTENSIONS: &[&str] = &[
+    "ldk", "trk", "are", "rte", "wpt", "set", "kml", "kmz", "geojson", "gpx",
+    "fit",
+];
 pub const PALITRA_GOI_SYNC_DIRECTION_ECHO: &str = "echo";
 pub const PALITRA_GOI_SYNC_DIRECTION_GOI: &str = "goi";
 pub const PALITRA_GOI_REMOTE_STATUS_PRESENT: &str = "present";

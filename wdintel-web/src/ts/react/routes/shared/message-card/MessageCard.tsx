@@ -75,9 +75,10 @@ const MessageCardRoot = styled('div')(({ theme }) => ({
 }));
 
 export function formatMessageCardTooltipTime(
-  msg: Pick<InboxMessage, 'time' | 'timestamp'>,
+  msg: Pick<InboxMessage, 'time' | 'timestamp'> & Partial<Pick<InboxMessage, 'isTimeNull'>>,
   preferTimestamp = false,
 ): string {
+  if (msg.isTimeNull === true) return NO_DATA_LABEL;
   if (preferTimestamp && isPresent(msg.timestamp)) {
     return dayjs(msg.timestamp).tz(APP_TIME_ZONE).format('HH:mm:ss');
   }
@@ -280,7 +281,7 @@ function MessageCardComponent({
   );
   const watermarkUserName = authUserName?.trim() ?? '';
   const timeDistance =
-    isPresent(displayTimestamp) && isPresent(relativeTimeMs)
+    msg.isTimeNull !== true && isPresent(displayTimestamp) && isPresent(relativeTimeMs)
       ? messageRenderDistance(displayTimestamp, relativeTimeMs)
       : null;
   const tooltipTime = useMemo(

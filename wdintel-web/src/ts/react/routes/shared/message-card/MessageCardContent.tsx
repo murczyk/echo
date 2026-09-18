@@ -70,6 +70,7 @@ import { MessageCardImageList } from './MessageCardImageList';
 import { MessageCardTags } from './MessageCardTags';
 import type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
 import { MessageMediaDocumentLink } from './MessageMediaDocumentLink';
+import { KmzAttachmentPreviewLink } from './KmzAttachmentPreviewLink';
 import { collectMessageDocuments } from './message-card-document-utils';
 import { blurActiveElement } from '../../../utils/focus';
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -103,7 +104,7 @@ function formatInterceptionHeader(message: InboxMessage): string {
     ? dayjs(message.timestamp).tz(APP_TIME_ZONE)
     : null;
   const date = message.date ?? timestamp?.format('DD.MM.YYYY');
-  const time = message.time ?? timestamp?.format('HH:mm:ss');
+  const time = message.isTimeNull === true ? null : (message.time ?? timestamp?.format('HH:mm:ss'));
   return [date, time].filter(isPresent).join(', ') || 'Дата перехоплення недоступна';
 }
 
@@ -515,7 +516,14 @@ export function MessageCardMessageBody({
     () => new Set(images.map((image) => normalizeAttachmentHref(image.href))),
     [images],
   );
-  const documents = collectMessageDocuments(msg);
+  const kmzConversionHrefSet = new Set(
+    (msg.media ?? [])
+      .filter((attachment) => attachment.kmzConversionStatus != null)
+      .map((attachment) => normalizeAttachmentHref(attachment.href)),
+  );
+  const documents = collectMessageDocuments(msg).filter(
+    (document) => !kmzConversionHrefSet.has(normalizeAttachmentHref(document.href)),
+  );
   const previewableDocuments = documents.filter((document) => document.kind !== 'unsupported');
   const documentHrefSet = new Set(
     documents.map((document) => normalizeAttachmentHref(document.href)),
@@ -982,18 +990,31 @@ export function MessageCardMessageBody({
                   />
                 );
               })}
-              {downloadAttachments.map((attachment) => (
-                <MessageMediaDownloadLink
-                  key={attachment.id}
-                  attachment={attachment}
-                  selected={
-                    selectedSummaryMediaIdentity != null &&
-                    summaryAttachmentIdentity(attachment) === selectedSummaryMediaIdentity
-                  }
-                  isDownloadStarting={isDownloadStarting}
-                  onDownloadStart={onDownloadStart}
-                />
-              ))}
+              {downloadAttachments.map((attachment) => {
+                const selected =
+                  selectedSummaryMediaIdentity != null &&
+                  summaryAttachmentIdentity(attachment) === selectedSummaryMediaIdentity;
+                return attachment.kmzConversionStatus != null ? (
+                  <KmzAttachmentPreviewLink
+                    key={attachment.id}
+                    mediaId={resolveMediaAttachmentId(attachment)}
+                    originalHref={String(attachment.href ?? '')}
+                    fileName={mediaAttachmentDisplayName(attachment)}
+                    initialStatus={attachment.kmzConversionStatus}
+                    selected={selected}
+                    isDownloadStarting={isDownloadStarting}
+                    onDownloadStart={onDownloadStart}
+                  />
+                ) : (
+                  <MessageMediaDownloadLink
+                    key={attachment.id}
+                    attachment={attachment}
+                    selected={selected}
+                    isDownloadStarting={isDownloadStarting}
+                    onDownloadStart={onDownloadStart}
+                  />
+                );
+              })}
             </div>
           ) : null}
           {hasVisibleSummary ? (

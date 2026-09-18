@@ -54,6 +54,7 @@ pub struct InboxMessageDesc {
     pub location_v2: Option<String>,
     pub date: Option<String>,
     pub time: Option<String>,
+    pub is_time_null: Option<bool>,
     pub checked: Option<bool>,
     pub unit_v2: Option<String>,
     pub network: Option<String>,
@@ -88,6 +89,7 @@ fn reference_inbox_message_summary(
         (timestamp, date, time, group_name)
     };
     InboxMessageSummary {
+        is_time_null: None,
         id: message_id,
         is_accessible,
         is_deleted,
@@ -120,6 +122,7 @@ fn inbox_message_summary(
         .map(|timestamp| timestamp.and_utc().timestamp_millis());
     let date = inbox_item.and_then(|item| item.date.clone());
     let time = inbox_item.and_then(|item| item.time.clone());
+    let is_time_null = inbox_item.and_then(|item| item.is_time_null);
     let group_name = group_names.get(&message_id).cloned();
     let coords = inbox_item.and_then(|item| item.coords.clone());
     let file_names = media_file_names
@@ -127,7 +130,7 @@ fn inbox_message_summary(
         .cloned()
         .unwrap_or_default();
     if message.deleted || !is_accessible {
-        return Some(reference_inbox_message_summary(
+        let mut summary = reference_inbox_message_summary(
             message_id,
             is_accessible,
             message.deleted,
@@ -135,9 +138,13 @@ fn inbox_message_summary(
             date,
             time,
             group_name,
-        ));
+        );
+        summary.is_time_null =
+            if message.deleted { None } else { is_time_null };
+        return Some(summary);
     }
     Some(InboxMessageSummary {
+        is_time_null,
         id: message_id,
         is_accessible: true,
         is_deleted: false,
@@ -868,6 +875,13 @@ pub async fn aggregate_to_inbox_messages(
         crate::media_summary::load_statuses(&env.dbx, &media_entries)
             .await
             .c(h!())?;
+    let kmz_conversion_statuses =
+        crate::sigint::media_conversion::load_statuses(
+            &env.dbx,
+            &media_entries,
+        )
+        .await
+        .c(h!())?;
     let mut media_by_message: HashMap<i64, Vec<signal_message_media::Model>> =
         HashMap::new();
     for media in media_entries {
@@ -947,6 +961,9 @@ pub async fn aggregate_to_inbox_messages(
                 transcription: transcriptions_by_media.get(&m.id).cloned(),
                 ocr: ocr_by_media.get(&m.id).cloned(),
                 summary: summaries_by_media.get(&m.id).cloned(),
+                kmz_conversion_status: kmz_conversion_statuses
+                    .get(&m.id)
+                    .cloned(),
             })
             .collect_vec();
         let images = media
@@ -1066,6 +1083,7 @@ pub async fn aggregate_to_inbox_messages(
         res.push((
             message.id,
             InboxMessage {
+                is_time_null: message.is_time_null,
                 message_uuid: message.id_uuid.map(|uuid| uuid.to_string()),
                 message_uid: message.message_uid,
                 text: body.clone(),
@@ -2089,6 +2107,7 @@ pub async fn submit_upsert_inbox_item(
             id_uuid: Set(signal_message_uuid),
             date: Set(message.date.clone()),
             time: Set(message.time.clone()),
+            is_time_null: NotSet,
             freq: Set(freq),
             coords: Set(coords_s.map(|x| x.text)),
             checked: Set(Some(message.checked)),

@@ -270,6 +270,7 @@ where
         .c(h!())?;
     }
     let result = sigint_inbox_item::ActiveModel {
+        is_time_null: sea_orm::NotSet,
         id: Set(message.id),
         id_uuid: Set(message.id_uuid),
         date: Set(date_v),

@@ -39,6 +39,7 @@ export function summarizeIntelligenceMessage(
     timestamp: message.timestamp,
     date: message.date,
     time: message.time,
+    isTimeNull: message.isTimeNull,
     groupName: null,
     groupMasterKey: message.groupMasterKey,
     coords,

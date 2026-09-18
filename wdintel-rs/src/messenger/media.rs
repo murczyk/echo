@@ -35,6 +35,7 @@ pub struct MediaUploadInput {
 pub struct StoreMediaAttachmentsResult {
     pub media: Vec<signal_message_media::Model>,
     pub skipped_missing: bool,
+    pub stored_uploads: Vec<MediaUploadInput>,
     pub uploaded_files_ready_for_deletion: Vec<MediaUploadInput>,
 }
 
@@ -563,6 +564,11 @@ pub async fn store_media_attachments(
             return Err(err);
         }
     };
+    let stored_uploads = staged
+        .attachments
+        .iter()
+        .map(|attachment| attachment.upload_input.clone())
+        .collect();
     let uploaded_files_ready_for_deletion =
         staged.uploaded_files_ready_for_deletion();
     if deletion == UploadedAttachmentDeletion::DeleteAfterStore {
@@ -572,6 +578,7 @@ pub async fn store_media_attachments(
     Ok(StoreMediaAttachmentsResult {
         media,
         skipped_missing: staged.skipped_missing,
+        stored_uploads,
         uploaded_files_ready_for_deletion,
     })
 }

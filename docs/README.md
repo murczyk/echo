@@ -155,6 +155,15 @@ error and release its multipart admission when the task finishes. Admission
 remains held while conversion buffers are alive; source and result logs contain
 byte counts instead of file payloads.
 
+New SIGINT inbox attachments whose extensions are supported by the AlpineQuest
+converter create one `signal_message_media_conversion_job` row per file. Each
+row links the source media and message and records the source MD5. A singleton
+worker converts jobs sequentially, verifies the stored source against that MD5,
+and keeps the encrypted KMZ result in object storage without adding another
+message attachment. Authorized attachment preview and download routes reuse the
+original media access check; deleting an attachment through direct submit also
+removes its stored conversion result on a best-effort basis.
+
 Consumers with smaller
 existing limits retain them; OCR gateway images remain limited to 16 MiB. ZIP
 extraction rejects unsafe paths before extraction. Legacy importers preserve

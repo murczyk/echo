@@ -8,6 +8,7 @@ ANALYTICS_LIB=${ECHO_ANALYTICS_LIB:-$SCRIPT_DIR/lib.sh}
 source "$ANALYTICS_LIB"
 
 table_resnapshot_timeout=${MIRROR_TABLE_RESNAPSHOT_TIMEOUT_SECONDS:-7200}
+table_cdc_timeout=${ANALYTICS_DEPLOY_HEALTH_TIMEOUT_SECONDS:-300}
 table_resnapshot_poll_interval=${MIRROR_TABLE_RESNAPSHOT_POLL_SECONDS:-5}
 table_resnapshot_state_dir=${ECHO_ANALYTICS_RESNAPSHOT_STATE_DIR:-/var/lib/echo-analytics/table-resnapshot}
 analytics_bin_dir=${ECHO_ANALYTICS_BIN_DIR:-$(dirname "$ANALYTICS_LIB")}
@@ -197,8 +198,12 @@ SQL
 
 source_table_has_rows() {
   local source_table=$1 has_rows
-  has_rows=$(source_psql -Atq -v ON_ERROR_STOP=1 \
-    -c "SELECT EXISTS (SELECT 1 FROM $source_table LIMIT 1)")
+  if ! has_rows=$(source_psql -Atq -v ON_ERROR_STOP=1 \
+    -c "SELECT EXISTS (SELECT 1 FROM $source_table LIMIT 1)"); then
+    die "could not verify whether $source_table is empty"
+  fi
+  [[ "$has_rows" == t || "$has_rows" == f ]] \
+    || die "invalid emptiness result for $source_table"
   [[ "$has_rows" == t ]]
 }
 
@@ -403,6 +408,34 @@ finish_repair() {
   log "Targeted table resnapshot completed for $source_table"
 }
 
+wait_for_additive_cdc() {
+  local source_table=$1 destination=$2 source_schema=$3 deadline raw_schema raw_only
+  deadline=$((SECONDS + table_cdc_timeout))
+  while ((SECONDS < deadline)); do
+    raw_schema=$(raw_columns "$destination" | LC_ALL=C sort)
+    raw_only=$(comm -13 \
+      <(printf '%s\n' "$source_schema") \
+      <(printf '%s\n' "$raw_schema"))
+    [[ -z "$raw_only" ]] || die "$source_table gained unexpected raw columns: $raw_only"
+    if [[ "$source_schema" == "$raw_schema" ]]; then
+      repair_complete=true
+      log "$source_table added columns propagated through CDC; no resnapshot needed"
+      return 0
+    fi
+    sleep "$table_resnapshot_poll_interval"
+  done
+  die "$source_table CDC schema propagation timed out; refusing to rebuild a populated table"
+}
+
+require_empty_additive_table() {
+  local strategy=$1 source_table=$2
+  if [[ "$strategy" == empty_table_resnapshot || "$strategy" == cdc_additive ]]; then
+    if source_table_has_rows "$source_table"; then
+      die "$source_table is not empty; refusing empty-table resnapshot"
+    fi
+  fi
+}
+
 resnapshot_table() {
   local strategy=$1 source_table=$2 current_mapping state_mapping
   local state_strategy mapping destination
@@ -456,10 +489,12 @@ resnapshot_table() {
   if [[ -z "$state_mapping" && "$raw_exists" != true ]]; then
     die "$CLICKHOUSE_RAW_DB.$destination is missing without recoverable resnapshot state"
   fi
-  if [[ "$strategy" == empty_table_resnapshot ]]; then
-    source_table_has_rows "$source_table" \
-      && die "$source_table is not empty; refusing empty-table resnapshot"
+  if [[ "$strategy" == cdc_additive && -z "$state_mapping" ]] \
+    && source_table_has_rows "$source_table"; then
+    wait_for_additive_cdc "$source_table" "$destination" "$source_schema"
+    return 0
   fi
+  require_empty_additive_table "$strategy" "$source_table"
 
   if [[ -z "$state_mapping" ]]; then
     [[ -n "$current_mapping" ]] \
@@ -474,12 +509,14 @@ resnapshot_table() {
   fi
 
   pause_mirror
+  require_empty_additive_table "$strategy" "$source_table"
   if [[ -n "$current_mapping" ]]; then
     log "Removing preserved mapping for $source_table"
     apply_table_edit remove "$mapping"
     pause_mirror
   fi
 
+  require_empty_additive_table "$strategy" "$source_table"
   log "Dropping only $CLICKHOUSE_RAW_DB.$destination and its current-state view"
   drop_raw_table_and_view "$destination"
   log "Re-adding preserved mapping for $source_table"
@@ -525,11 +562,13 @@ handle_exit() {
 main() {
   local strategy=${2:-} source_table=${3:-}
   [[ ${1:-} == --strategy && -n "$strategy" && -n "$source_table" && $# -eq 3 ]] \
-    || die "usage: $0 --strategy empty_table_resnapshot|replicated_snapshot SCHEMA.TABLE"
-  [[ "$strategy" == empty_table_resnapshot || "$strategy" == replicated_snapshot ]] \
+    || die "usage: $0 --strategy empty_table_resnapshot|replicated_snapshot|cdc_additive SCHEMA.TABLE"
+  [[ "$strategy" == empty_table_resnapshot || "$strategy" == replicated_snapshot || "$strategy" == cdc_additive ]] \
     || die "invalid resnapshot strategy: $strategy"
   [[ "$source_table" =~ ^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$ ]] \
     || die "invalid source table: $source_table"
+  [[ "$table_cdc_timeout" =~ ^[1-9][0-9]*$ ]] \
+    || die "ANALYTICS_DEPLOY_HEALTH_TIMEOUT_SECONDS must be a positive integer"
   [[ "$table_resnapshot_timeout" =~ ^[1-9][0-9]*$ ]] \
     || die "MIRROR_TABLE_RESNAPSHOT_TIMEOUT_SECONDS must be a positive integer"
   [[ "$table_resnapshot_poll_interval" =~ ^[1-9][0-9]*$ ]] \

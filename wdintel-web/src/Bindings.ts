@@ -399,6 +399,7 @@ export type InboxMessage = {
   imageRecognized: Array<string>;
   date: string | null;
   time: string | null;
+  isTimeNull: boolean | null;
   freq: string | null;
   coords: string | null;
   coordsWithLocality: Array<CoordinateWithLocality>;
@@ -446,6 +447,7 @@ export type InboxMessageSummary = {
   timestamp: number | null;
   date: string | null;
   time: string | null;
+  isTimeNull: boolean | null;
   groupName: string | null;
   groupMasterKey: string | null;
   coords: string | null;
@@ -2655,6 +2657,23 @@ export type MessageMediaInfo = {
   transcription: string | null;
   ocr: OcrMediaSummary | null;
   summary: MediaSummaryStatus | null;
+  kmzConversionStatus: string | null;
+};
+
+export type SignalMediaKmzConversionStatusRsp = {
+  status: string;
+  error: string | null;
+  convertedFileName: string | null;
+};
+
+export type SignalMediaKmzPreviewLineString = {
+  coords: Array<Coords>;
+  color: string | null;
+};
+
+export type SignalMediaKmzPreviewRsp = {
+  points: Array<PalitraPoint>;
+  lineStrings: Array<SignalMediaKmzPreviewLineString>;
 };
 
 export type SigintZone = {

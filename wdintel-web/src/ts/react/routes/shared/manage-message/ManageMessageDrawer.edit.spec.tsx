@@ -6,6 +6,7 @@ import { act, forwardRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { InboxMessage } from '../../../../../Bindings';
+import dayjs from 'dayjs';
 
 const referenceDataMocks = vi.hoisted(() => ({
   getUserSigintGroups: vi.fn().mockResolvedValue([]),
@@ -217,8 +218,19 @@ vi.mock('../../../components/loadingOverlayStyles', () => ({
   pageDrawerBackdropSx: () => ({}),
 }));
 vi.mock('@mui/x-date-pickers/TimePicker', () => ({
-  TimePicker: ({ label, value }: { label?: string; value?: unknown }) => {
-    if (label) pickerValuesByLabel.set(label, value);
+  TimePicker: ({
+    label,
+    value,
+    onChange,
+  }: {
+    label?: string;
+    value?: unknown;
+    onChange: (value: unknown) => void;
+  }) => {
+    if (label) {
+      pickerValuesByLabel.set(label, value);
+      timePickerOnChange.set(label, onChange);
+    }
     return <div>{label}</div>;
   },
 }));
@@ -257,6 +269,7 @@ const autocompleteInputValuesByLabel = new Map<string, string>();
 const autocompleteOptionLabelsByLabel = new Map<string, string[]>();
 const autocompleteOptionsByLabel = new Map<string, unknown[]>();
 const pickerValuesByLabel = new Map<string, unknown>();
+const timePickerOnChange = new Map<string, (value: unknown) => void>();
 let drawerModalProps: { closeAfterTransition?: boolean } | undefined;
 let drawerSlotProps:
   { paper?: { sx?: { width?: string | Record<string, string | number> } } } | undefined;
@@ -591,6 +604,7 @@ describe('ManageMessageDrawer edit mode', () => {
     autocompleteOptionLabelsByLabel.clear();
     autocompleteOptionsByLabel.clear();
     pickerValuesByLabel.clear();
+    timePickerOnChange.clear();
     drawerModalProps = undefined;
     drawerOnClose = undefined;
     directSubmitMocks.submitDirect.mockReset();
@@ -1332,6 +1346,47 @@ describe('ManageMessageDrawer edit mode', () => {
 
     root.unmount();
   });
+
+  it.each([false, true])(
+    '#3515 submits clearing/restoring time (previously missing: %s)',
+    async (isTimeNull) => {
+      const message = buildMessage({ isTimeNull, timestamp: Date.parse('2026-07-01T09:00:00Z') });
+      directSubmitMocks.editDirectSubmit.mockResolvedValue({ signal_message_id: 91, message });
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={null}
+            onClose={vi.fn()}
+            editTarget={{ id: 91, message }}
+          />,
+        );
+      });
+      expect(pickerValuesByLabel.get('Час перехоплення') == null).toBe(isTimeNull);
+      await act(async () => {
+        timePickerOnChange.get('Час перехоплення')?.(
+          isTimeNull ? dayjs('2026-07-01T12:00:00') : null,
+        );
+      });
+      await act(async () => {
+        container
+          .querySelector('form')
+          ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      });
+      expect(directSubmitMocks.editDirectSubmit).toHaveBeenCalledWith(
+        91,
+        expect.objectContaining({
+          is_time_null: !isTimeNull,
+          timestamp: '2026-07-01T09:00:00.000Z',
+        }),
+      );
+      root.unmount();
+    },
+  );
 
   it('edits a message with an accessible parent as an independent message by default', async () => {
     const onSubmitEdit = vi.fn();

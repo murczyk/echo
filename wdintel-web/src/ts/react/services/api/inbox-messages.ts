@@ -97,6 +97,7 @@ export type MessageMediaInfoRaw = Partial<MessageMediaInfo> & {
   content_type?: string;
   file_name?: string | null;
   size_bytes?: number;
+  kmz_conversion_status?: string | null;
 };
 
 export function normalizeMessageMediaInfo(m: MessageMediaInfoRaw): MessageMediaInfo {
@@ -110,6 +111,8 @@ export function normalizeMessageMediaInfo(m: MessageMediaInfoRaw): MessageMediaI
     transcription: (m.transcription ?? raw.transcription ?? null) as string | null,
     ocr: m.ocr ?? null,
     summary: m.summary ?? null,
+    kmzConversionStatus: (m.kmzConversionStatus ?? raw.kmz_conversion_status ?? null) as
+      string | null,
   };
 }
 
@@ -309,6 +312,7 @@ function normalizeInboxMessage(
   return {
     ...m,
     messageUuid,
+    isTimeNull: m.isTimeNull ?? null,
     groupMasterKey,
     networkIds,
     networkName,

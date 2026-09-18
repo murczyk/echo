@@ -48,6 +48,9 @@ const EVENT_MSG_INTELLIGENCE_REPORT_COMPAT_DECODER: &str = r#"|> Json.Decode.and
 const LONG_POLL_DEPLOYMENT_MAINTENANCE_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deployment_maintenance" (Json.Decode.nullable (deploymentMaintenanceDecoder))))"#;
 const LONG_POLL_DEPLOYMENT_MAINTENANCE_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "deployment_maintenance" (Json.Decode.nullable (deploymentMaintenanceDecoder)), Json.Decode.succeed Nothing ]))"#;
 
+const MESSAGE_IS_TIME_NULL_STRICT_DECODER: &str = r#"Json.Decode.field "is_time_null" (Json.Decode.nullable (Json.Decode.bool))"#;
+const MESSAGE_IS_TIME_NULL_COMPAT_DECODER: &str = r#"Json.Decode.oneOf [ Json.Decode.field "is_time_null" (Json.Decode.nullable (Json.Decode.bool)), Json.Decode.succeed Nothing ]"#;
+
 pub fn main_gen_elm() -> Result<(), AppError> {
     let mut target = vec![];
     elm_rs::export!("Bindings", &mut target, {
@@ -391,6 +394,9 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::organism::goi::types::ListGoiKnowledgeRsp,
             crate::datasource::types::Datasource,
             crate::rer_importer::types::MessageMediaInfo,
+            crate::sigint::media_conversion::types::SignalMediaKmzConversionStatusRsp,
+            crate::sigint::media_conversion::types::SignalMediaKmzPreviewLineString,
+            crate::sigint::media_conversion::types::SignalMediaKmzPreviewRsp,
             crate::sigint::types::SigintZone,
             crate::sigint::types::InterseptionKind,
             crate::sigint::types::ZoneDatasourceGroup,
@@ -1135,6 +1141,9 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::organism::goi::types::ListGoiKnowledgeRsp,
             crate::datasource::types::Datasource,
             crate::rer_importer::types::MessageMediaInfo,
+            crate::sigint::media_conversion::types::SignalMediaKmzConversionStatusRsp,
+            crate::sigint::media_conversion::types::SignalMediaKmzPreviewLineString,
+            crate::sigint::media_conversion::types::SignalMediaKmzPreviewRsp,
             crate::sigint::types::SigintZone,
             crate::sigint::types::InterseptionKind,
             crate::sigint::types::ZoneDatasourceGroup,
@@ -1750,6 +1759,10 @@ fn patch_backward_compatible_decoders(
         .replace(
             EVENT_MSG_ORIGIN_STRICT_DECODER,
             EVENT_MSG_ORIGIN_COMPAT_DECODER,
+        )
+        .replace(
+            MESSAGE_IS_TIME_NULL_STRICT_DECODER,
+            MESSAGE_IS_TIME_NULL_COMPAT_DECODER,
         )
         .replace(
             LONG_POLL_DEPLOYMENT_MAINTENANCE_STRICT_DECODER,
