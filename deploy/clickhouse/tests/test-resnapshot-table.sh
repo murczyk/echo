@@ -39,6 +39,7 @@ run_case() {
 }
 
 if [[ $# -eq 0 ]]; then
+  run_case cdc_paused success
   run_case cdc_propagated success
   run_case cdc_timeout failure
   run_case cdc_empty success
@@ -214,7 +215,10 @@ case $scenario in
     grep -q '^snapshot$' "$operations_file"
     grep -q '^refresh$' "$operations_file"
     ;;
-  cdc_propagated)
+  cdc_propagated|cdc_paused)
+    if [[ "$scenario" == cdc_paused ]]; then
+      mock_status=2
+    fi
     mock_has_rows=true
     raw_columns() {
       if [[ -f "$case_dir/cdc-read" ]]; then
@@ -226,6 +230,9 @@ case $scenario in
     }
     resnapshot_table cdc_additive public.echo_automation
     ! grep -Eq '^(pause|remove|drop|add|snapshot)' "$operations_file"
+    if [[ "$scenario" == cdc_paused ]]; then
+      grep -q '^resume$' "$operations_file"
+    fi
     ;;
   cdc_timeout)
     mock_has_rows=true

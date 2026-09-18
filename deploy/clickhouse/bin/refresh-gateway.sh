@@ -164,6 +164,7 @@ DO $do$
 DECLARE
   foreign_table record;
   select_list text;
+  column_difference text;
 BEGIN
   IF (
     SELECT count(*)
@@ -173,27 +174,34 @@ BEGIN
     RAISE EXCEPTION 'imported foreign-table count does not match ClickHouse view count';
   END IF;
 
-  IF EXISTS (
-    WITH imported_columns AS (
-      SELECT foreign_relation.foreign_table_name AS target_table,
-             column_info.column_name
-      FROM information_schema.foreign_tables foreign_relation
-      JOIN information_schema.columns column_info
-        ON column_info.table_schema = foreign_relation.foreign_table_schema
-       AND column_info.table_name = foreign_relation.foreign_table_name
-      WHERE foreign_relation.foreign_table_schema = 'echo_clickhouse_foreign'
-    ), differing_columns AS (
-      (SELECT target_table, column_name FROM source_column_metadata
-       EXCEPT
-       SELECT target_table, column_name FROM imported_columns)
-      UNION ALL
-      (SELECT target_table, column_name FROM imported_columns
-       EXCEPT
-       SELECT target_table, column_name FROM source_column_metadata)
-    )
-    SELECT FROM differing_columns
-  ) THEN
-    RAISE EXCEPTION 'source and imported ClickHouse columns do not match';
+  WITH imported_columns AS (
+    SELECT foreign_relation.foreign_table_name AS target_table,
+           column_info.column_name
+    FROM information_schema.foreign_tables foreign_relation
+    JOIN information_schema.columns column_info
+      ON column_info.table_schema = foreign_relation.foreign_table_schema
+     AND column_info.table_name = foreign_relation.foreign_table_name
+    WHERE foreign_relation.foreign_table_schema = 'echo_clickhouse_foreign'
+  ), differing_columns AS (
+    SELECT 'source only' AS side, missing.* FROM (
+      SELECT target_table, column_name FROM source_column_metadata
+      EXCEPT
+      SELECT target_table, column_name FROM imported_columns
+    ) missing
+    UNION ALL
+    SELECT 'imported only' AS side, extra.* FROM (
+      SELECT target_table, column_name FROM imported_columns
+      EXCEPT
+      SELECT target_table, column_name FROM source_column_metadata
+    ) extra
+  )
+  SELECT string_agg(format('%s: %I.%I', side, target_table, column_name),
+                    E'\n' ORDER BY side, target_table, column_name)
+  INTO column_difference
+  FROM differing_columns;
+  IF column_difference IS NOT NULL THEN
+    RAISE EXCEPTION 'source and imported ClickHouse columns do not match'
+      USING DETAIL = column_difference;
   END IF;
 
   FOR foreign_table IN

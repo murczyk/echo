@@ -1016,9 +1016,17 @@ PeerDB's paused-mirror table editing to remove and re-add only that preserved
 mapping. Additive nullable columns on non-empty tables that require a targeted
 rebuild declare `replicated_snapshot` with `"targeted_resnapshot": true`; the
 same helper validates additive-only drift and rebuilds only the preserved table
-mapping. Automatic repairs consider only declarations added or changed since
-the previously active control release. Retry an interrupted repair explicitly
-with `just analytics-resnapshot-table`. Drops, renames, type changes, and other
+mapping. Automatic repairs consider manifest-authorized tables and preserved
+retry state.
+Deployment repairs the complete batch under one analytics reconciliation lock,
+then refreshes and verifies the gateway once all raw tables are ready. Retry an
+interrupted deployment with `/opt/echo-peerdb/current/bin/source-verify-deploy.sh`
+on the source host after activating the same corrected control bundle on both
+hosts. Completed raw snapshots are reused, and retry state is retained until
+global verification succeeds. Monitor retained WAL while the mirror is paused;
+do not request a full mirror resync. Use `just analytics-resnapshot-table` only
+for a standalone table repair when other tables already match. Drops, renames,
+type changes, and other
 incompatible changes use `mirror_resync`. Dependency revision changes for
 `echo-im` and `echo-gpu` must declare whether they contain schema changes.
 Deployment never starts a full mirror resync implicitly.

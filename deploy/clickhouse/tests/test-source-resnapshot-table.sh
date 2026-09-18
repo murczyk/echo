@@ -97,4 +97,12 @@ if manifest_resnapshot_strategy public.unknown >/dev/null 2>&1; then
   exit 1
 fi
 
+load_source_config() { export ANALYTICS_ADDRESS=127.0.0.1; }
+require_paired_control_release() { printf '%064d\n' 1; }
+acquire_source_reconcile_lock() { :; }
+run_remote_batch() { cat >"$case_dir/batch"; }
+run_remote_resnapshot() { exit 99; }
+main --manifest
+[[ $(cat "$case_dir/batch") == "$expected" ]]
+
 printf 'Source table resnapshot authorization tests passed\n'

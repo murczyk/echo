@@ -12,6 +12,8 @@ table_cdc_timeout=${ANALYTICS_DEPLOY_HEALTH_TIMEOUT_SECONDS:-300}
 table_resnapshot_poll_interval=${MIRROR_TABLE_RESNAPSHOT_POLL_SECONDS:-5}
 table_resnapshot_state_dir=${ECHO_ANALYTICS_RESNAPSHOT_STATE_DIR:-/var/lib/echo-analytics/table-resnapshot}
 analytics_bin_dir=${ECHO_ANALYTICS_BIN_DIR:-$(dirname "$ANALYTICS_LIB")}
+batch_mode=false
+preflight_only=false
 mutation_started=false
 repair_complete=false
 
@@ -401,6 +403,10 @@ refresh_analytics() {
 
 finish_repair() {
   local source_table=$1
+  if [[ "$batch_mode" == true ]]; then
+    log "Raw table repair completed for $source_table; retaining state until batch verification"
+    return 0
+  fi
   resume_mirror
   refresh_analytics
   clear_state_mapping "$source_table"
@@ -418,7 +424,7 @@ wait_for_additive_cdc() {
       <(printf '%s\n' "$raw_schema"))
     [[ -z "$raw_only" ]] || die "$source_table gained unexpected raw columns: $raw_only"
     if [[ "$source_schema" == "$raw_schema" ]]; then
-      repair_complete=true
+      [[ "$batch_mode" == true ]] || repair_complete=true
       log "$source_table added columns propagated through CDC; no resnapshot needed"
       return 0
     fi
@@ -481,9 +487,18 @@ resnapshot_table() {
     source_only=$source_schema
   fi
 
+  if [[ "$preflight_only" == true ]]; then
+    [[ -n "$state_mapping" || "$raw_exists" == true ]] \
+      || die "$CLICKHOUSE_RAW_DB.$destination is missing without recoverable resnapshot state"
+    if [[ -n "$source_only" && "$strategy" == empty_table_resnapshot ]]; then
+      require_empty_additive_table "$strategy" "$source_table"
+    fi
+    return 0
+  fi
+
   if [[ -z "$state_mapping" && -z "$source_only" ]]; then
     log "$source_table already matches raw ClickHouse; no resnapshot needed"
-    repair_complete=true
+    [[ "$batch_mode" == true ]] || repair_complete=true
     return 0
   fi
   if [[ -z "$state_mapping" && "$raw_exists" != true ]]; then
@@ -491,6 +506,10 @@ resnapshot_table() {
   fi
   if [[ "$strategy" == cdc_additive && -z "$state_mapping" ]] \
     && source_table_has_rows "$source_table"; then
+    if [[ $(stable_mirror_status) == 2 ]]; then
+      mutation_started=true
+      resume_mirror
+    fi
     wait_for_additive_cdc "$source_table" "$destination" "$source_schema"
     return 0
   fi
@@ -559,14 +578,90 @@ handle_exit() {
   exit "$exit_status"
 }
 
+validate_batch_entries() {
+  python3 - "$BUNDLE_DIR/migration-impact.json" "$table_resnapshot_state_dir" "$MIRROR_NAME" "$(cat)" <<'PYTHON'
+import json
+import pathlib
+import re
+import sys
+
+manifest_path, state_dir, mirror, batch = sys.argv[1:]
+manifest = json.loads(pathlib.Path(manifest_path).read_text())
+authorized = {}
+for section in ("migrations", "dependencies"):
+    for declaration in manifest[section].values():
+        for change in declaration.get("changes", []):
+            strategy = change.get("strategy")
+            if strategy in {"empty_table_resnapshot", "cdc_additive"} or (
+                strategy == "replicated_snapshot" and change.get("targeted_resnapshot") is True
+            ):
+                authorized.setdefault(change["table"], set()).add(strategy)
+entries = {}
+
+def add_entry(strategy, table):
+    if not re.fullmatch(r"[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*", table):
+        raise SystemExit(f"invalid source table: {table}")
+    if authorized.get(table) != {strategy}:
+        raise SystemExit(f"unauthorized or conflicting repair strategy for {table}: {strategy}")
+    if table in entries and entries[table] != strategy:
+        raise SystemExit(f"conflicting batch strategies for {table}")
+    entries[table] = strategy
+
+for line in batch.splitlines():
+    if not line.strip():
+        continue
+    fields = line.rstrip("\n").split("\t")
+    if len(fields) != 2:
+        raise SystemExit("expected strategy and source table separated by a tab")
+    add_entry(*fields)
+for path in sorted(pathlib.Path(state_dir).glob(f"{mirror}-*.json")):
+    state = json.loads(path.read_text())
+    table = state["sourceTableIdentifier"]
+    if path.name != f"{mirror}-{table.replace('.', '__')}.json":
+        raise SystemExit(f"invalid retry state filename: {path.name}")
+    add_entry(state.get("strategy", "empty_table_resnapshot"), table)
+for table, strategy in sorted(entries.items()):
+    print(strategy, table, sep="\t")
+PYTHON
+}
+
+resnapshot_batch() {
+  local entries strategy source_table
+  entries=$(validate_batch_entries) \
+    || die "invalid targeted repair batch or retry state"
+  [[ -n "$entries" ]] || return 0
+  batch_mode=true
+  preflight_only=true
+  while IFS=$'\t' read -r strategy source_table; do
+    resnapshot_table "$strategy" "$source_table"
+  done <<<"$entries"
+  preflight_only=false
+  while IFS=$'\t' read -r strategy source_table; do
+    log "Checking targeted $strategy repair for $source_table"
+    resnapshot_table "$strategy" "$source_table"
+  done <<<"$entries"
+  mutation_started=true
+  resume_mirror
+  refresh_analytics
+  while IFS=$'\t' read -r strategy source_table; do
+    clear_state_mapping "$source_table"
+  done <<<"$entries"
+  repair_complete=true
+  log "Targeted table repair batch completed"
+}
+
 main() {
   local strategy=${2:-} source_table=${3:-}
-  [[ ${1:-} == --strategy && -n "$strategy" && -n "$source_table" && $# -eq 3 ]] \
-    || die "usage: $0 --strategy empty_table_resnapshot|replicated_snapshot|cdc_additive SCHEMA.TABLE"
-  [[ "$strategy" == empty_table_resnapshot || "$strategy" == replicated_snapshot || "$strategy" == cdc_additive ]] \
-    || die "invalid resnapshot strategy: $strategy"
-  [[ "$source_table" =~ ^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$ ]] \
-    || die "invalid source table: $source_table"
+  if [[ ${1:-} == --batch && $# -eq 1 ]]; then
+    batch_mode=true
+  else
+    [[ ${1:-} == --strategy && -n "$strategy" && -n "$source_table" && $# -eq 3 ]] \
+      || die "usage: $0 --batch | --strategy empty_table_resnapshot|replicated_snapshot|cdc_additive SCHEMA.TABLE"
+    [[ "$strategy" == empty_table_resnapshot || "$strategy" == replicated_snapshot || "$strategy" == cdc_additive ]] \
+      || die "invalid resnapshot strategy: $strategy"
+    [[ "$source_table" =~ ^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$ ]] \
+      || die "invalid source table: $source_table"
+  fi
   [[ "$table_cdc_timeout" =~ ^[1-9][0-9]*$ ]] \
     || die "ANALYTICS_DEPLOY_HEALTH_TIMEOUT_SECONDS must be a positive integer"
   [[ "$table_resnapshot_timeout" =~ ^[1-9][0-9]*$ ]] \
@@ -586,7 +681,12 @@ main() {
   trap handle_exit EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
-  resnapshot_table "$strategy" "$source_table"
+  if [[ "$batch_mode" == true ]]; then
+    require_cmd python3
+    resnapshot_batch
+  else
+    resnapshot_table "$strategy" "$source_table"
+  fi
 }
 
 if [[ ${ECHO_ANALYTICS_RESNAPSHOT_TEST_MODE:-false} != true ]]; then

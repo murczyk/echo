@@ -94,8 +94,19 @@ run_remote_resnapshot() {
       "sudo -n env ECHO_ANALYTICS_EXPECTED_CONTROL_RELEASE=$control_release ANALYTICS_DEPLOY_HEALTH_TIMEOUT_SECONDS=$cdc_timeout /opt/echo-analytics/current/bin/resnapshot-table.sh --strategy $strategy $source_table"
 }
 
+run_remote_batch() {
+  local cdc_timeout=${ANALYTICS_DEPLOY_HEALTH_TIMEOUT_SECONDS:-300}
+  [[ "$cdc_timeout" =~ ^[1-9][0-9]*$ ]] \
+    || die "ANALYTICS_DEPLOY_HEALTH_TIMEOUT_SECONDS must be a positive integer"
+  timeout --foreground "${remote_timeout}s" \
+    ssh -o BatchMode=yes -o ConnectTimeout=10 \
+      -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
+      "$analytics_ssh_target" \
+      "sudo -n env ECHO_ANALYTICS_EXPECTED_CONTROL_RELEASE=$control_release ANALYTICS_DEPLOY_HEALTH_TIMEOUT_SECONDS=$cdc_timeout /opt/echo-analytics/current/bin/resnapshot-table.sh --batch"
+}
+
 main() {
-  local mode=${1:-} source_table=${2:-} strategy entry entries
+  local mode=${1:-} source_table=${2:-} strategy entries
   local -a source_tables=()
   declare -A strategies_by_table=()
 
@@ -133,15 +144,8 @@ main() {
 
   if [[ "$mode" == --manifest ]]; then
     entries=$(manifest_resnapshot_entries)
-    while IFS= read -r entry; do
-      [[ -n "$entry" ]] || continue
-      IFS=$'\t' read -r strategy source_table <<<"$entry"
-      validate_source_table "$source_table"
-      [[ "$strategy" == empty_table_resnapshot || "$strategy" == replicated_snapshot || "$strategy" == cdc_additive ]] \
-        || die "invalid resnapshot strategy for $source_table: $strategy"
-      source_tables+=("$source_table")
-      strategies_by_table["$source_table"]=$strategy
-    done <<<"$entries"
+    run_remote_batch <<<"$entries"
+    return 0
   fi
 
   if ((${#source_tables[@]} == 0)); then
