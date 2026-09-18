@@ -54,6 +54,7 @@ struct Report1213Item {
     nominal_working_freq: String,
     first_seen_at: NaiveDateTime,
     last_seen_at: NaiveDateTime,
+    has_unknown_time: bool,
     node_callsign: Option<String>,
     source_mgrs: Option<String>,
 }
@@ -71,6 +72,7 @@ struct Report1213Accumulator {
     activity_key: Report1213ActivityKey,
     first_seen_at: NaiveDateTime,
     last_seen_at: NaiveDateTime,
+    has_unknown_time: bool,
     sender_name_stats: BTreeMap<String, Report1213ObservedTextStat>,
     linked_unit_name_stats: BTreeMap<String, Report1213ObservedTextStat>,
     latest_source_mgrs: Option<(NaiveDateTime, String)>,
@@ -89,6 +91,7 @@ impl Report1213Accumulator {
             activity_key,
             first_seen_at: seen_at,
             last_seen_at: seen_at,
+            has_unknown_time: false,
             sender_name_stats: BTreeMap::new(),
             linked_unit_name_stats: BTreeMap::new(),
             latest_source_mgrs: None,
@@ -103,6 +106,7 @@ impl Report1213Accumulator {
     fn apply_activity_range(&mut self, range: &Report1213ActivityRange) {
         self.first_seen_at = range.first_seen_at;
         self.last_seen_at = range.last_seen_at;
+        self.has_unknown_time |= range.has_unknown_time;
     }
 
     fn observe_sender_names(
@@ -158,6 +162,7 @@ impl Report1213Accumulator {
             nominal_working_freq: self.nominal_working_freq,
             first_seen_at: self.first_seen_at,
             last_seen_at: self.last_seen_at,
+            has_unknown_time: self.has_unknown_time,
             node_callsign: pick_report_1213_text(&self.sender_name_stats),
             source_mgrs: self.latest_source_mgrs.map(|(_, mgrs)| mgrs),
         }
@@ -193,17 +198,20 @@ enum Report1213ActivityKey {
 struct Report1213ActivityRange {
     first_seen_at: NaiveDateTime,
     last_seen_at: NaiveDateTime,
+    has_unknown_time: bool,
 }
 
 impl Report1213ActivityRange {
-    fn new(seen_at: NaiveDateTime) -> Self {
+    fn new(seen_at: NaiveDateTime, is_time_null: bool) -> Self {
         Self {
             first_seen_at: seen_at,
             last_seen_at: seen_at,
+            has_unknown_time: is_time_null,
         }
     }
 
-    fn observe(&mut self, seen_at: NaiveDateTime) {
+    fn observe(&mut self, seen_at: NaiveDateTime, is_time_null: bool) {
+        self.has_unknown_time |= is_time_null;
         self.first_seen_at = std::cmp::min(self.first_seen_at, seen_at);
         self.last_seen_at = std::cmp::max(self.last_seen_at, seen_at);
     }
@@ -222,6 +230,7 @@ struct Report1213MessageRow {
     freq: Option<String>,
     date: Option<String>,
     time: Option<String>,
+    is_time_null: Option<bool>,
     unit: Option<String>,
 }
 
@@ -392,6 +401,7 @@ async fn load_report_1213_messages(
     .column_as(sigint_inbox_item::Column::Freq, "freq")
     .column_as(sigint_inbox_item::Column::Date, "date")
     .column_as(sigint_inbox_item::Column::Time, "time")
+    .column_as(sigint_inbox_item::Column::IsTimeNull, "is_time_null")
     .column_as(sigint_inbox_item::Column::UnitV2, "unit")
     .into_model::<Report1213MessageRow>()
     .all(dbx)
@@ -424,6 +434,7 @@ async fn load_report_1213_messages(
             message.freq = row.freq;
             message.date = row.date;
             message.time = row.time;
+            message.is_time_null = row.is_time_null;
             message.unit = row.unit;
             message.group_master_key = group_info
                 .as_ref()
@@ -694,6 +705,7 @@ fn build_report_1213_data(
                 row.apply_activity_range(range);
             } else {
                 row.observe_datetime(seen_at);
+                row.has_unknown_time |= message.is_time_null == Some(true);
             }
             row.observe_linked_unit_name(
                 row_def.linked_unit_name.as_deref(),
@@ -835,6 +847,7 @@ fn build_report_1213_activity_ranges(
                 &mut ranges.linked,
                 (network_id, freq.clone()),
                 seen_at,
+                message.is_time_null == Some(true),
             );
         }
 
@@ -843,6 +856,7 @@ fn build_report_1213_activity_ranges(
                 &mut ranges.fuzzy,
                 (freq, report_1213_message_aor_id(message, group_aors)),
                 seen_at,
+                message.is_time_null == Some(true),
             );
         }
     }
@@ -854,11 +868,12 @@ fn observe_report_1213_activity_range<K: Ord>(
     ranges: &mut BTreeMap<K, Report1213ActivityRange>,
     key: K,
     seen_at: NaiveDateTime,
+    is_time_null: bool,
 ) {
     ranges
         .entry(key)
-        .and_modify(|range| range.observe(seen_at))
-        .or_insert_with(|| Report1213ActivityRange::new(seen_at));
+        .and_modify(|range| range.observe(seen_at, is_time_null))
+        .or_insert_with(|| Report1213ActivityRange::new(seen_at, is_time_null));
 }
 
 fn find_report_1213_activity_range<'a>(
@@ -1062,6 +1077,9 @@ fn report_1213_item_paragraph(text: &str) -> Paragraph {
 }
 
 fn render_report_1213_activity_period(item: &Report1213Item) -> String {
+    if item.has_unknown_time {
+        return String::new();
+    }
     format!(
         "{}-{}",
         item.first_seen_at.format("%H:%M"),
@@ -1085,6 +1103,43 @@ mod tests {
     };
     use serial_test::serial;
     use tempfile::NamedTempFile;
+
+    #[test]
+    fn issue_3515_activity_range_does_not_present_unknown_time_as_noon() {
+        let mut message = blank_inbox_message();
+        message.freq = Some("138.8150".to_string());
+        message.network_ids = Some(vec![1]);
+        message.timestamp =
+            Some(test_dt(9, 10, 0).and_utc().timestamp_millis());
+        let names = HashMap::from([(1, "network".to_string())]);
+        for flag in [None, Some(false), Some(true)] {
+            message.is_time_null = flag;
+            let ranges = build_report_1213_activity_ranges(
+                &[(1, message.clone())],
+                &names,
+                &BTreeMap::new(),
+                &HashMap::new(),
+                true,
+            )
+            .unwrap();
+            let mut row = Report1213Accumulator::new(
+                "network".to_string(),
+                "138.8150".to_string(),
+                Report1213ActivityKey::LinkedNetwork(1),
+                test_dt(9, 12, 0),
+            );
+            row.apply_activity_range(ranges.linked.values().next().unwrap());
+            let item = row.finish();
+            assert_eq!(
+                render_report_1213_activity_period(&item),
+                if flag == Some(true) {
+                    ""
+                } else {
+                    "12:00-12:00"
+                }
+            );
+        }
+    }
 
     async fn seed_report_1213_message(
         dbx: &DatabaseConnection,
@@ -1855,6 +1910,7 @@ mod tests {
                 nominal_working_freq: "138.8150".to_string(),
                 first_seen_at: test_dt(9, 6, 10),
                 last_seen_at: test_dt(9, 22, 29),
+                has_unknown_time: false,
                 node_callsign: Some("ЯМАЛ".to_string()),
                 source_mgrs: Some("37UDR0123412345".to_string()),
             }],

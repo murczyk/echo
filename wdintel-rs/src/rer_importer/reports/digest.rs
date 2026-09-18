@@ -53,6 +53,7 @@ pub struct NetworkRow {
 }
 
 pub struct InterNote {
+    pub is_time_null: bool,
     pub time: Option<NaiveDateTime>,
     pub comment: String,
     pub interception: Option<String>,
@@ -98,6 +99,7 @@ struct DigestMessageRow {
     location_v2: Option<String>,
     date: Option<String>,
     time: Option<String>,
+    is_time_null: Option<bool>,
     unit: Option<String>,
 }
 
@@ -401,6 +403,7 @@ async fn load_digest_messages(
     .column_as(sigint_inbox_item::Column::LocationV2, "location_v2")
     .column_as(sigint_inbox_item::Column::Date, "date")
     .column_as(sigint_inbox_item::Column::Time, "time")
+    .column_as(sigint_inbox_item::Column::IsTimeNull, "is_time_null")
     .column_as(sigint_inbox_item::Column::UnitV2, "unit")
     .into_model::<DigestMessageRow>()
     .all(dbx)
@@ -438,6 +441,7 @@ async fn load_digest_messages(
                 );
             message.date = row.date;
             message.time = row.time;
+            message.is_time_null = row.is_time_null;
             message.unit = row.unit;
             message.group_master_key =
                 group_info.and_then(|group| group.group_master_key);
@@ -457,6 +461,13 @@ fn build_note_comment(
 
     match note.time {
         None => note.comment.clone(),
+        Some(dt) if note.is_time_null => {
+            if show_date {
+                format!("{} {}", dt.format("%d.%m"), note.comment)
+            } else {
+                note.comment.clone()
+            }
+        }
         Some(dt) => match show_date {
             false => format!("{} {}", dt.time().format("%H:%M"), note.comment),
             true => format!("{} {}", dt.format("%d.%m %H:%M"), note.comment),
@@ -790,6 +801,7 @@ async fn collect_report(
                     to_callsigns,
                 };
                 notes.push(InterNote {
+                    is_time_null: message.is_time_null == Some(true),
                     time,
                     comment,
                     interception: Some(message.text.clone()),
@@ -1108,6 +1120,9 @@ fn normalize_message_date(raw: &str) -> String {
 }
 
 fn extract_message_time(message: &InboxMessage) -> Option<String> {
+    if message.is_time_null == Some(true) {
+        return None;
+    }
     sanitize_optional_text(message.time.clone())
         .map(|time| normalize_message_time(&time))
         .or_else(|| {
@@ -1212,8 +1227,75 @@ mod tests {
     use serial_test::serial;
 
     #[test]
+    fn issue_3515_digest_omits_unknown_time_but_keeps_date() {
+        let mut message = blank_inbox_message();
+        message.date = Some("2026-06-27".to_string());
+        message.time = Some("12:00:00".to_string());
+        message.timestamp = Some(
+            NaiveDate::from_ymd_opt(2026, 6, 27)
+                .unwrap()
+                .and_hms_opt(9, 0, 0)
+                .unwrap()
+                .and_utc()
+                .timestamp_millis(),
+        );
+        for flag in [None, Some(false), Some(true)] {
+            message.is_time_null = flag;
+            assert_eq!(
+                extract_message_date(&message).as_deref(),
+                Some("27.06.2026")
+            );
+            assert_eq!(
+                extract_message_time(&message).as_deref(),
+                if flag == Some(true) {
+                    None
+                } else {
+                    Some("12:00")
+                }
+            );
+        }
+        message.time = None;
+        assert_eq!(extract_message_time(&message), None);
+        let note = InterNote {
+            is_time_null: true,
+            time: Some(
+                NaiveDate::from_ymd_opt(2026, 6, 27)
+                    .unwrap()
+                    .and_hms_opt(12, 0, 0)
+                    .unwrap(),
+            ),
+            comment: "date-only observation".to_string(),
+            interception: None,
+            interception_form_1217: None,
+            interception_id: None,
+            details: InterceptionDetails {
+                date: extract_message_date(&message),
+                time: extract_message_time(&message),
+                freq: None,
+                location: None,
+                unit: None,
+                who_callsign: None,
+                to_callsigns: None,
+            },
+        };
+        assert_eq!(
+            build_note_comment(&note, false, false),
+            "date-only observation"
+        );
+        assert_eq!(
+            build_note_comment(&note, true, false),
+            "27.06 date-only observation"
+        );
+        assert_eq!(
+            build_note_comment(&note, true, true),
+            "date-only observation"
+        );
+    }
+
+    #[test]
     fn build_note_comment_omits_time_for_form_1217() {
         let note = InterNote {
+            is_time_null: false,
             time: Some(
                 NaiveDate::from_ymd_opt(2026, 3, 21)
                     .unwrap()
@@ -1244,6 +1326,7 @@ mod tests {
     #[test]
     fn build_note_comment_keeps_time_when_form_1217_disabled() {
         let note = InterNote {
+            is_time_null: false,
             time: Some(
                 NaiveDate::from_ymd_opt(2026, 3, 21)
                     .unwrap()

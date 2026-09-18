@@ -83,6 +83,7 @@ enum ItemUnitResolution {
 
 #[derive(Clone, Debug)]
 struct RerReportMessage {
+    is_time_null: bool,
     timestamp: NaiveDateTime,
     comment: String,
     body: String,
@@ -110,6 +111,7 @@ struct RerReport {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SposobReportMessage {
+    is_time_null: bool,
     timestamp: NaiveDateTime,
     body: String,
 }
@@ -435,6 +437,7 @@ async fn load_report(
             target,
             item_id,
             timestamp,
+            item.is_time_null == Some(true),
             comments.join("; "),
             message_body_without_duplicate_comments(
                 &message, &comments, &blacklist,
@@ -497,6 +500,7 @@ async fn load_sposob_report(
             &mut report,
             item_id,
             timestamp,
+            item.is_time_null == Some(true),
             sposob_message_body_without_headers(&item, &message).c(h!())?,
         );
     }
@@ -508,6 +512,7 @@ fn insert_report_message(
     target: ResolvedItemUnit,
     item_id: i64,
     timestamp: NaiveDateTime,
+    is_time_null: bool,
     comment: String,
     body: String,
     callsigns: Vec<String>,
@@ -547,6 +552,7 @@ fn insert_report_message(
             }
         })
         .or_insert_with(|| RerReportMessage {
+            is_time_null,
             timestamp,
             comment,
             body,
@@ -558,12 +564,17 @@ fn insert_sposob_report_message(
     report: &mut SposobReport,
     item_id: i64,
     timestamp: NaiveDateTime,
+    is_time_null: bool,
     body: String,
 ) {
     report
         .messages
         .entry(item_id)
-        .or_insert_with(|| SposobReportMessage { timestamp, body });
+        .or_insert_with(|| SposobReportMessage {
+            is_time_null,
+            timestamp,
+            body,
+        });
 }
 
 async fn load_candidate_item_ids(
@@ -1283,6 +1294,9 @@ fn format_unit_identity(identity: &UnitIdentity) -> String {
 }
 
 fn format_message_heading(message: &RerReportMessage) -> String {
+    if message.is_time_null {
+        return message.comment.clone();
+    }
     let time = message.timestamp.format("%H:%M").to_string();
     if message.comment.trim().is_empty() {
         time
@@ -1292,6 +1306,9 @@ fn format_message_heading(message: &RerReportMessage) -> String {
 }
 
 fn format_sposob_message(message: &SposobReportMessage) -> String {
+    if message.is_time_null {
+        return message.body.clone();
+    }
     format!("{}\n{}", message.timestamp.format("%H-%M-%S"), message.body)
 }
 
@@ -2012,6 +2029,28 @@ mod tests {
     }
 
     #[test]
+    fn issue_3515_rer_reports_omit_unknown_time() {
+        let mut message = RerReportMessage {
+            timestamp: dt(12, 0),
+            is_time_null: false,
+            comment: "observation".to_string(),
+            body: "message".to_string(),
+            points: BTreeSet::new(),
+        };
+        assert_eq!(format_message_heading(&message), "12:00 observation");
+        message.is_time_null = true;
+        assert_eq!(format_message_heading(&message), "observation");
+        let mut message = SposobReportMessage {
+            timestamp: dt(12, 0),
+            is_time_null: false,
+            body: "message".to_string(),
+        };
+        assert_eq!(format_sposob_message(&message), "12-00-00\nmessage");
+        message.is_time_null = true;
+        assert_eq!(format_sposob_message(&message), "message");
+    }
+
+    #[test]
     fn write_report_docx_renders_report_maker_text_order() {
         let identity =
             unit_identity(&unit("6 А", "68 мсд", "", "", "", "")).unwrap();
@@ -2024,6 +2063,7 @@ mod tests {
             },
             10,
             dt(9, 15),
+            false,
             "важливо".to_string(),
             "Перший рядок\nДругий рядок".to_string(),
             vec!["БАРС".to_string()],
@@ -2068,6 +2108,7 @@ mod tests {
         report.messages.insert(
             10,
             SposobReportMessage {
+                is_time_null: false,
                 timestamp: dt(9, 15),
                 body: "Перший рядок\nДругий рядок".to_string(),
             },
@@ -2075,6 +2116,7 @@ mod tests {
         report.messages.insert(
             11,
             SposobReportMessage {
+                is_time_null: false,
                 timestamp: NaiveDate::from_ymd_opt(2026, 6, 28)
                     .unwrap()
                     .and_hms_opt(1, 2, 3)
@@ -2131,12 +2173,14 @@ mod tests {
             &mut report,
             first.id,
             dt_on(date, 6, 45),
+            false,
             message_body_without_headers(&first).unwrap(),
         );
         insert_sposob_report_message(
             &mut report,
             second.id,
             dt_on(date, 14, 47),
+            false,
             message_body_without_headers(&second).unwrap(),
         );
         let content = build_sposob_report_content(&report, date);
@@ -2160,6 +2204,7 @@ mod tests {
         report.messages.insert(
             1,
             SposobReportMessage {
+                is_time_null: false,
                 timestamp: NaiveDate::from_ymd_opt(2026, 6, 27)
                     .unwrap()
                     .and_hms_opt(1, 0, 0)
@@ -2170,6 +2215,7 @@ mod tests {
         report.messages.insert(
             2,
             SposobReportMessage {
+                is_time_null: false,
                 timestamp: NaiveDate::from_ymd_opt(2026, 7, 1)
                     .unwrap()
                     .and_hms_opt(1, 0, 0)
@@ -2194,6 +2240,7 @@ mod tests {
         report.messages.insert(
             1,
             SposobReportMessage {
+                is_time_null: false,
                 timestamp: NaiveDate::from_ymd_opt(2026, 7, 1)
                     .unwrap()
                     .and_hms_opt(1, 12, 0)
@@ -2204,6 +2251,7 @@ mod tests {
         report.messages.insert(
             2,
             SposobReportMessage {
+                is_time_null: false,
                 timestamp: NaiveDate::from_ymd_opt(2026, 7, 1)
                     .unwrap()
                     .and_hms_opt(23, 47, 0)

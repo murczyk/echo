@@ -1831,6 +1831,7 @@ mod tests {
             "device_name".to_string(),
             "intelligence_reports".to_string(),
             "has_date_in_header".to_string(),
+            "is_time_null".to_string(),
             "keyword_tokens".to_string(),
             "message_comments".to_string(),
             "message_uid".to_string(),

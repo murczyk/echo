@@ -37,6 +37,7 @@ struct InboxMessage {
     created_at: NaiveDateTime,
     date: Option<String>,
     time: Option<String>,
+    is_time_null: Option<bool>,
     freq: Option<String>,
     unit: Option<String>,
     callsigns: Option<JsonValue>,
@@ -297,7 +298,8 @@ fn interception_report_newest_first(req: &InboxMessagesReq) -> bool {
         || req.before_id_noninclusive.is_some()
 }
 
-type InterceptionMessageKey = (Option<String>, Option<String>, Option<String>);
+type InterceptionMessageKey =
+    (Option<String>, Option<String>, bool, Option<String>);
 
 fn merge_interception_report_chunk(
     messages: &mut Vec<InboxMessage>,
@@ -309,10 +311,14 @@ fn merge_interception_report_chunk(
         let key = (
             message.date.clone(),
             message.time.clone(),
+            message.is_time_null == Some(true),
             message.body.clone(),
         );
         if seen.insert(key) {
-            if message.date.is_some() && message.time.is_some() {
+            if message.date.is_some()
+                && (message.is_time_null == Some(true)
+                    || message.time.is_some())
+            {
                 record_count = record_count.saturating_add(1);
             }
             messages.push(message);
@@ -577,7 +583,11 @@ fn process_messages_for_interception_report(
             continue;
         };
 
-        let Some(time) = message.time.as_ref() else {
+        let time = if message.is_time_null == Some(true) {
+            String::new()
+        } else if let Some(time) = &message.time {
+            time.clone()
+        } else {
             continue;
         };
 
@@ -592,7 +602,7 @@ fn process_messages_for_interception_report(
                     + RER_INTERCEPTION_REPORT_HEADER_ROWS_NUM as RowNum,
                 message: &message,
                 date,
-                time: time.clone(),
+                time,
                 without_model_tags,
                 keep_full_message,
             },
@@ -675,6 +685,7 @@ async fn build_inbox_messages_report_sql(
         .column(sigint_inbox_item::Column::Datetime)
         .column(sigint_inbox_item::Column::Date)
         .column(sigint_inbox_item::Column::Time)
+        .column(sigint_inbox_item::Column::IsTimeNull)
         .column(sigint_inbox_item::Column::Freq)
         .column(signal_message::Column::Id)
         .column(signal_message::Column::CreatedAt)
@@ -1376,6 +1387,7 @@ mod tests {
             created_at: datetime,
             date: Some(date.to_string()),
             time: Some(time.to_string()),
+            is_time_null: None,
             freq: None,
             unit: None,
             callsigns: None,
@@ -1385,6 +1397,60 @@ mod tests {
             inbox_tags: None,
             important: None,
         }
+    }
+
+    #[test]
+    fn issue_3515_interception_export_keeps_date_only_rows_without_noon() {
+        use std::io::Read;
+        let mut message = interception_message(
+            "2026-06-27",
+            "12:00:00",
+            "date-only observation",
+        );
+        message.is_time_null = Some(true);
+        let mut messages = Vec::new();
+        let mut seen = HashSet::new();
+        assert_eq!(
+            merge_interception_report_chunk(
+                &mut messages,
+                &mut seen,
+                vec![message]
+            ),
+            1
+        );
+        let mut workbook = rust_xlsxwriter::Workbook::new();
+        super::process_messages_for_interception_report(
+            workbook.add_worksheet(),
+            messages,
+            std::collections::HashMap::new(),
+            false,
+            true,
+        )
+        .unwrap();
+        let bytes = workbook.save_to_buffer().unwrap();
+        let mut archive =
+            zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+        let mut xml = String::new();
+        archive
+            .by_name("xl/sharedStrings.xml")
+            .unwrap()
+            .read_to_string(&mut xml)
+            .unwrap();
+        assert!(xml.contains("date-only observation"));
+        assert!(!xml.contains("12:00"));
+        let known = interception_message(
+            "2026-06-27",
+            "12:00:00",
+            "date-only observation",
+        );
+        assert_eq!(
+            merge_interception_report_chunk(
+                &mut Vec::new(),
+                &mut seen,
+                vec![known]
+            ),
+            1
+        );
     }
 
     #[test]
