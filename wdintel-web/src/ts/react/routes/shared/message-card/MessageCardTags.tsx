@@ -362,7 +362,7 @@ function MessageCardTagsComponent({
       <div
         ref={compactMeasureRef}
         data-message-card-tags="true"
-        className="flex w-full min-w-0 flex-wrap items-start gap-2"
+        className="flex w-full min-w-0 flex-nowrap items-start gap-2 overflow-hidden"
       >
         {compactOrderedRows.map((row) => (
           <MessageCardTagChip

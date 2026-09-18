@@ -13,6 +13,7 @@ import type {
   ExportPermission,
   SortColumn,
   SortDescriptor,
+  SortDirection,
   UnitHierarchyFilter,
 } from './types';
 import { normalizeUnitSearchValue } from '../../utils/unit-search';
@@ -21,10 +22,7 @@ import { hasRole } from '../../utils/roles';
 const DEFAULT_LIMIT = 100;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export const DEFAULT_SORT: CallsignsSortState = {
-  column: 'unit',
-  direction: 'asc',
-};
+export const DEFAULT_SORT: CallsignsSortState = null;
 
 export const DEFAULT_FILTERS = createDefaultFilters();
 
@@ -231,6 +229,7 @@ export function getDefaultPageSize() {
 }
 
 export function toBackendSort(sort: CallsignsSortState): ListCallsignsSortBy[] {
+  if (!sort) return [];
   if (sort.column === 'callsign') {
     return [sort.direction === 'asc' ? 'CallsignAsc' : 'CallsignDesc'];
   }
@@ -259,16 +258,15 @@ export function toBackendSort(sort: CallsignsSortState): ListCallsignsSortBy[] {
 export function nextSortState(
   current: CallsignsSortState,
   column: SortColumn,
-  direction?: CallsignsSortState['direction'],
+  direction?: SortDirection,
 ): CallsignsSortState {
   if (direction) {
     return { column, direction };
   }
-  if (current.column === column) {
-    return {
-      column,
-      direction: current.direction === 'asc' ? 'desc' : 'asc',
-    };
+  if (current?.column === column) {
+    const firstDirection = column === 'createdAt' ? 'desc' : 'asc';
+    if (current.direction !== firstDirection) return null;
+    return { column, direction: firstDirection === 'asc' ? 'desc' : 'asc' };
   }
   return {
     column,
@@ -277,8 +275,8 @@ export function nextSortState(
 }
 
 export function getSortDescriptor(sort: CallsignsSortState, column: SortColumn): SortDescriptor {
-  const active = sort.column === column;
-  const direction = active ? sort.direction : null;
+  const active = sort?.column === column;
+  const direction = active ? sort?.direction : null;
   return {
     backend: active ? toBackendSort(sort) : [],
     label: direction === 'asc' ? 'asc' : direction === 'desc' ? 'desc' : 'none',

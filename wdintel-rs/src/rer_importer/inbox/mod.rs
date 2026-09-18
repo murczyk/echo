@@ -3894,6 +3894,7 @@ async fn try_load_rer_analysis_inbox_hybrid(
             return Ok(None);
         }
         Err(error @ AppError::ServiceUnavailable { .. }) => {
+            diagnostics.fallback("fallback_saturated");
             return Err(error);
         }
         Err(error) => {
@@ -3973,6 +3974,7 @@ async fn try_load_rer_duty_inbox_hybrid(
             return Ok(None);
         }
         Err(error @ AppError::ServiceUnavailable { .. }) => {
+            diagnostics.fallback("fallback_saturated");
             return Err(error);
         }
         Err(error) => {

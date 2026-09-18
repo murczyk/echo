@@ -1156,15 +1156,27 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                            )
 
                 downloadLink =
-                    a
-                        [ class "btn btn-outline-secondary btn-sm shrink-0"
-                        , href attachment.href
-                        , download displayFileName
-                        , target "_blank"
-                        ]
-                        [ i [ class "bi bi-download me-2" ] []
-                        , text displayFileName
-                        ]
+                    case attachment.kmzConversionStatus of
+                        Just conversionStatus ->
+                            node "kmz-attachment-preview"
+                                [ class "shrink-0"
+                                , attribute "media-id" attachment.id
+                                , attribute "original-href" attachment.href
+                                , attribute "file-name" displayFileName
+                                , attribute "conversion-status" conversionStatus
+                                ]
+                                []
+
+                        Nothing ->
+                            a
+                                [ class "btn btn-outline-secondary btn-sm shrink-0"
+                                , href attachment.href
+                                , download displayFileName
+                                , target "_blank"
+                                ]
+                                [ i [ class "bi bi-download me-2" ] []
+                                , text displayFileName
+                                ]
             in
             if transcriptionBesidePlayer then
                 div [ class "mb-2 flex w-full items-start gap-2" ] <|

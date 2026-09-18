@@ -6876,6 +6876,7 @@ type alias MessageMediaInfo =
     , transcription : Maybe (String)
     , ocr : Maybe (OcrMediaSummary)
     , summary : Maybe (MediaSummaryStatus)
+    , kmzConversionStatus : Maybe (String)
     }
 
 
@@ -6890,6 +6891,51 @@ messageMediaInfoEncoder struct =
         , ( "transcription", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.transcription )
         , ( "ocr", (Maybe.withDefault Json.Encode.null << Maybe.map (ocrMediaSummaryEncoder)) struct.ocr )
         , ( "summary", (Maybe.withDefault Json.Encode.null << Maybe.map (mediaSummaryStatusEncoder)) struct.summary )
+        , ( "kmz_conversion_status", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.kmzConversionStatus )
+        ]
+
+
+type alias SignalMediaKmzConversionStatusRsp =
+    { status : String
+    , error : Maybe (String)
+    , convertedFileName : Maybe (String)
+    }
+
+
+signalMediaKmzConversionStatusRspEncoder : SignalMediaKmzConversionStatusRsp -> Json.Encode.Value
+signalMediaKmzConversionStatusRspEncoder struct =
+    Json.Encode.object
+        [ ( "status", (Json.Encode.string) struct.status )
+        , ( "error", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.error )
+        , ( "converted_file_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.convertedFileName )
+        ]
+
+
+type alias SignalMediaKmzPreviewLineString =
+    { coords : List (Coords)
+    , color : Maybe (String)
+    }
+
+
+signalMediaKmzPreviewLineStringEncoder : SignalMediaKmzPreviewLineString -> Json.Encode.Value
+signalMediaKmzPreviewLineStringEncoder struct =
+    Json.Encode.object
+        [ ( "coords", (Json.Encode.list (coordsEncoder)) struct.coords )
+        , ( "color", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.color )
+        ]
+
+
+type alias SignalMediaKmzPreviewRsp =
+    { points : List (PalitraPoint)
+    , lineStrings : List (SignalMediaKmzPreviewLineString)
+    }
+
+
+signalMediaKmzPreviewRspEncoder : SignalMediaKmzPreviewRsp -> Json.Encode.Value
+signalMediaKmzPreviewRspEncoder struct =
+    Json.Encode.object
+        [ ( "points", (Json.Encode.list (palitraPointEncoder)) struct.points )
+        , ( "line_strings", (Json.Encode.list (signalMediaKmzPreviewLineStringEncoder)) struct.lineStrings )
         ]
 
 
@@ -18848,6 +18894,29 @@ messageMediaInfoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "transcription" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ocr" (Json.Decode.nullable (ocrMediaSummaryDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "summary" (Json.Decode.nullable (mediaSummaryStatusDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kmz_conversion_status" (Json.Decode.nullable (Json.Decode.string))))
+
+
+signalMediaKmzConversionStatusRspDecoder : Json.Decode.Decoder SignalMediaKmzConversionStatusRsp
+signalMediaKmzConversionStatusRspDecoder =
+    Json.Decode.succeed SignalMediaKmzConversionStatusRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "error" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "converted_file_name" (Json.Decode.nullable (Json.Decode.string))))
+
+
+signalMediaKmzPreviewLineStringDecoder : Json.Decode.Decoder SignalMediaKmzPreviewLineString
+signalMediaKmzPreviewLineStringDecoder =
+    Json.Decode.succeed SignalMediaKmzPreviewLineString
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coords" (Json.Decode.list (coordsDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color" (Json.Decode.nullable (Json.Decode.string))))
+
+
+signalMediaKmzPreviewRspDecoder : Json.Decode.Decoder SignalMediaKmzPreviewRsp
+signalMediaKmzPreviewRspDecoder =
+    Json.Decode.succeed SignalMediaKmzPreviewRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "points" (Json.Decode.list (palitraPointDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "line_strings" (Json.Decode.list (signalMediaKmzPreviewLineStringDecoder))))
 
 
 sigintZoneDecoder : Json.Decode.Decoder SigintZone

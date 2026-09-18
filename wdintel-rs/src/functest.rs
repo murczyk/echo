@@ -522,8 +522,7 @@ pub mod tests {
     ) -> signal_group::ActiveModel {
         let mut out = inp.clone();
         if out.master_key == NotSet {
-            out.master_key =
-                Set(random_word::get(random_word::Lang::En).to_string());
+            out.master_key = Set(uuid::Uuid::new_v4().to_string());
         }
         if out.name == NotSet {
             out.name = Set(None);

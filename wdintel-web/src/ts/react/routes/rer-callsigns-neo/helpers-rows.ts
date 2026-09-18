@@ -1,7 +1,7 @@
 import type { Callsign, CallsignUnitStatRow, Source, Unit } from '../../../../Bindings';
 import { isNullOrUndefined } from '../../utils/misc';
 import { normalizeDuplicateLookupValue } from './helpers-core';
-import type { BuildRowsResult, CallsignRowView, UnitStatView } from './types';
+import type { BuildRowsResult, CallsignRowView, CallsignsSortState, UnitStatView } from './types';
 
 function compareStrings(left: string, right: string) {
   return left.localeCompare(right, 'uk', { sensitivity: 'base' });
@@ -121,21 +121,11 @@ export function createSourcesById(sources: Source[]): Map<number, Source> {
 
 export function sortRowsClientSide(
   callsigns: Callsign[],
-  sort: {
-    column:
-      | 'callsign'
-      | 'position'
-      | 'fullName'
-      | 'comment'
-      | 'unit'
-      | 'sourceName'
-      | 'radioFreq'
-      | 'createdAt';
-    direction: 'asc' | 'desc';
-  },
+  sort: CallsignsSortState,
   unitsById: Map<number, Unit>,
   sourcesById: Map<number, Source>,
 ): Callsign[] {
+  if (!sort) return callsigns;
   const sorted = [...callsigns];
   sorted.sort((left, right) => {
     let result = 0;

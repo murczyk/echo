@@ -61,6 +61,8 @@ pub enum Relation {
     SignalMessageGroup,
     #[sea_orm(has_many = "super::signal_message_media::Entity")]
     SignalMessageMedia,
+    #[sea_orm(has_many = "super::signal_message_media_conversion_job::Entity")]
+    SignalMessageMediaConversionJob,
 }
 
 impl Related<super::datasource_group::Entity> for Entity {
@@ -108,6 +110,12 @@ impl Related<super::signal_message_group::Entity> for Entity {
 impl Related<super::signal_message_media::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SignalMessageMedia.def()
+    }
+}
+
+impl Related<super::signal_message_media_conversion_job::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SignalMessageMediaConversionJob.def()
     }
 }
 

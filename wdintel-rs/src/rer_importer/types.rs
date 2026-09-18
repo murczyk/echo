@@ -244,6 +244,8 @@ pub struct MessageMediaInfo {
     pub ocr: Option<crate::ocr::types::OcrMediaSummary>,
     #[serde(default)]
     pub summary: Option<crate::media_summary::types::MediaSummaryStatus>,
+    #[serde(default)]
+    pub kmz_conversion_status: Option<String>,
 }
 
 #[derive(

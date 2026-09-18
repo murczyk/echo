@@ -8,6 +8,7 @@ import {
   EMPTY_CALLSIGN_ROW_ERROR,
   buildDuplicateHintGroups,
   LEGACY_CALLSIGN_CLEAR_ERROR,
+  DEFAULT_SORT,
   buildListCallsignsReq,
   createDefaultFilters,
   getExportPermission,
@@ -22,6 +23,7 @@ import {
   parseDateTimeLocalToMs,
   QUICK_PASTE_TSV_FORMAT_ERROR,
   RO_SOURCE_RADIO_FREQ_REQUIRED_ERROR,
+  sortRowsClientSide,
   UNIT_SELECTION_REQUIRED_ERROR,
   toBackendSort,
   validateDraftRows,
@@ -505,6 +507,8 @@ describe('rer-callsigns helpers', () => {
   });
 
   it('maps sort state to backend sort enums', () => {
+    expect(DEFAULT_SORT).toBeNull();
+    expect(toBackendSort(null)).toEqual([]);
     expect(toBackendSort({ column: 'callsign', direction: 'asc' })).toEqual(['CallsignAsc']);
     expect(toBackendSort({ column: 'fullName', direction: 'asc' })).toEqual([
       'CallsignFullNameAsc',
@@ -519,6 +523,8 @@ describe('rer-callsigns helpers', () => {
     const current: CallsignsSortState = { column: 'unit', direction: 'asc' };
 
     expect(nextSortState(current, 'unit')).toEqual({ column: 'unit', direction: 'desc' });
+    expect(nextSortState({ column: 'unit', direction: 'desc' }, 'unit')).toBeNull();
+    expect(nextSortState(null, 'unit')).toEqual({ column: 'unit', direction: 'asc' });
     expect(nextSortState(current, 'createdAt')).toEqual({ column: 'createdAt', direction: 'desc' });
     expect(nextSortState(current, 'position', 'asc')).toEqual({
       column: 'position',
@@ -533,6 +539,25 @@ describe('rer-callsigns helpers', () => {
       backend: [],
       label: 'none',
     });
+    expect(getSortDescriptor(null, 'unit')).toEqual({ backend: [], label: 'none' });
+  });
+
+  it('preserves backend result order until the user selects a sort', () => {
+    const exact = { id: 2, callsign: '41', unitId: 2 } as Callsign;
+    const broaderMatch = { id: 1, callsign: 'Альфа', unitId: 1 } as Callsign;
+    const callsigns = [exact, broaderMatch];
+    const unitsById = new Map<number, Unit>([
+      [1, { ...EMPTY_UNIT_HIERARCHY, id: 1, name: '1 АК', army: '1 АК' } as Unit],
+      [2, { ...EMPTY_UNIT_HIERARCHY, id: 2, name: 'ПКС', army: 'ПКС' } as Unit],
+    ]);
+
+    expect(sortRowsClientSide(callsigns, null, unitsById, new Map())).toEqual([
+      exact,
+      broaderMatch,
+    ]);
+    expect(
+      sortRowsClientSide(callsigns, { column: 'unit', direction: 'asc' }, unitsById, new Map()),
+    ).toEqual([broaderMatch, exact]);
   });
 
   it('requires callsign or full name for draft rows', () => {

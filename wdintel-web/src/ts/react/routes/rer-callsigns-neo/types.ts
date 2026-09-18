@@ -23,9 +23,9 @@ export type SortDirection = 'asc' | 'desc';
 export type CallsignsSortState = {
   column: SortColumn;
   direction: SortDirection;
-};
+} | null;
 
-export type OnSort = (column: SortColumn, direction?: SortDirection) => void;
+export type OnSort = (column: SortColumn | null, direction?: SortDirection) => void;
 
 export type CallsignsFilterState = {
   filterText: string;

@@ -2657,6 +2657,23 @@ export type MessageMediaInfo = {
   transcription: string | null;
   ocr: OcrMediaSummary | null;
   summary: MediaSummaryStatus | null;
+  kmzConversionStatus: string | null;
+};
+
+export type SignalMediaKmzConversionStatusRsp = {
+  status: string;
+  error: string | null;
+  convertedFileName: string | null;
+};
+
+export type SignalMediaKmzPreviewLineString = {
+  coords: Array<Coords>;
+  color: string | null;
+};
+
+export type SignalMediaKmzPreviewRsp = {
+  points: Array<PalitraPoint>;
+  lineStrings: Array<SignalMediaKmzPreviewLineString>;
 };
 
 export type SigintZone = {
