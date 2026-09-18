@@ -1,5 +1,10 @@
 {
   "migrations": {
+    "echo:m20260918_092309_sigint_inbox_item_is_time_null": {
+      "changes": [
+        { "table": "public.sigint_inbox_item", "strategy": "cdc_additive" }
+      ]
+    },
     "echo:m20260917_123830_unresolved_unit_message_order": {
       "changes": [
         {

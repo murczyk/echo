@@ -26,6 +26,8 @@ pub struct InboxMessageSummary {
     pub date: Option<String>,
     pub time: Option<String>,
     #[serde(default)]
+    pub is_time_null: Option<bool>,
+    #[serde(default)]
     pub group_name: Option<String>,
     pub group_master_key: Option<String>,
     #[serde(default)]
@@ -46,6 +48,8 @@ pub struct InboxMessage {
     pub image_recognized: Vec<String>,
     pub date: Option<String>,
     pub time: Option<String>,
+    #[serde(default)]
+    pub is_time_null: Option<bool>,
     pub freq: Option<String>,
     pub coords: Option<String>,
     #[serde(default)]
@@ -176,6 +180,7 @@ fn default_checked() -> bool {
 impl From<InboxInsertPayload> for InboxMessage {
     fn from(payload: InboxInsertPayload) -> Self {
         Self {
+            is_time_null: None,
             message_uuid: None,
             message_uid: None,
             text: payload.text,
@@ -1828,6 +1833,7 @@ mod tests {
             "device_name".to_string(),
             "intelligence_reports".to_string(),
             "has_date_in_header".to_string(),
+            "is_time_null".to_string(),
             "keyword_tokens".to_string(),
             "message_comments".to_string(),
             "message_uid".to_string(),

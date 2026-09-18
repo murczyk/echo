@@ -27,6 +27,7 @@ STRATEGIES = {
     "excluded",
     "replicated_snapshot",
     "cdc_backfill",
+    "cdc_additive",
     "empty_table_resnapshot",
     "mirror_resync",
 }
@@ -218,10 +219,10 @@ def validate_change(
                 f"{key}: {table} uses replicated_snapshot without CREATE TABLE "
                 "or targeted_resnapshot"
             )
-        if strategy == "cdc_backfill":
+        if strategy in {"cdc_backfill", "cdc_additive"}:
             if "alter" not in operations or not has_add_column(contents, table):
-                errors.append(f"{key}: {table} uses cdc_backfill without ADD COLUMN")
-            if table not in CDC_BACKFILL_GUARANTEED_NONEMPTY_TABLES:
+                errors.append(f"{key}: {table} uses {strategy} without ADD COLUMN")
+            if strategy == "cdc_backfill" and table not in CDC_BACKFILL_GUARANTEED_NONEMPTY_TABLES:
                 errors.append(
                     f"{key}: {table} uses cdc_backfill but may be empty; "
                     "use mirror_resync because zero-row DML cannot propagate "
@@ -236,9 +237,9 @@ def validate_change(
             errors.extend(f"{key}: {error}" for error in backfill_errors)
             if not dml.search(contents) and not backfill_dml:
                 errors.append(
-                    f"{key}: {table} uses cdc_backfill without reviewed backfill DML"
+                    f"{key}: {table} uses {strategy} without reviewed backfill DML"
                 )
-        if strategy == "empty_table_resnapshot" or targeted_resnapshot:
+        if strategy in {"empty_table_resnapshot", "cdc_additive"} or targeted_resnapshot:
             if (
                 "alter" not in operations
                 or not has_add_column(contents, table)
@@ -371,7 +372,7 @@ def validate_dependency_changes(
                     "use mirror_resync because zero-row DML cannot propagate "
                     "the schema to ClickHouse"
                 )
-            if strategy == "empty_table_resnapshot":
+            if strategy in {"empty_table_resnapshot", "cdc_additive"}:
                 errors.append(
                     f"{key}: {table} uses {strategy} in a dependency "
                     "declaration where additive DDL cannot be verified"
@@ -421,6 +422,21 @@ def non_nullable_added_catalog_tables(
         ):
             invalid.add(fields[0])
     return invalid
+
+
+def invalid_cdc_added_catalog_tables(
+    before_path: Path, after_path: Path, tables: set[str]
+) -> set[str]:
+    before = set(before_path.read_text().splitlines())
+    return {
+        fields[0]
+        for line in after_path.read_text().splitlines()
+        if line not in before
+        for fields in [line.split("\t")]
+        if len(fields) >= 5
+        and fields[0] in tables
+        and (fields[3] == "t" or fields[4] != "")
+    }
 
 
 def declared_tables(
@@ -530,6 +546,20 @@ def check(
                 "database catalog changes differ from the analytics impact manifest "
                 f"(undeclared={sorted(undeclared)}, "
                 f"unchanged_but_declared={sorted(unchanged_but_declared)})"
+            )
+        cdc_tables = {
+            change["table"]
+            for key in migration_keys
+            for change in manifest["migrations"].get(key, {}).get("changes", [])
+            if change.get("strategy") == "cdc_additive"
+        }
+        invalid_cdc = invalid_cdc_added_catalog_tables(
+            catalog_before, catalog_after, cdc_tables
+        ) | non_additive_catalog_tables(catalog_before, catalog_after, cdc_tables)
+        if invalid_cdc:
+            errors.append(
+                "cdc_additive requires only nullable added columns without defaults "
+                f"(invalid={sorted(invalid_cdc)})"
             )
         non_additive = non_additive_catalog_tables(
             catalog_before,

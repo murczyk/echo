@@ -51,6 +51,7 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub network: Option<String>,
     pub datetime: Option<DateTime>,
+    pub is_time_null: Option<bool>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

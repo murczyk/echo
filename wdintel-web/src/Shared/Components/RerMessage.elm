@@ -1226,24 +1226,28 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
         timeColumn =
             let
                 formattedDateTime =
-                    case ( message.date, message.time ) of
-                        ( Just dateStr, Just timeStr ) ->
-                            Utils.Time.parseDatetimeParts (dateStr ++ "T" ++ timeStr)
-                                |> Result.toMaybe
-                                |> Maybe.map (TimeExtra.partsToPosix vps.zone)
-                                |> Maybe.map (Utils.Time.renderDateTimeF1 vps.zone)
-                                |> Maybe.withDefault (String.trim (dateStr ++ " " ++ timeStr))
+                    if message.isTimeNull == Just True then
+                        Maybe.withDefault "" message.date
 
-                        ( Just dateStr, Nothing ) ->
-                            dateStr
+                    else
+                        case ( message.date, message.time ) of
+                            ( Just dateStr, Just timeStr ) ->
+                                Utils.Time.parseDatetimeParts (dateStr ++ "T" ++ timeStr)
+                                    |> Result.toMaybe
+                                    |> Maybe.map (TimeExtra.partsToPosix vps.zone)
+                                    |> Maybe.map (Utils.Time.renderDateTimeF1 vps.zone)
+                                    |> Maybe.withDefault (String.trim (dateStr ++ " " ++ timeStr))
 
-                        ( Nothing, Just timeStr ) ->
-                            timeStr
+                            ( Just dateStr, Nothing ) ->
+                                dateStr
 
-                        _ ->
-                            message.timestamp
-                                |> Maybe.map (Utils.Time.renderDateTimeF1 vps.zone << Time.millisToPosix)
-                                |> Maybe.withDefault ""
+                            ( Nothing, Just timeStr ) ->
+                                timeStr
+
+                            _ ->
+                                message.timestamp
+                                    |> Maybe.map (Utils.Time.renderDateTimeF1 vps.zone << Time.millisToPosix)
+                                    |> Maybe.withDefault ""
 
                 dateTimeBlock =
                     HtmlX.viewIf (formattedDateTime /= "") <|
@@ -1354,14 +1358,15 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                         |> Maybe.map (Utils.Time.renderDateTimeF1 vps.zone << Time.millisToPosix)
             in
             div [ class "flex flex-col gap-1" ]
-                [ div [ title "Час коли попало в групу" ]
-                    [ itemBlock
-                        { iconTitle = String.fromInt msgId
-                        , iconName = "bi-clock-history"
-                        , label = messageTimestamp
-                        }
-                        []
-                    ]
+                [ HtmlX.viewIf (message.isTimeNull /= Just True) <|
+                    div [ title "Час коли попало в групу" ]
+                        [ itemBlock
+                            { iconTitle = String.fromInt msgId
+                            , iconName = "bi-clock-history"
+                            , label = messageTimestamp
+                            }
+                            []
+                        ]
                 , let
                     mGroup =
                         message.groupMasterKey

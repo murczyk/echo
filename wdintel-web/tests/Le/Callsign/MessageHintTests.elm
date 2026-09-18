@@ -75,6 +75,7 @@ headers =
 message : Maybe (List B.ContentNode) -> List String -> Maybe (List Int) -> B.InboxMessage
 message textMarked callsigns networkIds =
     { messageUuid = Nothing
+    , isTimeNull = Nothing
     , messageUid = Nothing
     , text = "wolf"
     , media = []

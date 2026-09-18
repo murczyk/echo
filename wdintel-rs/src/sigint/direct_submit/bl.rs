@@ -4,7 +4,8 @@ use super::types::{
     DirectSubmitPayload, DirectSubmitRsp,
 };
 use crate::config::{
-    FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT, SIGINT_MESSAGE_MAX_ATTACHMENTS,
+    FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT, SIGINT_MESSAGE_DATE_ONLY_HOUR,
+    SIGINT_MESSAGE_MAX_ATTACHMENTS,
 };
 use crate::error::AppError;
 use crate::messenger::media::MediaUploadInput;
@@ -169,6 +170,7 @@ where
     let parent_signal_message_ids = vec![source.id];
 
     Ok(DirectSubmitPayload {
+        is_time_null: copy_inputs.inbox_item.is_time_null,
         full_body: source.body.clone().or_else(|| Some(message.text.clone())),
         text: message
             .no_headers_body
@@ -536,14 +538,28 @@ async fn save_signal_message(
             .await
             .c(h!())?;
     }
+    let is_time_null = match payload.is_time_null {
+        Some(is_time_null) => Some(is_time_null),
+        None => match signal_message_id {
+            Some(id) => query::find_inbox_item_is_time_null(&txn, id)
+                .await
+                .c(h!())?,
+            None => None,
+        },
+    };
     let previous_timestamp =
         signal_message.and_then(|signal_message| signal_message.timestamp);
-    let keep_timestamp_missing = payload.timestamp.is_none()
+    let keep_timestamp_missing = is_time_null != Some(true)
+        && payload.timestamp.is_none()
         && ((signal_message_id.is_some() && previous_timestamp.is_none())
             || !copy_sources.is_empty());
-    let submit_item =
-        direct_submit_payload_to_item(&payload, sender, previous_timestamp)
-            .c(h!())?;
+    let submit_item = direct_submit_payload_to_item(
+        &payload,
+        sender,
+        previous_timestamp,
+        is_time_null,
+    )
+    .c(h!())?;
     let submitted = persist_direct_submit_item(
         env,
         &txn,
@@ -559,6 +575,15 @@ async fn save_signal_message(
     )
     .await
     .c(h!())?;
+    if let Some(is_time_null) = is_time_null {
+        query::set_inbox_item_is_time_null(
+            &txn,
+            submitted.inbox_id,
+            is_time_null,
+        )
+        .await
+        .c(h!())?;
+    }
     let network = payload
         .network
         .as_ref()
@@ -1156,7 +1181,8 @@ fn direct_submit_payload_to_item(
     payload: &DirectSubmitPayload,
     sender: String,
     previous_timestamp: Option<chrono::NaiveDateTime>,
-) -> Result<InboxSubmitItem, AppError> {
+    is_time_null: Option<bool>,
+) -> anyhow::Result<InboxSubmitItem> {
     Ok(InboxSubmitItem {
         full_body: payload.full_body.clone(),
         text: payload.text.clone(),
@@ -1166,17 +1192,12 @@ fn direct_submit_payload_to_item(
         from_callsign: payload.from_callsign.clone(),
         to: payload.to.clone(),
         tags: payload.tags.clone(),
-        timestamp: payload.timestamp.clone().unwrap_or_else(|| {
-            previous_timestamp
-                .map(|timestamp| {
-                    timestamp
-                        .and_utc()
-                        .to_rfc3339_opts(SecondsFormat::Millis, true)
-                })
-                .unwrap_or_else(|| {
-                    Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
-                })
-        }),
+        timestamp: direct_submit_timestamp(
+            payload,
+            previous_timestamp,
+            is_time_null,
+        )
+        .c(h!())?,
         sender: Some(sender),
         post: payload.post.clone(),
         unit: payload.unit.clone(),
@@ -1186,6 +1207,34 @@ fn direct_submit_payload_to_item(
         dmr: payload.dmr.clone(),
         parse_body_coordinates: false,
     })
+}
+
+fn direct_submit_timestamp(
+    payload: &DirectSubmitPayload,
+    previous_timestamp: Option<chrono::NaiveDateTime>,
+    is_time_null: Option<bool>,
+) -> anyhow::Result<String> {
+    let timestamp = payload.timestamp.clone().unwrap_or_else(|| {
+        previous_timestamp
+            .map(|timestamp| timestamp.and_utc())
+            .unwrap_or_else(Utc::now)
+            .to_rfc3339_opts(SecondsFormat::Millis, true)
+    });
+    if is_time_null != Some(true) {
+        return Ok(timestamp);
+    }
+    let timezone = crate::config::get_tz();
+    let date = chrono::DateTime::parse_from_rfc3339(&timestamp)
+        .c(h!())?
+        .with_timezone(&timezone)
+        .date_naive();
+    let noon = date
+        .and_hms_opt(SIGINT_MESSAGE_DATE_ONLY_HOUR, 0, 0)
+        .c(h!())?;
+    let timestamp = timezone.from_local_datetime(&noon).single().c(h!())?;
+    Ok(timestamp
+        .with_timezone(&Utc)
+        .to_rfc3339_opts(SecondsFormat::Millis, true))
 }
 
 #[cfg(test)]
@@ -1228,6 +1277,7 @@ mod tests {
 
     fn direct_submit_payload(text: &str) -> DirectSubmitPayload {
         DirectSubmitPayload {
+            is_time_null: None,
             full_body: None,
             text: Some(text.to_string()),
             comment: None,
@@ -1282,9 +1332,13 @@ mod tests {
             }))
             .unwrap();
 
-        let item =
-            direct_submit_payload_to_item(&payload, "sender".to_string(), None)
-                .unwrap();
+        let item = direct_submit_payload_to_item(
+            &payload,
+            "sender".to_string(),
+            None,
+            None,
+        )
+        .unwrap();
 
         assert_eq!(item.full_body.as_deref(), Some("full source"));
         assert_eq!(item.text.as_deref(), Some("body only"));
@@ -1871,6 +1925,93 @@ mod tests {
         assert_eq!(deleted_parent.date, None);
         assert_eq!(deleted_parent.time, None);
         assert_eq!(deleted_parent.group_name, None);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3515_date_only_create_edit_and_copy() {
+        let env = cleanup().await.unwrap();
+        let login_id = crate::users::login_id_by_name(&env.dbx, TEST_LOGIN)
+            .await
+            .unwrap();
+        for (input, date, expected) in [
+            ("2026-01-14T23:30:00Z", "2026-01-15", "2026-01-15T10:00:00Z"),
+            ("2026-07-14T22:30:00Z", "2026-07-15", "2026-07-15T09:00:00Z"),
+        ] {
+            let expected = chrono::DateTime::parse_from_rfc3339(expected)
+                .unwrap()
+                .naive_utc();
+            let mut payload = direct_submit_payload("date-only message #3515");
+            payload.timestamp = Some(input.to_string());
+            payload.is_time_null = Some(true);
+            let created = submit_signal_message(&login_id, &env, payload)
+                .await
+                .unwrap();
+            let id = created.signal_message_id;
+            assert_eq!(created.message.unwrap().is_time_null, Some(true));
+            let inbox_item = sigint_inbox_item::Entity::find_by_id(id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(inbox_item.date.as_deref(), Some(date));
+            assert_eq!(inbox_item.time.as_deref(), Some("12:00:00"));
+            assert_eq!(inbox_item.datetime, Some(expected));
+            assert_eq!(inbox_item.is_time_null, Some(true));
+            let message = signal_message::Entity::find_by_id(id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(message.timestamp, Some(expected));
+
+            let edited = edit_signal_message(
+                &login_id,
+                &env,
+                id,
+                direct_submit_payload("unrelated edit #3515"),
+            )
+            .await
+            .unwrap();
+            assert_eq!(edited.message.unwrap().is_time_null, Some(true));
+            let copied = copy_signal_messages(&login_id, &env, vec![id])
+                .await
+                .unwrap()
+                .payloads
+                .remove(0);
+            assert_eq!(copied.is_time_null, Some(true));
+            let copy = submit_signal_message(&login_id, &env, copied)
+                .await
+                .unwrap();
+            assert_eq!(copy.message.as_ref().unwrap().is_time_null, Some(true));
+            assert_eq!(
+                copy.message.as_ref().unwrap().timestamp,
+                Some(expected.and_utc().timestamp_millis())
+            );
+            assert_eq!(
+                copy.message.unwrap().parent_messages[0].is_time_null,
+                Some(true)
+            );
+
+            let mut known = direct_submit_payload("known noon #3515");
+            known.is_time_null = Some(false);
+            known.timestamp = Some(expected.and_utc().to_rfc3339());
+            let edited = edit_signal_message(&login_id, &env, id, known)
+                .await
+                .unwrap();
+            assert_eq!(edited.message.unwrap().is_time_null, Some(false));
+            let mut unknown = direct_submit_payload("clear time #3515");
+            unknown.is_time_null = Some(true);
+            let edited = edit_signal_message(&login_id, &env, id, unknown)
+                .await
+                .unwrap();
+            let edited = edited.message.unwrap();
+            assert_eq!(edited.is_time_null, Some(true));
+            assert_eq!(
+                edited.timestamp,
+                Some(expected.and_utc().timestamp_millis())
+            );
+        }
     }
 
     #[tokio::test]

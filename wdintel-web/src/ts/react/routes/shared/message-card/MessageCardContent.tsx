@@ -104,7 +104,7 @@ function formatInterceptionHeader(message: InboxMessage): string {
     ? dayjs(message.timestamp).tz(APP_TIME_ZONE)
     : null;
   const date = message.date ?? timestamp?.format('DD.MM.YYYY');
-  const time = message.time ?? timestamp?.format('HH:mm:ss');
+  const time = message.isTimeNull === true ? null : (message.time ?? timestamp?.format('HH:mm:ss'));
   return [date, time].filter(isPresent).join(', ') || 'Дата перехоплення недоступна';
 }
 
