@@ -442,3 +442,128 @@ where
         .c(h!())?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::functest::tests::{cleanup, mk_signal_message};
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set, NotSet};
+    use serial_test::serial;
+    use uuid::Uuid;
+
+    async fn insert_job(
+        env: &Env,
+        signal_message_id: i64,
+        signal_message_uuid: Option<Uuid>,
+        file_name: &str,
+    ) -> signal_message_media_conversion_job::Model {
+        let media = signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(signal_message_id),
+            signal_message_uuid: Set(signal_message_uuid),
+            content_type: Set("application/gpx+xml".to_string()),
+            file_ext: Set(Some("gpx".to_string())),
+            file_name: Set(Some(file_name.to_string())),
+            size_bytes: Set(1),
+            created_at: Set(Utc::now().naive_utc()),
+            is_encrypted: Set(true),
+            storage_key: Set(Some(format!("test/{file_name}"))),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        signal_message_media_conversion_job::ActiveModel {
+            id: NotSet,
+            signal_message_id: Set(signal_message_id),
+            source_media_id: Set(media.id),
+            source_file_md5: Set("c4ca4238a0b923820dcc509a6f75849b".to_string()),
+            source_file_name: Set(file_name.to_string()),
+            source_content_type: Set(Some("application/gpx+xml".to_string())),
+            status: Set(SIGINT_MEDIA_CONVERSION_STATUS_PENDING.to_string()),
+            conversion_receipt: Set(None),
+            converted_storage_key: Set(None),
+            converted_file_name: Set(None),
+            converted_size_bytes: Set(None),
+            created_at: NotSet,
+            last_attempt_at: Set(None),
+            attempt_count: Set(0),
+            last_error: Set(None),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap()
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn worker_lease_and_attempt_guard_keep_claims_sequential() {
+        let env = cleanup().await.unwrap();
+        let message = mk_signal_message(
+            &env.dbx,
+            crate::entities::signal_message::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let first =
+            insert_job(&env, message.id, message.id_uuid, "first.gpx").await;
+        let second =
+            insert_job(&env, message.id, message.id_uuid, "second.gpx").await;
+
+        assert!(work_may_be_available(&env.dbx).await.unwrap());
+        let lease = acquire_worker_lease(&env.dbx).await.unwrap().unwrap();
+        assert!(acquire_worker_lease(&env.dbx).await.unwrap().is_none());
+        let txn = env.dbx.begin().await.unwrap();
+        let claimed =
+            take_next_job(&txn, SIGINT_MEDIA_CONVERSION_STALE_PROCESSING_SEC)
+                .await
+                .unwrap()
+                .unwrap();
+        txn.commit().await.unwrap();
+        assert_eq!(claimed.id, first.id);
+        assert_eq!(claimed.attempt_count, 1);
+        assert!(!work_may_be_available(&env.dbx).await.unwrap());
+
+        let stale_attempt = ConversionAttempt {
+            id: claimed.id,
+            attempt_count: claimed.attempt_count + 1,
+        };
+        assert!(!finish_job(
+            &env.dbx,
+            stale_attempt,
+            "stale".to_string(),
+            "test/stale.kmz".to_string(),
+            "stale.kmz".to_string(),
+            1,
+        )
+        .await
+        .unwrap());
+        assert!(finish_job(
+            &env.dbx,
+            ConversionAttempt {
+                id: claimed.id,
+                attempt_count: claimed.attempt_count,
+            },
+            "receipt".to_string(),
+            "test/first.kmz".to_string(),
+            "first_converted.kmz".to_string(),
+            1,
+        )
+        .await
+        .unwrap());
+        assert!(work_may_be_available(&env.dbx).await.unwrap());
+
+        drop(lease);
+        let _next_lease =
+            acquire_worker_lease(&env.dbx).await.unwrap().unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let next =
+            take_next_job(&txn, SIGINT_MEDIA_CONVERSION_STALE_PROCESSING_SEC)
+                .await
+                .unwrap()
+                .unwrap();
+        txn.commit().await.unwrap();
+        assert_eq!(next.id, second.id);
+    }
+}

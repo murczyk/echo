@@ -323,3 +323,98 @@ pub(super) fn converted_file_name(source_file_name: &str) -> String {
         .unwrap_or("file");
     format!("{stem}_converted.kmz")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::functest::tests::{cleanup, mk_signal_message};
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set};
+    use serial_test::serial;
+
+    #[serial]
+    #[tokio::test]
+    async fn schedules_supported_upload_with_source_identity() {
+        let env = cleanup().await.unwrap();
+        let message = mk_signal_message(
+            &env.dbx,
+            crate::entities::signal_message::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let supported_bytes = b"supported geodata";
+        let supported_path = directory.path().join("route.gpx");
+        tokio::fs::write(&supported_path, supported_bytes)
+            .await
+            .unwrap();
+        let ignored_path = directory.path().join("notes.txt");
+        tokio::fs::write(&ignored_path, b"not geodata")
+            .await
+            .unwrap();
+
+        let supported_media = signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
+            content_type: Set("application/gpx+xml".to_string()),
+            file_ext: Set(Some("gpx".to_string())),
+            file_name: Set(Some("route.gpx".to_string())),
+            size_bytes: Set(i64::try_from(supported_bytes.len()).unwrap()),
+            created_at: Set(chrono::Utc::now().naive_utc()),
+            is_encrypted: Set(true),
+            storage_key: Set(Some("test/route.gpx".to_string())),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let ignored_media = signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
+            content_type: Set("text/plain".to_string()),
+            file_ext: Set(Some("txt".to_string())),
+            file_name: Set(Some("notes.txt".to_string())),
+            size_bytes: Set(11),
+            created_at: Set(chrono::Utc::now().naive_utc()),
+            is_encrypted: Set(true),
+            storage_key: Set(Some("test/notes.txt".to_string())),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let media = vec![supported_media.clone(), ignored_media];
+        let uploads = vec![
+            MediaUploadInput {
+                path: supported_path.to_string_lossy().into_owned(),
+                name: Some("route.gpx".to_string()),
+                content_type: Some("application/gpx+xml".to_string()),
+            },
+            MediaUploadInput {
+                path: ignored_path.to_string_lossy().into_owned(),
+                name: Some("notes.txt".to_string()),
+                content_type: Some("text/plain".to_string()),
+            },
+        ];
+
+        schedule_uploaded_media(&env.dbx, message.id, &media, &uploads)
+            .await
+            .unwrap();
+
+        let jobs = signal_message_media_conversion_job::Entity::find()
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(jobs.len(), 1);
+        let job = &jobs[0];
+        assert_eq!(job.signal_message_id, message.id);
+        assert_eq!(job.source_media_id, supported_media.id);
+        assert_eq!(job.source_file_name, "route.gpx");
+        assert_eq!(
+            job.source_file_md5,
+            format!("{:x}", Md5::digest(supported_bytes))
+        );
+        assert_eq!(job.status, SIGINT_MEDIA_CONVERSION_STATUS_PENDING);
+    }
+}

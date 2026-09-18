@@ -95,44 +95,46 @@
 
 ## Verification completed
 
-- Latest backend state:
-  - `cargo check -p wdintel-rs` passed.
-  - `cargo clippy -p wdintel-rs --all-targets --all-features -- -D warnings`
-    passed.
-  - `cargo fmt --all` completed successfully.
-- Frontend state (frontend was unchanged by the final worker hardening):
-  - `just build-front` passed.
-  - `npx tsc --noEmit` passed.
-  - focused Elm compilation of `src/Pages/RerAnalysis.elm` passed.
-  - focused Vitest run passed: 2 files, 17 tests.
-  - exact Prettier formatting of all changed TS/TSX files reported unchanged.
-  - `npm run format:staged` passed but found zero staged files because all work
-    is intentionally unstaged.
-- Migration/analytics validation passed against a fresh database restored from
-  the standard test dump:
-  `source deploy/setup_test_database.sh sigint_media_kmz_catalog && GITHUB_BASE_REF=main TEST_DB_NAME="$DB_NAME" scripts/ci/check_analytics_migration_catalog.sh`.
-- A direct `just migrate-up` against the pre-existing local database could not
-  run because that database contains a migration from another branch that is
-  absent from this checkout. The clean restored-database migration/catalog run
-  passed and is the valid baseline.
-- `git diff --check` passed before the last worker-only concurrency hardening.
-- No commit or push was made.
+- Resolved the rebase conflicts in `echo-migration/src/lib.rs` and
+  `deploy/clickhouse/migration-impact.json` by retaining both chronological,
+  additive migrations. `GIT_EDITOR=true git rebase --continue` completed the
+  rebase successfully; no conflict markers remain and nothing was pushed.
+- Backend checks passed:
+  - `cargo check -p wdintel-rs`;
+  - `cargo clippy -p wdintel-rs --all-targets --all-features -- -D warnings`;
+  - focused database-backed media conversion tests against a fresh standard
+    test dump: 2 tests passed;
+  - `cargo fmt --all -- --check` and `git diff --check`.
+- Added database-backed regression coverage for supported-file scheduling,
+  stored message/media/MD5 identity, exclusive worker leasing, sequential
+  claims, and stale-attempt protection.
+- Frontend checks passed:
+  - `just build-front`;
+  - `npx tsc --noEmit`;
+  - focused Vitest run: 3 files, 18 tests;
+  - `npm run format:staged` (no staged frontend files).
+- Added a popup regression test covering the converted preview, both download
+  targets/names, and the requirement that download controls precede the map.
+- Re-ran the catalog-aware migration check after the rebase against a fresh
+  database restored from the standard test dump; it passed with both the
+  upstream migration and this branch migration in the resolved order.
+- The pre-existing default local test database remains unsuitable because it
+  contains schema state from another branch. All database-backed checks above
+  used fresh databases restored from the required standard test dump.
 - No Mattermost notification was sent because the workspace has no `.env` hook.
 
 ## Current state
 
-- Implementation is present in the working tree and is uncommitted/unstaged.
-- The final worker implementation compiles and passes Clippy.
-- Work stopped at the requested handoff point immediately after that check.
+- The feature implementation is in the rebased branch history. The rebase is
+  complete and the index has no unresolved conflicts.
+- The new regression tests and this updated handoff are uncommitted. No push
+  was performed.
 
 ## Remaining work
 
-1. Run the final mechanical audit after the last worker edit:
-   - `cargo fmt --all -- --check`
-   - `git diff --check`
-   - `git status --short`
-   - inspect the complete diff for unrelated changes.
-2. Perform a manual end-to-end smoke test with at least two convertible files:
+1. Perform a manual end-to-end smoke test in an environment with configured S3,
+   Alpine conversion service, an authenticated browser, and representative
+   SIGINT data, using at least two convertible files:
    - create a SIGINT inbox item;
    - confirm one job per file with message ID and MD5;
    - confirm jobs execute sequentially and results are not message attachments;
@@ -140,10 +142,11 @@
    - confirm the popup previews the converted result and both downloads have
      the expected contents/names;
    - delete an attachment and confirm converted-object cleanup.
-3. Consider adding focused database-backed regression coverage for scheduling,
-   single-worker claiming/stale-attempt protection, and converted-route
-   authorization before merge. No new backend functional test has been added.
-4. Decide whether this feature needs a `CHANGELOG.md` entry. If it does, obtain
+   This cannot be completed in the current local test environment because its
+   S3 and Alpine/browser integration dependencies are not configured.
+2. Consider adding converted-route authorization integration coverage before
+   merge; scheduling and worker concurrency are now covered.
+3. Decide whether this feature needs a `CHANGELOG.md` entry. If it does, obtain
    the GitHub issue number first and follow the project changelog skill/rules.
-5. Show the final diff/status to the user and request permission before any
-   commit. Never commit or push without explicit permission.
+4. Review and commit the uncommitted regression tests and handoff update only
+   after explicit permission. Never push without explicit permission.
