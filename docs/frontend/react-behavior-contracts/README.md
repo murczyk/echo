@@ -18,6 +18,7 @@ Each entry identifies its production boundary, observable outcome, persistence r
 - [MRT tables](mrt-tables.md): internal column order, persisted table state, and overflow actions.
 - [Message card and inbox compatibility](message-card.md): message wire normalization.
 - [Networks](networks.md): network report, frequency, and callsign API compatibility.
+- [Settings](settings.md): Settings presentation and persisted-preference safeguards.
 - [Shared components and browser boundaries](shared-components.md): clipboard fallback safety.
 - [Units](units.md): unit search, duplicates, attachment, and ORBIT API compatibility.
 - [Maps and coordinates](maps.md): coordinate interchange and locality labels.

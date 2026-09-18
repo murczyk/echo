@@ -90,7 +90,7 @@
 - **Responsive and keyboard requirements:** none.
 - **Known race/idempotency constraints:** a completed download must not leave a stale batch-history row visible.
 - **Source implementation:** `routes/settings-neo/SettingsMyReportsSection.tsx`
-- **Existing test(s):** `wdintel-web/src/ts/react/routes/settings-neo/__tests__/SettingsMyReportsSection.spec.tsx`
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded.
 
 ## Transcription results pagination
