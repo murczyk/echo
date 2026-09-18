@@ -287,7 +287,7 @@ async fn list_callsigns_impl(
             load_callsign_seek_cursor(dbx, *after_id).await.c(h!())?;
         callsigns = apply_callsigns_after_cursor(
             callsigns,
-            &sort_by,
+            sort_by.as_ref(),
             &after_cursor,
             exact_match_filter,
         );
@@ -456,7 +456,7 @@ async fn list_callsigns_impl(
     }
 
     if let Some(exact_match_filter) = exact_match_filter {
-        let descending = callsigns_sort_is_descending(&sort_by);
+        let descending = callsigns_sort_is_descending(sort_by.as_ref());
         let exact_match_sort_key = callsigns_exact_match_sort_key_expr(
             Some(exact_match_filter),
             descending,
@@ -467,7 +467,7 @@ async fn list_callsigns_impl(
             callsigns.order_by_asc(exact_match_sort_key)
         };
     }
-    callsigns = apply_callsigns_sort(callsigns, &sort_by);
+    callsigns = apply_callsigns_sort(callsigns, sort_by.as_ref());
     // println!(
     //     "> callsigns sql: {}",
     //     callsigns.build(DbBackend::Postgres).to_string()
@@ -519,12 +519,13 @@ struct CallsignEffectiveCreatedAtRow {
     sigint_callsign_id: i64,
     created_at: chrono::NaiveDateTime,
 }
-fn effective_callsigns_sort(req: &ListCallsignsReq) -> ListCallsignsSortBy {
-    req.sort_by
-        .as_ref()
-        .and_then(|sort_by| sort_by.first())
-        .cloned()
-        .unwrap_or(ListCallsignsSortBy::CallsignUnitAsc)
+fn effective_callsigns_sort(
+    req: &ListCallsignsReq,
+) -> Option<ListCallsignsSortBy> {
+    match &req.sort_by {
+        Some(sort_by) => sort_by.first().cloned(),
+        None => Some(ListCallsignsSortBy::CallsignUnitAsc),
+    }
 }
 
 fn callsigns_sort_created_at_expr() -> SimpleExpr {
@@ -662,17 +663,19 @@ fn callsigns_exact_match_filter(req: &ListCallsignsReq) -> Option<&str> {
         })
 }
 
-fn callsigns_sort_is_descending(sort_by: &ListCallsignsSortBy) -> bool {
+fn callsigns_sort_is_descending(sort_by: Option<&ListCallsignsSortBy>) -> bool {
     matches!(
         sort_by,
-        ListCallsignsSortBy::CallsignDesc
-            | ListCallsignsSortBy::CallsignPositionDesc
-            | ListCallsignsSortBy::CallsignFullNameDesc
-            | ListCallsignsSortBy::CallsignCommentDesc
-            | ListCallsignsSortBy::CallsignSourceDesc
-            | ListCallsignsSortBy::CallsignRadioFreqDesc
-            | ListCallsignsSortBy::CallsignCreatedAtDesc
-            | ListCallsignsSortBy::CallsignUnitDesc
+        Some(
+            ListCallsignsSortBy::CallsignDesc
+                | ListCallsignsSortBy::CallsignPositionDesc
+                | ListCallsignsSortBy::CallsignFullNameDesc
+                | ListCallsignsSortBy::CallsignCommentDesc
+                | ListCallsignsSortBy::CallsignSourceDesc
+                | ListCallsignsSortBy::CallsignRadioFreqDesc
+                | ListCallsignsSortBy::CallsignCreatedAtDesc
+                | ListCallsignsSortBy::CallsignUnitDesc
+        )
     )
 }
 
@@ -710,7 +713,7 @@ fn callsign_exact_match_sort_key(
 
 fn apply_callsigns_after_cursor(
     callsigns: SelectTwo<sigint_callsign::Entity, sigint_unit::Entity>,
-    sort_by: &ListCallsignsSortBy,
+    sort_by: Option<&ListCallsignsSortBy>,
     cursor: &CallsignSeekCursor,
     exact_match_filter: Option<&str>,
 ) -> SelectTwo<sigint_callsign::Entity, sigint_unit::Entity> {
@@ -722,6 +725,16 @@ fn apply_callsigns_after_cursor(
         exact_match_filter,
         descending,
     );
+    let Some(sort_by) = sort_by else {
+        return callsigns.filter(
+            Expr::tuple([exact_match_sort_expr, callsigns_id_expr()]).gt(
+                SimpleExpr::Tuple(vec![
+                    cursor_exact_match_sort_key.into(),
+                    cursor.callsign.id.into(),
+                ]),
+            ),
+        );
+    };
     match sort_by {
         ListCallsignsSortBy::CallsignAsc => callsigns.filter(
             Expr::tuple([
@@ -952,8 +965,11 @@ fn apply_callsigns_after_cursor(
 
 fn apply_callsigns_sort(
     callsigns: SelectTwo<sigint_callsign::Entity, sigint_unit::Entity>,
-    sort_by: &ListCallsignsSortBy,
+    sort_by: Option<&ListCallsignsSortBy>,
 ) -> SelectTwo<sigint_callsign::Entity, sigint_unit::Entity> {
+    let Some(sort_by) = sort_by else {
+        return callsigns.order_by_asc(sigint_callsign::Column::Id);
+    };
     match sort_by {
         ListCallsignsSortBy::CallsignAsc => callsigns
             .order_by_asc(sigint_callsign::Column::Callsign)
@@ -1834,6 +1850,49 @@ mod tests {
                 assert_eq!(paged_ids, expected_ids);
             }
         }
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_list_callsigns_without_selected_sort_paginates_by_id() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let unit =
+            insert_test_unit(&env.dbx, &login.id, "CallsignTestUnit").await;
+        let now = Utc::now().naive_utc();
+
+        let prefix =
+            insert_test_callsign(&env.dbx, unit.id, "041", now, "").await;
+        let exact =
+            insert_test_callsign(&env.dbx, unit.id, "41", now, "").await;
+        let suffix =
+            insert_test_callsign(&env.dbx, unit.id, "410", now, "").await;
+        let expected_ids = vec![exact.id, prefix.id, suffix.id];
+        let mut req =
+            list_req(None, None, ListCallsignsSortBy::CallsignUnitAsc);
+        req.filter_text = Some("41".to_string());
+        req.sort_by = Some(vec![]);
+
+        let full = list_callsigns_impl(&env.dbx, &req).await.unwrap();
+        assert_eq!(
+            full.iter().map(|callsign| callsign.id).collect::<Vec<_>>(),
+            expected_ids,
+        );
+
+        let mut paged_ids = vec![];
+        let mut after_id = None;
+        for _ in 0..=expected_ids.len() {
+            req.after_id = after_id;
+            req.limit = Some(1);
+            let page = list_callsigns_impl(&env.dbx, &req).await.unwrap();
+            if page.is_empty() {
+                break;
+            }
+            after_id = page.last().map(|callsign| callsign.id);
+            paged_ids.extend(page.into_iter().map(|callsign| callsign.id));
+        }
+
+        assert_eq!(paged_ids, expected_ids);
     }
 
     #[serial]

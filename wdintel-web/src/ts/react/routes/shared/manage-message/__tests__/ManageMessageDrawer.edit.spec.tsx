@@ -6,6 +6,7 @@ import { act, forwardRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { InboxMessage } from '../../../../../../Bindings';
+import dayjs from 'dayjs';
 
 const referenceDataMocks = vi.hoisted(() => ({
   getUserSigintGroups: vi.fn().mockResolvedValue([]),
@@ -219,8 +220,19 @@ vi.mock('../../../../components/loadingOverlayStyles', () => ({
   pageDrawerBackdropSx: () => ({}),
 }));
 vi.mock('@mui/x-date-pickers/TimePicker', () => ({
-  TimePicker: ({ label, value }: { label?: string; value?: unknown }) => {
-    if (label) pickerValuesByLabel.set(label, value);
+  TimePicker: ({
+    label,
+    value,
+    onChange,
+  }: {
+    label?: string;
+    value?: unknown;
+    onChange: (value: unknown) => void;
+  }) => {
+    if (label) {
+      pickerValuesByLabel.set(label, value);
+      timePickerOnChange.set(label, onChange);
+    }
     return <div>{label}</div>;
   },
 }));
@@ -243,6 +255,9 @@ type TextFieldMockProps = {
   inputRef?: Ref<HTMLInputElement | HTMLTextAreaElement>;
   error?: boolean;
   helperText?: ReactNode;
+  required?: boolean;
+  inputProps?: { value?: string };
+  slotProps?: { htmlInput?: { style?: Record<string, string>; value?: string } };
 };
 
 const textFieldPropsByLabel = new Map<string | undefined, TextFieldMockProps>();
@@ -254,7 +269,9 @@ const autocompleteOnInputChangeByLabel = new Map<
 const autocompleteValuesByLabel = new Map<string, unknown>();
 const autocompleteInputValuesByLabel = new Map<string, string>();
 const autocompleteOptionLabelsByLabel = new Map<string, string[]>();
+const autocompleteOptionsByLabel = new Map<string, unknown[]>();
 const pickerValuesByLabel = new Map<string, unknown>();
+const timePickerOnChange = new Map<string, (value: unknown) => void>();
 let drawerModalProps: { closeAfterTransition?: boolean } | undefined;
 let drawerSlotProps:
   { paper?: { sx?: { width?: string | Record<string, string | number> } } } | undefined;
@@ -424,6 +441,9 @@ vi.mock('@mui/material', () => ({
     inputRef,
     error,
     helperText,
+    required,
+    inputProps,
+    slotProps,
   }: TextFieldMockProps) => {
     const labelKey = typeof label === 'string' ? label : undefined;
     textFieldPropsByLabel.set(labelKey, {
@@ -439,6 +459,9 @@ vi.mock('@mui/material', () => ({
       autoFocus,
       error,
       helperText,
+      required,
+      inputProps,
+      slotProps,
     });
 
     return (
@@ -450,6 +473,7 @@ vi.mock('@mui/material', () => ({
             value={value ?? ''}
             rows={rows}
             disabled={disabled}
+            required={required}
             autoFocus={autoFocus}
             ref={inputRef as Ref<HTMLTextAreaElement>}
             onChange={(event) => onChange?.(event as never)}
@@ -460,8 +484,10 @@ vi.mock('@mui/material', () => ({
           <input
             aria-label={labelKey}
             placeholder={placeholder}
-            value={value ?? ''}
+            value={value ?? slotProps?.htmlInput?.value ?? inputProps?.value ?? ''}
             disabled={disabled}
+            required={required}
+            style={slotProps?.htmlInput?.style}
             autoFocus={autoFocus}
             ref={inputRef as Ref<HTMLInputElement>}
             onChange={(event) => onChange?.(event as never)}
@@ -481,6 +507,7 @@ vi.mock('@mui/material', () => ({
     onInputChange,
     options,
     getOptionLabel,
+    renderOption,
     loading: _loading,
   }: {
     renderInput?: (params: unknown) => ReactNode;
@@ -490,9 +517,16 @@ vi.mock('@mui/material', () => ({
     onInputChange?: (event: unknown, value: string, reason: string) => void;
     options?: unknown[];
     getOptionLabel?: (option: unknown) => string;
+    renderOption?: (props: { key: string }, option: unknown) => ReactNode;
     loading?: boolean;
   }) => {
-    const input = renderInput?.({ InputProps: {} } as never);
+    const input = renderInput?.({
+      InputProps: {},
+      inputProps: {
+        value:
+          value != null && !Array.isArray(value) && getOptionLabel ? getOptionLabel(value) : '',
+      },
+    } as never);
     const label = (input as { props?: { label?: unknown } } | undefined)?.props?.label;
     if (typeof label === 'string' && onChange) {
       autocompleteOnChangeByLabel.set(label, onChange);
@@ -507,10 +541,14 @@ vi.mock('@mui/material', () => ({
     if (typeof label === 'string' && getOptionLabel) {
       autocompleteOptionLabelsByLabel.set(label, (options ?? []).map(getOptionLabel));
     }
+    if (typeof label === 'string') autocompleteOptionsByLabel.set(label, options ?? []);
     return (
       <div data-testid="autocomplete" data-value={JSON.stringify(value)}>
         {Array.isArray(value) ? value.map((v) => <span key={String(v)}>{String(v)}</span>) : null}
         {input ?? null}
+        {renderOption
+          ? (options ?? []).map((option, index) => renderOption({ key: String(index) }, option))
+          : null}
       </div>
     );
   },
@@ -567,7 +605,9 @@ describe('ManageMessageDrawer edit mode', () => {
     autocompleteValuesByLabel.clear();
     autocompleteInputValuesByLabel.clear();
     autocompleteOptionLabelsByLabel.clear();
+    autocompleteOptionsByLabel.clear();
     pickerValuesByLabel.clear();
+    timePickerOnChange.clear();
     drawerModalProps = undefined;
     drawerOnClose = undefined;
     directSubmitMocks.submitDirect.mockReset();
@@ -919,6 +959,10 @@ describe('ManageMessageDrawer edit mode', () => {
       textFieldPropsByLabel
         .get('Текст розвіддонесення')
         ?.onChange?.({ target: { value: 'Готовий текст оператора' } });
+      const noSendOption = autocompleteOptionsByLabel
+        .get('Відправити в групу')
+        ?.find((option) => (option as { name?: string }).name === 'Не відправляти');
+      autocompleteOnChangeByLabel.get('Відправити в групу')?.(null, noSendOption);
       await Promise.resolve();
     });
     await act(async () => {
@@ -934,7 +978,7 @@ describe('ManageMessageDrawer edit mode', () => {
     root.unmount();
   });
 
-  it('creates a nested report from copied fields with optional group and retained media', async () => {
+  it('requires an explicit report destination and submits the no-send option as null', async () => {
     referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
     referenceDataMocks.getGroupInfosBatch.mockResolvedValue([
       { masterKey: 'g-1', name: 'Group 1' },
@@ -1014,7 +1058,20 @@ describe('ManageMessageDrawer edit mode', () => {
       autocompleteOnInputChangeByLabel.get('Позивні')?.(null, 'charlie', 'input');
     });
     expect(autocompleteInputValuesByLabel.get('Позивні')).toBe('CHARLIE');
-    expect(autocompleteValuesByLabel.get('Група')).toBeNull();
+    expect(autocompleteValuesByLabel.get('Відправити в групу')).toBeNull();
+    expect(autocompleteOptionLabelsByLabel.get('Відправити в групу')).toEqual([
+      'Не відправляти',
+      'Group 1',
+    ]);
+    const groupInput = container.querySelector(
+      'input[aria-label="Відправити в групу"]',
+    ) as HTMLInputElement;
+    expect(groupInput.required).toBe(true);
+    expect(
+      Array.from(container.querySelectorAll('li')).find(
+        (option) => option.textContent === 'Не відправляти',
+      )?.style.color,
+    ).toBe('#d32f2f');
     expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.autoFocus).toBe(true);
     await act(async () => {
       await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
@@ -1041,9 +1098,35 @@ describe('ManageMessageDrawer edit mode', () => {
       textFieldPropsByLabel
         .get('Текст розвіддонесення')
         ?.onChange?.({ target: { value: 'new report body' } });
+      await Promise.resolve();
     });
+    expect((container.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(
+      false,
+    );
     await act(async () => {
       form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+    expect(directSubmitMocks.submitDirect).not.toHaveBeenCalled();
+    expect(textFieldPropsByLabel.get('Відправити в групу')).toMatchObject({
+      error: true,
+      helperText: 'Оберіть групу',
+    });
+
+    const noSendOption = autocompleteOptionsByLabel
+      .get('Відправити в групу')
+      ?.find((option) => (option as { name?: string }).name === 'Не відправляти');
+    expect(noSendOption).toBeDefined();
+    await act(async () => {
+      autocompleteOnChangeByLabel.get('Відправити в групу')?.(null, noSendOption);
+      await Promise.resolve();
+    });
+    expect(groupInput.value).toBe('Не відправляти');
+    expect(groupInput.style.color).toBe('');
+
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      await Promise.resolve();
     });
 
     expect(directSubmitMocks.submitDirect).toHaveBeenCalledWith(
@@ -1216,8 +1299,39 @@ describe('ManageMessageDrawer edit mode', () => {
       'original copied body',
     );
     expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.value).toBe('existing report body');
+    const groupInput = container.querySelector(
+      'input[aria-label="Відправити в групу"]',
+    ) as HTMLInputElement;
+    expect(groupInput.value).toBe('Не відправляти');
+    expect(groupInput.required).toBe(true);
+    expect(groupInput.style.color).toBe('');
 
     const form = container.querySelector('form') as HTMLFormElement;
+    await act(async () => {
+      autocompleteOnChangeByLabel.get('Відправити в групу')?.(null, null);
+      await Promise.resolve();
+    });
+    expect((container.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+    expect(directSubmitMocks.editDirectSubmit).not.toHaveBeenCalled();
+    expect(textFieldPropsByLabel.get('Відправити в групу')).toMatchObject({
+      error: true,
+      helperText: 'Оберіть групу',
+    });
+
+    const noSendOption = autocompleteOptionsByLabel
+      .get('Відправити в групу')
+      ?.find((option) => (option as { name?: string }).name === 'Не відправляти');
+    await act(async () => {
+      autocompleteOnChangeByLabel.get('Відправити в групу')?.(null, noSendOption);
+      await Promise.resolve();
+    });
+
     await act(async () => {
       form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     });
@@ -1235,6 +1349,48 @@ describe('ManageMessageDrawer edit mode', () => {
 
     root.unmount();
   });
+
+  // @test-scope regression: https://github.com/echoua/echo/issues/3515
+  it.each([false, true])(
+    '#3515 submits clearing/restoring time (previously missing: %s)',
+    async (isTimeNull) => {
+      const message = buildMessage({ isTimeNull, timestamp: Date.parse('2026-07-01T09:00:00Z') });
+      directSubmitMocks.editDirectSubmit.mockResolvedValue({ signal_message_id: 91, message });
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={null}
+            onClose={vi.fn()}
+            editTarget={{ id: 91, message }}
+          />,
+        );
+      });
+      expect(pickerValuesByLabel.get('Час перехоплення') == null).toBe(isTimeNull);
+      await act(async () => {
+        timePickerOnChange.get('Час перехоплення')?.(
+          isTimeNull ? dayjs('2026-07-01T12:00:00') : null,
+        );
+      });
+      await act(async () => {
+        container
+          .querySelector('form')
+          ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      });
+      expect(directSubmitMocks.editDirectSubmit).toHaveBeenCalledWith(
+        91,
+        expect.objectContaining({
+          is_time_null: !isTimeNull,
+          timestamp: '2026-07-01T09:00:00.000Z',
+        }),
+      );
+      root.unmount();
+    },
+  );
 
   // @test-scope safeguard: prevents a linked message edit from copying or mutating its accessible parent report.
   it('edits a message with an accessible parent as an independent message by default', async () => {

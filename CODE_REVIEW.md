@@ -61,8 +61,8 @@ CI compares migration DDL with
 `deploy/clickhouse/migration-impact.json`. Every changed Echo migration and
 every updated `echo-im` or `echo-gpu` migration revision must declare its
 analytics impact. The supported strategies are `excluded`,
-`replicated_snapshot`, `cdc_backfill`, `empty_table_resnapshot`, and
-`mirror_resync`.
+`replicated_snapshot`, `cdc_backfill`, `cdc_additive`,
+`empty_table_resnapshot`, and `mirror_resync`.
 
 Treat every schema migration as a coupled change to
 `deploy/clickhouse/migration-impact.json`: review the matching entry in the
@@ -92,6 +92,12 @@ explicit table/mirror resync; do not add generic no-op updates. Do not consider
 the deployment complete until the column is present in the raw ClickHouse
 table, current-state view, PostgreSQL gateway, and the analytics health check
 is green.
+
+`cdc_additive` is limited to nullable column additions without defaults. Require
+reviewed, bounded post-DDL DML to publish the schema on populated tables. Deployment
+waits for CDC and fails on timeout without rebuilding a populated table; only an
+empty table may use the targeted resnapshot fallback. Catalog checks must reject
+non-additive changes, defaults, and non-nullable additions for this strategy.
 
 Treat replicated tables as potentially empty. The `cdc_backfill` strategy is
 allowed only for a table whose schema guarantees a row on every deployment;
@@ -134,8 +140,15 @@ workflow such as user login.
 
 ## Architecture documentation
 
+Keep `docs/README.md` small and focused on system architecture. Do not add
+feature-specific implementation details, field semantics, migration notes, or
+issue-by-issue descriptions. Put necessary details in focused documentation
+and add an architecture-guide link only when it helps explain the architecture.
+Reject additions that expand the guide without changing the architectural picture.
+
 Require changes to deployment topology, process or worker ownership, storage,
-or external integrations to update [docs/README.md](docs/README.md). Changes to
+or external integrations to update [docs/README.md](docs/README.md) only when
+they change the system architecture. Changes to
 the optional analytics stack must also update
 [deploy/clickhouse/README.md](deploy/clickhouse/README.md) and its operational
 scripts when applicable.

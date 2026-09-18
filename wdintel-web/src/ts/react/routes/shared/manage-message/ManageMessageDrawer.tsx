@@ -284,7 +284,8 @@ function ReportSourceHeader({
 }) {
   const sourceEtalonDisplayModel =
     etalonDisplayModel ?? resolveMessageCardEtalonDisplayModel(message);
-  const time = message.time?.trim() ? formatTime(message.time) : null;
+  const time =
+    message.isTimeNull !== true && message.time?.trim() ? formatTime(message.time) : null;
   const date = message.date?.trim() ? formatDateNoYear(message.date) : null;
 
   return (
@@ -597,7 +598,7 @@ export function ManageMessageDrawer(props: Props) {
                         groupsLoading={groupsLoading}
                         busy={busy}
                         isEditMode={isEditMode}
-                        groupOptional={isReportMode}
+                        isReportMode={isReportMode}
                         groupEditable={isReportMode}
                         cyberEchoEnabled={props.cyberEchoEnabled}
                         deviceNameOptions={deviceNameOptions}

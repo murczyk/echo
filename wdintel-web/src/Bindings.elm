@@ -1080,6 +1080,7 @@ type alias InboxMessage =
     , imageRecognized : List (String)
     , date : Maybe (String)
     , time : Maybe (String)
+    , isTimeNull : Maybe (Bool)
     , freq : Maybe (String)
     , coords : Maybe (String)
     , coordsWithLocality : List (CoordinateWithLocality)
@@ -1130,6 +1131,7 @@ inboxMessageEncoder struct =
         , ( "image_recognized", (Json.Encode.list (Json.Encode.string)) struct.imageRecognized )
         , ( "date", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.date )
         , ( "time", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.time )
+        , ( "is_time_null", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isTimeNull )
         , ( "freq", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.freq )
         , ( "coords", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.coords )
         , ( "coords_with_locality", (Json.Encode.list (coordinateWithLocalityEncoder)) struct.coordsWithLocality )
@@ -1178,6 +1180,7 @@ type alias InboxMessageSummary =
     , timestamp : Maybe (Int)
     , date : Maybe (String)
     , time : Maybe (String)
+    , isTimeNull : Maybe (Bool)
     , groupName : Maybe (String)
     , groupMasterKey : Maybe (String)
     , coords : Maybe (String)
@@ -1196,6 +1199,7 @@ inboxMessageSummaryEncoder struct =
         , ( "timestamp", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.timestamp )
         , ( "date", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.date )
         , ( "time", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.time )
+        , ( "is_time_null", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isTimeNull )
         , ( "group_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.groupName )
         , ( "group_master_key", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.groupMasterKey )
         , ( "coords", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.coords )
@@ -6872,6 +6876,7 @@ type alias MessageMediaInfo =
     , transcription : Maybe (String)
     , ocr : Maybe (OcrMediaSummary)
     , summary : Maybe (MediaSummaryStatus)
+    , kmzConversionStatus : Maybe (String)
     }
 
 
@@ -6886,6 +6891,51 @@ messageMediaInfoEncoder struct =
         , ( "transcription", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.transcription )
         , ( "ocr", (Maybe.withDefault Json.Encode.null << Maybe.map (ocrMediaSummaryEncoder)) struct.ocr )
         , ( "summary", (Maybe.withDefault Json.Encode.null << Maybe.map (mediaSummaryStatusEncoder)) struct.summary )
+        , ( "kmz_conversion_status", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.kmzConversionStatus )
+        ]
+
+
+type alias SignalMediaKmzConversionStatusRsp =
+    { status : String
+    , error : Maybe (String)
+    , convertedFileName : Maybe (String)
+    }
+
+
+signalMediaKmzConversionStatusRspEncoder : SignalMediaKmzConversionStatusRsp -> Json.Encode.Value
+signalMediaKmzConversionStatusRspEncoder struct =
+    Json.Encode.object
+        [ ( "status", (Json.Encode.string) struct.status )
+        , ( "error", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.error )
+        , ( "converted_file_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.convertedFileName )
+        ]
+
+
+type alias SignalMediaKmzPreviewLineString =
+    { coords : List (Coords)
+    , color : Maybe (String)
+    }
+
+
+signalMediaKmzPreviewLineStringEncoder : SignalMediaKmzPreviewLineString -> Json.Encode.Value
+signalMediaKmzPreviewLineStringEncoder struct =
+    Json.Encode.object
+        [ ( "coords", (Json.Encode.list (coordsEncoder)) struct.coords )
+        , ( "color", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.color )
+        ]
+
+
+type alias SignalMediaKmzPreviewRsp =
+    { points : List (PalitraPoint)
+    , lineStrings : List (SignalMediaKmzPreviewLineString)
+    }
+
+
+signalMediaKmzPreviewRspEncoder : SignalMediaKmzPreviewRsp -> Json.Encode.Value
+signalMediaKmzPreviewRspEncoder struct =
+    Json.Encode.object
+        [ ( "points", (Json.Encode.list (palitraPointEncoder)) struct.points )
+        , ( "line_strings", (Json.Encode.list (signalMediaKmzPreviewLineStringEncoder)) struct.lineStrings )
         ]
 
 
@@ -15235,6 +15285,7 @@ inboxMessageDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "image_recognized" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "date" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "time" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "is_time_null" (Json.Decode.nullable (Json.Decode.bool)), Json.Decode.succeed Nothing ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coords" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coords_with_locality" (Json.Decode.list (coordinateWithLocalityDecoder))))
@@ -15284,6 +15335,7 @@ inboxMessageSummaryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "timestamp" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "date" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "time" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "is_time_null" (Json.Decode.nullable (Json.Decode.bool)), Json.Decode.succeed Nothing ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_key" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coords" (Json.Decode.nullable (Json.Decode.string))))
@@ -18842,6 +18894,29 @@ messageMediaInfoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "transcription" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ocr" (Json.Decode.nullable (ocrMediaSummaryDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "summary" (Json.Decode.nullable (mediaSummaryStatusDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kmz_conversion_status" (Json.Decode.nullable (Json.Decode.string))))
+
+
+signalMediaKmzConversionStatusRspDecoder : Json.Decode.Decoder SignalMediaKmzConversionStatusRsp
+signalMediaKmzConversionStatusRspDecoder =
+    Json.Decode.succeed SignalMediaKmzConversionStatusRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "error" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "converted_file_name" (Json.Decode.nullable (Json.Decode.string))))
+
+
+signalMediaKmzPreviewLineStringDecoder : Json.Decode.Decoder SignalMediaKmzPreviewLineString
+signalMediaKmzPreviewLineStringDecoder =
+    Json.Decode.succeed SignalMediaKmzPreviewLineString
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coords" (Json.Decode.list (coordsDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color" (Json.Decode.nullable (Json.Decode.string))))
+
+
+signalMediaKmzPreviewRspDecoder : Json.Decode.Decoder SignalMediaKmzPreviewRsp
+signalMediaKmzPreviewRspDecoder =
+    Json.Decode.succeed SignalMediaKmzPreviewRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "points" (Json.Decode.list (palitraPointDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "line_strings" (Json.Decode.list (signalMediaKmzPreviewLineStringDecoder))))
 
 
 sigintZoneDecoder : Json.Decode.Decoder SigintZone

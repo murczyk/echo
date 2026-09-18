@@ -39,6 +39,8 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     SignalMessage,
+    #[sea_orm(has_one = "super::signal_message_media_conversion_job::Entity")]
+    SignalMessageMediaConversionJob,
 }
 
 impl Related<super::media_summary::Entity> for Entity {
@@ -56,6 +58,12 @@ impl Related<super::ocr_job::Entity> for Entity {
 impl Related<super::signal_message::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SignalMessage.def()
+    }
+}
+
+impl Related<super::signal_message_media_conversion_job::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SignalMessageMediaConversionJob.def()
     }
 }
 

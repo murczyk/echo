@@ -27,3 +27,21 @@
 - **Source implementation:** `routes/rer-callsigns-neo/helpers.ts`
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-callsigns-neo/__tests__/helpers.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational parser coverage.
+
+## Callsigns table sorting and presentation
+
+- **Status:** normative
+- **Behavior ID:** `react-callsigns-table-presentation`
+- **Affected route/component:** RER Callsigns table
+- **User role or permission:** callsign viewers; edit and delete actions remain permission-dependent
+- **Preconditions:** callsign rows and source metadata are loaded
+- **User action or external event:** sort a column, clear sorting, inspect source roles, or open a row action
+- **Expected observable result:** backend order is preserved until sorting is selected; sortable columns cycle through their supported directions and can return to no sort; primary and confirming sources retain distinct roles; edit/delete actions remain modal actions; vertical overflow is enabled only when loaded content requires scrolling
+- **Loading/empty/error/success behavior:** an active table overlay does not expose a second vertical scrollbar
+- **URL, localStorage, or user-settings persistence:** table-owned state retains the selected sort
+- **API endpoint and compatibility requirements:** list requests preserve the selected backend sort enum and use no sort enum after clearing
+- **Responsive and keyboard requirements:** sortable headers and row actions remain keyboard reachable
+- **Known race/idempotency constraints:** clearing sorting must restore server order rather than applying a stale client sort
+- **Source implementation:** `wdintel-web/src/ts/react/routes/rer-callsigns-neo/components/CallsignsTable.tsx`, `wdintel-web/src/ts/react/routes/rer-callsigns-neo/helpers-core.ts`
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
+- **Original Echo issue/PR, if known:** none recorded

@@ -37,6 +37,7 @@ pub mod file_upload;
 pub mod freq;
 pub(crate) mod import;
 pub(crate) mod key;
+pub mod media_conversion;
 pub mod message_id;
 pub mod message_uuid_oneoff;
 pub mod network;

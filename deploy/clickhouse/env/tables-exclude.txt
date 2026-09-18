@@ -28,6 +28,7 @@ public.echo_chat_ingestion_state
 public.echo_chat_webhook_delivery
 public.palitra_goi_sync_job
 public.palitra_conversion_job
+public.signal_message_media_conversion_job
 public.goi_palitra_sync
 public.palitra_highlight_blacklist
 

@@ -56,6 +56,11 @@ flowchart LR
     vector -.-> observability["Optional observability\nSigNoz"]
 ```
 
+ClickHouse diagnostic storage uses an explicit 1–7 day retention policy for
+both analytics and SigNoz, including archived system logs. See the
+[maintenance runbook](../deploy/clickhouse/README.md#bounded-clickhouse-diagnostic-logs)
+for provisioning, expiry, and upgrade checks.
+
 The application container uses native systemd services; deployment tooling
 does not create its LXC container. Optional analytics runs in a separate
 container and stores only derived data. PostgreSQL remains authoritative, and
@@ -149,6 +154,15 @@ JSON decode errors are terminal as well. Failures populate the background job's
 error and release its multipart admission when the task finishes. Admission
 remains held while conversion buffers are alive; source and result logs contain
 byte counts instead of file payloads.
+
+New SIGINT inbox attachments whose extensions are supported by the AlpineQuest
+converter create one `signal_message_media_conversion_job` row per file. Each
+row links the source media and message and records the source MD5. A singleton
+worker converts jobs sequentially, verifies the stored source against that MD5,
+and keeps the encrypted KMZ result in object storage without adding another
+message attachment. Authorized attachment preview and download routes reuse the
+original media access check; deleting an attachment through direct submit also
+removes its stored conversion result on a best-effort basis.
 
 Consumers with smaller
 existing limits retain them; OCR gateway images remain limited to 16 MiB. ZIP

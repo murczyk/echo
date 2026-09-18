@@ -55,7 +55,7 @@ server {
         proxy_send_timeout 30;
     }
     location ^~ /api/sigint/file-upload/ {
-        client_max_body_size 2100M;
+        client_max_body_size 6200M;
         proxy_request_buffering off;
         proxy_pass http://127.0.0.1:8081;
         proxy_set_header Host $host;

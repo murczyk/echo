@@ -6,7 +6,11 @@ import { FormProvider, useForm, type UseFormReturn } from 'react-hook-form';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { SettlementDetails } from '../../../../../services/api/settlements';
-import { EMPTY_FORM_VALUES, type MessageFormData } from '../../manage-message-drawer.schema';
+import {
+  DO_NOT_SEND_GROUP_VALUE,
+  EMPTY_FORM_VALUES,
+  type MessageFormData,
+} from '../../manage-message-drawer.schema';
 import { LocationsSection } from '../LocationsSection';
 import { useSettlementAutocomplete } from '../useSettlementAutocomplete';
 
@@ -219,6 +223,16 @@ describe('LocationsSection', () => {
 
     expect(vi.mocked(useSettlementAutocomplete)).toHaveBeenCalledWith(
       expect.objectContaining({ signalGroupMasterKey: 'group-1' }),
+    );
+  });
+
+  // @test-scope safeguard: prevents the no-send sentinel from being used as an authorization-scoped settlement lookup key.
+  it('does not pass the no-send destination to the settlement hook as a group key', async () => {
+    signalGroupMasterKey = DO_NOT_SEND_GROUP_VALUE;
+    await renderSection();
+
+    expect(vi.mocked(useSettlementAutocomplete)).toHaveBeenCalledWith(
+      expect.objectContaining({ signalGroupMasterKey: null }),
     );
   });
 });

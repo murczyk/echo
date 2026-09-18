@@ -2754,6 +2754,7 @@ where
         .column_as(sigint_inbox_item::Column::LocationV2, "location_v2")
         .column_as(sigint_inbox_item::Column::Date, "date")
         .column_as(sigint_inbox_item::Column::Time, "time")
+        .column_as(sigint_inbox_item::Column::IsTimeNull, "is_time_null")
         .column_as(sigint_inbox_item::Column::Checked, "checked")
         .column_as(sigint_inbox_item::Column::UnitV2, "unit_v2")
         .column_as(sigint_inbox_item::Column::Network, "network")

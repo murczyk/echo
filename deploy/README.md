@@ -302,6 +302,12 @@ Make sure your nginx (`brew install nginx`) has the following configuration (`/o
             proxy_pass http://localhost:8081;
             proxy_set_header Host $host;
         }
+        location ^~ /api/sigint/file-upload/ {
+            client_max_body_size 6200M;
+            proxy_request_buffering off;
+            proxy_pass http://localhost:8081;
+            proxy_set_header Host $host;
+        }
         # ...
     }
 

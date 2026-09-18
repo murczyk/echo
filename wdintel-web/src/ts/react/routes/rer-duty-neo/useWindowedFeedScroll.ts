@@ -25,6 +25,8 @@ export type {
   WindowedFeedScrollItem,
 } from './windowed-feed-scroll-shared';
 
+const ANCHOR_RESTORE_LAYOUT_STABLE_FRAMES = 3;
+
 function centeredItemScrollTop(scroller: HTMLElement, target: HTMLElement): number {
   const scrollerRect = scroller.getBoundingClientRect();
   const targetRect = target.getBoundingClientRect();
@@ -183,6 +185,61 @@ export function useWindowedFeedScroll({
   });
   updateScrollStateRef.current = tracking.updateScrollState;
 
+  const pendingAnchorRestoreRafRef = useRef<number | null>(null);
+  const stopPendingAnchorRestore = useCallback(() => {
+    if (pendingAnchorRestoreRafRef.current === null) return;
+    cancelAnimationFrame(pendingAnchorRestoreRafRef.current);
+    pendingAnchorRestoreRafRef.current = null;
+  }, []);
+  const schedulePendingAnchorRestore = useCallback(() => {
+    stopPendingAnchorRestore();
+    const scroller = refs.scrollerRef.current;
+    if (!refs.enabledRef.current || !scroller) return;
+    let lastHeight = scroller.scrollHeight;
+    let stableFrames = 0;
+
+    const tick = () => {
+      pendingAnchorRestoreRafRef.current = null;
+      const active = refs.scrollerRef.current;
+      if (!refs.enabledRef.current || !active) return;
+      if (Math.abs(active.scrollHeight - lastHeight) <= 0.5) {
+        stableFrames += 1;
+      } else {
+        lastHeight = active.scrollHeight;
+        stableFrames = 0;
+      }
+      if (stableFrames < ANCHOR_RESTORE_LAYOUT_STABLE_FRAMES) {
+        pendingAnchorRestoreRafRef.current = requestAnimationFrame(tick);
+        return;
+      }
+
+      const restoreOutcome = anchors.restoreAnchorPosition({
+        settleSynchronousLayout: true,
+        settleUpperClamp: true,
+      });
+      if (restoreOutcome === 'pending') {
+        lastHeight = active.scrollHeight;
+        stableFrames = 0;
+        pendingAnchorRestoreRafRef.current = requestAnimationFrame(tick);
+        return;
+      }
+      tracking.updateScrollState({
+        allowLoadOlder: false,
+        allowLoadNewer: false,
+        allowTopReached: false,
+      });
+      anchors.captureAnchorSnapshot();
+      recordDutyScrollDebugEvent(
+        debugFeedId,
+        'anchor:settle-complete',
+        `height=${active.scrollHeight.toFixed(1)}; frames=${stableFrames}`,
+      );
+    };
+
+    pendingAnchorRestoreRafRef.current = requestAnimationFrame(tick);
+  }, [anchors, debugFeedId, refs, stopPendingAnchorRestore, tracking]);
+  useEffect(() => stopPendingAnchorRestore, [stopPendingAnchorRestore]);
+
   const directItemTargetIdRef = useRef<number | null>(null);
   const directItemCenterRafRef = useRef<number | null>(null);
 
@@ -299,7 +356,10 @@ export function useWindowedFeedScroll({
     if (!enabled) return;
     const scroller = refs.scrollerRef.current;
     if (!scroller) return;
-    const stopTrackingForUserInteraction = () => stopDirectItemTracking();
+    const stopTrackingForUserInteraction = () => {
+      stopDirectItemTracking();
+      stopPendingAnchorRestore();
+    };
     scroller.addEventListener('wheel', stopTrackingForUserInteraction, { passive: true });
     scroller.addEventListener('touchstart', stopTrackingForUserInteraction, { passive: true });
     scroller.addEventListener('pointerdown', stopTrackingForUserInteraction);
@@ -310,7 +370,7 @@ export function useWindowedFeedScroll({
       scroller.removeEventListener('pointerdown', stopTrackingForUserInteraction);
       scroller.removeEventListener('keydown', stopTrackingForUserInteraction);
     };
-  }, [enabled, refs, stopDirectItemTracking]);
+  }, [enabled, refs, stopDirectItemTracking, stopPendingAnchorRestore]);
 
   const clearReportedScrollTrackingStateRef = useRef(tracking.clearReportedScrollTrackingState);
   clearReportedScrollTrackingStateRef.current = tracking.clearReportedScrollTrackingState;
@@ -318,6 +378,7 @@ export function useWindowedFeedScroll({
   useLayoutEffect(() => {
     const resetChanged = refs.previousResetKeyRef.current !== resetKey;
     if (resetChanged) {
+      stopPendingAnchorRestore();
       recordDutyScrollDebugEvent(
         debugFeedId,
         'feed:reset',
@@ -338,12 +399,14 @@ export function useWindowedFeedScroll({
     const currentItemIds = refs.itemIdsRef.current;
     const topStatusChanged = refs.previousTopStatusRef.current !== topStatus;
     if (!enabled) {
+      stopPendingAnchorRestore();
       follow.stopBottomSettle();
       follow.clearFollowScroll();
       return;
     }
     refs.previousTopStatusRef.current = topStatus;
     if (currentItemIds.length === 0) {
+      stopPendingAnchorRestore();
       refs.hasInitialScrolledRef.current = false;
       refs.hasSeenNotAtBottomRef.current = false;
       refs.previousItemIdsRef.current = currentItemIds;
@@ -355,6 +418,7 @@ export function useWindowedFeedScroll({
     }
 
     if (!refs.hasInitialScrolledRef.current) {
+      stopPendingAnchorRestore();
       refs.previousItemIdsRef.current = currentItemIds;
       if (!initialPositioningReady) {
         anchors.captureAnchorSnapshot();
@@ -373,6 +437,7 @@ export function useWindowedFeedScroll({
 
     const itemsChanged = !areNumberArraysEqual(refs.previousItemIdsRef.current, currentItemIds);
     if (itemsChanged || topStatusChanged) {
+      stopPendingAnchorRestore();
       if (directItemTargetIdRef.current !== null) {
         centerTrackedItem('items-changed');
       } else if (
@@ -429,9 +494,17 @@ export function useWindowedFeedScroll({
         previousIds.every((id, index) => currentItemIds[index] === id);
       // A pure append does not move any existing row; restoring a stale measured
       // anchor here can itself create the prohibited watch-off navigation.
-      if (!itemsChanged || !isPureAppend) anchors.restoreAnchorPosition();
+      const restoreOutcome =
+        !itemsChanged || !isPureAppend
+          ? anchors.restoreAnchorPosition({ settleSynchronousLayout: true })
+          : 'restored';
       if (itemsChanged) refs.preserveBottomAnchorRef.current = false;
       refs.previousItemIdsRef.current = currentItemIds;
+      if (restoreOutcome === 'pending') {
+        recordDutyScrollDebugEvent(debugFeedId, 'items:anchor-retry-pending');
+        schedulePendingAnchorRestore();
+        return;
+      }
       anchors.captureAnchorSnapshot();
       // Re-check near-bottom so catch-up can arm another newer load.
       tracking.updateScrollState({ allowLoadOlder: false, allowTopReached: false });
@@ -456,7 +529,9 @@ export function useWindowedFeedScroll({
     follow,
     refs,
     resetKey,
+    schedulePendingAnchorRestore,
     stopDirectItemTracking,
+    stopPendingAnchorRestore,
     topStatus,
     tracking,
     itemIds,
@@ -493,7 +568,13 @@ export function useWindowedFeedScroll({
         return;
       }
       recordDutyScrollDebugEvent(debugFeedId, 'resize:preserve-anchor');
-      anchors.restoreAnchorPosition();
+      const restoreOutcome = anchors.restoreAnchorPosition();
+      if (restoreOutcome === 'pending') {
+        recordDutyScrollDebugEvent(debugFeedId, 'resize:anchor-retry-pending');
+        schedulePendingAnchorRestore();
+        return;
+      }
+      stopPendingAnchorRestore();
       tracking.updateScrollState({
         allowLoadOlder: false,
         allowLoadNewer: false,
@@ -512,6 +593,8 @@ export function useWindowedFeedScroll({
     itemIds.length,
     refs,
     resetKey,
+    schedulePendingAnchorRestore,
+    stopPendingAnchorRestore,
     tracking,
   ]);
 
@@ -525,6 +608,7 @@ export function useWindowedFeedScroll({
   const handleScroll = useCallback<UIEventHandler<HTMLDivElement>>(() => {
     if (!refs.enabledRef.current) return;
     if (refs.isRestoringAnchorRef.current) return;
+    if (pendingAnchorRestoreRafRef.current !== null) return;
     if (!initialPositioningReady && !refs.hasInitialScrolledRef.current) {
       refs.hasInitialScrolledRef.current = true;
     }

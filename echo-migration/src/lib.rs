@@ -427,6 +427,8 @@ mod m20260915_105452_disable_bot_tags;
 mod m20260915_151525_network_recalculation_last_seen_batch_index;
 mod m20260916_130029_activate_sigint_network_units;
 mod m20260917_123830_unresolved_unit_message_order;
+mod m20260918_092309_sigint_inbox_item_is_time_null;
+mod m20260917_150626_signal_message_media_conversion_job;
 
 pub struct Migrator;
 
@@ -1018,6 +1020,10 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(
                 m20260917_123830_unresolved_unit_message_order::Migration,
+            ),
+            Box::new(m20260918_092309_sigint_inbox_item_is_time_null::Migration),
+            Box::new(
+                m20260917_150626_signal_message_media_conversion_job::Migration,
             ),
         ]
     }

@@ -103,6 +103,11 @@ always shows the comparison diff. Automatic mode reloads, applies, and commits
 each item in its own transaction before continuing to the next item, so a later
 failure does not roll back earlier completed work.
 
+The start menu separates high-impact actions into a red Danger Zone below an
+orange warning. It contains, in order, ORBIT synchronization, junk SIGINT unit
+removal, preparation of a new ORBIT data revision, and complete ORBIT erase and
+reimport.
+
 ### IMPORT NEW ORBIT DATA REVISION
 
 Enter the path to an ORBIT JSON export. This prepares and stores the normalized
@@ -209,8 +214,8 @@ already accepted changes.
 
 ### Review conflicting SIGINT higher-echelon values
 
-This manual workflow treats brigade, division, corps, army, army region, and
-military district names as case-insensitive unique identities. It processes
+This manual workflow treats brigade, division, corps, army, military district,
+and army region names as case-insensitive unique identities. It processes
 those echelons from lower to higher and their names alphabetically. For every
 pair of units sharing one identity, it reviews differing higher-echelon fields
 one at a time, including a populated value versus an empty value.
@@ -246,11 +251,12 @@ This workflow processes non-archived labels from
 `/admin/units?tab=unparsed`. The operational unit parser converts each label to
 an echelon hierarchy, including brigade and corps levels, then the normal ORBIT
 linking matcher scores it without a second matching implementation. Automatic
-mode preserves the full rating, distance, and ambiguity checks before
-considering whether that ORBIT unit has exactly one active, non-deleted SIGINT
-link. Manual mode also presents a uniquely matched ORBIT root with no SIGINT
-link; accepting it imports and links the SIGINT unit before resolving the
-label.
+mode proceeds only when exactly one ORBIT candidate has rating 100 and is within
+the automatic distance limit. Two or more eligible candidates remain ambiguous
+even when one is closer. The selected ORBIT unit must then have exactly one
+active, non-deleted SIGINT link. Manual mode also presents a uniquely matched
+ORBIT root with no SIGINT link; accepting it imports and links the SIGINT unit
+before resolving the label.
 
 Accepted labels are re-matched under the advisory lock, added as SIGINT unit
 aliases, and returned to the existing failed-unit worker for reprocessing. A

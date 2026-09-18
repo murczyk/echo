@@ -216,3 +216,12 @@ another failure.
 зменшення вхідного трафіку від внутрішнього відставання порівнюйте
 `ingested.count` з попередніми сімома днями разом із `queue.items` і
 `processing.count`.
+
+## ClickHouse diagnostic retention
+
+SigNoz storage maintenance uses the [bounded diagnostic-log policy](../deploy/clickhouse/README.md#signoz-clickhouse-maintenance):
+1 day for trace/profiling logs, 3 days for text/asynchronous-insert logs, and
+7 days for other managed diagnostics, including numeric archive tables.
+Application logs remain at 15 days and metrics at 30 days. Use the SigNoz
+profile's `--check` after upgrades and `--apply --expire --yes` for cleanup that
+preserves recent history. ZooKeeper filesystem cleanup is separate.

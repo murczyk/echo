@@ -25,8 +25,11 @@ run_case() {
     }
   fi
   case $scenario in
-    nonempty|raw_only|strategy_mismatch|terminal_state)
+    nonempty|raw_only|strategy_mismatch|terminal_state|cdc_timeout)
       ! grep -Eq '^(pause|remove|drop|add|refresh)' "$case_dir/operations"
+      ;;
+    cdc_race)
+      ! grep -Eq '^(remove|drop|add|snapshot)' "$case_dir/operations"
       ;;
     recoverable_failure)
       grep -q '^recovery-pause$' "$case_dir/operations"
@@ -36,6 +39,11 @@ run_case() {
 }
 
 if [[ $# -eq 0 ]]; then
+  run_case cdc_paused success
+  run_case cdc_propagated success
+  run_case cdc_timeout failure
+  run_case cdc_empty success
+  run_case cdc_race failure
   run_case no_drift success
   run_case additive_empty success
   run_case additive_nonempty success
@@ -206,6 +214,41 @@ case $scenario in
     grep -q '^add' "$operations_file"
     grep -q '^snapshot$' "$operations_file"
     grep -q '^refresh$' "$operations_file"
+    ;;
+  cdc_propagated|cdc_paused)
+    if [[ "$scenario" == cdc_paused ]]; then
+      mock_status=2
+    fi
+    mock_has_rows=true
+    raw_columns() {
+      if [[ -f "$case_dir/cdc-read" ]]; then
+        printf '%s\n' "$mock_source_columns"
+      else
+        touch "$case_dir/cdc-read"
+        printf '%s\n' "$mock_raw_columns"
+      fi
+    }
+    resnapshot_table cdc_additive public.echo_automation
+    ! grep -Eq '^(pause|remove|drop|add|snapshot)' "$operations_file"
+    if [[ "$scenario" == cdc_paused ]]; then
+      grep -q '^resume$' "$operations_file"
+    fi
+    ;;
+  cdc_timeout)
+    mock_has_rows=true
+    table_cdc_timeout=1
+    table_resnapshot_poll_interval=1
+    resnapshot_table cdc_additive public.echo_automation
+    ;;
+  cdc_empty)
+    resnapshot_table cdc_additive public.echo_automation
+    grep -q '^snapshot$' "$operations_file"
+    ;;
+  cdc_race)
+    source_table_has_rows() {
+      grep -q '^pause' "$operations_file"
+    }
+    resnapshot_table cdc_additive public.echo_automation
     ;;
   additive_nonempty)
     mock_has_rows=true

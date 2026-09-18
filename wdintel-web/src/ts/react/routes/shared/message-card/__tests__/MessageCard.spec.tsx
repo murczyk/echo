@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { InboxMessage, MessageMediaInfo, Network, Tag } from '../../../../../../Bindings.ts';
 import { emptyFilter } from '../../../rer-duty-neo/utils.ts';
-import { MessageCard } from '../MessageCard.tsx';
+import { formatMessageCardTooltipTime, MessageCard } from '../MessageCard.tsx';
 import { MessageCardHeader, MessageCardMetadata } from '../MessageCardHeader.tsx';
 import {
   canDownloadAllMessageAttachments,
@@ -218,6 +218,94 @@ describe('MessageCard', () => {
     expect(view.container.querySelector('[title="Пристрій"]')).not.toBeNull();
     expect(view.container.textContent).toContain('Радіостанція');
   });
+
+  // @test-scope regression: https://github.com/echoua/echo/issues/3515
+  it.each(['interception', 'creation'] as const)(
+    '#3515 hides all generated times for a date-only message (%s)',
+    async (messageTimeBasis) => {
+      const view = await renderCard({
+        messageTimeBasis,
+        msg: buildMessage({
+          text: 'Повідомлення без часу',
+          textMarked: [],
+          timestamp: Date.UTC(2026, 6, 15, 9),
+          createdAt: Date.UTC(2026, 6, 15, 10),
+          date: '15.07.2026',
+          time: '12:00:00',
+          isTimeNull: true,
+          hasDateInHeader: false,
+        }),
+      });
+      expect(view.container.textContent).toContain('15.07');
+      expect(view.container.textContent).not.toMatch(/12:00|13:00/);
+      expect(view.container.querySelector('.message-card-relative-time')).toBeNull();
+      expect(
+        view.container.querySelectorAll('[data-message-card-timestamp-item="true"]'),
+      ).toHaveLength(1);
+      expect(
+        formatMessageCardTooltipTime({
+          time: '12:00',
+          timestamp: Date.UTC(2026, 6, 15, 9),
+          isTimeNull: true,
+        }),
+      ).not.toContain('12:00');
+    },
+  );
+
+  // @test-scope regression: https://github.com/echoua/echo/issues/3515
+  it.each(['interception', 'creation'] as const)(
+    '#3515 shows creation and event dates independently in analysis (%s)',
+    async (messageTimeBasis) => {
+      for (const isTimeNull of [true, false, null]) {
+        const view = await renderCard({
+          displayMode: 'analysis',
+          messageTimeBasis,
+          msg: buildMessage({
+            text: 'Повідомлення',
+            textMarked: [],
+            createdAt: Date.UTC(2026, 6, 16, 21, 30),
+            timestamp: Date.UTC(2026, 6, 15, 9),
+            date: '14.07.2026',
+            time: '08:45:00',
+            isTimeNull,
+          }),
+        });
+        const timestamps = view.container.querySelectorAll(
+          '[data-message-card-timestamp-item="true"]',
+        );
+        expect(timestamps).toHaveLength(2);
+        expect(timestamps[0]?.textContent).toContain('17.07 00:30');
+        expect(timestamps[0]?.getAttribute('title')).toBe('Час створення');
+        expect(timestamps[1]?.getAttribute('title')).toBe('Час події');
+        expect(timestamps[1]?.textContent).toContain(isTimeNull ? '14.07' : '14.07 08:45');
+        if (isTimeNull) expect(timestamps[1]?.textContent).not.toContain(':');
+        for (const timestamp of timestamps) {
+          expect(
+            timestamp.querySelector('[data-testid="CalendarTodayOutlinedIcon"]'),
+          ).not.toBeNull();
+        }
+      }
+    },
+  );
+
+  // @test-scope regression: https://github.com/echoua/echo/issues/3515
+  it.each([
+    { date: '2026-07-14', time: '08:45:00', isTimeNull: false, expected: '14.07 08:45' },
+    { date: null, time: null, isTimeNull: false, expected: '15.07 12:00' },
+    { date: null, time: null, isTimeNull: true, expected: '15.07' },
+  ])(
+    '#3515 formats analysis event dates with timestamp fallback ($expected)',
+    async ({ expected, ...fields }) => {
+      const view = await renderCard({
+        displayMode: 'analysis',
+        msg: buildMessage({ ...fields, timestamp: Date.UTC(2026, 6, 15, 9) }),
+      });
+      expect(view.container.querySelector('[title="Час події"]')?.textContent).toContain(expected);
+      if (fields.isTimeNull) {
+        expect(view.container.querySelector('[title="Час події"]')?.textContent).not.toContain(':');
+      }
+    },
+  );
 
   // @test-scope regression: https://github.com/echoua/echo/issues/3324
   it('ECHO-3324 cancels the matching mixed-provenance bot-tag action', async () => {

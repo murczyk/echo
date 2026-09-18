@@ -44,6 +44,7 @@ struct Message {
     pub sender: Option<String>,
     pub date: Option<String>,
     pub time: Option<String>,
+    pub is_time_null: Option<bool>,
     pub freq: Option<String>,
     pub checked: Option<bool>,
     pub unit: Option<String>,
@@ -289,6 +290,7 @@ async fn get_inbox_messages_report_chunk_postgres(
         )))
         .column(sigint_inbox_item::Column::Date)
         .column(sigint_inbox_item::Column::Time)
+        .column(sigint_inbox_item::Column::IsTimeNull)
         .column(sigint_inbox_item::Column::Freq)
         .column(sigint_inbox_item::Column::Checked)
         .column_as(sigint_inbox_item::Column::LocationV2, "location")
@@ -572,6 +574,7 @@ async fn get_inbox_messages_report_chunk_postgres(
                 timestamp: m.timestamp,
                 created_at: m.created_at,
                 message: InboxMessage {
+                    is_time_null: m.is_time_null,
                     parent_messages: vec![],
                     intelligence_reports: vec![],
                     message_uuid: None,
@@ -752,7 +755,8 @@ pub async fn report_xlsx_kind_pelengs1(
                     .as_ref()
                     .is_some_and(|coords| !coords.is_empty())
                 && message.date.is_some()
-                && message.time.is_some()
+                && (message.is_time_null == Some(true)
+                    || message.time.is_some())
                 && message.freq.is_some()
         })
         .count();
@@ -788,7 +792,7 @@ pub async fn report_xlsx_kind_pelengs1(
             continue;
         };
         let date = NaiveDate::parse_from_str(date, "%Y-%m-%d").context(h!())?;
-        let Some(time) = m.time.as_ref() else {
+        let Some(date_time) = peleng_report_date_time(m, date) else {
             continue;
         };
         let Some(freq) = m.freq.as_ref() else {
@@ -807,13 +811,7 @@ pub async fn report_xlsx_kind_pelengs1(
             .write_string(i, 1, m.unit.clone().unwrap_or("НВ".to_string()))
             .context(h!())?;
         sheet1.write_string(i, 2, freq).context(h!())?;
-        sheet1
-            .write_string(
-                i,
-                3,
-                format!("{}, {}", time, date.format("%d.%m.%y")),
-            )
-            .context(h!())?;
+        sheet1.write_string(i, 3, date_time).context(h!())?;
         // Resolve human-readable sender name (written as the last column)
         let sender_name =
             match m.sender.as_ref().and_then(|id| sender_names.get(id)) {
@@ -918,6 +916,18 @@ fn translate_direction(dir: String) -> anyhow::Result<String> {
     }
 }
 
+fn peleng_report_date_time(
+    message: &InboxMessage,
+    date: NaiveDate,
+) -> Option<String> {
+    let date = date.format("%d.%m.%y");
+    if message.is_time_null == Some(true) {
+        Some(date.to_string())
+    } else {
+        message.time.as_ref().map(|time| format!("{time}, {date}"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -938,6 +948,7 @@ mod tests {
                 sender: None,
                 date: None,
                 time: None,
+                is_time_null: None,
                 freq: None,
                 checked: None,
                 unit: None,
@@ -952,6 +963,7 @@ mod tests {
                 sender: None,
                 date: None,
                 time: None,
+                is_time_null: None,
                 freq: None,
                 checked: None,
                 unit: None,
@@ -1098,7 +1110,8 @@ mod tests {
             sigint_inbox_item::ActiveModel {
                 id: Set(signal_message.id),
                 date: Set(Some(dt.date().to_string())),
-                time: Set(Some(dt.time().format("%H:%M:%S").to_string())),
+                time: Set(Some("12:00:00".to_string())),
+                is_time_null: Set(Some(true)),
                 freq: Set(Some("138.500".to_string())),
                 lat: Set(None),
                 lng: Set(None),
@@ -1146,6 +1159,19 @@ mod tests {
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].0, signal_message.id);
         assert_eq!(messages[0].1, Some((48.1, 37.2)));
+        let mut message = messages[0].2.clone();
+        assert_eq!(message.is_time_null, Some(true));
+        assert_eq!(
+            peleng_report_date_time(&message, dt.date()).as_deref(),
+            Some("09.03.26")
+        );
+        for flag in [None, Some(false)] {
+            message.is_time_null = flag;
+            assert_eq!(
+                peleng_report_date_time(&message, dt.date()).as_deref(),
+                Some("12:00:00, 09.03.26")
+            );
+        }
     }
 
     async fn seed_peleng_device_message(

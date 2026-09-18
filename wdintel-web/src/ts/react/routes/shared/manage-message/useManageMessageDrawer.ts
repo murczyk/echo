@@ -34,6 +34,7 @@ import { useRecentValues } from './useRecentValues';
 import { isPresent } from '../../../utils/misc';
 import { blurActiveElement } from '../../../utils/focus';
 import {
+  DO_NOT_SEND_GROUP_VALUE,
   makeMessageSchema,
   EMPTY_FORM_VALUES,
   type MessageFormData,
@@ -316,7 +317,7 @@ export function useManageMessageDrawer({
   }, [freqInput, formReady]);
 
   const resolver = useMemo(
-    () => zodResolver(makeMessageSchema(isEditMode, isReportMode, isReportMode)),
+    () => zodResolver(makeMessageSchema(isEditMode, false, isReportMode)),
     [isEditMode, isReportMode],
   );
 
@@ -354,6 +355,7 @@ export function useManageMessageDrawer({
         transcription: m.transcription ?? (raw as any).transcription ?? null,
         ocr: m.ocr ?? (raw as any).ocr ?? null,
         summary: m.summary ?? (raw as any).summary ?? null,
+        kmzConversionStatus: m.kmzConversionStatus ?? (raw as any).kmz_conversion_status ?? null,
       };
     });
   }, [isEditMode, editTarget?.message.media, reportSource?.message.media]);
@@ -382,41 +384,45 @@ export function useManageMessageDrawer({
 
   const { parsing, handleParse } = useMessageParser(methods, busy, setErrorMsg);
 
-  const canSubmit = useMemo(
-    () =>
-      isManageMessageSubmitEligible({
-        busy: busy || (isReportCreateMode && !reportCopyLoaded),
-        parsing,
-        schemaValid: formState.isValid,
-        isEditMode,
-        groupOptional: isReportMode,
-        reportTextRequired: isReportMode,
-        groupsLoading,
-        selectedGroupKey: formValues.signalGroupMasterKey ?? '',
-        accessibleGroupKeys: signalGroups.map((group) => group.masterKey),
-        text: formValues.text ?? '',
-        fullBody: formValues.full_body ?? '',
-        newAttachmentCount: uppyFiles.length,
-        existingAttachmentIds: existingMedia.map((media) => media.id),
-        deletedAttachmentIds: formValues.deleted_media_ids ?? [],
-        maxAttachmentCount: MAX_MESSAGE_ATTACHMENTS,
-      }),
-    [
-      busy,
-      editTarget,
-      existingMedia,
-      formState.isValid,
-      formValues,
-      groupsLoading,
-      isEditMode,
-      isReportCreateMode,
-      isReportMode,
+  const canSubmit = useMemo(() => {
+    const selectedGroupKey = formValues.signalGroupMasterKey ?? '';
+    const reportDestinationMissing = isReportMode && !selectedGroupKey.trim();
+
+    return isManageMessageSubmitEligible({
+      busy: busy || (isReportCreateMode && !reportCopyLoaded),
       parsing,
-      reportCopyLoaded,
-      signalGroups,
-      uppyFiles.length,
-    ],
-  );
+      schemaValid: formState.isValid || reportDestinationMissing,
+      isEditMode,
+      allowMissingGroup: isReportMode,
+      reportTextRequired: isReportMode,
+      groupsLoading,
+      selectedGroupKey,
+      accessibleGroupKeys: [
+        ...signalGroups.map((group) => group.masterKey),
+        ...(isReportMode ? [DO_NOT_SEND_GROUP_VALUE] : []),
+      ],
+      text: formValues.text ?? '',
+      fullBody: formValues.full_body ?? '',
+      newAttachmentCount: uppyFiles.length,
+      existingAttachmentIds: existingMedia.map((media) => media.id),
+      deletedAttachmentIds: formValues.deleted_media_ids ?? [],
+      maxAttachmentCount: MAX_MESSAGE_ATTACHMENTS,
+    });
+  }, [
+    busy,
+    editTarget,
+    existingMedia,
+    formState.isValid,
+    formValues,
+    groupsLoading,
+    isEditMode,
+    isReportCreateMode,
+    isReportMode,
+    parsing,
+    reportCopyLoaded,
+    signalGroups,
+    uppyFiles.length,
+  ]);
 
   useEffect(() => {
     if (!formReady) return;
@@ -493,7 +499,8 @@ export function useManageMessageDrawer({
       reset({
         ...mapInboxMessageToForm(editTarget.message, tagsMap),
         text: editTarget.message.noHeadersBody?.body ?? editTarget.message.text ?? '',
-        signalGroupMasterKey: editTarget.message.groupMasterKey ?? '',
+        signalGroupMasterKey:
+          editTarget.message.groupMasterKey ?? (isReportMode ? DO_NOT_SEND_GROUP_VALUE : ''),
         deviceName: cyberEchoEnabled ? (editTarget.message.deviceName ?? '') : '',
         network_signal_name:
           metadata.length || editTarget.message.networkIds?.length || editTarget.message.networkName

@@ -20,7 +20,7 @@ pub mod ai_callsign;
 pub mod ai_engine;
 pub mod ai_intel_report;
 pub mod ai_settlement;
-mod alpine;
+pub(crate) mod alpine;
 pub mod api_integrations;
 pub mod atak;
 pub mod aws;

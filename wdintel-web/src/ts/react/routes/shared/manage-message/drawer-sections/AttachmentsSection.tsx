@@ -333,6 +333,7 @@ export function AttachmentsSection({
           transcription: null,
           ocr: null,
           summary: null,
+          kmzConversionStatus: null,
           href: previewUrl,
         });
         if (docKind !== 'unsupported') {
@@ -504,7 +505,7 @@ export function AttachmentsSection({
         onFileSelect={handleFileSelect}
         onDrop={handleDrop}
         onKeyDown={handleDropzoneKeyDown}
-        helperText="До 20 файлів, до 2 ГБ кожен"
+        helperText="До 20 файлів, до 6 ГіБ кожен"
       />
 
       {errorMsg ? (

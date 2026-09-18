@@ -1955,6 +1955,37 @@ where
     Ok(media)
 }
 
+pub async fn find_inbox_item_is_time_null<C: ConnectionTrait>(
+    dbx: &C,
+    id: i64,
+) -> anyhow::Result<Option<bool>> {
+    Ok(sigint_inbox_item::Entity::find_by_id(id)
+        .select_only()
+        .column(sigint_inbox_item::Column::IsTimeNull)
+        .into_tuple::<Option<bool>>()
+        .one(dbx)
+        .await
+        .c(h!())?
+        .flatten())
+}
+
+pub async fn set_inbox_item_is_time_null<C: ConnectionTrait>(
+    dbx: &C,
+    id: i64,
+    is_time_null: bool,
+) -> anyhow::Result<()> {
+    sigint_inbox_item::Entity::update_many()
+        .col_expr(
+            sigint_inbox_item::Column::IsTimeNull,
+            Expr::value(is_time_null),
+        )
+        .filter(sigint_inbox_item::Column::Id.eq(id))
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

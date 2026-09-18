@@ -30,6 +30,11 @@ cat >"$manifest" <<'JSON'
         { "table": "public.created", "strategy": "replicated_snapshot" }
       ]
     },
+    "echo:m3515": {
+      "changes": [
+        { "table": "public.messages", "strategy": "cdc_additive" }
+      ]
+    },
     "echo:m3": {
       "changes": [
         { "table": "public.empty", "strategy": "cdc_backfill" }
@@ -74,11 +79,12 @@ export ECHO_PEERDB_LIB=$SCRIPT_DIR/lib.sh
 # shellcheck disable=SC1090
 source "$SCRIPT_DIR/source-resnapshot-table.sh"
 
-expected=$'replicated_snapshot\tpublic.dependency\nempty_table_resnapshot\tpublic.empty\nreplicated_snapshot\tpublic.nonempty'
+expected=$'replicated_snapshot\tpublic.dependency\nempty_table_resnapshot\tpublic.empty\ncdc_additive\tpublic.messages\nreplicated_snapshot\tpublic.nonempty'
 [[ $(manifest_resnapshot_entries) == "$expected" ]]
 deployment_baseline_manifest_file=$manifest
 [[ $(manifest_resnapshot_entries) == "$expected" ]]
 deployment_baseline_manifest_file=$baseline_manifest
+[[ $(manifest_resnapshot_strategy public.messages) == cdc_additive ]]
 [[ $(manifest_resnapshot_strategy public.empty) == empty_table_resnapshot ]]
 [[ $(manifest_resnapshot_strategy public.dependency) == replicated_snapshot ]]
 [[ $(manifest_resnapshot_strategy public.nonempty) == replicated_snapshot ]]
@@ -90,5 +96,13 @@ if manifest_resnapshot_strategy public.unknown >/dev/null 2>&1; then
   printf 'unknown table unexpectedly received resnapshot authorization\n' >&2
   exit 1
 fi
+
+load_source_config() { export ANALYTICS_ADDRESS=127.0.0.1; }
+require_paired_control_release() { printf '%064d\n' 1; }
+acquire_source_reconcile_lock() { :; }
+run_remote_batch() { cat >"$case_dir/batch"; }
+run_remote_resnapshot() { exit 99; }
+main --manifest
+[[ $(cat "$case_dir/batch") == "$expected" ]]
 
 printf 'Source table resnapshot authorization tests passed\n'

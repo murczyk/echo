@@ -17,6 +17,7 @@ pub(crate) struct ReportMessageGroupInfo {
 
 pub(crate) fn blank_inbox_message() -> InboxMessage {
     InboxMessage {
+        is_time_null: None,
         parent_messages: vec![],
         intelligence_reports: vec![],
         message_uuid: None,

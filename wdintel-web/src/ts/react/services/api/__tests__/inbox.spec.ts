@@ -162,6 +162,7 @@ describe('inbox API normalization', () => {
                 size_bytes: 1024,
                 href: '/api/messenger/media/audio-1',
                 transcription: 'recognized speech',
+                kmz_conversion_status: 'done',
               },
             ],
           }),
@@ -186,6 +187,7 @@ describe('inbox API normalization', () => {
         transcription: 'recognized speech',
         ocr: null,
         summary: null,
+        kmzConversionStatus: 'done',
       },
     ]);
   });
@@ -248,6 +250,7 @@ describe('normalizeMessageMediaInfo', () => {
       transcription: null,
       ocr: null,
       summary: null,
+      kmzConversionStatus: null,
     });
   });
 });

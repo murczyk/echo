@@ -18,8 +18,8 @@ const UNIQUE_ECHELONS: [UniqueEchelon; 6] = [
     UniqueEchelon::Division,
     UniqueEchelon::Corps,
     UniqueEchelon::Army,
-    UniqueEchelon::ArmyRegion,
     UniqueEchelon::MilitaryDistrict,
+    UniqueEchelon::ArmyRegion,
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -28,8 +28,8 @@ enum UniqueEchelon {
     Division,
     Corps,
     Army,
-    ArmyRegion,
     MilitaryDistrict,
+    ArmyRegion,
 }
 
 impl UniqueEchelon {
@@ -39,8 +39,8 @@ impl UniqueEchelon {
             Self::Division => 1,
             Self::Corps => 2,
             Self::Army => 3,
-            Self::ArmyRegion => 4,
-            Self::MilitaryDistrict => 5,
+            Self::MilitaryDistrict => 4,
+            Self::ArmyRegion => 5,
         }
     }
 
@@ -50,8 +50,8 @@ impl UniqueEchelon {
             Self::Division => "division",
             Self::Corps => "corps",
             Self::Army => "army",
-            Self::ArmyRegion => "army_region",
             Self::MilitaryDistrict => "military_district",
+            Self::ArmyRegion => "army_region",
         }
     }
 
@@ -61,8 +61,8 @@ impl UniqueEchelon {
             Self::Division => super::EchoEchelon::Division,
             Self::Corps => super::EchoEchelon::Corps,
             Self::Army => super::EchoEchelon::Army,
-            Self::ArmyRegion => super::EchoEchelon::ArmyRegion,
             Self::MilitaryDistrict => super::EchoEchelon::MilitaryDistrict,
+            Self::ArmyRegion => super::EchoEchelon::ArmyRegion,
         }
     }
 
@@ -72,8 +72,8 @@ impl UniqueEchelon {
             Self::Division => &unit.division,
             Self::Corps => &unit.corps,
             Self::Army => &unit.army,
-            Self::ArmyRegion => &unit.army_region,
             Self::MilitaryDistrict => &unit.military_district,
+            Self::ArmyRegion => &unit.army_region,
         }
     }
 
@@ -83,8 +83,8 @@ impl UniqueEchelon {
             Self::Division => unit.division = value,
             Self::Corps => unit.corps = value,
             Self::Army => unit.army = value,
-            Self::ArmyRegion => unit.army_region = value,
             Self::MilitaryDistrict => unit.military_district = value,
+            Self::ArmyRegion => unit.army_region = value,
         }
     }
 }
@@ -1001,6 +1001,43 @@ mod tests {
     }
 
     #[test]
+    fn military_district_is_below_army_region() {
+        let units = vec![
+            unit(1, true, ["", "", "", "", "district A", "REGION"]),
+            unit(2, true, ["", "", "", "", "district B", "region"]),
+        ];
+        let army_region = collect_anchors(&units, UniqueEchelon::ArmyRegion)
+            .into_iter()
+            .next()
+            .unwrap();
+
+        assert!(next_conflict_for_anchor(
+            &units,
+            &army_region,
+            &HashSet::new()
+        )
+        .is_none());
+
+        let units = vec![
+            unit(1, true, ["", "", "", "", "DISTRICT", "region A"]),
+            unit(2, true, ["", "", "", "", "district", "region B"]),
+        ];
+        let military_district =
+            collect_anchors(&units, UniqueEchelon::MilitaryDistrict)
+                .into_iter()
+                .next()
+                .unwrap();
+        let conflict = next_conflict_for_anchor(
+            &units,
+            &military_district,
+            &HashSet::new(),
+        )
+        .unwrap();
+
+        assert_eq!(conflict.conflicting_echelon, UniqueEchelon::ArmyRegion);
+    }
+
+    #[test]
     fn loads_context_for_units_that_can_join_a_later_conflict() {
         let units = vec![
             unit(1, true, ["X", "A", "C", "", "", ""]),
@@ -1508,7 +1545,7 @@ mod tests {
     }
 
     fn unit(id: i64, active: bool, hierarchy: [&str; 6]) -> HierarchyUnit {
-        let [brigade, division, corps, army, army_region, military_district] =
+        let [brigade, division, corps, army, military_district, army_region] =
             hierarchy;
         HierarchyUnit {
             id,

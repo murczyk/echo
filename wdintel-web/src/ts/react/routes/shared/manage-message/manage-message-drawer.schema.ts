@@ -1,4 +1,5 @@
 import * as z from 'zod';
+import dayjs from 'dayjs';
 import { parseCoordinateBlock } from '../../../../maps/coordinate-parser';
 
 export {
@@ -10,6 +11,7 @@ export {
 } from '../../../components/attachment-files';
 
 export const FREQ_FORMAT_REGEX = /^\d+([.,]\d+)?$/;
+export const DO_NOT_SEND_GROUP_VALUE = '__do_not_send__';
 
 export function parseCoordLine(line: string): { lat: number; lon: number } | null {
   const parsed = parseCoordinateBlock(line)[0];
@@ -79,7 +81,12 @@ export function makeMessageSchema(
       callsigns: z.array(z.string()).optional(),
       tags: z.array(z.string()).optional(),
       date: z.any().optional(),
-      time: z.any().optional(),
+      time: z
+        .any()
+        .optional()
+        .refine((value) => value == null || (dayjs.isDayjs(value) && value.isValid()), {
+          message: 'Вкажіть коректний час або очистіть поле',
+        }),
       full_body: reportTextRequired
         ? z.string().trim().min(1, 'Введіть текст розвіддонесення')
         : z.string().optional(),

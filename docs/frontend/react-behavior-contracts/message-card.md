@@ -167,12 +167,30 @@
 - **Source implementation:** `src/ts/react/routes/shared/message-card/attachment-preview/`, `renderers/`, and coordinate components.
 - **Current retained test(s):** `wdintel-web/tests/e2e/message-card-media-preview.spec.ts`
 
+## Converted KMZ attachment preview
+
+- **Status:** normative
+- **Behavior ID:** `react-message-card-kmz-conversion-preview`
+- **Affected route/component:** `KmzAttachmentPreviewLink` and `KmzAttachmentPreviewMap`
+- **User role or permission:** users permitted to view and download the message attachment
+- **Preconditions:** an attachment has a KMZ conversion job and an original download URL
+- **User action or external event:** open the attachment after conversion is pending or complete
+- **Expected observable result:** the component resolves conversion status, loads the converted preview, and presents original and converted downloads before the map preview with their respective filenames
+- **Loading/empty/error/success behavior:** pending conversion remains pending until status resolves; preview or conversion failures remain explicit instead of presenting a fabricated map
+- **URL, localStorage, or user-settings persistence:** none
+- **API endpoint and compatibility requirements:** status, preview, and converted-download requests retain the media ID; the original download retains its original URL
+- **Responsive and keyboard requirements:** the attachment trigger and both download links remain keyboard reachable
+- **Known race/idempotency constraints:** closing or replacing the attachment aborts stale status and preview requests
+- **Source implementation:** `wdintel-web/src/ts/react/routes/shared/message-card/KmzAttachmentPreviewLink.tsx`, `wdintel-web/src/ts/react/routes/shared/message-card/KmzAttachmentPreviewMap.tsx`
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
+- **Original Echo issue/PR, if known:** none recorded
+
 ## Manage Message draft and coordinate safeguards
 
 - **Status:** inferred characterization
 - **Behavior ID:** `react-manage-message-draft-coordinates`
 - **Affected route/component:** `src/ts/react/routes/shared/manage-message/ManageMessageDrawer.tsx` and coordinate sections.
-- **Expected observable result:** coordinate entry and previews preserve the entered coordinate list and its selected interpretation; a draft cannot submit until required message fields are satisfied. Closing or reopening a drawer preserves only the session behavior explicitly owned by its caller and does not silently submit incomplete data.
+- **Expected observable result:** coordinate entry and previews preserve the entered coordinate list and its selected interpretation; settlement lookup uses the selected real group and never sends the no-send sentinel as an authorization-scoped group key; a draft cannot submit until required message fields are satisfied. Closing or reopening a drawer preserves only the session behavior explicitly owned by its caller and does not silently submit incomplete data.
 - **Known race/idempotency constraints:** coordinate parsing, map preview, and submit eligibility remain tied to the current draft; stale validation cannot enable a superseded draft.
 - **Source implementation:** `src/ts/react/routes/shared/manage-message/ManageMessageDrawer.tsx`, `drawer-sections/CoordinateListInput.tsx`, and `CoordinateInputPreview.tsx`.
 - **Current retained test(s):** `wdintel-web/src/ts/react/routes/shared/manage-message/__tests__/ManageMessageDrawer.edit.spec.tsx`.
@@ -182,10 +200,10 @@
 - **Status:** issue-backed regressions
 - **Behavior ID:** `react-message-card-issue-regressions`
 - **Affected route/component:** `MessageCard.tsx`, `MessageCardHeader.tsx`, and bot-tag controls
-- **Expected observable result:** Echo #3461 exposes device metadata only through an allowed device-access provider. Echo #3324 scopes bot-tag confirmation/cancellation to the matching message and tag, preserves its Popover anchor through unrelated rerenders, and suppresses the action for read-only cards, disabled bot tags, and different message/tag targets.
+- **Expected observable result:** Echo #3461 exposes device metadata only through an allowed device-access provider. Echo #3324 scopes bot-tag confirmation/cancellation to the matching message and tag, preserves its Popover anchor through unrelated rerenders, and suppresses the action for read-only cards, disabled bot tags, and different message/tag targets. Echo #3515 keeps date-only messages free of generated noon times and renders creation and event dates independently in Analysis.
 - **Source implementation:** `wdintel-web/src/ts/react/routes/shared/message-card/MessageCard.tsx`, `MessageCardHeader.tsx`
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx`
-- **Original Echo issue/PR, if known:** [#3461](https://github.com/echoua/echo/issues/3461), [#3324](https://github.com/echoua/echo/issues/3324)
+- **Original Echo issue/PR, if known:** [#3461](https://github.com/echoua/echo/issues/3461), [#3324](https://github.com/echoua/echo/issues/3324), [#3515](https://github.com/echoua/echo/issues/3515)
 
 ## Retained media parsing and safety
 
@@ -210,9 +228,10 @@
 - **Status:** inferred characterization
 - **Behavior ID:** `react-message-edit-mapping`
 - **Affected route/component:** Manage Message drawer.
-- **Expected observable result:** form fields map to editable message fields; null/default/date/tag values remain usable in the form. Saving an edit preserves every untouched persisted field, including media, tokens, network IDs, callsigns, and coordinates.
+- **Expected observable result:** form fields map to editable message fields; null/default/date/tag values remain usable in the form. Saving an edit preserves every untouched persisted field, including media, tokens, network IDs, callsigns, and coordinates. Echo #3515 preserves a date-only message as date-only when editing or copying it instead of restoring a generated noon time.
 - **Source implementation:** `routes/shared/manage-message/manage-message-drawer.mappers.ts`.
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/manage-message/__tests__/manage-message-drawer.mappers.spec.ts`
+- **Original Echo issue/PR, if known:** [#3515](https://github.com/echoua/echo/issues/3515)
 
 ## Browser message-card regressions
 

@@ -2217,6 +2217,7 @@ fn generic_submit_item_to_inbox_message(
             }
         });
     let message = InboxMessage {
+        is_time_null: None,
         parent_messages: vec![],
         intelligence_reports: vec![],
         message_uuid: None,
@@ -3893,6 +3894,7 @@ async fn try_load_rer_analysis_inbox_hybrid(
             return Ok(None);
         }
         Err(error @ AppError::ServiceUnavailable { .. }) => {
+            diagnostics.fallback("fallback_saturated");
             return Err(error);
         }
         Err(error) => {
@@ -3972,6 +3974,7 @@ async fn try_load_rer_duty_inbox_hybrid(
             return Ok(None);
         }
         Err(error @ AppError::ServiceUnavailable { .. }) => {
+            diagnostics.fallback("fallback_saturated");
             return Err(error);
         }
         Err(error) => {
