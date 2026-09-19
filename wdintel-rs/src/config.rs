@@ -447,6 +447,13 @@ pub const RER_CALLSIGN_QUERY_SEPARATOR_VARIANTS: &[char] = &[
     '\u{2005}', '\u{2006}', '\u{2007}', '\u{2008}', '\u{2009}', '\u{200a}',
     '\u{2028}', '\u{2029}', '\u{202f}', '\u{205f}', '\u{3000}',
 ];
+pub const RER_CALLSIGN_MATCH_KEY_SQL: &str = concat!(
+    "btrim(regexp_replace(translate(lower($1), ",
+    "U&'\\002D\\0020\\2010\\2011\\2012\\2013\\2014\\2015\\0009\\000A",
+    "\\000B\\000C\\000D\\0085\\00A0\\1680\\2000\\2001\\2002\\2003",
+    "\\2004\\2005\\2006\\2007\\2008\\2009\\200A\\2028\\2029\\202F",
+    "\\205F\\3000', repeat('-', 32)), '-+', '-', 'g'), '-')"
+);
 pub const RER_CALLSIGN_QUERY_PARAM_CHUNK_SIZE: usize = 30_000;
 pub const RER_REPORT_ENRICHMENT_ID_BATCH_SIZE: usize = 20_000;
 pub const RER_BABAK_CANDIDATE_PAGE_SIZE: u64 = 5_000;

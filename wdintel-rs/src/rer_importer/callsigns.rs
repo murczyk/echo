@@ -1,5 +1,7 @@
 use super::highlight::CNCallsign;
-use crate::config::RER_CALLSIGN_QUERY_SEPARATOR_VARIANTS;
+use crate::config::{
+    RER_CALLSIGN_MATCH_KEY_SQL, RER_CALLSIGN_QUERY_SEPARATOR_VARIANTS,
+};
 use crate::entities::{prelude::*, *};
 use crate::error::AppError;
 use crate::rer_importer::analysis::*;
@@ -478,37 +480,35 @@ pub(crate) fn callsign_match_key_expr<C>(column: C) -> SimpleExpr
 where
     C: IntoColumnRef,
 {
-    let separators = RER_CALLSIGN_QUERY_SEPARATOR_VARIANTS
-        .iter()
-        .collect::<String>();
-    let replacements = "-".repeat(RER_CALLSIGN_QUERY_SEPARATOR_VARIANTS.len());
-    Expr::cust_with_exprs(
-        "btrim(regexp_replace(translate(lower($1), $2, $3), '-+', '-', 'g'), '-')",
-        [
-            Expr::column(column),
-            Expr::value(separators),
-            Expr::value(replacements),
-        ],
-    )
+    Expr::cust_with_expr(RER_CALLSIGN_MATCH_KEY_SQL, Expr::column(column))
 }
 
-fn callsign_form_token_len(callsign: &str) -> usize {
-    let mut token_len = 0;
-    let mut in_alphanumeric_token = false;
-    for char_ in callsign.chars() {
-        if char_.is_alphanumeric() {
-            if !in_alphanumeric_token {
-                token_len += 1;
-                in_alphanumeric_token = true;
+#[derive(Default)]
+struct CallsignMatchTrie {
+    etalon: Option<String>,
+    children: HashMap<char, CallsignMatchTrie>,
+}
+
+impl CallsignMatchTrie {
+    fn from_callsign_forms(callsign_forms: &BTreeMap<String, String>) -> Self {
+        let mut trie = Self::default();
+        for (callsign, etalon) in callsign_forms {
+            let mut node = &mut trie;
+            for char_ in callsign.chars() {
+                node = node.children.entry(char_).or_default();
             }
-        } else {
-            in_alphanumeric_token = false;
-            if !char_.is_whitespace() {
-                token_len += 1;
-            }
+            node.etalon = Some(etalon.clone());
         }
+        trie
     }
-    token_len
+
+    fn advance(&self, value: &str) -> Option<&Self> {
+        let mut node = self;
+        for char_ in value.chars() {
+            node = node.children.get(&char_)?;
+        }
+        Some(node)
+    }
 }
 
 fn highlight_callsign_token_windows(
@@ -516,46 +516,53 @@ fn highlight_callsign_token_windows(
     tokens: &[crate::nlp::types::WordToken],
     callsign_forms: &BTreeMap<String, String>,
 ) -> Vec<CNCallsign> {
-    let max_ngram_len = callsign_forms
-        .keys()
-        .map(|callsign| callsign_form_token_len(callsign))
-        .max()
-        .unwrap_or(1)
-        .max(2);
+    let trie = CallsignMatchTrie::from_callsign_forms(callsign_forms);
+    let token_keys = tokens
+        .iter()
+        .map(|token| {
+            (!token.text.chars().any(|char_| matches!(char_, '\n' | '\r')))
+                .then(|| callsign_match_key(&token.text))
+        })
+        .collect::<Vec<_>>();
     let mut res = vec![];
 
-    for n in 1..=max_ngram_len {
-        for i in 0..tokens.len().saturating_sub(n - 1) {
-            let slice = &tokens[i..i + n];
-            let (Some(first), Some(last)) = (slice.first(), slice.last())
-            else {
-                continue;
+    for (start, first) in tokens.iter().enumerate() {
+        if token_keys[start].as_ref().is_none_or(String::is_empty) {
+            continue;
+        }
+        let mut node = &trie;
+        let mut has_key = false;
+        for (token, token_key) in
+            tokens[start..].iter().zip(&token_keys[start..])
+        {
+            let Some(token_key) = token_key else {
+                break;
             };
-            if first.text.chars().all(is_callsign_separator)
-                || last.text.chars().all(is_callsign_separator)
-                || slice.iter().any(|token| {
-                    token.text.chars().any(|char_| matches!(char_, '\n' | '\r'))
-                })
-            {
+            if token_key.is_empty() {
                 continue;
             }
-            let text = slice
-                .iter()
-                .map(|token| token.text.clone())
-                .collect::<Vec<_>>()
-                .join(" ");
-            let Some(etalon) = callsign_forms.get(&callsign_match_key(&text))
-            else {
+            if has_key {
+                let Some(next_node) = node.children.get(&'-') else {
+                    break;
+                };
+                node = next_node;
+            }
+            let Some(next_node) = node.advance(token_key) else {
+                break;
+            };
+            node = next_node;
+            has_key = true;
+            let Some(etalon) = &node.etalon else {
                 continue;
             };
             res.push(CNCallsign {
                 begin: first.start,
-                end: last.end,
+                end: token.end,
                 etalon: etalon.clone(),
                 text: body
                     .chars()
                     .skip(first.start)
-                    .take(last.end - first.start)
+                    .take(token.end - first.start)
                     .collect(),
             });
         }
