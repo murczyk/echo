@@ -1085,6 +1085,7 @@ pub const SIGINT_MEDIA_KMZ_CONVERSION_EXTENSIONS: &[&str] = &[
     "ldk", "trk", "are", "rte", "wpt", "set", "kml", "kmz", "geojson", "gpx",
     "fit",
 ];
+pub const SIGINT_MEDIA_KMZ_PASSTHROUGH_EXTENSIONS: &[&str] = &["kmz"];
 pub const PALITRA_GOI_SYNC_DIRECTION_ECHO: &str = "echo";
 pub const PALITRA_GOI_SYNC_DIRECTION_GOI: &str = "goi";
 pub const PALITRA_GOI_REMOTE_STATUS_PRESENT: &str = "present";

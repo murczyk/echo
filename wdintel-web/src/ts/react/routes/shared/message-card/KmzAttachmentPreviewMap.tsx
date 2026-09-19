@@ -70,7 +70,13 @@ function addPreviewLayers(layerGroup: L.FeatureGroup, preview: SignalMediaKmzPre
   }
 }
 
-export function KmzAttachmentPreviewMap({ preview }: { preview: SignalMediaKmzPreviewRsp }) {
+export function KmzAttachmentPreviewMap({
+  preview,
+  fill = false,
+}: {
+  preview: SignalMediaKmzPreviewRsp;
+  fill?: boolean;
+}) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useLayoutEffect(() => {
@@ -102,5 +108,22 @@ export function KmzAttachmentPreviewMap({ preview }: { preview: SignalMediaKmzPr
     };
   }, [preview]);
 
-  return <Box ref={containerRef} className="palitra-map-surface" sx={getPreviewShellSx()} />;
+  return (
+    <Box
+      ref={containerRef}
+      className="palitra-map-surface"
+      sx={
+        fill
+          ? {
+              ...getPreviewShellSx(),
+              flex: '1 1 auto',
+              height: '100%',
+              minHeight: 0,
+              border: 0,
+              borderRadius: 0,
+            }
+          : getPreviewShellSx()
+      }
+    />
+  );
 }

@@ -92,6 +92,13 @@ impl StagedMediaAttachments {
         self.skipped_missing
     }
 
+    pub(crate) fn stored_uploads(&self) -> Vec<MediaUploadInput> {
+        self.attachments
+            .iter()
+            .map(|attachment| attachment.upload_input.clone())
+            .collect()
+    }
+
     pub(crate) fn uploaded_files_ready_after_discard(
         &self,
     ) -> Vec<MediaUploadInput> {
