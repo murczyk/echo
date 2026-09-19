@@ -24,7 +24,7 @@
     "test:ts": "vitest run",
     "pretest:ts": "npm run tokens:check",
     "pretest:ts:ci": "npm run tokens:check",
-    "test:ts:ci": "vitest run src/ts/react/routes/rer-duty-neo/FeedFilterSelectionSection.spec.tsx src/ts/react/routes/rer-analysis-neo/components/AnalysisFilterField.spec.tsx src/ts/react/routes/rer-analysis-neo/components/analysis-filters-panel-derived.spec.ts",
+    "test:ts:ci": "vitest run src/ts/react/routes/rer-duty-neo/FeedFilterSelectionSection.spec.tsx src/ts/react/routes/rer-analysis-neo/components/AnalysisFilterField.spec.tsx src/ts/react/routes/rer-analysis-neo/components/analysis-filters-panel-derived.spec.ts src/ts/react/routes/rer-duty-neo/duty-creation-order.regression.spec.tsx src/ts/react/routes/rer-duty-neo/dutyNotificationDelivery.spec.ts src/ts/react/routes/rer-duty-neo/useRerDutyMessageActions.spec.tsx src/ts/react/routes/settings-neo/index.spec.tsx src/ts/react/routes/rer-analysis-neo/__tests__/use-rer-analysis-neo-page.spec.tsx",
     "tokens:check": "node scripts/design-tokens.mjs --check",
     "tokens:generate": "node scripts/design-tokens.mjs",
     "storybook": "storybook dev -p 6006 --ci --disable-telemetry",

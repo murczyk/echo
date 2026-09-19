@@ -11,6 +11,7 @@ import { SettingsMyOrganismSection } from './SettingsMyOrganismSection';
 import { SettingsDutySection } from './SettingsDutySection';
 import { SettingsAudioTranscriptionCard } from './SettingsAudioTranscriptionCard';
 import { SettingsMessageCard } from './SettingsMessageCard';
+import { SettingsAnalysisTimeBasisCard } from './SettingsAnalysisTimeBasisCard';
 import { useGlobalSetting } from './use-global-settings';
 import { useDutySettings } from '../../hooks/use-duty-settings';
 import type { UserDutySettings } from '../../services/api/user-settings';
@@ -270,11 +271,6 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                 dutySettings.setMessageTextPreviewLines(value);
                 scheduleDutySettingsSave({ messageTextPreviewLines: value });
               }}
-              messageSortBy={dutySettings.messageSortBy}
-              onMessageSortByChange={(value) => {
-                dutySettings.setMessageSortBy(value);
-                scheduleDutySettingsSave({ messageSortBy: value });
-              }}
               mediaSummaryEnabled={dutySettings.mediaSummaryEnabled}
               onMediaSummaryEnabledChange={(value) => {
                 dutySettings.setMediaSummaryEnabled(value);
@@ -355,6 +351,15 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                     </Box>
                   ) : null}
 
+                  <SettingsAnalysisTimeBasisCard
+                    messageSortBy={dutySettings.messageSortBy}
+                    onMessageSortByChange={(value) => {
+                      dutySettings.setMessageSortBy(value);
+                      scheduleDutySettingsSave({ messageSortBy: value });
+                    }}
+                    loadInProgress={globalSettings.loadInProgress || dutySettings.loadInProgress}
+                  />
+
                   <SettingsMessageCard
                     tagsLayout={dutySettings.tagsLayout}
                     onTagsLayoutChange={(layout) => {
@@ -365,11 +370,6 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                     onMessageTextPreviewLinesChange={(value) => {
                       dutySettings.setMessageTextPreviewLines(value);
                       scheduleDutySettingsSave({ messageTextPreviewLines: value });
-                    }}
-                    messageSortBy={dutySettings.messageSortBy}
-                    onMessageSortByChange={(value) => {
-                      dutySettings.setMessageSortBy(value);
-                      scheduleDutySettingsSave({ messageSortBy: value });
                     }}
                     mediaSummaryEnabled={dutySettings.mediaSummaryEnabled}
                     onMediaSummaryEnabledChange={(value) => {
