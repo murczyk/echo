@@ -39,7 +39,6 @@ describe('useDutyFeedColumnActions', () => {
     const flushPendingNewerMessages = vi.fn();
     const feed = {
       id: 'mf-0',
-      messageSortBy: 'IMSTimestamp',
       filter: {},
       items: [[40, minimalInboxMessage()]],
       loading: false,

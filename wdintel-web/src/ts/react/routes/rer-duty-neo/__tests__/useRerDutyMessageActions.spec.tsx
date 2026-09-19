@@ -127,7 +127,7 @@ function buildReqForFeed(_feed: MessageFeedState, opts: BuildReqOpts): InboxMess
 function buildFeed(overrides: Partial<MessageFeedState> = {}): MessageFeedState {
   const items: [number, InboxMessage][] = Array.from({ length: 20 }, (_, index) => [
     index + 1,
-    minimalInboxMessage({ timestamp: 100 + index }),
+    minimalInboxMessage({ createdAtOrder: 100 + index }),
   ]);
   return {
     id: 'mf-0',
@@ -332,7 +332,11 @@ describe('useRerDutyMessageActions', () => {
         <TestHarness
           apiRef={apiRef}
           columnRefsRef={columnRefsRef}
-          initialFeeds={[buildFeed({ items: [[10, minimalInboxMessage({ timestamp: null })]] })]}
+          initialFeeds={[
+            buildFeed({
+              items: [[10, minimalInboxMessage({ createdAt: null, createdAtOrder: null })]],
+            }),
+          ]}
         />,
       );
     });
@@ -377,7 +381,11 @@ describe('useRerDutyMessageActions', () => {
         <TestHarness
           apiRef={apiRef}
           columnRefsRef={columnRefsRef}
-          initialFeeds={[buildFeed({ items: [[10, minimalInboxMessage({ timestamp: null })]] })]}
+          initialFeeds={[
+            buildFeed({
+              items: [[10, minimalInboxMessage({ createdAt: null, createdAtOrder: null })]],
+            }),
+          ]}
         />,
       );
     });
@@ -396,15 +404,16 @@ describe('useRerDutyMessageActions', () => {
     );
   });
 
-  it('replaces an edited message in every loaded feed without changing feed state', async () => {
-    const original = buildMessage({ text: 'before', timestamp: 20 });
-    const updated = buildMessage({ text: 'after', timestamp: 30 });
+  // https://github.com/echoua/echo/issues/3546
+  it('updates event metadata in every loaded feed without changing creation order or unread state', async () => {
+    const original = buildMessage({ text: 'before', timestamp: 20, createdAt: 40 });
+    const updated = buildMessage({ text: 'after', timestamp: 30, createdAt: 40 });
     const firstFeed = buildFeed({
       id: 'mf-1',
       items: [
-        [8, buildMessage({ timestamp: 20 })],
+        [8, buildMessage({ timestamp: 20, createdAt: 20 })],
         [42, original],
-        [3, buildMessage({ timestamp: 20 })],
+        [3, buildMessage({ timestamp: 20, createdAt: 20 })],
       ],
     });
     const secondFeed = buildFeed({ id: 'mf-2', items: [[42, original]] });
@@ -430,10 +439,13 @@ describe('useRerDutyMessageActions', () => {
     ]);
 
     await act(async () => {
-      apiRef.current!.handleEditedMessage(42, buildMessage({ text: 'earlier', timestamp: 10 }));
+      apiRef.current!.handleEditedMessage(
+        42,
+        buildMessage({ text: 'earlier', timestamp: 10, createdAt: 40 }),
+      );
     });
 
-    expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual([42, 3, 8]);
+    expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual([3, 8, 42]);
   });
 
   it('waits for a confirmed landing while arrow count validation is pending', async () => {
@@ -452,7 +464,11 @@ describe('useRerDutyMessageActions', () => {
         <TestHarness
           apiRef={apiRef}
           columnRefsRef={columnRefsRef}
-          initialFeeds={[buildFeed({ items: [[10, minimalInboxMessage({ timestamp: null })]] })]}
+          initialFeeds={[
+            buildFeed({
+              items: [[10, minimalInboxMessage({ createdAt: null, createdAtOrder: null })]],
+            }),
+          ]}
         />,
       );
       await flushMicrotasks();
@@ -494,7 +510,11 @@ describe('useRerDutyMessageActions', () => {
         <TestHarness
           apiRef={apiRef}
           columnRefsRef={columnRefsRef}
-          initialFeeds={[buildFeed({ items: [[10, minimalInboxMessage({ timestamp: null })]] })]}
+          initialFeeds={[
+            buildFeed({
+              items: [[10, minimalInboxMessage({ createdAt: null, createdAtOrder: null })]],
+            }),
+          ]}
         />,
       );
     });
@@ -529,8 +549,7 @@ describe('useRerDutyMessageActions', () => {
           columnRefsRef={columnRefsRef}
           initialFeeds={[
             buildFeed({
-              messageSortBy: 'IMSTimestamp',
-              items: [[40, minimalInboxMessage({ timestamp: 140 })]],
+              items: [[40, minimalInboxMessage({ createdAtOrder: 140 })]],
               evictedNewerTailId: 80,
               readIds: new Set([40]),
               unreadCount: 0,
@@ -576,7 +595,7 @@ describe('useRerDutyMessageActions', () => {
           columnRefsRef={columnRefsRef}
           initialFeeds={[
             buildFeed({
-              items: [[10, minimalInboxMessage({ timestamp: null })]],
+              items: [[10, minimalInboxMessage({ createdAt: null, createdAtOrder: null })]],
               evictedNewerTailId: 20,
             }),
           ]}
@@ -617,7 +636,11 @@ describe('useRerDutyMessageActions', () => {
         <TestHarness
           apiRef={apiRef}
           columnRefsRef={columnRefsRef}
-          initialFeeds={[buildFeed({ items: [[10, minimalInboxMessage({ timestamp: null })]] })]}
+          initialFeeds={[
+            buildFeed({
+              items: [[10, minimalInboxMessage({ createdAt: null, createdAtOrder: null })]],
+            }),
+          ]}
         />,
       );
     });
@@ -655,7 +678,7 @@ describe('useRerDutyMessageActions', () => {
                 ...feed,
                 items: Array.from({ length: 40 }, (_, index) => [
                   index + 1,
-                  minimalInboxMessage({ timestamp: 100 + index }),
+                  minimalInboxMessage({ createdAtOrder: 100 + index }),
                 ]),
                 readIds: new Set<number>(Array.from({ length: 40 }, (_, index) => index + 1)),
                 unreadCount: 5,
@@ -691,7 +714,7 @@ describe('useRerDutyMessageActions', () => {
                 ...feed,
                 items: Array.from({ length: 65 }, (_, index) => [
                   index + 1,
-                  minimalInboxMessage({ timestamp: 100 + index }),
+                  minimalInboxMessage({ createdAtOrder: 100 + index }),
                 ]),
                 readIds: new Set<number>(Array.from({ length: 60 }, (_, index) => index + 1)),
                 unreadCount: 7,
@@ -720,7 +743,7 @@ describe('useRerDutyMessageActions', () => {
             buildFeed({
               items: Array.from({ length: 65 }, (_, index) => [
                 index + 1,
-                minimalInboxMessage({ timestamp: 100 + index }),
+                minimalInboxMessage({ createdAtOrder: 100 + index }),
               ]),
               readIds: new Set<number>(Array.from({ length: 60 }, (_, index) => index + 1)),
               unreadCount: 5,
@@ -752,7 +775,7 @@ describe('useRerDutyMessageActions', () => {
             buildFeed({
               items: Array.from({ length: 65 }, (_, index) => [
                 index + 1,
-                minimalInboxMessage({ timestamp: 100 + index }),
+                minimalInboxMessage({ createdAtOrder: 100 + index }),
               ]),
               readIds: new Set<number>(Array.from({ length: 65 }, (_, index) => index + 1)),
               unreadCount: 5,
@@ -787,7 +810,7 @@ describe('useRerDutyMessageActions', () => {
             buildFeed({
               items: Array.from({ length: 40 }, (_, index) => [
                 index + 21,
-                minimalInboxMessage({ timestamp: (index + 21) * 100 }),
+                minimalInboxMessage({ createdAtOrder: (index + 21) * 100 }),
               ]),
               readIds: new Set<number>(Array.from({ length: 40 }, (_, index) => index + 21)),
               windowedUnreadItems: new Map(
@@ -820,7 +843,7 @@ describe('useRerDutyMessageActions', () => {
           apiRef={apiRef}
           initialFeeds={[
             buildFeed({
-              items: [[1, minimalInboxMessage({ timestamp: 100 })]],
+              items: [[1, minimalInboxMessage({ createdAtOrder: 100 })]],
               readIds: new Set<number>(),
               windowedUnreadItems: new Map([
                 [1, 100],
@@ -858,8 +881,8 @@ describe('useRerDutyMessageActions', () => {
           initialFeeds={[
             buildFeed({
               items: [
-                [1, minimalInboxMessage({ timestamp: 100 })],
-                [2, minimalInboxMessage({ timestamp: 101 })],
+                [1, minimalInboxMessage({ createdAtOrder: 100 })],
+                [2, minimalInboxMessage({ createdAtOrder: 101 })],
               ],
               unreadCount: 5,
               readIds: new Set<number>([2]),
@@ -887,7 +910,7 @@ describe('useRerDutyMessageActions', () => {
           feed.id === 'mf-0'
             ? {
                 ...feed,
-                items: [[1, minimalInboxMessage({ timestamp: 100 })]],
+                items: [[1, minimalInboxMessage({ createdAtOrder: 100 })]],
                 unreadCount: 5,
                 readIds: new Set<number>([1]),
               }

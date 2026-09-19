@@ -10,6 +10,7 @@ function buildInboxMessage(id: number): InboxMessage {
     messageUid: `scroll-stability-${id}`,
     text: `Card ${id} ${'stable message content '.repeat(32)}`,
     timestamp: 1_720_000_000_000 + id * 1_000,
+    createdAt: 1_720_000_000_000 + id * 1_000,
     groupMasterKey: 'group-1',
   });
 }
@@ -116,6 +117,46 @@ async function readBottomDistance(scroller: Locator) {
 }
 
 const initialInboxIds = Array.from({ length: 40 }, (_, index) => index + 1);
+
+// @test-scope regression: https://github.com/echoua/echo/issues/3546
+test('uses creation time for Duty ordering and display with an event-time Analysis preference @smoke @regression', async ({
+  page,
+}) => {
+  const createdAt = Date.UTC(2026, 8, 19, 8);
+  const response = buildInboxResponse([9, 7, 2]);
+  response.inbox_items = [9, 7, 2].map((id, index) => [
+    id,
+    {
+      ...buildInboxMessage(id),
+      timestamp: createdAt + index * 60_000,
+      createdAt: createdAt - index * 60_000,
+      createdAtOrder: (createdAt - index * 60_000) * 1000,
+    } as never,
+  ]);
+  const fixture = await installRerDutyShortStateMocks(page, {
+    userSettingsResponse: {
+      tagsLayout: 'compact',
+      disableAutoScroll: true,
+      messageSortBy: 'interception',
+    },
+    inboxResponseForRequest: (request) =>
+      readBeforeId(request) != null || readSinceId(request) != null
+        ? buildInboxResponse([])
+        : response,
+  });
+  await page.goto('/rer-duty-neo?state-short=short-1');
+  const rows = page.locator('[data-duty-message-id]');
+  await expect(rows).toHaveCount(3);
+  expect(
+    await rows.evaluateAll((elements) =>
+      elements.map((element) => Number(element.getAttribute('data-duty-message-id'))),
+    ),
+  ).toEqual([2, 7, 9]);
+  await expect(rows.first().locator('[title="Дата і час створення повідомлення"]')).toContainText(
+    '19.09, 10:58',
+  );
+  expect(fixture.getLastInboxRequest()).toMatchObject({ sort_by: 'IMSCreatedAt' });
+});
 
 // @test-scope safeguard: prevents prepending compact-tag history from moving the user's visible reading anchor.
 test('keeps a compact-tag reading anchor stable while prepending an older chunk', async ({

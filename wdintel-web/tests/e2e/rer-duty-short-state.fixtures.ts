@@ -1,4 +1,5 @@
 import type { Page, Route } from '@playwright/test';
+import type { MessageTimeBasis } from '../../src/ts/react/services/api/user-settings';
 import type { InboxMessagesRspRaw } from '../../src/ts/react/services/api/inbox-messages';
 import { networkSettingsResponse, systemSettingsCurrentResponse } from './fixture-responses';
 
@@ -21,8 +22,8 @@ type ShortStateFixtureOptions = {
   networkInfoResponse?: unknown[];
   disableAutoScroll?: boolean;
   userSettingsResponse?:
-    | { tagsLayout: string; disableAutoScroll: boolean }
-    | Promise<{ tagsLayout: string; disableAutoScroll: boolean }>;
+    | { tagsLayout: string; disableAutoScroll: boolean; messageSortBy?: MessageTimeBasis }
+    | Promise<{ tagsLayout: string; disableAutoScroll: boolean; messageSortBy?: MessageTimeBasis }>;
   userSettingsFailure?: boolean;
 };
 

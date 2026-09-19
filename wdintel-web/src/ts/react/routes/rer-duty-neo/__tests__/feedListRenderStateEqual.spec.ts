@@ -3,7 +3,7 @@ import { emptyFilter, feedListRenderStateEqual, type MessageFeedState } from '..
 import { minimalInboxMessage } from '../inbox-message-mocks';
 
 function baseFeed(overrides: Partial<MessageFeedState> = {}): MessageFeedState {
-  const items: MessageFeedState['items'] = [[1, minimalInboxMessage({ timestamp: 1 })]];
+  const items: MessageFeedState['items'] = [[1, minimalInboxMessage({ createdAtOrder: 1 })]];
   return {
     id: 'mf-0',
     filter: emptyFilter(),
@@ -25,7 +25,7 @@ function baseFeed(overrides: Partial<MessageFeedState> = {}): MessageFeedState {
 // @test-scope safeguard: prevents unchanged feed render state from causing an unnecessary live-feed repaint.
 describe('feedListRenderStateEqual', () => {
   it('treats unread/read metadata-only updates as equal', () => {
-    const items: MessageFeedState['items'] = [[1, minimalInboxMessage({ timestamp: 1 })]];
+    const items: MessageFeedState['items'] = [[1, minimalInboxMessage({ createdAtOrder: 1 })]];
     const filter = emptyFilter();
     const prev = baseFeed({ items, filter, unreadCount: 3, readIds: new Set([1]) });
     const next = baseFeed({
@@ -42,14 +42,14 @@ describe('feedListRenderStateEqual', () => {
   it('treats item identity changes as unequal', () => {
     const prev = baseFeed();
     const next = baseFeed({
-      items: [[2, minimalInboxMessage({ timestamp: 2 })]],
+      items: [[2, minimalInboxMessage({ createdAtOrder: 2 })]],
     });
 
     expect(feedListRenderStateEqual(prev, next)).toBe(false);
   });
 
   it('treats loading flag changes as unequal', () => {
-    const items: MessageFeedState['items'] = [[1, minimalInboxMessage({ timestamp: 1 })]];
+    const items: MessageFeedState['items'] = [[1, minimalInboxMessage({ createdAtOrder: 1 })]];
     const prev = baseFeed({ items, loadingOlder: false });
     const next = baseFeed({ items, loadingOlder: true });
 
@@ -57,13 +57,13 @@ describe('feedListRenderStateEqual', () => {
   });
 
   it('treats pendingNewerItems-only updates as equal', () => {
-    const items: MessageFeedState['items'] = [[1, minimalInboxMessage({ timestamp: 1 })]];
+    const items: MessageFeedState['items'] = [[1, minimalInboxMessage({ createdAtOrder: 1 })]];
     const filter = emptyFilter();
     const prev = baseFeed({ items, filter });
     const next = baseFeed({
       items,
       filter,
-      pendingNewerItems: [[2, minimalInboxMessage({ timestamp: 2 })]],
+      pendingNewerItems: [[2, minimalInboxMessage({ createdAtOrder: 2 })]],
     });
 
     expect(feedListRenderStateEqual(prev, next)).toBe(true);

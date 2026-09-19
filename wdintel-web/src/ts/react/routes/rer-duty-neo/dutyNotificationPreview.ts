@@ -19,7 +19,6 @@ function shortenBody(body: string | null | undefined): string | null {
 
 export async function loadDutyNotificationPreview(
   req: InboxMessagesReq,
-  messageSortBy: 'IMSTimestamp' | 'IMSCreatedAt',
   isCurrent: () => boolean,
 ): Promise<DutyNotificationPreviewResult> {
   if (!isCurrent()) return { kind: DutyNotificationPreviewResultKind.Stale };
@@ -35,7 +34,7 @@ export async function loadDutyNotificationPreview(
       .map(([messageId, message]) => ({
         messageId,
         message,
-        orderTimestamp: messageOrderTimestamp(message, messageSortBy),
+        orderTimestamp: messageOrderTimestamp(message),
       }))
       .sort(
         (a, b) => (b.orderTimestamp ?? 0) - (a.orderTimestamp ?? 0) || b.messageId - a.messageId,

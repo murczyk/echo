@@ -383,11 +383,11 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
 
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
       inboxRsp([
-        [2, minimalInboxMessage({ timestamp: 200 })],
-        [3, minimalInboxMessage({ timestamp: 300 })],
-        [4, minimalInboxMessage({ timestamp: 400 })],
-        [5, minimalInboxMessage({ timestamp: 500 })],
-        [6, minimalInboxMessage({ timestamp: 600 })],
+        [2, minimalInboxMessage({ createdAtOrder: 200 })],
+        [3, minimalInboxMessage({ createdAtOrder: 300 })],
+        [4, minimalInboxMessage({ createdAtOrder: 400 })],
+        [5, minimalInboxMessage({ createdAtOrder: 500 })],
+        [6, minimalInboxMessage({ createdAtOrder: 600 })],
       ]),
     );
     await act(async () => {
@@ -444,7 +444,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       .mockImplementationOnce(() => preview.promise);
     await startPoll();
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
-      inboxRsp([[3, minimalInboxMessage({ timestamp: 300 })]]),
+      inboxRsp([[3, minimalInboxMessage({ createdAtOrder: 300 })]]),
     );
     await act(async () => {
       apiRef.current!.applyFilter('mf-0', { ...emptyFilter(), groupsSelected: ['g-1'] });
@@ -484,7 +484,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       inboxRsp(
         Array.from({ length: 10 }, (_, index) => [
           index + 1,
-          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 1) * 100 }),
         ]),
       ),
     );
@@ -533,7 +533,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
         inboxRsp(
           Array.from({ length: 10 }, (_, index) => [
             index + 101,
-            minimalInboxMessage({ timestamp: (index + 101) * 100 }),
+            minimalInboxMessage({ createdAtOrder: (index + 101) * 100 }),
           ]),
         ),
       );
@@ -578,7 +578,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
     expect(apiRef.current?.error).toBe('initial load failed');
 
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
-      inboxRsp([[10, minimalInboxMessage({ timestamp: 1000 })]]),
+      inboxRsp([[10, minimalInboxMessage({ createdAtOrder: 1000 })]]),
     );
     await act(async () => {
       await apiRef.current!.loadFeedInitialMessages('mf-0');
@@ -596,7 +596,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       inboxRsp(
         Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
           index + 21,
-          minimalInboxMessage({ timestamp: (index + 21) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 21) * 100 }),
         ]),
       ),
     );
@@ -655,7 +655,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       inboxRsp(
         Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
           index + 21,
-          minimalInboxMessage({ timestamp: (index + 21) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 21) * 100 }),
         ]),
       ),
     );
@@ -746,7 +746,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       inboxRsp(
         Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
           index + 21,
-          minimalInboxMessage({ timestamp: (index + 21) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 21) * 100 }),
         ]),
       ),
     );
@@ -825,7 +825,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       inboxRsp(
         Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
           index + 21,
-          minimalInboxMessage({ timestamp: (index + 21) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 21) * 100 }),
         ]),
       ),
     );
@@ -848,7 +848,11 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       apiRef.current!.setMessageFeeds((prev) =>
         prev.map((feed) => (feed.id === 'mf-0' ? { ...feed, unreadCount: 25 } : feed)),
       );
-      loadPromise = apiRef.current!.loadFeedNewerMessages('mf-0');
+      const followGeneration = apiRef.current!.beginFollowTail('mf-0');
+      loadPromise = apiRef.current!.loadFeedNewerMessages('mf-0', {
+        scrollToEndAfterLoad: true,
+        followGeneration,
+      });
     });
     await act(async () => {
       newerResponse.resolve(
@@ -856,7 +860,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
           Array.from({ length: 20 }, (_, index) => [
             DUTY_FEED_MESSAGE_WINDOW_LIMIT + 20 + index + 1,
             minimalInboxMessage({
-              timestamp: (DUTY_FEED_MESSAGE_WINDOW_LIMIT + 20 + index + 1) * 100,
+              createdAtOrder: (DUTY_FEED_MESSAGE_WINDOW_LIMIT + 20 + index + 1) * 100,
             }),
           ]),
         ),
@@ -868,18 +872,22 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
     });
 
     const feedAfterAppend = apiRef.current!.messageFeeds[0];
-    expect(feedAfterAppend.items.at(-1)?.[0]).toBe(60);
-    expect(feedAfterAppend.unreadCount).toBe(25);
+    expect(feedAfterAppend.items.at(-1)?.[0]).toBe(80);
+    expect(feedAfterAppend.unreadCount).toBe(0);
 
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
-      inboxRsp([[81, minimalInboxMessage({ timestamp: 8100 })]]),
+      inboxRsp([[81, minimalInboxMessage({ createdAtOrder: 8100 })]]),
     );
     await act(async () => {
-      await apiRef.current!.loadFeedNewerMessages('mf-0', { skipIfNewestExhausted: true });
+      await apiRef.current!.loadFeedNewerMessages('mf-0', {
+        skipIfNewestExhausted: true,
+        scrollToEndAfterLoad: true,
+        followGeneration: apiRef.current!.ensureFollowTail('mf-0'),
+      });
     });
 
     expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(3);
-    expect(apiRef.current!.messageFeeds[0].items.at(-1)?.[0]).toBe(60);
+    expect(apiRef.current!.messageFeeds[0].items.at(-1)?.[0]).toBe(81);
   });
 
   it('completes the down-arrow path when newer loading returns no rows', async () => {
@@ -887,7 +895,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       inboxRsp(
         Array.from({ length: 10 }, (_, index) => [
           index + 1,
-          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 1) * 100 }),
         ]),
       ),
     );
@@ -917,11 +925,11 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
 
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
       inboxRsp([
-        [11, minimalInboxMessage({ timestamp: 1100 })],
-        [12, minimalInboxMessage({ timestamp: 1200 })],
-        [13, minimalInboxMessage({ timestamp: 1300 })],
-        [14, minimalInboxMessage({ timestamp: 1400 })],
-        [15, minimalInboxMessage({ timestamp: 1500 })],
+        [11, minimalInboxMessage({ createdAtOrder: 1100 })],
+        [12, minimalInboxMessage({ createdAtOrder: 1200 })],
+        [13, minimalInboxMessage({ createdAtOrder: 1300 })],
+        [14, minimalInboxMessage({ createdAtOrder: 1400 })],
+        [15, minimalInboxMessage({ createdAtOrder: 1500 })],
       ]),
     );
     await act(async () => {
@@ -1025,7 +1033,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       inboxRsp(
         Array.from({ length: 10 }, (_, index) => [
           index + 1,
-          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 1) * 100 }),
         ]),
       ),
     );
@@ -1060,7 +1068,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
         Array.from({ length: 5 }, (_, index) => [
           index + 11,
           minimalInboxMessage({
-            timestamp: (index + 11) * 100,
+            createdAtOrder: (index + 11) * 100,
           }),
         ]),
       ),
@@ -1094,7 +1102,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       inboxRsp(
         Array.from({ length: 10 }, (_, index) => [
           index + 1,
-          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 1) * 100 }),
         ]),
       ),
     );
@@ -1119,11 +1127,11 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
 
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
       inboxRsp([
-        [11, minimalInboxMessage({ timestamp: 1100 })],
-        [12, minimalInboxMessage({ timestamp: 1200 })],
-        [13, minimalInboxMessage({ timestamp: 1300 })],
-        [14, minimalInboxMessage({ timestamp: 1400 })],
-        [15, minimalInboxMessage({ timestamp: 1500 })],
+        [11, minimalInboxMessage({ createdAtOrder: 1100 })],
+        [12, minimalInboxMessage({ createdAtOrder: 1200 })],
+        [13, minimalInboxMessage({ createdAtOrder: 1300 })],
+        [14, minimalInboxMessage({ createdAtOrder: 1400 })],
+        [15, minimalInboxMessage({ createdAtOrder: 1500 })],
       ]),
     );
     await act(async () => {
@@ -1163,7 +1171,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       inboxRsp(
         Array.from({ length: 10 }, (_, index) => [
           index + 1,
-          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 1) * 100 }),
         ]),
       ),
     );
@@ -1200,7 +1208,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
         inboxRsp(
           Array.from({ length: 5 }, (_, index) => [
             11 + index,
-            minimalInboxMessage({ timestamp: (11 + index) * 100 }),
+            minimalInboxMessage({ createdAtOrder: (11 + index) * 100 }),
           ]),
         ),
       );
@@ -1226,7 +1234,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       inboxRsp(
         Array.from({ length: 10 }, (_, index) => [
           index + 1,
-          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 1) * 100 }),
         ]),
       ),
     );
@@ -1264,7 +1272,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
         inboxRsp(
           Array.from({ length: 5 }, (_, index) => [
             11 + index,
-            minimalInboxMessage({ timestamp: (11 + index) * 100 }),
+            minimalInboxMessage({ createdAtOrder: (11 + index) * 100 }),
           ]),
         ),
       );
@@ -1292,7 +1300,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       inboxRsp(
         Array.from({ length: 10 }, (_, index) => [
           index + 1,
-          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 1) * 100 }),
         ]),
       ),
     );
@@ -1319,7 +1327,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       inboxRsp(
         Array.from({ length: 5 }, (_, index) => [
           index + 11,
-          minimalInboxMessage({ timestamp: (index + 11) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 11) * 100 }),
         ]),
       ),
     );
@@ -1362,7 +1370,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       inboxRsp(
         Array.from({ length: 40 }, (_, index) => [
           index + 1,
-          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 1) * 100 }),
         ]),
       ),
     );
@@ -1387,7 +1395,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
           ...feed,
           items: Array.from({ length: 20 }, (_, index) => [
             index + 61,
-            minimalInboxMessage({ timestamp: (index + 61) * 100 }),
+            minimalInboxMessage({ createdAtOrder: (index + 61) * 100 }),
           ]),
           readIds: new Set(Array.from({ length: 20 }, (_, index) => index + 61)),
           windowedUnreadItems,
@@ -1432,7 +1440,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       inboxRsp(
         Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
           index + 21,
-          minimalInboxMessage({ timestamp: (index + 21) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 21) * 100 }),
         ]),
       ),
     );
@@ -1460,7 +1468,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       inboxRsp(
         Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
           index + 101,
-          minimalInboxMessage({ timestamp: (index + 101) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 101) * 100 }),
         ]),
       ),
     );
@@ -1512,7 +1520,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
         inboxRsp(
           Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
             index + 21,
-            minimalInboxMessage({ timestamp: (index + 21) * 100 }),
+            minimalInboxMessage({ createdAtOrder: (index + 21) * 100 }),
           ]),
         ),
       )
@@ -1520,7 +1528,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
         inboxRsp(
           Array.from({ length: 10 }, (_, index) => [
             index + 201,
-            minimalInboxMessage({ timestamp: (index + 201) * 100 }),
+            minimalInboxMessage({ createdAtOrder: (index + 201) * 100 }),
           ]),
         ),
       );
@@ -1570,7 +1578,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       });
 
       hoisted.fetchInboxMessages.mockResolvedValueOnce(
-        inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]),
+        inboxRsp([[2, minimalInboxMessage({ createdAtOrder: 200 })]]),
       );
       hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
 
@@ -1605,7 +1613,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       });
 
       hoisted.fetchInboxMessages.mockResolvedValueOnce(
-        inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]),
+        inboxRsp([[2, minimalInboxMessage({ createdAtOrder: 200 })]]),
       );
       hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
 
@@ -1641,7 +1649,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       });
 
       hoisted.fetchInboxMessages.mockResolvedValueOnce(
-        inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]),
+        inboxRsp([[2, minimalInboxMessage({ createdAtOrder: 200 })]]),
       );
       hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
 
@@ -1664,6 +1672,37 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       expect(feed.unreadCount).toBeGreaterThan(0);
     });
 
+    // @test-scope regression: https://github.com/echoua/echo/issues/3360
+    it('#3360 keeps a full reading window intact during a non-physical pending flush', async () => {
+      const { apiRef } = await mountLoadedFeed();
+      const items = Array.from(
+        { length: DUTY_FEED_MESSAGE_WINDOW_LIMIT },
+        (_, index) =>
+          [index + 1, minimalInboxMessage({ createdAtOrder: (index + 1) * 100 })] as const,
+      );
+      await act(async () => {
+        apiRef.current!.setMessageFeeds((feeds) =>
+          feeds.map((feed) => ({
+            ...feed,
+            items: [...items],
+            pendingNewerItems: [[41, minimalInboxMessage({ createdAtOrder: 4100 })]],
+          })),
+        );
+        await flushMicrotasks();
+      });
+
+      await act(async () => {
+        apiRef.current!.flushPendingNewerMessages('mf-0', {
+          allowWindowTrim: false,
+          protectedItemIds: [1],
+        });
+        await flushMicrotasks();
+      });
+
+      const feed = apiRef.current!.messageFeeds[0];
+      expect(feed.items.map(([id]) => id)).toEqual(items.map(([id]) => id));
+      expect(feed.pendingNewerItems?.map(([id]) => id)).toEqual([41]);
+    });
     it('does not mark-all-read when only near-bottom (range) is true without watch mode', async () => {
       const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
         current: null,
@@ -1676,7 +1715,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       });
 
       hoisted.fetchInboxMessages.mockResolvedValueOnce(
-        inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]),
+        inboxRsp([[2, minimalInboxMessage({ createdAtOrder: 200 })]]),
       );
       hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
 

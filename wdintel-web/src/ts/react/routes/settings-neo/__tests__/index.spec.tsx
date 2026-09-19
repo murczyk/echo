@@ -360,6 +360,52 @@ describe('SettingsNeoPage', () => {
     container.remove();
   });
 
+  // @test-scope regression: https://github.com/echoua/echo/issues/3546
+  it.each(['duty', 'analysis'] as const)(
+    'keeps shared card controls in %s and sorting only in Analysis (#3546)',
+    async (section) => {
+      await act(async () => {
+        root.render(<SettingsNeoPage section={section} />);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(container.textContent).toContain('Щільний');
+      expect(container.textContent).toContain('Без тегів');
+      expect(container.textContent).toContain('Згортати перегляд довгих повідомлень:');
+      expect(container.textContent?.includes('За датою перехоплення')).toBe(section === 'analysis');
+      expect(container.textContent?.includes('За датою створення')).toBe(section === 'analysis');
+      expect(container.textContent).toContain(
+        'Визначає, коли з’являється кнопка «Показати більше».',
+      );
+    },
+  );
+
+  // @test-scope regression: https://github.com/echoua/echo/issues/3546
+  it('saves the Analysis time basis only from Analysis settings', async () => {
+    await act(async () => {
+      root.render(<SettingsNeoPage section="analysis" />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    for (const basis of ['creation', 'interception']) {
+      const button = container.querySelector<HTMLButtonElement>(`[data-toggle-value="${basis}"]`);
+      expect(button).not.toBeNull();
+      await act(async () => {
+        button!.click();
+        await Promise.resolve();
+      });
+      expect(saveUserDutySettings).toHaveBeenLastCalledWith(
+        expect.objectContaining({ messageSortBy: basis }),
+      );
+    }
+    saveUserDutySettings.mockClear();
+    await act(async () => root.render(<SettingsNeoPage section="duty" />));
+    expect(container.querySelector('[data-toggle-value="creation"]')).toBeNull();
+    expect(container.querySelector('[data-toggle-value="interception"]')).toBeNull();
+    expect(saveUserDutySettings).not.toHaveBeenCalled();
+  });
+
   // @test-scope safeguard: prevents a transient failure from losing a queued preference update.
   it('drains queued duty saves after a transient failure', async () => {
     const firstSave = deferred<void>();

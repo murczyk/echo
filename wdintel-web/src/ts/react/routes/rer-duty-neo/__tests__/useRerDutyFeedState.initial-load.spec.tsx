@@ -420,7 +420,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
 
   it('notifies once when the first count after a successful load finds new mail', async () => {
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
-      inboxRsp([[7, minimalInboxMessage({ timestamp: 700 })]], 7),
+      inboxRsp([[7, minimalInboxMessage({ createdAtOrder: 700 })]], 7),
     );
     hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
@@ -476,7 +476,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(1, 40));
     hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(42, 81));
     hoisted.fetchMessagesByIdsWithMetadata.mockResolvedValueOnce(
-      inboxRsp([[41, minimalInboxMessage({ timestamp: 4100, messageUid: 'target-uid' })]]),
+      inboxRsp([[41, minimalInboxMessage({ createdAtOrder: 4100, messageUid: 'target-uid' })]]),
     );
 
     await act(async () => {
@@ -523,7 +523,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
       .mockResolvedValueOnce(rangeRsp(1, 40))
       .mockResolvedValueOnce(rangeRsp(42, 81));
     const targetResponse = inboxRsp([
-      [41, minimalInboxMessage({ timestamp: 4100, messageUid: 'target-uid' })],
+      [41, minimalInboxMessage({ createdAtOrder: 4100, messageUid: 'target-uid' })],
     ]);
     targetResponse.callsigns = [{ callsign: 'TARGET', res: [], networkHints: [] }];
     targetResponse.signalProfiles = {
@@ -577,7 +577,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
   it('reloads a settled empty feed through the initial-load effect', async () => {
     hoisted.fetchInboxMessages
       .mockResolvedValueOnce(inboxRsp([]))
-      .mockResolvedValueOnce(inboxRsp([[7, minimalInboxMessage({ timestamp: 700 })]]));
+      .mockResolvedValueOnce(inboxRsp([[7, minimalInboxMessage({ createdAtOrder: 700 })]]));
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
       current: null,
     };
@@ -612,7 +612,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     hoisted.fetchInboxMessages.mockImplementation((request: any) => {
       const group = request.selectedGroups?.[0];
       if (group === 'group-0')
-        return Promise.resolve(inboxRsp([[1, minimalInboxMessage({ timestamp: 100 })]]));
+        return Promise.resolve(inboxRsp([[1, minimalInboxMessage({ createdAtOrder: 100 })]]));
       if (group === 'group-1') return Promise.resolve(inboxRsp([]));
       if (group === 'group-2') return Promise.resolve(inboxRsp([]));
       throw new Error(`Unexpected group ${group}`);
@@ -627,9 +627,9 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     hoisted.fetchInboxMessages.mockImplementation((request: any) => {
       const group = request.selectedGroups?.[0];
       if (group === 'group-1')
-        return Promise.resolve(inboxRsp([[8, minimalInboxMessage({ timestamp: 800 })]]));
+        return Promise.resolve(inboxRsp([[8, minimalInboxMessage({ createdAtOrder: 800 })]]));
       if (group === 'group-2')
-        return Promise.resolve(inboxRsp([[9, minimalInboxMessage({ timestamp: 900 })]]));
+        return Promise.resolve(inboxRsp([[9, minimalInboxMessage({ createdAtOrder: 900 })]]));
       throw new Error(`Unexpected reload group ${group}`);
     });
 
@@ -665,7 +665,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     );
     hoisted.fetchInboxMessages.mockImplementation((request: any) =>
       Promise.resolve(
-        inboxRsp([[request.selectedFreqs ? 10 : 20, minimalInboxMessage({ timestamp: 100 })]]),
+        inboxRsp([[request.selectedFreqs ? 10 : 20, minimalInboxMessage({ createdAtOrder: 100 })]]),
       ),
     );
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
@@ -712,12 +712,12 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
         inboxRsp(
           request.selectedFreqs
             ? [
-                [1, minimalInboxMessage({ timestamp: 100 })],
-                [2, minimalInboxMessage({ timestamp: 200 })],
+                [1, minimalInboxMessage({ createdAtOrder: 100 })],
+                [2, minimalInboxMessage({ createdAtOrder: 200 })],
               ]
             : [
-                [10, minimalInboxMessage({ timestamp: 1000 })],
-                [11, minimalInboxMessage({ timestamp: 1100 })],
+                [10, minimalInboxMessage({ createdAtOrder: 1000 })],
+                [11, minimalInboxMessage({ createdAtOrder: 1100 })],
               ],
         ),
       ),
@@ -750,13 +750,13 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
         inboxRsp(
           request.selectedFreqs
             ? [
-                [2, minimalInboxMessage({ timestamp: 50 })],
-                [3, minimalInboxMessage({ timestamp: 300 })],
+                [2, minimalInboxMessage({ createdAtOrder: 50 })],
+                [3, minimalInboxMessage({ createdAtOrder: 300 })],
               ]
             : [
-                [10, minimalInboxMessage({ timestamp: 1000 })],
-                [11, minimalInboxMessage({ timestamp: 1100 })],
-                [12, minimalInboxMessage({ timestamp: 1200 })],
+                [10, minimalInboxMessage({ createdAtOrder: 1000 })],
+                [11, minimalInboxMessage({ createdAtOrder: 1100 })],
+                [12, minimalInboxMessage({ createdAtOrder: 1200 })],
               ],
         ),
       ),
@@ -777,8 +777,8 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
 
   it('completes an edit refresh before requesting unread counts', async () => {
     hoisted.fetchInboxMessages
-      .mockResolvedValueOnce(inboxRsp([[1, minimalInboxMessage({ timestamp: 100 })]]))
-      .mockResolvedValueOnce(inboxRsp([[1, minimalInboxMessage({ timestamp: 100 })]]));
+      .mockResolvedValueOnce(inboxRsp([[1, minimalInboxMessage({ createdAtOrder: 100 })]]))
+      .mockResolvedValueOnce(inboxRsp([[1, minimalInboxMessage({ createdAtOrder: 100 })]]));
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
       current: null,
     };
@@ -797,14 +797,14 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     hoisted.fetchInboxMessages
       .mockResolvedValueOnce(
         inboxRsp([
-          [1, minimalInboxMessage({ timestamp: 100 })],
-          [3, minimalInboxMessage({ timestamp: 300 })],
+          [1, minimalInboxMessage({ createdAtOrder: 100 })],
+          [3, minimalInboxMessage({ createdAtOrder: 300 })],
         ]),
       )
       .mockResolvedValueOnce(
         inboxRsp([
-          [3, minimalInboxMessage({ timestamp: 50 })],
-          [1, minimalInboxMessage({ timestamp: 100 })],
+          [3, minimalInboxMessage({ createdAtOrder: 50 })],
+          [1, minimalInboxMessage({ createdAtOrder: 100 })],
         ]),
       );
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
@@ -840,7 +840,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     await act(async () => apiRef.current?.reloadEmptyFeeds());
     await act(async () => flushMicrotasks());
 
-    fresh.resolve(inboxRsp([[9, minimalInboxMessage({ timestamp: 900 })]]));
+    fresh.resolve(inboxRsp([[9, minimalInboxMessage({ createdAtOrder: 900 })]]));
     await act(async () => flushMicrotasks());
     stale.resolve(inboxRsp([]));
     await act(async () => flushMicrotasks());
@@ -849,16 +849,15 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(apiRef.current?.error).toBeNull();
   });
 
-  it('rebuilds unread ordering for a sort-mode change and ignores stale responses', async () => {
-    const stale = deferred<InboxMessagesRsp>('stale sort-mode reload');
-    const fresh = deferred<InboxMessagesRsp>('fresh sort-mode reload');
+  // https://github.com/echoua/echo/issues/3546
+  it('preserves unread ordering across edit reloads and ignores stale responses (#3546)', async () => {
+    const stale = deferred<InboxMessagesRsp>('stale edit reload');
+    const fresh = deferred<InboxMessagesRsp>('fresh edit reload');
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
       current: null,
     };
 
-    await act(async () =>
-      root.render(<TestHarness apiRef={apiRef} messageSortBy="IMSTimestamp" />),
-    );
+    await act(async () => root.render(<TestHarness apiRef={apiRef} />));
     await act(async () => flushMicrotasks());
     await act(async () => {
       apiRef.current!.setMessageFeeds((feeds) =>
@@ -877,12 +876,12 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
       .mockImplementationOnce(() => stale.promise)
       .mockImplementationOnce(() => fresh.promise);
 
-    await act(async () => apiRef.current?.reloadFeedsPreservingUnread());
+    await act(async () => apiRef.current?.reloadEditedFeeds());
     await act(async () => flushMicrotasks());
     await act(async () => {
-      root.render(<TestHarness apiRef={apiRef} messageSortBy="IMSCreatedAt" />);
+      root.render(<TestHarness apiRef={apiRef} />);
     });
-    await act(async () => apiRef.current?.reloadFeedsPreservingUnread());
+    await act(async () => apiRef.current?.reloadEditedFeeds());
     await act(async () => flushMicrotasks());
 
     fresh.resolve(
@@ -892,11 +891,10 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
       ]),
     );
     await act(async () => flushMicrotasks());
-    stale.resolve(inboxRsp([[99, minimalInboxMessage({ timestamp: 9_900 })]]));
+    stale.resolve(inboxRsp([[99, minimalInboxMessage({ createdAtOrder: 9_900 })]]));
     await act(async () => flushMicrotasks());
 
     const feed = apiRef.current!.messageFeeds[0];
-    expect(feed.messageSortBy).toBe('IMSCreatedAt');
     expect(feed.items.map(([id]) => id)).toEqual([2, 1]);
     expect(feed.readIds).toEqual(new Set<number>([1]));
     expect(feed.windowedUnreadItems).toEqual(new Map());
@@ -910,26 +908,23 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
       ]),
     );
     await act(async () => {
-      root.render(<TestHarness apiRef={apiRef} messageSortBy="IMSTimestamp" />);
+      root.render(<TestHarness apiRef={apiRef} />);
     });
-    await act(async () => apiRef.current?.reloadFeedsPreservingUnread());
+    await act(async () => apiRef.current?.reloadEditedFeeds());
     await act(async () => flushMicrotasks());
 
-    const interceptionFeed = apiRef.current!.messageFeeds[0];
-    expect(interceptionFeed.messageSortBy).toBe('IMSTimestamp');
-    expect(interceptionFeed.items.map(([id]) => id)).toEqual([2, 1]);
-    expect(interceptionFeed.windowedUnreadItems).toEqual(new Map());
-    expect(interceptionFeed.unresolvedUnreadIds).toEqual(new Set<number>([99]));
+    const reloadedFeed = apiRef.current!.messageFeeds[0];
+    expect(reloadedFeed.items.map(([id]) => id)).toEqual([2, 1]);
+    expect(reloadedFeed.windowedUnreadItems).toEqual(new Map());
+    expect(reloadedFeed.unresolvedUnreadIds).toEqual(new Set<number>([99]));
   });
 
-  it('preserves buffered unread messages when reloading for a sort-mode change', async () => {
+  it('preserves buffered unread messages when reloading for a edit reload', async () => {
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
       current: null,
     };
 
-    await act(async () =>
-      root.render(<TestHarness apiRef={apiRef} messageSortBy="IMSTimestamp" />),
-    );
+    await act(async () => root.render(<TestHarness apiRef={apiRef} />));
     await act(async () => flushMicrotasks());
     await act(async () => {
       apiRef.current!.setMessageFeeds((feeds) =>
@@ -949,13 +944,12 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     );
 
     await act(async () => {
-      root.render(<TestHarness apiRef={apiRef} messageSortBy="IMSCreatedAt" />);
+      root.render(<TestHarness apiRef={apiRef} />);
     });
-    await act(async () => apiRef.current?.reloadFeedsPreservingUnread());
+    await act(async () => apiRef.current?.reloadEditedFeeds());
     await act(async () => flushMicrotasks());
 
     const feed = apiRef.current!.messageFeeds[0];
-    expect(feed.messageSortBy).toBe('IMSCreatedAt');
     expect(feed.items.map(([id]) => id)).toEqual([2, 3]);
     expect(feed.pendingNewerItems).toEqual([]);
     expect(feed.windowedUnreadItems).toEqual(new Map());
@@ -964,7 +958,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(feed.unreadCount).toBe(2);
   });
 
-  it('does not double-count anonymous unread stock across basis changes (#3455)', async () => {
+  it('does not double-count anonymous unread stock across edit reloads (#3455)', async () => {
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
       inboxRsp([[1, minimalInboxMessage({ timestamp: 1_000, createdAt: 2_000 })]]),
     );
@@ -973,7 +967,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     };
 
     await act(async () => {
-      root.render(<TestHarness apiRef={apiRef} messageSortBy="IMSTimestamp" />);
+      root.render(<TestHarness apiRef={apiRef} />);
     });
     await act(async () => flushMicrotasks());
     await act(async () => {
@@ -994,9 +988,9 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     );
 
     await act(async () => {
-      root.render(<TestHarness apiRef={apiRef} messageSortBy="IMSCreatedAt" />);
+      root.render(<TestHarness apiRef={apiRef} />);
     });
-    await act(async () => apiRef.current?.reloadFeedsPreservingUnread());
+    await act(async () => apiRef.current?.reloadEditedFeeds());
     await act(async () => flushMicrotasks());
 
     expect(apiRef.current!.messageFeeds[0]).toMatchObject({
@@ -1012,9 +1006,9 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
       ]),
     );
     await act(async () => {
-      root.render(<TestHarness apiRef={apiRef} messageSortBy="IMSTimestamp" />);
+      root.render(<TestHarness apiRef={apiRef} />);
     });
-    await act(async () => apiRef.current?.reloadFeedsPreservingUnread());
+    await act(async () => apiRef.current?.reloadEditedFeeds());
     await act(async () => flushMicrotasks());
 
     expect(apiRef.current!.messageFeeds[0]).toMatchObject({
@@ -1023,7 +1017,8 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     });
   });
 
-  it('uses creation-order cursors for an initial saved creation preference', async () => {
+  // https://github.com/echoua/echo/issues/3546
+  it('uses creation-order cursors for an initial load regardless of event time (#3546)', async () => {
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
       inboxRsp([
         [1, minimalInboxMessage({ timestamp: 100, createdAt: 2_000, createdAtOrder: 2_000_123 })],
@@ -1035,7 +1030,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     };
 
     await act(async () => {
-      root.render(<TestHarness apiRef={apiRef} messageSortBy="IMSCreatedAt" />);
+      root.render(<TestHarness apiRef={apiRef} />);
     });
     await act(async () => flushMicrotasks());
 
@@ -1112,7 +1107,9 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(apiRef.current?.messageFeeds[0]?.items.map(([id]) => id)).toEqual([1]);
 
     await act(async () => {
-      resolveReload(inboxRsp([[2, minimalInboxMessage({ timestamp: 200, text: 'reloaded' })]]));
+      resolveReload(
+        inboxRsp([[2, minimalInboxMessage({ createdAtOrder: 200, text: 'reloaded' })]]),
+      );
       await flushMicrotasks();
     });
 
@@ -1125,7 +1122,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
       inboxRsp(
         Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT + 5 }, (_, index) => [
           index + 1,
-          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 1) * 100 }),
         ]),
       ),
     );
@@ -1152,7 +1149,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
       inboxRsp(
         Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
           index + 21,
-          minimalInboxMessage({ timestamp: (index + 21) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 21) * 100 }),
         ]),
       ),
     );
@@ -1171,7 +1168,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
       inboxRsp(
         Array.from({ length: 20 }, (_, index) => [
           index + 1,
-          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 1) * 100 }),
         ]),
       ),
     );
@@ -1193,7 +1190,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
       inboxRsp(
         Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
           index + 1,
-          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 1) * 100 }),
         ]),
       ),
     );
@@ -1212,7 +1209,9 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
       inboxRsp(
         Array.from({ length: 20 }, (_, index) => [
           DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1,
-          minimalInboxMessage({ timestamp: (DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1) * 100 }),
+          minimalInboxMessage({
+            createdAtOrder: (DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1) * 100,
+          }),
         ]),
       ),
     );
@@ -1250,7 +1249,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
       inboxRsp(
         Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
           index + 1,
-          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 1) * 100 }),
         ]),
       ),
     );
@@ -1272,7 +1271,9 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
       inboxRsp(
         Array.from({ length: 20 }, (_, index) => [
           DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1,
-          minimalInboxMessage({ timestamp: (DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1) * 100 }),
+          minimalInboxMessage({
+            createdAtOrder: (DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1) * 100,
+          }),
         ]),
       ),
     );
@@ -1293,7 +1294,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
       inboxRsp(
         Array.from({ length: 20 }, (_, index) => [
           index + 1,
-          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 1) * 100 }),
         ]),
       ),
     );
@@ -1310,7 +1311,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
       inboxRsp(
         Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
           index + 1,
-          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 1) * 100 }),
         ]),
       ),
     );
@@ -1323,7 +1324,9 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
       inboxRsp(
         Array.from({ length: 50 }, (_, index) => [
           DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1,
-          minimalInboxMessage({ timestamp: (DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1) * 100 }),
+          minimalInboxMessage({
+            createdAtOrder: (DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1) * 100,
+          }),
         ]),
       ),
     );
@@ -1353,7 +1356,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
       inboxRsp(
         Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
           index + 1,
-          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 1) * 100 }),
         ]),
       ),
     );
@@ -1374,7 +1377,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
       inboxRsp(
         Array.from({ length: 20 }, (_, index) => [
           index - 19,
-          minimalInboxMessage({ timestamp: (index - 19) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index - 19) * 100 }),
         ]),
       ),
     );
@@ -1388,7 +1391,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
       inboxRsp(
         Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
           index + 1,
-          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 1) * 100 }),
         ]),
       ),
     );
@@ -1414,7 +1417,9 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
       inboxRsp(
         Array.from({ length: 20 }, (_, index) => [
           DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1,
-          minimalInboxMessage({ timestamp: (DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1) * 100 }),
+          minimalInboxMessage({
+            createdAtOrder: (DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1) * 100,
+          }),
         ]),
       ),
     );
@@ -1446,7 +1451,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
       inboxRsp(
         Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
           index + 21,
-          minimalInboxMessage({ timestamp: (index + 21) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 21) * 100 }),
         ]),
       ),
     );
@@ -1465,7 +1470,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
       inboxRsp(
         Array.from({ length: 20 }, (_, index) => [
           index + 1,
-          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 1) * 100 }),
         ]),
       ),
     );
@@ -1480,7 +1485,9 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
       inboxRsp(
         Array.from({ length: 20 }, (_, index) => [
           DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1,
-          minimalInboxMessage({ timestamp: (DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1) * 100 }),
+          minimalInboxMessage({
+            createdAtOrder: (DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1) * 100,
+          }),
         ]),
       ),
     );

@@ -138,7 +138,7 @@ export function useRerDutyFeedInteractionActions(params: Params) {
       // Capture their tail now; a later poll arrival must stay beyond this operation.
       const capturedTarget = feed.pendingNewerItems?.at(-1) ?? feed.items.at(-1);
       const capturedCursor = capturedTarget
-        ? messageOrderCursor(capturedTarget[0], capturedTarget[1], feed.messageSortBy)
+        ? messageOrderCursor(capturedTarget[0], capturedTarget[1])
         : null;
       const requestVerifiedLanding = (
         target: { id: number; timestamp: number | null },
@@ -286,7 +286,7 @@ export function useRerDutyFeedInteractionActions(params: Params) {
               newlyReadIds.push(id);
             }
             if (id === lastVisibleId) {
-              lastVisibleTimestamp = messageOrderTimestamp(message, f.messageSortBy);
+              lastVisibleTimestamp = messageOrderTimestamp(message);
               break;
             }
           }

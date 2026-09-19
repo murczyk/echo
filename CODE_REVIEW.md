@@ -46,6 +46,15 @@ actual test invocation. For Playwright, an Echo-linked regression annotation
 and the literal `@regression` title tag must agree; `e2e:regression` selects
 title tags, not source comments.
 
+## Duty behavior contract
+
+For changes to Duty Neo, shared message settings/cards, or inbox ordering and
+pagination, review the [Duty creation-time contract](docs/duty/README.md#creation-time-contract).
+Duty must always use creation time; Analysis's time-basis preference must not
+affect Duty. Require the #3546 behavior regressions to remain in the frontend CI
+suite, and update the contract and acceptance tests together for intentional
+behavior changes. Documentation alone does not replace executable coverage.
+
 ## Query performance
 
 Review database access using [QUERY_PERF.md](QUERY_PERF.md). Require

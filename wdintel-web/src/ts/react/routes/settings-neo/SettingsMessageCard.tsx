@@ -14,10 +14,7 @@ import {
 } from '@mui/material';
 import { isPresent } from '../../utils/misc';
 
-import type {
-  MessageTextPreviewLineLimit,
-  MessageTimeBasis,
-} from '../../services/api/user-settings';
+import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 
 const cardSx = {
@@ -123,8 +120,6 @@ export type SettingsMessageCardProps = {
   onTagsLayoutChange: (layout: TagsLayoutVariant) => void;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
   onMessageTextPreviewLinesChange: (value: MessageTextPreviewLineLimit) => void;
-  messageSortBy: MessageTimeBasis;
-  onMessageSortByChange: (value: MessageTimeBasis) => void;
   mediaSummaryEnabled: boolean;
   onMediaSummaryEnabledChange: (value: boolean) => void;
   collapseMediaPreviews: boolean;
@@ -137,8 +132,6 @@ export function SettingsMessageCard({
   onTagsLayoutChange,
   messageTextPreviewLines,
   onMessageTextPreviewLinesChange,
-  messageSortBy,
-  onMessageSortByChange,
   mediaSummaryEnabled,
   onMediaSummaryEnabledChange,
   collapseMediaPreviews,
@@ -275,38 +268,6 @@ export function SettingsMessageCard({
               <ToggleButton value="20">20 рядків</ToggleButton>
               <ToggleButton value="40">40 рядків</ToggleButton>
               <ToggleButton value="off">Без скорочення</ToggleButton>
-            </ToggleButtonGroup>
-          </Box>
-        </Stack>
-
-        <Stack spacing={1}>
-          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-            Сортування:
-          </Typography>
-          <Box>
-            <ToggleButtonGroup
-              value={messageSortBy}
-              exclusive
-              color="primary"
-              onChange={(_, value: MessageTimeBasis | null) => {
-                if (isPresent(value)) onMessageSortByChange(value);
-              }}
-              size="small"
-              disabled={loadInProgress}
-              aria-label="Сортування повідомлень"
-              sx={{
-                flexWrap: 'wrap',
-                '& .MuiToggleButton-root': {
-                  textTransform: 'none',
-                  fontSize: 14,
-                  px: 2,
-                  py: 1,
-                  whiteSpace: 'nowrap',
-                },
-              }}
-            >
-              <ToggleButton value="interception">За датою перехоплення</ToggleButton>
-              <ToggleButton value="creation">За датою створення</ToggleButton>
             </ToggleButtonGroup>
           </Box>
         </Stack>

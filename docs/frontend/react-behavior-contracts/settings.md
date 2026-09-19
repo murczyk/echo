@@ -1,22 +1,22 @@
 # Settings
 
-## Message-card ordering regression
+## Analysis time-basis regression
 
-- **Behavior ID:** `react-settings-message-card-order`
+- **Behavior ID:** `react-settings-analysis-time-basis`
 - **Status:** issue-backed regression
-- **Affected route/component:** `SettingsMessageCard`
+- **Affected route/component:** `SettingsNeoPage`, `SettingsAnalysisTimeBasisCard`
 - **User role or permission:** authenticated user
 - **Preconditions:** settings render
 - **User action or external event:** open settings
-- **Expected observable result:** sorting follows the long-message setting
+- **Expected observable result:** the time-basis control appears and persists only in Analysis settings; Duty retains the shared message-card controls without exposing this Analysis preference
 - **Loading/empty/error/success behavior:** normal settings loading
 - **URL, localStorage, or user-settings persistence:** user settings
 - **API endpoint and compatibility requirements:** `services/api/user-settings.saveUserSettings`
 - **Responsive and keyboard requirements:** controls are keyboard reachable
 - **Known race/idempotency constraints:** none
-- **Source implementation:** `wdintel-web/src/ts/react/routes/settings-neo/SettingsMessageCard.tsx`
-- **Existing tests:** `wdintel-web/src/ts/react/routes/settings-neo/__tests__/SettingsMessageCard.spec.tsx`
-- **Original Echo issue/PR, if known:** [#3455](https://github.com/echoua/echo/issues/3455)
+- **Source implementation:** `wdintel-web/src/ts/react/routes/settings-neo/SettingsAnalysisTimeBasisCard.tsx`, `wdintel-web/src/ts/react/routes/settings-neo/index.tsx`
+- **Existing tests:** `wdintel-web/src/ts/react/routes/settings-neo/__tests__/index.spec.tsx`
+- **Original Echo issue/PR, if known:** [#3546](https://github.com/echoua/echo/issues/3546)
 
 ## Message-card choices and callbacks
 

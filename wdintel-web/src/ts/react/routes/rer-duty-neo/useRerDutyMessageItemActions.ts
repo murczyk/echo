@@ -228,7 +228,7 @@ export function useRerDutyMessageItemActions(params: Params) {
             ([id, currentMessage]) =>
               (id === messageId ? [id, message] : [id, currentMessage]) as [number, InboxMessage],
           );
-          return { ...feed, items: sortMessageItemsByTime(updatedItems, feed.messageSortBy) };
+          return { ...feed, items: sortMessageItemsByTime(updatedItems) };
         }),
       );
     },

@@ -356,7 +356,6 @@ export function buildInboxReq(opts: {
   expandedFreqsDenied?: string[] | null;
   highlightSignals?: boolean | null;
   reportTagsOnlyThisUnit?: boolean | null;
-  sortBy?: 'IMSTimestamp' | 'IMSCreatedAt';
 }): InboxMessagesReq {
   const f = opts.filter;
   const selectedUnitIds = (f.unitsSelected ?? []).flatMap((value) => {
@@ -424,7 +423,7 @@ export function buildInboxReq(opts: {
     metadataHash: null,
     onlyWithMetadata: null,
     withoutMetadata: null,
-    sortBy: opts.sortBy ?? 'IMSTimestamp',
+    sortBy: 'IMSCreatedAt',
     reportTagsOnlyThisUnit: opts.reportTagsOnlyThisUnit ?? null,
     ignoreImportedCoords: true,
     includePelengLocations: null,
@@ -762,21 +761,12 @@ export function getPointEtalonsFromMessage(
 export type MessageItem = [number, InboxMessage];
 export type MessageCursor = { id: number; timestamp: number | null };
 
-export function messageOrderTimestamp(
-  message: InboxMessage,
-  messageSortBy: 'IMSTimestamp' | 'IMSCreatedAt',
-): number | null | undefined {
-  return messageSortBy === 'IMSCreatedAt'
-    ? (message.createdAtOrder ?? (message.createdAt == null ? null : message.createdAt * 1000))
-    : message.timestamp;
+export function messageOrderTimestamp(message: InboxMessage): number | null {
+  return message.createdAtOrder ?? (message.createdAt == null ? null : message.createdAt * 1000);
 }
 
-export function messageOrderCursor(
-  id: number,
-  message: InboxMessage,
-  messageSortBy: 'IMSTimestamp' | 'IMSCreatedAt',
-): MessageCursor {
-  return { id, timestamp: messageOrderTimestamp(message, messageSortBy) ?? null };
+export function messageOrderCursor(id: number, message: InboxMessage): MessageCursor {
+  return { id, timestamp: messageOrderTimestamp(message) ?? null };
 }
 
 export function compareMessageTuple(
@@ -836,9 +826,8 @@ function trimMessageWindow(
 export function windowInitialMessageItems(
   items: MessageItem[],
   limit: number = DUTY_FEED_MESSAGE_WINDOW_LIMIT,
-  messageSortBy: 'IMSTimestamp' | 'IMSCreatedAt' = 'IMSTimestamp',
 ): MessageItem[] {
-  const sorted = sortMessageItemsByTime(dedupeMessageItems(items), messageSortBy);
+  const sorted = sortMessageItemsByTime(dedupeMessageItems(items));
   return trimMessageWindow(sorted, limit, 'start').items;
 }
 
@@ -846,14 +835,10 @@ export function prependWindowedMessageItems(
   existing: MessageItem[],
   incomingOlder: MessageItem[],
   limit: number = DUTY_FEED_MESSAGE_WINDOW_LIMIT,
-  messageSortBy: 'IMSTimestamp' | 'IMSCreatedAt' = 'IMSTimestamp',
 ): WindowedMessageItemsResult {
   const existingIds = itemIds(existing);
   const addedItems = dedupeMessageItems(incomingOlder).filter(([id]) => !existingIds.has(id));
-  const combined = sortMessageItemsByTime(
-    dedupeMessageItems([...addedItems, ...existing]),
-    messageSortBy,
-  );
+  const combined = sortMessageItemsByTime(dedupeMessageItems([...addedItems, ...existing]));
   const trimmed = trimMessageWindow(combined, limit, 'end');
   return { items: trimmed.items, addedItems, removedItems: trimmed.removedItems };
 }
@@ -862,14 +847,10 @@ export function appendWindowedMessageItems(
   existing: MessageItem[],
   incomingNewer: MessageItem[],
   limit: number = DUTY_FEED_MESSAGE_WINDOW_LIMIT,
-  messageSortBy: 'IMSTimestamp' | 'IMSCreatedAt' = 'IMSTimestamp',
 ): WindowedMessageItemsResult {
   const existingIds = itemIds(existing);
   const addedItems = dedupeMessageItems(incomingNewer).filter(([id]) => !existingIds.has(id));
-  const combined = sortMessageItemsByTime(
-    dedupeMessageItems([...existing, ...addedItems]),
-    messageSortBy,
-  );
+  const combined = sortMessageItemsByTime(dedupeMessageItems([...existing, ...addedItems]));
   const trimmed = trimMessageWindow(combined, limit, 'start');
   return { items: trimmed.items, addedItems, removedItems: trimmed.removedItems };
 }
@@ -882,18 +863,12 @@ export function safePendingNewerPrefix(
   items: MessageItem[],
   pending: MessageItem[],
   protectedItemIds: readonly number[],
-  messageSortBy: 'IMSTimestamp' | 'IMSCreatedAt' = 'IMSTimestamp',
 ): MessageItem[] {
   if (protectedItemIds.length === 0) return pending;
   const protectedIds = new Set(protectedItemIds);
   let safeLength = 0;
   for (let length = 1; length <= pending.length; length += 1) {
-    const preview = appendWindowedMessageItems(
-      items,
-      pending.slice(0, length),
-      undefined,
-      messageSortBy,
-    );
+    const preview = appendWindowedMessageItems(items, pending.slice(0, length));
     if (preview.removedItems.some(([id]) => protectedIds.has(id))) break;
     safeLength = length;
   }
@@ -949,15 +924,12 @@ export function mergeCallsignInfoResponses(
   return next;
 }
 
-/** Sort message items by time ascending (oldest first). Uses timestamp then id as tiebreaker. */
-export function sortMessageItemsByTime(
-  items: MessageItem[],
-  messageSortBy: 'IMSTimestamp' | 'IMSCreatedAt' = 'IMSTimestamp',
-): MessageItem[] {
+/** Sort message items by time ascending (oldest first). Uses creation time in microseconds, then id as tiebreaker. */
+export function sortMessageItemsByTime(items: MessageItem[]): MessageItem[] {
   return [...items].sort(([idA, a], [idB, b]) =>
     compareMessageTuple(
-      { id: idA, timestamp: messageOrderTimestamp(a, messageSortBy) },
-      { id: idB, timestamp: messageOrderTimestamp(b, messageSortBy) },
+      { id: idA, timestamp: messageOrderTimestamp(a) },
+      { id: idB, timestamp: messageOrderTimestamp(b) },
     ),
   );
 }
@@ -974,7 +946,6 @@ export function dedupeMessageItems(items: MessageItem[]): MessageItem[] {
 
 export type MessageFeedState = {
   id: string;
-  messageSortBy: 'IMSTimestamp' | 'IMSCreatedAt';
   filter: RerDutyFeedFilterState;
   items: MessageItem[];
   loading: boolean;
@@ -988,7 +959,7 @@ export type MessageFeedState = {
   /** Message IDs that have been "read" (entered viewport). Unread count = items not in this set. */
   readIds: Set<number>;
   windowedUnreadItems: Map<number, number>;
-  /** Unread identities retained across a sort reload when their new ordering value is not loaded. */
+  /** Unread identities retained across a reload while their messages are outside the window. */
   unresolvedUnreadIds?: Set<number>;
   /** Count of retained unread messages without an individual identity. */
   unresolvedUnreadCount?: number;
@@ -1043,7 +1014,7 @@ export function mergePendingNewerItems(
     ([id]) => !existingIds.has(id) && !pendingIds.has(id),
   );
   if (added.length === 0) return pending;
-  return sortMessageItemsByTime(dedupeMessageItems([...pending, ...added]), feed.messageSortBy);
+  return sortMessageItemsByTime(dedupeMessageItems([...pending, ...added]));
 }
 
 /** Effective since-id for newer fetches: pending tail when buffering, else window tail. */
@@ -1082,7 +1053,7 @@ function reconcileWindowedUnreadIdsForAppend(
   const windowedUnreadItems = new Map(feed.windowedUnreadItems);
   windowed.removedItems.forEach(([id, message]) => {
     if (!feed.readIds.has(id)) {
-      windowedUnreadItems.set(id, messageOrderTimestamp(message, feed.messageSortBy) ?? 0);
+      windowedUnreadItems.set(id, messageOrderTimestamp(message) ?? 0);
     }
   });
   windowed.items.forEach(([id]) => windowedUnreadItems.delete(id));
@@ -1104,12 +1075,7 @@ export function appendNewerItemsToFeed(
     [...feed.items, ...incomingNewer].some(([id]) => id === feed.evictedNewerTailId)
       ? null
       : feed.evictedNewerTailId;
-  const windowed = appendWindowedMessageItems(
-    feed.items,
-    incomingNewer,
-    undefined,
-    feed.messageSortBy,
-  );
+  const windowed = appendWindowedMessageItems(feed.items, incomingNewer);
   if (windowed.addedItems.length === 0) {
     if (markAllRead) {
       return {
@@ -1231,7 +1197,7 @@ export function feedIndicatorUnreadCount(
         compareMessageTuple(
           { timestamp, id },
           {
-            timestamp: tail == null ? null : messageOrderTimestamp(tail[1], feed.messageSortBy),
+            timestamp: tail == null ? null : messageOrderTimestamp(tail[1]),
             id: currentTailId,
           },
         ) <= 0,
