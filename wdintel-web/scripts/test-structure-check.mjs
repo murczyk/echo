@@ -6,17 +6,25 @@ const webRoot = resolve(new URL('..', import.meta.url).pathname);
 const repoRoot = resolve(webRoot, '..');
 const reactRoot = join(webRoot, 'src/ts/react');
 const e2eRoot = join(webRoot, 'tests/e2e');
+const behaviorContractRoot = join(repoRoot, 'docs/frontend/react-behavior-contracts');
 const playwrightConfig = join(webRoot, 'playwright.config.ts');
 const testFilePattern = /\.(?:spec|test)\.[cm]?[jt]sx?$/;
 const sourceFilePattern = /\.[cm]?[jt]sx?$/;
 const testSupportPattern =
   /(?:\.|-)(?:test-utils|test-helpers|fixture|fixtures|mock|mocks)\.[cm]?[jt]sx?$/;
+const ignoredDirectoryNames = new Set([
+  'dist',
+  'node_modules',
+  'playwright-report',
+  'test-results',
+]);
 const failures = [];
 
 function walk(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name);
-    return entry.isDirectory() ? walk(path) : [path];
+    if (!entry.isDirectory()) return [path];
+    return ignoredDirectoryNames.has(entry.name) ? [] : walk(path);
   });
 }
 
@@ -112,10 +120,7 @@ function moduleSpecifiers(path) {
 }
 
 function frontendModules() {
-  return walk(webRoot).filter(
-    (path) =>
-      sourceFilePattern.test(path) && !path.includes('/node_modules/') && !path.includes('/dist/'),
-  );
+  return walk(webRoot).filter((path) => sourceFilePattern.test(path));
 }
 
 function checkPlaywrightPlacement() {
@@ -152,7 +157,12 @@ function checkReferencedFiles() {
   const ciFiles = existsSync(join(repoRoot, '.github'))
     ? walk(join(repoRoot, '.github')).filter((path) => /\.(?:ya?ml|json|js|mjs)$/.test(path))
     : [];
-  const sources = packageScripts.concat(ciFiles.map((path) => readFileSync(path, 'utf8')));
+  const behaviorContractFiles = existsSync(behaviorContractRoot)
+    ? walk(behaviorContractRoot).filter((path) => path.endsWith('.md'))
+    : [];
+  const sources = packageScripts.concat(
+    ciFiles.concat(behaviorContractFiles).map((path) => readFileSync(path, 'utf8')),
+  );
   const pathPattern =
     /(?:wdintel-web\/)?(?:src\/ts\/react|tests\/e2e)\/[^\s'"\\]+?\.(?:spec|test)\.[cm]?[jt]sx?/g;
   for (const source of sources) {

@@ -51,7 +51,8 @@ test.describe('@smoke @regression @message-references message-card references', 
       await linkedMessagePage.close();
     });
 
-    test(`${host} opens an available linked message with a middle click`, async ({
+    // Regression: https://github.com/echoua/echo/pull/3397
+    test(`${host} uses cached native middle-click navigation without cancelling the anchor event`, async ({
       page,
       baseURL,
     }) => {
@@ -79,13 +80,36 @@ test.describe('@smoke @regression @message-references message-card references', 
         },
       });
 
+      const link = page.getByRole('link', { name: 'повідомлення', exact: true });
+      await link.hover();
+      await expect(page.getByTestId('message-summary-preview-77')).toBeVisible();
+      await page.evaluate(() => {
+        document.addEventListener(
+          'auxclick',
+          (event) => {
+            const target = event.target;
+            if (target instanceof Element && target.closest('a[aria-label="повідомлення"]')) {
+              document.documentElement.dataset.messageReferenceAuxDefaultPrevented = String(
+                event.defaultPrevented,
+              );
+            }
+          },
+          { once: true },
+        );
+      });
+
       const [linkedMessagePage] = await Promise.all([
-        page.waitForEvent('popup'),
-        page.getByRole('link', { name: 'повідомлення', exact: true }).click({ button: 'middle' }),
+        page.context().waitForEvent('page'),
+        link.click({ button: 'middle' }),
       ]);
 
       await linkedMessagePage.waitForURL(href);
       expect(linkedMessagePage.url()).toBe(href);
+      expect(
+        await page.evaluate(
+          () => document.documentElement.dataset.messageReferenceAuxDefaultPrevented,
+        ),
+      ).toBe('false');
       await linkedMessagePage.close();
     });
 
