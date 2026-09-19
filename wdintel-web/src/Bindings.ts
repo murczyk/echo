@@ -566,6 +566,7 @@ export type InboxMessagesReq = {
 };
 
 export type InboxSubmitReq = {
+  callsignEdits: Array<CallsignEdit> | null;
   messages: Array<[number, InboxMessage]>;
 };
 
@@ -5131,6 +5132,66 @@ export type AiCallsignPageRsp = {
   engines: Array<AiCallsignEngineItem>;
   messages: Array<AiCallsignTestMessageItem>;
   worker: AiCallsignWorkerSettingsItem;
+};
+
+export type CallsignEdit = {
+  messageId: number;
+  actionId: string;
+  added: Array<string>;
+  removed: Array<string>;
+};
+
+export type FeedbackListReq = {
+  search: string;
+  after: string;
+};
+
+export type FeedbackItem = {
+  callsign: string;
+  removalCount: number;
+  updatedAt: number;
+};
+
+export type FeedbackDetailsReq = {
+  callsign: string;
+  beforeId: number | null;
+};
+
+export type FeedbackDetail = {
+  id: number;
+  inboxItemId: number | null;
+  actor: string | null;
+  body: string;
+  createdAt: number;
+};
+
+export type ReparseStartReq = {
+  days: number;
+};
+
+export type ReparseIdReq = {
+  id: string;
+};
+
+export type ReparseStatus = {
+  id: string;
+  state: string;
+  automatic: boolean;
+  sinceTs: number;
+  untilTs: number;
+  createdAt: number;
+  completedAt: number | null;
+  total: number;
+  changed: number;
+  unchanged: number;
+  skipped: number;
+  failed: number;
+};
+
+export type ReparseFailure = {
+  inboxItemId: number;
+  attempts: number;
+  lastError: string | null;
 };
 
 export type AiCallsignPromptState = {

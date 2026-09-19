@@ -3441,7 +3441,26 @@ async fn submit_legacy_inbox(
     let logins = crate::users::get_organism_login_ids(&env.dbx, user)
         .await
         .context(h!())?;
-    submit_legacy_inbox_messages(env, &login, &logins, req).await
+    if let Some(edits) = &req.callsign_edits {
+        let groups = crate::messenger::group::get_identity_sigint_groups(
+            &env.dbx, &login,
+        )
+        .await
+        .c(h!())?;
+        for edit in edits {
+            ensure_comment_save_access(env, &login, &groups, edit.message_id)
+                .await
+                .c(h!())?;
+            if !req.messages.iter().any(|(id, _)| *id == edit.message_id) {
+                return Err(AppError::BL {
+                    msg: "Позивний належить іншому повідомленню".into(),
+                });
+            }
+        }
+    }
+    Ok(submit_legacy_inbox_messages(env, &login, &logins, req)
+        .await
+        .c(h!())?)
 }
 
 async fn submit_legacy_inbox_messages(
@@ -3456,6 +3475,46 @@ async fn submit_legacy_inbox_messages(
 
     for (id, message) in req.messages.iter() {
         let mut message = message.clone();
+        let mut all_ids = find_all_duplicates(&txn, *id).await.c(h!())?;
+        all_ids.sort_unstable();
+        for item_id in &all_ids {
+            sigint_inbox_item::Entity::find_by_id(*item_id)
+                .lock_exclusive()
+                .one(&txn)
+                .await
+                .c(h!())?;
+        }
+        if let Some(edits) = &req.callsign_edits {
+            let original = signal_message::Entity::find_by_id(*id)
+                .one(&txn)
+                .await
+                .c(h!())?
+                .c(h!())?;
+            for edit in edits.iter().filter(|edit| edit.message_id == *id) {
+                crate::ai_callsign::feedback::record_edit(
+                    &txn,
+                    *login,
+                    edit,
+                    &all_ids,
+                    original.body.as_deref().unwrap_or_default(),
+                )
+                .await
+                .c(h!())?;
+            }
+            let current =
+                crate::inbox::callsigns::load_by_item_ids(&txn, &[*id])
+                    .await
+                    .c(h!())?
+                    .remove(id)
+                    .unwrap_or_default();
+            message.callsigns = crate::ai_callsign::feedback::apply_overrides(
+                &txn,
+                *id,
+                current.primary,
+            )
+            .await
+            .c(h!())?;
+        }
         let callsigns: Vec<String> = crate::utils::uniq_via_btreeset(
             &message
                 .callsigns
@@ -3476,7 +3535,6 @@ async fn submit_legacy_inbox_messages(
         );
         message.keyword_tokens = None;
 
-        let all_ids = find_all_duplicates(&txn, *id).await.c(h!())?;
         for id in &all_ids {
             let inbox_id = submit_upsert_inbox_item(
                 env.settlements.clone(),
@@ -6218,6 +6276,7 @@ mod tests {
             &login.id,
             &logins,
             InboxSubmitReq {
+                callsign_edits: None,
                 messages: vec![(message.id, inbox_message)],
             },
         )

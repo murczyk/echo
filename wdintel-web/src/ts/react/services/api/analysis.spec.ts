@@ -88,7 +88,7 @@ describe('analysis API', () => {
     });
   });
 
-  it('preserves ContentNode variants when submitting inbox messages', async () => {
+  it('preserves ContentNode variants and explicit callsign action keys when submitting inbox messages', async () => {
     const message = {
       text: 'hello',
       callsigns: ['ALPHA'],
@@ -97,11 +97,15 @@ describe('analysis API', () => {
 
     await submitAnalysisInboxMessages({
       messages: [[7, message]],
+      callsignEdits: [{ messageId: 7, actionId: 'removal-action', added: [], removed: ['фипка'] }],
     });
 
     expect(postVoidMock).toHaveBeenCalledWith(
       '/api/rer-importer/inbox/submit',
       expect.objectContaining({
+        callsignEdits: [
+          { messageId: 7, actionId: 'removal-action', added: [], removed: ['фипка'] },
+        ],
         messages: [[7, expect.objectContaining({ text_marked: [{ CNTextC: { text: 'hello' } }] })]],
       }),
     );

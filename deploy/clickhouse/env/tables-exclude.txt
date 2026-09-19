@@ -96,3 +96,12 @@ public.device_settings
 
 # Login TOTP seeds (plaintext second-factor credentials).
 public.login_totp
+
+# Callsign feedback and historical parsing state.
+public.ai_callsign_feedback
+public.ai_callsign_feedback_summary
+public.ai_callsign_override
+public.ai_callsign_action
+public.ai_callsign_reparse_run
+public.ai_callsign_reparse_target
+public.ai_callsign_reparse_job

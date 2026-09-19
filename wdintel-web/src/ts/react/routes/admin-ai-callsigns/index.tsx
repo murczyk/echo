@@ -32,6 +32,7 @@ import {
   testAiCallsignParsing,
 } from '../../services/api/ai-callsigns';
 import type { AiCallsignAction } from './AiCallsignControls';
+import { AiCallsignFeedback } from './AiCallsignFeedback';
 import { AiCallsignMessageEditor } from './AiCallsignMessageEditor';
 import { AiCallsignPromptPanel } from './AiCallsignPromptPanel';
 import { AiCallsignsTable } from './AiCallsignsTable';
@@ -39,7 +40,7 @@ import { AiCallsignWorkerSettings } from './AiCallsignWorkerSettings';
 
 type AiCallsignScreen =
   { kind: 'list' } | { kind: 'create' } | { kind: 'edit'; message: AiCallsignTestMessageItem };
-type AiCallsignTab = 'prompt' | 'worker';
+type AiCallsignTab = 'prompt' | 'worker' | 'feedback';
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -279,6 +280,12 @@ export function AdminAiCallsignsPage() {
               id="ai-callsigns-tab-worker"
               aria-controls="ai-callsigns-panel-worker"
             />
+            <Tab
+              value="feedback"
+              label="Зворотний зв’язок"
+              id="ai-callsigns-tab-feedback"
+              aria-controls="ai-callsigns-panel-feedback"
+            />
           </Tabs>
         }
         titleActionsGap={2}
@@ -325,6 +332,15 @@ export function AdminAiCallsignsPage() {
             ) : null}
           </Box>
 
+          {tab === 'feedback' && (
+            <div
+              id="ai-callsigns-panel-feedback"
+              role="tabpanel"
+              aria-labelledby="ai-callsigns-tab-feedback"
+            >
+              <AiCallsignFeedback enabled={workerSettings.enabled} />
+            </div>
+          )}
           <Box
             id="ai-callsigns-panel-worker"
             role="tabpanel"
