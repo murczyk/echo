@@ -323,7 +323,8 @@ async fn store_kept_duplicate_trace_media(
         staged_media,
     )
     .await
-    .map(|_| vec![])
+    .context(h!())?;
+    Ok(vec![])
 }
 
 async fn store_queue_media(

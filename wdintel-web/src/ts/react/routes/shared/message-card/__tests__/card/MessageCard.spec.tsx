@@ -3982,6 +3982,11 @@ describe('MessageCard', () => {
         false,
       );
     }
+    expect(
+      canDownloadAllMessageAttachments([
+        { ...attachment, fileName: 'route.KMZ', kmzConversionStatus: 'done' },
+      ]),
+    ).toBe(false);
   });
 
   it('keeps individual downloads visible when archive metadata is unavailable', async () => {
