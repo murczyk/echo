@@ -1,4 +1,4 @@
-import { Box, Button, CircularProgress, IconButton, Typography } from '@mui/material';
+import { Box, Button, IconButton, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import CheckIcon from '@mui/icons-material/Check';
 import CloseIcon from '@mui/icons-material/Close';
@@ -13,25 +13,21 @@ import type { SyntheticEvent } from 'react';
 import { copyTextToClipboard } from '../../../../../copy-to-clipboard';
 import { renderWgsFloat } from '../../../importer-beta/coordinates';
 import { BaseLayerId, DEFAULT_BASE_LAYER_ID } from '../../../../../maps/base-layers';
-import { getTileLayers } from '../../../../../web-components/analysis-map/tile-layers';
 import {
   getCoordinateMgrsText,
   getCoordinateTextIfAvailable,
 } from '../../../../../maps/coordinate-format';
 import { formatCoordinateLocality } from '../../../../../maps/coordinate-locality';
 import { CoordinateMapPreviewControls } from '../CoordinateMapPreviewControls';
+import { MessageCardMapPreview } from '../MessageCardMapPreview';
 import { MessageCardAttachmentPreviewHeader } from '../attachment-preview/MessageCardAttachmentPreviewHeader';
 import { MessageCardAttachmentPreviewLayout } from '../attachment-preview/MessageCardAttachmentPreviewLayout';
 import type { CoordinatePreviewPoint } from '../message-coordinate-preview';
-import { getAttachmentPreviewStageSx } from '../attachment-preview/message-card-attachment-preview';
 import type { MessageCardPreviewNavigation } from '../attachment-preview/message-card-preview.types';
 
-type MapInitState = 'loading' | 'ready' | 'error';
 const PREVIEW_ZOOM = 13;
 const PREVIEW_MAX_ZOOM = 13;
 const PREVIEW_BOUNDS_PADDING: [number, number] = [80, 80];
-const MAP_INIT_TIMEOUT_MS = 2000;
-const MAP_HOST_MIN_SIZE_PX = 48;
 const COORDINATE_ROW_HEIGHT = 24;
 const COORDINATE_ROW_GAP = 6;
 const COORDINATE_LABEL_WIDTH = 80;
@@ -182,32 +178,20 @@ function CoordinateMapPreview({
   baseLayerId: BaseLayerId;
 }) {
   const theme = useTheme();
-  const [mapHostEl, setMapHostEl] = useState<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markerRefs = useRef<L.CircleMarker[]>([]);
-  const layerRef = useRef<L.Layer | null>(null);
-  const tileLayersRef = useRef<ReturnType<typeof getTileLayers> | null>(null);
-  const baseLayerIdRef = useRef<BaseLayerId>(DEFAULT_BASE_LAYER_ID);
   const pointsRef = useRef(points);
   const activeIndexRef = useRef(activeIndex);
   const previousActiveIndexRef = useRef(activeIndex);
   const onActiveIndexChangeRef = useRef(onActiveIndexChange);
-  const initFrameRef = useRef<number | null>(null);
   const invalidateFrameRef = useRef<number | null>(null);
-  const initTimeoutRef = useRef<number | null>(null);
   const copyResetTimeoutsRef = useRef<Partial<Record<CoordinateFormat, number>>>({});
   const copyGenerationRef = useRef(0);
   const copyRequestIdsRef = useRef<Partial<Record<CoordinateFormat, number>>>({});
-  const [mapInitState, setMapInitState] = useState<MapInitState>('loading');
   const [copyStatuses, setCopyStatuses] =
     useState<Record<CoordinateFormat, CopyStatus>>(INITIAL_COPY_STATUSES);
-  const [retryToken, setRetryToken] = useState(0);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
-
-  useEffect(() => {
-    baseLayerIdRef.current = baseLayerId;
-  }, [baseLayerId]);
 
   useEffect(() => {
     pointsRef.current = points;
@@ -232,26 +216,6 @@ function CoordinateMapPreview({
       previousActiveIndexRef.current = activeIndex;
     }
   }, [activeIndex]);
-
-  useEffect(() => {
-    if (mapRef.current == null) {
-      return;
-    }
-
-    const tileLayers = tileLayersRef.current;
-    if (tileLayers == null) {
-      return;
-    }
-
-    const nextLayer = tileLayers[baseLayerId];
-    if (layerRef.current === nextLayer) {
-      return;
-    }
-
-    layerRef.current?.remove();
-    nextLayer.addTo(mapRef.current);
-    layerRef.current = nextLayer;
-  }, [baseLayerId]);
 
   useEffect(() => {
     if (mapRef.current == null) {
@@ -283,187 +247,77 @@ function CoordinateMapPreview({
     });
   }, [activeIndex]);
 
-  useEffect(() => {
-    if (mapHostEl == null) {
-      return;
+  const initializeCoordinateMap = useCallback((map: L.Map) => {
+    const visiblePoints = pointsRef.current;
+    const currentPoint = visiblePoints[activeIndexRef.current] ?? visiblePoints[0];
+    if (currentPoint == null) return;
+
+    mapRef.current = map;
+    map.on('click', () => setIsPanelOpen(false));
+    const latLngs = visiblePoints.map(({ lat, lng }): [number, number] => [lat, lng]);
+    if (latLngs.length === 1) {
+      map.setView(latLngs[0], PREVIEW_ZOOM);
+    } else {
+      map.fitBounds(L.latLngBounds(latLngs), {
+        animate: false,
+        maxZoom: PREVIEW_MAX_ZOOM,
+        padding: PREVIEW_BOUNDS_PADDING,
+      });
     }
 
-    let cancelled = false;
-    const currentHost = mapHostEl;
-
-    const clearPendingInvalidate = () => {
-      if (invalidateFrameRef.current === null) {
-        return;
-      }
-
-      window.cancelAnimationFrame(invalidateFrameRef.current);
-      invalidateFrameRef.current = null;
-    };
-
-    const scheduleInvalidate = () => {
-      if (invalidateFrameRef.current !== null || cancelled || mapRef.current == null) {
-        return;
-      }
-
-      invalidateFrameRef.current = window.requestAnimationFrame(() => {
-        invalidateFrameRef.current = null;
-        const map = mapRef.current;
-        if (map == null) {
-          return;
-        }
-        map.invalidateSize({ animate: false, pan: false });
-        const latLngs = pointsRef.current.map(({ lat, lng }): [number, number] => [lat, lng]);
-        if (latLngs.length > 1) {
-          map.fitBounds(L.latLngBounds(latLngs), {
-            animate: false,
-            maxZoom: PREVIEW_MAX_ZOOM,
-            padding: PREVIEW_BOUNDS_PADDING,
-          });
-        }
+    markerRefs.current = visiblePoints.map(({ lat, lng }, index) => {
+      const marker = L.circleMarker([lat, lng], {
+        radius: index === activeIndexRef.current ? 10 : 8,
+        color: '#ffffff',
+        weight: 3,
+        fillColor: index === activeIndexRef.current ? '#1976d2' : '#ff4d2d',
+        fillOpacity: 1,
+        interactive: true,
+        bubblingMouseEvents: false,
       });
-    };
-
-    const initializeMap = () => {
-      if (cancelled || mapRef.current != null || mapHostEl !== currentHost) {
-        return false;
-      }
-
-      if (!currentHost.isConnected) {
-        return false;
-      }
-
-      const rect = currentHost.getBoundingClientRect();
-      if (rect.width < MAP_HOST_MIN_SIZE_PX || rect.height < MAP_HOST_MIN_SIZE_PX) {
-        return false;
-      }
-
-      const visiblePoints = pointsRef.current;
-      const currentPoint = visiblePoints[activeIndexRef.current] ?? visiblePoints[0];
-      if (currentPoint == null) {
-        return false;
-      }
-      const map = L.map(currentHost, {
-        zoomControl: false,
-        attributionControl: false,
-        dragging: true,
-        scrollWheelZoom: true,
-        doubleClickZoom: true,
-        touchZoom: true,
-        boxZoom: true,
-        keyboard: true,
-        preferCanvas: true,
-        minZoom: 2,
-        maxZoom: 17,
-      });
-      map.on('click', () => setIsPanelOpen(false));
-      L.control?.zoom?.({ position: 'bottomright' })?.addTo?.(map);
-
-      const latLngs = visiblePoints.map(({ lat, lng }): [number, number] => [lat, lng]);
-      if (latLngs.length === 1) {
-        map.setView(latLngs[0], PREVIEW_ZOOM);
-      } else {
-        map.fitBounds(L.latLngBounds(latLngs), {
-          animate: false,
-          maxZoom: PREVIEW_MAX_ZOOM,
-          padding: PREVIEW_BOUNDS_PADDING,
+      const mgrsText = getCoordinateMgrsText({ lat, lng });
+      if (mgrsText != null) {
+        const label = document.createElement('span');
+        label.textContent = mgrsText;
+        marker.bindTooltip(label, {
+          permanent: true,
+          direction: 'top',
+          offset: [0, -8],
+          opacity: 1,
+          className: 'coordinate-preview-mgrs-label',
+          interactive: false,
         });
       }
-
-      const tileLayers = getTileLayers();
-      tileLayersRef.current = tileLayers;
-      const baseLayer = tileLayers[baseLayerIdRef.current];
-      baseLayer.addTo(map);
-
-      const markers = visiblePoints.map(({ lat, lng }, index) => {
-        const marker = L.circleMarker([lat, lng], {
-          radius: index === activeIndexRef.current ? 10 : 8,
-          color: '#ffffff',
-          weight: 3,
-          fillColor: index === activeIndexRef.current ? '#1976d2' : '#ff4d2d',
-          fillOpacity: 1,
-          interactive: true,
-          bubblingMouseEvents: false,
-        });
-        const mgrsText = getCoordinateMgrsText({ lat, lng });
-        if (mgrsText != null) {
-          const label = document.createElement('span');
-          label.textContent = mgrsText;
-          marker.bindTooltip(label, {
-            permanent: true,
-            direction: 'top',
-            offset: [0, -8],
-            opacity: 1,
-            className: 'coordinate-preview-mgrs-label',
-            interactive: false,
-          });
-        }
-        marker.addTo(map);
-        marker.on('click', () => {
-          map.setView([lat, lng], map.getZoom());
-          setIsPanelOpen(true);
-          onActiveIndexChangeRef.current(index);
-        });
-        return marker;
+      marker.addTo(map);
+      marker.on('click', () => {
+        map.setView([lat, lng], map.getZoom());
+        setIsPanelOpen(true);
+        onActiveIndexChangeRef.current(index);
       });
-
-      mapRef.current = map;
-      markerRefs.current = markers;
-      layerRef.current = baseLayer;
-      setMapInitState('ready');
-      scheduleInvalidate();
-
-      return true;
-    };
-
-    const resizeObserver =
-      typeof ResizeObserver === 'undefined'
-        ? null
-        : new ResizeObserver(() => {
-            if (cancelled) {
-              return;
-            }
-
-            if (mapRef.current == null) {
-              initializeMap();
-              return;
-            }
-
-            scheduleInvalidate();
-          });
-
-    resizeObserver?.observe(currentHost);
-    initTimeoutRef.current = window.setTimeout(() => {
-      if (!cancelled && mapRef.current == null) {
-        setMapInitState('error');
-      }
-    }, MAP_INIT_TIMEOUT_MS);
-
-    initFrameRef.current = window.requestAnimationFrame(() => {
-      initFrameRef.current = null;
-      initializeMap();
+      return marker;
     });
 
     return () => {
-      cancelled = true;
-      resizeObserver?.disconnect();
-      if (initFrameRef.current !== null) {
-        window.cancelAnimationFrame(initFrameRef.current);
-        initFrameRef.current = null;
+      if (invalidateFrameRef.current !== null) {
+        window.cancelAnimationFrame(invalidateFrameRef.current);
+        invalidateFrameRef.current = null;
       }
-      if (initTimeoutRef.current !== null) {
-        window.clearTimeout(initTimeoutRef.current);
-        initTimeoutRef.current = null;
-      }
-      clearPendingInvalidate();
       markerRefs.current.forEach((marker) => marker.remove());
       markerRefs.current = [];
-      layerRef.current?.remove();
-      layerRef.current = null;
-      tileLayersRef.current = null;
-      mapRef.current?.remove();
       mapRef.current = null;
     };
-  }, [mapHostEl, retryToken]);
+  }, []);
+
+  const resizeCoordinateMap = useCallback((map: L.Map) => {
+    const latLngs = pointsRef.current.map(({ lat, lng }): [number, number] => [lat, lng]);
+    if (latLngs.length > 1) {
+      map.fitBounds(L.latLngBounds(latLngs), {
+        animate: false,
+        maxZoom: PREVIEW_MAX_ZOOM,
+        padding: PREVIEW_BOUNDS_PADDING,
+      });
+    }
+  }, []);
 
   const point = points[activeIndex] ?? points[0];
   if (point == null) {
@@ -574,93 +428,13 @@ function CoordinateMapPreview({
   };
 
   return (
-    <Box
-      sx={{
-        position: 'relative',
-        flex: 1,
-        minHeight: 0,
-        overflow: 'hidden',
-        borderRadius: 0,
-        backgroundColor: 'background.paper',
-        ...getAttachmentPreviewStageSx(),
-      }}
+    <MessageCardMapPreview
+      baseLayerId={baseLayerId}
+      className="coordinate-fullscreen-map"
+      dataAttributes={{ 'data-coordinate-marker-count': points.length }}
+      onMapReady={initializeCoordinateMap}
+      onMapResize={resizeCoordinateMap}
     >
-      <Box
-        ref={setMapHostEl}
-        className="coordinate-fullscreen-map"
-        data-coordinate-marker-count={mapInitState === 'ready' ? points.length : 0}
-        sx={{
-          position: 'absolute',
-          inset: 0,
-          '& .leaflet-container': {
-            width: '100%',
-            height: '100%',
-          },
-        }}
-      />
-      {mapInitState === 'ready' ? null : (
-        <Box
-          sx={{
-            position: 'absolute',
-            inset: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            pointerEvents: 'auto',
-            backgroundColor: 'rgba(10, 13, 18, 0.08)',
-            zIndex: 1,
-          }}
-        >
-          {mapInitState === 'loading' ? (
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1,
-                px: 1.5,
-                py: 1,
-                borderRadius: 999,
-                bgcolor: panelBackground,
-                color: 'text.primary',
-              }}
-            >
-              <CircularProgress size={18} color="inherit" />
-              <Typography variant="caption" sx={{ fontWeight: 700 }}>
-                Завантаження мапи…
-              </Typography>
-            </Box>
-          ) : (
-            <Box
-              sx={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: 1.25,
-                px: 2,
-                py: 1.5,
-                borderRadius: 2,
-                bgcolor: panelBackground,
-                color: 'text.primary',
-              }}
-            >
-              <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                Не вдалося відкрити мапу
-              </Typography>
-              <Button
-                aria-label="Повторити"
-                size="small"
-                variant="contained"
-                onClick={() => {
-                  setMapInitState('loading');
-                  setRetryToken((value) => value + 1);
-                }}
-              >
-                Повторити
-              </Button>
-            </Box>
-          )}
-        </Box>
-      )}
       <Box
         sx={{
           position: 'absolute',
@@ -809,7 +583,7 @@ function CoordinateMapPreview({
           ) : null}
         </Box>
       </Box>
-    </Box>
+    </MessageCardMapPreview>
   );
 }
 

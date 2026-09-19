@@ -576,6 +576,7 @@ export function MessageMediaThumbnailDownloadLink({
   displayName,
   downloadName,
   downloadKey,
+  downloadLabel,
   isDownloadStarting,
   onDownloadStart,
 }: {
@@ -583,11 +584,12 @@ export function MessageMediaThumbnailDownloadLink({
   displayName: string;
   downloadName: string;
   downloadKey: string;
+  downloadLabel?: string;
 } & MessageCardDownloadGuardProps) {
   if (href.trim() === '') return null;
 
   const downloading = isDownloadStarting(downloadKey);
-  const label = `Завантажити вкладення: ${displayName}`;
+  const label = downloadLabel ?? `Завантажити вкладення: ${displayName}`;
   return (
     <Tooltip title={label} enterDelay={400} disableInteractive>
       <MessageCardDisabledControlCursorWrapper

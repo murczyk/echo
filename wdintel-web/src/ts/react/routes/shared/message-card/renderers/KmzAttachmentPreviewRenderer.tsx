@@ -1,13 +1,5 @@
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
-import {
-  Box,
-  Button,
-  CircularProgress,
-  IconButton,
-  Stack,
-  Tooltip,
-  Typography,
-} from '@mui/material';
+import { Box, Button, CircularProgress, Stack, Tooltip, Typography } from '@mui/material';
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 
 import type {
@@ -22,6 +14,8 @@ import {
   kmzAttachmentConversionDownloadUrl,
 } from '../../../../services/api/kmz-attachment-conversion';
 import { isAbortError } from '../../../../services/api/client';
+import { BaseLayerId, DEFAULT_BASE_LAYER_ID } from '../../../../../maps/base-layers';
+import { CoordinateMapPreviewControls } from '../CoordinateMapPreviewControls';
 import { KmzAttachmentPreviewMap } from '../KmzAttachmentPreviewMap';
 import {
   guardMessageCardDownloadClick,
@@ -50,6 +44,7 @@ function DownloadAction({
   fileName,
   fallbackFileName,
   label,
+  variant,
   downloadKey,
   disabled,
   isDownloadStarting,
@@ -59,6 +54,7 @@ function DownloadAction({
   fileName: string;
   fallbackFileName: string;
   label: string;
+  variant: 'outlined' | 'contained';
   downloadKey: string;
   disabled: boolean;
 } & Partial<MessageCardDownloadGuardProps>) {
@@ -77,7 +73,7 @@ function DownloadAction({
   return (
     <Tooltip title={downloading ? 'Завантаження…' : label} enterDelay={300}>
       <span>
-        <IconButton
+        <Button
           component="a"
           href={unavailable ? undefined : href}
           download={mediaDownloadAttr(fileName, fallbackFileName)}
@@ -88,10 +84,14 @@ function DownloadAction({
           aria-busy={downloading}
           onClick={startDownload}
           size="small"
-          sx={{ color: 'text.secondary' }}
+          variant={variant}
+          startIcon={
+            downloading ? <CircularProgress size={16} color="inherit" /> : <DownloadOutlinedIcon />
+          }
+          sx={{ textTransform: 'none', whiteSpace: 'nowrap' }}
         >
-          {downloading ? <CircularProgress size={16} color="inherit" /> : <DownloadOutlinedIcon />}
-        </IconButton>
+          {label}
+        </Button>
       </span>
     </Tooltip>
   );
@@ -115,6 +115,7 @@ export function KmzAttachmentPreviewRenderer({
   const [convertedFileName, setConvertedFileName] = useState<string | null>(null);
   const [preview, setPreview] = useState<SignalMediaKmzPreviewRsp | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [baseLayerId, setBaseLayerId] = useState<BaseLayerId>(DEFAULT_BASE_LAYER_ID);
 
   useEffect(() => {
     notifyRef.current = notify;
@@ -177,7 +178,7 @@ export function KmzAttachmentPreviewRenderer({
   const convertedReady = status === 'done';
   const stage =
     preview && hasPreviewGeometry(preview) ? (
-      <KmzAttachmentPreviewMap preview={preview} fill />
+      <KmzAttachmentPreviewMap preview={preview} baseLayerId={baseLayerId} />
     ) : (
       <Box
         sx={{
@@ -228,6 +229,7 @@ export function KmzAttachmentPreviewRenderer({
                 fileName={source.fileName}
                 fallbackFileName="attachment"
                 label="Завантажити оригінал"
+                variant="outlined"
                 downloadKey={`media:${source.mediaId}`}
                 disabled={source.originalHref === ''}
                 isDownloadStarting={isDownloadStarting}
@@ -240,6 +242,7 @@ export function KmzAttachmentPreviewRenderer({
                 fileName={convertedFileName ?? 'converted.kmz'}
                 fallbackFileName="converted.kmz"
                 label="Завантажити конвертований KMZ"
+                variant="contained"
                 downloadKey={`media-converted:${source.mediaId}`}
                 disabled={!convertedReady}
                 isDownloadStarting={isDownloadStarting}
@@ -250,6 +253,14 @@ export function KmzAttachmentPreviewRenderer({
         />
       }
       stage={stage}
+      controls={
+        preview && hasPreviewGeometry(preview) ? (
+          <CoordinateMapPreviewControls
+            baseLayerId={baseLayerId}
+            onBaseLayerChange={setBaseLayerId}
+          />
+        ) : undefined
+      }
     />
   );
 }
