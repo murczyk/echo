@@ -540,7 +540,7 @@ mod tests {
         intercepted_at: NaiveDateTime,
     ) -> i64 {
         sigint_callsign::ActiveModel {
-            callsign: Set("Iggy\u{2011}Test\u{2011}Callsign".to_string()),
+            callsign: Set("Iggy\u{2011}Test Callsign".to_string()),
             position: Set(String::new()),
             comment: Set(String::new()),
             unit_id: Set(unit_id),

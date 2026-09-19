@@ -476,17 +476,28 @@ pub(crate) fn callsign_match_key(callsign: &str) -> String {
 pub(crate) fn callsign_query_variants(callsign: &str) -> Vec<String> {
     let key = callsign_match_key(callsign);
     let original = callsign.trim().to_lowercase();
-    RER_CALLSIGN_QUERY_SEPARATOR_VARIANTS
-        .iter()
-        .map(|separator| key.replace('-', &separator.to_string()))
-        .chain([original])
-        .filter(|callsign| !callsign.is_empty())
-        .fold(Vec::new(), |mut callsigns, callsign| {
-            if !callsigns.contains(&callsign) {
-                callsigns.push(callsign);
-            }
-            callsigns
-        })
+    let mut parts = key.split('-');
+    let mut variants = vec![parts.next().unwrap_or_default().to_string()];
+    for part in parts {
+        variants = variants
+            .into_iter()
+            .flat_map(|variant| {
+                RER_CALLSIGN_QUERY_SEPARATOR_VARIANTS.iter().map(
+                    move |separator| {
+                        let mut variant = variant.clone();
+                        variant.push(*separator);
+                        variant.push_str(part);
+                        variant
+                    },
+                )
+            })
+            .collect();
+    }
+    variants.retain(|callsign| !callsign.is_empty());
+    if !original.is_empty() && !variants.contains(&original) {
+        variants.push(original);
+    }
+    variants
 }
 
 fn callsign_form_token_len(callsign: &str) -> usize {

@@ -837,15 +837,15 @@ mod tests {
     }
 
     #[test]
-    fn prepares_space_and_hyphen_callsign_query_variants() {
-        let requests = vec![request("САКСОФОН КОНТРОЛЬ", vec![])];
+    fn prepares_mixed_callsign_query_separator_variants() {
+        let requests = vec![request("IGGY-TEST-CALLSIGN", vec![])];
         let requested_callsigns = requested_callsigns(&requests);
 
-        assert_eq!(requests[0].normalized_callsign, "саксофон-контроль");
-        assert!(requested_callsigns.contains(&"саксофон-контроль".to_string()));
-        assert!(requested_callsigns.contains(&"саксофон контроль".to_string()));
+        assert_eq!(requests[0].normalized_callsign, "iggy-test-callsign");
+        assert!(requested_callsigns.contains(&"iggy-test-callsign".to_string()));
+        assert!(requested_callsigns.contains(&"iggy test callsign".to_string()));
         assert!(requested_callsigns
-            .contains(&"саксофон\u{2011}контроль".to_string()));
+            .contains(&"iggy\u{2011}test callsign".to_string()));
     }
 
     #[test]
