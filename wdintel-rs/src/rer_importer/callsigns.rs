@@ -459,6 +459,13 @@ fn is_callsign_separator(char_: char) -> bool {
     RER_CALLSIGN_QUERY_SEPARATOR_VARIANTS.contains(&char_)
 }
 
+fn is_callsign_line_break(char_: char) -> bool {
+    matches!(
+        char_,
+        '\n' | '\u{b}' | '\u{c}' | '\r' | '\u{85}' | '\u{2028}' | '\u{2029}'
+    )
+}
+
 pub(crate) fn callsign_match_key(callsign: &str) -> String {
     let mut key = String::new();
     let mut pending_separator = false;
@@ -520,7 +527,7 @@ fn highlight_callsign_token_windows(
     let token_keys = tokens
         .iter()
         .map(|token| {
-            (!token.text.chars().any(|char_| matches!(char_, '\n' | '\r')))
+            (!token.text.chars().any(is_callsign_line_break))
                 .then(|| callsign_match_key(&token.text))
         })
         .collect::<Vec<_>>();
@@ -3356,35 +3363,44 @@ mod tests {
     fn does_not_highlight_callsign_token_windows_across_lines() {
         use crate::nlp::types::WordToken;
 
-        let body = "САКСОФОН\nКОНТРОЛЬ";
-        let tokens = vec![
-            WordToken {
-                text: "САКСОФОН".to_string(),
-                start: 0,
-                end: 8,
-            },
-            WordToken {
-                text: "\n".to_string(),
-                start: 8,
-                end: 9,
-            },
-            WordToken {
-                text: "КОНТРОЛЬ".to_string(),
-                start: 9,
-                end: 17,
-            },
-        ];
         let callsign_forms = BTreeMap::from([(
             callsign_match_key("саксофон-контроль"),
             "саксофон-контроль".to_string(),
         )]);
 
-        assert!(highlight_callsign_token_windows(
-            body,
-            &tokens,
-            &callsign_forms
-        )
-        .is_empty());
+        for line_break in [
+            '\n', '\u{b}', '\u{c}', '\r', '\u{85}', '\u{2028}', '\u{2029}',
+        ] {
+            let body = format!("САКСОФОН{line_break}КОНТРОЛЬ");
+            let tokens = vec![
+                WordToken {
+                    text: "САКСОФОН".to_string(),
+                    start: 0,
+                    end: 8,
+                },
+                WordToken {
+                    text: line_break.to_string(),
+                    start: 8,
+                    end: 9,
+                },
+                WordToken {
+                    text: "КОНТРОЛЬ".to_string(),
+                    start: 9,
+                    end: 17,
+                },
+            ];
+
+            assert!(
+                highlight_callsign_token_windows(
+                    &body,
+                    &tokens,
+                    &callsign_forms
+                )
+                .is_empty(),
+                "matched across U+{:04X}",
+                line_break as u32
+            );
+        }
     }
 
     //     #[tokio::test]
