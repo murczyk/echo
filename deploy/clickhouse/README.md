@@ -1228,3 +1228,10 @@ directory alone does not remove it. Verify service health and fresh data;
 `--check` will report intentional drift. Expired or truncated rows cannot be
 recovered by a configuration rollback. Do not recreate dropped expired
 archives. Application data and ZFS snapshots are unaffected.
+
+### Callsign feedback operational tables
+
+Callsign removal feedback, overrides, action deduplication and re-parsing queues are
+excluded from replication. Deployment synchronizes these exclusions before the
+additive migration; no existing replicated table is changed or backfilled. See
+[the storage and query measurements](../../docs/CALLSIGN_FEEDBACK.md).

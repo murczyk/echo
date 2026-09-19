@@ -175,15 +175,15 @@
 - **User role or permission:** users permitted to view and download the message attachment
 - **Preconditions:** an attachment has a KMZ conversion job and an original download URL
 - **User action or external event:** open the attachment after conversion is pending or complete
-- **Expected observable result:** the component resolves conversion status, loads the converted preview, and presents original and converted downloads before the map preview with their respective filenames
+- **Expected observable result:** the component resolves conversion status, loads the converted preview, and presents original and converted downloads with their respective filenames. When a parent attachment carousel is available, the KMZ preview opens inside that shared carousel instead of mounting a second dialog. A completed conversion for a non-KMZ source contributes the original and converted artifacts to archive eligibility; pending, failed, or already-KMZ sources do not fabricate a second downloadable artifact.
 - **Loading/empty/error/success behavior:** pending conversion remains pending until status resolves; preview or conversion failures remain explicit instead of presenting a fabricated map
 - **URL, localStorage, or user-settings persistence:** none
 - **API endpoint and compatibility requirements:** status, preview, and converted-download requests retain the media ID; the original download retains its original URL
-- **Responsive and keyboard requirements:** the attachment trigger and both download links remain keyboard reachable
+- **Responsive and keyboard requirements:** the attachment trigger and both download links remain keyboard reachable; arrow keys focused inside the Leaflet map remain map input and do not navigate the attachment carousel.
 - **Known race/idempotency constraints:** closing or replacing the attachment aborts stale status and preview requests
 - **Source implementation:** `wdintel-web/src/ts/react/routes/shared/message-card/KmzAttachmentPreviewLink.tsx`, `wdintel-web/src/ts/react/routes/shared/message-card/KmzAttachmentPreviewMap.tsx`
-- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
-- **Original Echo issue/PR, if known:** none recorded
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/attachment-preview/__tests__/MessageCardAttachmentPreviewProvider.spec.tsx`, `wdintel-web/src/ts/react/routes/shared/message-card/attachment-preview/__tests__/MessageCardAttachmentPreviewDialog.spec.tsx`, `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx`
+- **Original Echo issue/PR, if known:** [#3521](https://github.com/echoua/echo/issues/3521), [#3540](https://github.com/echoua/echo/pull/3540)
 
 ## Manage Message draft and coordinate safeguards
 

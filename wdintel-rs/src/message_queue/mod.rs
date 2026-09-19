@@ -316,8 +316,15 @@ async fn store_kept_duplicate_trace_media(
     {
         return Ok(vec![]);
     }
-    store_queue_media(txn, signal_message_id, signal_message_uuid, staged_media)
-        .await
+    persist_queue_media(
+        txn,
+        signal_message_id,
+        signal_message_uuid,
+        staged_media,
+    )
+    .await
+    .context(h!())?;
+    Ok(vec![])
 }
 
 async fn store_queue_media(
@@ -326,8 +333,33 @@ async fn store_queue_media(
     signal_message_uuid: Option<Uuid>,
     staged_media: &StagedMediaAttachments,
 ) -> Result<Vec<MediaUploadInput>, AppError> {
+    let media = persist_queue_media(
+        txn,
+        signal_message_id,
+        signal_message_uuid,
+        staged_media,
+    )
+    .await
+    .c(h!())?;
+    crate::sigint::media_conversion::schedule_uploaded_media(
+        txn,
+        signal_message_id,
+        &media,
+        &staged_media.stored_uploads(),
+    )
+    .await
+    .c(h!())?;
+    Ok(vec![])
+}
+
+async fn persist_queue_media(
+    txn: &DatabaseTransaction,
+    signal_message_id: i64,
+    signal_message_uuid: Option<Uuid>,
+    staged_media: &StagedMediaAttachments,
+) -> Result<Vec<signal_message_media::Model>, AppError> {
     // Recovery wraps this error in a rollback because media may carry critical context.
-    crate::messenger::media::persist_staged_media(
+    let media = crate::messenger::media::persist_staged_media(
         staged_media,
         signal_message_id,
         signal_message_uuid,
@@ -342,7 +374,7 @@ async fn store_queue_media(
     )
     .await
     .c(h!())?;
-    Ok(vec![])
+    Ok(media)
 }
 
 pub async fn stage_queue_media(
@@ -417,6 +449,7 @@ fn queue_media_deletion(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use md5::{Digest, Md5};
     use opendal::{services::Memory, Operator};
 
     fn memory_s3_config(config: &mut Config) {
@@ -497,6 +530,69 @@ mod tests {
 
         assert_eq!(staged_media.len(), 1);
         assert_eq!(staged_media.uploaded_object_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn queue_ingestion_enqueues_stored_geodata_before_commit() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let message = crate::functest::tests::mk_signal_message(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("queue-route.gpx");
+        let payload = b"queue geodata";
+        tokio::fs::write(&path, payload).await.unwrap();
+        let mut config = env.config.clone();
+        config.feature_delete_uploaded_attachment = Some(true);
+        memory_s3_config(&mut config);
+        let s3 = Some(Operator::new(Memory::default()).unwrap().finish());
+        let staged_media = stage_queue_media(
+            &[MessageAttachmentF1 {
+                path: path.display().to_string(),
+                name: Some("queue-route.gpx".into()),
+            }],
+            &config,
+            &s3,
+        )
+        .await
+        .unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+
+        store_queue_media(&txn, message.id, message.id_uuid, &staged_media)
+            .await
+            .unwrap();
+
+        let media = signal_message_media::Entity::find()
+            .filter(
+                signal_message_media::Column::SignalMessageId.eq(message.id),
+            )
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        let job = signal_message_media_conversion_job::Entity::find()
+            .filter(
+                signal_message_media_conversion_job::Column::SourceMediaId
+                    .eq(media.id),
+            )
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(job.signal_message_id, message.id);
+        assert_eq!(job.source_file_name, "queue-route.gpx");
+        assert_eq!(job.source_file_md5, format!("{:x}", Md5::digest(payload)));
+        assert_eq!(job.status, SIGINT_MEDIA_CONVERSION_STATUS_PENDING);
+
+        txn.commit().await.unwrap();
+        staged_media
+            .finalize_after_commit(&config, &s3, &env.dbx)
+            .await;
+        assert!(!path.exists());
     }
 
     #[tokio::test]

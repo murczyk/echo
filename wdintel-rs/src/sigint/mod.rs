@@ -762,6 +762,14 @@ pub async fn save_attachment_restapi(
             )
             .await
             .c(h!())?;
+            crate::sigint::media_conversion::schedule_uploaded_media(
+                &txn,
+                db_message_id,
+                &upload_result.media,
+                &upload_result.stored_uploads,
+            )
+            .await
+            .c(h!())?;
             crate::transcriber::media_queue::reconcile_message(
                 &txn,
                 db_message_id,

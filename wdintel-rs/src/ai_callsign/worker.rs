@@ -1,10 +1,8 @@
-use super::{effective_prompt, parse_callsigns};
-use crate::ai_engine::{request_ai_response, AiEngineMessage};
+use super::effective_prompt;
 use crate::config::{
     AI_CALLSIGN_SETTINGS_ID, AI_CALLSIGN_WORKER_IDLE_SLEEP_MS,
     AI_CALLSIGN_WORKER_MAX_ATTEMPTS, AI_CALLSIGN_WORKER_MAX_ERROR_CHARS,
     AI_CALLSIGN_WORKER_RETRY_BASE_SECS, AI_CALLSIGN_WORKER_RETRY_MAX_SECS,
-    AI_CHAT_ROLE_SYSTEM, AI_CHAT_ROLE_USER,
 };
 use crate::entities::{
     ai_callsign_settings, ai_callsign_worker_job, ai_engine, sigint_inbox_item,
@@ -19,11 +17,9 @@ use crate::utils::worker_watch;
 use anyhow::Context;
 use chrono::{Duration as ChronoDuration, Utc};
 use sea_orm::{
-    ActiveModelTrait,
-    ActiveValue::{NotSet, Set},
-    ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
-    EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, QuerySelect,
-    TransactionTrait,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
+    DatabaseConnection, DatabaseTransaction, EntityTrait, IntoActiveModel,
+    QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
 };
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -69,24 +65,74 @@ where
     if !enabled {
         return Ok(());
     }
-    ai_callsign_worker_job::Entity::insert(
-        ai_callsign_worker_job::ActiveModel {
-            sigint_inbox_item_id: Set(sigint_inbox_item_id),
-            sigint_inbox_item_uuid: Set(sigint_inbox_item_uuid),
-            attempts: NotSet,
-            next_attempt_at: NotSet,
-            last_error: NotSet,
-            created_at: NotSet,
-        },
-    )
-    .on_conflict_do_nothing()
-    .exec(dbx)
-    .await
-    .c(h!())?;
+    dbx.execute_raw(super::feedback::sql(
+        "insert into ai_callsign_worker_job (sigint_inbox_item_id, sigint_inbox_item_uuid) values ($1, $2) on conflict (sigint_inbox_item_id) do update set created_at = greatest(now() at time zone 'utc', ai_callsign_worker_job.created_at + interval '1 microsecond'), attempts = 0, next_attempt_at = now() at time zone 'utc', last_error = null",
+        vec![sigint_inbox_item_id.into(), sigint_inbox_item_uuid.into()],
+    )).await.c(h!())?;
     Ok(())
 }
 
 pub async fn run_nofail(env: Arc<Env>, cancellation_token: CancellationToken) {
+    loop {
+        if cancellation_token.is_cancelled() {
+            break;
+        }
+        if let Err(error) = run_leased(&env, &cancellation_token).await {
+            error!("ai_callsign_worker lease failed: {error:#}");
+        }
+        tokio::select! {
+            _ = cancellation_token.cancelled() => break,
+            _ = tokio::time::sleep(Duration::from_secs(crate::config::AI_CALLSIGN_WORKER_LEASE_SECS)) => {}
+        }
+    }
+}
+
+async fn run_leased(
+    env: &Arc<Env>,
+    cancellation: &CancellationToken,
+) -> anyhow::Result<()> {
+    let mut connection = env
+        .dbx
+        .get_postgres_connection_pool()
+        .acquire()
+        .await
+        .c(h!())?;
+    connection.close_on_drop();
+    let acquired: bool = sqlx::query_scalar("select pg_try_advisory_lock($1)")
+        .bind(crate::config::AI_CALLSIGN_WORKER_LOCK)
+        .fetch_one(&mut *connection)
+        .await
+        .c(h!())?;
+    if !acquired {
+        return Ok(());
+    }
+    let heartbeat = async {
+        loop {
+            tokio::time::sleep(Duration::from_secs(
+                crate::config::AI_CALLSIGN_WORKER_LEASE_SECS,
+            ))
+            .await;
+            tokio::time::timeout(
+                Duration::from_secs(
+                    crate::config::AI_CALLSIGN_WORKER_LEASE_SECS,
+                ),
+                sqlx::query("select 1").execute(&mut *connection),
+            )
+            .await
+            .c(h!())?
+            .c(h!())?;
+        }
+        #[allow(unreachable_code)]
+        Ok::<(), anyhow::Error>(())
+    };
+    tokio::select! {
+        _ = cancellation.cancelled() => Ok(()),
+        result = heartbeat => result,
+        _ = run_owned(env.clone(), cancellation.clone()) => Ok(())
+    }
+}
+
+async fn run_owned(env: Arc<Env>, cancellation_token: CancellationToken) {
     let mut redis = env.redis.clone();
     info!("ai_callsign_worker started");
     loop {
@@ -103,7 +149,14 @@ pub async fn run_nofail(env: Arc<Env>, cancellation_token: CancellationToken) {
                 false
             }
         };
-        if processed {
+        let reprocessed = match super::reparse::tick(&env).await {
+            Ok(processed) => processed,
+            Err(error) => {
+                error!("ai_callsign_reparse failed: {error:#}");
+                false
+            }
+        };
+        if processed || reprocessed {
             continue;
         }
         tokio::select! {
@@ -120,10 +173,10 @@ async fn process_next(
     rq: &reqwest::Client,
     redis: &mut redis::aio::ConnectionManager,
 ) -> Result<bool, AppError> {
-    let Some(config) = load_worker_config(dbx).await? else {
+    let Some(config) = load_worker_config(dbx).await.c(h!())? else {
         return Ok(false);
     };
-    let Some(job) = load_next_job(dbx).await? else {
+    let Some(job) = load_next_job(dbx).await.c(h!())? else {
         return Ok(false);
     };
     let message = signal_message::Entity::find_by_id(job.sigint_inbox_item_id)
@@ -132,39 +185,29 @@ async fn process_next(
         .await
         .c(h!())?;
     let Some(message) = message else {
-        delete_job(dbx, job.sigint_inbox_item_id).await?;
+        delete_job(dbx, job.sigint_inbox_item_id, job.created_at)
+            .await
+            .c(h!())?;
         return Ok(true);
     };
+    let is_aviation_group =
+        crate::inbox::message_is_aviation_group(dbx, &message)
+            .await
+            .c(h!())?;
     let body = message.body.unwrap_or_default();
-    let response = request_ai_response(
+    let callsigns = match super::parse_with_feedback(
+        dbx,
+        rq,
         &config.ai_engine,
-        vec![
-            AiEngineMessage {
-                role: AI_CHAT_ROLE_SYSTEM.to_string(),
-                content: config.prompt,
-            },
-            AiEngineMessage {
-                role: AI_CHAT_ROLE_USER.to_string(),
-                content: body.clone(),
-            },
-        ],
+        &config.prompt,
+        &body,
+        is_aviation_group,
     )
-    .await;
-    let callsigns = match response {
-        Ok(response_text) => match parse_callsigns(&response_text) {
-            Ok(callsigns) => callsigns,
-            Err(error) => {
-                fail_job(
-                    dbx,
-                    job,
-                    format!("{error}; відповідь ШІ: {response_text}"),
-                )
-                .await?;
-                return Ok(true);
-            }
-        },
+    .await
+    {
+        Ok(callsigns) => callsigns,
         Err(error) => {
-            fail_job(dbx, job, error.to_string()).await?;
+            fail_job(dbx, job, error.to_string()).await.c(h!())?;
             return Ok(true);
         }
     };
@@ -175,6 +218,7 @@ async fn process_next(
         job.sigint_inbox_item_id,
         &body,
         ai_callsigns,
+        None,
     )
     .await
     {
@@ -184,6 +228,9 @@ async fn process_next(
             return Ok(true);
         }
     };
+    delete_job(dbx, job.sigint_inbox_item_id, job.created_at)
+        .await
+        .c(h!())?;
     if changed {
         if let Err(error) = fanout_mult(
             redis,
@@ -250,54 +297,63 @@ async fn load_next_job(
         .c(h!())?)
 }
 
-async fn complete_job(
+pub(crate) async fn complete_job(
     dbx: &DatabaseConnection,
     rq: &reqwest::Client,
     sigint_inbox_item_id: i64,
     body: &str,
     ai_callsigns: Vec<String>,
-) -> Result<bool, AppError> {
-    let transaction = dbx.begin().await.c(h!())?;
-    let Some(state) =
-        lock_callsign_job_state(&transaction, sigint_inbox_item_id)
-            .await
-            .context(h!())?
-    else {
-        delete_job(&transaction, sigint_inbox_item_id)
-            .await
-            .context(h!())?;
-        transaction.commit().await.c(h!())?;
-        return Ok(false);
-    };
-    transaction.commit().await.c(h!())?;
-
-    let mut highlighted =
-        highlight_callsigns(rq, body, state.current, &ai_callsigns)
-            .await
-            .context(h!())?;
+    run_id: Option<Uuid>,
+) -> anyhow::Result<bool> {
+    let desired = super::feedback::apply_overrides(
+        dbx,
+        sigint_inbox_item_id,
+        ai_callsigns.clone(),
+    )
+    .await
+    .c(h!())?;
+    let mut highlighted = highlight_callsigns(rq, body, desired, &[])
+        .await
+        .context(h!())?;
     loop {
         let transaction = dbx.begin().await.c(h!())?;
+        if let Some(run_id) = run_id {
+            let active = transaction.query_one_raw(super::feedback::sql("select id from ai_callsign_reparse_run where id = $1 and state = 'running' for update", vec![run_id.into()])).await.c(h!())?;
+            if active.is_none() {
+                return Ok(false);
+            }
+        }
         let Some(state) =
             lock_callsign_job_state(&transaction, sigint_inbox_item_id)
                 .await
                 .context(h!())?
         else {
-            delete_job(&transaction, sigint_inbox_item_id)
-                .await
-                .context(h!())?;
             transaction.commit().await.c(h!())?;
             return Ok(false);
         };
-        let callsigns = merge_current_and_ai_callsigns(
-            state.current.clone(),
-            ai_callsigns.clone(),
+        let message = signal_message::Entity::find_by_id(sigint_inbox_item_id)
+            .lock_exclusive()
+            .one(&transaction)
+            .await
+            .c(h!())?
+            .c(h!())?;
+        anyhow::ensure!(
+            !message.deleted
+                && message.body.as_deref().unwrap_or_default() == body,
+            "Message changed during callsign parsing"
         );
+        let callsigns = super::feedback::apply_overrides(
+            &transaction,
+            sigint_inbox_item_id,
+            ai_callsigns.clone(),
+        )
+        .await
+        .c(h!())?;
         if callsigns != highlighted.callsigns {
             transaction.commit().await.c(h!())?;
-            highlighted =
-                highlight_callsigns(rq, body, state.current, &ai_callsigns)
-                    .await
-                    .context(h!())?;
+            highlighted = highlight_callsigns(rq, body, callsigns, &[])
+                .await
+                .context(h!())?;
             continue;
         }
         let changed = save_completed_job(
@@ -308,9 +364,16 @@ async fn complete_job(
         )
         .await
         .context(h!())?;
-        delete_job(&transaction, sigint_inbox_item_id)
+        if let Some(run_id) = run_id {
+            super::reparse::record_success(
+                &transaction,
+                run_id,
+                sigint_inbox_item_id,
+                if changed { "changed" } else { "unchanged" },
+            )
             .await
-            .context(h!())?;
+            .c(h!())?;
+        }
         transaction.commit().await.c(h!())?;
         return Ok(changed);
     }
@@ -402,6 +465,20 @@ async fn save_completed_job(
         )
         .await
         .c(h!())?;
+        let inbox_item =
+            sigint_inbox_item::Entity::find_by_id(sigint_inbox_item_id)
+                .one(transaction)
+                .await
+                .c(h!())?
+                .c(h!())?;
+        crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(vec![inbox_item], transaction).await.c(h!())?;
+        crate::stats::enqueue_group_stats_recalculation_for_message(
+            transaction,
+            sigint_inbox_item_id,
+            format!("callsign feedback update {sigint_inbox_item_id}"),
+        )
+        .await
+        .c(h!())?;
     }
     Ok(changed)
 }
@@ -418,26 +495,29 @@ async fn fail_job(
             "ai_callsign_worker dropped message_id={} after {} attempts: {}",
             job.sigint_inbox_item_id, attempts, error_text
         );
-        delete_job(dbx, job.sigint_inbox_item_id).await?;
+        delete_job(dbx, job.sigint_inbox_item_id, job.created_at)
+            .await
+            .c(h!())?;
         return Ok(());
     }
-    let mut job = job.into_active_model();
-    job.attempts = Set(attempts);
-    job.next_attempt_at = Set(Utc::now().naive_utc()
-        + ChronoDuration::seconds(retry_delay_secs(attempts)));
-    job.last_error = Set(Some(error_text));
-    job.update(dbx).await.c(h!())?;
+    dbx.execute_raw(super::feedback::sql("update ai_callsign_worker_job set attempts = $3, next_attempt_at = $4, last_error = $5 where sigint_inbox_item_id = $1 and created_at = $2", vec![job.sigint_inbox_item_id.into(), job.created_at.into(), attempts.into(), (Utc::now().naive_utc() + ChronoDuration::seconds(retry_delay_secs(attempts))).into(), error_text.into()])).await.c(h!())?;
     Ok(())
 }
 
 async fn delete_job<C>(
     dbx: &C,
     sigint_inbox_item_id: i64,
+    created_at: chrono::NaiveDateTime,
 ) -> Result<(), AppError>
 where
     C: ConnectionTrait,
 {
-    ai_callsign_worker_job::Entity::delete_by_id(sigint_inbox_item_id)
+    ai_callsign_worker_job::Entity::delete_many()
+        .filter(
+            ai_callsign_worker_job::Column::SigintInboxItemId
+                .eq(sigint_inbox_item_id),
+        )
+        .filter(ai_callsign_worker_job::Column::CreatedAt.eq(created_at))
         .exec(dbx)
         .await
         .c(h!())?;
@@ -465,7 +545,7 @@ pub(crate) fn merge_current_and_ai_callsigns(
     )
 }
 
-fn retry_delay_secs(attempts: i32) -> i64 {
+pub(crate) fn retry_delay_secs(attempts: i32) -> i64 {
     let exponent = u32::try_from(attempts.saturating_sub(1)).unwrap_or(0);
     AI_CALLSIGN_WORKER_RETRY_BASE_SECS
         .saturating_mul(2_i64.saturating_pow(exponent))
@@ -514,5 +594,47 @@ mod tests {
         assert_eq!(retry_delay_secs(1), 5);
         assert_eq!(retry_delay_secs(2), 10);
         assert_eq!(retry_delay_secs(20), 300);
+    }
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn stale_completion_and_failure_do_not_consume_reenqueued_work() {
+        use super::*;
+        use crate::ai_callsign::feedback::sql;
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let item = crate::functest::tests::mk_sigint_inbox_item(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let engine_id = Uuid::new_v4();
+        env.dbx.execute_raw(sql("insert into ai_engine (id, name, url, model_name) values ($1, $2, 'http://127.0.0.1:1', 'fixture')", vec![engine_id.into(), engine_id.to_string().into()])).await.unwrap();
+        env.dbx.execute_raw(sql("insert into ai_callsign_settings (id, prompt, worker_enabled, worker_ai_engine_id) values (1, '', true, $1) on conflict (id) do update set worker_enabled = true, worker_ai_engine_id = $1", vec![engine_id.into()])).await.unwrap();
+        enqueue_if_enabled(&env.dbx, item.id, item.id_uuid)
+            .await
+            .unwrap();
+        let old = load_next_job(&env.dbx).await.unwrap().unwrap();
+        enqueue_if_enabled(&env.dbx, item.id, item.id_uuid)
+            .await
+            .unwrap();
+        let new = load_next_job(&env.dbx).await.unwrap().unwrap();
+        assert!(new.created_at > old.created_at);
+        delete_job(&env.dbx, old.sigint_inbox_item_id, old.created_at)
+            .await
+            .unwrap();
+        fail_job(&env.dbx, old, "stale failure".into())
+            .await
+            .unwrap();
+        let pending = load_next_job(&env.dbx).await.unwrap().unwrap();
+        assert_eq!(pending.created_at, new.created_at);
+        assert_eq!(pending.attempts, 0);
+        delete_job(&env.dbx, new.sigint_inbox_item_id, new.created_at)
+            .await
+            .unwrap();
+        assert!(load_next_job(&env.dbx).await.unwrap().is_none());
+        ai_engine::Entity::delete_by_id(engine_id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
     }
 }

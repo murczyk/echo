@@ -59,3 +59,45 @@ export function saveAiCallsignWorkerSettings(
 ): Promise<AiCallsignWorkerSettingsItem> {
   return postJson<AiCallsignWorkerSettingsItem>('/api/admin/ai-callsigns/worker/save', req);
 }
+
+export function listCallsignFeedback(req: import('../../../../Bindings').FeedbackListReq) {
+  return postJson<import('../../../../Bindings').FeedbackItem[]>(
+    '/api/admin/ai-callsigns/feedback/list',
+    req,
+  );
+}
+
+export function getCallsignFeedback(req: import('../../../../Bindings').FeedbackDetailsReq) {
+  return postJson<import('../../../../Bindings').FeedbackDetail[]>(
+    '/api/admin/ai-callsigns/feedback/details',
+    req,
+  );
+}
+
+export function getCallsignReparseRuns() {
+  return postJson<import('../../../../Bindings').ReparseStatus[]>(
+    '/api/admin/ai-callsigns/reparse/status',
+  );
+}
+
+export function startCallsignReparse(req: import('../../../../Bindings').ReparseStartReq) {
+  return postJson<import('../../../../Bindings').ReparseIdReq>(
+    '/api/admin/ai-callsigns/reparse/start',
+    req,
+  );
+}
+
+export function cancelCallsignReparse(req: import('../../../../Bindings').ReparseIdReq) {
+  return postVoid('/api/admin/ai-callsigns/reparse/cancel', req);
+}
+
+export function retryCallsignReparse(req: import('../../../../Bindings').ReparseIdReq) {
+  return postVoid('/api/admin/ai-callsigns/reparse/retry', req);
+}
+
+export function getCallsignReparseFailures(req: import('../../../../Bindings').ReparseIdReq) {
+  return postJson<import('../../../../Bindings').ReparseFailure[]>(
+    '/api/admin/ai-callsigns/reparse/failures',
+    req,
+  );
+}

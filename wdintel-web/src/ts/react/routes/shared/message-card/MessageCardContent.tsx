@@ -535,6 +535,9 @@ export function MessageCardMessageBody({
   const downloadAttachments = attachmentMedia.filter(
     (attachment) => !isAudioMediaAttachment(attachment) && !isVideoMediaAttachment(attachment),
   );
+  const kmzPreviewAttachments = downloadAttachments.filter(
+    (attachment) => attachment.kmzConversionStatus != null,
+  );
   const mediaAttachmentCount = images.length + videoAttachments.length;
   const documentAttachmentCount = documents.length + downloadAttachments.length;
   const hasMediaAttachments = mediaAttachmentCount > 0;
@@ -651,6 +654,15 @@ export function MessageCardMessageBody({
         type: 'document' as const,
         value: document,
       })),
+      ...kmzPreviewAttachments.map((attachment) => ({
+        type: 'kmz' as const,
+        value: {
+          mediaId: resolveMediaAttachmentId(attachment),
+          originalHref: String(attachment.href ?? ''),
+          fileName: mediaAttachmentDisplayName(attachment),
+          initialStatus: attachment.kmzConversionStatus ?? 'pending',
+        },
+      })),
       ...audioPreviewSources.map((audio) => ({ type: 'audio' as const, value: audio })),
       ...(coordinatePreviewPoints.length > 0
         ? [{ type: 'coordinate' as const, points: coordinatePreviewPoints }]
@@ -660,15 +672,15 @@ export function MessageCardMessageBody({
       audioPreviewSources,
       coordinatePreviewPoints,
       images,
+      kmzPreviewAttachments,
       previewableDocuments,
       videoPreviewSources,
     ],
   );
+  const kmzPreviewStartIndex =
+    images.length + videoPreviewSources.length + previewableDocuments.length;
   const coordinatePreviewStartIndex =
-    images.length +
-    videoPreviewSources.length +
-    previewableDocuments.length +
-    audioPreviewSources.length;
+    kmzPreviewStartIndex + kmzPreviewAttachments.length + audioPreviewSources.length;
 
   const showPointLinks = messageHasPalitraTag(msg, tagsMap);
   const hasCoordinateMapPreview = hasCoordinatePreviewCandidate(msg, tagsMap);
@@ -980,14 +992,19 @@ export function MessageCardMessageBody({
                 const selected =
                   selectedSummaryMediaIdentity != null &&
                   summaryAttachmentIdentity(attachment) === selectedSummaryMediaIdentity;
-                return attachment.kmzConversionStatus != null ? (
+                const kmzPreviewIndex = kmzPreviewAttachments.indexOf(attachment);
+                return kmzPreviewIndex >= 0 ? (
                   <KmzAttachmentPreviewLink
                     key={attachment.id}
                     mediaId={resolveMediaAttachmentId(attachment)}
                     originalHref={String(attachment.href ?? '')}
                     fileName={mediaAttachmentDisplayName(attachment)}
-                    initialStatus={attachment.kmzConversionStatus}
+                    initialStatus={attachment.kmzConversionStatus ?? 'pending'}
                     selected={selected}
+                    onPreview={() => {
+                      blurActiveElement();
+                      setAttachmentPreviewIndex(kmzPreviewStartIndex + kmzPreviewIndex);
+                    }}
                     isDownloadStarting={isDownloadStarting}
                     onDownloadStart={onDownloadStart}
                   />

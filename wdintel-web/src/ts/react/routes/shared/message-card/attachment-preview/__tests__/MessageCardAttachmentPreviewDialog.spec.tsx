@@ -81,6 +81,14 @@ vi.mock('../../renderers/DocumentAttachmentPreviewRenderer.tsx', () => ({
   ),
 }));
 
+vi.mock('../../renderers/KmzAttachmentPreviewRenderer.tsx', () => ({
+  KmzAttachmentPreviewRenderer: () => (
+    <div data-renderer="kmz">
+      <div className="leaflet-container" tabIndex={0} />
+    </div>
+  ),
+}));
+
 vi.mock('../../renderers/CoordinateAttachmentPreviewRenderer.tsx', () => ({
   CoordinateAttachmentPreviewRenderer: () => <div data-renderer="coordinate" />,
 }));
@@ -94,6 +102,16 @@ const items: MessageCardPreviewItem[] = [
     points: [{ source: 'direct', lat: 50.45, lng: 30.52, label: 'point' }],
   },
 ];
+
+const kmzItem: MessageCardPreviewItem = {
+  type: 'kmz',
+  value: {
+    mediaId: 'route',
+    originalHref: '/route.geojson',
+    fileName: 'route.geojson',
+    initialStatus: 'done',
+  },
+};
 
 // @test-scope safeguard: prevents editor Escape and attachment navigation from closing or replaying actions in the wrong preview session
 describe('MessageCardAttachmentPreviewDialog', () => {
@@ -202,6 +220,35 @@ describe('MessageCardAttachmentPreviewDialog', () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })),
     );
     expect(onNext).toHaveBeenCalledOnce();
+  });
+
+  // @test-scope regression: https://github.com/echoua/echo/issues/3521
+  it('preserves Leaflet arrow-key handling #3521', async () => {
+    const onNext = vi.fn();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () =>
+      root?.render(
+        <MessageCardAttachmentPreviewDialog
+          item={kmzItem}
+          navigation={{ index: 0, count: 2, onPrevious: vi.fn(), onNext }}
+          onClose={vi.fn()}
+        />,
+      ),
+    );
+    const map = container.querySelector('.leaflet-container') as HTMLDivElement;
+    map.focus();
+    const event = new KeyboardEvent('keydown', {
+      key: 'ArrowRight',
+      bubbles: true,
+      cancelable: true,
+    });
+
+    await act(async () => map.dispatchEvent(event));
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(onNext).not.toHaveBeenCalled();
   });
 
   it('does not render carousel arrows while editing #3448', async () => {

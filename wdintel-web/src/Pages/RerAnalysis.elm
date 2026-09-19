@@ -2193,7 +2193,7 @@ update user shared route msg model =
                     case List.filter (\( id, _ ) -> id == msgId) model.messages |> List.head of
                         Just ( _, message ) ->
                             ( model
-                            , Api.rer_importer_inbox_submit (EditSidebarSaveDone msgId) { messages = [ ( msgId, message ) ] }
+                            , Api.rer_importer_inbox_submit (EditSidebarSaveDone msgId) { messages = [ ( msgId, message ) ], callsignEdits = Nothing }
                             )
 
                         Nothing ->

@@ -1,7 +1,7 @@
 import type { MessageCardDocumentKind } from '../document-preview.types';
 
 export type MessageCardPreviewKind =
-  'image' | 'video' | 'audio' | 'coordinate-map' | MessageCardDocumentKind;
+  'image' | 'video' | 'audio' | 'coordinate-map' | 'kmz-map' | MessageCardDocumentKind;
 
 export type MessageCardAttachmentPreviewConfig = {
   disableRestoreFocus: boolean;
@@ -16,6 +16,9 @@ const MESSAGE_CARD_PREVIEW_SHELL_CONFIG_BY_KIND = {
   },
   audio: {
     disableRestoreFocus: false,
+  },
+  'kmz-map': {
+    disableRestoreFocus: true,
   },
   'coordinate-map': {
     disableRestoreFocus: true,

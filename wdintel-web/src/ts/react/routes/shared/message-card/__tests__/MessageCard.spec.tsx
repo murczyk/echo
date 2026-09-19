@@ -543,6 +543,26 @@ describe('MessageCard', () => {
 
     const validMedia = [attachment('valid-first', 1), attachment('valid-second', 1)];
     expect(canDownloadAllMessageAttachments(validMedia)).toBe(true);
+
+    const convertedKmz = {
+      ...attachment('route', 128),
+      contentType: 'application/geo+json',
+      fileName: 'route.geojson',
+    } as MessageMediaInfo;
+    expect(
+      canDownloadAllMessageAttachments([{ ...convertedKmz, kmzConversionStatus: 'done' }]),
+    ).toBe(true);
+    for (const kmzConversionStatus of [null, 'pending', 'processing', 'error']) {
+      expect(canDownloadAllMessageAttachments([{ ...convertedKmz, kmzConversionStatus }])).toBe(
+        false,
+      );
+    }
+    expect(
+      canDownloadAllMessageAttachments([
+        { ...convertedKmz, fileName: 'route.KMZ', kmzConversionStatus: 'done' },
+      ]),
+    ).toBe(false);
+
     const validView = await renderCard({ msg: buildMessage({ media: validMedia }) });
     await openOverflowMenu(validView.container);
     expect(

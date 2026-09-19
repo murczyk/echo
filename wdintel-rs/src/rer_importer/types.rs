@@ -596,6 +596,9 @@ pub struct InboxDeleteReq {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct InboxSubmitReq {
+    #[serde(default)]
+    #[serde(rename = "callsignEdits")]
+    pub callsign_edits: Option<Vec<crate::ai_callsign::feedback::CallsignEdit>>,
     pub messages: Vec<(i64, InboxMessage)>,
 }
 

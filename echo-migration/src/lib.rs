@@ -1,3 +1,4 @@
+mod m20260906_094818_ai_callsign_feedback;
 pub use sea_orm_migration::prelude::*;
 
 mod m20220101_000001_create_table;
@@ -427,8 +428,8 @@ mod m20260915_105452_disable_bot_tags;
 mod m20260915_151525_network_recalculation_last_seen_batch_index;
 mod m20260916_130029_activate_sigint_network_units;
 mod m20260917_123830_unresolved_unit_message_order;
-mod m20260918_092309_sigint_inbox_item_is_time_null;
 mod m20260917_150626_signal_message_media_conversion_job;
+mod m20260918_092309_sigint_inbox_item_is_time_null;
 
 pub struct Migrator;
 
@@ -1025,6 +1026,7 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260917_150626_signal_message_media_conversion_job::Migration,
             ),
+            Box::new(m20260906_094818_ai_callsign_feedback::Migration),
         ]
     }
 }

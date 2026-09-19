@@ -1452,14 +1452,16 @@ inboxMessagesReqEncoder struct =
 
 
 type alias InboxSubmitReq =
-    { messages : List (( Int, InboxMessage ))
+    { callsignEdits : Maybe (List (CallsignEdit))
+    , messages : List (( Int, InboxMessage ))
     }
 
 
 inboxSubmitReqEncoder : InboxSubmitReq -> Json.Encode.Value
 inboxSubmitReqEncoder struct =
     Json.Encode.object
-        [ ( "messages", (Json.Encode.list (\( a, b) -> Json.Encode.list identity [ Json.Encode.int a, inboxMessageEncoder b ])) struct.messages )
+        [ ( "callsignEdits", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (callsignEditEncoder))) struct.callsignEdits )
+        , ( "messages", (Json.Encode.list (\( a, b) -> Json.Encode.list identity [ Json.Encode.int a, inboxMessageEncoder b ])) struct.messages )
         ]
 
 
@@ -13231,6 +13233,162 @@ aiCallsignPageRspEncoder struct =
         ]
 
 
+type alias CallsignEdit =
+    { messageId : Int
+    , actionId : String
+    , added : List (String)
+    , removed : List (String)
+    }
+
+
+callsignEditEncoder : CallsignEdit -> Json.Encode.Value
+callsignEditEncoder struct =
+    Json.Encode.object
+        [ ( "messageId", (Json.Encode.int) struct.messageId )
+        , ( "actionId", (Json.Encode.string) struct.actionId )
+        , ( "added", (Json.Encode.list (Json.Encode.string)) struct.added )
+        , ( "removed", (Json.Encode.list (Json.Encode.string)) struct.removed )
+        ]
+
+
+type alias FeedbackListReq =
+    { search : String
+    , after : String
+    }
+
+
+feedbackListReqEncoder : FeedbackListReq -> Json.Encode.Value
+feedbackListReqEncoder struct =
+    Json.Encode.object
+        [ ( "search", (Json.Encode.string) struct.search )
+        , ( "after", (Json.Encode.string) struct.after )
+        ]
+
+
+type alias FeedbackItem =
+    { callsign : String
+    , removalCount : Int
+    , updatedAt : Int
+    }
+
+
+feedbackItemEncoder : FeedbackItem -> Json.Encode.Value
+feedbackItemEncoder struct =
+    Json.Encode.object
+        [ ( "callsign", (Json.Encode.string) struct.callsign )
+        , ( "removalCount", (Json.Encode.int) struct.removalCount )
+        , ( "updatedAt", (Json.Encode.int) struct.updatedAt )
+        ]
+
+
+type alias FeedbackDetailsReq =
+    { callsign : String
+    , beforeId : Maybe (Int)
+    }
+
+
+feedbackDetailsReqEncoder : FeedbackDetailsReq -> Json.Encode.Value
+feedbackDetailsReqEncoder struct =
+    Json.Encode.object
+        [ ( "callsign", (Json.Encode.string) struct.callsign )
+        , ( "beforeId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.beforeId )
+        ]
+
+
+type alias FeedbackDetail =
+    { id : Int
+    , inboxItemId : Maybe (Int)
+    , actor : Maybe (String)
+    , body : String
+    , createdAt : Int
+    }
+
+
+feedbackDetailEncoder : FeedbackDetail -> Json.Encode.Value
+feedbackDetailEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "inboxItemId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.inboxItemId )
+        , ( "actor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.actor )
+        , ( "body", (Json.Encode.string) struct.body )
+        , ( "createdAt", (Json.Encode.int) struct.createdAt )
+        ]
+
+
+type alias ReparseStartReq =
+    { days : Int
+    }
+
+
+reparseStartReqEncoder : ReparseStartReq -> Json.Encode.Value
+reparseStartReqEncoder struct =
+    Json.Encode.object
+        [ ( "days", (Json.Encode.int) struct.days )
+        ]
+
+
+type alias ReparseIdReq =
+    { id : String
+    }
+
+
+reparseIdReqEncoder : ReparseIdReq -> Json.Encode.Value
+reparseIdReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        ]
+
+
+type alias ReparseStatus =
+    { id : String
+    , state : String
+    , automatic : Bool
+    , sinceTs : Int
+    , untilTs : Int
+    , createdAt : Int
+    , completedAt : Maybe (Int)
+    , total : Int
+    , changed : Int
+    , unchanged : Int
+    , skipped : Int
+    , failed : Int
+    }
+
+
+reparseStatusEncoder : ReparseStatus -> Json.Encode.Value
+reparseStatusEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "state", (Json.Encode.string) struct.state )
+        , ( "automatic", (Json.Encode.bool) struct.automatic )
+        , ( "sinceTs", (Json.Encode.int) struct.sinceTs )
+        , ( "untilTs", (Json.Encode.int) struct.untilTs )
+        , ( "createdAt", (Json.Encode.int) struct.createdAt )
+        , ( "completedAt", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.completedAt )
+        , ( "total", (Json.Encode.int) struct.total )
+        , ( "changed", (Json.Encode.int) struct.changed )
+        , ( "unchanged", (Json.Encode.int) struct.unchanged )
+        , ( "skipped", (Json.Encode.int) struct.skipped )
+        , ( "failed", (Json.Encode.int) struct.failed )
+        ]
+
+
+type alias ReparseFailure =
+    { inboxItemId : Int
+    , attempts : Int
+    , lastError : Maybe (String)
+    }
+
+
+reparseFailureEncoder : ReparseFailure -> Json.Encode.Value
+reparseFailureEncoder struct =
+    Json.Encode.object
+        [ ( "inboxItemId", (Json.Encode.int) struct.inboxItemId )
+        , ( "attempts", (Json.Encode.int) struct.attempts )
+        , ( "lastError", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastError )
+        ]
+
+
 type alias AiCallsignPromptState =
     { prompt : String
     , promptOverridden : Bool
@@ -15524,6 +15682,7 @@ inboxMessagesReqDecoder =
 inboxSubmitReqDecoder : Json.Decode.Decoder InboxSubmitReq
 inboxSubmitReqDecoder =
     Json.Decode.succeed InboxSubmitReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsignEdits" (Json.Decode.nullable (Json.Decode.list (callsignEditDecoder)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messages" (Json.Decode.list (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 (Json.Decode.int)) (Json.Decode.index 1 (inboxMessageDecoder))))))
 
 
@@ -22850,6 +23009,84 @@ aiCallsignPageRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "engines" (Json.Decode.list (aiCallsignEngineItemDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messages" (Json.Decode.list (aiCallsignTestMessageItemDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "worker" (aiCallsignWorkerSettingsItemDecoder)))
+
+
+callsignEditDecoder : Json.Decode.Decoder CallsignEdit
+callsignEditDecoder =
+    Json.Decode.succeed CallsignEdit
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageId" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "actionId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "added" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "removed" (Json.Decode.list (Json.Decode.string))))
+
+
+feedbackListReqDecoder : Json.Decode.Decoder FeedbackListReq
+feedbackListReqDecoder =
+    Json.Decode.succeed FeedbackListReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "after" (Json.Decode.string)))
+
+
+feedbackItemDecoder : Json.Decode.Decoder FeedbackItem
+feedbackItemDecoder =
+    Json.Decode.succeed FeedbackItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "removalCount" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updatedAt" (Json.Decode.int)))
+
+
+feedbackDetailsReqDecoder : Json.Decode.Decoder FeedbackDetailsReq
+feedbackDetailsReqDecoder =
+    Json.Decode.succeed FeedbackDetailsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "beforeId" (Json.Decode.nullable (Json.Decode.int))))
+
+
+feedbackDetailDecoder : Json.Decode.Decoder FeedbackDetail
+feedbackDetailDecoder =
+    Json.Decode.succeed FeedbackDetail
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inboxItemId" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "actor" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "body" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
+
+
+reparseStartReqDecoder : Json.Decode.Decoder ReparseStartReq
+reparseStartReqDecoder =
+    Json.Decode.succeed ReparseStartReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "days" (Json.Decode.int)))
+
+
+reparseIdReqDecoder : Json.Decode.Decoder ReparseIdReq
+reparseIdReqDecoder =
+    Json.Decode.succeed ReparseIdReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+
+
+reparseStatusDecoder : Json.Decode.Decoder ReparseStatus
+reparseStatusDecoder =
+    Json.Decode.succeed ReparseStatus
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "automatic" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sinceTs" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "untilTs" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "completedAt" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "changed" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unchanged" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "skipped" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "failed" (Json.Decode.int)))
+
+
+reparseFailureDecoder : Json.Decode.Decoder ReparseFailure
+reparseFailureDecoder =
+    Json.Decode.succeed ReparseFailure
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inboxItemId" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attempts" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lastError" (Json.Decode.nullable (Json.Decode.string))))
 
 
 aiCallsignPromptStateDecoder : Json.Decode.Decoder AiCallsignPromptState
