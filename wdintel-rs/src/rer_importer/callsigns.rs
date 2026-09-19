@@ -1,4 +1,5 @@
 use super::highlight::CNCallsign;
+use crate::config::RER_CALLSIGN_QUERY_SEPARATOR_VARIANTS;
 use crate::entities::{prelude::*, *};
 use crate::error::AppError;
 use crate::rer_importer::analysis::*;
@@ -452,16 +453,7 @@ fn normalize_callsign_header_value(callsign: &str) -> String {
 }
 
 fn is_callsign_separator(char_: char) -> bool {
-    char_.is_whitespace()
-        || matches!(
-            char_,
-            '-' | '\u{2010}'
-                | '\u{2011}'
-                | '\u{2012}'
-                | '\u{2013}'
-                | '\u{2014}'
-                | '\u{2015}'
-        )
+    RER_CALLSIGN_QUERY_SEPARATOR_VARIANTS.contains(&char_)
 }
 
 pub(crate) fn callsign_match_key(callsign: &str) -> String {
@@ -483,10 +475,11 @@ pub(crate) fn callsign_match_key(callsign: &str) -> String {
 
 pub(crate) fn callsign_query_variants(callsign: &str) -> Vec<String> {
     let key = callsign_match_key(callsign);
-    let spaced = key.replace('-', " ");
     let original = callsign.trim().to_lowercase();
-    [key, spaced, original]
-        .into_iter()
+    RER_CALLSIGN_QUERY_SEPARATOR_VARIANTS
+        .iter()
+        .map(|separator| key.replace('-', &separator.to_string()))
+        .chain([original])
         .filter(|callsign| !callsign.is_empty())
         .fold(Vec::new(), |mut callsigns, callsign| {
             if !callsigns.contains(&callsign) {
@@ -565,7 +558,13 @@ fn highlight_callsign_token_windows(
         }
     }
 
-    res.sort();
+    res.sort_by(|left, right| {
+        left.begin
+            .cmp(&right.begin)
+            .then_with(|| right.end.cmp(&left.end))
+            .then_with(|| left.etalon.cmp(&right.etalon))
+            .then_with(|| left.text.cmp(&right.text))
+    });
     res.dedup();
     res
 }
@@ -3329,15 +3328,15 @@ mod tests {
                 },
                 CNCallsign {
                     begin: 9,
-                    end: 17,
-                    etalon: "саксофон".to_string(),
-                    text: "САКСОФОН".to_string(),
-                },
-                CNCallsign {
-                    begin: 9,
                     end: 26,
                     etalon: "саксофон-контроль".to_string(),
                     text: "САКСОФОН-КОНТРОЛЬ".to_string(),
+                },
+                CNCallsign {
+                    begin: 9,
+                    end: 17,
+                    etalon: "саксофон".to_string(),
+                    text: "САКСОФОН".to_string(),
                 },
             ]
         );

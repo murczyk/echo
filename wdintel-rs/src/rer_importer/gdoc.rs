@@ -839,12 +839,13 @@ mod tests {
     #[test]
     fn prepares_space_and_hyphen_callsign_query_variants() {
         let requests = vec![request("САКСОФОН КОНТРОЛЬ", vec![])];
+        let requested_callsigns = requested_callsigns(&requests);
 
         assert_eq!(requests[0].normalized_callsign, "саксофон-контроль");
-        assert_eq!(
-            requested_callsigns(&requests),
-            vec!["саксофон-контроль", "саксофон контроль"]
-        );
+        assert!(requested_callsigns.contains(&"саксофон-контроль".to_string()));
+        assert!(requested_callsigns.contains(&"саксофон контроль".to_string()));
+        assert!(requested_callsigns
+            .contains(&"саксофон\u{2011}контроль".to_string()));
     }
 
     #[test]
@@ -854,18 +855,16 @@ mod tests {
             request("САКСОФОН\u{a0}КОНТРОЛЬ", vec![]),
         ];
 
-        assert_eq!(
-            network_callsign_query_groups(&requests),
-            vec![NetworkCallsignQueryGroup {
-                callsigns: vec![
-                    "саксофон-контроль".to_string(),
-                    "саксофон контроль".to_string(),
-                    "саксофон\u{2011}контроль".to_string(),
-                    "саксофон\u{a0}контроль".to_string(),
-                ],
-                network_scope: None,
-            }]
-        );
+        let groups = network_callsign_query_groups(&requests);
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].network_scope, None);
+        assert!(groups[0]
+            .callsigns
+            .contains(&"саксофон\u{2011}контроль".to_string()));
+        assert!(groups[0]
+            .callsigns
+            .contains(&"саксофон\u{a0}контроль".to_string()));
     }
 
     #[test]

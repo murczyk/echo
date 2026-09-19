@@ -704,7 +704,7 @@ mod tests {
         let mut inbox_message: InboxMessage = InboxInsertPayload {
             text: "interception".to_string(),
             freq: Some("123.45".to_string()),
-            callsigns: vec!["IGGY\u{2011}TEST\u{2011}CALLSIGN".to_string()],
+            callsigns: vec!["IGGY-TEST-CALLSIGN".to_string()],
             network_ids: Some(vec![network_id]),
             ..Default::default()
         }
