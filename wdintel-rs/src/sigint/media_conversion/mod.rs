@@ -275,7 +275,7 @@ async fn authorized_job(
 
 fn completed_result(
     job: &signal_message_media_conversion_job::Model,
-) -> anyhow::Result<(&str, &str)> {
+) -> anyhow::Result<(Option<&str>, &str)> {
     if job.status != SIGINT_MEDIA_CONVERSION_STATUS_DONE {
         anyhow::bail!(
             "{}",
@@ -285,7 +285,7 @@ fn completed_result(
         );
     }
     Ok((
-        job.converted_storage_key.as_deref().c(h!())?,
+        job.converted_storage_key.as_deref(),
         job.converted_file_name.as_deref().c(h!())?,
     ))
 }
@@ -316,14 +316,17 @@ pub(crate) fn source_is_ready_kmz(media: &signal_message_media::Model) -> bool {
 pub(crate) async fn fetch_completed_result_bytes(
     env: &Env,
     media: &signal_message_media::Model,
-    storage_key: &str,
+    storage_key: Option<&str>,
 ) -> anyhow::Result<Vec<u8>> {
     if source_is_ready_kmz(media) {
         worker::fetch_source_bytes(env, media).await.c(h!())
     } else {
-        crate::messenger::media::fetch_media_bytes_by_key(env, storage_key)
-            .await
-            .c(h!())
+        crate::messenger::media::fetch_media_bytes_by_key(
+            env,
+            storage_key.c(h!())?,
+        )
+        .await
+        .c(h!())
     }
 }
 

@@ -253,14 +253,20 @@ async fn process_job(
         .await
         .c(h!())?;
     let size_bytes = i64::try_from(prepared.body.len()).c(h!())?;
-    let storage_key = crate::messenger::media::store_asset(
-        env,
-        prepared.body,
-        Some(&file_name),
-        Some(crate::config::KMZ_CONTENT_TYPE),
-    )
-    .await
-    .c(h!())?;
+    let storage_key = if source_is_ready_kmz(&media) {
+        None
+    } else {
+        Some(
+            crate::messenger::media::store_asset(
+                env,
+                prepared.body,
+                Some(&file_name),
+                Some(crate::config::KMZ_CONTENT_TYPE),
+            )
+            .await
+            .c(h!())?,
+        )
+    };
     let applied = finish_job(
         &env.dbx,
         attempt,
@@ -271,7 +277,9 @@ async fn process_job(
     )
     .await;
     if !applied.as_ref().is_ok_and(|applied| *applied) {
-        delete_stored_results_best_effort(env, &[storage_key]).await;
+        if let Some(storage_key) = storage_key {
+            delete_stored_results_best_effort(env, &[storage_key]).await;
+        }
     }
     if !applied.c(h!())? {
         return Ok(ConversionOutcome::Stale);
@@ -412,7 +420,7 @@ async fn finish_job<C>(
     dbx: &C,
     attempt: ConversionAttempt,
     receipt: Option<String>,
-    storage_key: String,
+    storage_key: Option<String>,
     file_name: String,
     size_bytes: i64,
 ) -> anyhow::Result<bool>
@@ -666,7 +674,7 @@ mod tests {
                 &completion_dbx,
                 attempt,
                 Some("receipt".to_string()),
-                "test/route.kmz".to_string(),
+                Some("test/route.kmz".to_string()),
                 "route_converted.kmz".to_string(),
                 1,
             )
@@ -734,7 +742,7 @@ mod tests {
             &env.dbx,
             stale_attempt,
             Some("stale".to_string()),
-            "test/stale.kmz".to_string(),
+            Some("test/stale.kmz".to_string()),
             "stale.kmz".to_string(),
             1,
         )
@@ -747,7 +755,7 @@ mod tests {
                 attempt_count: claimed.attempt_count,
             },
             Some("receipt".to_string()),
-            "test/first.kmz".to_string(),
+            Some("test/first.kmz".to_string()),
             "first_converted.kmz".to_string(),
             1,
         )

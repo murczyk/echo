@@ -738,7 +738,7 @@ async fn rer_message_attachments_zip(
             crate::sigint::media_conversion::fetch_completed_result_bytes(
                 env.as_ref(),
                 media,
-                storage_key,
+                Some(storage_key),
             )
             .await
             .c(h!())?;
