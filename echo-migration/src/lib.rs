@@ -430,6 +430,7 @@ mod m20260916_130029_activate_sigint_network_units;
 mod m20260917_123830_unresolved_unit_message_order;
 mod m20260917_150626_signal_message_media_conversion_job;
 mod m20260918_092309_sigint_inbox_item_is_time_null;
+mod m20260919_112759_callsign_match_key_indexes;
 mod m20260919_132912_sigint_unit_changelog_index;
 
 pub struct Migrator;
@@ -1028,6 +1029,7 @@ impl MigratorTrait for Migrator {
                 m20260917_150626_signal_message_media_conversion_job::Migration,
             ),
             Box::new(m20260906_094818_ai_callsign_feedback::Migration),
+            Box::new(m20260919_112759_callsign_match_key_indexes::Migration),
             Box::new(
                 m20260919_132912_sigint_unit_changelog_index::Migration,
             ),

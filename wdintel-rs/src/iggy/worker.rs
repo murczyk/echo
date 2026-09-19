@@ -1,5 +1,8 @@
 use crate::entities::{api_integration, sigint_callsign, sigint_unit};
 use crate::error::AppError;
+use crate::rer_importer::callsigns::{
+    callsign_match_key, callsign_match_key_expr,
+};
 use crate::rer_importer::types::{InboxMessage, InboxMessagesReq};
 use crate::sigint::etalonka::query::{
     build_open_ended_network_freq_join_condition, SigintInboxItem,
@@ -11,7 +14,7 @@ use chrono::{NaiveDateTime, Utc};
 use futures_util::StreamExt;
 use iggy::prelude::{IggyMessage, IggyProducer};
 use sea_orm::sea_query::{
-    Alias, Expr, ExprTrait, Func, PostgresQueryBuilder, Query, SelectStatement,
+    Alias, Expr, ExprTrait, PostgresQueryBuilder, Query, SelectStatement,
 };
 use sea_orm::*;
 use serde::Serialize;
@@ -236,7 +239,8 @@ async fn load_callsign_ids(
                 .iter()
                 .chain(&inbox_message.callsigns_alg2)
         })
-        .map(|callsign| callsign.to_lowercase())
+        .map(|callsign| callsign_match_key(callsign))
+        .filter(|callsign| !callsign.is_empty())
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
@@ -250,10 +254,10 @@ async fn load_callsign_ids(
                 sigint_callsign::Relation::SigintUnit.def(),
             )
             .filter(
-                Func::lower(Expr::col((
+                callsign_match_key_expr((
                     sigint_callsign::Entity,
                     sigint_callsign::Column::Callsign,
-                )))
+                ))
                 .is_in(callsigns.iter().cloned()),
             )
             .filter(sigint_callsign::Column::Deleted.eq(false))
@@ -264,7 +268,7 @@ async fn load_callsign_ids(
             .c(h!())?;
         for callsign in callsigns {
             callsign_ids
-                .entry(callsign.callsign.to_lowercase())
+                .entry(callsign_match_key(&callsign.callsign))
                 .or_default()
                 .insert(callsign.id);
         }
@@ -281,7 +285,7 @@ fn enrich_inbox_message(
         .callsigns
         .iter()
         .chain(&inbox_message.callsigns_alg2)
-        .filter_map(|callsign| callsign_ids.get(&callsign.to_lowercase()))
+        .filter_map(|callsign| callsign_ids.get(&callsign_match_key(callsign)))
         .flatten()
         .copied()
         .collect::<BTreeSet<_>>()
@@ -537,7 +541,7 @@ mod tests {
         intercepted_at: NaiveDateTime,
     ) -> i64 {
         sigint_callsign::ActiveModel {
-            callsign: Set("Iggy-Test-Callsign".to_string()),
+            callsign: Set("Iggy\u{2011}Test Callsign".to_string()),
             position: Set(String::new()),
             comment: Set(String::new()),
             unit_id: Set(unit_id),
