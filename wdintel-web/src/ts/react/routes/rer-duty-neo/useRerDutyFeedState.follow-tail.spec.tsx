@@ -49,7 +49,7 @@ describe('useRerDutyFeedState — follow tail and scheduled scrolling', () => {
     });
     apiRef.current!.cancelFollowTail('mf-0');
     await act(async () => {
-      newer.resolve(inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]));
+      newer.resolve(inboxRsp([[2, minimalInboxMessage({ createdAtOrder: 200 })]]));
       await load;
       await flushMicrotasks();
     });
@@ -73,7 +73,7 @@ describe('useRerDutyFeedState — follow tail and scheduled scrolling', () => {
     expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(1);
     apiRef.current!.cancelFollowTail('mf-0');
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
-      inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]),
+      inboxRsp([[2, minimalInboxMessage({ createdAtOrder: 200 })]]),
     );
     await act(async () => {
       count.resolve({ quantity: 1, firstElementTs: null });
@@ -93,7 +93,7 @@ describe('useRerDutyFeedState — follow tail and scheduled scrolling', () => {
     const { apiRef, scrollToEnd } = await mountLoadedFeed();
     const generation = apiRef.current!.beginFollowTail('mf-0');
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
-      inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]),
+      inboxRsp([[2, minimalInboxMessage({ createdAtOrder: 200 })]]),
     );
 
     await act(async () => {
@@ -114,7 +114,7 @@ describe('useRerDutyFeedState — follow tail and scheduled scrolling', () => {
     const { apiRef, scrollToEnd } = await mountLoadedFeed();
     const generation = apiRef.current!.beginFollowTail('mf-0');
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
-      inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]),
+      inboxRsp([[2, minimalInboxMessage({ createdAtOrder: 200 })]]),
     );
 
     await act(async () => {
@@ -135,7 +135,7 @@ describe('useRerDutyFeedState — follow tail and scheduled scrolling', () => {
     const { apiRef, scrollToEnd } = await mountLoadedFeed();
     const firstGeneration = apiRef.current!.beginFollowTail('mf-0');
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
-      inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]),
+      inboxRsp([[2, minimalInboxMessage({ createdAtOrder: 200 })]]),
     );
     await act(async () => {
       await apiRef.current!.loadFeedNewerMessages('mf-0', {
@@ -149,7 +149,7 @@ describe('useRerDutyFeedState — follow tail and scheduled scrolling', () => {
     apiRef.current!.cancelFollowTail('mf-0');
     const secondGeneration = apiRef.current!.beginFollowTail('mf-0');
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
-      inboxRsp([[3, minimalInboxMessage({ timestamp: 300 })]]),
+      inboxRsp([[3, minimalInboxMessage({ createdAtOrder: 300 })]]),
     );
     await act(async () => {
       await apiRef.current!.loadFeedNewerMessages('mf-0', {
@@ -200,7 +200,7 @@ describe('useRerDutyFeedState — follow tail and scheduled scrolling', () => {
     document.body.appendChild(host);
     hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 1, firstElementTs: null });
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
-      inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]),
+      inboxRsp([[2, minimalInboxMessage({ createdAtOrder: 200 })]]),
     );
 
     try {
@@ -322,7 +322,7 @@ describe('useRerDutyFeedState — follow tail and scheduled scrolling', () => {
     await startPoll();
     expect(apiRef.current!.tailAvailabilityByFeedId['mf-0']).toBe('loading');
     await act(async () => {
-      newer.resolve(inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]));
+      newer.resolve(inboxRsp([[2, minimalInboxMessage({ createdAtOrder: 200 })]]));
       await flushMicrotasks();
     });
     const feed = apiRef.current!.messageFeeds[0];
@@ -414,7 +414,7 @@ describe('useRerDutyFeedState — follow tail and scheduled scrolling', () => {
     });
     expect(apiRef.current!.tailAvailabilityByFeedId['mf-0']).toBe('unknown');
     await act(async () => {
-      reload.resolve(inboxRsp([[3, minimalInboxMessage({ timestamp: 300 })]]));
+      reload.resolve(inboxRsp([[3, minimalInboxMessage({ createdAtOrder: 300 })]]));
       await flushMicrotasks();
     });
     expect(apiRef.current!.tailAvailabilityByFeedId['mf-0']).not.toBe('available');

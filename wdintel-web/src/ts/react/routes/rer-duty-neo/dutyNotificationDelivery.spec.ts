@@ -47,14 +47,11 @@ function response(message: InboxMessage, groupName = 'Group'): InboxMessagesRsp 
   };
 }
 
-async function deliver(
-  req: InboxMessagesReq,
-  messageSortBy: 'IMSTimestamp' | 'IMSCreatedAt' = 'IMSTimestamp',
-): Promise<ReturnType<typeof vi.fn>> {
+async function deliver(req: InboxMessagesReq): Promise<ReturnType<typeof vi.fn>> {
   const NotificationMock = setup();
   const cycle = beginDutyNotificationPollCycle();
   registerDutyNotificationPreview(cycle, 'feed-a', () =>
-    loadDutyNotificationPreview(req, messageSortBy, () => true),
+    loadDutyNotificationPreview(req, () => true),
   );
   notifyDutyNewMessages('feed-a', 1, cycle);
   endDutyNotificationPollCycle(cycle);
@@ -80,8 +77,8 @@ afterEach(() => {
 describe('Duty rich notification delivery', () => {
   const req = {} as InboxMessagesReq;
 
-  // https://github.com/echoua/echo/issues/3455
-  it('uses the active message ordering basis for notification previews', async () => {
+  // https://github.com/echoua/echo/issues/3546
+  it('uses creation time for notification previews despite conflicting event times', async () => {
     const interceptionNewest = minimalInboxMessage({
       sender: 'Interception newest',
       groupMasterKey: 'group',
@@ -101,15 +98,7 @@ describe('Duty rich notification delivery', () => {
     ];
     fetchInboxMessages.mockResolvedValue(previewResponse);
 
-    await expect(
-      loadDutyNotificationPreview(req, 'IMSTimestamp', () => true),
-    ).resolves.toMatchObject({
-      kind: 'ready',
-      preview: { messageId: 1, orderTimestamp: 200, title: 'Interception newest' },
-    });
-    await expect(
-      loadDutyNotificationPreview(req, 'IMSCreatedAt', () => true),
-    ).resolves.toMatchObject({
+    await expect(loadDutyNotificationPreview(req, () => true)).resolves.toMatchObject({
       kind: 'ready',
       preview: { messageId: 2, orderTimestamp: 200, title: 'Creation newest' },
     });
@@ -190,7 +179,7 @@ describe('Duty rich notification delivery', () => {
     const NotificationMock = setup();
     const cycle = beginDutyNotificationPollCycle();
     registerDutyNotificationPreview(cycle, 'feed-a', () =>
-      loadDutyNotificationPreview(req, 'IMSTimestamp', () => true),
+      loadDutyNotificationPreview(req, () => true),
     );
     notifyDutyNewMessages('feed-a', 1, cycle);
     endDutyNotificationPollCycle(cycle);
@@ -222,7 +211,7 @@ describe('Duty rich notification delivery', () => {
     const NotificationMock = setup();
     const cycle = beginDutyNotificationPollCycle();
     registerDutyNotificationPreview(cycle, 'feed-a', () =>
-      loadDutyNotificationPreview(req, 'IMSTimestamp', () => current),
+      loadDutyNotificationPreview(req, () => current),
     );
     notifyDutyNewMessages('feed-a', 1, cycle);
     endDutyNotificationPollCycle(cycle);

@@ -119,7 +119,10 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
   // Regression: https://github.com/echoua/echo/pull/3331
   it('keeps a captured preview current after auto-follow advances the unread cursor', async () => {
     const { apiRef } = await mountLoadedFeed();
-    const arrived = minimalInboxMessage({ timestamp: 200, noHeadersBody: { body: 'arrived' } });
+    const arrived = minimalInboxMessage({
+      createdAtOrder: 200,
+      noHeadersBody: { body: 'arrived' },
+    });
     hoisted.fetchInboxMessages.mockImplementation(() => Promise.resolve(inboxRsp([[2, arrived]])));
     hoisted.fetchInboxCount
       .mockResolvedValueOnce({ quantity: 1, firstElementTs: null })
@@ -391,8 +394,8 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     const { apiRef } = await mountLoadedFeed();
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
       inboxRsp([
-        [2, minimalInboxMessage({ timestamp: 200 })],
-        [3, minimalInboxMessage({ timestamp: 300 })],
+        [2, minimalInboxMessage({ createdAtOrder: 200 })],
+        [3, minimalInboxMessage({ createdAtOrder: 300 })],
       ]),
     );
     await act(async () => {
@@ -603,7 +606,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
 
   it('uses the last message id as the count cursor even when the timestamp is null', async () => {
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
-      inboxRsp([[10, minimalInboxMessage({ timestamp: null })]]),
+      inboxRsp([[10, minimalInboxMessage({ createdAtOrder: null })]]),
     );
 
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
@@ -648,7 +651,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     });
 
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
-      inboxRsp([[2, minimalInboxMessage({ timestamp: 200, text: 'newer' })]]),
+      inboxRsp([[2, minimalInboxMessage({ createdAtOrder: 200, text: 'newer' })]]),
     );
 
     await act(async () => {
@@ -894,8 +897,8 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
         ),
     );
     hoisted.fetchInboxMessages
-      .mockResolvedValueOnce(inboxRsp([[1, minimalInboxMessage({ timestamp: 100 })]]))
-      .mockResolvedValueOnce(inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]));
+      .mockResolvedValueOnce(inboxRsp([[1, minimalInboxMessage({ createdAtOrder: 100 })]]))
+      .mockResolvedValueOnce(inboxRsp([[2, minimalInboxMessage({ createdAtOrder: 200 })]]));
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
       current: null,
     };
@@ -1017,7 +1020,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     });
 
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
-      inboxRsp([[3, minimalInboxMessage({ timestamp: 300 })]]),
+      inboxRsp([[3, minimalInboxMessage({ createdAtOrder: 300 })]]),
     );
     hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
 
@@ -1060,7 +1063,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
       (req: { sinceIdNoninclusive?: number | null }) => {
         const since = req.sinceIdNoninclusive;
         if (since == null) {
-          return Promise.resolve(inboxRsp([[1, minimalInboxMessage({ timestamp: 100 })]]));
+          return Promise.resolve(inboxRsp([[1, minimalInboxMessage({ createdAtOrder: 100 })]]));
         }
         return Promise.resolve(rangeRsp(since + 1, since + 5));
       },
@@ -1130,7 +1133,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
       inboxRsp(
         Array.from({ length: 20 }, (_, index) => [
           2 + index,
-          minimalInboxMessage({ timestamp: 200 + index, text: `new-${index}` }),
+          minimalInboxMessage({ createdAtOrder: 200 + index, text: `new-${index}` }),
         ]),
       ),
     );
@@ -1148,7 +1151,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
       inboxRsp(
         Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
           index + 21,
-          minimalInboxMessage({ timestamp: (index + 21) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 21) * 100 }),
         ]),
       ),
     );
@@ -1182,7 +1185,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
       inboxRsp(
         Array.from({ length: 20 }, (_, index) => [
           index + 1,
-          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 1) * 100 }),
         ]),
       ),
     );
@@ -1306,7 +1309,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
         inboxRsp(
           Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
             index + 21,
-            minimalInboxMessage({ timestamp: (index + 21) * 100 }),
+            minimalInboxMessage({ createdAtOrder: (index + 21) * 100 }),
           ]),
         ),
       )
@@ -1314,7 +1317,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
         inboxRsp(
           Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
             index + 121,
-            minimalInboxMessage({ timestamp: (index + 121) * 100 }),
+            minimalInboxMessage({ createdAtOrder: (index + 121) * 100 }),
           ]),
         ),
       );
@@ -1374,8 +1377,8 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
         ),
     );
     hoisted.fetchInboxMessages
-      .mockResolvedValueOnce(inboxRsp([[1, minimalInboxMessage({ timestamp: 100 })]]))
-      .mockResolvedValueOnce(inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]));
+      .mockResolvedValueOnce(inboxRsp([[1, minimalInboxMessage({ createdAtOrder: 100 })]]))
+      .mockResolvedValueOnce(inboxRsp([[2, minimalInboxMessage({ createdAtOrder: 200 })]]));
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
       current: null,
     };
@@ -1421,8 +1424,8 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
         ),
     );
     hoisted.fetchInboxMessages
-      .mockResolvedValueOnce(inboxRsp([[1, minimalInboxMessage({ timestamp: 100 })]]))
-      .mockResolvedValueOnce(inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]));
+      .mockResolvedValueOnce(inboxRsp([[1, minimalInboxMessage({ createdAtOrder: 100 })]]))
+      .mockResolvedValueOnce(inboxRsp([[2, minimalInboxMessage({ createdAtOrder: 200 })]]));
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
       current: null,
     };
@@ -1460,7 +1463,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
       inboxRsp(
         Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
           index + 21,
-          minimalInboxMessage({ timestamp: (index + 21) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 21) * 100 }),
         ]),
       ),
     );
@@ -1503,7 +1506,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
       inboxRsp(
         Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
           index + 21,
-          minimalInboxMessage({ timestamp: (index + 21) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 21) * 100 }),
         ]),
       ),
     );
@@ -1547,7 +1550,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
         inboxRsp(
           Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
             index + 101,
-            minimalInboxMessage({ timestamp: (index + 101) * 100 }),
+            minimalInboxMessage({ createdAtOrder: (index + 101) * 100 }),
           ]),
         ),
       );
@@ -1573,7 +1576,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
       inboxRsp(
         Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
           index + 21,
-          minimalInboxMessage({ timestamp: (index + 21) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 21) * 100 }),
         ]),
       ),
     );
@@ -1625,7 +1628,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
         inboxRsp(
           Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
             index + 101,
-            minimalInboxMessage({ timestamp: (index + 101) * 100 }),
+            minimalInboxMessage({ createdAtOrder: (index + 101) * 100 }),
           ]),
         ),
       );
@@ -1648,7 +1651,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
       inboxRsp(
         Array.from({ length: 10 }, (_, index) => [
           index + 1,
-          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+          minimalInboxMessage({ createdAtOrder: (index + 1) * 100 }),
         ]),
       ),
     );
@@ -1763,7 +1766,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
   it('notifies from the server poll cursor and reloads an empty feed when matching messages arrive', async () => {
     hoisted.fetchInboxMessages
       .mockResolvedValueOnce(inboxRsp([], 80))
-      .mockResolvedValueOnce(inboxRsp([[81, minimalInboxMessage({ timestamp: 8100 })]], 81));
+      .mockResolvedValueOnce(inboxRsp([[81, minimalInboxMessage({ createdAtOrder: 8100 })]], 81));
 
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
       current: null,
@@ -1803,7 +1806,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
 
   it('suppresses automatic newer get-inbox after the current newest cursor is exhausted', async () => {
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
-      inboxRsp([[80, minimalInboxMessage({ timestamp: 8000 })]]),
+      inboxRsp([[80, minimalInboxMessage({ createdAtOrder: 8000 })]]),
     );
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
       current: null,
@@ -1830,7 +1833,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(2);
 
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
-      inboxRsp([[81, minimalInboxMessage({ timestamp: 8100 })]]),
+      inboxRsp([[81, minimalInboxMessage({ createdAtOrder: 8100 })]]),
     );
     await act(async () => {
       await apiRef.current!.loadFeedNewerMessages('mf-0');
