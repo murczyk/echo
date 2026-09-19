@@ -18,7 +18,8 @@ use rand::prelude::*;
 use regex::Regex;
 use sea_orm::*;
 use sea_query::{
-    Alias, CommonTableExpression, Expr, PostgresQueryBuilder, Query,
+    Alias, CommonTableExpression, Expr, IntoColumnRef, PostgresQueryBuilder,
+    Query, SimpleExpr,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -473,31 +474,22 @@ pub(crate) fn callsign_match_key(callsign: &str) -> String {
     key
 }
 
-pub(crate) fn callsign_query_variants(callsign: &str) -> Vec<String> {
-    let key = callsign_match_key(callsign);
-    let original = callsign.trim().to_lowercase();
-    let mut parts = key.split('-');
-    let mut variants = vec![parts.next().unwrap_or_default().to_string()];
-    for part in parts {
-        variants = variants
-            .into_iter()
-            .flat_map(|variant| {
-                RER_CALLSIGN_QUERY_SEPARATOR_VARIANTS.iter().map(
-                    move |separator| {
-                        let mut variant = variant.clone();
-                        variant.push(*separator);
-                        variant.push_str(part);
-                        variant
-                    },
-                )
-            })
-            .collect();
-    }
-    variants.retain(|callsign| !callsign.is_empty());
-    if !original.is_empty() && !variants.contains(&original) {
-        variants.push(original);
-    }
-    variants
+pub(crate) fn callsign_match_key_expr<C>(column: C) -> SimpleExpr
+where
+    C: IntoColumnRef,
+{
+    let separators = RER_CALLSIGN_QUERY_SEPARATOR_VARIANTS
+        .iter()
+        .collect::<String>();
+    let replacements = "-".repeat(RER_CALLSIGN_QUERY_SEPARATOR_VARIANTS.len());
+    Expr::cust_with_exprs(
+        "btrim(regexp_replace(translate(lower($1), $2, $3), '-+', '-', 'g'), '-')",
+        [
+            Expr::column(column),
+            Expr::value(separators),
+            Expr::value(replacements),
+        ],
+    )
 }
 
 fn callsign_form_token_len(callsign: &str) -> usize {
