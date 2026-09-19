@@ -102,8 +102,6 @@ function buildProps(overrides: Partial<FeedFilterPanelProps['panel']> = {}): Fee
     },
   };
 }
-
-// @test-scope safeguard: preserves Duty catalog loading, failure visibility, and multi-group selection without an unintended reload or lost filter draft.
 describe('FeedFilterPanel', () => {
   let container: HTMLElement;
   let root: Root;

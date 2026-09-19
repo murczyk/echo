@@ -14,8 +14,6 @@ afterEach(() => {
   root = null;
   document.body.innerHTML = '';
 });
-
-// @test-scope safeguard: prevents server-side unit pagination from skipping the current range or issuing an incorrect page transition.
 describe('UnitsPaginationControl', () => {
   it('shows the current range and navigates between pages', async () => {
     const onPrevPage = vi.fn();

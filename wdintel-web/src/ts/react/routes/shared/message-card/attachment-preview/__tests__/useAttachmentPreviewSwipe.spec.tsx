@@ -36,8 +36,6 @@ describe('useAttachmentPreviewSwipe', () => {
     root = null;
     container = null;
   });
-
-  // @test-scope safeguard: prevents attachment swipe direction from selecting the wrong neighboring preview
   it('triggers onNext on left swipe and onPrevious on right swipe', async () => {
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -83,8 +81,6 @@ describe('useAttachmentPreviewSwipe', () => {
 
     expect(onPrevious).toHaveBeenCalledTimes(1);
   });
-
-  // @test-scope safeguard: prevents disabled attachment previews from navigating on touch input
   it('does not trigger navigation when enabled is false', async () => {
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -114,8 +110,6 @@ describe('useAttachmentPreviewSwipe', () => {
     expect(onNext).not.toHaveBeenCalled();
     expect(onPrevious).not.toHaveBeenCalled();
   });
-
-  // @test-scope safeguard: prevents document scrolling gestures from unexpectedly changing attachments
   it('does not handle gestures that start inside a scrollable preview panel', async () => {
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -149,7 +143,7 @@ describe('useAttachmentPreviewSwipe', () => {
     expect(onPrevious).not.toHaveBeenCalled();
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3368
+  // Regression: https://github.com/echoua/echo/issues/3368
   it('restores fresh swipes after pinch completion while navigation was disabled #3368', async () => {
     container = document.createElement('div');
     document.body.appendChild(container);

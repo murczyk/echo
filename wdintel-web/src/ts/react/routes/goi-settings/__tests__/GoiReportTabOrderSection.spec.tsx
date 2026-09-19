@@ -108,8 +108,6 @@ async function renderSection() {
   await act(async () => Promise.resolve());
   return { container, root };
 }
-
-// @test-scope safeguard: prevents a GOI report-tab reordering from claiming success before persistence or hiding contextual failures.
 describe('GoiReportTabOrderSection notifications', () => {
   beforeEach(() => {
     mocks.fetch.mockReset();

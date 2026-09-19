@@ -45,8 +45,6 @@ afterEach(() => {
   latest = null;
   vi.clearAllMocks();
 });
-
-// @test-scope safeguard: prevents sidebar failures or insufficient permissions from exposing stale device-unit data.
 describe('useDevicesSidebarResource', () => {
   it('keeps a unit-statistics failure in its own retryable resource', async () => {
     devicesApiMock.getDeviceUnitStats

@@ -43,8 +43,6 @@ function deferredPromise<T>() {
   });
   return { promise, resolve };
 }
-
-// @test-scope safeguard: preserves map load-state ownership and user-visible error handling so late or paged map requests cannot misrepresent the selected settlement data.
 describe('AnalysisMapPane', () => {
   let container: HTMLDivElement;
   let root: Root;

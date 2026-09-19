@@ -14,8 +14,6 @@ describe('user-settings api', () => {
   beforeEach(() => {
     mocks.getJson.mockReset();
   });
-
-  // @test-scope parser: supported legacy message-preview values from user-settings responses
   it.each([
     ['twenty', 20],
     ['Twenty', 20],

@@ -6,20 +6,24 @@ description: Update Material React Table usage in wdintel-web, including shared 
 # Frontend MRT Tables
 
 ## Short description (for triggering)
+
 Use when editing `material-react-table` usage in `wdintel-web/src/ts/react`, especially shared table helpers, selection columns, row actions, or MRT display-column behavior.
 
 ## When to use / When NOT to use
+
 - Use: MRT table options, shared `MrtRowActionButton`, selection-column behavior, action-column layout, shared menu integration.
 - Use: Files such as `MrtRowActionButton.tsx`, `mui-customized/table/*`, and React route tables using `useMaterialReactTable`.
 - Do not use: Elm-only tables or non-MRT UI.
 - Do not use: Generic React work unrelated to `material-react-table`.
 
 ## Inputs to derive
+
 - Derive whether the table uses shared defaults from `getDefaultMRTOptions`.
 - Derive whether the route uses shared row actions from `MrtRowActions` / `MrtRowActionButton`.
 - Derive whether permissions should disable interaction or hide controls entirely.
 
 ## Procedure (checklist)
+
 - Prefer fixing MRT behavior in shared helpers before patching individual routes.
 - Start from shared helpers:
 - `getDefaultMRTOptions`
@@ -70,6 +74,7 @@ Use when editing `material-react-table` usage in `wdintel-web/src/ts/react`, esp
 - Per-route settings should use shared table props/provider inputs instead of ad hoc localStorage keys.
 
 ## Definition of Done (checklist)
+
 - Shared MRT behavior matches the intended global rule, not just one route.
 - Shared helpers still match repo defaults instead of drifting per route.
 - Selection-column permission behavior stays visible and disabled rather than disappearing or switching to radios unintentionally.
@@ -80,10 +85,12 @@ Use when editing `material-react-table` usage in `wdintel-web/src/ts/react`, esp
 - Relevant tests and build checks pass.
 
 ## Targeted checks
-- `cd wdintel-web && npm run test:ts:scope-check`
-- Run only admitted parser, safeguard, or linked regression coverage affected by the change.
-- Manually verify internal-column order, stale local-storage normalization, and overflow disclosure when no faithful admitted boundary exists.
+
+- `cd wdintel-web && npm run test:structure-check`
+- Run only the meaningful parser, safeguard, or linked-regression coverage affected by the change.
+- Manually verify internal-column order, stale local-storage normalization, and overflow disclosure when no faithful test boundary exists.
 - `just build-front`
 
 ## Assumptions
+
 - MRT tables in this repo should converge on shared behavior rather than per-route one-off implementations.

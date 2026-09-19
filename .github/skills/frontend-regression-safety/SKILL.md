@@ -6,15 +6,18 @@ description: Run mandatory frontend regression safety checks for API contract co
 # Frontend Regression Safety
 
 ## Short description (for triggering)
+
 Use at the end of any task that changes frontend behavior, API calls, UI states, or route flows.
 
 ## When to use / When NOT to use
+
 - Use: Any Elm/React/UI behavior change.
 - Use: Any edit in `wdintel-web/src` that touches network calls or interactions.
 - Do not use: Pure docs-only changes.
 - Do not use: Pure commit message drafting with no code change.
 
 ## Inputs the agent should request or derive
+
 - Derive changed endpoints from diffs in Elm effects or `services/api/*`.
 - Derive impacted screens/routes from changed components/pages.
 - Derive available test/build scripts from `justfile` and `wdintel-web/package.json`.
@@ -22,6 +25,7 @@ Use at the end of any task that changes frontend behavior, API calls, UI states,
 - Read the **Test scope** section of `CODE_REVIEW.md` before creating or expanding tests.
 
 ## Procedure (checklist)
+
 - REST API contract checks:
 - Confirm endpoint paths and methods unchanged unless explicitly intended.
 - Confirm request body keys and response parsing still match backend shape.
@@ -52,9 +56,10 @@ Use at the end of any task that changes frontend behavior, API calls, UI states,
 - If the local server or browser still cannot run, report the exact blocker and do not claim full E2E verification.
 - Add or extend tests only when they qualify under `CODE_REVIEW.md`. Do not create isolated coverage for trivial helpers, defaults, formatting, static rendering/configuration, or mocked implementation sequencing.
 - For issue/PR-linked regressions, include the stable Echo issue or pull-request reference in the test and exercise the real failure mode at the lowest faithful test level.
-- Run `npm run test:ts:scope-check` when changing the admitted React suite. The gate enforces traceability; review still verifies the category honestly matches the failure.
+- Run `npm run test:structure-check` when changing React test placement or support modules. Review each test's concrete behavior and failure mode rather than relying on labels.
 
 ## Definition of Done (checklist)
+
 - API contract compatibility verified or intentionally migrated.
 - UX regression checks completed across breakpoints and states.
 - Relevant URL/localStorage/user-settings persistence behavior is verified.
@@ -63,12 +68,14 @@ Use at the end of any task that changes frontend behavior, API calls, UI states,
 - No silent handling regressions for API errors.
 
 ## Tiny examples
+
 ```txt
 Changed /api/palitra/update/:id body?
 -> Update request mapper + response normalizer + related tests in same change.
 ```
 
 ## Self-check
+
 - Re-open diff and list each changed endpoint/method.
 - Re-open diff and list each changed interactive UI state.
 - Confirm every list item is either validated or intentionally changed and documented.
@@ -77,4 +84,5 @@ Changed /api/palitra/update/:id body?
 - Review every added or substantially expanded test against `CODE_REVIEW.md`; remove tests that cannot name an accepted category and a concrete failure mode.
 
 ## Assumptions
+
 - Manual visual verification is acceptable when automated UI tests are absent.

@@ -89,8 +89,6 @@ afterEach(() => {
   mrtMock.options = null;
   vi.clearAllMocks();
 });
-
-// @test-scope safeguard: preserves the explicit unit pagination controls instead of enabling duplicate or unreachable table navigation.
 describe('UnitsTable pagination', () => {
   it('does not enable the native bottom toolbar on the last page', () => {
     renderTable(20);

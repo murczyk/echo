@@ -202,8 +202,6 @@ function TestHarness(props: {
 
   return null;
 }
-
-// @test-scope safeguard: prevents failed, duplicate, or unauthorized message mutations from corrupting analysis state.
 describe('useAnalysisDataMessageActions', () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -441,8 +439,6 @@ describe('useAnalysisDataMessageActions', () => {
     ]);
     expect(apiRef.current!.messages[0]?.[1].tags).toEqual([3, 4]);
   });
-
-  // @test-scope safeguard: prevents a failed tag mutation from silently losing the user's current tag state
   it('rolls back the optimistic human tag change and keeps the prompt open on failure', async () => {
     hoisted.inboxMessageTagsRm.mockRejectedValueOnce(new Error('boom'));
     const apiRef = await renderHarness([
@@ -487,8 +483,6 @@ describe('useAnalysisDataMessageActions', () => {
     expect(reload).not.toHaveBeenCalled();
     expect(refreshTagFacet).not.toHaveBeenCalled();
   });
-
-  // @test-scope safeguard: reconciles a tag mutation when its event won a lost-response race
   it('reconciles the message when its event arrived before the mutation failed', async () => {
     hoisted.inboxMessageTagsRm.mockRejectedValueOnce(new Error('response lost'));
     const failLocalInboxChangeOrigin = vi.fn(() => true);
@@ -549,8 +543,6 @@ describe('useAnalysisDataMessageActions', () => {
     expect(fallbackRef.current!.botTagAction).toEqual({ messageId: 1, tagId: 3 });
     expect(fallbackRef.current!.messages[0]?.[1].tags).toEqual([3, 4]);
   });
-
-  // @test-scope safeguard: prevents duplicate point-blacklist mutations and divergent map/message state
   it('deduplicates blacklist requests and patches both analysis collections', async () => {
     const deferredRequest = deferred<void>();
     hoisted.addPalitraHighlightBlacklistEntry.mockReturnValueOnce(deferredRequest.promise);
@@ -621,8 +613,6 @@ describe('useAnalysisDataMessageActions', () => {
     expect(apiRef.current!.mapOpenMessages[0]?.[1]).toBe(originalMapMessages);
     expect(apiRef.current!.onError).toHaveBeenCalledWith('boom');
   });
-
-  // @test-scope safeguard: prevents an unauthorized blacklist mutation from being reported as an ordinary error
   it('routes blacklist 401 failures through unauthorized handling', async () => {
     const unauthorizedRef: MutableRefObject<ReturnType<typeof vi.fn> | null> = {
       current: vi.fn(() => true),

@@ -102,8 +102,6 @@ async function confirmMutation() {
   expect(document.body.textContent).toContain('wdintel-rs-bgworker');
   await clickButton('Підтвердити');
 }
-
-// @test-scope safeguard: prevents transcription-instance operations from bypassing confirmation, persisting invalid values, or leaving stale operational state.
 describe('AdminTranscriptionSettingsPage', () => {
   beforeEach(() => {
     window.history.replaceState({}, '', '/admin/transcription-settings');
@@ -192,8 +190,6 @@ describe('AdminTranscriptionSettingsPage', () => {
     expect(container.textContent).toContain('systemd unavailable');
     await act(async () => root.unmount());
   });
-
-  // @test-scope safeguard: prevents an instance-table filter from being sent to the unrelated transcription-results query.
   it('does not send instance column filters to transcription results', async () => {
     const columnFilters = encodeURIComponent(JSON.stringify([{ id: 'name', value: 'GPU 1' }]));
     window.history.replaceState(
@@ -215,8 +211,6 @@ describe('AdminTranscriptionSettingsPage', () => {
     );
     await act(async () => root.unmount());
   });
-
-  // @test-scope safeguard: prevents a failed transcription-results request from leaving the operator without an error signal.
   it('shows transcription-result load failures in a toast', async () => {
     mocks.listResults.mockRejectedValue(new Error('results unavailable'));
     const { root } = await renderPage();
@@ -229,8 +223,6 @@ describe('AdminTranscriptionSettingsPage', () => {
     });
     await act(async () => root.unmount());
   });
-
-  // @test-scope safeguard: prevents cursor pagination from skipping or repeating transcription results between pages.
   it('uses the server cursor for the next transcription-results page', async () => {
     mocks.listResults
       .mockResolvedValueOnce({
@@ -263,8 +255,6 @@ describe('AdminTranscriptionSettingsPage', () => {
     );
     await act(async () => root.unmount());
   });
-
-  // @test-scope safeguard: prevents the final transcription-results page from becoming unreachable when the response total changes.
   it('derives the last transcription-results page from the response total', async () => {
     const result = {
       id: '01900000-0000-7000-8000-000000000002',

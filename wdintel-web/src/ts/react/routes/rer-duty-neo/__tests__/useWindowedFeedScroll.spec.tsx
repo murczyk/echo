@@ -223,8 +223,6 @@ function installResizeObserverMock() {
 function createItemLayouts(ids: number[], startTop = 0, height = 50): Map<number, ItemLayout> {
   return new Map(ids.map((id, index) => [id, { top: startTop + index * height, height }]));
 }
-
-// @test-scope safeguard: prevents live-feed scrolling, trimming, and layout work from displacing the reader or leaving stale viewport state.
 describe('useWindowedFeedScroll', () => {
   let container: HTMLElement;
   let root: Root;

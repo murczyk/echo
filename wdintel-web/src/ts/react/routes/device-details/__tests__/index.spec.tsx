@@ -145,7 +145,6 @@ function renderPage(authUserRoles: string[] = ['DeviceSource']) {
 }
 
 describe('DeviceDetailsPage layout', () => {
-  // @test-scope safeguard: prevents the device details page from exposing unsupported controls or syncing data for the wrong tab.
   it('renders target device metadata and only the supported edit action', () => {
     renderPage();
 
@@ -223,8 +222,6 @@ describe('DeviceDetailsPage layout', () => {
     expect(container?.querySelector('[data-testid="device-file-content-pane"]')).not.toBeNull();
     expect(container?.querySelector('button[aria-label="Розгорнути ліву панель"]')).not.toBeNull();
   });
-
-  // @test-scope safeguard: prevents device reanalysis controls from being exposed to non-administrators.
   it('exposes the device reanalysis action only to Admin', () => {
     renderPage(['Admin']);
 
@@ -234,8 +231,6 @@ describe('DeviceDetailsPage layout', () => {
         ?.getAttribute('data-is-admin'),
     ).toBe('true');
   });
-
-  // @test-scope safeguard: prevents unsafe device metadata URLs from becoming executable links.
   it('keeps the device name non-clickable when the external URL is unsafe', () => {
     pageMock.useDeviceDetailsPage.mockReturnValue(
       buildPage({
@@ -257,8 +252,6 @@ describe('DeviceDetailsPage layout', () => {
     expect(deviceNameLink).toBeUndefined();
     expect(leftPanel?.querySelector('[data-testid="OpenInNewIcon"]')).toBeNull();
   });
-
-  // @test-scope safeguard: prevents edits to archived devices.
   it('keeps archived devices read-only', () => {
     pageMock.useDeviceDetailsPage.mockReturnValue(
       buildPage({

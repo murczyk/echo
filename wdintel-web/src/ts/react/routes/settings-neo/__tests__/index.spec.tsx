@@ -360,7 +360,7 @@ describe('SettingsNeoPage', () => {
     container.remove();
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3546
+  // Regression: https://github.com/echoua/echo/issues/3546
   it.each(['duty', 'analysis'] as const)(
     'keeps shared card controls in %s and sorting only in Analysis (#3546)',
     async (section) => {
@@ -381,7 +381,7 @@ describe('SettingsNeoPage', () => {
     },
   );
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3546
+  // Regression: https://github.com/echoua/echo/issues/3546
   it('saves the Analysis time basis only from Analysis settings', async () => {
     await act(async () => {
       root.render(<SettingsNeoPage section="analysis" />);
@@ -405,8 +405,6 @@ describe('SettingsNeoPage', () => {
     expect(container.querySelector('[data-toggle-value="interception"]')).toBeNull();
     expect(saveUserDutySettings).not.toHaveBeenCalled();
   });
-
-  // @test-scope safeguard: prevents a transient failure from losing a queued preference update.
   it('drains queued duty saves after a transient failure', async () => {
     const firstSave = deferred<void>();
     const secondSave = deferred<void>();
@@ -465,8 +463,6 @@ describe('SettingsNeoPage', () => {
       await Promise.resolve();
     });
   });
-
-  // @test-scope safeguard: prevents a disabled browser persistence setting from retaining the current Duty filter.
   it('disables browser persistence and removes the current Duty filter', async () => {
     persistDutyFilterState({ messageFeeds: [['mf-0', { groupsSelected: ['group-a'] }]] });
     await act(async () => {
@@ -488,8 +484,6 @@ describe('SettingsNeoPage', () => {
     expect(readPersistedDutyFilterState()).toBeNull();
     expect(saveUserDutySettings).not.toHaveBeenCalled();
   });
-
-  // @test-scope safeguard: prevents saving a group edit from dropping its organism membership.
   it('sends organism ids when saving my group edits', async () => {
     fetchServerInfoMock.mockResolvedValueOnce({ version: '1.0.0', featureMyAdminGroupsEdit: true });
     listMyAdminGroupsMock.mockResolvedValue({
@@ -558,8 +552,6 @@ describe('SettingsNeoPage', () => {
       }),
     );
   });
-
-  // @test-scope safeguard: prevents saving a group without an administrator.
   it('does not save my group edits without admins', async () => {
     fetchServerInfoMock.mockResolvedValueOnce({ version: '1.0.0', featureMyAdminGroupsEdit: true });
     listMyAdminGroupsMock.mockResolvedValue({

@@ -75,7 +75,7 @@ function canvasFixture() {
   } as never;
 }
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3448
+// Regression: https://github.com/echoua/echo/issues/3448
 describe('image editor raster operations #3448', () => {
   afterEach(() => vi.restoreAllMocks());
 

@@ -32,7 +32,6 @@ afterEach(async () => {
 });
 
 describe('AiEnginesTable AI-agent compatibility', () => {
-  // @test-scope safeguard: keeps the credential-transfer warning visible before an operator enables a token-backed AI engine.
   it('renders a compatible token provider with a red credential warning tooltip', async () => {
     await act(async () =>
       root.render(

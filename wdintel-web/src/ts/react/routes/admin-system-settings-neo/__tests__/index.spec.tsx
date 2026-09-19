@@ -101,8 +101,6 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
   afterEach(() => {
     document.body.innerHTML = '';
   });
-
-  // @test-scope safeguard: prevents success feedback from claiming persisted system settings before the save completes.
   it('saves a changed boolean and notifies after the API resolves', async () => {
     let resolveSave!: () => void;
     mocks.save.mockReturnValue(new Promise<void>((resolve) => (resolveSave = resolve)));
@@ -123,8 +121,6 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     });
     await act(async () => root.unmount());
   });
-
-  // @test-scope safeguard: prevents report settings from persisting fractional or unintended values.
   it('loads report defaults and saves normalized report settings', async () => {
     const { container, root } = await renderPage();
     const hoursInput = container.querySelector<HTMLInputElement>('input[type="number"]');
@@ -164,8 +160,6 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     expect(saveButton?.disabled).toBe(true);
     await act(async () => root.unmount());
   });
-
-  // @test-scope safeguard: prevents the bot-tag disable setting from being lost when system settings are saved.
   it('saves the bot tag toggle', async () => {
     const { container, root } = await renderPage();
     const checkbox = botTagsSwitch(container);
@@ -177,8 +171,6 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ disableBotTags: true }));
     await act(async () => root.unmount());
   });
-
-  // @test-scope safeguard: prevents unpersisted transcription changes from being presented as active.
   it('keeps the enablement warning until transcription is saved', async () => {
     const { container, root } = await renderPage();
     const checkbox = audioSwitch(container);

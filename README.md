@@ -99,16 +99,16 @@ This runs the frontend test pipeline in `wdintel-web`:
 - the full Vitest suite (`npm run test:ts`)
 - the generated frontend test setup
 
-React test-admission commands are available from `wdintel-web`:
+React test-structure commands are available from `wdintel-web`:
 
 ```bash
-npm run test:ts:scope-check
+npm run test:structure-check
 npm run test:ts
 ```
 
-`test:ts:scope-check` validates admission annotations. `test:ts` runs token
-validation and this gate before the complete Vitest suite. Test-only production
-exports are rejected when newly introduced relative to the PR merge base.
+`test:structure-check` validates test placement, test-support imports, and
+referenced test paths. `test:ts` runs token validation and this structural check
+before the complete Vitest suite.
 
 Frontend end-to-end checks:
 
@@ -258,9 +258,10 @@ just server=echo-gpu deploy-rustdocs
 
 [Delta.md](DELTA.md)
 
-Config with access details for delta is being stored in Hashicorp Vault. 
+Config with access details for delta is being stored in Hashicorp Vault.
 Vault secrets are backed up in Bitwarden.
 One-off commands for backup Vault secrets:
+
 - backup: OneoffBackupVaultSecretsToBitwarden
 - restore: OneoffRestoreVaultSecretsFromBitwarden
 
@@ -274,6 +275,7 @@ it's useful for resetting local db or preparing fresh `wd-init.pgrestore`
 ## РЕО
 
 Доповідь про радіоелектронну обстановку.
+
 - неприв'язані мережі: показуємо лише топ 90% активних за кількістю сеансів зв'язку, групуємо по частотах в межах +-12.5КГц
 - на неприв'язаних частотах показуємо лише позивні які б'ються із білим списком [callsigns_whitelist.txt](wdintel-rs/data/callsigns_whitelist.txt). він генеруєжться в модулі callsign-crawler проету milgeo-rs: https://github.com/echoua/milgeo-rs/tree/main/callsigns_crawler
 
@@ -285,13 +287,13 @@ It can show these visual kinds of content:
 
 - Keywords are shown as orange text highlights.
 - Map points are shown as orange clickable labels with a map menu.
-Callsigns use three message-card states:
+  Callsigns use three message-card states:
 
-| State | Condition | Link | Icon | Tooltip |
-| --- | --- | --- | --- | --- |
-| Message network | An exact callsign has a network hint whose network belongs to the message | Blue link | Filled info | Exact message-network hints only |
-| Known elsewhere | The exact callsign has catalog rows and/or hints from other networks | Blue link | Outlined info | Catalog and/or other-network sections |
-| Unresolved | The exact callsign has neither catalog rows nor network hints | Blue link | None | None |
+| State           | Condition                                                                 | Link      | Icon          | Tooltip                               |
+| --------------- | ------------------------------------------------------------------------- | --------- | ------------- | ------------------------------------- |
+| Message network | An exact callsign has a network hint whose network belongs to the message | Blue link | Filled info   | Exact message-network hints only      |
+| Known elsewhere | The exact callsign has catalog rows and/or hints from other networks      | Blue link | Outlined info | Catalog and/or other-network sections |
+| Unresolved      | The exact callsign has neither catalog rows nor network hints             | Blue link | None          | None                                  |
 
 Other-network knowledge uses the outlined icon. Missing position or formation text does not change the message-network state; the tooltip shows a fallback explanation. Matching is exact after trimming and case-folding only. Unresolved `CNCallsignC` tokens remain clickable.
 

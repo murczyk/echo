@@ -48,8 +48,6 @@ afterEach(() => {
 beforeEach(() => {
   fetchUserSettingsMock.mockReset();
 });
-
-// @test-scope safeguard: preserves an explicit “Off” preview preference across initial hydration and external user-settings updates instead of silently restoring message truncation.
 describe('useDutySettings', () => {
   it('preserves Off from the initial settings load', async () => {
     fetchUserSettingsMock.mockResolvedValue({ messageTextPreviewLines: null });

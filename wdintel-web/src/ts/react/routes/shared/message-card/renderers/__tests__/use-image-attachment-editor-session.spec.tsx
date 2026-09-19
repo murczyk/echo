@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { useImageAttachmentEditorSession } from '../use-image-attachment-editor-session';
 import { MessageCardAttachmentPreviewStage } from '../../attachment-preview/MessageCardAttachmentPreviewStage';
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3099
+// Regression: https://github.com/echoua/echo/issues/3099
 it('keeps stale sources and replacements bound to the original attachment #3099', async () => {
   const imageA = { id: 'a', href: '/a.png' } as never;
   const imageB = { id: 'b', href: '/b.png' } as never;
@@ -54,7 +54,7 @@ it('keeps stale sources and replacements bound to the original attachment #3099'
   act(() => root.unmount());
 });
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3294
+// Regression: https://github.com/echoua/echo/issues/3294
 it('clears a failed image source error when carousel navigation changes the target #3294', async () => {
   const imageA = { id: 'a', href: '/a.png' } as never;
   const imageB = { id: 'b', href: '/b.png' } as never;
@@ -92,7 +92,7 @@ it('clears a failed image source error when carousel navigation changes the targ
   act(() => root.unmount());
 });
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3368
+// Regression: https://github.com/echoua/echo/issues/3368
 it('ECHO-3368 invalidates stage gestures while editor loading and unlocks after failure or cancel', async () => {
   const image = { id: 'image', href: '/image.png' } as never;
   const sources: Array<{ resolve: (value: any) => void; reject: (reason: Error) => void }> = [];

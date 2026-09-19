@@ -159,8 +159,6 @@ function renderHarness(initialForm: NetworkCallsignDrawerForm) {
 
   return { container, root, getCurrentForm: () => currentForm };
 }
-
-// @test-scope safeguard: prevents catalog callsigns from being saved with invalid source, unit, or exclusive marker state.
 describe('NetworkCallsignDrawer', () => {
   it('allows developing rows to save without a source', () => {
     const view = renderHarness({

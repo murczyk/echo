@@ -266,8 +266,6 @@ function deferred<T>() {
   });
   return { promise, resolve, reject };
 }
-
-// @test-scope safeguard: prevents failed, duplicate, or stale Duty message mutations from corrupting feed state.
 describe('useRerDutyMessageActions', () => {
   let container: HTMLElement;
   let root: Root;

@@ -26,8 +26,6 @@ import {
 const fixture = createDutyFeedStateFixture();
 const hoisted = getDutyApiMocks();
 const { deferred, expectTailCountRequest, mountLoadedFeed, runNextRaf, startPoll } = fixture;
-
-// @test-scope safeguard: prevents follow-tail timers from overriding an intentional reader scroll or stale feed state.
 describe('useRerDutyFeedState — follow tail and scheduled scrolling', () => {
   let container: HTMLElement;
   let root: Root;

@@ -73,8 +73,6 @@ function deferred<T>() {
   });
   return { promise, resolve, reject };
 }
-
-// @test-scope safeguard: prevents stale settlement suggestions from replacing the current coordinate or typed search input.
 describe('useSettlementAutocomplete', () => {
   let root: Root;
   let container: HTMLDivElement;

@@ -137,8 +137,6 @@ function createSearchAdaptiveGraph(): NetworkCallsignRelationsRsp {
     freqs: [{ freq: '100.1', enabledByDefault: true }],
   };
 }
-
-// @test-scope safeguard: preserves explicit graph loading and prevents local graph filters from replacing a bounded, current graph with an unusable selection.
 describe('AnalysisCallsignGraphPane', () => {
   const rendered: Array<{ container: HTMLDivElement; root: Root }> = [];
 

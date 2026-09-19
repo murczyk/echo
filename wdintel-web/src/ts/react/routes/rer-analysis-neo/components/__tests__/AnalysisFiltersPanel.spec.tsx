@@ -295,8 +295,6 @@ describe('AnalysisFiltersPanel', () => {
       item.container.remove();
     }
   });
-
-  // @test-scope safeguard: prevents a completed invalidation from issuing a duplicate facet load that can overwrite the section the user already opened.
   it('does not auto-reload an already open section after filter invalidation completes', async () => {
     const loadFilterSection = vi.fn();
     const props = buildProps({

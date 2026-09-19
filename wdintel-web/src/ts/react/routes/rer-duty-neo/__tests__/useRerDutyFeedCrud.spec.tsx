@@ -83,8 +83,6 @@ async function flushMicrotasks() {
     await Promise.resolve();
   }
 }
-
-// @test-scope safeguard: prevents failed or overlapping Duty feed CRUD mutations from losing the selected feed state.
 describe('useRerDutyFeedCrud', () => {
   let container: HTMLDivElement;
   let root: Root;

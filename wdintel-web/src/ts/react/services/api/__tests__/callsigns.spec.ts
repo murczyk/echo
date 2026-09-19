@@ -10,8 +10,6 @@ describe('callsigns API', () => {
     vi.restoreAllMocks();
     window.history.replaceState({}, '', '/sigint/callsigns?filter=alpha#panel');
   });
-
-  // @test-scope safeguard: prevents unauthorized binary downloads from leaving users on a protected route
   it('redirects binary downloads on 401', async () => {
     vi.stubGlobal(
       'fetch',

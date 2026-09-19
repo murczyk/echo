@@ -43,8 +43,6 @@ function Harness(props: {
   props.apiRef.current = state;
   return null;
 }
-
-// @test-scope safeguard: prevents selecting or deselecting feed filters from discarding unrelated current selections.
 describe('useFeedFilterSelectionState', () => {
   let container: HTMLElement;
   let root: Root;

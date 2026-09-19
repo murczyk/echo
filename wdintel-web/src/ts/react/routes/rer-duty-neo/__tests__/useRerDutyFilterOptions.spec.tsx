@@ -49,8 +49,6 @@ function groupInfo(masterKey: string, name = masterKey) {
     areasOfResponsibility: null,
   };
 }
-
-// @test-scope safeguard: prevents refreshed Duty filter options from dropping selected values or showing stale labels.
 describe('useRerDutyFilterOptions', () => {
   let root: Root;
   let container: HTMLDivElement;

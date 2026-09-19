@@ -2,8 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { emptyNewCallsigns } from '../use-analysis-data.shared';
 import { invalidateNewCallsignsLoadState } from '../use-analysis-data.support';
-
-// @test-scope safeguard: prevents an invalidated callsign request from suppressing its required reload.
 describe('invalidateNewCallsignsLoadState', () => {
   it('clears the loading state and invalidates prior request keys', () => {
     const setNewCallsigns = vi.fn();

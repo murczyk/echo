@@ -595,8 +595,6 @@ function buildMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
     ...overrides,
   } as InboxMessage;
 }
-
-// @test-scope safeguard: prevents drawer lifecycle, async suggestion/upload, and edit flows from losing message content or applying stale state.
 describe('ManageMessageDrawer edit mode', () => {
   afterEach(() => {
     textFieldPropsByLabel.clear();
@@ -1350,7 +1348,7 @@ describe('ManageMessageDrawer edit mode', () => {
     root.unmount();
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3515
+  // Regression: https://github.com/echoua/echo/issues/3515
   it.each([false, true])(
     '#3515 submits clearing/restoring time (previously missing: %s)',
     async (isTimeNull) => {
@@ -1391,8 +1389,6 @@ describe('ManageMessageDrawer edit mode', () => {
       root.unmount();
     },
   );
-
-  // @test-scope safeguard: prevents a linked message edit from copying or mutating its accessible parent report.
   it('edits a message with an accessible parent as an independent message by default', async () => {
     const onSubmitEdit = vi.fn();
     const message = buildMessage({
@@ -1459,8 +1455,6 @@ describe('ManageMessageDrawer edit mode', () => {
 
     root.unmount();
   });
-
-  // @test-scope safeguard: prevents report editing from attempting to copy an inaccessible parent and losing the edit session.
   it('keeps explicit report edit mode without copying when no parents are accessible', async () => {
     const report = buildMessage({
       text: 'existing report body',

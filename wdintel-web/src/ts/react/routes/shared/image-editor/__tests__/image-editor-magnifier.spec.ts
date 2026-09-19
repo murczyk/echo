@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { calculateMagnifierSample } from '../image-editor-magnifier';
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3099
+// Regression: https://github.com/echoua/echo/issues/3099
 describe('image editor magnifier geometry #3099', () => {
   it('uses display scale, but never DPR, to calculate the native source rectangle', () => {
     expect(

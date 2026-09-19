@@ -154,7 +154,6 @@ function renderJournal(journal: DeviceFileJournalState) {
 }
 
 describe('DeviceFileJournal', () => {
-  // @test-scope safeguard: keeps file-journal load failures recoverable instead of silently hiding them.
   it('keeps load errors visible and exposes retry actions', () => {
     const reload = vi.fn().mockResolvedValue(undefined);
     renderJournal(
@@ -173,8 +172,6 @@ describe('DeviceFileJournal', () => {
     act(() => retryButton?.click());
     expect(reload).toHaveBeenCalledTimes(1);
   });
-
-  // @test-scope safeguard: prevents journal pagination from firing before the visible end of the loaded entries.
   it('shows the load-more action only at the end of the journal scroll', () => {
     const loadMore = vi.fn().mockResolvedValue(undefined);
     renderJournal(journalState({ totalCount: 2, nextCursor: 'next', loadMore }));

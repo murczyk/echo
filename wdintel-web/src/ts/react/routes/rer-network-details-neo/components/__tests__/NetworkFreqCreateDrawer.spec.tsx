@@ -290,8 +290,6 @@ afterEach(() => {
     item.container.remove();
   }
 });
-
-// @test-scope safeguard: prevents a new network frequency or key from being created with invalid dates or incompatible technical fields.
 describe('NetworkFreqCreateDrawer', () => {
   it('shows the base section heading and hides the create-only description field', () => {
     const view = renderDrawer(buildForm());

@@ -36,8 +36,6 @@ function event(sequence: number, type: AiAgentEvent['type'], text: string | null
     isError: null,
   };
 }
-
-// @test-scope parser: streamed and persisted AI-agent event payload fixtures.
 describe('applyAiAgentEvent', () => {
   it('applies deltas in sequence and ignores replays', () => {
     const first = applyAiAgentEvent(request(), event(1, 'assistant_delta', 'Від'));
@@ -133,8 +131,6 @@ describe('applyAiAgentEvent', () => {
     expect(hidden.assistantText).toBe('');
     expect(hidden.progress).toEqual([]);
   });
-
-  // @test-scope parser: persisted AI-agent event payload fixture that excludes non-displayable reasoning fields.
   it('normalizes persisted event payloads without exposing reasoning fields', () => {
     const normalized = normalizeAiAgentEvent({
       sequence: 2,
@@ -152,8 +148,6 @@ describe('applyAiAgentEvent', () => {
     expect(normalized.createdAt).toBe(1_700_000_000_000);
     expect(JSON.stringify(normalized)).not.toContain('не показувати');
   });
-
-  // @test-scope parser: structured AI-agent tool result payload fixture.
   it('normalizes structured API route and result fields', () => {
     const normalized = normalizeAiAgentEvent({
       sequence: 3,
@@ -193,7 +187,6 @@ describe('applyAiAgentEvent', () => {
 });
 
 describe('providerOptionDisabled', () => {
-  // @test-scope safeguard: prevents a conversation from switching to an incompatible AI provider.
   it('keeps the standard selector enabled while locking incompatible options', () => {
     expect(providerOptionDisabled(true, 'conversation-1', 'provider-1', 'provider-1')).toBe(false);
     expect(providerOptionDisabled(true, 'conversation-1', 'provider-1', 'provider-2')).toBe(true);

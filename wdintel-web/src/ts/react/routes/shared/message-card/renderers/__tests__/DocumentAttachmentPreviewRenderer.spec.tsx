@@ -197,8 +197,6 @@ function TestDocumentPreviewDialog(props: TestDocumentPreviewDialogProps) {
     />
   );
 }
-
-// @test-scope safeguard: prevents document evidence from losing Escape/key ownership, available actions, zoom state, or fullscreen capability boundaries
 describe('DocumentAttachmentPreviewRenderer', () => {
   afterEach(() => {
     document.body.innerHTML = '';

@@ -101,8 +101,6 @@ describe('AnalysisGroupsActivityCard', () => {
       item.container.remove();
     }
   });
-
-  // @test-scope safeguard: prevents unscoped activity loading until the user explicitly confirms the global filter request.
   it('offers an explicit global-filter load when no frequency is selected', async () => {
     const onLoad = vi.fn();
     const view = await renderComponent({
@@ -127,8 +125,6 @@ describe('AnalysisGroupsActivityCard', () => {
     });
     expect(onLoad).toHaveBeenCalledTimes(1);
   });
-
-  // @test-scope safeguard: prevents a selected frequency from silently showing no activity after the card opens.
   it('loads activity automatically when a frequency is already selected', async () => {
     const onLoad = vi.fn();
     const view = await renderComponent({
@@ -144,8 +140,6 @@ describe('AnalysisGroupsActivityCard', () => {
 
     expect(onLoad).toHaveBeenCalledTimes(1);
   });
-
-  // @test-scope safeguard: prevents an all-zero activity period from appearing as a loaded but blank chart.
   it('shows an empty-period message instead of an empty chart when all buckets are zero', async () => {
     const view = await renderComponent({
       groupsActivity: {

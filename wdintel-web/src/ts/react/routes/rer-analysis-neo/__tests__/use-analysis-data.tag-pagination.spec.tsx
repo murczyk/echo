@@ -151,8 +151,6 @@ async function renderAnalysisData() {
     await Promise.resolve();
   });
 }
-
-// @test-scope safeguard: prevents tag pagination responses from mixing pages or overwriting the current tag list.
 describe('useAnalysisData tag pagination', () => {
   beforeEach(() => {
     container = document.createElement('div');

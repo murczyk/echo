@@ -78,8 +78,6 @@ afterEach(() => {
   document.body.innerHTML = '';
   vi.clearAllMocks();
 });
-
-// @test-scope safeguard: prevents callsign mutations from applying to a stale or different network selection.
 describe('useRerNetworkDetailsNeoPageCallsignActions', () => {
   it('defaults a new callsign when the network has exactly one unit', () => {
     renderHarness([101]);

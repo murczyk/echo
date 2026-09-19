@@ -52,7 +52,6 @@ afterEach(() => {
 });
 
 describe('useAdminReportDetails', () => {
-  // @test-scope safeguard: prevents a completed report task from continuing to poll or duplicating log entries
   it('polls incremental task logs and stops after the report finishes', async () => {
     vi.useFakeTimers();
     vi.mocked(fetchReportHistoryStatus)

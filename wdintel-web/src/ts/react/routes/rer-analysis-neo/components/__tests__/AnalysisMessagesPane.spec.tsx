@@ -222,8 +222,6 @@ async function click(element: HTMLElement): Promise<void> {
     element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   });
 }
-
-// @test-scope safeguard: preserves analysis-message pagination, destructive actions, comments, and page transitions so stale or unintended message operations cannot be shown as current.
 describe('AnalysisMessagesPane', () => {
   const rendered: Rendered[] = [];
 

@@ -266,13 +266,57 @@
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/index.spec.tsx`.
 - **Original Echo issue/PR, if known:** none recorded; retained as a data-integrity safeguard.
 
+## Analysis filter draft continuity
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-analysis-filter-draft-continuity`
+- **Affected route/component:** `AnalysisFilterField`
+- **User action or external event:** the user types or changes a deferred filter while options refresh, the menu remains open, or the menu closes.
+- **Expected observable result:** in-progress search text and deferred selections are not lost or replayed from an older draft; an explicit selection, clear, or bulk paste applies the appropriate current value.
+- **Known race/idempotency constraints:** option refreshes and deferred close commits cannot overwrite the user's current filter draft.
+- **Source implementation:** `routes/rer-analysis-neo/components/AnalysisFilterField.tsx`.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/components/__tests__/AnalysisFilterField.spec.tsx`.
+
+## Analysis editor refresh integrity
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-analysis-editor-refresh-integrity`
+- **Affected route/component:** `RerAnalysisNeoPage`
+- **User action or external event:** the user creates or edits a message/report, follows a linked-message edit, or refreshes the page.
+- **Expected observable result:** create/edit completion refreshes analysis data; linked and forwarded messages use the correct edit ownership; an edit result without an inline message cannot save stale local data; manual refresh preserves the current message page.
+- **Known race/idempotency constraints:** mutation completion cannot apply a stale message object after server refresh.
+- **Source implementation:** `routes/rer-analysis-neo/index.tsx`.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/index.spec.tsx`.
+
+## Analysis mutation feedback
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-analysis-mutation-feedback`
+- **Affected route/component:** `RerAnalysisNeoPage` message and report editor flow.
+- **User action or external event:** the user creates a message or report, deletes a report, or cancels the editor.
+- **Expected observable result:** successful message creation shows the established success notification and refreshes Analysis. Successful report creation and deletion show their corresponding success notifications and refresh Analysis. Cancelling the editor neither shows a success notification nor triggers a mutation refresh.
+- **Known race/idempotency constraints:** only a completed server mutation may trigger its feedback and refresh.
+- **Source implementation:** `routes/rer-analysis-neo/index.tsx`.
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
+
+## Analysis direct-link failure presentation
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-analysis-direct-link-failure-presentation`
+- **Affected route/component:** `RerAnalysisNeoPage` direct-message link handling.
+- **User action or external event:** a direct-linked message cannot be resolved.
+- **Expected observable result:** the standard error notification reports the unavailable message once; ordinary rerenders do not repeat it or duplicate it as an inline alert.
+- **Known race/idempotency constraints:** the same unresolved direct-link failure remains deduplicated across ordinary rerenders.
+- **Source implementation:** `routes/rer-analysis-neo/index.tsx`.
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
+
 ## Analysis workspace interaction integrity
 
 - **Status:** inferred characterization
 - **Behavior ID:** `react-analysis-workspace-interaction-integrity`
 - **Affected route/component:** RER Analysis header, filters, center panes, sidebar, pagination, report dialog, map, and summary panels.
 - **User action or external event:** the user changes a filter, opens a pane/dialog, follows pagination, changes a report, or switches between analysis views.
-- **Expected observable result:** controls remain available in their active layout; selected filters and result navigation act on the intended data; messages, map, callsigns, frequencies, and summary views retain their distinct interaction affordances.
+- **Expected observable result:** controls remain available in their active layout; narrow panels use drawers without replacing the active center content; create actions remain available outside map-only states; selected filters and result navigation act on the intended data; messages, map, callsigns, frequencies, and summary views retain their distinct interaction affordances.
 - **Loading/empty/error/success behavior:** loading and empty states do not expose stale actions; failed report/filter work remains retryable.
 - **URL, localStorage, or user-settings persistence:** route-owned analysis state remains the source of truth.
 - **Known race/idempotency constraints:** panel refreshes and pagination must not apply actions to a stale selection.

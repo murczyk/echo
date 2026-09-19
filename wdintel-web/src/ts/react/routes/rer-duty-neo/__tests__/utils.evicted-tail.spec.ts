@@ -22,7 +22,7 @@ function indicatorFeed(overrides: Partial<MessageFeedState>): MessageFeedState {
   };
 }
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3496
+// Regression: https://github.com/echoua/echo/issues/3496
 describe('evicted Duty feed tail', () => {
   it('clears the evicted tail when a nolimit page restores it before trimming', () => {
     const feed = indicatorFeed({

@@ -5,8 +5,6 @@ import {
   readInitialArchiveViewFromUrl,
   updateArchiveViewInUrl,
 } from '../use-rer-palitra-neo-page.shared';
-
-// @test-scope safeguard: prevents Palitra URL state changes from discarding the user's archive view.
 describe('palitra URL state', () => {
   it('removes legacy tab values while preserving view mode', () => {
     window.history.replaceState({}, '', '/rer-palitra-neo?tab=anything&viewMode=archived');

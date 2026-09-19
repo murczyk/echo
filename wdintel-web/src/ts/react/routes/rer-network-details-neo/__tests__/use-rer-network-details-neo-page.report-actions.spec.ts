@@ -233,8 +233,6 @@ afterEach(() => {
   latestState = null;
   vi.useRealTimers();
 });
-
-// @test-scope safeguard: prevents report actions from applying to stale network details or reporting a false successful export.
 describe('useRerNetworkDetailsNeoPageReportActions', () => {
   it('updates the etalonka report progress flag through a focused setter', async () => {
     if (!latestActions) throw new Error('actions not ready');

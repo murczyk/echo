@@ -51,8 +51,6 @@ afterEach(() => {
   latest = null;
   vi.clearAllMocks();
 });
-
-// @test-scope safeguard: prevents top-sidebar data from applying after its analysis context has changed.
 describe('useAnalysisTopSidebarData', () => {
   it('keeps top sidebar counters visible while invalidating the right sidebar load state', () => {
     renderHook();

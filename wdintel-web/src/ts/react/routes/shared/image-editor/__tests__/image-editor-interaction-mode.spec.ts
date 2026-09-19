@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { applyImageEditorSurfaceCursor, imageEditorCursor } from '../image-editor-interaction-mode';
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3099
+// Regression: https://github.com/echoua/echo/issues/3099
 describe('imageEditorCursor', () => {
   it.each([
     ['select', 'default'],

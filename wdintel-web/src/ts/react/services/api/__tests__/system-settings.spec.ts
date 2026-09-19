@@ -8,8 +8,6 @@ import { getRerDutyTestReplayStatus } from '../system-settings';
 
 describe('system settings response normalization', () => {
   beforeEach(() => mocks.postJson.mockReset());
-
-  // @test-scope parser: normalizes replay-status fields from a backend response
   it('maps replay status', async () => {
     mocks.postJson.mockResolvedValue({
       status: 'running',

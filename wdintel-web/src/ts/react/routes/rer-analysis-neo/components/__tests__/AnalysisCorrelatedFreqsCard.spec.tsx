@@ -8,7 +8,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { AnalysisCorrelatedFreqsCard } from '../AnalysisCorrelatedFreqsCard';
 
 describe('AnalysisCorrelatedFreqsCard', () => {
-  // @test-scope safeguard: prevents selecting a frequency from issuing an unrequested correlated-frequency load.
   it('waits for an explicit load when a frequency is selected', () => {
     const container = document.createElement('div');
     const root = createRoot(container);

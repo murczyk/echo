@@ -34,7 +34,6 @@ function buildDevice(overrides: Partial<DeviceDetails> = {}): DeviceDetails {
 }
 
 describe('device form helpers', () => {
-  // @test-scope safeguard: prevents unauthorized analytical field groups from reaching create mutation requests
   it('omits analytical fields from Cyber create requests', () => {
     const form = createDefaultDeviceUpsertForm();
     form.name = 'Device Beta';
@@ -45,8 +44,6 @@ describe('device form helpers', () => {
       customFields: {},
     });
   });
-
-  // @test-scope safeguard: prevents deliberate field clears and deleted custom fields from being lost in update mutation requests
   it('uses null for deliberate clears and omits unchanged update fields', () => {
     const device = buildDevice();
     const form = deviceDetailsToUpsertForm(device);
@@ -66,8 +63,6 @@ describe('device form helpers', () => {
       customFields: { inventory_id: 'node-2', retired: null, transport: 'ssh' },
     });
   });
-
-  // @test-scope safeguard: prevents unauthorized source and analytical field groups from reaching update mutation requests
   it('filters every changed field group in both permission directions', () => {
     const device = buildDevice();
     const form = deviceDetailsToUpsertForm(device);
@@ -92,8 +87,6 @@ describe('device form helpers', () => {
       unitId: null,
     });
   });
-
-  // @test-scope parser: maps backend snake-case and nested custom-field errors to editable fields without accepting malformed payloads
   it('maps backend form errors to editable fields', () => {
     expect(
       parseDeviceServerFieldErrors(

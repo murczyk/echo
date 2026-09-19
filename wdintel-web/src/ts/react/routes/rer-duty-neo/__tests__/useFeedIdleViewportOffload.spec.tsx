@@ -56,8 +56,6 @@ function Harness({
     </div>
   );
 }
-
-// @test-scope safeguard: prevents offscreen feed cards from being reactivated before their viewport state is current.
 describe('useFeedIdleViewportOffload', () => {
   let container: HTMLElement;
   let root: Root;
@@ -147,8 +145,6 @@ describe('useFeedIdleViewportOffload', () => {
     expect(latest.mountedCount).toBe(2);
     expect(latest.hasPlaceholderHeight).toBe(true);
   });
-
-  // @test-scope safeguard: prevents follow scrolling from leaving the visible duty cards unmounted
   it('refreshes mounted ids on programmatic scroll without waking', async () => {
     await act(async () => {
       root.render(

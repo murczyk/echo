@@ -21,8 +21,6 @@ vi.mock('../../docx/sanitize-docx-html.ts', () => ({
 
 import { runWorkerTask } from '../../workers/worker-client.ts';
 import { DocxDocumentPreview } from '../DocxDocumentPreview.tsx';
-
-// @test-scope safeguard: prevents document previews from fetching oversized files or retaining large buffers on the main thread.
 describe('DocxDocumentPreview', () => {
   afterEach(() => {
     document.body.innerHTML = '';

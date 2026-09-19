@@ -26,7 +26,6 @@ afterEach(() => {
 });
 
 describe('AiAgentChat feature flag', () => {
-  // @test-scope safeguard: prevents disabled AI-chat installations from calling protected APIs.
   it('does not call protected chat APIs while the feature is disabled', async () => {
     mocks.configuration.mockResolvedValue({
       enabled: false,

@@ -49,8 +49,6 @@ const report: IntelligenceReportSummary = {
   coords: null,
   mediaFileNames: [],
 };
-
-// @test-scope safeguard: prevents inaccessible or deleted intelligence relationships from exposing message evidence.
 describe('MessageCardIntelligenceReports', () => {
   let root: Root | null = null;
   let container: HTMLDivElement | null = null;

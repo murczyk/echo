@@ -143,7 +143,7 @@ afterEach(() => {
 });
 
 describe('AdminDeviceAnalyticsPage', () => {
-  // @test-scope regression: https://github.com/echoua/echo/pull/3268
+  // Regression: https://github.com/echoua/echo/pull/3268
   it('shows a persistent registry configuration warning without an empty catalog', async () => {
     mocks.listTags.mockRejectedValueOnce(
       new HttpRequestError(
@@ -159,8 +159,6 @@ describe('AdminDeviceAnalyticsPage', () => {
     expect(buttonWithText('Повторити')).toBeUndefined();
     expect(buttonWithText('Створити тег')).toHaveProperty('disabled', true);
   });
-
-  // @test-scope safeguard: prevents a masked device webhook from being overwritten or cleared without its explicit mutation
   it('replaces the masked device webhook and clears it only through the explicit action', async () => {
     const input = container.querySelector<HTMLInputElement>('input[type="password"]');
     expect(input).not.toBeNull();
@@ -189,8 +187,6 @@ describe('AdminDeviceAnalyticsPage', () => {
     });
     expect(container.textContent).toContain('Webhook ще не налаштовано.');
   });
-
-  // @test-scope safeguard: prevents a newly created device tag from persisting the wrong rule expression
   it('creates the first tag and saves only the current local rule expression', async () => {
     await openDeviceTagsTab();
 
@@ -222,8 +218,6 @@ describe('AdminDeviceAnalyticsPage', () => {
       message: 'Тег пристроїв і його активне правило збережено.',
     });
   });
-
-  // @test-scope safeguard: prevents an unchanged empty device-tag rule from creating an unintended rule mutation
   it('creates a tag without saving an unchanged empty rule', async () => {
     await openDeviceTagsTab();
 
@@ -237,8 +231,6 @@ describe('AdminDeviceAnalyticsPage', () => {
     expect(mocks.createTag).toHaveBeenCalledWith({ name: 'Звіти' });
     expect(mocks.saveRule).not.toHaveBeenCalled();
   });
-
-  // @test-scope safeguard: prevents a rename or unchanged tag edit from emitting an unnecessary rule mutation
   it('skips rule saving when a renamed or unchanged tag keeps the same rule', async () => {
     const existingTag = { ...createdTag, ruleExpression: localExpression };
     const renamedTag = { ...existingTag, name: 'Оновлені звіти' };
@@ -271,8 +263,6 @@ describe('AdminDeviceAnalyticsPage', () => {
     expect(mocks.updateTag).toHaveBeenCalledTimes(1);
     expect(mocks.saveRule).not.toHaveBeenCalled();
   });
-
-  // @test-scope safeguard: prevents archive or restore actions from targeting the wrong device-analytics tag
   it('archives and restores an existing tag from its action menu', async () => {
     await openDeviceTagsTab();
 
@@ -307,8 +297,6 @@ describe('AdminDeviceAnalyticsPage', () => {
     await vi.waitFor(() => expect(document.body.textContent).toContain('Активний'));
     expect(window.confirm).toHaveBeenCalledTimes(2);
   });
-
-  // @test-scope safeguard: prevents an irreversible global reanalysis from being scheduled without confirmation
   it('requires confirmation before scheduling global reanalysis', async () => {
     await openDeviceTagsTab();
 

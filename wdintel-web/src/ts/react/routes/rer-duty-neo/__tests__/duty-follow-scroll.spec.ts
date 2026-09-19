@@ -8,8 +8,6 @@ import {
   dutyFollowScrollFrame,
   getDutyFollowScrollBehavior,
 } from '../duty-follow-scroll';
-
-// @test-scope safeguard: prevents follow-tail scroll scheduling from overriding an intentional reader position.
 describe('getDutyFollowScrollBehavior', () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -25,8 +23,6 @@ describe('getDutyFollowScrollBehavior', () => {
     expect(getDutyFollowScrollBehavior()).toBe('auto');
   });
 });
-
-// @test-scope safeguard: prevents scheduled follow-tail frames from applying after the feed state is no longer current.
 describe('dutyFollowScrollFrame', () => {
   it('eases from start toward the live edge over the duration', () => {
     const mid = dutyFollowScrollFrame({

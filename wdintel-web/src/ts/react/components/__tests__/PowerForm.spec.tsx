@@ -70,7 +70,7 @@ function buildKeyboardEvent(
   return event;
 }
 
-// @test-scope regression: https://github.com/echoua/echo/issues/2746
+// Regression: https://github.com/echoua/echo/issues/2746
 describe('PowerForm', () => {
   afterEach(() => {
     document.body.innerHTML = '';

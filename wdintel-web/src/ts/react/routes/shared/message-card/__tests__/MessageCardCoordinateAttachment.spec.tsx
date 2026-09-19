@@ -164,7 +164,7 @@ describe('MessageCardCoordinateAttachment', () => {
     vi.unstubAllGlobals();
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3324
+  // Regression: https://github.com/echoua/echo/issues/3324
   it('shows a direct preview and opens the coordinate dialog', async () => {
     const msg = { pointTokens: [] } as InboxMessage;
     vi.mocked(resolveMessageCoordinatePreview).mockResolvedValue({
@@ -221,7 +221,7 @@ describe('MessageCardCoordinateAttachment', () => {
     expect(dialog?.getAttribute('data-lng')).toBe('30.52355');
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3324
+  // Regression: https://github.com/echoua/echo/issues/3324
   it('shows one unified preview with the numeric point count', async () => {
     const msg = { pointTokens: [] } as InboxMessage;
     vi.mocked(resolveMessageCoordinatePreview).mockResolvedValue({
@@ -281,7 +281,7 @@ describe('MessageCardCoordinateAttachment', () => {
     );
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3453
+  // Regression: https://github.com/echoua/echo/issues/3453
   it('updates the thumbnail without recreating the map when a coordinate is removed', async () => {
     const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
       width: 180,
@@ -318,7 +318,7 @@ describe('MessageCardCoordinateAttachment', () => {
     rectSpy.mockRestore();
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3380
+  // Regression: https://github.com/echoua/echo/issues/3380
   it('keeps a thumbnail point when MGRS conversion is unavailable', async () => {
     const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
       width: 180,
@@ -344,7 +344,7 @@ describe('MessageCardCoordinateAttachment', () => {
     rectSpy.mockRestore();
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3324
+  // Regression: https://github.com/echoua/echo/issues/3324
   it('renders an inline retry error when the resolver rejects for a palette list failure', async () => {
     const msg = { pointTokens: [] } as InboxMessage;
     vi.mocked(resolveMessageCoordinatePreview)
@@ -381,7 +381,7 @@ describe('MessageCardCoordinateAttachment', () => {
     expect(container.querySelector('button[aria-label="Open BRAVO on map"]')).not.toBeNull();
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3324
+  // Regression: https://github.com/echoua/echo/issues/3324
   it('renders an inline retry error when the resolver rejects for a point lookup failure', async () => {
     const msg = { pointTokens: [] } as InboxMessage;
     vi.mocked(resolveMessageCoordinatePreview)
@@ -417,7 +417,7 @@ describe('MessageCardCoordinateAttachment', () => {
     expect(container.querySelector('button[aria-label="Open BRAVO on map"]')).not.toBeNull();
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3324
+  // Regression: https://github.com/echoua/echo/issues/3324
   it('ECHO-3324 keeps partial lookup errors inside the valid coordinate tile', async () => {
     const msg = { pointTokens: [] } as InboxMessage;
     vi.mocked(resolveMessageCoordinatePreview).mockResolvedValue({
@@ -452,7 +452,7 @@ describe('MessageCardCoordinateAttachment', () => {
     ).not.toBeNull();
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3324
+  // Regression: https://github.com/echoua/echo/issues/3324
   it('keeps successful document points visible while retrying a failed document request', async () => {
     const retry = createDeferred<{
       points: { source: 'document'; lat: number; lng: number; label: string }[];
@@ -513,8 +513,6 @@ describe('MessageCardCoordinateAttachment', () => {
     ).toBeNull();
     expect(container.querySelector('button[aria-label="Open Дамба on map"]')).not.toBeNull();
   });
-
-  // @test-scope safeguard: prevents a missing coordinate preview from presenting a false attachment tile.
   it('stays silent for a genuine preview miss', async () => {
     const msg = { pointTokens: [] } as InboxMessage;
     vi.mocked(resolveMessageCoordinatePreview).mockResolvedValue(null);
@@ -529,8 +527,6 @@ describe('MessageCardCoordinateAttachment', () => {
 
     expect(container.textContent).toBe('');
   });
-
-  // @test-scope safeguard: prevents a stale coordinate lookup failure from replacing the current message preview.
   it('ignores stale async errors after the message changes', async () => {
     const first = createDeferred<never>();
     const second = createDeferred<{
@@ -572,7 +568,7 @@ describe('MessageCardCoordinateAttachment', () => {
     expect(container.querySelector('button[aria-label="Open BRAVO on map"]')).not.toBeNull();
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3380
+  // Regression: https://github.com/echoua/echo/issues/3380
   it('ECHO-3380 opens the medium preview only after sustained mouse hover and closes after leaving both surfaces', async () => {
     vi.useFakeTimers();
     const onOpen = vi.fn();
@@ -618,7 +614,7 @@ describe('MessageCardCoordinateAttachment', () => {
     expect(onOpen).toHaveBeenCalledOnce();
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3380
+  // Regression: https://github.com/echoua/echo/issues/3380
   it.each(['mouse', 'pen'] as const)(
     'ECHO-3380 opens the medium preview for a %s pointer when hover none matches',
     async (pointerType) => {
@@ -646,7 +642,7 @@ describe('MessageCardCoordinateAttachment', () => {
     },
   );
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3380
+  // Regression: https://github.com/echoua/echo/issues/3380
   it('ECHO-3380 opens the medium preview on focus but rejects touch pointer interaction', async () => {
     vi.useFakeTimers();
     vi.stubGlobal(
@@ -676,7 +672,7 @@ describe('MessageCardCoordinateAttachment', () => {
     expect(document.body.querySelector('[data-coordinate-hover-preview]')).not.toBeNull();
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3380
+  // Regression: https://github.com/echoua/echo/issues/3380
   it('ECHO-3380 keeps the map loading until its primary tile succeeds', async () => {
     const leaflet = await import('leaflet');
     const primaryLayer = new leaflet.GridLayer();
@@ -701,7 +697,7 @@ describe('MessageCardCoordinateAttachment', () => {
     expect(container.querySelector('.coordinate-preview-map-skeleton')).toBeNull();
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3380
+  // Regression: https://github.com/echoua/echo/issues/3380
   it('ECHO-3380 renders the map fallback when initialization fails', async () => {
     const leaflet = await import('leaflet');
     vi.mocked(leaflet.map).mockImplementationOnce(() => {
@@ -723,7 +719,7 @@ describe('MessageCardCoordinateAttachment', () => {
     expect(container.textContent).toContain('Не вдалося завантажити мапу');
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3380
+  // Regression: https://github.com/echoua/echo/issues/3380
   it('ECHO-3380 removes a partially initialized map when the base layer fails', async () => {
     const leaflet = await import('leaflet');
     const primaryLayer = new leaflet.GridLayer();

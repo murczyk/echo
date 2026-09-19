@@ -55,8 +55,6 @@ afterEach(() => {
   latest = null;
   vi.clearAllMocks();
 });
-
-// @test-scope safeguard: prevents graph data errors or stale responses from replacing the current analysis graph.
 describe('useAnalysisGraphData', () => {
   it('keeps the current graph for a normal invalidation and clears it for a hard clear', () => {
     renderHook();

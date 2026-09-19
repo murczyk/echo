@@ -35,14 +35,13 @@ elm-spa watch  # runs build as you code (without the server)
 
 ```bash
 npm run test:ts                 # complete React Vitest migration suite
-npm run test:ts:scope-check     # admission validation only
+npm run test:structure-check     # placement and referenced-path validation
 ```
 
-Default React tests must carry a co-located `@test-scope` annotation for
-operational parser coverage, a concrete safeguard, or an Echo-linked
-regression. Unclassified tests fail the scope check immediately. Newly
-introduced test-only production exports also fail relative to the PR merge
-base; inherited exports are informational.
+Test admission is a review decision based on the behavior and failure mode a
+case protects. React tests live in production-owned `__tests__/` directories;
+the structure check rejects placement drift and production imports of recognized
+test-only support modules.
 
 Browser commands are intentionally separate:
 

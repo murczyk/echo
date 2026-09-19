@@ -119,8 +119,6 @@ function deferred<T>() {
   });
   return { promise, resolve };
 }
-
-// @test-scope safeguard: prevents OCR results or errors for an old attachment from replacing the currently selected preview.
 describe('OcrPreview', () => {
   afterEach(() => {
     document.body.innerHTML = '';
@@ -495,8 +493,6 @@ describe('OcrPreview', () => {
     expect(mapCoordinates).toHaveBeenCalledTimes(1);
     root.unmount();
   });
-
-  // @test-scope safeguard: prevents a stale OCR response from appearing after attachment navigation
   it('discards an OCR response after navigating to another attachment', async () => {
     const oldResponse = deferred<{
       state: string;
@@ -576,8 +572,6 @@ describe('OcrPreview', () => {
     expect(onOcrChange).toHaveBeenCalledWith(expect.objectContaining({ state: 'completed' }));
     root.unmount();
   });
-
-  // @test-scope safeguard: prevents a stale media summary response from appearing after attachment navigation
   it('discards a summary response after navigating to another attachment', async () => {
     const oldResponse = deferred<Record<string, unknown>>();
     getMediaSummary
@@ -679,8 +673,6 @@ describe('OcrPreview', () => {
     expect(container.textContent).not.toContain('Старий опис');
     root.unmount();
   });
-
-  // @test-scope safeguard: prevents the media-summary cache from retaining unbounded least-recently-used entries
   it('evicts the least recently used summary when the cache limit is reached', async () => {
     const requestCount = getMediaSummary.mock.calls.length;
     for (let index = 0; index < MEDIA_SUMMARY_CACHE_LIMIT + 2; index += 1) {

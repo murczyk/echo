@@ -13,7 +13,7 @@ async function setupAnalysisNeoPage(
   await installAnalysisNeoApiMocks(page, options);
 }
 
-// @test-scope regression: https://github.com/echoua/echo/pull/3268
+// Regression: https://github.com/echoua/echo/pull/3268
 test.describe('@smoke @regression', () => {
   test('analysis neo summary flow loads a known row', async ({ page }) => {
     await setupAnalysisNeoPage(page, { inboxResponse: createLoadedInboxResponse() });

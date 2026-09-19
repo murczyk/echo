@@ -5,99 +5,50 @@ description: Decide whether to add, retain, replace, or remove automated tests u
 
 # Test Scope Policy
 
-Read the **Test scope** section of `CODE_REVIEW.md` before adding or expanding the default test suite.
+Read the **Test scope** section of `CODE_REVIEW.md` before adding, retaining, or
+removing tests.
 
 ## React Vitest placement
 
 Place every new `*.spec.*` or `*.test.*` under `src/ts/react` as a direct child
-of the nearest production-owned `__tests__` directory. A React Vitest path has
-exactly one `__tests__` segment and no directory below it: never use recovery,
-characterization, nested test, temporary holding directories, or placement
-exceptions. Resolve collisions with a descriptive filename inside the correct
-directory, and preserve resolved production imports and `vi.mock` targets during
-relocation. Playwright belongs in `tests/e2e` and is not subject to this React
-placement rule.
+of the nearest production-owned `__tests__/` directory. The path has exactly one
+`__tests__` segment and no directory below it. Resolve collisions with a
+descriptive filename in that directory. Playwright tests and support modules
+belong under `tests/e2e`.
 
-## Admission gate
+## Admission review
 
-Use a co-located annotation for every retained default-suite test:
+No in-source `@test-scope` annotation is required. Classification is a review
+decision, not something developers satisfy with a label; a persuasive comment
+or renamed test does not make weak coverage valuable. Existing tests must not
+be deleted merely because they lack metadata. Judge new tests by the behavior
+and failure mode they protect, individually within a heterogeneous suite.
 
-```ts
-// @test-scope parser: coordinate conversion fixture
-// @test-scope safeguard: idempotency — prevents duplicate mutation after a repeated submit
-// @test-scope regression: https://github.com/echoua/echo/pull/1234
-```
-
-Regression annotations require an Echo issue or PR URL. Safeguard annotations
-must name the harmful outcome, not only a mechanism such as a timer or abort
-call. File-level annotations are allowed only for homogeneous parser fixtures.
-`describe` annotations are inherited, so use one only when every descendant
-truthfully shares the same admission category and failure mode.
-Dynamic titles and `.each` declarations are classified at their actual test
-invocation. For Playwright, every Echo-linked regression annotation requires a
-literal `@regression` title or describe tag, and every such tag requires that
-annotation: `e2e:regression` selects tags, not comments.
-
-Add or retain a test only when it protects at least one category accepted by `CODE_REVIEW.md`:
-
-- database-backed business behavior
-- an operational parser or fixture
-- a focused regression linked in the test to an Echo issue or pull request
-- a critical migration, authorization, concurrency, idempotency, or destructive-data safeguard
-
-If none applies, do not add the test. Removing a nonqualifying test does not require replacing it.
-Record any user-visible behavior left without a direct default-suite test in its
-behavior contract; contract references must use complete, existing
-repository-relative test paths or `No direct default-suite test; behavior is
-preserved by this contract.` Do not create recovery, holding, or temporary
-test/disposition artifacts.
-
-Adjacent test-support modules must use a recognized explicit support suffix
-(`.test-utils`, `.test-helpers`, `.fixture(s)`, or `.mock(s)`, including their
-hyphenated forms); they are test consumers rather than production consumers,
-and production modules must not import, dynamically import, or re-export them.
+Add or retain tests that protect database-backed business behavior, operational
+parsing, focused Echo issue/PR regressions, critical migration/authorization/
+concurrency/idempotency/destructive-data safeguards, meaningful integration
+behavior, or valuable Playwright coverage. Preserve `@regression` in Playwright
+titles because `e2e:regression` selects titles.
 
 ## Reject by default
 
-- Direct input/output restatements of trivial helpers, formatters, defaults, or small branch maps.
-- Outbound serializers and request builders, default-state construction, local validation, eligibility maps, merging/deduplication, sorting, and formatting are not parser fixtures. Parser coverage consumes external API, URL, pasted/user-entered structured-text, or file-format input.
-- A mocked API response does not automatically make a test parser coverage. Assertions limited to omitted-field defaults, nullish fallbacks, or scalar pass-through remain nonqualifying.
-- Static rendering tests for column order, headings, labels, icons, classes, or component configuration.
-- Mock-heavy tests that only assert props, timers, local state sequencing, or other implementation details without exercising the real failure mode.
-- Snapshots or shallow renders whose failure would only indicate an intentional markup/configuration edit.
-- Production exports introduced solely to make a private helper directly testable.
+- Trivial helpers, formatters, static rendering, labels, defaults, and small
+  branch maps.
+- Outbound serializers, request builders, local validation, eligibility maps,
+  merging/deduplication, sorting, and formatting presented as parser coverage.
+- Mocked implementation sequencing, prop forwarding, timer checks, or snapshots
+  that do not exercise an observable failure mode.
+- Production exports introduced only for direct testing.
 
-## Prefer meaningful coverage
+## Removal and documentation
 
-- State the user-visible, operational, or safety failure the test would catch before writing it.
-- Prefer an existing functional test or operational fixture over a new isolated test.
-- For issue/PR regressions, include the stable Echo issue or pull-request reference in the test.
-- Exercise observable behavior through the production boundary. For UI focus, modal, layout, or browser-navigation defects, use the lowest test level that can reproduce the real interaction; do not substitute mocked prop sequencing.
-- Running relevant existing tests is always appropriate and does not imply that new tests must be added.
+Inspect every candidate case before deleting it. If its unique user-visible or
+operational behavior remains part of the product contract, add or confirm an
+accurate behavior-contract entry before removal. Do not create ledgers,
+disposition files, allowlists, or recovery artifacts.
 
 ## Self-check
 
-Before finishing, review every added or substantially expanded test and ask:
-
-1. Which accepted category admits this test?
-2. What real failure does it catch?
-3. Is that failure exercised, rather than an implementation mechanism merely restated?
-4. If it is a regression test, is the Echo issue or pull request linked in the test?
-
-Delete or rewrite the test if these questions do not have concrete answers.
-
-## Contributor decision tree
-
-```text
-Is this an operational parser fixture?
-  -> Add it to the existing parser suite and annotate it as parser coverage.
-
-Is this a critical authorization/concurrency/idempotency/destructive safeguard?
-  -> Test the harmful outcome and annotate the safeguard.
-
-Is this a known UI regression?
-  -> Link the Echo issue/PR and test at the lowest faithful boundary.
-
-Is this a label/default/style/helper assertion?
-  -> Document or centralize it; do not add an isolated test.
-```
+For every added or retained test, identify the accepted category, concrete
+failure, and observable behavior. For every removed test, confirm either that
+it was an implementation detail or that its behavior contract is maintained.

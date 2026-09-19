@@ -44,7 +44,7 @@ function needs2faSetup() {
   };
 }
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3464
+// Regression: https://github.com/echoua/echo/issues/3464
 test('@smoke @regression ECHO-3464 guides first-time 2FA setup and preserves confirmation data', async ({
   page,
 }) => {
@@ -78,7 +78,7 @@ test('@smoke @regression ECHO-3464 guides first-time 2FA setup and preserves con
     .toEqual({ challenge_id: CHALLENGE_ID, token: '123456' });
 });
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3464
+// Regression: https://github.com/echoua/echo/issues/3464
 test('ECHO-3464 keeps returning-user verification concise and focused @regression', async ({
   page,
 }) => {
@@ -98,7 +98,7 @@ test('ECHO-3464 keeps returning-user verification concise and focused @regressio
   await expect(page.getByText('Не надсилайте QR-код або ключ іншим людям.')).toHaveCount(0);
 });
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3464
+// Regression: https://github.com/echoua/echo/issues/3464
 test('ECHO-3464 keeps first-time 2FA controls reachable on a short mobile screen @regression', async ({
   page,
 }) => {

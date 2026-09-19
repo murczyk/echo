@@ -45,7 +45,7 @@ function availableMessageResponse() {
   };
 }
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3092
+// Regression: https://github.com/echoua/echo/issues/3092
 describe('MessageReferenceLink', () => {
   let root: Root | null = null;
   let container: HTMLDivElement | null = null;

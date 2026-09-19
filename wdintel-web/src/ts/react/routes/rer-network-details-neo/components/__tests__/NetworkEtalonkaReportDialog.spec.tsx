@@ -114,8 +114,6 @@ function renderDialog(overrides: Partial<Parameters<typeof NetworkEtalonkaReport
     onToDateTimeStrChange,
   };
 }
-
-// @test-scope safeguard: prevents report-dialog edits from leaking across cancellation or hiding queued-report progress.
 describe('NetworkEtalonkaReportDialog', () => {
   afterEach(() => {
     powerDateTimePickerMock.mockClear();

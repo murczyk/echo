@@ -15,7 +15,7 @@ vi.mock('@mui/material', () => ({
 
 import { CreateMessageFab } from '../CreateMessageFab';
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3099
+// Regression: https://github.com/echoua/echo/issues/3099
 it('blurs the launcher before opening the drawer', async () => {
   const container = document.createElement('div');
   document.body.appendChild(container);

@@ -93,8 +93,6 @@ afterEach(() => {
   latest = null;
   vi.clearAllMocks();
 });
-
-// @test-scope safeguard: prevents report generation state or failures from applying to a changed analysis query.
 describe('useAnalysisReport', () => {
   it('maps the summary table report limit code to frontend-owned text', async () => {
     renderHook();

@@ -284,8 +284,6 @@ async function flushMicrotasks() {
     await Promise.resolve();
   }
 }
-
-// @test-scope safeguard: prevents a created message callback from applying to a stale Duty feed or editor session.
 describe('duty create-message bridge', () => {
   let container: HTMLDivElement;
   let root: Root;

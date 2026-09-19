@@ -198,8 +198,6 @@ async function typeInput(input: HTMLInputElement, value: string): Promise<void> 
     input.dispatchEvent(new Event('change', { bubbles: true }));
   });
 }
-
-// @test-scope safeguard: prevents saved-filter selection and destructive update/delete actions from targeting the wrong persisted filter
 describe('SavedFiltersControl', () => {
   const rendered: Rendered[] = [];
 

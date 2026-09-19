@@ -101,8 +101,6 @@ function Harness() {
     }),
   );
 }
-
-// @test-scope safeguard: prevents coordinate edits, deletion, and settlement selection from losing the current message location.
 describe('LocationsSection', () => {
   beforeEach(() => {
     mocks.autocompleteProps = undefined;
@@ -225,8 +223,6 @@ describe('LocationsSection', () => {
       expect.objectContaining({ signalGroupMasterKey: 'group-1' }),
     );
   });
-
-  // @test-scope safeguard: prevents the no-send sentinel from being used as an authorization-scoped settlement lookup key.
   it('does not pass the no-send destination to the settlement hook as a group key', async () => {
     signalGroupMasterKey = DO_NOT_SEND_GROUP_VALUE;
     await renderSection();

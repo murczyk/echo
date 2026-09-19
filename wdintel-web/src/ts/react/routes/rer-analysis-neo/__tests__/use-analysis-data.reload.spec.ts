@@ -159,8 +159,6 @@ function buildQueryState() {
     search: 'signal',
   };
 }
-
-// @test-scope safeguard: prevents a later signal-profile response from erasing already hydrated profile data.
 describe('mergeSignalProfiles', () => {
   it('keeps existing profiles and fills only missing entries', () => {
     expect(
@@ -184,7 +182,6 @@ describe('mergeSignalProfiles', () => {
 });
 
 describe('loadFilterSectionData', () => {
-  // @test-scope parser: analysis sender statistics response fixture
   it('uses sender names returned with the analysis sender statistics', async () => {
     mocks.fetchAnalysisSenders.mockResolvedValue({
       senders: [{ uuid: 'messenger-sender', count: 2, freqBreakdown: [], perDay: {} }],
@@ -215,8 +212,6 @@ describe('loadFilterSectionData', () => {
       { value: 'messenger-sender', label: 'Alpha Team', count: 2 },
     ]);
   });
-
-  // @test-scope parser: analysis network statistics and unit-label response fixture
   it('loads missing units before building network filter labels', async () => {
     mocks.fetchAnalysisNetworks.mockResolvedValue({
       networks: [{ networkId: 12, count: 6 }],
@@ -253,7 +248,6 @@ describe('loadFilterSectionData', () => {
 });
 
 describe('reloadAnalysisData', () => {
-  // @test-scope safeguard: prevents a slow secondary request from keeping primary message loading stuck.
   it('clears messages loading immediately after inbox resolves, without waiting for freqs', async () => {
     const inboxDeferred = deferred<ReloadInboxRsp>();
     const freqsDeferred = deferred<{
@@ -379,8 +373,6 @@ describe('reloadAnalysisData', () => {
     expect(mocks.fetchAnalysisCount).toHaveBeenCalledTimes(1);
     expect(invalidateCorrelatedFreqsCache).toHaveBeenCalledTimes(1);
   });
-
-  // @test-scope safeguard: prevents rebuilt inbox data from leaving matching summary information stale.
   it('refreshes summary callsign info after rebuilt inbox data arrives', async () => {
     const inboxDeferred = deferred<ReloadInboxRsp>();
     const rebuiltInboxDeferred = deferred<ReloadInboxRsp>();
@@ -531,8 +523,6 @@ describe('reloadAnalysisData', () => {
     ]);
     expect(setMessages.mock.lastCall?.[0]).toHaveLength(3);
   });
-
-  // @test-scope safeguard: prevents a rebuilt-inbox failure from erasing the existing inbox.
   it('keeps the original inbox state when rebuilt inbox fetch fails', async () => {
     const inboxDeferred = deferred<ReloadInboxRsp>();
     const rebuiltInboxDeferred = deferred<ReloadInboxRsp>();
@@ -634,8 +624,6 @@ describe('reloadAnalysisData', () => {
       buildSummaryCallsignsInfo([{ callsign: 'alpha', res: [] }], null),
     );
   });
-
-  // @test-scope safeguard: prevents a late frequency failure from corrupting current state.
   it('clears frequency-derived state when the frequency request fails after inbox loads', async () => {
     mocks.fetchAnalysisFreqs.mockRejectedValue(new Error('freqs failed'));
     mocks.fetchInboxMessages.mockResolvedValue({
@@ -710,8 +698,6 @@ describe('reloadAnalysisData', () => {
     expect(setOptions).toHaveBeenCalledWith(emptyOptions);
     expect(setTopFreqs).toHaveBeenCalledWith([]);
   });
-
-  // @test-scope safeguard: prevents an aborted reload followed by a frequency failure from becoming unhandled.
   it('keeps a late freqs rejection handled after an inbox abort returns first', async () => {
     const inboxDeferred = deferred<ReloadInboxRsp>();
     const freqsDeferred = deferred<{
@@ -795,8 +781,6 @@ describe('reloadAnalysisData', () => {
       process.off('unhandledRejection', onUnhandledRejection);
     }
   });
-
-  // @test-scope safeguard: prevents a failed critical inbox request from erasing deferred panel data.
   it('keeps deferred panel data intact when the critical inbox request fails early', async () => {
     mocks.fetchInboxMessages.mockRejectedValue(new Error('inbox failed'));
     mocks.fetchAnalysisFreqs.mockResolvedValue({ freqs: [] });
@@ -871,8 +855,6 @@ describe('reloadAnalysisData', () => {
     expect(setTopLocations).not.toHaveBeenCalledWith([]);
     expect(setTopUnits).not.toHaveBeenCalledWith([]);
   });
-
-  // @test-scope safeguard: prevents invalid query state from leaving pending callsign work active.
   it('invalidates pending new callsign loads when the query state cannot be built', async () => {
     const clearAnalysisResults = vi.fn();
     const invalidateSummaryLoads = vi.fn();

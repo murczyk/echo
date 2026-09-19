@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import { copyXlsxSelection } from '../copy-xlsx-selection';
-
-// @test-scope safeguard: prevents spreadsheet selection copy from silently dropping structured cell content.
 describe('copyXlsxSelection', () => {
   it('serializes the selected cell range as TSV', () => {
     expect(

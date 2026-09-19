@@ -38,8 +38,6 @@ afterEach(async () => {
     await Promise.resolve();
   });
 });
-
-// @test-scope safeguard: prevents a submitting-state transition from discarding unsaved unit edits.
 describe('unit-edit-dialog custom element', () => {
   it('preserves form edits when submitting state changes', async () => {
     const element = document.createElement('unit-edit-dialog');

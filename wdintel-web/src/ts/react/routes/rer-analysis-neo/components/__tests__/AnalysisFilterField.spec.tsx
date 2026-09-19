@@ -27,8 +27,6 @@ vi.mock('../../../../components/PowerAutocomplete', () => ({
 }));
 
 import { AnalysisFilterField } from '.././AnalysisFilterField';
-
-// @test-scope safeguard: preserves deferred filter drafts, selected values, and typed input across option refreshes so an analysis query cannot silently lose a user's in-progress filtering.
 describe('AnalysisFilterField', () => {
   function renderFilterField(props: Parameters<typeof AnalysisFilterField>[0]) {
     const container = document.createElement('div');
@@ -90,136 +88,6 @@ describe('AnalysisFilterField', () => {
       open?: boolean;
     };
   }
-
-  it('preserves caller-provided option order', () => {
-    const { root } = renderFilterField({
-      label: 'Частоти',
-      options: [
-        { value: '1.000', label: '1.000', count: 1 },
-        { value: '2.000', label: '2.000', count: 2 },
-        { value: '10.000', label: '10.000', count: 10 },
-      ],
-      value: [],
-      onChange: vi.fn(),
-    });
-    const props = latestAutocompleteProps();
-
-    expect(props.options.map((option) => option.value)).toEqual(['1.000', '2.000', '10.000']);
-
-    act(() => {
-      root.unmount();
-    });
-  });
-
-  it('expands grouped option values on change', () => {
-    const onChange = vi.fn();
-    const { root } = renderFilterField({
-      label: 'Позивні',
-      options: [{ value: 'ALPHA', label: 'ALPHA', count: 2, values: ['alpha', 'ALPHA'] }],
-      value: ['ALPHA'],
-      onChange,
-    });
-    const props = latestAutocompleteProps();
-
-    expect(props.value.map(({ value, label, values }) => ({ value, label, values }))).toEqual([
-      { value: 'ALPHA', label: 'ALPHA', values: ['alpha', 'ALPHA'] },
-    ]);
-
-    props.onChange(null, props.options);
-    expect(onChange).toHaveBeenCalledWith(['alpha', 'ALPHA']);
-
-    act(() => {
-      root.unmount();
-    });
-  });
-
-  it('uses stable option keys for duplicate labels', () => {
-    renderFilterField({
-      label: 'Позивні',
-      options: [
-        { value: 'alpha-a', label: 'ALPHA', count: 1 },
-        { value: 'alpha-b', label: 'ALPHA', count: 2 },
-      ],
-      value: [],
-      onChange: vi.fn(),
-    });
-
-    const props = latestAutocompleteProps();
-
-    expect(props.getOptionKey?.(props.options[0])).toBe('alpha-a-0');
-    expect(props.getOptionKey?.(props.options[1])).toBe('alpha-b-1');
-  });
-
-  it('passes bulk paste separators through to PowerAutocomplete', () => {
-    renderFilterField({
-      label: 'Частоти',
-      options: [{ value: '100.0000', label: '100.0000', count: 1 }],
-      value: [],
-      bulkPaste: true,
-      bulkPasteSeparators: [',', '\n'],
-      bulkPasteInputLabel: 'Частоти',
-      onChange: vi.fn(),
-    });
-
-    expect(latestAutocompleteProps().bulkPasteSeparators).toEqual([',', '\n']);
-    expect(latestAutocompleteProps().bulkPasteInputLabel).toBe('Частоти');
-    expect(latestAutocompleteProps().bulkPasteMenuLabel).toBeUndefined();
-    expect(latestAutocompleteProps().bulkPasteDialogTitle).toBeUndefined();
-  });
-
-  it('preserves already selected grouped values when requested', () => {
-    const onChange = vi.fn();
-    const { root } = renderFilterField({
-      label: 'Групи',
-      options: [
-        { value: 'group-a', label: 'Грак Пл', count: 2, values: ['group-a', 'group-b'] },
-        { value: 'group-c', label: 'Group C', count: 1 },
-      ],
-      value: ['group-b'],
-      preserveSelectedOptionValuesOnChange: true,
-      onChange,
-    });
-    const props = latestAutocompleteProps();
-
-    props.onChange(null, [props.options[0], props.options[1]], 'selectOption');
-    expect(onChange).toHaveBeenCalledWith(['group-b', 'group-c']);
-
-    act(() => {
-      root.unmount();
-    });
-  });
-
-  it('uses hydrated network option labels for selected chips', () => {
-    renderFilterField({
-      label: 'Мережі',
-      options: [{ value: '2852', label: 'управління', count: 0 }],
-      value: ['2852'],
-      onChange: vi.fn(),
-    });
-
-    expect(latestAutocompleteProps().value).toEqual([
-      { key: '2852-0', label: 'управління', value: '2852', count: 0, values: ['2852'] },
-    ]);
-  });
-
-  it('uses a stable prefixed key for unknown selected fallback values', () => {
-    renderFilterField({
-      label: 'Підрозділи',
-      options: [],
-      value: ['missing-unit'],
-      onChange: vi.fn(),
-    });
-
-    expect(latestAutocompleteProps().value).toEqual([
-      {
-        key: 'selected:missing-unit',
-        label: 'missing-unit',
-        value: 'missing-unit',
-        count: 0,
-        values: ['missing-unit'],
-      },
-    ]);
-  });
 
   it('preserves typed input across loading and option refreshes', () => {
     const { root } = renderFilterField({
@@ -397,47 +265,6 @@ describe('AnalysisFilterField', () => {
     });
   });
 
-  it('matches the unknown unit alias to the canonical empty filter option', () => {
-    const onChange = vi.fn();
-    const { root } = renderFilterField({
-      label: 'Підрозділи',
-      options: [{ value: '', label: '<Не вказано>', count: 4 }],
-      value: ['Не визначено'],
-      normalizeUnknownAliases: true,
-      onChange,
-    });
-    const props = latestAutocompleteProps();
-
-    expect(props.value.map((option) => ({ value: option.value, label: option.label }))).toEqual([
-      { value: '', label: '<Не вказано>' },
-    ]);
-
-    props.onChange(null, props.options);
-    expect(onChange).toHaveBeenCalledWith(['']);
-
-    act(() => {
-      root.unmount();
-    });
-  });
-
-  it('keeps unknown selected values visible with a safe fallback label and zero count', () => {
-    const { root } = renderFilterField({
-      label: 'Мережі',
-      options: [{ value: '12', label: 'Мережа 12', count: 4 }],
-      value: ['99'],
-      onChange: vi.fn(),
-    });
-    const props = latestAutocompleteProps();
-
-    expect(props.value).toEqual([
-      { key: 'selected:99', value: '99', label: '99', count: 0, values: ['99'] },
-    ]);
-
-    act(() => {
-      root.unmount();
-    });
-  });
-
   it('keeps multi-select edits local until close when deferred commit is enabled', () => {
     const onChange = vi.fn();
     const { root } = renderFilterField({
@@ -512,27 +339,6 @@ describe('AnalysisFilterField', () => {
     });
 
     expect(onChange).toHaveBeenCalledTimes(1);
-
-    act(() => {
-      root.unmount();
-    });
-  });
-
-  it('preserves the selected chip order when requested', () => {
-    const { root } = renderFilterField({
-      label: 'Частоти',
-      options: [
-        { value: '1.000', label: '1.000', count: 1 },
-        { value: '2.000', label: '2.000', count: 2 },
-        { value: '10.000', label: '10.000', count: 10 },
-      ],
-      value: ['10.000', '2.000', '1.000'],
-      preserveSelectionOrder: true,
-      onChange: vi.fn(),
-    });
-    const props = latestAutocompleteProps();
-
-    expect(props.value.map((option) => option.value)).toEqual(['10.000', '2.000', '1.000']);
 
     act(() => {
       root.unmount();

@@ -6,7 +6,7 @@ import { expect, it, vi } from 'vitest';
 
 import { MessageCardAttachmentPreviewStage } from '../MessageCardAttachmentPreviewStage';
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3520
+// Regression: https://github.com/echoua/echo/issues/3520
 it('keeps the preview open when selecting a playback rate from a portal #3520', () => {
   const onClose = vi.fn();
   const container = document.createElement('div');

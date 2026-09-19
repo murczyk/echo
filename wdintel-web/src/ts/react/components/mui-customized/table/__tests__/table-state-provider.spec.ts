@@ -4,8 +4,6 @@
 import { describe, expect, it } from 'vitest';
 
 import { normalizeColumnOrder } from '../table-state-provider.tsx';
-
-// @test-scope safeguard: prevents stale persisted table layouts from corrupting the visible data-column order
 describe('normalizeColumnOrder', () => {
   it('keeps row numbers before actions while preserving the data column order', () => {
     expect(

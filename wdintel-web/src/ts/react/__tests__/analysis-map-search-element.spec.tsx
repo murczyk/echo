@@ -52,8 +52,6 @@ async function pressEnter(input: HTMLInputElement): Promise<void> {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
   });
 }
-
-// @test-scope safeguard: prevents disabled or debounced map search input from emitting stale or duplicate queries.
 describe('AnalysisMapSearchElement', () => {
   let container: HTMLElement;
 

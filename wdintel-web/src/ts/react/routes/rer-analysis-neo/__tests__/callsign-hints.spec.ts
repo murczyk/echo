@@ -151,7 +151,6 @@ function createCallsignInfoMap(
 }
 
 describe('rer-analysis-neo callsign hints', () => {
-  // @test-scope parser: analysis callsign network-hint response fixture.
   it('classifies message callsigns from explicit network hints only', () => {
     const result = getMessageCallsignHintResult({
       callsign: '  WoLf ',

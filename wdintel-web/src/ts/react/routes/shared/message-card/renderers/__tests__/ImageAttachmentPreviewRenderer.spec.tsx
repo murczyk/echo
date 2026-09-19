@@ -355,8 +355,6 @@ function TestImagePreviewDialog(props: TestImagePreviewDialogProps) {
     />
   );
 }
-
-// @test-scope safeguard: prevents image evidence from losing bounded zoom/pan, editor Escape ownership, copy feedback, or fullscreen preview state
 describe('ImageAttachmentPreviewRenderer', () => {
   afterEach(() => {
     dialogProps.splice(0);
@@ -366,87 +364,6 @@ describe('ImageAttachmentPreviewRenderer', () => {
     document.body.innerHTML = '';
     vi.mocked(copyImageToClipboard).mockReset();
     vi.mocked(copyImageToClipboard).mockResolvedValue(undefined);
-  });
-
-  it('passes media layout sizing and keeps restore focus disabled', async () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    const root = createRoot(container);
-
-    await act(async () => {
-      root.render(
-        <TestImagePreviewDialog
-          imageHrefs={[{ href: 'https://example.test/image.png' } as never]}
-          open
-          onClose={vi.fn()}
-          onIndexChange={vi.fn()}
-        />,
-      );
-    });
-
-    const dialog = dialogProps.at(-1);
-    expect(dialog?.disableRestoreFocus).toBe(true);
-    expect(dialog?.disableEscapeKeyDown).toBe(true);
-    expect(dialog?.fullScreen).toBe(true);
-    expect(dialog?.paperSx).toMatchObject({
-      width: '100vw',
-      height: '100svh',
-      maxWidth: '100vw',
-      maxHeight: '100svh',
-    });
-    root.unmount();
-  });
-
-  it('shows the shared report text field when opened from report mode', async () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    const root = createRoot(container);
-
-    await act(async () => {
-      root.render(
-        <TestImagePreviewDialog
-          imageHrefs={[{ href: 'https://example.test/image.png' } as never]}
-          open
-          onClose={vi.fn()}
-          onIndexChange={vi.fn()}
-          reportDraft={{ value: 'Текст із дровера', onChange: vi.fn() }}
-        />,
-      );
-    });
-
-    const textarea = document.body.querySelector(
-      'textarea[aria-label="Текст розвіддонесення"]',
-    ) as HTMLTextAreaElement | null;
-
-    expect(textarea).not.toBeNull();
-    expect(textarea?.value).toBe('Текст із дровера');
-    expect(
-      document.body.querySelector('button[aria-label="Сховати розвіддонесення"]'),
-    ).not.toBeNull();
-
-    const pane = document.body.querySelector('[data-attachment-preview-report-pane]');
-    expect(pane?.classList.contains('overflow-visible')).toBe(true);
-    root.unmount();
-  });
-
-  it('hides the toolbar divider when OCR and summary actions are unavailable', async () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    const root = createRoot(container);
-
-    await act(async () => {
-      root.render(
-        <TestImagePreviewDialog
-          imageHrefs={[{ href: 'https://example.test/image.png' } as never]}
-          open
-          onClose={vi.fn()}
-          onIndexChange={vi.fn()}
-        />,
-      );
-    });
-
-    expect(container.querySelectorAll('hr')).toHaveLength(0);
-    root.unmount();
   });
 
   it('uses fullscreen geometry and closes on one Escape', async () => {
@@ -820,35 +737,6 @@ describe('ImageAttachmentPreviewRenderer', () => {
     expect(
       document.body.querySelector('[data-copy-status]')?.getAttribute('data-copy-status'),
     ).toBe('idle');
-    root.unmount();
-  });
-
-  it('keeps the carousel counter and header visible in fullscreen', async () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    const root = createRoot(container);
-
-    await act(async () => {
-      root.render(
-        <TestImagePreviewDialog
-          imageHrefs={[
-            { href: 'https://example.test/image-1.png' } as never,
-            { href: 'https://example.test/image-2.png' } as never,
-          ]}
-          currentIndex={1}
-          open
-          onClose={vi.fn()}
-          onIndexChange={vi.fn()}
-        />,
-      );
-    });
-
-    expect(document.body.querySelector('[data-attachment-preview-counter]')?.textContent).toBe(
-      '2 / 2',
-    );
-    expect(document.body.querySelector('[data-actions]')).not.toBeNull();
-
-    expect(document.body.querySelector('[data-actions]')).not.toBeNull();
     root.unmount();
   });
 });

@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ImageEditorCompactNumericControl } from '../ImageEditorContextControls';
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3099
+// Regression: https://github.com/echoua/echo/issues/3099
 describe('ImageEditorCompactNumericControl', () => {
   let root: Root | null = null;
   let container: HTMLDivElement | null = null;

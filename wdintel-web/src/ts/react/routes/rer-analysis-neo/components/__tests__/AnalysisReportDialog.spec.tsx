@@ -77,8 +77,6 @@ function renderDialog(overrides: Partial<Parameters<typeof AnalysisReportDialog>
     onUpdate,
   };
 }
-
-// @test-scope safeguard: preserves report-template, focus, authorization, and queued-task behavior so users cannot lose context, close queued work, or submit an invalid report.
 describe('AnalysisReportDialog', () => {
   afterEach(() => {
     dialogProps.splice(0);

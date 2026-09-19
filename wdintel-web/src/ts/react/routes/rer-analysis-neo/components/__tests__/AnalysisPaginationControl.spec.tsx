@@ -114,8 +114,6 @@ function baseProps(): React.ComponentProps<typeof AnalysisPaginationControl> {
     onNextPage: vi.fn(),
   };
 }
-
-// @test-scope safeguard: prevents analysis pagination from requesting unavailable pages or abandoning the user's active result range while loading.
 describe('AnalysisPaginationControl', () => {
   const rendered: Rendered[] = [];
 

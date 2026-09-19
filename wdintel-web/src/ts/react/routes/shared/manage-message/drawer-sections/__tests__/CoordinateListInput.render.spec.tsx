@@ -6,8 +6,6 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { CoordinateListInput } from '../CoordinateListInput.tsx';
-
-// @test-scope safeguard: prevents an invalid or duplicate coordinate paste from silently mutating the message draft
 describe('CoordinateListInput feedback', () => {
   afterEach(() => {
     document.body.innerHTML = '';

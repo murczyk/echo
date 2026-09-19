@@ -211,8 +211,6 @@ describe('SavedFiltersControl', () => {
     }
     tooltipProps = [];
   });
-
-  // @test-scope safeguard: prevents a failed save from discarding the entered saved-filter name.
   it('keeps the dialog open when the action reports failure', async () => {
     const onSaveAsNew = vi.fn().mockResolvedValue(false);
     const onSavedFilterNameChange = vi.fn();

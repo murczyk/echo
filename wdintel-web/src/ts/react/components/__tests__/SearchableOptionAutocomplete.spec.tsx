@@ -92,8 +92,6 @@ function renderHarness() {
 
   return { container, root };
 }
-
-// @test-scope safeguard: prevents transient search text from replacing a selected value without an explicit operator choice
 describe('SearchableOptionAutocomplete', () => {
   it('does not change the selected value while typing', () => {
     const view = renderHarness();

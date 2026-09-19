@@ -49,7 +49,6 @@ afterEach(() => {
 });
 
 describe('DeviceFileSearchResults', () => {
-  // @test-scope safeguard: prevents duplicate file paths from collapsing distinct entry identities or opening the wrong file.
   it('renders duplicate paths as separate ID-keyed rows and navigates by entry ID', () => {
     const onOpenDirectory = vi.fn();
     const onSelectFile = vi.fn();

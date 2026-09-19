@@ -119,8 +119,6 @@ function getButton(container: HTMLElement, label: string): HTMLButtonElement {
   if (!(button instanceof HTMLButtonElement)) throw new Error(`Button not found: ${label}`);
   return button;
 }
-
-// @test-scope safeguard: preserves analysis filter metric selection, loading, search, and disclosure interactions so users cannot mistake stale or hidden counts for current selections.
 describe('AnalysisCountBlock', () => {
   const rendered: Rendered[] = [];
 

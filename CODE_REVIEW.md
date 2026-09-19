@@ -24,13 +24,15 @@ validation, eligibility maps, merging/deduplication, sorting, or formatting as
 parser coverage. A parser fixture consumes operational API, URL,
 pasted/user-entered structured-text, or file-format input.
 
-For React tests, every retained default-suite test must carry a truthful
-`@test-scope` admission annotation: an operational parser fixture, a safeguard
-that names its concrete harmful outcome, or an Echo issue/PR-linked regression.
-File-level annotations are permitted only for homogeneous parser fixtures.
-See `.github/skills/test-scope-policy/SKILL.md` and
-`docs/frontend/react-behavior-contracts/README.md` for the contributor decision
-tree and migration rules.
+Test classification is a review decision, not an in-source label. Do not delete
+an existing test merely because it lacks metadata, and do not let a convincing
+comment or renamed test make weak coverage valuable. Judge new tests by the
+behavior and failure mode they protect. Inspect heterogeneous suites test by
+test; never assign one broad justification to all their cases. Keep issue- or
+PR-linked regressions, critical safeguards, operational parsing, meaningful
+integration behavior, database-backed flows, and valuable Playwright coverage.
+When removing a test leaves product knowledge without another maintained home,
+describe that behavior in the appropriate behavior contract first.
 
 React Vitest specs under `src/ts/react` are direct children of the nearest
 production-owned `__tests__` directory, with exactly one `__tests__` path
@@ -41,10 +43,8 @@ and `vi.mock` targets when relocating tests. Playwright remains in `tests/e2e`.
 Behavior contracts must name complete, existing repository-relative test paths,
 or use `No direct default-suite test; behavior is preserved by this contract.`.
 Removing a nonqualifying test must not leave user-visible behavior undocumented.
-Dynamic test titles and `.each` declarations remain subject to admission at the
-actual test invocation. For Playwright, an Echo-linked regression annotation
-and the literal `@regression` title tag must agree; `e2e:regression` selects
-title tags, not source comments.
+For Playwright, preserve `@regression` title tags because `e2e:regression`
+selects title tags, not source comments.
 
 ## Duty behavior contract
 

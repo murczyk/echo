@@ -8,7 +8,6 @@ import {
 } from '.././engine-eligibility';
 
 describe('isAiAgentEligibleEngine', () => {
-  // @test-scope safeguard: prevents endpoint authorization from selecting malformed, credential-bearing, query-bearing, or untrusted provider URLs
   it('allows the same internal HTTP /v1 upstreams as the backend', () => {
     expect(
       isAiAgentEligibleEngine({
@@ -73,8 +72,6 @@ describe('isAiAgentEligibleEngine', () => {
       false,
     );
   });
-
-  // @test-scope safeguard: prevents credential disclosure messaging from confusing direct-container token transport with the Echo gateway
   it('shows token handling according to the provider transport', () => {
     expect(
       getAiAgentTokenNotice({

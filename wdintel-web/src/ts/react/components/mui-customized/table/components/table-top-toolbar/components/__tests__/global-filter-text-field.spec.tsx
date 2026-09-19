@@ -109,8 +109,6 @@ function createKeyboardEvent(
     ...overrides,
   } as KeyboardEvent<HTMLInputElement>;
 }
-
-// @test-scope safeguard: prevents keyboard filter clearing from mutating disabled, read-only, or empty table search state
 describe('GlobalFilterTextField', () => {
   const rendered: Rendered[] = [];
 

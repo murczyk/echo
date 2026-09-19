@@ -134,8 +134,6 @@ describe('MessageCardMediaSummary', () => {
       root?.render(<MessageCardMediaSummary {...props} />);
     });
   };
-
-  // @test-scope safeguard: prevents long media descriptions from becoming inaccessible after the preview is collapsed
   it('enables expand button and allows toggling when content exceeds 3 lines via scrollHeight', async () => {
     const summaryText =
       "У документі наведено опис аерознімка сухого трав'янистого ландшафту з розрідженою рослинністю, зокрема невеликими деревами та чагарниками. Зазначено наявність ґрунтової стежки або дороги праворуч, а також ознаки ерозії або порушення рельєфу.";
@@ -190,8 +188,6 @@ describe('MessageCardMediaSummary', () => {
       scrollHeightSpy.mockRestore();
     }
   });
-
-  // @test-scope safeguard: prevents a nonfunctional expand control from appearing for a short media description
   it('keeps expand button disabled when text fits within 3 lines', async () => {
     const shortText = 'Короткий опис в один рядок';
 
@@ -229,8 +225,6 @@ describe('MessageCardMediaSummary', () => {
     expect(expandButton).not.toBeNull();
     expect(expandButton?.disabled).toBe(true);
   });
-
-  // @test-scope safeguard: prevents multiline media descriptions from being permanently truncated
   it('enables expand button for summaries with more than 3 line breaks', async () => {
     const multiLineText = 'Рядок 1\nРядок 2\nРядок 3\nРядок 4';
 
@@ -252,8 +246,6 @@ describe('MessageCardMediaSummary', () => {
     expect(expandButton).not.toBeNull();
     expect(expandButton?.disabled).toBe(false);
   });
-
-  // @test-scope safeguard: prevents one media item's expanded description from leaking into the next item
   it('resets expanded state when mediaId changes', async () => {
     const multiLineText = 'Рядок 1\nРядок 2\nРядок 3\nРядок 4';
 
@@ -294,8 +286,6 @@ describe('MessageCardMediaSummary', () => {
     // Should be reset to collapsed
     expect(container?.querySelector('button[aria-label="Розгорнути опис"]')).not.toBeNull();
   });
-
-  // @test-scope safeguard: prevents an in-flight media summary from appearing as an empty completed result
   it('renders skeleton placeholders while summary is loading rather than empty text', async () => {
     let resolvePromise: (value: unknown) => void = () => {};
     const pendingPromise = new Promise((resolve) => {
@@ -324,8 +314,6 @@ describe('MessageCardMediaSummary', () => {
     expect(container?.querySelector('[data-skeleton]')).toBeNull();
     expect(container?.textContent).toContain('Опис завантажено');
   });
-
-  // @test-scope safeguard: prevents carousel navigation from showing unloaded summaries for adjacent media
   it('prefetches summaries for all carousel media items', async () => {
     getMediaSummary.mockResolvedValue({
       state: 'completed',

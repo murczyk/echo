@@ -89,8 +89,6 @@ vi.mock(
 
 let container: HTMLDivElement;
 let root: Root;
-
-// @test-scope safeguard: prevents an unopened coordinate preview from starting map or locality work.
 describe('CoordinateInputPreview', () => {
   beforeEach(() => {
     vi.useFakeTimers();

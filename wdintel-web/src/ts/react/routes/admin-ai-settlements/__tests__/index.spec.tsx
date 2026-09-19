@@ -96,7 +96,6 @@ afterEach(() => {
 });
 
 describe('AdminAiSettlementsPage', () => {
-  // @test-scope safeguard: prevents saving evaluation results for engines or prompts that were not tested.
   it('tests selected engines and saves the displayed results', async () => {
     const { container, root } = await renderPage();
 
@@ -117,8 +116,6 @@ describe('AdminAiSettlementsPage', () => {
     expect(container.textContent).not.toContain('ТЕСТ:');
     await act(async () => root.unmount());
   });
-
-  // @test-scope safeguard: prevents an in-flight evaluation from being saved against a changed prompt.
   it('discards test results when the prompt changes during the request', async () => {
     let resolveTest: ((value: Awaited<ReturnType<typeof mocks.test>>) => void) | undefined;
     mocks.test.mockImplementationOnce(
@@ -157,8 +154,6 @@ describe('AdminAiSettlementsPage', () => {
     });
     await act(async () => root.unmount());
   });
-
-  // @test-scope safeguard: prevents deleted-message evaluation results from being persisted after a request completes.
   it('discards in-flight test results when a message is deleted', async () => {
     let resolveTest: ((value: Awaited<ReturnType<typeof mocks.test>>) => void) | undefined;
     mocks.test.mockImplementationOnce(
@@ -198,8 +193,6 @@ describe('AdminAiSettlementsPage', () => {
     });
     await act(async () => root.unmount());
   });
-
-  // @test-scope safeguard: prevents results calculated for an old prompt from being persisted with a changed prompt.
   it('clears results from the previous prompt when saving a changed prompt', async () => {
     mocks.getPage.mockResolvedValueOnce({
       ...(await mocks.getPage()),
@@ -238,8 +231,6 @@ describe('AdminAiSettlementsPage', () => {
     expect(container.textContent).not.toContain('АРТІЛЬНЕ');
     await act(async () => root.unmount());
   });
-
-  // @test-scope safeguard: prevents a reset prompt or worker setting from being silently replaced by stale local state.
   it('saves worker settings and resets the prompt override', async () => {
     const { container, root } = await renderPage();
 

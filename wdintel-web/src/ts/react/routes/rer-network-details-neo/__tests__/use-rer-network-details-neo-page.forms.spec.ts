@@ -6,8 +6,6 @@ import {
   toCreateNetworkReq,
 } from '../use-rer-network-details-neo-page.forms';
 import { createDefaultNetworkUpsertForm } from '../use-rer-network-details-neo-page.forms';
-
-// @test-scope safeguard: prevents network form state from resetting or retaining fields for the wrong selected network.
 describe('use-rer-network-details-neo-page.forms', () => {
   it('passes modulation directly when creating a network', () => {
     const req = toCreateNetworkReq({

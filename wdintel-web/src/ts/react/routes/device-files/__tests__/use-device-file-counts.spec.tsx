@@ -61,8 +61,6 @@ afterEach(() => {
   latest = null;
   vi.clearAllMocks();
 });
-
-// @test-scope safeguard: prevents directory-count retries and batches from discarding successful tree state or mixing directory identities.
 describe('useDeviceFileCounts', () => {
   it('serializes count batches and merges results by directory ID', async () => {
     const rootCounts = deferred<{ counts: { entryId: string; fileCount: number }[] }>();

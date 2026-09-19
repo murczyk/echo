@@ -28,7 +28,7 @@ function renderSelectionStyle(selected: import('fabric').FabricObject) {
   return { apply: apply!, requestRenderAll, root, scheduleHistory };
 }
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3448
+// Regression: https://github.com/echoua/echo/issues/3448
 describe('selected dashed annotation width #3448', () => {
   it.each([
     [() => new fabric.Rect(), ImageEditorObjectRole.Rectangle],

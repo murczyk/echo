@@ -111,7 +111,7 @@ describe('AdminGoiIntegrationsNeoPage', () => {
     delete (window as { localStorage?: Storage }).localStorage;
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/pull/3268
+  // Regression: https://github.com/echoua/echo/pull/3268
   it('keeps a dirty drawer open when dismissal is declined', async () => {
     const { root } = await renderPage();
     await clickButton('Редагувати');
@@ -127,7 +127,7 @@ describe('AdminGoiIntegrationsNeoPage', () => {
     await act(async () => root.unmount());
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/pull/3268
+  // Regression: https://github.com/echoua/echo/pull/3268
   it('refreshes the clean drawer baseline after worker setup', async () => {
     const configured = {
       ...integration,
@@ -156,7 +156,7 @@ describe('AdminGoiIntegrationsNeoPage', () => {
     await act(async () => root.unmount());
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/pull/3268
+  // Regression: https://github.com/echoua/echo/pull/3268
   it('prevents drawer dismissal while a connection check is running', async () => {
     let finishCheck:
       ((value: { ok: boolean; error: string | null; listedEntries: string[] }) => void) | null =
@@ -180,8 +180,6 @@ describe('AdminGoiIntegrationsNeoPage', () => {
 
     await act(async () => root.unmount());
   });
-
-  // @test-scope safeguard: prevents a GOI integration overflow action from deleting a record other than the selected ID
   it('deletes through the row overflow action', async () => {
     const { container, root } = await renderPage();
 

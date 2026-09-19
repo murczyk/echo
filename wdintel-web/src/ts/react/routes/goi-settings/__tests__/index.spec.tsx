@@ -134,8 +134,6 @@ describe('GoiSettingsPage', () => {
     }
     vi.clearAllMocks();
   });
-
-  // @test-scope safeguard: prevents a destructive GOI synchronization state change without explicit confirmation.
   it('asks for confirmation before pausing sync', async () => {
     await renderComponent();
 
@@ -158,8 +156,6 @@ describe('GoiSettingsPage', () => {
 
     expect(mocks.updateCurrentUserGoiPauseWorker).toHaveBeenCalledWith(7, true);
   });
-
-  // @test-scope safeguard: prevents a destructive GOI synchronization state change without explicit confirmation.
   it('asks for confirmation before resuming sync', async () => {
     mocks.fetchCurrentUserGoiIntegrations.mockResolvedValue([
       makeIntegration({ pauseWorker: true }),

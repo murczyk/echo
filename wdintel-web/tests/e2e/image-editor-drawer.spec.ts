@@ -139,7 +139,7 @@ async function openSecondPendingImageEditor(page: import('@playwright/test').Pag
 
 test.describe('image editor drawer integration #3448', () => {
   for (const host of ['duty', 'analysis'] as const satisfies ImageEditorDrawerHost[]) {
-    // @test-scope regression: https://github.com/echoua/echo/issues/3448
+    // Regression: https://github.com/echoua/echo/issues/3448
     test(`${host} opens from preview and saves one pending replacement @regression`, async ({
       page,
     }) => {
@@ -155,8 +155,6 @@ test.describe('image editor drawer integration #3448', () => {
       pageErrors.dispose();
     });
   }
-
-  // @test-scope safeguard: prevents a cancelled pending edit from creating replacement uploads.
   test('cancelling an edit creates no replacement upload', async ({ page }) => {
     const pageErrors = capturePageErrors(page);
     const submitted = await observeImageEditorSubmission(page);
@@ -176,8 +174,6 @@ test.describe('image editor drawer integration #3448', () => {
     expect(submitted.submissions).toHaveLength(0);
     pageErrors.assertNone();
   });
-
-  // @test-scope safeguard: preserves persisted-media replacement and deletion identity.
   test('submits one replacement and deletion for persisted media', async ({ page }) => {
     await openEditMessageDrawer(page);
     const submitted = await observeImageEditorSubmission(page);
@@ -195,8 +191,6 @@ test.describe('image editor drawer integration #3448', () => {
       upload_urls: ['/api/sigint/file-upload/tus/editor-upload'],
     });
   });
-
-  // @test-scope safeguard: retains a rejected TUS upload through the multipart fallback.
   test('falls back to multipart when the TUS chunk is rejected', async ({ page }) => {
     const pageErrors = capturePageErrors(page);
     await openEditMessageDrawer(page);
@@ -216,8 +210,6 @@ test.describe('image editor drawer integration #3448', () => {
     pageErrors.assertNone();
     pageErrors.dispose();
   });
-
-  // @test-scope safeguard: aborts an in-flight fallback upload after route teardown.
   test('@smoke browser Back cancels fallback without saving an edit after unmount', async ({
     page,
   }) => {
@@ -262,7 +254,7 @@ test.describe('image editor drawer integration #3448', () => {
     expect(submitted.submissions).toHaveLength(0);
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3448
+  // Regression: https://github.com/echoua/echo/issues/3448
   test('finishes text editing on an empty-canvas click without creating a second label #3448 @regression', async ({
     page,
   }) => {
@@ -285,7 +277,7 @@ test.describe('image editor drawer integration #3448', () => {
     await expect(deleteSelected).toBeDisabled();
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3448
+  // Regression: https://github.com/echoua/echo/issues/3448
   test('selects the clicked annotation after ending another text edit #3448 @regression', async ({
     page,
   }) => {
@@ -318,7 +310,7 @@ test.describe('image editor drawer integration #3448', () => {
     await expect.poll(() => selectedTextState(editor).then((state) => state.text)).toBe(first.text);
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3448
+  // Regression: https://github.com/echoua/echo/issues/3448
   test('moves text frames without changing their transforms at non-default zoom #3448 @regression', async ({
     page,
   }) => {
@@ -390,7 +382,7 @@ test.describe('image editor drawer integration #3448', () => {
     );
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3448
+  // Regression: https://github.com/echoua/echo/issues/3448
   test('cancels an active text-frame move without committing it #3448 @regression', async ({
     page,
   }) => {
@@ -431,7 +423,7 @@ test.describe('image editor drawer integration #3448', () => {
     pageErrors.assertNone();
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3448
+  // Regression: https://github.com/echoua/echo/issues/3448
   test('tears down an editor with an active text-frame pointer gesture #3448 @regression', async ({
     page,
   }) => {
@@ -470,7 +462,6 @@ test.describe('image editor drawer integration #3448', () => {
 });
 
 for (const status of [401, 403, 413]) {
-  // @test-scope safeguard: prevents terminal TUS failures from producing fallback or saved media.
   test(`terminal TUS ${status} never falls back or saves an edit`, async ({ page }) => {
     await openEditMessageDrawer(page);
     const sent = await observeImageEditorSubmission(page);
@@ -493,8 +484,6 @@ for (const status of [401, 403, 413]) {
       await expect(page.getByRole('heading', { name: 'Редагувати повідомлення' })).toBeVisible();
   });
 }
-
-// @test-scope safeguard: resumes an accepted chunk without duplicate upload creation or byte loss.
 test('TUS preserves a busy upload while resuming after a lost accepted chunk response', async ({
   page,
 }, info) => {
@@ -573,7 +562,7 @@ test('TUS preserves a busy upload while resuming after a lost accepted chunk res
   });
 });
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3448
+// Regression: https://github.com/echoua/echo/issues/3448
 test('keeps editor actions reachable at representative viewports @regression', async ({ page }) => {
   const { editor } = await openPendingImageEditor(page, 'duty');
   for (const viewport of [
@@ -591,7 +580,7 @@ test('keeps editor actions reachable at representative viewports @regression', a
   }
 });
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3448
+// Regression: https://github.com/echoua/echo/issues/3448
 test('presents shortcut help across desktop and mobile controls #3448 @regression', async ({
   page,
 }) => {
@@ -606,7 +595,7 @@ test('presents shortcut help across desktop and mobile controls #3448 @regressio
   await expect(editor).toBeVisible();
 });
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3448
+// Regression: https://github.com/echoua/echo/issues/3448
 test('keeps standalone-arrow toolbar styles combined after each edit #3448 @regression', async ({
   page,
 }) => {
@@ -637,7 +626,7 @@ test('keeps standalone-arrow toolbar styles combined after each edit #3448 @regr
   await expect(dash).toHaveAttribute('aria-pressed', 'true');
 });
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3294
+// Regression: https://github.com/echoua/echo/issues/3294
 test('large single-IDAT PNG remains editable within image source limits #3294 @regression', async ({
   page,
 }, info) => {

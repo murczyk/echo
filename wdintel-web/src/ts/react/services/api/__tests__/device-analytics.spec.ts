@@ -91,7 +91,6 @@ beforeEach(() => {
 });
 
 describe('device analytics API service', () => {
-  // @test-scope parser: normalizes strict tagged rule expressions from admin API responses
   it('normalizes the strict tagged rule expression returned by the admin API', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ tags: [wireTag()] }));
 
@@ -100,8 +99,6 @@ describe('device analytics API service', () => {
     expect(requestBody()).toBeUndefined();
     expect(rsp.tags[0]).toMatchObject({ id: TAG_ID, name: 'Звіти', ruleExpression: expression });
   });
-
-  // @test-scope parser: normalizes reusable test files from admin API responses
   it('lists reusable test files for a tag', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
@@ -123,8 +120,6 @@ describe('device analytics API service', () => {
       },
     ]);
   });
-
-  // @test-scope parser: normalizes local-expression test results from admin API responses
   it('normalizes local-expression test results', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({ results: [{ index: 0, matched: true, passed: true }] }),

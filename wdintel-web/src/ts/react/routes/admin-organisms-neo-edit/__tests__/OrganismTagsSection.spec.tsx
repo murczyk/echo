@@ -192,8 +192,6 @@ function switchToArchiveView(view: ReturnType<typeof renderSection>) {
     .find((button) => button.textContent === 'Архів')
     ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 }
-
-// @test-scope safeguard: prevents organism-tag edits from targeting unsaved organisms, hidden archive records, or invalid persisted values.
 describe('OrganismTagsSection', () => {
   let view: ReturnType<typeof renderSection>;
 

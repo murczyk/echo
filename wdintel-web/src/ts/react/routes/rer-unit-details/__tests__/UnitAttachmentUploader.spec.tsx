@@ -34,8 +34,6 @@ vi.mock('../../../services/api/aor', () => ({
 vi.mock('../../../services/api/units', () => ({
   uploadUnitAttachment: vi.fn(),
 }));
-
-// @test-scope safeguard: prevents selected unit attachments from being silently omitted or reported as a completed batch incorrectly
 describe('UnitAttachmentUploader', () => {
   beforeEach(() => {
     vi.mocked(listAors).mockResolvedValue([

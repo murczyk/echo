@@ -5,7 +5,7 @@ import {
   type MessageCardMediaPreviewHost,
 } from './message-card-media-preview.fixtures';
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3092
+// Regression: https://github.com/echoua/echo/issues/3092
 test.describe('@smoke @regression @message-references message-card references', () => {
   for (const host of ['analysis', 'duty'] as MessageCardMediaPreviewHost[]) {
     test(`${host} shows a linked message label and preview`, async ({ page, baseURL }) => {

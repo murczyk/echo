@@ -69,8 +69,6 @@ function createMessage(overrides: Partial<InboxMessage>): InboxMessage {
 const palitraTagsMap: Record<number, Tag> = {
   7: { isPalitra: true } as Tag,
 };
-
-// @test-scope parser: preserves accepted coordinate formats, source precedence, and recoverable lookup failures for message previews.
 describe('message coordinate preview resolver', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -1089,8 +1087,6 @@ describe('message coordinate preview resolver', () => {
     expect(searchPalitraPoints).toHaveBeenCalledTimes(1);
   });
 });
-
-// @test-scope parser: prevents malformed coordinate-like text from creating a misleading preview affordance.
 describe('hasCoordinatePreviewCandidate', () => {
   it.each([
     {

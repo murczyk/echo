@@ -48,8 +48,6 @@ function OutsideProviderProbe() {
     return <div>{error instanceof Error ? error.message : String(error)}</div>;
   }
 }
-
-// @test-scope safeguard: prevents queued operational notifications from being lost, reordered, or left inaccessible during dismissal races
 describe('PowerSnackbarProvider', () => {
   afterEach(() => {
     vi.useRealTimers();

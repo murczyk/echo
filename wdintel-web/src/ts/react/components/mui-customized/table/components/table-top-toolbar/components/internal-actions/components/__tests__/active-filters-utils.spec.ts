@@ -32,8 +32,6 @@ function buildTable(overrides: Partial<MRT_TableInstance<any>> = {}): MRT_TableI
 
   return table as MRT_TableInstance<any>;
 }
-
-// @test-scope safeguard: prevents table filter summaries from exposing defaults as active constraints or omitting an operator's active filter
 describe('active-filters utils', () => {
   it('collects column and global filters', () => {
     const table = buildTable();

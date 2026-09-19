@@ -208,8 +208,6 @@ afterEach(() => {
   root = null;
   document.body.innerHTML = '';
 });
-
-// @test-scope safeguard: keeps network-frequency callsign failures visible without discarding already hydrated callsigns.
 describe('NetworkDetailsFrequenciesTable', () => {
   it('shows callsign period settings near the table filters', () => {
     const view = renderTable(new Map(), 'success');

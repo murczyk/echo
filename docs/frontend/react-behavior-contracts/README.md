@@ -23,12 +23,12 @@ Each entry identifies its production boundary, observable outcome, persistence r
 - [Units](units.md): unit search, duplicates, attachment, and ORBIT API compatibility.
 - [Maps and coordinates](maps.md): coordinate interchange and locality labels.
 
-## Migration status
+## Review and placement
 
-All current React tests remain subject to the admission gate: they must carry a
-truthful parser, concrete safeguard, or Echo issue/PR regression annotation.
-`npm run test:ts` remains the complete migration suite; newly introduced
-test-only production exports are also rejected relative to the PR merge base.
+Test admission is a review decision, not an in-source label. New React specs
+belong directly in the nearest production-owned `__tests__/` directory; existing
+tests are not removed solely because they lack metadata. `npm run test:ts`
+includes the structural check for that placement and referenced test paths.
 
 ## Entry template
 

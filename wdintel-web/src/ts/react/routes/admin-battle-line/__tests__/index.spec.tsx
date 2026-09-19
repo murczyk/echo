@@ -150,7 +150,7 @@ afterEach(() => {
 });
 
 describe('AdminBattleLinePage', () => {
-  // @test-scope regression: https://github.com/echoua/echo/pull/3268
+  // Regression: https://github.com/echoua/echo/pull/3268
   it('pushes explicit tab values and restores them on browser navigation', async () => {
     window.history.replaceState(null, '', '/admin/battle-line?keep=1#map');
     await renderPage();
@@ -165,8 +165,6 @@ describe('AdminBattleLinePage', () => {
       'НЕВИЗНАЧЕНІ ЛОКАЦІЇ',
     );
   });
-
-  // @test-scope safeguard: prevents operators from paging through the wrong unresolved Battle Line evidence
   it('renders current/history data and loads both paginated tabs', async () => {
     await renderPage();
     expect(container.textContent).toContain('previous.kml');
@@ -203,8 +201,6 @@ describe('AdminBattleLinePage', () => {
       ),
     );
   });
-
-  // @test-scope safeguard: prevents unresolved authorization or stale settings from exposing device metadata on Battle Line message cards.
   describe('message device access', () => {
     it('provides device access to test-result and unlinked message cards only when enabled', async () => {
       await renderPage();
@@ -307,8 +303,6 @@ describe('AdminBattleLinePage', () => {
       expect(messageDeviceAccess.allowed).toHaveBeenLastCalledWith(false);
     });
   });
-
-  // @test-scope safeguard: prevents a failed Battle Line evidence request from leaving operators in a permanently loading state
   it('stops showing loading indicators when paginated requests fail', async () => {
     await renderPage();
     api.fetchBattleLineUnlinkedInbox.mockRejectedValueOnce(new Error('unlinked failed'));
@@ -322,8 +316,6 @@ describe('AdminBattleLinePage', () => {
     await vi.waitFor(() => expect(container.textContent).toContain('unresolved failed'));
     expect(container.querySelector('[role="progressbar"]')).toBeNull();
   });
-
-  // @test-scope safeguard: prevents an uploaded Battle Line version from retaining a superseded diagnostic result
   it('shows the empty test state and clears a superseded result after upload', async () => {
     await renderPage();
     api.testBattleLine.mockResolvedValueOnce(testResponse());
@@ -352,8 +344,6 @@ describe('AdminBattleLinePage', () => {
     expect(container.querySelector('[data-testid="message-42"]')).toBeNull();
     expect(container.textContent).not.toContain('У location_v2 немає локацій');
   });
-
-  // @test-scope safeguard: prevents a Battle Line diagnostic from querying the wrong message identifier type
   it('searches for a Battle Line test message by message UID', async () => {
     await renderPage();
     api.testBattleLine.mockResolvedValueOnce(testResponse());
@@ -370,8 +360,6 @@ describe('AdminBattleLinePage', () => {
       }),
     );
   });
-
-  // @test-scope safeguard: prevents a stale Battle Line diagnostic response from overwriting a newer upload failure
   it('ignores a pending test response and reports an upload refresh failure', async () => {
     await renderPage();
     const pendingTest = deferred<BattleLineTestRsp>();
@@ -411,8 +399,6 @@ describe('AdminBattleLinePage', () => {
     expect(container.querySelector('[data-testid="message-42"]')).toBeNull();
     expect(container.textContent).not.toContain('ХАРКІВ');
   });
-
-  // @test-scope safeguard: prevents a failed diagnostic from leaving a stale settlement selected on the Battle Line map
   it('passes the chosen settlement to the map and clears it after a test error', async () => {
     await renderPage();
     api.testBattleLine.mockResolvedValueOnce(

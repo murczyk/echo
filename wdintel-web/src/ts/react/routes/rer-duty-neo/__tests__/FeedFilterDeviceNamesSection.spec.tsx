@@ -46,7 +46,7 @@ vi.mock('../../../components/PowerSnackbar', () => ({
 
 import { FeedFilterDeviceNamesSection } from '../FeedFilterDeviceNamesSection';
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3461
+// Regression: https://github.com/echoua/echo/issues/3461
 describe('FeedFilterDeviceNamesSection', () => {
   let container: HTMLElement;
   let root: Root;

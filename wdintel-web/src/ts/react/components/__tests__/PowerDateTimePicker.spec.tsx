@@ -91,8 +91,6 @@ vi.mock('@mui/x-date-pickers/AdapterDayjs', () => ({
 }));
 
 import { PowerDatePicker, PowerDateTimePicker } from '../PowerDateTimePicker';
-
-// @test-scope safeguard: prevents stale controlled values and pending typing from overwriting an active form edit.
 describe('PowerDateTimePicker', () => {
   afterEach(() => {
     document.body.innerHTML = '';

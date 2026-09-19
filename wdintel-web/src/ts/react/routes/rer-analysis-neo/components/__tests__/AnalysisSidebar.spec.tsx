@@ -171,8 +171,6 @@ async function click(element: HTMLElement): Promise<void> {
     element.click();
   });
 }
-
-// @test-scope safeguard: preserves selected callsign values and sidebar close/tab actions so the analysis workspace cannot apply a user action to the wrong active panel.
 describe('AnalysisSidebar', () => {
   const rendered: Rendered[] = [];
 

@@ -29,8 +29,6 @@ describe('units API', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
-
-  // @test-scope parser: normalizes snake-case unit-list responses for React consumers.
   it('normalizes unit response fields to camel case', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({
@@ -64,8 +62,6 @@ describe('units API', () => {
       },
     ]);
   });
-
-  // @test-scope parser: unit-detail response fixture preserves nullable AOR metadata while normalizing attachment fields
   it('loads unit details without AOR metadata for non-admins', async () => {
     vi.stubGlobal(
       'fetch',
@@ -82,8 +78,6 @@ describe('units API', () => {
       attachments: [{ id: 19, unitId: 7, aors: null }],
     });
   });
-
-  // @test-scope parser: normalizes paginated unit response metadata.
   it('normalizes paginated unit response metadata', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({
@@ -102,16 +96,12 @@ describe('units API', () => {
       units: [],
     });
   });
-
-  // @test-scope parser: normalizes visible attachment ID responses.
   it('loads unit IDs with attachments visible to the current user', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ unit_ids: [7, 11] }));
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(getUnitIdsWithVisibleAttachments([7, 11])).resolves.toEqual([7, 11]);
   });
-
-  // @test-scope parser: normalizes device-network response objects.
   it('creates a device network for an existing unit', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ network_id: 23 }));
     vi.stubGlobal('fetch', fetchMock);
@@ -124,8 +114,6 @@ describe('units API', () => {
       }),
     ).resolves.toEqual({ networkId: 23 });
   });
-
-  // @test-scope parser: normalizes ORBIT duplicate-candidate response fields.
   it('loads ORBIT-linked duplicate candidates before unit creation', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({
@@ -166,8 +154,6 @@ describe('units API', () => {
       },
     ]);
   });
-
-  // @test-scope parser: normalizes ORBIT search and import response objects.
   it('searches and imports Orbit units', async () => {
     const fetchMock = vi
       .fn()
@@ -196,8 +182,6 @@ describe('units API', () => {
       networkId: null,
     });
   });
-
-  // @test-scope parser: normalizes attachment update and delete responses.
   it('updates and deletes attachment metadata', async () => {
     const fetchMock = vi
       .fn()
@@ -223,8 +207,6 @@ describe('units API', () => {
     ).resolves.toMatchObject({ id: 19, unitId: 7, aors: [{ id: 2, name: 'Смуга 2' }] });
     await expect(deleteUnitAttachment(19)).resolves.toBe(19);
   });
-
-  // @test-scope parser: normalizes uploaded attachment response fields.
   it('normalizes uploaded attachment response fields', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({

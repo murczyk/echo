@@ -33,8 +33,6 @@ function renderComponent(node: React.ReactNode): Rendered {
   });
   return { container, root };
 }
-
-// @test-scope safeguard: prevents operational alerts from disappearing unexpectedly or becoming impossible to dismiss
 describe('PowerAlert', () => {
   it('calls onClose when auto-hide timeout expires', () => {
     vi.useFakeTimers();

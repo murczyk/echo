@@ -9,8 +9,6 @@ import {
   readPersistedDutyFilterState,
   setDutyFilterPersistenceDisabled,
 } from '../duty-filter-persistence';
-
-// @test-scope safeguard: prevents disabled or partially-cleared browser persistence from restoring a stale Duty filter.
 describe('Duty filter persistence', () => {
   beforeEach(() => {
     const storage = new Map<string, string>();

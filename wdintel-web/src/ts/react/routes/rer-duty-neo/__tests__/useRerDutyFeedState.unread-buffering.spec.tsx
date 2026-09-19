@@ -27,8 +27,6 @@ import {
 const fixture = createDutyFeedStateFixture();
 const hoisted = getDutyApiMocks();
 const { deferred, expectTailCountRequest, mountLoadedFeed, runNextRaf, startPoll } = fixture;
-
-// @test-scope safeguard: prevents unread buffering and read acknowledgements from losing or duplicating live messages.
 describe('useRerDutyFeedState — unread buffering and read state', () => {
   let container: HTMLElement;
   let root: Root;
@@ -1672,7 +1670,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       expect(feed.unreadCount).toBeGreaterThan(0);
     });
 
-    // @test-scope regression: https://github.com/echoua/echo/issues/3360
+    // Regression: https://github.com/echoua/echo/issues/3360
     it('#3360 keeps a full reading window intact during a non-physical pending flush', async () => {
       const { apiRef } = await mountLoadedFeed();
       const items = Array.from(

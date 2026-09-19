@@ -89,8 +89,6 @@ vi.mock('react-pdf', () => {
 
 import { pdfjs } from 'react-pdf';
 import { PdfDocumentPreview } from '../PdfDocumentPreview.tsx';
-
-// @test-scope safeguard: preserves bounded PDF loading and incremental rendering for large documents.
 describe('PdfDocumentPreview', () => {
   afterEach(() => {
     document.body.innerHTML = '';

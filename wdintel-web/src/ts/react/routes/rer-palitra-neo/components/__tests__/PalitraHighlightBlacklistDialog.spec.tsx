@@ -48,8 +48,6 @@ async function settle() {
 function has(text: string) {
   return document.body.textContent?.includes(text) ?? false;
 }
-
-// @test-scope safeguard: prevents highlight-blacklist mutations from racing pending requests or hiding retryable failures.
 describe('PalitraHighlightBlacklistDialog', () => {
   let mounted: { root: Root; container: HTMLElement } | null = null;
   afterEach(() => {

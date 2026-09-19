@@ -147,7 +147,6 @@ afterEach(() => {
 });
 
 describe('RerUnitsNeoPage search and pagination controls', () => {
-  // @test-scope safeguard: prevents unit-page navigation controls from being separated from the table they paginate
   it('places page navigation with the table controls', () => {
     renderPage();
 
@@ -157,8 +156,6 @@ describe('RerUnitsNeoPage search and pagination controls', () => {
     expect(titleActions?.querySelector('[aria-label="Наступна сторінка"]')).toBeNull();
     expect(tableControls?.querySelector('[aria-label="Наступна сторінка"]')).not.toBeNull();
   });
-
-  // @test-scope safeguard: prevents each typed search character from issuing an obsolete unit-page request
   it('waits 500 ms after typing before searching', () => {
     vi.useFakeTimers();
     renderPage();
@@ -178,8 +175,6 @@ describe('RerUnitsNeoPage search and pagination controls', () => {
 
     expect(pageMock.requests.at(-1)?.filterText).toBe('аб');
   });
-
-  // @test-scope safeguard: keeps the unit search control usable without disrupting the operator's active typing position
   it('keeps the search input focused and enabled while loading', () => {
     renderPage();
     const searchInput = container.querySelector<HTMLInputElement>('input[placeholder="Пошук"]');

@@ -88,8 +88,6 @@ import { APP_DATETIME_INPUT_MAX, APP_DATETIME_INPUT_MIN, APP_TIME_ZONE } from '.
 const fixedNow = new Date('2026-05-01T12:00:00Z');
 const fixedToday = dayjs(fixedNow).tz(APP_TIME_ZONE).startOf('day');
 const fixedTomorrow = fixedToday.add(1, 'day');
-
-// @test-scope safeguard: prevents controlled date-range edits, bounds, presets, and accessible trigger state from losing the operator's intended interval
 describe('DateTimeRangeControl', () => {
   afterEach(() => {
     document.body.innerHTML = '';

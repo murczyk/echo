@@ -113,7 +113,6 @@ function getButton(container: HTMLElement, label: string): HTMLButtonElement {
 }
 
 describe('FeedNotificationPanel', () => {
-  // @test-scope safeguard: prevents an already open notification panel from showing stale browser delivery status.
   it('refreshes browser status from the shared notification-status event', async () => {
     const { container } = await renderPanel();
 
@@ -124,8 +123,6 @@ describe('FeedNotificationPanel', () => {
 
     expect(container.textContent).toContain('Браузеру не вдалося створити системний банер.');
   });
-
-  // @test-scope safeguard: prevents denied browser permission from being persisted as an enabled notification channel.
   it('does not persist after denied browser permission', async () => {
     const changed = vi.fn();
     const persisted = vi.fn();
@@ -143,8 +140,6 @@ describe('FeedNotificationPanel', () => {
     expect(api.setStored).not.toHaveBeenCalled();
     expect(persisted).not.toHaveBeenCalled();
   });
-
-  // @test-scope safeguard: prevents a failed notification-settings write from changing the persisted panel state.
   it('reports storage failure without persisting panel state', async () => {
     api.setStored.mockReturnValueOnce({ ok: false, error: 'quota' });
     const changed = vi.fn();
@@ -160,8 +155,6 @@ describe('FeedNotificationPanel', () => {
     expect(persisted).not.toHaveBeenCalled();
     expect(sound.checked).toBe(true);
   });
-
-  // @test-scope safeguard: prevents a failed sound-setting write from falsely showing that alerts were disabled.
   it('keeps the sound switch checked after failed persistence', async () => {
     api.getStored.mockReturnValue({ soundEnabled: true, browserEnabled: false });
     api.setStored.mockReturnValue({ ok: false, error: 'quota' });
@@ -182,8 +175,6 @@ describe('FeedNotificationPanel', () => {
     expect(persisted).not.toHaveBeenCalled();
     expect(sound.checked).toBe(true);
   });
-
-  // @test-scope safeguard: prevents a recovered notification setting from retaining a stale storage error.
   it('clears an existing error after successful persistence', async () => {
     api.getStored.mockReturnValue({ soundEnabled: true, browserEnabled: false });
     api.setStored.mockReturnValue({ ok: true });
@@ -201,8 +192,6 @@ describe('FeedNotificationPanel', () => {
     expect(persisted).toHaveBeenCalledTimes(1);
     expect(sound.checked).toBe(false);
   });
-
-  // @test-scope safeguard: prevents concurrent notification switches from overwriting the operator's latest selection.
   it('merges concurrent switch writes with the latest stored settings', async () => {
     let resume!: () => void;
     api.resume.mockImplementation(

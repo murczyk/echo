@@ -27,8 +27,6 @@ import {
 const fixture = createDutyFeedStateFixture();
 const hoisted = getDutyApiMocks();
 const { deferred, expectTailCountRequest, mountLoadedFeed, runNextRaf, startPoll } = fixture;
-
-// @test-scope safeguard: prevents polling or tail availability updates from applying stale feed state.
 describe('useRerDutyFeedState — polling and tail availability', () => {
   let container: HTMLElement;
   let root: Root;

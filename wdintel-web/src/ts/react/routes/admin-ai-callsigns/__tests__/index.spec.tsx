@@ -100,8 +100,6 @@ beforeEach(() => {
 afterEach(() => {
   document.body.innerHTML = '';
 });
-
-// @test-scope safeguard: prevents AI callsign test overrides and displayed results from being persisted inconsistently.
 describe('AdminAiCallsignsPage', () => {
   it('tests selected engines and saves the displayed results', async () => {
     const { container, root } = await renderPage();

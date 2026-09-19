@@ -38,7 +38,6 @@ function buildEntry(overrides: Partial<DeviceFileTreeEntry> = {}): DeviceFileTre
 }
 
 describe('device file request helpers', () => {
-  // @test-scope safeguard: prevents overlapping pagination from duplicating rows while preserving distinct entries with the same path
   it('keeps distinct duplicate paths and rejects only repeated entry IDs on append', () => {
     const first = buildEntry();
     const duplicatePath = buildEntry({

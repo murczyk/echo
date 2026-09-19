@@ -28,8 +28,6 @@ import {
 const fixture = createDutyFeedStateFixture();
 const hoisted = getDutyApiMocks();
 const { deferred, expectTailCountRequest, mountLoadedFeed, runNextRaf, startPoll } = fixture;
-
-// @test-scope safeguard: prevents directional page loads and late responses from replacing the current feed window.
 describe('useRerDutyFeedState — directional loading and races', () => {
   let container: HTMLElement;
   let root: Root;

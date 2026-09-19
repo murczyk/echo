@@ -32,7 +32,6 @@ afterEach(() => {
 });
 
 describe('AI agent API mapping', () => {
-  // @test-scope safeguard: prevents runtime profiles for disallowed AI engines from being submitted
   it('round-trips provider runtime profiles for allowed engines', async () => {
     const response = {
       featureEnabled: true,
@@ -84,8 +83,6 @@ describe('AI agent API mapping', () => {
       clearMattermostWebhook: false,
     });
   });
-
-  // @test-scope parser: AI-agent cancellation response state normalization fixture
   it('returns the authoritative state from cancellation', async () => {
     mocks.postJson.mockResolvedValue({ state: 'completed' });
 
@@ -94,8 +91,6 @@ describe('AI agent API mapping', () => {
       requestId: 'request-1',
     });
   });
-
-  // @test-scope parser: AI-agent audit activity and conversation response normalization fixture
   it('keeps structured API activity and Mattermost alert retry state', async () => {
     mocks.postJson.mockResolvedValue({
       request: {
@@ -204,8 +199,6 @@ describe('AI agent API mapping', () => {
     ]);
     expect(JSON.stringify(request)).not.toContain('не показувати');
   });
-
-  // @test-scope parser: AI-agent conversation response normalization generates unique message keys.
   it('normalizes response-generated unique message keys after a title update', async () => {
     mocks.postJson.mockResolvedValue({
       id: 'conversation-1',
@@ -242,8 +235,6 @@ describe('AI agent API mapping', () => {
       'completed',
     ]);
   });
-
-  // @test-scope safeguard: prevents an inactive AI event stream from retaining a client request forever.
   it('aborts an inactive event stream after 15 seconds', async () => {
     vi.useFakeTimers();
     vi.stubGlobal(
@@ -267,8 +258,6 @@ describe('AI agent API mapping', () => {
 
     await result;
   });
-
-  // @test-scope safeguard: prevents dispatcher saves from sending non-editable sensitive host-file settings
   it('saves only editable dispatcher fields and tests the singleton', async () => {
     const dispatcher = {
       configured: true,

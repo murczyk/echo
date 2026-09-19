@@ -102,8 +102,6 @@ afterEach(() => {
   container = null;
   latest = null;
 });
-
-// @test-scope safeguard: prevents stale settlement overlays from replacing the current map selection.
 describe('useAnalysisMapData settlement overlays', () => {
   it('appends subsequent settlement pages until the advertised count is loaded', async () => {
     const firstPage = [

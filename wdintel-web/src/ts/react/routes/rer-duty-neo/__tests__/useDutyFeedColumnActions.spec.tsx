@@ -13,7 +13,7 @@ import { ScrollNavigationIntent } from '../windowed-feed-scroll-shared';
 import type { FeedColumnModel } from '../types';
 import type { MessageFeedState } from '../utils';
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3496
+// Regression: https://github.com/echoua/echo/issues/3496
 describe('useDutyFeedColumnActions', () => {
   let container: HTMLElement;
   let root: Root;

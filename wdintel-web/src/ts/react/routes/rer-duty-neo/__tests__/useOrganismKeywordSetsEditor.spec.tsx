@@ -44,8 +44,6 @@ async function renderHook(reload: () => Promise<void>) {
     },
   };
 }
-
-// @test-scope safeguard: prevents a keyword-set save failure from replacing the current editable set with stale state.
 describe('useOrganismKeywordSetsEditor save behavior', () => {
   beforeEach(() => upsertMock.mockReset());
   afterEach(() => {

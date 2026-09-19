@@ -36,7 +36,7 @@
 - **User role or permission:** users able to open the attachment
 - **Preconditions:** an attachment preview is open
 - **User action or external event:** the user zooms/pans media, enters fullscreen, presses Escape, or closes the preview
-- **Expected observable result:** zoom is bounded and pan remains within fitted media; a media disclosure is opened before Duty thumbnails become interactive; images, video, and documents share the attachment-preview dialog and its ordered carousel; document previews do not unexpectedly restore focus to an unrelated control.
+- **Expected observable result:** zoom is bounded and pan remains within fitted media; Escape remains owned by an active image editor or source-loading state until it can safely close the preview; copy actions give current success/error feedback; report-mode previews retain the shared report text field; a media disclosure is opened before Duty thumbnails become interactive; images, video, and documents share the attachment-preview dialog and its ordered carousel; document previews do not unexpectedly restore focus to an unrelated control.
 - **Loading/empty/error/success behavior:** unsupported kinds use the document shell without inventing media interaction.
 - **URL, localStorage, or user-settings persistence:** none.
 - **API endpoint and compatibility requirements:** none.

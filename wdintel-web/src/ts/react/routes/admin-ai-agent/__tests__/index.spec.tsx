@@ -143,8 +143,6 @@ afterEach(async () => {
   document.body.replaceChildren();
   vi.clearAllMocks();
 });
-
-// @test-scope safeguard: prevents AI-agent settings changes from silently dropping configured providers or failures.
 describe('AdminAiAgentPage settings', () => {
   it('saves the eligible allowlist and reports success', async () => {
     await act(async () => clickSave());

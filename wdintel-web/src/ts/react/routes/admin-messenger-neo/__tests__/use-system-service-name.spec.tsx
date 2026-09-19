@@ -58,8 +58,6 @@ describe('useSystemServiceName', () => {
     vi.useRealTimers();
     document.body.innerHTML = '';
   });
-
-  // @test-scope safeguard: prevents stale system-service availability checks from overwriting an operator's current input.
   it('checks and applies an available normalized name after debouncing', async () => {
     vi.useFakeTimers();
     getSystemServiceNameAvailabilityMock.mockResolvedValueOnce({
@@ -86,8 +84,6 @@ describe('useSystemServiceName', () => {
     expect(view.current.systemServiceName).toBe('echo-kherson-2');
     await act(async () => view.root.unmount());
   });
-
-  // @test-scope safeguard: prevents stale system-service availability checks from overwriting an operator's current input.
   it('keeps a manual edit when an automatic request finishes late', async () => {
     vi.useFakeTimers();
     let resolveAvailability!: (value: { exists: boolean; systemServiceName: string }) => void;
@@ -122,8 +118,6 @@ describe('useSystemServiceName', () => {
     expect(view.current.systemServiceName).toBe('manual-name');
     await act(async () => view.root.unmount());
   });
-
-  // @test-scope safeguard: prevents stale system-service availability checks from overwriting an operator's current input.
   it('rejects an availability result after the flow resets', async () => {
     let resolveAvailability!: (value: { exists: boolean; systemServiceName: string }) => void;
     let signal: AbortSignal | undefined;
@@ -157,8 +151,6 @@ describe('useSystemServiceName', () => {
     await expect(availabilityPromise).resolves.toBe(false);
     await act(async () => view.root.unmount());
   });
-
-  // @test-scope safeguard: prevents stale system-service availability checks from overwriting an operator's current input.
   it('aborts submission availability when unmounted', async () => {
     let resolveAvailability!: (value: { exists: boolean; systemServiceName: string }) => void;
     let signal: AbortSignal | undefined;

@@ -4,8 +4,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildCallsignPanelProps } from '../../network-callsigns-page';
-
-// @test-scope safeguard: prevents intercepted callsigns from opening with incorrect creation defaults.
 describe('NetworkDetailsNeoPageBody callsign props', () => {
   it('opens intercepted callsigns with the expected create defaults', () => {
     const openCallsignDrawerForCreate = vi.fn();

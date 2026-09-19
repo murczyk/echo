@@ -59,8 +59,6 @@ afterEach(() => {
   document.body.innerHTML = '';
   vi.clearAllMocks();
 });
-
-// @test-scope safeguard: prevents a failed highlight blacklist removal from corrupting current Palitra state.
 describe('highlight blacklist removal hook', () => {
   it('loads only the blacklist and removes an entry', async () => {
     mocks.list.mockResolvedValue([entry]);

@@ -100,8 +100,6 @@ afterEach(async () => {
   document.body.replaceChildren();
   vi.clearAllMocks();
 });
-
-// @test-scope safeguard: prevents an operator from receiving stale or false success state while changing a user's AI-agent lifecycle.
 describe('AdminUserDetailsPage AI agent lifecycle', () => {
   it('starts the selected user agent and refreshes its status', async () => {
     await act(async () => clickButton('Start'));

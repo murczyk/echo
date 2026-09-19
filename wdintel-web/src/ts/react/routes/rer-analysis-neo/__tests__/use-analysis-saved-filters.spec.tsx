@@ -84,8 +84,6 @@ async function flushEffects() {
     await Promise.resolve();
   });
 }
-
-// @test-scope safeguard: prevents applying or resetting saved filters from retaining stale analysis selections.
 describe('useAnalysisSavedFilters', () => {
   beforeEach(() => {
     container = document.createElement('div');

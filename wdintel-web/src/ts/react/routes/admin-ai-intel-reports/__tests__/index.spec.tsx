@@ -121,8 +121,6 @@ afterEach(() => {
   document.body.innerHTML = '';
   delete (window as { localStorage?: Storage }).localStorage;
 });
-
-// @test-scope safeguard: prevents attempt-log refreshes from discarding loaded AI-report settings or review outcomes.
 describe('AdminAiIntelReportsPage', () => {
   it('renders successful and failed attempts with their review results', async () => {
     const { container, root } = await renderPage();

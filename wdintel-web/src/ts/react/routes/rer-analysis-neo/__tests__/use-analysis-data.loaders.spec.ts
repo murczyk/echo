@@ -126,8 +126,6 @@ afterEach(() => {
   container = null;
   latest = null;
 });
-
-// @test-scope safeguard: prevents stale map-open messages from surviving an incompatible refresh.
 describe('shouldClearMapOpenMessages', () => {
   it('returns true when the map selection is empty after normalization', () => {
     expect(shouldClearMapOpenMessages([null, undefined, Number.NaN])).toBe(true);
@@ -137,8 +135,6 @@ describe('shouldClearMapOpenMessages', () => {
     expect(shouldClearMapOpenMessages([1, null, 2])).toBe(false);
   });
 });
-
-// @test-scope safeguard: prevents failed loader caches from blocking a later successful analysis reload.
 describe('retryable loader caches', () => {
   it('loads missing networks for map messages without blocking map load success', async () => {
     const setMapOpenMessages = vi.fn();

@@ -213,8 +213,6 @@ function renderHeader(
   });
   return { container, root };
 }
-
-// @test-scope safeguard: preserves compact panel controls, the narrow settings-menu actions, and report-focus return so the analysis workspace remains operable after responsive transitions.
 describe('AnalysisPageHeader', () => {
   const rendered: Array<{ container: HTMLDivElement; root: Root }> = [];
 

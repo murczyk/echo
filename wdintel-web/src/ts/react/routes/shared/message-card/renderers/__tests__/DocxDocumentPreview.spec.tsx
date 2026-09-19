@@ -26,8 +26,6 @@ describe('DocxDocumentPreview', () => {
     document.body.innerHTML = '';
     vi.restoreAllMocks();
   });
-
-  // @test-scope safeguard: prevents oversized DOCX attachments from downloading into the preview process
   it('rejects oversized files before fetching the body', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
       throw new Error('should not fetch');

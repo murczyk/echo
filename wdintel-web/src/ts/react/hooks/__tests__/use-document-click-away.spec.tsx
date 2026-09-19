@@ -55,8 +55,6 @@ describe('useDocumentClickAway', () => {
       document.body.innerHTML = '';
     });
   });
-
-  // @test-scope safeguard: prevents portal dialog actions from dismissing the panel beneath them
   it('ignores clicks inside portal roots matched by selectors', async () => {
     const onClickAway = vi.fn();
 
@@ -75,8 +73,6 @@ describe('useDocumentClickAway', () => {
 
     expect(onClickAway).not.toHaveBeenCalled();
   });
-
-  // @test-scope safeguard: prevents a genuinely outside click from leaving a transient panel open
   it('fires when clicking outside both the panel and ignored portal roots', async () => {
     const onClickAway = vi.fn();
 

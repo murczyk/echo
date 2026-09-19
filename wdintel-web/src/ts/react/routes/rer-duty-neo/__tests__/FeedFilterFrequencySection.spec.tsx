@@ -81,8 +81,6 @@ function renderFrequency(
     onValueChange: (value: string[]) => void;
   };
 }
-
-// @test-scope safeguard: preserves frequency bulk-paste handling and reports clipboard failures instead of silently losing selected Duty filters.
 describe('FeedFilterFrequencySection', () => {
   it('configures newline bulk paste and ordered frequency copy', async () => {
     mocks.copyTextToClipboard.mockResolvedValue(undefined);

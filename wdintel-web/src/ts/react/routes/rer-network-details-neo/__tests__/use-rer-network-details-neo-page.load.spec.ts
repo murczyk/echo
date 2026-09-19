@@ -192,8 +192,6 @@ function installDefaultApiMocks() {
   callsignsApiMock.getNetworkCallsignsActivity.mockResolvedValue({ callsignsActivity: [] });
   callsignsApiMock.listSources.mockResolvedValue([]);
 }
-
-// @test-scope safeguard: prevents stale network-detail loads from overwriting the currently selected network.
 describe('use-rer-network-details-neo-page.load', () => {
   it('keeps blank frequencies enabled after load', () => {
     expect(

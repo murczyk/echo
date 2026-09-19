@@ -305,8 +305,6 @@ function typeDialogValue(container: HTMLElement, value: string) {
     dialogTextField.onChange?.({ target: { value } });
   });
 }
-
-// @test-scope safeguard: prevents bulk resolution from dropping, duplicating, or resolving submitted values to the wrong canonical option.
 describe('PowerAutocomplete bulk-value integrity', () => {
   it('passes a copied newline list from one frequency column into another bulk flow', () => {
     const copiedValues: string[] = [];

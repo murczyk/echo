@@ -13,8 +13,6 @@ vi.mock('../../../../components/PowerDateTimePicker', () => ({
 }));
 
 import { NetworkDatePickerField } from '.././NetworkDatePickerField';
-
-// @test-scope safeguard: prevents a required network date from being cleared or an invalid date from being persisted.
 describe('NetworkDatePickerField', () => {
   afterEach(() => {
     document.body.innerHTML = '';

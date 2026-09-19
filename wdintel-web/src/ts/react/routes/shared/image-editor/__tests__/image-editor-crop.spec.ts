@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { applyCrop, cancelCrop, normalizedCropFrame, startCrop } from '../image-editor-crop';
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3099
+// Regression: https://github.com/echoua/echo/issues/3099
 describe('image editor crop bounds #3099', () => {
   it('normalizes scaled crop geometry and keeps every edge inside the document', () => {
     expect(

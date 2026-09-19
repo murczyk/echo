@@ -28,8 +28,6 @@ const rawMessage = {
   post_id: 5,
   media: [{ content_type: 'image/jpeg', file_name: 'photo.jpg', size_bytes: 123 }],
 };
-
-// @test-scope parser: normalizes supported direct-submit response variants.
 describe('direct-submit response normalization', () => {
   it('normalizes an inline snake_case create message', async () => {
     apiMocks.postJson.mockResolvedValueOnce({ signal_message_id: 101, message: rawMessage });

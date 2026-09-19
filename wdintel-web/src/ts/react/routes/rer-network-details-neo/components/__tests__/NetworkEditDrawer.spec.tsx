@@ -219,8 +219,6 @@ afterEach(() => {
     item.container.remove();
   }
 });
-
-// @test-scope safeguard: prevents network changes from being saved with invalid required metadata, frequencies, or lost referenced units.
 describe('NetworkEditDrawer', () => {
   it('keeps validation text hidden on initial open and shows it after blur', () => {
     const view = renderDrawer(buildForm({ freq: '123.4567' }));

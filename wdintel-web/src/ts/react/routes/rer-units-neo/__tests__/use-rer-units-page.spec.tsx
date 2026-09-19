@@ -74,8 +74,6 @@ afterEach(() => {
   document.body.innerHTML = '';
   vi.clearAllMocks();
 });
-
-// @test-scope safeguard: prevents a unit-page request from replacing the visible page with mismatched backend data
 describe('useRerUnitsPage loading', () => {
   it('loads and replaces bounded backend pages', async () => {
     const activeReq = { limit: 20, offset: 0, filterActive: true } as ListUnitsReq;
@@ -142,8 +140,6 @@ describe('useRerUnitsPage loading', () => {
     );
   });
 });
-
-// @test-scope safeguard: prevents stale post-mutation refreshes from reopening or overwriting the current unit session
 describe('useRerUnitsPage mutations', () => {
   it('keeps the terminal merge refresh over a stale mount load', async () => {
     const req = { limit: 20, offset: 0 } as ListUnitsReq;

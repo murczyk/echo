@@ -18,8 +18,6 @@ vi.mock('../client', () => ({
 }));
 
 const postJsonMock = vi.mocked(postJson);
-
-// @test-scope parser: network-list response compatibility fixture
 it('normalizes the combined network-list response', async () => {
   postJsonMock.mockResolvedValueOnce({
     list: [
@@ -69,8 +67,6 @@ it('normalizes the combined network-list response', async () => {
   expect(response.list).toHaveLength(1);
   expect(response.statusCounts).toEqual({ active: 7, inactive: 1, archived: 2 });
 });
-
-// @test-scope parser: network activity-summary response normalization fixture.
 it('returns precise activity alongside the grouped chart from one request', async () => {
   postJsonMock.mockResolvedValueOnce({
     activity: { 1: { 123: { alpha: 2 } } },
@@ -88,8 +84,6 @@ it('returns precise activity alongside the grouped chart from one request', asyn
     lastActivityAt: { 1: 456 },
   });
 });
-
-// @test-scope parser: network-frequency callsign-map response compatibility fixture
 it('normalizes string keys to numeric IDs in the batch callsigns response', async () => {
   postJsonMock.mockResolvedValueOnce({
     callsigns_by_network_freq_id: {
@@ -108,8 +102,6 @@ describe('networks API v2 frequency mutations', () => {
   beforeEach(() => {
     postJsonMock.mockReset();
   });
-
-  // @test-scope parser: nested Neo frequency-mutation response payload
   it('normalizes the nested Neo add-frequency response payload', async () => {
     postJsonMock.mockResolvedValueOnce({
       network: {
@@ -177,8 +169,6 @@ describe('networks API v2 frequency mutations', () => {
       undefined,
     );
   });
-
-  // @test-scope parser: nested Neo frequency-mutation response payload
   it('normalizes the nested Neo update-frequency response payload', async () => {
     postJsonMock.mockResolvedValueOnce({
       network: {
@@ -243,8 +233,6 @@ describe('networks API v2 frequency mutations', () => {
       undefined,
     );
   });
-
-  // @test-scope parser: single network-frequency callsign response compatibility fixture
   it('normalizes the single frequency callsign response', async () => {
     postJsonMock.mockResolvedValueOnce({
       network_freq_id: 7,

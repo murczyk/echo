@@ -25,8 +25,6 @@ vi.mock('../../../services/api/bgtask', () => ({
 }));
 
 import { AdminUnitDuplicatesPage } from '../index';
-
-// @test-scope safeguard: prevents transient or stale background-task responses from losing or overwriting the terminal unit-merge result.
 describe('AdminUnitDuplicatesPage', () => {
   beforeEach(() => {
     const storage = new Map<string, string>();

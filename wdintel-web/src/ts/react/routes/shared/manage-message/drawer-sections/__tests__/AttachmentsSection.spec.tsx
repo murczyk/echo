@@ -91,7 +91,7 @@ function pendingFile(id: string, name: string, type: string, meta: Record<string
   };
 }
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3099
+// Regression: https://github.com/echoua/echo/issues/3099
 describe('AttachmentsSection media previews', () => {
   const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockImplementation(() => 'blob:local');
   const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);

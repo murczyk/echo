@@ -1,4 +1,3 @@
-// @test-scope parser: inbox message response normalization fixtures
 import { describe, expect, it, vi } from 'vitest';
 
 import { fetchMessagesByIds } from '../inbox-messages';

@@ -189,8 +189,6 @@ afterEach(() => {
   root = null;
   document.body.innerHTML = '';
 });
-
-// @test-scope safeguard: prevents palette actions from bypassing GOI ownership, import state, or management permissions.
 describe('PalitraTable row actions', () => {
   it('disables preview with a crossed-out icon for failed imports', () => {
     const onRequestPreview = vi.fn();

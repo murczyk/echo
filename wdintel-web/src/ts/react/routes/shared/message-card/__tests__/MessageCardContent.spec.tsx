@@ -159,8 +159,6 @@ async function openPaletteChooser(container: HTMLElement, pointIndex = 0) {
     await new Promise((resolve) => window.setTimeout(resolve, 0));
   });
 }
-
-// @test-scope safeguard: prevents point-blacklist mutations from targeting the wrong source, blocking independent choices, or hiding recoverable failures
 describe('MessageCardContent point blacklist actions', () => {
   let activeRoot: Root | null = null;
   let activeContainer: HTMLElement | null = null;

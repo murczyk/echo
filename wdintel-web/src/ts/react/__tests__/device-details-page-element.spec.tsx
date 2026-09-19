@@ -63,8 +63,6 @@ async function mount(element: HTMLElement) {
     await Promise.resolve();
   });
 }
-
-// @test-scope safeguard: prevents invalid device routes or changed roles from exposing incorrect device synchronization controls.
 describe('device-details-page custom element', () => {
   it('renders a visible error for missing or invalid device UUID', async () => {
     const missingId = document.createElement('device-details-page');
@@ -87,8 +85,6 @@ describe('device-details-page custom element', () => {
     expect(document.body.textContent).not.toContain('Некоректний ID пристрою.');
     expect(document.body.querySelector('[data-device-id]')).toBeNull();
   });
-
-  // @test-scope safeguard: prevents a late device response from replacing the details for the newly selected device.
   it('ignores stale detail responses after the device-id attribute changes', async () => {
     let resolveFirst!: (response: Response) => void;
     let resolveSecond!: (response: Response) => void;

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { EMPTY_FORM_VALUES, makeMessageSchema, parseCoords } from '../manage-message-drawer.schema';
 
 describe('makeMessageSchema', () => {
-  // @test-scope parser: rejects malformed coordinate input before message submission.
   it('returns a coords field error for invalid coordinates in edit mode', () => {
     const result = makeMessageSchema(true).safeParse({
       ...EMPTY_FORM_VALUES,
@@ -14,8 +13,6 @@ describe('makeMessageSchema', () => {
     if (result.success) return;
     expect(result.error.issues).toContainEqual(expect.objectContaining({ path: ['coords'] }));
   });
-
-  // @test-scope parser: accepts supported coordinate formats for message submission.
   it('accepts and returns multiple coordinate formats', () => {
     const value = '49.12345, 37.12345\n37U DR 05997 22279';
     const result = makeMessageSchema(false).safeParse({

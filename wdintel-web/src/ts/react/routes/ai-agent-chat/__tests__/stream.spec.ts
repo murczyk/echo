@@ -2,8 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { AiAgentEvent } from '../../../services/api/ai-agent';
 import { streamAiAgentEventsWithReconnect } from '../stream';
-
-// @test-scope safeguard: prevents stream disconnects and reconnects from duplicating or losing chat events.
 describe('streamAiAgentEventsWithReconnect', () => {
   it('resumes after the last ordered sequence', async () => {
     let lastSequence = 0;

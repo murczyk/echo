@@ -19,8 +19,6 @@ const EMPTY_UNIT_HIERARCHY = {
   teamOrCrew: '',
   other: '',
 } as const;
-
-// @test-scope safeguard: prevents identically named formations in different region and district paths from merging and misattributing statistics
 describe('UnitStatsSidebar hierarchy', () => {
   it('separates same-named armies by their full regional path', () => {
     const stats: UnitStatView[] = [

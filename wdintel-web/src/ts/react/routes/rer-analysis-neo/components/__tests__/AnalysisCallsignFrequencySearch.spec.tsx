@@ -28,8 +28,6 @@ describe('AnalysisCallsignFrequencySearch', () => {
     act(() => root?.unmount());
     root = null;
   });
-
-  // @test-scope safeguard: preserves selection and filtering actions after callsign frequency search succeeds.
   it('searches with two matches by default and renders selectable frequency cards', async () => {
     const container = document.createElement('div');
     root = createRoot(container);
@@ -99,8 +97,6 @@ describe('AnalysisCallsignFrequencySearch', () => {
     });
     expect(onAddFreq).toHaveBeenCalledWith('456.78');
   });
-
-  // @test-scope safeguard: prevents uppercase display labels from changing the callsign value sent to the search boundary.
   it('searches with the original callsign values behind uppercase labels', async () => {
     const container = document.createElement('div');
     root = createRoot(container);

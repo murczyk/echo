@@ -69,8 +69,6 @@ async function mountElement(element: HTMLElement, container: HTMLElement): Promi
     container.appendChild(element);
   });
 }
-
-// @test-scope safeguard: prevents map-focus actions from targeting unselected or ineligible Palitra geometries.
 describe('analysis-map-palitras', () => {
   let container: HTMLElement;
 
@@ -192,8 +190,6 @@ describe('analysis-map-palitras', () => {
 
     expect(element.querySelector('button[aria-label="Показати обрані палітри"]')).toBeNull();
   });
-
-  // @test-scope safeguard: prevents map palitra overflow actions from appearing before a user has selected the group they would affect.
   it('shows the per-group overflow only after a group selection exists', async () => {
     const element = createElement();
     element.setPalitras([

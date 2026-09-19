@@ -21,8 +21,6 @@ function baseFeed(overrides: Partial<MessageFeedState> = {}): MessageFeedState {
     ...overrides,
   };
 }
-
-// @test-scope safeguard: prevents unchanged feed render state from causing an unnecessary live-feed repaint.
 describe('feedListRenderStateEqual', () => {
   it('treats unread/read metadata-only updates as equal', () => {
     const items: MessageFeedState['items'] = [[1, minimalInboxMessage({ createdAtOrder: 1 })]];

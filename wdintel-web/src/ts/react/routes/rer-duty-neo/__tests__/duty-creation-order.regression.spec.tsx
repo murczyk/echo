@@ -101,7 +101,7 @@ function ids() {
   return feeds.messageFeeds[0].items.map(([id]) => id);
 }
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3546
+// Regression: https://github.com/echoua/echo/issues/3546
 describe('Duty creation-time contract', () => {
   beforeEach(() => {
     vi.useFakeTimers();

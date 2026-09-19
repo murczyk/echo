@@ -72,8 +72,6 @@ function buildKeyboardEvent(
   Object.defineProperty(event, 'target', { configurable: true, value: target });
   return event;
 }
-
-// @test-scope safeguard: prevents blocked form states from submitting through native keyboard or browser form behavior
 describe('PowerForm', () => {
   afterEach(() => {
     boxProps.splice(0);

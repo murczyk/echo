@@ -101,8 +101,6 @@ describe('MrtRowActions', () => {
     }
     vi.useRealTimers();
   });
-
-  // @test-scope safeguard: prevents focus remaining in a closing row-action control while its modal opens
   it('defers a direct modal action and blurs the active element first', async () => {
     const onEdit = vi.fn();
     const blurSpy = vi.spyOn(HTMLElement.prototype, 'blur');
@@ -132,8 +130,6 @@ describe('MrtRowActions', () => {
     expect(onEdit).toHaveBeenCalledTimes(1);
     blurSpy.mockRestore();
   });
-
-  // @test-scope safeguard: prevents disabled destructive actions from becoming executable in overflow menus
   it('keeps disabled overflow actions disabled in the menu', async () => {
     const onEdit = vi.fn();
     const onDelete = vi.fn();

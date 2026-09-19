@@ -30,8 +30,6 @@ afterEach(() => {
     delete (window as { localStorage?: Storage }).localStorage;
   }
 });
-
-// @test-scope safeguard: prevents stale, duplicate, cross-feed, or incorrectly reported Duty browser notifications.
 describe('Duty browser notifications', () => {
   // Regression: https://github.com/echoua/echo/pull/3331
   it('suppresses stale previews and previews invalidated after an ended cycle', async () => {

@@ -74,8 +74,6 @@ async function openEditor(container: HTMLDivElement) {
   );
   await act(async () => (edit as HTMLElement)?.click());
 }
-
-// @test-scope safeguard: prevents a keyword-set save from reporting success before the persisted state is current.
 describe('FeedKeywordsPanel success notifications', () => {
   beforeEach(() => {
     notifyMock.mockReset();

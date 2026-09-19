@@ -436,8 +436,6 @@ async function click(element: Element | null) {
     element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   });
 }
-
-// @test-scope safeguard: prevents message creation and edit callbacks from updating the wrong Duty feed or report mode.
 describe('RerDutyNeoPage creation workflow', () => {
   beforeEach(() => {
     useRerDutyFeedsMock.mockReset();
@@ -499,8 +497,6 @@ describe('RerDutyNeoPage creation workflow', () => {
       root.unmount();
     });
   });
-
-  // @test-scope safeguard: prevents editing an own report through the message flow and losing report-specific handling.
   it('opens an own report card from the header edit action in report mode', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -567,8 +563,6 @@ describe('RerDutyNeoPage creation workflow', () => {
 
     await act(async () => root.unmount());
   });
-
-  // @test-scope safeguard: prevents creating a report from discarding already loaded duty feeds
   it('opens report mode and keeps populated feeds without a full reload after creation', async () => {
     nextCreatedResponse.value = { signal_message_id: 91 };
     const { container, root, state } = await renderPage();

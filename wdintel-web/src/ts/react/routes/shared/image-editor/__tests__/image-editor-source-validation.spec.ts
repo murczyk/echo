@@ -66,7 +66,7 @@ function webp(kind: 'VP8X' | 'VP8 ' | 'VP8L', data: number[]) {
   return bytes;
 }
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3294
+// Regression: https://github.com/echoua/echo/issues/3294
 describe('image editor bounded source validation #3294', () => {
   it('parses valid PNG and JPEG dimensions and rejects oversized declarations', async () => {
     await expect(validateImageEditorSource(source(png(6000, 4000)))).resolves.toMatchObject({

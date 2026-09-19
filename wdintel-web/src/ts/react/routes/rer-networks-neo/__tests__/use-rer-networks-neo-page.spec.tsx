@@ -339,8 +339,6 @@ describe('useRerNetworksNeoPage', () => {
     locationReplaceSpy = null;
     vi.useRealTimers();
   });
-
-  // @test-scope safeguard: prevents an edited network from retaining stale relations.
   it('refreshes an edited row with updated relations from the server', async () => {
     await renderHook();
     await flushEffects();
@@ -404,8 +402,6 @@ describe('useRerNetworksNeoPage', () => {
     expect(latest?.rows.find((row) => row.id === 1)?.network.postIds).toEqual([2]);
     expect(apiMock.listNetworks).toHaveBeenCalledTimes(3);
   });
-
-  // @test-scope safeguard: prevents an edited network outside the active filter from remaining visible.
   it('drops an edited row when it no longer matches the active filter', async () => {
     await renderHook();
     await flushEffects();
@@ -456,8 +452,6 @@ describe('useRerNetworksNeoPage', () => {
     expect(latest?.rows.map((row) => row.id)).toEqual([2]);
     expect(apiMock.listNetworks).toHaveBeenCalledTimes(4);
   });
-
-  // @test-scope safeguard: prevents a filter change during bootstrap from being lost.
   it('replays a filter change after bootstrap completes', async () => {
     const firstLoad = deferred<{
       list: Network[];
@@ -493,8 +487,6 @@ describe('useRerNetworksNeoPage', () => {
       expect.any(Object),
     );
   });
-
-  // @test-scope safeguard: prevents unauthorized network data from remaining accessible.
   it('redirects to login on unauthorized network load', async () => {
     apiMock.listNetworks.mockRejectedValueOnce(new HttpRequestError(401, 'unauthorized'));
 
@@ -504,8 +496,6 @@ describe('useRerNetworksNeoPage', () => {
     expect(locationReplaceSpy).toHaveBeenCalled();
     expect(String(locationReplaceSpy.mock.calls[0]?.[0] ?? '')).toContain('/login');
   });
-
-  // @test-scope safeguard: prevents a cancellation race from downloading a cancelled report.
   it('shows the cancelled message when cancellation races with bgtask polling', async () => {
     await renderHook();
     await flushEffects();
@@ -573,8 +563,6 @@ describe('useRerNetworksNeoPage', () => {
     expect(latest?.etalonkaReport.error).toBe('Звіт скасовано в Моїх звітах.');
     expect(apiMock.downloadNetworkEtalonkaReportTaskResult).not.toHaveBeenCalled();
   });
-
-  // @test-scope safeguard: prevents a failed query from becoming permanently unreloadable.
   it('allows retrying a failed reload for the same query later', async () => {
     await renderHook();
     await flushEffects();
@@ -608,7 +596,7 @@ describe('useRerNetworksNeoPage', () => {
     expect(apiMock.listNetworks).toHaveBeenCalledTimes(4);
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/pull/3489
+  // Regression: https://github.com/echoua/echo/pull/3489
   it('uses precise visible activity from the chart response', async () => {
     const cachedLastActivityAt = Date.now() - 24 * 60 * 60 * 1000;
     const visibleLastActivityAt = cachedLastActivityAt - 60 * 60 * 1000;
@@ -631,8 +619,6 @@ describe('useRerNetworksNeoPage', () => {
     expect(latest?.rows[1]?.lastActivityDetail).toBe('Немає перехоплень за останні 10 днів');
     expect(apiMock.getNetworkLastActivity).not.toHaveBeenCalled();
   });
-
-  // @test-scope safeguard: prevents pagination from leaving first-page activity permanently loading.
   it('settles first-page activity after pagination starts', async () => {
     const firstPage = Array.from({ length: 100 }, (_, index) => buildNetwork(index + 1));
     const initialActivity = deferred<NetworkGroupsActivitySummaryRsp>();
@@ -661,7 +647,7 @@ describe('useRerNetworksNeoPage', () => {
     await vi.waitFor(() => expect(latest?.rows[0]?.activityLoadState).toBe('loaded'));
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3329
+  // Regression: https://github.com/echoua/echo/issues/3329
   it('does not abort page-two activity when page three starts loading', async () => {
     const pageOne = Array.from({ length: 100 }, (_, index) => buildNetwork(index + 1));
     const pageTwo = Array.from({ length: 100 }, (_, index) => buildNetwork(index + 101));
@@ -706,7 +692,7 @@ describe('useRerNetworksNeoPage', () => {
     expect(latest?.rows[100]?.lastActivityDetail).toBe('Немає перехоплень за останні 10 днів');
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3329
+  // Regression: https://github.com/echoua/echo/issues/3329
   it('ignores activity from a replaced list query', async () => {
     const oldActivity = deferred<NetworkGroupsActivitySummaryRsp>();
     const newActivity = deferred<NetworkGroupsActivitySummaryRsp>();
@@ -746,7 +732,7 @@ describe('useRerNetworksNeoPage', () => {
     await vi.waitFor(() => expect(latest?.rows[0]?.activityLoadState).toBe('loaded'));
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3329
+  // Regression: https://github.com/echoua/echo/issues/3329
   it('marks every requested network as activity error without rendering inactivity', async () => {
     apiMock.getNetworksGroupsActivitySummary.mockRejectedValueOnce(
       new Error('activity unavailable'),
@@ -762,8 +748,6 @@ describe('useRerNetworksNeoPage', () => {
     );
     expect(latest?.status?.text).toContain('activity unavailable');
   });
-
-  // @test-scope safeguard: prevents authorized UnitsEditor users from being denied network mutations.
   it('enables edit and delete permissions for UnitsEditor roles', async () => {
     authUserRoles = ['Rer', 'UnitsEditor'];
 
@@ -776,8 +760,6 @@ describe('useRerNetworksNeoPage', () => {
       canDelete: true,
     });
   });
-
-  // @test-scope safeguard: prevents a soft-deleted network from remaining in the active list.
   it('removes a soft-deleted network from the active list', async () => {
     await renderHook();
     await flushEffects();

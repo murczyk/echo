@@ -9,8 +9,6 @@ describe('auth redirect', () => {
   beforeEach(() => {
     window.history.replaceState({}, '', '/');
   });
-
-  // @test-scope safeguard: prevents the login route from recursively redirecting after an unauthorized response.
   it('does not redirect when the unauthorized event is emitted on login', () => {
     window.history.replaceState({}, '', '/login?foo=1#summary');
     const replace = vi.spyOn(window.location, 'replace').mockImplementation(() => {});
@@ -20,8 +18,6 @@ describe('auth redirect', () => {
     expect(replace).not.toHaveBeenCalled();
     replace.mockRestore();
   });
-
-  // @test-scope safeguard: prevents concurrent unauthorized responses from starting multiple login redirects.
   it('redirects once when concurrent requests emit unauthorized events', () => {
     window.history.replaceState({}, '', '/reports?page=2#summary');
     const replace = vi.spyOn(window.location, 'replace').mockImplementation(() => {});

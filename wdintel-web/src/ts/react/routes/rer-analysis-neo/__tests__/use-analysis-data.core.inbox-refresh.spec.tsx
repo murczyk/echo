@@ -330,8 +330,6 @@ afterEach(() => {
   container?.remove();
   container = null;
 });
-
-// @test-scope safeguard: prevents a refresh or late inbox response from replacing the current analysis message state.
 describe('useAnalysisData inbox refreshes', () => {
   it('skips fetching when no visible ids overlap', async () => {
     hoisted.messages = [[1, inboxMessage({ text: 'one' })]];

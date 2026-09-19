@@ -380,8 +380,6 @@ function TestCoordinatePreviewDialog({
     />
   );
 }
-
-// @test-scope safeguard: prevents coordinate evidence maps from stealing carousel input, losing selected points, or leaving retry/copy failures unreachable
 describe('CoordinateAttachmentPreviewRenderer', () => {
   let container: HTMLElement;
   let root: Root;

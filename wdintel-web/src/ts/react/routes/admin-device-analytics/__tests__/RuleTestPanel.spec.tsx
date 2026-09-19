@@ -72,8 +72,6 @@ afterEach(() => {
   document.body.replaceChildren();
   vi.clearAllMocks();
 });
-
-// @test-scope safeguard: prevents unsaved tags or failed rule evaluations from corrupting reusable analytics test cases.
 describe('RuleTestPanel', () => {
   it('loads positive and negative files and tests the local expression', async () => {
     expect(mocks.listFiles).toHaveBeenCalledWith(

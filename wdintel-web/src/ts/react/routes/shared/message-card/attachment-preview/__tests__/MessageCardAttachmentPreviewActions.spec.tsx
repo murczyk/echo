@@ -114,8 +114,6 @@ function SharedMediaDownloadHarness() {
     </>
   );
 }
-
-// @test-scope safeguard: prevents preview actions from duplicating a media operation, downloading the wrong original, or reordering critical controls
 describe('MessageCardAttachmentPreviewActions', () => {
   afterEach(() => {
     document.body.innerHTML = '';

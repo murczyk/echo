@@ -19,8 +19,6 @@ type RouteComparisonCase = {
 type LoadResult = {
   markerMs: number;
 };
-
-// @test-scope safeguard: prevents Neo route first load from exceeding the equivalent classic route by more than the configured threshold.
 test.describe('@perf', () => {
   async function measureRouteLoad(
     browser: Browser,

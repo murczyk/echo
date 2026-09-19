@@ -126,8 +126,6 @@ async function click(element: HTMLElement): Promise<void> {
     element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   });
 }
-
-// @test-scope safeguard: prevents internal or stale table columns from being exposed as an operator-controlled visibility choice
 describe('ColumnsVisibilityButton', () => {
   const rendered: Rendered[] = [];
 

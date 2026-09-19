@@ -88,8 +88,6 @@ function bodyButtonContaining(text: string): HTMLButtonElement {
   if (!(button instanceof HTMLButtonElement)) throw new Error(`Button not found: ${text}`);
   return button;
 }
-
-// @test-scope safeguard: prevents device reanalysis or tag-file retries from acting on stale data without an explicit operator confirmation.
 describe('DeviceAnalyticsPanel', () => {
   it('renders only active tags with files and lazily paginates a generic tag widget', async () => {
     mocks.getDeviceAnalyticsSummary.mockResolvedValue({

@@ -18,7 +18,7 @@ vi.mock('@mui/material', () => ({
 
 import { ImageEditorWorkspace } from '../ImageEditorWorkspace';
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3099
+// Regression: https://github.com/echoua/echo/issues/3099
 describe('ImageEditorWorkspace wheel zoom', () => {
   it('registers one non-passive native listener and zooms once', async () => {
     const container = document.createElement('div');

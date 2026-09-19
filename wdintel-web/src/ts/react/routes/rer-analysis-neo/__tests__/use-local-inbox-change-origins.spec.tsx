@@ -12,8 +12,6 @@ function Harness({ onRender }: { onRender: (origins: Origins) => void }) {
   onRender(useLocalInboxChangeOrigins());
   return null;
 }
-
-// @test-scope safeguard: prevents local inbox mutation origins from being lost before matching refresh events arrive.
 describe('useLocalInboxChangeOrigins', () => {
   let container: HTMLDivElement;
   let root: Root;

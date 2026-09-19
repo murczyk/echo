@@ -52,8 +52,6 @@ function buildMessage(): InboxMessage {
     images: [],
   } as InboxMessage;
 }
-
-// @test-scope safeguard: prevents late or failed comment hydration from replacing the current message comments.
 describe('loadMissingMessageCommentsForMessages', () => {
   it('loads comments without filtering out self-authored entries', async () => {
     fetchMessageComments.mockResolvedValue({
@@ -89,8 +87,6 @@ describe('loadMissingMessageCommentsForMessages', () => {
       ],
     });
   });
-
-  // @test-scope safeguard: prevents a late comment batch from overwriting comments after analysis invalidation
   it('does not surface stale loads after the request version changes', async () => {
     fetchMessageComments.mockResolvedValue({
       data: [{ messageId: 42, comments: [buildComment({ login: 'stale-login' })] }],

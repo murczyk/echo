@@ -23,8 +23,6 @@ function aor(id: number, withBoundaries: boolean): AreaOfResponsibility {
     createdAt: 0,
   };
 }
-
-// @test-scope safeguard: prevents incomplete or unchanged AOR boundary drafts from being persisted as map changes.
 describe('AOR BattleLine boundary drafts', () => {
   it('saves only added or moved complete boundary pairs', () => {
     const aors = [aor(1, true), aor(2, false)];

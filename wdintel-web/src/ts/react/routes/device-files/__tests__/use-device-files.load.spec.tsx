@@ -106,8 +106,6 @@ async function mountHook() {
   });
   await flush();
 }
-
-// @test-scope safeguard: prevents a stale device-file search scope from surviving refreshed root data.
 describe('useDeviceFilesLoad', () => {
   it('keeps root server order and selects the first root as the initial search scope', async () => {
     await mountHook();
@@ -120,8 +118,6 @@ describe('useDeviceFilesLoad', () => {
     });
     expect(apiMock.searchDeviceFiles).not.toHaveBeenCalled();
   });
-
-  // @test-scope safeguard: prevents a delayed search from replacing the files shown for the newly selected device root.
   it('ignores a stale search response after the search scope changes', async () => {
     const first = deferred<SearchDeviceFilesRsp>();
     const second = deferred<SearchDeviceFilesRsp>();
@@ -169,8 +165,6 @@ describe('useDeviceFilesLoad', () => {
     expect(latest?.searchScope?.entryId).toBe(ROOT_ONE_ID);
     expect(latest?.searchEntries.map((entry) => entry.parentEntryId)).toEqual([ROOT_ONE_ID]);
   });
-
-  // @test-scope safeguard: prevents cursor pagination from dropping distinct file records that share a path.
   it('appends cursor pages while preserving distinct duplicate paths', async () => {
     apiMock.searchDeviceFiles
       .mockResolvedValueOnce({

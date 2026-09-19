@@ -96,7 +96,6 @@ afterEach(() => {
 });
 
 describe('UnitFormDrawer', () => {
-  // @test-scope safeguard: prevents an ORBIT-linked unit from being created without the selected duplicate association.
   it('waits for duplicate selection before creating an ORBIT-linked unit', async () => {
     vi.mocked(getCreateUnitDuplicateCandidates).mockResolvedValue([duplicate]);
     const onSubmit = vi.fn();

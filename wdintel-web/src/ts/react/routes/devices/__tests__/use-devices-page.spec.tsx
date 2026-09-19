@@ -68,8 +68,6 @@ afterEach(() => {
   latest = null;
   vi.clearAllMocks();
 });
-
-// @test-scope safeguard: prevents an uncertain device-create request from being retried automatically.
 describe('useDevicesPage create reconciliation', () => {
   it('reloads the list without automatically retrying an uncertain create', async () => {
     apiMock.createDevice.mockRejectedValue(new HttpRequestError(0, 'network down'));

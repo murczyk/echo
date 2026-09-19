@@ -110,8 +110,6 @@ afterEach(() => {
     item.container.remove();
   }
 });
-
-// @test-scope safeguard: prevents invalid or future network-frequency activity periods from being persisted.
 describe('NetworkFreqActivityPeriodControl', () => {
   it('starts active and hides the end date', () => {
     const view = renderHarness({ activeFrom: '2026-06-13', activeTo: '' });

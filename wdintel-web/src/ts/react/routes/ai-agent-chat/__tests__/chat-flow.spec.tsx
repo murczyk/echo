@@ -169,8 +169,6 @@ afterEach(async () => {
   vi.restoreAllMocks();
   vi.clearAllMocks();
 });
-
-// @test-scope safeguard: prevents overlapping chat requests or late responses from applying to the wrong conversation.
 describe('AiAgentChat request queue', () => {
   it('keeps following new progress when the viewport is at the bottom', async () => {
     const originalScrollIntoView = Object.getOwnPropertyDescriptor(
@@ -462,8 +460,6 @@ describe('AiAgentChat request queue', () => {
     );
   });
 });
-
-// @test-scope safeguard: prevents conversation changes and cancellation controls from losing the active chat state.
 describe('AiAgentChat conversation controls', () => {
   it('renders the polished empty state, provider control, and hidden history pane', () => {
     expect(container.textContent).toContain('Спитайте ЕХО');

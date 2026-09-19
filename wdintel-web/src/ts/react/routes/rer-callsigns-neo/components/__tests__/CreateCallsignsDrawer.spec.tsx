@@ -291,8 +291,6 @@ function setInputValue(element: HTMLInputElement | HTMLTextAreaElement, value: s
   const descriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(element), 'value');
   descriptor?.set?.call(element, value);
 }
-
-// @test-scope safeguard: prevents duplicate callsigns or an unselected unit from being submitted during bulk creation.
 describe('CreateCallsignsDrawer', () => {
   it('renders a sticky duplicate summary and row-level hints', () => {
     const view = renderComponent([

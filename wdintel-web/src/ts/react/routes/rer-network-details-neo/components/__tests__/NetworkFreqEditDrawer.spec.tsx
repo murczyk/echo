@@ -231,8 +231,6 @@ afterEach(() => {
     item.container.remove();
   }
 });
-
-// @test-scope safeguard: prevents an edited network frequency from being saved with invalid activity dates or incompatible technical fields.
 describe('NetworkFreqEditDrawer', () => {
   it('passes the current frequency to the read-only Rx field', () => {
     const view = renderDrawer(buildForm({ freq: '148.2500' }));

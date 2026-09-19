@@ -1,4 +1,3 @@
-// @test-scope parser: legacy report-cancellation response classification fixtures
 import { describe, expect, it } from 'vitest';
 
 import { isCancelledReportHistory, isCancelledReportHistoryError } from '../report-history';

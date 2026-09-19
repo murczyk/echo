@@ -110,7 +110,7 @@ vi.mock('fabric', () => {
 
 import { ImageEditor } from '../ImageEditor';
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3099
+// Regression: https://github.com/echoua/echo/issues/3099
 describe('ImageEditor initialization', () => {
   const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:source');
   let consoleError: ReturnType<typeof vi.spyOn> | undefined;

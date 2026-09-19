@@ -1,7 +1,6 @@
 /**
  * @vitest-environment happy-dom
  */
-// @test-scope parser: Echo message-reference URL grammar fixture.
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it } from 'vitest';

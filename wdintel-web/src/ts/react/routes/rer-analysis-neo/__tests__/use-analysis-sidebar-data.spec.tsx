@@ -123,8 +123,6 @@ afterEach(() => {
   container?.remove();
   container = null;
 });
-
-// @test-scope safeguard: prevents sidebar requests and errors from leaking stale analysis context across selections.
 describe('useAnalysisSidebarData', () => {
   it('loads date activity through the global-filter endpoint without a selected frequency', async () => {
     apiMocks.fetchAnalysisActivityDaily.mockResolvedValue({ dataPerDate: {} });

@@ -90,8 +90,6 @@ describe('AdminApiIntegrationsPage', () => {
     document.body.innerHTML = '';
     delete (window as { localStorage?: Storage }).localStorage;
   });
-
-  // @test-scope safeguard: prevents accidental deletion of an API integration before the explicit confirmation action.
   it('deletes through the overflow action and confirmation dialog', async () => {
     const { container, root } = await renderPage();
 

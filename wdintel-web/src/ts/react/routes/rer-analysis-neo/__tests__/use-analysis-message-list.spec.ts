@@ -117,8 +117,6 @@ function renderHook(
 
   return harness;
 }
-
-// @test-scope safeguard: prevents pagination, count, and asynchronous callsign updates from showing stale or incorrectly ordered messages.
 describe('useAnalysisMessageList pagination', () => {
   const harnesses: Harness[] = [];
 
@@ -177,8 +175,6 @@ describe('useAnalysisMessageList pagination', () => {
     });
     expect(fetchAnalysisCallsignInfosMock).toHaveBeenCalledWith(['alpha']);
   });
-
-  // @test-scope safeguard: prevents a stale enrichment response from overwriting newer callsign ownership
   it('does not merge a stale enrichment response or remove a newer owner', async () => {
     const h = renderHook();
     harnesses.push(h);
@@ -212,8 +208,6 @@ describe('useAnalysisMessageList pagination', () => {
     });
     expect(h.summaryCallsignsInfo.old).toBeDefined();
   });
-
-  // @test-scope safeguard: prevents duplicate enrichment requests from producing duplicate callsign updates
   it('deduplicates completed and in-flight enrichment requests', async () => {
     const h = renderHook();
     harnesses.push(h);
@@ -241,8 +235,6 @@ describe('useAnalysisMessageList pagination', () => {
     await act(async () => Promise.resolve());
     expect(h.summaryCallsignsInfo).toEqual({ alpha, wolf });
   });
-
-  // @test-scope safeguard: prevents stale scoped callsign data from suppressing a refreshed unscoped result
   it('does not let scoped data suppress unscoped callsign enrichment', async () => {
     const scoped = {
       callsign: 'WOLF',
@@ -295,8 +287,6 @@ describe('useAnalysisMessageList pagination', () => {
     expect(h.summaryCallsignsInfo.wolf.networkHints.map(({ id }) => id)).toEqual([10, 20]);
     expect(h.summaryCallsignsInfo.wolf.res.map(({ id }) => id)).toEqual([7]);
   });
-
-  // @test-scope safeguard: prevents a failed enrichment owner from blocking a later legitimate list update
   it('releases failed enrichment ownership for a later legitimate list update', async () => {
     const h = renderHook();
     harnesses.push(h);
@@ -514,8 +504,6 @@ describe('useAnalysisMessageList pagination', () => {
       await nextPagePromise;
     });
   });
-
-  // @test-scope safeguard: prevents stale hydrated page data from advancing the current cursor and page index
   it('does not advance a stale page request after message hydration', async () => {
     const hydration = deferred<void>();
     const h = renderHook(
@@ -815,8 +803,6 @@ describe('useAnalysisMessageList pagination', () => {
       sinceIdNoninclusive: null,
     });
   });
-
-  // @test-scope safeguard: prevents page invalidation from leaving preserved messages with stale callsign enrichment
   it('re-enriches preserved-page messages after page-request invalidation', async () => {
     const h = renderHook();
     harnesses.push(h);
@@ -862,8 +848,6 @@ describe('useAnalysisMessageList pagination', () => {
       freshResponse.networkHints[0],
     ]);
   });
-
-  // @test-scope safeguard: prevents invalidated page data from accepting a late enrichment response
   it('ignores an in-flight enrichment response after page-request invalidation', async () => {
     const h = renderHook();
     harnesses.push(h);

@@ -161,8 +161,6 @@ afterEach(() => {
   document.body.innerHTML = '';
   vi.clearAllMocks();
 });
-
-// @test-scope safeguard: prevents failed or stale frequency mutations from corrupting the current network details.
 describe('useRerNetworkDetailsNeoPageFrequencyActions', () => {
   it('creates a frequency in place without reloading the list when v2 returns a row', async () => {
     apiMock.addFreqToNetworkV2.mockResolvedValueOnce({

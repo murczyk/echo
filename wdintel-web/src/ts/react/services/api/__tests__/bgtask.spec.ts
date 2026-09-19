@@ -13,8 +13,6 @@ afterEach(() => {
   vi.useRealTimers();
   vi.mocked(getJson).mockReset();
 });
-
-// @test-scope safeguard: prevents transient polling failures or cancellation from losing or indefinitely retrying a background task.
 describe('waitForBgtaskCompletion', () => {
   it('retries a temporary status failure without losing the task', async () => {
     vi.useFakeTimers();

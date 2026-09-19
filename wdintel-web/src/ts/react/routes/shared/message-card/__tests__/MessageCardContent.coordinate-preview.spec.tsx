@@ -80,8 +80,6 @@ function createMessage(overrides: Partial<InboxMessage>): InboxMessage {
     ...overrides,
   } as InboxMessage;
 }
-
-// @test-scope safeguard: preserves coordinate evidence eligibility and its position in the attachment carousel.
 describe('MessageCardContent coordinate preview guard', () => {
   let container: HTMLElement;
   let root: Root;

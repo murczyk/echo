@@ -309,8 +309,6 @@ function TestVideoPreviewDialog(props: TestVideoPreviewDialogProps) {
     />
   );
 }
-
-// @test-scope safeguard: prevents video evidence from losing its source, retry/authorization handling, playback state, or reachable preview controls
 describe('VideoAttachmentPreviewRenderer', () => {
   afterEach(() => {
     vi.useRealTimers();

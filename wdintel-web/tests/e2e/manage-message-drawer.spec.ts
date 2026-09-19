@@ -125,7 +125,6 @@ async function openLinkedMessageEditDrawer(
 
 test.describe('@smoke manage message drawer linked-message regressions', () => {
   for (const host of ['duty', 'analysis'] as const satisfies ManageMessageDrawerHost[]) {
-    // @test-scope safeguard: prevents the drawer and its actions from rendering outside the viewport.
     test(`${host} creates an ordinary message drawer at the viewport right edge`, async ({
       page,
     }) => {
@@ -142,8 +141,6 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       await page.setViewportSize({ width: 375, height: 500 });
       await expectDrawerAtViewportRight(page);
     });
-
-    // @test-scope safeguard: prevents edits from targeting the wrong message/report entity or copying inaccessible parent data.
     test(`${host} edits a message with an intelligence report as a message`, async ({ page }) => {
       await openLinkedMessageEditDrawer(page, host, 'with-report');
 
@@ -153,8 +150,6 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
         0,
       );
     });
-
-    // @test-scope safeguard: prevents edits from targeting the wrong message/report entity or copying inaccessible parent data.
     test(`${host} edits a forwarded intelligence report as a message`, async ({ page }) => {
       await openLinkedMessageEditDrawer(page, host, 'forwarded-report');
 
@@ -163,8 +158,6 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
         0,
       );
     });
-
-    // @test-scope safeguard: prevents edits from targeting the wrong message/report entity or copying inaccessible parent data.
     test(`${host} edits an own report without accessible parents as a report`, async ({ page }) => {
       const drawer = await openLinkedMessageEditDrawer(
         page,

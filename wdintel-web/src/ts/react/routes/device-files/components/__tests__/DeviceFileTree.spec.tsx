@@ -89,7 +89,6 @@ afterEach(() => {
 });
 
 describe('DeviceFileTree counters', () => {
-  // @test-scope safeguard: keeps a usable file tree and retry path when count loading fails.
   it('keeps the tree usable while counts load and exposes a nonblocking retry', () => {
     act(() => {
       root?.render(<DeviceFileTree files={buildFiles({ loading: true })} />);

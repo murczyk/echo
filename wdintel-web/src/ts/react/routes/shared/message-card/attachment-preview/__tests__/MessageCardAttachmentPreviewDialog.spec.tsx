@@ -112,8 +112,6 @@ const kmzItem: MessageCardPreviewItem = {
     initialStatus: 'done',
   },
 };
-
-// @test-scope safeguard: prevents editor Escape and attachment navigation from closing or replaying actions in the wrong preview session
 describe('MessageCardAttachmentPreviewDialog', () => {
   let root: Root | null = null;
   let container: HTMLDivElement | null = null;
@@ -222,7 +220,7 @@ describe('MessageCardAttachmentPreviewDialog', () => {
     expect(onNext).toHaveBeenCalledOnce();
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3521
+  // Regression: https://github.com/echoua/echo/issues/3521
   it('preserves Leaflet arrow-key handling #3521', async () => {
     const onNext = vi.fn();
     container = document.createElement('div');

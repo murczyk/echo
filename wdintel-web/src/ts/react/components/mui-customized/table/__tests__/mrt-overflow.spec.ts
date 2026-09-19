@@ -38,8 +38,6 @@ function destroy(view: Rendered) {
   act(() => view.root.unmount());
   view.container.remove();
 }
-
-// @test-scope safeguard: prevents virtualized table overflow from hiding data, breaking links or focus, or applying stale shared measurement results
 describe('MRT overflow policies', () => {
   it('fits only whole items including gaps and the dynamic trigger width', () => {
     expect(
@@ -161,8 +159,6 @@ describe('MRT overflow policies', () => {
     ).not.toThrow();
   });
 });
-
-// @test-scope safeguard: prevents virtualized table overflow from hiding data, breaking links or focus, or applying stale shared measurement results
 describe('MRT rendered overflow components', () => {
   let availableWidth = 100;
   let textWidth = 100;

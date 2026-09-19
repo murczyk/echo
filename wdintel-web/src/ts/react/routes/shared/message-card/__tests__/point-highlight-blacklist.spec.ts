@@ -10,8 +10,6 @@ function message(overrides: Partial<InboxMessage>): InboxMessage {
     ...overrides,
   } as InboxMessage;
 }
-
-// @test-scope safeguard: prevents removing one point highlight source from corrupting unrelated marked-message tokens.
 describe('removePointHighlightSourceFromMessage', () => {
   it('removes only the selected palette from marked text and point tokens', () => {
     const source = message({

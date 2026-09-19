@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 import { installRerDutyShortStateMocks } from './rer-duty-short-state.fixtures';
 
-// @test-scope regression: https://github.com/echoua/echo/pull/3268
+// Regression: https://github.com/echoua/echo/pull/3268
 test.describe('@smoke @regression', () => {
   test('blocked Duty session returns to login and stops background requests', async ({ page }) => {
     await installRerDutyShortStateMocks(page);

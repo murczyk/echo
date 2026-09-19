@@ -97,10 +97,7 @@ afterEach(() => {
   document.body.innerHTML = '';
   vi.clearAllMocks();
 });
-
-// @test-scope safeguard: prevents duplicate callsign warnings from being omitted while editing or importing rows
 describe('useRerCallsignsNeoPage duplicate hints', () => {
-  // @test-scope safeguard: prevents a distinct same-named unit ID from becoming unselectable while blank unit labels are excluded
   it('exposes selectable units without blank-name entries', () => {
     const page = renderHookHarness();
 
@@ -175,7 +172,7 @@ describe('useRerCallsignsNeoPage duplicate hints', () => {
 });
 
 describe('useRerCallsignsNeoPage unit filters', () => {
-  // @test-scope regression: https://github.com/echoua/echo/issues/3387
+  // Regression: https://github.com/echoua/echo/issues/3387
   it('keeps the selected hierarchy while filtering the unit column for echo-3387', () => {
     const page = renderHookHarness();
     const hierarchyFilter = {

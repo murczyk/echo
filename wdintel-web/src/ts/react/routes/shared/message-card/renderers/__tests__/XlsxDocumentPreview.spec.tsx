@@ -32,8 +32,6 @@ vi.mock('../../xlsx/XlsxSheetTabs.tsx', () => ({
 
 import { XlsxDocumentPreview } from '../XlsxDocumentPreview.tsx';
 import { runWorkerTask } from '../../workers/worker-client.ts';
-
-// @test-scope safeguard: prevents spreadsheet previews from loading oversized files and keeps parsing off the main thread.
 describe('XlsxDocumentPreview', () => {
   afterEach(() => {
     document.body.innerHTML = '';

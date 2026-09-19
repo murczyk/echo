@@ -194,8 +194,6 @@ afterEach(() => {
   vi.useRealTimers();
   document.body.replaceChildren();
 });
-
-// @test-scope safeguard: prevents unresolved-unit labels from being archived, annotated, or resolved against the wrong persisted group.
 describe('AdminUnitUnparsedPage', () => {
   it('loads grouped rows and uses the server-reported page size', async () => {
     const root = await renderPage();

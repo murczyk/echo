@@ -125,8 +125,6 @@ function renderComponent(props: ComponentProps<typeof NetworkDetailsCallsignsPan
 
   return { container, root };
 }
-
-// @test-scope safeguard: keeps failed callsign loads visible and retryable without discarding already loaded rows.
 describe('NetworkDetailsCallsignsPanel', () => {
   const rendered: Rendered[] = [];
 

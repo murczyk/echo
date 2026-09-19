@@ -130,8 +130,6 @@ async function click(element: HTMLElement): Promise<void> {
     element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   });
 }
-
-// @test-scope safeguard: prevents active table constraints from remaining applied when an operator clears filters from the summary popup
 describe('ActiveFiltersButton', () => {
   const rendered: Rendered[] = [];
 

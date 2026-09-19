@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { useImageEditorRasterQueue } from '../use-image-editor-raster-queue';
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3099
+// Regression: https://github.com/echoua/echo/issues/3099
 it('serializes concealment work and recovers after a rejected operation #3099', async () => {
   let queue: ReturnType<typeof useImageEditorRasterQueue> | null = null;
   const container = document.createElement('div');

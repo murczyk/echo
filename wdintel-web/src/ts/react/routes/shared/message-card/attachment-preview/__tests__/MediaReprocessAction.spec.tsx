@@ -54,8 +54,6 @@ const completedOcr = {
   attempts: 0,
   statusLog: [],
 };
-
-// @test-scope safeguard: prevents a failed or unauthorized media reprocess action from claiming a completed attachment update.
 describe('MediaReprocessAction', () => {
   let roots: Root[];
 

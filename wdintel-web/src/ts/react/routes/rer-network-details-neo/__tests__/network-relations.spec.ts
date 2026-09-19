@@ -81,8 +81,6 @@ function createGraph(): NetworkCallsignRelationsRsp {
     ],
   };
 }
-
-// @test-scope safeguard: prevents oversized relation graphs from exceeding render limits and freezing the network-details page.
 describe('network relation render limits', () => {
   it('selects the first complete weight threshold within exact render limits', () => {
     const graph = {

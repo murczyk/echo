@@ -39,8 +39,6 @@ function createDeferred<T>() {
   });
   return { promise, resolve, reject };
 }
-
-// @test-scope safeguard: prevents inbox change events from being lost, duplicated, or applied after listener cleanup.
 describe('useInboxChangedMessageIds', () => {
   let container: HTMLDivElement;
   let root: Root;

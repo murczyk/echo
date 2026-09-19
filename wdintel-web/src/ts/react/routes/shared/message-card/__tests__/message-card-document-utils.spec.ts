@@ -1,7 +1,6 @@
 /**
  * @vitest-environment happy-dom
  */
-// @test-scope parser: document attachment type, MIME-parameter, and filename derivation fixtures
 import { describe, expect, it } from 'vitest';
 
 import type { InboxMessage, MessageMediaInfo } from '../../../../../../Bindings';

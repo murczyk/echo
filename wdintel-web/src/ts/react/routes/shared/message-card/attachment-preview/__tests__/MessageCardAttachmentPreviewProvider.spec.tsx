@@ -61,8 +61,6 @@ const attachments: MessageCardPreviewAttachment[] = [
     value: { id: 'document-1', href: '/document.pdf', kind: 'pdf' },
   },
 ];
-
-// @test-scope safeguard: prevents mixed attachment types from losing their shared carousel identity during preview navigation
 describe('MessageCardAttachmentPreviewProvider', () => {
   let root: Root | null = null;
   let container: HTMLDivElement | null = null;

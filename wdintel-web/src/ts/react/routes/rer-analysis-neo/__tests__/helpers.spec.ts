@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { emptyQueryState, parseQueryStateFromWindow } from '../helpers';
 
 describe('rer-analysis-neo URL state', () => {
-  // @test-scope parser: reads managed analysis URL query state
   it('treats managed URL parameters as authoritative', () => {
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
@@ -18,8 +17,6 @@ describe('rer-analysis-neo URL state', () => {
 
     delete (globalThis as { window?: Window }).window;
   });
-
-  // @test-scope parser: rejects unsupported legacy analysis URL state
   it('ignores unsupported legacy state parameters when managed URL parameters are absent', () => {
     Object.defineProperty(globalThis, 'window', {
       configurable: true,

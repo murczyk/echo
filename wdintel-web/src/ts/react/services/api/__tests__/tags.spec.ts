@@ -1,4 +1,3 @@
-// @test-scope parser: organism-tag response normalization fixtures
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { postJson } from '../client';

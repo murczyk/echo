@@ -19,7 +19,7 @@ describe('Duty action error notifications', () => {
     container = null;
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3400
+  // Regression: https://github.com/echoua/echo/issues/3400
   it('#3400 delivers each repeated duplicate-filter failure to the snackbar boundary', async () => {
     const notify = vi.fn();
     let saveFilter: ((feedId: string, name: string) => Promise<boolean>) | null = null;

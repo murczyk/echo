@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { preserveAiManagedLoginIds } from '../login-options';
 
 describe('login options', () => {
-  // @test-scope safeguard: prevents keyboard removal or clearing from deleting AI-managed login access
   it('keeps AI-managed login IDs after keyboard removal or clear actions', () => {
     expect(
       preserveAiManagedLoginIds(

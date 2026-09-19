@@ -9,8 +9,6 @@ import {
   shouldHandleAsSpaClick,
   withBackTo,
 } from '.././browser';
-
-// @test-scope safeguard: preserves SPA navigation semantics and encoded return paths.
 describe('browser utils', () => {
   it('adds encoded backTo to paths without query params', () => {
     window.history.replaceState({}, '', '/admin/users?page=2');

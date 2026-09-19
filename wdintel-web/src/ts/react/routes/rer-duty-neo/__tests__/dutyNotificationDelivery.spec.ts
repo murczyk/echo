@@ -77,7 +77,7 @@ afterEach(() => {
 describe('Duty rich notification delivery', () => {
   const req = {} as InboxMessagesReq;
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3546
+  // Regression: https://github.com/echoua/echo/issues/3546
   it('uses creation time for notification previews despite conflicting event times', async () => {
     const interceptionNewest = minimalInboxMessage({
       sender: 'Interception newest',
@@ -104,7 +104,7 @@ describe('Duty rich notification delivery', () => {
     });
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/pull/3331
+  // Regression: https://github.com/echoua/echo/pull/3331
   it('delivers header-free rich content and sender/group fallbacks', async () => {
     fetchInboxMessages.mockResolvedValueOnce(
       response(
@@ -155,7 +155,7 @@ describe('Duty rich notification delivery', () => {
     );
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/pull/3331
+  // Regression: https://github.com/echoua/echo/pull/3331
   it('uses one generic banner for an immediate current failure', async () => {
     fetchInboxMessages.mockRejectedValueOnce(new Error('preview failed'));
     const NotificationMock = await deliver(req);
@@ -165,7 +165,7 @@ describe('Duty rich notification delivery', () => {
     );
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/pull/3331
+  // Regression: https://github.com/echoua/echo/pull/3331
   it('uses one generic banner when the production three-second preview deadline aborts', async () => {
     vi.useFakeTimers();
     fetchInboxMessages.mockImplementationOnce(
@@ -199,7 +199,7 @@ describe('Duty rich notification delivery', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/pull/3331
+  // Regression: https://github.com/echoua/echo/pull/3331
   it('suppresses a preview invalidated after its request has started', async () => {
     vi.useFakeTimers();
     let current = true;

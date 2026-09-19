@@ -84,8 +84,6 @@ async function click(element: HTMLElement): Promise<void> {
 function getButtons(container: HTMLElement): HTMLButtonElement[] {
   return Array.from(container.querySelectorAll('button'));
 }
-
-// @test-scope safeguard: prevents a row action from being hidden, deferred, or activated through the wrong overflow-menu state
 describe('MrtRowActions', () => {
   const rendered: Rendered[] = [];
 

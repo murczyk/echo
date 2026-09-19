@@ -4,7 +4,6 @@ import { parseCoordinateBlock } from '../../../../../../maps/coordinate-parser.t
 import { mergeCoordinateInput } from '../CoordinateListInput.tsx';
 
 describe('CoordinateListInput helpers', () => {
-  // @test-scope parser: coordinate paste fixture accepts operational coordinate formats.
   it('adds every coordinate from pasted text without manual separators', () => {
     const result = mergeCoordinateInput(
       '49.12345, 37.12345',
@@ -21,8 +20,6 @@ describe('CoordinateListInput helpers', () => {
     expect(result.value).not.toContain('37U DR');
     expect(result.value).not.toContain('СК-42');
   });
-
-  // @test-scope parser: malformed pasted coordinates are atomically rejected.
   it('rejects the entire input when a coordinate is not parsed', () => {
     const currentValue = '50.12345, 38.12345';
     const result = mergeCoordinateInput(currentValue, '49.12345, 37.12345\nunsupported coordinate');
@@ -32,8 +29,6 @@ describe('CoordinateListInput helpers', () => {
     expect(result.added).toBe(0);
     expect(result.value).toBe(currentValue);
   });
-
-  // @test-scope safeguard: prevents duplicate-coordinate insertion from creating duplicate map points.
   it('does not add the same point twice', () => {
     const result = mergeCoordinateInput('49.12345, 37.12345', '49.1234500 37.1234500');
 
@@ -41,8 +36,6 @@ describe('CoordinateListInput helpers', () => {
     expect(result.added).toBe(0);
     expect(parseCoordinateBlock(result.value)).toHaveLength(1);
   });
-
-  // @test-scope parser: one-line multi-coordinate paste fixture.
   it('extracts multiple coordinates pasted on one line', () => {
     const result = mergeCoordinateInput('', '49.12345, 37.12345; 50.12345, 38.12345');
 

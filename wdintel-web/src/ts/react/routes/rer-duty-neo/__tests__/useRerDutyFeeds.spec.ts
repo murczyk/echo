@@ -244,8 +244,6 @@ async function flushMicrotasks(): Promise<void> {
     await Promise.resolve();
   }
 }
-
-// @test-scope safeguard: prevents duplicate callsign enrichment requests for current Duty feeds.
 describe('getPendingDutyCallsignLookups', () => {
   it('skips callsigns that already resolved as not found', () => {
     const pending = getPendingDutyCallsignLookups({
@@ -319,8 +317,6 @@ describe('getPendingDutyCallsignLookups', () => {
     expect(pending).toEqual(['борода']);
   });
 });
-
-// @test-scope safeguard: prevents feed loading, filter changes, and callsign enrichment from applying stale data.
 describe('useRerDutyFeeds', () => {
   let container: HTMLElement;
   let root: Root;
@@ -535,8 +531,6 @@ describe('useRerDutyFeeds', () => {
     expect(hoisted.fetchAnalysisCallsignInfos).toHaveBeenNthCalledWith(2, ['борода']);
   });
 });
-
-// @test-scope safeguard: prevents inbox refresh events from losing or misrouting the affected Duty feed message.
 describe('useRerDutyFeeds inbox refreshes', () => {
   beforeEach(() => {
     hoisted.fetchMessagesByIds.mockClear();

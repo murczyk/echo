@@ -439,8 +439,6 @@ describe('AnalysisSummaryTableCard', () => {
     useMediaQueryMock.mockReturnValue(width < 600);
     return renderComponent(buildProps());
   }
-
-  // @test-scope safeguard: prevents a loading summary from presenting stale rows as current data.
   it('shows skeletons during loading', async () => {
     const view = await renderComponent(
       buildProps({
@@ -453,8 +451,6 @@ describe('AnalysisSummaryTableCard', () => {
     expect(view.container.querySelector('[data-testid="loading-skeleton"]')).not.toBeNull();
     expect(view.container.querySelector('table')).toBeNull();
   });
-
-  // @test-scope safeguard: prevents an empty loaded summary from exposing non-actionable table controls.
   it('shows a compact empty state without rendering the MRT footer', async () => {
     const view = await renderComponent(
       buildProps({
@@ -467,8 +463,6 @@ describe('AnalysisSummaryTableCard', () => {
     expect(view.container.textContent).toContain('Частоти за обраними параметрами відсутні');
     expect(view.container.querySelector('table')).toBeNull();
   });
-
-  // @test-scope safeguard: prevents an empty successful response from remaining indefinitely loading.
   it('treats zero rows as loaded when the optional loaded prop is omitted', async () => {
     const props = buildProps({ rows: [], loading: false });
     delete props.loaded;
@@ -478,8 +472,6 @@ describe('AnalysisSummaryTableCard', () => {
     expect(view.container.textContent).toContain('Частоти за обраними параметрами відсутні');
     expect(view.container.querySelector('table')).toBeNull();
   });
-
-  // @test-scope safeguard: prevents summary row actions from targeting the wrong frequency.
   it('routes filter and map row actions to the existing callbacks', async () => {
     const onSelectFreq = vi.fn();
     const onShowFreqOnMap = vi.fn();
@@ -497,8 +489,6 @@ describe('AnalysisSummaryTableCard', () => {
     expect(onSelectFreq).toHaveBeenCalledWith('100.100');
     expect(onShowFreqOnMap).toHaveBeenCalledWith('100.100');
   });
-
-  // @test-scope safeguard: prevents a rename dialog from restoring focus into a hidden table subtree.
   it('marks rename unit as modal and disables restore focus on the dialog', async () => {
     const view = await renderComponent(buildProps());
     rendered.push(view);
@@ -516,8 +506,6 @@ describe('AnalysisSummaryTableCard', () => {
         ?.getAttribute('data-disable-restore-focus'),
     ).toBe('true');
   });
-
-  // @test-scope safeguard: preserves the unit-rename action and its cancellable dialog flow.
   it('opens and closes the rename dialog from the actions column', async () => {
     const view = await renderComponent(buildProps());
     rendered.push(view);
@@ -529,8 +517,6 @@ describe('AnalysisSummaryTableCard', () => {
     await click(getButton(view.container, 'Скасувати'));
     expect(view.container.textContent).not.toContain('Частота 100.100');
   });
-
-  // @test-scope safeguard: prevents a confirmed unit rename from mutating a different frequency or unit.
   it('submits onRenameUnit after confirming the dialog', async () => {
     const onRenameUnit = vi.fn().mockResolvedValue(undefined);
     const view = await renderComponent(buildProps({ onRenameUnit }));
@@ -542,8 +528,6 @@ describe('AnalysisSummaryTableCard', () => {
 
     expect(onRenameUnit).toHaveBeenCalledWith('100.100', '1 обрмп', '77 обрмп');
   });
-
-  // @test-scope safeguard: preserves the one-unit rename flow without an ambiguous unit selection.
   it('uses a single editable field when only one unit is available', async () => {
     const onRenameUnit = vi.fn().mockResolvedValue(undefined);
     const view = await renderComponent(
@@ -564,8 +548,6 @@ describe('AnalysisSummaryTableCard', () => {
 
     expect(onRenameUnit).toHaveBeenCalledWith('100.100', '1 обрмп', '77 обрмп');
   });
-
-  // @test-scope safeguard: prevents overflowed callsigns from becoming inaccessible to the user.
   it('keeps complete item values available to the shared overflow primitive', async () => {
     const view = await renderComponent(
       buildProps({
@@ -584,8 +566,6 @@ describe('AnalysisSummaryTableCard', () => {
     expect(view.container.textContent).toContain('FOXTROT');
     expect(view.container.textContent).toContain('GOLF');
   });
-
-  // @test-scope safeguard: prevents analysis results from silently clipping callsigns, units, or locations.
   it('renders analysis item cells without fixed-count clipping', async () => {
     const view = await renderComponent(
       buildProps({
@@ -606,8 +586,6 @@ describe('AnalysisSummaryTableCard', () => {
     expect(row.children[6].textContent).toContain('unit-d');
     expect(row.children[7].textContent).toContain('loc-e');
   });
-
-  // @test-scope safeguard: prevents overflowed callsigns from becoming inaccessible to the user.
   it('renders standalone callsign chip overflow control', async () => {
     const view = await renderStandalone(
       <CallsignChipsCell
@@ -625,8 +603,6 @@ describe('AnalysisSummaryTableCard', () => {
     expect(view.container.textContent).toContain('ALPHA');
     expect(view.container.textContent).toContain('Ще 4');
   });
-
-  // @test-scope safeguard: prevents hidden callsigns from being exposed before an explicit disclosure action.
   it('mounts genuinely hidden distinct callsigns only while disclosure is open', async () => {
     const view = await renderStandalone(
       <CallsignChipsCell
@@ -652,8 +628,6 @@ describe('AnalysisSummaryTableCard', () => {
     act(() => trigger?.click());
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();
   });
-
-  // @test-scope safeguard: prevents overflowed units and locations from becoming inaccessible to the user.
   it('renders standalone compact list overflow controls', async () => {
     const view = await renderStandalone(
       <div>

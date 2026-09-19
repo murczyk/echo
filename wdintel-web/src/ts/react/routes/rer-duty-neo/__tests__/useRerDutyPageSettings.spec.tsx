@@ -52,7 +52,7 @@ async function flush() {
   });
 }
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3461
+// Regression: https://github.com/echoua/echo/issues/3461
 describe('useRerDutyPageSettings device access', () => {
   beforeEach(() => {
     container = document.createElement('div');

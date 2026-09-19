@@ -198,28 +198,28 @@ afterEach(() => {
 });
 
 describe('MessageCard', () => {
-  // @test-scope regression: https://github.com/echoua/echo/issues/3461
+  // Regression: https://github.com/echoua/echo/issues/3461
   it('ECHO-3461 hides device metadata without device access', async () => {
     const view = await renderHeader(false);
     expect(view.container.querySelector('[title="Пристрій"]')).toBeNull();
     expect(view.container.textContent).not.toContain('Радіостанція');
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3461
+  // Regression: https://github.com/echoua/echo/issues/3461
   it('ECHO-3461 hides device metadata without a provider', async () => {
     const view = await renderHeader(undefined);
     expect(view.container.querySelector('[title="Пристрій"]')).toBeNull();
     expect(view.container.textContent).not.toContain('Радіостанція');
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3461
+  // Regression: https://github.com/echoua/echo/issues/3461
   it('ECHO-3461 shows device metadata with an allowed provider', async () => {
     const view = await renderHeader(true);
     expect(view.container.querySelector('[title="Пристрій"]')).not.toBeNull();
     expect(view.container.textContent).toContain('Радіостанція');
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3515
+  // Regression: https://github.com/echoua/echo/issues/3515
   it.each(['interception', 'creation'] as const)(
     '#3515 hides all generated times for a date-only message (%s)',
     async (messageTimeBasis) => {
@@ -252,7 +252,7 @@ describe('MessageCard', () => {
     },
   );
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3515
+  // Regression: https://github.com/echoua/echo/issues/3515
   it.each(['interception', 'creation'] as const)(
     '#3515 shows creation and event dates independently in analysis (%s)',
     async (messageTimeBasis) => {
@@ -297,7 +297,7 @@ describe('MessageCard', () => {
     },
   );
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3515
+  // Regression: https://github.com/echoua/echo/issues/3515
   it.each([
     { date: '2026-07-14', time: '08:45:00', isTimeNull: false, expected: '14.07, 08:45' },
     { date: null, time: null, isTimeNull: false, expected: '15.07, 12:00' },
@@ -320,7 +320,7 @@ describe('MessageCard', () => {
     },
   );
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3324
+  // Regression: https://github.com/echoua/echo/issues/3324
   it('ECHO-3324 cancels the matching mixed-provenance bot-tag action', async () => {
     const onCancelBotTagAction = vi.fn();
     const view = await renderCard({
@@ -338,7 +338,7 @@ describe('MessageCard', () => {
     expect(onCancelBotTagAction).toHaveBeenCalledOnce();
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3324
+  // Regression: https://github.com/echoua/echo/issues/3324
   it('ECHO-3324 confirms the matching bot-tag action exactly once', async () => {
     const onMarkBotTagWrong = vi.fn();
     await renderCard({
@@ -357,7 +357,7 @@ describe('MessageCard', () => {
     expect(onMarkBotTagWrong).toHaveBeenCalledWith(42, 3);
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3324
+  // Regression: https://github.com/echoua/echo/issues/3324
   it('ECHO-3324 retains the matching bot-tag anchor through unrelated card rerenders', async () => {
     const onCancelBotTagAction = vi.fn();
     const onMarkBotTagWrong = vi.fn();
@@ -384,7 +384,7 @@ describe('MessageCard', () => {
     expect(onMarkBotTagWrong).not.toHaveBeenCalled();
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3324
+  // Regression: https://github.com/echoua/echo/issues/3324
   it.each([
     ['read-only card', { readOnly: true }],
     ['disabled bot tags', { hideBotTags: true }],
@@ -400,8 +400,6 @@ describe('MessageCard', () => {
     expect(observedPopoverAnchors).toHaveLength(0);
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();
   });
-
-  // @test-scope parser: classifies ambiguous MIME and extension combinations before selecting media handlers
   it('classifies ambiguous video and snake-case audio metadata', () => {
     const video = {
       id: 'mpeg',
@@ -421,8 +419,6 @@ describe('MessageCard', () => {
     expect(isAudioMediaAttachment(video)).toBe(false);
     expect(isAudioMediaAttachment(audio)).toBe(true);
   });
-
-  // @test-scope safeguard: prevents duplicate downloads while allowing another attachment to download during its own cooldown
   it('keeps download cooldowns independent by attachment identity', async () => {
     vi.useFakeTimers();
     try {
@@ -460,8 +456,6 @@ describe('MessageCard', () => {
       vi.useRealTimers();
     }
   });
-
-  // @test-scope safeguard: prevents oversized audio from starting prohibited derived-image processing
   it('does not request derived images for oversized snake-case audio metadata', async () => {
     const view = await renderCard({
       msg: buildMessage({
@@ -481,8 +475,6 @@ describe('MessageCard', () => {
     expect(player?.hasAttribute('wave-src')).toBe(false);
     expect(player?.hasAttribute('spectrum-src')).toBe(false);
   });
-
-  // @test-scope safeguard: prevents legacy media metadata from selecting the wrong attachment evidence
   it('keeps legacy image order while merging metadata by attachment identity', async () => {
     const first = 'https://example.test/files/first.png';
     const shared = 'https://example.test/files/shared.png';
@@ -509,8 +501,6 @@ describe('MessageCard', () => {
     await click(thumbnails[1] as HTMLElement);
     expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('shared.png');
   });
-
-  // @test-scope safeguard: prevents invalid oversized archive requests while preserving access to each valid individual attachment
   it('rejects archive count and size limits while keeping individual downloads', async () => {
     const attachment = (id: string, sizeBytes: number) =>
       ({

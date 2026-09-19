@@ -88,8 +88,6 @@ afterEach(() => {
   latest = null;
   vi.clearAllMocks();
 });
-
-// @test-scope safeguard: prevents file-journal pagination and retries from duplicating entries or hiding load failures.
 describe('useDeviceFileJournal', () => {
   it('loads only while active and reloads fresh data when re-entered', async () => {
     await renderHook();

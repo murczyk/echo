@@ -21,8 +21,6 @@ function callsignInfoRow(
 function callsignInfo(callsign: string, rows: CallsignInfoRes['res']): CallsignInfoRes {
   return { callsign, res: rows, networkHints: [] };
 }
-
-// @test-scope safeguard: prevents later analysis response slices from discarding accumulated callsign network hints.
 describe('mergeAnalysisCallsignInfoMap', () => {
   it('merges accumulated network matches when adding later slices in the same query scope', () => {
     const prev = {
@@ -128,8 +126,6 @@ describe('mergeAnalysisCallsignInfoMap', () => {
     ]);
   });
 });
-
-// @test-scope safeguard: prevents concurrent network updates from discarding an already loaded network.
 describe('mergeNetworksById', () => {
   it('keeps concurrently updated networks when merging async-loaded items', () => {
     const merged = mergeNetworksById(
@@ -140,8 +136,6 @@ describe('mergeNetworksById', () => {
     expect(merged.map((network) => network.id)).toEqual([1, 3, 2]);
   });
 });
-
-// @test-scope safeguard: prevents duplicate new-callsign loads for the same current analysis context.
 describe('shouldSkipNewCallsignsLoad', () => {
   it('skips duplicate requests for the same in-flight or already loaded key', () => {
     expect(shouldSkipNewCallsignsLoad('loaded', null, 'loaded')).toBe(true);

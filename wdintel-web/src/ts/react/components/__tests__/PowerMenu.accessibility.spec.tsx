@@ -21,8 +21,6 @@ type Rendered = {
   container: HTMLDivElement;
   root: Root;
 };
-
-// @test-scope safeguard: preserves menu labelling required for assistive technology to identify the invoking control
 describe('PowerMenu accessibility', () => {
   const rendered: Rendered[] = [];
 

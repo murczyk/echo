@@ -1,4 +1,3 @@
-// @test-scope parser: inbox response wire-normalization fixtures
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { InboxMessage } from '../../../../../Bindings';

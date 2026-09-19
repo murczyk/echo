@@ -102,8 +102,6 @@ async function click(element: HTMLElement): Promise<void> {
     element.click();
   });
 }
-
-// @test-scope safeguard: preserves the query controls that let users clear, expand, and apply search or date-range changes without losing their active analysis context.
 describe('AnalysisHeaderControls', () => {
   const rendered: Rendered[] = [];
 

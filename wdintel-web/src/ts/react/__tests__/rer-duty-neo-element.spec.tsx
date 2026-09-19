@@ -34,8 +34,6 @@ function deferred<T>() {
   });
   return { promise, resolve };
 }
-
-// @test-scope safeguard: prevents an old authenticated Duty element response from applying after identity changes.
 describe('rer-duty-neo custom element identity remounting', () => {
   afterEach(() => {
     document.body.replaceChildren();

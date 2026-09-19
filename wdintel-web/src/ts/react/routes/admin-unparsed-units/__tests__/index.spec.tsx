@@ -41,7 +41,6 @@ beforeEach(() => {
 afterEach(() => document.body.replaceChildren());
 
 describe('AdminUnparsedUnitsPage', () => {
-  // @test-scope safeguard: prevents a stale paginated response from replacing messages for a newly selected unparsed-unit label
   it('discards an in-flight page when the title changes', async () => {
     let resolveOldPage:
       ((response: { messages: UnresolvedUnitMessage[]; nextCursor: null }) => void) | undefined;

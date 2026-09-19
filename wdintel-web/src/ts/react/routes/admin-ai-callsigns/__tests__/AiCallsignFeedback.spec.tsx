@@ -62,7 +62,7 @@ async function click(label: string) {
 }
 
 describe('callsign feedback', () => {
-  // @test-scope regression: https://github.com/echoua/echo/issues/3167
+  // Regression: https://github.com/echoua/echo/issues/3167
   it('shows recorded evidence and launches a 14-day historical run', async () => {
     const container = await mount();
     expect(container.textContent).toContain('фипка');
@@ -74,14 +74,14 @@ describe('callsign feedback', () => {
     expect(mocks.start).toHaveBeenCalledWith({ days: 14 });
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3167
+  // Regression: https://github.com/echoua/echo/issues/3167
   it('does not allow launching without the configured worker', async () => {
     await mount(false);
     await click('Запустити обробку');
     expect(mocks.start).not.toHaveBeenCalled();
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/issues/3167
+  // Regression: https://github.com/echoua/echo/issues/3167
   it('reports API failures to the user', async () => {
     mocks.start.mockRejectedValueOnce(new Error('vLLM unavailable'));
     await mount();

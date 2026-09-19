@@ -27,8 +27,6 @@ import { persistDutyFilterState, readPersistedDutyFilterState } from '../duty-fi
 const fixture = createDutyFeedStateFixture();
 const hoisted = getDutyApiMocks();
 const { deferred, expectTailCountRequest, mountLoadedFeed, runNextRaf, startPoll } = fixture;
-
-// @test-scope safeguard: prevents initial or replacement feed loads from exposing stale, empty, or mismatched state.
 describe('useRerDutyFeedState — initial loading and reloads', () => {
   let container: HTMLElement;
   let root: Root;

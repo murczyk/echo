@@ -11,8 +11,6 @@ describe('GOI admin login identifiers', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
-
-  // @test-scope parser: GOI integration maintainer UUID response compatibility fixture
   it('reads the maintainer UUID from the backend field', async () => {
     vi.stubGlobal(
       'fetch',
@@ -37,8 +35,6 @@ describe('GOI admin login identifiers', () => {
       { maintainerLoginId: loginId, accessLogins: [loginId] },
     ]);
   });
-
-  // @test-scope safeguard: prevents GOI integration saves from dropping maintainer access through a legacy field name
   it('writes the maintainer UUID to the backend field', async () => {
     let body: Record<string, unknown> = {};
     vi.stubGlobal(

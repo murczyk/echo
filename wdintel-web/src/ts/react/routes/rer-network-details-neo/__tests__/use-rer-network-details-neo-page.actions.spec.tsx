@@ -147,8 +147,6 @@ afterEach(() => {
   document.body.innerHTML = '';
   vi.clearAllMocks();
 });
-
-// @test-scope safeguard: prevents a failed network mutation from restoring stale data over a newer selected network.
 describe('useRerNetworkDetailsNeoPageActions restore guard', () => {
   it('requests restore for deleted rows without an active window', async () => {
     apiMock.updateNetwork.mockResolvedValue(buildNetwork({ deleted: true, activeTo: null }));

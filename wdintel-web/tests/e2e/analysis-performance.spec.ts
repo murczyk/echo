@@ -40,8 +40,6 @@ test.describe('@perf', () => {
       await context.close();
     }
   }
-
-  // @test-scope safeguard: detects a user-visible first-load regression between the supported analysis routes.
   test('rer-analysis-neo first load is not slower than rer-analysis', async ({
     browser,
   }, testInfo) => {
@@ -60,8 +58,6 @@ test.describe('@perf', () => {
     expect(neo.titleMs).toBeLessThanOrEqual(classic.titleMs + 750);
     expect(neo.shellMs).toBeLessThanOrEqual(classic.shellMs + 750);
   });
-
-  // @test-scope safeguard: keeps the usable analysis shell responsive while secondary data is delayed.
   test('rer-analysis-neo reaches the shell quickly on a delayed backend', async ({ page }) => {
     await installAnalysisNeoApiMocks(page, {
       summaryDelayMs: 1_500,

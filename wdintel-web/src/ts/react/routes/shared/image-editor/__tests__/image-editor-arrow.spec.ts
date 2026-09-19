@@ -82,7 +82,7 @@ function attachedArrowHarness(target?: { x: number; y: number }) {
   };
 }
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3099
+// Regression: https://github.com/echoua/echo/issues/3099
 describe('image editor arrow geometry #3099', () => {
   it.each([
     [
@@ -119,7 +119,7 @@ describe('image editor arrow geometry #3099', () => {
   });
 });
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3448
+// Regression: https://github.com/echoua/echo/issues/3448
 describe('text callout geometry #3448', () => {
   it('anchors a rotated padded label at its transformed boundary', () => {
     const text = new fabric.IText('Текст', {

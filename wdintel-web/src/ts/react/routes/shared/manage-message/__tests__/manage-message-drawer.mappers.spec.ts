@@ -39,7 +39,7 @@ const values: MessageFormValues = {
   tags: [],
 };
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3515
+// Regression: https://github.com/echoua/echo/issues/3515
 it('#3515 keeps date-only edit time empty despite the noon timestamp', () => {
   const form = mapInboxMessageToForm(
     buildMessage({
@@ -54,7 +54,7 @@ it('#3515 keeps date-only edit time empty despite the noon timestamp', () => {
   expect(form.time).toBeNull();
 });
 
-// @test-scope regression: https://github.com/echoua/echo/issues/3515
+// Regression: https://github.com/echoua/echo/issues/3515
 it('#3515 preserves a date-only copied message without restoring noon in the form', () => {
   const form = mapDirectSubmitCopyToForm({
     timestamp: '2026-07-15T09:00:00Z',
@@ -66,7 +66,6 @@ it('#3515 preserves a date-only copied message without restoring noon in the for
 });
 
 describe('mapFormToInboxMessage', () => {
-  // @test-scope safeguard: prevents edits from losing untouched persisted media, tokens, network IDs, callsigns, or coordinates.
   it('preserves untouched persisted fields while applying an edit', () => {
     const original = buildMessage();
     const next = mapFormToInboxMessage(original, values, new Map());
