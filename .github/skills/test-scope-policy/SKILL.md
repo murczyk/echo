@@ -61,6 +61,7 @@ and production modules must not import, dynamically import, or re-export them.
 
 - Direct input/output restatements of trivial helpers, formatters, defaults, or small branch maps.
 - Outbound serializers and request builders, default-state construction, local validation, eligibility maps, merging/deduplication, sorting, and formatting are not parser fixtures. Parser coverage consumes external API, URL, pasted/user-entered structured-text, or file-format input.
+- A mocked API response does not automatically make a test parser coverage. Assertions limited to omitted-field defaults, nullish fallbacks, or scalar pass-through remain nonqualifying.
 - Static rendering tests for column order, headings, labels, icons, classes, or component configuration.
 - Mock-heavy tests that only assert props, timers, local state sequencing, or other implementation details without exercising the real failure mode.
 - Snapshots or shallow renders whose failure would only indicate an intentional markup/configuration edit.

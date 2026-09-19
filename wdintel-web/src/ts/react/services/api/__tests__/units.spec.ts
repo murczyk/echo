@@ -8,8 +8,8 @@ import {
   DEFAULT_LIST_UNITS_REQ,
   deleteUnitAttachment,
   getCreateUnitDuplicateCandidates,
-  getUnitsPage,
   getUnitDetails,
+  getUnitsPage,
   getUnitIdsWithVisibleAttachments,
   getUnitsList,
   importOrbitUnit,
@@ -63,6 +63,24 @@ describe('units API', () => {
         hasOrbit: true,
       },
     ]);
+  });
+
+  // @test-scope parser: unit-detail response fixture preserves nullable AOR metadata while normalizing attachment fields
+  it('loads unit details without AOR metadata for non-admins', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          unit: { id: 7 },
+          attachments: [{ id: 19, unit_id: 7, aors: null }],
+        }),
+      ),
+    );
+
+    await expect(getUnitDetails(7)).resolves.toMatchObject({
+      unit: { id: 7 },
+      attachments: [{ id: 19, unitId: 7, aors: null }],
+    });
   });
 
   // @test-scope parser: normalizes paginated unit response metadata.
@@ -147,24 +165,6 @@ describe('units API', () => {
         orbitUnitGenerativeNames: ['106 пдд / МВО'],
       },
     ]);
-  });
-
-  // @test-scope parser: normalizes unit-detail attachments with nullable AOR metadata.
-  it('loads unit details without AOR metadata for non-admins', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        jsonResponse({
-          unit: { id: 7 },
-          attachments: [{ id: 19, unit_id: 7, aors: null }],
-        }),
-      ),
-    );
-
-    await expect(getUnitDetails(7)).resolves.toMatchObject({
-      unit: { id: 7 },
-      attachments: [{ id: 19, unitId: 7, aors: null }],
-    });
   });
 
   // @test-scope parser: normalizes ORBIT search and import response objects.

@@ -1,4 +1,4 @@
-// @test-scope parser: inbox request and response wire-compatibility fixtures
+// @test-scope parser: inbox response wire-normalization fixtures
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { InboxMessage } from '../../../../../Bindings';
@@ -81,10 +81,9 @@ describe('inbox API normalization', () => {
     expect(message?.pointTokens).toEqual([{ begin: 0, end: 3, etalon: 'P-2', text: 'P-2' }]);
   });
 
-  it('normalizes inbox metadata fields from snake_case and falls back to an empty array', async () => {
+  it('normalizes inbox metadata fields from snake_case', async () => {
     postJsonMock.mockResolvedValueOnce({
       inbox_items: [
-        [7, buildRawMessage({ metadata: null })],
         [
           8,
           buildRawMessage({
@@ -120,11 +119,9 @@ describe('inbox API normalization', () => {
     });
 
     const response = await fetchInboxMessages({} as Parameters<typeof fetchInboxMessages>[0]);
-    const firstMessage = response.inboxItems[0]?.[1];
-    const secondMessage = response.inboxItems[1]?.[1];
+    const message = response.inboxItems[0]?.[1];
 
-    expect(firstMessage?.metadata).toEqual([]);
-    expect(secondMessage?.metadata).toEqual([
+    expect(message?.metadata).toEqual([
       {
         colorCode: ' 3 ',
         colorCodeStartIndex: 1,

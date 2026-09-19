@@ -1,5 +1,13 @@
 # Message card and inbox compatibility
 
+## Inbox metadata compatibility default
+
+- **Status:** operational compatibility
+- **Behavior ID:** `react-inbox-metadata-default`
+- **Expected observable result:** inbox messages without metadata expose an empty metadata list to message-card consumers.
+- **Source implementation:** `wdintel-web/src/ts/react/services/api/inbox.ts`
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
+
 ## Inbox message wire format
 
 - **Status:** operational compatibility

@@ -854,6 +854,109 @@ function runGateSelfValidation() {
       'adjacent support cycle did not terminate deterministically',
     );
 
+    const sideEffectRoot = join(web, 'src/ts/react/side-effect-self-check');
+    const sideEffectOwner = join(sideEffectRoot, 'owner.ts');
+    const sideEffectSpec = join(sideEffectRoot, '__tests__/owner.spec.ts');
+    const sideEffectFixture = join(sideEffectRoot, '__tests__/fixture.ts');
+    const sideEffectOuterFixture = join(sideEffectRoot, '__tests__/outer.fixture.ts');
+    const sideEffectInnerFixture = join(sideEffectRoot, '__tests__/inner.fixture.ts');
+    const sideEffectCycleA = join(sideEffectRoot, '__tests__/cycle-a.fixture.ts');
+    const sideEffectCycleB = join(sideEffectRoot, '__tests__/cycle-b.fixture.ts');
+    const sideEffectConsumer = join(sideEffectRoot, 'consumer.ts');
+    const sideEffectAsset = join(sideEffectRoot, '__tests__/fixture.css');
+    const sideEffectSources = [sideEffectOwner, sideEffectFixture, sideEffectSpec];
+    const classifySideEffect = () =>
+      testOnlyProductionExportsFor({
+        testFiles: [sideEffectSpec],
+        productionFiles: [sideEffectOwner],
+        sourceFiles: sideEffectSources,
+        readSource: (candidate) => (existsSync(candidate) ? readFileSync(candidate, 'utf8') : null),
+        resolveModule: modulePath,
+        testSupportFiles: new Set(
+          sideEffectSources.filter((candidate) => isTestSupportModule(candidate)),
+        ),
+      });
+    write(sideEffectOwner, 'export function helper() {} export function testOnlyHelper() {}');
+    write(
+      sideEffectFixture,
+      "import { helper, testOnlyHelper } from '../owner'; void helper; void testOnlyHelper;",
+    );
+    write(sideEffectSpec, "import './fixture';");
+    expect(
+      ['helper', 'testOnlyHelper'].every(
+        (symbol) =>
+          classifySideEffect().filter(
+            (finding) => finding.file === sideEffectOwner && finding.symbol === symbol,
+          ).length === 1,
+      ),
+      'direct side-effect fixture did not preserve test demand',
+    );
+    write(sideEffectOuterFixture, "import './inner.fixture';");
+    write(sideEffectInnerFixture, "import { helper } from '../owner'; void helper;");
+    sideEffectSources.splice(
+      1,
+      sideEffectSources.length - 2,
+      sideEffectOuterFixture,
+      sideEffectInnerFixture,
+    );
+    write(sideEffectSpec, "import './outer.fixture';");
+    expect(
+      classifySideEffect().some(
+        ({ file, symbol }) => file === sideEffectOwner && symbol === 'helper',
+      ),
+      'nested side-effect fixtures did not preserve test demand',
+    );
+    write(sideEffectCycleA, "import './cycle-b.fixture';");
+    write(
+      sideEffectCycleB,
+      "import './cycle-a.fixture'; import { helper } from '../owner'; void helper;",
+    );
+    sideEffectSources.splice(1, sideEffectSources.length - 2, sideEffectCycleA, sideEffectCycleB);
+    write(sideEffectSpec, "import './cycle-a.fixture';");
+    expect(
+      classifySideEffect().filter(
+        ({ file, symbol }) => file === sideEffectOwner && symbol === 'helper',
+      ).length === 1,
+      'side-effect cycle did not terminate with one helper finding',
+    );
+    write(
+      sideEffectFixture,
+      "import { helper, testOnlyHelper } from '../owner'; void helper; void testOnlyHelper;",
+    );
+    sideEffectSources.splice(1, sideEffectSources.length - 2, sideEffectFixture);
+    write(sideEffectSpec, "import './fixture';");
+    write(sideEffectConsumer, "import { helper } from './owner'; void helper;");
+    sideEffectSources.push(sideEffectConsumer);
+    expect(
+      !classifySideEffect().some(
+        ({ file, symbol }) => file === sideEffectOwner && symbol === 'helper',
+      ) &&
+        classifySideEffect().filter(
+          ({ file, symbol }) => file === sideEffectOwner && symbol === 'testOnlyHelper',
+        ).length === 1,
+      'genuine production consumer did not clear only its consumed side-effect finding',
+    );
+    sideEffectSources.pop();
+    write(
+      sideEffectFixture,
+      "import './fixture.css'; import { helper } from '../owner'; void helper;",
+    );
+    write(sideEffectAsset, 'body {}');
+    sideEffectSources.splice(1, sideEffectSources.length - 2, sideEffectFixture);
+    write(sideEffectSpec, "import './fixture';");
+    const assetDemands = testDependencyDemands(
+      [sideEffectSpec],
+      (candidate) => (existsSync(candidate) ? readFileSync(candidate, 'utf8') : null),
+      modulePath,
+    );
+    expect(
+      !assetDemands.has(sideEffectAsset) &&
+        classifySideEffect().some(
+          ({ file, symbol }) => file === sideEffectOwner && symbol === 'helper',
+        ),
+      'non-source asset prevented surrounding side-effect fixture traversal',
+    );
+
     const declarationFile = join(
       web,
       'src/ts/react/declaration-self-check/__tests__/declarations.spec.ts',
@@ -1683,7 +1786,11 @@ function consumedSymbolsFromText(file, sourceText, resolveModule) {
   for (const statement of sourceFile.statements) {
     if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)) {
       const target = resolveModule(file, statement.moduleSpecifier.text);
-      if (!target || !statement.importClause) continue;
+      if (!target) continue;
+      if (!statement.importClause) {
+        imports.push({ target, symbols: new Set() });
+        continue;
+      }
       const symbols = new Set();
       if (statement.importClause.name) symbols.add('default');
       const bindings = statement.importClause.namedBindings;

@@ -155,15 +155,6 @@ describe('HTTP error messages', () => {
 });
 
 describe('tryRunAndReturnNullExceptUnauthorized', () => {
-  // @test-scope parser: API error fallback normalization
-  it('returns null for non-401 errors', async () => {
-    const result = await tryRunAndReturnNullExceptUnauthorized(async () => {
-      throw new HttpRequestError(500, 'server error');
-    });
-
-    expect(result).toBeNull();
-  });
-
   // @test-scope safeguard: prevents callers from silently treating unauthorized access as an empty result
   it('rethrows unauthorized errors', async () => {
     await expect(

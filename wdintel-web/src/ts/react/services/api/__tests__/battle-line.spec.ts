@@ -1,4 +1,4 @@
-// @test-scope parser: battle-line state and upload API compatibility fixtures
+// @test-scope parser: battle-line state response normalization fixture
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { fetchBattleLineState } from '../battle-line';

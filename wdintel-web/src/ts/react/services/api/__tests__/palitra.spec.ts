@@ -108,8 +108,8 @@ describe('palitra reference loading', () => {
 });
 
 describe('palitra list normalization', () => {
-  // @test-scope parser: palette list legacy blacklist-count normalization fixture
-  it('accepts the generated blacklist count and defaults older responses to zero', async () => {
+  // @test-scope parser: palette list generated blacklist-count response normalization fixture
+  it('parses the generated blacklist count', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
@@ -129,8 +129,8 @@ describe('palitra list normalization', () => {
 describe('palitra highlight blacklist', () => {
   beforeEach(() => vi.restoreAllMocks());
 
-  // @test-scope parser: palette blacklist response normalization and duplicate-elision fixture
-  it('normalizes and deduplicates blacklist entries', async () => {
+  // @test-scope parser: palette blacklist response normalization fixture
+  it('normalizes blacklist entries', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
@@ -142,13 +142,6 @@ describe('palitra highlight blacklist', () => {
               label: ' Точка ',
               created_by_login_id: 'a',
               created_by_login: 'b',
-            },
-            {
-              id: 5,
-              palitra_id: 42,
-              label: 'точка',
-              created_by_login_id: 'c',
-              created_by_login: 'd',
             },
           ]),
           { status: 200 },

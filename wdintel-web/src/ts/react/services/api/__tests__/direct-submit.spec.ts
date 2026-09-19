@@ -29,7 +29,7 @@ const rawMessage = {
   media: [{ content_type: 'image/jpeg', file_name: 'photo.jpg', size_bytes: 123 }],
 };
 
-// @test-scope parser: normalizes supported snake-case and optional inline direct-submit responses.
+// @test-scope parser: normalizes supported direct-submit response variants.
 describe('direct-submit response normalization', () => {
   it('normalizes an inline snake_case create message', async () => {
     apiMocks.postJson.mockResolvedValueOnce({ signal_message_id: 101, message: rawMessage });
@@ -54,15 +54,16 @@ describe('direct-submit response normalization', () => {
     });
     expect(result.message).not.toHaveProperty('group_master_key');
     expect(result.message).not.toHaveProperty('network_ids');
-    expect(apiMocks.postJson).toHaveBeenCalledWith('/api/1.1/submit-direct', request, undefined);
   });
 
   it.each([{ signal_message_id: 102 }, { signal_message_id: 102, message: null }])(
-    'preserves a response without an inline message',
+    'preserves a create response without an inline message',
     async (raw) => {
       apiMocks.postJson.mockResolvedValueOnce(raw);
 
-      await expect(submitDirect(request)).resolves.toEqual({ signal_message_id: 102 });
+      await expect(submitDirect(request)).resolves.toEqual({
+        signal_message_id: 102,
+      });
     },
   );
 
@@ -84,18 +85,16 @@ describe('direct-submit response normalization', () => {
     });
   });
 
-  it('normalizes an inline edit message and preserves request options', async () => {
-    const options = { signal: new AbortController().signal };
+  it('normalizes an inline snake_case edit message', async () => {
     apiMocks.postJson.mockResolvedValueOnce({ signal_message_id: 104, message: rawMessage });
 
-    const result = await editDirectSubmit(42, request, options);
+    const result = await editDirectSubmit(42, request);
 
     expect(result.message?.groupMasterKey).toBe('group-1');
-    expect(apiMocks.postJson).toHaveBeenCalledWith('/api/1.1/message/42/edit', request, options);
   });
 
   it.each([{ signal_message_id: 105 }, { signal_message_id: 106, message: null }])(
-    'normalizes an edit response without an inline message',
+    'preserves an edit response without an inline message',
     async (raw) => {
       apiMocks.postJson.mockResolvedValueOnce(raw);
 

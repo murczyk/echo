@@ -43,6 +43,23 @@
 - **Existing test(s):** `wdintel-web/src/ts/react/services/api/__tests__/client.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as an authorization safeguard.
 
+## Nullable API error helper
+
+- **Status:** operational compatibility
+- **Behavior ID:** `react-api-null-except-unauthorized`
+- **Expected observable result:** `tryRunAndReturnNullExceptUnauthorized` converts non-401 failures to `null` and propagates 401 failures.
+- **Source implementation:** `wdintel-web/src/ts/react/services/api/client.ts`
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
+- **Retained authorization safeguard:** `wdintel-web/src/ts/react/services/api/__tests__/client.spec.ts`
+
+## Palitra blacklist-count compatibility
+
+- **Status:** operational compatibility
+- **Behavior ID:** `react-palitra-blacklist-count-default`
+- **Expected observable result:** older Palitra list responses without a blacklist count normalize that count to zero.
+- **Source implementation:** `wdintel-web/src/ts/react/services/api/palitra.ts`
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
+
 ## Direct-submit inline response normalization
 
 - **Status:** operational compatibility
@@ -51,10 +68,10 @@
 - **User role or permission:** users permitted to submit or edit a direct report.
 - **Preconditions:** the create or edit endpoint returns a successful response with an optional inline message.
 - **User action or external event:** the user submits or edits a direct report.
-- **Expected observable result:** snake-case and camel-case inline messages normalize for React consumers; missing or null inline messages remain absent; request options are preserved for edits.
+- **Expected observable result:** snake-case inline messages normalize to React fields, already-camel-case inline messages remain usable, and omitted or null inline messages remain absent while the operation succeeds.
 - **Loading/empty/error/success behavior:** a successful response without an inline message remains a successful response.
 - **URL, localStorage, or user-settings persistence:** none.
-- **API endpoint and compatibility requirements:** create uses `/api/1.1/submit-direct`; edit uses `/api/1.1/message/:id/edit`; supported message fields normalize without changing request options.
+- **API endpoint and compatibility requirements:** supported response shapes normalize at the API boundary. Create/edit request routes and bodies, plus edit request-option and abort-signal forwarding, have no direct default-suite test and are preserved by this contract.
 - **Responsive and keyboard requirements:** none.
 - **Known race/idempotency constraints:** none.
 - **Source implementation:** `src/ts/react/services/api/direct-submit.ts`

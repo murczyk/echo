@@ -73,7 +73,7 @@
 - **Responsive and keyboard requirements:** none specific to this shared logic.
 - **Known race/idempotency constraints:** deleted sets must not remain selected after a refresh.
 - **Source implementation:** `src/ts/react/services/api/organism-keyword-sets.ts`, `routes/rer-duty-neo/FeedKeywordsPanel.tsx`
-- **Existing test(s):** `wdintel-web/src/ts/react/services/api/__tests__/organism-keyword-sets.spec.ts`
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded.
 
 ## Own-report edit routing
