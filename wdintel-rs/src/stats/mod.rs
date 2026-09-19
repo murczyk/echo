@@ -316,49 +316,56 @@ async fn enqueue_group_stats_recalculation_for_unit_links<'a, C>(
 where
     C: ConnectionTrait + 'a,
 {
-    let mut query = sigint_inbox_item_unit::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            sigint_inbox_item_unit::Relation::SigintInboxItem.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SignalMessage.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SignalMessageGroup.def(),
-        )
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(signal_message_group::Column::GroupMasterKey.is_not_null());
-    if let Some(unit_id) = unit_id {
-        query =
-            query.filter(sigint_inbox_item_unit::Column::UnitId.eq(unit_id));
-    }
-    if let Some(link_ids) = link_ids {
-        query = query.filter(
-            sigint_inbox_item_unit::Column::Id.is_in(link_ids.iter().copied()),
-        );
-    }
-    let master_keys = query
-        .select_only()
-        .column(signal_message_group::Column::GroupMasterKey)
-        .distinct()
-        .into_tuple::<String>()
-        .all(dbx)
+    let min_since_ts =
+        Utc::now().naive_utc() - Duration::days(STATS_MIN_DATETIME_DAYS);
+    let statement = match (unit_id, link_ids) {
+        (Some(unit_id), _) => Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+                select
+                    min(smg.group_master_key) as master_key,
+                    min(coalesce(sii.datetime, sm.timestamp, sm.created_at)) as since_ts,
+                    max(coalesce(sii.datetime, sm.timestamp, sm.created_at)) as till_ts
+                from sigint_inbox_item_unit link
+                inner join sigint_inbox_item sii on sii.id = link.item_id
+                inner join signal_message sm on sm.id = sii.id
+                inner join signal_message_group smg on smg.signal_message_id = sm.id
+                where link.unit_id = $1
+                  and smg.group_master_key is not null
+                  and sm.deleted = false
+                  and coalesce(sii.datetime, sm.timestamp, sm.created_at) >= $2
+            "#,
+            vec![unit_id.into(), min_since_ts.into()],
+        ),
+        (None, Some(link_ids)) => Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+                select
+                    min(smg.group_master_key) as master_key,
+                    min(coalesce(sii.datetime, sm.timestamp, sm.created_at)) as since_ts,
+                    max(coalesce(sii.datetime, sm.timestamp, sm.created_at)) as till_ts
+                from sigint_inbox_item_unit link
+                inner join sigint_inbox_item sii on sii.id = link.item_id
+                inner join signal_message sm on sm.id = sii.id
+                inner join signal_message_group smg on smg.signal_message_id = sm.id
+                where link.id = any($1::bigint[])
+                  and smg.group_master_key is not null
+                  and sm.deleted = false
+                  and coalesce(sii.datetime, sm.timestamp, sm.created_at) >= $2
+            "#,
+            vec![link_ids.to_vec().into(), min_since_ts.into()],
+        ),
+        (None, None) => return Ok(false),
+    };
+    let window = GroupStatsMessagesWindow::find_by_statement(statement)
+        .one(dbx)
         .await
         .c(h!())?;
-    let mut enqueued = false;
-    for master_key in master_keys {
-        enqueued |= enqueue_group_stats_recalculation_for_group_history(
-            dbx,
-            &master_key,
-            reason.clone(),
-        )
-        .await
-        .c(h!())?;
-    }
-    Ok(enqueued)
+    Ok(
+        enqueue_group_stats_recalculation_window(dbx, window, reason)
+            .await
+            .c(h!())?,
+    )
 }
 
 pub async fn enqueue_group_stats_recalculation_for_message<'a, C>(
@@ -408,6 +415,26 @@ where
     .one(dbx)
     .await
     .c(h!())?;
+    let reason = if message_ids.len() == 1 {
+        reason_prefix.to_string()
+    } else {
+        format!("{reason_prefix} ({} inbox messages)", message_ids.len())
+    };
+    Ok(
+        enqueue_group_stats_recalculation_window(dbx, window, reason)
+            .await
+            .c(h!())?,
+    )
+}
+
+async fn enqueue_group_stats_recalculation_window<'a, C>(
+    dbx: &'a C,
+    window: Option<GroupStatsMessagesWindow>,
+    reason: String,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait + 'a,
+{
     let Some(window) = window else {
         return Ok(false);
     };
@@ -431,11 +458,6 @@ where
     if till_ts <= since_ts {
         return Ok(false);
     }
-    let reason = if message_ids.len() == 1 {
-        reason_prefix.to_string()
-    } else {
-        format!("{reason_prefix} ({} inbox messages)", message_ids.len())
-    };
     enqueue_pending_group_stats_task(
         dbx,
         &master_key,
@@ -3944,6 +3966,18 @@ mod tests {
         )
         .await
         .unwrap();
+        mk_stats_message_for_group(txn, &group.master_key, message_ts).await;
+        group
+    }
+
+    async fn mk_stats_message_for_group<'a, 'async_trait, C>(
+        txn: &'a C,
+        master_key: &str,
+        message_ts: NaiveDateTime,
+    ) -> i64
+    where
+        C: ConnectionTrait + 'async_trait,
+    {
         let message = mk_signal_message(
             txn,
             signal_message::ActiveModel {
@@ -3957,7 +3991,7 @@ mod tests {
             txn,
             signal_message_group::ActiveModel {
                 signal_message_id: Set(message.id),
-                group_master_key: Set(Some(group.master_key.clone())),
+                group_master_key: Set(Some(master_key.to_string())),
                 ..Default::default()
             },
         )
@@ -3976,7 +4010,7 @@ mod tests {
         )
         .await
         .unwrap();
-        group
+        message.id
     }
 
     async fn add_group_stats_aor(
@@ -4170,6 +4204,13 @@ mod tests {
             .unwrap()
             .unwrap()
             .id;
+        let unrelated_message_ts = message_ts - Duration::days(4);
+        mk_stats_message_for_group(
+            &env.dbx,
+            &group.master_key,
+            unrelated_message_ts,
+        )
+        .await;
         assert!(enqueue_group_stats_recalculation_for_unit_link_ids(
             &env.dbx,
             &[link_id],
@@ -4177,6 +4218,24 @@ mod tests {
         )
         .await
         .unwrap());
+        let task = group_stats_recalculation_task::Entity::find()
+            .filter(
+                group_stats_recalculation_task::Column::Reason
+                    .eq("moved linked unit batch"),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            task.since_ts,
+            start_of_day(get_local_date(message_ts)).unwrap()
+        );
+        assert_eq!(
+            task.till_ts,
+            start_of_day(get_local_date(message_ts) + Duration::days(1))
+                .unwrap()
+        );
         assert!(enqueue_group_stats_recalculation_for_linked_unit(
             &env.dbx,
             active_unit.id,
@@ -4184,15 +4243,24 @@ mod tests {
         )
         .await
         .unwrap());
-        assert!(group_stats_recalculation_task::Entity::find()
+        let task = group_stats_recalculation_task::Entity::find()
             .filter(
-                group_stats_recalculation_task::Column::GroupMasterKey
-                    .eq(group.master_key),
+                group_stats_recalculation_task::Column::Reason
+                    .eq("updated linked unit"),
             )
             .one(&env.dbx)
             .await
             .unwrap()
-            .is_some());
+            .unwrap();
+        assert_eq!(
+            task.since_ts,
+            start_of_day(get_local_date(message_ts)).unwrap()
+        );
+        assert_eq!(
+            task.till_ts,
+            start_of_day(get_local_date(message_ts) + Duration::days(1))
+                .unwrap()
+        );
     }
 
     #[serial]

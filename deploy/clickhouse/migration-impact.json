@@ -1,5 +1,8 @@
 {
   "migrations": {
+    "echo:m20260919_132912_sigint_unit_changelog_index": {
+      "changes": []
+    },
     "echo:m20260906_094818_ai_callsign_feedback": {
       "changes": [
         {
