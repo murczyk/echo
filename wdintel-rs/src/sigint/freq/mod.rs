@@ -453,6 +453,22 @@ fn inbox_item_callsign_exists() -> SimpleExpr {
     ))
 }
 
+fn select_freq_page(
+    rows: Vec<(String, i64, Option<String>)>,
+    after_freq_nonincl: Option<&str>,
+    limit: usize,
+) -> (Vec<(String, i64, Option<String>)>, bool) {
+    let mut rows = rows.into_iter();
+    if let Some(after_freq_nonincl) = after_freq_nonincl {
+        if !rows.by_ref().any(|(freq, _, _)| freq == after_freq_nonincl) {
+            return (Vec::new(), false);
+        }
+    }
+
+    let page = rows.by_ref().take(limit).collect::<Vec<_>>();
+    (page, rows.next().is_some())
+}
+
 /// Lists frequencies which were active (active in 14-day period, can include non-actives if checked), their assigned units if any.
 ///
 /// This API is slow. DO NOT USE FOR POPULAR PAGES TO GET FREQ INFO. Only intended for admin pages.
@@ -721,6 +737,22 @@ pub async fn list_freqs(
     };
     // println!("> freqs in period count: {}", freqs_period.len());
 
+    let (freqs_period, show_load_more) = select_freq_page(
+        freqs_period,
+        req.after_freq_nonincl.as_deref(),
+        LIMIT,
+    );
+    if freqs_period.is_empty() {
+        return Ok(Json(ListFreqsRsp {
+            show_load_more: false,
+            freqs: Vec::new(),
+        }));
+    }
+    let page_freqs = freqs_period
+        .iter()
+        .map(|(freq, _, _)| freq.clone())
+        .collect::<Vec<_>>();
+
     #[derive(FromQueryResult)]
     struct BeforeRes {
         freq: Option<String>,
@@ -745,6 +777,7 @@ pub async fn list_freqs(
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(before_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(before_till))
+        .filter(sigint_inbox_item::Column::Freq.is_in(page_freqs))
         .group_by(sea_query::expr::SimpleExpr::Custom("freq".into()))
         .order_by_asc(sigint_inbox_item::Column::Freq);
     // let before_count: u64 = before_res.clone().count(&env.dbx).await.c(h!())?;
@@ -764,21 +797,8 @@ pub async fn list_freqs(
         .collect();
     // println!("> before count: {}", before_res.len());
 
-    let mut show_load_more = false;
-
     let mut freqs = vec![];
-    let mut need_skip = false;
-    if let Some(_after_freq_nonincl) = &req.after_freq_nonincl {
-        need_skip = true;
-    }
     for (freq, message_count, location_v2) in freqs_period {
-        if need_skip {
-            if req.after_freq_nonincl == Some(freq) {
-                need_skip = false;
-            }
-            continue;
-        }
-
         let networks = sigint_network::Entity::find()
             .join(
                 JoinType::InnerJoin,
@@ -820,11 +840,6 @@ pub async fn list_freqs(
             last_updated_at,
             last_updated_by,
         });
-
-        if freqs.len() >= LIMIT {
-            show_load_more = true;
-            break;
-        }
     }
 
     Ok(Json(ListFreqsRsp {
