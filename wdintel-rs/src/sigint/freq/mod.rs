@@ -453,6 +453,16 @@ fn inbox_item_callsign_exists() -> SimpleExpr {
     ))
 }
 
+fn needs_unit_join(
+    filter_unit: &Option<String>,
+    filter_further_investigation: &Option<bool>,
+) -> bool {
+    filter_unit
+        .as_deref()
+        .is_some_and(|unit| !unit.trim().is_empty())
+        || filter_further_investigation.unwrap_or(false)
+}
+
 fn sort_freq_rows(
     rows: &mut [(String, i64, Option<String>)],
     sort_by: Option<&[ListFreqsSortBy]>,
@@ -700,16 +710,10 @@ pub async fn list_freqs(
                 )
                 .select_only()
                 .column_as(sigint_inbox_item::Column::Freq, "freq")
-                .column_as(sigint_inbox_item::Column::LocationV2, "location_v2")
-                .column_as(sigint_inbox_item::Column::Datetime, "datetime")
                 .column_as(
-                    Expr::col((
-                        signal_message::Entity,
-                        signal_message::Column::Id,
-                    )),
-                    "dedup_key",
-                )
-                .distinct_on([dedup_key_alias.clone()]);
+                    sigint_inbox_item::Column::LocationV2,
+                    "location_v2",
+                );
 
             dedup_freq_per = filters_list_freq_search(
                 dedup_freq_per,
@@ -726,10 +730,23 @@ pub async fn list_freqs(
             .await
             .c(h!())?;
 
-            dedup_freq_per = dedup_freq_per
-                .order_by(Expr::cust("dedup_key"), Order::Asc)
-                // emulate NULLS FIRST: order nulls before non-nulls
-                .order_by(sigint_inbox_item::Column::Datetime, Order::Asc);
+            if needs_unit_join(
+                &req.filter_unit,
+                &req.filter_further_investigation,
+            ) {
+                dedup_freq_per = dedup_freq_per
+                    .column_as(
+                        Expr::col((
+                            signal_message::Entity,
+                            signal_message::Column::Id,
+                        )),
+                        "dedup_key",
+                    )
+                    .distinct_on([dedup_key_alias.clone()])
+                    .order_by(Expr::cust("dedup_key"), Order::Asc)
+                    // emulate NULLS FIRST: order nulls before non-nulls
+                    .order_by(sigint_inbox_item::Column::Datetime, Order::Asc);
+            }
 
             let uniq_alias = Alias::new("uniq");
             let mut main_query = Query::select()
@@ -771,6 +788,7 @@ pub async fn list_freqs(
                 }
             }
             main_query.order_by_expr(Expr::cust("freq"), Order::Asc);
+            // This bounds returned groups, not the message scan or aggregation.
             if req.after_freq_nonincl.is_none() {
                 main_query.limit((LIMIT + 1) as u64);
             }
@@ -1317,12 +1335,12 @@ where
         ));
     };
 
+    let needs_unit_join =
+        needs_unit_join(filter_unit, filter_further_investigation);
     let filter_unit = filter_unit
         .as_deref()
         .map(str::trim)
         .filter(|unit| !unit.is_empty());
-    let needs_unit_join =
-        filter_unit.is_some() || filter_further_investigation.unwrap_or(false);
 
     if needs_unit_join {
         q = q
