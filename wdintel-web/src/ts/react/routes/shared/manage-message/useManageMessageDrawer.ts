@@ -1,7 +1,9 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import dayjs from 'dayjs';
+
+import { useDutySettings } from '../../../hooks/use-duty-settings';
 
 import {
   getUserSigintGroups,
@@ -382,7 +384,28 @@ export function useManageMessageDrawer({
     return () => window.removeEventListener('paste', handlePaste);
   }, [formReady, handlePaste]);
 
-  const { parsing, handleParse } = useMessageParser(methods, busy, setErrorMsg);
+  const dutySettings = useDutySettings();
+  const autoParseEnabled = dutySettings.messageAutoParseEnabled;
+  const handleToggleAutoParse = useCallback(
+    (enabled: boolean) => {
+      dutySettings.scheduleSave({
+        ...dutySettings,
+        messageAutoParseEnabled: enabled,
+      });
+    },
+    [dutySettings],
+  );
+
+  const { parsing, parseSuccess, parseError, handleParse } = useMessageParser(
+    methods,
+    busy,
+    setErrorMsg,
+    {
+      autoParseEnabled,
+      isEditMode,
+      isReportMode,
+    },
+  );
 
   const canSubmit = useMemo(() => {
     const selectedGroupKey = formValues.signalGroupMasterKey ?? '';
@@ -823,7 +846,11 @@ export function useManageMessageDrawer({
     setAttachmentErrorMsg,
     methods,
     canSubmit,
+    parseSuccess,
+    parseError,
     handleParse,
+    autoParseEnabled,
+    handleToggleAutoParse,
     handleDrawerClose,
     onSubmit,
     recentValues,

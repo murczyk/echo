@@ -35,6 +35,7 @@ export type DutySettingsHook = DutySettingsValue & {
   setMediaSummaryEnabled: (value: boolean) => void;
   setMessageTextPreviewLines: (value: MessageTextPreviewLineLimit) => void;
   setMessageSortBy: (value: MessageTimeBasis) => void;
+  setMessageAutoParseEnabled: (value: boolean) => void;
   scheduleSave: (nextSettings: DutySettingsSaveRequest) => void;
 };
 
@@ -57,6 +58,7 @@ function normalizeDutySettings(
     dutyCollapseMediaPreviews:
       settings?.dutyCollapseMediaPreviews ?? DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
     mediaSummaryEnabled: settings?.mediaSummaryEnabled ?? DEFAULT_MEDIA_SUMMARY_ENABLED,
+    messageAutoParseEnabled: settings?.messageAutoParseEnabled ?? false,
   };
 }
 
@@ -181,6 +183,8 @@ export function useDutySettings(): DutySettingsHook {
     setMessageTextPreviewLines: (value) =>
       setSettings((current) => ({ ...current, messageTextPreviewLines: value })),
     setMessageSortBy: (value) => setSettings((current) => ({ ...current, messageSortBy: value })),
+    setMessageAutoParseEnabled: (value) =>
+      setSettings((current) => ({ ...current, messageAutoParseEnabled: value })),
     scheduleSave,
   };
 }

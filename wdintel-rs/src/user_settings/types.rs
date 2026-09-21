@@ -98,6 +98,8 @@ pub struct UserDutySettingsDto {
     pub media_summary_enabled: bool,
     #[serde(default)]
     pub message_sort_by: MessageTimeBasis,
+    #[serde(default)]
+    pub message_auto_parse_enabled: bool,
 }
 
 fn default_duty_collapse_media_previews() -> bool {
@@ -123,6 +125,7 @@ impl Default for UserDutySettingsDto {
             duty_collapse_media_previews: false,
             media_summary_enabled: false,
             message_sort_by: MessageTimeBasis::MessageInterception,
+            message_auto_parse_enabled: false,
         }
     }
 }

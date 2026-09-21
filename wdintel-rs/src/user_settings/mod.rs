@@ -52,6 +52,7 @@ fn model_to_dto(m: &user_settings::Model) -> UserDutySettingsDto {
             Some("creation") => MessageTimeBasis::MessageCreation,
             _ => MessageTimeBasis::MessageInterception,
         },
+        message_auto_parse_enabled: m.message_auto_parse_enabled,
     }
 }
 
@@ -129,6 +130,7 @@ pub async fn user_settings_put(
             MessageTimeBasis::MessageInterception => "interception".to_owned(),
             MessageTimeBasis::MessageCreation => "creation".to_owned(),
         })),
+        message_auto_parse_enabled: Set(dto.message_auto_parse_enabled),
         updated_at: Set(now),
     })
     .on_conflict(
@@ -146,6 +148,7 @@ pub async fn user_settings_put(
                 user_settings::Column::DutyCollapseMediaPreviews,
                 user_settings::Column::MediaSummaryEnabled,
                 user_settings::Column::MessageSortBy,
+                user_settings::Column::MessageAutoParseEnabled,
                 user_settings::Column::UpdatedAt,
             ])
             .to_owned(),

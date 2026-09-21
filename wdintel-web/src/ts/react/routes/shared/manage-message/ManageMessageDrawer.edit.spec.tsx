@@ -39,6 +39,17 @@ const uppyMocks = vi.hoisted(() => ({
     emitUploadSuccess: () => void;
   } | null,
 }));
+const dutySettingsMocks = vi.hoisted(() => ({
+  messageAutoParseEnabled: false,
+  scheduleSave: vi.fn(),
+}));
+
+vi.mock('../../../hooks/use-duty-settings', () => ({
+  useDutySettings: () => ({
+    messageAutoParseEnabled: dutySettingsMocks.messageAutoParseEnabled,
+    scheduleSave: dutySettingsMocks.scheduleSave,
+  }),
+}));
 
 vi.mock('../../../services/api/inbox-reference-data', () => ({
   getUserSigintGroups: referenceDataMocks.getUserSigintGroups,
@@ -192,6 +203,24 @@ vi.mock('@uppy/core', () => {
 vi.mock('@uppy/tus', () => ({ default: class {} }));
 vi.mock('@mui/icons-material/Add', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/DeleteOutline', () => ({ default: () => <span /> }));
+vi.mock('@mui/icons-material/CheckCircle', () => ({
+  default: ({
+    'data-testid': testId = 'check-icon',
+    color,
+  }: {
+    'data-testid'?: string;
+    color?: string;
+  }) => <span data-testid={testId} data-color={color} />,
+}));
+vi.mock('@mui/icons-material/ErrorOutline', () => ({
+  default: ({
+    'data-testid': testId = 'error-icon',
+    color,
+  }: {
+    'data-testid'?: string;
+    color?: string;
+  }) => <span data-testid={testId} data-color={color} />,
+}));
 vi.mock('@mui/icons-material/SmartToyOutlined', () => ({
   default: ({
     'aria-label': ariaLabel,
@@ -315,11 +344,27 @@ vi.mock('@mui/material', () => ({
   ),
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Divider: () => <hr />,
+  Tooltip: ({ children }: { children?: ReactNode }) => <>{children}</>,
   Menu: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   MenuItem: ({ children, onClick }: { children?: ReactNode; onClick?: () => void }) => (
-    <button type="button" onClick={onClick}>
+    <button type="button" role="menuitem" onClick={onClick}>
       {children}
     </button>
+  ),
+  FormControlLabel: ({ control, label }: { control?: ReactNode; label?: ReactNode }) => (
+    <label>
+      {control}
+      {label}
+    </label>
+  ),
+  Switch: ({
+    checked,
+    onChange,
+  }: {
+    checked?: boolean;
+    onChange?: (e: unknown, checked: boolean) => void;
+  }) => (
+    <input type="checkbox" checked={checked} onChange={(e) => onChange?.(e, e.target.checked)} />
   ),
   ListItemIcon: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
   ListItemText: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
@@ -366,13 +411,16 @@ vi.mock('@mui/material', () => ({
     type = 'button',
     onClick,
     disabled,
+    startIcon,
   }: {
     children?: ReactNode;
     type?: 'button' | 'submit' | 'reset';
     onClick?: () => void;
     disabled?: boolean;
+    startIcon?: ReactNode;
   } & Record<string, unknown>) => (
     <button type={type} onClick={onClick} disabled={disabled}>
+      {startIcon}
       {children}
     </button>
   ),
@@ -624,6 +672,8 @@ describe('ManageMessageDrawer edit mode', () => {
     inboxMessageActionMocks.deleteMessage.mockResolvedValue(undefined);
     aiIntelReportMocks.quickIntelReportSuggestion.mockReset();
     aiIntelReportMocks.quickIntelReportSuggestion.mockResolvedValue(null);
+    dutySettingsMocks.messageAutoParseEnabled = false;
+    dutySettingsMocks.scheduleSave.mockReset();
     document.body.innerHTML = '';
     referenceDataMocks.getTagsForDisplay.mockResolvedValue({ tagsMap: {}, tagsOrder: [] });
     referenceDataMocks.getUserSigintGroups.mockReset();
@@ -3196,5 +3246,366 @@ describe('ManageMessageDrawer edit mode', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(container.textContent).not.toContain('Помилка');
     root.unmount();
+  });
+
+  describe('auto-parse setting', () => {
+    it('renders "Розпарсити" button and settings icon when auto-parse is disabled', async () => {
+      dutySettingsMocks.messageAutoParseEnabled = false;
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={null}
+            onClose={vi.fn()}
+          />,
+        );
+        await Promise.resolve();
+      });
+
+      const parseButton = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Розпарсити',
+      );
+      expect(parseButton).toBeDefined();
+
+      const settingsBtn = container.querySelector('button[aria-label="Налаштування парсингу"]');
+      expect(settingsBtn).toBeDefined();
+
+      root.unmount();
+    });
+
+    it('renders "Авто-парсинг" button when auto-parse is enabled', async () => {
+      dutySettingsMocks.messageAutoParseEnabled = true;
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={null}
+            onClose={vi.fn()}
+          />,
+        );
+        await Promise.resolve();
+      });
+
+      const autoParseButton = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Авто-парсинг',
+      );
+      expect(autoParseButton).toBeDefined();
+
+      root.unmount();
+    });
+
+    it('toggles auto-parse setting when clicking menu item', async () => {
+      dutySettingsMocks.messageAutoParseEnabled = false;
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={null}
+            onClose={vi.fn()}
+          />,
+        );
+        await Promise.resolve();
+      });
+
+      const settingsBtn = container.querySelector(
+        'button[aria-label="Налаштування парсингу"]',
+      ) as HTMLButtonElement;
+      await act(async () => {
+        settingsBtn.click();
+        await Promise.resolve();
+      });
+
+      const menuItem = Array.from(document.querySelectorAll('[role="menuitem"]')).find((item) =>
+        item.textContent?.includes('Парсити автоматично'),
+      ) as HTMLButtonElement | undefined;
+      expect(menuItem).toBeDefined();
+
+      await act(async () => {
+        menuItem?.click();
+        await Promise.resolve();
+      });
+
+      expect(dutySettingsMocks.scheduleSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          messageAutoParseEnabled: true,
+        }),
+      );
+
+      root.unmount();
+    });
+
+    it('automatically triggers parse with debounce when auto-parse is enabled and user enters text', async () => {
+      vi.useFakeTimers();
+      dutySettingsMocks.messageAutoParseEnabled = true;
+      directSubmitMocks.parseDirectSubmit.mockResolvedValue({
+        text: 'auto parsed text',
+      });
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={null}
+            onClose={vi.fn()}
+          />,
+        );
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: 'incoming message body' } });
+      });
+
+      expect(directSubmitMocks.parseDirectSubmit).not.toHaveBeenCalled();
+
+      await act(async () => {
+        vi.advanceTimersByTime(1000);
+        await Promise.resolve();
+      });
+
+      expect(directSubmitMocks.parseDirectSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          full_body: 'incoming message body',
+        }),
+      );
+
+      root.unmount();
+      vi.useRealTimers();
+    });
+
+    it('shows spinner in parse button while parse is in flight', async () => {
+      let resolveParse!: (value: any) => void;
+      directSubmitMocks.parseDirectSubmit.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveParse = resolve;
+          }),
+      );
+
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={null}
+            onClose={vi.fn()}
+          />,
+        );
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: 'test parse' } });
+      });
+
+      const parseButton = Array.from(container.querySelectorAll('button')).find((button) =>
+        button.textContent?.includes('Розпарсити'),
+      ) as HTMLButtonElement;
+
+      await act(async () => {
+        parseButton.click();
+        await Promise.resolve();
+      });
+
+      expect(parseButton.disabled).toBe(true);
+      expect(parseButton.querySelector('[data-testid="spinner"]')).not.toBeNull();
+
+      await act(async () => {
+        resolveParse({ text: 'parsed' });
+        await Promise.resolve();
+      });
+
+      expect(parseButton.querySelector('[data-testid="spinner"]')).toBeNull();
+      expect(parseButton.querySelector('[data-testid="check-icon"]')).not.toBeNull();
+
+      root.unmount();
+    });
+
+    it('keeps success checkmark until text changes, then restores standard icon', async () => {
+      directSubmitMocks.parseDirectSubmit.mockResolvedValue({ text: 'parsed text' });
+
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={null}
+            onClose={vi.fn()}
+          />,
+        );
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: 'test parse' } });
+      });
+
+      const parseButton = Array.from(container.querySelectorAll('button')).find((button) =>
+        button.textContent?.includes('Розпарсити'),
+      ) as HTMLButtonElement;
+
+      await act(async () => {
+        parseButton.click();
+        await Promise.resolve();
+      });
+
+      expect(parseButton.querySelector('[data-testid="check-icon"]')).not.toBeNull();
+
+      // Typing more text resets the checkmark
+      await act(async () => {
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: 'test parse modified' } });
+      });
+
+      expect(parseButton.querySelector('[data-testid="check-icon"]')).toBeNull();
+
+      root.unmount();
+    });
+
+    it('shows error icon when parsing fails, and clears it when text changes', async () => {
+      directSubmitMocks.parseDirectSubmit.mockRejectedValue(new Error('Parse failure'));
+
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={null}
+            onClose={vi.fn()}
+          />,
+        );
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: 'invalid text' } });
+      });
+
+      const parseButton = Array.from(container.querySelectorAll('button')).find((button) =>
+        button.textContent?.includes('Розпарсити'),
+      ) as HTMLButtonElement;
+
+      await act(async () => {
+        parseButton.click();
+        await Promise.resolve();
+      });
+
+      expect(parseButton.querySelector('[data-testid="error-icon"]')).not.toBeNull();
+
+      // Changing text resets the error icon
+      await act(async () => {
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: 'fixed text' } });
+      });
+
+      expect(parseButton.querySelector('[data-testid="error-icon"]')).toBeNull();
+
+      root.unmount();
+    });
+
+    it('clears time input when parsed message has is_time_null: true', async () => {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={null}
+            onClose={vi.fn()}
+          />,
+        );
+        await Promise.resolve();
+      });
+
+      directSubmitMocks.parseDirectSubmit.mockResolvedValueOnce({
+        text: 'test',
+        timestamp: '2026-09-01T05:50:00Z',
+        is_time_null: false,
+      });
+
+      await act(async () => {
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: '123 прк | 2026-09-01\n05-50' } });
+      });
+
+      const parseButton = Array.from(container.querySelectorAll('button')).find((button) =>
+        button.textContent?.includes('Розпарсити'),
+      ) as HTMLButtonElement;
+
+      await act(async () => {
+        parseButton.click();
+        await Promise.resolve();
+      });
+
+      expect(pickerValuesByLabel.get('Час перехоплення')).not.toBeNull();
+      expect(pickerValuesByLabel.get('Дата перехоплення')).not.toBeNull();
+
+      directSubmitMocks.parseDirectSubmit.mockResolvedValueOnce({
+        text: 'test',
+        timestamp: '2026-09-01T00:00:00Z',
+        is_time_null: true,
+      });
+
+      await act(async () => {
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: '123 прк | 2026-09-01' } });
+      });
+
+      await act(async () => {
+        parseButton.click();
+        await Promise.resolve();
+      });
+
+      expect(pickerValuesByLabel.get('Дата перехоплення')).not.toBeNull();
+      expect(pickerValuesByLabel.get('Час перехоплення')).toBeNull();
+
+      root.unmount();
+    });
   });
 });

@@ -110,6 +110,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
       dutyCollapseMediaPreviews: dutySettings.dutyCollapseMediaPreviews,
       mediaSummaryEnabled: dutySettings.mediaSummaryEnabled,
       messageSortBy: dutySettings.messageSortBy,
+      messageAutoParseEnabled: dutySettings.messageAutoParseEnabled,
       ...overrides,
     });
   };

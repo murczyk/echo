@@ -9,9 +9,17 @@ import {
   CircularProgress,
   Box,
   Stack,
+  Tooltip,
+  Menu,
+  MenuItem,
+  FormControlLabel,
+  Switch,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import SettingsIcon from '@mui/icons-material/Settings';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
@@ -366,6 +374,8 @@ export function ManageMessageDrawer(props: Props) {
     formDisabled,
     saving,
     parsing,
+    parseSuccess,
+    parseError,
     errorMsg,
     setErrorMsg,
     tagOptions,
@@ -381,10 +391,22 @@ export function ManageMessageDrawer(props: Props) {
     methods,
     canSubmit,
     handleParse,
+    autoParseEnabled,
+    handleToggleAutoParse,
     handleDrawerClose,
     onSubmit,
     recentValues,
   } = drawerState;
+  const [settingsAnchorEl, setSettingsAnchorEl] = React.useState<null | HTMLElement>(null);
+  const isSettingsOpen = Boolean(settingsAnchorEl);
+
+  const handleOpenSettings = (event: React.MouseEvent<HTMLElement>) => {
+    setSettingsAnchorEl(event.currentTarget);
+  };
+
+  const handleCloseSettings = () => {
+    setSettingsAnchorEl(null);
+  };
   const dismissDisabled = saving || deleteInFlight;
   const busy = formDisabled || deleteInFlight;
   const reportEditLoading = props.editTargetLoadState?.status === 'loading';
@@ -541,21 +563,68 @@ export function ManageMessageDrawer(props: Props) {
                             title="Джерело"
                             action={
                               !isEditMode ? (
-                                <Button
-                                  onClick={handleParse}
-                                  variant="outlined"
-                                  size="small"
-                                  startIcon={
-                                    parsing ? (
-                                      <CircularProgress size={16} color="inherit" />
-                                    ) : (
-                                      <AutoFixHighIcon />
-                                    )
-                                  }
-                                  disabled={busy || parsing}
-                                >
-                                  Розпарсити
-                                </Button>
+                                <Stack direction="row" spacing={0.5} alignItems="center">
+                                  <Button
+                                    onClick={() => void handleParse()}
+                                    variant="outlined"
+                                    size="small"
+                                    startIcon={
+                                      parsing ? (
+                                        <CircularProgress size={16} color="inherit" />
+                                      ) : parseSuccess ? (
+                                        <CheckCircleIcon fontSize="small" color="success" />
+                                      ) : parseError ? (
+                                        <ErrorOutlineIcon fontSize="small" color="error" />
+                                      ) : (
+                                        <AutoFixHighIcon />
+                                      )
+                                    }
+                                    disabled={busy || parsing}
+                                  >
+                                    {autoParseEnabled ? 'Авто-парсинг' : 'Розпарсити'}
+                                  </Button>
+                                  <Tooltip title="Налаштування парсингу">
+                                    <IconButton
+                                      size="small"
+                                      onClick={handleOpenSettings}
+                                      aria-label="Налаштування парсингу"
+                                      disabled={busy}
+                                    >
+                                      <SettingsIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                  <Menu
+                                    anchorEl={settingsAnchorEl}
+                                    open={isSettingsOpen}
+                                    onClose={handleCloseSettings}
+                                    anchorOrigin={{
+                                      vertical: 'bottom',
+                                      horizontal: 'right',
+                                    }}
+                                    transformOrigin={{
+                                      vertical: 'top',
+                                      horizontal: 'right',
+                                    }}
+                                  >
+                                    <MenuItem
+                                      onClick={() => {
+                                        handleToggleAutoParse(!autoParseEnabled);
+                                      }}
+                                    >
+                                      <FormControlLabel
+                                        control={
+                                          <Switch
+                                            checked={autoParseEnabled}
+                                            size="small"
+                                            tabIndex={-1}
+                                          />
+                                        }
+                                        label="Парсити автоматично"
+                                        sx={{ pointerEvents: 'none', m: 0 }}
+                                      />
+                                    </MenuItem>
+                                  </Menu>
+                                </Stack>
                               ) : null
                             }
                           >

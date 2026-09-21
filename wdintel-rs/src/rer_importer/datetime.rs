@@ -5,26 +5,36 @@ use chrono_tz::Tz;
 use lazy_static::lazy_static;
 use regex::{Captures, Regex};
 
-type ProcessorFn =
-    fn(DateTime<Tz>, &Captures) -> Result<NaiveDateTime, AppError>;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExtractedDateTime {
+    pub datetime: NaiveDateTime,
+    pub has_time: bool,
+}
 
-/// Витягує дату та час з тіла повідомлення.
-/// ***ВАЖЛИВО:*** при додаванні нових форматів дати та часу
-/// потрібно також додати їх у rer_importer::body_noheader::extract_text для коректного виділення тіла повідомлення.
-pub fn extract_datetime(
+type ProcessorFn =
+    fn(DateTime<Tz>, &Captures) -> Result<ExtractedDateTime, AppError>;
+
+/// Витягує дату та час з тіла повідомлення разом із прапорцем наявності часу.
+pub fn extract_datetime_with_precision(
     lnow: DateTime<Tz>,
     body: &str,
-) -> Result<Option<NaiveDateTime>, AppError> {
+) -> Result<Option<ExtractedDateTime>, AppError> {
     if let Some(timestamp) = trailing_datetime(body) {
         if let Ok(timestamp) = validate_datetime(lnow, timestamp) {
-            return Ok(Some(timestamp));
+            return Ok(Some(ExtractedDateTime {
+                datetime: timestamp,
+                has_time: true,
+            }));
         }
     }
     if let Some(zp_peleng) =
         crate::rer_importer::zp_peleng_vorony_odina_format::parse(body)
     {
         if let Ok(timestamp) = validate_datetime(lnow, zp_peleng.timestamp) {
-            return Ok(Some(timestamp));
+            return Ok(Some(ExtractedDateTime {
+                datetime: timestamp,
+                has_time: true,
+            }));
         }
     }
     if let Some(zp_digital_post_alt) =
@@ -33,7 +43,10 @@ pub fn extract_datetime(
         if let Ok(timestamp) =
             validate_datetime(lnow, zp_digital_post_alt.timestamp)
         {
-            return Ok(Some(timestamp));
+            return Ok(Some(ExtractedDateTime {
+                datetime: timestamp,
+                has_time: true,
+            }));
         }
     }
 
@@ -73,6 +86,11 @@ pub fn extract_datetime(
             (
                 Regex::new(r"\|\s*(?P<year>\d{4})-(?P<mon>\d{2})-(?P<day>\d{2})\s*\n\s*(?P<hour>\d{2})-(?P<minute>\d{2})").unwrap(),
                 |lnow, capts| { parse_datetime(lnow, capts, true, true, true, false) },
+            ),
+            // Work with non-RER header lines without time like "50 обрБпС | YYYY-MM-DD"
+            (
+                Regex::new(r"\|\s*(?P<year>\d{4})-(?P<mon>\d{2})-(?P<day>\d{2})(?:\s*(?:\r?\n|$))").unwrap(),
+                |lnow, capts| { parse_date_only(lnow, capts) },
             ),
             // Work with formats like 17.11, 00:01:49
             (
@@ -145,9 +163,7 @@ pub fn extract_datetime(
             Regex::new(r"Час: (?P<hour>\d\d):(?P<minute>\d\d);?").unwrap();
     }
     '_if: {
-        if let (Some(capts_ymd), Some(capts_hm)) =
-            (RE_DATE_BURAN.captures(body), RE_TIME_BURAN.captures(body))
-        {
+        if let Some(capts_ymd) = RE_DATE_BURAN.captures(body) {
             let Some(day) = capts_ymd.name("day") else {
                 break '_if;
             };
@@ -161,14 +177,22 @@ pub fn extract_datetime(
             };
             let year: i32 = year.as_str().parse().c(h!())?;
 
-            let Some(hour) = capts_hm.name("hour") else {
-                break '_if;
+            let capts_hm = RE_TIME_BURAN.captures(body);
+            let has_time = capts_hm.is_some();
+            let (hour, minute) = if let Some(ref capts_hm) = capts_hm {
+                let Some(hour) = capts_hm.name("hour") else {
+                    break '_if;
+                };
+                let hour: u32 = hour.as_str().parse().c(h!())?;
+                let Some(minute) = capts_hm.name("minute") else {
+                    break '_if;
+                };
+                let minute: u32 = minute.as_str().parse().c(h!())?;
+                (hour, minute)
+            } else {
+                (0, 0)
             };
-            let hour: u32 = hour.as_str().parse().c(h!())?;
-            let Some(minute) = capts_hm.name("minute") else {
-                break '_if;
-            };
-            let minute: u32 = minute.as_str().parse().c(h!())?;
+
             let Some(res) = NaiveDate::from_ymd_opt(year, mon, day) else {
                 break '_if;
             };
@@ -181,18 +205,29 @@ pub fn extract_datetime(
             else {
                 break '_if;
             };
-            if res_tz > lnow {
+            if has_time && res_tz > lnow {
                 res -= chrono::Duration::days(1);
             }
             let lmax = lnow + chrono::Duration::days(2);
             if res_tz > lmax {
                 break '_if;
             }
-            return Ok(Some(res));
+            return Ok(Some(ExtractedDateTime {
+                datetime: res,
+                has_time,
+            }));
         }
     };
 
     Ok(None)
+}
+
+/// Витягує дату та час з тіла повідомлення.
+pub fn extract_datetime(
+    lnow: DateTime<Tz>,
+    body: &str,
+) -> Result<Option<NaiveDateTime>, AppError> {
+    Ok(extract_datetime_with_precision(lnow, body)?.map(|d| d.datetime))
 }
 
 pub fn without_trailing_datetime(body: &str) -> &str {
@@ -267,7 +302,7 @@ fn parse_datetime(
     has_month: bool,
     has_day: bool,
     has_second: bool,
-) -> Result<NaiveDateTime, AppError> {
+) -> Result<ExtractedDateTime, AppError> {
     let mon: u32 = if has_month {
         capts["mon"].parse().c(h!())?
     } else {
@@ -334,13 +369,52 @@ fn parse_datetime(
         });
     }
 
-    Ok(res_tz.naive_local())
+    Ok(ExtractedDateTime {
+        datetime: res_tz.naive_local(),
+        has_time: true,
+    })
+}
+
+fn parse_date_only(
+    lnow: DateTime<Tz>,
+    capts: &regex::Captures,
+) -> Result<ExtractedDateTime, AppError> {
+    let mon: u32 = capts["mon"].parse().c(h!())?;
+    let day: u32 = capts["day"].parse().c(h!())?;
+    let year: i32 = capts["year"].parse().c(h!())?;
+
+    let Some(res) = NaiveDate::from_ymd_opt(year, mon, day)
+        .and_then(|d| d.and_hms_opt(0, 0, 0))
+    else {
+        return Err(AppError::BL {
+            msg: "Invalid date or time".to_string(),
+        });
+    };
+
+    let tz = lnow.timezone();
+    let Some(res_tz) = tz.from_local_datetime(&res).earliest() else {
+        return Err(AppError::BL {
+            msg: "Invalid date or time".to_string(),
+        });
+    };
+
+    let lmax = lnow + chrono::Duration::days(2);
+    if res_tz > lmax {
+        return Err(AppError::BL {
+            msg: "Date or time too far in future".to_string(),
+        });
+    }
+
+    Ok(ExtractedDateTime {
+        datetime: res_tz.naive_local(),
+        has_time: false,
+    })
 }
 
 fn parse_datetime_short_year(
     lnow: DateTime<Tz>,
     capts: &regex::Captures,
-) -> Result<NaiveDateTime, AppError> {
+) -> Result<ExtractedDateTime, AppError> {
     let year2: i32 = capts["year2"].parse().c(h!())?;
     let year = 2000 + year2;
     let mon: u32 = capts["mon"].parse().c(h!())?;
@@ -365,7 +439,10 @@ fn parse_datetime_short_year(
             msg: "Date or time too far in future".to_string(),
         });
     }
-    Ok(res_tz.naive_local())
+    Ok(ExtractedDateTime {
+        datetime: res_tz.naive_local(),
+        has_time: true,
+    })
 }
 
 fn try_offset_year(
@@ -1154,5 +1231,21 @@ mod tests {
                 .unwrap(),
         );
         assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn extract_datetime_non_rer_header_date_only() {
+        let input = "123 прк  | 2026-09-01\nbody";
+        let tz = crate::config::get_tz();
+        let lnow = tz.with_ymd_and_hms(2026, 9, 19, 12, 0, 0).unwrap();
+        let precision = extract_datetime_with_precision(lnow, input)
+            .unwrap()
+            .unwrap();
+        let expected = NaiveDate::from_ymd_opt(2026, 9, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        assert_eq!(precision.datetime, expected);
+        assert!(!precision.has_time);
     }
 }

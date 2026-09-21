@@ -28,6 +28,7 @@ pub struct Model {
     pub duty_collapse_media_previews: bool,
     pub media_summary_enabled: bool,
     pub message_sort_by: Option<String>,
+    pub message_auto_parse_enabled: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -24079,6 +24079,7 @@ type alias UserDutySettingsDto =
     , dutyCollapseMediaPreviews : Bool
     , mediaSummaryEnabled : Bool
     , messageSortBy : MessageTimeBasis
+    , messageAutoParseEnabled : Bool
     }
 
 
@@ -24097,3 +24098,4 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "dutyCollapseMediaPreviews" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mediaSummaryEnabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageSortBy" (messageTimeBasisDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageAutoParseEnabled" (Json.Decode.bool)))
