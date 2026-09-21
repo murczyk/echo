@@ -44,6 +44,10 @@ export function useMessageParser(
   const observedBodyRef = useRef(fullBody ?? '');
   const lastParsedBodyRef = useRef<string | null>(null);
 
+  const clearParsedCoordinates = useCallback(() => {
+    setValue('coords', '', { shouldDirty: true, shouldValidate: true });
+  }, [setValue]);
+
   const handleBodyChange = useCallback(
     (rawBody: string) => {
       if (rawBody === observedBodyRef.current) return false;
@@ -74,6 +78,9 @@ export function useMessageParser(
       const currentBody = currentRawBody.trim();
       const signalGroupMasterKey = getValues('signalGroupMasterKey')?.trim();
       if (!currentBody) {
+        if (!isEditMode && !isReportMode) {
+          clearParsedCoordinates();
+        }
         if (!opts?.isAuto) {
           setErrorMsg('Введіть текст повідомлення');
         }
@@ -109,11 +116,12 @@ export function useMessageParser(
         };
         fillText('text', parsed.text);
         fillText('freq', parsed.freq ?? '');
-        fillText(
+        setValue(
           'coords',
-          parsed.coords
-            ?.map(({ lat, lon }) => `${Number(lat.toFixed(5))}, ${Number(lon.toFixed(5))}`)
-            .join('\n') ?? '',
+          (parsed.coords ?? [])
+            .map(({ lat, lon }) => `${Number(lat.toFixed(5))}, ${Number(lon.toFixed(5))}`)
+            .join('\n'),
+          { shouldDirty: true, shouldValidate: true },
         );
         fillText('comment', parsed.comment ?? '');
         fillText('post', parsed.post ?? '');
@@ -143,7 +151,7 @@ export function useMessageParser(
         }
       }
     },
-    [busy, getValues, setErrorMsg, setValue],
+    [busy, clearParsedCoordinates, getValues, isEditMode, isReportMode, setErrorMsg, setValue],
   );
 
   useEffect(() => {
@@ -154,6 +162,9 @@ export function useMessageParser(
     if (!trimmed) {
       lastParsedBodyRef.current = null;
       setParseStatus('idle');
+      if (active && autoParseEnabled && !isEditMode && !isReportMode && !busy) {
+        clearParsedCoordinates();
+      }
       return;
     }
     if (parsing) return;
@@ -183,6 +194,7 @@ export function useMessageParser(
     isReportMode,
     busy,
     parsing,
+    clearParsedCoordinates,
     handleBodyChange,
     handleParse,
     debounceMs,

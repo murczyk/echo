@@ -1,8 +1,10 @@
 import AddIcon from '@mui/icons-material/Add';
+import CheckIcon from '@mui/icons-material/Check';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import {
   Box,
-  Chip,
   IconButton,
   InputAdornment,
   Stack,
@@ -11,25 +13,28 @@ import {
   Typography,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
-import { useMemo, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
 
-import { getCoordinateText } from '../../../../../maps/coordinate-format';
+import { copyTextToClipboard } from '../../../../../copy-to-clipboard';
+import { getCoordinateMgrsText, getCoordinateText } from '../../../../../maps/coordinate-format';
 import {
   isCoordinateBlockFullyParsed,
   parseCoordinateBlock,
-  type CoordinateInputFormat,
   type ParsedCoordinate,
 } from '../../../../../maps/coordinate-parser';
 import { COORDINATE_PANEL_MAX_HEIGHT_PX } from './coordinate-input.constants';
 
-const FORMAT_LABELS: Record<CoordinateInputFormat, string> = {
-  wgs84: 'WGS-84',
-  dms: 'DMS',
-  mgrs: 'MGRS',
-  utm: 'UTM',
-  sk42: 'СК-42',
-  usk2000: 'УСК-2000',
-};
+const COPY_FEEDBACK_MS = 1200;
+
+type CopyStatus = 'idle' | 'copying' | 'copied' | 'error';
 
 type Props = {
   value: string;
@@ -51,6 +56,74 @@ function coordinateDuplicateKey(point: ParsedCoordinate): string {
 
 function serializeCoordinates(points: ParsedCoordinate[]): string {
   return points.map((point) => getCoordinateText('wgs', point)).join('\n');
+}
+
+function CoordinateCopyButton({
+  value,
+  index,
+  disabled,
+}: {
+  value: string | null;
+  index: number;
+  disabled: boolean;
+}) {
+  const [status, setStatus] = useState<CopyStatus>('idle');
+  const resetTimeoutRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (resetTimeoutRef.current != null) window.clearTimeout(resetTimeoutRef.current);
+    },
+    [],
+  );
+
+  const scheduleReset = () => {
+    if (resetTimeoutRef.current != null) window.clearTimeout(resetTimeoutRef.current);
+    resetTimeoutRef.current = window.setTimeout(() => setStatus('idle'), COPY_FEEDBACK_MS);
+  };
+
+  const handleCopy = () => {
+    if (!value) return;
+    setStatus('copying');
+    void copyTextToClipboard(value)
+      .then(() => {
+        setStatus('copied');
+        scheduleReset();
+      })
+      .catch(() => {
+        setStatus('error');
+        scheduleReset();
+      });
+  };
+
+  const title =
+    status === 'copied'
+      ? 'Скопійовано'
+      : status === 'error'
+        ? 'Не вдалося скопіювати'
+        : 'Копіювати MGRS';
+
+  return (
+    <Tooltip title={title}>
+      <span>
+        <IconButton
+          size="small"
+          aria-label={`Копіювати координату ${index + 1}`}
+          onClick={handleCopy}
+          disabled={disabled || !value || status === 'copying'}
+          sx={{ width: 28, height: 28, p: 0.5 }}
+        >
+          {status === 'copied' ? (
+            <CheckIcon sx={{ fontSize: 18 }} />
+          ) : status === 'error' ? (
+            <ErrorOutlineIcon sx={{ fontSize: 18 }} />
+          ) : (
+            <ContentCopyIcon sx={{ fontSize: 18 }} />
+          )}
+        </IconButton>
+      </span>
+    </Tooltip>
+  );
 }
 
 export function duplicateCoordinateHint(currentValue: string, input: string): string | null {
@@ -261,6 +334,7 @@ export function CoordinateListInput({
             <Stack spacing={0.5}>
               {points.map((point, index) => {
                 const isMatching = matchingKeys.has(coordinateDuplicateKey(point));
+                const mgrsText = getCoordinateMgrsText(point);
 
                 return (
                   <Box
@@ -285,22 +359,15 @@ export function CoordinateListInput({
                       },
                     })}
                   >
-                    {point.format !== 'wgs84' ? (
-                      <Chip
-                        label={FORMAT_LABELS[point.format]}
-                        size="small"
-                        variant="outlined"
-                        sx={{ flexShrink: 0, height: 24 }}
-                      />
-                    ) : null}
                     <Typography
                       variant="body2"
                       noWrap
-                      title={getCoordinateText('wgs', point)}
+                      title={mgrsText ?? undefined}
                       sx={{ flex: 1, minWidth: 0, fontVariantNumeric: 'tabular-nums' }}
                     >
-                      {getCoordinateText('wgs', point)}
+                      {mgrsText ?? 'MGRS недоступний'}
                     </Typography>
+                    <CoordinateCopyButton value={mgrsText} index={index} disabled={disabled} />
                     <IconButton
                       size="small"
                       aria-label={`Видалити координату ${index + 1}`}

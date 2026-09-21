@@ -5,6 +5,7 @@ import {
   Typography,
   TextField,
   Button,
+  ButtonGroup,
   IconButton,
   CircularProgress,
   Box,
@@ -16,7 +17,7 @@ import {
   Switch,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
-import SettingsIcon from '@mui/icons-material/Settings';
+import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
@@ -561,31 +562,39 @@ export function ManageMessageDrawer(props: Props) {
                             title="Джерело"
                             action={
                               !isEditMode ? (
-                                <Stack direction="row" spacing={0.5} alignItems="center">
-                                  <Button
-                                    onClick={() => void handleParse()}
+                                <>
+                                  <ButtonGroup
                                     variant="outlined"
                                     size="small"
-                                    startIcon={
-                                      <AutoParseStatusIcon
-                                        status={parseStatus}
-                                        debounceKey={debounceKey}
-                                      />
-                                    }
-                                    disabled={busy || parsing}
+                                    aria-label="Дії парсингу"
                                   >
-                                    {autoParseEnabled ? 'Авто-парсинг' : 'Розпарсити'}
-                                  </Button>
-                                  <Tooltip title="Налаштування парсингу">
-                                    <IconButton
+                                    <Button
+                                      onClick={() => void handleParse()}
+                                      variant="outlined"
                                       size="small"
-                                      onClick={handleOpenSettings}
-                                      aria-label="Налаштування парсингу"
-                                      disabled={busy}
+                                      startIcon={
+                                        <AutoParseStatusIcon
+                                          status={parseStatus}
+                                          debounceKey={debounceKey}
+                                        />
+                                      }
+                                      disabled={busy || parsing}
                                     >
-                                      <SettingsIcon fontSize="small" />
-                                    </IconButton>
-                                  </Tooltip>
+                                      {autoParseEnabled ? 'Авто-парсинг' : 'Розпарсити'}
+                                    </Button>
+                                    <Tooltip title="Налаштування парсингу">
+                                      <Button
+                                        onClick={handleOpenSettings}
+                                        aria-label="Налаштування парсингу"
+                                        aria-haspopup="menu"
+                                        aria-expanded={isSettingsOpen ? 'true' : undefined}
+                                        disabled={busy}
+                                        sx={{ minWidth: 32, px: 0.75 }}
+                                      >
+                                        <ArrowDropDownIcon fontSize="small" />
+                                      </Button>
+                                    </Tooltip>
+                                  </ButtonGroup>
                                   <Menu
                                     anchorEl={settingsAnchorEl}
                                     open={isSettingsOpen}
@@ -617,7 +626,7 @@ export function ManageMessageDrawer(props: Props) {
                                       />
                                     </MenuItem>
                                   </Menu>
-                                </Stack>
+                                </>
                               ) : null
                             }
                           >

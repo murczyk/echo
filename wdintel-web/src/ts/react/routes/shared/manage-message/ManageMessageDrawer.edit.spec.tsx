@@ -343,6 +343,17 @@ vi.mock('@mui/material', () => ({
     },
   ),
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  ButtonGroup: ({
+    children,
+    'aria-label': ariaLabel,
+  }: {
+    children?: ReactNode;
+    'aria-label'?: string;
+  }) => (
+    <div role="group" aria-label={ariaLabel}>
+      {children}
+    </div>
+  ),
   Divider: () => <hr />,
   Tooltip: ({ children }: { children?: ReactNode }) => <>{children}</>,
   Menu: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
@@ -412,14 +423,27 @@ vi.mock('@mui/material', () => ({
     onClick,
     disabled,
     startIcon,
+    'aria-label': ariaLabel,
+    'aria-haspopup': ariaHasPopup,
+    'aria-expanded': ariaExpanded,
   }: {
     children?: ReactNode;
     type?: 'button' | 'submit' | 'reset';
     onClick?: () => void;
     disabled?: boolean;
     startIcon?: ReactNode;
+    'aria-label'?: string;
+    'aria-haspopup'?: 'menu';
+    'aria-expanded'?: 'true';
   } & Record<string, unknown>) => (
-    <button type={type} onClick={onClick} disabled={disabled}>
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      aria-haspopup={ariaHasPopup}
+      aria-expanded={ariaExpanded}
+    >
       {startIcon}
       {children}
     </button>
@@ -3249,7 +3273,7 @@ describe('ManageMessageDrawer edit mode', () => {
   });
 
   describe('auto-parse setting', () => {
-    it('renders "Розпарсити" button and settings icon when auto-parse is disabled', async () => {
+    it('renders parsing actions as a joined split button when auto-parse is disabled', async () => {
       dutySettingsMocks.messageAutoParseEnabled = false;
       const container = document.createElement('div');
       document.body.appendChild(container);
@@ -3274,6 +3298,11 @@ describe('ManageMessageDrawer edit mode', () => {
 
       const settingsBtn = container.querySelector('button[aria-label="Налаштування парсингу"]');
       expect(settingsBtn).toBeDefined();
+      const parsingActions = container.querySelector('[role="group"][aria-label="Дії парсингу"]');
+      expect(parsingActions?.contains(parseButton as Node)).toBe(true);
+      expect(parsingActions?.contains(settingsBtn)).toBe(true);
+      expect(settingsBtn?.querySelector('[data-testid="ArrowDropDownIcon"]')).not.toBeNull();
+      expect(parsingActions?.querySelector('[role="menuitem"]')).toBeNull();
 
       root.unmount();
     });
@@ -3802,6 +3831,166 @@ describe('ManageMessageDrawer edit mode', () => {
 
       expect(pickerValuesByLabel.get('Дата перехоплення')).not.toBeNull();
       expect(pickerValuesByLabel.get('Час перехоплення')).toBeNull();
+
+      root.unmount();
+    });
+
+    it('clears the coordinate list when parsing no longer finds coordinates', async () => {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={null}
+            onClose={vi.fn()}
+          />,
+        );
+        await Promise.resolve();
+      });
+
+      directSubmitMocks.parseDirectSubmit.mockResolvedValueOnce({
+        text: 'test',
+        coords: [{ lat: 49.123457, lon: 37.234568 }],
+        to: [],
+        locations: [],
+      });
+      await act(async () => {
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: 'Повідомлення з координатами' } });
+      });
+
+      const parseButton = Array.from(container.querySelectorAll('button')).find((button) =>
+        button.textContent?.includes('Розпарсити'),
+      ) as HTMLButtonElement;
+      await act(async () => {
+        parseButton.click();
+        await Promise.resolve();
+      });
+      expect(container.querySelector('button[aria-label="Видалити координату 1"]')).not.toBeNull();
+
+      directSubmitMocks.parseDirectSubmit.mockResolvedValueOnce({
+        text: 'test',
+        coords: [],
+        to: [],
+        locations: [],
+      });
+      await act(async () => {
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: 'Повідомлення без координат' } });
+      });
+      await act(async () => {
+        parseButton.click();
+        await Promise.resolve();
+      });
+
+      expect(container.querySelector('button[aria-label="Видалити координату 1"]')).toBeNull();
+      expect(container.textContent).toContain('Координати ще не додані');
+
+      root.unmount();
+    });
+
+    it('clears parsed coordinates when auto-parsed message text becomes empty', async () => {
+      vi.useFakeTimers();
+      dutySettingsMocks.messageAutoParseEnabled = true;
+      directSubmitMocks.parseDirectSubmit.mockResolvedValue({
+        text: 'test',
+        coords: [{ lat: 49.123457, lon: 37.234568 }],
+        to: [],
+        locations: [],
+      });
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={null}
+            onClose={vi.fn()}
+          />,
+        );
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: '49.123457, 37.234568' } });
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(1000);
+        await Promise.resolve();
+      });
+      expect(container.querySelector('button[aria-label="Видалити координату 1"]')).not.toBeNull();
+
+      await act(async () => {
+        textFieldPropsByLabel.get('Текст повідомлення')?.onChange?.({ target: { value: '' } });
+        await Promise.resolve();
+      });
+
+      expect(container.querySelector('button[aria-label="Видалити координату 1"]')).toBeNull();
+      expect(container.textContent).toContain('Координати ще не додані');
+
+      root.unmount();
+      vi.useRealTimers();
+    });
+
+    it('clears parsed coordinates when manually parsing empty message text', async () => {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={null}
+            onClose={vi.fn()}
+          />,
+        );
+        await Promise.resolve();
+      });
+
+      directSubmitMocks.parseDirectSubmit.mockResolvedValueOnce({
+        text: 'test',
+        coords: [{ lat: 49.123457, lon: 37.234568 }],
+        to: [],
+        locations: [],
+      });
+      await act(async () => {
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: '49.123457, 37.234568' } });
+      });
+
+      const parseButton = Array.from(container.querySelectorAll('button')).find((button) =>
+        button.textContent?.includes('Розпарсити'),
+      ) as HTMLButtonElement;
+      await act(async () => {
+        parseButton.click();
+        await Promise.resolve();
+      });
+      expect(container.querySelector('button[aria-label="Видалити координату 1"]')).not.toBeNull();
+
+      await act(async () => {
+        textFieldPropsByLabel.get('Текст повідомлення')?.onChange?.({ target: { value: '' } });
+      });
+      await act(async () => {
+        parseButton.click();
+        await Promise.resolve();
+      });
+
+      expect(container.querySelector('button[aria-label="Видалити координату 1"]')).toBeNull();
+      expect(container.textContent).toContain('Координати ще не додані');
 
       root.unmount();
     });

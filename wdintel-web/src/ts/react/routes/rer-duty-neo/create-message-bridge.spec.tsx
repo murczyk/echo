@@ -125,6 +125,7 @@ vi.mock('@mui/material', () => ({
       {children}
     </button>
   ),
+  ButtonGroup: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Chip: ({ label }: { label?: ReactNode }) => <span>{label}</span>,
   CircularProgress: () => <span data-testid="spinner" />,
   Dialog: ({ children, open }: { children?: ReactNode; open?: boolean }) =>

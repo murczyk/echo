@@ -5,11 +5,16 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+const copyTextToClipboard = vi.hoisted(() => vi.fn());
+
+vi.mock('../../../../../copy-to-clipboard', () => ({ copyTextToClipboard }));
+
 import { CoordinateListInput } from './CoordinateListInput';
 
 describe('CoordinateListInput feedback', () => {
   afterEach(() => {
     document.body.innerHTML = '';
+    copyTextToClipboard.mockReset();
   });
 
   it('keeps a pasted duplicate visible and shows a neutral status hint', async () => {
@@ -46,7 +51,7 @@ describe('CoordinateListInput feedback', () => {
       'Enter — додати; можна вставити одразу декілька координат',
     );
     expect(container.querySelector('[data-coordinate-duplicate="true"]')?.textContent).toContain(
-      '49.12346, 37.23457',
+      '37U CQ 71194 42680',
     );
     expect(input?.getAttribute('aria-invalid')).not.toBe('true');
     expect(onChange).not.toHaveBeenCalled();
@@ -87,7 +92,7 @@ describe('CoordinateListInput feedback', () => {
       'Enter — додати; можна вставити одразу декілька координат',
     );
     expect(container.querySelector('[data-coordinate-duplicate="true"]')?.textContent).toContain(
-      '49.12346, 37.23457',
+      '37U CQ 71194 42680',
     );
 
     await act(async () => root.unmount());
@@ -127,6 +132,122 @@ describe('CoordinateListInput feedback', () => {
     expect(container.textContent).toContain('Не вдалося розпізнати всі координати');
     expect(onChange).not.toHaveBeenCalled();
     expect(onErrorChange).toHaveBeenLastCalledWith('Не вдалося розпізнати всі координати');
+
+    await act(async () => root.unmount());
+  });
+
+  it('renders every saved coordinate in MGRS format', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <CoordinateListInput
+          value="49.123457, 37.234568"
+          onChange={vi.fn()}
+          onBlur={vi.fn()}
+          onErrorChange={vi.fn()}
+          disabled={false}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('37U CQ 71194 42680');
+    expect(container.textContent).not.toContain('49.12346, 37.23457');
+
+    await act(async () => root.unmount());
+  });
+
+  it('copies the displayed MGRS coordinate and confirms success', async () => {
+    copyTextToClipboard.mockResolvedValue(undefined);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <CoordinateListInput
+          value="49.123457, 37.234568"
+          onChange={vi.fn()}
+          onBlur={vi.fn()}
+          onErrorChange={vi.fn()}
+          disabled={false}
+        />,
+      );
+    });
+
+    const copyButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Копіювати координату 1"]',
+    );
+    await act(async () => {
+      copyButton?.click();
+      await Promise.resolve();
+    });
+
+    expect(copyTextToClipboard).toHaveBeenCalledWith('37U CQ 71194 42680');
+    expect(copyButton?.querySelector('[data-testid="CheckIcon"]')).not.toBeNull();
+
+    await act(async () => root.unmount());
+  });
+
+  it('renders the copy action with compact dimensions', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <CoordinateListInput
+          value="49.123457, 37.234568"
+          onChange={vi.fn()}
+          onBlur={vi.fn()}
+          onErrorChange={vi.fn()}
+          disabled={false}
+        />,
+      );
+    });
+
+    const copyButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Копіювати координату 1"]',
+    );
+    const copyIcon = copyButton?.querySelector<SVGElement>('[data-testid="ContentCopyIcon"]');
+
+    expect(copyButton).not.toBeNull();
+    expect(window.getComputedStyle(copyButton!).width).toBe('28px');
+    expect(window.getComputedStyle(copyButton!).height).toBe('28px');
+    expect(window.getComputedStyle(copyIcon!).fontSize).toBe('18px');
+
+    await act(async () => root.unmount());
+  });
+
+  it('shows copy failure feedback', async () => {
+    copyTextToClipboard.mockRejectedValue(new Error('denied'));
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <CoordinateListInput
+          value="49.123457, 37.234568"
+          onChange={vi.fn()}
+          onBlur={vi.fn()}
+          onErrorChange={vi.fn()}
+          disabled={false}
+        />,
+      );
+    });
+
+    const copyButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Копіювати координату 1"]',
+    );
+    await act(async () => {
+      copyButton?.click();
+      await Promise.resolve();
+    });
+
+    expect(copyButton?.querySelector('[data-testid="ErrorOutlineIcon"]')).not.toBeNull();
 
     await act(async () => root.unmount());
   });
