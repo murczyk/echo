@@ -18,17 +18,13 @@ require_cmd timeout
 validate_identifier SOURCE_DB "$SOURCE_DB"
 validate_identifier SOURCE_USER "$SOURCE_USER"
 validate_identifier SOURCE_PUBLICATION "$SOURCE_PUBLICATION"
+require_source_replication_role
 
 install_default_source_exclusions
 require_analytics_heartbeat_table
 read_local_source_tables
 require_analytics_heartbeat_selected
 
-[[ $(source_local_psql -Atq -v user="$SOURCE_USER" <<'SQL'
-SELECT EXISTS (SELECT FROM pg_roles WHERE rolname = :'user');
-SQL
-) == t ]] \
-  || die "source replication role does not exist; run source-configure.sh first"
 [[ $(source_local_psql -Atq -v publication="$SOURCE_PUBLICATION" <<'SQL'
 SELECT EXISTS (SELECT FROM pg_publication WHERE pubname = :'publication');
 SQL

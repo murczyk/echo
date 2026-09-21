@@ -303,21 +303,39 @@ source_local_psql() {
   sudo -u postgres psql -X --dbname "$SOURCE_DB" "$@"
 }
 
+require_source_replication_role() {
+  validate_identifier SOURCE_DB "$SOURCE_DB"
+  validate_identifier SOURCE_USER "$SOURCE_USER"
+
+  local missing
+  missing=$(source_local_psql -Atq -v ON_ERROR_STOP=1 \
+    -v source_user="$SOURCE_USER" <<'SQL'
+SELECT COALESCE((
+  SELECT concat_ws(', ',
+    CASE WHEN NOT rolcanlogin THEN 'LOGIN' END,
+    CASE WHEN NOT rolreplication THEN 'REPLICATION' END,
+    CASE WHEN NOT rolbypassrls THEN 'BYPASSRLS' END,
+    CASE WHEN NOT has_database_privilege(oid, current_database(), 'CONNECT') THEN 'CONNECT' END
+  )
+  FROM pg_roles
+  WHERE rolname = :'source_user'
+), 'role missing');
+SQL
+  ) || return $?
+  [[ "$missing" != 'role missing' ]] \
+    || die "source replication role $SOURCE_USER does not exist; run source-configure.sh first"
+  [[ -z "$missing" ]] \
+    || die "source replication role $SOURCE_USER lacks $missing; if analytics should be enabled, run $SCRIPT_DIR/source-repair-role.sh --yes explicitly"
+}
+
 read_local_source_tables() {
   local exclude_file
   exclude_file=$(effective_source_exclude_file)
   read_exclusions "$exclude_file"
 
   declare -ga SOURCE_TABLES=()
-  local table
-  while IFS= read -r table; do
-    [[ -n "$table" ]] || continue
-    [[ -z "${EXCLUDED_TABLE_LOOKUP[$table]:-}" ]] || continue
-    [[ "$table" =~ ^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$ ]] \
-      || die "table requires quoted PeerDB mapping support: $table"
-    SOURCE_TABLES+=("$table")
-  done < <(
-    source_local_psql -Atq -v ON_ERROR_STOP=1 <<'SQL'
+  local table tables
+  tables=$(source_local_psql -Atq -v ON_ERROR_STOP=1 <<'SQL'
 SELECT n.nspname || '.' || c.relname
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -326,7 +344,15 @@ WHERE c.relkind IN ('r', 'p')
   AND n.nspname !~ '^pg_'
 ORDER BY n.nspname, c.relname;
 SQL
-  )
+  ) || return $?
+
+  while IFS= read -r table; do
+    [[ -n "$table" ]] || continue
+    [[ -z "${EXCLUDED_TABLE_LOOKUP[$table]:-}" ]] || continue
+    [[ "$table" =~ ^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$ ]] \
+      || die "table requires quoted PeerDB mapping support: $table"
+    SOURCE_TABLES+=("$table")
+  done <<<"$tables"
 
   ((${#SOURCE_TABLES[@]} > 0)) || die "no source tables selected"
 }
@@ -1011,21 +1037,22 @@ SQL
 read_source_tables() {
   declare -ga SOURCE_TABLES=()
 
-  local table
-  while IFS= read -r table; do
-    [[ -n "$table" ]] || continue
-    [[ "$table" =~ ^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$ ]] \
-      || die "table requires quoted PeerDB mapping support: $table"
-    SOURCE_TABLES+=("$table")
-  done < <(
-    source_psql -Atq -v ON_ERROR_STOP=1 \
-      -v publication="$SOURCE_PUBLICATION" <<'SQL'
+  local table tables
+  tables=$(source_psql -Atq -v ON_ERROR_STOP=1 \
+    -v publication="$SOURCE_PUBLICATION" <<'SQL'
 SELECT schemaname || '.' || tablename
 FROM pg_catalog.pg_publication_tables
 WHERE pubname = :'publication'
 ORDER BY schemaname, tablename;
 SQL
-  )
+  ) || return $?
+
+  while IFS= read -r table; do
+    [[ -n "$table" ]] || continue
+    [[ "$table" =~ ^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$ ]] \
+      || die "table requires quoted PeerDB mapping support: $table"
+    SOURCE_TABLES+=("$table")
+  done <<<"$tables"
 
   ((${#SOURCE_TABLES[@]} > 0)) \
     || die "source publication has no tables: $SOURCE_PUBLICATION"

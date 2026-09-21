@@ -22,9 +22,11 @@ bash deploy/clickhouse/tests/test-control-bundle.sh
 bash deploy/clickhouse/tests/test-analytics-reconcile-file-lock.sh
 bash deploy/clickhouse/tests/test-clickhouse-memory-limit.sh
 bash deploy/clickhouse/tests/test-reconcile-if-needed.sh
+bash deploy/clickhouse/tests/test-source-preflight.sh
 
 bash "$SCRIPT_DIR/ensure_postgres_running.sh"
 bash deploy/clickhouse/tests/test-analytics-schema-reconcile-lock.sh
+bash deploy/clickhouse/tests/test-source-repair-role.sh
 
 # CI boxes may require extra time while PostgreSQL replays WAL / crash-recovery.
 export POSTGRES_STARTUP_TIMEOUT_SECS="${POSTGRES_STARTUP_TIMEOUT_SECS:-600}"

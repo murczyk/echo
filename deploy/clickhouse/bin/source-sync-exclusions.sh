@@ -7,6 +7,7 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 source "$SCRIPT_DIR/lib.sh"
 load_source_config
 ensure_yes "${1:-}"
+require_source_replication_role
 
 require_cmd sudo
 require_file "$SOURCE_TABLE_EXCLUDE_REPO_FILE"

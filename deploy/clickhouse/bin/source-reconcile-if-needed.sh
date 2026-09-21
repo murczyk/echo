@@ -10,6 +10,7 @@ protected_file_exists "$SOURCE_CONFIG_FILE" || exit 0
 
 load_source_config
 acquire_source_reconcile_lock
+require_source_replication_role
 
 require_cmd sha256sum
 require_analytics_heartbeat_table

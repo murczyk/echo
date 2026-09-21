@@ -762,13 +762,63 @@ consumers on the same cluster.
 Recovery rules:
 
 - Valid slot: restore the failed component and allow PeerDB to catch up.
-- Lost slot: repair the stack, then run `bin/resync.sh --yes`; this creates a
+- Lost or missing slot: repair the stack, then run `bin/resync.sh --yes`; this creates a
   fresh snapshot. Refresh current views/gateway after tables are ready.
 - Never use `pg_replication_slot_advance()` to free space. It skips changes
   and silently makes analytics inconsistent.
 - `idle_replication_slot_timeout=7d` invalidates abandoned slots on PostgreSQL
   18 at checkpoint. An intentional outage longer than that therefore requires
   resync.
+
+### Explicit source-role repair
+
+Table reconciliation and exclusion synchronization check the configured source
+role's `LOGIN`, `REPLICATION`, `BYPASSRLS`, and database `CONNECT` permissions
+before changing the table selection or pausing the mirror. The timer checks the
+role even when table fingerprints match. A disabled role is reported without
+re-enabling it: confirm that analytics should be enabled before repairing it.
+
+On the affected source host, run:
+
+```bash
+/opt/echo-peerdb/current/bin/source-repair-role.sh --check
+/opt/echo-peerdb/current/bin/source-repair-role.sh --yes
+```
+
+The explicit repair uses the source reconciliation lock, preserves the password
+and other role settings, and does not restart PostgreSQL. A missing role still
+requires initial source configuration. Verify connectivity from the paired
+analytics host afterward; the local permission check does not validate its
+password or network access. Query failures retain their PostgreSQL diagnostics
+and are not reported as empty publications.
+
+For the September 21 staging incident, only `echo-staging` and its paired
+analytics host `100.85.35.99` are recovery targets. The 147 publication tables
+and mirror mappings match, but the source role cannot log in and the replication
+slot is missing. Restore login on the source, suspend table-reconciliation and
+analytics reconciliation/health timers while recovering, and run sequentially:
+
+```bash
+ssh echo-staging 'sudo -u postgres psql -X -v ON_ERROR_STOP=1 --dbname wd -c "ALTER ROLE echo_peerdb LOGIN"'
+ssh echo-staging '/opt/echo-peerdb/current/bin/resync.sh --yes'
+ssh echo-staging '/opt/echo-peerdb/current/bin/finish-resync.sh'
+```
+
+This rebuilds all mapped tables, including `public.signal_message` and
+`public.sigint_inbox_item`. A table-specific repair cannot recover changes lost
+across the entire missing replication stream. Expect minutes to hours, with
+snapshot read load on PostgreSQL and write load on ClickHouse/MinIO. Keep the
+application services available and monitor source disk and retained WAL using
+`wal-status.sh`; its existing thresholds warn at 75% and fail at 90% of the cap.
+The default resync deadline is two hours. On timeout, terminal mirror failure,
+critical WAL usage, or failed health checks, stop deployment and inspect the
+failure; do not force-resume the mirror or skip changes by advancing a slot.
+
+After successful recovery, restore the reconciliation/health timers and enable
+the source WAL monitor. Require a valid active slot with advancing acknowledgments,
+matching publication/raw/current/gateway table sets, and a passing analytics
+health check before `just deploy --server=echo-staging`. This incident recovery
+does not authorize a production resync or deployment.
 
 ## Why MinIO remains required
 

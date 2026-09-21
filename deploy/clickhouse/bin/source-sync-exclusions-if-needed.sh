@@ -9,6 +9,7 @@ source "$SCRIPT_DIR/lib.sh"
 protected_file_exists "$SOURCE_CONFIG_FILE" || exit 0
 load_source_config
 ensure_yes "${1:-}"
+require_source_replication_role
 
 require_cmd diff
 require_cmd sudo
