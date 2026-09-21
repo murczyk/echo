@@ -343,6 +343,32 @@ test("rejects recursive harness and mutating skills", () => {
   );
 });
 
+test("accepts every skill advertised by Echo", async () => {
+  const registry = await readFile(
+    process.env.ECHO_AI_AGENT_ROUTE_REGISTRY ??
+      new URL(
+        "../../wdintel-rs/src/ai_agent/route_registry.rs",
+        import.meta.url,
+      ),
+    "utf8",
+  );
+  const routes = registry
+    .split("pub const ROUTES: &[ReadOnlyRoute] = &[")[1]
+    ?.split("\n];")[0];
+  assert.ok(routes, "Echo route registry must be present");
+  const skills = [...routes.matchAll(/ReadOnlyRoute\s*\{([^}]+)\}/g)];
+  assert.ok(skills.length > 0, "Echo must advertise skills");
+  for (const [, fields] of skills) {
+    const route = Object.fromEntries(
+      [...fields.matchAll(/(\w+): "([^"]*)"/g)].map(([, key, value]) => [
+        key === "request_kind" ? "requestKind" : key,
+        value,
+      ]),
+    );
+    assert.doesNotThrow(() => validateSkill(route), route.skill);
+  }
+});
+
 test("accepts only the matching typed inbox and message-ID routes", () => {
   assert.equal(
     validateSkill({
