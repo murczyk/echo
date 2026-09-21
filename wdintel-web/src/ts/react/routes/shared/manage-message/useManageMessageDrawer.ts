@@ -396,11 +396,12 @@ export function useManageMessageDrawer({
     [dutySettings],
   );
 
-  const { parsing, parseSuccess, parseError, handleParse } = useMessageParser(
+  const { parsing, parseStatus, debounceKey, handleBodyChange, handleParse } = useMessageParser(
     methods,
     busy,
     setErrorMsg,
     {
+      active: formReady,
       autoParseEnabled,
       isEditMode,
       isReportMode,
@@ -802,6 +803,9 @@ export function useManageMessageDrawer({
     formDisabled: busy,
     saving,
     parsing,
+    parseStatus,
+    debounceKey,
+    handleBodyChange,
     errorMsg,
     setErrorMsg,
     tagOptions,
@@ -846,8 +850,6 @@ export function useManageMessageDrawer({
     setAttachmentErrorMsg,
     methods,
     canSubmit,
-    parseSuccess,
-    parseError,
     handleParse,
     autoParseEnabled,
     handleToggleAutoParse,

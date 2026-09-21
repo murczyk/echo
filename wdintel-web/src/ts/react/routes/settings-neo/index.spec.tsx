@@ -256,6 +256,7 @@ vi.mock('../../services/api/user-settings', () => ({
     showClassicAnalysis: false,
     dutyCollapseMediaPreviews: true,
     mediaSummaryEnabled: false,
+    messageAutoParseEnabled: false,
     messageTextPreviewLines: 20,
     messageSortBy: 'interception',
   }),
@@ -411,6 +412,7 @@ describe('SettingsNeoPage', () => {
           showClassicAnalysis: false,
           dutyCollapseMediaPreviews: true,
           mediaSummaryEnabled: false,
+          messageAutoParseEnabled: false,
         });
       }
     },
@@ -465,6 +467,7 @@ describe('SettingsNeoPage', () => {
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: false,
+      messageAutoParseEnabled: false,
       messageTextPreviewLines: 20,
       messageSortBy: 'interception',
     });
@@ -532,6 +535,7 @@ describe('SettingsNeoPage', () => {
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: false,
+      messageAutoParseEnabled: false,
       messageTextPreviewLines: 20,
       messageSortBy: 'interception',
     });
@@ -567,6 +571,7 @@ describe('SettingsNeoPage', () => {
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: false,
+      messageAutoParseEnabled: false,
       messageTextPreviewLines: 20,
       messageSortBy: 'interception',
     });
@@ -602,6 +607,7 @@ describe('SettingsNeoPage', () => {
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: false,
+      messageAutoParseEnabled: false,
       messageTextPreviewLines: 20,
       messageSortBy: 'interception',
     });
@@ -636,6 +642,7 @@ describe('SettingsNeoPage', () => {
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: false,
+      messageAutoParseEnabled: false,
       messageTextPreviewLines: 20,
       messageSortBy: 'interception',
     });
@@ -675,6 +682,7 @@ describe('SettingsNeoPage', () => {
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: false,
+      messageAutoParseEnabled: false,
       messageTextPreviewLines: 20,
       messageSortBy: 'interception',
     });
@@ -700,6 +708,7 @@ describe('SettingsNeoPage', () => {
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: false,
+      messageAutoParseEnabled: false,
       messageTextPreviewLines: 20,
       messageSortBy: 'interception',
     });
@@ -744,6 +753,7 @@ describe('SettingsNeoPage', () => {
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: true,
+      messageAutoParseEnabled: false,
       messageTextPreviewLines: 20,
       messageSortBy: 'interception',
     });

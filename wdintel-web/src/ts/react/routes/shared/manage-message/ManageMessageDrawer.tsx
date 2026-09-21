@@ -16,9 +16,6 @@ import {
   Switch,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
-import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import SettingsIcon from '@mui/icons-material/Settings';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
@@ -36,6 +33,7 @@ import { deleteMessage } from '../../../services/api/inbox-message-actions';
 import { formatDirectSubmitError } from '../../../services/api/direct-submit';
 
 import { useManageMessageDrawer } from './useManageMessageDrawer';
+import { AutoParseStatusIcon } from './AutoParseStatusIcon';
 import { FormSectionWrapper } from './drawer-sections/FormSectionWrapper';
 import { AttachmentsSection } from './drawer-sections/AttachmentsSection';
 import { SystemSection } from './drawer-sections/SystemSection';
@@ -374,8 +372,8 @@ export function ManageMessageDrawer(props: Props) {
     formDisabled,
     saving,
     parsing,
-    parseSuccess,
-    parseError,
+    parseStatus,
+    debounceKey,
     errorMsg,
     setErrorMsg,
     tagOptions,
@@ -569,15 +567,10 @@ export function ManageMessageDrawer(props: Props) {
                                     variant="outlined"
                                     size="small"
                                     startIcon={
-                                      parsing ? (
-                                        <CircularProgress size={16} color="inherit" />
-                                      ) : parseSuccess ? (
-                                        <CheckCircleIcon fontSize="small" color="success" />
-                                      ) : parseError ? (
-                                        <ErrorOutlineIcon fontSize="small" color="error" />
-                                      ) : (
-                                        <AutoFixHighIcon />
-                                      )
+                                      <AutoParseStatusIcon
+                                        status={parseStatus}
+                                        debounceKey={debounceKey}
+                                      />
                                     }
                                     disabled={busy || parsing}
                                   >
@@ -634,6 +627,10 @@ export function ManageMessageDrawer(props: Props) {
                               render={({ field }) => (
                                 <TextField
                                   {...field}
+                                  onChange={(event) => {
+                                    drawerState.handleBodyChange(event.target.value);
+                                    field.onChange(event);
+                                  }}
                                   label="Текст повідомлення"
                                   fullWidth
                                   multiline

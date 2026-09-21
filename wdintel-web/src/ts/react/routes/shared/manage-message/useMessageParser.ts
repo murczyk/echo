@@ -6,11 +6,15 @@ import { parseDirectSubmit } from '../../../services/api/direct-submit';
 import type { MessageFormData } from './manage-message-drawer.schema';
 
 export type UseMessageParserOptions = {
+  active?: boolean;
   autoParseEnabled?: boolean;
   isEditMode?: boolean;
   isReportMode?: boolean;
   debounceMs?: number;
 };
+
+export type MessageParseStatus = 'idle' | 'debouncing' | 'parsing' | 'success' | 'error';
+export const DEFAULT_MESSAGE_PARSE_DEBOUNCE_MS = 1000;
 
 export function useMessageParser(
   methods: UseFormReturn<MessageFormData>,
@@ -19,22 +23,55 @@ export function useMessageParser(
   options?: UseMessageParserOptions,
 ) {
   const [parsing, setParsing] = useState(false);
-  const [parseSuccess, setParseSuccess] = useState(false);
-  const [parseError, setParseError] = useState(false);
+  const [parseStatus, setParseStatus] = useState<MessageParseStatus>('idle');
+  const [debounceKey, setDebounceKey] = useState(0);
+  const [bodyRevision, setBodyRevision] = useState(0);
   const { getValues, setValue, watch } = methods;
 
+  const active = options?.active ?? true;
   const autoParseEnabled = options?.autoParseEnabled ?? false;
   const isEditMode = options?.isEditMode ?? false;
   const isReportMode = options?.isReportMode ?? false;
-  const debounceMs = options?.debounceMs ?? 1000;
+  const debounceMs = options?.debounceMs ?? DEFAULT_MESSAGE_PARSE_DEBOUNCE_MS;
 
   const fullBody = watch('full_body');
+  const latestRequestIdRef = useRef(0);
+  const activeRef = useRef(active);
+  if (activeRef.current !== active) {
+    activeRef.current = active;
+    latestRequestIdRef.current += 1;
+  }
+  const observedBodyRef = useRef(fullBody ?? '');
   const lastParsedBodyRef = useRef<string | null>(null);
+
+  const handleBodyChange = useCallback(
+    (rawBody: string) => {
+      if (rawBody === observedBodyRef.current) return false;
+
+      observedBodyRef.current = rawBody;
+      latestRequestIdRef.current += 1;
+      lastParsedBodyRef.current = null;
+      setBodyRevision((revision) => revision + 1);
+      setParsing(false);
+
+      if (!rawBody.trim()) {
+        setParseStatus('idle');
+      } else if (active && autoParseEnabled && !isEditMode && !isReportMode && !busy) {
+        setParseStatus('debouncing');
+      } else {
+        setParseStatus('idle');
+      }
+
+      return true;
+    },
+    [active, autoParseEnabled, busy, isEditMode, isReportMode],
+  );
 
   const handleParse = useCallback(
     async (opts?: { isAuto?: boolean }) => {
-      if (parsing || busy) return;
-      const currentBody = getValues('full_body')?.trim();
+      if (busy) return;
+      const currentRawBody = getValues('full_body') ?? '';
+      const currentBody = currentRawBody.trim();
       const signalGroupMasterKey = getValues('signalGroupMasterKey')?.trim();
       if (!currentBody) {
         if (!opts?.isAuto) {
@@ -43,8 +80,9 @@ export function useMessageParser(
         return;
       }
 
-      setParseSuccess(false);
-      setParseError(false);
+      const requestId = latestRequestIdRef.current + 1;
+      latestRequestIdRef.current = requestId;
+      setParseStatus('parsing');
       setParsing(true);
       setErrorMsg(null);
       try {
@@ -52,8 +90,11 @@ export function useMessageParser(
           full_body: currentBody,
           ...(signalGroupMasterKey ? { signal_group_master_key: signalGroupMasterKey } : {}),
         });
-        lastParsedBodyRef.current = currentBody;
-        setParseSuccess(true);
+        if (requestId !== latestRequestIdRef.current || !activeRef.current) {
+          return;
+        }
+        lastParsedBodyRef.current = currentRawBody;
+        setParseStatus('success');
         const timestamp = parsed.timestamp ? dayjs(parsed.timestamp) : null;
         const fillText = (
           name: 'text' | 'freq' | 'coords' | 'comment' | 'post' | 'unit' | 'network_name',
@@ -89,36 +130,45 @@ export function useMessageParser(
           }
         }
       } catch (error: any) {
-        lastParsedBodyRef.current = currentBody;
-        setParseError(true);
+        if (requestId !== latestRequestIdRef.current || !activeRef.current) {
+          return;
+        }
+        lastParsedBodyRef.current = currentRawBody;
+        setParseStatus('error');
         console.error('Error parsing message', error);
         setErrorMsg(error.message || 'Не вдалося розпарсити повідомлення');
       } finally {
-        setParsing(false);
+        if (requestId === latestRequestIdRef.current) {
+          setParsing(false);
+        }
       }
     },
-    [busy, getValues, parsing, setErrorMsg, setValue],
+    [busy, getValues, setErrorMsg, setValue],
   );
 
   useEffect(() => {
-    const trimmed = fullBody?.trim();
+    const rawBody = fullBody ?? '';
+    if (handleBodyChange(rawBody)) return;
+
+    const trimmed = rawBody.trim();
     if (!trimmed) {
       lastParsedBodyRef.current = null;
-      setParseSuccess(false);
-      setParseError(false);
+      setParseStatus('idle');
       return;
     }
-    if (trimmed !== lastParsedBodyRef.current) {
-      setParseSuccess(false);
-      setParseError(false);
-    }
-    if (!autoParseEnabled || isEditMode || isReportMode || busy || parsing) {
+    if (parsing) return;
+    if (!active || !autoParseEnabled || isEditMode || isReportMode || busy) {
+      if (rawBody !== lastParsedBodyRef.current) {
+        setParseStatus('idle');
+      }
       return;
     }
-    if (trimmed === lastParsedBodyRef.current) {
+    if (rawBody === lastParsedBodyRef.current) {
       return;
     }
 
+    setParseStatus('debouncing');
+    setDebounceKey((key) => key + 1);
     const timer = setTimeout(() => {
       void handleParse({ isAuto: true });
     }, debounceMs);
@@ -126,19 +176,30 @@ export function useMessageParser(
     return () => clearTimeout(timer);
   }, [
     fullBody,
+    bodyRevision,
+    active,
     autoParseEnabled,
     isEditMode,
     isReportMode,
     busy,
     parsing,
+    handleBodyChange,
     handleParse,
     debounceMs,
   ]);
 
+  useEffect(() => {
+    if (active) return;
+    setParsing(false);
+    setParseStatus('idle');
+    lastParsedBodyRef.current = null;
+  }, [active]);
+
   return {
     parsing,
-    parseSuccess,
-    parseError,
+    parseStatus,
+    debounceKey,
+    handleBodyChange,
     handleParse,
   };
 }

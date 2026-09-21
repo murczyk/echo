@@ -3300,6 +3300,9 @@ describe('ManageMessageDrawer edit mode', () => {
         (button) => button.textContent === 'Авто-парсинг',
       );
       expect(autoParseButton).toBeDefined();
+      const statusIcon = autoParseButton?.querySelector('[data-testid="auto-parse-status"]');
+      expect(statusIcon?.getAttribute('aria-hidden')).toBe('true');
+      expect(statusIcon?.getAttribute('aria-label')).toBeNull();
 
       root.unmount();
     });
@@ -3388,6 +3391,201 @@ describe('ManageMessageDrawer edit mode', () => {
         expect.objectContaining({
           full_body: 'incoming message body',
         }),
+      );
+
+      root.unmount();
+      vi.useRealTimers();
+    });
+
+    it('shows and restarts the one-second auto-parse countdown after each text change', async () => {
+      vi.useFakeTimers();
+      dutySettingsMocks.messageAutoParseEnabled = true;
+      directSubmitMocks.parseDirectSubmit.mockResolvedValue({ text: 'parsed text' });
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={null}
+            onClose={vi.fn()}
+          />,
+        );
+        await Promise.resolve();
+      });
+
+      const parseButton = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Авто-парсинг',
+      ) as HTMLButtonElement;
+
+      await act(async () => {
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: 'first version' } });
+      });
+
+      expect(
+        parseButton.querySelector('[data-testid="auto-parse-status"]')?.getAttribute('data-state'),
+      ).toBe('debouncing');
+
+      await act(async () => {
+        vi.advanceTimersByTime(600);
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: 'latest version' } });
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(999);
+      });
+
+      expect(directSubmitMocks.parseDirectSubmit).not.toHaveBeenCalled();
+
+      await act(async () => {
+        vi.advanceTimersByTime(1);
+        await Promise.resolve();
+      });
+
+      expect(directSubmitMocks.parseDirectSubmit).toHaveBeenCalledOnce();
+      expect(directSubmitMocks.parseDirectSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ full_body: 'latest version' }),
+      );
+
+      root.unmount();
+      vi.useRealTimers();
+    });
+
+    it('ignores stale parse success when edited text returns to the original value', async () => {
+      vi.useFakeTimers();
+      dutySettingsMocks.messageAutoParseEnabled = true;
+      let resolveFirstParse!: (value: any) => void;
+      let resolveSecondParse!: (value: any) => void;
+      directSubmitMocks.parseDirectSubmit
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              resolveFirstParse = resolve;
+            }),
+        )
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              resolveSecondParse = resolve;
+            }),
+        )
+        .mockResolvedValueOnce({ text: 'reparsed text' })
+        .mockResolvedValueOnce({ text: 'whitespace parsed text' });
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={null}
+            onClose={vi.fn()}
+          />,
+        );
+        await Promise.resolve();
+      });
+
+      const parseButton = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Авто-парсинг',
+      ) as HTMLButtonElement;
+      const advancedFieldsButton = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Розширені поля',
+      );
+      await act(async () => {
+        advancedFieldsButton?.click();
+      });
+
+      await act(async () => {
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: 'same version' } });
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(1000);
+        await Promise.resolve();
+      });
+      expect(directSubmitMocks.parseDirectSubmit).toHaveBeenCalledOnce();
+
+      await act(async () => {
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: 'different version' } });
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: 'same version' } });
+      });
+
+      expect(parseButton.querySelector('[data-testid="check-icon"]')).toBeNull();
+      expect(
+        parseButton.querySelector('[data-testid="auto-parse-status"]')?.getAttribute('data-state'),
+      ).toBe('debouncing');
+
+      await act(async () => {
+        resolveFirstParse({ text: 'stale parsed text' });
+        await Promise.resolve();
+      });
+      expect(parseButton.querySelector('[data-testid="check-icon"]')).toBeNull();
+      expect(textFieldPropsByLabel.get('Коротке повідомлення')?.value ?? '').toBe('');
+
+      await act(async () => {
+        vi.advanceTimersByTime(1000);
+        await Promise.resolve();
+      });
+      expect(directSubmitMocks.parseDirectSubmit).toHaveBeenCalledTimes(2);
+      expect(directSubmitMocks.parseDirectSubmit).toHaveBeenLastCalledWith(
+        expect.objectContaining({ full_body: 'same version' }),
+      );
+
+      await act(async () => {
+        resolveSecondParse({ text: 'latest parsed text' });
+        await Promise.resolve();
+      });
+      expect(parseButton.querySelector('[data-testid="check-icon"]')).not.toBeNull();
+      expect(textFieldPropsByLabel.get('Коротке повідомлення')?.value).toBe('latest parsed text');
+
+      await act(async () => {
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: 'temporary edit' } });
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: 'same version' } });
+      });
+      expect(parseButton.querySelector('[data-testid="check-icon"]')).toBeNull();
+      expect(
+        parseButton.querySelector('[data-testid="auto-parse-status"]')?.getAttribute('data-state'),
+      ).toBe('debouncing');
+
+      await act(async () => {
+        vi.advanceTimersByTime(1000);
+        await Promise.resolve();
+      });
+      expect(directSubmitMocks.parseDirectSubmit).toHaveBeenCalledTimes(3);
+
+      await act(async () => {
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: 'same version ' } });
+      });
+      expect(
+        parseButton.querySelector('[data-testid="auto-parse-status"]')?.getAttribute('data-state'),
+      ).toBe('debouncing');
+
+      await act(async () => {
+        vi.advanceTimersByTime(1000);
+        await Promise.resolve();
+      });
+      expect(directSubmitMocks.parseDirectSubmit).toHaveBeenCalledTimes(4);
+      expect(directSubmitMocks.parseDirectSubmit).toHaveBeenLastCalledWith(
+        expect.objectContaining({ full_body: 'same version' }),
       );
 
       root.unmount();

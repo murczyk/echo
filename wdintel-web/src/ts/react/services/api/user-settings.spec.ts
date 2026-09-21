@@ -36,6 +36,7 @@ describe('user-settings api', () => {
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: false,
+      messageAutoParseEnabled: false,
       messageTextPreviewLines: 20,
       messageSortBy: 'interception',
     });
