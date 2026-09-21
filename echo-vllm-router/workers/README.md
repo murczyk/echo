@@ -29,6 +29,9 @@ shared extractor can batch two active documents.
 
 ## NuExtract on Flyingskull
 
+Install the [outer-host update policy and follow the GPU maintenance runbook](nuextract/MAINTENANCE.md)
+before unattended upgrades can change the shared NVIDIA runtime.
+
 NuExtract3 used about 14.4 GiB of the 16 GiB GPU during evaluation. Before this
 rollout, explicitly approve moving or retiring the current
 `echo-gpu-pve5-echo-gpu` workload. Do not run both workloads concurrently.
