@@ -151,9 +151,7 @@ sinks:
     type: http
     inputs:
       - signoz_prepare
-    # `signoz_gate` overwrites this field from the trusted service environment.
-    uri: "{{ _signoz_logs_endpoint }}"
-    dangerously_allow_unconfined_template_resolution: true
+    uri: "${SIGNOZ_LOGS_ENDPOINT:-http://127.0.0.1:8082}"
     method: "post"
     encoding:
       codec: json

@@ -13,7 +13,7 @@ use actix_web::{
     body::MessageBody,
     dev::{ServiceRequest, ServiceResponse},
     middleware::Next,
-    Error,
+    Error, HttpMessage, HttpRequest,
 };
 use redis::AsyncCommands;
 use sea_orm::{
@@ -26,6 +26,14 @@ use uuid::Uuid;
 struct ManagedAgentLoginMarker {
     id: Uuid,
     human_login_id: Uuid,
+}
+
+struct ValidatedAgentTestIdentity(login::Model);
+
+pub(crate) fn test_identity(req: &HttpRequest) -> Option<login::Model> {
+    req.extensions()
+        .get::<ValidatedAgentTestIdentity>()
+        .map(|identity| identity.0.clone())
 }
 
 pub async fn enforce_agent_routes<B>(
@@ -154,6 +162,8 @@ async fn authorize_agent_request(
                 "Agent test credential route denied",
             ));
         }
+        req.extensions_mut()
+            .insert(ValidatedAgentTestIdentity(login.clone()));
         return Ok(());
     }
     let Some(request_id) = grant.request_id else {
@@ -259,7 +269,7 @@ fn session_binding_matches(
         && binding.allow_disabled == grant.allow_disabled
 }
 
-fn has_exact_agent_security_profile(login: &login::Model) -> bool {
+pub(super) fn has_exact_agent_security_profile(login: &login::Model) -> bool {
     has_exact_agent_roles(&login.roles)
         && login.password.is_none()
         && !login.password_auth_enabled
