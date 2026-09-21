@@ -57,6 +57,7 @@ describe('device file request helpers', () => {
       }),
     ).toEqual({
       deviceId: DEVICE_ID,
+      syncId: null,
       parentEntryId: ROOT_ID,
       includeBreadcrumbs: true,
       limit: 100,

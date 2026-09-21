@@ -103,7 +103,7 @@ function buildPage(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   pageMock.useDeviceDetailsPage.mockReturnValue(buildPage());
-  pageMock.useDeviceFiles.mockReturnValue({});
+  pageMock.useDeviceFiles.mockReturnValue({ counts: { error: null }, tree: { branches: {} } });
   pageMock.useDeviceFileJournal.mockReturnValue({
     entries: [],
     totalCount: null,
@@ -200,6 +200,7 @@ describe('DeviceDetailsPage layout', () => {
     expect(container?.querySelector('[data-testid="device-files-sidebar"]')).toBeNull();
     expect(pageMock.useDeviceFileJournal).toHaveBeenLastCalledWith({
       deviceId: DEVICE_ID,
+      syncId: null,
       enabled: true,
       tagFilter: { tagIds: [], tagMatch: 'any', untagged: false },
     });

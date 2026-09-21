@@ -1,5 +1,6 @@
 import { createRoot, Root } from 'react-dom/client';
 
+import { PowerSnackbarProvider } from './components/PowerSnackbar';
 import { NeoMuiThemeProvider } from './mui-theme';
 import { DeviceDetailsPage } from './routes/device-details';
 
@@ -30,9 +31,11 @@ function readDeviceIdFromElement(element: Element): string | null {
 function DeviceDetailsPageRoot({
   authUserRoles,
   deviceId,
+  syncId,
 }: {
   authUserRoles: string[];
   deviceId: string | null;
+  syncId: string | null;
 }) {
   if (deviceId === null) {
     return (
@@ -44,7 +47,9 @@ function DeviceDetailsPageRoot({
 
   return (
     <NeoMuiThemeProvider>
-      <DeviceDetailsPage deviceId={deviceId} authUserRoles={authUserRoles} />
+      <PowerSnackbarProvider>
+        <DeviceDetailsPage deviceId={deviceId} authUserRoles={authUserRoles} syncId={syncId} />
+      </PowerSnackbarProvider>
     </NeoMuiThemeProvider>
   );
 }
@@ -53,7 +58,7 @@ class DeviceDetailsPageElement extends HTMLElement {
   private root: Root | null = null;
 
   static get observedAttributes() {
-    return ['device-id', 'data-auth-user-roles'];
+    return ['device-id', 'data-auth-user-roles', 'sync-id'];
   }
 
   private renderRoot() {
@@ -62,6 +67,7 @@ class DeviceDetailsPageElement extends HTMLElement {
       <DeviceDetailsPageRoot
         authUserRoles={readAuthUserRoles(this)}
         deviceId={readDeviceIdFromElement(this)}
+        syncId={this.getAttribute('sync-id')}
       />,
     );
   }
@@ -80,7 +86,7 @@ class DeviceDetailsPageElement extends HTMLElement {
   }
 
   attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null) {
-    if ((name === 'device-id' || name === 'data-auth-user-roles') && oldValue !== newValue) {
+    if (DeviceDetailsPageElement.observedAttributes.includes(name) && oldValue !== newValue) {
       this.renderRoot();
     }
   }

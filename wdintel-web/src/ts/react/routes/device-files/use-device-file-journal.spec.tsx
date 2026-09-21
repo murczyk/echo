@@ -45,11 +45,13 @@ function journalResponse(
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 let enabled = false;
+let syncId: string | null = null;
 let latest: DeviceFileJournalState | null = null;
 
 function Harness() {
   latest = useDeviceFileJournal({
     deviceId: DEVICE_ID,
+    syncId,
     enabled,
     tagFilter: { tagIds: [], tagMatch: 'any', untagged: false },
   });
@@ -72,6 +74,7 @@ async function renderHook() {
 
 beforeEach(() => {
   enabled = false;
+  syncId = null;
   apiMock.journalDeviceFiles.mockResolvedValue(
     journalResponse([journalEntry(FILE_ONE_ID, 'first.log')]),
   );
@@ -164,4 +167,33 @@ describe('useDeviceFileJournal', () => {
     expect(latest?.error).toBeNull();
     expect(latest?.entries[0].name).toBe('recovered.log');
   });
+});
+
+it('#3390 discards old-session pages after switching the URL filter', async () => {
+  let resolveOld!: (response: JournalDeviceFilesRsp) => void;
+  apiMock.journalDeviceFiles.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        resolveOld = resolve;
+      }),
+  );
+  enabled = true;
+  syncId = '018f0000-0000-7000-8000-000000000011';
+  await renderHook();
+  const signal = apiMock.journalDeviceFiles.mock.calls.at(-1)?.[1].signal as AbortSignal;
+  syncId = '018f0000-0000-7000-8000-000000000012';
+  apiMock.journalDeviceFiles.mockResolvedValueOnce(
+    journalResponse([journalEntry(FILE_TWO_ID, 'new-session.log')]),
+  );
+  await renderHook();
+  expect(signal.aborted).toBe(true);
+  expect(apiMock.journalDeviceFiles).toHaveBeenLastCalledWith(
+    expect.objectContaining({ syncId, cursor: null }),
+    expect.anything(),
+  );
+  resolveOld(journalResponse([journalEntry(FILE_ONE_ID, 'old-session.log')], 'old-cursor', 50));
+  await flush();
+  expect(latest?.entries.map((entry) => entry.name)).toEqual(['new-session.log']);
+  expect(latest?.nextCursor).toBeNull();
+  expect(latest?.totalCount).toBe(1);
 });

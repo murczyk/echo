@@ -502,7 +502,7 @@ fn validation_form(errors: Vec<FilesystemFieldError>) -> AppError {
     )
 }
 
-fn map_read_error(error: FilesystemError) -> AppError {
+pub(super) fn map_read_error(error: FilesystemError) -> AppError {
     match error {
         FilesystemError::Validation(errors) => validation_form(errors),
         FilesystemError::NotFound => AppError::NotFound,

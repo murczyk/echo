@@ -1,8 +1,8 @@
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import EditIcon from '@mui/icons-material/Edit';
-import { Box, Skeleton, Stack, Tooltip, useMediaQuery } from '@mui/material';
+import { Box, Skeleton, Tooltip, useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, type CSSProperties } from 'react';
 
 import { PageErrorState } from '../../components/PageErrorState';
 import { PageHeader } from '../../components/PageHeader';
@@ -21,6 +21,11 @@ import { DeviceDetailsLeftPanel } from './components/DeviceDetailsLeftPanel';
 import { DeviceDetailsTabPanel, type DeviceDetailsTab } from './components/DeviceDetailsTabPanel';
 import { formatDeviceLifecycleLabel } from './helpers';
 import { useDeviceDetailsPage } from './use-device-details-page';
+import { useDeviceSyncSessions } from './use-device-sync-sessions';
+import { selectDeviceSyncSession } from './url-state';
+import { DeviceSyncSessionsSidebar } from './components/DeviceSyncSessionsSidebar';
+import { DeviceSyncSessionFilter } from './components/DeviceSyncSessionFilter';
+import { useDeviceFileErrorNotification } from '../device-files/use-device-file-error-notification';
 
 function DeviceHeaderTitle({
   deviceName,
@@ -79,36 +84,69 @@ function DeviceHeaderTitle({
 export function DeviceDetailsPage({
   deviceId,
   authUserRoles = [],
+  syncId = null,
 }: {
   deviceId: string;
   authUserRoles?: string[];
+  syncId?: string | null;
 }) {
   const page = useDeviceDetailsPage({ deviceId, authUserRoles });
   const theme = useTheme();
   const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
-  const echoLgMediaQuery = `@media (min-width: ${theme.echo.breakpoint.lg})`;
   const [activeTab, setActiveTab] = useState<DeviceDetailsTab>('analytical');
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
+  const [rightPanelOpen, setRightPanelOpen] = useState(syncId !== null);
   const [tagFilter, setTagFilter] = useState<DeviceAnalyticsTagFilter>({
     tagIds: [],
     tagMatch: 'any',
     untagged: false,
   });
   const device = page.device;
+  const sessions = useDeviceSyncSessions({
+    deviceId,
+    syncId,
+    open: rightPanelOpen,
+    enabled: page.permissions.canRead && device !== null,
+  });
   const tagsState = useDeviceAnalyticsTags({
     deviceId,
     enabled: page.permissions.canRead && device !== null,
   });
   const files = useDeviceFiles({
     deviceId,
-    enabled: activeTab === 'files' && page.permissions.canRead && device !== null,
+    syncId,
+    enabled: activeTab === 'files' && sessions.ready,
     tagFilter,
   });
   const journal = useDeviceFileJournal({
     deviceId,
-    enabled: activeTab === 'journal' && page.permissions.canRead && device !== null,
+    syncId,
+    enabled: activeTab === 'journal' && sessions.ready,
     tagFilter,
   });
+  const refreshRef = useRef(() => {});
+  refreshRef.current = () => {
+    if (!sessions.ready) return;
+    if (activeTab === 'files') void files.refreshVisible();
+    if (activeTab === 'journal') void journal.reload();
+  };
+  useEffect(() => {
+    if (sessions.refreshVersion > 0) refreshRef.current();
+  }, [sessions.refreshVersion]);
+  const fileError = [
+    files.rootsError?.message,
+    files.searchError?.message,
+    files.searchLoadMoreError?.message,
+    files.counts.error?.message,
+    journal.error?.message,
+    journal.loadMoreError?.message,
+    tagsState.error?.message,
+    ...Object.values(files.tree.branches).flatMap((branch) => [
+      branch.error?.message,
+      branch.loadMoreError?.message,
+    ]),
+  ].find(Boolean);
+  useDeviceFileErrorNotification(fileError);
   useEffect(() => {
     setTagFilter({ tagIds: [], tagMatch: 'any', untagged: false });
   }, [deviceId]);
@@ -170,8 +208,14 @@ export function DeviceDetailsPage({
         }
         titleLeadingGap={2}
         actions={
-          showEditAction ? (
-            <Stack direction="row" spacing={1} alignItems="center">
+          <div className="flex flex-wrap items-center justify-end gap-echo-sm">
+            {syncId !== null ? (
+              <DeviceSyncSessionFilter
+                session={sessions.session}
+                onReset={() => selectDeviceSyncSession(null)}
+              />
+            ) : null}
+            {showEditAction ? (
               <Tooltip title="Редагувати">
                 <span>
                   <PowerIconButton
@@ -183,8 +227,14 @@ export function DeviceDetailsPage({
                   </PowerIconButton>
                 </span>
               </Tooltip>
-            </Stack>
-          ) : undefined
+            ) : null}
+            <SidePanelToggleButton
+              side="right"
+              active={rightPanelOpen}
+              label={rightPanelOpen ? 'Згорнути праву панель' : 'Розгорнути праву панель'}
+              onClick={() => setRightPanelOpen((current) => !current)}
+            />
+          </div>
         }
       />
 
@@ -195,26 +245,13 @@ export function DeviceDetailsPage({
         </PowerAlert>
       ) : null}
 
-      <Box
-        sx={{
-          position: 'relative',
-          flex: 1,
-          minHeight: 0,
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1fr)',
-          gridTemplateRows: 'auto minmax(420px, 1fr)',
-          overflow: 'auto',
-          [echoLgMediaQuery]: {
-            gridTemplateColumns: leftPanelVisible
-              ? activeTab === 'files'
-                ? '320px minmax(0, 1fr)'
-                : 'minmax(360px, 420px) minmax(0, 1fr)'
-              : 'minmax(0, 1fr)',
-            gridTemplateRows: 'minmax(0, 1fr)',
-            overflow: 'hidden',
-          },
-          gap: 2,
-        }}
+      <div
+        className="relative flex-1 min-h-0 grid grid-cols-1 auto-rows-auto gap-echo-lg overflow-auto echo-lg:grid-cols-[var(--device-columns)] echo-lg:grid-rows-[minmax(0,1fr)] echo-lg:overflow-hidden"
+        style={
+          {
+            '--device-columns': `${leftPanelVisible ? (activeTab === 'files' ? '320px ' : 'minmax(360px, 420px) ') : ''}minmax(0, 1fr)${rightPanelOpen ? ' 344px' : ''}`,
+          } as CSSProperties
+        }
       >
         {page.loading && device === null ? (
           leftPanelVisible ? (
@@ -241,19 +278,32 @@ export function DeviceDetailsPage({
                 <DeviceDetailsLeftPanel device={device} loading={page.loading} />
               </Box>
             ) : null}
-            <Box sx={{ minHeight: 0, minWidth: 0, display: 'flex', overflow: 'hidden' }}>
+            <div className="min-h-[420px] echo-lg:min-h-0 min-w-0 flex overflow-hidden">
               <DeviceDetailsTabPanel
                 activeTab={activeTab}
                 selectedFile={files.selectedFile}
                 journal={journal}
                 deviceId={deviceId}
+                syncId={syncId}
+                dataReady={sessions.ready}
+                sessionError={sessions.selectionError}
+                onRetrySession={sessions.refresh}
+                refreshVersion={sessions.refreshVersion}
                 isAdmin={hasRole(authUserRoles, 'Admin')}
                 tagsState={tagsState}
                 tagFilter={tagFilter}
                 onTagFilterChange={setTagFilter}
                 onTabChange={setActiveTab}
               />
-            </Box>
+            </div>
+            {rightPanelOpen ? (
+              <DeviceSyncSessionsSidebar
+                deviceId={deviceId}
+                syncId={syncId}
+                state={sessions}
+                onSelect={selectDeviceSyncSession}
+              />
+            ) : null}
           </>
         ) : null}
 
@@ -262,7 +312,7 @@ export function DeviceDetailsPage({
           ariaLabel="Оновлення пристрою"
           showSpinner={false}
         />
-      </Box>
+      </div>
 
       <DeviceUpsertDrawer
         open={page.editForm !== null}

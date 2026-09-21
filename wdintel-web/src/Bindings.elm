@@ -5115,14 +5115,16 @@ deviceFileEncoder struct =
 
 
 type alias ListDeviceFileRootsReq =
-    { deviceId : String
+    { syncId : Maybe (String)
+    , deviceId : String
     }
 
 
 listDeviceFileRootsReqEncoder : ListDeviceFileRootsReq -> Json.Encode.Value
 listDeviceFileRootsReqEncoder struct =
     Json.Encode.object
-        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        [ ( "sync_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.syncId )
+        , ( "device_id", (Json.Encode.string) struct.deviceId )
         ]
 
 
@@ -5153,7 +5155,8 @@ deviceFileSubtreeCountEncoder struct =
 
 
 type alias CountDeviceFileSubtreesReq =
-    { deviceId : String
+    { syncId : Maybe (String)
+    , deviceId : String
     , parentEntryId : Maybe (String)
     , directoryEntryIds : List (String)
     }
@@ -5162,7 +5165,8 @@ type alias CountDeviceFileSubtreesReq =
 countDeviceFileSubtreesReqEncoder : CountDeviceFileSubtreesReq -> Json.Encode.Value
 countDeviceFileSubtreesReqEncoder struct =
     Json.Encode.object
-        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        [ ( "sync_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.syncId )
+        , ( "device_id", (Json.Encode.string) struct.deviceId )
         , ( "parent_entry_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.parentEntryId )
         , ( "directory_entry_ids", (Json.Encode.list (Json.Encode.string)) struct.directoryEntryIds )
         ]
@@ -5181,7 +5185,8 @@ countDeviceFileSubtreesRspEncoder struct =
 
 
 type alias BrowseDeviceFilesReq =
-    { deviceId : String
+    { syncId : Maybe (String)
+    , deviceId : String
     , parentEntryId : String
     , includeBreadcrumbs : Maybe (Bool)
     , limit : Maybe (Int)
@@ -5195,7 +5200,8 @@ type alias BrowseDeviceFilesReq =
 browseDeviceFilesReqEncoder : BrowseDeviceFilesReq -> Json.Encode.Value
 browseDeviceFilesReqEncoder struct =
     Json.Encode.object
-        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        [ ( "sync_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.syncId )
+        , ( "device_id", (Json.Encode.string) struct.deviceId )
         , ( "parent_entry_id", (Json.Encode.string) struct.parentEntryId )
         , ( "include_breadcrumbs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.includeBreadcrumbs )
         , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
@@ -5223,7 +5229,8 @@ browseDeviceFilesRspEncoder struct =
 
 
 type alias SearchDeviceFilesReq =
-    { deviceId : String
+    { syncId : Maybe (String)
+    , deviceId : String
     , scopeEntryId : String
     , nameQuery : Maybe (String)
     , kinds : Maybe (List (FileEntryKind))
@@ -5242,7 +5249,8 @@ type alias SearchDeviceFilesReq =
 searchDeviceFilesReqEncoder : SearchDeviceFilesReq -> Json.Encode.Value
 searchDeviceFilesReqEncoder struct =
     Json.Encode.object
-        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        [ ( "sync_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.syncId )
+        , ( "device_id", (Json.Encode.string) struct.deviceId )
         , ( "scope_entry_id", (Json.Encode.string) struct.scopeEntryId )
         , ( "name_query", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.nameQuery )
         , ( "kinds", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (fileEntryKindEncoder))) struct.kinds )
@@ -5301,7 +5309,8 @@ deviceFileJournalEntryEncoder struct =
 
 
 type alias JournalDeviceFilesReq =
-    { deviceId : String
+    { syncId : Maybe (String)
+    , deviceId : String
     , limit : Maybe (Int)
     , cursor : Maybe (String)
     , tagIds : Maybe (List (String))
@@ -5313,7 +5322,8 @@ type alias JournalDeviceFilesReq =
 journalDeviceFilesReqEncoder : JournalDeviceFilesReq -> Json.Encode.Value
 journalDeviceFilesReqEncoder struct =
     Json.Encode.object
-        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        [ ( "sync_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.syncId )
+        , ( "device_id", (Json.Encode.string) struct.deviceId )
         , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
         , ( "cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.cursor )
         , ( "tag_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.tagIds )
@@ -5529,6 +5539,94 @@ syncSummaryEncoder struct =
         , ( "updated_at", (Json.Encode.string) struct.updatedAt )
         , ( "completed_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.completedAt )
         , ( "expires_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.expiresAt )
+        ]
+
+
+type alias ListDeviceSyncSessionsReq =
+    { deviceId : String
+    , createdFrom : Maybe (String)
+    , createdTo : Maybe (String)
+    , limit : Maybe (Int)
+    , cursor : Maybe (String)
+    }
+
+
+listDeviceSyncSessionsReqEncoder : ListDeviceSyncSessionsReq -> Json.Encode.Value
+listDeviceSyncSessionsReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "created_from", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.createdFrom )
+        , ( "created_to", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.createdTo )
+        , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
+        , ( "cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.cursor )
+        ]
+
+
+type alias ListDeviceSyncSessionsRsp =
+    { sessions : List (SyncSummary)
+    , nextCursor : Maybe (String)
+    }
+
+
+listDeviceSyncSessionsRspEncoder : ListDeviceSyncSessionsRsp -> Json.Encode.Value
+listDeviceSyncSessionsRspEncoder struct =
+    Json.Encode.object
+        [ ( "sessions", (Json.Encode.list (syncSummaryEncoder)) struct.sessions )
+        , ( "next_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.nextCursor )
+        ]
+
+
+type alias GetDeviceSyncSessionReq =
+    { deviceId : String
+    , syncId : String
+    }
+
+
+getDeviceSyncSessionReqEncoder : GetDeviceSyncSessionReq -> Json.Encode.Value
+getDeviceSyncSessionReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "sync_id", (Json.Encode.string) struct.syncId )
+        ]
+
+
+type alias DeviceSyncSessionSummariesReq =
+    { deviceId : String
+    , syncIds : List (String)
+    }
+
+
+deviceSyncSessionSummariesReqEncoder : DeviceSyncSessionSummariesReq -> Json.Encode.Value
+deviceSyncSessionSummariesReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "sync_ids", (Json.Encode.list (Json.Encode.string)) struct.syncIds )
+        ]
+
+
+type alias DeviceSyncSessionSummary =
+    { syncId : String
+    , analysis : DeviceAnalyticsSummaryRsp
+    }
+
+
+deviceSyncSessionSummaryEncoder : DeviceSyncSessionSummary -> Json.Encode.Value
+deviceSyncSessionSummaryEncoder struct =
+    Json.Encode.object
+        [ ( "sync_id", (Json.Encode.string) struct.syncId )
+        , ( "analysis", (deviceAnalyticsSummaryRspEncoder) struct.analysis )
+        ]
+
+
+type alias DeviceSyncSessionSummariesRsp =
+    { summaries : List (DeviceSyncSessionSummary)
+    }
+
+
+deviceSyncSessionSummariesRspEncoder : DeviceSyncSessionSummariesRsp -> Json.Encode.Value
+deviceSyncSessionSummariesRspEncoder struct =
+    Json.Encode.object
+        [ ( "summaries", (Json.Encode.list (deviceSyncSessionSummaryEncoder)) struct.summaries )
         ]
 
 
@@ -6149,6 +6247,20 @@ deviceAnalyticsReqEncoder struct =
         ]
 
 
+type alias DeviceAnalyticsSummaryReq =
+    { deviceId : String
+    , syncId : Maybe (String)
+    }
+
+
+deviceAnalyticsSummaryReqEncoder : DeviceAnalyticsSummaryReq -> Json.Encode.Value
+deviceAnalyticsSummaryReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "sync_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.syncId )
+        ]
+
+
 type alias DeviceAnalyticsTagsRsp =
     { tags : List (AnalyticsTag)
     }
@@ -6194,7 +6306,8 @@ deviceAnalyticsSummaryRspEncoder struct =
 
 
 type alias DeviceAnalyticsFilesReq =
-    { deviceId : String
+    { syncId : Maybe (String)
+    , deviceId : String
     , tagId : String
     , limit : Maybe (Int)
     , cursor : Maybe (String)
@@ -6204,7 +6317,8 @@ type alias DeviceAnalyticsFilesReq =
 deviceAnalyticsFilesReqEncoder : DeviceAnalyticsFilesReq -> Json.Encode.Value
 deviceAnalyticsFilesReqEncoder struct =
     Json.Encode.object
-        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        [ ( "sync_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.syncId )
+        , ( "device_id", (Json.Encode.string) struct.deviceId )
         , ( "tag_id", (Json.Encode.string) struct.tagId )
         , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
         , ( "cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.cursor )
@@ -17661,6 +17775,7 @@ deviceFileDecoder =
 listDeviceFileRootsReqDecoder : Json.Decode.Decoder ListDeviceFileRootsReq
 listDeviceFileRootsReqDecoder =
     Json.Decode.succeed ListDeviceFileRootsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sync_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
 
 
@@ -17673,6 +17788,7 @@ listDeviceFileRootsRspDecoder =
 browseDeviceFilesReqDecoder : Json.Decode.Decoder BrowseDeviceFilesReq
 browseDeviceFilesReqDecoder =
     Json.Decode.succeed BrowseDeviceFilesReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sync_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "parent_entry_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_breadcrumbs" (Json.Decode.nullable (Json.Decode.bool))))
@@ -17694,6 +17810,7 @@ browseDeviceFilesRspDecoder =
 searchDeviceFilesReqDecoder : Json.Decode.Decoder SearchDeviceFilesReq
 searchDeviceFilesReqDecoder =
     Json.Decode.succeed SearchDeviceFilesReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sync_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "scope_entry_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name_query" (Json.Decode.nullable (Json.Decode.string))))
@@ -17733,6 +17850,7 @@ deviceFileJournalEntryDecoder =
 journalDeviceFilesReqDecoder : Json.Decode.Decoder JournalDeviceFilesReq
 journalDeviceFilesReqDecoder =
     Json.Decode.succeed JournalDeviceFilesReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sync_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cursor" (Json.Decode.nullable (Json.Decode.string))))
@@ -17973,6 +18091,50 @@ syncSummaryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "completed_at" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "expires_at" (Json.Decode.nullable (Json.Decode.string))))
+
+
+listDeviceSyncSessionsReqDecoder : Json.Decode.Decoder ListDeviceSyncSessionsReq
+listDeviceSyncSessionsReqDecoder =
+    Json.Decode.succeed ListDeviceSyncSessionsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_from" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_to" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cursor" (Json.Decode.nullable (Json.Decode.string))))
+
+
+listDeviceSyncSessionsRspDecoder : Json.Decode.Decoder ListDeviceSyncSessionsRsp
+listDeviceSyncSessionsRspDecoder =
+    Json.Decode.succeed ListDeviceSyncSessionsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sessions" (Json.Decode.list (syncSummaryDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_cursor" (Json.Decode.nullable (Json.Decode.string))))
+
+
+getDeviceSyncSessionReqDecoder : Json.Decode.Decoder GetDeviceSyncSessionReq
+getDeviceSyncSessionReqDecoder =
+    Json.Decode.succeed GetDeviceSyncSessionReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sync_id" (Json.Decode.string)))
+
+
+deviceSyncSessionSummariesReqDecoder : Json.Decode.Decoder DeviceSyncSessionSummariesReq
+deviceSyncSessionSummariesReqDecoder =
+    Json.Decode.succeed DeviceSyncSessionSummariesReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sync_ids" (Json.Decode.list (Json.Decode.string))))
+
+
+deviceSyncSessionSummaryDecoder : Json.Decode.Decoder DeviceSyncSessionSummary
+deviceSyncSessionSummaryDecoder =
+    Json.Decode.succeed DeviceSyncSessionSummary
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sync_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis" (deviceAnalyticsSummaryRspDecoder)))
+
+
+deviceSyncSessionSummariesRspDecoder : Json.Decode.Decoder DeviceSyncSessionSummariesRsp
+deviceSyncSessionSummariesRspDecoder =
+    Json.Decode.succeed DeviceSyncSessionSummariesRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "summaries" (Json.Decode.list (deviceSyncSessionSummaryDecoder))))
 
 
 batchSummaryDecoder : Json.Decode.Decoder BatchSummary
@@ -18376,6 +18538,13 @@ deviceAnalyticsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
 
 
+deviceAnalyticsSummaryReqDecoder : Json.Decode.Decoder DeviceAnalyticsSummaryReq
+deviceAnalyticsSummaryReqDecoder =
+    Json.Decode.succeed DeviceAnalyticsSummaryReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sync_id" (Json.Decode.nullable (Json.Decode.string))))
+
+
 deviceAnalyticsTagsRspDecoder : Json.Decode.Decoder DeviceAnalyticsTagsRsp
 deviceAnalyticsTagsRspDecoder =
     Json.Decode.succeed DeviceAnalyticsTagsRsp
@@ -18401,6 +18570,7 @@ deviceAnalyticsSummaryRspDecoder =
 deviceAnalyticsFilesReqDecoder : Json.Decode.Decoder DeviceAnalyticsFilesReq
 deviceAnalyticsFilesReqDecoder =
     Json.Decode.succeed DeviceAnalyticsFilesReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sync_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))

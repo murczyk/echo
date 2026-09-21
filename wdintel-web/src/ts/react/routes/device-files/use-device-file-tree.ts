@@ -45,6 +45,7 @@ function createEmptyBranch(): DeviceFileTreeBranch {
 
 export function useDeviceFileTree({
   deviceId,
+  syncId = null,
   enabled,
   roots,
   tagFilter,
@@ -52,12 +53,15 @@ export function useDeviceFileTree({
   onDirectoriesLoaded,
 }: {
   deviceId: string;
+  syncId?: string | null;
   enabled: boolean;
   roots: DeviceFileRoot[];
   tagFilter: DeviceAnalyticsTagFilter;
   onDirectoryMissing: (entryId: string) => void;
   onDirectoriesLoaded: (parentEntryId: string, directoryEntryIds: string[]) => void;
 }) {
+  const dataScope = `${deviceId}:${syncId ?? 'all'}`;
+  const [resultScope, setResultScope] = useState(dataScope);
   const [branches, setBranches] = useState<Record<string, DeviceFileTreeBranch>>({});
   const [expandedEntryIds, setExpandedEntryIds] = useState<Set<string>>(new Set());
   const branchesRef = useRef<Record<string, DeviceFileTreeBranch>>({});
@@ -120,6 +124,7 @@ export function useDeviceFileTree({
         const rsp = await browseDeviceFiles(
           buildBrowseDeviceFilesReq({
             deviceId,
+            syncId,
             parentEntryId,
             cursor,
             tagFilter: tagFilterRef.current,
@@ -152,7 +157,8 @@ export function useDeviceFileTree({
           error: append ? branch.error : loadError,
           loadMoreError: append ? loadError : null,
         }));
-        if (loadError.status === 404) onDirectoryMissingRef.current(parentEntryId);
+        if (loadError.status === 404 && syncId === null)
+          onDirectoryMissingRef.current(parentEntryId);
       } finally {
         const activeRequest = requestsRef.current.get(parentEntryId);
         if (activeRequest?.id === request.id) {
@@ -166,7 +172,7 @@ export function useDeviceFileTree({
         }
       }
     },
-    [deviceId, enabled, tagFilterKey, updateBranch],
+    [deviceId, syncId, enabled, tagFilterKey, updateBranch],
   );
 
   const toggleDirectory = useCallback(
@@ -209,6 +215,7 @@ export function useDeviceFileTree({
   const rootsKey = roots.map((root) => root.entryId).join('|');
   useEffect(() => {
     abortAllRequests();
+    setResultScope(dataScope);
     branchesRef.current = {};
     setBranches({});
 
@@ -222,11 +229,11 @@ export function useDeviceFileTree({
     }
 
     return abortAllRequests;
-  }, [abortAllRequests, deviceId, enabled, loadBranch, rootsKey]);
+  }, [abortAllRequests, dataScope, deviceId, enabled, loadBranch, rootsKey]);
 
   return {
-    branches,
-    expandedEntryIds,
+    branches: resultScope === dataScope ? branches : {},
+    expandedEntryIds: resultScope === dataScope ? expandedEntryIds : new Set<string>(),
     refreshing: Object.values(branches).some(
       (branch) => branch.loading || branch.refreshing || branch.loadingMore,
     ),

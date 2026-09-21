@@ -292,11 +292,23 @@ pub(crate) async fn device_tags(
 pub(crate) async fn device_summary(
     env: Data<Env>,
     user: Identity,
-    Json(body): Json<DeviceAnalyticsReq>,
+    Json(body): Json<types::DeviceAnalyticsSummaryReq>,
 ) -> Result<Json<DeviceAnalyticsSummaryRsp>, AppError> {
     let login = access::resolve_current_login(&env.dbx, &user)
         .await
         .c(h!())?;
+    if body.sync_id.is_some() {
+        return Ok(Json(
+            crate::devices::files::sessions::read::summary(
+                &env.dbx,
+                env.file_registry_db().c(h!())?,
+                &login,
+                body,
+            )
+            .await
+            .c(h!())?,
+        ));
+    }
     let device_id = bl::parse_canonical_uuid(&body.device_id, "device_id")?;
     Ok(Json(
         bl::device_summary(
@@ -319,6 +331,18 @@ pub(crate) async fn device_files(
     let login = access::resolve_current_login(&env.dbx, &user)
         .await
         .c(h!())?;
+    if body.sync_id.is_some() {
+        return Ok(Json(
+            crate::devices::files::sessions::read::analytics_files(
+                &env.dbx,
+                env.file_registry_db().c(h!())?,
+                &login,
+                body,
+            )
+            .await
+            .c(h!())?,
+        ));
+    }
     let device_id = bl::parse_canonical_uuid(&body.device_id, "device_id")?;
     let tag_id = bl::parse_canonical_uuid(&body.tag_id, "tag_id")?;
     Ok(Json(

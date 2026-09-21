@@ -130,10 +130,20 @@ async fn verified_content_reuse_migration_preserves_original_publication() {
                 .await;
         tx.commit().await.unwrap();
 
-        wdfiles_migration::Migrator::down(connection, Some(1))
+        let migrations = wdfiles_migration::Migrator::migrations();
+        let reuse_migration_index = migrations
+            .iter()
+            .position(|migration| {
+                migration.name()
+                    == "m20260915_212032_reuse_verified_file_content"
+            })
+            .unwrap();
+        let rollback_steps =
+            u32::try_from(migrations.len() - reuse_migration_index).unwrap();
+        wdfiles_migration::Migrator::down(connection, Some(rollback_steps))
             .await
             .unwrap();
-        wdfiles_migration::Migrator::up(connection, Some(1))
+        wdfiles_migration::Migrator::up(connection, Some(rollback_steps))
             .await
             .unwrap();
         assert_file_content_schema(connection).await;
@@ -642,6 +652,7 @@ async fn assert_migration_versions(connection: &DatabaseConnection) {
             "m20260819_103954_update_file_entry_analysis_guard".to_string(),
             "m20260905_160446_device_file_content".to_string(),
             "m20260915_212032_reuse_verified_file_content".to_string(),
+            "m20260921_122222_device_sync_session_history".to_string(),
         ]
     );
 }
@@ -1174,11 +1185,13 @@ order by tablename, indexname
             ),
             ("file_revision", "file_metadata_revision_sync_file_idx",),
             ("file_revision", "file_revision_device_file_revision_key",),
+            ("file_revision", "file_revision_session_journal_idx"),
             ("file_sync_batch", "file_sync_batch_pkey"),
             ("file_sync_item", "file_sync_item_accepted_path_uidx"),
             ("file_sync_item", "file_sync_item_pkey"),
             ("file_sync_item", "file_sync_item_result_order_idx"),
             ("file_sync_session", "file_sync_session_expiry_idx"),
+            ("file_sync_session", "file_sync_session_history_idx"),
             ("file_sync_session", "file_sync_session_open_device_uidx"),
             ("file_sync_session", "file_sync_session_pkey"),
         ]

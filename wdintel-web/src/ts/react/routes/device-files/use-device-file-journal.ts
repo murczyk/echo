@@ -33,13 +33,17 @@ function appendJournalEntries(
 
 export function useDeviceFileJournal({
   deviceId,
+  syncId = null,
   enabled,
   tagFilter,
 }: {
   deviceId: string;
+  syncId?: string | null;
   enabled: boolean;
   tagFilter: DeviceAnalyticsTagFilter;
 }): DeviceFileJournalState {
+  const dataScope = `${deviceId}:${syncId ?? 'all'}`;
+  const [resultScope, setResultScope] = useState(dataScope);
   const [entries, setEntries] = useState<DeviceFileJournalEntry[]>([]);
   const [totalCount, setTotalCount] = useState<number | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -82,6 +86,7 @@ export function useDeviceFileJournal({
         const rsp = await journalDeviceFiles(
           {
             deviceId,
+            syncId,
             limit: DEVICE_FILE_PAGE_SIZE,
             cursor,
             tagIds: currentTagFilter.tagIds.length === 0 ? null : currentTagFilter.tagIds,
@@ -120,13 +125,14 @@ export function useDeviceFileJournal({
         if (abortRef.current === controller) abortRef.current = null;
       }
     },
-    [deviceId, enabled, tagFilterKey],
+    [deviceId, syncId, enabled, tagFilterKey],
   );
 
   useEffect(() => {
     requestSeqRef.current += 1;
     abortRef.current?.abort();
     abortRef.current = null;
+    setResultScope(dataScope);
     nextCursorRef.current = null;
     setEntries([]);
     setNextCursor(null);
@@ -141,12 +147,12 @@ export function useDeviceFileJournal({
       requestSeqRef.current += 1;
       abortRef.current?.abort();
     };
-  }, [deviceId, enabled, load]);
+  }, [dataScope, deviceId, syncId, enabled, load]);
 
   return {
-    entries,
-    totalCount,
-    nextCursor,
+    entries: resultScope === dataScope ? entries : [],
+    totalCount: resultScope === dataScope ? totalCount : null,
+    nextCursor: resultScope === dataScope ? nextCursor : null,
     loading,
     loadingMore,
     error,

@@ -12,6 +12,7 @@ type DeviceFileCountScope = {
 
 type QueuedDeviceFileCountScope = DeviceFileCountScope & {
   deviceId: string;
+  syncId: string | null;
   generation: number;
 };
 
@@ -26,11 +27,15 @@ export type DeviceFileCountsState = {
 
 export function useDeviceFileCounts({
   deviceId,
+  syncId = null,
   enabled,
 }: {
   deviceId: string;
+  syncId?: string | null;
   enabled: boolean;
 }): DeviceFileCountsState {
+  const dataScope = `${deviceId}:${syncId ?? 'all'}`;
+  const [resultScope, setResultScope] = useState(dataScope);
   const [countsByEntryId, setCountsByEntryId] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<DeviceFileLoadError | null>(null);
@@ -58,6 +63,7 @@ export function useDeviceFileCounts({
           const rsp = await countDeviceFileSubtrees(
             {
               deviceId: scope.deviceId,
+              syncId: scope.syncId,
               parentEntryId: scope.parentEntryId,
               directoryEntryIds: scope.directoryEntryIds,
             },
@@ -132,6 +138,7 @@ export function useDeviceFileCounts({
       ) {
         queueRef.current.push({
           deviceId,
+          syncId,
           generation: generationRef.current,
           parentEntryId,
           directoryEntryIds: unscheduledEntryIds.slice(
@@ -144,7 +151,7 @@ export function useDeviceFileCounts({
       setLoading(true);
       void drainQueue();
     },
-    [deviceId, drainQueue, enabled],
+    [deviceId, syncId, drainQueue, enabled],
   );
 
   const retry = useCallback(() => {
@@ -168,8 +175,9 @@ export function useDeviceFileCounts({
   }, []);
 
   useEffect(() => {
+    setResultScope(dataScope);
     reset();
-  }, [deviceId, enabled, reset]);
+  }, [dataScope, deviceId, syncId, enabled, reset]);
 
   useEffect(
     () => () => {
@@ -180,5 +188,12 @@ export function useDeviceFileCounts({
     [],
   );
 
-  return { countsByEntryId, loading, error, enqueue, retry, reset };
+  return {
+    countsByEntryId: resultScope === dataScope ? countsByEntryId : {},
+    loading,
+    error,
+    enqueue,
+    retry,
+    reset,
+  };
 }

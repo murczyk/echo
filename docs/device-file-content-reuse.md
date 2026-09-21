@@ -96,8 +96,10 @@ database's PeerDB analytics mirror.
 
 Deploy the API and background worker from the same version, with the migration,
 before enabling clients that discard completed payloads. Existing TUS clients
-continue to work. Normal read/download APIs resolve the current revision's
-binding and existing object. Cleanup retains referenced objects; reuse does
+continue to work. Revision read/download APIs resolve the requested revision's
+binding and existing object, including published historical revisions selected
+through [synchronization sessions](device-sync-sessions.md). Cleanup retains
+referenced objects; reuse does
 not reserve upload quota, allocate spool bytes or probe storage availability.
 
 Do not downgrade to the older API after reuse begins: it assumes one content

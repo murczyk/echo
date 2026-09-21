@@ -1,3 +1,4 @@
+pub(in crate::devices) use repository::map_session;
 mod hierarchy;
 mod mutation;
 mod prepare;

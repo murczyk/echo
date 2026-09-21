@@ -1704,3 +1704,5 @@ async fn run_items_reject_invalid_results_and_late_targets() {
         "unexpected fixed-set constraint error: {error}",
     );
 }
+
+mod session_reads;

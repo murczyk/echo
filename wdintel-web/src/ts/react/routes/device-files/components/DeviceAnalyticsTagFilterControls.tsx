@@ -44,6 +44,8 @@ export function DeviceAnalyticsTagFilterControls({
       <Stack
         direction={compact ? 'column' : { xs: 'column', md: 'row' }}
         spacing={1.5}
+        useFlexGap
+        flexWrap="wrap"
         alignItems={compact ? 'stretch' : { md: 'flex-start' }}
       >
         <PowerAutocomplete<AnalyticsTag>
@@ -65,7 +67,7 @@ export function DeviceAnalyticsTagFilterControls({
               size="small"
             />
           )}
-          sx={compact ? { minWidth: 0 } : { minWidth: { md: 320 }, flex: 1 }}
+          sx={compact ? { minWidth: 0 } : { minWidth: 0, flex: { xs: 1, md: '1 1 320px' } }}
         />
         <TextField
           select
@@ -75,7 +77,7 @@ export function DeviceAnalyticsTagFilterControls({
           disabled={filter.untagged || filter.tagIds.length < 2}
           fullWidth={compact}
           onChange={(event) => onChange({ ...filter, tagMatch: event.target.value as TagMatch })}
-          sx={compact ? undefined : { minWidth: 150 }}
+          sx={compact ? undefined : { width: 150, maxWidth: '100%' }}
           SelectProps={{ native: true }}
         >
           <option value="any">Будь-який</option>

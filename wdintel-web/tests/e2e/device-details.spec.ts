@@ -13,6 +13,141 @@ const ANALYTICS_TAG_ID = '018f0000-0000-7000-8000-000000000006';
 const SEARCH_FILE_ONE_ID = '018f0000-0000-7000-8000-000000000012';
 const SEARCH_FILE_TWO_ID = '018f0000-0000-7000-8000-000000000013';
 
+test('@smoke #3390 restores the session from the URL and keeps both sidebars in the layout', async ({
+  page,
+}, testInfo) => {
+  await installMocks(page);
+  const syncIds = ['018f0000-0000-7000-8000-000000000021', '018f0000-0000-7000-8000-000000000022'];
+  const sessions = syncIds.map((id, index) => ({
+    sync_id: id,
+    device_id: DEVICE_ID,
+    mode: 'automatic',
+    status: 'completed',
+    analysis_run_id: null,
+    next_batch_index: 1,
+    counts: { received: 2, accepted: 2, created: 2, updated: 0, rejected: 0 },
+    created_at: `2026-09-21T1${index}:00:00Z`,
+    updated_at: `2026-09-21T1${index}:01:00Z`,
+    completed_at: `2026-09-21T1${index}:01:00Z`,
+    expires_at: null,
+  }));
+  const scopes: Array<{ path: string; syncId: string | null }> = [];
+  await page.route('**/api/device/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const body = route.request().postDataJSON();
+    if (path.endsWith('/sessions/list')) return fulfillJson(route, { sessions, next_cursor: null });
+    if (path.endsWith('/sessions/get'))
+      return fulfillJson(route, {
+        sync: sessions.find((session) => session.sync_id === body.sync_id),
+      });
+    if (path.endsWith('/sessions/summaries'))
+      return fulfillJson(route, {
+        summaries: body.sync_ids.map((id: string) => ({
+          sync_id: id,
+          analysis: { total_file_count: 2, analyzed_file_count: 2, items: [] },
+        })),
+      });
+    if (/\/(roots|browse|search|journal|summary|files|subtree-counts)$/.test(path))
+      scopes.push({ path, syncId: body.sync_id ?? null });
+    return route.fallback();
+  });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto(`/devices/${DEVICE_ID}?sync_id=${syncIds[0]}&keep=1`);
+  const right = page.getByTestId('device-sync-sessions-sidebar');
+  await expect(right).toBeVisible();
+  await expect(right.locator(`[data-sync-id="${syncIds[0]}"]`)).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate(
+      (theme) => document.documentElement.setAttribute('data-bs-theme', theme),
+      theme,
+    );
+    for (const tab of ['Аналітичні відомості', 'Файли', 'Журнал']) {
+      await page.getByRole('tab', { name: tab, exact: true }).click();
+      const left =
+        tab === 'Файли'
+          ? page.getByTestId('device-files-sidebar')
+          : page.getByTestId('device-details-left-panel');
+      await expect(left).toBeVisible();
+      const leftBox = await left.boundingBox();
+      const rightBox = await right.boundingBox();
+      const center = await page.getByTestId('device-details-tab-panel').boundingBox();
+      expect(leftBox && rightBox && center).toBeTruthy();
+      expect(Math.abs(leftBox!.y - rightBox!.y)).toBeLessThan(2);
+      expect(Math.abs(leftBox!.height - rightBox!.height)).toBeLessThan(2);
+      expect(center!.x + center!.width).toBeLessThanOrEqual(rightBox!.x);
+      expect(await left.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(
+        await right.evaluate((node) => getComputedStyle(node).backgroundColor),
+      );
+    }
+    await page.screenshot({ path: testInfo.outputPath(`sidebars-${theme}.png`) });
+  }
+  await right.locator(`[data-sync-id="${syncIds[1]}"]`).click();
+  await expect(page).toHaveURL(new RegExp(`sync_id=${syncIds[1]}&keep=1`));
+  await expect(page.getByRole('tab', { name: 'Журнал', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect
+    .poll(() => scopes.filter((scope) => scope.path.endsWith('/journal')).at(-1)?.syncId)
+    .toBe(syncIds[1]);
+  await page.getByRole('button', { name: 'Згорнути праву панель' }).click();
+  await expect(right).toBeHidden();
+  await expect(page).toHaveURL(new RegExp(`sync_id=${syncIds[1]}`));
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`sync_id=${syncIds[0]}`));
+  await expect(right).toBeHidden();
+  await page.goForward();
+  await expect
+    .poll(() => scopes.filter((scope) => scope.path.endsWith('/journal')).at(-1)?.syncId)
+    .toBe(syncIds[1]);
+  await page.reload();
+  await expect(right).toBeVisible();
+  await expect(right.locator(`[data-sync-id="${syncIds[1]}"]`)).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await right.getByRole('button', { name: /Усі сесії/ }).click();
+  await expect(page).toHaveURL(`/devices/${DEVICE_ID}?keep=1`);
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`sync_id=${syncIds[1]}`));
+  for (const width of [1280, 1024]) {
+    await page.setViewportSize({ width, height: 900 });
+    const rightBox = await right.boundingBox();
+    const centerBox = await page.getByTestId('device-details-tab-panel').boundingBox();
+    expect(centerBox!.x + centerBox!.width).toBeLessThanOrEqual(rightBox!.x);
+    expect(rightBox!.x + rightBox!.width).toBeLessThanOrEqual(width);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(right).toBeAttached();
+  expect(await right.evaluate((node) => getComputedStyle(node).position)).not.toBe('fixed');
+});
+
+test('@smoke #3390 rejects an invalid session URL without showing unfiltered results', async ({
+  page,
+}) => {
+  await installMocks(page);
+  await page.route('**/api/device/files/sessions/**', (route) => {
+    if (route.request().url().endsWith('/list'))
+      return fulfillJson(route, { sessions: [], next_cursor: null });
+    return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
+  });
+  await page.goto(`/devices/${DEVICE_ID}?sync_id=`);
+  const center = page.getByTestId('device-details-tab-panel');
+  await expect(center.getByRole('alert')).toContainText('Некоректний ідентифікатор сесії');
+  await expect(center.getByRole('tabpanel')).toHaveCount(0);
+  await page.getByRole('tab', { name: 'Журнал', exact: true }).click();
+  await expect(center.getByRole('tabpanel')).toHaveCount(0);
+  await page.goto(`/devices/${DEVICE_ID}?sync_id=018f0000-0000-7000-8000-000000000099`);
+  await expect(center.getByRole('alert')).toBeVisible();
+  await expect(center.getByRole('tabpanel')).toHaveCount(0);
+  await center.getByRole('button', { name: 'Показати всі сесії' }).click();
+  await expect(page).toHaveURL(`/devices/${DEVICE_ID}`);
+  await expect(center.getByRole('tabpanel')).toBeVisible();
+});
+
 function fulfillJson(route: Route, body: unknown) {
   return route.fulfill({
     contentType: 'application/json; charset=utf-8',
@@ -563,6 +698,7 @@ test('@smoke device details uses tabs, an IDE-style Files sidebar, and a synchro
   await expect.poll(() => tracker.searchRequests.length).toBe(1);
   expect(tracker.searchRequests[0]).toEqual({
     device_id: DEVICE_ID,
+    sync_id: null,
     scope_entry_id: POSIX_ROOT_ID,
     name_query: 'duplicate',
     kinds: ['file'],

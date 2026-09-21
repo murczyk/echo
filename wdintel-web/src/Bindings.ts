@@ -1980,6 +1980,7 @@ export type DeviceFile = {
 };
 
 export type ListDeviceFileRootsReq = {
+  syncId: string | null;
   deviceId: string;
 };
 
@@ -1993,6 +1994,7 @@ export type DeviceFileSubtreeCount = {
 };
 
 export type CountDeviceFileSubtreesReq = {
+  syncId: string | null;
   deviceId: string;
   parentEntryId: string | null;
   directoryEntryIds: Array<string>;
@@ -2003,6 +2005,7 @@ export type CountDeviceFileSubtreesRsp = {
 };
 
 export type BrowseDeviceFilesReq = {
+  syncId: string | null;
   deviceId: string;
   parentEntryId: string;
   includeBreadcrumbs: boolean | null;
@@ -2020,6 +2023,7 @@ export type BrowseDeviceFilesRsp = {
 };
 
 export type SearchDeviceFilesReq = {
+  syncId: string | null;
   deviceId: string;
   scopeEntryId: string;
   nameQuery: string | null;
@@ -2053,6 +2057,7 @@ export type DeviceFileJournalEntry = {
 };
 
 export type JournalDeviceFilesReq = {
+  syncId: string | null;
   deviceId: string;
   limit: number | null;
   cursor: string | null;
@@ -2141,6 +2146,38 @@ export type SyncSummary = {
   updatedAt: string;
   completedAt: string | null;
   expiresAt: string | null;
+};
+
+export type ListDeviceSyncSessionsReq = {
+  deviceId: string;
+  createdFrom: string | null;
+  createdTo: string | null;
+  limit: number | null;
+  cursor: string | null;
+};
+
+export type ListDeviceSyncSessionsRsp = {
+  sessions: Array<SyncSummary>;
+  nextCursor: string | null;
+};
+
+export type GetDeviceSyncSessionReq = {
+  deviceId: string;
+  syncId: string;
+};
+
+export type DeviceSyncSessionSummariesReq = {
+  deviceId: string;
+  syncIds: Array<string>;
+};
+
+export type DeviceSyncSessionSummary = {
+  syncId: string;
+  analysis: DeviceAnalyticsSummaryRsp;
+};
+
+export type DeviceSyncSessionSummariesRsp = {
+  summaries: Array<DeviceSyncSessionSummary>;
 };
 
 export type BatchSummary = {
@@ -2371,6 +2408,11 @@ export type DeviceAnalyticsReq = {
   deviceId: string;
 };
 
+export type DeviceAnalyticsSummaryReq = {
+  deviceId: string;
+  syncId: string | null;
+};
+
 export type DeviceAnalyticsTagsRsp = {
   tags: Array<AnalyticsTag>;
 };
@@ -2388,6 +2430,7 @@ export type DeviceAnalyticsSummaryRsp = {
 };
 
 export type DeviceAnalyticsFilesReq = {
+  syncId: string | null;
   deviceId: string;
   tagId: string;
   limit: number | null;

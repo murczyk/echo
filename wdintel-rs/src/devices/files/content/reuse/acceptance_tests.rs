@@ -190,7 +190,14 @@ async fn reuse_is_idempotent_after_later_metadata_and_preserves_original_complet
     );
     assert_eq!(fixture.persisted(&upload).await.status,
         crate::file_registry::entities::sea_orm_active_enums::FileContentUploadStatus::Completed);
-    let error = wdfiles_migration::Migrator::down(fixture.db(), Some(1))
+    let migration = wdfiles_migration::Migrator::migrations()
+        .into_iter()
+        .find(|migration| {
+            migration.name() == "m20260915_212032_reuse_verified_file_content"
+        })
+        .unwrap();
+    let error = migration
+        .down(&sea_orm_migration::SchemaManager::new(fixture.db()))
         .await
         .unwrap_err();
     assert!(

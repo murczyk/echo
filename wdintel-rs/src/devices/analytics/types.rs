@@ -621,6 +621,14 @@ pub struct DeviceAnalyticsSummaryRsp {
 )]
 #[serde(deny_unknown_fields)]
 pub struct DeviceAnalyticsFilesReq {
+    #[serde(
+        default,
+        deserialize_with = "crate::devices::types::deserialize_nullable_canonical_uuid"
+    )]
+    pub sync_id: Option<String>,
+    #[serde(
+        deserialize_with = "crate::devices::types::deserialize_canonical_uuid"
+    )]
     pub device_id: String,
     pub tag_id: String,
     pub limit: Option<u64>,
@@ -721,4 +729,28 @@ pub(in crate::devices) struct AnalysisRunTagSummary {
 pub(in crate::devices) struct DeviceAnalyticsFileLink {
     pub file_entry_id: Uuid,
     pub file_entry_created_at: DateTime<FixedOffset>,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Clone,
+    Debug,
+    Deserialize,
+    Eq,
+    PartialEq,
+    Serialize,
+)]
+#[serde(deny_unknown_fields)]
+pub struct DeviceAnalyticsSummaryReq {
+    #[serde(
+        deserialize_with = "crate::devices::types::deserialize_canonical_uuid"
+    )]
+    pub device_id: String,
+    #[serde(
+        default,
+        deserialize_with = "crate::devices::types::deserialize_nullable_canonical_uuid"
+    )]
+    pub sync_id: Option<String>,
 }

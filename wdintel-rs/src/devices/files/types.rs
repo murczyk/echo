@@ -656,6 +656,8 @@ pub struct DeviceFile {
 )]
 #[serde(deny_unknown_fields)]
 pub struct ListDeviceFileRootsReq {
+    #[serde(default, deserialize_with = "deserialize_nullable_canonical_uuid")]
+    pub sync_id: Option<String>,
     #[serde(deserialize_with = "deserialize_canonical_uuid")]
     pub device_id: String,
 }
@@ -688,6 +690,8 @@ pub struct ListDeviceFileRootsRsp {
 )]
 #[serde(deny_unknown_fields)]
 pub struct CountDeviceFileSubtreesReq {
+    #[serde(default, deserialize_with = "deserialize_nullable_canonical_uuid")]
+    pub sync_id: Option<String>,
     #[serde(deserialize_with = "deserialize_canonical_uuid")]
     pub device_id: String,
     #[serde(deserialize_with = "deserialize_nullable_canonical_uuid")]
@@ -742,6 +746,8 @@ pub struct CountDeviceFileSubtreesRsp {
 )]
 #[serde(deny_unknown_fields)]
 pub struct BrowseDeviceFilesReq {
+    #[serde(default, deserialize_with = "deserialize_nullable_canonical_uuid")]
+    pub sync_id: Option<String>,
     #[serde(deserialize_with = "deserialize_canonical_uuid")]
     pub device_id: String,
     #[serde(deserialize_with = "deserialize_canonical_uuid")]
@@ -785,6 +791,8 @@ pub struct BrowseDeviceFilesRsp {
 )]
 #[serde(deny_unknown_fields)]
 pub struct SearchDeviceFilesReq {
+    #[serde(default, deserialize_with = "deserialize_nullable_canonical_uuid")]
+    pub sync_id: Option<String>,
     #[serde(deserialize_with = "deserialize_canonical_uuid")]
     pub device_id: String,
     #[serde(deserialize_with = "deserialize_canonical_uuid")]
@@ -858,6 +866,8 @@ pub struct DeviceFileJournalEntry {
 )]
 #[serde(deny_unknown_fields)]
 pub struct JournalDeviceFilesReq {
+    #[serde(default, deserialize_with = "deserialize_nullable_canonical_uuid")]
+    pub sync_id: Option<String>,
     #[serde(deserialize_with = "deserialize_canonical_uuid")]
     pub device_id: String,
     pub limit: Option<u64>,

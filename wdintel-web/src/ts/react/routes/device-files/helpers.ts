@@ -56,12 +56,14 @@ function splitFilterValues(value: string): string[] | null {
 
 export function buildBrowseDeviceFilesReq(params: {
   deviceId: string;
+  syncId?: string | null;
   parentEntryId: string;
   cursor: string | null;
   tagFilter: DeviceAnalyticsTagFilter;
 }): BrowseDeviceFilesReq {
   return {
     deviceId: params.deviceId,
+    syncId: params.syncId ?? null,
     parentEntryId: params.parentEntryId,
     includeBreadcrumbs: true,
     limit: DEVICE_FILE_PAGE_SIZE,
@@ -74,6 +76,7 @@ export function buildBrowseDeviceFilesReq(params: {
 
 export function buildSearchDeviceFilesReq(params: {
   deviceId: string;
+  syncId?: string | null;
   scopeEntryId: string;
   draft: DeviceFileSearchDraft;
   cursor: string | null;
@@ -82,6 +85,7 @@ export function buildSearchDeviceFilesReq(params: {
   const nameQuery = params.draft.nameQuery.trim();
   return {
     deviceId: params.deviceId,
+    syncId: params.syncId ?? null,
     scopeEntryId: params.scopeEntryId,
     nameQuery: nameQuery === '' ? null : nameQuery,
     kinds: params.draft.kinds.length === 0 ? null : params.draft.kinds,
@@ -102,9 +106,11 @@ export function buildSearchFingerprint(
   scopeEntryId: string,
   draft: DeviceFileSearchDraft,
   tagFilter: DeviceAnalyticsTagFilter,
+  syncId: string | null = null,
 ): string {
   const req = buildSearchDeviceFilesReq({
     deviceId,
+    syncId,
     scopeEntryId,
     draft,
     cursor: null,

@@ -1,6 +1,7 @@
 module Pages.Devices.Id_ exposing (Model, Msg, page)
 
 import Auth
+import Dict
 import Core.Auth
 import Effect as E exposing (Effect)
 import Html exposing (div, node, text)
@@ -68,12 +69,12 @@ view : Auth.User -> Shared.Model -> Route { id : String } -> Model -> View Msg
 view user shared route _ =
     { title = "Пристрій"
     , body =
-        [ devicesBody user shared route.params.id ]
+        [ devicesBody user shared route.params.id (Dict.get "sync_id" route.query) ]
     }
 
 
-devicesBody : Auth.User -> Shared.Model -> String -> Html.Html Msg
-devicesBody user shared deviceId =
+devicesBody : Auth.User -> Shared.Model -> String -> Maybe String -> Html.Html Msg
+devicesBody user shared deviceId syncId =
     div [ class "app-shell-fill-height box-border min-h-0 px-6 py-4 w-full flex flex-col" ]
         [ case shared.systemSettings of
             Nothing ->
@@ -90,9 +91,11 @@ devicesBody user shared deviceId =
 
                 else
                     node "device-details-page"
-                        [ class "block w-full h-full"
+                        ([ class "block w-full h-full"
                         , attribute "device-id" deviceId
                         , attribute "data-auth-user-roles" (String.join "," user.roles)
                         ]
+                            ++ (syncId |> Maybe.map (attribute "sync-id" >> List.singleton) |> Maybe.withDefault [])
+                        )
                         []
         ]

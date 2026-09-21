@@ -17,6 +17,7 @@ import {
   Typography,
 } from '@mui/material';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useDeviceFileErrorNotification } from '../../device-files/use-device-file-error-notification';
 
 import type {
   AnalyticsTag,
@@ -79,10 +80,12 @@ function AnalyticsFilesList({ files }: { files: DeviceAnalyticsFile[] }) {
 
 function DeviceAnalyticsTagWidget({
   deviceId,
+  syncId = null,
   summary,
   onUseAsFilter,
 }: {
   deviceId: string;
+  syncId?: string | null;
   summary: AnalyticsWidgetSummary;
   onUseAsFilter: (tagId: string) => void;
 }) {
@@ -92,6 +95,7 @@ function DeviceAnalyticsTagWidget({
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<DeviceFileLoadError | null>(null);
+  useDeviceFileErrorNotification(error?.message);
   const loadedRef = useRef(false);
   const nextCursorRef = useRef<string | null>(null);
   const requestSeqRef = useRef(0);
@@ -113,6 +117,7 @@ function DeviceAnalyticsTagWidget({
         const rsp = await listDeviceAnalyticsFiles(
           {
             deviceId,
+            syncId,
             tagId: summary.tag.id,
             limit: ANALYTICS_FILES_PAGE_SIZE,
             cursor,
@@ -146,7 +151,7 @@ function DeviceAnalyticsTagWidget({
         if (abortRef.current === controller) abortRef.current = null;
       }
     },
-    [deviceId, summary.tag.id, summary.tag.name],
+    [deviceId, syncId, summary.tag.id, summary.tag.name],
   );
 
   useEffect(() => {
@@ -161,7 +166,7 @@ function DeviceAnalyticsTagWidget({
     setLoadingMore(false);
     setError(null);
     return () => abortRef.current?.abort();
-  }, [deviceId, summary.tag.id]);
+  }, [deviceId, syncId, summary.tag.id]);
 
   return (
     <Accordion
@@ -182,6 +187,8 @@ function DeviceAnalyticsTagWidget({
         <Stack
           direction={{ xs: 'column', sm: 'row' }}
           spacing={1}
+          useFlexGap
+          flexWrap="wrap"
           alignItems={{ sm: 'center' }}
           sx={{ minWidth: 0, width: '100%', pr: 1 }}
         >
@@ -204,7 +211,8 @@ function DeviceAnalyticsTagWidget({
             size="small"
             variant="outlined"
             onClick={() => onUseAsFilter(summary.tag.id)}
-            sx={{ alignSelf: 'flex-start' }}
+            sx={{ alignSelf: 'flex-start', maxWidth: '100%' }}
+            style={{ whiteSpace: 'normal' }}
           >
             Використати як фільтр
           </PowerButton>
@@ -242,7 +250,8 @@ function DeviceAnalyticsTagWidget({
               variant="outlined"
               disabled={loadingMore}
               onClick={() => void load(true)}
-              sx={{ alignSelf: 'center' }}
+              sx={{ alignSelf: 'center', maxWidth: '100%' }}
+              style={{ whiteSpace: 'normal' }}
             >
               {loadingMore ? 'Завантаження…' : 'Завантажити ще'}
             </PowerButton>
@@ -255,24 +264,32 @@ function DeviceAnalyticsTagWidget({
 
 export function DeviceAnalyticsPanel({
   deviceId,
+  syncId = null,
   enabled,
+  refreshVersion = 0,
   isAdmin,
   tagsState,
   tagFilter,
   onTagFilterChange,
 }: {
   deviceId: string;
+  syncId?: string | null;
   enabled: boolean;
+  refreshVersion?: number;
   isAdmin: boolean;
   tagsState: DeviceAnalyticsTagsState;
   tagFilter: DeviceAnalyticsTagFilter;
   onTagFilterChange: (filter: DeviceAnalyticsTagFilter) => void;
 }) {
+  const [summaryVersion, setSummaryVersion] = useState(0);
   const [summary, setSummary] = useState<DeviceAnalyticsSummaryRsp | null>(null);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<DeviceFileLoadError | null>(null);
+  useDeviceFileErrorNotification(error?.message);
   const [reanalyzing, setReanalyzing] = useState(false);
   const [reanalysisMessage, setReanalysisMessage] = useState<string | null>(null);
+  const [reanalysisError, setReanalysisError] = useState<string | null>(null);
+  useDeviceFileErrorNotification(reanalysisError);
   const [reanalysisDialogOpen, setReanalysisDialogOpen] = useState(false);
   const requestSeqRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -286,9 +303,13 @@ export function DeviceAnalyticsPanel({
     setLoading(true);
     setError(null);
     try {
-      const rsp = await getDeviceAnalyticsSummary({ deviceId }, { signal: controller.signal });
+      const rsp = await getDeviceAnalyticsSummary(
+        { deviceId, syncId },
+        { signal: controller.signal },
+      );
       if (requestSeqRef.current !== seq || controller.signal.aborted) return;
       setSummary(rsp);
+      setSummaryVersion((value) => value + 1);
     } catch (loadError) {
       if (requestSeqRef.current !== seq || controller.signal.aborted || isAbortError(loadError)) {
         return;
@@ -302,7 +323,7 @@ export function DeviceAnalyticsPanel({
       if (requestSeqRef.current === seq) setLoading(false);
       if (abortRef.current === controller) abortRef.current = null;
     }
-  }, [deviceId, enabled]);
+  }, [deviceId, syncId, enabled]);
 
   useEffect(() => {
     requestSeqRef.current += 1;
@@ -314,7 +335,7 @@ export function DeviceAnalyticsPanel({
     setReanalysisDialogOpen(false);
     if (enabled) void loadSummary();
     return () => abortRef.current?.abort();
-  }, [deviceId, enabled, loadSummary]);
+  }, [deviceId, syncId, enabled, loadSummary, refreshVersion]);
 
   const summaries = useMemo(() => {
     const summaryByTagId = new Map((summary?.items ?? []).map((item) => [item.tag.id, item]));
@@ -336,11 +357,15 @@ export function DeviceAnalyticsPanel({
   const scheduleReanalysis = async () => {
     setReanalysisDialogOpen(false);
     setReanalyzing(true);
+    setReanalysisError(null);
     setReanalysisMessage(null);
     try {
       await reanalyzeDevice({ deviceId });
       setReanalysisMessage('Повторний аналіз запущено у фоновому режимі.');
     } catch (scheduleError) {
+      setReanalysisError(
+        toDeviceFileLoadError(scheduleError, 'Не вдалося запустити повторний аналіз').message,
+      );
       setReanalysisMessage(
         toDeviceFileLoadError(scheduleError, 'Не вдалося запустити повторний аналіз').message,
       );
@@ -371,7 +396,13 @@ export function DeviceAnalyticsPanel({
         </DialogActions>
       </Dialog>
       <Stack spacing={2}>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between">
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={1}
+          useFlexGap
+          flexWrap="wrap"
+          justifyContent="space-between"
+        >
           <Box>
             <Typography id="device-analytics-title" variant="h6">
               Аналітика файлів
@@ -380,7 +411,12 @@ export function DeviceAnalyticsPanel({
               Динамічні теги синхронізованих файлів
             </Typography>
           </Box>
-          <Stack direction="row" spacing={0.5} alignItems="center">
+          <Stack
+            direction="row"
+            spacing={0.5}
+            alignItems="center"
+            sx={{ minWidth: 0, maxWidth: '100%' }}
+          >
             <PowerIconButton
               aria-label="Оновити аналітичні відомості"
               disabled={loading}
@@ -392,6 +428,7 @@ export function DeviceAnalyticsPanel({
               <PowerButton
                 size="small"
                 variant="outlined"
+                style={{ whiteSpace: 'normal' }}
                 disabled={reanalyzing}
                 onClick={() => setReanalysisDialogOpen(true)}
               >
@@ -412,8 +449,10 @@ export function DeviceAnalyticsPanel({
             data-testid="device-analytics-progress"
             direction={{ xs: 'column', sm: 'row' }}
             spacing={1}
+            useFlexGap
+            flexWrap="wrap"
           >
-            <Paper variant="outlined" sx={{ flex: 1, px: 2, py: 1.5 }}>
+            <Paper variant="outlined" sx={{ flex: '1 1 140px', minWidth: 0, px: 2, py: 1.5 }}>
               <Typography variant="caption" color="text.secondary">
                 Усього файлів
               </Typography>
@@ -421,7 +460,7 @@ export function DeviceAnalyticsPanel({
                 {fileCountFormatter.format(summary.totalFileCount)}
               </Typography>
             </Paper>
-            <Paper variant="outlined" sx={{ flex: 1, px: 2, py: 1.5 }}>
+            <Paper variant="outlined" sx={{ flex: '1 1 140px', minWidth: 0, px: 2, py: 1.5 }}>
               <Typography variant="caption" color="text.secondary">
                 Проаналізовано файлів
               </Typography>
@@ -464,8 +503,9 @@ export function DeviceAnalyticsPanel({
           <Stack spacing={1}>
             {summaries.map((summary) => (
               <DeviceAnalyticsTagWidget
-                key={summary.tag.id}
+                key={`${summary.tag.id}:${summaryVersion}`}
                 deviceId={deviceId}
+                syncId={syncId}
                 summary={summary}
                 onUseAsFilter={(tagId) =>
                   onTagFilterChange({ tagIds: [tagId], tagMatch: 'any', untagged: false })
