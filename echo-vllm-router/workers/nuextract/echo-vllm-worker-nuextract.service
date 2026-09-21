@@ -16,7 +16,7 @@ Environment=XDG_CACHE_HOME=/var/cache/echo-vllm-worker
 ExecStart=/opt/echo-vllm-worker/bin/run-nuextract
 StateDirectory=echo-vllm-worker
 CacheDirectory=echo-vllm-worker
-Restart=on-failure
+Restart=always
 RestartSec=10s
 TimeoutStartSec=1800s
 TimeoutStopSec=60s

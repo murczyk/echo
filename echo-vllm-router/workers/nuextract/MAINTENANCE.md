@@ -12,6 +12,30 @@ exposed the mismatch: GPU mount hooks failed, leaving NuExtract stopped and
 OCR jobs waiting on both CBR instances. On 2026-09-21, a normal module reload
 and container start restored service without rebooting the host.
 
+Later that morning, a separate CUDA out-of-memory error in the image encoder
+caused vLLM to exit with status 0, leaving `Restart=on-failure` inactive.
+The worker now reserves 85% of GPU memory instead of 95%, leaving more room
+for image-encoder allocations while retaining two concurrent sequences and
+the 16,384-token context. `Restart=always` recovers unexpected clean exits;
+an explicit `systemctl stop` still keeps the service stopped for maintenance.
+
+To apply these worker settings to an existing container, copy the updated
+`run-worker.sh` and `echo-vllm-worker-nuextract.service` into it, then run inside
+the container during a worker maintenance window:
+
+```bash
+sudo install -m 0755 run-worker.sh /opt/echo-vllm-worker/bin/run-nuextract
+sudo install -m 0644 echo-vllm-worker-nuextract.service /etc/systemd/system/
+sudo systemd-analyze verify /etc/systemd/system/echo-vllm-worker-nuextract.service
+sudo systemctl daemon-reload
+sudo systemctl restart echo-vllm-worker-nuextract.service
+```
+
+After model loading, run `verify-nuextract`, check recent logs for CUDA errors,
+and confirm OCR jobs complete. These settings reduce the observed memory
+pressure and recover process exits; they do not guarantee every input fits
+the GPU. Repeated OOMs need further workload-specific investigation.
+
 ## Install the host policy
 
 Copy `install-host-policy.sh` and `99-echo-gpu-maintenance` together to the

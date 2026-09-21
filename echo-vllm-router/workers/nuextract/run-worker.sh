@@ -27,7 +27,7 @@ exec /opt/vllm-venv/bin/vllm serve "$MODEL_SNAPSHOT" \
   --trust-remote-code \
   --dtype bfloat16 \
   --max-model-len 16384 \
-  --gpu-memory-utilization 0.95 \
+  --gpu-memory-utilization 0.85 \
   --max-num-seqs 2 \
   --limit-mm-per-prompt '{"image":1,"video":0}' \
   --chat-template-content-format openai \
