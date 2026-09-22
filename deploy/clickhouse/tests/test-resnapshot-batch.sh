@@ -114,4 +114,13 @@ resnapshot_batch <<<"$entries"
 ! grep -q '^drop sigint_network$' "$operations"
 [[ -z $(ls -A "$table_resnapshot_state_dir") ]]
 [[ $(tail -n 1 "$operations") == refresh ]]
+
+(
+  refresh_analytics() {
+    printf 'refresh-again\n' >>"$operations"
+  }
+  resnapshot_batch <<<"$entries"
+)
+[[ $(grep -c '^snapshot ' "$operations") == 2 ]]
+[[ $(tail -n 1 "$operations") == refresh-again ]]
 printf 'Targeted batch repair tests passed\n'

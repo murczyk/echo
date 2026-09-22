@@ -1069,7 +1069,13 @@ same helper validates additive-only drift and rebuilds only the preserved table
 mapping. Automatic repairs consider manifest-authorized tables and preserved
 retry state.
 Deployment repairs the complete batch under one analytics reconciliation lock,
-then refreshes and verifies the gateway once all raw tables are ready. Retry an
+then refreshes current-state views, compares gateway foreign tables and
+compatibility views, including grants and view security options, with the source
+and ClickHouse catalogs, reconciles schema drift, and verifies analytics once
+all raw tables are ready. Gateway views
+without drift are left in place; changed views are refreshed individually with
+short PostgreSQL lock timeouts. Transient PostgreSQL deadlocks retry only the
+failed verification step before the mirror is left paused. Retry an
 interrupted deployment with `/opt/echo-peerdb/current/bin/source-verify-deploy.sh`
 on the source host after activating the same corrected control bundle on both
 hosts. Completed raw snapshots are reused, and retry state is retained until

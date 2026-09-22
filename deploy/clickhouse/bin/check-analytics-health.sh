@@ -18,6 +18,16 @@ export PGCONNECT_TIMEOUT=${ANALYTICS_HEALTH_CONNECT_TIMEOUT_SECONDS:-5}
   || die "ANALYTICS_HEALTH_CONNECT_TIMEOUT_SECONDS must be a positive integer"
 slot_name="peerflow_slot_${MIRROR_NAME}"
 validate_identifier slot_name "$slot_name"
+health_error_file=$(mktemp /tmp/echo-analytics-health.XXXXXX)
+trap 'rm -f -- "$health_error_file"' EXIT
+
+report_transient_health_error() {
+  local error
+  error=$(<"$health_error_file")
+  if source_reconciliation_failure_is_transient "$error"; then
+    printf '%s\n' "$error" >&2
+  fi
+}
 
 record_health() {
   local healthy=$1
@@ -100,27 +110,28 @@ done
 
 flow_status=$(catalog_psql -Atq \
   -v ON_ERROR_STOP=1 \
-  -v mirror="$MIRROR_NAME" <<'SQL' 2>/dev/null || true
+  -v mirror="$MIRROR_NAME" <<'SQL' 2>"$health_error_file"
 SELECT status FROM flows WHERE name = :'mirror';
 SQL
-)
+) || report_transient_health_error
 [[ "$flow_status" == 1 ]] \
   || fail_health "mirror is not running (status=${flow_status:-missing})"
 
 nonce=$(< /proc/sys/kernel/random/uuid)
 source_updated_at=$(source_psql -Atq -v ON_ERROR_STOP=1 \
-  -v nonce="$nonce" <<'SQL' 2>/dev/null || true
+  -v nonce="$nonce" <<'SQL' 2>"$health_error_file"
 UPDATE echo_analytics.heartbeat
 SET nonce = :'nonce'::uuid,
     updated_at = clock_timestamp()
 WHERE singleton
 RETURNING updated_at;
 SQL
-)
+) || report_transient_health_error
 [[ -n "$source_updated_at" ]] \
   || fail_health "could not update source analytics heartbeat"
 source_lsn=$(source_psql -Atq -v ON_ERROR_STOP=1 \
-  -c 'SELECT pg_current_wal_lsn()' 2>/dev/null || true)
+  -c 'SELECT pg_current_wal_lsn()' 2>"$health_error_file") \
+  || report_transient_health_error
 [[ "$source_lsn" =~ ^[0-9A-F]+/[0-9A-F]+$ ]] \
   || fail_health "could not read source WAL position"
 
@@ -129,20 +140,20 @@ confirmed_flush_lsn=
 while ((SECONDS < deadline)); do
   slot_state=$(source_psql -Atq -F '|' -v ON_ERROR_STOP=1 \
     -v slot="$slot_name" \
-    <<'SQL' 2>/dev/null || true
+    <<'SQL' 2>"$health_error_file"
 SELECT wal_status,
        confirmed_flush_lsn
 FROM pg_replication_slots
 WHERE slot_name = :'slot';
 SQL
-  )
+  ) || report_transient_health_error
   IFS='|' read -r wal_status confirmed_flush_lsn <<<"$slot_state"
   [[ "$wal_status" != lost && -n "$wal_status" ]] \
     || fail_health "replication slot is missing or lost" \
       "$source_lsn" "$confirmed_flush_lsn"
   destination_visible=$(gateway_psql -Atq -v ON_ERROR_STOP=1 \
     -v nonce="$nonce" \
-    -v source_updated_at="$source_updated_at" <<'SQL' 2>/dev/null || true
+    -v source_updated_at="$source_updated_at" <<'SQL' 2>"$health_error_file"
 SELECT true
 FROM public.echo_analytics__heartbeat
 WHERE singleton
@@ -151,7 +162,7 @@ WHERE singleton
     OR updated_at >= :'source_updated_at'::timestamptz
   );
 SQL
-  )
+  ) || report_transient_health_error
   if [[ "$destination_visible" == t ]]; then
     if ! "$SCRIPT_DIR/reconcile-if-needed.sh" --check; then
       fail_health "analytics desired-state check failed" \

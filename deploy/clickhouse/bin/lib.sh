@@ -104,7 +104,7 @@ reconcile_analytics_schema_with_retry() {
 
 source_reconciliation_failure_is_transient() {
   grep -Eiq \
-    'deadlock detected|tuple concurrently updated|another table-selection reconciliation is already running|canceling statement due to lock timeout' \
+    'deadlock detected|tuple concurrently updated|another table-selection reconciliation is already running|canceling statement due to lock timeout|could not obtain lock on relation' \
     <<<"$1"
 }
 

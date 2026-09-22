@@ -52,6 +52,8 @@ if [[ $# -eq 0 ]]; then
   run_case mapping_preserved success
   run_case interrupted_retry success
   run_case refresh_reconciles_state success
+  run_case refresh_retries_gateway_deadlock success
+  run_case refresh_retries_health_deadlock success
   run_case strategy_mismatch failure
   run_case terminal_state failure
   run_case recoverable_failure failure
@@ -70,7 +72,11 @@ export ECHO_ANALYTICS_LIB=$TEST_DIR/resnapshot-test-lib.sh
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/resnapshot-table.sh"
 
-if [[ $scenario == refresh_reconciles_state ]]; then
+if [[ $scenario == refresh_reconciles_state \
+  || $scenario == refresh_retries_gateway_deadlock \
+  || $scenario == refresh_retries_health_deadlock ]]; then
+  # shellcheck disable=SC1091
+  source "$TEST_DIR/../bin/lib.sh"
   analytics_bin_dir=$case_dir/bin
   mkdir -p "$analytics_bin_dir"
   for helper in \
@@ -85,7 +91,11 @@ if [[ $scenario == refresh_reconciles_state ]]; then
 set -euo pipefail
 helper=${0##*/}
 printf '%s\n' "$helper" >>"$ECHO_RESNAPSHOT_TEST_CASE_DIR/operations"
-if [[ $helper == reconcile-if-needed.sh ]]; then
+if [[ $helper == "$ECHO_RESNAPSHOT_TEST_FAIL_HELPER" && -f "$ECHO_RESNAPSHOT_TEST_CASE_DIR/deadlock-once" ]]; then
+  rm "$ECHO_RESNAPSHOT_TEST_CASE_DIR/deadlock-once"
+  printf 'ERROR: deadlock detected\n' >&2
+  exit 1
+elif [[ $helper == reconcile-if-needed.sh ]]; then
   touch "$ECHO_RESNAPSHOT_TEST_CASE_DIR/reconciled"
 elif [[ $helper == check-analytics-health.sh ]]; then
   [[ -f "$ECHO_RESNAPSHOT_TEST_CASE_DIR/reconciled" ]]
@@ -93,15 +103,52 @@ fi
 MOCK
     chmod +x "$analytics_bin_dir/$helper"
   done
+  touch "$case_dir/deadlock-once"
+  export SOURCE_RECONCILE_RETRY_ATTEMPTS=2
+  export SOURCE_RECONCILE_RETRY_DELAY_SECONDS=0
+  case $scenario in
+    refresh_reconciles_state)
+      export ECHO_RESNAPSHOT_TEST_FAIL_HELPER=reconcile-schema.sh
+      ;;
+    refresh_retries_gateway_deadlock)
+      export ECHO_RESNAPSHOT_TEST_FAIL_HELPER=refresh-gateway.sh
+      ;;
+    refresh_retries_health_deadlock)
+      export ECHO_RESNAPSHOT_TEST_FAIL_HELPER=check-analytics-health.sh
+      ;;
+  esac
   refresh_analytics
-  diff -u \
-    <(printf '%s\n' \
-      refresh-current-views.sh \
-      refresh-gateway.sh \
-      reconcile-schema.sh \
-      reconcile-if-needed.sh \
-      check-analytics-health.sh) \
-    "$operations_file"
+  if [[ $scenario == refresh_reconciles_state ]]; then
+    diff -u \
+      <(printf '%s\n' \
+        refresh-current-views.sh \
+        refresh-gateway.sh \
+        reconcile-schema.sh \
+        reconcile-schema.sh \
+        reconcile-if-needed.sh \
+        check-analytics-health.sh) \
+      "$operations_file"
+  elif [[ $scenario == refresh_retries_gateway_deadlock ]]; then
+    diff -u \
+      <(printf '%s\n' \
+        refresh-current-views.sh \
+        refresh-gateway.sh \
+        refresh-gateway.sh \
+        reconcile-schema.sh \
+        reconcile-if-needed.sh \
+        check-analytics-health.sh) \
+      "$operations_file"
+  else
+    diff -u \
+      <(printf '%s\n' \
+        refresh-current-views.sh \
+        refresh-gateway.sh \
+        reconcile-schema.sh \
+        reconcile-if-needed.sh \
+        check-analytics-health.sh \
+        check-analytics-health.sh) \
+      "$operations_file"
+  fi
   exit 0
 fi
 

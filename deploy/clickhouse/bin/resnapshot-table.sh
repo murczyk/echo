@@ -394,11 +394,20 @@ wait_for_table_snapshot() {
 }
 
 refresh_analytics() {
-  "$analytics_bin_dir/refresh-current-views.sh"
-  "$analytics_bin_dir/refresh-gateway.sh"
-  "$analytics_bin_dir/reconcile-schema.sh"
-  "$analytics_bin_dir/reconcile-if-needed.sh"
-  "$analytics_bin_dir/check-analytics-health.sh"
+  retry_source_reconciliation_step \
+    "Current-state view refresh" "$analytics_bin_dir/refresh-current-views.sh" \
+    || return $?
+  retry_source_reconciliation_step \
+    "Gateway reconciliation" "$analytics_bin_dir/refresh-gateway.sh" \
+    || return $?
+  retry_source_reconciliation_step \
+    "Analytics schema verification" "$analytics_bin_dir/reconcile-schema.sh" \
+    || return $?
+  retry_source_reconciliation_step \
+    "Derived analytics reconciliation" "$analytics_bin_dir/reconcile-if-needed.sh" \
+    || return $?
+  retry_source_reconciliation_step \
+    "Analytics health check" "$analytics_bin_dir/check-analytics-health.sh"
 }
 
 finish_repair() {
