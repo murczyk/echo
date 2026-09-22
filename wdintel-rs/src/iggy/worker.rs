@@ -92,6 +92,24 @@ async fn sync_integration(
     env: &Env,
     api_integration: api_integration::Model,
 ) -> Result<(), AppError> {
+    let Some(transaction) = try_lock_integration(&env.dbx, api_integration.id)
+        .await
+        .c(h!())?
+    else {
+        return Ok(());
+    };
+    let Some(api_integration) =
+        api_integration::Entity::find_by_id(api_integration.id)
+            .one(&transaction)
+            .await
+            .c(h!())?
+            .filter(|integration| {
+                integration.sync_enabled && integration.has_iggy_connection
+            })
+    else {
+        transaction.commit().await.c(h!())?;
+        return Ok(());
+    };
     let url = api_integration.iggy_url.as_deref().c(h!())?;
     let iggy_login = api_integration.iggy_login.as_deref().c(h!())?;
     let password = api_integration.iggy_password.as_deref().c(h!())?;
@@ -106,19 +124,13 @@ async fn sync_integration(
             set_is_working(&env.dbx, api_integration.id, false)
                 .await
                 .c(h!())?;
+            transaction.commit().await.c(h!())?;
             return Ok(());
         }
         set_is_working(&env.dbx, api_integration.id, true)
             .await
             .c(h!())?;
     }
-
-    let Some(transaction) = try_lock_integration(&env.dbx, api_integration.id)
-        .await
-        .c(h!())?
-    else {
-        return Ok(());
-    };
 
     let started_at = Utc::now().naive_utc();
     let inbox_messages = load_inbox_messages(env, &api_integration, started_at)
@@ -203,6 +215,24 @@ async fn try_lock_integration(
         transaction.rollback().await.c(h!())?;
         Ok(None)
     }
+}
+
+pub(crate) async fn lock_integration_for_update(
+    transaction: &DatabaseTransaction,
+    id: i64,
+) -> Result<(), AppError> {
+    transaction
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "select pg_advisory_xact_lock(hashtextextended($1 || $2::text, 0))",
+            [
+                crate::config::API_INTEGRATION_IGGY_LOCK_NAMESPACE.into(),
+                id.into(),
+            ],
+        ))
+        .await
+        .c(h!())?;
+    Ok(())
 }
 
 async fn sync_connected_integration(
@@ -1253,6 +1283,154 @@ mod tests {
         let old_message: InboxMessage =
             serde_json::from_value(event[1].clone()).unwrap();
         assert_eq!(old_message.text, "interception");
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn destination_change_clears_only_its_queued_events() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let integration = insert_integration(&env, login.id).await;
+        let other = insert_integration(&env, login.id).await;
+        let item_id = insert_inbox_item(&env, Utc::now().naive_utc()).await;
+        sigint_inbox_item::ActiveModel {
+            id: Set(item_id),
+            location: Set(Some("first edit".to_string())),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        assert_eq!(
+            load_pending_events(&env.dbx, integration.id)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+
+        api_integration::ActiveModel {
+            id: Set(integration.id),
+            iggy_password: Set(Some("new password".to_string())),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        assert_eq!(
+            load_pending_events(&env.dbx, integration.id)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+
+        api_integration::ActiveModel {
+            id: Set(integration.id),
+            iggy_url: Set(Some("tcp://localhost:8091".to_string())),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        assert!(load_pending_events(&env.dbx, integration.id)
+            .await
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            load_pending_events(&env.dbx, other.id).await.unwrap().len(),
+            1
+        );
+
+        sigint_inbox_item::ActiveModel {
+            id: Set(item_id),
+            location: Set(Some("second edit".to_string())),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        api_integration::ActiveModel {
+            id: Set(integration.id),
+            iggy_inbox_topic: Set(Some("new-inbox".to_string())),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        assert!(load_pending_events(&env.dbx, integration.id)
+            .await
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            load_pending_events(&env.dbx, other.id).await.unwrap().len(),
+            2
+        );
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn unit_deletion_queues_updated_message_without_unit_id() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let group = find_test_datasource_group(&env.dbx).await.unwrap();
+        let integration = insert_integration(&env, login.id).await;
+        let (item_id, _) = insert_grouped_inbox_item(&env, &group).await;
+        let unit = mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        sigint_inbox_item_unit::ActiveModel {
+            item_id: Set(item_id),
+            unit_id: Set(unit.id),
+            kind: Set(SigintInboxItemUnitKind::Parsed),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        api_integration_iggy_event::Entity::delete_many()
+            .filter(
+                api_integration_iggy_event::Column::ApiIntegrationId
+                    .eq(integration.id),
+            )
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+
+        sigint_unit::ActiveModel {
+            id: Set(unit.id),
+            deleted: Set(true),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        let events =
+            load_pending_events(&env.dbx, integration.id).await.unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].sigint_inbox_item_id, Some(item_id));
+        assert_eq!(
+            events[0].payload["event_type"],
+            "sigint_inbox_item_updated"
+        );
+        let messages = load_pending_event_messages(&env, &integration, &events)
+            .await
+            .unwrap();
+        assert!(messages[&item_id].sigint_unit_ids.is_empty());
+
+        sigint_unit::ActiveModel {
+            id: Set(unit.id),
+            deleted: Set(false),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        let events =
+            load_pending_events(&env.dbx, integration.id).await.unwrap();
+        assert_eq!(events.len(), 2);
+        let messages = load_pending_event_messages(&env, &integration, &events)
+            .await
+            .unwrap();
+        assert_eq!(messages[&item_id].sigint_unit_ids, vec![unit.id]);
     }
 
     struct AssociationFixture {

@@ -32,8 +32,27 @@ returns void language sql as $$
     insert into api_integration_iggy_event (api_integration_id, sigint_inbox_item_id, payload)
     select integration.id, item_id, event_payload
     from api_integration integration
-    where integration.sync_enabled and integration.has_iggy_connection;
+    where integration.sync_enabled and integration.has_iggy_connection
+    order by integration.id
+    for share of integration;
 $$;
+
+create function capture_api_integration_iggy_destination_change()
+returns trigger language plpgsql as $$
+begin
+    if old.iggy_url is distinct from new.iggy_url
+        or old.iggy_inbox_topic is distinct from new.iggy_inbox_topic
+        or old.api_user_login_id is distinct from new.api_user_login_id then
+        delete from api_integration_iggy_event
+        where api_integration_id = new.id;
+    end if;
+    return new;
+end;
+$$;
+
+create trigger api_integration_capture_iggy_destination_change
+after update of iggy_url, iggy_inbox_topic, api_user_login_id on api_integration
+for each row execute function capture_api_integration_iggy_destination_change();
 
 create function api_integration_iggy_has_publisher()
 returns boolean language sql stable as $$
@@ -244,6 +263,29 @@ $$;
 create trigger sigint_inbox_item_unit_capture_iggy_edit
 after insert or update or delete on sigint_inbox_item_unit
 for each row execute function capture_api_integration_iggy_related_edit('item_id');
+
+create function capture_api_integration_iggy_unit_visibility()
+returns trigger language plpgsql as $$
+begin
+    with publishers as (
+        select id from api_integration
+        where sync_enabled and has_iggy_connection
+        order by id for share
+    )
+    insert into api_integration_iggy_event (api_integration_id, sigint_inbox_item_id, payload)
+    select distinct publishers.id, link.item_id,
+        jsonb_build_object('event_type', 'sigint_inbox_item_updated')
+    from sigint_inbox_item_unit link
+    cross join publishers
+    where link.unit_id = new.id;
+    return new;
+end;
+$$;
+
+create trigger sigint_unit_capture_iggy_visibility
+after update of deleted on sigint_unit
+for each row when (old.deleted is distinct from new.deleted)
+execute function capture_api_integration_iggy_unit_visibility();
 
 create trigger sigint_inbox_item_tag_capture_iggy_edit
 after insert or update or delete on sigint_inbox_item_tag
@@ -530,6 +572,8 @@ drop trigger if exists sigint_inbox_item_settlement_capture_iggy_link on sigint_
 drop trigger if exists sigint_inbox_item_callsign_capture_iggy_link on sigint_inbox_item_callsign;
 drop trigger if exists sigint_inbox_item_network_capture_iggy_link on sigint_inbox_item_network;
 drop trigger if exists sigint_inbox_item_unit_capture_iggy_edit on sigint_inbox_item_unit;
+drop trigger if exists sigint_unit_capture_iggy_visibility on sigint_unit;
+drop trigger if exists api_integration_capture_iggy_destination_change on api_integration;
 drop trigger if exists sigint_inbox_item_tag_capture_iggy_edit on sigint_inbox_item_tag;
 drop trigger if exists sigint_inbox_item_metadata_capture_iggy_edit on sigint_inbox_item_metadata;
 drop trigger if exists sigint_inbox_item_point_token_capture_iggy_edit on sigint_inbox_item_point_token;
@@ -544,6 +588,8 @@ drop function if exists capture_api_integration_iggy_inbox_callsign();
 drop function if exists capture_api_integration_iggy_network_link();
 drop function if exists capture_api_integration_iggy_inbox_edit();
 drop function if exists capture_api_integration_iggy_related_edit();
+drop function if exists capture_api_integration_iggy_unit_visibility();
+drop function if exists capture_api_integration_iggy_destination_change();
 drop function if exists queue_api_integration_iggy_network_frequency_change(bigint, text, text, timestamp without time zone, timestamp without time zone);
 drop function if exists api_integration_iggy_network_callsign_ids(bigint);
 drop function if exists api_integration_iggy_network_sigint_callsign_ids(bigint);

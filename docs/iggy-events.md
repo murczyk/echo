@@ -12,6 +12,9 @@ the worker deletes an outbox row only after Iggy acknowledges it, so retries can
 repeat an event. The worker reads committed rows in outbox ID order; concurrent
 database transactions can commit in a different order.
 
+Changing an integration's Iggy URL, inbox topic, or API user clears its queued
+events. Subsequent messages and edits use the current configuration.
+
 | `event_type` suffix | Additional fields | Meaning |
 | --- | --- | --- |
 | `updated` | `message` | Replace the inbox message snapshot after item, message, unit, tag, metadata, point token, media, or group edits. |
