@@ -135,6 +135,7 @@ impl EchelonMove {
 struct EchelonMoveChange {
     unit_name: String,
     hierarchy_change: OrbitUnitHierarchyChange,
+    preserved_destination: Option<OrbitUnitAttributeChange>,
 }
 
 #[derive(Default)]
@@ -554,6 +555,13 @@ fn proposed_change(
         [] if echelon_move.removes_unknown_value() => None,
         _ => return None,
     };
+    let preserved_destination = destination
+        .filter(|destination| echelon_value(unit, *destination) == source)
+        .map(|destination| OrbitUnitAttributeChange {
+            attribute: echelon_attribute(destination),
+            current: source.to_string(),
+            proposed: source.to_string(),
+        });
     let attributes = match destination {
         None => {
             vec![OrbitUnitAttributeChange {
@@ -576,6 +584,7 @@ fn proposed_change(
             sigint_unit_id: unit.id,
             attributes,
         },
+        preserved_destination,
     })
 }
 
@@ -741,6 +750,7 @@ fn review_manually_inner(
             .hierarchy_change
             .attributes
             .iter()
+            .chain(change.preserved_destination.iter())
             .map(|attribute| tui::EchelonMoveDiff {
                 attribute: attribute.attribute,
                 current: attribute.current.clone(),
