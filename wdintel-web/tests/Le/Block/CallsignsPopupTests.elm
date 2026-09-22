@@ -264,4 +264,42 @@ suite =
                         ]
                         ()
             ]
+        , describe "#3566 пріоритет позивних у рядку частоти"
+            [ test "мережевий позивний після перших трьох залишається у прев'ю" <|
+                \_ ->
+                    let
+                        unit =
+                            createUnit 1 "6А" "68 мсд" "122 мсп" "2 мсб" ""
+
+                        networks =
+                            Dict.fromList [ ( 1, createNetwork 1 [ "123.45" ] [ 1 ] ) ]
+
+                        units =
+                            Dict.fromList [ ( 1, unit ) ]
+
+                        callsigns =
+                            [ "alpha", "bravo", "charlie", "zulu" ]
+
+                        priorities =
+                            Dict.fromList [ ( "alpha", [] ), ( "bravo", [] ), ( "charlie", [] ), ( "zulu", [ 1 ] ) ]
+
+                        details =
+                            Dict.fromList [ ( "zulu", [ createCallsignInfo 1 "zulu" "Командир" unit.name unit.id ] ) ]
+
+                        fullOrder =
+                            CallsignsPopup.sortCallsignsNew "123.45" networks (createParams units details callsigns)
+                                |> List.take 3
+                                |> List.map Tuple.second
+                    in
+                    CallsignsPopup.sortCallsignsForPreview "123.45" networks units priorities callsigns
+                        |> Expect.equal (Just fullOrder)
+            , test "каталоговий позивний після перших трьох залишається у прев'ю" <|
+                \_ ->
+                    CallsignsPopup.sortCallsignsForPreview "123.45"
+                        Dict.empty
+                        Dict.empty
+                        (Dict.fromList [ ( "alpha", [] ), ( "bravo", [] ), ( "charlie", [] ), ( "zulu", [ 1 ] ) ])
+                        [ "alpha", "bravo", "charlie", "zulu" ]
+                        |> Expect.equal (Just [ "zulu", "alpha", "bravo" ])
+            ]
         ]

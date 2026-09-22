@@ -1326,6 +1326,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::freq::list_freqs_v2)
             .service(crate::sigint::freq::list_freqs_for_period)
             .service(crate::sigint::freq::list_callsigns_by_freqs)
+            .service(crate::sigint::freq::list_callsign_priorities)
             .service(crate::sigint::freq::list_points_by_freq)
             .service(crate::sigint::freq::list_groups_by_freqs_per_day)
             .service(crate::sigint::freq::latest_frequencies)

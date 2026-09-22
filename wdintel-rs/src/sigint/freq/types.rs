@@ -167,6 +167,14 @@ pub struct ListCallsignsByFreqsReq {
 }
 
 #[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct FreqCallsignPriority {
+    pub callsign: String,
+    pub unit_ids: Vec<i64>,
+}
+
+#[derive(
     Elm,
     ElmEncode,
     ElmDecode,

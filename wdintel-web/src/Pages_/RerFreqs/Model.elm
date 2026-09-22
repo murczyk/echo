@@ -39,17 +39,21 @@ type alias Model =
     , locationTexts : Dict String TextLocation
     , openMapRowId : Maybe String
     , callsignsByFreq : Api.ListCallsignsByFreqsRsp
+    , callsignPriorityUnitIds : Dict String (List Int)
+    , priorityRequests : Set.Set String
+    , previewNeedsDetails : Bool
     , altUnitsByFreq : Api.ListAltUnitsByFreqsRsp
     , altUnitsRequestId : Int
     , callsignsInfo : Dict String (List B.CallsignInfo)
     , networksExtra : Dict Int B.Network
+    , networkInfoFailed : Bool
     , rowShowAllPopupStatus : Maybe ( String, ShowAllPopupFor )
     , selCallsignState : Select.State
     , callsignSearchQuery : String
     , callsignSearchDebounce : Debounce String
     , callsignSearchResults : RemoteData ApiError (List B.FreqCallsign)
 
-    -- Names whose popup detail requests have already been sent.
+    -- Lowercase names whose popup detail requests have already been sent.
     , callsigns : List String
     , sortingOrder : B.ListFreqsSortBy
     , groupsMessageCountByDay : GroupsActivityPerDayRsp

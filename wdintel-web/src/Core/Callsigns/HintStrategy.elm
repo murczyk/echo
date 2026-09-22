@@ -1,4 +1,4 @@
-module Core.Callsigns.HintStrategy exposing (HintContext(..), HintResult, HintStrategy(..), getCallsignHints)
+module Core.Callsigns.HintStrategy exposing (HintContext(..), HintResult, HintStrategy(..), getCallsignHints, previewCallsignPriority)
 
 import Bindings as B
 import Core.Unit as Unit
@@ -141,6 +141,33 @@ findCallsignUnit callsigns units =
         |> Set.fromList
         |> Set.toList
         |> List.filterMap (\unitId -> Dict.get unitId units)
+
+
+previewCallsignPriority : List B.Network -> Dict Int B.Unit -> List Int -> ( Int, Int )
+previewCallsignPriority networks masterUnits unitIds =
+    let
+        networkUnits =
+            getUnitsInfoByIds (getAllUnitsIdsForNetworks networks) masterUnits
+
+        relatedUnitIds =
+            unitIds
+                |> Set.fromList
+                |> Set.toList
+                |> List.filterMap (\unitId -> Dict.get unitId masterUnits)
+                |> List.filter (\unit -> List.any (Unit.isSameOrChildUnit unit) networkUnits)
+                |> List.map .id
+                |> Set.fromList
+
+        relatedCount =
+            unitIds
+                |> List.filter (\unitId -> Set.member unitId relatedUnitIds)
+                |> List.length
+    in
+    if relatedCount > 0 then
+        ( 1, relatedCount )
+
+    else
+        ( 2, List.length unitIds )
 
 
 {-| Перевіряє чи є позивний пов'язаний з мережевими юнітами

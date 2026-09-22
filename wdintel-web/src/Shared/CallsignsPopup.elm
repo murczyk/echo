@@ -65,6 +65,40 @@ sortCallsignsNew freq networksDict params =
         |> List.sortWith sortByPrioNew
 
 
+sortCallsignsForPreview : String -> Dict Int B.Network -> Dict Int B.Unit -> Dict String (List Int) -> List String -> Maybe (List String)
+sortCallsignsForPreview freq networksDict masterUnits priorities callsigns =
+    if List.all (\callsign -> Dict.member (String.toLower callsign) priorities) callsigns then
+        let
+            networksForFreq =
+                Dict.values networksDict
+                    |> List.filter (\network -> List.any (\networkFreq -> networkFreq.freq == freq) network.freqs)
+
+            priority callsign =
+                Dict.get (String.toLower callsign) priorities
+                    |> Maybe.withDefault []
+                    |> HintStrategy.previewCallsignPriority networksForFreq masterUnits
+        in
+        callsigns
+            |> List.map (\callsign -> ( priority callsign, callsign ))
+            |> List.sortWith (\left right -> comparePriorities (Tuple.first left) (Tuple.first right))
+            |> List.take 3
+            |> List.map Tuple.second
+            |> Just
+
+    else
+        Nothing
+
+
+comparePriorities : ( Int, Int ) -> ( Int, Int ) -> Order
+comparePriorities ( priorityA, countA ) ( priorityB, countB ) =
+    case compare priorityA priorityB of
+        EQ ->
+            compare countB countA
+
+        order ->
+            order
+
+
 {-| Нова функція сортування для HintResult
 Спочатку NetworkBased (мережеві), потім SystemWide (каталог), потім по кількості підказок
 -}
@@ -101,24 +135,7 @@ sortByPrioNew callsignWithPrioA callsignWithPrioB =
         lengthB =
             List.length hintB.prioritizedCallsigns
     in
-    if priorityA < priorityB then
-        LT
-
-    else if priorityA > priorityB then
-        GT
-
-    else
-    -- Якщо стратегії однакові - сортуємо по кількості підказок
-    if
-        lengthA > lengthB
-    then
-        LT
-
-    else if lengthA < lengthB then
-        GT
-
-    else
-        EQ
+    comparePriorities ( priorityA, lengthA ) ( priorityB, lengthB )
 
 
 {-| Нова функція сортування для мережі через HintStrategy (поки що не використовується)
@@ -147,7 +164,7 @@ type alias ViewParams msg =
     { callsigns : List String
     , isOpened : Bool
     , isLoading : Bool
-    , deferDetails : Bool
+    , previewCallsigns : Maybe (List String)
     , onOpen : msg
     , onClose : msg
     , masterUnits : Dict Int B.Unit
@@ -158,25 +175,28 @@ type alias ViewParams msg =
 view : ViewParams msg -> PopupCallerOrigin -> Html msg
 view viewParams pageSpecific =
     let
-        displayedCallsigns =
-            case pageSpecific of
-                FreqsPage _ _ ->
-                    if viewParams.deferDetails && (not viewParams.isOpened || viewParams.isLoading) then
-                        List.take 3 viewParams.callsigns
-
-                    else
-                        viewParams.callsigns
-
-                NetworksPage _ ->
-                    viewParams.callsigns
-
-        sortedCallsigns =
+        sortCallsigns callsigns =
             case pageSpecific of
                 FreqsPage freq networksDict ->
-                    sortCallsignsNew freq networksDict { viewParams | callsigns = displayedCallsigns }
+                    sortCallsignsNew freq networksDict { viewParams | callsigns = callsigns }
 
                 NetworksPage network ->
-                    sortCallsigns2New network viewParams
+                    sortCallsigns2New network { viewParams | callsigns = callsigns }
+
+        sortedPreview =
+            sortCallsigns (Maybe.withDefault viewParams.callsigns viewParams.previewCallsigns)
+
+        sortedPopup =
+            if viewParams.isOpened && not viewParams.isLoading then
+                case viewParams.previewCallsigns of
+                    Just _ ->
+                        sortCallsigns viewParams.callsigns
+
+                    Nothing ->
+                        sortedPreview
+
+            else
+                []
 
         ( callsignsWithUnits, callsignsWithoutUnits ) =
             let
@@ -184,11 +204,15 @@ view viewParams pageSpecific =
                 hasUnits callsignWithPrio =
                     (callsignWithPrio |> Tuple.first |> .prioritizedCallsigns |> List.length) > 0
             in
-            sortedCallsigns
+            sortedPopup
                 |> List.partition hasUnits
     in
     div []
-        [ viewCallsignsRow sortedCallsigns
+        [ if viewParams.previewCallsigns == Just [] && not (List.isEmpty viewParams.callsigns) then
+            div [] [ text "Завантаження позивних..." ]
+
+          else
+            viewCallsignsRow sortedPreview
         , if List.length viewParams.callsigns > 3 then
             let
                 body =

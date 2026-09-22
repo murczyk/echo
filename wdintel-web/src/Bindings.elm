@@ -10043,6 +10043,20 @@ listCallsignsByFreqsReqEncoder struct =
         ]
 
 
+type alias FreqCallsignPriority =
+    { callsign : String
+    , unitIds : List (Int)
+    }
+
+
+freqCallsignPriorityEncoder : FreqCallsignPriority -> Json.Encode.Value
+freqCallsignPriorityEncoder struct =
+    Json.Encode.object
+        [ ( "callsign", (Json.Encode.string) struct.callsign )
+        , ( "unit_ids", (Json.Encode.list (Json.Encode.int)) struct.unitIds )
+        ]
+
+
 type alias ListAltUnitByFreqsReq =
     { freqs : List (String)
     , sinceDateInclusiveMs : Int
@@ -21361,6 +21375,13 @@ listCallsignsByFreqsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "since_date_inclusive_ms" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_noninclusive_ms" (Json.Decode.int)))
+
+
+freqCallsignPriorityDecoder : Json.Decode.Decoder FreqCallsignPriority
+freqCallsignPriorityDecoder =
+    Json.Decode.succeed FreqCallsignPriority
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_ids" (Json.Decode.list (Json.Decode.int))))
 
 
 listAltUnitByFreqsReqDecoder : Json.Decode.Decoder ListAltUnitByFreqsReq
