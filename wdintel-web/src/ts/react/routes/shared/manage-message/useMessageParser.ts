@@ -1,9 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { UseFormReturn } from 'react-hook-form';
-import dayjs from 'dayjs';
 
 import { parseDirectSubmit } from '../../../services/api/direct-submit';
 import type { MessageFormData } from './manage-message-drawer.schema';
+import {
+  acceptParsedCandidate,
+  clearParserOwnedValues,
+  createParserOwnershipState,
+  PARSER_LIST_FIELDS,
+  PARSER_SCALAR_FIELDS,
+  reconcileParserSnapshot,
+  recordManualChange,
+  toParserSnapshot,
+  type ParserFeedback,
+  type ParserFieldName,
+  type ParserReconcileResult,
+} from './message-parser-ownership';
 
 export type UseMessageParserOptions = {
   active?: boolean;
@@ -14,7 +26,18 @@ export type UseMessageParserOptions = {
 };
 
 export type MessageParseStatus = 'idle' | 'debouncing' | 'parsing' | 'success' | 'error';
-export const DEFAULT_MESSAGE_PARSE_DEBOUNCE_MS = 1000;
+export const DEFAULT_MESSAGE_PARSE_DEBOUNCE_MS = 700;
+export const MESSAGE_PARSE_FEEDBACK_MS = 3000;
+
+const PARSER_FIELDS = new Set<string>([...PARSER_SCALAR_FIELDS, ...PARSER_LIST_FIELDS]);
+
+function copyFormValues(values: MessageFormData): MessageFormData {
+  return {
+    ...values,
+    callsigns: [...(values.callsigns ?? [])],
+    locations: [...(values.locations ?? [])],
+  };
+}
 
 export function useMessageParser(
   methods: UseFormReturn<MessageFormData>,
@@ -24,6 +47,7 @@ export function useMessageParser(
 ) {
   const [parsing, setParsing] = useState(false);
   const [parseStatus, setParseStatus] = useState<MessageParseStatus>('idle');
+  const [parserFeedback, setParserFeedback] = useState<ParserFeedback | null>(null);
   const [debounceKey, setDebounceKey] = useState(0);
   const [bodyRevision, setBodyRevision] = useState(0);
   const { getValues, setValue, watch } = methods;
@@ -37,6 +61,10 @@ export function useMessageParser(
   const fullBody = watch('full_body');
   const latestRequestIdRef = useRef(0);
   const activeRef = useRef(active);
+  const applyingParserPatchRef = useRef(false);
+  const feedbackSequenceRef = useRef(0);
+  const ownershipRef = useRef(createParserOwnershipState());
+  const lastObservedFormRef = useRef(copyFormValues(getValues()));
   if (activeRef.current !== active) {
     activeRef.current = active;
     latestRequestIdRef.current += 1;
@@ -44,9 +72,65 @@ export function useMessageParser(
   const observedBodyRef = useRef(fullBody ?? '');
   const lastParsedBodyRef = useRef<string | null>(null);
 
-  const clearParsedCoordinates = useCallback(() => {
-    setValue('coords', '', { shouldDirty: true, shouldValidate: true });
-  }, [setValue]);
+  const publishFeedback = useCallback((result: ParserReconcileResult) => {
+    if (result.changedFields.length === 0 && result.conflictFields.length === 0) {
+      setParserFeedback(null);
+      return;
+    }
+    feedbackSequenceRef.current += 1;
+    setParserFeedback({
+      sequence: feedbackSequenceRef.current,
+      changedFields: result.changedFields,
+      conflictFields: result.conflictFields,
+      emptyCandidateFields: result.emptyCandidateFields,
+    });
+  }, []);
+
+  const applyParserResult = useCallback(
+    (result: ParserReconcileResult) => {
+      ownershipRef.current = result.state;
+      applyingParserPatchRef.current = true;
+      try {
+        for (const [field, value] of Object.entries(result.patch)) {
+          setValue(field as keyof MessageFormData, value, {
+            shouldDirty: true,
+            shouldValidate: true,
+          });
+        }
+      } finally {
+        applyingParserPatchRef.current = false;
+        lastObservedFormRef.current = copyFormValues(getValues());
+      }
+      publishFeedback(result);
+    },
+    [getValues, publishFeedback, setValue],
+  );
+
+  useEffect(() => {
+    const subscription = watch((_values, { name }) => {
+      const currentForm = copyFormValues(getValues());
+      if (
+        name &&
+        PARSER_FIELDS.has(name) &&
+        !applyingParserPatchRef.current &&
+        !isEditMode &&
+        !isReportMode
+      ) {
+        ownershipRef.current = recordManualChange(
+          ownershipRef.current,
+          name as ParserFieldName,
+          currentForm[name as keyof MessageFormData],
+          lastObservedFormRef.current,
+        );
+      }
+      lastObservedFormRef.current = currentForm;
+    });
+    return () => subscription.unsubscribe();
+  }, [getValues, isEditMode, isReportMode, watch]);
+
+  const clearParsedValues = useCallback(() => {
+    applyParserResult(clearParserOwnedValues(ownershipRef.current, getValues()));
+  }, [applyParserResult, getValues]);
 
   const handleBodyChange = useCallback(
     (rawBody: string) => {
@@ -71,88 +155,75 @@ export function useMessageParser(
     [active, autoParseEnabled, busy, isEditMode, isReportMode],
   );
 
-  const handleParse = useCallback(
-    async (opts?: { isAuto?: boolean }) => {
-      if (busy) return;
-      const currentRawBody = getValues('full_body') ?? '';
-      const currentBody = currentRawBody.trim();
-      const signalGroupMasterKey = getValues('signalGroupMasterKey')?.trim();
-      if (!currentBody) {
-        if (!isEditMode && !isReportMode) {
-          clearParsedCoordinates();
-        }
-        if (!opts?.isAuto) {
-          setErrorMsg('Введіть текст повідомлення');
-        }
-        return;
-      }
+  const handleParse = useCallback(async () => {
+    if (busy) return;
+    const currentRawBody = getValues('full_body') ?? '';
+    const currentBody = currentRawBody.trim();
+    const signalGroupMasterKey = getValues('signalGroupMasterKey')?.trim();
+    if (!currentBody) {
+      if (!isEditMode && !isReportMode) clearParsedValues();
+      setParseStatus('idle');
+      return;
+    }
 
-      const requestId = latestRequestIdRef.current + 1;
-      latestRequestIdRef.current = requestId;
-      setParseStatus('parsing');
-      setParsing(true);
-      setErrorMsg(null);
-      try {
-        const parsed = await parseDirectSubmit({
-          full_body: currentBody,
-          ...(signalGroupMasterKey ? { signal_group_master_key: signalGroupMasterKey } : {}),
-        });
-        if (requestId !== latestRequestIdRef.current || !activeRef.current) {
-          return;
-        }
-        lastParsedBodyRef.current = currentRawBody;
-        setParseStatus('success');
-        const timestamp = parsed.timestamp ? dayjs(parsed.timestamp) : null;
-        const fillText = (
-          name: 'text' | 'freq' | 'coords' | 'comment' | 'post' | 'unit' | 'network_name',
-          value: string | null | undefined,
-        ) => {
-          if (!value) return;
-          setValue(name, value, { shouldDirty: true, shouldValidate: true });
-        };
-        const fillList = (name: 'callsigns' | 'locations', value: string[] | undefined) => {
-          if (!value || value.length === 0) return;
-          setValue(name, value, { shouldDirty: true, shouldValidate: true });
-        };
-        fillText('text', parsed.text);
-        fillText('freq', parsed.freq ?? '');
-        setValue(
-          'coords',
-          (parsed.coords ?? [])
-            .map(({ lat, lon }) => `${Number(lat.toFixed(5))}, ${Number(lon.toFixed(5))}`)
-            .join('\n'),
-          { shouldDirty: true, shouldValidate: true },
-        );
-        fillText('comment', parsed.comment ?? '');
-        fillText('post', parsed.post ?? '');
-        fillText('network_name', parsed.unit ?? '');
-        fillText('unit', parsed.unit_v2 ?? '');
-        fillList('callsigns', parsed.to);
-        fillList('locations', parsed.locations);
-        if (timestamp?.isValid()) {
-          setValue('date', timestamp, { shouldDirty: true });
-          if (parsed.is_time_null === true) {
-            setValue('time', null, { shouldDirty: true });
-          } else {
-            setValue('time', timestamp, { shouldDirty: true });
-          }
-        }
-      } catch (error: any) {
-        if (requestId !== latestRequestIdRef.current || !activeRef.current) {
-          return;
-        }
-        lastParsedBodyRef.current = currentRawBody;
-        setParseStatus('error');
-        console.error('Error parsing message', error);
-        setErrorMsg(error.message || 'Не вдалося розпарсити повідомлення');
-      } finally {
-        if (requestId === latestRequestIdRef.current) {
-          setParsing(false);
-        }
-      }
+    const requestId = latestRequestIdRef.current + 1;
+    latestRequestIdRef.current = requestId;
+    setParseStatus('parsing');
+    setParsing(true);
+    setErrorMsg(null);
+    try {
+      const parsed = await parseDirectSubmit({
+        full_body: currentBody,
+        ...(signalGroupMasterKey ? { signal_group_master_key: signalGroupMasterKey } : {}),
+      });
+      if (requestId !== latestRequestIdRef.current || !activeRef.current) return;
+      lastParsedBodyRef.current = currentRawBody;
+      applyParserResult(
+        reconcileParserSnapshot(ownershipRef.current, getValues(), toParserSnapshot(parsed)),
+      );
+      setParseStatus('success');
+    } catch (error: any) {
+      if (requestId !== latestRequestIdRef.current || !activeRef.current) return;
+      lastParsedBodyRef.current = currentRawBody;
+      setParseStatus('error');
+      console.error('Error parsing message', error);
+      setErrorMsg(error.message || 'Не вдалося розпарсити повідомлення');
+    } finally {
+      if (requestId === latestRequestIdRef.current) setParsing(false);
+    }
+  }, [
+    applyParserResult,
+    busy,
+    clearParsedValues,
+    getValues,
+    isEditMode,
+    isReportMode,
+    setErrorMsg,
+  ]);
+
+  const acceptParsedField = useCallback(
+    (field: ParserFieldName) => {
+      const accepted = acceptParsedCandidate(ownershipRef.current, getValues(), field);
+      applyParserResult({
+        ...accepted,
+        conflictFields: parserFeedback?.conflictFields.filter((item) => item !== field) ?? [],
+        emptyCandidateFields:
+          parserFeedback?.emptyCandidateFields?.filter((item) => item !== field) ?? [],
+      });
     },
-    [busy, clearParsedCoordinates, getValues, isEditMode, isReportMode, setErrorMsg, setValue],
+    [applyParserResult, getValues, parserFeedback],
   );
+
+  const resetParserSession = useCallback(() => {
+    latestRequestIdRef.current += 1;
+    ownershipRef.current = createParserOwnershipState();
+    observedBodyRef.current = getValues('full_body') ?? '';
+    lastObservedFormRef.current = copyFormValues(getValues());
+    lastParsedBodyRef.current = null;
+    setParsing(false);
+    setParseStatus('idle');
+    setParserFeedback(null);
+  }, [getValues]);
 
   useEffect(() => {
     const rawBody = fullBody ?? '';
@@ -162,29 +233,23 @@ export function useMessageParser(
     if (!trimmed) {
       lastParsedBodyRef.current = null;
       setParseStatus('idle');
-      if (active && autoParseEnabled && !isEditMode && !isReportMode && !busy) {
-        clearParsedCoordinates();
-      }
+      if (active && !isEditMode && !isReportMode) clearParsedValues();
       return;
     }
     if (parsing) return;
     if (!active || !autoParseEnabled || isEditMode || isReportMode || busy) {
-      if (rawBody !== lastParsedBodyRef.current) {
-        setParseStatus('idle');
-      }
+      if (rawBody !== lastParsedBodyRef.current) setParseStatus('idle');
       return;
     }
-    if (rawBody === lastParsedBodyRef.current) {
-      return;
-    }
+    if (rawBody === lastParsedBodyRef.current) return;
 
     setParseStatus('debouncing');
     setDebounceKey((key) => key + 1);
-    const timer = setTimeout(() => {
-      void handleParse({ isAuto: true });
+    const timer = window.setTimeout(() => {
+      void handleParse();
     }, debounceMs);
 
-    return () => clearTimeout(timer);
+    return () => window.clearTimeout(timer);
   }, [
     fullBody,
     bodyRevision,
@@ -194,7 +259,7 @@ export function useMessageParser(
     isReportMode,
     busy,
     parsing,
-    clearParsedCoordinates,
+    clearParsedValues,
     handleBodyChange,
     handleParse,
     debounceMs,
@@ -202,16 +267,17 @@ export function useMessageParser(
 
   useEffect(() => {
     if (active) return;
-    setParsing(false);
-    setParseStatus('idle');
-    lastParsedBodyRef.current = null;
-  }, [active]);
+    resetParserSession();
+  }, [active, resetParserSession]);
 
   return {
     parsing,
     parseStatus,
+    parserFeedback,
     debounceKey,
     handleBodyChange,
     handleParse,
+    acceptParsedField,
+    resetParserSession,
   };
 }

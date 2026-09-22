@@ -396,16 +396,30 @@ export function useManageMessageDrawer({
     [dutySettings],
   );
 
-  const { parsing, parseStatus, debounceKey, handleBodyChange, handleParse } = useMessageParser(
-    methods,
-    busy,
-    setErrorMsg,
-    {
-      active: formReady,
-      autoParseEnabled,
-      isEditMode,
-      isReportMode,
+  const {
+    parsing,
+    parseStatus,
+    parserFeedback,
+    debounceKey,
+    handleBodyChange,
+    handleParse,
+    acceptParsedField,
+  } = useMessageParser(methods, busy, setErrorMsg, {
+    active: formReady,
+    autoParseEnabled,
+    isEditMode,
+    isReportMode,
+  });
+  const handleAcceptParsedField = useCallback(
+    (field: Parameters<typeof acceptParsedField>[0]) => {
+      if (field === 'network_name') {
+        setSelectedNetwork(null);
+        setNetworkNameInput('');
+        setUnitLocked(false);
+      }
+      acceptParsedField(field);
     },
+    [acceptParsedField],
   );
 
   const canSubmit = useMemo(() => {
@@ -804,6 +818,7 @@ export function useManageMessageDrawer({
     saving,
     parsing,
     parseStatus,
+    parserFeedback,
     debounceKey,
     handleBodyChange,
     errorMsg,
@@ -851,6 +866,7 @@ export function useManageMessageDrawer({
     methods,
     canSubmit,
     handleParse,
+    acceptParsedField: handleAcceptParsedField,
     autoParseEnabled,
     handleToggleAutoParse,
     handleDrawerClose,

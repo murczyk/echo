@@ -134,6 +134,7 @@ vi.mock('@mui/material', () => ({
   DialogContent: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   DialogContentText: ({ children }: { children?: ReactNode }) => <p>{children}</p>,
   DialogTitle: ({ children }: { children?: ReactNode }) => <h2>{children}</h2>,
+  Divider: () => <hr />,
   Drawer: ({ children, open }: { children?: ReactNode; open?: boolean }) =>
     open ? <div role="dialog">{children}</div> : null,
   Menu: ({ children }: { children?: ReactNode }) => <div>{children}</div>,

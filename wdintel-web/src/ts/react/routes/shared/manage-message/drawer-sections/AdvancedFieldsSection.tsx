@@ -4,6 +4,7 @@ import { useFormContext, Controller } from 'react-hook-form';
 import type { MessageFormData } from '../manage-message-drawer.schema';
 import { FormSectionWrapper } from './FormSectionWrapper';
 import { DmrSection } from './DmrSection';
+import { ParserFieldFeedback } from '../MessageParserFeedback';
 
 type Props = {
   showAdvanced: boolean;
@@ -72,22 +73,24 @@ export function AdvancedFieldsSection({
           )}
         />
 
-        <Controller
-          name="text"
-          control={control}
-          render={({ field }) => (
-            <TextField
-              {...field}
-              label="Коротке повідомлення"
-              fullWidth
-              multiline
-              rows={4}
-              error={!!errors.text}
-              helperText={errors.text?.message}
-              disabled={busy}
-            />
-          )}
-        />
+        <ParserFieldFeedback field="text" label="коротке повідомлення">
+          <Controller
+            name="text"
+            control={control}
+            render={({ field }) => (
+              <TextField
+                {...field}
+                label="Коротке повідомлення"
+                fullWidth
+                multiline
+                rows={4}
+                error={!!errors.text}
+                helperText={errors.text?.message}
+                disabled={busy}
+              />
+            )}
+          />
+        </ParserFieldFeedback>
 
         <Divider />
 

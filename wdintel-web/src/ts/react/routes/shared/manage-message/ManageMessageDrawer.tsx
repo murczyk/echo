@@ -35,6 +35,7 @@ import { formatDirectSubmitError } from '../../../services/api/direct-submit';
 
 import { useManageMessageDrawer } from './useManageMessageDrawer';
 import { AutoParseStatusIcon } from './AutoParseStatusIcon';
+import { MessageParserFeedbackProvider } from './MessageParserFeedback';
 import { FormSectionWrapper } from './drawer-sections/FormSectionWrapper';
 import { AttachmentsSection } from './drawer-sections/AttachmentsSection';
 import { SystemSection } from './drawer-sections/SystemSection';
@@ -374,6 +375,7 @@ export function ManageMessageDrawer(props: Props) {
     saving,
     parsing,
     parseStatus,
+    parserFeedback,
     debounceKey,
     errorMsg,
     setErrorMsg,
@@ -390,6 +392,7 @@ export function ManageMessageDrawer(props: Props) {
     methods,
     canSubmit,
     handleParse,
+    acceptParsedField,
     autoParseEnabled,
     handleToggleAutoParse,
     handleDrawerClose,
@@ -408,6 +411,7 @@ export function ManageMessageDrawer(props: Props) {
   };
   const dismissDisabled = saving || deleteInFlight;
   const busy = formDisabled || deleteInFlight;
+  const parseDisabled = busy || parsing;
   const reportEditLoading = props.editTargetLoadState?.status === 'loading';
   const reportEditError = props.editTargetLoadState?.status === 'error';
   const isReportEditIntent =
@@ -510,241 +514,246 @@ export function ManageMessageDrawer(props: Props) {
                   </PowerAlert>
                 )}
 
-                <FormProvider {...methods}>
-                  <PowerForm
-                    id="create-message-form"
-                    noValidate
-                    onSubmit={methods.handleSubmit(onSubmit)}
-                    canSubmit={canSubmit && !deleteInFlight}
-                    globalSubmitShortcut
-                    sx={{
-                      display: 'grid',
-                      gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) minmax(0, 1fr)' },
-                      gap: 3,
-                      alignItems: 'start',
-                    }}
-                  >
-                    {isReportMode ? (
-                      <ReportTextRow
-                        originalText={originalReportText}
-                        sourceMessage={props.reportSource?.message ?? null}
-                        sourceGroupName={reportSourceGroupName}
-                        sourceSenderName={
-                          props.reportSource?.senderName ??
-                          props.reportSource?.message.sender ??
-                          null
-                        }
-                        sourceEtalonDisplayModel={props.reportSource?.etalonDisplayModel ?? null}
-                        deviceAccess={props.cyberEchoEnabled}
-                        busy={busy}
-                        quickSuggestion={quickSuggestion}
-                        onApplyQuickSuggestion={applyQuickSuggestion}
-                        onSelectAdjacentQuickSuggestion={selectAdjacentQuickSuggestion}
-                        onRetryQuickSuggestion={retryQuickSuggestion}
-                      />
-                    ) : null}
-
-                    {/* LEFT COLUMN */}
-                    <Box component="fieldset" sx={{ minWidth: 0, border: 0, p: 0, m: 0 }}>
-                      {!isReportMode ? (
-                        <>
-                          <Typography component="legend" variant="subtitle2" sx={{ mb: 1 }}>
-                            Вміст повідомлення <span aria-hidden="true">*</span>
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                            Додайте текст повідомлення або принаймні одне вкладення.
-                          </Typography>
-                        </>
+                <MessageParserFeedbackProvider
+                  feedback={parserFeedback}
+                  onAccept={acceptParsedField}
+                >
+                  <FormProvider {...methods}>
+                    <PowerForm
+                      id="create-message-form"
+                      noValidate
+                      onSubmit={methods.handleSubmit(onSubmit)}
+                      canSubmit={canSubmit && !deleteInFlight}
+                      globalSubmitShortcut
+                      sx={{
+                        display: 'grid',
+                        gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) minmax(0, 1fr)' },
+                        gap: 3,
+                        alignItems: 'start',
+                      }}
+                    >
+                      {isReportMode ? (
+                        <ReportTextRow
+                          originalText={originalReportText}
+                          sourceMessage={props.reportSource?.message ?? null}
+                          sourceGroupName={reportSourceGroupName}
+                          sourceSenderName={
+                            props.reportSource?.senderName ??
+                            props.reportSource?.message.sender ??
+                            null
+                          }
+                          sourceEtalonDisplayModel={props.reportSource?.etalonDisplayModel ?? null}
+                          deviceAccess={props.cyberEchoEnabled}
+                          busy={busy}
+                          quickSuggestion={quickSuggestion}
+                          onApplyQuickSuggestion={applyQuickSuggestion}
+                          onSelectAdjacentQuickSuggestion={selectAdjacentQuickSuggestion}
+                          onRetryQuickSuggestion={retryQuickSuggestion}
+                        />
                       ) : null}
-                      <Stack spacing={2.5}>
+
+                      {/* LEFT COLUMN */}
+                      <Box component="fieldset" sx={{ minWidth: 0, border: 0, p: 0, m: 0 }}>
                         {!isReportMode ? (
-                          <FormSectionWrapper
-                            title="Джерело"
-                            action={
-                              !isEditMode ? (
-                                <>
-                                  <ButtonGroup
-                                    variant="outlined"
-                                    size="small"
-                                    aria-label="Дії парсингу"
-                                  >
-                                    <Button
-                                      onClick={() => void handleParse()}
+                          <>
+                            <Typography component="legend" variant="subtitle2" sx={{ mb: 1 }}>
+                              Вміст повідомлення <span aria-hidden="true">*</span>
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                              Додайте текст повідомлення або принаймні одне вкладення.
+                            </Typography>
+                          </>
+                        ) : null}
+                        <Stack spacing={2.5}>
+                          {!isReportMode ? (
+                            <FormSectionWrapper
+                              title="Джерело"
+                              action={
+                                !isEditMode ? (
+                                  <>
+                                    <ButtonGroup
                                       variant="outlined"
                                       size="small"
-                                      startIcon={
-                                        <AutoParseStatusIcon
-                                          status={parseStatus}
-                                          debounceKey={debounceKey}
-                                        />
-                                      }
-                                      disabled={busy || parsing}
+                                      aria-label="Дії парсингу"
                                     >
-                                      {autoParseEnabled ? 'Авто-парсинг' : 'Розпарсити'}
-                                    </Button>
-                                    <Tooltip title="Налаштування парсингу">
                                       <Button
-                                        onClick={handleOpenSettings}
-                                        aria-label="Налаштування парсингу"
-                                        aria-haspopup="menu"
-                                        aria-expanded={isSettingsOpen ? 'true' : undefined}
-                                        disabled={busy}
-                                        sx={{ minWidth: 32, px: 0.75 }}
-                                      >
-                                        <ArrowDropDownIcon fontSize="small" />
-                                      </Button>
-                                    </Tooltip>
-                                  </ButtonGroup>
-                                  <Menu
-                                    anchorEl={settingsAnchorEl}
-                                    open={isSettingsOpen}
-                                    onClose={handleCloseSettings}
-                                    anchorOrigin={{
-                                      vertical: 'bottom',
-                                      horizontal: 'right',
-                                    }}
-                                    transformOrigin={{
-                                      vertical: 'top',
-                                      horizontal: 'right',
-                                    }}
-                                  >
-                                    <MenuItem
-                                      onClick={() => {
-                                        handleToggleAutoParse(!autoParseEnabled);
-                                      }}
-                                    >
-                                      <FormControlLabel
-                                        control={
-                                          <Switch
-                                            checked={autoParseEnabled}
-                                            size="small"
-                                            tabIndex={-1}
+                                        onClick={() => void handleParse()}
+                                        variant="outlined"
+                                        size="small"
+                                        startIcon={
+                                          <AutoParseStatusIcon
+                                            status={parseStatus}
+                                            debounceKey={debounceKey}
                                           />
                                         }
-                                        label="Парсити автоматично"
-                                        sx={{ pointerEvents: 'none', m: 0 }}
-                                      />
-                                    </MenuItem>
-                                  </Menu>
-                                </>
-                              ) : null
-                            }
-                          >
-                            <Controller
-                              name="full_body"
-                              control={methods.control}
-                              render={({ field }) => (
-                                <TextField
-                                  {...field}
-                                  onChange={(event) => {
-                                    drawerState.handleBodyChange(event.target.value);
-                                    field.onChange(event);
-                                  }}
-                                  label="Текст повідомлення"
-                                  fullWidth
-                                  multiline
-                                  rows={12}
-                                  disabled={busy}
-                                />
-                              )}
-                            />
-                          </FormSectionWrapper>
-                        ) : null}
+                                        disabled={parseDisabled}
+                                      >
+                                        {autoParseEnabled ? 'Авто-парсинг' : 'Розпарсити'}
+                                      </Button>
+                                      <Tooltip title="Налаштування парсингу">
+                                        <Button
+                                          onClick={handleOpenSettings}
+                                          aria-label="Налаштування парсингу"
+                                          aria-haspopup="menu"
+                                          aria-expanded={isSettingsOpen ? 'true' : undefined}
+                                          disabled={busy}
+                                          sx={{ minWidth: 32, px: 0.75 }}
+                                        >
+                                          <ArrowDropDownIcon fontSize="small" />
+                                        </Button>
+                                      </Tooltip>
+                                    </ButtonGroup>
+                                    <Menu
+                                      anchorEl={settingsAnchorEl}
+                                      open={isSettingsOpen}
+                                      onClose={handleCloseSettings}
+                                      anchorOrigin={{
+                                        vertical: 'bottom',
+                                        horizontal: 'right',
+                                      }}
+                                      transformOrigin={{
+                                        vertical: 'top',
+                                        horizontal: 'right',
+                                      }}
+                                    >
+                                      <MenuItem
+                                        onClick={() => {
+                                          handleToggleAutoParse(!autoParseEnabled);
+                                        }}
+                                      >
+                                        <FormControlLabel
+                                          control={
+                                            <Switch
+                                              checked={autoParseEnabled}
+                                              size="small"
+                                              tabIndex={-1}
+                                            />
+                                          }
+                                          label="Парсити автоматично"
+                                          sx={{ pointerEvents: 'none', m: 0 }}
+                                        />
+                                      </MenuItem>
+                                    </Menu>
+                                  </>
+                                ) : null
+                              }
+                            >
+                              <Controller
+                                name="full_body"
+                                control={methods.control}
+                                render={({ field }) => (
+                                  <TextField
+                                    {...field}
+                                    onChange={(event) => {
+                                      drawerState.handleBodyChange(event.target.value);
+                                      field.onChange(event);
+                                    }}
+                                    label="Текст повідомлення"
+                                    fullWidth
+                                    multiline
+                                    rows={12}
+                                    disabled={busy}
+                                  />
+                                )}
+                              />
+                            </FormSectionWrapper>
+                          ) : null}
 
-                        <AttachmentsSection
-                          uppy={uppy}
-                          uppyFiles={uppyFiles}
-                          fileInputRef={fileInputRef}
-                          handleFileSelect={handleFileSelect}
-                          handleDrop={handleDrop}
-                          handleDropzoneKeyDown={handleDropzoneKeyDown}
+                          <AttachmentsSection
+                            uppy={uppy}
+                            uppyFiles={uppyFiles}
+                            fileInputRef={fileInputRef}
+                            handleFileSelect={handleFileSelect}
+                            handleDrop={handleDrop}
+                            handleDropzoneKeyDown={handleDropzoneKeyDown}
+                            busy={busy}
+                            existingMedia={existingMedia}
+                            errorMsg={drawerState.attachmentErrorMsg}
+                            reportTextPreviewEnabled={isReportMode}
+                          />
+                        </Stack>
+                      </Box>
+
+                      {/* RIGHT COLUMN */}
+                      <Stack spacing={2.5}>
+                        <SystemSection
+                          signalGroups={signalGroups}
+                          groupsLoading={groupsLoading}
                           busy={busy}
-                          existingMedia={existingMedia}
-                          errorMsg={drawerState.attachmentErrorMsg}
-                          reportTextPreviewEnabled={isReportMode}
+                          isEditMode={isEditMode}
+                          isReportMode={isReportMode}
+                          groupEditable={isReportMode}
+                          cyberEchoEnabled={props.cyberEchoEnabled}
+                          deviceNameOptions={deviceNameOptions}
+                          deviceNamesLoading={deviceNamesLoading}
+                          setDeviceNameInput={setDeviceNameInput}
+                          recentValues={recentValues}
                         />
+
+                        <MetadataSection
+                          showAdvanced={showAdvanced}
+                          busy={busy}
+                          recentValues={recentValues}
+                          tagOptions={tagOptions}
+                          postOptions={drawerState.postOptions}
+                          postLoading={drawerState.postLoading}
+                          setPostInput={drawerState.setPostInput}
+                          unitOptions={drawerState.unitOptions}
+                          unitLoading={drawerState.unitLoading}
+                          setUnitInput={drawerState.setUnitInput}
+                          unitLocked={drawerState.unitLocked}
+                          callsignOptions={drawerState.callsignOptions}
+                          callsignLoading={drawerState.callsignLoading}
+                          callsignInput={drawerState.callsignInput}
+                          setCallsignInput={drawerState.setCallsignInput}
+                        />
+
+                        <NetworkSection
+                          isEditMode={isEditMode}
+                          busy={busy}
+                          recentValues={recentValues}
+                          networkNameOptions={drawerState.networkNameOptions}
+                          networkNameLoading={drawerState.networkNameLoading}
+                          setNetworkNameInput={drawerState.setNetworkNameInput}
+                          networkUnitNamesById={drawerState.networkUnitNamesById}
+                          selectedNetwork={drawerState.selectedNetwork}
+                          setSelectedNetwork={drawerState.setSelectedNetwork}
+                          freqOptions={drawerState.freqOptions}
+                          freqLoading={drawerState.freqLoading}
+                          setFreqInput={drawerState.setFreqInput}
+                          unitLocked={drawerState.unitLocked}
+                          setUnitLocked={drawerState.setUnitLocked}
+                        />
+
+                        <LocationsSection
+                          busy={busy}
+                          recentValues={recentValues}
+                          open={props.open}
+                          onError={setErrorMsg}
+                        />
+
+                        {!isReportMode ? (
+                          <>
+                            <DmrSection
+                              showAdvanced={showAdvanced}
+                              busy={busy}
+                              recentValues={recentValues}
+                            />
+
+                            <AdvancedFieldsSection
+                              showAdvanced={showAdvanced}
+                              busy={busy}
+                              recentValues={recentValues}
+                              signalNameOptions={drawerState.signalNameOptions}
+                              signalNameLoading={drawerState.signalNameLoading}
+                              setSignalNameInput={drawerState.setSignalNameInput}
+                            />
+                          </>
+                        ) : null}
                       </Stack>
-                    </Box>
-
-                    {/* RIGHT COLUMN */}
-                    <Stack spacing={2.5}>
-                      <SystemSection
-                        signalGroups={signalGroups}
-                        groupsLoading={groupsLoading}
-                        busy={busy}
-                        isEditMode={isEditMode}
-                        isReportMode={isReportMode}
-                        groupEditable={isReportMode}
-                        cyberEchoEnabled={props.cyberEchoEnabled}
-                        deviceNameOptions={deviceNameOptions}
-                        deviceNamesLoading={deviceNamesLoading}
-                        setDeviceNameInput={setDeviceNameInput}
-                        recentValues={recentValues}
-                      />
-
-                      <MetadataSection
-                        showAdvanced={showAdvanced}
-                        busy={busy}
-                        recentValues={recentValues}
-                        tagOptions={tagOptions}
-                        postOptions={drawerState.postOptions}
-                        postLoading={drawerState.postLoading}
-                        setPostInput={drawerState.setPostInput}
-                        unitOptions={drawerState.unitOptions}
-                        unitLoading={drawerState.unitLoading}
-                        setUnitInput={drawerState.setUnitInput}
-                        unitLocked={drawerState.unitLocked}
-                        callsignOptions={drawerState.callsignOptions}
-                        callsignLoading={drawerState.callsignLoading}
-                        callsignInput={drawerState.callsignInput}
-                        setCallsignInput={drawerState.setCallsignInput}
-                      />
-
-                      <NetworkSection
-                        isEditMode={isEditMode}
-                        busy={busy}
-                        recentValues={recentValues}
-                        networkNameOptions={drawerState.networkNameOptions}
-                        networkNameLoading={drawerState.networkNameLoading}
-                        setNetworkNameInput={drawerState.setNetworkNameInput}
-                        networkUnitNamesById={drawerState.networkUnitNamesById}
-                        selectedNetwork={drawerState.selectedNetwork}
-                        setSelectedNetwork={drawerState.setSelectedNetwork}
-                        freqOptions={drawerState.freqOptions}
-                        freqLoading={drawerState.freqLoading}
-                        setFreqInput={drawerState.setFreqInput}
-                        unitLocked={drawerState.unitLocked}
-                        setUnitLocked={drawerState.setUnitLocked}
-                      />
-
-                      <LocationsSection
-                        busy={busy}
-                        recentValues={recentValues}
-                        open={props.open}
-                        onError={setErrorMsg}
-                      />
-
-                      {!isReportMode ? (
-                        <>
-                          <DmrSection
-                            showAdvanced={showAdvanced}
-                            busy={busy}
-                            recentValues={recentValues}
-                          />
-
-                          <AdvancedFieldsSection
-                            showAdvanced={showAdvanced}
-                            busy={busy}
-                            recentValues={recentValues}
-                            signalNameOptions={drawerState.signalNameOptions}
-                            signalNameLoading={drawerState.signalNameLoading}
-                            setSignalNameInput={drawerState.setSignalNameInput}
-                          />
-                        </>
-                      ) : null}
-                    </Stack>
-                  </PowerForm>
-                </FormProvider>
+                    </PowerForm>
+                  </FormProvider>
+                </MessageParserFeedbackProvider>
 
                 {reportDeleteId != null ? (
                   <Box sx={{ display: { xs: 'flex', md: 'none' }, mt: 3, pt: 1 }}>

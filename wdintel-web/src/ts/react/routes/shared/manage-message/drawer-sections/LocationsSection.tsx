@@ -10,6 +10,7 @@ import type { SettlementDetails } from '../../../../services/api/settlements';
 import { useSettlementAutocomplete } from './useSettlementAutocomplete';
 import { CoordinateInputPreview } from './CoordinateInputPreview';
 import { CoordinateListInput } from './CoordinateListInput';
+import { ParserFieldFeedback } from '../MessageParserFeedback';
 
 type LocationAutocompleteOption =
   | { kind: 'recent'; key: string; name: string }
@@ -81,93 +82,97 @@ export function LocationsSection({ busy, recentValues, open, onError }: Props) {
 
   return (
     <FormSectionWrapper title="Локації та координати">
-      <Controller
-        name="locations"
-        control={control}
-        render={({ field }) => (
-          <Autocomplete<LocationAutocompleteOption, true, false, true>
-            multiple
-            freeSolo
-            autoSelect
-            forcePopupIcon
-            options={options}
-            value={field.value || []}
-            onChange={(_, newValue) =>
-              field.onChange(
-                normalizeMultiValue((newValue as AutocompleteValue[]).map(optionToLocationName)),
-              )
-            }
-            onInputChange={(_, value, reason) => onInputChange(value, reason)}
-            loading={loading}
-            filterOptions={(items) => items}
-            getOptionLabel={(option) =>
-              typeof option === 'string'
-                ? option
-                : option.kind === 'recent'
-                  ? option.name
-                  : option.settlement.name
-            }
-            getOptionKey={optionKey}
-            isOptionEqualToValue={(option, value) => optionKey(option) === optionKey(value)}
-            renderOption={(props, option) => (
-              <li {...props} key={optionKey(option)}>
-                {option.kind === 'settlement' ? (
-                  <Box>
-                    <Typography>{option.settlement.name}</Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {option.settlement.region}
-                    </Typography>
-                  </Box>
-                ) : (
-                  option.name
-                )}
-              </li>
-            )}
-            noOptionsText="Немає варіантів"
-            loadingText="Пошук локацій…"
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                label="Назви локацій"
-                size="small"
-                slotProps={{
-                  input: {
-                    ...params.InputProps,
-                    endAdornment: (
-                      <>
-                        {loading ? <CircularProgress color="inherit" size={20} /> : null}
-                        {params.InputProps?.endAdornment}
-                      </>
-                    ),
-                  },
-                }}
-              />
-            )}
-            disabled={busy}
-          />
-        )}
-      />
+      <ParserFieldFeedback field="locations" label="локації">
+        <Controller
+          name="locations"
+          control={control}
+          render={({ field }) => (
+            <Autocomplete<LocationAutocompleteOption, true, false, true>
+              multiple
+              freeSolo
+              autoSelect
+              forcePopupIcon
+              options={options}
+              value={field.value || []}
+              onChange={(_, newValue) =>
+                field.onChange(
+                  normalizeMultiValue((newValue as AutocompleteValue[]).map(optionToLocationName)),
+                )
+              }
+              onInputChange={(_, value, reason) => onInputChange(value, reason)}
+              loading={loading}
+              filterOptions={(items) => items}
+              getOptionLabel={(option) =>
+                typeof option === 'string'
+                  ? option
+                  : option.kind === 'recent'
+                    ? option.name
+                    : option.settlement.name
+              }
+              getOptionKey={optionKey}
+              isOptionEqualToValue={(option, value) => optionKey(option) === optionKey(value)}
+              renderOption={(props, option) => (
+                <li {...props} key={optionKey(option)}>
+                  {option.kind === 'settlement' ? (
+                    <Box>
+                      <Typography>{option.settlement.name}</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {option.settlement.region}
+                      </Typography>
+                    </Box>
+                  ) : (
+                    option.name
+                  )}
+                </li>
+              )}
+              noOptionsText="Немає варіантів"
+              loadingText="Пошук локацій…"
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Назви локацій"
+                  size="small"
+                  slotProps={{
+                    input: {
+                      ...params.InputProps,
+                      endAdornment: (
+                        <>
+                          {loading ? <CircularProgress color="inherit" size={20} /> : null}
+                          {params.InputProps?.endAdornment}
+                        </>
+                      ),
+                    },
+                  }}
+                />
+              )}
+              disabled={busy}
+            />
+          )}
+        />
+      </ParserFieldFeedback>
 
-      <Controller
-        name="coords"
-        control={control}
-        render={({ field }) => (
-          <CoordinateListInput
-            value={field.value ?? ''}
-            onChange={field.onChange}
-            onBlur={field.onBlur}
-            onErrorChange={(message) => {
-              if (message) setError('coords', { type: 'manual', message });
-              else clearErrors('coords');
-            }}
-            disabled={busy}
-            error={errors.coords?.message}
-            previewSlot={
-              <CoordinateInputPreview value={coordsText ?? ''} busy={busy} onError={onError} />
-            }
-          />
-        )}
-      />
+      <ParserFieldFeedback field="coords" label="координати">
+        <Controller
+          name="coords"
+          control={control}
+          render={({ field }) => (
+            <CoordinateListInput
+              value={field.value ?? ''}
+              onChange={field.onChange}
+              onBlur={field.onBlur}
+              onErrorChange={(message) => {
+                if (message) setError('coords', { type: 'manual', message });
+                else clearErrors('coords');
+              }}
+              disabled={busy}
+              error={errors.coords?.message}
+              previewSlot={
+                <CoordinateInputPreview value={coordsText ?? ''} busy={busy} onError={onError} />
+              }
+            />
+          )}
+        />
+      </ParserFieldFeedback>
     </FormSectionWrapper>
   );
 }
