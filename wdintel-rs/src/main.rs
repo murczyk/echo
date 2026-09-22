@@ -1127,6 +1127,7 @@ enum Cmd {
     /// Refreshes historical Redis group statistics through the present.
     OneoffCalculateHistoricStats(OneoffCalculateHistoricStatsPs),
     OneoffDisableIm,
+    /// Disables IM datasources, GOI integrations, and Iggy synchronization.
     OneoffDisableImAndGoi,
     OneoffFixNetworkCallsigns,
     OneoffCountGroupBatches,
