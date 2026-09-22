@@ -1,3 +1,4 @@
+import { AuthorLabel } from '../../../components/AuthorLabel';
 import MessageIcon from '@mui/icons-material/Message';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import AccountCircleOutlinedIcon from '@mui/icons-material/AccountCircleOutlined';
@@ -772,11 +773,13 @@ function MetaLine({
   title,
   text,
   iconKind,
+  children,
 }: {
   icon: JSX.Element;
   title: string;
   text: string;
   iconKind?: 'group';
+  children?: ReactNode;
 }) {
   return (
     <div className="message-card-header-meta" data-message-card-metadata-item="true" title={text}>
@@ -789,7 +792,7 @@ function MetaLine({
       >
         {icon}
       </span>
-      <HeaderText nowrap>{text}</HeaderText>
+      <HeaderText nowrap>{children ?? text}</HeaderText>
     </div>
   );
 }
@@ -946,7 +949,9 @@ export function MessageCardMetadata({
           />
         ) : null}
         {isPresent(senderName) ? (
-          <MetaLine icon={<AccountCircleOutlinedIcon />} title="Відправник" text={senderName} />
+          <MetaLine icon={<AccountCircleOutlinedIcon />} title="Відправник" text={senderName}>
+            <AuthorLabel accountId={msg.sender} fallback={senderName} />
+          </MetaLine>
         ) : null}
         {isPresent(msg.freq) ? (
           <div className="message-card-header-meta" data-message-card-metadata-item="true">

@@ -1,3 +1,4 @@
+import { AuthorLabel } from '../../../components/AuthorLabel';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { Box, Chip, Divider, Link, Skeleton, Stack, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
@@ -205,7 +206,11 @@ function buildAdditionalFields(device: DeviceDetails): FieldConfig[] {
     {
       key: 'createdBy',
       label: 'Створив',
-      value: <DeviceTextValue>{device.createdBy}</DeviceTextValue>,
+      value: (
+        <DeviceTextValue>
+          <AuthorLabel login={device.createdBy} />
+        </DeviceTextValue>
+      ),
     },
     {
       key: 'createdAt',

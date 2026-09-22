@@ -20,6 +20,7 @@ import Maybe exposing (withDefault)
 import Maybe.Extra as MaybeX
 import Pages_.RerAnalysis.Utils
 import Shared.Components.Popup as Popup
+import Shared.Components.AuthorLabel
 import Shared.Components.RerMessage
 import Shared.Components.Watermark as Watermark
 import Shared.MarkedText
@@ -894,7 +895,10 @@ leftColumn ( messageId, message ) ps model =
                         [ class "py-1 px-2 flex items-center"
                         ]
                         [ i [ class "bi bi-person-circle mr-1 text-icons leading-none", title "Відправник" ] []
-                        , span [ class "text-xs" ] [ text <| Maybe.withDefault "" sender.givenName ++ " " ++ Maybe.withDefault "" sender.familyName ]
+                        , span [ class "text-xs" ]
+                            [ Shared.Components.AuthorLabel.sender (Maybe.withDefault "" message.sender)
+                                (Maybe.withDefault "" sender.givenName ++ " " ++ Maybe.withDefault "" sender.familyName)
+                            ]
                         ]
             ]
         , flip HtmlX.viewMaybe message.freq <|

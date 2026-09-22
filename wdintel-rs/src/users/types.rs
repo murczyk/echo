@@ -17,6 +17,7 @@ pub struct UserValidationResult {
 pub struct User {
     pub id: String,
     pub name: String,
+    pub display_name: Option<String>,
     pub roles: Vec<String>,
     pub sigint_zone_id: Option<i64>,
     pub organism_id: Option<i64>,
@@ -208,4 +209,37 @@ impl From<DeactivationReasonEnum> for DeactivationReasonType {
             }
         }
     }
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AuthorIdentity {
+    pub id: String,
+    pub login: String,
+    pub display_name: Option<String>,
+    pub delta_login: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(deny_unknown_fields)]
+pub struct DisplayNameSaveReq {
+    pub display_name: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AuthorIdentitiesReq {
+    pub logins: Vec<String>,
+    pub ids: Vec<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AuthorIdentitiesRsp {
+    pub authors: Vec<AuthorIdentity>,
 }

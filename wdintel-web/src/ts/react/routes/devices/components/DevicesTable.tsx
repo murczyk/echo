@@ -1,3 +1,7 @@
+import {
+  AUTHOR_COLUMN_META,
+  mrtAuthorCell,
+} from '../../../components/mui-customized/table/mrt-author-cell';
 import { Box, CircularProgress, Link, Typography } from '@mui/material';
 import type { MRT_ColumnOrderState, MRT_TableInstance } from 'material-react-table';
 import { MaterialReactTable } from 'material-react-table';
@@ -107,6 +111,8 @@ function useDevicesTableColumns(): AppMrtColumnDef<DeviceRowView>[] {
         id: 'createdBy',
         accessorKey: 'createdBy',
         header: 'Створив',
+        meta: AUTHOR_COLUMN_META,
+        Cell: mrtAuthorCell((row) => row.createdBy),
         size: 170,
         enableSorting: false,
       },

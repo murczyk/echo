@@ -1,3 +1,7 @@
+import {
+  AUTHOR_COLUMN_META,
+  mrtAuthorCell,
+} from '../../../components/mui-customized/table/mrt-author-cell';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import { Box, Stack, Tooltip, Typography } from '@mui/material';
@@ -278,13 +282,8 @@ export function buildPalitraTableColumns(
       id: 'author',
       size: 180,
       enableSorting: false,
-      meta: { overflowMode: 'text' },
-      Cell: mrtTextCell({
-        displayValue: ({ row }) =>
-          row.original.kind === 'folder' ? '' : formatText(row.original.author),
-        fullValue: ({ row }) =>
-          row.original.kind === 'folder' ? '' : formatText(row.original.author),
-      }),
+      meta: AUTHOR_COLUMN_META,
+      Cell: mrtAuthorCell<TableRowView>((row) => (row.kind === 'folder' ? '' : row.author)),
     },
     {
       header: 'Доступ',

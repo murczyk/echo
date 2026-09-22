@@ -1,3 +1,7 @@
+import {
+  AUTHOR_COLUMN_META,
+  mrtAuthorCell,
+} from '../../components/mui-customized/table/mrt-author-cell';
 import DeleteIcon from '@mui/icons-material/Delete';
 import {
   Autocomplete,
@@ -142,6 +146,8 @@ function usePolicyColumns(
       {
         header: 'Автор',
         accessorKey: 'author',
+        meta: AUTHOR_COLUMN_META,
+        Cell: mrtAuthorCell((row) => row.author),
         size: 180,
       },
       {

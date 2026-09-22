@@ -1,3 +1,4 @@
+import { AuthorLabel } from '../../components/AuthorLabel';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import {
   Alert,
@@ -209,7 +210,8 @@ function LbzTab({
             <Typography variant="h6">Активна версія</Typography>
             {state.activeVersion ? (
               <Typography variant="body2">
-                {state.activeVersion.sourceFileName} · {state.activeVersion.uploaderLogin} ·{' '}
+                {state.activeVersion.sourceFileName} ·{' '}
+                <AuthorLabel login={state.activeVersion.uploaderLogin} /> ·{' '}
                 {formatVersionTime(state.activeVersion.uploadedAtTs)}
               </Typography>
             ) : (
@@ -346,7 +348,9 @@ function LbzTab({
             {state.previousVersions.map((version) => (
               <TableRow key={version.id}>
                 <TableCell>{version.sourceFileName}</TableCell>
-                <TableCell>{version.uploaderLogin}</TableCell>
+                <TableCell>
+                  <AuthorLabel login={version.uploaderLogin} />
+                </TableCell>
                 <TableCell>{formatVersionTime(version.uploadedAtTs)}</TableCell>
                 <TableCell>{formatVersionTime(version.retiredAtTs)}</TableCell>
               </TableRow>
