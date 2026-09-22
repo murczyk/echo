@@ -229,7 +229,8 @@ pub fn extract_datetime(
 ) -> Result<Option<NaiveDateTime>, AppError> {
     Ok(extract_datetime_with_precision(lnow, body)
         .c(h!())?
-        .map(|d| d.datetime))
+        .filter(|extracted| extracted.has_time)
+        .map(|extracted| extracted.datetime))
 }
 
 pub fn without_trailing_datetime(body: &str) -> &str {
@@ -1249,5 +1250,16 @@ mod tests {
             .unwrap();
         assert_eq!(precision.datetime, expected);
         assert!(!precision.has_time);
+    }
+
+    #[test]
+    fn legacy_extract_datetime_ignores_non_rer_header_date_only() {
+        let input = "123 прк  | 2026-09-01\nbody";
+        let tz = crate::config::get_tz();
+        let lnow = tz.with_ymd_and_hms(2026, 9, 19, 12, 0, 0).unwrap();
+
+        let datetime = extract_datetime(lnow, input).unwrap();
+
+        assert_eq!(datetime, None);
     }
 }
