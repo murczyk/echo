@@ -18,6 +18,10 @@
     "echo:m20260922_092044_api_integration_iggy_events": {
       "changes": [
         {
+          "table": "public.api_integration_iggy_destination",
+          "strategy": "excluded"
+        },
+        {
           "table": "public.api_integration_iggy_event",
           "strategy": "excluded"
         }

@@ -11,6 +11,7 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     pub api_integration_id: i64,
+    pub destination_id: i64,
     pub sigint_inbox_item_id: Option<i64>,
     #[sea_orm(column_type = "JsonBinary")]
     pub payload: Json,
@@ -27,11 +28,25 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     ApiIntegration,
+    #[sea_orm(
+        belongs_to = "super::api_integration_iggy_destination::Entity",
+        from = "Column::DestinationId",
+        to = "super::api_integration_iggy_destination::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    ApiIntegrationIggyDestination,
 }
 
 impl Related<super::api_integration::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::ApiIntegration.def()
+    }
+}
+
+impl Related<super::api_integration_iggy_destination::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ApiIntegrationIggyDestination.def()
     }
 }
 

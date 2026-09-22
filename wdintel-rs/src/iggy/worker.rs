@@ -1,6 +1,7 @@
 use crate::entities::{
-    api_integration, api_integration_iggy_event, sigint_callsign,
-    sigint_inbox_item_network, sigint_unit,
+    api_integration, api_integration_iggy_destination,
+    api_integration_iggy_event, sigint_callsign, sigint_inbox_item_network,
+    sigint_unit,
 };
 use crate::error::AppError;
 use crate::rer_importer::callsigns::{
@@ -110,9 +111,38 @@ async fn sync_integration(
         transaction.commit().await.c(h!())?;
         return Ok(());
     };
-    let url = api_integration.iggy_url.as_deref().c(h!())?;
-    let iggy_login = api_integration.iggy_login.as_deref().c(h!())?;
-    let password = api_integration.iggy_password.as_deref().c(h!())?;
+    let destinations = load_destinations(&env.dbx, api_integration.id)
+        .await
+        .c(h!())?;
+    let destination = destinations.last().c(h!())?;
+    let started_at = Utc::now().naive_utc();
+    let pending_events = load_pending_events(&env.dbx, api_integration.id)
+        .await
+        .c(h!())?;
+    let pending_events = pending_events
+        .into_iter()
+        .filter(|event| event.created_at <= started_at)
+        .collect::<Vec<_>>();
+    let (historical_events, pending_events): (Vec<_>, Vec<_>) = pending_events
+        .into_iter()
+        .partition(|event| event.destination_id != destination.id);
+    let last_sync_at = sync_historical_destinations(
+        env,
+        api_integration.id,
+        api_integration.last_sync_at.unwrap_or(started_at),
+        started_at,
+        &destinations,
+        &historical_events,
+    )
+    .await
+    .c(h!())?;
+    prune_old_destinations(&env.dbx, api_integration.id)
+        .await
+        .c(h!())?;
+
+    let url = destination.iggy_url.as_deref().c(h!())?;
+    let iggy_login = destination.iggy_login.as_deref().c(h!())?;
+    let password = destination.iggy_password.as_deref().c(h!())?;
     if !api_integration.is_working {
         if let Err(err) =
             crate::iggy::test_connection(url, iggy_login, password).await
@@ -132,17 +162,14 @@ async fn sync_integration(
             .c(h!())?;
     }
 
-    let started_at = Utc::now().naive_utc();
-    let inbox_messages = load_inbox_messages(env, &api_integration, started_at)
-        .await
-        .c(h!())?;
-    let pending_events = load_pending_events(&env.dbx, api_integration.id)
-        .await
-        .c(h!())?;
-    let pending_events = pending_events
-        .into_iter()
-        .filter(|event| event.created_at <= started_at)
-        .collect::<Vec<_>>();
+    let inbox_messages = load_inbox_messages(
+        env,
+        &destination.api_user_login_id,
+        std::cmp::max(last_sync_at, destination.active_from),
+        started_at,
+    )
+    .await
+    .c(h!())?;
     if !inbox_messages.is_empty() {
         info!(
             "Iggy integration {} publishing {} inbox messages",
@@ -159,20 +186,24 @@ async fn sync_integration(
     }
     let inbox_messages =
         enrich_inbox_messages(env, inbox_messages).await.c(h!())?;
-    let pending_messages =
-        load_pending_event_messages(env, &api_integration, &pending_events)
-            .await
-            .c(h!())?;
+    let pending_messages = load_pending_event_messages(
+        env,
+        &destination.api_user_login_id,
+        &pending_events,
+    )
+    .await
+    .c(h!())?;
     let client = crate::iggy::connect(url, iggy_login, password)
         .await
         .context(h!())?;
     let sync_result = sync_connected_integration(
         env,
-        &api_integration,
-        started_at,
+        api_integration.id,
+        destination,
+        Some(started_at),
         inbox_messages,
-        pending_events,
-        pending_messages,
+        &pending_events,
+        &pending_messages,
         &client,
     )
     .await;
@@ -187,6 +218,36 @@ async fn sync_integration(
     release_result.context(h!())?;
     analytics_result.context(h!())?;
     shutdown_result.context(h!())?;
+    Ok(())
+}
+
+async fn load_destinations(
+    dbx: &DatabaseConnection,
+    api_integration_id: i64,
+) -> Result<Vec<api_integration_iggy_destination::Model>, AppError> {
+    api_integration_iggy_destination::Entity::find()
+        .filter(
+            api_integration_iggy_destination::Column::ApiIntegrationId
+                .eq(api_integration_id),
+        )
+        .order_by_asc(api_integration_iggy_destination::Column::Id)
+        .all(dbx)
+        .await
+        .c(h!())
+        .map_err(AppError::from)
+}
+
+async fn prune_old_destinations(
+    dbx: &DatabaseConnection,
+    api_integration_id: i64,
+) -> Result<(), AppError> {
+    dbx.query_one_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "select prune_api_integration_iggy_destinations($1)",
+        [api_integration_id.into()],
+    ))
+    .await
+    .c(h!())?;
     Ok(())
 }
 
@@ -237,14 +298,15 @@ pub(crate) async fn lock_integration_for_update(
 
 async fn sync_connected_integration(
     env: &Env,
-    api_integration: &api_integration::Model,
-    started_at: NaiveDateTime,
+    api_integration_id: i64,
+    destination: &api_integration_iggy_destination::Model,
+    completed_at: Option<NaiveDateTime>,
     inbox_messages: Vec<(i64, IggyInboxMessage)>,
-    pending_events: Vec<api_integration_iggy_event::Model>,
-    pending_messages: HashMap<i64, IggyInboxMessage>,
+    pending_events: &[api_integration_iggy_event::Model],
+    pending_messages: &HashMap<i64, IggyInboxMessage>,
     client: &iggy::prelude::IggyClient,
 ) -> Result<(), AppError> {
-    let inbox_topic = api_integration.iggy_inbox_topic.as_deref().c(h!())?;
+    let inbox_topic = destination.iggy_inbox_topic.as_deref().c(h!())?;
     let (stream, topic) = crate::iggy::stream_and_topic(inbox_topic);
     let producer = client
         .producer(stream, topic)
@@ -258,25 +320,116 @@ async fn sync_connected_integration(
         if let Err(err) = publish_with_retry(&producer, &payload).await {
             error!(
                 "Iggy integration {} failed to publish inbox message {}: {err:#?}",
-                api_integration.id, inbox_message.0
+                api_integration_id, inbox_message.0
             );
             return Err(err);
         }
     }
 
-    set_sync_completed(&env.dbx, api_integration.id, started_at)
+    if let Some(completed_at) = completed_at {
+        set_sync_completed(&env.dbx, api_integration_id, completed_at)
+            .await
+            .c(h!())?;
+    }
+    publish_pending_events(
+        env,
+        &destination.api_user_login_id,
+        pending_events,
+        pending_messages,
+        &producer,
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn sync_historical_destinations(
+    env: &Env,
+    api_integration_id: i64,
+    mut last_sync_at: NaiveDateTime,
+    started_at: NaiveDateTime,
+    destinations: &[api_integration_iggy_destination::Model],
+    events: &[api_integration_iggy_event::Model],
+) -> Result<NaiveDateTime, AppError> {
+    for pair in destinations.windows(2) {
+        let destination = &pair[0];
+        let completed_at = std::cmp::min(pair[1].active_from, started_at);
+        let created_after =
+            std::cmp::max(last_sync_at, destination.active_from);
+        let inbox_messages = if created_after < completed_at {
+            load_inbox_messages(
+                env,
+                &destination.api_user_login_id,
+                created_after,
+                completed_at,
+            )
+            .await
+            .c(h!())?
+        } else {
+            Vec::new()
+        };
+        let events = events
+            .iter()
+            .filter(|event| event.destination_id == destination.id)
+            .cloned()
+            .collect::<Vec<_>>();
+        if inbox_messages.is_empty() && events.is_empty() {
+            continue;
+        }
+        let inbox_messages =
+            enrich_inbox_messages(env, inbox_messages).await.c(h!())?;
+        let pending_messages = load_pending_event_messages(
+            env,
+            &destination.api_user_login_id,
+            &events,
+        )
         .await
         .c(h!())?;
+        let client = crate::iggy::connect(
+            destination.iggy_url.as_deref().c(h!())?,
+            destination.iggy_login.as_deref().c(h!())?,
+            destination.iggy_password.as_deref().c(h!())?,
+        )
+        .await
+        .context(h!())?;
+        let sync_result = sync_connected_integration(
+            env,
+            api_integration_id,
+            destination,
+            (created_after < completed_at).then_some(completed_at),
+            inbox_messages,
+            &events,
+            &pending_messages,
+            &client,
+        )
+        .await;
+        let shutdown_result = crate::iggy::shutdown(&client).await;
+        sync_result.context(h!())?;
+        shutdown_result.context(h!())?;
+        if created_after < completed_at {
+            last_sync_at = completed_at;
+        }
+    }
+    Ok(last_sync_at)
+}
+
+async fn publish_pending_events(
+    env: &Env,
+    api_user_login_id: &uuid::Uuid,
+    events: &[api_integration_iggy_event::Model],
+    pending_messages: &HashMap<i64, IggyInboxMessage>,
+    producer: &IggyProducer,
+) -> Result<(), AppError> {
     let mut visible_networks = HashMap::new();
     let mut visible_groups = None;
-    for event in pending_events {
+    for event in events {
         let message = event
             .sigint_inbox_item_id
             .and_then(|id| pending_messages.get(&id));
         let action = pending_event_action(
             env,
-            api_integration,
-            &event,
+            api_user_login_id,
+            event,
             message,
             &mut visible_networks,
             &mut visible_groups,
@@ -285,11 +438,11 @@ async fn sync_connected_integration(
         .c(h!())?;
         if action != PendingEventAction::Skip {
             let payload =
-                render_pending_event(&event, message, action).c(h!())?;
-            if let Err(err) = publish_with_retry(&producer, &payload).await {
+                render_pending_event(event, message, action).c(h!())?;
+            if let Err(err) = publish_with_retry(producer, &payload).await {
                 error!(
                     "Iggy integration {} failed to publish event {}: {err:#?}",
-                    api_integration.id, event.id
+                    event.api_integration_id, event.id
                 );
                 return Err(err);
             }
@@ -304,7 +457,7 @@ async fn sync_connected_integration(
 
 async fn pending_event_action(
     env: &Env,
-    api_integration: &api_integration::Model,
+    api_user_login_id: &uuid::Uuid,
     event: &api_integration_iggy_event::Model,
     message: Option<&IggyInboxMessage>,
     visible_networks: &mut HashMap<i64, bool>,
@@ -324,7 +477,7 @@ async fn pending_event_action(
                     *visible_groups = Some(
                         crate::messenger::group::get_identity_sigint_groups(
                             &env.dbx,
-                            &api_integration.api_user_login_id,
+                            api_user_login_id,
                         )
                         .await
                         .c(h!())?
@@ -350,13 +503,10 @@ async fn pending_event_action(
             PendingEventAction::Skip
         });
     }
-    let visible = has_visible_linked_inbox_item(
-        env,
-        &api_integration.api_user_login_id,
-        network_id,
-    )
-    .await
-    .c(h!())?;
+    let visible =
+        has_visible_linked_inbox_item(env, api_user_login_id, network_id)
+            .await
+            .c(h!())?;
     visible_networks.insert(network_id, visible);
     Ok(if visible {
         PendingEventAction::Publish
@@ -443,7 +593,7 @@ async fn maybe_log_analytics_entries(
 
 async fn load_pending_event_messages(
     env: &Env,
-    api_integration: &api_integration::Model,
+    api_user_login_id: &uuid::Uuid,
     events: &[api_integration_iggy_event::Model],
 ) -> Result<HashMap<i64, IggyInboxMessage>, AppError> {
     let ids = events
@@ -452,14 +602,12 @@ async fn load_pending_event_messages(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let logins = crate::users::get_organism_login_ids_by_id(
-        &env.dbx,
-        &api_integration.api_user_login_id,
-    )
-    .await
-    .c(h!())?;
+    let logins =
+        crate::users::get_organism_login_ids_by_id(&env.dbx, api_user_login_id)
+            .await
+            .c(h!())?;
     let messages = crate::rer_importer::inbox::get_inbox_messages_by_ids(
-        &api_integration.api_user_login_id,
+        api_user_login_id,
         &logins,
         env,
         &ids,
@@ -503,28 +651,26 @@ fn render_pending_event(
 
 async fn load_inbox_messages(
     env: &Env,
-    api_integration: &api_integration::Model,
-    started_at: NaiveDateTime,
+    api_user_login_id: &uuid::Uuid,
+    created_after: NaiveDateTime,
+    created_till: NaiveDateTime,
 ) -> Result<Vec<(i64, crate::rer_importer::types::InboxMessage)>, AppError> {
-    let last_sync_at = api_integration.last_sync_at.unwrap_or(started_at);
     let req = InboxMessagesReq {
         nolimit: Some(true),
         newest_first: Some(false),
         ..Default::default()
     };
-    let logins = crate::users::get_organism_login_ids_by_id(
-        &env.dbx,
-        &api_integration.api_user_login_id,
-    )
-    .await
-    .c(h!())?;
+    let logins =
+        crate::users::get_organism_login_ids_by_id(&env.dbx, api_user_login_id)
+            .await
+            .c(h!())?;
     crate::rer_importer::inbox::get_inbox_messages_created_between(
-        &api_integration.api_user_login_id,
+        api_user_login_id,
         &logins,
         env,
         &req,
-        last_sync_at,
-        started_at,
+        created_after,
+        created_till,
     )
     .await
 }
@@ -1083,13 +1229,17 @@ mod tests {
                         == group_master_key
             })
             .unwrap();
-        let messages = load_pending_event_messages(env, integration, &events)
-            .await
-            .unwrap();
+        let messages = load_pending_event_messages(
+            env,
+            &integration.api_user_login_id,
+            &events,
+        )
+        .await
+        .unwrap();
         assert!(!messages.contains_key(&item_id));
         let action = pending_event_action(
             env,
-            integration,
+            &integration.api_user_login_id,
             event,
             None,
             &mut HashMap::new(),
@@ -1287,7 +1437,7 @@ mod tests {
 
     #[actix_web::test]
     #[serial]
-    async fn destination_change_clears_only_its_queued_events() {
+    async fn destination_change_keeps_queued_events_on_original_route() {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let integration = insert_integration(&env, login.id).await;
@@ -1301,45 +1451,41 @@ mod tests {
         .update(&env.dbx)
         .await
         .unwrap();
-        assert_eq!(
-            load_pending_events(&env.dbx, integration.id)
-                .await
-                .unwrap()
-                .len(),
-            1
-        );
-
-        api_integration::ActiveModel {
-            id: Set(integration.id),
-            iggy_password: Set(Some("new password".to_string())),
-            ..Default::default()
-        }
-        .update(&env.dbx)
-        .await
-        .unwrap();
-        assert_eq!(
-            load_pending_events(&env.dbx, integration.id)
-                .await
-                .unwrap()
-                .len(),
-            1
-        );
-
-        api_integration::ActiveModel {
-            id: Set(integration.id),
-            iggy_url: Set(Some("tcp://localhost:8091".to_string())),
-            ..Default::default()
-        }
-        .update(&env.dbx)
-        .await
-        .unwrap();
-        assert!(load_pending_events(&env.dbx, integration.id)
+        let old_event = load_pending_events(&env.dbx, integration.id)
             .await
             .unwrap()
-            .is_empty());
+            .remove(0);
+        let old_destination =
+            api_integration_iggy_destination::Entity::find_by_id(
+                old_event.destination_id,
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(old_destination.iggy_url, integration.iggy_url);
         assert_eq!(
-            load_pending_events(&env.dbx, other.id).await.unwrap().len(),
-            1
+            old_destination.iggy_inbox_topic,
+            integration.iggy_inbox_topic
+        );
+
+        let new_login = mk_login(&env.dbx, Default::default()).await.unwrap();
+        api_integration::ActiveModel {
+            id: Set(integration.id),
+            api_user_login_id: Set(new_login.id),
+            iggy_url: Set(Some("tcp://localhost:8091".to_string())),
+            iggy_login: Set(Some("new login".to_string())),
+            iggy_password: Set(Some("new password".to_string())),
+            iggy_inbox_topic: Set(Some("new-inbox".to_string())),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        assert_eq!(
+            load_pending_events(&env.dbx, integration.id).await.unwrap()[0]
+                .destination_id,
+            old_destination.id
         );
 
         sigint_inbox_item::ActiveModel {
@@ -1350,22 +1496,150 @@ mod tests {
         .update(&env.dbx)
         .await
         .unwrap();
+        let events =
+            load_pending_events(&env.dbx, integration.id).await.unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].destination_id, old_destination.id);
+        assert_ne!(events[1].destination_id, old_destination.id);
+        let new_destination =
+            api_integration_iggy_destination::Entity::find_by_id(
+                events[1].destination_id,
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            new_destination.iggy_url.as_deref(),
+            Some("tcp://localhost:8091")
+        );
+        assert_eq!(new_destination.iggy_login.as_deref(), Some("new login"));
+        assert_eq!(
+            new_destination.iggy_password.as_deref(),
+            Some("new password")
+        );
+        assert_eq!(
+            new_destination.iggy_inbox_topic.as_deref(),
+            Some("new-inbox")
+        );
+        assert_eq!(new_destination.api_user_login_id, new_login.id);
+        assert_eq!(old_destination.iggy_password, integration.iggy_password);
+        assert_eq!(old_destination.api_user_login_id, login.id);
+        assert_eq!(
+            load_pending_events(&env.dbx, other.id).await.unwrap().len(),
+            2
+        );
+
+        api_integration_iggy_event::Entity::delete_by_id(old_event.id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
         api_integration::ActiveModel {
             id: Set(integration.id),
-            iggy_inbox_topic: Set(Some("new-inbox".to_string())),
+            last_sync_at: Set(Some(new_destination.active_from)),
             ..Default::default()
         }
         .update(&env.dbx)
         .await
         .unwrap();
-        assert!(load_pending_events(&env.dbx, integration.id)
+        prune_old_destinations(&env.dbx, integration.id)
             .await
-            .unwrap()
-            .is_empty());
-        assert_eq!(
-            load_pending_events(&env.dbx, other.id).await.unwrap().len(),
-            2
-        );
+            .unwrap();
+        assert!(api_integration_iggy_destination::Entity::find_by_id(
+            old_destination.id
+        )
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .is_none());
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn destination_change_keeps_unsent_creations_on_original_route() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let group = find_test_datasource_group(&env.dbx).await.unwrap();
+        let integration = insert_integration(&env, login.id).await;
+        let last_sync_at = Utc::now().naive_utc() - ChronoDuration::seconds(1);
+        api_integration::ActiveModel {
+            id: Set(integration.id),
+            last_sync_at: Set(Some(last_sync_at)),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        let (old_item_id, _) = insert_grouped_inbox_item(&env, &group).await;
+        api_integration::ActiveModel {
+            id: Set(integration.id),
+            iggy_url: Set(Some("tcp://localhost:8091".to_string())),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        let (new_item_id, _) = insert_grouped_inbox_item(&env, &group).await;
+        let destinations =
+            load_destinations(&env.dbx, integration.id).await.unwrap();
+        assert_eq!(destinations.len(), 2);
+        let old_messages = load_inbox_messages(
+            &env,
+            &login.id,
+            std::cmp::max(last_sync_at, destinations[0].active_from),
+            destinations[1].active_from,
+        )
+        .await
+        .unwrap();
+        let new_messages = load_inbox_messages(
+            &env,
+            &login.id,
+            destinations[1].active_from,
+            Utc::now().naive_utc() + ChronoDuration::seconds(1),
+        )
+        .await
+        .unwrap();
+        assert!(old_messages.iter().any(|(id, _)| *id == old_item_id));
+        assert!(!old_messages.iter().any(|(id, _)| *id == new_item_id));
+        assert!(new_messages.iter().any(|(id, _)| *id == new_item_id));
+        assert!(!new_messages.iter().any(|(id, _)| *id == old_item_id));
+
+        api_integration_iggy_event::Entity::delete_many()
+            .filter(
+                api_integration_iggy_event::Column::ApiIntegrationId
+                    .eq(integration.id),
+            )
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        prune_old_destinations(&env.dbx, integration.id)
+            .await
+            .unwrap();
+        assert!(api_integration_iggy_destination::Entity::find_by_id(
+            destinations[0].id
+        )
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .is_some());
+        api_integration::ActiveModel {
+            id: Set(integration.id),
+            last_sync_at: Set(Some(destinations[1].active_from)),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        prune_old_destinations(&env.dbx, integration.id)
+            .await
+            .unwrap();
+        assert!(api_integration_iggy_destination::Entity::find_by_id(
+            destinations[0].id
+        )
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .is_none());
     }
 
     #[actix_web::test]
@@ -1411,9 +1685,13 @@ mod tests {
             events[0].payload["event_type"],
             "sigint_inbox_item_updated"
         );
-        let messages = load_pending_event_messages(&env, &integration, &events)
-            .await
-            .unwrap();
+        let messages = load_pending_event_messages(
+            &env,
+            &integration.api_user_login_id,
+            &events,
+        )
+        .await
+        .unwrap();
         assert!(messages[&item_id].sigint_unit_ids.is_empty());
 
         sigint_unit::ActiveModel {
@@ -1427,9 +1705,13 @@ mod tests {
         let events =
             load_pending_events(&env.dbx, integration.id).await.unwrap();
         assert_eq!(events.len(), 2);
-        let messages = load_pending_event_messages(&env, &integration, &events)
-            .await
-            .unwrap();
+        let messages = load_pending_event_messages(
+            &env,
+            &integration.api_user_login_id,
+            &events,
+        )
+        .await
+        .unwrap();
         assert_eq!(messages[&item_id].sigint_unit_ids, vec![unit.id]);
     }
 
@@ -1930,9 +2212,13 @@ mod tests {
 
         let events =
             load_pending_events(&env.dbx, integration.id).await.unwrap();
-        let messages = load_pending_event_messages(&env, &integration, &events)
-            .await
-            .unwrap();
+        let messages = load_pending_event_messages(
+            &env,
+            &integration.api_user_login_id,
+            &events,
+        )
+        .await
+        .unwrap();
         let rendered: serde_json::Value = serde_json::from_slice(
             &render_pending_event(
                 &events[0],
@@ -1996,9 +2282,13 @@ mod tests {
             insert_grouped_inbox_item(&env, &group).await;
         let events =
             load_pending_events(&env.dbx, integration.id).await.unwrap();
-        let messages = load_pending_event_messages(&env, &integration, &events)
-            .await
-            .unwrap();
+        let messages = load_pending_event_messages(
+            &env,
+            &integration.api_user_login_id,
+            &events,
+        )
+        .await
+        .unwrap();
         assert!(messages.contains_key(&deleted_item_id));
 
         signal_message_group::Entity::delete_by_id(deleted_group.id)
@@ -2036,9 +2326,13 @@ mod tests {
         .unwrap();
         let events =
             load_pending_events(&env.dbx, integration.id).await.unwrap();
-        let messages = load_pending_event_messages(&env, &integration, &events)
-            .await
-            .unwrap();
+        let messages = load_pending_event_messages(
+            &env,
+            &integration.api_user_login_id,
+            &events,
+        )
+        .await
+        .unwrap();
         assert!(messages.contains_key(&target_item_id));
         assert_group_loss_action(
             &env,
