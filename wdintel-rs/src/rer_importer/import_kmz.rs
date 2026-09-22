@@ -3,7 +3,7 @@ use crate::delta::finish_bgtask;
 use crate::kml::types::*;
 use crate::messenger::id;
 use crate::rer_importer::bgtask_log;
-use crate::users::ensure_rer_role;
+use crate::users::ensure_base_role;
 use crate::utils::*;
 use crate::{entities::*, error::*, types::*};
 use actix_multipart::Multipart;
@@ -20,7 +20,7 @@ pub async fn rer_delta_kmz_import(
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
 ) -> Result<Json<i64>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let file_name = field.name().unwrap_or("upload.kmz").to_string();
     let tmp_dir = TempDir::new()?;

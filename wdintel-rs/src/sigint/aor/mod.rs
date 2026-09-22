@@ -23,7 +23,7 @@ pub async fn aor_list(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Admin", "UnitsEditor", "Rer", "Api"],
+        vec!["Admin", "UnitsEditor", "Rer", "Cyber", "Api"],
     )
     .await?;
 
@@ -262,7 +262,7 @@ pub async fn update_aor_report_order(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Admin", "Rer"],
+        vec!["Admin", "Rer", "Cyber"],
     )
     .await
     .c(h!())?;

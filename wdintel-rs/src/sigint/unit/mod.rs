@@ -15,7 +15,7 @@ use crate::event_stream::fanout;
 use crate::event_stream::types::*;
 use crate::types::*;
 use crate::users::{
-    ensure_rer_role, has_any_role, has_role, login_id_from_identity,
+    ensure_base_role, has_any_role, has_role, login_id_from_identity,
 };
 use actix_web::post;
 use actix_web::web::Json;
@@ -213,7 +213,7 @@ pub async fn list_units(
     req: Json<ListUnitsReq>,
 ) -> Result<Json<ListUnitsRsp>, AppError> {
     let login_id = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &login_id, vec!["Rer", "Api"])
+    has_any_role(&env.dbx, &login_id, vec!["Rer", "Cyber", "Api"])
         .await
         .c(h!())?;
     let can_view_orbit =
@@ -250,7 +250,7 @@ pub async fn unit_status_counts(
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<UnitStatusCountsRsp>, AppError> {
     let login_id = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &login_id, vec!["Rer", "Api"])
+    has_any_role(&env.dbx, &login_id, vec!["Rer", "Cyber", "Api"])
         .await
         .c(h!())?;
     Ok(Json(read_unit_status_counts(&env.dbx).await?))
@@ -1029,7 +1029,7 @@ pub async fn list_units_by_id(
     req: Json<ListUnitsByIdReq>,
 ) -> Result<Json<ListUnitsByIdRsp>, AppError> {
     let login = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "Api"])
+    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber", "Api"])
         .await
         .c(h!())?;
     let can_view_orbit = orbit::can_view_orbit_data(&env.dbx, &login).await?;
@@ -1055,7 +1055,7 @@ pub async fn create_unit(
     env: actix_web::web::Data<Env>,
     req: Json<CreateUnitReq>,
 ) -> Result<Json<Unit>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
     has_role(&env.dbx, &login, "UnitsEditor").await.c(h!())?;
 
@@ -1091,7 +1091,7 @@ pub async fn create_unit_with_auto_network(
     env: actix_web::web::Data<Env>,
     req: Json<CreateUnitWithAutoNetworkReq>,
 ) -> Result<Json<CreateUnitWithAutoNetworkRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .c(h!())?;
@@ -1110,7 +1110,7 @@ pub async fn create_device_network(
     env: actix_web::web::Data<Env>,
     req: Json<CreateDeviceNetworkReq>,
 ) -> Result<Json<CreateDeviceNetworkRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .c(h!())?;
@@ -1626,7 +1626,7 @@ pub async fn update_unit(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateUnitReq>,
 ) -> Result<Json<Unit>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
     has_role(&env.dbx, &login, "UnitsEditor").await.c(h!())?;
     let can_update_orbit_note =
@@ -1977,7 +1977,7 @@ pub async fn delete_unit(
     env: actix_web::web::Data<Env>,
     req: Json<i64>,
 ) -> Result<Json<Unit>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
     has_role(&env.dbx, &login, "UnitsEditor").await.c(h!())?;
     let unit =
@@ -2057,7 +2057,7 @@ pub async fn delete_unit_duplicate(
     req: Json<DeleteUnitDuplicateReq>,
 ) -> Result<Json<i64>, AppError> {
     let dbx = &env.dbx;
-    ensure_rer_role(dbx, &user).await.c(h!())?;
+    ensure_base_role(dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).context(h!())?;
     has_role(dbx, &login, "UnitsEditor").await.c(h!())?;
     let req: DeleteUnitDuplicateReq = req.into_inner();
@@ -3307,7 +3307,7 @@ where
 ///
 /// # Дозволи
 ///
-/// Для доступу до цього ендпоінту користувач повинен мати роль: "Rer".
+/// Для доступу до цього ендпоінту користувач повинен мати роль: "Rer" або "Cyber".
 #[post("/api/sigint/unit/search")]
 pub async fn units_search(
     user: actix_identity::Identity,
@@ -3315,7 +3315,9 @@ pub async fn units_search(
     req: Json<UnitSearchReq>,
 ) -> Result<Json<ListUnitsByIdRsp>, AppError> {
     let login = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &login, vec!["Rer"]).await.c(h!())?;
+    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber"])
+        .await
+        .c(h!())?;
     let can_view_orbit = orbit::can_view_orbit_data(&env.dbx, &login).await?;
 
     let search_phrase = req.search.trim();

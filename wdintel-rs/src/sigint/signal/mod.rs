@@ -5,7 +5,7 @@ use crate::event_stream::fanout;
 use crate::event_stream::types::*;
 use crate::types::*;
 use crate::users::{
-    ensure_rer_role, has_any_role, has_role, login_id_from_identity,
+    ensure_base_role, has_any_role, has_role, login_id_from_identity,
 };
 use actix_web::post;
 use actix_web::web::Json;
@@ -26,7 +26,7 @@ pub async fn list_signals(
     env: actix_web::web::Data<Env>,
     req: Json<ListSignalsReq>,
 ) -> Result<Json<ListSignalsRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     const LIMIT: u64 = 100000;
 
     let signals = list_signals_impl(&env.dbx, &req.0, Some(LIMIT))
@@ -46,7 +46,7 @@ pub async fn list_signals_csv(
     req: Json<ListSignalsReq>,
     http_req: actix_web::HttpRequest,
 ) -> Result<actix_web::HttpResponse, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
 
     let signals = list_signals_impl(&env.dbx, &req.0, None).await.c(h!())?;
     let sigint_unit_ids: Vec<i64> = signals
@@ -180,7 +180,7 @@ pub async fn signal_unit_stats(
     env: actix_web::web::Data<Env>,
     _req: Json<()>,
 ) -> Result<Json<SignalUnitStatsRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     #[derive(FromQueryResult)]
     struct Row {
         unit_id: i64,
@@ -230,7 +230,7 @@ pub async fn create_signal(
     env: actix_web::web::Data<Env>,
     req: Json<CreateSignalReq>,
 ) -> Result<Json<i64>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .c(h!())?;
@@ -289,7 +289,7 @@ pub async fn update_signal(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateSignalReq>,
 ) -> Result<Json<i64>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .c(h!())?;
@@ -343,7 +343,7 @@ pub async fn delete_signal(
     env: actix_web::web::Data<Env>,
     req: Json<i64>,
 ) -> Result<Json<i64>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .c(h!())?;
@@ -400,9 +400,13 @@ pub async fn signal_name_search(
     env: actix_web::web::Data<Env>,
     req: Json<SignalSearchReq>,
 ) -> Result<Json<SignalSearchRsp>, AppError> {
-    has_any_role(&env.dbx, &login_id_from_identity(&user)?, vec!["Rer"])
-        .await
-        .c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &login_id_from_identity(&user)?,
+        vec!["Rer", "Cyber"],
+    )
+    .await
+    .c(h!())?;
 
     let search_phrase = req.search.trim();
 

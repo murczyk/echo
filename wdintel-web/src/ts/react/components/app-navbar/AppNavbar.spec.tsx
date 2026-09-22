@@ -103,10 +103,10 @@ describe('AppNavbar', () => {
     expect(logoImg).not.toBeUndefined();
   });
 
-  it('renders main navigation elements for Rer role', () => {
+  it.each(['Rer', 'Cyber'])('#3568 renders main navigation for %s', (role) => {
     const { container } = renderComponent({
       ...defaultProps,
-      user: { ...defaultProps.user, roles: ['Rer'] },
+      user: { ...defaultProps.user, roles: [role] },
     });
     const content = container.textContent;
     expect(content).toContain('Оперативний');
@@ -208,10 +208,10 @@ describe('AppNavbar', () => {
     expect(container.textContent).not.toContain('Статистика');
   });
 
-  it('keeps documentation and statistics links for users without AI chat role', () => {
+  it.each(['Rer', 'Cyber'])('#3568 keeps ApiAgent excluded from %s AI chat access', (role) => {
     const { container } = renderComponent({
       ...defaultProps,
-      user: { ...defaultProps.user, roles: ['Rer', 'ApiAgent'] },
+      user: { ...defaultProps.user, roles: [role, 'ApiAgent'] },
     });
 
     act(() => {
@@ -356,7 +356,7 @@ describe('AppNavbar', () => {
     const content = container.textContent;
     expect(content).toContain('База даних');
     expect(content).toContain('Пристрої');
-    expect(content).not.toContain('Мережі');
+    expect(content).toContain('Мережі');
   });
 
   it('hides Devices when the Devices section is disabled or read role is missing', () => {

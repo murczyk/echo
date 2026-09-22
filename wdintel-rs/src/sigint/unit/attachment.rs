@@ -21,7 +21,7 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::types::*;
 use crate::users::{
-    ensure_admin, ensure_rer_role, has_role, login_id_from_identity,
+    ensure_admin, ensure_base_role, has_role, login_id_from_identity,
 };
 use actix_multipart::{Field, Multipart};
 use actix_web::http::header;
@@ -51,7 +51,7 @@ pub async fn unit_details(
     env: Data<Env>,
     req: Json<UnitDetailsReq>,
 ) -> Result<Json<UnitDetailsRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
     let unit = find_available_unit(&env.dbx, req.unit_id).await?;
     let attachments =
@@ -104,7 +104,7 @@ pub async fn unit_attachment_unit_ids(
     env: Data<Env>,
     req: Json<Vec<i64>>,
 ) -> Result<Json<UnitAttachmentUnitIdsRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
     let requested_unit_ids = req.into_inner();
     let unit_ids = list_visible_attachment_unit_ids(
@@ -213,7 +213,7 @@ pub async fn download_unit_attachment(
     env: Data<Env>,
     req: Json<UnitAttachmentDownloadReq>,
 ) -> Result<HttpResponse, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
     let attachment =
         find_visible_attachment(&env.dbx, &login, req.attachment_id).await?;

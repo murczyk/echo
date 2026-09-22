@@ -45,4 +45,20 @@ suite =
                     , \_ -> Expect.equal True (Core.Auth.canReadDevices (user [ "DeviceSource", "Cyber" ]))
                     ]
                     ()
+        , test "#3568 admits Rer or Cyber while keeping roles distinct" <|
+            \_ ->
+                Expect.all
+                    [ \_ ->
+                        [ [ "Rer" ], [ "Cyber" ], [ "Rer", "Cyber" ], [ "Admin" ], [ "Full" ] ]
+                            |> List.all (user >> Core.Auth.hasRerOrCyber)
+                            |> Expect.equal True
+                    , \_ ->
+                        [ [], [ "Basic" ], [ "DeviceSource" ], [ "Api" ], [ "ApiAgent" ] ]
+                            |> List.any (user >> Core.Auth.hasRerOrCyber)
+                            |> Expect.equal False
+                    , \_ -> Expect.equal True (Core.Auth.hasRole "Basic" (user [ "Cyber" ]))
+                    , \_ -> Expect.equal False (Core.Auth.hasRole "Rer" (user [ "Cyber" ]))
+                    , \_ -> Expect.equal False (Core.Auth.hasRole "Cyber" (user [ "Rer" ]))
+                    ]
+                    ()
         ]

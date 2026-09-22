@@ -1,5 +1,5 @@
 use crate::users::{
-    ensure_rer_role, has_any_role, has_role, login_id_from_identity,
+    ensure_base_role, has_any_role, has_role, login_id_from_identity,
 };
 use std::collections::{BTreeSet, HashMap, HashSet};
 
@@ -52,7 +52,7 @@ pub async fn list_callsigns(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "ApiAgent"],
+        vec!["Rer", "Cyber", "ApiAgent"],
     )
     .await
     .c(h!())?;
@@ -78,7 +78,7 @@ pub async fn list_callsigns_csv(
     req: Json<ListCallsignsReq>,
     http_req: actix_web::HttpRequest,
 ) -> Result<actix_web::HttpResponse, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
 
     let rows = list_callsigns_export_rows(&env.dbx, &req.0).await.c(h!())?;
 
@@ -117,7 +117,7 @@ pub async fn list_callsigns_xlsx(
     req: Json<ListCallsignsReq>,
     http_req: actix_web::HttpRequest,
 ) -> Result<actix_web::HttpResponse, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
 
     let rows = list_callsigns_export_rows(&env.dbx, &req.0).await.c(h!())?;
 
@@ -1042,7 +1042,7 @@ pub async fn get_callsigns_with_units_from_inbox(
     env: actix_web::web::Data<Env>,
     req: Json<GetCallsignsWithUnitsFromInboxReq>,
 ) -> Result<Json<GetCallsignsWithUnitsFromInboxRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
 
     if req.callsigns.is_empty() {
@@ -1159,7 +1159,7 @@ pub async fn create_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<CreateCallsignReq>,
 ) -> Result<Json<Callsign>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     has_role(&env.dbx, &login_id_from_identity(&user)?, "CallsignsEditor")
         .await
         .c(h!())?;
@@ -1206,7 +1206,7 @@ pub async fn update_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateCallsignReq>,
 ) -> Result<Json<Callsign>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     has_role(&env.dbx, &login_id_from_identity(&user)?, "CallsignsEditor")
         .await
         .c(h!())?;
@@ -1245,7 +1245,7 @@ pub async fn delete_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<i64>,
 ) -> Result<Json<Callsign>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     has_role(&env.dbx, &login_id_from_identity(&user)?, "CallsignsEditor")
         .await
         .c(h!())?;
@@ -1330,7 +1330,7 @@ pub async fn callsign_unit_stats(
     env: actix_web::web::Data<Env>,
     _req: Json<()>,
 ) -> Result<Json<CallsignUnitStatsRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let units = list_callsign_unit_stats(&env.dbx).await?;
     Ok(Json(CallsignUnitStatsRsp { units }))
 }
@@ -1402,9 +1402,13 @@ pub async fn callsign_name_search(
     env: actix_web::web::Data<Env>,
     req: Json<CallsignSearchReq>,
 ) -> Result<Json<CallsignSearchRsp>, AppError> {
-    has_any_role(&env.dbx, &login_id_from_identity(&user)?, vec!["Rer"])
-        .await
-        .c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &login_id_from_identity(&user)?,
+        vec!["Rer", "Cyber"],
+    )
+    .await
+    .c(h!())?;
 
     let search_phrase = req.search.trim();
 

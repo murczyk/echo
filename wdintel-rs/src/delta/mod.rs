@@ -6,7 +6,7 @@ use crate::error::AppError;
 use crate::kml::types::*;
 use crate::types::*;
 use crate::users::{
-    ensure_basic_role, ensure_rer_role, has_role, login_id_from_identity,
+    ensure_base_role, ensure_basic_role, has_role, login_id_from_identity,
 };
 use crate::utils::multipart;
 use actix_multipart::Multipart;
@@ -954,7 +954,7 @@ pub async fn import_map(
     mut payload: Multipart,
     admission: crate::utils::multipart_admission::MultipartAdmission,
 ) -> Result<Json<i64>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let source_name = field.name().unwrap_or("upload.kmz").to_string();
     let convert = enemy_units_geojson::ActiveModel {

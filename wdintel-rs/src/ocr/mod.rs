@@ -24,7 +24,7 @@ use crate::ocr::types::{
 };
 use crate::storage;
 use crate::types::{Env, ShortContext};
-use crate::users::{ensure_admin, ensure_rer_role, login_id_from_identity};
+use crate::users::{ensure_admin, ensure_base_role, login_id_from_identity};
 use actix_identity::Identity;
 use actix_web::{
     get, http::header, post, web::Json, HttpRequest, HttpResponse,
@@ -1064,7 +1064,7 @@ pub(crate) async fn authorized_media(
     user: &Identity,
     media_id: Uuid,
 ) -> Result<signal_message_media::Model, crate::error::AppError> {
-    ensure_rer_role(&env.dbx, user).await.c(h!())?;
+    ensure_base_role(&env.dbx, user).await.c(h!())?;
     let login = login_id_from_identity(user).c(h!())?;
     let media = signal_message_media::Entity::find_by_id(media_id)
         .one(&env.dbx)

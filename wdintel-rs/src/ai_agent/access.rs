@@ -1,6 +1,6 @@
 use crate::config::{
-    AI_AGENT_ROLE_API, AI_AGENT_ROLE_RER, AI_AGENT_SETTINGS_ID,
-    AI_AGENT_TEMPLATE_LOGIN_ID,
+    AI_AGENT_ROLE_API, AI_AGENT_ROLE_CYBER, AI_AGENT_ROLE_RER,
+    AI_AGENT_SETTINGS_ID, AI_AGENT_TEMPLATE_LOGIN_ID,
 };
 use crate::entities::{
     ai_agent_allowed_engine, ai_agent_settings, ai_agent_user_link, ai_engine,
@@ -71,7 +71,9 @@ pub async fn current_human_login(
             "ApiAgent cannot use the AI agent harness".to_string(),
         ));
     }
-    crate::users::ensure_rer_role_by_id(dbx, &login.id).await?;
+    crate::users::ensure_base_role_by_id(dbx, &login.id)
+        .await
+        .c(h!())?;
     if require_feature && !settings(dbx).await?.feature_enabled {
         return Err(AppError::Forbidden(
             "AI agent harness is disabled".to_string(),
@@ -108,7 +110,7 @@ where
     };
     if human.deleted
         || human.deleted_permanently
-        || !has_rer_role(&human.roles)
+        || !has_rer_or_cyber_role(&human.roles)
         || agent.sigint_zone_id != human.sigint_zone_id
         || agent.organism_id != human.organism_id
         || (human.organism_id.is_some()
@@ -141,11 +143,13 @@ where
         .collect())
 }
 
-fn has_rer_role(roles: &serde_json::Value) -> bool {
+fn has_rer_or_cyber_role(roles: &serde_json::Value) -> bool {
     let Ok(roles) = serde_json::from_value::<Vec<String>>(roles.clone()) else {
         return false;
     };
-    crate::users::role_matches(&roles, AI_AGENT_ROLE_RER).unwrap_or(false)
+    [AI_AGENT_ROLE_RER, AI_AGENT_ROLE_CYBER]
+        .iter()
+        .any(|role| crate::users::role_matches(&roles, role).unwrap_or(false))
 }
 
 pub async fn allowed_engines(
@@ -279,11 +283,18 @@ mod tests {
     use serial_test::serial;
 
     #[test]
-    fn linked_human_requires_rer_role() {
-        assert!(has_rer_role(&serde_json::json!(["Rer", "Cyber"])));
-        assert!(has_rer_role(&serde_json::json!(["Admin", "NoAutoLogout"])));
-        assert!(has_rer_role(&serde_json::json!(["Full"])));
-        assert!(!has_rer_role(&serde_json::json!(["Cyber"])));
+    fn issue_3568_linked_human_requires_rer_or_cyber_role() {
+        assert!(has_rer_or_cyber_role(&serde_json::json!(["Rer", "Cyber"])));
+        assert!(has_rer_or_cyber_role(&serde_json::json!([
+            "Admin",
+            "NoAutoLogout"
+        ])));
+        assert!(has_rer_or_cyber_role(&serde_json::json!(["Full"])));
+        assert!(has_rer_or_cyber_role(&serde_json::json!(["Cyber"])));
+        assert!(has_rer_or_cyber_role(&serde_json::json!(["Rer"])));
+        assert!(!has_rer_or_cyber_role(&serde_json::json!(["Basic"])));
+        assert!(!has_rer_or_cyber_role(&serde_json::json!(["ApiAgent"])));
+        assert!(!has_rer_or_cyber_role(&serde_json::json!(["Cyber", 1])));
     }
 
     #[tokio::test]

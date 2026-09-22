@@ -52,7 +52,7 @@ async fn active_login_rejects_ineligible_accounts() {
         .await
         .unwrap();
         assert!(matches!(
-            has_role(&env.dbx, &login.id, "Rer").await,
+            ensure_base_role_by_id(&env.dbx, &login.id).await,
             Err(AppError::Unauthenticated)
         ));
         assert!(matches!(
@@ -79,6 +79,56 @@ async fn active_login_rejects_ineligible_accounts() {
         has_role(&env.dbx, &Uuid::now_v7(), "Rer").await,
         Err(AppError::Unauthenticated)
     ));
+}
+
+#[tokio::test]
+#[serial]
+async fn issue_3568_rer_or_cyber_access_preserves_role_boundaries() {
+    let (env, _guard) = crate::functest::tests::cleanup_locked().await.unwrap();
+    for (roles, allowed) in [
+        (vec!["Rer"], true),
+        (vec!["Cyber"], true),
+        (vec!["Rer", "Cyber"], true),
+        (vec!["Admin"], true),
+        (vec!["Full"], true),
+        (vec!["Basic"], false),
+        (vec!["DeviceSource"], false),
+        (vec!["Api"], false),
+        (vec!["ApiAgent"], false),
+        (vec![], false),
+    ] {
+        let login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                roles: Set(serde_json::json!(roles)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let result = ensure_base_role_by_id(&env.dbx, &login.id).await;
+        if allowed {
+            result.unwrap();
+            has_role(&env.dbx, &login.id, "Basic").await.unwrap();
+        } else {
+            assert!(matches!(result, Err(AppError::Forbidden(_))), "{roles:?}");
+        }
+        if roles == ["Cyber"] {
+            for role in ["Rer", "Admin", "UnitsEditor", "CallsignsEditor"] {
+                assert!(matches!(
+                    has_role(&env.dbx, &login.id, role).await,
+                    Err(AppError::Forbidden(_))
+                ));
+            }
+            let mut login = login.into_active_model();
+            login.deleted = Set(true);
+            let login = login.update(&env.dbx).await.unwrap();
+            assert!(matches!(
+                ensure_base_role_by_id(&env.dbx, &login.id).await,
+                Err(AppError::Unauthenticated)
+            ));
+        }
+    }
 }
 
 async fn set_test_login_blocked(

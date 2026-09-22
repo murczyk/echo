@@ -16,7 +16,7 @@ import { ChangelogDropdown } from './ChangelogDropdown';
 import { ProfileDropdown } from './ProfileDropdown';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { fetchUserSettings, USER_SETTINGS_UPDATED_EVENT } from '../../services/api/user-settings';
-import { canReadDevices, hasRole } from '../../utils/roles';
+import { canReadDevices, hasRole, hasRerOrCyber } from '../../utils/roles';
 
 function filterTranscriptionSettings(items: Menu[], enabled: boolean): Menu[] {
   return items.flatMap<Menu>((item): Menu[] => {
@@ -233,18 +233,18 @@ export function AppNavbar({
     shared?.serverInfo?.mode === 'live' || shared?.serverInfo?.mode === 'debug';
   const isAdminMenuVisible = hasRole(user?.roles, 'Admin');
   const isBasic = hasRole(user?.roles, 'Basic');
-  const isRer = hasRole(user?.roles, 'Rer');
+  const isRerOrCyber = hasRerOrCyber(user?.roles);
   const isApiAgent = hasRole(user?.roles, 'ApiAgent');
-  const isAiChatUser = isRer && !isApiAgent;
+  const isAiChatUser = isRerOrCyber && !isApiAgent;
   const devicesReadable = canReadDevices(user?.roles);
   const devicesMenuIsVisible =
     serverModeIsLive && loadedDevicesSectionEnabled === true && devicesReadable;
   const databaseMenuSubs = getDatabaseSubs({
-    includeRerItems: serverModeIsLive && isRer,
+    includeRerItems: serverModeIsLive && isRerOrCyber,
     includeDevicesItem: devicesMenuIsVisible,
   });
 
-  const goiMenuIsVisible = serverModeIsLive && isRer && user.goiIntegrations?.length > 0;
+  const goiMenuIsVisible = serverModeIsLive && isRerOrCyber && user.goiIntegrations?.length > 0;
   const visibleAdminSubs = filterTranscriptionSettings(
     adminSubs,
     loadedAudioTranscription === true,
@@ -551,7 +551,7 @@ export function AppNavbar({
           >
             <ul className="app-navbar-links-list flex min-w-0 w-full flex-col gap-y-1 lg:flex-row lg:flex-wrap lg:items-center lg:gap-x-4 lg:gap-y-1">
               {serverModeIsLive &&
-                isRer &&
+                isRerOrCyber &&
                 renderDropdownMenu(
                   'operational',
                   'Оперативний',
@@ -559,7 +559,7 @@ export function AppNavbar({
                   '/rer-duty-neo',
                 )}
               {serverModeIsLive &&
-                isRer &&
+                isRerOrCyber &&
                 renderDropdownMenu(
                   'analysis',
                   'Аналіз',

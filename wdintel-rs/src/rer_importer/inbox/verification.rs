@@ -23,7 +23,7 @@ pub(crate) async fn run(
     let login = crate::users::login_id_by_name(&env.dbx, &request.login)
         .await
         .c(h!())?;
-    crate::users::ensure_rer_role_by_id(&env.dbx, &login)
+    crate::users::ensure_base_role_by_id(&env.dbx, &login)
         .await
         .c(h!())?;
     let logins = crate::users::get_organism_login_ids_by_id(&env.dbx, &login)

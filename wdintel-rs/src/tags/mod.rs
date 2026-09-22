@@ -6,7 +6,7 @@ use crate::event_stream::fanout;
 use crate::event_stream::types::{EventMsg, EventType};
 use crate::types::Env;
 use crate::types::*;
-use crate::users::{ensure_admin, ensure_rer_role, login_id_from_identity};
+use crate::users::{ensure_admin, ensure_base_role, login_id_from_identity};
 use actix_web::web::Json;
 use actix_web::{delete, get, post, put};
 use futures::future::try_join_all;
@@ -51,7 +51,7 @@ async fn tags_list(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<(i64, Tag)>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let user_id = login_id_from_identity(&user)?;
 
     let tags = ordering::collect_tags_list(&user_id, &env.dbx)
@@ -125,7 +125,7 @@ async fn organism_list_tags(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<TagAdmin>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
     let res = bl::list_current_organism_tags(&env.dbx, &login)
         .await
@@ -379,7 +379,7 @@ async fn inbox_message_tags_add(
     http_req: actix_web::HttpRequest,
     req: Json<InboxMessageTagsAddReq>,
 ) -> Result<Json<()>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let user_id: uuid::Uuid = login_id_from_identity(&user)?;
 
     let txn: DatabaseTransaction = env.dbx.begin().await.c(h!())?;
@@ -442,7 +442,7 @@ async fn inbox_message_tags_rm(
     http_req: actix_web::HttpRequest,
     req: Json<InboxMessageTagsRmReq>,
 ) -> Result<Json<()>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let user_id: uuid::Uuid = login_id_from_identity(&user)?;
 
     let txn: DatabaseTransaction = env.dbx.begin().await.c(h!())?;
@@ -572,7 +572,7 @@ async fn inbox_message_tags_model_error(
     http_req: actix_web::HttpRequest,
     req: Json<InboxMessageTagModelErrorReq>,
 ) -> Result<Json<()>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let user_id: uuid::Uuid = login_id_from_identity(&user)?;
 
     let txn: DatabaseTransaction = env.dbx.begin().await.c(h!())?;

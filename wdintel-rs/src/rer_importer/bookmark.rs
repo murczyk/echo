@@ -1,7 +1,7 @@
 use crate::config::RER_IMPORTER_BOOKMARK_LIST_LIMIT;
 use crate::error::AppError;
 use crate::types::*;
-use crate::users::ensure_rer_role;
+use crate::users::ensure_base_role;
 use crate::users::login_id_from_identity;
 use crate::{entities::*, utils::*};
 use actix_identity::Identity;
@@ -26,7 +26,7 @@ async fn bookmark_add(
     env: actix_web::web::Data<Env>,
     req: Json<BookmarkAddReq>,
 ) -> Result<Json<()>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
     let txn = env.dbx.begin().await.c(h!())?;
 
@@ -94,7 +94,7 @@ async fn bookmarks_list(
     env: actix_web::web::Data<Env>,
     req: Json<BookmarkListReq>,
 ) -> Result<Json<Vec<Bookmark>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     Ok(Json(
         sigint_bookmark::Entity::find()
             .filter(
@@ -135,7 +135,7 @@ async fn bookmark_rm(
     env: actix_web::web::Data<Env>,
     req: Json<BookmarkRmReq>,
 ) -> Result<Json<()>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
 
     sigint_bookmark::Entity::update_many()

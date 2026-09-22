@@ -31,7 +31,7 @@ use crate::sigint::etalonka::types::{
 };
 use crate::types::{Env, ShortContext};
 use crate::users::{
-    ensure_admin, ensure_rer_role, ensure_rer_role_by_id, has_role,
+    ensure_admin, ensure_base_role, ensure_base_role_by_id, has_role,
     login_id_from_identity,
 };
 use actix_identity::Identity;
@@ -2255,7 +2255,7 @@ pub async fn report_history_list(
     user: Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<ReportHistoryRow>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let user_login = login_id_from_identity(&user)?;
     let report_histories =
         crate::rer_importer::analysis::with_analytics_read_fallback(
@@ -2389,7 +2389,7 @@ pub async fn report_history_retry(
     env: actix_web::web::Data<Env>,
     req: Json<ReportHistoryIdReq>,
 ) -> Result<Json<ReportHistoryRow>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let user_login = login_id_from_identity(&user)?;
     let report_history = find_report_for_user(&env.dbx, req.id, &user_login)
         .await?
@@ -2430,7 +2430,7 @@ pub async fn report_history_cancel(
     env: actix_web::web::Data<Env>,
     req: Json<ReportHistoryIdReq>,
 ) -> Result<Json<ReportHistoryRow>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let user_login = login_id_from_identity(&user)?;
     let report_history = find_report_for_user(&env.dbx, req.id, &user_login)
         .await?
@@ -2661,7 +2661,7 @@ pub async fn download_report_for_user_login(
     user_login: &uuid::Uuid,
     report_history_id: i64,
 ) -> Result<HttpResponse, AppError> {
-    ensure_rer_role_by_id(&env.dbx, user_login).await.c(h!())?;
+    ensure_base_role_by_id(&env.dbx, user_login).await.c(h!())?;
     let report_history =
         find_report_for_user(&env.dbx, report_history_id, user_login)
             .await?
@@ -2756,7 +2756,7 @@ async fn find_current_user_report(
     user: &Identity,
     id: i64,
 ) -> Result<report_history::Model, AppError> {
-    ensure_rer_role(&env.dbx, user).await.c(h!())?;
+    ensure_base_role(&env.dbx, user).await.c(h!())?;
     let user_login = login_id_from_identity(user)?;
     find_report_for_user(&env.dbx, id, &user_login)
         .await?

@@ -23,7 +23,7 @@ pub(crate) async fn submit_generic_inbox(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Api", "ApiAgent"],
+        vec!["Rer", "Cyber", "Api", "ApiAgent"],
     )
     .await
     .c(h!())?;
