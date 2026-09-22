@@ -14,7 +14,7 @@ import Utils.NetworksUtils as NetworksUtils
 
 type Msg
     = Refresh
-    | GotFreqs Bool (Result ApiError B.ListFreqsRsp)
+    | GotFreqs Int Bool B.ListFreqsReq (Result ApiError B.ListFreqsRsp)
     | GotFreqNetworks String (Result ApiError (List B.Network))
     | DateTimeFromMsg (Shared.Components.DateTime.Msg Msg)
     | DateTimeToMsg (Shared.Components.DateTime.Msg Msg)
@@ -24,15 +24,18 @@ type Msg
     | NetworkAddExistingModulationSelMsg (Select.Msg Int)
     | FilterStateMsg FilterState
     | FilterStateDebounceMsg Debounce.Msg
+    | DebouncedFreqsLoad
     | UnitStatsReturnedByApi (Result ApiError B.FreqUnitStatsRsp)
     | SwitchFromTextToMap String
     | MapClose String
     | PointsByFreqReturnedByApi String (Result ApiError B.ListPointsByFreqRsp)
-    | CallsignsByFreqsReturnedByApi (Result ApiError Api.ListCallsignsByFreqsRsp)
+    | CallsignsByFreqsReturnedByApi Int (Result ApiError Api.ListCallsignsByFreqsRsp)
+    | CallsignPrioritiesReturnedByApi Int (List String) (Result ApiError (List B.FreqCallsignPriority))
+    | PreviewDetailsTick Posix
     | AltUnitsByFreqReturnedByApi Int Bool (Result ApiError Api.ListAltUnitsByFreqsRsp)
-    | GroupsMessageCountByDayReturnedByApi (Result ApiError GroupsActivityPerDayRsp)
-    | CallsignsInfoReturnedByApi (Result ApiError (List B.CallsignInfoRes))
-    | NetworksInfoLoaded (Result ApiError (List B.Network))
+    | GroupsMessageCountByDayReturnedByApi Int (Result ApiError GroupsActivityPerDayRsp)
+    | CallsignsInfoReturnedByApi Int (List String) (Result ApiError (List B.CallsignInfoRes))
+    | NetworksInfoLoaded Int (Result ApiError (List B.Network))
     | SortByMessageNumber
     | FreqsLoadMore
     | RowShowAllPopupChanged (Maybe ( String, ShowAllPopupFor ))

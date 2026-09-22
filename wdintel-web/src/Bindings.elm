@@ -9934,6 +9934,7 @@ type alias ListFreqsReq =
     { sinceDateInclusiveMs : Int
     , tillDateNoninclusiveMs : Int
     , newOnly : Bool
+    , skipNewStatus : Bool
     , includeNonActive : Bool
     , filterFreq : Maybe (String)
     , filterUnit : Maybe (String)
@@ -9953,6 +9954,7 @@ listFreqsReqEncoder struct =
         [ ( "since_date_inclusive_ms", (Json.Encode.int) struct.sinceDateInclusiveMs )
         , ( "till_date_noninclusive_ms", (Json.Encode.int) struct.tillDateNoninclusiveMs )
         , ( "new_only", (Json.Encode.bool) struct.newOnly )
+        , ( "skip_new_status", (Json.Encode.bool) struct.skipNewStatus )
         , ( "include_non_active", (Json.Encode.bool) struct.includeNonActive )
         , ( "filter_freq", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterFreq )
         , ( "filter_unit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnit )
@@ -10038,6 +10040,20 @@ listCallsignsByFreqsReqEncoder struct =
         [ ( "freqs", (Json.Encode.list (Json.Encode.string)) struct.freqs )
         , ( "since_date_inclusive_ms", (Json.Encode.int) struct.sinceDateInclusiveMs )
         , ( "till_date_noninclusive_ms", (Json.Encode.int) struct.tillDateNoninclusiveMs )
+        ]
+
+
+type alias FreqCallsignPriority =
+    { callsign : String
+    , unitIds : List (Int)
+    }
+
+
+freqCallsignPriorityEncoder : FreqCallsignPriority -> Json.Encode.Value
+freqCallsignPriorityEncoder struct =
+    Json.Encode.object
+        [ ( "callsign", (Json.Encode.string) struct.callsign )
+        , ( "unit_ids", (Json.Encode.list (Json.Encode.int)) struct.unitIds )
         ]
 
 
@@ -21279,6 +21295,7 @@ listFreqsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "since_date_inclusive_ms" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_noninclusive_ms" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "new_only" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "skip_new_status" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_non_active" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_freq" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit" (Json.Decode.nullable (Json.Decode.string))))
@@ -21358,6 +21375,13 @@ listCallsignsByFreqsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "since_date_inclusive_ms" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_noninclusive_ms" (Json.Decode.int)))
+
+
+freqCallsignPriorityDecoder : Json.Decode.Decoder FreqCallsignPriority
+freqCallsignPriorityDecoder =
+    Json.Decode.succeed FreqCallsignPriority
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_ids" (Json.Decode.list (Json.Decode.int))))
 
 
 listAltUnitByFreqsReqDecoder : Json.Decode.Decoder ListAltUnitByFreqsReq

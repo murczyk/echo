@@ -54,9 +54,49 @@ getCallsignHintsNew freq networks params callsign =
 -}
 sortCallsignsNew : String -> Dict Int B.Network -> Params a -> List ( HintStrategy.HintResult, String )
 sortCallsignsNew freq networksDict params =
+    let
+        networksForFreq =
+            Dict.filter
+                (\_ network -> List.any (\networkFreq -> networkFreq.freq == freq) network.freqs)
+                networksDict
+    in
     params.callsigns
-        |> List.map (\callsign -> ( getCallsignHintsNew freq networksDict params callsign, callsign ))
+        |> List.map (\callsign -> ( getCallsignHintsNew freq networksForFreq params callsign, callsign ))
         |> List.sortWith sortByPrioNew
+
+
+sortCallsignsForPreview : String -> Dict Int B.Network -> Dict Int B.Unit -> Dict String (List Int) -> List String -> Maybe (List String)
+sortCallsignsForPreview freq networksDict masterUnits priorities callsigns =
+    if List.all (\callsign -> Dict.member (String.toLower callsign) priorities) callsigns then
+        let
+            networksForFreq =
+                Dict.values networksDict
+                    |> List.filter (\network -> List.any (\networkFreq -> networkFreq.freq == freq) network.freqs)
+
+            priority callsign =
+                Dict.get (String.toLower callsign) priorities
+                    |> Maybe.withDefault []
+                    |> HintStrategy.previewCallsignPriority networksForFreq masterUnits
+        in
+        callsigns
+            |> List.map (\callsign -> ( priority callsign, callsign ))
+            |> List.sortWith (\left right -> comparePriorities (Tuple.first left) (Tuple.first right))
+            |> List.take 3
+            |> List.map Tuple.second
+            |> Just
+
+    else
+        Nothing
+
+
+comparePriorities : ( Int, Int ) -> ( Int, Int ) -> Order
+comparePriorities ( priorityA, countA ) ( priorityB, countB ) =
+    case compare priorityA priorityB of
+        EQ ->
+            compare countB countA
+
+        order ->
+            order
 
 
 {-| Нова функція сортування для HintResult
@@ -95,24 +135,7 @@ sortByPrioNew callsignWithPrioA callsignWithPrioB =
         lengthB =
             List.length hintB.prioritizedCallsigns
     in
-    if priorityA < priorityB then
-        LT
-
-    else if priorityA > priorityB then
-        GT
-
-    else
-    -- Якщо стратегії однакові - сортуємо по кількості підказок
-    if
-        lengthA > lengthB
-    then
-        LT
-
-    else if lengthA < lengthB then
-        GT
-
-    else
-        EQ
+    comparePriorities ( priorityA, lengthA ) ( priorityB, lengthB )
 
 
 {-| Нова функція сортування для мережі через HintStrategy (поки що не використовується)
@@ -140,6 +163,8 @@ type PopupCallerOrigin
 type alias ViewParams msg =
     { callsigns : List String
     , isOpened : Bool
+    , isLoading : Bool
+    , previewCallsigns : Maybe (List String)
     , onOpen : msg
     , onClose : msg
     , masterUnits : Dict Int B.Unit
@@ -150,15 +175,28 @@ type alias ViewParams msg =
 view : ViewParams msg -> PopupCallerOrigin -> Html msg
 view viewParams pageSpecific =
     let
-        sortedCallsigns =
+        sortCallsigns callsigns =
             case pageSpecific of
                 FreqsPage freq networksDict ->
-                    -- ✅ ВИПРАВЛЕННЯ: Використовуємо нову систему HintStrategy
-                    sortCallsignsNew freq networksDict viewParams
+                    sortCallsignsNew freq networksDict { viewParams | callsigns = callsigns }
 
                 NetworksPage network ->
-                    -- ✅ ВИПРАВЛЕННЯ: Використовуємо нову систему HintStrategy
-                    sortCallsigns2New network viewParams
+                    sortCallsigns2New network { viewParams | callsigns = callsigns }
+
+        sortedPreview =
+            sortCallsigns (Maybe.withDefault viewParams.callsigns viewParams.previewCallsigns)
+
+        sortedPopup =
+            if viewParams.isOpened && not viewParams.isLoading then
+                case viewParams.previewCallsigns of
+                    Just _ ->
+                        sortCallsigns viewParams.callsigns
+
+                    Nothing ->
+                        sortedPreview
+
+            else
+                []
 
         ( callsignsWithUnits, callsignsWithoutUnits ) =
             let
@@ -166,11 +204,15 @@ view viewParams pageSpecific =
                 hasUnits callsignWithPrio =
                     (callsignWithPrio |> Tuple.first |> .prioritizedCallsigns |> List.length) > 0
             in
-            sortedCallsigns
+            sortedPopup
                 |> List.partition hasUnits
     in
     div []
-        [ viewCallsignsRow sortedCallsigns
+        [ if viewParams.previewCallsigns == Just [] && not (List.isEmpty viewParams.callsigns) then
+            div [] [ text "Завантаження позивних..." ]
+
+          else
+            viewCallsignsRow sortedPreview
         , if List.length viewParams.callsigns > 3 then
             let
                 body =
@@ -185,29 +227,14 @@ view viewParams pageSpecific =
                         [ text ("Показати всі " ++ (viewParams.callsigns |> List.length |> String.fromInt)) ]
 
                 popupBody =
-                    div [ class "d-flex flex-column", style "gap" "20px" ]
-                        [ if not (List.isEmpty callsignsWithUnits) then
-                            div [ class "callsigns-section" ]
-                                [ div [ class "callsigns-section-header" ] [ text "Еталонні позивні" ]
-                                , viewCallsignsGroup callsignsWithUnits
-                                ]
+                    if viewParams.isLoading then
+                        div [] [ text "Завантаження інформації про позивні..." ]
 
-                          else
-                            text ""
-                        , if not (List.isEmpty callsignsWithoutUnits) then
-                            div [ class "callsigns-section" ]
-                                [ div [ class "callsigns-section-header" ] [ text "Не прив'язані позивні" ]
-                                , viewCallsignsGroup callsignsWithoutUnits
-                                ]
+                    else if viewParams.isOpened then
+                        viewPopupBody callsignsWithUnits callsignsWithoutUnits
 
-                          else
-                            text ""
-                        , if List.isEmpty callsignsWithUnits && List.isEmpty callsignsWithoutUnits then
-                            div [ class "callsigns-section-empty" ] [ text "Немає позивних для відображення" ]
-
-                          else
-                            text ""
-                        ]
+                    else
+                        text ""
             in
             Shared.Components.Popup.new
                 { body = body
@@ -220,6 +247,33 @@ view viewParams pageSpecific =
                 |> Shared.Components.Popup.withFakeAnchor
                 |> Shared.Components.Popup.withCloseButton
                 |> Shared.Components.Popup.view
+
+          else
+            text ""
+        ]
+
+
+viewPopupBody : List ( HintStrategy.HintResult, String ) -> List ( HintStrategy.HintResult, String ) -> Html msg
+viewPopupBody callsignsWithUnits callsignsWithoutUnits =
+    div [ class "d-flex flex-column", style "gap" "20px" ]
+        [ if not (List.isEmpty callsignsWithUnits) then
+            div [ class "callsigns-section" ]
+                [ div [ class "callsigns-section-header" ] [ text "Еталонні позивні" ]
+                , viewCallsignsGroup callsignsWithUnits
+                ]
+
+          else
+            text ""
+        , if not (List.isEmpty callsignsWithoutUnits) then
+            div [ class "callsigns-section" ]
+                [ div [ class "callsigns-section-header" ] [ text "Не прив'язані позивні" ]
+                , viewCallsignsGroup callsignsWithoutUnits
+                ]
+
+          else
+            text ""
+        , if List.isEmpty callsignsWithUnits && List.isEmpty callsignsWithoutUnits then
+            div [ class "callsigns-section-empty" ] [ text "Немає позивних для відображення" ]
 
           else
             text ""

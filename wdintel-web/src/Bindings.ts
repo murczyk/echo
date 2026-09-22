@@ -3845,6 +3845,7 @@ export type ListFreqsReq = {
   sinceDateInclusiveMs: number;
   tillDateNoninclusiveMs: number;
   newOnly: boolean;
+  skipNewStatus: boolean;
   includeNonActive: boolean;
   filterFreq: string | null;
   filterUnit: string | null;
@@ -3882,6 +3883,11 @@ export type ListCallsignsByFreqsReq = {
   freqs: Array<string>;
   sinceDateInclusiveMs: number;
   tillDateNoninclusiveMs: number;
+};
+
+export type FreqCallsignPriority = {
+  callsign: string;
+  unitIds: Array<number>;
 };
 
 export type ListAltUnitByFreqsReq = {

@@ -1291,6 +1291,8 @@ freqsTableConfig shared model user =
                                 , children =
                                     [ CallsignsPopup.view
                                         { isOpened = isOpen
+                                        , isLoading = False
+                                        , previewCallsigns = Nothing
                                         , onClose = CallsignsPopupClosedByUser
                                         , onOpen = CallsignsPopupOpenedByUser freq.networkFreqId
                                         , callsigns = callsigns

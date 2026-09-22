@@ -2,6 +2,10 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::location::utils::to_location_list;
 use crate::rer_importer::analysis::message_in_groups_exists;
+use crate::rer_importer::callsigns::{
+    callsign_match_key, callsign_match_key_expr,
+};
+use crate::rer_importer::types::RerCallsignInfoBatchReq;
 use crate::sigint::sender::message_ids_for_senders;
 use crate::types::*;
 use crate::users::{ensure_rer_role, has_any_role, login_id_from_identity};
@@ -11,6 +15,7 @@ use actix_web::web::{Data, Json};
 use chrono::prelude::*;
 use lazy_static::lazy_static;
 use regex::Regex;
+use sea_orm::sea_query::ExprTrait;
 use sea_orm::{sea_query::PostgresQueryBuilder, *};
 use sea_orm::{
     ColumnTrait, Condition, EntityTrait, QueryFilter, QuerySelect, Statement,
@@ -447,6 +452,73 @@ pub async fn list_callsigns_by_freqs(
     ))
 }
 
+#[post("/api/sigint/freq/callsign-priorities")]
+pub async fn list_callsign_priorities(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<RerCallsignInfoBatchReq>,
+) -> Result<Json<Vec<FreqCallsignPriority>>, AppError> {
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+
+    #[derive(FromQueryResult)]
+    struct CallsignPriorityRow {
+        callsign: String,
+        unit_id: i64,
+    }
+
+    let callsigns = req
+        .callsigns
+        .iter()
+        .map(|callsign| callsign_match_key(callsign))
+        .filter(|callsign| !callsign.is_empty())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let mut unit_ids_by_callsign = HashMap::<String, Vec<i64>>::new();
+    for callsigns in
+        callsigns.chunks(crate::config::RER_CALLSIGN_QUERY_PARAM_CHUNK_SIZE)
+    {
+        let rows = sigint_callsign::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                sigint_callsign::Relation::SigintUnit.def(),
+            )
+            .select_only()
+            .column(sigint_callsign::Column::Callsign)
+            .column(sigint_callsign::Column::UnitId)
+            .filter(
+                callsign_match_key_expr(sigint_callsign::Column::Callsign)
+                    .is_in(callsigns.to_vec()),
+            )
+            .filter(sigint_callsign::Column::Deleted.eq(false))
+            .filter(sigint_unit::Column::Deleted.eq(false))
+            .filter(sigint_unit::Column::Active.eq(true))
+            .into_model::<CallsignPriorityRow>()
+            .all(&env.dbx)
+            .await
+            .c(h!())?;
+        for row in rows {
+            unit_ids_by_callsign
+                .entry(callsign_match_key(&row.callsign))
+                .or_default()
+                .push(row.unit_id);
+        }
+    }
+
+    Ok(Json(
+        req.callsigns
+            .iter()
+            .map(|callsign| FreqCallsignPriority {
+                callsign: callsign.clone(),
+                unit_ids: unit_ids_by_callsign
+                    .get(&callsign_match_key(callsign))
+                    .cloned()
+                    .unwrap_or_default(),
+            })
+            .collect(),
+    ))
+}
+
 fn inbox_item_callsign_exists() -> SimpleExpr {
     Expr::cust(crate::inbox::callsigns::sql_exists_condition(
         "sigint_inbox_item",
@@ -541,6 +613,46 @@ async fn load_freq_networks(
             .push(row);
     }
     Ok(networks_by_freq)
+}
+
+async fn previously_seen_freqs(
+    dbx: &DatabaseConnection,
+    login: &uuid::Uuid,
+    before_since: NaiveDateTime,
+    before_till: NaiveDateTime,
+    freqs: Option<&[String]>,
+) -> anyhow::Result<BTreeSet<String>> {
+    #[derive(FromQueryResult)]
+    struct BeforeRes {
+        freq: Option<String>,
+    }
+
+    let group_keys =
+        crate::messenger::group::get_identity_sigint_groups(dbx, login)
+            .await
+            .c(h!())?;
+    let mut before_res = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .select_only()
+        .column_as(sigint_inbox_item::Column::Freq, "freq")
+        .filter(message_in_groups_exists(group_keys))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(sigint_inbox_item::Column::Datetime.gte(before_since))
+        .filter(sigint_inbox_item::Column::Datetime.lt(before_till))
+        .group_by(sigint_inbox_item::Column::Freq);
+    if let Some(freqs) = freqs {
+        before_res = before_res
+            .filter(sigint_inbox_item::Column::Freq.is_in(freqs.to_vec()));
+    }
+    let before_res = before_res
+        .into_model::<BeforeRes>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    Ok(before_res.into_iter().filter_map(|row| row.freq).collect())
 }
 
 /// Lists frequencies which were active (active in 14-day period, can include non-actives if checked), their assigned units if any.
@@ -839,49 +951,20 @@ pub async fn list_freqs(
         .map(|(freq, _, _)| freq.clone())
         .collect::<Vec<_>>();
 
-    #[derive(FromQueryResult)]
-    struct BeforeRes {
-        freq: Option<String>,
-    }
-
     let before_since = dt_since - chrono::Duration::days(PERIOD_DAYS);
-    let before_till = dt_since;
-    let before_res = signal_message::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SigintInboxItem.def(),
+    let before_res = if req.skip_new_status {
+        BTreeSet::new()
+    } else {
+        previously_seen_freqs(
+            &env.dbx,
+            &login,
+            before_since,
+            dt_since,
+            Some(&page_freqs),
         )
-        .select_only()
-        .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
-        .filter(message_in_groups_exists(
-            crate::messenger::group::get_identity_sigint_groups(
-                &env.dbx, &login,
-            )
-            .await
-            .c(h!())?,
-        ))
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(sigint_inbox_item::Column::Datetime.gte(before_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(before_till))
-        .filter(sigint_inbox_item::Column::Freq.is_in(page_freqs.clone()))
-        .group_by(sea_query::expr::SimpleExpr::Custom("freq".into()))
-        .order_by_asc(sigint_inbox_item::Column::Freq);
-    // let before_count: u64 = before_res.clone().count(&env.dbx).await.c(h!())?;
-    // println!("> before count: {}", before_count);
-    // before_res = before_res.limit(LIMIT);
-    // println!(
-    //     "> before sql: {}",
-    //     before_res.build(DbBackend::Postgres).to_string()
-    // );
-    let before_res: BTreeSet<String> = before_res
-        .into_model::<BeforeRes>()
-        .all(&env.dbx)
         .await
         .c(h!())?
-        .iter()
-        .flat_map(|x| x.freq.clone())
-        .collect();
-    // println!("> before count: {}", before_res.len());
+    };
 
     let networks_by_freq =
         load_freq_networks(&env.dbx, page_freqs).await.c(h!())?;
@@ -897,7 +980,7 @@ pub async fn list_freqs(
 
         let last_updated_network = networks.iter().max_by_key(|n| n.updated_at);
 
-        let is_new = !before_res.contains(&freq);
+        let is_new = !req.skip_new_status && !before_res.contains(&freq);
         let network_ids = networks.iter().map(|x| x.id).collect();
         let last_updated_by = last_updated_network
             .and_then(|x| x.updated_by_login_id)
@@ -1169,48 +1252,14 @@ pub async fn list_freqs_v2(
     };
     // println!("> freqs in period count: {}", freqs_period.len());
 
-    #[derive(FromQueryResult)]
-    struct BeforeRes {
-        freq: Option<String>,
-    }
-
     let before_since = dt_since - chrono::Duration::days(PERIOD_DAYS);
-    let before_till = dt_since;
-    let before_res = signal_message::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SigintInboxItem.def(),
-        )
-        .select_only()
-        .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
-        .filter(message_in_groups_exists(
-            crate::messenger::group::get_identity_sigint_groups(
-                &env.dbx, &login,
-            )
+    let before_res = if req.skip_new_status {
+        BTreeSet::new()
+    } else {
+        previously_seen_freqs(&env.dbx, &login, before_since, dt_since, None)
             .await
-            .c(h!())?,
-        ))
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(sigint_inbox_item::Column::Datetime.gte(before_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(before_till))
-        .group_by(sea_query::expr::SimpleExpr::Custom("freq".into()))
-        .order_by_asc(sigint_inbox_item::Column::Freq);
-    // let before_count: u64 = before_res.clone().count(&env.dbx).await.c(h!())?;
-    // println!("> before count: {}", before_count);
-    // before_res = before_res.limit(LIMIT);
-    // println!(
-    //     "> before sql: {}",
-    //     before_res.build(DbBackend::Postgres).to_string()
-    // );
-    let before_res: BTreeSet<String> = before_res
-        .into_model::<BeforeRes>()
-        .all(&env.dbx)
-        .await
-        .c(h!())?
-        .iter()
-        .flat_map(|x| x.freq.clone())
-        .collect();
-    // println!("> before count: {}", before_res.len());
+            .c(h!())?
+    };
 
     let mut show_load_more = false;
 
@@ -1250,7 +1299,7 @@ pub async fn list_freqs_v2(
 
         let last_updated_network = networks.iter().max_by_key(|n| n.updated_at);
 
-        let is_new = !before_res.contains(&freq);
+        let is_new = !req.skip_new_status && !before_res.contains(&freq);
         let network_ids = networks.iter().map(|x| x.id).collect();
         let last_updated_by = last_updated_network
             .and_then(|x| x.updated_by_login_id)
