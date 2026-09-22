@@ -81,6 +81,14 @@ vi.mock('../../renderers/DocumentAttachmentPreviewRenderer', () => ({
   ),
 }));
 
+vi.mock('../../renderers/KmzAttachmentPreviewRenderer', () => ({
+  KmzAttachmentPreviewRenderer: () => (
+    <div data-renderer="kmz">
+      <div className="leaflet-container" tabIndex={0} />
+    </div>
+  ),
+}));
+
 vi.mock('../../renderers/CoordinateAttachmentPreviewRenderer', () => ({
   CoordinateAttachmentPreviewRenderer: () => <div data-renderer="coordinate" />,
 }));
@@ -89,6 +97,15 @@ const items: MessageCardPreviewItem[] = [
   { type: 'image', value: { href: '/image.png' } },
   { type: 'video', value: { id: 'video', name: 'video.mp4', source: '/video.mp4' } },
   { type: 'document', value: { href: '/document.pdf', kind: 'pdf' } },
+  {
+    type: 'kmz',
+    value: {
+      mediaId: 'route',
+      originalHref: '/route.geojson',
+      fileName: 'route.geojson',
+      initialStatus: 'done',
+    },
+  },
   {
     type: 'coordinate',
     points: [{ source: 'direct', lat: 50.45, lng: 30.52, label: 'point' }],
@@ -201,6 +218,34 @@ describe('MessageCardAttachmentPreviewDialog', () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })),
     );
     expect(onNext).toHaveBeenCalledOnce();
+  });
+
+  it('preserves Leaflet arrow-key handling #3521', async () => {
+    const onNext = vi.fn();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () =>
+      root?.render(
+        <MessageCardAttachmentPreviewDialog
+          item={items[3]!}
+          navigation={{ index: 0, count: 2, onPrevious: vi.fn(), onNext }}
+          onClose={vi.fn()}
+        />,
+      ),
+    );
+    const map = container.querySelector('.leaflet-container') as HTMLDivElement;
+    map.focus();
+    const event = new KeyboardEvent('keydown', {
+      key: 'ArrowRight',
+      bubbles: true,
+      cancelable: true,
+    });
+
+    await act(async () => map.dispatchEvent(event));
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(onNext).not.toHaveBeenCalled();
   });
 
   it('does not render carousel arrows while editing #3448', async () => {

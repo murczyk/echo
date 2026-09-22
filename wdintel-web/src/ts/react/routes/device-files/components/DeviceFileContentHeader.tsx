@@ -47,9 +47,11 @@ function DownloadButton({ href, fileName }: { href: string | null; fileName: str
 export function DeviceFileContentHeader({
   file,
   href,
+  sessionScoped = false,
 }: {
   file: DeviceFileTreeEntry;
   href: string | null;
+  sessionScoped?: boolean;
 }) {
   const path = file.absolutePath ?? (file.pathComponents.join(' / ') || file.name);
   return (
@@ -67,7 +69,7 @@ export function DeviceFileContentHeader({
       {file.revision != null ? (
         <span className="inline-flex shrink-0 items-center gap-echo-xs whitespace-nowrap rounded-echo-sm bg-echo-success/20 px-echo-sm py-echo-xs text-echo-xs text-[color:color-mix(in_srgb,var(--echo-color-success)_60%,var(--echo-color-text))]">
           <span aria-hidden="true" className="size-echo-xs rounded-full bg-current" />
-          Ревізія {file.revision} · Поточна
+          Ревізія {file.revision} · {sessionScoped ? 'Із вибраної сесії' : 'Поточна'}
         </span>
       ) : null}
       <DownloadButton href={href} fileName={file.name} />

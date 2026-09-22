@@ -21,7 +21,7 @@ export function CoordinateMapPreviewControls({
 }: {
   baseLayerId: BaseLayerId;
   onBaseLayerChange: (baseLayerId: BaseLayerId) => void;
-  pointNavigation: MessageCardPreviewNavigation;
+  pointNavigation?: MessageCardPreviewNavigation;
 }) {
   return (
     <Box
@@ -51,7 +51,7 @@ export function CoordinateMapPreviewControls({
           borderColor: 'divider',
         }}
       >
-        {pointNavigation.count > 1 ? (
+        {pointNavigation != null && pointNavigation.count > 1 ? (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, mr: 0.5 }}>
             <Tooltip title="Попередня координата" enterDelay={300}>
               <IconButton

@@ -26,7 +26,6 @@ export function createEmptyFeedState(
 ): MessageFeedState {
   return {
     id,
-    messageSortBy: 'IMSTimestamp',
     filter,
     items: [],
     loading: true,
@@ -125,12 +124,11 @@ function preserveUnreadState(
 function windowInitialMessageItemsAroundTarget(
   items: Array<[number, InboxMessage]>,
   targetMessageIds: readonly number[],
-  messageSortBy: 'IMSTimestamp' | 'IMSCreatedAt',
 ): Array<[number, InboxMessage]> {
-  const sortedItems = windowInitialMessageItems(items, Math.max(1, items.length), messageSortBy);
+  const sortedItems = windowInitialMessageItems(items, Math.max(1, items.length));
   const targetIds = new Set(targetMessageIds);
   const targetIndex = sortedItems.findIndex(([id]) => targetIds.has(id));
-  if (targetIndex < 0) return windowInitialMessageItems(sortedItems, undefined, messageSortBy);
+  if (targetIndex < 0) return windowInitialMessageItems(sortedItems);
 
   const beforeTarget = Math.floor(DUTY_FEED_MESSAGE_WINDOW_LIMIT / 2);
   let start = Math.max(0, targetIndex - beforeTarget);
@@ -212,14 +210,9 @@ export function useRerDutyInitialLoad(params: Params) {
         const metadata = mergeInitialLoadMetadata(responses);
         current.mergeInboxCallsigns(feedId, metadata.callsigns, { replace: true });
         const loadedItems = responses.flatMap((loadedResponse) => loadedResponse.inboxItems);
-        const messageSortBy = inboxReq.sortBy === 'IMSCreatedAt' ? 'IMSCreatedAt' : 'IMSTimestamp';
         const items = initialTarget
-          ? windowInitialMessageItemsAroundTarget(
-              loadedItems,
-              initialTarget.messageIds,
-              messageSortBy,
-            )
-          : windowInitialMessageItems(loadedItems, undefined, messageSortBy);
+          ? windowInitialMessageItemsAroundTarget(loadedItems, initialTarget.messageIds)
+          : windowInitialMessageItems(loadedItems);
         const previousFeed = current.messageFeedsRef.current.find(
           (candidate) => candidate.id === feedId,
         );
@@ -232,8 +225,8 @@ export function useRerDutyInitialLoad(params: Params) {
           const tail = items.at(-1);
           if (tail) {
             current.installFeedUnreadCursorAndBaseline(
-              { ...effectiveFeed, messageSortBy },
-              messageOrderCursor(tail[0], tail[1], messageSortBy),
+              effectiveFeed,
+              messageOrderCursor(tail[0], tail[1]),
             );
           } else if (pollCursor) {
             current.installFeedUnreadCursorAndBaseline(effectiveFeed, pollCursor);
@@ -246,7 +239,6 @@ export function useRerDutyInitialLoad(params: Params) {
             candidate.id === feedId
               ? {
                   ...candidate,
-                  messageSortBy,
                   items,
                   loading: false,
                   referenceTimeMs: Date.now(),
@@ -277,13 +269,7 @@ export function useRerDutyInitialLoad(params: Params) {
           current.setGroupInfos((previous) => ({ ...previous, ...groups }));
         }
         const tail = items.at(-1);
-        return tail
-          ? messageOrderCursor(
-              tail[0],
-              tail[1],
-              inboxReq.sortBy === 'IMSCreatedAt' ? 'IMSCreatedAt' : 'IMSTimestamp',
-            )
-          : null;
+        return tail ? messageOrderCursor(tail[0], tail[1]) : null;
       } catch (error) {
         if (current.getFeedLoadGeneration(feedId) !== requestGeneration) return;
         const currentFeed = current.messageFeedsRef.current.find(
@@ -291,11 +277,7 @@ export function useRerDutyInitialLoad(params: Params) {
         );
         const effectiveTail = currentFeed?.pendingNewerItems?.at(-1) ?? currentFeed?.items.at(-1);
         const fallbackCursor = effectiveTail
-          ? messageOrderCursor(
-              effectiveTail[0],
-              effectiveTail[1],
-              currentFeed?.messageSortBy ?? 'IMSTimestamp',
-            )
+          ? messageOrderCursor(effectiveTail[0], effectiveTail[1])
           : null;
         if (preserveUnread) {
           current.completeFeedReload(feedId);

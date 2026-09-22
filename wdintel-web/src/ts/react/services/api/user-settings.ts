@@ -11,6 +11,7 @@ export const USER_SETTINGS_UPDATED_EVENT = 'user-settings-updated';
 
 export type { UserDutySettingsDto };
 export type UserDutySettings = {
+  /** Analysis time basis. Duty always uses creation time. */
   messageSortBy: MessageTimeBasis;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
   tagsLayout: TagsLayoutVariant;

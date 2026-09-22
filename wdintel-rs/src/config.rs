@@ -374,6 +374,10 @@ pub const DEVICE_NAME_MAX_CHARS: usize = 255;
 pub const DEVICE_EXTERNAL_URL_MAX_CHARS: usize = 4096;
 pub const DEVICE_LIST_DEFAULT_LIMIT: u64 = 100;
 pub const DEVICE_LIST_MAX_LIMIT: u64 = 100;
+pub const DEVICE_FILE_SESSION_DEFAULT_LIMIT: u64 = 20;
+pub const DEVICE_FILE_SESSION_MAX_LIMIT: u64 = 100;
+pub const DEVICE_FILE_SESSION_SUMMARIES_LIMIT: usize = 10;
+pub const DEVICE_FILE_SESSION_CURSOR_MAX_BYTES: usize = 8192;
 pub const DEVICE_FILE_PAGE_DEFAULT_LIMIT: u64 = 100;
 pub const DEVICE_FILE_PAGE_MAX_LIMIT: u64 = 100;
 pub const DEVICE_FILE_SYNC_BATCH_MAX_COUNT: usize = 1_000;
@@ -440,6 +444,20 @@ pub const RER_REPORT_CHUNKS_MAX: usize = 10_000;
 pub const RER_ETALONKA_REPORT_SINCE_DEFAULT_DAYS: i64 = 365;
 pub const RER_ETALONKA_REPORT_SINCE_MIN_MS: i64 = 1_640_995_200_000;
 pub const RER_ETALONKA_PELENGS_MAP_QUERY_CHUNK_MULTIPLIER: i64 = 14;
+pub const RER_CALLSIGN_QUERY_SEPARATOR_VARIANTS: &[char] = &[
+    '-', ' ', '\u{2010}', '\u{2011}', '\u{2012}', '\u{2013}', '\u{2014}',
+    '\u{2015}', '\t', '\n', '\u{b}', '\u{c}', '\r', '\u{85}', '\u{a0}',
+    '\u{1680}', '\u{2000}', '\u{2001}', '\u{2002}', '\u{2003}', '\u{2004}',
+    '\u{2005}', '\u{2006}', '\u{2007}', '\u{2008}', '\u{2009}', '\u{200a}',
+    '\u{2028}', '\u{2029}', '\u{202f}', '\u{205f}', '\u{3000}',
+];
+pub const RER_CALLSIGN_MATCH_KEY_SQL: &str = concat!(
+    "btrim(regexp_replace(translate(lower($1), ",
+    "U&'\\002D\\0020\\2010\\2011\\2012\\2013\\2014\\2015\\0009\\000A",
+    "\\000B\\000C\\000D\\0085\\00A0\\1680\\2000\\2001\\2002\\2003",
+    "\\2004\\2005\\2006\\2007\\2008\\2009\\200A\\2028\\2029\\202F",
+    "\\205F\\3000', repeat('-', 32)), '-+', '-', 'g'), '-')"
+);
 pub const RER_CALLSIGN_QUERY_PARAM_CHUNK_SIZE: usize = 30_000;
 pub const RER_REPORT_ENRICHMENT_ID_BATCH_SIZE: usize = 20_000;
 pub const RER_BABAK_CANDIDATE_PAGE_SIZE: u64 = 5_000;
@@ -1085,6 +1103,7 @@ pub const SIGINT_MEDIA_KMZ_CONVERSION_EXTENSIONS: &[&str] = &[
     "ldk", "trk", "are", "rte", "wpt", "set", "kml", "kmz", "geojson", "gpx",
     "fit",
 ];
+pub const SIGINT_MEDIA_KMZ_PASSTHROUGH_EXTENSIONS: &[&str] = &["kmz"];
 pub const PALITRA_GOI_SYNC_DIRECTION_ECHO: &str = "echo";
 pub const PALITRA_GOI_SYNC_DIRECTION_GOI: &str = "goi";
 pub const PALITRA_GOI_REMOTE_STATUS_PRESENT: &str = "present";

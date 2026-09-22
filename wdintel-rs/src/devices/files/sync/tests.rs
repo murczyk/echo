@@ -1143,3 +1143,5 @@ async fn authorization_precedes_file_mutation_and_infrastructure_failure_rolls_b
     );
     assert_eq!(file_entry::Entity::find().count(file_db).await.unwrap(), 0);
 }
+
+mod session_reads;

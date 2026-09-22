@@ -62,7 +62,6 @@ import type { InboxMessage, Network, SignalProfileEntry, Tag, Unit } from '../..
 function indicatorFeed(overrides: Partial<MessageFeedState>): MessageFeedState {
   return {
     id: 'mf-0',
-    messageSortBy: 'IMSTimestamp',
     filter: emptyFilter(),
     items: [],
     loading: false,
@@ -743,7 +742,6 @@ describe('rer-duty utils', () => {
   it('uses the tracked unread count for feed and tab unread totals', () => {
     const feed: MessageFeedState = {
       id: 'mf-1',
-      messageSortBy: 'IMSTimestamp',
       filter: emptyFilter(),
       items: [
         [1, {} as InboxMessage],
@@ -868,16 +866,16 @@ describe('rer-duty utils', () => {
   it('merges and flushes pending newer items without double-counting ids', () => {
     const feed = indicatorFeed({
       items: [
-        [1, { timestamp: 100 } as InboxMessage],
-        [2, { timestamp: 200 } as InboxMessage],
+        [1, { createdAtOrder: 100 } as InboxMessage],
+        [2, { createdAtOrder: 200 } as InboxMessage],
       ],
       readIds: new Set([1, 2]),
       unreadCount: 0,
-      pendingNewerItems: [[3, { timestamp: 300 } as InboxMessage]],
+      pendingNewerItems: [[3, { createdAtOrder: 300 } as InboxMessage]],
     });
     const merged = mergePendingNewerItems(feed, [
-      [3, { timestamp: 300 } as InboxMessage],
-      [4, { timestamp: 400 } as InboxMessage],
+      [3, { createdAtOrder: 300 } as InboxMessage],
+      [4, { createdAtOrder: 400 } as InboxMessage],
     ]);
     expect(merged.map(([id]) => id)).toEqual([3, 4]);
 
@@ -891,7 +889,7 @@ describe('rer-duty utils', () => {
     const feed = indicatorFeed({
       items: Array.from({ length: 40 }, (_, index) => [
         index + 1,
-        { timestamp: (index + 1) * 100 } as InboxMessage,
+        { createdAtOrder: (index + 1) * 100 } as InboxMessage,
       ]),
       evictedNewerTailId: 60,
     });
@@ -899,7 +897,7 @@ describe('rer-duty utils', () => {
       feed,
       Array.from({ length: 60 }, (_, index) => [
         index + 41,
-        { timestamp: (index + 41) * 100 } as InboxMessage,
+        { createdAtOrder: (index + 41) * 100 } as InboxMessage,
       ]),
     );
 
@@ -910,9 +908,9 @@ describe('rer-duty utils', () => {
 
   it('#3496 does not treat a higher older ID as the evicted chronological tail', () => {
     const feed = indicatorFeed({
-      items: [[100, { timestamp: 100 } as InboxMessage]],
+      items: [[100, { createdAtOrder: 100 } as InboxMessage]],
       evictedNewerTailId: 60,
-      pendingNewerItems: [[101, { timestamp: 200 } as InboxMessage]],
+      pendingNewerItems: [[101, { createdAtOrder: 200 } as InboxMessage]],
     });
 
     expect(feedHasUnloadedEvictedNewerTail(feed)).toBe(true);
@@ -1010,7 +1008,7 @@ describe('rer-duty utils', () => {
 
   it('does not double count windowed IDs covered by a matching preview', () => {
     const feed = indicatorFeed({
-      items: [[20, { timestamp: 200 } as InboxMessage]],
+      items: [[20, { createdAtOrder: 200 } as InboxMessage]],
       readIds: new Set([20]),
       windowedUnreadItems: new Map([[1, 300]]),
     });
@@ -1019,7 +1017,7 @@ describe('rer-duty utils', () => {
 
   it('counts a hidden unread item before a matching tail preview', () => {
     const feed = indicatorFeed({
-      items: [[20, { timestamp: 200 } as InboxMessage]],
+      items: [[20, { createdAtOrder: 200 } as InboxMessage]],
       readIds: new Set([20]),
       windowedUnreadItems: new Map([[900, 100]]),
     });
@@ -1028,7 +1026,7 @@ describe('rer-duty utils', () => {
 
   it('counts windowed unread IDs at or before a matching preview tail', () => {
     const feed = indicatorFeed({
-      items: [[80, { timestamp: 200 } as InboxMessage]],
+      items: [[80, { createdAtOrder: 200 } as InboxMessage]],
       readIds: new Set([80]),
       windowedUnreadItems: new Map(Array.from({ length: 20 }, (_, index) => [index + 41, 100])),
     });
@@ -1085,11 +1083,11 @@ describe('rer-duty utils', () => {
 
   it('windows initial messages to the newest items after sorting and dedupe', () => {
     const items = [
-      [3, { timestamp: 300 } as InboxMessage],
-      [1, { timestamp: 100 } as InboxMessage],
-      [2, { timestamp: 200 } as InboxMessage],
-      [2, { timestamp: 250 } as InboxMessage],
-      [4, { timestamp: 400 } as InboxMessage],
+      [3, { createdAtOrder: 300 } as InboxMessage],
+      [1, { createdAtOrder: 100 } as InboxMessage],
+      [2, { createdAtOrder: 200 } as InboxMessage],
+      [2, { createdAtOrder: 250 } as InboxMessage],
+      [4, { createdAtOrder: 400 } as InboxMessage],
     ] as Array<[number, InboxMessage]>;
 
     expect(windowInitialMessageItems(items, 3).map(([id]) => id)).toEqual([2, 3, 4]);
@@ -1103,9 +1101,7 @@ describe('rer-duty utils', () => {
       [3, { timestamp: 200, createdAt: 200 } as InboxMessage],
     ] as Array<[number, InboxMessage]>;
 
-    expect(windowInitialMessageItems(items, 3, 'IMSCreatedAt').map(([id]) => id)).toEqual([
-      1, 3, 2,
-    ]);
+    expect(windowInitialMessageItems(items, 3).map(([id]) => id)).toEqual([1, 3, 2]);
   });
 
   // https://github.com/echoua/echo/issues/3455
@@ -1115,7 +1111,7 @@ describe('rer-duty utils', () => {
       [2, { createdAt: 100, createdAtOrder: 100_100 } as InboxMessage],
     ] as Array<[number, InboxMessage]>;
 
-    expect(windowInitialMessageItems(items, 2, 'IMSCreatedAt').map(([id]) => id)).toEqual([2, 1]);
+    expect(windowInitialMessageItems(items, 2).map(([id]) => id)).toEqual([2, 1]);
   });
 
   // https://github.com/echoua/echo/issues/3455
@@ -1126,22 +1122,18 @@ describe('rer-duty utils', () => {
       createdAtOrder: 1_700_000_100_000_321,
     } as InboxMessage;
 
-    expect(messageOrderCursor(42, message, 'IMSCreatedAt')).toEqual({
+    expect(messageOrderCursor(42, message)).toEqual({
       id: 42,
       timestamp: 1_700_000_100_000_321,
-    });
-    expect(messageOrderCursor(42, message, 'IMSTimestamp')).toEqual({
-      id: 42,
-      timestamp: 1_700_000_000_000,
     });
   });
 
   it('prepends older messages and trims the newest side when the window is full', () => {
     const existing = [3, 4, 5].map(
-      (id) => [id, { timestamp: id * 100 } as InboxMessage] as [number, InboxMessage],
+      (id) => [id, { createdAtOrder: id * 100 } as InboxMessage] as [number, InboxMessage],
     );
     const incomingOlder = [1, 2, 3].map(
-      (id) => [id, { timestamp: id * 100 } as InboxMessage] as [number, InboxMessage],
+      (id) => [id, { createdAtOrder: id * 100 } as InboxMessage] as [number, InboxMessage],
     );
 
     const result = prependWindowedMessageItems(existing, incomingOlder, 4);
@@ -1153,10 +1145,10 @@ describe('rer-duty utils', () => {
 
   it('appends newer messages and trims the oldest side when the window is full', () => {
     const existing = [1, 2, 3].map(
-      (id) => [id, { timestamp: id * 100 } as InboxMessage] as [number, InboxMessage],
+      (id) => [id, { createdAtOrder: id * 100 } as InboxMessage] as [number, InboxMessage],
     );
     const incomingNewer = [3, 4, 5].map(
-      (id) => [id, { timestamp: id * 100 } as InboxMessage] as [number, InboxMessage],
+      (id) => [id, { createdAtOrder: id * 100 } as InboxMessage] as [number, InboxMessage],
     );
 
     const result = appendWindowedMessageItems(existing, incomingNewer, 4);
@@ -1167,7 +1159,7 @@ describe('rer-duty utils', () => {
   });
 
   // https://github.com/echoua/echo/issues/3455
-  it('protects pending prefixes using creation ordering when enabled', () => {
+  it('protects pending prefixes using creation ordering', () => {
     const items = Array.from({ length: 40 }, (_, index) => {
       const id = index + 1;
       return [
@@ -1180,13 +1172,12 @@ describe('rer-duty utils', () => {
     });
     const pending = [[1001, { timestamp: 1000, createdAt: 3000 } as InboxMessage]];
 
-    expect(safePendingNewerPrefix(items, pending, [1])).toEqual(pending);
-    expect(safePendingNewerPrefix(items, pending, [1], 'IMSCreatedAt')).toEqual([]);
+    expect(safePendingNewerPrefix(items, pending, [1])).toEqual([]);
   });
 
   it('retains read ids only for messages still inside the fixed window', () => {
     const items = [2, 3].map(
-      (id) => [id, { timestamp: id * 100 } as InboxMessage] as [number, InboxMessage],
+      (id) => [id, { createdAtOrder: id * 100 } as InboxMessage] as [number, InboxMessage],
     );
 
     expect([...retainReadIdsForItems(new Set([1, 2, 4]), items)]).toEqual([2]);

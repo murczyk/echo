@@ -7,6 +7,7 @@ describe('message-card-preview-config', () => {
     ['image', true],
     ['video', false],
     ['coordinate-map', true],
+    ['kmz-map', true],
     ['pdf', true],
     ['docx', true],
     ['xlsx', true],

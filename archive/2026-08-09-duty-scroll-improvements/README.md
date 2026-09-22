@@ -4,6 +4,9 @@ Status: **implemented** (windowed scroll + local-authoritative unread / near-bot
 
 Short summary: [`docs/duty/README.md`](../../docs/duty/README.md).
 
+The current [creation-time contract](../../docs/duty/README.md#creation-time-contract)
+defines ordering for every window, cursor, and unread operation described below.
+
 This document describes how Duty Neo feed scrolling works **now**, and how the unread badge is owned relative to that scroll model.
 
 Primary code:

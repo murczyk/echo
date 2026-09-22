@@ -28,3 +28,7 @@ export async function getKmzAttachmentPreview(
 export function kmzAttachmentConversionDownloadUrl(mediaId: string): string {
   return conversionUrl(mediaId, 'download');
 }
+
+export function kmzAttachmentConversionArchiveUrl(mediaId: string): string {
+  return conversionUrl(mediaId, 'archive.zip');
+}

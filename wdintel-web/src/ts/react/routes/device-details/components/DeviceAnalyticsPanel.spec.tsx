@@ -140,7 +140,7 @@ describe('DeviceAnalyticsPanel', () => {
     act(() => buttonContaining('Звіти').click());
     await flush();
     expect(mocks.listDeviceAnalyticsFiles).toHaveBeenCalledWith(
-      { deviceId: 'device-1', tagId: 'tag-1', limit: 10, cursor: null },
+      { deviceId: 'device-1', syncId: null, tagId: 'tag-1', limit: 10, cursor: null },
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(container.textContent).toContain('report.pdf');
@@ -155,7 +155,7 @@ describe('DeviceAnalyticsPanel', () => {
     act(() => buttonContaining('Завантажити ще').click());
     await flush();
     expect(mocks.listDeviceAnalyticsFiles).toHaveBeenLastCalledWith(
-      { deviceId: 'device-1', tagId: 'tag-1', limit: 10, cursor: 'cursor-1' },
+      { deviceId: 'device-1', syncId: null, tagId: 'tag-1', limit: 10, cursor: 'cursor-1' },
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(container.textContent).toContain('report-2.pdf');

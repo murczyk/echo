@@ -15,6 +15,8 @@ vi.mock('../../../services/api/kmz-attachment-conversion', () => ({
   getKmzAttachmentPreview: api.getPreview,
   kmzAttachmentConversionDownloadUrl: (mediaId: string) =>
     `/api/messenger/media/${mediaId}/kmz-conversion/download`,
+  kmzAttachmentConversionArchiveUrl: (mediaId: string) =>
+    `/api/messenger/media/${mediaId}/kmz-conversion/archive.zip`,
 }));
 
 vi.mock('./KmzAttachmentPreviewMap', () => ({
@@ -29,10 +31,8 @@ function findButton(label: string): HTMLButtonElement | undefined {
   );
 }
 
-function findLink(label: string): HTMLAnchorElement | undefined {
-  return Array.from(document.body.querySelectorAll('a')).find(
-    (link) => link.textContent?.trim() === label,
-  );
+function findLink(label: string): HTMLAnchorElement | null {
+  return document.body.querySelector(`a[aria-label="${label}"]`);
 }
 
 beforeEach(() => {
@@ -63,7 +63,7 @@ afterEach(() => {
 });
 
 describe('KmzAttachmentPreviewLink', () => {
-  it('opens the converted preview with both downloads above it', async () => {
+  it('opens the converted preview in the shared viewer with both downloads', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -100,9 +100,44 @@ describe('KmzAttachmentPreviewLink', () => {
       '/api/messenger/media/media-1/kmz-conversion/download',
     );
     expect(converted?.getAttribute('download')).toBe('route_converted.kmz');
+    expect(original?.textContent).toContain('Завантажити оригінал');
+    expect(converted?.textContent).toContain('Завантажити конвертований KMZ');
     expect(preview).not.toBeNull();
+    expect(document.body.querySelector('button[aria-label="Delta"]')).not.toBeNull();
+    expect(document.body.querySelector('button[aria-label="Google"]')).not.toBeNull();
+    expect(document.body.querySelector('button[aria-label="OpenStreetMap"]')).not.toBeNull();
     expect(
       (original?.compareDocumentPosition(preview as Node) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it('delegates opening to the parent attachment carousel when provided', async () => {
+    const onPreview = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root?.render(
+        <KmzAttachmentPreviewLink
+          mediaId="media-1"
+          originalHref="/api/messenger/media/media-1"
+          fileName="route.geojson"
+          initialStatus="done"
+          onPreview={onPreview}
+        />,
+      );
+    });
+
+    await act(async () => findButton('route.geojson')?.click());
+
+    expect(onPreview).toHaveBeenCalledOnce();
+    const archive = document.body.querySelector(
+      'a[aria-label="Завантажити оригінал і конвертований KMZ: route.geojson"]',
+    );
+    expect(archive?.getAttribute('href')).toBe(
+      '/api/messenger/media/media-1/kmz-conversion/archive.zip',
+    );
+    expect(archive?.getAttribute('download')).toBe('route_files.zip');
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
   });
 });

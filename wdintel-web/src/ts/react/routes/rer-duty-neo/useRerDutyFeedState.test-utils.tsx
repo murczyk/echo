@@ -94,7 +94,7 @@ export function rangeRsp(from: number, to: number): InboxMessagesRsp {
   return inboxRsp(
     Array.from({ length: to - from + 1 }, (_, index) => {
       const id = from + index;
-      return [id, minimalInboxMessage({ timestamp: id * 100 })];
+      return [id, minimalInboxMessage({ createdAtOrder: id * 100 })];
     }),
   );
 }
@@ -107,7 +107,6 @@ export function DutyFeedStateHarness(props: {
   setProfiles?: Parameters<typeof useRerDutyFeedState>[0]['setProfiles'];
   setGroupInfos?: Parameters<typeof useRerDutyFeedState>[0]['setGroupInfos'];
   deviceAccess?: DeviceAccess;
-  messageSortBy?: Parameters<typeof useRerDutyFeedState>[0]['messageSortBy'];
 }) {
   const api = useRerDutyFeedState({
     freqs: props.freqs ?? [],
@@ -120,7 +119,6 @@ export function DutyFeedStateHarness(props: {
     pollIntervalSec: 1,
     disableAutoScroll: props.disableAutoScroll ?? false,
     deviceAccess: props.deviceAccess ?? { status: 'allowed' },
-    messageSortBy: props.messageSortBy,
   });
   props.apiRef.current = new Proxy(api, {
     get(target, property, receiver) {
@@ -242,7 +240,7 @@ export function createDutyFeedStateFixture() {
     window.history.replaceState({}, '', '/');
     dutyApiMocks.fetchInboxCount.mockResolvedValue({ quantity: 0, firstElementTs: null });
     dutyApiMocks.fetchInboxMessages.mockResolvedValue(
-      inboxRsp([[1, minimalInboxMessage({ timestamp: 100 })]]),
+      inboxRsp([[1, minimalInboxMessage({ createdAtOrder: 100 })]]),
     );
     dutyApiMocks.fetchMessagesByIds.mockResolvedValue([]);
     dutyApiMocks.fetchMessagesByIdsWithMetadata.mockResolvedValue(inboxRsp([]));

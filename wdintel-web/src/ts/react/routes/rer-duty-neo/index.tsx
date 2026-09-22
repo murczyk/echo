@@ -78,7 +78,6 @@ export function RerDutyNeoPage({
     collapseMediaPreviews,
     mediaSummaryEnabled,
     messageTextPreviewLines,
-    messageSortBy,
   } = useRerDutyPageSettings();
   const openReportEditor = useCallback(
     (reportId: number) => {
@@ -300,7 +299,6 @@ export function RerDutyNeoPage({
     collapseMediaPreviews,
     mediaSummaryEnabled,
     messageTextPreviewLines,
-    messageTimeBasis: messageSortBy,
     openReportEditor: (reportId) => {
       void openReportEditor(reportId);
     },

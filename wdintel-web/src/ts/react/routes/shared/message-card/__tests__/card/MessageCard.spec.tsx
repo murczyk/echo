@@ -4068,6 +4068,30 @@ describe('MessageCard', () => {
     expect(queryArchiveDownloadLink(view.container)).not.toBeNull();
   });
 
+  it('counts a ready converted KMZ as a second downloadable archive file', () => {
+    const attachment = {
+      id: 'route',
+      href: '/api/messenger/media/route',
+      contentType: 'application/geo+json',
+      fileName: 'route.geojson',
+      sizeBytes: 128,
+    } as MessageMediaInfo;
+
+    expect(canDownloadAllMessageAttachments([{ ...attachment, kmzConversionStatus: 'done' }])).toBe(
+      true,
+    );
+    for (const kmzConversionStatus of [null, 'pending', 'processing', 'error']) {
+      expect(canDownloadAllMessageAttachments([{ ...attachment, kmzConversionStatus }])).toBe(
+        false,
+      );
+    }
+    expect(
+      canDownloadAllMessageAttachments([
+        { ...attachment, fileName: 'route.KMZ', kmzConversionStatus: 'done' },
+      ]),
+    ).toBe(false);
+  });
+
   it('keeps individual downloads visible when archive metadata is unavailable', async () => {
     const view = await renderCard({
       msg: {

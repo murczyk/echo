@@ -1,4 +1,4 @@
-import { Box, Paper, Tab, Tabs } from '@mui/material';
+import { Box, Paper, Tab, Tabs, CircularProgress } from '@mui/material';
 
 import type { DeviceFileTreeEntry } from '../../../../../Bindings';
 import { DeviceFileContentPane } from '../../device-files';
@@ -7,6 +7,8 @@ import type { DeviceAnalyticsTagFilter } from '../../device-files/types';
 import type { DeviceAnalyticsTagsState } from '../../device-files/use-device-analytics-tags';
 import type { DeviceFileJournalState } from '../../device-files/use-device-file-journal';
 import { DeviceAnalyticsPanel } from './DeviceAnalyticsPanel';
+import { PowerButton } from '../../../components/PowerButton';
+import { selectDeviceSyncSession } from '../url-state';
 
 export type DeviceDetailsTab = 'analytical' | 'files' | 'journal';
 
@@ -15,6 +17,11 @@ export function DeviceDetailsTabPanel({
   selectedFile,
   journal,
   deviceId,
+  syncId = null,
+  dataReady = true,
+  sessionError = null,
+  onRetrySession,
+  refreshVersion = 0,
   isAdmin,
   tagsState,
   tagFilter,
@@ -25,6 +32,11 @@ export function DeviceDetailsTabPanel({
   selectedFile: DeviceFileTreeEntry | null;
   journal: DeviceFileJournalState;
   deviceId: string;
+  syncId?: string | null;
+  dataReady?: boolean;
+  sessionError?: string | null;
+  onRetrySession?: () => void;
+  refreshVersion?: number;
   isAdmin: boolean;
   tagsState: DeviceAnalyticsTagsState;
   tagFilter: DeviceAnalyticsTagFilter;
@@ -77,7 +89,22 @@ export function DeviceDetailsTabPanel({
       </Box>
 
       <Box sx={{ minHeight: 0, flex: 1, overflow: 'hidden' }}>
-        {activeTab === 'analytical' ? (
+        {!dataReady ? (
+          <div className="p-echo-lg" role={sessionError ? 'alert' : 'status'}>
+            {sessionError ? (
+              <>
+                <p>{sessionError}</p>
+                <PowerButton onClick={onRetrySession}>Спробувати ще раз</PowerButton>
+                <PowerButton onClick={() => selectDeviceSyncSession(null)}>
+                  Показати всі сесії
+                </PowerButton>
+              </>
+            ) : (
+              <CircularProgress size={24} aria-label="Завантаження вибраної сесії" />
+            )}
+          </div>
+        ) : null}
+        {dataReady && activeTab === 'analytical' ? (
           <Box
             id="device-details-analytical-panel"
             role="tabpanel"
@@ -85,7 +112,10 @@ export function DeviceDetailsTabPanel({
             sx={{ height: '100%', minHeight: 0 }}
           >
             <DeviceAnalyticsPanel
+              key={`${deviceId}:${syncId ?? 'all'}`}
               deviceId={deviceId}
+              syncId={syncId}
+              refreshVersion={refreshVersion}
               enabled
               isAdmin={isAdmin}
               tagsState={tagsState}
@@ -94,17 +124,21 @@ export function DeviceDetailsTabPanel({
             />
           </Box>
         ) : null}
-        {activeTab === 'files' ? (
+        {dataReady && activeTab === 'files' ? (
           <Box
             id="device-details-files-panel"
             role="tabpanel"
             aria-labelledby="device-details-files-tab"
             sx={{ height: '100%', minHeight: 0, minWidth: 0 }}
           >
-            <DeviceFileContentPane deviceId={deviceId} file={selectedFile ?? null} />
+            <DeviceFileContentPane
+              deviceId={deviceId}
+              file={selectedFile ?? null}
+              sessionScoped={syncId !== null}
+            />
           </Box>
         ) : null}
-        {activeTab === 'journal' ? (
+        {dataReady && activeTab === 'journal' ? (
           <Box
             id="device-details-journal-panel"
             role="tabpanel"

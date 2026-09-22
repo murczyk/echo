@@ -1,9 +1,10 @@
-module Core.Callsigns.HintStrategy exposing (HintContext(..), HintResult, HintStrategy(..), getCallsignHints)
+module Core.Callsigns.HintStrategy exposing (HintContext(..), HintResult, HintStrategy(..), getCallsignHints, previewCallsignPriority)
 
 import Bindings as B
 import Core.Unit as Unit
 import Dict exposing (Dict)
 import List.Extra as ListX
+import Set
 
 
 {-| Фільтрує мережі за частотою
@@ -119,7 +120,7 @@ filterCallsignsByNetworkUnits : List B.CallsignInfo -> Dict Int B.Unit -> List B
 filterCallsignsByNetworkUnits callsigns masterUnits networkUnits =
     let
         callsignsUnits =
-            findCallsignUnit callsigns (Dict.values masterUnits)
+            findCallsignUnit callsigns masterUnits
 
         unitsWithSameRegiment =
             callsignsUnits |> List.filter (\callsignUnit -> networkUnits |> List.any (Unit.isSameOrChildUnit callsignUnit))
@@ -133,17 +134,40 @@ filterCallsignsByNetworkUnits callsigns masterUnits networkUnits =
 
 {-| Знаходить юніти для позивних
 -}
-findCallsignUnit : List B.CallsignInfo -> List B.Unit -> List B.Unit
+findCallsignUnit : List B.CallsignInfo -> Dict Int B.Unit -> List B.Unit
 findCallsignUnit callsigns units =
+    callsigns
+        |> List.filterMap .unitId
+        |> Set.fromList
+        |> Set.toList
+        |> List.filterMap (\unitId -> Dict.get unitId units)
+
+
+previewCallsignPriority : List B.Network -> Dict Int B.Unit -> List Int -> ( Int, Int )
+previewCallsignPriority networks masterUnits unitIds =
     let
-        unitIds =
-            callsigns |> List.filterMap .unitId
+        networkUnits =
+            getUnitsInfoByIds (getAllUnitsIdsForNetworks networks) masterUnits
+
+        relatedUnitIds =
+            unitIds
+                |> Set.fromList
+                |> Set.toList
+                |> List.filterMap (\unitId -> Dict.get unitId masterUnits)
+                |> List.filter (\unit -> List.any (Unit.isSameOrChildUnit unit) networkUnits)
+                |> List.map .id
+                |> Set.fromList
+
+        relatedCount =
+            unitIds
+                |> List.filter (\unitId -> Set.member unitId relatedUnitIds)
+                |> List.length
     in
-    units
-        |> List.filter
-            (\unit ->
-                List.member unit.id unitIds
-            )
+    if relatedCount > 0 then
+        ( 1, relatedCount )
+
+    else
+        ( 2, List.length unitIds )
 
 
 {-| Перевіряє чи є позивний пов'язаний з мережевими юнітами
@@ -169,7 +193,7 @@ isCallsignRelatedToNetworks maybeCallsignInfo networks masterUnits =
 
                     -- Знаходимо юніти для цього позивного
                     callsignUnits =
-                        findCallsignUnit callsignInfoList (Dict.values masterUnits)
+                        findCallsignUnit callsignInfoList masterUnits
 
                     -- Перевіряємо чи є хоча б один юніт позивного пов'язаний з мережевими юнітами
                     isRelated =

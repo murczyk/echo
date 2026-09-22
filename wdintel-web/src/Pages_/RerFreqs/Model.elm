@@ -39,6 +39,9 @@ type alias Model =
     , locationTexts : Dict String TextLocation
     , openMapRowId : Maybe String
     , callsignsByFreq : Api.ListCallsignsByFreqsRsp
+    , callsignListRequests : Set.Set String
+    , callsignSummaries : Api.ListCallsignsByFreqsSummaryRsp
+    , callsignSummaryRequestIds : Dict String Int
     , altUnitsByFreq : Api.ListAltUnitsByFreqsRsp
     , altUnitsRequestId : Int
     , callsignsInfo : Dict String (List B.CallsignInfo)
@@ -49,7 +52,7 @@ type alias Model =
     , callsignSearchDebounce : Debounce String
     , callsignSearchResults : RemoteData ApiError (List B.FreqCallsign)
 
-    --TODO Remove when back returns proper list of data for table
+    -- Lowercase names whose popup detail requests have already been sent.
     , callsigns : List String
     , sortingOrder : B.ListFreqsSortBy
     , groupsMessageCountByDay : GroupsActivityPerDayRsp

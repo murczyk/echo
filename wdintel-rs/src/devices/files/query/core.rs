@@ -229,7 +229,9 @@ pub(super) fn apply_search_filters(
     query
 }
 
-pub(super) fn literal_name_pattern(name_query: &str) -> String {
+pub(in crate::devices::files) fn literal_name_pattern(
+    name_query: &str,
+) -> String {
     let mut pattern = String::with_capacity(
         name_query.len().saturating_mul(2).saturating_add(2),
     );

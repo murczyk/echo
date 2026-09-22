@@ -26,7 +26,7 @@ export function shouldIgnoreArrowNavigation(target: EventTarget | null): boolean
   if (!(target instanceof HTMLElement)) return false;
   return Boolean(
     target.closest(
-      'input, textarea, select, [contenteditable="true"], [role="slider"], [data-audio-player-host]',
+      'input, textarea, select, [contenteditable="true"], [role="slider"], [data-audio-player-host], .leaflet-container',
     ),
   );
 }

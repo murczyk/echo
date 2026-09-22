@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 EXTRACTOR_HOST=${EXTRACTOR_HOST:-echo-document-extractor}
-clients=(echo-staging echo-cbr-staging echo-cbr echo-siversk echo-zp2 echo-skhid echo-pivnich)
+clients=("$@")
+if (( ${#clients[@]} == 0 )); then
+  clients=(echo-staging echo-cbr-staging echo-cbr echo-siversk echo-zp2 echo-skhid echo-pivnich)
+fi
 token=$(ssh -o BatchMode=yes "$EXTRACTOR_HOST" \
   "sudo awk -F= '\$1 == \"ECHO_DOCUMENT_EXTRACTOR_TOKEN\" {print substr(\$0, index(\$0, \"=\") + 1)}' /etc/echo-document-extractor/secret.env")
 [[ -n "$token" ]] || { printf 'extractor token is unavailable\n' >&2; exit 1; }
@@ -14,7 +18,7 @@ for client in "${clients[@]}"; do
     base=http://100.93.77.92:8000
     curl -fsS --max-time 10 "$base/health/live" >/dev/null
     [[ $(curl -sS -o /dev/null -w "%{http_code}" -H "Authorization: Bearer invalid" "$base/v1/status") == 401 ]]
-    curl -fsS --max-time 10 -H "Authorization: Bearer $token" "$base/v1/status" >/dev/null
+    curl -fsS --max-time 15 -H "Authorization: Bearer $token" "$base/v1/status"
 
     ocr_block=$(awk '"'"'
       /^\[ocr\]$/ { in_ocr=1; next }
@@ -42,6 +46,6 @@ for client in "${clients[@]}"; do
         exit 1
       }
     fi
-  '
+  ' | python3 "$SCRIPT_DIR/verify-status.py"
 done
-printf 'Client authentication verification passed on all seven Echo hosts\n'
+printf 'Client authentication and extractor readiness verified on %s host(s)\n' "${#clients[@]}"

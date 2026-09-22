@@ -32,6 +32,9 @@
 
 ## Git
 
+- Name issue branches `<issue-id>-<short-title>`, for example `123-foo-bar`, where the number is the GitHub issue ID.
+- Alternatively, use `<author>/YYYY-MM-DD-<short-title>`, for example `k-bx/2026-09-23-foo-bar`, where the author is a GitHub username, person's name, or callsign.
+- Use lowercase English words separated by hyphens for the short title, usually two or three words describing the issue title or the essence of the work.
 - **Never Commit or Push Without Permission**
 - **NEVER** run `git commit` without explicitly asking the user first
 - **NEVER** run `git push` without explicitly asking the user first

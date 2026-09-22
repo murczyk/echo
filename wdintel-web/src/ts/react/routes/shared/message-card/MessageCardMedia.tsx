@@ -192,7 +192,14 @@ export function mediaDownloadAttr(displayName: string, fallbackName: string): st
 }
 
 export function canDownloadAllMessageAttachments(attachments: MessageMediaInfo[]): boolean {
-  if (attachments.length <= 1 || attachments.length > RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES) {
+  const downloadableFileCount =
+    attachments.length +
+    attachments.filter(
+      (attachment) =>
+        attachment.kmzConversionStatus === 'done' &&
+        !mediaAttachmentDisplayName(attachment).toLowerCase().endsWith('.kmz'),
+    ).length;
+  if (downloadableFileCount <= 1 || attachments.length > RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES) {
     return false;
   }
   const knownTotalBytes = attachments.reduce((totalBytes, attachment) => {
@@ -569,6 +576,7 @@ export function MessageMediaThumbnailDownloadLink({
   displayName,
   downloadName,
   downloadKey,
+  downloadLabel,
   isDownloadStarting,
   onDownloadStart,
 }: {
@@ -576,11 +584,12 @@ export function MessageMediaThumbnailDownloadLink({
   displayName: string;
   downloadName: string;
   downloadKey: string;
+  downloadLabel?: string;
 } & MessageCardDownloadGuardProps) {
   if (href.trim() === '') return null;
 
   const downloading = isDownloadStarting(downloadKey);
-  const label = `Завантажити вкладення: ${displayName}`;
+  const label = downloadLabel ?? `Завантажити вкладення: ${displayName}`;
   return (
     <Tooltip title={label} enterDelay={400} disableInteractive>
       <MessageCardDisabledControlCursorWrapper

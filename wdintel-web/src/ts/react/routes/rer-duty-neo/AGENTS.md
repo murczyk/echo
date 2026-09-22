@@ -1,5 +1,10 @@
 # Duty Neo Route Instructions
 
+Follow the [Duty creation-time contract](../../../../../../docs/duty/README.md#creation-time-contract).
+Duty ordering, date filters, unread cursors, notification selection, and primary
+time display always use creation time. Do not add a sort preference or consume
+Analysis's `messageSortBy` setting. Keep the #3546 behavior regressions in CI.
+
 MUI remains the application design system, but repeated Duty feed rendering is a performance-sensitive boundary. Do not replace lightweight native structural markup with MUI layout abstractions merely for consistency or convenience.
 
 Protected hot path:

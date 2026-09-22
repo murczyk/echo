@@ -65,7 +65,6 @@ export type FeedStateDeps = {
   /** When true, duty page must not auto-scroll / follow new messages (user prefs). */
   disableAutoScroll: boolean;
   deviceAccess: DeviceAccess;
-  messageSortBy?: 'IMSTimestamp' | 'IMSCreatedAt';
   onFeedRemoved?: (feedId: string) => void;
 };
 
@@ -316,17 +315,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       previous.map((feed) => (feedIds.includes(feed.id) ? { ...feed, loading: true } : feed)),
     );
   }, [markFeedReloadRequested]);
-  const reloadFeedsPreservingUnread = useCallback(() => {
-    const feedIds = Array.from(new Set(messageFeedsRef.current.map((feed) => feed.id)));
-    if (feedIds.length === 0) return;
-    feedIds.forEach((feedId) => {
-      markFeedReloadRequested(feedId, true);
-      editReloadFeedIdsRef.current.add(feedId);
-    });
-    setMessageFeeds((previous) =>
-      previous.map((feed) => (feedIds.includes(feed.id) ? { ...feed, loading: true } : feed)),
-    );
-  }, [markFeedReloadRequested]);
   const completeFeedReload = useCallback((feedId: string) => {
     pendingReloadFeedIdsRef.current = new Set(
       [...pendingReloadFeedIdsRef.current].filter((id) => id !== feedId),
@@ -420,7 +408,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         (feed.items.at(-1)
           ? {
               id: feed.items.at(-1)![0],
-              timestamp: messageOrderTimestamp(feed.items.at(-1)![1], feed.messageSortBy) ?? null,
+              timestamp: messageOrderTimestamp(feed.items.at(-1)![1]) ?? null,
             }
           : null);
       if (target != null) {
@@ -430,7 +418,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           feed.items.filter(
             ([id, message]) =>
               !feed.readIds.has(id) &&
-              !readThroughTarget(id, messageOrderTimestamp(message, feed.messageSortBy) ?? null),
+              !readThroughTarget(id, messageOrderTimestamp(message) ?? null),
           ).length +
           [...feed.windowedUnreadItems.entries()].filter(
             ([id, timestamp]) => !readThroughTarget(id, timestamp),
@@ -453,9 +441,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
             compareMessageTuple({ id, timestamp }, target) <= 0;
           const readIds = new Set(candidate.readIds);
           candidate.items.forEach(([id, message]) => {
-            if (
-              throughTarget(id, messageOrderTimestamp(message, candidate.messageSortBy) ?? null)
-            ) {
+            if (throughTarget(id, messageOrderTimestamp(message) ?? null)) {
               readIds.add(id);
             }
           });
@@ -470,7 +456,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
             compareMessageTuple(
               {
                 id: loadedTail[0],
-                timestamp: messageOrderTimestamp(loadedTail[1], candidate.messageSortBy) ?? null,
+                timestamp: messageOrderTimestamp(loadedTail[1]) ?? null,
               },
               target,
             ) === 0;
@@ -596,14 +582,13 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           : feed.filter;
       return buildInboxReq({
         ...opts,
-        sortBy: deps.messageSortBy,
         filter,
         expandedFreqsSelected: expandedSelected,
         expandedFreqsDenied: expandedDenied,
         highlightSignals: feed.highlightSignalsEnabled ?? false,
       });
     },
-    [deps.messageSortBy, deviceAccess.status, freqs],
+    [deviceAccess.status, freqs],
   );
 
   useEffect(() => {
@@ -811,7 +796,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       for (const [id, message] of feed.items) {
         const itemCursor = {
           id,
-          timestamp: messageOrderTimestamp(message, feed.messageSortBy) ?? null,
+          timestamp: messageOrderTimestamp(message) ?? null,
         };
         if (nextCursor != null && compareMessageTuple(itemCursor, nextCursor) <= 0) continue;
         if (
@@ -834,10 +819,10 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         loadedTail != null &&
         compareMessageTuple(
           earliestWindowedUnreadItem,
-          messageOrderCursor(loadedTail[0], loadedTail[1], feed.messageSortBy),
+          messageOrderCursor(loadedTail[0], loadedTail[1]),
         ) <= 0;
       if (loadedFullyRead && !hasBlockingWindowedUnread) {
-        nextCursor = messageOrderCursor(loadedTail[0], loadedTail[1], feed.messageSortBy);
+        nextCursor = messageOrderCursor(loadedTail[0], loadedTail[1]);
       }
       if (
         nextCursor != null &&
@@ -911,7 +896,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           });
           if (typeof registerDutyNotificationPreview === 'function') {
             registerDutyNotificationPreview(cycle, feedId, () =>
-              loadDutyNotificationPreview(previewRequest, currentFeed.messageSortBy, () => {
+              loadDutyNotificationPreview(previewRequest, () => {
                 const live = messageFeedsRef.current.find((candidate) => candidate.id === feedId);
                 return (
                   isLifecycleCurrent() &&
@@ -1273,7 +1258,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     reloadEmptyFeeds,
     reloadFeeds,
     reloadEditedFeeds,
-    reloadFeedsPreservingUnread,
     loadFeedOlderMessages,
     loadFeedNewerMessages,
     flushPendingNewerMessages,

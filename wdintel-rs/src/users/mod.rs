@@ -61,6 +61,17 @@ pub(crate) async fn start_user_session(
     db: &impl ConnectionTrait,
 ) -> Result<(), AppError> {
     update_last_active_at(db, &login_id).await.c(h!())?;
+    initialize_user_session(env, http_req, login_id)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+pub(crate) async fn initialize_user_session(
+    env: &actix_web::web::Data<Env>,
+    http_req: &HttpRequest,
+    login_id: Uuid,
+) -> anyhow::Result<()> {
     let session_id = Uuid::now_v7();
     crate::session::add_session(&mut env.redis.clone(), session_id, &login_id)
         .await
@@ -760,12 +771,13 @@ pub async fn list_logins(
 async fn api_user(
     env: actix_web::web::Data<Env>,
     user: Option<Identity>,
+    http_req: HttpRequest,
 ) -> Result<Json<User>, AppError> {
     let Some(user) = user else {
         return Err(AppError::Unauthenticated);
     };
     let user_id = login_id_from_identity(&user).c(h!())?;
-    let login_obj = match load_active_login(&env.dbx, &user_id)
+    let login_obj = match login_for_user_response(&env.dbx, &http_req, user_id)
         .await
         .map_err(AppError::from)
     {
@@ -800,6 +812,19 @@ async fn api_user(
         goi_integrations: goi.integrations,
         last_release_seen: login_obj.last_release_seen,
     }))
+}
+
+async fn login_for_user_response(
+    db: &impl ConnectionTrait,
+    http_req: &HttpRequest,
+    login_id: Uuid,
+) -> anyhow::Result<login::Model> {
+    if let Some(login) = crate::ai_agent::middleware::test_identity(http_req)
+        .filter(|login| login.id == login_id)
+    {
+        return Ok(login);
+    }
+    load_active_login(db, &login_id).await.c(h!())
 }
 
 #[post("/api/user/release-seen")]

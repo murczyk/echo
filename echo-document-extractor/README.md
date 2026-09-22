@@ -42,6 +42,12 @@ requires `Authorization: Bearer …`; submissions also require an
 - `GET /v1/status`: queue, worker, storage, Paddle, and exact router-model
   status.
 
+`/health/ready` checks queue/storage availability. Verify full OCR readiness
+with `bin/verify-clients.sh echo-cbr-staging echo-cbr`, which checks the worker,
+Paddle, and required router models in the authenticated status response.
+NuExtract GPU maintenance and its dependency alert are documented in the
+[host runbook](../echo-vllm-router/workers/nuextract/MAINTENANCE.md).
+
 Manifest version one remains the compatibility path and uses the statically
 configured NuExtract3 plus OCR-Gemma adapters. Version two may carry an opaque
 Echo-issued OCR gateway grant and engine metadata; the extractor then uses

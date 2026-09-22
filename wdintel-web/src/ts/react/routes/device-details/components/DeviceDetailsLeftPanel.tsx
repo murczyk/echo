@@ -1,5 +1,5 @@
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import { Box, Chip, Divider, Link, Paper, Skeleton, Stack, Typography } from '@mui/material';
+import { Box, Chip, Divider, Link, Skeleton, Stack, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
 
 import type { DeviceDetails } from '../../../../../Bindings';
@@ -266,17 +266,9 @@ function DeviceLeftPanelContent({ device }: { device: DeviceDetails }) {
 
 export function DeviceDetailsLeftPanel({ device, loading }: Props) {
   return (
-    <Paper
-      variant="outlined"
+    <aside
       data-testid="device-details-left-panel"
-      sx={{
-        height: '100%',
-        minHeight: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        boxSizing: 'border-box',
-        overflow: 'auto',
-      }}
+      className="h-full min-h-0 flex flex-col box-border overflow-auto bg-echo-surface border border-echo-border rounded-echo-md"
     >
       <Box
         sx={{
@@ -297,6 +289,6 @@ export function DeviceDetailsLeftPanel({ device, loading }: Props) {
           <DeviceLeftPanelContent device={device} />
         ) : null}
       </Box>
-    </Paper>
+    </aside>
   );
 }

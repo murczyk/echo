@@ -68,12 +68,11 @@ async fn load_published_content(
     PublishedContent::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "select entry.name, content.object_key, content.source_size_bytes, content.is_encrypted
-         from file_entry entry
+         from file_revision entry
          join file_content content on content.file_id = entry.id
              and content.revision = entry.revision
-             and content.object_key = entry.content_path
          where entry.device_id = $1 and entry.id = $2
-             and entry.revision = $3 and entry.kind = 'file'",
+             and entry.revision = $3",
         [device_id.into(), file_id.into(), revision.into()],
     ))
     .one(env.file_registry_db().c(h!())?.connection())
@@ -109,11 +108,16 @@ async fn serve_content(
     response
         .content_type("application/octet-stream")
         .insert_header(disposition)
+        .insert_header((header::CONTENT_ENCODING, "identity"))
         .insert_header((header::CONTENT_LENGTH, size.to_string()))
         .insert_header((header::CACHE_CONTROL, "private, no-store"))
         .insert_header((header::X_CONTENT_TYPE_OPTIONS, "nosniff"));
     if request.method() == Method::HEAD {
-        return Ok(response.finish());
+        return Ok(response.body(actix_web::body::SizedStream::new(
+            size,
+            futures_util::stream::empty::<Result<web::Bytes, actix_web::Error>>(
+            ),
+        )));
     }
     if content.is_encrypted {
         let bytes = decrypt_content(env, &config, &content.object_key)

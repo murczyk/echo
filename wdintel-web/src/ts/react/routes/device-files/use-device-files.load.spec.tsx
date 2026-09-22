@@ -65,10 +65,14 @@ let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 let latest: ReturnType<typeof useDeviceFilesLoad> | null = null;
 
+let selectedSyncId: string | null = null;
+let enabled = true;
+
 function Harness() {
   latest = useDeviceFilesLoad({
     deviceId: DEVICE_ID,
-    enabled: true,
+    enabled,
+    syncId: selectedSyncId,
     tagFilter: { tagIds: [], tagMatch: 'any', untagged: false },
   });
   return null;
@@ -82,6 +86,8 @@ async function flush() {
 }
 
 beforeEach(() => {
+  selectedSyncId = null;
+  enabled = true;
   apiMock.listDeviceFileRoots.mockResolvedValue({
     roots: [buildRoot(ROOT_TWO_ID, 'D:\\'), buildRoot(ROOT_ONE_ID, 'C:\\')],
   });
@@ -108,6 +114,35 @@ async function mountHook() {
 }
 
 describe('useDeviceFilesLoad', () => {
+  it('#3390 preserves search input across session validation and ignores the previous session response', async () => {
+    const previous = deferred<SearchDeviceFilesRsp>();
+    apiMock.searchDeviceFiles
+      .mockReturnValueOnce(previous.promise)
+      .mockResolvedValue({ entries: [], nextCursor: null });
+    await mountHook();
+    act(() => latest?.setSearchDraft({ ...latest.searchDraft, nameQuery: 'report' }));
+    await flush();
+    act(() => latest?.submitSearch());
+    selectedSyncId = '018f0000-0000-7000-8000-000000000030';
+    enabled = false;
+    await mountHook();
+    expect(latest?.searchEntries).toEqual([]);
+    expect(latest?.searchNextCursor).toBeNull();
+    enabled = true;
+    await mountHook();
+    expect(apiMock.searchDeviceFiles.mock.calls.at(-1)?.[0]).toMatchObject({
+      syncId: selectedSyncId,
+      nameQuery: 'report',
+      cursor: null,
+    });
+    expect(latest?.searchDraft.nameQuery).toBe('report');
+    expect(latest?.searchActive).toBe(true);
+    previous.resolve({ entries: [buildEntry('stale', ROOT_TWO_ID)], nextCursor: 'stale-cursor' });
+    await flush();
+    expect(latest?.searchEntries).toEqual([]);
+    expect(latest?.searchNextCursor).toBeNull();
+  });
+
   it('keeps root server order and selects the first root as the initial search scope', async () => {
     await mountHook();
 

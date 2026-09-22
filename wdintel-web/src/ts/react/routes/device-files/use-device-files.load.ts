@@ -24,10 +24,12 @@ type LoadOptions = { append?: boolean; preserve?: boolean };
 
 export function useDeviceFilesLoad({
   deviceId,
+  syncId = null,
   enabled,
   tagFilter,
 }: {
   deviceId: string;
+  syncId?: string | null;
   enabled: boolean;
   tagFilter: DeviceAnalyticsTagFilter;
 }) {
@@ -51,6 +53,9 @@ export function useDeviceFilesLoad({
   const [searchError, setSearchError] = useState<DeviceFileLoadError | null>(null);
   const [searchLoadMoreError, setSearchLoadMoreError] = useState<DeviceFileLoadError | null>(null);
 
+  const dataScope = `${deviceId}:${syncId ?? 'all'}`;
+  const [resultScope, setResultScope] = useState(dataScope);
+  const previousDeviceRef = useRef(deviceId);
   const rootsRef = useRef<DeviceFileRoot[]>([]);
   const searchScopeRef = useRef<DeviceFileSearchScope | null>(null);
   const searchNextCursorRef = useRef<string | null>(null);
@@ -99,7 +104,7 @@ export function useDeviceFilesLoad({
       setRootsError(null);
 
       try {
-        const rsp = await listDeviceFileRoots({ deviceId }, { signal: controller.signal });
+        const rsp = await listDeviceFileRoots({ deviceId, syncId }, { signal: controller.signal });
         if (rootsSeqRef.current !== seq || controller.signal.aborted) return;
 
         setRoots(rsp.roots);
@@ -149,7 +154,7 @@ export function useDeviceFilesLoad({
         if (rootsAbortRef.current === controller) rootsAbortRef.current = null;
       }
     },
-    [deviceId, enabled, replaceSearchScope, resetSearchResults],
+    [deviceId, syncId, enabled, replaceSearchScope, resetSearchResults],
   );
 
   const fallbackToRoots = useCallback(
@@ -169,7 +174,13 @@ export function useDeviceFilesLoad({
       const currentTagFilter = tagFilterRef.current;
       const append = options?.append ?? false;
       const preserve = options?.preserve ?? false;
-      const fingerprint = buildSearchFingerprint(deviceId, scope.entryId, draft, currentTagFilter);
+      const fingerprint = buildSearchFingerprint(
+        deviceId,
+        scope.entryId,
+        draft,
+        currentTagFilter,
+        syncId,
+      );
       if (append && searchFingerprintRef.current !== fingerprint) return;
 
       const cursor = append ? searchNextCursorRef.current : null;
@@ -194,6 +205,7 @@ export function useDeviceFilesLoad({
         const rsp = await searchDeviceFiles(
           buildSearchDeviceFilesReq({
             deviceId,
+            syncId,
             scopeEntryId: scope.entryId,
             draft,
             cursor,
@@ -222,7 +234,7 @@ export function useDeviceFilesLoad({
           return;
         }
         const loadError = toDeviceFileLoadError(error, 'Помилка пошуку файлів');
-        if (loadError.status === 404) {
+        if (loadError.status === 404 && syncId === null) {
           fallbackToRoots('Область пошуку більше не існує. Вибрано перший доступний корінь.');
         } else if (append) {
           setSearchLoadMoreError(loadError);
@@ -238,7 +250,7 @@ export function useDeviceFilesLoad({
         if (searchAbortRef.current === controller) searchAbortRef.current = null;
       }
     },
-    [deviceId, enabled, fallbackToRoots, tagFilterKey],
+    [deviceId, syncId, enabled, fallbackToRoots, tagFilterKey],
   );
 
   const selectSearchScope = useCallback(
@@ -302,7 +314,13 @@ export function useDeviceFilesLoad({
     }
   }, [enabled, loadSearch, tagFilterKey]);
 
+  const loadSearchRef = useRef(loadSearch);
+  loadSearchRef.current = loadSearch;
   useEffect(() => {
+    const sameDevice = previousDeviceRef.current === deviceId;
+    previousDeviceRef.current = deviceId;
+    const appliedDraft = sameDevice ? appliedSearchDraftRef.current : null;
+    setResultScope(dataScope);
     rootsAbortRef.current?.abort();
     searchAbortRef.current?.abort();
     rootsSeqRef.current += 1;
@@ -310,7 +328,7 @@ export function useDeviceFilesLoad({
     searchScopeRef.current = null;
     searchNextCursorRef.current = null;
     searchFingerprintRef.current = null;
-    appliedSearchDraftRef.current = null;
+    appliedSearchDraftRef.current = appliedDraft;
     rootsRef.current = [];
     setRoots([]);
     setRootsLoading(enabled);
@@ -318,7 +336,7 @@ export function useDeviceFilesLoad({
     setRootsError(null);
     setScopeNotice(null);
     setSearchScope(null);
-    setSearchDraftState(createDefaultFileSearchDraft());
+    if (!sameDevice) setSearchDraftState(createDefaultFileSearchDraft());
     setSearchValidationErrors({});
     setAppliedSearchDraft(null);
     setSearchEntries([]);
@@ -328,17 +346,31 @@ export function useDeviceFilesLoad({
     setSearchLoadingMore(false);
     setSearchError(null);
     setSearchLoadMoreError(null);
-    if (enabled) void loadRoots(false);
+    if (enabled) {
+      const controller = new AbortController();
+      void loadRoots(false).then(() => {
+        if (controller.signal.aborted || appliedDraft === null || searchScopeRef.current === null)
+          return;
+        appliedSearchDraftRef.current = appliedDraft;
+        setAppliedSearchDraft(appliedDraft);
+        void loadSearchRef.current(appliedDraft);
+      });
+      return () => {
+        controller.abort();
+        rootsAbortRef.current?.abort();
+        searchAbortRef.current?.abort();
+      };
+    }
 
     return () => {
       rootsAbortRef.current?.abort();
       searchAbortRef.current?.abort();
     };
-  }, [deviceId, enabled, loadRoots]);
+  }, [dataScope, deviceId, syncId, enabled, loadRoots]);
 
   return {
-    roots,
-    rootsLoading,
+    roots: resultScope === dataScope ? roots : [],
+    rootsLoading: resultScope !== dataScope || rootsLoading,
     rootsRefreshing,
     rootsError,
     scopeNotice,
@@ -347,8 +379,8 @@ export function useDeviceFilesLoad({
     appliedSearchDraft,
     searchActive: appliedSearchDraft !== null,
     searchValidationErrors,
-    searchEntries,
-    searchNextCursor,
+    searchEntries: resultScope === dataScope ? searchEntries : [],
+    searchNextCursor: resultScope === dataScope ? searchNextCursor : null,
     searchLoading,
     searchRefreshing,
     searchLoadingMore,

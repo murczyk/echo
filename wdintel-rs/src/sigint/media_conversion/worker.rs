@@ -1,4 +1,6 @@
-use super::{converted_file_name, delete_stored_results_best_effort};
+use super::{
+    converted_file_name, delete_stored_results_best_effort, source_is_ready_kmz,
+};
 use crate::config::{
     SIGINT_MEDIA_CONVERSION_ADVISORY_LOCK_KEY,
     SIGINT_MEDIA_CONVERSION_HEARTBEAT_SEC,
@@ -16,6 +18,7 @@ use crate::entities::{
 use crate::h;
 use crate::logging::warn;
 use crate::types::{Env, ShortContext};
+use bytes::Bytes;
 use chrono::Utc;
 use futures_util::TryStreamExt;
 use md5::{Digest, Md5};
@@ -39,6 +42,11 @@ struct ConversionAttempt {
 enum ConversionOutcome {
     Applied,
     Stale,
+}
+
+struct PreparedKmz {
+    body: Bytes,
+    receipt: Option<String>,
 }
 
 pub async fn run_nofail(env: Arc<Env>) {
@@ -239,6 +247,58 @@ async fn process_job(
         format!("{:x}", Md5::digest(&source)) == job.source_file_md5,
         "conversion source MD5 does not match the queued file"
     );
+    let file_name = converted_file_name(&job.source_file_name);
+    let prepared = prepare_kmz(env, &media, job, source).await.c(h!())?;
+    validate_prepared_kmz(&file_name, &prepared.body)
+        .await
+        .c(h!())?;
+    let size_bytes = i64::try_from(prepared.body.len()).c(h!())?;
+    let storage_key = if source_is_ready_kmz(&media) {
+        None
+    } else {
+        Some(
+            crate::messenger::media::store_asset(
+                env,
+                prepared.body,
+                Some(&file_name),
+                Some(crate::config::KMZ_CONTENT_TYPE),
+            )
+            .await
+            .c(h!())?,
+        )
+    };
+    let applied = finish_job(
+        &env.dbx,
+        attempt,
+        prepared.receipt,
+        storage_key.clone(),
+        file_name,
+        size_bytes,
+    )
+    .await;
+    if !applied.as_ref().is_ok_and(|applied| *applied) {
+        if let Some(storage_key) = storage_key {
+            delete_stored_results_best_effort(env, &[storage_key]).await;
+        }
+    }
+    if !applied.c(h!())? {
+        return Ok(ConversionOutcome::Stale);
+    }
+    Ok(ConversionOutcome::Applied)
+}
+
+async fn prepare_kmz(
+    env: &Env,
+    media: &signal_message_media::Model,
+    job: &signal_message_media_conversion_job::Model,
+    source: Vec<u8>,
+) -> anyhow::Result<PreparedKmz> {
+    if source_is_ready_kmz(media) {
+        return Ok(PreparedKmz {
+            body: Bytes::from(source),
+            receipt: None,
+        });
+    }
     let converted = tokio::time::timeout(
         Duration::from_secs(SIGINT_MEDIA_CONVERSION_JOB_TIMEOUT_SEC),
         crate::alpine::convert_bytes_to_kmz(
@@ -257,36 +317,21 @@ async fn process_job(
     })
     .c(h!())?
     .c(h!())?;
-    anyhow::ensure!(
-        !converted.body.is_empty(),
-        "converter returned an empty KMZ"
-    );
-    let file_name = converted_file_name(&job.source_file_name);
-    let size_bytes = i64::try_from(converted.body.len()).c(h!())?;
-    let storage_key = crate::messenger::media::store_asset(
-        env,
-        converted.body,
-        Some(&file_name),
-        Some(crate::config::KMZ_CONTENT_TYPE),
-    )
-    .await
-    .c(h!())?;
-    let applied = finish_job(
-        &env.dbx,
-        attempt,
-        converted.receipt,
-        storage_key.clone(),
-        file_name,
-        size_bytes,
-    )
-    .await;
-    if !applied.as_ref().is_ok_and(|applied| *applied) {
-        delete_stored_results_best_effort(env, &[storage_key]).await;
-    }
-    if !applied.c(h!())? {
-        return Ok(ConversionOutcome::Stale);
-    }
-    Ok(ConversionOutcome::Applied)
+    Ok(PreparedKmz {
+        body: converted.body,
+        receipt: Some(converted.receipt),
+    })
+}
+
+async fn validate_prepared_kmz(
+    file_name: &str,
+    body: &[u8],
+) -> anyhow::Result<()> {
+    anyhow::ensure!(!body.is_empty(), "KMZ preview file is empty");
+    crate::palitra::kmz::parse_coordinates_from_file(file_name, body)
+        .await
+        .c(h!())?;
+    Ok(())
 }
 
 async fn process_job_with_heartbeat(
@@ -342,7 +387,7 @@ where
     Ok(result.rows_affected == 1)
 }
 
-async fn fetch_source_bytes(
+pub(super) async fn fetch_source_bytes(
     env: &Env,
     media: &signal_message_media::Model,
 ) -> anyhow::Result<Vec<u8>> {
@@ -374,8 +419,8 @@ async fn fetch_source_bytes(
 async fn finish_job<C>(
     dbx: &C,
     attempt: ConversionAttempt,
-    receipt: String,
-    storage_key: String,
+    receipt: Option<String>,
+    storage_key: Option<String>,
     file_name: String,
     size_bytes: i64,
 ) -> anyhow::Result<bool>
@@ -460,7 +505,55 @@ mod tests {
     use crate::functest::tests::{cleanup, mk_signal_message};
     use sea_orm::{ActiveModelTrait, ActiveValue::Set, NotSet};
     use serial_test::serial;
+    use std::io::{Cursor, Write};
     use uuid::Uuid;
+
+    fn kmz_without_kml() -> Vec<u8> {
+        let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        archive
+            .start_file(
+                "route.geojson",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+        archive
+            .write_all(br#"{"type":"FeatureCollection","features":[]}"#)
+            .unwrap();
+        archive.finish().unwrap().into_inner()
+    }
+
+    fn media_with_extension(extension: &str) -> signal_message_media::Model {
+        signal_message_media::Model {
+            id: Uuid::nil(),
+            signal_message_id: 1,
+            signal_message_uuid: None,
+            content_type: "application/octet-stream".to_string(),
+            file_ext: Some(extension.to_string()),
+            file_name: Some(format!("route.{extension}")),
+            size_bytes: 1,
+            created_at: Utc::now().naive_utc(),
+            is_encrypted: true,
+            storage_key: Some("test/route".to_string()),
+        }
+    }
+
+    #[tokio::test]
+    async fn kmz_is_passthrough_and_geojson_requires_conversion() {
+        assert!(source_is_ready_kmz(&media_with_extension("kmz")));
+        assert!(source_is_ready_kmz(&media_with_extension("KMZ")));
+        assert!(!source_is_ready_kmz(&media_with_extension("geojson")));
+
+        let valid = tokio::fs::read("data/test.kmz").await.unwrap();
+        validate_prepared_kmz("route_converted.kmz", &valid)
+            .await
+            .unwrap();
+        let error =
+            validate_prepared_kmz("route_converted.kmz", &kmz_without_kml())
+                .await
+                .unwrap_err();
+        assert!(format!("{error:#}")
+            .contains("KMZ archive contains no KML documents"));
+    }
 
     async fn insert_job(
         env: &Env,
@@ -580,8 +673,8 @@ mod tests {
             finish_job(
                 &completion_dbx,
                 attempt,
-                "receipt".to_string(),
-                "test/route.kmz".to_string(),
+                Some("receipt".to_string()),
+                Some("test/route.kmz".to_string()),
                 "route_converted.kmz".to_string(),
                 1,
             )
@@ -648,8 +741,8 @@ mod tests {
         assert!(!finish_job(
             &env.dbx,
             stale_attempt,
-            "stale".to_string(),
-            "test/stale.kmz".to_string(),
+            Some("stale".to_string()),
+            Some("test/stale.kmz".to_string()),
             "stale.kmz".to_string(),
             1,
         )
@@ -661,8 +754,8 @@ mod tests {
                 id: claimed.id,
                 attempt_count: claimed.attempt_count,
             },
-            "receipt".to_string(),
-            "test/first.kmz".to_string(),
+            Some("receipt".to_string()),
+            Some("test/first.kmz".to_string()),
             "first_converted.kmz".to_string(),
             1,
         )

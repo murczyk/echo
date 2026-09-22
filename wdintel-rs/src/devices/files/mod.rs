@@ -6,6 +6,7 @@ mod ltree;
 mod metadata;
 mod path;
 pub(in crate::devices) mod query;
+pub(crate) mod sessions;
 pub(crate) mod sync;
 #[cfg(test)]
 mod tests;
@@ -62,6 +63,18 @@ pub(crate) async fn roots(
     let login = access::resolve_current_login(&env.dbx, &user)
         .await
         .c(h!())?;
+    if body.sync_id.is_some() {
+        return Ok(Json(
+            sessions::read::roots(
+                &env.dbx,
+                env.file_registry_db().c(h!())?,
+                &login,
+                body,
+            )
+            .await
+            .c(h!())?,
+        ));
+    }
     let roots = bl::list_roots(
         &env.dbx,
         env.file_registry_db()?,
@@ -81,6 +94,18 @@ pub(crate) async fn subtree_counts(
     let login = access::resolve_current_login(&env.dbx, &user)
         .await
         .c(h!())?;
+    if body.sync_id.is_some() {
+        return Ok(Json(
+            sessions::read::counts(
+                &env.dbx,
+                env.file_registry_db().c(h!())?,
+                &login,
+                body,
+            )
+            .await
+            .c(h!())?,
+        ));
+    }
     let counts = bl::count_subtrees(
         &env.dbx,
         env.file_registry_db()?,
@@ -109,6 +134,18 @@ pub(crate) async fn browse(
     let login = access::resolve_current_login(&env.dbx, &user)
         .await
         .c(h!())?;
+    if body.sync_id.is_some() {
+        return Ok(Json(
+            sessions::read::browse(
+                &env.dbx,
+                env.file_registry_db().c(h!())?,
+                &login,
+                body,
+            )
+            .await
+            .c(h!())?,
+        ));
+    }
     let result = bl::browse(
         &env.dbx,
         env.file_registry_db()?,
@@ -138,6 +175,18 @@ pub(crate) async fn search(
     let login = access::resolve_current_login(&env.dbx, &user)
         .await
         .c(h!())?;
+    if body.sync_id.is_some() {
+        return Ok(Json(
+            sessions::read::search(
+                &env.dbx,
+                env.file_registry_db().c(h!())?,
+                &login,
+                body,
+            )
+            .await
+            .c(h!())?,
+        ));
+    }
     let result = bl::search(
         &env.dbx,
         env.file_registry_db()?,
@@ -185,6 +234,18 @@ pub(crate) async fn journal(
     let login = access::resolve_current_login(&env.dbx, &user)
         .await
         .c(h!())?;
+    if body.sync_id.is_some() {
+        return Ok(Json(
+            sessions::read::journal(
+                &env.dbx,
+                env.file_registry_db().c(h!())?,
+                &login,
+                body,
+            )
+            .await
+            .c(h!())?,
+        ));
+    }
     let result = bl::journal(
         &env.dbx,
         env.file_registry_db()?,

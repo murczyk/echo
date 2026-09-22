@@ -2957,6 +2957,17 @@ async fn acceptance_content_read_requires_visible_device_and_current_publication
             response.headers().get("content-length").unwrap(),
             bytes.len().to_string().as_str()
         );
+        if method == Method::HEAD {
+            use actix_web::body::{BodySize, MessageBody};
+            assert_eq!(
+                response.response().body().size(),
+                BodySize::Sized(bytes.len() as u64)
+            );
+            assert_eq!(
+                response.headers().get("content-encoding").unwrap(),
+                "identity"
+            );
+        }
         assert_eq!(
             response.headers().get("cache-control").unwrap(),
             "private, no-store"
@@ -2997,16 +3008,26 @@ async fn acceptance_content_read_requires_visible_device_and_current_publication
         .await;
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
+    // #3390: a later sync must not hide the published bytes of the selected session.
     resync_file(&env, &fixture, &file).await;
-    let response = test::call_service(
-        &app,
-        test::TestRequest::get()
-            .uri(&path)
-            .cookie(reader_cookie)
-            .to_request(),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    for method in [Method::GET, Method::HEAD] {
+        let response = test::call_service(
+            &app,
+            test::TestRequest::default()
+                .method(method.clone())
+                .uri(&path)
+                .cookie(reader_cookie.clone())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = test::read_body(response).await;
+        if method == Method::GET {
+            assert_eq!(body.as_ref(), bytes);
+        } else {
+            assert!(body.is_empty());
+        }
+    }
 }
 
 #[actix_web::test]

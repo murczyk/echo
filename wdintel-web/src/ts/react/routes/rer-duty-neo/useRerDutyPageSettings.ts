@@ -9,7 +9,6 @@ import { fetchCurrentUser } from '../../services/api/user';
 import {
   USER_SETTINGS_UPDATED_EVENT,
   fetchUserSettings,
-  type MessageTimeBasis,
   type MessageTextPreviewLineLimit,
 } from '../../services/api/user-settings';
 import { DEFAULT_DUTY_TAGS_LAYOUT, type TagsLayoutVariant } from './utils';
@@ -26,7 +25,6 @@ export type RerDutyPageSettings = {
   collapseMediaPreviews: boolean;
   mediaSummaryEnabled: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
-  messageSortBy: MessageTimeBasis;
 };
 
 export type DeviceAccess =
@@ -56,7 +54,6 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
   const [mediaSummaryEnabled, setMediaSummaryEnabled] = useState(DEFAULT_MEDIA_SUMMARY_ENABLED);
   const [messageTextPreviewLines, setMessageTextPreviewLines] =
     useState<MessageTextPreviewLineLimit>(20);
-  const [messageSortBy, setMessageSortBy] = useState<MessageTimeBasis>('interception');
 
   useEffect(() => {
     let cancelled = false;
@@ -71,7 +68,6 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         );
         setMediaSummaryEnabled(prefs.mediaSummaryEnabled ?? DEFAULT_MEDIA_SUMMARY_ENABLED);
         setMessageTextPreviewLines(prefs.messageTextPreviewLines);
-        setMessageSortBy(prefs.messageSortBy);
       } catch {
         if (cancelled) return;
         setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
@@ -79,7 +75,6 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         setCollapseMediaPreviews(true);
         setMediaSummaryEnabled(DEFAULT_MEDIA_SUMMARY_ENABLED);
         setMessageTextPreviewLines(20);
-        setMessageSortBy('interception');
       }
     };
     loadLayout();
@@ -97,7 +92,6 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
           dutyCollapseMediaPreviews?: boolean;
           mediaSummaryEnabled?: boolean;
           messageTextPreviewLines?: MessageTextPreviewLineLimit;
-          messageSortBy?: MessageTimeBasis;
         }>
       ).detail;
       if (detail?.tagsLayout) {
@@ -118,9 +112,6 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         detail?.messageTextPreviewLines === null
       ) {
         setMessageTextPreviewLines(detail.messageTextPreviewLines);
-      }
-      if (detail?.messageSortBy === 'interception' || detail?.messageSortBy === 'creation') {
-        setMessageSortBy(detail.messageSortBy);
       }
     };
 
@@ -198,6 +189,5 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
     collapseMediaPreviews,
     mediaSummaryEnabled,
     messageTextPreviewLines,
-    messageSortBy,
   };
 }

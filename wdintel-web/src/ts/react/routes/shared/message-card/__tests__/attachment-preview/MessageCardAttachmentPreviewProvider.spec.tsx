@@ -44,6 +44,15 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewDialog', () => ({
 const attachments: MessageCardPreviewAttachment[] = [
   { type: 'image', value: { id: 'image-1', href: '/image.png' } },
   {
+    type: 'kmz',
+    value: {
+      mediaId: 'route',
+      originalHref: '/route.geojson',
+      fileName: 'route.geojson',
+      initialStatus: 'done',
+    },
+  },
+  {
     type: 'video',
     value: { id: 'video-1', name: 'video.mp4', source: '/video.mp4' },
   },
@@ -87,7 +96,19 @@ describe('MessageCardAttachmentPreviewProvider', () => {
     expect(container.querySelector('[data-preview-type]')?.getAttribute('data-preview-type')).toBe(
       'image',
     );
-    expect(container.textContent).toContain('1 / 3');
+    expect(container.textContent).toContain('1 / 4');
+
+    await act(async () => {
+      container
+        ?.querySelector('button[aria-label="Наступне"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(container.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+    expect(container.querySelector('[role="dialog"]')).toBe(dialog);
+    expect(container.querySelector('[data-preview-type]')?.getAttribute('data-preview-type')).toBe(
+      'kmz',
+    );
+    expect(container.textContent).toContain('2 / 4');
 
     await act(async () => {
       container
@@ -99,19 +120,17 @@ describe('MessageCardAttachmentPreviewProvider', () => {
     expect(container.querySelector('[data-preview-type]')?.getAttribute('data-preview-type')).toBe(
       'video',
     );
-    expect(container.textContent).toContain('2 / 3');
+    expect(container.textContent).toContain('3 / 4');
 
     await act(async () => {
       container
         ?.querySelector('button[aria-label="Наступне"]')
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
-    expect(container.querySelectorAll('[role="dialog"]')).toHaveLength(1);
-    expect(container.querySelector('[role="dialog"]')).toBe(dialog);
     expect(container.querySelector('[data-preview-type]')?.getAttribute('data-preview-type')).toBe(
       'document',
     );
-    expect(container.textContent).toContain('3 / 3');
+    expect(container.textContent).toContain('4 / 4');
 
     await act(async () => {
       container
@@ -122,6 +141,6 @@ describe('MessageCardAttachmentPreviewProvider', () => {
     expect(container.querySelector('[data-preview-type]')?.getAttribute('data-preview-type')).toBe(
       'image',
     );
-    expect(container.textContent).toContain('1 / 3');
+    expect(container.textContent).toContain('1 / 4');
   });
 });

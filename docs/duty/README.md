@@ -6,6 +6,40 @@ Short guide for humans. Full behavior and acceptance scenarios:
 
 Issue: [#3059](https://github.com/echoua/echo/issues/3059).
 
+## Creation-time contract
+
+Regression: [#3546](https://github.com/echoua/echo/issues/3546).
+
+Duty Neo always uses message creation time. This is a feed invariant, not a user
+preference. Analysis alone retains the event/creation-time choice; its saved
+`messageSortBy` setting must never change or reload Duty feeds.
+
+- Every Duty inbox/count request uses `IMSCreatedAt`, including date filters,
+  initial/direct-link loads, older/newer pages, polling, and notification previews.
+- Feed order is ascending `(signal_message.created_at, id)`, newest at the bottom.
+  Local sorting, pagination/unread cursors, pending buffers, and notification
+  selection use `createdAtOrder` (microseconds), falling back only to
+  `createdAt * 1000` for older payloads. Event time is never an ordering fallback.
+- Cards use creation time for the primary/relative time display. Event dates remain
+  message metadata; editing an event date cannot move a card in the feed.
+- The sorting chooser exists only under Settings → Analysis. Existing Analysis
+  preferences and its shared API/storage field are preserved.
+
+Acceptance scenarios covered by the #3546 regressions in `test:ts:ci`:
+
+1. Event time, creation time, and IDs disagree: initial and paginated windows stay
+   in creation order, including equal timestamps and distinct microseconds within
+   one displayed millisecond.
+2. A newly created message with an old event date enters the live tail, contributes
+   to unread state, survives pending-buffer commits, and is eligible for notification.
+3. Updating event metadata does not reorder messages or corrupt unread cursors.
+4. Loading or changing Analysis's preference does not reload or change Duty; the
+   Analysis chooser still saves and controls Analysis.
+
+Preserve this contract when changing shared settings, MessageCard, inbox requests,
+or Duty scrolling/unread behavior. Run its CI regressions alongside the affected
+scroll, direct-link, and Analysis checks.
+
 Scroll/commit performance notes (Virtuoso rollback, profile, next levers):
 [`archive/2026-08-12-duty-feed-scroll-perf/README.md`](../../archive/2026-08-12-duty-feed-scroll-perf/README.md).
 Cheap closed actions, `startTransition` window commits, and narrow active-only feed mounts are covered there.

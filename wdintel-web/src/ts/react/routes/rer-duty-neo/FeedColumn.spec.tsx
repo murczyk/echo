@@ -262,7 +262,7 @@ describe('FeedColumn', () => {
     const props = buildProps();
     const onLoadNewer = vi.fn();
     const onReachedBottom = vi.fn();
-    props.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    props.column.feed.items = [[1, minimalInboxMessage({ createdAtOrder: 100 })]];
     props.column.actions.onLoadNewer = onLoadNewer;
     props.column.actions.onReachedBottom = onReachedBottom;
 
@@ -295,8 +295,8 @@ describe('FeedColumn', () => {
   it('mounts the full message window in the duty feed list', async () => {
     const props = buildProps();
     props.column.feed.items = [
-      [1, minimalInboxMessage({ timestamp: 100 })],
-      [2, minimalInboxMessage({ timestamp: 200 })],
+      [1, minimalInboxMessage({ createdAtOrder: 100 })],
+      [2, minimalInboxMessage({ createdAtOrder: 200 })],
     ];
 
     await act(async () => {
@@ -309,7 +309,7 @@ describe('FeedColumn', () => {
 
   it('updates mounted message cards when the preview limit changes', async () => {
     const props = buildProps();
-    props.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    props.column.feed.items = [[1, minimalInboxMessage({ createdAtOrder: 100 })]];
     props.column.messageCard.messageTextPreviewLines = 20;
 
     await act(async () => {
@@ -613,8 +613,8 @@ describe('FeedColumn', () => {
   it('scopes the bot tag prompt to the matching message card only', async () => {
     const props = buildProps();
     props.column.feed.items = [
-      [1, minimalInboxMessage({ timestamp: 101 })],
-      [2, minimalInboxMessage({ timestamp: 102 })],
+      [1, minimalInboxMessage({ createdAtOrder: 101 })],
+      [2, minimalInboxMessage({ createdAtOrder: 102 })],
     ];
     props.column.messageCard.botTagAction = { messageId: 1, tagId: 3 };
 
@@ -740,7 +740,7 @@ describe('FeedColumn', () => {
     props.column.view.bottomUnreadCount = 2;
     props.column.view.tailAvailability = 'available';
     props.column.actions.onArrowClick = vi.fn();
-    props.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    props.column.feed.items = [[1, minimalInboxMessage({ createdAtOrder: 100 })]];
     props.column.view.workspaceFabAvoidance = 'above';
 
     await act(async () => {
@@ -766,7 +766,7 @@ describe('FeedColumn', () => {
     props.column.view.workspaceFabAvoidance = 'left';
     props.column.view.bottomUnreadCount = 2;
     props.column.view.tailAvailability = 'available';
-    props.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    props.column.feed.items = [[1, minimalInboxMessage({ createdAtOrder: 100 })]];
 
     await act(async () => {
       root.render(<FeedColumn column={props.column} />);
@@ -797,7 +797,7 @@ describe('FeedColumn', () => {
     props.column.view.workspaceFabAvoidance = 'none';
     props.column.view.bottomUnreadCount = 1;
     props.column.view.tailAvailability = 'available';
-    props.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    props.column.feed.items = [[1, minimalInboxMessage({ createdAtOrder: 100 })]];
 
     await act(async () => {
       root.render(<FeedColumn column={props.column} />);
@@ -818,7 +818,7 @@ describe('FeedColumn', () => {
 
   it('does not show the bottom button for stale unread data at an exhausted tail', async () => {
     const props = buildProps();
-    props.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    props.column.feed.items = [[1, minimalInboxMessage({ createdAtOrder: 100 })]];
     props.column.view.bottomUnreadCount = 3;
     props.column.view.tailAvailability = 'exhausted';
     await act(async () => root.render(<FeedColumn column={props.column} />));
@@ -841,7 +841,7 @@ describe('FeedColumn', () => {
 
   it('does not show a badge when raw unread exists but every loaded message is read', async () => {
     const props = buildProps();
-    props.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    props.column.feed.items = [[1, minimalInboxMessage({ createdAtOrder: 100 })]];
     props.column.feed.readIds = new Set([1]);
     props.column.feed.unreadCount = 1;
     props.column.view.bottomUnreadCount = 0;
@@ -856,8 +856,8 @@ describe('FeedColumn', () => {
   it('shows the number of actual loaded unread messages', async () => {
     const props = buildProps();
     props.column.feed.items = [
-      [1, minimalInboxMessage({ timestamp: 100 })],
-      [2, minimalInboxMessage({ timestamp: 200 })],
+      [1, minimalInboxMessage({ createdAtOrder: 100 })],
+      [2, minimalInboxMessage({ createdAtOrder: 200 })],
     ];
     props.column.feed.readIds = new Set([1]);
     props.column.feed.unreadCount = 50;
@@ -871,13 +871,13 @@ describe('FeedColumn', () => {
 
   it('shows the bottom button only for available tail content or away from the bottom', async () => {
     const available = buildProps();
-    available.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    available.column.feed.items = [[1, minimalInboxMessage({ createdAtOrder: 100 })]];
     available.column.view.tailAvailability = 'available';
     await act(async () => root.render(<FeedColumn column={available.column} />));
     expect(container.querySelector('[data-duty-feed-scroll-button]')).not.toBeNull();
 
     const middle = buildProps();
-    middle.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    middle.column.feed.items = [[1, minimalInboxMessage({ createdAtOrder: 100 })]];
     middle.column.view.physicallyAtBottom = false;
     middle.column.view.tailAvailability = 'exhausted';
     await act(async () => root.render(<FeedColumn column={middle.column} />));
@@ -886,7 +886,7 @@ describe('FeedColumn', () => {
 
   it('shows a spinner while newer mail is loading and keeps the unread badge', async () => {
     const idle = buildProps();
-    idle.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    idle.column.feed.items = [[1, minimalInboxMessage({ createdAtOrder: 100 })]];
     idle.column.view.loadingNewer = false;
     idle.column.view.bottomUnreadCount = 0;
     await act(async () => root.render(<FeedColumn column={idle.column} />));
@@ -894,7 +894,7 @@ describe('FeedColumn', () => {
     expect(container.querySelector('[role="progressbar"]')).toBeNull();
 
     const loading = buildProps();
-    loading.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    loading.column.feed.items = [[1, minimalInboxMessage({ createdAtOrder: 100 })]];
     loading.column.view.loadingNewer = true;
     loading.column.view.bottomUnreadCount = 12;
     loading.column.view.isWatchMode = false;
@@ -1045,7 +1045,7 @@ describe('FeedColumn', () => {
   it('keeps the feed content visible while refreshing existing messages', async () => {
     const props = buildProps();
     props.column.feed.loading = true;
-    props.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    props.column.feed.items = [[1, minimalInboxMessage({ createdAtOrder: 100 })]];
 
     await act(async () => {
       root.render(<FeedColumn column={props.column} />);

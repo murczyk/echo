@@ -1,8 +1,10 @@
 use crate::config::{
-    KMZ_CONTENT_TYPE, SIGINT_MEDIA_CONVERSION_STATUS_DONE,
+    KMZ_CONTENT_TYPE, RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES,
+    SIGINT_MEDIA_CONVERSION_STATUS_DONE,
     SIGINT_MEDIA_CONVERSION_STATUS_PENDING,
     SIGINT_MEDIA_KMZ_CONVERSION_EXTENSIONS,
     SIGINT_MEDIA_KMZ_CONVERSION_MAX_SOURCE_BYTES,
+    SIGINT_MEDIA_KMZ_PASSTHROUGH_EXTENSIONS,
 };
 use crate::entities::{
     signal_message_media, signal_message_media_conversion_job,
@@ -21,9 +23,12 @@ use sea_orm::{
     EntityTrait, NotSet, QueryFilter, QuerySelect, Set,
 };
 use std::collections::HashMap;
+use std::io::{BufWriter, Seek, Write};
 use std::path::Path;
 use tokio::io::AsyncReadExt;
+use tokio_util::io::ReaderStream;
 use uuid::Uuid;
+use zip::write::SimpleFileOptions;
 
 pub mod types;
 pub mod worker;
@@ -98,7 +103,7 @@ where
     if media.is_empty() {
         return Ok(HashMap::new());
     }
-    Ok(signal_message_media_conversion_job::Entity::find()
+    let mut statuses = signal_message_media_conversion_job::Entity::find()
         .filter(
             signal_message_media_conversion_job::Column::SourceMediaId
                 .is_in(media.iter().map(|media| media.id)),
@@ -108,7 +113,15 @@ where
         .c(h!())?
         .into_iter()
         .map(|job| (job.source_media_id, job.status))
-        .collect())
+        .collect::<HashMap<_, _>>();
+    for media in media {
+        if is_eligible_source(media) {
+            statuses.entry(media.id).or_insert_with(|| {
+                SIGINT_MEDIA_CONVERSION_STATUS_PENDING.to_string()
+            });
+        }
+    }
+    Ok(statuses)
 }
 
 pub async fn lock_and_load_converted_storage_keys(
@@ -166,14 +179,12 @@ pub async fn preview(
     env: web::Data<Env>,
     path: web::Path<(Uuid,)>,
 ) -> Result<web::Json<SignalMediaKmzPreviewRsp>, AppError> {
-    let (_, job) = authorized_job(&user, env.as_ref(), path.0).await.c(h!())?;
+    let (media, job) =
+        authorized_job(&user, env.as_ref(), path.0).await.c(h!())?;
     let (storage_key, file_name) = completed_result(&job).c(h!())?;
-    let bytes = crate::messenger::media::fetch_media_bytes_by_key(
-        env.as_ref(),
-        storage_key,
-    )
-    .await
-    .c(h!())?;
+    let bytes = fetch_completed_result_bytes(env.as_ref(), &media, storage_key)
+        .await
+        .c(h!())?;
     let preview =
         crate::palitra::kmz::parse_coordinates_from_file(file_name, &bytes)
             .await
@@ -197,14 +208,12 @@ pub async fn download(
     env: web::Data<Env>,
     path: web::Path<(Uuid,)>,
 ) -> Result<HttpResponse, AppError> {
-    let (_, job) = authorized_job(&user, env.as_ref(), path.0).await.c(h!())?;
+    let (media, job) =
+        authorized_job(&user, env.as_ref(), path.0).await.c(h!())?;
     let (storage_key, file_name) = completed_result(&job).c(h!())?;
-    let bytes = crate::messenger::media::fetch_media_bytes_by_key(
-        env.as_ref(),
-        storage_key,
-    )
-    .await
-    .c(h!())?;
+    let bytes = fetch_completed_result_bytes(env.as_ref(), &media, storage_key)
+        .await
+        .c(h!())?;
     let content_disposition = header::ContentDisposition {
         disposition: header::DispositionType::Attachment,
         parameters: vec![header::DispositionParam::FilenameExt(
@@ -219,6 +228,139 @@ pub async fn download(
         .insert_header((header::CONTENT_TYPE, KMZ_CONTENT_TYPE))
         .insert_header(content_disposition)
         .body(bytes))
+}
+
+#[get("/api/messenger/media/{media_id}/kmz-conversion/archive.zip")]
+pub async fn download_archive(
+    user: actix_identity::Identity,
+    env: web::Data<Env>,
+    path: web::Path<(Uuid,)>,
+) -> Result<HttpResponse, AppError> {
+    let (media, job) =
+        authorized_job(&user, env.as_ref(), path.0).await.c(h!())?;
+    let (storage_key, converted_file_name) = completed_result(&job).c(h!())?;
+    validate_archive_size(&media, &job).c(h!())?;
+
+    let zip_file = tempfile::tempfile().c(h!())?;
+    let mut archive = zip::ZipWriter::new(BufWriter::new(zip_file));
+    let options = SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    let source_file_name = safe_archive_file_name(
+        Some(&job.source_file_name),
+        "original_attachment",
+    );
+    let source_size = {
+        let source = worker::fetch_source_bytes(env.as_ref(), &media)
+            .await
+            .c(h!())?;
+        let source_size = u64::try_from(source.len()).c(h!())?;
+        write_archive_entry(&mut archive, &options, &source_file_name, &source)
+            .c(h!())?;
+        source_size
+    };
+    let converted_file_name =
+        safe_archive_file_name(Some(converted_file_name), "converted.kmz");
+    let converted =
+        fetch_completed_result_bytes(env.as_ref(), &media, storage_key)
+            .await
+            .c(h!())?;
+    validate_archive_size_values(
+        source_size,
+        u64::try_from(converted.len()).c(h!())?,
+    )
+    .c(h!())?;
+    write_archive_entry(
+        &mut archive,
+        &options,
+        &converted_file_name,
+        &converted,
+    )
+    .c(h!())?;
+
+    let mut zip_file = archive.finish().c(h!())?.into_inner().c(h!())?;
+    let zip_size = zip_file.metadata().c(h!())?.len();
+    zip_file.rewind().c(h!())?;
+    let archive_name = attachment_archive_name(&source_file_name);
+    let content_disposition = header::ContentDisposition {
+        disposition: header::DispositionType::Attachment,
+        parameters: vec![header::DispositionParam::FilenameExt(
+            header::ExtendedValue {
+                charset: header::Charset::Ext("UTF-8".into()),
+                language_tag: None,
+                value: archive_name.as_bytes().to_vec(),
+            },
+        )],
+    };
+    Ok(HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "application/zip"))
+        .insert_header(content_disposition)
+        .insert_header((header::CONTENT_LENGTH, zip_size.to_string()))
+        .streaming(ReaderStream::new(tokio::fs::File::from_std(zip_file))))
+}
+
+fn validate_archive_size(
+    media: &signal_message_media::Model,
+    job: &signal_message_media_conversion_job::Model,
+) -> anyhow::Result<()> {
+    let source_size = u64::try_from(media.size_bytes).c(h!())?;
+    let converted_size =
+        u64::try_from(job.converted_size_bytes.c(h!())?).c(h!())?;
+    validate_archive_size_values(source_size, converted_size).c(h!())
+}
+
+fn validate_archive_size_values(
+    source_size: u64,
+    converted_size: u64,
+) -> anyhow::Result<()> {
+    let total_size = source_size.checked_add(converted_size).c(h!())?;
+    anyhow::ensure!(
+        total_size <= RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES,
+        "Geodata archive is too large: {total_size} bytes, max is {RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES}"
+    );
+    Ok(())
+}
+
+fn safe_archive_file_name(file_name: Option<&str>, fallback: &str) -> String {
+    let file_name = file_name
+        .map(crate::palitra::kmz::sanitize_upload_filename)
+        .unwrap_or_else(|| fallback.to_string());
+    let file_name = file_name
+        .chars()
+        .map(|character| {
+            if character.is_control() || matches!(character, '/' | '\\') {
+                '_'
+            } else {
+                character
+            }
+        })
+        .collect::<String>();
+    let file_name = file_name.trim().trim_matches('.');
+    if file_name.is_empty() {
+        fallback.to_string()
+    } else {
+        file_name.to_string()
+    }
+}
+
+fn attachment_archive_name(source_file_name: &str) -> String {
+    let stem = Path::new(source_file_name)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .map(str::trim)
+        .filter(|stem| !stem.is_empty())
+        .unwrap_or("geodata");
+    format!("{stem}_files.zip")
+}
+
+fn write_archive_entry<W: Write + Seek>(
+    archive: &mut zip::ZipWriter<W>,
+    options: &SimpleFileOptions,
+    file_name: &str,
+    bytes: &[u8],
+) -> anyhow::Result<()> {
+    archive.start_file(file_name, *options).c(h!())?;
+    archive.write_all(bytes).c(h!())?;
+    Ok(())
 }
 
 async fn authorized_job(
@@ -254,9 +396,14 @@ async fn authorized_job(
         )
         .one(&env.dbx)
         .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)
         .c(h!())?;
+    let job = match job {
+        Some(job) => job,
+        None if is_eligible_source(&media) => {
+            schedule_stored_media(env, &media).await.c(h!())?
+        }
+        None => return Err(AppError::NotFound),
+    };
     if job.signal_message_id != media.signal_message_id {
         return Err(AppError::NotFound);
     }
@@ -265,7 +412,7 @@ async fn authorized_job(
 
 fn completed_result(
     job: &signal_message_media_conversion_job::Model,
-) -> anyhow::Result<(&str, &str)> {
+) -> anyhow::Result<(Option<&str>, &str)> {
     if job.status != SIGINT_MEDIA_CONVERSION_STATUS_DONE {
         anyhow::bail!(
             "{}",
@@ -275,13 +422,92 @@ fn completed_result(
         );
     }
     Ok((
-        job.converted_storage_key.as_deref().c(h!())?,
+        job.converted_storage_key.as_deref(),
         job.converted_file_name.as_deref().c(h!())?,
     ))
 }
 
 fn is_supported_source(media: &signal_message_media::Model) -> bool {
-    SIGINT_MEDIA_KMZ_CONVERSION_EXTENSIONS.contains(&source_extension(media))
+    SIGINT_MEDIA_KMZ_CONVERSION_EXTENSIONS
+        .iter()
+        .any(|extension| {
+            source_extension(media).eq_ignore_ascii_case(extension)
+        })
+}
+
+fn is_eligible_source(media: &signal_message_media::Model) -> bool {
+    is_supported_source(media)
+        && usize::try_from(media.size_bytes).is_ok_and(|size_bytes| {
+            size_bytes <= SIGINT_MEDIA_KMZ_CONVERSION_MAX_SOURCE_BYTES
+        })
+}
+
+pub(crate) fn source_is_ready_kmz(media: &signal_message_media::Model) -> bool {
+    SIGINT_MEDIA_KMZ_PASSTHROUGH_EXTENSIONS
+        .iter()
+        .any(|extension| {
+            source_extension(media).eq_ignore_ascii_case(extension)
+        })
+}
+
+pub(crate) async fn fetch_completed_result_bytes(
+    env: &Env,
+    media: &signal_message_media::Model,
+    storage_key: Option<&str>,
+) -> anyhow::Result<Vec<u8>> {
+    if source_is_ready_kmz(media) {
+        worker::fetch_source_bytes(env, media).await.c(h!())
+    } else {
+        crate::messenger::media::fetch_media_bytes_by_key(
+            env,
+            storage_key.c(h!())?,
+        )
+        .await
+        .c(h!())
+    }
+}
+
+async fn schedule_stored_media(
+    env: &Env,
+    media: &signal_message_media::Model,
+) -> anyhow::Result<signal_message_media_conversion_job::Model> {
+    let source = worker::fetch_source_bytes(env, media).await.c(h!())?;
+    let source_file_name = media
+        .file_name
+        .clone()
+        .unwrap_or_else(|| format!("{}.{}", media.id, source_extension(media)));
+    signal_message_media_conversion_job::Entity::insert(
+        signal_message_media_conversion_job::ActiveModel {
+            id: NotSet,
+            signal_message_id: Set(media.signal_message_id),
+            source_media_id: Set(media.id),
+            source_file_md5: Set(format!("{:x}", Md5::digest(&source))),
+            source_file_name: Set(source_file_name),
+            source_content_type: Set(Some(media.content_type.clone())),
+            status: Set(SIGINT_MEDIA_CONVERSION_STATUS_PENDING.to_string()),
+            conversion_receipt: Set(None),
+            converted_storage_key: Set(None),
+            converted_file_name: Set(None),
+            converted_size_bytes: Set(None),
+            created_at: NotSet,
+            last_attempt_at: Set(None),
+            attempt_count: Set(0),
+            last_error: Set(None),
+        },
+    )
+    .on_conflict_do_nothing()
+    .exec_without_returning(&env.dbx)
+    .await
+    .c(h!())?;
+    signal_message_media_conversion_job::Entity::find()
+        .filter(
+            signal_message_media_conversion_job::Column::SourceMediaId
+                .eq(media.id),
+        )
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .c(h!())
 }
 
 fn source_extension(media: &signal_message_media::Model) -> &str {
@@ -334,6 +560,29 @@ mod tests {
     use crate::functest::tests::{cleanup, mk_signal_message};
     use sea_orm::{ActiveModelTrait, ActiveValue::Set};
     use serial_test::serial;
+
+    fn media_with_extension(extension: &str) -> signal_message_media::Model {
+        signal_message_media::Model {
+            id: Uuid::nil(),
+            signal_message_id: 1,
+            signal_message_uuid: None,
+            content_type: "application/octet-stream".to_string(),
+            file_ext: Some(extension.to_string()),
+            file_name: Some(format!("route.{extension}")),
+            size_bytes: 1,
+            created_at: chrono::Utc::now().naive_utc(),
+            is_encrypted: true,
+            storage_key: Some("test/route".to_string()),
+        }
+    }
+
+    #[test]
+    fn recognizes_kmz_and_geojson_sources_case_insensitively() {
+        for extension in ["kmz", "KMZ", "geojson", "GEOJSON"] {
+            assert!(is_eligible_source(&media_with_extension(extension)));
+        }
+        assert!(!is_eligible_source(&media_with_extension("txt")));
+    }
 
     #[serial]
     #[tokio::test]
@@ -407,6 +656,8 @@ mod tests {
         .insert(&env.dbx)
         .await
         .unwrap();
+        let ignored_media_id = ignored_media.id;
+        let oversized_media_id = oversized_media.id;
         let media =
             vec![supported_media.clone(), ignored_media, oversized_media];
         let uploads = vec![
@@ -430,6 +681,14 @@ mod tests {
                 content_type: Some("application/gpx+xml".to_string()),
             },
         ];
+
+        let statuses = load_statuses(&env.dbx, &media).await.unwrap();
+        assert_eq!(
+            statuses.get(&supported_media.id).map(String::as_str),
+            Some(SIGINT_MEDIA_CONVERSION_STATUS_PENDING)
+        );
+        assert!(!statuses.contains_key(&ignored_media_id));
+        assert!(!statuses.contains_key(&oversized_media_id));
 
         schedule_uploaded_media(&env.dbx, message.id, &media, &uploads)
             .await

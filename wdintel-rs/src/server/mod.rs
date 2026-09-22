@@ -913,6 +913,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::media_conversion::status)
             .service(crate::sigint::media_conversion::preview)
             .service(crate::sigint::media_conversion::download)
+            .service(crate::sigint::media_conversion::download_archive)
             .service(crate::ocr::messenger_media_ocr)
             .service(crate::ocr::messenger_media_ocr_download)
             .service(crate::ocr::messenger_media_ocr_status)
@@ -1185,6 +1186,9 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::devices::devices::update)
             .service(crate::devices::settings::update)
             .service(crate::devices::files::roots)
+            .service(crate::devices::files::sessions::list)
+            .service(crate::devices::files::sessions::get)
+            .service(crate::devices::files::sessions::summaries)
             .service(crate::devices::files::subtree_counts)
             .service(crate::devices::files::browse)
             .service(crate::devices::files::search)
@@ -1322,6 +1326,8 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::freq::list_freqs_v2)
             .service(crate::sigint::freq::list_freqs_for_period)
             .service(crate::sigint::freq::list_callsigns_by_freqs)
+            .service(crate::sigint::freq::list_callsigns_by_freqs_summary)
+            .service(crate::sigint::freq::list_callsign_priorities)
             .service(crate::sigint::freq::list_points_by_freq)
             .service(crate::sigint::freq::list_groups_by_freqs_per_day)
             .service(crate::sigint::freq::latest_frequencies)
@@ -1915,7 +1921,7 @@ mod tests {
     }
 
     #[actix_web::test]
-    async fn test_rer_message_attachments_zip_requires_authentication() {
+    async fn test_attachment_zip_routes_require_authentication() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let redis_session_store =
             RedisSessionStore::new(crate::redis_conn_string(&config).unwrap())
@@ -1937,10 +1943,13 @@ mod tests {
                 .configure(configure_routes),
         )
         .await;
-        let req = test::TestRequest::get()
-            .uri("/api/rer-importer/messages/1/attachments.zip")
-            .to_request();
-        let res = test::call_service(&app, req).await;
-        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+        for uri in [
+            "/api/rer-importer/messages/1/attachments.zip",
+            "/api/messenger/media/00000000-0000-0000-0000-000000000000/kmz-conversion/archive.zip",
+        ] {
+            let req = test::TestRequest::get().uri(uri).to_request();
+            let res = test::call_service(&app, req).await;
+            assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+        }
     }
 }

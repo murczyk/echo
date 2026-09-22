@@ -1212,6 +1212,34 @@ list_callsigns_by_freq toMsg req =
         }
 
 
+type alias ListCallsignsByFreqsSummaryRsp =
+    Dict String FreqCallsignSummary
+
+
+list_callsigns_by_freq_summary :
+    (Result ApiError ListCallsignsByFreqsSummaryRsp -> msg)
+    -> ListCallsignsByFreqsReq
+    -> Cmd msg
+list_callsigns_by_freq_summary toMsg req =
+    Http.post
+        { url = "/api/sigint/freq/callsigns-summary"
+        , body = Http.jsonBody (listCallsignsByFreqsReqEncoder req)
+        , expect = leExpectJson toMsg (Decode.dict freqCallsignSummaryDecoder)
+        }
+
+
+list_callsign_priorities :
+    (Result ApiError (List FreqCallsignPriority) -> msg)
+    -> RerCallsignInfoBatchReq
+    -> Cmd msg
+list_callsign_priorities toMsg req =
+    Http.post
+        { url = "/api/sigint/freq/callsign-priorities"
+        , body = Http.jsonBody (rerCallsignInfoBatchReqEncoder req)
+        , expect = leExpectJson toMsg (Decode.list freqCallsignPriorityDecoder)
+        }
+
+
 type alias ListAltUnitsByFreqsRsp =
     Dict String (List FreqAltUnitMessageCount)
 

@@ -4,7 +4,7 @@ use crate::config::{
 };
 use crate::entities::{
     ai_agent_allowed_engine, ai_agent_settings, ai_agent_user_link, ai_engine,
-    login, secret_group_user,
+    login, organism, secret_group_user,
 };
 use crate::error::AppError;
 use crate::h;
@@ -99,10 +99,11 @@ where
         return Ok(false);
     }
     let human = login::Entity::find_by_id(human_login_id)
+        .find_also_related(organism::Entity)
         .one(dbx)
         .await
         .c(h!())?;
-    let Some(human) = human else {
+    let Some((human, organism)) = human else {
         return Ok(false);
     };
     if human.deleted
@@ -110,6 +111,10 @@ where
         || !has_rer_role(&human.roles)
         || agent.sigint_zone_id != human.sigint_zone_id
         || agent.organism_id != human.organism_id
+        || (human.organism_id.is_some()
+            && !organism.is_some_and(|organism| {
+                organism.enabled && !organism.deleted_permanently
+            }))
     {
         return Ok(false);
     }

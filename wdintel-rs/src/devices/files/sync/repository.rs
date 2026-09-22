@@ -1011,7 +1011,7 @@ fn ensure_open_explicit(
     Ok(())
 }
 
-fn map_session(
+pub(in crate::devices) fn map_session(
     session: file_sync_session::Model,
     analysis_run_id: Option<Uuid>,
 ) -> SyncSummary {
