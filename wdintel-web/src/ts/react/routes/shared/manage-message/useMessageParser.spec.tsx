@@ -270,6 +270,53 @@ describe('useMessageParser ownership', () => {
     expect(latest.methods.getValues('freq')).toBe('');
   });
 
+  it('reparses for a new signal group and ignores the previous group response', async () => {
+    vi.useFakeTimers();
+    let resolveFirst!: (value: DirectSubmitParseResponse) => void;
+    apiMocks.parseDirectSubmit
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(response({ freq: '151.000' }));
+    await mount(true);
+    await act(async () => {
+      latest.methods.setValue('signalGroupMasterKey', 'g-1');
+      await Promise.resolve();
+    });
+    await setSource('незмінний текст');
+    await act(async () => {
+      vi.advanceTimersByTime(700);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      latest.methods.setValue('signalGroupMasterKey', 'g-2');
+      await Promise.resolve();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(700);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      resolveFirst(response({ freq: '149.500' }));
+      await Promise.resolve();
+    });
+
+    expect(apiMocks.parseDirectSubmit).toHaveBeenCalledTimes(2);
+    expect(apiMocks.parseDirectSubmit).toHaveBeenNthCalledWith(1, {
+      full_body: 'незмінний текст',
+      signal_group_master_key: 'g-1',
+    });
+    expect(apiMocks.parseDirectSubmit).toHaveBeenNthCalledWith(2, {
+      full_body: 'незмінний текст',
+      signal_group_master_key: 'g-2',
+    });
+    expect(latest.methods.getValues('freq')).toBe('151.000');
+  });
+
   it('invalidates an in-flight response when the parser becomes inactive', async () => {
     let resolveParse!: (value: DirectSubmitParseResponse) => void;
     apiMocks.parseDirectSubmit.mockImplementationOnce(

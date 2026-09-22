@@ -61,6 +61,7 @@ export function useMessageParser(
   const onPristineSourceCleared = options?.onPristineSourceCleared;
 
   const fullBody = watch('full_body');
+  const signalGroupMasterKey = watch('signalGroupMasterKey');
   const latestRequestIdRef = useRef(0);
   const parserActiveRef = useRef(parserActive);
   const parseInFlightRef = useRef(false);
@@ -75,6 +76,7 @@ export function useMessageParser(
     parseInFlightRef.current = false;
   }
   const observedBodyRef = useRef(fullBody ?? '');
+  const observedSignalGroupRef = useRef(signalGroupMasterKey ?? '');
   const lastParsedBodyRef = useRef<string | null>(null);
 
   const publishFeedback = useCallback((result: ParserReconcileResult) => {
@@ -162,6 +164,24 @@ export function useMessageParser(
     [autoParseEnabled, busy, getValues, onPristineSourceCleared, parserActive],
   );
 
+  const handleSignalGroupChange = useCallback(
+    (groupMasterKey: string, rawBody: string) => {
+      if (groupMasterKey === observedSignalGroupRef.current) return false;
+
+      observedSignalGroupRef.current = groupMasterKey;
+      latestRequestIdRef.current += 1;
+      parseInFlightRef.current = false;
+      lastParsedBodyRef.current = null;
+      setBodyRevision((revision) => revision + 1);
+      setParsing(false);
+      setParseStatus(
+        rawBody.trim() && parserActive && autoParseEnabled && !busy ? 'debouncing' : 'idle',
+      );
+      return true;
+    },
+    [autoParseEnabled, busy, parserActive],
+  );
+
   const handleParse = useCallback(async () => {
     if (busy || parseInFlightRef.current || !parserActiveRef.current) return;
     const currentRawBody = getValues('full_body') ?? '';
@@ -220,6 +240,7 @@ export function useMessageParser(
     ownershipRef.current = createParserOwnershipState();
     hasManualFormChangesRef.current = false;
     observedBodyRef.current = getValues('full_body') ?? '';
+    observedSignalGroupRef.current = getValues('signalGroupMasterKey') ?? '';
     lastObservedFormRef.current = copyFormValues(getValues());
     lastParsedBodyRef.current = null;
     setParsing(false);
@@ -230,6 +251,7 @@ export function useMessageParser(
   useEffect(() => {
     const rawBody = fullBody ?? '';
     if (handleBodyChange(rawBody)) return;
+    if (handleSignalGroupChange(signalGroupMasterKey ?? '', rawBody)) return;
 
     const trimmed = rawBody.trim();
     if (!trimmed) {
@@ -253,12 +275,14 @@ export function useMessageParser(
     return () => window.clearTimeout(timer);
   }, [
     fullBody,
+    signalGroupMasterKey,
     bodyRevision,
     parserActive,
     autoParseEnabled,
     busy,
     parsing,
     handleBodyChange,
+    handleSignalGroupChange,
     handleParse,
     debounceMs,
   ]);
