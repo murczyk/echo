@@ -39,7 +39,9 @@ type alias Model =
     , locationTexts : Dict String TextLocation
     , openMapRowId : Maybe String
     , callsignsByFreq : Api.ListCallsignsByFreqsRsp
+    , callsignListRequests : Set.Set String
     , callsignSummaries : Api.ListCallsignsByFreqsSummaryRsp
+    , callsignSummaryRequestIds : Dict String Int
     , altUnitsByFreq : Api.ListAltUnitsByFreqsRsp
     , altUnitsRequestId : Int
     , callsignsInfo : Dict String (List B.CallsignInfo)

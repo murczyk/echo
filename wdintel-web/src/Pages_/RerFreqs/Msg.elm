@@ -30,7 +30,7 @@ type Msg
     | MapClose String
     | PointsByFreqReturnedByApi String (Result ApiError B.ListPointsByFreqRsp)
     | CallsignsByFreqsReturnedByApi Int String (Result ApiError Api.ListCallsignsByFreqsRsp)
-    | CallsignSummariesReturnedByApi Int (Result ApiError Api.ListCallsignsByFreqsSummaryRsp)
+    | CallsignSummariesReturnedByApi Int Int (List String) (Result ApiError Api.ListCallsignsByFreqsSummaryRsp)
     | AltUnitsByFreqReturnedByApi Int Bool (Result ApiError Api.ListAltUnitsByFreqsRsp)
     | GroupsMessageCountByDayReturnedByApi Int (Result ApiError GroupsActivityPerDayRsp)
     | CallsignsInfoReturnedByApi Int (List String) (Result ApiError (List B.CallsignInfoRes))

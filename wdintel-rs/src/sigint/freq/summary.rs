@@ -1,17 +1,14 @@
-use super::{load_callsign_priority_unit_ids, types::FreqCallsignSummary};
-use crate::entities::{sigint_network, sigint_network_freq, sigint_unit};
+use super::{
+    load_callsign_priority_unit_ids, load_freq_networks,
+    types::FreqCallsignSummary,
+};
+use crate::entities::sigint_unit;
 use crate::h;
 use crate::rer_importer::callsigns::callsign_match_key;
 use crate::sigint::network::bl::get_networks_units;
 use crate::types::ShortContext;
 use sea_orm::*;
 use std::collections::{BTreeSet, HashMap, HashSet};
-
-#[derive(FromQueryResult)]
-struct FreqNetworkId {
-    freq: String,
-    network_id: i64,
-}
 
 #[derive(FromQueryResult)]
 struct PreviewUnit {
@@ -41,7 +38,6 @@ impl PreviewUnit {
 
 struct PreviewContext {
     catalog_unit_ids: HashMap<String, Vec<i64>>,
-    catalog_unit_ids_unique: HashSet<i64>,
     network_unit_ids_by_freq: HashMap<String, Vec<i64>>,
     units: HashMap<i64, PreviewUnit>,
 }
@@ -120,7 +116,6 @@ async fn load_context(
     };
     Ok(PreviewContext {
         catalog_unit_ids,
-        catalog_unit_ids_unique,
         network_unit_ids_by_freq,
         units,
     })
@@ -130,41 +125,26 @@ async fn load_network_unit_ids_by_freq<'a>(
     dbx: &DatabaseConnection,
     freqs: impl Iterator<Item = &'a String>,
 ) -> anyhow::Result<HashMap<String, Vec<i64>>> {
-    let rows = sigint_network_freq::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            sigint_network_freq::Relation::SigintNetwork.def(),
-        )
-        .select_only()
-        .column(sigint_network_freq::Column::Freq)
-        .column(sigint_network_freq::Column::NetworkId)
-        .filter(sigint_network_freq::Column::Freq.is_in(freqs.cloned()))
-        .filter(sigint_network_freq::Column::Deleted.eq(false))
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .filter(
-            Condition::any()
-                .add(sigint_network::Column::ActiveTo.is_null())
-                .add(sigint_network_freq::Column::ActiveTo.is_null()),
-        )
-        .into_model::<FreqNetworkId>()
-        .all(dbx)
+    let networks_by_freq = load_freq_networks(dbx, freqs.cloned().collect())
         .await
         .c(h!())?;
-    let network_ids = rows
-        .iter()
-        .map(|row| row.network_id)
+    let network_ids = networks_by_freq
+        .values()
+        .flat_map(|rows| rows.iter().map(|row| row.id))
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
     let unit_ids_by_network =
         get_networks_units(dbx, &network_ids).await.c(h!())?;
     let mut unit_ids_by_freq = HashMap::<String, Vec<i64>>::new();
-    for row in rows {
-        if let Some(unit_ids) = unit_ids_by_network.get(&row.network_id) {
-            unit_ids_by_freq
-                .entry(row.freq)
-                .or_default()
-                .extend(unit_ids.iter().copied());
+    for (freq, rows) in networks_by_freq {
+        for row in rows {
+            if let Some(unit_ids) = unit_ids_by_network.get(&row.id) {
+                unit_ids_by_freq
+                    .entry(freq.clone())
+                    .or_default()
+                    .extend(unit_ids.iter().copied());
+            }
         }
     }
     Ok(unit_ids_by_freq)
@@ -182,8 +162,14 @@ fn ranked_preview(
         .flat_map(|ids| ids.iter())
         .filter_map(|id| context.units.get(id))
         .collect::<Vec<_>>();
-    let related_unit_ids = context
-        .catalog_unit_ids_unique
+    let unit_ids_for_freq = callsigns
+        .iter()
+        .filter_map(|callsign| {
+            context.catalog_unit_ids.get(&callsign_match_key(callsign))
+        })
+        .flat_map(|ids| ids.iter().copied())
+        .collect::<HashSet<_>>();
+    let related_unit_ids = unit_ids_for_freq
         .iter()
         .filter_map(|id| context.units.get(id))
         .filter(|unit| {
@@ -228,9 +214,8 @@ fn is_related(left: &PreviewUnit, right: &PreviewUnit) -> bool {
 fn is_child_of(parent: &PreviewUnit, child: &PreviewUnit) -> bool {
     let parent_levels = parent.levels();
     let child_levels = child.levels();
-    let parent_last =
-        parent_levels.iter().rev().find(|level| !level.is_empty());
-    let child_last = child_levels.iter().rev().find(|level| !level.is_empty());
+    let parent_last = parent_levels.iter().rposition(|level| !level.is_empty());
+    let child_last = child_levels.iter().rposition(|level| !level.is_empty());
     matches!((parent_last, child_last), (Some(parent), Some(child)) if child > parent)
         && parent_levels
             .iter()
@@ -256,17 +241,17 @@ mod tests {
     }
 
     #[test]
-    fn preview_prioritizes_related_units_and_preserves_name_order_for_ties() {
-        let units = [unit(1, "A", ""), unit(2, "A", "B"), unit(3, "C", "D")]
-            .into_iter()
-            .map(|unit| (unit.id, unit))
-            .collect();
+    fn issue_3566_preview_prioritizes_related_units_by_depth() {
+        let units =
+            [unit(1, "58", ""), unit(2, "58", "42"), unit(3, "60", "55")]
+                .into_iter()
+                .map(|unit| (unit.id, unit))
+                .collect();
         let context = PreviewContext {
             catalog_unit_ids: HashMap::from([
                 ("bravo".into(), vec![3]),
                 ("charlie".into(), vec![2]),
             ]),
-            catalog_unit_ids_unique: HashSet::from([2, 3]),
             network_unit_ids_by_freq: HashMap::from([("123".into(), vec![1])]),
             units,
         };

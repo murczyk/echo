@@ -54,6 +54,12 @@ getCallsignHintsNew freq networks params callsign =
 -}
 sortCallsignsNew : String -> Dict Int B.Network -> Params a -> List ( HintStrategy.HintResult, String )
 sortCallsignsNew freq networksDict params =
+    callsignsWithHintsForFreq freq networksDict params
+        |> List.sortWith sortByPrioNew
+
+
+callsignsWithHintsForFreq : String -> Dict Int B.Network -> Params a -> List ( HintStrategy.HintResult, String )
+callsignsWithHintsForFreq freq networksDict params =
     let
         networksForFreq =
             Dict.filter
@@ -62,7 +68,6 @@ sortCallsignsNew freq networksDict params =
     in
     params.callsigns
         |> List.map (\callsign -> ( getCallsignHintsNew freq networksForFreq params callsign, callsign ))
-        |> List.sortWith sortByPrioNew
 
 
 sortCallsignsForPreview : String -> Dict Int B.Network -> Dict Int B.Unit -> Dict String (List Int) -> List String -> Maybe (List String)
@@ -185,7 +190,12 @@ view viewParams pageSpecific =
                     sortCallsigns2New network { viewParams | callsigns = callsigns }
 
         sortedPreview =
-            sortCallsigns (Maybe.withDefault viewParams.callsigns viewParams.previewCallsigns)
+            case ( pageSpecific, viewParams.previewCallsigns ) of
+                ( FreqsPage freq networksDict, Just preview ) ->
+                    callsignsWithHintsForFreq freq networksDict { viewParams | callsigns = preview }
+
+                _ ->
+                    sortCallsigns (Maybe.withDefault viewParams.callsigns viewParams.previewCallsigns)
 
         sortedPopup =
             if viewParams.isOpened && not viewParams.isLoading then
@@ -209,7 +219,7 @@ view viewParams pageSpecific =
                 |> List.partition hasUnits
     in
     div []
-        [ if viewParams.previewCallsigns == Just [] && not (List.isEmpty viewParams.callsigns) then
+        [ if viewParams.totalCount > 0 && viewParams.previewCallsigns == Just [] && not (List.isEmpty viewParams.callsigns) then
             div [] [ text "Завантаження позивних..." ]
 
           else
