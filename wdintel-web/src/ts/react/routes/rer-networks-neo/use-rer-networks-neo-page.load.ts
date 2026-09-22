@@ -34,6 +34,7 @@ import { redirectToLogin } from '../../auth-redirect';
 import type { SelectedSidebarUnitFilter } from '../rer-callsigns-neo/types';
 
 type LoadArgs = {
+  radioFeaturesAllowed: boolean;
   unitId?: number;
   tableStateContext: {
     globalFilter: string;
@@ -202,7 +203,7 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
             listAors({ sortBy: null }),
             args.unitId ? Promise.resolve([]) : getNetworkUnitStats(),
             listPosts(),
-            getEncryptions(),
+            args.radioFeaturesAllowed ? getEncryptions() : Promise.resolve([]),
           ])
         : null;
       const networksPromise = listNetworks(req, { signal: controller.signal });

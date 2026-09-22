@@ -1,3 +1,4 @@
+import { useRadioFeatures } from '../../shared/RadioFeatures';
 import {
   Box,
   Button,
@@ -291,9 +292,10 @@ export function NetworkCallsignDrawer({
   onSave,
   disableRestoreFocus = false,
 }: Props) {
+  const radioFeaturesAllowed = useRadioFeatures();
   const titleId = 'network-callsign-drawer-title';
   const sourceId = form?.sourceId ?? null;
-  const isRoSource = sourceId === NetworkCallsignSourceId.RO;
+  const isRoSource = radioFeaturesAllowed && sourceId === NetworkCallsignSourceId.RO;
   const [radioFreqTouched, setRadioFreqTouched] = useState(false);
   const [sourceTouched, setSourceTouched] = useState(false);
   const [unitTouched, setUnitTouched] = useState(false);

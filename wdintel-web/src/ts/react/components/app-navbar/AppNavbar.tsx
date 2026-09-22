@@ -16,7 +16,7 @@ import { ChangelogDropdown } from './ChangelogDropdown';
 import { ProfileDropdown } from './ProfileDropdown';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { fetchUserSettings, USER_SETTINGS_UPDATED_EVENT } from '../../services/api/user-settings';
-import { canReadDevices, hasRole, hasRerOrCyber } from '../../utils/roles';
+import { canReadDevices, canUseRadioFeatures, hasRole, hasRerOrCyber } from '../../utils/roles';
 
 function filterTranscriptionSettings(items: Menu[], enabled: boolean): Menu[] {
   return items.flatMap<Menu>((item): Menu[] => {
@@ -242,7 +242,10 @@ export function AppNavbar({
   const databaseMenuSubs = getDatabaseSubs({
     includeRerItems: serverModeIsLive && isRerOrCyber,
     includeDevicesItem: devicesMenuIsVisible,
-  });
+  }).filter(
+    (item) =>
+      item.type !== 'item' || item.activeName !== 'rer-freqs' || canUseRadioFeatures(user?.roles),
+  );
 
   const goiMenuIsVisible = serverModeIsLive && isRerOrCyber && user.goiIntegrations?.length > 0;
   const visibleAdminSubs = filterTranscriptionSettings(

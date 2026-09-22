@@ -130,7 +130,10 @@ export function AnalysisSidebar({
   showNarrowCloseButton = true,
 }: Props) {
   const isSidebarVisible = rightPanelOpen;
-  const sidebarTabs = getAnalysisSidebarTabs(analysisMapInSidebar);
+  const sidebarTabs = getAnalysisSidebarTabs(
+    analysisMapInSidebar,
+    queryState.radioFeaturesAllowed !== false,
+  );
   const sidebarTab = analysisMapInSidebar || rightSidebarTab !== 'map' ? rightSidebarTab : 'stats';
   const selectedFreq = queryState.freqsSelected[0] ?? null;
   const keepMapPaneMounted = analysisMapInSidebar && isSidebarVisible;

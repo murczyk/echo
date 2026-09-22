@@ -299,6 +299,7 @@ export function useAnalysisFilterSections({
 
   const loadFilterSection = useCallback(
     async (section: AnalysisFilterSectionId) => {
+      if (queryState.radioFeaturesAllowed === false && section === 'metadata') return;
       const analysisReq = buildAnalysisReq(queryState, optionsFreqValues);
       if (isNullOrUndefined(analysisReq)) return;
       const sectionAnalysisReq = buildAnalysisReqForFilterSection(section, analysisReq);
@@ -402,6 +403,7 @@ export function useAnalysisFilterSections({
 
       await Promise.all(
         sections.map(async (section) => {
+          if (queryState.radioFeaturesAllowed === false && section === 'metadata') return;
           const sectionKey = filterSectionCacheKey(section, analysisReq);
           if (loadedFilterSectionKeyRef.current[section] === sectionKey) return;
           if (inFlightFilterSectionKeysRef.current.get(section) === sectionKey) return;

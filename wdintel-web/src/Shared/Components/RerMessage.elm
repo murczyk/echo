@@ -1437,6 +1437,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                             [ i [ class "bi bi-box-arrow-up-right cursor-pointer text-action text-sm", title "Відкрити частоту на мапі в окремому вікні" ] [] ]
                         ]
                   in
+                  HtmlX.viewIf (Core.Auth.canUseRadioFeatures vps.user) <|
                   itemBlock { label = message.freq, iconName = "bi-broadcast", iconTitle = "Частота" } actionsBlock
                 , itemBlock { iconTitle = "Координати", iconName = "bi-geo", label = message.coords } []
                 , itemBlock { iconTitle = "Локація", iconName = "bi-geo-alt", label = message.location } []
@@ -1533,7 +1534,11 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                 ]
 
         metadataLinks =
-            Pages_.RerAnalysis.Utils.buildMetadataLinks vps.zone message
+            if Core.Auth.canUseRadioFeatures vps.user then
+                Pages_.RerAnalysis.Utils.buildMetadataLinks vps.zone message
+
+            else
+                []
 
         markedTextModel =
             message.textMarked

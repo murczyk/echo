@@ -1,6 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
+import { RadioFeaturesProvider } from '../../../RadioFeatures';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import type { ComponentProps, ElementType, ReactNode } from 'react';
@@ -695,12 +696,16 @@ async function renderCard(
 
   await act(async () => {
     root.render(
-      <AudioTranscriptionPreferencesProvider
-        collapsedByDefault={options.audioTranscriptionCollapsed ?? false}
-        enabled={options.audioTranscriptionEnabled ?? true}
-      >
-        <MessageCard {...props} />
-      </AudioTranscriptionPreferencesProvider>,
+      <RadioFeaturesProvider allowed>
+        {
+          <AudioTranscriptionPreferencesProvider
+            collapsedByDefault={options.audioTranscriptionCollapsed ?? false}
+            enabled={options.audioTranscriptionEnabled ?? true}
+          >
+            <MessageCard {...props} />
+          </AudioTranscriptionPreferencesProvider>
+        }
+      </RadioFeaturesProvider>,
     );
   });
 
@@ -769,13 +774,15 @@ async function renderHeader(
       </div>
     );
     root.render(
-      metadataOverrides.useMessageDeviceAccessProvider === false ? (
-        content
-      ) : (
-        <MessageDeviceAccessProvider allowed={metadataOverrides.canUseMessageDevices ?? true}>
-          {content}
-        </MessageDeviceAccessProvider>
-      ),
+      <RadioFeaturesProvider allowed>
+        {metadataOverrides.useMessageDeviceAccessProvider === false ? (
+          content
+        ) : (
+          <MessageDeviceAccessProvider allowed={metadataOverrides.canUseMessageDevices ?? true}>
+            {content}
+          </MessageDeviceAccessProvider>
+        )}
+      </RadioFeaturesProvider>,
     );
   });
 
@@ -1747,9 +1754,13 @@ describe('MessageCard', () => {
 
     await act(async () => {
       view.root.render(
-        <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
-          <MessageCard {...view.props} messageTextPreviewLines={40} />
-        </AudioTranscriptionPreferencesProvider>,
+        <RadioFeaturesProvider allowed>
+          {
+            <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
+              <MessageCard {...view.props} messageTextPreviewLines={40} />
+            </AudioTranscriptionPreferencesProvider>
+          }
+        </RadioFeaturesProvider>,
       );
     });
 
@@ -2306,7 +2317,11 @@ describe('MessageCard', () => {
     ).toBeNull();
 
     await act(async () => {
-      view.root.render(<MessageCardHeader {...view.headerProps!} onEditDetails={vi.fn()} />);
+      view.root.render(
+        <RadioFeaturesProvider allowed>
+          {<MessageCardHeader {...view.headerProps!} onEditDetails={vi.fn()} />}
+        </RadioFeaturesProvider>,
+      );
     });
     const updatedHeaderRow = view.container.querySelector<HTMLElement>(
       '[data-message-card-header-row="true"]',
@@ -3086,9 +3101,13 @@ describe('MessageCard', () => {
 
     await act(async () => {
       view.root.render(
-        <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
-          <MessageCard {...view.props} messageTextPreviewLines={40} />
-        </AudioTranscriptionPreferencesProvider>,
+        <RadioFeaturesProvider allowed>
+          {
+            <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
+              <MessageCard {...view.props} messageTextPreviewLines={40} />
+            </AudioTranscriptionPreferencesProvider>
+          }
+        </RadioFeaturesProvider>,
       );
     });
 
@@ -4518,9 +4537,13 @@ describe('MessageCard', () => {
 
       await act(async () => {
         view.root.render(
-          <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
-            <MessageCard {...nextProps} />
-          </AudioTranscriptionPreferencesProvider>,
+          <RadioFeaturesProvider allowed>
+            {
+              <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
+                <MessageCard {...nextProps} />
+              </AudioTranscriptionPreferencesProvider>
+            }
+          </RadioFeaturesProvider>,
         );
       });
 
@@ -4579,9 +4602,13 @@ describe('MessageCard', () => {
 
       await act(async () => {
         view.root.render(
-          <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
-            <MessageCard {...nextProps} />
-          </AudioTranscriptionPreferencesProvider>,
+          <RadioFeaturesProvider allowed>
+            {
+              <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
+                <MessageCard {...nextProps} />
+              </AudioTranscriptionPreferencesProvider>
+            }
+          </RadioFeaturesProvider>,
         );
       });
 
@@ -4657,9 +4684,13 @@ describe('MessageCard', () => {
 
       await act(async () => {
         view.root.render(
-          <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
-            <MessageCard {...nextProps} />
-          </AudioTranscriptionPreferencesProvider>,
+          <RadioFeaturesProvider allowed>
+            {
+              <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
+                <MessageCard {...nextProps} />
+              </AudioTranscriptionPreferencesProvider>
+            }
+          </RadioFeaturesProvider>,
         );
       });
 

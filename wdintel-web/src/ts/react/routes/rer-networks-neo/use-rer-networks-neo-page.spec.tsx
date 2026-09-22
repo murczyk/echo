@@ -466,60 +466,82 @@ describe('useRerNetworksNeoPage', () => {
     expect(apiMock.listNetworks).toHaveBeenCalledTimes(1);
   });
 
-  it('creates a network without frequency when non-RER interceptions are enabled', async () => {
-    apiMock.currentSystemSettings.mockResolvedValueOnce({
-      id: 1,
-      rerAnalysisUnitsExactMatchOnlyDefault: false,
-      rerDutyTestEnabled: false,
-      rerDutyInsertHistoricalInterceptions: false,
-      rerDutyTestSinceMs: 0,
-      rerDutyTestLimit: 0,
-      rerDutyPollIntervalSec: 0,
-      rerShortUrlEnabled: false,
-      supportNonRerInterceptions: true,
-    });
+  it.each([
+    { roles: ['Rer', 'UnitsEditor'], supportNonRerInterceptions: true },
+    { roles: ['Cyber', 'UnitsEditor'], supportNonRerInterceptions: false },
+  ])(
+    '#3568 creates without frequency for $roles with supportNonRerInterceptions=$supportNonRerInterceptions',
+    async ({ roles, supportNonRerInterceptions }) => {
+      authUserRoles = roles;
+      apiMock.currentSystemSettings.mockResolvedValueOnce({
+        id: 1,
+        rerAnalysisUnitsExactMatchOnlyDefault: false,
+        rerDutyTestEnabled: false,
+        rerDutyInsertHistoricalInterceptions: false,
+        rerDutyTestSinceMs: 0,
+        rerDutyTestLimit: 0,
+        rerDutyPollIntervalSec: 0,
+        rerShortUrlEnabled: false,
+        supportNonRerInterceptions,
+      });
 
+      await renderHook();
+      await flushEffects();
+
+      await act(async () => {
+        latest?.setCreateDialog({
+          id: null,
+          name: 'Радіомережа без частоти',
+          location: 'Київ',
+          radioStation: '',
+          purpose: 'для управління підлеглим особовим складом',
+          operationMode: 'дуплекс',
+          operationType: 'ведення службового радіообміну',
+          operationPeriod: 'цілодобово',
+          doNotArchive: false,
+          unitMask: [],
+          status: NETWORK_STATUS_ACTIVE,
+          aorIds: [1],
+          unitIds: [1],
+          postIds: [],
+          freq: '',
+          modulation: 'DMR',
+          encryptionId: null,
+          activeFrom: '',
+          activeTo: '',
+          encryptionKeyIds: [],
+        });
+      });
+      await flushEffects();
+
+      await act(async () => {
+        await latest?.saveNetworkCreate();
+      });
+      await flushEffects();
+
+      expect(apiMock.createNetwork).toHaveBeenCalledWith(
+        expect.objectContaining({
+          freqs: null,
+          name: 'Радіомережа без частоти',
+        }),
+      );
+      expect(browserMock.navigateWithinSpa).toHaveBeenCalledWith('/rer-networks-neo/3');
+    },
+  );
+
+  it('#3568 ignores persisted frequency filters and sorting without erasing preferences', async () => {
+    authUserRoles = ['Cyber', 'UnitsEditor'];
+    tableStateMock.columnFilters = [{ id: 'freqs', value: '153.6250' }] as never;
+    tableStateMock.sorting = [{ id: 'freqs', desc: true }] as never;
     await renderHook();
     await flushEffects();
-
-    await act(async () => {
-      latest?.setCreateDialog({
-        id: null,
-        name: 'Радіомережа без частоти',
-        location: 'Київ',
-        radioStation: '',
-        purpose: 'для управління підлеглим особовим складом',
-        operationMode: 'дуплекс',
-        operationType: 'ведення службового радіообміну',
-        operationPeriod: 'цілодобово',
-        doNotArchive: false,
-        unitMask: [],
-        status: NETWORK_STATUS_ACTIVE,
-        aorIds: [1],
-        unitIds: [1],
-        postIds: [],
-        freq: '',
-        modulation: 'DMR',
-        encryptionId: null,
-        activeFrom: '',
-        activeTo: '',
-        encryptionKeyIds: [],
-      });
-    });
-    await flushEffects();
-
-    await act(async () => {
-      await latest?.saveNetworkCreate();
-    });
-    await flushEffects();
-
-    expect(apiMock.createNetwork).toHaveBeenCalledWith(
-      expect.objectContaining({
-        freqs: null,
-        name: 'Радіомережа без частоти',
-      }),
-    );
-    expect(browserMock.navigateWithinSpa).toHaveBeenCalledWith('/rer-networks-neo/3');
+    expect(apiMock.getEncryptions).not.toHaveBeenCalled();
+    for (const [request] of apiMock.listNetworks.mock.calls) {
+      expect(JSON.stringify(request)).not.toContain('153.6250');
+      expect(JSON.stringify(request)).not.toContain('freqs');
+    }
+    expect(tableStateMock.columnFilters).toEqual([{ id: 'freqs', value: '153.6250' }]);
+    expect(tableStateMock.sorting).toEqual([{ id: 'freqs', desc: true }]);
   });
 
   it('keeps backend row order when the server returns a custom sort', async () => {
@@ -534,7 +556,15 @@ describe('useRerNetworksNeoPage', () => {
     expect(latest?.rows.map((row) => row.id)).toEqual([2, 1]);
   });
 
-  it('refreshes an edited row with updated relations from the server', async () => {
+  it.each([
+    ['Rer', 'UnitsEditor'],
+    ['Cyber', 'UnitsEditor'],
+  ])('#3568 preserves hidden radio metadata when editing with %s', async (...roles) => {
+    authUserRoles = roles;
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(1, { radioStation: ' original station ' }), buildNetwork(2)],
+      statusCounts: { active: 7, inactive: 1, archived: 1 },
+    });
     await renderHook();
     await flushEffects();
 
@@ -543,7 +573,7 @@ describe('useRerNetworksNeoPage', () => {
         id: 1,
         name: 'Network 1',
         location: 'Location 1',
-        radioStation: '',
+        radioStation: ' updated station ',
         purpose: '',
         operationMode: '',
         operationType: '',
@@ -581,6 +611,7 @@ describe('useRerNetworksNeoPage', () => {
         id: 1,
         name: 'Network 1',
         location: 'Location 1',
+        radioStation: roles.includes('Rer') ? 'updated station' : ' original station ',
         areaOfResponsibilityIds: [1],
         status: NETWORK_STATUS_ACTIVE,
       }),

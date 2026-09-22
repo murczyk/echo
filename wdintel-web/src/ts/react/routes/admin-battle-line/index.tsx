@@ -51,7 +51,8 @@ import { PageHeader } from '../../components/PageHeader';
 import { PageLoadingState } from '../../components/PageLoadingState';
 import { BattleLineMap } from './BattleLineMap';
 import { NetworkUnitMap } from './NetworkUnitMap';
-import { canUseMessageDevices } from '../../utils/roles';
+import { RadioFeaturesProvider } from '../shared/RadioFeatures';
+import { canUseRadioFeatures, canUseMessageDevices } from '../../utils/roles';
 
 export type BattleLineTab = 'lbz' | 'networks' | 'unlinked' | 'unresolved';
 
@@ -547,6 +548,7 @@ export function AdminBattleLinePage() {
   const [state, setState] = useState<BattleLineState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [radioFeaturesAllowed, setRadioFeaturesAllowed] = useState(false);
   const [messageDeviceAccessAllowed, setMessageDeviceAccessAllowed] = useState(false);
   const loadSerialRef = useRef(0);
   const messageDeviceAccessSerialRef = useRef(0);
@@ -556,12 +558,16 @@ export function AdminBattleLinePage() {
     try {
       const [user, settings] = await Promise.all([fetchCurrentUser(), currentSystemSettings()]);
       if (messageDeviceAccessSerialRef.current === serial) {
+        setRadioFeaturesAllowed(canUseRadioFeatures(user.roles));
         setMessageDeviceAccessAllowed(
           canUseMessageDevices(user.roles, settings.devicesSectionEnabled),
         );
       }
     } catch {
-      if (messageDeviceAccessSerialRef.current === serial) setMessageDeviceAccessAllowed(false);
+      if (messageDeviceAccessSerialRef.current === serial) {
+        setMessageDeviceAccessAllowed(false);
+        setRadioFeaturesAllowed(false);
+      }
     }
   }, []);
   const reload = useCallback(async () => {
@@ -606,49 +612,51 @@ export function AdminBattleLinePage() {
     setTab(nextTab);
   };
   return (
-    <Stack spacing={2} sx={{ height: '100%', minHeight: 0 }}>
-      <PageHeader title="Карта" />
-      <Tabs
-        value={tab}
-        onChange={(_, value: BattleLineTab) => selectTab(value)}
-        variant="scrollable"
-      >
-        <Tab value="lbz" label="ЛБЗ" />
-        <Tab value="networks" label="Мережі" />
-        <Tab value="unlinked" label="ПЕРЕХОПЛЕННЯ БЕЗ НП" />
-        <Tab value="unresolved" label="НЕВИЗНАЧЕНІ ЛОКАЦІЇ" />
-      </Tabs>
-      <Divider />
-      <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-        {tab === 'lbz' ? (
-          state ? (
-            <LbzTab
-              state={state}
-              reload={reload}
-              canUseMessageDevices={messageDeviceAccessAllowed}
-            />
-          ) : loading ? (
-            <PageLoadingState />
-          ) : (
-            <Alert
-              severity="error"
-              action={<Button onClick={() => void reload()}>Повторити</Button>}
-            >
-              Не вдалося завантажити дані ЛБЗ
-            </Alert>
-          )
-        ) : null}
-        {tab === 'unlinked' ? (
-          <UnlinkedTab onError={setError} canUseMessageDevices={messageDeviceAccessAllowed} />
-        ) : null}
-        {tab === 'unresolved' ? <UnresolvedTab onError={setError} /> : null}
-        {tab === 'networks' ? <NetworksTab /> : null}
-      </Box>
-      <Snackbar open={error != null} autoHideDuration={8000} onClose={() => setError(null)}>
-        <Alert severity="error" onClose={() => setError(null)}>
-          {error}
-        </Alert>
-      </Snackbar>
-    </Stack>
+    <RadioFeaturesProvider allowed={radioFeaturesAllowed}>
+      <Stack spacing={2} sx={{ height: '100%', minHeight: 0 }}>
+        <PageHeader title="Карта" />
+        <Tabs
+          value={tab}
+          onChange={(_, value: BattleLineTab) => selectTab(value)}
+          variant="scrollable"
+        >
+          <Tab value="lbz" label="ЛБЗ" />
+          <Tab value="networks" label="Мережі" />
+          <Tab value="unlinked" label="ПЕРЕХОПЛЕННЯ БЕЗ НП" />
+          <Tab value="unresolved" label="НЕВИЗНАЧЕНІ ЛОКАЦІЇ" />
+        </Tabs>
+        <Divider />
+        <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+          {tab === 'lbz' ? (
+            state ? (
+              <LbzTab
+                state={state}
+                reload={reload}
+                canUseMessageDevices={messageDeviceAccessAllowed}
+              />
+            ) : loading ? (
+              <PageLoadingState />
+            ) : (
+              <Alert
+                severity="error"
+                action={<Button onClick={() => void reload()}>Повторити</Button>}
+              >
+                Не вдалося завантажити дані ЛБЗ
+              </Alert>
+            )
+          ) : null}
+          {tab === 'unlinked' ? (
+            <UnlinkedTab onError={setError} canUseMessageDevices={messageDeviceAccessAllowed} />
+          ) : null}
+          {tab === 'unresolved' ? <UnresolvedTab onError={setError} /> : null}
+          {tab === 'networks' ? <NetworksTab /> : null}
+        </Box>
+        <Snackbar open={error != null} autoHideDuration={8000} onClose={() => setError(null)}>
+          <Alert severity="error" onClose={() => setError(null)}>
+            {error}
+          </Alert>
+        </Snackbar>
+      </Stack>
+    </RadioFeaturesProvider>
   );
 }

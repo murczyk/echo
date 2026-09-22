@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InboxMessage } from '../../../../Bindings';
 import { transformCamelToSnake } from '../../../snake-to-camel';
 import { USER_SETTINGS_UPDATED_EVENT } from '../../services/api/user-settings';
+import { emptyFilter, pushStateToUrl } from './utils';
 import { useRerDutyFeeds } from './useRerDutyFeeds';
 import { minimalInboxMessage } from './inbox-message-mocks';
 
@@ -18,6 +19,7 @@ let requests: Request[];
 let items: Item[];
 let older: Item[];
 let newer: Item[];
+let radioFeaturesAllowed = true;
 
 function message(id: number, createdOffset: number, eventOffset: number): Item {
   return [
@@ -79,7 +81,7 @@ function responseFor(path: string, body: Record<string, unknown>): unknown {
 }
 
 function Harness() {
-  feeds = useRerDutyFeeds('reader', null, { status: 'allowed' });
+  feeds = useRerDutyFeeds('reader', null, { status: 'allowed' }, radioFeaturesAllowed);
   return null;
 }
 
@@ -105,6 +107,7 @@ function ids() {
 describe('Duty creation-time contract', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    radioFeaturesAllowed = true;
     requests = [];
     items = [message(9, 300, -60_000), message(7, 100, 60_000), message(2, 200, 0)];
     older = [];
@@ -137,6 +140,44 @@ describe('Duty creation-time contract', () => {
     container.remove();
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it('#3568 ignores restored frequency filters in every Duty request and preserves them for Rer', async () => {
+    radioFeaturesAllowed = false;
+    pushStateToUrl({
+      messageFeeds: [
+        [
+          'mf-0',
+          { ...emptyFilter(), freqsSelected: ['153.6250'], freqsDenied: ['153.6260'] },
+          { adjacentFreqsRange: 0.005 },
+        ],
+      ],
+    });
+    await mount();
+    await act(async () => {
+      await feeds.loadFeedOlderMessages('mf-0');
+    });
+    await act(async () => {
+      await feeds.loadFeedNewerMessages('mf-0');
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    await settle();
+    expect(requests.some(({ path }) => path.endsWith('/latest-frequencies'))).toBe(false);
+    const inboxRequests = requests.filter(
+      ({ path }) => path.endsWith('/get-inbox') || path.endsWith('/get-inbox-count'),
+    );
+    expect(inboxRequests.length).toBeGreaterThan(2);
+    for (const { body } of inboxRequests) {
+      expect(body).toMatchObject({
+        selected_freqs: null,
+        denied_freqs: null,
+        sort_by: 'IMSCreatedAt',
+      });
+    }
+    expect(feeds.messageFeeds[0].filter.freqsSelected).toEqual(['153.6250']);
+    expect(feeds.messageFeeds[0].filter.freqsDenied).toEqual(['153.6260']);
   });
 
   it('keeps creation order through pagination, buffering, and Analysis preference changes', async () => {

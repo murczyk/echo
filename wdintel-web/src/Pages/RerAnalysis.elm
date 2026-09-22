@@ -2,6 +2,8 @@ module Pages.RerAnalysis exposing (Model, Msg, init, page, update)
 
 import Api
 import Auth
+import Core.RadioFeatures
+import Core.Auth
 import Bindings as B
 import Config
 import Core.Callsigns.MessageHint as MessageHint
@@ -10,6 +12,7 @@ import Core.Types exposing (ApiError)
 import Date
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
+import Html.Extra
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onInput)
@@ -76,8 +79,8 @@ normalizeUnitNameFromMap unitName =
         trimmed
 
 
-init : Route () -> () -> ( Model, Effect Msg )
-init route _ =
+init : B.User -> Route () -> () -> ( Model, Effect Msg )
+init user route _ =
     let
         ms : Maybe B.RerAnalysisQueryState
         ms =
@@ -103,7 +106,8 @@ init route _ =
 
         model : Model
         model =
-            { formErrors = Dict.empty
+            { radioFeaturesAllowed = Core.Auth.canUseRadioFeatures user
+            , formErrors = Dict.empty
             , toasts = Shared.Components.Toast.init
             , from = Shared.Components.DateTime.init ()
             , to = Shared.Components.DateTime.init ()
@@ -344,6 +348,7 @@ getInboxReq model =
         ( selectedUnitIds, selectedLegacyUnits ) =
             Query.partitionUnitSelections (Query.normalizeUnitSelections model.unitsSelected)
     in
+    Core.RadioFeatures.inboxFilters model.radioFeaturesAllowed <|
     { sinceIdNoninclusive = Nothing
     , beforeIdNoninclusive = Nothing
     , aroundMessageRef = Nothing
@@ -455,7 +460,8 @@ cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
             ( selectedUnitIds, selectedLegacyUnits ) =
                 Query.partitionUnitSelections (Query.normalizeUnitSelections model.unitsSelected)
         in
-        E.getCallsignsGraph GotCallsignGraph
+        E.getCallsignsGraph GotCallsignGraph <|
+            Core.RadioFeatures.analysisFilters model.radioFeaturesAllowed <|
             { sinceDateInclusiveMs = Time.posixToMillis dtFromPosix
             , tillDateNoninclusiveMs = Time.posixToMillis dtToPosix
             , selectedGroups = emptyToNothing model.groupsSelected
@@ -593,7 +599,7 @@ removeMapPointsForMissingMessages requestedMessageIds messages mapPoints =
 
 loadMetadataStatsIfNeeded : Model -> Effect Msg
 loadMetadataStatsIfNeeded model =
-    case ( model.unfoldMetadataFilter, model.from.datePosix, model.to.datePosix ) of
+    case ( model.radioFeaturesAllowed && model.unfoldMetadataFilter, model.from.datePosix, model.to.datePosix ) of
         ( True, Just dtFromPosix, Just dtToPosix ) ->
             E.getMetadataStats GotStatsMetadata
                 (Query.analysisStatsParams dtFromPosix dtToPosix model)
@@ -627,7 +633,7 @@ loadSumTableOnly model =
                     Query.analysisStatsParams dtFromPosix dtToPosix model
 
                 loadingSumTable =
-                    not (Utils.Time.isMoreThanThresholdApart dtFromPosix dtToPosix)
+                    model.radioFeaturesAllowed && not (Utils.Time.isMoreThanThresholdApart dtFromPosix dtToPosix)
 
                 sumTable =
                     if loadingSumTable then
@@ -660,7 +666,7 @@ loadCoreStats model =
                     not (Utils.Time.isMoreThanThresholdApart dtFromPosix dtToPosix)
 
                 loadingSumTable =
-                    model.unfoldSumTable && not (Utils.Time.isMoreThanThresholdApart dtFromPosix dtToPosix)
+                    model.radioFeaturesAllowed && model.unfoldSumTable && not (Utils.Time.isMoreThanThresholdApart dtFromPosix dtToPosix)
 
                 cmdLoadSummaryTable isLoading =
                     if isLoading then
@@ -732,7 +738,7 @@ loadCoreStats model =
                                 ( { model | mapPoints = NeedsReload data }, E.none )
 
                 ( m3, eff3 ) =
-                    case ( m2.groupsMessageCountByDay, List.head m2.freqsSelected ) of
+                    case ( m2.groupsMessageCountByDay, if m2.radioFeaturesAllowed then List.head m2.freqsSelected else Nothing ) of
                         ( NotAsked, Just freq ) ->
                             if m2.unfoldGraphs then
                                 ( m2
@@ -864,7 +870,7 @@ loadInitialFilterStats model =
                     List.length model.callsignsSelected > 0
 
                 FreqsFilter ->
-                    List.length model.freqsSelected > 0
+                    model.radioFeaturesAllowed && List.length model.freqsSelected > 0
 
                 SendersFilter ->
                     List.length model.sendersSelected > 0
@@ -950,7 +956,7 @@ menuItemWithCount itemName count =
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
 page user shared req =
     Page.new
-        { init = init req
+        { init = init user req
         , update = update user shared req
         , view = view shared user req
         , subscriptions = subscriptions
@@ -2312,7 +2318,7 @@ update user shared route msg model =
                         m2 =
                             { model | unfoldGraphs = not model.unfoldGraphs }
                     in
-                    case ( m2.groupsMessageCountByDay, List.head m2.freqsSelected ) of
+                    case ( m2.groupsMessageCountByDay, if m2.radioFeaturesAllowed then List.head m2.freqsSelected else Nothing ) of
                         ( NotAsked, Just freq ) ->
                             if m2.unfoldGraphs then
                                 ( { m2 | groupsMessageCountByDay = Loading }
@@ -3804,7 +3810,7 @@ update user shared route msg model =
                         , reportTagsOnlyThisUnit = Just model.reportTagsOnlyThisUnitForReport
                         , tagReportSortBy =
                             if model.reportTemplate == RTTags then
-                                Just model.reportTagSortBySelect.selected
+                                Just (if model.radioFeaturesAllowed then model.reportTagSortBySelect.selected else B.ByTime)
 
                             else
                                 Nothing
@@ -4388,7 +4394,7 @@ update user shared route msg model =
             )
 
         GroupsActivityPeriodChanged period ->
-            case ( model.from.datePosix, model.to.datePosix, List.head model.freqsSelected ) of
+            case ( model.from.datePosix, model.to.datePosix, if model.radioFeaturesAllowed then List.head model.freqsSelected else Nothing ) of
                 ( Just dtFromPosix, Just dtToPosix, Just freq ) ->
                     let
                         sinceDate =
@@ -4492,10 +4498,10 @@ reportTemplateToApiType model template =
 
         RTSenders y ->
             if y == Senders then
-                Just (B.Senders { aggregation = B.ByProfile, advancedFreqs = model.reportAdvancedSenders })
+                Just (B.Senders { aggregation = B.ByProfile, advancedFreqs = model.radioFeaturesAllowed && model.reportAdvancedSenders })
 
             else
-                Just (B.Senders { aggregation = B.ByPost, advancedFreqs = model.reportAdvancedSenders })
+                Just (B.Senders { aggregation = B.ByPost, advancedFreqs = model.radioFeaturesAllowed && model.reportAdvancedSenders })
 
         RTNaUshnom ->
             Just B.Naushnom
@@ -4587,7 +4593,8 @@ editSidebarContent model =
                                     ]
                                     []
                                 ]
-                            , div []
+                            , Html.Extra.viewIf model.radioFeaturesAllowed <|
+                              div []
                                 [ label [ class "block text-sm font-medium mb-2" ] [ text "Частота" ]
                                 , input
                                     [ type_ "text"

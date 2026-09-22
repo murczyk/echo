@@ -443,7 +443,8 @@ view isDark _ model =
                 , withGreenCircle = False
                 }
                 tabFiltersSenders
-            , filterMenuBlockCountOutOf
+            , HtmlX.viewIf model.radioFeaturesAllowed <|
+                filterMenuBlockCountOutOf
                 { unfold = model.unfoldFreqsFilter
                 , toggleMsg = ToggleUnfoldFreqsFilter
                 , label = "частоти"
@@ -497,7 +498,8 @@ view isDark _ model =
                 , withGreenCircle = False
                 }
                 tabFiltersNetworks
-            , filterMenuBlock
+            , HtmlX.viewIf model.radioFeaturesAllowed <|
+                filterMenuBlock
                 { unfold = model.unfoldMetadataFilter
                 , toggleMsg = ToggleUnfoldMetadataFilter
                 , label = "метадані"
@@ -815,6 +817,7 @@ view isDark _ model =
                             , i [ class "bi-question-circle text-xs text-gray-500 dark:text-gray-400" ] []
                             ]
                         |> Shared.Components.Checkbox.view
+                        |> HtmlX.viewIf model.radioFeaturesAllowed
                     ]
                 ]
 

@@ -1,3 +1,4 @@
+import { useRadioFeatures } from '../../shared/RadioFeatures';
 import ClearOutlinedIcon from '@mui/icons-material/ClearOutlined';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import SearchOutlinedIcon from '@mui/icons-material/SearchOutlined';
@@ -139,19 +140,30 @@ export function NetworkCallsignRelationsGraph({
   const [selectedMessagesError, setSelectedMessagesError] = useState<string | null>(null);
   const [edgeDrilldownNodeId, setEdgeDrilldownNodeId] = useState<string | null>(null);
 
+  const radioFeaturesAllowed = useRadioFeatures();
   const graphView = useMemo(
     () =>
       buildNetworkCallsignRelationsGraphView(
         relations,
         relationsSearch,
-        relationsEnabledFreqs,
+        radioFeaturesAllowed ? relationsEnabledFreqs : relations.freqs.map((item) => item.freq),
         relationsMinIntensity,
       ),
-    [relations, relationsEnabledFreqs, relationsMinIntensity, relationsSearch],
+    [
+      relations,
+      relationsEnabledFreqs,
+      relationsMinIntensity,
+      relationsSearch,
+      radioFeaturesAllowed,
+    ],
   );
   const relationFreqState = useMemo(
-    () => buildNetworkCallsignRelationFreqState(relations, relationsEnabledFreqs),
-    [relations.edges, relations.freqs, relationsEnabledFreqs],
+    () =>
+      buildNetworkCallsignRelationFreqState(
+        relations,
+        radioFeaturesAllowed ? relationsEnabledFreqs : relations.freqs.map((item) => item.freq),
+      ),
+    [relations.edges, relations.freqs, relationsEnabledFreqs, radioFeaturesAllowed],
   );
   const legendFreqs = useMemo(() => graphView.freqs, [graphView.freqs]);
   const { availableFreqs, resolvedEnabledFreqs } = relationFreqState;
@@ -298,7 +310,7 @@ export function NetworkCallsignRelationsGraph({
             callsign: selection.callsign,
             source: selection.source,
             target: selection.target,
-            freqs: resolvedEnabledFreqs,
+            freqs: radioFeaturesAllowed ? resolvedEnabledFreqs : [],
             limit: 24,
           },
           { signal: controller.signal },
@@ -322,6 +334,7 @@ export function NetworkCallsignRelationsGraph({
     relationsSince,
     relationsTill,
     resolvedEnabledFreqs,
+    radioFeaturesAllowed,
     selectedMessageSelection?.callsign,
     selectedMessageSelection?.source,
     selectedMessageSelection?.target,
@@ -539,7 +552,9 @@ export function NetworkCallsignRelationsGraph({
               {totalIntensity} перехоплень
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              {contextDescription}
+              {radioFeaturesAllowed
+                ? contextDescription
+                : "Позивні, зв'язки та перехоплення за поточними фільтрами."}
             </Typography>
           </Stack>
         </Stack>
@@ -718,38 +733,40 @@ export function NetworkCallsignRelationsGraph({
                   >
                     Інтенсивність: {relationsMinIntensity}
                   </Button>
-                  <Button
-                    id={filterButtonId}
-                    type="button"
-                    variant="outlined"
-                    size="small"
-                    onClick={(event) => setFilterAnchorEl(event.currentTarget)}
-                    startIcon={<TuneOutlinedIcon />}
-                    sx={{
-                      borderRadius: 2,
-                      px: 1.1,
-                      py: 0.4,
-                      minWidth: 0,
-                      height: 32,
-                      textTransform: 'none',
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      color: 'text.secondary',
-                      borderColor: 'divider',
-                      '& .MuiButton-startIcon': { mr: 0.5 },
-                      '& .MuiSvgIcon-root': { fontSize: 16 },
-                      '&:hover': {
-                        color: 'text.primary',
-                        borderColor: 'text.secondary',
-                        bgcolor: 'action.hover',
-                      },
-                    }}
-                  >
-                    {formatRelationFreqButtonLabel(
-                      resolvedEnabledFreqs,
-                      availableFreqs.map((freq) => freq.freq),
-                    )}
-                  </Button>
+                  {radioFeaturesAllowed ? (
+                    <Button
+                      id={filterButtonId}
+                      type="button"
+                      variant="outlined"
+                      size="small"
+                      onClick={(event) => setFilterAnchorEl(event.currentTarget)}
+                      startIcon={<TuneOutlinedIcon />}
+                      sx={{
+                        borderRadius: 2,
+                        px: 1.1,
+                        py: 0.4,
+                        minWidth: 0,
+                        height: 32,
+                        textTransform: 'none',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        color: 'text.secondary',
+                        borderColor: 'divider',
+                        '& .MuiButton-startIcon': { mr: 0.5 },
+                        '& .MuiSvgIcon-root': { fontSize: 16 },
+                        '&:hover': {
+                          color: 'text.primary',
+                          borderColor: 'text.secondary',
+                          bgcolor: 'action.hover',
+                        },
+                      }}
+                    >
+                      {formatRelationFreqButtonLabel(
+                        resolvedEnabledFreqs,
+                        availableFreqs.map((freq) => freq.freq),
+                      )}
+                    </Button>
+                  ) : null}
                 </>
               ) : null}
             </Stack>

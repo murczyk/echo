@@ -9,6 +9,7 @@ export function useMessageParser(
   methods: UseFormReturn<MessageFormData>,
   busy: boolean,
   setErrorMsg: (msg: string | null) => void,
+  radioFeaturesAllowed = true,
 ) {
   const [parsing, setParsing] = useState(false);
   const { getValues, setValue } = methods;
@@ -42,7 +43,7 @@ export function useMessageParser(
         setValue(name, value, { shouldDirty: true, shouldValidate: true });
       };
       fillText('text', parsed.text);
-      fillText('freq', parsed.freq ?? '');
+      if (radioFeaturesAllowed) fillText('freq', parsed.freq ?? '');
       fillText(
         'coords',
         parsed.coords

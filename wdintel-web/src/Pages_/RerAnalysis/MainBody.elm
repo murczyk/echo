@@ -305,8 +305,8 @@ analysisFeaturesBlock model shared route =
             ]
     in
     div []
-        [ div [] (ifOrEmpty model.unfoldGraphs (Pages_.RerAnalysis.Graphs.graphsBlock model shared))
-        , div [ class "mb-2" ] (Pages_.RerAnalysis.SumTable.sumTableBlock model shared route)
+        [ div [] (ifOrEmpty (model.radioFeaturesAllowed && model.unfoldGraphs) (Pages_.RerAnalysis.Graphs.graphsBlock model shared))
+        , div [ class "mb-2" ] (ifOrEmpty model.radioFeaturesAllowed (Pages_.RerAnalysis.SumTable.sumTableBlock model shared route))
         , div
             (if model.unfoldCallsignGraph then
                 [ style "margin-bottom" "50px" ]
@@ -489,7 +489,8 @@ view user model shared route =
                     (ReportTemplateSelect RTTags)
                     "З донесенням"
                     "Простий перелік повідомлень разом з їх донесенням"
-                , templateCard
+                , HtmlX.viewIf model.radioFeaturesAllowed <|
+                  templateCard
                     (model.reportTemplate == RTPelengs)
                     (ReportTemplateSelect RTPelengs)
                     "Пеленги"
@@ -514,7 +515,8 @@ view user model shared route =
                     (ReportTemplateSelect RTPostsDocx)
                     "Пости"
                     "Docx-звіт з узагальненими метриками по постах"
-                , templateCard
+                , HtmlX.viewIf model.radioFeaturesAllowed <|
+                  templateCard
                     (model.reportTemplate == RTMouse)
                     (ReportTemplateSelect RTMouse)
                     "Мишка"
@@ -566,7 +568,8 @@ view user model shared route =
                             ]
                         ]
                     ]
-                , templateCard
+                , HtmlX.viewIf model.radioFeaturesAllowed <|
+                  templateCard
                     (model.reportTemplate == RTReo)
                     (ReportTemplateSelect RTReo)
                     "РЕО"
@@ -603,29 +606,33 @@ view user model shared route =
                     (ReportTemplateSelect ActiveNetworks)
                     "Активні радіомережі"
                     "Для генерування потрібні права редактора чи адміна"
-                , templateCard
+                , HtmlX.viewIf model.radioFeaturesAllowed <|
+                  templateCard
                     (model.reportTemplate == RTNetworkFrequencies)
                     (ReportTemplateSelect RTNetworkFrequencies)
                     "Частоти Радіомереж"
                     "Для генерування потрібні права редактора чи адміна. За обраний період: мережа, частота, активність та останній раз в етері"
-                , templateCard
+                , HtmlX.viewIf model.radioFeaturesAllowed <|
+                  templateCard
                     (model.reportTemplate == RTSummaryTable)
                     (ReportTemplateSelect RTSummaryTable)
                     "Підсумкова таблиця"
                     "XLSX-експорт підсумкової таблиці без обмеження в 1 тиждень"
-                , templateCard
+                , HtmlX.viewIf model.radioFeaturesAllowed <|
+                  templateCard
                     (model.reportTemplate == RTReport125)
                     (ReportTemplateSelect RTReport125)
                     "Звіт 1.2.5"
                     "Таблиця пеленгів із необов’язковим зазначенням об’єктів пеленгації за формою 1.2.5"
-                , templateCard
+                , HtmlX.viewIf model.radioFeaturesAllowed <|
+                  templateCard
                     (model.reportTemplate == RTReport1213)
                     (ReportTemplateSelect RTReport1213)
                     "Звіт 1.2.13"
                     "Стислий звіт по радіомережах з частотою, часом, позивним вузла та координатами"
                 ]
 
-            , HtmlX.viewIf (model.reportTemplate == RTTags) <|
+            , HtmlX.viewIf (model.radioFeaturesAllowed && model.reportTemplate == RTTags) <|
                 let
                     isDark =
                         isDarkMode shared.themeMode
@@ -689,7 +696,7 @@ view user model shared route =
                     ]
 
             -- Add adjacent-freqs range selector when RTReo is chosen
-            , HtmlX.viewIf (model.reportTemplate == RTReo) <|
+            , HtmlX.viewIf (model.radioFeaturesAllowed && model.reportTemplate == RTReo) <|
                 let
                     isDark =
                         isDarkMode shared.themeMode
@@ -730,7 +737,7 @@ view user model shared route =
                                 options2
                         )
                     ]
-            , HtmlX.viewIf (model.reportTemplate == RTReo) <|
+            , HtmlX.viewIf (model.radioFeaturesAllowed && model.reportTemplate == RTReo) <|
                 let
                     isDark =
                         isDarkMode shared.themeMode
@@ -777,7 +784,7 @@ view user model shared route =
                                 options2
                         )
                     ]
-            , HtmlX.viewIf (model.reportTemplate == RTReo) <|
+            , HtmlX.viewIf (model.radioFeaturesAllowed && model.reportTemplate == RTReo) <|
                 div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]
                     [ div [ class "form-check" ]
                         [ input
@@ -1028,7 +1035,8 @@ view user model shared route =
                                 [ text "шукати по постах"
                                 ]
                             ]
-                        , div [ class "form-check mt-2" ]
+                        , HtmlX.viewIf model.radioFeaturesAllowed <|
+                          div [ class "form-check mt-2" ]
                             [ input
                                 [ class "form-check-input"
                                 , type_ "checkbox"

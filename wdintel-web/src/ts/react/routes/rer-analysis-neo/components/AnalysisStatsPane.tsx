@@ -1,3 +1,4 @@
+import { useRadioFeatures } from '../../shared/RadioFeatures';
 import { Box, Stack } from '@mui/material';
 
 import type { AnalysisCountItem } from '../types';
@@ -63,6 +64,7 @@ export function AnalysisStatsPane({
   topNetworks,
   topUnits,
 }: Props) {
+  const radioFeaturesAllowed = useRadioFeatures();
   const selectedUnitKeys = selectedUnits.map(normalizeUnknownUnitDisplayValue);
 
   return (
@@ -79,15 +81,17 @@ export function AnalysisStatsPane({
         />
       </Box>
       <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
-        <AnalysisCountBlock
-          title="Частоти"
-          items={topFreqs}
-          loading={rightSidebarLoading}
-          onClearSelection={onClearFreq}
-          onItemAdd={onAddFreq}
-          onItemToggle={onToggleFreq}
-          selectedItemKeys={selectedFreqs}
-        />
+        {radioFeaturesAllowed ? (
+          <AnalysisCountBlock
+            title="Частоти"
+            items={topFreqs}
+            loading={rightSidebarLoading}
+            onClearSelection={onClearFreq}
+            onItemAdd={onAddFreq}
+            onItemToggle={onToggleFreq}
+            selectedItemKeys={selectedFreqs}
+          />
+        ) : null}
       </Box>
       <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
         <AnalysisCountBlock

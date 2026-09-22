@@ -1,6 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
+import { RadioFeaturesProvider } from '../../shared/RadioFeatures';
 import { act, Children, cloneElement, isValidElement } from 'react';
 import type { ComponentProps, ReactElement, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -326,7 +327,9 @@ async function renderComponent(
   document.body.appendChild(container);
   const root = createRoot(container);
   await act(async () => {
-    root.render(<AnalysisFiltersPanel {...props} />);
+    root.render(
+      <RadioFeaturesProvider allowed>{<AnalysisFiltersPanel {...props} />}</RadioFeaturesProvider>,
+    );
   });
   return { container, root };
 }
@@ -533,7 +536,11 @@ describe('AnalysisFiltersPanel', () => {
     });
 
     await act(async () => {
-      view.root.render(<AnalysisFiltersPanel {...buildPage()} />);
+      view.root.render(
+        <RadioFeaturesProvider allowed>
+          {<AnalysisFiltersPanel {...buildPage()} />}
+        </RadioFeaturesProvider>,
+      );
     });
 
     expect(
@@ -948,12 +955,16 @@ describe('AnalysisFiltersPanel', () => {
     loadFilterSection.mockClear();
     await act(async () => {
       view.root.render(
-        <AnalysisFiltersPanel
-          {...buildProps({
-            filtersLoading: false,
-            loadFilterSection,
-          })}
-        />,
+        <RadioFeaturesProvider allowed>
+          {
+            <AnalysisFiltersPanel
+              {...buildProps({
+                filtersLoading: false,
+                loadFilterSection,
+              })}
+            />
+          }
+        </RadioFeaturesProvider>,
       );
     });
 
@@ -1307,32 +1318,36 @@ describe('AnalysisFiltersPanel', () => {
 
     await act(async () => {
       view.root.render(
-        <AnalysisFiltersPanel
-          {...buildProps({
-            counts: {
-              countOverall: 0,
-              countSelected: 0,
-              groupsCount: 0,
-              sendersCount: 0,
-              freqsCount: 0,
-              callsignsCount: 0,
-              unitsCount: 0,
-              locationsCount: 0,
-              postsCount: 0,
-              tagsCount: 0,
-              aorsCount: 0,
-              networksCount: 0,
-              unitsExactMatchesCount: 0,
-              unitsNonExactMatchesCount: 0,
-            } as AnalysisPageState['counts'],
-            countsLoading: true,
-            queryState: {
-              ...emptyQueryState(),
-              unitsSelected: ['u1'],
-              unitsExactMatchOnly: null,
-            },
-          })}
-        />,
+        <RadioFeaturesProvider allowed>
+          {
+            <AnalysisFiltersPanel
+              {...buildProps({
+                counts: {
+                  countOverall: 0,
+                  countSelected: 0,
+                  groupsCount: 0,
+                  sendersCount: 0,
+                  freqsCount: 0,
+                  callsignsCount: 0,
+                  unitsCount: 0,
+                  locationsCount: 0,
+                  postsCount: 0,
+                  tagsCount: 0,
+                  aorsCount: 0,
+                  networksCount: 0,
+                  unitsExactMatchesCount: 0,
+                  unitsNonExactMatchesCount: 0,
+                } as AnalysisPageState['counts'],
+                countsLoading: true,
+                queryState: {
+                  ...emptyQueryState(),
+                  unitsSelected: ['u1'],
+                  unitsExactMatchOnly: null,
+                },
+              })}
+            />
+          }
+        </RadioFeaturesProvider>,
       );
     });
 

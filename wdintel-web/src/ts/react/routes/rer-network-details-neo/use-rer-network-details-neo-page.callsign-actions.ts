@@ -1,3 +1,4 @@
+import { canUseRadioFeatures } from '../../utils/roles';
 import { useCallback } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { NetworkFreqCallsignsPeriod } from '../../../../Bindings';
@@ -186,7 +187,10 @@ export function useRerNetworkDetailsNeoPageCallsignActions({
 
     if (!canManageCallsignActions || !network || !form || state.callsignDrawerSaving) return;
 
-    const validationError = getNetworkCallsignDrawerSaveError(form);
+    const validationError = getNetworkCallsignDrawerSaveError(
+      form,
+      canUseRadioFeatures(state.currentUser?.roles),
+    );
     if (validationError) {
       setState((current) => ({ ...current, callsignDrawerError: validationError }));
       return;
@@ -272,6 +276,7 @@ export function useRerNetworkDetailsNeoPageCallsignActions({
     state.callsignDrawerForm,
     state.callsignDrawerMode,
     state.callsignDrawerSaving,
+    state.currentUser,
     state.network,
   ]);
 

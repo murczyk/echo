@@ -1,3 +1,5 @@
+import { RadioFeaturesProvider } from '../shared/RadioFeatures';
+import { canUseRadioFeatures } from '../../utils/roles';
 import { Box, useMediaQuery, useTheme } from '@mui/material';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isPresent } from '../../utils/misc';
@@ -137,7 +139,13 @@ export function RerDutyNeoPage({
     [cancelReportEditLoad],
   );
   const previousFeedCountRef = useRef(0);
-  const feeds = useRerDutyFeeds(authUserName, currentUser?.organismId ?? null, deviceAccess);
+  const radioFeaturesAllowed = canUseRadioFeatures(currentUser?.roles);
+  const feeds = useRerDutyFeeds(
+    authUserName,
+    currentUser?.organismId ?? null,
+    deviceAccess,
+    radioFeaturesAllowed,
+  );
   const {
     messageFeeds,
     error,
@@ -400,93 +408,96 @@ export function RerDutyNeoPage({
   }, [dutyTabUnreadTotal]);
 
   return (
-    <Box
-      className="flex flex-col w-full min-h-0"
-      sx={{
-        zoom: narrowScreen ? DUTY_MOBILE_ROOT_ZOOM : 1,
-        height: narrowScreen
-          ? `calc((${DUTY_VIEWPORT_HEIGHT}) / ${DUTY_MOBILE_ROOT_ZOOM})`
-          : DUTY_VIEWPORT_HEIGHT,
-        '@supports (height: 100dvh)': {
+    <RadioFeaturesProvider allowed={radioFeaturesAllowed}>
+      <Box
+        className="flex flex-col w-full min-h-0"
+        sx={{
+          zoom: narrowScreen ? DUTY_MOBILE_ROOT_ZOOM : 1,
           height: narrowScreen
-            ? `calc((${DUTY_VIEWPORT_HEIGHT_DVH}) / ${DUTY_MOBILE_ROOT_ZOOM})`
-            : DUTY_VIEWPORT_HEIGHT_DVH,
-        },
-        minHeight: 0,
-        overflow: 'hidden',
-        position: 'relative',
-      }}
-    >
-      <Box className="flex items-center justify-between flex-wrap gap-2 mb-2 shrink-0" />
-
-      <PointBlacklistPaletteNamesCacheProvider>
-        <MessageDeviceAccessProvider allowed={cyberEchoEnabled}>
-          <AudioTranscriptionPreferencesProvider
-            collapsedByDefault={audioTranscriptionCollapsed}
-            enabled={audioTranscriptionEnabled}
-          >
-            <RerDutyNeoWorkspace
-              activeFeedId={activeFeedIdSafe}
-              buildFeedColumnModel={buildFeedColumnModel}
-              columnRefsRef={columnRefsRef}
-              createMessageFeed={createMessageFeed}
-              openCreateMessageComposer={openCreateMessageComposer}
-              isInitialLoading={isInitialLoading}
-              messageFeeds={messageFeeds}
-              narrowScreen={narrowScreen}
-              onSelectFeed={setActiveFeedId}
-              showLoadingBackdrop={showLoadingBackdrop}
-            />
-          </AudioTranscriptionPreferencesProvider>
-        </MessageDeviceAccessProvider>
-      </PointBlacklistPaletteNamesCacheProvider>
-
-      <ManageMessageDrawer
-        open={
-          createMessageOpen ||
-          isPresent(editTarget) ||
-          isPresent(reportSource) ||
-          editTargetLoadState.status !== 'idle'
-        }
-        cyberEchoEnabled={cyberEchoEnabled}
-        currentUser={currentUser}
-        editTarget={editTarget}
-        editAsReport={editAsReport}
-        editTargetLoadState={editTargetLoadState}
-        onRetryEditTargetLoad={() => {
-          if (editTargetLoadState.status !== 'idle') openReportEditor(editTargetLoadState.reportId);
+            ? `calc((${DUTY_VIEWPORT_HEIGHT}) / ${DUTY_MOBILE_ROOT_ZOOM})`
+            : DUTY_VIEWPORT_HEIGHT,
+          '@supports (height: 100dvh)': {
+            height: narrowScreen
+              ? `calc((${DUTY_VIEWPORT_HEIGHT_DVH}) / ${DUTY_MOBILE_ROOT_ZOOM})`
+              : DUTY_VIEWPORT_HEIGHT_DVH,
+          },
+          minHeight: 0,
+          overflow: 'hidden',
+          position: 'relative',
         }}
-        reportSource={reportSource}
-        onClose={closeMessageEditor}
-        onSubmitEdit={
-          editTarget && !editAsReport
-            ? async (messageId, message) => {
-                handleEditedMessage(messageId, message);
-              }
-            : undefined
-        }
-        onEditSuccess={() => {
-          if (editAsReport) {
-            reloadFeeds();
-          } else {
-            reloadEditedFeeds();
+      >
+        <Box className="flex items-center justify-between flex-wrap gap-2 mb-2 shrink-0" />
+
+        <PointBlacklistPaletteNamesCacheProvider>
+          <MessageDeviceAccessProvider allowed={cyberEchoEnabled}>
+            <AudioTranscriptionPreferencesProvider
+              collapsedByDefault={audioTranscriptionCollapsed}
+              enabled={audioTranscriptionEnabled}
+            >
+              <RerDutyNeoWorkspace
+                activeFeedId={activeFeedIdSafe}
+                buildFeedColumnModel={buildFeedColumnModel}
+                columnRefsRef={columnRefsRef}
+                createMessageFeed={createMessageFeed}
+                openCreateMessageComposer={openCreateMessageComposer}
+                isInitialLoading={isInitialLoading}
+                messageFeeds={messageFeeds}
+                narrowScreen={narrowScreen}
+                onSelectFeed={setActiveFeedId}
+                showLoadingBackdrop={showLoadingBackdrop}
+              />
+            </AudioTranscriptionPreferencesProvider>
+          </MessageDeviceAccessProvider>
+        </PointBlacklistPaletteNamesCacheProvider>
+
+        <ManageMessageDrawer
+          open={
+            createMessageOpen ||
+            isPresent(editTarget) ||
+            isPresent(reportSource) ||
+            editTargetLoadState.status !== 'idle'
           }
-        }}
-        onDeleteSuccess={() => {
-          reloadFeeds();
-          notify({ message: 'Розвіддонесення успішно видалено.', severity: 'success' });
-        }}
-        onCreated={handleCreatedMessage}
-      />
+          cyberEchoEnabled={cyberEchoEnabled}
+          currentUser={currentUser}
+          editTarget={editTarget}
+          editAsReport={editAsReport}
+          editTargetLoadState={editTargetLoadState}
+          onRetryEditTargetLoad={() => {
+            if (editTargetLoadState.status !== 'idle')
+              openReportEditor(editTargetLoadState.reportId);
+          }}
+          reportSource={reportSource}
+          onClose={closeMessageEditor}
+          onSubmitEdit={
+            editTarget && !editAsReport
+              ? async (messageId, message) => {
+                  handleEditedMessage(messageId, message);
+                }
+              : undefined
+          }
+          onEditSuccess={() => {
+            if (editAsReport) {
+              reloadFeeds();
+            } else {
+              reloadEditedFeeds();
+            }
+          }}
+          onDeleteSuccess={() => {
+            reloadFeeds();
+            notify({ message: 'Розвіддонесення успішно видалено.', severity: 'success' });
+          }}
+          onCreated={handleCreatedMessage}
+        />
 
-      <DeleteConfirmDialog
-        open={isPresent(deleteConfirmId)}
-        onClose={() => {
-          setDeleteConfirmId(null);
-          setDeleteConfirmFeedId(null);
-        }}
-        onConfirm={handleDeleteConfirm}
-      />
-    </Box>
+        <DeleteConfirmDialog
+          open={isPresent(deleteConfirmId)}
+          onClose={() => {
+            setDeleteConfirmId(null);
+            setDeleteConfirmFeedId(null);
+          }}
+          onConfirm={handleDeleteConfirm}
+        />
+      </Box>
+    </RadioFeaturesProvider>
   );
 }

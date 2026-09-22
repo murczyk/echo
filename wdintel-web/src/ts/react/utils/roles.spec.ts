@@ -3,6 +3,7 @@ import {
   canReadDevices,
   canUseMessageDevices,
   hasAnyRole,
+  canUseRadioFeatures,
   hasRerOrCyber,
   hasRole,
   resolveDevicesCapabilities,
@@ -36,6 +37,18 @@ describe('roles', () => {
     expect(hasRole(['Admin'], 'NoAutoLogout')).toBe(false);
     expect(hasRole(['No2FA'], 'No2FA')).toBe(true);
     expect(hasRole(['Admin'], 'No2FA')).toBe(false);
+  });
+
+  it.each([
+    [['Cyber'], false],
+    [['Cyber', 'UnitsEditor', 'NetworkEditor', 'CallsignsEditor'], false],
+    [['Rer'], true],
+    [['Rer', 'Cyber'], true],
+    [['Admin'], true],
+    [['Full', 'Cyber'], true],
+    [null, false],
+  ] as const)('#3568 resolves radio access for %j', (roles, expected) => {
+    expect(canUseRadioFeatures(roles)).toBe(expected);
   });
 
   it('#3568 admits Rer or Cyber while keeping their permissions distinct', () => {

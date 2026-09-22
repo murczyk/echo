@@ -1,3 +1,4 @@
+import { canUseRadioFeatures } from '../../utils/roles';
 import { useCallback, useEffect, useRef } from 'react';
 import type { Dispatch, SetStateAction, MutableRefObject } from 'react';
 import type {
@@ -638,7 +639,8 @@ export function useRerNetworkDetailsNeoPageLoad(
 
     const isCurrent = () => reloadGeneration.current === generation;
 
-    void fetchCurrentUser()
+    const currentUserPromise = fetchCurrentUser();
+    void currentUserPromise
       .then((currentUser) => {
         if (!isCurrent()) return;
         setState((current) => ({
@@ -736,7 +738,9 @@ export function useRerNetworkDetailsNeoPageLoad(
           getUnitsList(),
           listPosts(),
           listAors({ sortBy: null }),
-          getEncryptions(),
+          currentUserPromise.then((user) =>
+            canUseRadioFeatures(user.roles) ? getEncryptions() : [],
+          ),
           currentSystemSettings(),
         ]);
         if (!isCurrent()) return;

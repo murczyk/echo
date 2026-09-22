@@ -1,4 +1,4 @@
-module Core.Auth exposing (canReadDevices, hasRerOrCyber, hasRole, serverModeIs)
+module Core.Auth exposing (canReadDevices, canUseRadioFeatures, hasRerOrCyber, hasRole, serverModeIs)
 
 import Bindings as B exposing (User)
 
@@ -82,6 +82,11 @@ hasRole role user =
 hasRerOrCyber : User -> Bool
 hasRerOrCyber user =
     hasRole "Rer" user || hasRole "Cyber" user
+
+
+canUseRadioFeatures : User -> Bool
+canUseRadioFeatures user =
+    hasRole "Rer" user
 
 
 canReadDevices : User -> Bool

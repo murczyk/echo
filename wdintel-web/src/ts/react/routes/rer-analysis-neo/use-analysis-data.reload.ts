@@ -839,10 +839,10 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
             },
             params.signal ? { signal: params.signal } : undefined,
           );
-      const freqsPromise = fetchAnalysisFreqs(
-        analysisReq,
-        params.signal ? { signal: params.signal } : undefined,
-      );
+      const freqsPromise =
+        params.queryState.radioFeaturesAllowed === false
+          ? Promise.resolve({ freqs: [] })
+          : fetchAnalysisFreqs(analysisReq, params.signal ? { signal: params.signal } : undefined);
       void freqsPromise.catch(() => undefined);
 
       let inboxRsp: Awaited<ReturnType<typeof fetchInboxMessages>>;

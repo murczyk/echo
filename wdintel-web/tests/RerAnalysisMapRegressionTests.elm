@@ -12,6 +12,7 @@ import Pages_.RerDuty.Waterfall.Messages as WaterfallMessages
 import Route
 import Set
 import Shared
+import Time
 import Test exposing (Test, describe, test)
 import Url
 import Utils.RemoteData exposing (RemoteData(..))
@@ -52,7 +53,7 @@ suite =
                                     shared.user
 
                             ( model, _ ) =
-                                RerAnalysis.init route ()
+                                RerAnalysis.init user route ()
 
                             ( loadingModel, _ ) =
                                 RerAnalysis.update user shared route (LoadMessagesForMap [ 7 ]) model
@@ -105,7 +106,7 @@ suite =
                                     shared.user
 
                             ( model, _ ) =
-                                RerAnalysis.init route ()
+                                RerAnalysis.init user route ()
 
                             ( loadingModel, _ ) =
                                 RerAnalysis.update user shared route (LoadMessagesForMap [ 7 ]) model
@@ -122,6 +123,47 @@ suite =
                             [ \_ -> emptySuccessModel.mapOpenMessagesLoadRequestId |> Expect.equal 1
                             , \_ -> emptySuccessModel.mapOpenMessagesRequestId |> Expect.equal 0
                             , \_ -> emptySuccessModel.mapOpenMessages |> Expect.equal (Success [])
+                            ]
+                            ()
+        , test "#3568 ignores restored radio filters without erasing saved choices" <|
+            \_ ->
+                case Url.fromString "http://localhost/rer-analysis" of
+                    Nothing ->
+                        Expect.fail "invalid test url"
+
+                    Just url ->
+                        let
+                            user =
+                                { id = "cyber", name = "cyber", roles = [ "Cyber", "UnitsEditor" ], sigintZoneId = Nothing, organismId = Nothing, deltaLogin = Nothing, goiConfiguredForOrganism = False, goiFullAccessForOrganism = False, goiHost = Nothing, goiIntegrations = [], lastReleaseSeen = Nothing }
+
+                            ( initial, _ ) =
+                                RerAnalysis.init user (Route.fromUrl () url) ()
+
+                            defaults =
+                                Query.emptyQueryState
+
+                            saved =
+                                { defaults | freqsSelected = [ "153.6250" ], adjacentFreqsRange = 0.005, includePelengLocations = True, metadataCc = [ "3" ], onlyWithMetadata = True, search = "retained text" }
+
+                            restored =
+                                Query.updModelFromQueryState initial saved
+
+                            request =
+                                Query.analysisStatsParams (Time.millisToPosix 0) (Time.millisToPosix 1000) restored
+
+                            roundTrip =
+                                Query.modelQueryState restored
+                        in
+                        Expect.all
+                            [ \_ -> Expect.equal Nothing request.selectedFreqs
+                            , \_ -> Expect.equal Nothing request.metadataCc
+                            , \_ -> Expect.equal (Just False) request.onlyWithMetadata
+                            , \_ -> Expect.equal (Just False) request.includePelengLocations
+                            , \_ -> Expect.equal (Just "retained text") request.search
+                            , \_ -> Expect.equal saved.freqsSelected roundTrip.freqsSelected
+                            , \_ -> Expect.within (Expect.Absolute 0) saved.adjacentFreqsRange roundTrip.adjacentFreqsRange
+                            , \_ -> Expect.equal saved.metadataCc roundTrip.metadataCc
+                            , \_ -> Expect.equal saved.includePelengLocations roundTrip.includePelengLocations
                             ]
                             ()
         , test "normalizes legacy unit aliases before toggling" <|
@@ -167,7 +209,7 @@ suite =
                                 Maybe.withDefault anonymousUser shared.user
 
                             ( model, _ ) =
-                                RerAnalysis.init route ()
+                                RerAnalysis.init user route ()
 
                             refreshedMessage =
                                 { messageStub
@@ -213,7 +255,7 @@ suite =
                                 Maybe.withDefault anonymousUser shared.user
 
                             ( model, _ ) =
-                                RerAnalysis.init route ()
+                                RerAnalysis.init user route ()
 
                             highlighted =
                                 { messageStub
@@ -256,7 +298,7 @@ suite =
                                 Shared.init (Ok { isDark = False, now = 0 }) route
 
                             ( waterfall, _ ) =
-                                Waterfall.init "wf-a" Nothing
+                                Waterfall.init True "wf-a" Nothing
 
                             refreshedMessage =
                                 { messageStub

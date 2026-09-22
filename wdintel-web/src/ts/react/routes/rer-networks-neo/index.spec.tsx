@@ -380,7 +380,7 @@ it('keeps MRT filter modes disabled on the networks table', () => {
 
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(RerNetworksNeoPage));
+    root?.render(createElement(RerNetworksNeoPage, { authUserRoles: ['Rer'] }));
   });
 
   expect(capturedOptions).not.toBeNull();
@@ -532,7 +532,7 @@ it('wraps long network labels without truncating the status chip row', () => {
 
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(RerNetworksNeoPage));
+    root?.render(createElement(RerNetworksNeoPage, { authUserRoles: ['Rer'] }));
   });
 
   const networkCell = (
@@ -582,7 +582,7 @@ it('refreshes AOR filter options after lookup data loads', () => {
   defaultPageReturn.aorOptions = [];
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(RerNetworksNeoPage));
+    root?.render(createElement(RerNetworksNeoPage, { authUserRoles: ['Rer'] }));
   });
 
   expect(
@@ -600,7 +600,7 @@ it('refreshes AOR filter options after lookup data loads', () => {
     buildAor(1, 'Альфа'),
   ];
   act(() => {
-    root?.render(createElement(RerNetworksNeoPage));
+    root?.render(createElement(RerNetworksNeoPage, { authUserRoles: ['Rer'] }));
   });
 
   expect(
@@ -634,7 +634,7 @@ it('does not duplicate the AOR column filter in the active filter list', () => {
 
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(RerNetworksNeoPage));
+    root?.render(createElement(RerNetworksNeoPage, { authUserRoles: ['Rer'] }));
   });
 
   const aorsColumn = (
@@ -693,7 +693,7 @@ it('uses skeleton rows only for the initial load state', () => {
 
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(RerNetworksNeoPage));
+    root?.render(createElement(RerNetworksNeoPage, { authUserRoles: ['Rer'] }));
   });
 
   expect((capturedOptions?.state as Record<string, unknown> | undefined)?.showSkeletons).toBe(
@@ -717,7 +717,7 @@ it('keeps the empty-result table from adding a second vertical scrollbar', () =>
 
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(RerNetworksNeoPage));
+    root?.render(createElement(RerNetworksNeoPage, { authUserRoles: ['Rer'] }));
   });
 
   const paperProps =
@@ -773,7 +773,7 @@ it('hides load more and expands the first-load frame to full height', () => {
 
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(RerNetworksNeoPage));
+    root?.render(createElement(RerNetworksNeoPage, { authUserRoles: ['Rer'] }));
   });
 
   expect(container.textContent).not.toContain('Завантажити ще');
@@ -1025,7 +1025,7 @@ it('keeps structured last activity visible and available through hover and focus
 
     root = createRoot(container!);
     act(() => {
-      root?.render(createElement(RerNetworksNeoPage));
+      root?.render(createElement(RerNetworksNeoPage, { authUserRoles: ['Rer'] }));
     });
     const lastActivityCell = (
       capturedOptions?.columns as Array<{ id?: string; Cell?: (props: any) => unknown }>
@@ -1306,7 +1306,7 @@ it('toggles and closes the reports menu', () => {
 
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(RerNetworksNeoPage));
+    root?.render(createElement(RerNetworksNeoPage, { authUserRoles: ['Rer'] }));
   });
 
   const reportsButton = Array.from(container.querySelectorAll('button')).find((button) =>
@@ -1316,26 +1316,37 @@ it('toggles and closes the reports menu', () => {
 
   act(() => {
     reportsButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    root?.render(createElement(RerNetworksNeoPage));
+    root?.render(createElement(RerNetworksNeoPage, { authUserRoles: ['Rer'] }));
   });
   expect(document.body.textContent).toContain('Еталонний опис');
   expect(document.body.textContent).toContain('ГОІ');
 
   act(() => {
     reportsButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    root?.render(createElement(RerNetworksNeoPage));
+    root?.render(createElement(RerNetworksNeoPage, { authUserRoles: ['Rer'] }));
   });
   expect(document.body.textContent).not.toContain('Еталонний опис');
 
   act(() => {
     reportsButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    root?.render(createElement(RerNetworksNeoPage));
+    root?.render(createElement(RerNetworksNeoPage, { authUserRoles: ['Rer'] }));
   });
   expect(document.body.textContent).toContain('Еталонний опис');
 
   act(() => {
     document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    root?.render(createElement(RerNetworksNeoPage));
+    root?.render(createElement(RerNetworksNeoPage, { authUserRoles: ['Rer'] }));
   });
   expect(document.body.textContent).not.toContain('Еталонний опис');
+});
+
+it('#3568 removes the frequency column from the Cyber column selector', async () => {
+  root = createRoot(container!);
+  tableStateMock.columnVisibility = { freqs: true };
+  await act(async () => {
+    root?.render(createElement(RerNetworksNeoPage, { authUserRoles: ['Cyber', 'UnitsEditor'] }));
+  });
+  const columns = capturedOptions?.columns as Array<{ id?: string }>;
+  expect(columns.some((column) => column.id === 'network')).toBe(true);
+  expect(columns.some((column) => column.id === 'freqs')).toBe(false);
 });

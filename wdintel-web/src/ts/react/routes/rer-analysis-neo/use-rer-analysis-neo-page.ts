@@ -5,7 +5,8 @@ import { isNullOrUndefined } from '../../utils/misc';
 
 import { fetchCurrentUser } from '../../services/api/user';
 import { currentSystemSettings } from '../../services/api/system-settings';
-import { canUseMessageDevices } from '../../utils/roles';
+import { effectiveRadioQuery } from './radio-features';
+import { canUseRadioFeatures, canUseMessageDevices } from '../../utils/roles';
 import {
   normalizeUnknownUnitFilterValue,
   normalizeUnknownUnitSelections,
@@ -96,7 +97,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
       ? createResetQueryState()
       : initialQueryState,
   );
-  const [centerTab, setCenterTabState] = useState<AnalysisCenterTab>('messages');
+  const [selectedCenterTab, setCenterTabState] = useState<AnalysisCenterTab>('messages');
   const [error, setError] = useState<string | null>(null);
   const [directMessageError, setDirectMessageError] = useState<string | null>(null);
   const [leftPanelOpen, setLeftPanelOpen] = useState(
@@ -135,7 +136,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const [rightPanelOpen, setRightPanelOpen] = useState(
     () => initialPanelQueryState.rightPanelOpen ?? false,
   );
-  const [rightSidebarTab, setRightSidebarTab] = useState<AnalysisSidebarTab | null>(() =>
+  const [selectedSidebarTab, setRightSidebarTab] = useState<AnalysisSidebarTab | null>(() =>
     initialPanelQueryState.rightPanelOpen ? 'stats' : null,
   );
   const [targetMessageUid] = useState(parseMessageUidFromWindow);
@@ -165,10 +166,19 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
           ? { status: 'allowed' }
           : { status: 'denied' };
   const canUseDevices = deviceAccess.status === 'allowed';
-  const effectiveQueryState =
-    deviceAccess.status === 'denied' && queryState.deviceNamesSelected.length > 0
-      ? { ...queryState, deviceNamesSelected: [] }
-      : queryState;
+  const radioFeaturesAllowed = canUseRadioFeatures(currentUser?.roles);
+  const centerTab =
+    !radioFeaturesAllowed && selectedCenterTab === 'summary' ? 'messages' : selectedCenterTab;
+  const rightSidebarTab =
+    !radioFeaturesAllowed && selectedSidebarTab === 'frequencies' ? 'stats' : selectedSidebarTab;
+  const effectiveQueryState = useMemo(
+    () =>
+      effectiveRadioQuery(
+        deviceAccess.status === 'denied' ? { ...queryState, deviceNamesSelected: [] } : queryState,
+        radioFeaturesAllowed,
+      ),
+    [queryState, deviceAccess.status, radioFeaturesAllowed],
+  );
   useEffect(() => {
     if (dutySettings.loadInProgress) return;
     setQueryState((current) =>
@@ -183,18 +193,23 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     search: initialQueryState.search,
   });
   const directMessageWindowQueryState = useMemo(
-    () => ({
-      ...initialQueryState,
-      deviceNamesSelected:
-        deviceAccess.status === 'denied' ? [] : initialQueryState.deviceNamesSelected,
-      groupsSelected: queryState.groupsSelected,
-      freqsSelected: queryState.freqsSelected,
-      networksSelected: queryState.networksSelected,
-      withoutNetwork: queryState.withoutNetwork,
-      messageTimeBasis: dutySettings.messageSortBy,
-    }),
+    () =>
+      effectiveRadioQuery(
+        {
+          ...initialQueryState,
+          deviceNamesSelected:
+            deviceAccess.status === 'denied' ? [] : initialQueryState.deviceNamesSelected,
+          groupsSelected: queryState.groupsSelected,
+          freqsSelected: queryState.freqsSelected,
+          networksSelected: queryState.networksSelected,
+          withoutNetwork: queryState.withoutNetwork,
+          messageTimeBasis: dutySettings.messageSortBy,
+        },
+        radioFeaturesAllowed,
+      ),
     [
       initialQueryState,
+      radioFeaturesAllowed,
       deviceAccess.status,
       queryState.freqsSelected,
       queryState.groupsSelected,
@@ -558,11 +573,13 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     allFrequencies: dataFreqValues,
     onError: setPageError,
     onUnauthorized: handleUnauthorized,
-    queryState: effectiveQueryState,
+    queryState:
+      deviceAccess.status === 'denied' ? { ...queryState, deviceNamesSelected: [] } : queryState,
     setQueryState,
   });
 
   const report = useAnalysisReport({
+    radioFeaturesAllowed,
     analysisReq,
     fromDateTimeStr: queryState.fromDateTimeStr,
     inboxReq: data.inboxReq,
@@ -1017,6 +1034,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   return {
     authUserName,
     aorEntries: data.aorEntries,
+    radioFeaturesAllowed,
     canResetFilters,
     analysisMapInSidebar: dutySettings.analysisMapInSidebar,
     showAnalysisCallsignAddForm: dutySettings.showAnalysisCallsignAddForm,
@@ -1052,7 +1070,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     groupsActivityLoadedPeriod: data.groupsActivityLoadedPeriod,
     groupsActivityLoading: data.groupsActivityLoading,
     hasLoadedInitialMessages: data.hasLoadedInitialMessages,
-    includeOnlyNewFreqs: queryState.includeOnlyNewFreqs,
+    includeOnlyNewFreqs: effectiveQueryState.includeOnlyNewFreqs,
     inboxReq: data.inboxReq,
     isDirty: savedFilters.isDirty,
     leftPanelOpen,
@@ -1100,7 +1118,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     openReportEditor: editor.openReportEditor,
     retryEditTargetLoad: editor.retryEditTargetLoad,
     profiles,
-    queryState,
+    queryState: effectiveQueryState,
     tagsLayout: dutySettings.tagsLayout,
     hideBotTags,
     mediaSummaryEnabled: dutySettings.mediaSummaryEnabled,

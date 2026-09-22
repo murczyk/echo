@@ -14,6 +14,8 @@ module Pages_.RerDuty.Waterfall exposing
     )
 
 import Api
+import Core.RadioFeatures
+import Core.Auth
 import Bindings as B
 import Browser.Dom exposing (Element)
 import Config
@@ -147,7 +149,8 @@ type LoadingEarlierStatus
 
 
 type alias Model =
-    { id : String
+    { radioFeaturesAllowed : Bool
+    , id : String
     , height : Int
     , lastScroll : Maybe Posix
     , lastBottomCheck : Maybe Posix
@@ -221,11 +224,13 @@ type alias Model =
 
 
 init :
-    String
+    Bool
+    -> String
     -> Maybe B.RerDutyQueryStateWf
     -> ( Model, Effect Msg )
-init id_ ms =
-    ( { id = id_
+init radioFeaturesAllowed id_ ms =
+    ( { radioFeaturesAllowed = radioFeaturesAllowed
+      , id = id_
       , height = 200
       , lastScroll = Nothing
       , lastBottomCheck = Nothing
@@ -330,7 +335,7 @@ init id_ ms =
       , pollingFailed = False
       }
     , E.batch
-        [ initCmd id_
+        [ initCmd radioFeaturesAllowed id_
         , initCmdOnce
         ]
     )
@@ -352,12 +357,16 @@ loadingNewMessagesInterval =
     1000
 
 
-initCmd : String -> Effect Msg
-initCmd id_ =
+initCmd : Bool -> String -> Effect Msg
+initCmd radioFeaturesAllowed id_ =
     E.batch
         [ E.getElementById (waterfallDivId id_) GotWaterfallDiv
         , E.getCurrentTime InitGotTime
-        , E.sendCmd <| Api.sigint_latest_frequencies GotLatestFrequencies
+        , if radioFeaturesAllowed then
+            E.sendCmd <| Api.sigint_latest_frequencies GotLatestFrequencies
+
+          else
+            E.none
         ]
 
 
@@ -394,6 +403,7 @@ scrollThrottleConfig =
 
 getBasicInboxParams : Model -> B.InboxMessagesReq
 getBasicInboxParams model =
+    Core.RadioFeatures.inboxFilters model.radioFeaturesAllowed <|
     { sinceIdNoninclusive = Nothing
     , beforeIdNoninclusive = Nothing
     , aroundMessageRef = Nothing
@@ -3085,7 +3095,8 @@ messageTab ps shared model =
                                         ]
                                     ]
                                 ]
-                            , div [ style "margin-bottom" "12px" ]
+                            , HtmlX.viewIf model.radioFeaturesAllowed <|
+                              div [ style "margin-bottom" "12px" ]
                                 [ div [ class "relative", style "height" "32px" ]
                                     [ span [ class "fw-bold" ] [ text "частота" ]
                                     , button

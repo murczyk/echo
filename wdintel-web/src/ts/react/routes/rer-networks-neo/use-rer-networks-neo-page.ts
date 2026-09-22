@@ -1,3 +1,4 @@
+import { canUseRadioFeatures } from '../../utils/roles';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MRT_ColumnFiltersState, MRT_SortingState } from 'material-react-table';
 import { useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
@@ -48,13 +49,21 @@ export function useRerNetworksNeoPage({
   unitId,
 }: { authUserRoles?: string[]; unitId?: number } = {}) {
   const tableStateContext = useTableStateContext();
+  const radioFeaturesAllowed = canUseRadioFeatures(authUserRoles);
+  const sorting = useMemo(
+    () => tableStateContext.sorting.filter((item) => radioFeaturesAllowed || item.id !== 'freqs'),
+    [tableStateContext.sorting, radioFeaturesAllowed],
+  );
   const shellPermissions = useMemo(
     () => getNetworkPermissionsFromRoles(authUserRoles),
     [authUserRoles],
   );
   const columnFilters = useMemo(
-    () => sanitizeNetworkColumnFilters(tableStateContext.columnFilters),
-    [tableStateContext.columnFilters],
+    () =>
+      sanitizeNetworkColumnFilters(tableStateContext.columnFilters).filter(
+        (item) => radioFeaturesAllowed || item.id !== 'freqs',
+      ),
+    [tableStateContext.columnFilters, radioFeaturesAllowed],
   );
 
   const [loading, setLoading] = useState(true);
@@ -122,8 +131,8 @@ export function useRerNetworksNeoPage({
   );
   const tableStateContextRef = useRef({
     globalFilter: tableStateContext.globalFilter,
-    columnFilters: tableStateContext.columnFilters,
-    sorting: tableStateContext.sorting,
+    columnFilters,
+    sorting,
   });
   const filtersRef = useRef(filters);
   const columnFiltersRef = useRef(columnFilters);
@@ -143,10 +152,10 @@ export function useRerNetworksNeoPage({
   useEffect(() => {
     tableStateContextRef.current = {
       globalFilter: tableStateContext.globalFilter,
-      columnFilters: tableStateContext.columnFilters,
-      sorting: tableStateContext.sorting,
+      columnFilters,
+      sorting,
     };
-  }, [tableStateContext.columnFilters, tableStateContext.globalFilter, tableStateContext.sorting]);
+  }, [columnFilters, tableStateContext.globalFilter, sorting]);
 
   useEffect(() => {
     filtersRef.current = filters;
@@ -230,7 +239,7 @@ export function useRerNetworksNeoPage({
     () => ({
       globalFilter: tableStateContext.globalFilter,
       columnFilters,
-      sorting: tableStateContext.sorting,
+      sorting,
       filters: {
         ...filters,
         searchText: tableStateContext.globalFilter,
@@ -240,7 +249,7 @@ export function useRerNetworksNeoPage({
         unitId,
         globalFilter: tableStateContext.globalFilter,
         columnFilters,
-        sorting: tableStateContext.sorting,
+        sorting,
         filters: {
           searchText: filters.searchText,
           unitText: filters.unitText,
@@ -256,14 +265,14 @@ export function useRerNetworksNeoPage({
       selectedSidebarUnitFilter,
       unitId,
       tableStateContext.globalFilter,
-      tableStateContext.sorting,
+      sorting,
     ],
   );
   const immediateQueryKey = useMemo(
     () =>
       JSON.stringify({
         columnFilters,
-        sorting: tableStateContext.sorting,
+        sorting,
         status: filters.status,
         unitText: filters.unitText,
         showOnlyInvestigating: filters.showOnlyInvestigating,
@@ -275,7 +284,7 @@ export function useRerNetworksNeoPage({
       filters.status,
       filters.unitText,
       selectedSidebarUnitFilter,
-      tableStateContext.sorting,
+      sorting,
     ],
   );
 
@@ -308,6 +317,7 @@ export function useRerNetworksNeoPage({
         setAors,
         setUnitStats,
         setPosts,
+        radioFeaturesAllowed,
         setEncryptions,
         setStatus,
         setStatusCounts,
@@ -319,7 +329,7 @@ export function useRerNetworksNeoPage({
         setLastActivityLoadStateByNetworkId,
         setBootstrapLoaded,
       }),
-    [unitId],
+    [radioFeaturesAllowed, unitId],
   );
 
   const reportActions = useMemo(
@@ -334,11 +344,13 @@ export function useRerNetworksNeoPage({
         },
         selectedSidebarUnitFilter,
         columnFilters,
-        sorting: tableStateContext.sorting,
+        sorting,
         tableGlobalFilter: tableStateContext.globalFilter,
         reportTargetNetworkIds,
         reportTargetRequest,
-        etalonkaReport,
+        etalonkaReport: radioFeaturesAllowed
+          ? etalonkaReport
+          : { ...etalonkaReport, activeFreqsOnly: false },
         downloadInFlight,
         setReportTargetNetworkIds,
         setReportTargetRequest,
@@ -348,6 +360,7 @@ export function useRerNetworksNeoPage({
         setStatus,
       }),
     [
+      radioFeaturesAllowed,
       columnFilters,
       downloadInFlight,
       etalonkaReport,
@@ -359,7 +372,7 @@ export function useRerNetworksNeoPage({
       reportTargetRequest,
       rows,
       tableStateContext.globalFilter,
-      tableStateContext.sorting,
+      sorting,
       unitId,
     ],
   );
@@ -379,6 +392,7 @@ export function useRerNetworksNeoPage({
         lastExecutedFullQueryKeyRef,
         editDialog,
         createDialog,
+        radioFeaturesAllowed,
         supportNonRerInterceptions,
         deleteDialogNetwork,
         editSubmitting,
@@ -398,6 +412,7 @@ export function useRerNetworksNeoPage({
         setActivityByNetworkId,
       }),
     [
+      radioFeaturesAllowed,
       createDialog,
       createSubmitting,
       deleteDialogNetwork,
@@ -517,6 +532,7 @@ export function useRerNetworksNeoPage({
   }, []);
 
   return {
+    radioFeaturesAllowed,
     loading,
     refreshing,
     loadingMore,

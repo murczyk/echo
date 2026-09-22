@@ -1,3 +1,4 @@
+import { useRadioFeatures } from '../shared/RadioFeatures';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { Box, FormControl, InputLabel, MenuItem, Select, Tooltip } from '@mui/material';
 import type { SavedFilterDuty } from '../../../../Bindings';
@@ -123,6 +124,7 @@ export function FeedFilterPanelView({
   advanced,
   savedFilters,
 }: FeedFilterPanelViewProps) {
+  const radioFeaturesAllowed = useRadioFeatures();
   return (
     <Box
       className="z-2"
@@ -242,18 +244,20 @@ export function FeedFilterPanelView({
           getBulkCopyText={senders.getBulkCopyText}
         />
 
-        <FeedFilterFrequencySection
-          mode={freqs.mode}
-          onModeChange={freqs.onModeChange}
-          value={freqs.value}
-          onValueChange={freqs.onValueChange}
-          options={freqs.options}
-          placeholder={freqs.placeholder}
-          reloadFreqsLoading={freqs.reloadFreqsLoading}
-          onReloadFreqs={freqs.onReloadFreqs}
-          adjacentFreqsRange={freqs.adjacentFreqsRange}
-          onAdjacentFreqsRangeChange={freqs.onAdjacentFreqsRangeChange}
-        />
+        {radioFeaturesAllowed ? (
+          <FeedFilterFrequencySection
+            mode={freqs.mode}
+            onModeChange={freqs.onModeChange}
+            value={freqs.value}
+            onValueChange={freqs.onValueChange}
+            options={freqs.options}
+            placeholder={freqs.placeholder}
+            reloadFreqsLoading={freqs.reloadFreqsLoading}
+            onReloadFreqs={freqs.onReloadFreqs}
+            adjacentFreqsRange={freqs.adjacentFreqsRange}
+            onAdjacentFreqsRangeChange={freqs.onAdjacentFreqsRangeChange}
+          />
+        ) : null}
 
         <FeedFilterSelectionSection
           title="Пост"

@@ -58,7 +58,7 @@ function renderDialog(overrides: Partial<Parameters<typeof AnalysisReportDialog>
     progressExpanded: false,
     taskRuns: [],
     open: true,
-    currentUser: null,
+    currentUser: { roles: ['Rer'] } as never,
     supportNonRerInterceptions: false,
     report: buildReport(),
     queryState: createResetQueryState(),
@@ -384,7 +384,7 @@ describe('AnalysisReportDialog', () => {
       view.root.render(
         createElement(AnalysisReportDialog, {
           ...view.props,
-          currentUser: { roles: ['AdvancedReports'] } as never,
+          currentUser: { roles: ['Rer', 'AdvancedReports'] } as never,
         }),
       );
     });

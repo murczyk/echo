@@ -1,3 +1,4 @@
+import { useRadioFeatures } from '../../shared/RadioFeatures';
 import ExpandMoreOutlinedIcon from '@mui/icons-material/ExpandMoreOutlined';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import {
@@ -130,9 +131,10 @@ function NetworkEditDrawerComponent({
   frequencyOptional = false,
   unitMaskVisible = false,
 }: Props) {
+  const radioFeaturesAllowed = useRadioFeatures();
   const titleId = 'network-edit-drawer-title';
   const includeFrequency =
-    form !== null && mode === 'create'
+    radioFeaturesAllowed && form !== null && mode === 'create'
       ? shouldIncludeNetworkCreateFrequency(form, frequencyOptional)
       : false;
   const validation = getNetworkUpsertValidationError(form, { includeFrequency });
@@ -438,14 +440,16 @@ function NetworkEditDrawerComponent({
                     renderInput={(params) => <TextField {...params} label="Пости" size="small" />}
                   />
 
-                  <TextField
-                    label="Радіостанція"
-                    value={form.radioStation}
-                    onChange={(event) => onChange({ ...form, radioStation: event.target.value })}
-                    disabled={formBlocked}
-                    fullWidth
-                    size="small"
-                  />
+                  {radioFeaturesAllowed ? (
+                    <TextField
+                      label="Радіостанція"
+                      value={form.radioStation}
+                      onChange={(event) => onChange({ ...form, radioStation: event.target.value })}
+                      disabled={formBlocked}
+                      fullWidth
+                      size="small"
+                    />
+                  ) : null}
 
                   {mode === 'edit' ? (
                     <FormControl fullWidth size="small" disabled={formBlocked}>
@@ -465,7 +469,7 @@ function NetworkEditDrawerComponent({
                 </Stack>
               </DrawerSection>
 
-              {mode === 'create' ? (
+              {radioFeaturesAllowed && mode === 'create' ? (
                 <>
                   <Box
                     sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 1.75 }}

@@ -1,3 +1,4 @@
+import { useRadioFeatures } from '../RadioFeatures';
 import { styled } from '@mui/material/styles';
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
@@ -244,14 +245,23 @@ function MessageCardComponent({
   const onCopyLocationAction =
     etalonDisplayModel.copyLocationValue == null ? undefined : onCopyLocation;
   const pointEtalons = useMemo(() => getPointEtalonsFromMessage(msg, tagsMap), [msg, tagsMap]);
+  const radioFeaturesAllowed = useRadioFeatures();
   const excludeSources = useMemo(
     () => ({
       group: { value: msg.groupMasterKey, label: groupName },
       sender: { value: msg.sender, label: senderName },
-      freq: { value: msg.freq, label: msg.freq },
+      freq: { value: radioFeaturesAllowed ? msg.freq : null, label: msg.freq },
       post: { value: msg.post, label: msg.post },
     }),
-    [msg.groupMasterKey, groupName, msg.sender, senderName, msg.freq, msg.post],
+    [
+      radioFeaturesAllowed,
+      msg.groupMasterKey,
+      groupName,
+      msg.sender,
+      senderName,
+      msg.freq,
+      msg.post,
+    ],
   );
   const excludeMenuOptions = useMemo(
     () =>
@@ -285,7 +295,7 @@ function MessageCardComponent({
     [analysisDestination, displayMode, msg],
   );
   const metadataTrigger =
-    displayMode === 'analysis' && hasVisibleDmrMetadata(msg) ? (
+    radioFeaturesAllowed && displayMode === 'analysis' && hasVisibleDmrMetadata(msg) ? (
       <MessageCardDmrMetadataPopover msg={msg} />
     ) : undefined;
   const canDownloadAllAttachments = canDownloadAllMessageAttachments(msg.media ?? []);
@@ -326,7 +336,7 @@ function MessageCardComponent({
     onImportant,
     onCreateReport,
     onCopyText,
-    onCopyFreq,
+    onCopyFreq: radioFeaturesAllowed ? onCopyFreq : undefined,
     onCopyTextWithNetwork,
     onCopyTextWithNetworkAndNote,
     onCopyMessageLink,

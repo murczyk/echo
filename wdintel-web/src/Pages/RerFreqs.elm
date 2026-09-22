@@ -26,6 +26,7 @@ import Pages_.RerFreqs.NetworkWorkflow as NetworkWorkflow
 import Pages_.RerFreqs.Utils as Utils
 import Process
 import Route exposing (Route)
+import Route.Path
 import Select
 import Set
 import Shared
@@ -2582,9 +2583,23 @@ view dark shared user model =
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
 page user shared _ =
     Page.new
-        { init = init
+        { init = \flags ->
+            let
+                ( initial, effect ) =
+                    init flags
+            in
+            if Core.Auth.canUseRadioFeatures user then
+                ( initial, effect )
+
+            else
+                ( initial, E.replaceRoutePath Route.Path.Home_ )
         , update = update shared
-        , view = view (isDarkMode shared.themeMode) shared user
+        , view = \state ->
+            if Core.Auth.canUseRadioFeatures user then
+                view (isDarkMode shared.themeMode) shared user state
+
+            else
+                { title = "", body = [] }
         , subscriptions = subscriptions
         }
         |> Page.withLayout (toLayout user)

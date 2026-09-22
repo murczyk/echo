@@ -57,6 +57,10 @@ export function hasRole(roles: readonly string[] | null | undefined, role: UserR
   }
 }
 
+export function canUseRadioFeatures(roles: readonly string[] | null | undefined): boolean {
+  return hasRole(roles, 'Rer');
+}
+
 export function hasRerOrCyber(roles: readonly string[] | null | undefined): boolean {
   return hasAnyRole(roles, ['Rer', 'Cyber']);
 }

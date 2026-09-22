@@ -149,13 +149,14 @@ export function useRerDutyFeeds(
   authUserName: string | null,
   currentUserOrganismId: number | null = null,
   deviceAccess: DeviceAccess = { status: 'loading' },
+  radioFeaturesAllowed = false,
 ) {
   const [keywordSets, setKeywordSets] = useState<OrganismKeywordSetDto[]>([]);
   const reloadKeywordSets = useCallback(async () => {
     const sets = await fetchOrganismKeywordSets();
     setKeywordSets(sets);
   }, []);
-  const filterOpts = useRerDutyFilterOptions();
+  const filterOpts = useRerDutyFilterOptions(radioFeaturesAllowed);
   const [pollIntervalSec, setPollIntervalSec] = useState(INBOX_COUNT_POLL_INTERVAL_MS / 1000);
   const dutySettings = useDutySettings();
   const lastInboxEventPollAtRef = useRef(Number.NEGATIVE_INFINITY);
@@ -181,6 +182,7 @@ export function useRerDutyFeeds(
     pollIntervalSec: effectiveDutyPollIntervalSec(pollIntervalSec),
     disableAutoScroll: dutyDisableAutoScroll,
     deviceAccess,
+    radioFeaturesAllowed,
     onFeedRemoved: filterOpts.pruneSavedFilterUiState,
   });
   const setFeedError = feedState.setError;

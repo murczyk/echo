@@ -4,6 +4,7 @@ import Auth
 import Bindings as B
 import Core.Auth
 import Effect as E exposing (Effect)
+import Html.Extra
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
@@ -346,7 +347,7 @@ descriptionItem description network user shared =
                           , span [ style "color" "var(--color-text-muted)" ] [ text "•" ]
                           , span [] [ text <| Utils.Time.renderDateF6 shared.timeZone (Time.millisToPosix description.createdAt) ]
                           ]
-                        , if description.networkFrequencyId /= Nothing then
+                        , if Core.Auth.canUseRadioFeatures user && description.networkFrequencyId /= Nothing then
                             [ span [ style "color" "var(--color-text-muted)" ] [ text "•" ]
                             , span [ class "font-medium", style "color" "var(--color-primary)" ]
                                 [ text <|
@@ -508,7 +509,8 @@ confirmationCreateSidebarContent shared model _ network =
         [ div [ class "flex-1 p-6 flex flex-col" ]
             [ h2 [ class "text-lg font-semibold mb-6" ] [ text "Створити обґрунтування прив'язки" ]
             , div [ class "space-y-4 flex-1 flex flex-col" ]
-                [ div []
+                [ Html.Extra.viewIf model.radioFeaturesAllowed <|
+                  div []
                     [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота (необов'язково)" ]
                     , let
                         selectedItem =
@@ -595,7 +597,8 @@ editDescriptionSidebarContent shared model _ _ description =
         [ div [ class "flex-1 p-6 flex flex-col" ]
             [ h2 [ class "text-lg font-semibold mb-6" ] [ text "Редагувати опис" ]
             , div [ class "space-y-4 flex-1 flex flex-col" ]
-                [ div []
+                [ Html.Extra.viewIf model.radioFeaturesAllowed <|
+                  div []
                     [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота (необов'язково)" ]
                     , let
                         selectedItem =

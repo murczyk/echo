@@ -1,3 +1,4 @@
+import { useRadioFeatures } from '../../shared/RadioFeatures';
 import DownloadIcon from '@mui/icons-material/Download';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import HighlightOffIcon from '@mui/icons-material/HighlightOff';
@@ -228,6 +229,7 @@ export function NetworkEtalonkaReportDialog({
   launchWarningText = null,
   disableRestoreFocus = false,
 }: Props) {
+  const radioFeaturesAllowed = useRadioFeatures();
   const isExtended = report.reportType === 'ExtendedReport';
   const historyRow = report.historyRow ?? null;
   const hasBgtask = historyRow?.bgtaskId != null;
@@ -378,12 +380,14 @@ export function NetworkEtalonkaReportDialog({
           >
             <ReportSectionCard title="Основні налаштування" minHeightMd={220}>
               <Stack spacing={1.25}>
-                <ReportCheckboxRow
-                  checked={report.activeFreqsOnly}
-                  onChange={onActiveFreqsOnlyChange}
-                  disabled={report.running}
-                  label="Лише активні частоти"
-                />
+                {radioFeaturesAllowed ? (
+                  <ReportCheckboxRow
+                    checked={report.activeFreqsOnly}
+                    onChange={onActiveFreqsOnlyChange}
+                    disabled={report.running}
+                    label="Лише активні частоти"
+                  />
+                ) : null}
                 <ReportCheckboxRow
                   checked={report.includeCallsignFullNames}
                   onChange={onIncludeCallsignFullNamesChange}
@@ -455,37 +459,45 @@ export function NetworkEtalonkaReportDialog({
                     </Box>
 
                     <Stack spacing={0.75}>
-                      <ReportCheckboxRow
-                        checked={report.includeFreqActiveFrom}
-                        onChange={onIncludeFreqActiveFromChange}
-                        disabled={report.running}
-                        label="Включити «Активна з» для частот"
-                      />
-                      <ReportCheckboxRow
-                        checked={report.includeFreqCreatedAt}
-                        onChange={onIncludeFreqCreatedAtChange}
-                        disabled={report.running}
-                        label="Включити «Дата прив'язки» для частот"
-                      />
+                      {radioFeaturesAllowed ? (
+                        <ReportCheckboxRow
+                          checked={report.includeFreqActiveFrom}
+                          onChange={onIncludeFreqActiveFromChange}
+                          disabled={report.running}
+                          label="Включити «Активна з» для частот"
+                        />
+                      ) : null}
+                      {radioFeaturesAllowed ? (
+                        <ReportCheckboxRow
+                          checked={report.includeFreqCreatedAt}
+                          onChange={onIncludeFreqCreatedAtChange}
+                          disabled={report.running}
+                          label="Включити «Дата прив'язки» для частот"
+                        />
+                      ) : null}
                       <ReportCheckboxRow
                         checked={report.includeUnitCallsigns}
                         onChange={onIncludeUnitCallsignsChange}
                         disabled={report.running}
                         label="Включити позивні підрозділів"
                       />
-                      <ReportCheckboxRow
-                        checked={report.includePelengsMap}
-                        onChange={onIncludePelengsMapChange}
-                        disabled={report.running}
-                        label="Включити карту пеленгів"
-                      />
-                      <ReportCheckboxRow
-                        checked={report.includeHeadingsAndFreqs}
-                        onChange={onIncludeHeadingsAndFreqsChange}
-                        disabled={report.running || noDescriptions}
-                        label="Включити заголовки та частоти"
-                        infoTitle={headingsAndFreqsTooltipTitle}
-                      />
+                      {radioFeaturesAllowed ? (
+                        <ReportCheckboxRow
+                          checked={report.includePelengsMap}
+                          onChange={onIncludePelengsMapChange}
+                          disabled={report.running}
+                          label="Включити карту пеленгів"
+                        />
+                      ) : null}
+                      {radioFeaturesAllowed ? (
+                        <ReportCheckboxRow
+                          checked={report.includeHeadingsAndFreqs}
+                          onChange={onIncludeHeadingsAndFreqsChange}
+                          disabled={report.running || noDescriptions}
+                          label="Включити заголовки та частоти"
+                          infoTitle={headingsAndFreqsTooltipTitle}
+                        />
+                      ) : null}
                     </Stack>
                   </Stack>
                 ) : (
@@ -496,13 +508,15 @@ export function NetworkEtalonkaReportDialog({
                     </Typography>
 
                     <Stack spacing={0.75}>
-                      <ReportCheckboxRow
-                        checked={report.includeHeadingsAndFreqs}
-                        onChange={onIncludeHeadingsAndFreqsChange}
-                        disabled={report.running || noDescriptions}
-                        label="Включити заголовки та частоти"
-                        infoTitle={headingsAndFreqsTooltipTitle}
-                      />
+                      {radioFeaturesAllowed ? (
+                        <ReportCheckboxRow
+                          checked={report.includeHeadingsAndFreqs}
+                          onChange={onIncludeHeadingsAndFreqsChange}
+                          disabled={report.running || noDescriptions}
+                          label="Включити заголовки та частоти"
+                          infoTitle={headingsAndFreqsTooltipTitle}
+                        />
+                      ) : null}
                     </Stack>
                   </Stack>
                 )}
