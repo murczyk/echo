@@ -587,7 +587,9 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           : feed.filter;
       return buildInboxReq({
         ...opts,
-        filter: radioFeaturesAllowed ? filter : { ...filter, freqsSelected: [], freqsDenied: [] },
+        filter: radioFeaturesAllowed
+          ? filter
+          : { ...filter, freqsSelected: [], freqsDenied: [], postsSelected: [], postsDenied: [] },
         expandedFreqsSelected: expandedSelected,
         expandedFreqsDenied: expandedDenied,
         highlightSignals: feed.highlightSignalsEnabled ?? false,

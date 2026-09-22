@@ -5,6 +5,7 @@ import { networkSettingsResponse } from './fixture-responses';
 
 type ShortStateFixtureOptions = {
   enableAudioTranscription?: boolean;
+  dutyExcludeMenuEnabled?: boolean;
   shortStateId?: string;
   shortState?: unknown;
   inboxResponse?: InboxMessagesRspRaw | null | Promise<InboxMessagesRspRaw | null>;
@@ -230,7 +231,10 @@ export async function installRerDutyShortStateMocks(
     }
 
     if (pathname === '/api/system-settings/current') {
-      await fulfillJson(route, emptySystemSettingsResponse(options.enableAudioTranscription));
+      await fulfillJson(route, {
+        ...emptySystemSettingsResponse(options.enableAudioTranscription),
+        duty_exclude_menu_enabled: options.dutyExcludeMenuEnabled ?? true,
+      });
       resolveSystemSettingsReady();
       return;
     }

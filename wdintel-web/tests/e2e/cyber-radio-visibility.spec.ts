@@ -53,7 +53,7 @@ for (const width of [390, 820, 1440]) {
       if (host === 'duty') {
         await page.getByRole('button', { name: 'Фільтри', exact: true }).click();
         await expect(page.getByLabel('Панель фільтрів')).toBeVisible();
-        await expect(page.getByLabel('Панель фільтрів').getByText(/частот/i)).toHaveCount(0);
+        await expect(page.getByLabel('Панель фільтрів').getByText(/частот|пост/i)).toHaveCount(0);
       }
       expect(radioRequests).toEqual([]);
     });
@@ -92,6 +92,26 @@ for (const host of ['duty', 'analysis']) {
     await expect(page.locator('app-navbar')).toBeAttached();
     await expect(page.getByText('частота', { exact: true })).toHaveCount(0);
     await expect(page.getByText('метадані', { exact: true })).toHaveCount(0);
+    await expect(page.getByText(/^(пост|пости)$/)).toHaveCount(0);
     await expect(page.getByTitle('підсумкова таблиця', { exact: true })).toHaveCount(0);
+  });
+}
+
+for (const enabled of [true, false]) {
+  test(`#3568 Duty minus menu follows the system flag: ${enabled}`, async ({ page }) => {
+    await installRerDutyShortStateMocks(page, {
+      inboxResponse: createLoadedInboxResponse(),
+      dutyExcludeMenuEnabled: enabled,
+    });
+    await page.goto('/rer-duty-neo');
+    await expect(page.getByText('Analysis summary fixture message', { exact: true })).toBeVisible();
+    const minus = page.getByRole('button', { name: 'Виключити…', exact: true });
+    if (enabled) {
+      await expect(minus).toBeVisible();
+      await minus.click();
+      await expect(page.getByRole('menuitem').filter({ hasText: 'Виключити групу' })).toBeVisible();
+    } else {
+      await expect(minus).toHaveCount(0);
+    }
   });
 }

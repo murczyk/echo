@@ -117,6 +117,27 @@ describe('AppNavbar', () => {
     expect(content).not.toContain('Адмін');
   });
 
+  it.each([
+    ['Cyber'],
+    ['Cyber', 'UnitsEditor'],
+    ['Rer'],
+    ['Rer', 'Cyber'],
+    ['Admin'],
+    ['Full', 'Cyber'],
+  ])(
+    '#3568 hides frequency and signal database links only without effective Rer: %j',
+    (...roles) => {
+      const { container } = renderComponent({
+        ...defaultProps,
+        user: { ...defaultProps.user, roles },
+      });
+      const allowed = roles.some((role) => ['Rer', 'Admin', 'Full'].includes(role));
+      expect(Boolean(container.querySelector('a[href="/rer-signals"]'))).toBe(allowed);
+      expect(Boolean(container.querySelector('a[href="/rer-freqs"]'))).toBe(allowed);
+      expect(container.querySelector('a[href="/rer-networks-neo"]')).not.toBeNull();
+    },
+  );
+
   it('uses the same mobile left padding for linked and button menu entries', () => {
     const { container } = renderComponent({
       ...defaultProps,

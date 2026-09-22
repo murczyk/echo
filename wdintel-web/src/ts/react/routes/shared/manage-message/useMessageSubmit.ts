@@ -215,7 +215,9 @@ export function useMessageSubmit({
           (!isEditMode && !isReportCreateMode)
             ? timeValue == null
             : undefined,
-        post: data.post || undefined,
+        post: radioFeaturesAllowed
+          ? data.post || undefined
+          : (editTarget?.message.post ?? undefined),
         unit: data.unit || undefined,
         locations: data.locations || [],
         network: networkObj,

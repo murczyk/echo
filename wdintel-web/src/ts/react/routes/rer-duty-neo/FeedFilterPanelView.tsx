@@ -259,28 +259,30 @@ export function FeedFilterPanelView({
           />
         ) : null}
 
-        <FeedFilterSelectionSection
-          title="Пост"
-          mode={posts.mode}
-          onModeChange={posts.onModeChange}
-          value={posts.value}
-          onValueChange={posts.onValueChange}
-          options={posts.options}
-          getOptionLabel={posts.getOptionLabel}
-          placeholder={posts.placeholder}
-          autocompleteClassName={posts.autocompleteClassName}
-          bulkPaste
-          bulkPasteSeparators={['\n']}
-          bulkPasteMenuLabel="Додати кілька постів"
-          bulkPasteDialogTitle="Додати кілька постів"
-          bulkPasteInputLabel="Пости"
-          bulkCopy={posts.bulkCopy}
-          bulkCopyMenuLabel={posts.bulkCopyMenuLabel}
-          onBulkCopy={posts.onBulkCopy}
-          getBulkPasteToken={posts.getBulkPasteToken}
-          getBulkPasteAliases={posts.getBulkPasteAliases}
-          getBulkCopyText={posts.getBulkCopyText}
-        />
+        {radioFeaturesAllowed ? (
+          <FeedFilterSelectionSection
+            title="Пост"
+            mode={posts.mode}
+            onModeChange={posts.onModeChange}
+            value={posts.value}
+            onValueChange={posts.onValueChange}
+            options={posts.options}
+            getOptionLabel={posts.getOptionLabel}
+            placeholder={posts.placeholder}
+            autocompleteClassName={posts.autocompleteClassName}
+            bulkPaste
+            bulkPasteSeparators={['\n']}
+            bulkPasteMenuLabel="Додати кілька постів"
+            bulkPasteDialogTitle="Додати кілька постів"
+            bulkPasteInputLabel="Пости"
+            bulkCopy={posts.bulkCopy}
+            bulkCopyMenuLabel={posts.bulkCopyMenuLabel}
+            onBulkCopy={posts.onBulkCopy}
+            getBulkPasteToken={posts.getBulkPasteToken}
+            getBulkPasteAliases={posts.getBulkPasteAliases}
+            getBulkCopyText={posts.getBulkCopyText}
+          />
+        ) : null}
 
         <Box>
           <FeedFilterSelectionSection

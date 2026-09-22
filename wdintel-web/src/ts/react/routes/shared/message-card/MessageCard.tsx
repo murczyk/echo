@@ -1,3 +1,5 @@
+import { useContext } from 'react';
+import { DutyExcludeMenuContext } from './DutyExcludeMenu';
 import { useRadioFeatures } from '../RadioFeatures';
 import { styled } from '@mui/material/styles';
 import dayjs from 'dayjs';
@@ -246,12 +248,13 @@ function MessageCardComponent({
     etalonDisplayModel.copyLocationValue == null ? undefined : onCopyLocation;
   const pointEtalons = useMemo(() => getPointEtalonsFromMessage(msg, tagsMap), [msg, tagsMap]);
   const radioFeaturesAllowed = useRadioFeatures();
+  const dutyExcludeMenuEnabled = useContext(DutyExcludeMenuContext);
   const excludeSources = useMemo(
     () => ({
       group: { value: msg.groupMasterKey, label: groupName },
       sender: { value: msg.sender, label: senderName },
       freq: { value: radioFeaturesAllowed ? msg.freq : null, label: msg.freq },
-      post: { value: msg.post, label: msg.post },
+      post: { value: radioFeaturesAllowed ? msg.post : null, label: msg.post },
     }),
     [
       radioFeaturesAllowed,
@@ -265,10 +268,10 @@ function MessageCardComponent({
   );
   const excludeMenuOptions = useMemo(
     () =>
-      displayMode === 'duty'
+      displayMode === 'duty' && dutyExcludeMenuEnabled
         ? buildVisibleExcludeMenuOptions(filterState, excludeSources)
         : EMPTY_EXCLUDE_OPTIONS,
-    [displayMode, filterState, excludeSources],
+    [displayMode, dutyExcludeMenuEnabled, filterState, excludeSources],
   );
   const mapHref = useMemo(
     () =>

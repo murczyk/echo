@@ -345,7 +345,7 @@ init _ shared () =
             , limit = Nothing
             , offset = Nothing
             }
-        , E.loadPostsFromShared { sortBy = Nothing }
+        , (if shared.user |> Maybe.map Core.Auth.canUseRadioFeatures |> Maybe.withDefault False then E.loadPostsFromShared { sortBy = Nothing } else E.none)
         , E.sendCmd (Api.aor_list AorListReturnedByApi { sortBy = Nothing })
         , if shared.user |> Maybe.map Core.Auth.canUseRadioFeatures |> Maybe.withDefault False then
             E.getEncryptions EncryptionsReturnedByApi
@@ -963,7 +963,8 @@ viewMissingFieldsBlock shared model =
                                 defaultOptions
                     ]
                 ]
-            , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            , Html.Extra.viewIf model.radioFeaturesAllowed <|
+              div [ class "grid grid-cols-3 gap-x-4 items-center" ]
                 [ span [ class "text-[13px] font-medium" ] [ text "Пости:" ]
                 , div [ class "col-span-2" ]
                     [ let

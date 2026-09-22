@@ -148,7 +148,13 @@ describe('Duty creation-time contract', () => {
       messageFeeds: [
         [
           'mf-0',
-          { ...emptyFilter(), freqsSelected: ['153.6250'], freqsDenied: ['153.6260'] },
+          {
+            ...emptyFilter(),
+            freqsSelected: ['153.6250'],
+            freqsDenied: ['153.6260'],
+            postsSelected: ['POST-1'],
+            postsDenied: ['POST-2'],
+          },
           { adjacentFreqsRange: 0.005 },
         ],
       ],
@@ -173,11 +179,15 @@ describe('Duty creation-time contract', () => {
       expect(body).toMatchObject({
         selected_freqs: null,
         denied_freqs: null,
+        selected_posts: null,
+        denied_posts: null,
         sort_by: 'IMSCreatedAt',
       });
     }
     expect(feeds.messageFeeds[0].filter.freqsSelected).toEqual(['153.6250']);
     expect(feeds.messageFeeds[0].filter.freqsDenied).toEqual(['153.6260']);
+    expect(feeds.messageFeeds[0].filter.postsSelected).toEqual(['POST-1']);
+    expect(feeds.messageFeeds[0].filter.postsDenied).toEqual(['POST-2']);
   });
 
   it('keeps creation order through pagination, buffering, and Analysis preference changes', async () => {

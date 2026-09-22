@@ -358,13 +358,13 @@ describe('rer-analysis-neo helpers', () => {
     });
   });
 
-  it('derives default analysis dates from today to tomorrow in the app timezone', () => {
+  it('#3568 defaults Analysis to 90 calendar days in the app timezone', () => {
     const state = createInitialQueryState(
       emptyQueryState(),
       new Date(Date.UTC(2026, 0, 15, 22, 30, 0)),
     );
 
-    expect(state.fromDateTimeStr).toBe('2026-01-16T00:00');
+    expect(state.fromDateTimeStr).toBe('2025-10-19T00:00');
     expect(state.toDateTimeStr).toBe('2026-01-17T00:00');
   });
 
@@ -441,7 +441,7 @@ describe('rer-analysis-neo helpers', () => {
       new Date(Date.UTC(2026, 0, 16, 10, 30, 0)),
     );
 
-    expect(state.fromDateTimeStr).toBe('2026-01-16T00:00');
+    expect(state.fromDateTimeStr).toBe('2025-10-19T00:00');
     expect(state.toDateTimeStr).toBe('2026-01-17T00:00');
     expect(buildAnalysisReq(state)).not.toBeNull();
   });

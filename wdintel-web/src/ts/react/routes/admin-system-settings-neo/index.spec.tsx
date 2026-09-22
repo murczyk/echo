@@ -196,6 +196,26 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     await act(async () => root.unmount());
   });
 
+  it('#3568 saves the Duty minus-menu flag and reloads the disabled choice', async () => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo#duty');
+    const first = await renderPage();
+    const menuToggle = (container: HTMLElement) =>
+      Array.from(container.querySelectorAll('label'))
+        .find((label) => label.textContent?.includes('Меню - (мінус) в оперативному'))
+        ?.querySelector<HTMLInputElement>('input');
+    expect(menuToggle(first.container)?.checked).toBe(true);
+    await act(async () => menuToggle(first.container)?.click());
+    await act(async () => button(first.container, 'зберегти')?.click());
+    expect(mocks.save).toHaveBeenCalledWith(
+      expect.objectContaining({ dutyExcludeMenuEnabled: false }),
+    );
+    await act(async () => first.root.unmount());
+    mocks.list.mockResolvedValue([{ id: 2, deleted: false, dutyExcludeMenuEnabled: false }]);
+    const reloaded = await renderPage();
+    expect(menuToggle(reloaded.container)?.checked).toBe(false);
+    await act(async () => reloaded.root.unmount());
+  });
+
   it('keeps classic menu toggles in their respective tabs', async () => {
     window.history.replaceState({}, '', '/admin/system-settings-neo#duty');
     const { container, root } = await renderPage();

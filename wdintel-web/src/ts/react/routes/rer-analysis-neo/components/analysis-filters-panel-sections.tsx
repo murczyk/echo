@@ -429,30 +429,32 @@ export function AnalysisFiltersPanelSections({
           ) : null}
         </FilterSection>
       ) : null}
-      <FilterSection
-        title="Пости"
-        countLabel={countLabel(
-          'posts',
-          options.posts.length,
-          derived.postsSelectedCount,
-          counts?.postsCount ?? options.posts.length,
-        )}
-        expanded={expandedSections.posts}
-        onToggle={() => toggleSection('posts')}
-        onLoad={loadSection('posts')}
-      >
-        <Stack spacing={1.25}>
-          <AnalysisFilterField
-            label="Пости"
-            options={derived.postsOptions}
-            loading={isFilterSectionLoading('posts') || isFilterSectionStale('posts')}
-            emptyLoading={isFilterSectionEmptyLoading('posts', derived.postsOptions.length)}
-            value={queryState.postsSelected}
-            deferredCommit
-            onChange={(postsSelected) => updateQueryState({ postsSelected })}
-          />
-        </Stack>
-      </FilterSection>
+      {radioFeaturesAllowed ? (
+        <FilterSection
+          title="Пости"
+          countLabel={countLabel(
+            'posts',
+            options.posts.length,
+            derived.postsSelectedCount,
+            counts?.postsCount ?? options.posts.length,
+          )}
+          expanded={expandedSections.posts}
+          onToggle={() => toggleSection('posts')}
+          onLoad={loadSection('posts')}
+        >
+          <Stack spacing={1.25}>
+            <AnalysisFilterField
+              label="Пости"
+              options={derived.postsOptions}
+              loading={isFilterSectionLoading('posts') || isFilterSectionStale('posts')}
+              emptyLoading={isFilterSectionEmptyLoading('posts', derived.postsOptions.length)}
+              value={queryState.postsSelected}
+              deferredCommit
+              onChange={(postsSelected) => updateQueryState({ postsSelected })}
+            />
+          </Stack>
+        </FilterSection>
+      ) : null}
       <FilterSection
         title="Локації"
         countLabel={countLabel(

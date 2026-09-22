@@ -192,7 +192,7 @@ export function useManageMessageDrawer({
   }, [cyberEchoEnabled, deviceNameInput, formReady]);
 
   useEffect(() => {
-    if (!formReady) return;
+    if (!formReady || !radioFeaturesAllowed) return;
     let active = true;
 
     setPostLoading(true);
@@ -210,7 +210,7 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [postInput, formReady]);
+  }, [postInput, formReady, radioFeaturesAllowed]);
 
   useEffect(() => {
     if (!formReady) return;

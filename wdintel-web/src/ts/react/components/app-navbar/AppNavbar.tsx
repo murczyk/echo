@@ -244,7 +244,9 @@ export function AppNavbar({
     includeDevicesItem: devicesMenuIsVisible,
   }).filter(
     (item) =>
-      item.type !== 'item' || item.activeName !== 'rer-freqs' || canUseRadioFeatures(user?.roles),
+      item.type !== 'item' ||
+      !['rer-freqs', 'rer-signals'].includes(item.activeName) ||
+      canUseRadioFeatures(user?.roles),
   );
 
   const goiMenuIsVisible = serverModeIsLive && isRerOrCyber && user.goiIntegrations?.length > 0;

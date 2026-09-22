@@ -1,3 +1,4 @@
+import { DutyExcludeMenuContext } from '../../DutyExcludeMenu';
 /**
  * @vitest-environment happy-dom
  */
@@ -652,6 +653,8 @@ async function renderCard(
   options: {
     audioTranscriptionCollapsed?: boolean;
     audioTranscriptionEnabled?: boolean;
+    dutyExcludeMenuEnabled?: boolean;
+    radioFeaturesAllowed?: boolean;
   } = {},
 ): Promise<Rendered> {
   const container = document.createElement('div');
@@ -696,13 +699,19 @@ async function renderCard(
 
   await act(async () => {
     root.render(
-      <RadioFeaturesProvider allowed>
+      <RadioFeaturesProvider allowed={options.radioFeaturesAllowed ?? true}>
         {
           <AudioTranscriptionPreferencesProvider
             collapsedByDefault={options.audioTranscriptionCollapsed ?? false}
             enabled={options.audioTranscriptionEnabled ?? true}
           >
-            <MessageCard {...props} />
+            {options.dutyExcludeMenuEnabled == null ? (
+              <MessageCard {...props} />
+            ) : (
+              <DutyExcludeMenuContext.Provider value={options.dutyExcludeMenuEnabled}>
+                <MessageCard {...props} />
+              </DutyExcludeMenuContext.Provider>
+            )}
           </AudioTranscriptionPreferencesProvider>
         }
       </RadioFeaturesProvider>,
@@ -2779,6 +2788,28 @@ describe('MessageCard', () => {
     expect(view.container.textContent).not.toContain('Копіювати частоту');
     expect(view.container.textContent).not.toContain("Копіювати прив'язку");
     expect(view.container.textContent).not.toContain('Не встановлена');
+  });
+
+  it('#3568 disables the quick-exclude menu without removing other Duty actions', async () => {
+    const view = await renderCard({}, { dutyExcludeMenuEnabled: false });
+    rendered.push(view);
+    expect(view.container.querySelector(`button[aria-label="${EXCLUDE_TITLE}"]`)).toBeNull();
+    expect(view.container.querySelector(`button[aria-label="${COPY_TITLE}"]`)).not.toBeNull();
+    expect(latestMenuProps).toHaveLength(0);
+  });
+
+  it('#3568 keeps group exclusion but hides post exclusion for Cyber', async () => {
+    const view = await renderCard(
+      { msg: buildMessage({ post: 'HIDDEN-POST' }) },
+      { radioFeaturesAllowed: false },
+    );
+    rendered.push(view);
+    await click(
+      view.container.querySelector(`button[aria-label="${EXCLUDE_TITLE}"]`) as HTMLButtonElement,
+    );
+    expect(view.container.textContent).toContain('Виключити групу');
+    expect(view.container.textContent).not.toContain('Виключити пост');
+    expect(view.container.textContent).not.toContain('HIDDEN-POST');
   });
 
   it('opens the exclude menu and applies the selected exclusion', async () => {

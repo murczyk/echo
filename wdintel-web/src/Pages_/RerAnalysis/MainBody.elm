@@ -510,7 +510,8 @@ view user model shared route =
                     (ReportTemplateSelect (RTSenders Senders))
                     "Відправники"
                     "Аналіз відправників"
-                , templateCard
+                , HtmlX.viewIf model.radioFeaturesAllowed <|
+                  templateCard
                     (model.reportTemplate == RTPostsDocx)
                     (ReportTemplateSelect RTPostsDocx)
                     "Пости"
@@ -1009,6 +1010,7 @@ view user model shared route =
                     ]
             , case model.reportTemplate of
                 RTSenders x ->
+                    HtmlX.viewIf model.radioFeaturesAllowed <|
                     div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]
                         [ div [ class "form-check" ]
                             [ input

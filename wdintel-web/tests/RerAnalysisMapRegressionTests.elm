@@ -134,7 +134,7 @@ suite =
                     Just url ->
                         let
                             user =
-                                { id = "cyber", name = "cyber", roles = [ "Cyber", "UnitsEditor" ], sigintZoneId = Nothing, organismId = Nothing, deltaLogin = Nothing, goiConfiguredForOrganism = False, goiFullAccessForOrganism = False, goiHost = Nothing, goiIntegrations = [], lastReleaseSeen = Nothing }
+                                { id = "cyber", name = "cyber", roles = [ "Cyber", "UnitsEditor" ], sigintZoneId = Nothing, organismId = Nothing, deltaLogin = Nothing, displayName = Nothing, goiConfiguredForOrganism = False, goiFullAccessForOrganism = False, goiHost = Nothing, goiIntegrations = [], lastReleaseSeen = Nothing }
 
                             ( initial, _ ) =
                                 RerAnalysis.init user (Route.fromUrl () url) ()
@@ -143,7 +143,7 @@ suite =
                                 Query.emptyQueryState
 
                             saved =
-                                { defaults | freqsSelected = [ "153.6250" ], adjacentFreqsRange = 0.005, includePelengLocations = True, metadataCc = [ "3" ], onlyWithMetadata = True, search = "retained text" }
+                                { defaults | freqsSelected = [ "153.6250" ], postsSelected = [ "hidden-post" ], adjacentFreqsRange = 0.005, includePelengLocations = True, metadataCc = [ "3" ], onlyWithMetadata = True, search = "retained text" }
 
                             restored =
                                 Query.updModelFromQueryState initial saved
@@ -155,7 +155,9 @@ suite =
                                 Query.modelQueryState restored
                         in
                         Expect.all
-                            [ \_ -> Expect.equal Nothing request.selectedFreqs
+                            [ \_ -> Expect.equal Nothing request.selectedPosts
+                            , \_ -> Expect.equal saved.postsSelected roundTrip.postsSelected
+                            , \_ -> Expect.equal Nothing request.selectedFreqs
                             , \_ -> Expect.equal Nothing request.metadataCc
                             , \_ -> Expect.equal (Just False) request.onlyWithMetadata
                             , \_ -> Expect.equal (Just False) request.includePelengLocations

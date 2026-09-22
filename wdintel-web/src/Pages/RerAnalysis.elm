@@ -861,7 +861,7 @@ loadInitialFilterStats model =
                     List.length model.locationsSelected > 0
 
                 PostsFilter ->
-                    List.length model.postsSelected > 0
+                    model.radioFeaturesAllowed && List.length model.postsSelected > 0
 
                 UnitsFilter ->
                     List.length model.unitsSelected > 0
@@ -4616,7 +4616,8 @@ editSidebarContent model =
                                     ]
                                     []
                                 ]
-                            , div []
+                            , Html.Extra.viewIf model.radioFeaturesAllowed <|
+                              div []
                                 [ label [ class "block text-sm font-medium mb-2" ] [ text "Пост" ]
                                 , input
                                     [ type_ "text"

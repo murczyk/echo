@@ -1350,7 +1350,7 @@ update shared user msg model =
             ( m3
             , E.batch
                 [ E.sendCmd <| Api.user_sigint_groups GotGroupKeys { sinceDateInclusiveMs = Just (Utils.Time.xDaysAgo 2 now_ |> Time.posixToMillis) }
-                , E.getPosts GotPosts (Query.analysisStatsDefaultParams (Utils.Time.xDaysAgo 14 now_) now_)
+                , if model.radioFeaturesAllowed then E.getPosts GotPosts (Query.analysisStatsDefaultParams (Utils.Time.xDaysAgo 14 now_) now_) else E.none
                 , cmd3
                 ]
             )
@@ -3200,7 +3200,8 @@ messageTab ps shared model =
                                         ]
                                     ]
                                 ]
-                            , div [ style "margin-bottom" "12px" ]
+                            , HtmlX.viewIf model.radioFeaturesAllowed <|
+                              div [ style "margin-bottom" "12px" ]
                                 [ div [ class "position-relative", style "height" "32px" ]
                                     [ span [ class "fw-bold" ] [ text "пост" ]
                                     ]

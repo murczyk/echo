@@ -420,25 +420,27 @@ function NetworkEditDrawerComponent({
                     label="Не архівувати автоматично"
                   />
 
-                  <Autocomplete<LookupOption, true, false, false>
-                    multiple
-                    disableCloseOnSelect
-                    filterSelectedOptions
-                    fullWidth
-                    size="small"
-                    options={postOptions}
-                    value={selectedPosts}
-                    loading={referenceLoading}
-                    disabled={formBlocked}
-                    loadingText={LOADING_TEXT}
-                    noOptionsText={referenceLoading ? LOADING_TEXT : 'Немає варіантів'}
-                    getOptionLabel={(option) => option.label}
-                    isOptionEqualToValue={(option, value) => option.id === value.id}
-                    onChange={handleAutocompleteChange('postIds')}
-                    filterOptions={networkEditLookupFilterOptions}
-                    slotProps={NEO_AUTOCOMPLETE_SLOT_PROPS}
-                    renderInput={(params) => <TextField {...params} label="Пости" size="small" />}
-                  />
+                  {radioFeaturesAllowed ? (
+                    <Autocomplete<LookupOption, true, false, false>
+                      multiple
+                      disableCloseOnSelect
+                      filterSelectedOptions
+                      fullWidth
+                      size="small"
+                      options={postOptions}
+                      value={selectedPosts}
+                      loading={referenceLoading}
+                      disabled={formBlocked}
+                      loadingText={LOADING_TEXT}
+                      noOptionsText={referenceLoading ? LOADING_TEXT : 'Немає варіантів'}
+                      getOptionLabel={(option) => option.label}
+                      isOptionEqualToValue={(option, value) => option.id === value.id}
+                      onChange={handleAutocompleteChange('postIds')}
+                      filterOptions={networkEditLookupFilterOptions}
+                      slotProps={NEO_AUTOCOMPLETE_SLOT_PROPS}
+                      renderInput={(params) => <TextField {...params} label="Пости" size="small" />}
+                    />
+                  ) : null}
 
                   {radioFeaturesAllowed ? (
                     <TextField

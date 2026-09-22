@@ -344,7 +344,8 @@ export function AnalysisReportDialog({
     : reportTemplateOptions;
   const visibleReportTemplateOptions = availableReportTemplateOptions.filter(
     (option) =>
-      radioFeaturesAllowed || !['pelengs', 'reo', 'mouse', 'report_125'].includes(option.id),
+      radioFeaturesAllowed ||
+      !['pelengs', 'reo', 'mouse', 'report_125', 'posts_docx'].includes(option.id),
   );
   const isBabakOrInterception = report.template === 'babak' || report.template === 'interception';
   const disableBabakUnitCommentsFilter = report.template === 'babak' && report.withoutComments;
@@ -614,23 +615,25 @@ export function AnalysisReportDialog({
               alignItems={{ sm: 'center' }}
               flexWrap="wrap"
             >
-              <FormControl size="small" sx={{ flex: '1 1 240px', maxWidth: 300, minWidth: 220 }}>
-                <InputLabel id="analysis-report-aggregation-label">Агрегація</InputLabel>
-                <Select
-                  labelId="analysis-report-aggregation-label"
-                  label="Агрегація"
-                  value={report.senderAggregation}
-                  onChange={(event) =>
-                    onUpdate({
-                      senderAggregation: event.target
-                        .value as AnalysisReportState['senderAggregation'],
-                    })
-                  }
-                >
-                  <MenuItem value="ByProfile">Профілі</MenuItem>
-                  <MenuItem value="ByPost">Пости</MenuItem>
-                </Select>
-              </FormControl>
+              {radioFeaturesAllowed ? (
+                <FormControl size="small" sx={{ flex: '1 1 240px', maxWidth: 300, minWidth: 220 }}>
+                  <InputLabel id="analysis-report-aggregation-label">Агрегація</InputLabel>
+                  <Select
+                    labelId="analysis-report-aggregation-label"
+                    label="Агрегація"
+                    value={report.senderAggregation}
+                    onChange={(event) =>
+                      onUpdate({
+                        senderAggregation: event.target
+                          .value as AnalysisReportState['senderAggregation'],
+                      })
+                    }
+                  >
+                    <MenuItem value="ByProfile">Профілі</MenuItem>
+                    <MenuItem value="ByPost">Пости</MenuItem>
+                  </Select>
+                </FormControl>
+              ) : null}
               {radioFeaturesAllowed ? (
                 <ReportCheckboxLabel
                   checked={report.senderAdvancedFreqs}

@@ -22,6 +22,7 @@ const directSubmitMocks = vi.hoisted(() => ({
   parseDirectSubmit: vi.fn(),
   searchNetworkNames: vi.fn().mockResolvedValue([]),
   searchFreqs: vi.fn().mockResolvedValue([]),
+  searchPostNames: vi.fn().mockResolvedValue([]),
 }));
 const networkMocks = vi.hoisted(() => ({
   getNetworksByIds: vi.fn().mockResolvedValue([]),
@@ -50,7 +51,7 @@ vi.mock('../../../services/api/inbox-reference-data', () => ({
 vi.mock('../../../services/api/direct-submit', () => ({
   searchDeviceName: vi.fn().mockResolvedValue(null),
   searchDeviceNames: vi.fn().mockResolvedValue([]),
-  searchPostNames: vi.fn().mockResolvedValue([]),
+  searchPostNames: directSubmitMocks.searchPostNames,
   searchUnitNames: vi.fn().mockResolvedValue([]),
   searchNetworkNames: directSubmitMocks.searchNetworkNames,
   searchSignalNames: vi.fn().mockResolvedValue([]),
@@ -617,6 +618,7 @@ describe('ManageMessageDrawer edit mode', () => {
     directSubmitMocks.createDeviceName.mockResolvedValue({ id: 1 });
     directSubmitMocks.parseDirectSubmit.mockReset();
     directSubmitMocks.searchFreqs.mockClear();
+    directSubmitMocks.searchPostNames.mockClear();
     directSubmitMocks.searchNetworkNames.mockReset();
     directSubmitMocks.searchNetworkNames.mockResolvedValue([]);
     networkMocks.getNetworksByIds.mockReset();
@@ -1841,6 +1843,7 @@ describe('ManageMessageDrawer edit mode', () => {
     directSubmitMocks.parseDirectSubmit.mockResolvedValue({
       text: 'parsed body',
       freq: '153.6250',
+      post: 'HIDDEN-PARSED-POST',
     });
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -1878,6 +1881,8 @@ describe('ManageMessageDrawer edit mode', () => {
     expect(container.textContent).not.toContain('DMR метадані');
     expect(container.textContent).not.toContain('Назва сигнала мережі');
     expect(directSubmitMocks.searchFreqs).not.toHaveBeenCalled();
+    expect(directSubmitMocks.searchPostNames).not.toHaveBeenCalled();
+    expect(autocompleteOnChangeByLabel.has('Пост')).toBe(false);
     const submit = container.querySelector('button[type="submit"]') as HTMLButtonElement;
     expect(submit.disabled).toBe(false);
     await act(async () => {
@@ -1886,7 +1891,7 @@ describe('ManageMessageDrawer edit mode', () => {
         .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     });
     expect(directSubmitMocks.submitDirect).toHaveBeenCalledWith(
-      expect.objectContaining({ freq: undefined, dmr: [] }),
+      expect.objectContaining({ freq: undefined, post: undefined, dmr: [] }),
     );
     root.unmount();
   });
@@ -2958,6 +2963,7 @@ describe('ManageMessageDrawer edit mode', () => {
             editTarget={{
               id: 91,
               message: buildMessage({
+                post: 'ORIGINAL-POST',
                 metadata: [
                   { ...metadataBase, colorCode: '3', senderId: '101' },
                   { ...metadataBase, colorCode: '3', senderId: '202' },
@@ -2979,6 +2985,7 @@ describe('ManageMessageDrawer edit mode', () => {
         expect(container.textContent).not.toContain('Колірний код (CC)');
         expect(directSubmitMocks.searchFreqs).not.toHaveBeenCalled();
       }
+      expect(directSubmitMocks.editDirectSubmit.mock.calls[0][1].post).toBe('ORIGINAL-POST');
       expect(directSubmitMocks.editDirectSubmit.mock.calls[0][1].dmr).toMatchObject([
         { cc: 3, sender_id: 101, signal_name: 'DMR' },
         { cc: 3, sender_id: 202, signal_name: 'DMR' },

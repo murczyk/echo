@@ -1441,7 +1441,8 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                   itemBlock { label = message.freq, iconName = "bi-broadcast", iconTitle = "Частота" } actionsBlock
                 , itemBlock { iconTitle = "Координати", iconName = "bi-geo", label = message.coords } []
                 , itemBlock { iconTitle = "Локація", iconName = "bi-geo-alt", label = message.location } []
-                , itemBlock { iconTitle = "Пости", iconName = "bi-binoculars", label = message.post } []
+                , HtmlX.viewIf (Core.Auth.canUseRadioFeatures vps.user) <|
+                  itemBlock { iconTitle = "Пости", iconName = "bi-binoculars", label = message.post } []
                 ]
 
         messageColumn =

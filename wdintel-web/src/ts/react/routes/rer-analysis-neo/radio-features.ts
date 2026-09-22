@@ -12,6 +12,7 @@ export function effectiveRadioQuery(
         ...query,
         radioFeaturesAllowed: false,
         freqsSelected: [],
+        postsSelected: [],
         adjacentFreqsRange: 0,
         includeOnlyNewFreqs: false,
         includePelengLocations: false,
@@ -34,10 +35,11 @@ export function effectiveRadioReport(
     tagReportSortBy: 'ByTime',
     reoAdjacentFreqsDistance: 0,
     senderAdvancedFreqs: false,
+    senderAggregation: 'ByProfile',
     template:
       report.template === 'summary_table'
         ? 'kmz'
-        : ['pelengs', 'reo', 'mouse', 'report_125'].includes(report.template)
+        : ['pelengs', 'reo', 'mouse', 'report_125', 'posts_docx'].includes(report.template)
           ? 'tags'
           : report.template,
   };
@@ -51,6 +53,8 @@ export function effectiveRadioRequest<T extends AnalysisStatsReq | InboxMessages
   return {
     ...request,
     selectedFreqs: null,
+    selectedPosts: null,
+    ...('deniedPosts' in request ? { deniedPosts: null } : {}),
     ...('deniedFreqs' in request ? { deniedFreqs: null } : {}),
     includePelengLocations: false,
     metadataCc: null,

@@ -222,7 +222,7 @@ viewNetworkInfoReadonly user network shared model =
             , infoRow shared "Характер роботи" (text <| Maybe.withDefault "" network.operationType)
             , infoRow shared "Період функціонування" (text <| Maybe.withDefault "" network.operationPeriod)
             , infoRow shared "Активність" (text <| createActivityStr network.activeFrom network.activeTo shared.timeZone)
-            , infoRow shared "Пости" (postNames shared network.postIds)
+            , Html.Extra.viewIf model.radioFeaturesAllowed <| infoRow shared "Пости" (postNames shared network.postIds)
             , Html.Extra.viewIf model.radioFeaturesAllowed <| infoRow shared "Радіостанція" (text <| Maybe.withDefault "" network.radioStation)
             , infoRow shared "Статус" (text (networkStatusLabel network.status))
             ]
@@ -475,7 +475,8 @@ viewNetworkInfoForm updNetworkReq network networkFreqs shared model =
             , div [ class "col-span-2 h-[40px] flex items-center" ]
                 [ text <| createActivityStr network.activeFrom network.activeTo shared.timeZone ]
             ]
-        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+        , Html.Extra.viewIf model.radioFeaturesAllowed <|
+          div [ class "grid grid-cols-3 gap-x-4 items-center" ]
             [ span [ class "text-[13px] font-medium" ] [ text "Пости:" ]
             , div [ class "col-span-2 h-[40px] flex items-center" ]
                 [ div [ class "w-full" ]

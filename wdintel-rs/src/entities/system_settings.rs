@@ -50,6 +50,7 @@ pub struct Model {
     pub hide_orbit_data: bool,
     pub show_peleng_distance_to_battleline: bool,
     pub disable_bot_tags: Option<bool>,
+    pub duty_exclude_menu_enabled: Option<bool>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

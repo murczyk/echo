@@ -480,7 +480,8 @@ view isDark _ model =
                 , withGreenCircle = not model.includePelengLocations
                 }
                 tabFiltersLocations
-            , filterMenuBlockCountOutOf
+            , HtmlX.viewIf model.radioFeaturesAllowed <|
+              filterMenuBlockCountOutOf
                 { unfold = model.unfoldPostsFilter
                 , toggleMsg = ToggleUnfoldPostsFilter
                 , label = "пости"

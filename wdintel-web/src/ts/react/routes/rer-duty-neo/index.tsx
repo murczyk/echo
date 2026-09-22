@@ -1,3 +1,4 @@
+import { DutyExcludeMenuContext } from '../shared/message-card/DutyExcludeMenu';
 import { RadioFeaturesProvider } from '../shared/RadioFeatures';
 import { canUseRadioFeatures } from '../../utils/roles';
 import { Box, useMediaQuery, useTheme } from '@mui/material';
@@ -77,6 +78,7 @@ export function RerDutyNeoPage({
     audioTranscriptionCollapsed,
     audioTranscriptionEnabled,
     hideBotTags,
+    dutyExcludeMenuEnabled,
     collapseMediaPreviews,
     mediaSummaryEnabled,
     messageTextPreviewLines,
@@ -434,18 +436,20 @@ export function RerDutyNeoPage({
               collapsedByDefault={audioTranscriptionCollapsed}
               enabled={audioTranscriptionEnabled}
             >
-              <RerDutyNeoWorkspace
-                activeFeedId={activeFeedIdSafe}
-                buildFeedColumnModel={buildFeedColumnModel}
-                columnRefsRef={columnRefsRef}
-                createMessageFeed={createMessageFeed}
-                openCreateMessageComposer={openCreateMessageComposer}
-                isInitialLoading={isInitialLoading}
-                messageFeeds={messageFeeds}
-                narrowScreen={narrowScreen}
-                onSelectFeed={setActiveFeedId}
-                showLoadingBackdrop={showLoadingBackdrop}
-              />
+              <DutyExcludeMenuContext.Provider value={dutyExcludeMenuEnabled ?? true}>
+                <RerDutyNeoWorkspace
+                  activeFeedId={activeFeedIdSafe}
+                  buildFeedColumnModel={buildFeedColumnModel}
+                  columnRefsRef={columnRefsRef}
+                  createMessageFeed={createMessageFeed}
+                  openCreateMessageComposer={openCreateMessageComposer}
+                  isInitialLoading={isInitialLoading}
+                  messageFeeds={messageFeeds}
+                  narrowScreen={narrowScreen}
+                  onSelectFeed={setActiveFeedId}
+                  showLoadingBackdrop={showLoadingBackdrop}
+                />
+              </DutyExcludeMenuContext.Provider>
             </AudioTranscriptionPreferencesProvider>
           </MessageDeviceAccessProvider>
         </PointBlacklistPaletteNamesCacheProvider>

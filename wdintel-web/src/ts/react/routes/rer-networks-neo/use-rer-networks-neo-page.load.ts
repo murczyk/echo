@@ -202,7 +202,7 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
             getUnitsList(),
             listAors({ sortBy: null }),
             args.unitId ? Promise.resolve([]) : getNetworkUnitStats(),
-            listPosts(),
+            args.radioFeaturesAllowed ? listPosts() : Promise.resolve([]),
             args.radioFeaturesAllowed ? getEncryptions() : Promise.resolve([]),
           ])
         : null;

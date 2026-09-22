@@ -399,6 +399,7 @@ describe('useRerAnalysisNeoPage', () => {
       act(() => {
         latest?.updateQueryState({
           freqsSelected: ['145.500'],
+          postsSelected: ['hidden-post'],
           adjacentFreqsRange: 0.025,
           includeOnlyNewFreqs: true,
           metadataCc: ['7'],
@@ -411,6 +412,7 @@ describe('useRerAnalysisNeoPage', () => {
       await flushEffects();
       expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].queryState).toMatchObject({
         freqsSelected: [],
+        postsSelected: [],
         adjacentFreqsRange: 0,
         includeOnlyNewFreqs: false,
         metadataCc: [],

@@ -534,7 +534,7 @@ update shared msg model =
                     }
 
                  --TODO: do not load if loaded already
-                 , E.loadPostsFromShared { sortBy = Nothing }
+                 , (if shared.user |> Maybe.map Core.Auth.canUseRadioFeatures |> Maybe.withDefault False then E.loadPostsFromShared { sortBy = Nothing } else E.none)
                  , E.getSignalsForNetwork SignalsForNetworkLoaded { networkId = res.id }
                  ]
                     ++ ((if model.radioFeaturesAllowed then FrequenciesTable.loadFreqsInit res.id else []) |> List.map (E.map Frequencies))

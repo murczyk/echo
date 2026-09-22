@@ -4,6 +4,7 @@ module Core.RadioFeatures exposing (analysisFilters, inboxFilters)
 type alias RadioFilters a =
     { a
         | selectedFreqs : Maybe (List String)
+        , selectedPosts : Maybe (List String)
         , includePelengLocations : Maybe Bool
         , metadataCc : Maybe (List String)
         , metadataSender : Maybe (List String)
@@ -22,6 +23,7 @@ analysisFilters allowed request =
     else
         { request
             | selectedFreqs = Nothing
+            , selectedPosts = Nothing
             , includePelengLocations = Just False
             , metadataCc = Nothing
             , metadataSender = Nothing
@@ -32,7 +34,7 @@ analysisFilters allowed request =
         }
 
 
-inboxFilters : Bool -> RadioFilters { a | deniedFreqs : Maybe (List String) } -> RadioFilters { a | deniedFreqs : Maybe (List String) }
+inboxFilters : Bool -> RadioFilters { a | deniedFreqs : Maybe (List String), deniedPosts : Maybe (List String) } -> RadioFilters { a | deniedFreqs : Maybe (List String), deniedPosts : Maybe (List String) }
 inboxFilters allowed request =
     if allowed then
         request
@@ -42,4 +44,4 @@ inboxFilters allowed request =
             normalized =
                 analysisFilters allowed request
         in
-        { normalized | deniedFreqs = Nothing }
+        { normalized | deniedFreqs = Nothing, deniedPosts = Nothing }

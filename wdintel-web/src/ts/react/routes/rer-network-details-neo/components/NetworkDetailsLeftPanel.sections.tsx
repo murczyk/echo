@@ -244,7 +244,7 @@ export function MainContentSections({
     postItems,
   });
   const visibleOperationalFields = operationalFields.filter(
-    (field) => radioFeaturesAllowed || !['range', 'transfer', 'radio'].includes(field.key),
+    (field) => radioFeaturesAllowed || !['range', 'transfer', 'radio', 'posts'].includes(field.key),
   );
   const additionalFields = buildAdditionalFields({ network });
 

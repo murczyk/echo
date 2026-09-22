@@ -116,6 +116,9 @@ fn map_system_settings_item(
         show_peleng_distance_to_battleline: settings
             .show_peleng_distance_to_battleline,
         disable_bot_tags: settings.disable_bot_tags.unwrap_or(false),
+        duty_exclude_menu_enabled: settings
+            .duty_exclude_menu_enabled
+            .unwrap_or(true),
     })
 }
 
@@ -622,6 +625,7 @@ fn system_settings_active_model(
         enable_audio_transcription: Set(req.enable_audio_transcription),
         hide_orbit_data: Set(hide_orbit_data),
         disable_bot_tags: Set(Some(req.disable_bot_tags)),
+        duty_exclude_menu_enabled: Set(Some(req.duty_exclude_menu_enabled)),
     })
 }
 
@@ -782,6 +786,9 @@ pub async fn current_system_settings(
                 .show_peleng_distance_to_battleline,
             hide_orbit_data: settings.hide_orbit_data,
             disable_bot_tags: settings.disable_bot_tags.unwrap_or(false),
+            duty_exclude_menu_enabled: settings
+                .duty_exclude_menu_enabled
+                .unwrap_or(true),
         },
         None => SystemSettingsCurrentRsp {
             id: None,
@@ -815,6 +822,7 @@ pub async fn current_system_settings(
             show_peleng_distance_to_battleline: false,
             hide_orbit_data: false,
             disable_bot_tags: false,
+            duty_exclude_menu_enabled: true,
         },
     }))
 }
@@ -929,6 +937,46 @@ mod tests {
         settings.disable_bot_tags = Set(Some(true));
         settings.update(&env.dbx).await.unwrap();
         assert!(bot_tags_disabled(&env.dbx).await.unwrap());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3568_duty_exclude_menu_defaults_on_and_preserves_saved_choice(
+    ) {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+        let login_id = test_login_id(&env).await;
+        let legacy = insert_settings(&env.dbx, old_ts(), false).await;
+        assert!(
+            map_system_settings_item(legacy)
+                .unwrap()
+                .duty_exclude_menu_enabled
+        );
+
+        let mut req = settings_req(false);
+        req.duty_exclude_menu_enabled = false;
+        let disabled =
+            create_system_settings_for_login(&env.dbx, &login_id, &req)
+                .await
+                .unwrap();
+        assert_eq!(disabled.duty_exclude_menu_enabled, Some(false));
+
+        req.duty_exclude_menu_enabled = true;
+        create_system_settings_for_login(&env.dbx, &login_id, &req)
+            .await
+            .unwrap();
+        let reactivated = activate_system_settings_for_login(
+            &env.dbx,
+            &login_id,
+            disabled.id,
+        )
+        .await
+        .unwrap();
+        assert!(
+            !map_system_settings_item(reactivated)
+                .unwrap()
+                .duty_exclude_menu_enabled
+        );
     }
 
     #[tokio::test]
@@ -1187,6 +1235,7 @@ mod tests {
             show_classic_analysis: true,
             show_peleng_distance_to_battleline: false,
             disable_bot_tags: false,
+            duty_exclude_menu_enabled: true,
         }
     }
 
@@ -1252,6 +1301,7 @@ mod tests {
             show_peleng_distance_to_battleline: Set(false),
             hide_orbit_data: Set(false),
             disable_bot_tags: Set(None),
+            duty_exclude_menu_enabled: Set(None),
         }
         .insert(dbx)
         .await

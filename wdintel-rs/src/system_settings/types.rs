@@ -34,6 +34,7 @@ pub struct SystemSettingsCurrentRsp {
     pub show_peleng_distance_to_battleline: bool,
     pub hide_orbit_data: bool,
     pub disable_bot_tags: bool,
+    pub duty_exclude_menu_enabled: bool,
 }
 
 #[derive(
@@ -73,6 +74,7 @@ pub struct SystemSettingsItem {
     pub show_classic_analysis: bool,
     pub show_peleng_distance_to_battleline: bool,
     pub disable_bot_tags: bool,
+    pub duty_exclude_menu_enabled: bool,
 }
 
 #[derive(
@@ -131,6 +133,8 @@ pub struct CreateSystemSettingsReq {
     pub show_peleng_distance_to_battleline: bool,
     #[serde(default)]
     pub disable_bot_tags: bool,
+    #[serde(default = "default_true")]
+    pub duty_exclude_menu_enabled: bool,
 }
 
 fn default_true() -> bool {

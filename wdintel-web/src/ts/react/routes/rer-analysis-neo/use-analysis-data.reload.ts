@@ -350,7 +350,10 @@ export function filterSectionsForInitialLoad(
     sections.add(section);
   });
   additionalSections.forEach((section) => sections.add(section));
-  return Array.from(sections);
+  return Array.from(sections).filter(
+    (section) =>
+      queryState.radioFeaturesAllowed !== false || !['posts', 'metadata'].includes(section),
+  );
 }
 
 function toFilterOptions<T>(

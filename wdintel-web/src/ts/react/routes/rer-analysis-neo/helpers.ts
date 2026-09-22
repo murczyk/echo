@@ -144,7 +144,7 @@ function getDefaultAnalysisDateRange(now: Date): {
   const startOfTomorrowInAppTz = startOfTodayInAppTz.add(1, 'day');
 
   return {
-    fromDateTimeStr: startOfTodayInAppTz.format('YYYY-MM-DDTHH:mm'),
+    fromDateTimeStr: startOfTomorrowInAppTz.subtract(90, 'day').format('YYYY-MM-DDTHH:mm'),
     toDateTimeStr: startOfTomorrowInAppTz.format('YYYY-MM-DDTHH:mm'),
   };
 }

@@ -70,7 +70,7 @@ export function useRerDutyFilterOptions(radioFeaturesAllowed = true) {
     const [sendersResult, freqsResult, postsResult, tagsResult] = await Promise.allSettled([
       getLatestSenders(),
       radioFeaturesAllowed ? getLatestFrequencies() : Promise.resolve([]),
-      getPostsList(),
+      radioFeaturesAllowed ? getPostsList() : Promise.resolve([]),
       getTagsForDisplay(),
     ]);
     if (sendersResult.status === 'fulfilled') {

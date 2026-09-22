@@ -21,7 +21,9 @@ export function AnalysisOverviewCard({ counts }: Props) {
         <PowerChip label={`Позивні: ${counts?.callsignsCount ?? 0}`} color="default" />
         <PowerChip label={`Підрозділи: ${counts?.unitsCount ?? 0}`} color="default" />
         <PowerChip label={`Локації: ${counts?.locationsCount ?? 0}`} color="default" />
-        <PowerChip size="small" label={`Пости: ${counts?.postsCount ?? 0}`} color="default" />
+        {radioFeaturesAllowed ? (
+          <PowerChip size="small" label={`Пости: ${counts?.postsCount ?? 0}`} color="default" />
+        ) : null}
         <PowerChip size="small" label={`Теги: ${counts?.tagsCount ?? 0}`} color="default" />
         <PowerChip size="small" label={`AOR: ${counts?.aorsCount ?? 0}`} color="default" />
         <PowerChip size="small" label={`Мережі: ${counts?.networksCount ?? 0}`} color="default" />

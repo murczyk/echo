@@ -736,7 +736,7 @@ export function useRerNetworkDetailsNeoPageLoad(
       try {
         const [units, posts, aors, encryptions, systemSettings] = await Promise.all([
           getUnitsList(),
-          listPosts(),
+          currentUserPromise.then((user) => (canUseRadioFeatures(user.roles) ? listPosts() : [])),
           listAors({ sortBy: null }),
           currentUserPromise.then((user) =>
             canUseRadioFeatures(user.roles) ? getEncryptions() : [],
