@@ -199,6 +199,7 @@ returns trigger language plpgsql as $$
 declare
     old_item_id bigint;
     new_item_id bigint;
+    event_payload jsonb;
 begin
     if not api_integration_iggy_has_publisher() then
         return coalesce(new, old);
@@ -214,16 +215,27 @@ begin
     end if;
     if old_item_id is not null and (tg_op = 'DELETE' or old_item_id <> new_item_id)
         and exists (select 1 from sigint_inbox_item where id = old_item_id) then
-        perform queue_api_integration_iggy_event(
-            old_item_id, jsonb_build_object('event_type', 'sigint_inbox_item_updated')
-        );
+        event_payload := jsonb_build_object('event_type', 'sigint_inbox_item_updated');
+        if tg_table_name = 'signal_message_group' then
+            event_payload := event_payload || jsonb_build_object(
+                'previous_group_master_key', to_jsonb(old) ->> 'group_master_key'
+            );
+        end if;
+        perform queue_api_integration_iggy_event(old_item_id, event_payload);
     end if;
     if new_item_id is not null and exists (
         select 1 from sigint_inbox_item where id = new_item_id
     ) then
-        perform queue_api_integration_iggy_event(
-            new_item_id, jsonb_build_object('event_type', 'sigint_inbox_item_updated')
-        );
+        event_payload := jsonb_build_object('event_type', 'sigint_inbox_item_updated');
+        if tg_table_name = 'signal_message_group' and tg_op = 'UPDATE'
+            and old_item_id = new_item_id
+            and (to_jsonb(old) ->> 'group_master_key') is distinct from
+                (to_jsonb(new) ->> 'group_master_key') then
+            event_payload := event_payload || jsonb_build_object(
+                'previous_group_master_key', to_jsonb(old) ->> 'group_master_key'
+            );
+        end if;
+        perform queue_api_integration_iggy_event(new_item_id, event_payload);
     end if;
     return coalesce(new, old);
 end;

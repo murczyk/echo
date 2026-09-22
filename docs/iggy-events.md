@@ -15,7 +15,7 @@ database transactions can commit in a different order.
 | `event_type` suffix | Additional fields | Meaning |
 | --- | --- | --- |
 | `updated` | `message` | Replace the inbox message snapshot after item, message, unit, tag, metadata, point token, media, or group edits. |
-| `deleted` | none | Remove a deleted inbox item. |
+| `deleted` | none | Remove an inbox item after deletion or loss of access to its last visible group. |
 | `network_linked`, `network_unlinked` | `sigint_network_id`, `sigint_network_freq_ids`, `sigint_network_callsign_ids`, `sigint_callsign_ids` | Add or remove the network, its matching frequency IDs, active network callsign IDs, and their catalog callsign IDs. |
 | `network_frequencies_changed` | `sigint_network_id`, `unlinked_sigint_network_freq_ids`, `linked_sigint_network_freq_ids` | Apply an inbox frequency or interception time edit. |
 | `callsign_linked`, `callsign_unlinked` | `sigint_inbox_item_callsign_id`, `callsign`, `sigint_callsign_ids` | Apply an inbox callsign edit. |
@@ -26,8 +26,10 @@ match the inbox item's `freq` and interception time against the network's
 frequency rows. The current inbox schema stores one `freq` value per item;
 multiple matching network frequency rows are included. The worker publishes
 item updates and associations only for inbox items visible to the integration's
-API user. Deletion events carry only the item ID and are published even after
-the item is no longer visible.
+API user. Deletion events carry only the item ID and are published after
+physical deletion even when the item is no longer visible. For group visibility
+loss, the event is sent only to integrations whose API user could access the
+removed group.
 
 All activity and frequency interval times use UTC.
 

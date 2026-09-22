@@ -36,6 +36,13 @@ struct IggyInboxMessage {
     sigint_network_freq_ids: Vec<i64>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PendingEventAction {
+    Skip,
+    Publish,
+    Revoke,
+}
+
 pub async fn run_nofail(env: Arc<Env>) {
     loop {
         let has_active_integrations =
@@ -144,7 +151,9 @@ async fn sync_integration(
         load_pending_event_messages(env, &api_integration, &pending_events)
             .await
             .c(h!())?;
-    let client = crate::iggy::connect(url, iggy_login, password).await?;
+    let client = crate::iggy::connect(url, iggy_login, password)
+        .await
+        .context(h!())?;
     let sync_result = sync_connected_integration(
         env,
         &api_integration,
@@ -162,10 +171,11 @@ async fn sync_integration(
         Ok(())
     };
     let shutdown_result = crate::iggy::shutdown(&client).await;
-    sync_result?;
-    release_result?;
-    analytics_result?;
-    shutdown_result
+    sync_result.context(h!())?;
+    release_result.context(h!())?;
+    analytics_result.context(h!())?;
+    shutdown_result.context(h!())?;
+    Ok(())
 }
 
 async fn try_lock_integration(
@@ -228,21 +238,24 @@ async fn sync_connected_integration(
         .await
         .c(h!())?;
     let mut visible_networks = HashMap::new();
+    let mut visible_groups = None;
     for event in pending_events {
         let message = event
             .sigint_inbox_item_id
             .and_then(|id| pending_messages.get(&id));
-        if should_publish_pending_event(
+        let action = pending_event_action(
             env,
             api_integration,
             &event,
             message,
             &mut visible_networks,
+            &mut visible_groups,
         )
         .await
-        .c(h!())?
-        {
-            let payload = render_pending_event(&event, message).c(h!())?;
+        .c(h!())?;
+        if action != PendingEventAction::Skip {
+            let payload =
+                render_pending_event(&event, message, action).c(h!())?;
             if let Err(err) = publish_with_retry(&producer, &payload).await {
                 error!(
                     "Iggy integration {} failed to publish event {}: {err:#?}",
@@ -259,20 +272,53 @@ async fn sync_connected_integration(
     Ok(())
 }
 
-async fn should_publish_pending_event(
+async fn pending_event_action(
     env: &Env,
     api_integration: &api_integration::Model,
     event: &api_integration_iggy_event::Model,
     message: Option<&IggyInboxMessage>,
     visible_networks: &mut HashMap<i64, bool>,
-) -> Result<bool, AppError> {
+    visible_groups: &mut Option<BTreeSet<String>>,
+) -> Result<PendingEventAction, AppError> {
     if event.sigint_inbox_item_id.is_some() {
-        return Ok(message.is_some()
-            || event.payload["event_type"] == "sigint_inbox_item_deleted");
+        if message.is_some()
+            || event.payload["event_type"] == "sigint_inbox_item_deleted"
+        {
+            return Ok(PendingEventAction::Publish);
+        }
+        if event.payload["event_type"] == "sigint_inbox_item_updated" {
+            if let Some(previous_group) =
+                event.payload["previous_group_master_key"].as_str()
+            {
+                if visible_groups.is_none() {
+                    *visible_groups = Some(
+                        crate::messenger::group::get_identity_sigint_groups(
+                            &env.dbx,
+                            &api_integration.api_user_login_id,
+                        )
+                        .await
+                        .c(h!())?
+                        .into_iter()
+                        .collect(),
+                    );
+                }
+                if visible_groups
+                    .as_ref()
+                    .is_some_and(|groups| groups.contains(previous_group))
+                {
+                    return Ok(PendingEventAction::Revoke);
+                }
+            }
+        }
+        return Ok(PendingEventAction::Skip);
     }
     let network_id = event.payload["sigint_network_id"].as_i64().c(h!())?;
     if let Some(visible) = visible_networks.get(&network_id) {
-        return Ok(*visible);
+        return Ok(if *visible {
+            PendingEventAction::Publish
+        } else {
+            PendingEventAction::Skip
+        });
     }
     let visible = has_visible_linked_inbox_item(
         env,
@@ -282,7 +328,11 @@ async fn should_publish_pending_event(
     .await
     .c(h!())?;
     visible_networks.insert(network_id, visible);
-    Ok(visible)
+    Ok(if visible {
+        PendingEventAction::Publish
+    } else {
+        PendingEventAction::Skip
+    })
 }
 
 async fn has_visible_linked_inbox_item(
@@ -396,14 +446,21 @@ async fn load_pending_event_messages(
 fn render_pending_event(
     event: &api_integration_iggy_event::Model,
     message: Option<&IggyInboxMessage>,
+    action: PendingEventAction,
 ) -> Result<Vec<u8>, AppError> {
     let mut payload = event.payload.clone();
     let fields = payload.as_object_mut().c(h!())?;
+    fields.remove("previous_group_master_key");
     fields.insert("event_id".into(), serde_json::json!(event.id));
     if let Some(id) = event.sigint_inbox_item_id {
         fields.insert("sigint_inbox_item_id".into(), serde_json::json!(id));
     }
-    if fields.get("event_type").and_then(|value| value.as_str())
+    if action == PendingEventAction::Revoke {
+        fields.insert(
+            "event_type".into(),
+            serde_json::json!("sigint_inbox_item_deleted"),
+        );
+    } else if fields.get("event_type").and_then(|value| value.as_str())
         == Some("sigint_inbox_item_updated")
     {
         fields.insert(
@@ -823,7 +880,7 @@ async fn set_sync_completed(
 mod tests {
     use super::*;
     use crate::entities::{
-        login,
+        datasource_group, login,
         sea_orm_active_enums::{
             SigintInboxItemCallsignSource, SigintInboxItemUnitKind,
         },
@@ -939,6 +996,89 @@ mod tests {
         .await
         .unwrap();
         signal_message.id
+    }
+
+    async fn insert_grouped_inbox_item(
+        env: &Env,
+        group: &datasource_group::Model,
+    ) -> (i64, signal_message_group::Model) {
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                datasource_group_id: Set(Some(group.id)),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let message_group = mk_signal_message_group(
+            &env.dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(message.id),
+                group_master_key: Set(Some(group.group_master_key.clone())),
+                datasource_group_id: Set(Some(group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        (message.id, message_group)
+    }
+
+    async fn assert_group_loss_action(
+        env: &Env,
+        integration: &api_integration::Model,
+        item_id: i64,
+        group_master_key: &str,
+        expected: PendingEventAction,
+    ) {
+        let events =
+            load_pending_events(&env.dbx, integration.id).await.unwrap();
+        let event = events
+            .iter()
+            .rev()
+            .find(|event| {
+                event.sigint_inbox_item_id == Some(item_id)
+                    && event.payload["previous_group_master_key"]
+                        == group_master_key
+            })
+            .unwrap();
+        let messages = load_pending_event_messages(env, integration, &events)
+            .await
+            .unwrap();
+        assert!(!messages.contains_key(&item_id));
+        let action = pending_event_action(
+            env,
+            integration,
+            event,
+            None,
+            &mut HashMap::new(),
+            &mut None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(action, expected);
+        if action == PendingEventAction::Revoke {
+            let payload: serde_json::Value = serde_json::from_slice(
+                &render_pending_event(event, None, action).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(payload["event_type"], "sigint_inbox_item_deleted");
+            assert_eq!(payload["sigint_inbox_item_id"], item_id);
+            assert_eq!(payload["event_id"], event.id);
+            assert!(payload.get("message").is_none());
+            assert!(payload.get("previous_group_master_key").is_none());
+        }
     }
 
     struct NetworkFixture {
@@ -1395,7 +1535,12 @@ mod tests {
             intercepted_at.and_utc().timestamp_millis(),
         );
         let payload: serde_json::Value = serde_json::from_slice(
-            &render_pending_event(callsign_linked, Some(&message)).unwrap(),
+            &render_pending_event(
+                callsign_linked,
+                Some(&message),
+                PendingEventAction::Publish,
+            )
+            .unwrap(),
         )
         .unwrap();
         assert_eq!(
@@ -1611,8 +1756,12 @@ mod tests {
             .await
             .unwrap();
         let rendered: serde_json::Value = serde_json::from_slice(
-            &render_pending_event(&events[0], Some(&messages[&message.id]))
-                .unwrap(),
+            &render_pending_event(
+                &events[0],
+                Some(&messages[&message.id]),
+                PendingEventAction::Publish,
+            )
+            .unwrap(),
         )
         .unwrap();
         assert_eq!(rendered["event_type"], "sigint_inbox_item_updated");
@@ -1632,9 +1781,111 @@ mod tests {
         let events =
             load_pending_events(&env.dbx, integration.id).await.unwrap();
         let deleted: serde_json::Value = serde_json::from_slice(
-            &render_pending_event(events.last().unwrap(), None).unwrap(),
+            &render_pending_event(
+                events.last().unwrap(),
+                None,
+                PendingEventAction::Publish,
+            )
+            .unwrap(),
         )
         .unwrap();
         assert_eq!(deleted["event_type"], "sigint_inbox_item_deleted");
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn losing_last_visible_group_revokes_only_prior_recipients() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let group = find_test_datasource_group(&env.dbx).await.unwrap();
+        let integration = insert_integration(&env, login.id).await;
+        let unrelated_zone =
+            mk_sigint_zone(&env.dbx, Default::default()).await.unwrap();
+        let unrelated_login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                sigint_zone_id: Set(Some(unrelated_zone.id)),
+                organism_id: Set(login.organism_id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let unrelated_integration =
+            insert_integration(&env, unrelated_login.id).await;
+
+        let (deleted_item_id, deleted_group) =
+            insert_grouped_inbox_item(&env, &group).await;
+        let events =
+            load_pending_events(&env.dbx, integration.id).await.unwrap();
+        let messages = load_pending_event_messages(&env, &integration, &events)
+            .await
+            .unwrap();
+        assert!(messages.contains_key(&deleted_item_id));
+
+        signal_message_group::Entity::delete_by_id(deleted_group.id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        assert_group_loss_action(
+            &env,
+            &integration,
+            deleted_item_id,
+            &group.group_master_key,
+            PendingEventAction::Revoke,
+        )
+        .await;
+        assert_group_loss_action(
+            &env,
+            &unrelated_integration,
+            deleted_item_id,
+            &group.group_master_key,
+            PendingEventAction::Skip,
+        )
+        .await;
+
+        let (moved_item_id, moved_group) =
+            insert_grouped_inbox_item(&env, &group).await;
+        let target_item_id =
+            insert_inbox_item(&env, Utc::now().naive_utc()).await;
+        signal_message_group::ActiveModel {
+            id: Set(moved_group.id),
+            signal_message_id: Set(target_item_id),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        let events =
+            load_pending_events(&env.dbx, integration.id).await.unwrap();
+        let messages = load_pending_event_messages(&env, &integration, &events)
+            .await
+            .unwrap();
+        assert!(messages.contains_key(&target_item_id));
+        assert_group_loss_action(
+            &env,
+            &integration,
+            moved_item_id,
+            &group.group_master_key,
+            PendingEventAction::Revoke,
+        )
+        .await;
+
+        signal_message_group::ActiveModel {
+            id: Set(moved_group.id),
+            group_master_key: Set(None),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        assert_group_loss_action(
+            &env,
+            &integration,
+            target_item_id,
+            &group.group_master_key,
+            PendingEventAction::Revoke,
+        )
+        .await;
     }
 }
