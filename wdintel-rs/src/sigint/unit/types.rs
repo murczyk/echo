@@ -102,6 +102,16 @@ mod tests {
 
         assert!(!req.include_inactive);
     }
+
+    #[test]
+    fn list_units_request_accepts_return_inactive() {
+        let req: ListUnitsReq = serde_json::from_value(serde_json::json!({
+            "return_inactive": true
+        }))
+        .unwrap();
+
+        assert!(req.include_inactive);
+    }
 }
 
 #[derive(
@@ -173,7 +183,7 @@ pub struct ListUnitsReq {
     pub sort_by: Option<ListUnitsSortBy>,
     pub after_unit_id: Option<i64>,
     pub before_unit_id: Option<i64>,
-    #[serde(default)]
+    #[serde(default, alias = "return_inactive")]
     pub include_inactive: bool,
     pub filter_active: Option<bool>,
     pub filter_text: Option<String>,

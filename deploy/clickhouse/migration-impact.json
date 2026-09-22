@@ -15,6 +15,14 @@
         { "table": "public.system_settings", "strategy": "cdc_backfill" }
       ]
     },
+    "echo:m20260922_092044_api_integration_iggy_events": {
+      "changes": [
+        {
+          "table": "public.api_integration_iggy_event",
+          "strategy": "excluded"
+        }
+      ]
+    },
     "echo:m20260919_132912_sigint_unit_changelog_index": {
       "changes": []
     },
