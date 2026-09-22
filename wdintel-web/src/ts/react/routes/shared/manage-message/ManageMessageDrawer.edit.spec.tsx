@@ -2531,6 +2531,70 @@ describe('ManageMessageDrawer edit mode', () => {
     vi.useRealTimers();
   });
 
+  it('keeps submission blocked when auto-reparse fails', async () => {
+    vi.useFakeTimers();
+    dutySettingsMocks.messageAutoParseEnabled = true;
+    directSubmitMocks.parseDirectSubmit
+      .mockResolvedValueOnce({
+        text: 'parsed body',
+        freq: '149.500',
+        coords: [],
+        to: [],
+        locations: [],
+      })
+      .mockRejectedValueOnce(new Error('Parse failure'));
+    referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
+    referenceDataMocks.getGroupInfosBatch.mockResolvedValue([{ masterKey: 'g-1' }]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer open cyberEchoEnabled={false} currentUser={null} onClose={vi.fn()} />,
+      );
+      await Promise.resolve();
+    });
+    await act(async () => {
+      autocompleteOnChangeByLabel.get('Група')?.(null, { masterKey: 'g-1' });
+      textFieldPropsByLabel
+        .get('Текст повідомлення')
+        ?.onChange?.({ target: { value: 'old body' } });
+      await Promise.resolve();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(700);
+      await Promise.resolve();
+    });
+
+    const form = container.querySelector('form') as HTMLFormElement;
+    const submitButton = container.querySelector('button[type="submit"]') as HTMLButtonElement;
+    expect(submitButton.disabled).toBe(false);
+    expect(autocompleteValuesByLabel.get('Частота (МГц)')).toBe('149.500');
+
+    await act(async () => {
+      textFieldPropsByLabel
+        .get('Текст повідомлення')
+        ?.onChange?.({ target: { value: 'new body' } });
+      await Promise.resolve();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(700);
+      await Promise.resolve();
+    });
+
+    expect(directSubmitMocks.parseDirectSubmit).toHaveBeenCalledTimes(2);
+    expect(autocompleteValuesByLabel.get('Частота (МГц)')).toBe('149.500');
+    expect(submitButton.disabled).toBe(true);
+    form.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }),
+    );
+    expect(directSubmitMocks.submitDirect).not.toHaveBeenCalled();
+
+    root.unmount();
+    vi.useRealTimers();
+  });
+
   it('renders the edit title and calls onSubmitEdit with a merged message on save', async () => {
     const onSubmitEdit = vi.fn();
     directSubmitMocks.editDirectSubmit.mockResolvedValue({
