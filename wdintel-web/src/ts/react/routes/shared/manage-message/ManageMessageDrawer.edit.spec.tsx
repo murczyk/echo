@@ -2484,6 +2484,53 @@ describe('ManageMessageDrawer edit mode', () => {
     root.unmount();
   });
 
+  it('blocks submission while auto-parse is debouncing', async () => {
+    vi.useFakeTimers();
+    dutySettingsMocks.messageAutoParseEnabled = true;
+    directSubmitMocks.parseDirectSubmit.mockResolvedValue({
+      text: 'parsed body',
+      coords: [],
+      to: [],
+      locations: [],
+    });
+    referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
+    referenceDataMocks.getGroupInfosBatch.mockResolvedValue([{ masterKey: 'g-1' }]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer open cyberEchoEnabled={false} currentUser={null} onClose={vi.fn()} />,
+      );
+      await Promise.resolve();
+    });
+    await act(async () => {
+      autocompleteOnChangeByLabel.get('Група')?.(null, { masterKey: 'g-1' });
+      textFieldPropsByLabel.get('Текст повідомлення')?.onChange?.({ target: { value: 'body' } });
+      await Promise.resolve();
+    });
+
+    const form = container.querySelector('form') as HTMLFormElement;
+    const submitButton = container.querySelector('button[type="submit"]') as HTMLButtonElement;
+    expect(submitButton.disabled).toBe(true);
+
+    form.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }),
+    );
+    expect(directSubmitMocks.submitDirect).not.toHaveBeenCalled();
+
+    await act(async () => {
+      vi.advanceTimersByTime(700);
+      await Promise.resolve();
+    });
+
+    expect(directSubmitMocks.parseDirectSubmit).toHaveBeenCalledOnce();
+    expect(submitButton.disabled).toBe(false);
+    root.unmount();
+    vi.useRealTimers();
+  });
+
   it('renders the edit title and calls onSubmitEdit with a merged message on save', async () => {
     const onSubmitEdit = vi.fn();
     directSubmitMocks.editDirectSubmit.mockResolvedValue({

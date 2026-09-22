@@ -472,10 +472,11 @@ export function useManageMessageDrawer({
   const canSubmit = useMemo(() => {
     const selectedGroupKey = formValues.signalGroupMasterKey ?? '';
     const reportDestinationMissing = isReportMode && !selectedGroupKey.trim();
+    const parserBlocksSubmit = parsing || parseStatus === 'debouncing';
 
     return isManageMessageSubmitEligible({
       busy: busy || (isReportCreateMode && !reportCopyLoaded),
-      parsing,
+      parsing: parserBlocksSubmit,
       schemaValid: formState.isValid || reportDestinationMissing,
       isEditMode,
       allowMissingGroup: isReportMode,
@@ -503,6 +504,7 @@ export function useManageMessageDrawer({
     isEditMode,
     isReportCreateMode,
     isReportMode,
+    parseStatus,
     parsing,
     reportCopyLoaded,
     signalGroups,

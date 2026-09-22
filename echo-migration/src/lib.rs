@@ -1032,6 +1032,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260906_094818_ai_callsign_feedback::Migration),
             Box::new(
                 m20260919_131822_add_message_auto_parse_enabled_to_user_settings::Migration,
+            ),
             Box::new(m20260919_112759_callsign_match_key_indexes::Migration),
             Box::new(
                 m20260919_132912_sigint_unit_changelog_index::Migration,
