@@ -124,7 +124,11 @@ export function useMessageParser(
             currentForm[name as keyof MessageFormData],
             lastObservedFormRef.current,
           );
-        } else if (name !== 'full_body' && getFieldState(name as keyof MessageFormData).isDirty) {
+        } else if (
+          name !== 'full_body' &&
+          name !== 'signalGroupMasterKey' &&
+          getFieldState(name as keyof MessageFormData).isDirty
+        ) {
           hasManualFormChangesRef.current = true;
         }
       }

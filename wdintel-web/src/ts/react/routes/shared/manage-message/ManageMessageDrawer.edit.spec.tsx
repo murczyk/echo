@@ -4497,6 +4497,61 @@ describe('ManageMessageDrawer edit mode', () => {
       vi.useRealTimers();
     });
 
+    it('preserves a manually selected group while resetting parsed fields for an empty source', async () => {
+      vi.useFakeTimers();
+      referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
+      referenceDataMocks.getGroupInfosBatch.mockResolvedValue([
+        { masterKey: 'g-1', name: 'Group 1' },
+      ]);
+      dutySettingsMocks.messageAutoParseEnabled = true;
+      directSubmitMocks.parseDirectSubmit.mockResolvedValue({
+        text: 'parsed',
+        freq: '149.500',
+        coords: [],
+        to: [],
+        locations: [],
+      });
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={null}
+            onClose={vi.fn()}
+          />,
+        );
+        await Promise.resolve();
+      });
+      await act(async () => {
+        autocompleteOnChangeByLabel.get('Група')?.(null, { masterKey: 'g-1' });
+        await Promise.resolve();
+      });
+      await act(async () => {
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: 'частота 149.500' } });
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(700);
+        await Promise.resolve();
+      });
+      expect(autocompleteValuesByLabel.get('Частота (МГц)')).toBe('149.500');
+
+      await act(async () => {
+        textFieldPropsByLabel.get('Текст повідомлення')?.onChange?.({ target: { value: '' } });
+        await Promise.resolve();
+      });
+
+      expect(autocompleteValuesByLabel.get('Частота (МГц)') ?? '').toBe('');
+      expect(autocompleteValuesByLabel.get('Група')).toMatchObject({ masterKey: 'g-1' });
+      root.unmount();
+      vi.useRealTimers();
+    });
+
     it('still restores pristine fields after an inaccessible recent group is cleared internally', async () => {
       vi.useFakeTimers();
       setRecentValues({ group: ['stale-group'] });
