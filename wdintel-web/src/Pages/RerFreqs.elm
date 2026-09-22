@@ -236,6 +236,7 @@ loadFreqs model paginating =
                 { sinceDateInclusiveMs = Time.posixToMillis dtFromPosix
                 , tillDateNoninclusiveMs = Time.posixToMillis dtToPosix
                 , newOnly = model.newOnly
+                , skipNewStatus = True
                 , includeNonActive = model.includeNonActive
                 , filterFreq = emptySToNothing model.filterState.freq
                 , sortBy = Just [ model.sortingOrder ]
@@ -276,6 +277,7 @@ loadFreqsWithTracker model paginating tracker =
                 { sinceDateInclusiveMs = Time.posixToMillis dtFromPosix
                 , tillDateNoninclusiveMs = Time.posixToMillis dtToPosix
                 , newOnly = model.newOnly
+                , skipNewStatus = True
                 , includeNonActive = model.includeNonActive
                 , filterFreq = emptySToNothing model.filterState.freq
                 , sortBy = Just [ model.sortingOrder ]
@@ -392,6 +394,32 @@ reloadFreqsIfSelectedChanged mAction _ model =
 
         _ ->
             ( model, E.none, False )
+
+
+requestCallsignsInfo : List String -> Model -> ( Model, Effect Msg )
+requestCallsignsInfo callsigns model =
+    let
+        requestedCallsigns =
+            Set.fromList model.callsigns
+
+        newCallsigns =
+            Set.diff (Set.fromList callsigns) requestedCallsigns
+                |> Set.toList
+    in
+    ( { model | callsigns = Set.toList (Set.union requestedCallsigns (Set.fromList newCallsigns)) }
+    , if List.isEmpty newCallsigns then
+        E.none
+
+      else
+        E.getCallsignsInfo (CallsignsInfoReturnedByApi newCallsigns) { callsigns = newCallsigns }
+    )
+
+
+requestCallsignsInfoForFreq : String -> Model -> ( Model, Effect Msg )
+requestCallsignsInfoForFreq freq model =
+    requestCallsignsInfo
+        (Dict.get freq model.callsignsByFreq |> Maybe.withDefault [])
+        model
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -904,25 +932,25 @@ update shared msg model =
                         model.callsignsByFreq
                         rsp
 
-                newCallsigns =
-                    Dict.values rsp
-                        |> List.concat
-                        |> List.filter (\callsign -> not (List.member callsign model.callsigns))
-            in
-            ( { model
-                | callsignsByFreq = mergedResult
-                , callsigns =
-                    newCallsigns
-                        ++ model.callsigns
-                        |> Set.fromList
-                        |> Set.toList
-              }
-            , if List.length newCallsigns > 0 then
-                E.getCallsignsInfo CallsignsInfoReturnedByApi { callsigns = newCallsigns }
+                updatedModel =
+                    { model | callsignsByFreq = mergedResult }
 
-              else
-                E.none
-            )
+                visibleCallsigns =
+                    Dict.values rsp |> List.concatMap (List.take 3)
+
+                ( modelWithVisibleCallsigns, visibleEffect ) =
+                    requestCallsignsInfo visibleCallsigns updatedModel
+            in
+            case modelWithVisibleCallsigns.rowShowAllPopupStatus of
+                Just ( freq, ShowAllCallsigns ) ->
+                    let
+                        ( modelWithPopupCallsigns, popupEffect ) =
+                            requestCallsignsInfoForFreq freq modelWithVisibleCallsigns
+                    in
+                    ( modelWithPopupCallsigns, E.batch [ visibleEffect, popupEffect ] )
+
+                _ ->
+                    ( modelWithVisibleCallsigns, visibleEffect )
 
         CallsignsByFreqsReturnedByApi (Err err) ->
             ( model
@@ -947,12 +975,16 @@ update shared msg model =
             else
                 ( model, E.none )
 
-        CallsignsInfoReturnedByApi (Err e) ->
-            ( model
+        CallsignsInfoReturnedByApi requestedCallsigns (Err e) ->
+            let
+                requestedCallsignsSet =
+                    Set.fromList requestedCallsigns
+            in
+            ( { model | callsigns = List.filter (\callsign -> not (Set.member callsign requestedCallsignsSet)) model.callsigns }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження інформації позивних" e
             )
 
-        CallsignsInfoReturnedByApi (Ok callsignsRes) ->
+        CallsignsInfoReturnedByApi _ (Ok callsignsRes) ->
             let
                 updatedCallsignsInfo =
                     List.foldl
@@ -999,9 +1031,14 @@ update shared msg model =
             )
 
         RowShowAllPopupChanged freqToShowAllItemsPopup ->
-            ( { model | rowShowAllPopupStatus = freqToShowAllItemsPopup }
-            , E.none
-            )
+            case freqToShowAllItemsPopup of
+                Just ( freq, ShowAllCallsigns ) ->
+                    requestCallsignsInfoForFreq freq { model | rowShowAllPopupStatus = freqToShowAllItemsPopup }
+
+                _ ->
+                    ( { model | rowShowAllPopupStatus = freqToShowAllItemsPopup }
+                    , E.none
+                    )
 
         SelCallsignMsg imsg ->
             let
@@ -1774,11 +1811,26 @@ freqsTableConfig shared model user =
 
                                         _ ->
                                             False
+
+                                isLoading =
+                                    if isOpen then
+                                        let
+                                            requestedCallsigns =
+                                                Set.fromList model.callsigns
+                                        in
+                                        List.any
+                                            (\callsign -> Set.member callsign requestedCallsigns && not (Dict.member callsign model.callsignsInfo))
+                                            callsigns
+
+                                    else
+                                        False
                               in
                               case shared.masterUnits of
                                 Success units ->
                                     CallsignsPopup.view
                                         { isOpened = isOpen
+                                        , isLoading = isLoading
+                                        , deferDetails = True
                                         , onClose = RowShowAllPopupChanged Nothing
                                         , onOpen = RowShowAllPopupChanged <| Just ( freq.freq, ShowAllCallsigns )
                                         , callsigns = callsigns

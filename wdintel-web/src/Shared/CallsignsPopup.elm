@@ -54,8 +54,14 @@ getCallsignHintsNew freq networks params callsign =
 -}
 sortCallsignsNew : String -> Dict Int B.Network -> Params a -> List ( HintStrategy.HintResult, String )
 sortCallsignsNew freq networksDict params =
+    let
+        networksForFreq =
+            Dict.filter
+                (\_ network -> List.any (\networkFreq -> networkFreq.freq == freq) network.freqs)
+                networksDict
+    in
     params.callsigns
-        |> List.map (\callsign -> ( getCallsignHintsNew freq networksDict params callsign, callsign ))
+        |> List.map (\callsign -> ( getCallsignHintsNew freq networksForFreq params callsign, callsign ))
         |> List.sortWith sortByPrioNew
 
 
@@ -140,6 +146,8 @@ type PopupCallerOrigin
 type alias ViewParams msg =
     { callsigns : List String
     , isOpened : Bool
+    , isLoading : Bool
+    , deferDetails : Bool
     , onOpen : msg
     , onClose : msg
     , masterUnits : Dict Int B.Unit
@@ -150,14 +158,24 @@ type alias ViewParams msg =
 view : ViewParams msg -> PopupCallerOrigin -> Html msg
 view viewParams pageSpecific =
     let
+        displayedCallsigns =
+            case pageSpecific of
+                FreqsPage _ _ ->
+                    if viewParams.deferDetails && (not viewParams.isOpened || viewParams.isLoading) then
+                        List.take 3 viewParams.callsigns
+
+                    else
+                        viewParams.callsigns
+
+                NetworksPage _ ->
+                    viewParams.callsigns
+
         sortedCallsigns =
             case pageSpecific of
                 FreqsPage freq networksDict ->
-                    -- ✅ ВИПРАВЛЕННЯ: Використовуємо нову систему HintStrategy
-                    sortCallsignsNew freq networksDict viewParams
+                    sortCallsignsNew freq networksDict { viewParams | callsigns = displayedCallsigns }
 
                 NetworksPage network ->
-                    -- ✅ ВИПРАВЛЕННЯ: Використовуємо нову систему HintStrategy
                     sortCallsigns2New network viewParams
 
         ( callsignsWithUnits, callsignsWithoutUnits ) =
@@ -185,29 +203,14 @@ view viewParams pageSpecific =
                         [ text ("Показати всі " ++ (viewParams.callsigns |> List.length |> String.fromInt)) ]
 
                 popupBody =
-                    div [ class "d-flex flex-column", style "gap" "20px" ]
-                        [ if not (List.isEmpty callsignsWithUnits) then
-                            div [ class "callsigns-section" ]
-                                [ div [ class "callsigns-section-header" ] [ text "Еталонні позивні" ]
-                                , viewCallsignsGroup callsignsWithUnits
-                                ]
+                    if viewParams.isLoading then
+                        div [] [ text "Завантаження інформації про позивні..." ]
 
-                          else
-                            text ""
-                        , if not (List.isEmpty callsignsWithoutUnits) then
-                            div [ class "callsigns-section" ]
-                                [ div [ class "callsigns-section-header" ] [ text "Не прив'язані позивні" ]
-                                , viewCallsignsGroup callsignsWithoutUnits
-                                ]
+                    else if viewParams.isOpened then
+                        viewPopupBody callsignsWithUnits callsignsWithoutUnits
 
-                          else
-                            text ""
-                        , if List.isEmpty callsignsWithUnits && List.isEmpty callsignsWithoutUnits then
-                            div [ class "callsigns-section-empty" ] [ text "Немає позивних для відображення" ]
-
-                          else
-                            text ""
-                        ]
+                    else
+                        text ""
             in
             Shared.Components.Popup.new
                 { body = body
@@ -220,6 +223,33 @@ view viewParams pageSpecific =
                 |> Shared.Components.Popup.withFakeAnchor
                 |> Shared.Components.Popup.withCloseButton
                 |> Shared.Components.Popup.view
+
+          else
+            text ""
+        ]
+
+
+viewPopupBody : List ( HintStrategy.HintResult, String ) -> List ( HintStrategy.HintResult, String ) -> Html msg
+viewPopupBody callsignsWithUnits callsignsWithoutUnits =
+    div [ class "d-flex flex-column", style "gap" "20px" ]
+        [ if not (List.isEmpty callsignsWithUnits) then
+            div [ class "callsigns-section" ]
+                [ div [ class "callsigns-section-header" ] [ text "Еталонні позивні" ]
+                , viewCallsignsGroup callsignsWithUnits
+                ]
+
+          else
+            text ""
+        , if not (List.isEmpty callsignsWithoutUnits) then
+            div [ class "callsigns-section" ]
+                [ div [ class "callsigns-section-header" ] [ text "Не прив'язані позивні" ]
+                , viewCallsignsGroup callsignsWithoutUnits
+                ]
+
+          else
+            text ""
+        , if List.isEmpty callsignsWithUnits && List.isEmpty callsignsWithoutUnits then
+            div [ class "callsigns-section-empty" ] [ text "Немає позивних для відображення" ]
 
           else
             text ""

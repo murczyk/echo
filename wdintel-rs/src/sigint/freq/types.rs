@@ -39,6 +39,9 @@ pub struct ListFreqsReq {
     pub since_date_inclusive_ms: i64,
     pub till_date_noninclusive_ms: i64,
     pub new_only: bool,
+    /// Skips the previous-period scan and returns `is_new = false`.
+    #[serde(default)]
+    pub skip_new_status: bool,
     pub include_non_active: bool,
     pub filter_freq: Option<String>,
     pub filter_unit: Option<String>,

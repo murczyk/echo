@@ -4,6 +4,7 @@ import Bindings as B
 import Core.Unit as Unit
 import Dict exposing (Dict)
 import List.Extra as ListX
+import Set
 
 
 {-| Фільтрує мережі за частотою
@@ -119,7 +120,7 @@ filterCallsignsByNetworkUnits : List B.CallsignInfo -> Dict Int B.Unit -> List B
 filterCallsignsByNetworkUnits callsigns masterUnits networkUnits =
     let
         callsignsUnits =
-            findCallsignUnit callsigns (Dict.values masterUnits)
+            findCallsignUnit callsigns masterUnits
 
         unitsWithSameRegiment =
             callsignsUnits |> List.filter (\callsignUnit -> networkUnits |> List.any (Unit.isSameOrChildUnit callsignUnit))
@@ -133,17 +134,13 @@ filterCallsignsByNetworkUnits callsigns masterUnits networkUnits =
 
 {-| Знаходить юніти для позивних
 -}
-findCallsignUnit : List B.CallsignInfo -> List B.Unit -> List B.Unit
+findCallsignUnit : List B.CallsignInfo -> Dict Int B.Unit -> List B.Unit
 findCallsignUnit callsigns units =
-    let
-        unitIds =
-            callsigns |> List.filterMap .unitId
-    in
-    units
-        |> List.filter
-            (\unit ->
-                List.member unit.id unitIds
-            )
+    callsigns
+        |> List.filterMap .unitId
+        |> Set.fromList
+        |> Set.toList
+        |> List.filterMap (\unitId -> Dict.get unitId units)
 
 
 {-| Перевіряє чи є позивний пов'язаний з мережевими юнітами
@@ -169,7 +166,7 @@ isCallsignRelatedToNetworks maybeCallsignInfo networks masterUnits =
 
                     -- Знаходимо юніти для цього позивного
                     callsignUnits =
-                        findCallsignUnit callsignInfoList (Dict.values masterUnits)
+                        findCallsignUnit callsignInfoList masterUnits
 
                     -- Перевіряємо чи є хоча б один юніт позивного пов'язаний з мережевими юнітами
                     isRelated =

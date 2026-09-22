@@ -3845,6 +3845,7 @@ export type ListFreqsReq = {
   sinceDateInclusiveMs: number;
   tillDateNoninclusiveMs: number;
   newOnly: boolean;
+  skipNewStatus: boolean;
   includeNonActive: boolean;
   filterFreq: string | null;
   filterUnit: string | null;

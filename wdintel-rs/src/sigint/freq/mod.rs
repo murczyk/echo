@@ -151,7 +151,7 @@ pub async fn list_alt_unit_by_freqs(
         .column_as(Expr::cust("count(*)"), "count")
         .column_as(sigint_inbox_item::Column::Unit, "unit")
         .column_as(sigint_inbox_item::Column::Freq, "freq")
-        .filter(message_in_groups_exists(
+        .filter(message_in_groups_by_message_id(
             crate::messenger::group::get_identity_sigint_groups_noimport(
                 &env.dbx,
                 &user,
@@ -405,7 +405,7 @@ pub async fn list_callsigns_by_freqs(
         .distinct()
         .column_as(signal_message::Column::Id, "id")
         .column_as(sigint_inbox_item::Column::Freq, "freq")
-        .filter(message_in_groups_exists(
+        .filter(message_in_groups_by_message_id(
             crate::messenger::group::get_identity_sigint_groups_noimport(
                 &env.dbx,
                 &user,
@@ -451,6 +451,31 @@ fn inbox_item_callsign_exists() -> SimpleExpr {
     Expr::cust(crate::inbox::callsigns::sql_exists_condition(
         "sigint_inbox_item",
     ))
+}
+
+fn message_in_groups_by_message_id(keys: Vec<String>) -> SimpleExpr {
+    if keys.is_empty() {
+        return Expr::cust("FALSE");
+    }
+
+    Expr::exists(
+        signal_message_group::Entity::find()
+            .select_only()
+            .expr(Expr::value(1))
+            .filter(
+                Expr::col((
+                    signal_message_group::Entity,
+                    signal_message_group::Column::SignalMessageId,
+                ))
+                .equals((signal_message::Entity, signal_message::Column::Id)),
+            )
+            // Keep the group key out of the index condition to seek by message ID.
+            .filter(Expr::cust_with_values(
+                "ARRAY[signal_message_group.group_master_key] && $1",
+                [keys],
+            ))
+            .into_query(),
+    )
 }
 
 fn needs_unit_join(
@@ -853,7 +878,7 @@ pub async fn list_freqs(
         )
         .select_only()
         .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
-        .filter(message_in_groups_exists(
+        .filter(message_in_groups_by_message_id(
             crate::messenger::group::get_identity_sigint_groups(
                 &env.dbx, &login,
             )
@@ -873,14 +898,17 @@ pub async fn list_freqs(
     //     "> before sql: {}",
     //     before_res.build(DbBackend::Postgres).to_string()
     // );
-    let before_res: BTreeSet<String> = before_res
-        .into_model::<BeforeRes>()
-        .all(&env.dbx)
-        .await
-        .c(h!())?
-        .iter()
-        .flat_map(|x| x.freq.clone())
-        .collect();
+    let before_res: Vec<BeforeRes> = if req.skip_new_status {
+        Vec::new()
+    } else {
+        before_res
+            .into_model::<BeforeRes>()
+            .all(&env.dbx)
+            .await
+            .c(h!())?
+    };
+    let before_res: BTreeSet<String> =
+        before_res.iter().flat_map(|x| x.freq.clone()).collect();
     // println!("> before count: {}", before_res.len());
 
     let networks_by_freq =
@@ -897,7 +925,7 @@ pub async fn list_freqs(
 
         let last_updated_network = networks.iter().max_by_key(|n| n.updated_at);
 
-        let is_new = !before_res.contains(&freq);
+        let is_new = !req.skip_new_status && !before_res.contains(&freq);
         let network_ids = networks.iter().map(|x| x.id).collect();
         let last_updated_by = last_updated_network
             .and_then(|x| x.updated_by_login_id)
@@ -1202,14 +1230,17 @@ pub async fn list_freqs_v2(
     //     "> before sql: {}",
     //     before_res.build(DbBackend::Postgres).to_string()
     // );
-    let before_res: BTreeSet<String> = before_res
-        .into_model::<BeforeRes>()
-        .all(&env.dbx)
-        .await
-        .c(h!())?
-        .iter()
-        .flat_map(|x| x.freq.clone())
-        .collect();
+    let before_res: Vec<BeforeRes> = if req.skip_new_status {
+        Vec::new()
+    } else {
+        before_res
+            .into_model::<BeforeRes>()
+            .all(&env.dbx)
+            .await
+            .c(h!())?
+    };
+    let before_res: BTreeSet<String> =
+        before_res.iter().flat_map(|x| x.freq.clone()).collect();
     // println!("> before count: {}", before_res.len());
 
     let mut show_load_more = false;
@@ -1250,7 +1281,7 @@ pub async fn list_freqs_v2(
 
         let last_updated_network = networks.iter().max_by_key(|n| n.updated_at);
 
-        let is_new = !before_res.contains(&freq);
+        let is_new = !req.skip_new_status && !before_res.contains(&freq);
         let network_ids = networks.iter().map(|x| x.id).collect();
         let last_updated_by = last_updated_network
             .and_then(|x| x.updated_by_login_id)
@@ -1304,7 +1335,7 @@ where
 {
     let mut q = q.clone();
 
-    q = q.filter(message_in_groups_exists(
+    q = q.filter(message_in_groups_by_message_id(
         crate::messenger::group::get_identity_sigint_groups_noimport(
             &env.dbx,
             user,

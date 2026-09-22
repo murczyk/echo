@@ -49,7 +49,7 @@ type alias Model =
     , callsignSearchDebounce : Debounce String
     , callsignSearchResults : RemoteData ApiError (List B.FreqCallsign)
 
-    --TODO Remove when back returns proper list of data for table
+    -- Names whose popup detail requests have already been sent.
     , callsigns : List String
     , sortingOrder : B.ListFreqsSortBy
     , groupsMessageCountByDay : GroupsActivityPerDayRsp

@@ -31,7 +31,7 @@ type Msg
     | CallsignsByFreqsReturnedByApi (Result ApiError Api.ListCallsignsByFreqsRsp)
     | AltUnitsByFreqReturnedByApi Int Bool (Result ApiError Api.ListAltUnitsByFreqsRsp)
     | GroupsMessageCountByDayReturnedByApi (Result ApiError GroupsActivityPerDayRsp)
-    | CallsignsInfoReturnedByApi (Result ApiError (List B.CallsignInfoRes))
+    | CallsignsInfoReturnedByApi (List String) (Result ApiError (List B.CallsignInfoRes))
     | NetworksInfoLoaded (Result ApiError (List B.Network))
     | SortByMessageNumber
     | FreqsLoadMore
