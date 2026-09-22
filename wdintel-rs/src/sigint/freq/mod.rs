@@ -453,6 +453,96 @@ fn inbox_item_callsign_exists() -> SimpleExpr {
     ))
 }
 
+fn needs_unit_join(
+    filter_unit: &Option<String>,
+    filter_further_investigation: &Option<bool>,
+) -> bool {
+    filter_unit
+        .as_deref()
+        .is_some_and(|unit| !unit.trim().is_empty())
+        || filter_further_investigation.unwrap_or(false)
+}
+
+fn sort_freq_rows(
+    rows: &mut [(String, i64, Option<String>)],
+    sort_by: Option<&[ListFreqsSortBy]>,
+) {
+    rows.sort_by(|left, right| {
+        sort_by
+            .unwrap_or_default()
+            .iter()
+            .fold(std::cmp::Ordering::Equal, |ordering, sort| {
+                ordering.then_with(|| match sort {
+                    ListFreqsSortBy::FreqAsc => left.0.cmp(&right.0),
+                    ListFreqsSortBy::FreqDesc => right.0.cmp(&left.0),
+                    ListFreqsSortBy::MessageCountAsc => left.1.cmp(&right.1),
+                    ListFreqsSortBy::MessageCountDesc => right.1.cmp(&left.1),
+                })
+            })
+            .then_with(|| left.0.cmp(&right.0))
+    });
+}
+
+fn select_freq_page(
+    rows: Vec<(String, i64, Option<String>)>,
+    after_freq_nonincl: Option<&str>,
+    limit: usize,
+) -> (Vec<(String, i64, Option<String>)>, bool) {
+    let mut rows = rows.into_iter();
+    if let Some(after_freq_nonincl) = after_freq_nonincl {
+        if !rows.by_ref().any(|(freq, _, _)| freq == after_freq_nonincl) {
+            return (Vec::new(), false);
+        }
+    }
+
+    let page = rows.by_ref().take(limit).collect::<Vec<_>>();
+    (page, rows.next().is_some())
+}
+
+#[derive(FromQueryResult)]
+struct FreqNetworkRow {
+    freq: String,
+    id: i64,
+    created_at: NaiveDateTime,
+    updated_at: NaiveDateTime,
+    updated_by_login_id: Option<uuid::Uuid>,
+}
+
+async fn load_freq_networks(
+    dbx: &DatabaseConnection,
+    freqs: Vec<String>,
+) -> anyhow::Result<HashMap<String, Vec<FreqNetworkRow>>> {
+    let rows = sigint_network::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_network::Relation::SigintNetworkFreq.def(),
+        )
+        .select_only()
+        .column_as(sigint_network_freq::Column::Freq, "freq")
+        .column_as(sigint_network::Column::Id, "id")
+        .column(sigint_network::Column::CreatedAt)
+        .column(sigint_network::Column::UpdatedAt)
+        .column(sigint_network::Column::UpdatedByLoginId)
+        .filter(sigint_network_freq::Column::Freq.is_in(freqs))
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .filter(sigint_network_freq::Column::ActiveTo.is_null())
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .order_by_asc(sigint_network::Column::CreatedAt)
+        .order_by_asc(sigint_network::Column::Id)
+        .into_model::<FreqNetworkRow>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let mut networks_by_freq = HashMap::<String, Vec<FreqNetworkRow>>::new();
+    for row in rows {
+        networks_by_freq
+            .entry(row.freq.clone())
+            .or_default()
+            .push(row);
+    }
+    Ok(networks_by_freq)
+}
+
 /// Lists frequencies which were active (active in 14-day period, can include non-actives if checked), their assigned units if any.
 ///
 /// This API is slow. DO NOT USE FOR POPULAR PAGES TO GET FREQ INFO. Only intended for admin pages.
@@ -608,7 +698,7 @@ pub async fn list_freqs(
                     (freq, callsigns.len() as i64, location_v2)
                 })
                 .collect::<Vec<_>>();
-            rows.sort_by_key(|row| std::cmp::Reverse(row.1));
+            sort_freq_rows(&mut rows, req.sort_by.as_deref());
             FreqPeriodSource::Rows(rows)
         }
         None => {
@@ -620,16 +710,10 @@ pub async fn list_freqs(
                 )
                 .select_only()
                 .column_as(sigint_inbox_item::Column::Freq, "freq")
-                .column_as(sigint_inbox_item::Column::LocationV2, "location_v2")
-                .column_as(sigint_inbox_item::Column::Datetime, "datetime")
                 .column_as(
-                    Expr::col((
-                        signal_message::Entity,
-                        signal_message::Column::Id,
-                    )),
-                    "dedup_key",
-                )
-                .distinct_on([dedup_key_alias.clone()]);
+                    sigint_inbox_item::Column::LocationV2,
+                    "location_v2",
+                );
 
             dedup_freq_per = filters_list_freq_search(
                 dedup_freq_per,
@@ -646,10 +730,23 @@ pub async fn list_freqs(
             .await
             .c(h!())?;
 
-            dedup_freq_per = dedup_freq_per
-                .order_by(Expr::cust("dedup_key"), Order::Asc)
-                // emulate NULLS FIRST: order nulls before non-nulls
-                .order_by(sigint_inbox_item::Column::Datetime, Order::Asc);
+            if needs_unit_join(
+                &req.filter_unit,
+                &req.filter_further_investigation,
+            ) {
+                dedup_freq_per = dedup_freq_per
+                    .column_as(
+                        Expr::col((
+                            signal_message::Entity,
+                            signal_message::Column::Id,
+                        )),
+                        "dedup_key",
+                    )
+                    .distinct_on([dedup_key_alias.clone()])
+                    .order_by(Expr::cust("dedup_key"), Order::Asc)
+                    // emulate NULLS FIRST: order nulls before non-nulls
+                    .order_by(sigint_inbox_item::Column::Datetime, Order::Asc);
+            }
 
             let uniq_alias = Alias::new("uniq");
             let mut main_query = Query::select()
@@ -666,6 +763,9 @@ pub async fn list_freqs(
                 .add_group_by([Expr::cust("freq")])
                 .to_owned();
 
+            main_query.and_where(
+                Expr::col((uniq_alias.clone(), "freq")).is_not_null(),
+            );
             if req.filter_unknown_network.unwrap_or(false) {
                 main_query.and_where(unknown_network_freq_filter("uniq.freq"));
             }
@@ -686,9 +786,11 @@ pub async fn list_freqs(
                     let expr = Expr::cust(col);
                     main_query.order_by_expr(expr, order);
                 }
-            } else {
-                let expr = Expr::cust("freq");
-                main_query.order_by_expr(expr, Order::Asc);
+            }
+            main_query.order_by_expr(Expr::cust("freq"), Order::Asc);
+            // This bounds returned groups, not the message scan or aggregation.
+            if req.after_freq_nonincl.is_none() {
+                main_query.limit((LIMIT + 1) as u64);
             }
             FreqPeriodSource::Sql(main_query.to_string(PostgresQueryBuilder))
         }
@@ -721,6 +823,22 @@ pub async fn list_freqs(
     };
     // println!("> freqs in period count: {}", freqs_period.len());
 
+    let (freqs_period, show_load_more) = select_freq_page(
+        freqs_period,
+        req.after_freq_nonincl.as_deref(),
+        LIMIT,
+    );
+    if freqs_period.is_empty() {
+        return Ok(Json(ListFreqsRsp {
+            show_load_more: false,
+            freqs: Vec::new(),
+        }));
+    }
+    let page_freqs = freqs_period
+        .iter()
+        .map(|(freq, _, _)| freq.clone())
+        .collect::<Vec<_>>();
+
     #[derive(FromQueryResult)]
     struct BeforeRes {
         freq: Option<String>,
@@ -745,6 +863,7 @@ pub async fn list_freqs(
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(before_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(before_till))
+        .filter(sigint_inbox_item::Column::Freq.is_in(page_freqs.clone()))
         .group_by(sea_query::expr::SimpleExpr::Custom("freq".into()))
         .order_by_asc(sigint_inbox_item::Column::Freq);
     // let before_count: u64 = before_res.clone().count(&env.dbx).await.c(h!())?;
@@ -764,34 +883,14 @@ pub async fn list_freqs(
         .collect();
     // println!("> before count: {}", before_res.len());
 
-    let mut show_load_more = false;
-
+    let networks_by_freq =
+        load_freq_networks(&env.dbx, page_freqs).await.c(h!())?;
     let mut freqs = vec![];
-    let mut need_skip = false;
-    if let Some(_after_freq_nonincl) = &req.after_freq_nonincl {
-        need_skip = true;
-    }
     for (freq, message_count, location_v2) in freqs_period {
-        if need_skip {
-            if req.after_freq_nonincl == Some(freq) {
-                need_skip = false;
-            }
-            continue;
-        }
-
-        let networks = sigint_network::Entity::find()
-            .join(
-                JoinType::InnerJoin,
-                sigint_network::Relation::SigintNetworkFreq.def(),
-            )
-            .filter(sigint_network_freq::Column::Freq.eq(freq.clone()))
-            .filter(sigint_network::Column::Deleted.eq(false))
-            .filter(sigint_network_freq::Column::ActiveTo.is_null())
-            .filter(sigint_network_freq::Column::Deleted.eq(false))
-            .order_by_asc(sigint_network::Column::CreatedAt)
-            .all(&env.dbx)
-            .await
-            .c(h!())?;
+        let networks = networks_by_freq
+            .get(&freq)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
         let created_at = networks
             .first()
             .map(|x| x.created_at.and_utc().timestamp_millis());
@@ -820,11 +919,6 @@ pub async fn list_freqs(
             last_updated_at,
             last_updated_by,
         });
-
-        if freqs.len() >= LIMIT {
-            show_load_more = true;
-            break;
-        }
     }
 
     Ok(Json(ListFreqsRsp {
@@ -1241,12 +1335,12 @@ where
         ));
     };
 
+    let needs_unit_join =
+        needs_unit_join(filter_unit, filter_further_investigation);
     let filter_unit = filter_unit
         .as_deref()
         .map(str::trim)
         .filter(|unit| !unit.is_empty());
-    let needs_unit_join =
-        filter_unit.is_some() || filter_further_investigation.unwrap_or(false);
 
     if needs_unit_join {
         q = q
