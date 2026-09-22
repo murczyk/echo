@@ -105,20 +105,4 @@ describe('MessageParserFeedback', () => {
       container.querySelector('[data-testid="parser-feedback-freq"]')?.getAttribute('data-state'),
     ).toBe('conflict');
   });
-
-  it('labels acceptance as removal when the latest parse has no value', async () => {
-    const feedback: ParserFeedback = {
-      sequence: 1,
-      changedFields: [],
-      conflictFields: ['freq'],
-      emptyCandidateFields: ['freq'],
-    };
-
-    await renderFeedback(feedback);
-
-    expect(
-      container.querySelector('button[aria-label="Прибрати частоту: у тексті значення немає"]')
-        ?.textContent,
-    ).toBe('Прибрати значення');
-  });
 });

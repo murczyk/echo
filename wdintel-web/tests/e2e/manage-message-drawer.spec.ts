@@ -168,8 +168,17 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
     const frequencyFeedback = page.getByTestId('parser-feedback-freq');
     await expect(frequencyFeedback).toHaveAttribute('data-state', 'conflict');
 
+    await page.waitForTimeout(3100);
+    await expect(frequencyFeedback).toHaveAttribute('data-state', 'conflict');
+    await page.getByRole('button', { name: 'Взяти частоту із тексту' }).click();
+    await expect(page.getByLabel('Частота (МГц)')).toHaveValue('151.000');
+    await expect(frequencyFeedback).toHaveAttribute('data-state', 'updated');
     await expect(frequencyFeedback).toHaveAttribute('data-state', 'idle', { timeout: 4000 });
-    await expect(page.getByLabel('Частота (МГц)')).toHaveValue('150.000');
+    await expect(page.getByRole('button', { name: /^Видалити координату/ })).toHaveCount(1);
+
+    await source.fill('');
+
+    await expect(page.getByLabel('Частота (МГц)')).toHaveValue('151.000');
     await expect(page.getByRole('button', { name: /^Видалити координату/ })).toHaveCount(1);
   });
 

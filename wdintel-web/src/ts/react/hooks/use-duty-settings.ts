@@ -37,6 +37,7 @@ export type DutySettingsHook = DutySettingsValue & {
   setMessageSortBy: (value: MessageTimeBasis) => void;
   setMessageAutoParseEnabled: (value: boolean) => void;
   scheduleSave: (nextSettings: DutySettingsSaveRequest) => void;
+  retryLoad: () => void;
 };
 
 function normalizeDutySettings(
@@ -68,6 +69,7 @@ export function useDutySettings(): DutySettingsHook {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveInProgress, setSaveInProgress] = useState(false);
+  const [loadRevision, setLoadRevision] = useState(0);
   const pendingSaveRef = useRef<DutySettingsSaveRequest | null>(null);
   const saveRunningRef = useRef(false);
 
@@ -97,7 +99,13 @@ export function useDutySettings(): DutySettingsHook {
     return () => {
       abortController.abort();
     };
-  }, [applySettings]);
+  }, [applySettings, loadRevision]);
+
+  const retryLoad = useCallback(() => {
+    setLoadError(null);
+    setLoadInProgress(true);
+    setLoadRevision((revision) => revision + 1);
+  }, []);
 
   useEffect(() => {
     const onSettingsUpdated = (event: Event) => {
@@ -186,5 +194,6 @@ export function useDutySettings(): DutySettingsHook {
     setMessageAutoParseEnabled: (value) =>
       setSettings((current) => ({ ...current, messageAutoParseEnabled: value })),
     scheduleSave,
+    retryLoad,
   };
 }

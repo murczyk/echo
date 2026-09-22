@@ -48,7 +48,6 @@ export type ParserFeedback = {
   sequence: number;
   changedFields: ParserFieldName[];
   conflictFields: ParserFieldName[];
-  emptyCandidateFields?: ParserFieldName[];
 };
 
 export type ParserReconcileResult = {
@@ -56,7 +55,6 @@ export type ParserReconcileResult = {
   patch: Partial<MessageFormData>;
   changedFields: ParserFieldName[];
   conflictFields: ParserFieldName[];
-  emptyCandidateFields: ParserFieldName[];
 };
 
 type ParserListAdapter = {
@@ -183,6 +181,7 @@ function isListField(field: ParserFieldName): field is ParserListFieldName {
 }
 
 function scalarEmptyValue(field: ParserScalarFieldName): unknown {
+  if (field === 'date') return dayjs();
   return STRING_SCALAR_FIELDS.has(field) ? '' : null;
 }
 
@@ -228,11 +227,19 @@ export function recordManualChange(
   const suppressedKeys = new Set(next.lists[field].suppressedKeys);
 
   previousItems.forEach(({ key }) => {
-    if (!nextKeys.has(key) && parsedKeys.has(key)) suppressedKeys.add(key);
+    if (!nextKeys.has(key) && (parsedKeys.has(key) || existingManualKeys.has(key))) {
+      suppressedKeys.add(key);
+    }
   });
 
+  const readdedSuppressedKeys = new Set(
+    nextItems.filter(({ key }) => suppressedKeys.has(key)).map(({ key }) => key),
+  );
+  readdedSuppressedKeys.forEach((key) => suppressedKeys.delete(key));
+
   next.lists[field].manual = nextItems.filter(
-    ({ key }) => !parsedKeys.has(key) || existingManualKeys.has(key),
+    ({ key }) =>
+      !parsedKeys.has(key) || existingManualKeys.has(key) || readdedSuppressedKeys.has(key),
   );
   next.lists[field].suppressedKeys = [...suppressedKeys];
   return next;
@@ -247,7 +254,6 @@ export function reconcileParserSnapshot(
   const patch: Partial<MessageFormData> = {};
   const changedFields: ParserFieldName[] = [];
   const conflictFields: ParserFieldName[] = [];
-  const emptyCandidateFields: ParserFieldName[] = [];
 
   PARSER_SCALAR_FIELDS.forEach((field) => {
     const candidate = snapshot.scalars[field];
@@ -256,9 +262,9 @@ export function reconcileParserSnapshot(
     next.parsedScalars[field] = candidate;
 
     if (next.scalarOrigins[field] === 'manual') {
+      if (!candidatePresent) return;
       if (!scalarValuesEqual(currentForm[field], desired)) {
         conflictFields.push(field);
-        if (!candidatePresent) emptyCandidateFields.push(field);
       }
       return;
     }
@@ -293,40 +299,7 @@ export function reconcileParserSnapshot(
     }
   });
 
-  return { state: next, patch, changedFields, conflictFields, emptyCandidateFields };
-}
-
-export function clearParserOwnedValues(
-  state: ParserOwnershipState,
-  currentForm: MessageFormData,
-): ParserReconcileResult {
-  const next = cloneState(state);
-  const patch: Partial<MessageFormData> = {};
-  const changedFields: ParserFieldName[] = [];
-
-  PARSER_SCALAR_FIELDS.forEach((field) => {
-    next.parsedScalars[field] = undefined;
-    if (next.scalarOrigins[field] !== 'parsed') return;
-    const desired = scalarEmptyValue(field);
-    if (!scalarValuesEqual(currentForm[field], desired)) {
-      Object.assign(patch, { [field]: desired });
-      changedFields.push(field);
-    }
-  });
-
-  PARSER_LIST_FIELDS.forEach((field) => {
-    const adapter = listAdapters[field];
-    const listState = next.lists[field];
-    if (listState.parsed.length === 0) return;
-    listState.parsed = [];
-    const desiredItems = materializeList(listState);
-    if (!listValuesEqual(adapter.read(currentForm[field]), desiredItems)) {
-      Object.assign(patch, { [field]: adapter.write(desiredItems) });
-      changedFields.push(field);
-    }
-  });
-
-  return { state: next, patch, changedFields, conflictFields: [], emptyCandidateFields: [] };
+  return { state: next, patch, changedFields, conflictFields };
 }
 
 export function acceptParsedCandidate(
@@ -346,7 +319,7 @@ export function acceptParsedCandidate(
       Object.assign(patch, { [field]: desired });
       changedFields.push(field);
     }
-    return { state: next, patch, changedFields, conflictFields: [], emptyCandidateFields: [] };
+    return { state: next, patch, changedFields, conflictFields: [] };
   }
 
   const listState = next.lists[field];
@@ -358,5 +331,5 @@ export function acceptParsedCandidate(
     Object.assign(patch, { [field]: adapter.write(desiredItems) });
     changedFields.push(field);
   }
-  return { state: next, patch, changedFields, conflictFields: [], emptyCandidateFields: [] };
+  return { state: next, patch, changedFields, conflictFields: [] };
 }

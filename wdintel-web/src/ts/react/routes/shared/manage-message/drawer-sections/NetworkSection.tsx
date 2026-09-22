@@ -40,6 +40,8 @@ export function NetworkSection({
   unitLocked,
   setUnitLocked,
 }: Props) {
+  const selectedNetworkRef = React.useRef(selectedNetwork);
+  selectedNetworkRef.current = selectedNetwork;
   const {
     control,
     trigger,
@@ -168,6 +170,7 @@ export function NetworkSection({
                     const network = typeof newValue === 'string' ? null : newValue;
                     const name = network ? network.name : newValue || '';
                     field.onChange(name);
+                    selectedNetworkRef.current = network;
                     setSelectedNetwork(network);
                     if (name) {
                       setValue('network_signal_name', 'DMR', { shouldValidate: true });
@@ -177,6 +180,7 @@ export function NetworkSection({
                       // Autofill and lock unit(s) from the selected network
                       try {
                         const units = await getUnitsByIds(network.unit_ids);
+                        if (selectedNetworkRef.current?.id !== network.id) return;
                         if (units.length > 0) {
                           setValue('unit', units.map((u) => u.name).join(', '), {
                             shouldValidate: true,
@@ -187,7 +191,7 @@ export function NetworkSection({
                         }
                       } catch (e) {
                         console.error('Failed to fetch units for network', e);
-                        setUnitLocked(false);
+                        if (selectedNetworkRef.current?.id === network.id) setUnitLocked(false);
                       }
                     } else {
                       setUnitLocked(false);

@@ -227,7 +227,9 @@ pub fn extract_datetime(
     lnow: DateTime<Tz>,
     body: &str,
 ) -> Result<Option<NaiveDateTime>, AppError> {
-    Ok(extract_datetime_with_precision(lnow, body)?.map(|d| d.datetime))
+    Ok(extract_datetime_with_precision(lnow, body)
+        .c(h!())?
+        .map(|d| d.datetime))
 }
 
 pub fn without_trailing_datetime(body: &str) -> &str {

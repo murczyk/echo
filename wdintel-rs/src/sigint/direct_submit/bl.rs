@@ -302,7 +302,8 @@ where
     let extracted_dt =
         crate::rer_importer::datetime::extract_datetime_with_precision(
             local_now, body,
-        )?;
+        )
+        .c(h!())?;
     let timestamp = extracted_dt.as_ref().and_then(|dt| {
         timezone
             .from_local_datetime(&dt.datetime)

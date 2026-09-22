@@ -41,13 +41,28 @@ const uppyMocks = vi.hoisted(() => ({
 }));
 const dutySettingsMocks = vi.hoisted(() => ({
   messageAutoParseEnabled: false,
+  loadInProgress: false,
+  loadError: null as string | null,
+  saveInProgress: false,
+  saveError: null as string | null,
+  setMessageAutoParseEnabled: vi.fn(),
   scheduleSave: vi.fn(),
+  retryLoad: vi.fn(),
+  unstableSetter: false,
 }));
 
 vi.mock('../../../hooks/use-duty-settings', () => ({
   useDutySettings: () => ({
     messageAutoParseEnabled: dutySettingsMocks.messageAutoParseEnabled,
+    loadInProgress: dutySettingsMocks.loadInProgress,
+    loadError: dutySettingsMocks.loadError,
+    saveInProgress: dutySettingsMocks.saveInProgress,
+    saveError: dutySettingsMocks.saveError,
+    setMessageAutoParseEnabled: dutySettingsMocks.unstableSetter
+      ? (value: boolean) => dutySettingsMocks.setMessageAutoParseEnabled(value)
+      : dutySettingsMocks.setMessageAutoParseEnabled,
     scheduleSave: dutySettingsMocks.scheduleSave,
+    retryLoad: dutySettingsMocks.retryLoad,
   }),
 }));
 
@@ -241,7 +256,25 @@ vi.mock('../../../components/PowerDateTimePicker', () => ({
   },
 }));
 vi.mock('../../../components/PowerAlert', () => ({
-  PowerAlert: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  PowerAlert: ({
+    action,
+    children,
+    onClose,
+  }: {
+    action?: ReactNode;
+    children?: ReactNode;
+    onClose?: () => void;
+  }) => (
+    <div role="alert">
+      {children}
+      {action}
+      {onClose ? (
+        <button type="button" aria-label="Закрити сповіщення" onClick={onClose}>
+          Закрити
+        </button>
+      ) : null}
+    </div>
+  ),
 }));
 vi.mock('../../../components/loadingOverlayStyles', () => ({
   pageDrawerBackdropSx: () => ({}),
@@ -701,7 +734,14 @@ describe('ManageMessageDrawer edit mode', () => {
     aiIntelReportMocks.quickIntelReportSuggestion.mockReset();
     aiIntelReportMocks.quickIntelReportSuggestion.mockResolvedValue(null);
     dutySettingsMocks.messageAutoParseEnabled = false;
+    dutySettingsMocks.loadInProgress = false;
+    dutySettingsMocks.loadError = null;
+    dutySettingsMocks.saveInProgress = false;
+    dutySettingsMocks.saveError = null;
+    dutySettingsMocks.unstableSetter = false;
+    dutySettingsMocks.setMessageAutoParseEnabled.mockReset();
     dutySettingsMocks.scheduleSave.mockReset();
+    dutySettingsMocks.retryLoad.mockReset();
     document.body.innerHTML = '';
     referenceDataMocks.getTagsForDisplay.mockResolvedValue({ tagsMap: {}, tagsOrder: [] });
     referenceDataMocks.getUserSigintGroups.mockReset();
@@ -3430,6 +3470,70 @@ describe('ManageMessageDrawer edit mode', () => {
       root.unmount();
     });
 
+    it('ignores stale unit hydration after accepting a different parsed network', async () => {
+      let resolveUnits!: (value: Array<{ id: number; name: string }>) => void;
+      unitMocks.getUnitsByIds.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveUnits = resolve;
+          }),
+      );
+      directSubmitMocks.parseDirectSubmit.mockResolvedValueOnce({
+        text: '',
+        unit: 'Розпізнана мережа',
+        coords: [],
+        to: [],
+        locations: [],
+      });
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={null}
+            onClose={vi.fn()}
+          />,
+        );
+        await Promise.resolve();
+      });
+      await act(async () => {
+        autocompleteOnChangeByLabel.get('Мережа')?.(null, {
+          id: 1,
+          name: 'Ручна мережа',
+          unit_ids: [51],
+          freqs: [],
+        });
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: 'розпізнана мережа' } });
+        await Promise.resolve();
+      });
+      const parseButton = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Розпарсити',
+      ) as HTMLButtonElement;
+      await act(async () => {
+        parseButton.click();
+        await Promise.resolve();
+      });
+      const accept = container.querySelector(
+        'button[aria-label="Взяти мережу із тексту"]',
+      ) as HTMLButtonElement;
+      await act(async () => accept.click());
+
+      await act(async () => {
+        resolveUnits([{ id: 51, name: 'Старий підрозділ' }]);
+        await Promise.resolve();
+      });
+
+      expect(autocompleteValuesByLabel.get('Мережа')).toBe('Розпізнана мережа');
+      expect(autocompleteValuesByLabel.get('Підрозділ')).not.toBe('Старий підрозділ');
+      root.unmount();
+    });
+
     it('does not expose a reset-form action in parsing settings', async () => {
       const container = document.createElement('div');
       document.body.appendChild(container);
@@ -3562,7 +3666,187 @@ describe('ManageMessageDrawer edit mode', () => {
           messageAutoParseEnabled: true,
         }),
       );
+      expect(dutySettingsMocks.setMessageAutoParseEnabled).toHaveBeenCalledWith(true);
 
+      root.unmount();
+    });
+
+    it('disables parser settings until duty settings finish loading', async () => {
+      dutySettingsMocks.loadInProgress = true;
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={null}
+            onClose={vi.fn()}
+          />,
+        );
+        await Promise.resolve();
+      });
+
+      expect(
+        (container.querySelector('button[aria-label="Налаштування парсингу"]') as HTMLButtonElement)
+          .disabled,
+      ).toBe(true);
+      root.unmount();
+    });
+
+    it('shows a settings load error and allows retrying it', async () => {
+      dutySettingsMocks.loadError = 'Не вдалося завантажити налаштування.';
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={null}
+            onClose={vi.fn()}
+          />,
+        );
+        await Promise.resolve();
+      });
+
+      expect(container.textContent).toContain('Не вдалося завантажити налаштування.');
+      const retryButton = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Повторити',
+      );
+      expect(retryButton).toBeDefined();
+
+      await act(async () => {
+        retryButton?.click();
+        await Promise.resolve();
+      });
+
+      expect(dutySettingsMocks.retryLoad).toHaveBeenCalledOnce();
+      root.unmount();
+    });
+
+    it.each([
+      ['edit', { editTarget: { id: 42, message: buildMessage() } }],
+      ['report', { editTarget: { id: 42, message: buildMessage() }, editAsReport: true }],
+    ] as const)('does not show parser settings errors in %s mode', async (_, modeProps) => {
+      dutySettingsMocks.loadError = 'Не вдалося завантажити налаштування.';
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={null}
+            onClose={vi.fn()}
+            {...modeProps}
+          />,
+        );
+        await Promise.resolve();
+      });
+
+      expect(container.textContent).not.toContain('Не вдалося завантажити налаштування.');
+      expect(container.querySelector('button[aria-label="Налаштування парсингу"]')).toBeNull();
+      root.unmount();
+    });
+
+    it('shows a parser setting save error and restores the previous value', async () => {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      const render = () =>
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={null}
+            onClose={vi.fn()}
+          />,
+        );
+
+      await act(async () => {
+        render();
+        await Promise.resolve();
+      });
+      await act(async () => {
+        (
+          container.querySelector('button[aria-label="Налаштування парсингу"]') as HTMLButtonElement
+        ).click();
+        await Promise.resolve();
+      });
+      const menuItem = Array.from(document.querySelectorAll('[role="menuitem"]')).find((item) =>
+        item.textContent?.includes('Парсити автоматично'),
+      ) as HTMLButtonElement;
+      await act(async () => {
+        menuItem.click();
+        await Promise.resolve();
+      });
+
+      dutySettingsMocks.saveError = 'Помилка збереження налаштувань';
+      await act(async () => {
+        render();
+        await Promise.resolve();
+      });
+
+      expect(dutySettingsMocks.setMessageAutoParseEnabled).toHaveBeenLastCalledWith(false);
+      expect(container.textContent).toContain('Помилка збереження налаштувань');
+      root.unmount();
+    });
+
+    it('keeps a dismissed settings save error closed across unrelated renders', async () => {
+      dutySettingsMocks.unstableSetter = true;
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      const render = () =>
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={null}
+            onClose={vi.fn()}
+          />,
+        );
+
+      await act(async () => {
+        render();
+        await Promise.resolve();
+      });
+      await act(async () => {
+        (
+          container.querySelector('button[aria-label="Налаштування парсингу"]') as HTMLButtonElement
+        ).click();
+        await Promise.resolve();
+      });
+      const menuItem = Array.from(document.querySelectorAll('[role="menuitem"]')).find((item) =>
+        item.textContent?.includes('Парсити автоматично'),
+      ) as HTMLButtonElement;
+      await act(async () => {
+        menuItem.click();
+        await Promise.resolve();
+      });
+
+      dutySettingsMocks.saveError = 'Помилка збереження налаштувань';
+      await act(async () => {
+        render();
+        await Promise.resolve();
+      });
+
+      const closeButton = container.querySelector(
+        'button[aria-label="Закрити сповіщення"]',
+      ) as HTMLButtonElement;
+      await act(async () => {
+        closeButton.click();
+        await Promise.resolve();
+      });
+
+      expect(container.textContent).not.toContain('Помилка збереження налаштувань');
       root.unmount();
     });
 
@@ -3956,7 +4240,7 @@ describe('ManageMessageDrawer edit mode', () => {
       root.unmount();
     });
 
-    it('clears time input when parsed message has is_time_null: true', async () => {
+    it('updates date and time when they disappear from parsed text', async () => {
       const container = document.createElement('div');
       document.body.appendChild(container);
       const root = createRoot(container);
@@ -4015,6 +4299,25 @@ describe('ManageMessageDrawer edit mode', () => {
       });
 
       expect(pickerValuesByLabel.get('Дата перехоплення')).not.toBeNull();
+      expect(pickerValuesByLabel.get('Час перехоплення')).toBeNull();
+
+      directSubmitMocks.parseDirectSubmit.mockResolvedValueOnce({ text: 'test' });
+      await act(async () => {
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: '123 прк без дати' } });
+      });
+      await act(async () => {
+        parseButton.click();
+        await Promise.resolve();
+      });
+
+      expect(
+        dayjs(pickerValuesByLabel.get('Дата перехоплення') as dayjs.ConfigType).isSame(
+          dayjs(),
+          'day',
+        ),
+      ).toBe(true);
       expect(pickerValuesByLabel.get('Час перехоплення')).toBeNull();
 
       root.unmount();
@@ -4080,12 +4383,85 @@ describe('ManageMessageDrawer edit mode', () => {
       root.unmount();
     });
 
-    it('clears parser-owned coordinates but keeps a manually added coordinate when source becomes empty', async () => {
+    it('restores initial create values when source becomes empty without manual field changes', async () => {
       vi.useFakeTimers();
+      setRecentValues({
+        group: ['g-1'],
+        unit: ['Початковий підрозділ'],
+        deviceName: ['Початковий пристрій'],
+      });
+      referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
+      referenceDataMocks.getGroupInfosBatch.mockResolvedValue([
+        { masterKey: 'g-1', name: 'Group 1' },
+      ]);
       dutySettingsMocks.messageAutoParseEnabled = true;
       directSubmitMocks.parseDirectSubmit.mockResolvedValue({
-        text: 'test',
+        text: 'parsed',
+        freq: '149.500',
+        unit_v2: 'Розпізнаний підрозділ',
+        timestamp: '2026-09-16T05:52:00Z',
         coords: [{ lat: 49.123457, lon: 37.234568 }],
+        to: [],
+        locations: [],
+      });
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer open cyberEchoEnabled currentUser={null} onClose={vi.fn()} />,
+        );
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: '49.123457, 37.234568' } });
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(700);
+        await Promise.resolve();
+      });
+
+      expect(autocompleteValuesByLabel.get('Частота (МГц)')).toBe('149.500');
+      expect(autocompleteValuesByLabel.get('Підрозділ')).toBe('Розпізнаний підрозділ');
+      expect(pickerValuesByLabel.get('Час перехоплення')).not.toBeNull();
+
+      await act(async () => {
+        textFieldPropsByLabel.get('Текст повідомлення')?.onChange?.({ target: { value: '' } });
+        await Promise.resolve();
+      });
+
+      expect(autocompleteValuesByLabel.get('Частота (МГц)') ?? '').toBe('');
+      expect(autocompleteValuesByLabel.get('Підрозділ')).toBe('Початковий підрозділ');
+      expect(autocompleteValuesByLabel.get('Назва пристрою')).toBe('Початковий пристрій');
+      expect(
+        dayjs(pickerValuesByLabel.get('Дата перехоплення') as dayjs.ConfigType).isSame(
+          dayjs(),
+          'day',
+        ),
+      ).toBe(true);
+      expect(pickerValuesByLabel.get('Час перехоплення')).toBeNull();
+      expect(container.textContent).toContain('Координати ще не додані');
+
+      root.unmount();
+      vi.useRealTimers();
+    });
+
+    it('still restores pristine fields after an inaccessible recent group is cleared internally', async () => {
+      vi.useFakeTimers();
+      setRecentValues({ group: ['stale-group'] });
+      referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
+      referenceDataMocks.getGroupInfosBatch.mockResolvedValue([
+        { masterKey: 'g-1', name: 'Group 1' },
+      ]);
+      dutySettingsMocks.messageAutoParseEnabled = true;
+      directSubmitMocks.parseDirectSubmit.mockResolvedValue({
+        text: 'parsed',
+        freq: '149.500',
+        coords: [],
         to: [],
         locations: [],
       });
@@ -4104,6 +4480,58 @@ describe('ManageMessageDrawer edit mode', () => {
         );
         await Promise.resolve();
       });
+      expect(autocompleteValuesByLabel.get('Група')).toBeNull();
+
+      await act(async () => {
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: 'частота 149.500' } });
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(700);
+        await Promise.resolve();
+      });
+      expect(autocompleteValuesByLabel.get('Частота (МГц)')).toBe('149.500');
+
+      await act(async () => {
+        textFieldPropsByLabel.get('Текст повідомлення')?.onChange?.({ target: { value: '' } });
+        await Promise.resolve();
+      });
+      expect(autocompleteValuesByLabel.get('Частота (МГц)') ?? '').toBe('');
+
+      await act(async () => {
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: 'новий текст' } });
+        await Promise.resolve();
+      });
+      expect((container.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(
+        true,
+      );
+
+      root.unmount();
+      vi.useRealTimers();
+    });
+
+    it('keeps every field unchanged when source becomes empty after a manual field change', async () => {
+      vi.useFakeTimers();
+      dutySettingsMocks.messageAutoParseEnabled = true;
+      directSubmitMocks.parseDirectSubmit.mockResolvedValue({
+        text: 'test',
+        coords: [{ lat: 49.123457, lon: 37.234568 }],
+        to: [],
+        locations: [],
+      });
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer open cyberEchoEnabled currentUser={null} onClose={vi.fn()} />,
+        );
+        await Promise.resolve();
+      });
 
       await act(async () => {
         textFieldPropsByLabel
@@ -4115,6 +4543,10 @@ describe('ManageMessageDrawer edit mode', () => {
         await Promise.resolve();
       });
       expect(container.querySelector('button[aria-label="Видалити координату 1"]')).not.toBeNull();
+
+      await act(async () => {
+        autocompleteOnInputChangeByLabel.get('Назва пристрою')?.(null, 'Ручний пристрій', 'input');
+      });
 
       await act(async () => {
         textFieldPropsByLabel
@@ -4135,9 +4567,10 @@ describe('ManageMessageDrawer edit mode', () => {
       });
 
       expect(container.querySelectorAll('button[aria-label^="Видалити координату"]')).toHaveLength(
-        1,
+        2,
       );
-      expect(container.textContent).not.toContain('37U CQ 71194 42680');
+      expect(container.textContent).toContain('37U CQ 71194 42681');
+      expect(autocompleteValuesByLabel.get('Назва пристрою')).toBe('Ручний пристрій');
       expect(container.textContent).not.toContain('Координати ще не додані');
 
       root.unmount();

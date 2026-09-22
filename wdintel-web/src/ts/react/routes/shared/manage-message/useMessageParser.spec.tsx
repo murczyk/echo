@@ -34,15 +34,23 @@ function Harness({
   onValue,
   setErrorMsg,
   autoParseEnabled = false,
+  active = true,
+  isEditMode = false,
+  isReportMode = false,
 }: {
   onValue: (value: HarnessValue) => void;
   setErrorMsg: (message: string | null) => void;
   autoParseEnabled?: boolean;
+  active?: boolean;
+  isEditMode?: boolean;
+  isReportMode?: boolean;
 }) {
   const methods = useForm<MessageFormData>({ defaultValues: EMPTY_FORM_VALUES });
   const parser = useMessageParser(methods, false, setErrorMsg, {
-    active: true,
+    active,
     autoParseEnabled,
+    isEditMode,
+    isReportMode,
   });
 
   useEffect(() => onValue({ methods, parser }), [methods, onValue, parser]);
@@ -179,7 +187,7 @@ describe('useMessageParser ownership', () => {
     expect(latest.parser.parserFeedback?.conflictFields).not.toContain('freq');
   });
 
-  it('clears only parser-owned values when source becomes empty', async () => {
+  it('keeps every value when source becomes empty after a manual field change', async () => {
     apiMocks.parseDirectSubmit.mockResolvedValueOnce(response({ freq: '149.500' }));
     await mount();
     await act(async () => {
@@ -195,7 +203,7 @@ describe('useMessageParser ownership', () => {
 
     await setSource('');
 
-    expect(latest.methods.getValues('freq')).toBe('');
+    expect(latest.methods.getValues('freq')).toBe('149.500');
     expect(latest.methods.getValues('unit')).toBe('Початковий підрозділ');
     expect(latest.methods.getValues('time')).toBeNull();
     expect(apiMocks.parseDirectSubmit).toHaveBeenCalledOnce();
@@ -262,7 +270,7 @@ describe('useMessageParser ownership', () => {
     expect(latest.methods.getValues('freq')).toBe('');
   });
 
-  it('invalidates an in-flight response when the parser session resets', async () => {
+  it('invalidates an in-flight response when the parser becomes inactive', async () => {
     let resolveParse!: (value: DirectSubmitParseResponse) => void;
     apiMocks.parseDirectSubmit.mockImplementationOnce(
       () =>
@@ -279,13 +287,89 @@ describe('useMessageParser ownership', () => {
       await Promise.resolve();
     });
     await act(async () => {
-      latest.parser.resetParserSession();
+      root.render(
+        <Harness
+          active={false}
+          setErrorMsg={setErrorMsg}
+          onValue={(value) => {
+            latest = value;
+          }}
+        />,
+      );
+      await Promise.resolve();
+    });
+    await act(async () => {
       resolveParse(response({ freq: '149.500' }));
       await pending;
     });
 
     expect(latest.methods.getValues('freq')).toBe('');
     expect(latest.parser.parseStatus).toBe('idle');
+  });
+
+  it.each([
+    ['edit mode', { isEditMode: true }],
+    ['report mode', { isReportMode: true }],
+  ] as const)('invalidates an in-flight response after entering %s', async (_, nextMode) => {
+    let resolveParse!: (value: DirectSubmitParseResponse) => void;
+    apiMocks.parseDirectSubmit.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveParse = resolve;
+        }),
+    );
+    await mount();
+    await setSource('повідомлення');
+
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = latest.parser.handleParse();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      root.render(
+        <Harness
+          {...nextMode}
+          setErrorMsg={setErrorMsg}
+          onValue={(value) => {
+            latest = value;
+          }}
+        />,
+      );
+      await Promise.resolve();
+    });
+    await act(async () => {
+      resolveParse(response({ freq: '149.500' }));
+      await pending;
+    });
+
+    expect(latest.methods.getValues('freq')).toBe('');
+    expect(latest.parser.parseStatus).toBe('idle');
+  });
+
+  it('does not start a second parse while the first request is in flight', async () => {
+    let resolveParse!: (value: DirectSubmitParseResponse) => void;
+    apiMocks.parseDirectSubmit.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveParse = resolve;
+        }),
+    );
+    await mount();
+    await setSource('повідомлення');
+
+    let first!: Promise<void>;
+    await act(async () => {
+      first = latest.parser.handleParse();
+      void latest.parser.handleParse();
+      await Promise.resolve();
+    });
+
+    expect(apiMocks.parseDirectSubmit).toHaveBeenCalledOnce();
+    await act(async () => {
+      resolveParse(response());
+      await first;
+    });
   });
 
   it('preserves all values when parsing fails', async () => {

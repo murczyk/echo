@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import dayjs from 'dayjs';
@@ -332,6 +332,17 @@ export function useManageMessageDrawer({
 
   const { control, formState, getValues, setValue, reset } = methods;
   const formValues = useWatch({ control });
+  const getInitialCreateFormValues = useCallback(
+    (): MessageFormData => ({
+      ...EMPTY_FORM_VALUES,
+      date: dayjs(),
+      time: null,
+      signalGroupMasterKey: recentValues.group[0] ?? '',
+      deviceName: cyberEchoEnabled ? (recentValues.deviceName[0] ?? '') : '',
+      unit: recentValues.unit[0] ?? '',
+    }),
+    [cyberEchoEnabled, recentValues],
+  );
 
   const existingMedia: MessageMediaInfo[] = useMemo(() => {
     const rawList = isEditMode
@@ -386,15 +397,50 @@ export function useManageMessageDrawer({
 
   const dutySettings = useDutySettings();
   const autoParseEnabled = dutySettings.messageAutoParseEnabled;
+  const autoParseSettingsDisabled =
+    dutySettings.loadInProgress || Boolean(dutySettings.loadError) || dutySettings.saveInProgress;
+  const autoParseBeforeSaveRef = useRef<boolean | null>(null);
+  const setMessageAutoParseEnabledRef = useRef(dutySettings.setMessageAutoParseEnabled);
+  setMessageAutoParseEnabledRef.current = dutySettings.setMessageAutoParseEnabled;
   const handleToggleAutoParse = useCallback(
     (enabled: boolean) => {
+      if (autoParseSettingsDisabled) return;
+      autoParseBeforeSaveRef.current = dutySettings.messageAutoParseEnabled;
+      dutySettings.setMessageAutoParseEnabled(enabled);
       dutySettings.scheduleSave({
         ...dutySettings,
         messageAutoParseEnabled: enabled,
       });
     },
-    [dutySettings],
+    [autoParseSettingsDisabled, dutySettings],
   );
+
+  useEffect(() => {
+    if (dutySettings.saveError) {
+      if (autoParseBeforeSaveRef.current !== null) {
+        setMessageAutoParseEnabledRef.current(autoParseBeforeSaveRef.current);
+        autoParseBeforeSaveRef.current = null;
+      }
+      setErrorMsg(dutySettings.saveError);
+      return;
+    }
+    if (!dutySettings.saveInProgress) autoParseBeforeSaveRef.current = null;
+  }, [dutySettings.saveError, dutySettings.saveInProgress]);
+
+  const resetPristineCreateFields = useCallback(() => {
+    reset({
+      ...getInitialCreateFormValues(),
+      signalGroupMasterKey: getValues('signalGroupMasterKey'),
+    });
+    setDeviceNameInput('');
+    setPostInput('');
+    setUnitInput('');
+    setNetworkNameInput('');
+    setCallsignInput('');
+    setFreqInput('');
+    setSelectedNetwork(null);
+    setUnitLocked(false);
+  }, [getInitialCreateFormValues, getValues, reset]);
 
   const {
     parsing,
@@ -409,6 +455,7 @@ export function useManageMessageDrawer({
     autoParseEnabled,
     isEditMode,
     isReportMode,
+    onPristineSourceCleared: resetPristineCreateFields,
   });
   const handleAcceptParsedField = useCallback(
     (field: Parameters<typeof acceptParsedField>[0]) => {
@@ -566,14 +613,7 @@ export function useManageMessageDrawer({
       // Seed deviceName only when its field is actually rendered (cyberEchoEnabled);
       // otherwise SystemSection hides it while useMessageSubmit would still call
       // createDeviceName and send a stale device_name_id the user never chose.
-      reset({
-        ...EMPTY_FORM_VALUES,
-        date: dayjs(),
-        time: null,
-        signalGroupMasterKey: recentValues.group[0] ?? '',
-        deviceName: cyberEchoEnabled ? (recentValues.deviceName[0] ?? '') : '',
-        unit: recentValues.unit[0] ?? '',
-      });
+      reset(getInitialCreateFormValues());
     }
   }, [
     formReady,
@@ -584,6 +624,7 @@ export function useManageMessageDrawer({
     reportSource?.id,
     recentValues,
     cyberEchoEnabled,
+    getInitialCreateFormValues,
   ]);
 
   useEffect(() => {
@@ -868,6 +909,9 @@ export function useManageMessageDrawer({
     handleParse,
     acceptParsedField: handleAcceptParsedField,
     autoParseEnabled,
+    autoParseSettingsDisabled,
+    autoParseSettingsLoadError: dutySettings.loadError,
+    retryAutoParseSettings: dutySettings.retryLoad,
     handleToggleAutoParse,
     handleDrawerClose,
     onSubmit,

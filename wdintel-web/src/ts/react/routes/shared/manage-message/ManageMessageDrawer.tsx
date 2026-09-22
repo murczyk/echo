@@ -394,6 +394,9 @@ export function ManageMessageDrawer(props: Props) {
     handleParse,
     acceptParsedField,
     autoParseEnabled,
+    autoParseSettingsDisabled,
+    autoParseSettingsLoadError,
+    retryAutoParseSettings,
     handleToggleAutoParse,
     handleDrawerClose,
     onSubmit,
@@ -508,6 +511,17 @@ export function ManageMessageDrawer(props: Props) {
               </PowerAlert>
             ) : (
               <>
+                {!isEditMode && !isReportMode && autoParseSettingsLoadError ? (
+                  <PowerAlert
+                    severity="error"
+                    autoHideDuration={null}
+                    dismissible={false}
+                    action={<Button onClick={retryAutoParseSettings}>Повторити</Button>}
+                    sx={{ mb: 2 }}
+                  >
+                    {autoParseSettingsLoadError}
+                  </PowerAlert>
+                ) : null}
                 {errorMsg && (
                   <PowerAlert severity="error" onClose={() => setErrorMsg(null)} sx={{ mb: 2 }}>
                     {errorMsg}
@@ -596,7 +610,7 @@ export function ManageMessageDrawer(props: Props) {
                                           aria-label="Налаштування парсингу"
                                           aria-haspopup="menu"
                                           aria-expanded={isSettingsOpen ? 'true' : undefined}
-                                          disabled={busy}
+                                          disabled={busy || autoParseSettingsDisabled}
                                           sx={{ minWidth: 32, px: 0.75 }}
                                         >
                                           <ArrowDropDownIcon fontSize="small" />
@@ -617,6 +631,7 @@ export function ManageMessageDrawer(props: Props) {
                                       }}
                                     >
                                       <MenuItem
+                                        disabled={autoParseSettingsDisabled}
                                         onClick={() => {
                                           handleToggleAutoParse(!autoParseEnabled);
                                         }}

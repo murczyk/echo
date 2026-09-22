@@ -5,7 +5,6 @@ import { parseDirectSubmit } from '../../../services/api/direct-submit';
 import type { MessageFormData } from './manage-message-drawer.schema';
 import {
   acceptParsedCandidate,
-  clearParserOwnedValues,
   createParserOwnershipState,
   PARSER_LIST_FIELDS,
   PARSER_SCALAR_FIELDS,
@@ -23,6 +22,7 @@ export type UseMessageParserOptions = {
   isEditMode?: boolean;
   isReportMode?: boolean;
   debounceMs?: number;
+  onPristineSourceCleared?: () => void;
 };
 
 export type MessageParseStatus = 'idle' | 'debouncing' | 'parsing' | 'success' | 'error';
@@ -50,24 +50,29 @@ export function useMessageParser(
   const [parserFeedback, setParserFeedback] = useState<ParserFeedback | null>(null);
   const [debounceKey, setDebounceKey] = useState(0);
   const [bodyRevision, setBodyRevision] = useState(0);
-  const { getValues, setValue, watch } = methods;
+  const { getFieldState, getValues, setValue, watch } = methods;
 
   const active = options?.active ?? true;
   const autoParseEnabled = options?.autoParseEnabled ?? false;
   const isEditMode = options?.isEditMode ?? false;
   const isReportMode = options?.isReportMode ?? false;
+  const parserActive = active && !isEditMode && !isReportMode;
   const debounceMs = options?.debounceMs ?? DEFAULT_MESSAGE_PARSE_DEBOUNCE_MS;
+  const onPristineSourceCleared = options?.onPristineSourceCleared;
 
   const fullBody = watch('full_body');
   const latestRequestIdRef = useRef(0);
-  const activeRef = useRef(active);
+  const parserActiveRef = useRef(parserActive);
+  const parseInFlightRef = useRef(false);
   const applyingParserPatchRef = useRef(false);
+  const hasManualFormChangesRef = useRef(false);
   const feedbackSequenceRef = useRef(0);
   const ownershipRef = useRef(createParserOwnershipState());
   const lastObservedFormRef = useRef(copyFormValues(getValues()));
-  if (activeRef.current !== active) {
-    activeRef.current = active;
+  if (parserActiveRef.current !== parserActive) {
+    parserActiveRef.current = parserActive;
     latestRequestIdRef.current += 1;
+    parseInFlightRef.current = false;
   }
   const observedBodyRef = useRef(fullBody ?? '');
   const lastParsedBodyRef = useRef<string | null>(null);
@@ -82,7 +87,6 @@ export function useMessageParser(
       sequence: feedbackSequenceRef.current,
       changedFields: result.changedFields,
       conflictFields: result.conflictFields,
-      emptyCandidateFields: result.emptyCandidateFields,
     });
   }, []);
 
@@ -109,42 +113,45 @@ export function useMessageParser(
   useEffect(() => {
     const subscription = watch((_values, { name }) => {
       const currentForm = copyFormValues(getValues());
-      if (
-        name &&
-        PARSER_FIELDS.has(name) &&
-        !applyingParserPatchRef.current &&
-        !isEditMode &&
-        !isReportMode
-      ) {
-        ownershipRef.current = recordManualChange(
-          ownershipRef.current,
-          name as ParserFieldName,
-          currentForm[name as keyof MessageFormData],
-          lastObservedFormRef.current,
-        );
+      if (name && !applyingParserPatchRef.current && !isEditMode && !isReportMode) {
+        if (PARSER_FIELDS.has(name)) {
+          hasManualFormChangesRef.current = true;
+          ownershipRef.current = recordManualChange(
+            ownershipRef.current,
+            name as ParserFieldName,
+            currentForm[name as keyof MessageFormData],
+            lastObservedFormRef.current,
+          );
+        } else if (name !== 'full_body' && getFieldState(name as keyof MessageFormData).isDirty) {
+          hasManualFormChangesRef.current = true;
+        }
       }
       lastObservedFormRef.current = currentForm;
     });
     return () => subscription.unsubscribe();
-  }, [getValues, isEditMode, isReportMode, watch]);
-
-  const clearParsedValues = useCallback(() => {
-    applyParserResult(clearParserOwnedValues(ownershipRef.current, getValues()));
-  }, [applyParserResult, getValues]);
+  }, [getFieldState, getValues, isEditMode, isReportMode, watch]);
 
   const handleBodyChange = useCallback(
     (rawBody: string) => {
       if (rawBody === observedBodyRef.current) return false;
 
+      const sourceWasNotEmpty = Boolean(observedBodyRef.current.trim());
       observedBodyRef.current = rawBody;
       latestRequestIdRef.current += 1;
+      parseInFlightRef.current = false;
       lastParsedBodyRef.current = null;
       setBodyRevision((revision) => revision + 1);
       setParsing(false);
 
       if (!rawBody.trim()) {
+        if (sourceWasNotEmpty && !hasManualFormChangesRef.current) {
+          ownershipRef.current = createParserOwnershipState();
+          setParserFeedback(null);
+          onPristineSourceCleared?.();
+          lastObservedFormRef.current = copyFormValues(getValues());
+        }
         setParseStatus('idle');
-      } else if (active && autoParseEnabled && !isEditMode && !isReportMode && !busy) {
+      } else if (parserActive && autoParseEnabled && !busy) {
         setParseStatus('debouncing');
       } else {
         setParseStatus('idle');
@@ -152,22 +159,22 @@ export function useMessageParser(
 
       return true;
     },
-    [active, autoParseEnabled, busy, isEditMode, isReportMode],
+    [autoParseEnabled, busy, getValues, onPristineSourceCleared, parserActive],
   );
 
   const handleParse = useCallback(async () => {
-    if (busy) return;
+    if (busy || parseInFlightRef.current || !parserActiveRef.current) return;
     const currentRawBody = getValues('full_body') ?? '';
     const currentBody = currentRawBody.trim();
     const signalGroupMasterKey = getValues('signalGroupMasterKey')?.trim();
     if (!currentBody) {
-      if (!isEditMode && !isReportMode) clearParsedValues();
       setParseStatus('idle');
       return;
     }
 
     const requestId = latestRequestIdRef.current + 1;
     latestRequestIdRef.current = requestId;
+    parseInFlightRef.current = true;
     setParseStatus('parsing');
     setParsing(true);
     setErrorMsg(null);
@@ -176,30 +183,25 @@ export function useMessageParser(
         full_body: currentBody,
         ...(signalGroupMasterKey ? { signal_group_master_key: signalGroupMasterKey } : {}),
       });
-      if (requestId !== latestRequestIdRef.current || !activeRef.current) return;
+      if (requestId !== latestRequestIdRef.current || !parserActiveRef.current) return;
       lastParsedBodyRef.current = currentRawBody;
       applyParserResult(
         reconcileParserSnapshot(ownershipRef.current, getValues(), toParserSnapshot(parsed)),
       );
       setParseStatus('success');
     } catch (error: any) {
-      if (requestId !== latestRequestIdRef.current || !activeRef.current) return;
+      if (requestId !== latestRequestIdRef.current || !parserActiveRef.current) return;
       lastParsedBodyRef.current = currentRawBody;
       setParseStatus('error');
       console.error('Error parsing message', error);
       setErrorMsg(error.message || 'Не вдалося розпарсити повідомлення');
     } finally {
-      if (requestId === latestRequestIdRef.current) setParsing(false);
+      if (requestId === latestRequestIdRef.current) {
+        parseInFlightRef.current = false;
+        setParsing(false);
+      }
     }
-  }, [
-    applyParserResult,
-    busy,
-    clearParsedValues,
-    getValues,
-    isEditMode,
-    isReportMode,
-    setErrorMsg,
-  ]);
+  }, [applyParserResult, busy, getValues, setErrorMsg]);
 
   const acceptParsedField = useCallback(
     (field: ParserFieldName) => {
@@ -207,16 +209,16 @@ export function useMessageParser(
       applyParserResult({
         ...accepted,
         conflictFields: parserFeedback?.conflictFields.filter((item) => item !== field) ?? [],
-        emptyCandidateFields:
-          parserFeedback?.emptyCandidateFields?.filter((item) => item !== field) ?? [],
       });
     },
     [applyParserResult, getValues, parserFeedback],
   );
 
-  const resetParserSession = useCallback(() => {
+  const resetParserState = useCallback(() => {
     latestRequestIdRef.current += 1;
+    parseInFlightRef.current = false;
     ownershipRef.current = createParserOwnershipState();
+    hasManualFormChangesRef.current = false;
     observedBodyRef.current = getValues('full_body') ?? '';
     lastObservedFormRef.current = copyFormValues(getValues());
     lastParsedBodyRef.current = null;
@@ -233,11 +235,10 @@ export function useMessageParser(
     if (!trimmed) {
       lastParsedBodyRef.current = null;
       setParseStatus('idle');
-      if (active && !isEditMode && !isReportMode) clearParsedValues();
       return;
     }
     if (parsing) return;
-    if (!active || !autoParseEnabled || isEditMode || isReportMode || busy) {
+    if (!parserActive || !autoParseEnabled || busy) {
       if (rawBody !== lastParsedBodyRef.current) setParseStatus('idle');
       return;
     }
@@ -253,22 +254,19 @@ export function useMessageParser(
   }, [
     fullBody,
     bodyRevision,
-    active,
+    parserActive,
     autoParseEnabled,
-    isEditMode,
-    isReportMode,
     busy,
     parsing,
-    clearParsedValues,
     handleBodyChange,
     handleParse,
     debounceMs,
   ]);
 
   useEffect(() => {
-    if (active) return;
-    resetParserSession();
-  }, [active, resetParserSession]);
+    if (parserActive) return;
+    resetParserState();
+  }, [parserActive, resetParserState]);
 
   return {
     parsing,
@@ -278,6 +276,5 @@ export function useMessageParser(
     handleBodyChange,
     handleParse,
     acceptParsedField,
-    resetParserSession,
   };
 }

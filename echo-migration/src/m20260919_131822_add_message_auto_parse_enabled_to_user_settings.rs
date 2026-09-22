@@ -18,14 +18,6 @@ impl MigrationTrait for Migration {
                 r#"
             alter table if exists user_settings
                 add column if not exists message_auto_parse_enabled boolean;
-
-            update user_settings
-            set message_auto_parse_enabled = coalesce(message_auto_parse_enabled, false)
-            where message_auto_parse_enabled is null;
-
-            alter table if exists user_settings
-                alter column message_auto_parse_enabled set default false,
-                alter column message_auto_parse_enabled set not null;
             "#,
             )
             .await

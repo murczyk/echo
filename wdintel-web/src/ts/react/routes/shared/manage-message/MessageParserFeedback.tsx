@@ -62,7 +62,6 @@ export function ParserFieldFeedback({
     : feedback?.changedFields.includes(field)
       ? 'updated'
       : 'idle';
-  const removesValue = feedback?.emptyCandidateFields?.includes(field) ?? false;
 
   return (
     <Box
@@ -93,15 +92,11 @@ export function ParserFieldFeedback({
           <Button
             size="small"
             color="warning"
-            aria-label={
-              removesValue
-                ? `Прибрати ${label}: у тексті значення немає`
-                : `Взяти ${label} із тексту`
-            }
+            aria-label={`Взяти ${label} із тексту`}
             onClick={() => onAccept(field)}
             sx={{ minHeight: 28, py: 0, px: 0.75, textTransform: 'none' }}
           >
-            {removesValue ? 'Прибрати значення' : 'Взяти з тексту'}
+            Взяти з тексту
           </Button>
         </Box>
       ) : null}

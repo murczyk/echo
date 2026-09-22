@@ -6,7 +6,6 @@ import { parseCoordinateBlock } from '../../../../maps/coordinate-parser';
 import { EMPTY_FORM_VALUES, type MessageFormData } from './manage-message-drawer.schema';
 import {
   acceptParsedCandidate,
-  clearParserOwnedValues,
   createParserOwnershipState,
   recordManualChange,
   reconcileParserSnapshot,
@@ -71,6 +70,23 @@ describe('message parser field ownership', () => {
     expect(second.changedFields).toContain('freq');
   });
 
+  it('sets a parser-owned date to today when a later parse has no date', () => {
+    const first = reconcileParserSnapshot(
+      createParserOwnershipState(),
+      emptyForm(),
+      emptySnapshot({ date: dayjs('2026-09-16') }),
+    );
+
+    const second = reconcileParserSnapshot(
+      first.state,
+      emptyForm({ date: dayjs('2026-09-16') }),
+      emptySnapshot(),
+    );
+
+    expect(dayjs(second.patch.date as dayjs.ConfigType).isSame(dayjs(), 'day')).toBe(true);
+    expect(second.changedFields).toContain('date');
+  });
+
   it('lets a parser candidate replace a never-owned initial value', () => {
     const result = reconcileParserSnapshot(
       createParserOwnershipState(),
@@ -107,14 +123,14 @@ describe('message parser field ownership', () => {
     expect(result.patch).not.toHaveProperty('freq');
   });
 
-  it('marks a conflict as removal when the latest parse has no candidate', () => {
+  it('keeps a manual value without a conflict when the latest parse has no candidate', () => {
     const current = emptyForm({ freq: '150.000' });
     const manual = recordManualChange(createParserOwnershipState(), 'freq', '150.000', current);
 
     const result = reconcileParserSnapshot(manual, current, emptySnapshot());
 
-    expect(result.conflictFields).toContain('freq');
-    expect(result.emptyCandidateFields).toContain('freq');
+    expect(result.patch).not.toHaveProperty('freq');
+    expect(result.conflictFields).not.toContain('freq');
   });
 
   it('maps is_time_null to a present null candidate and clears absent parsed timestamps', () => {
@@ -131,7 +147,7 @@ describe('message parser field ownership', () => {
       toParserSnapshot(parseResponse()),
     );
 
-    expect(second.patch.date).toBeNull();
+    expect(dayjs(second.patch.date as dayjs.ConfigType).isSame(dayjs(), 'day')).toBe(true);
     expect(second.patch.time).toBeUndefined();
   });
 
@@ -180,28 +196,6 @@ describe('message parser field ownership', () => {
     expect(reparsed.patch.coords).toBe(B_WGS);
   });
 
-  it('keeps coordinate ownership stable after API precision is serialized into the form', () => {
-    const parsedA = reconcileParserSnapshot(
-      createParserOwnershipState(),
-      emptyForm(),
-      toParserSnapshot(parseResponse({ coords: [{ lat: 49.123457, lon: 37.234568 }] })),
-    );
-    const serializedA = parsedA.patch.coords as string;
-    const withManualB = recordManualChange(
-      parsedA.state,
-      'coords',
-      `${serializedA}\n${B_WGS}`,
-      emptyForm({ coords: serializedA }),
-    );
-
-    const cleared = clearParserOwnedValues(
-      withManualB,
-      emptyForm({ coords: `${serializedA}\n${B_WGS}` }),
-    );
-
-    expect(cleared.patch.coords).toBe(B_WGS);
-  });
-
   it('suppresses a manually removed parsed coordinate across disappearance and reappearance', () => {
     const parsedA = reconcileParserSnapshot(
       createParserOwnershipState(),
@@ -227,6 +221,77 @@ describe('message parser field ownership', () => {
 
     expect(returned.patch).not.toHaveProperty('coords');
     expect(returned.conflictFields).toContain('coords');
+  });
+
+  it('keeps a manually re-added suppressed coordinate across parser removal', () => {
+    const parsed = reconcileParserSnapshot(
+      createParserOwnershipState(),
+      emptyForm(),
+      toParserSnapshot(parseResponse({ coords: [{ lat: 49.12346, lon: 37.23457 }] })),
+    );
+    const serialized = parsed.patch.coords as string;
+    const suppressed = recordManualChange(
+      parsed.state,
+      'coords',
+      '',
+      emptyForm({ coords: serialized }),
+    );
+    const readdedInMgrs = toParserSnapshot(
+      parseResponse({ coords: [{ lat: 49.12346, lon: 37.23457 }] }),
+    ).lists.coords[0]?.key;
+    const readded = recordManualChange(suppressed, 'coords', readdedInMgrs, emptyForm());
+
+    const removedFromText = reconcileParserSnapshot(
+      readded,
+      emptyForm({ coords: readdedInMgrs }),
+      toParserSnapshot(parseResponse()),
+    );
+
+    expect(removedFromText.patch).not.toHaveProperty('coords');
+    expect(removedFromText.state.lists.coords.manual).toHaveLength(1);
+  });
+
+  it('keeps a manually deleted item suppressed when an in-flight parse returns it', () => {
+    const manuallyAdded = recordManualChange(
+      createParserOwnershipState(),
+      'coords',
+      A_WGS,
+      emptyForm(),
+    );
+    const manuallyDeleted = recordManualChange(
+      manuallyAdded,
+      'coords',
+      '',
+      emptyForm({ coords: A_WGS }),
+    );
+
+    const lateResponse = reconcileParserSnapshot(
+      manuallyDeleted,
+      emptyForm(),
+      toParserSnapshot(parseResponse({ coords: [{ lat: 49.12346, lon: 37.23457 }] })),
+    );
+
+    expect(lateResponse.patch).not.toHaveProperty('coords');
+    expect(lateResponse.conflictFields).toContain('coords');
+  });
+
+  it.each([
+    ['callsigns', 'ALPHA'],
+    ['locations', 'Купʼянськ'],
+  ] as const)('keeps a manually re-added suppressed %s item', (field, value) => {
+    const snapshot = emptySnapshot();
+    snapshot.lists[field] = [{ key: value, value }];
+    const parsed = reconcileParserSnapshot(createParserOwnershipState(), emptyForm(), snapshot);
+    const suppressed = recordManualChange(parsed.state, field, [], emptyForm({ [field]: [value] }));
+    const readded = recordManualChange(suppressed, field, [value], emptyForm());
+
+    const removedFromText = reconcileParserSnapshot(readded, emptyForm({ [field]: [value] }), {
+      ...snapshot,
+      lists: { ...snapshot.lists, [field]: [] },
+    });
+
+    expect(removedFromText.patch).not.toHaveProperty(field);
+    expect(removedFromText.state.lists[field].manual).toHaveLength(1);
   });
 
   it('restores suppressed parsed list items without deleting manual items', () => {
@@ -312,28 +377,6 @@ describe('message parser field ownership', () => {
 
     expect(locations.lists.callsigns.manual.map(({ value }) => value)).toEqual(['ALPHA', 'BRAVO']);
     expect(locations.lists.locations.manual.map(({ value }) => value)).toEqual(['Купʼянськ']);
-  });
-
-  it('clears only parser-owned values when source text becomes empty', () => {
-    const parsed = reconcileParserSnapshot(
-      createParserOwnershipState(),
-      emptyForm({ unit: 'Початковий' }),
-      emptySnapshot({ freq: '149.500' }),
-    );
-    const withManual = recordManualChange(
-      parsed.state,
-      'time',
-      null,
-      emptyForm({ unit: 'Початковий', freq: '149.500' }),
-    );
-
-    const cleared = clearParserOwnedValues(
-      withManual,
-      emptyForm({ unit: 'Початковий', freq: '149.500', time: null }),
-    );
-
-    expect(cleared.patch).toEqual({ freq: '' });
-    expect(cleared.conflictFields).toEqual([]);
   });
 
   it('keeps two nearby coordinates as separate parsed points', () => {
