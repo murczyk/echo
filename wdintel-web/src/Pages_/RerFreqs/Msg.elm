@@ -29,9 +29,8 @@ type Msg
     | SwitchFromTextToMap String
     | MapClose String
     | PointsByFreqReturnedByApi String (Result ApiError B.ListPointsByFreqRsp)
-    | CallsignsByFreqsReturnedByApi Int (Result ApiError Api.ListCallsignsByFreqsRsp)
-    | CallsignPrioritiesReturnedByApi Int (List String) (Result ApiError (List B.FreqCallsignPriority))
-    | PreviewDetailsTick Posix
+    | CallsignsByFreqsReturnedByApi Int String (Result ApiError Api.ListCallsignsByFreqsRsp)
+    | CallsignSummariesReturnedByApi Int (Result ApiError Api.ListCallsignsByFreqsSummaryRsp)
     | AltUnitsByFreqReturnedByApi Int Bool (Result ApiError Api.ListAltUnitsByFreqsRsp)
     | GroupsMessageCountByDayReturnedByApi Int (Result ApiError GroupsActivityPerDayRsp)
     | CallsignsInfoReturnedByApi Int (List String) (Result ApiError (List B.CallsignInfoRes))

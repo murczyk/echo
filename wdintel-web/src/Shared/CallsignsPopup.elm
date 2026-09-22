@@ -162,6 +162,7 @@ type PopupCallerOrigin
 
 type alias ViewParams msg =
     { callsigns : List String
+    , totalCount : Int
     , isOpened : Bool
     , isLoading : Bool
     , previewCallsigns : Maybe (List String)
@@ -213,7 +214,7 @@ view viewParams pageSpecific =
 
           else
             viewCallsignsRow sortedPreview
-        , if List.length viewParams.callsigns > 3 then
+        , if viewParams.totalCount > 3 then
             let
                 body =
                     span
@@ -224,7 +225,7 @@ view viewParams pageSpecific =
                         , style "padding-right" "6px"
                         , style "text-decoration" "underline"
                         ]
-                        [ text ("Показати всі " ++ (viewParams.callsigns |> List.length |> String.fromInt)) ]
+                        [ text ("Показати всі " ++ String.fromInt viewParams.totalCount) ]
 
                 popupBody =
                     if viewParams.isLoading then

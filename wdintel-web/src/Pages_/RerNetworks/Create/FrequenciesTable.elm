@@ -905,6 +905,7 @@ freqsTableConfig shared model user =
                                 , children =
                                     [ CallsignsPopup.view
                                         { isOpened = isOpen
+                                        , totalCount = List.length callsigns
                                         , isLoading = False
                                         , previewCallsigns = Nothing
                                         , onClose = CallsignsPopupClosedByUser
