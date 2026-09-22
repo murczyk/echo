@@ -27,6 +27,7 @@ use self::bl::*;
 use self::types::*;
 
 pub mod bl;
+mod summary;
 pub mod types;
 pub mod util;
 
@@ -391,8 +392,37 @@ pub async fn list_callsigns_by_freqs(
     req: Json<ListCallsignsByFreqsReq>,
 ) -> Result<Json<HashMap<String, Vec<String>>>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
-    let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
+    let callsigns_by_freq =
+        load_callsigns_by_freqs(&env, &user, &req).await.c(h!())?;
+    Ok(Json(
+        callsigns_by_freq
+            .into_iter()
+            .map(|(freq, callsigns)| (freq, callsigns.into_iter().collect()))
+            .collect(),
+    ))
+}
+
+#[post("/api/sigint/freq/callsigns-summary")]
+pub async fn list_callsigns_by_freqs_summary(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<ListCallsignsByFreqsReq>,
+) -> Result<Json<HashMap<String, FreqCallsignSummary>>, AppError> {
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let callsigns_by_freq =
+        load_callsigns_by_freqs(&env, &user, &req).await.c(h!())?;
+    let summaries =
+        summary::build(&env.dbx, callsigns_by_freq).await.c(h!())?;
+    Ok(Json(summaries))
+}
+
+async fn load_callsigns_by_freqs(
+    env: &Data<Env>,
+    user: &actix_identity::Identity,
+    req: &ListCallsignsByFreqsReq,
+) -> anyhow::Result<HashMap<String, BTreeSet<String>>> {
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).c(h!())?;
+    let dt_till = dt_from_millis(req.till_date_noninclusive_ms).c(h!())?;
 
     #[derive(FromQueryResult)]
     struct InboxItemFreq {
@@ -413,7 +443,7 @@ pub async fn list_callsigns_by_freqs(
         .filter(message_in_groups_exists(
             crate::messenger::group::get_identity_sigint_groups_noimport(
                 &env.dbx,
-                &user,
+                user,
                 &env.config,
             )
             .await
@@ -432,7 +462,8 @@ pub async fn list_callsigns_by_freqs(
         inbox_items.iter().map(|row| row.id).collect::<Vec<_>>();
     let callsigns =
         crate::inbox::callsigns::load_by_item_ids(&env.dbx, &inbox_item_ids)
-            .await?;
+            .await
+            .c(h!())?;
     let mut callsigns_by_freq = HashMap::<String, BTreeSet<String>>::new();
     for inbox_item in inbox_items {
         let Some(inbox_item_callsigns) = callsigns.get(&inbox_item.id) else {
@@ -444,12 +475,7 @@ pub async fn list_callsigns_by_freqs(
             .extend(inbox_item_callsigns.effective());
     }
 
-    Ok(Json(
-        callsigns_by_freq
-            .into_iter()
-            .map(|(freq, callsigns)| (freq, callsigns.into_iter().collect()))
-            .collect(),
-    ))
+    Ok(callsigns_by_freq)
 }
 
 #[post("/api/sigint/freq/callsign-priorities")]
@@ -459,15 +485,36 @@ pub async fn list_callsign_priorities(
     req: Json<RerCallsignInfoBatchReq>,
 ) -> Result<Json<Vec<FreqCallsignPriority>>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let unit_ids_by_callsign =
+        load_callsign_priority_unit_ids(&env.dbx, &req.callsigns)
+            .await
+            .c(h!())?;
 
+    Ok(Json(
+        req.callsigns
+            .iter()
+            .map(|callsign| FreqCallsignPriority {
+                callsign: callsign.clone(),
+                unit_ids: unit_ids_by_callsign
+                    .get(&callsign_match_key(callsign))
+                    .cloned()
+                    .unwrap_or_default(),
+            })
+            .collect(),
+    ))
+}
+
+async fn load_callsign_priority_unit_ids(
+    dbx: &DatabaseConnection,
+    callsigns: &[String],
+) -> anyhow::Result<HashMap<String, Vec<i64>>> {
     #[derive(FromQueryResult)]
     struct CallsignPriorityRow {
         callsign: String,
         unit_id: i64,
     }
 
-    let callsigns = req
-        .callsigns
+    let callsigns = callsigns
         .iter()
         .map(|callsign| callsign_match_key(callsign))
         .filter(|callsign| !callsign.is_empty())
@@ -494,7 +541,7 @@ pub async fn list_callsign_priorities(
             .filter(sigint_unit::Column::Deleted.eq(false))
             .filter(sigint_unit::Column::Active.eq(true))
             .into_model::<CallsignPriorityRow>()
-            .all(&env.dbx)
+            .all(dbx)
             .await
             .c(h!())?;
         for row in rows {
@@ -505,18 +552,7 @@ pub async fn list_callsign_priorities(
         }
     }
 
-    Ok(Json(
-        req.callsigns
-            .iter()
-            .map(|callsign| FreqCallsignPriority {
-                callsign: callsign.clone(),
-                unit_ids: unit_ids_by_callsign
-                    .get(&callsign_match_key(callsign))
-                    .cloned()
-                    .unwrap_or_default(),
-            })
-            .collect(),
-    ))
+    Ok(unit_ids_by_callsign)
 }
 
 fn inbox_item_callsign_exists() -> SimpleExpr {

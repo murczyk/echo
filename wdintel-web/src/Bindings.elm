@@ -10043,6 +10043,20 @@ listCallsignsByFreqsReqEncoder struct =
         ]
 
 
+type alias FreqCallsignSummary =
+    { count : Int
+    , preview : List (String)
+    }
+
+
+freqCallsignSummaryEncoder : FreqCallsignSummary -> Json.Encode.Value
+freqCallsignSummaryEncoder struct =
+    Json.Encode.object
+        [ ( "count", (Json.Encode.int) struct.count )
+        , ( "preview", (Json.Encode.list (Json.Encode.string)) struct.preview )
+        ]
+
+
 type alias FreqCallsignPriority =
     { callsign : String
     , unitIds : List (Int)
@@ -21375,6 +21389,13 @@ listCallsignsByFreqsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "since_date_inclusive_ms" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_noninclusive_ms" (Json.Decode.int)))
+
+
+freqCallsignSummaryDecoder : Json.Decode.Decoder FreqCallsignSummary
+freqCallsignSummaryDecoder =
+    Json.Decode.succeed FreqCallsignSummary
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "preview" (Json.Decode.list (Json.Decode.string))))
 
 
 freqCallsignPriorityDecoder : Json.Decode.Decoder FreqCallsignPriority

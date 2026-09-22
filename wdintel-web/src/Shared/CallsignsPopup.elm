@@ -54,6 +54,12 @@ getCallsignHintsNew freq networks params callsign =
 -}
 sortCallsignsNew : String -> Dict Int B.Network -> Params a -> List ( HintStrategy.HintResult, String )
 sortCallsignsNew freq networksDict params =
+    callsignsWithHintsForFreq freq networksDict params
+        |> List.sortWith sortByPrioNew
+
+
+callsignsWithHintsForFreq : String -> Dict Int B.Network -> Params a -> List ( HintStrategy.HintResult, String )
+callsignsWithHintsForFreq freq networksDict params =
     let
         networksForFreq =
             Dict.filter
@@ -62,7 +68,6 @@ sortCallsignsNew freq networksDict params =
     in
     params.callsigns
         |> List.map (\callsign -> ( getCallsignHintsNew freq networksForFreq params callsign, callsign ))
-        |> List.sortWith sortByPrioNew
 
 
 sortCallsignsForPreview : String -> Dict Int B.Network -> Dict Int B.Unit -> Dict String (List Int) -> List String -> Maybe (List String)
@@ -162,6 +167,7 @@ type PopupCallerOrigin
 
 type alias ViewParams msg =
     { callsigns : List String
+    , totalCount : Int
     , isOpened : Bool
     , isLoading : Bool
     , previewCallsigns : Maybe (List String)
@@ -184,7 +190,12 @@ view viewParams pageSpecific =
                     sortCallsigns2New network { viewParams | callsigns = callsigns }
 
         sortedPreview =
-            sortCallsigns (Maybe.withDefault viewParams.callsigns viewParams.previewCallsigns)
+            case ( pageSpecific, viewParams.previewCallsigns ) of
+                ( FreqsPage freq networksDict, Just preview ) ->
+                    callsignsWithHintsForFreq freq networksDict { viewParams | callsigns = preview }
+
+                _ ->
+                    sortCallsigns (Maybe.withDefault viewParams.callsigns viewParams.previewCallsigns)
 
         sortedPopup =
             if viewParams.isOpened && not viewParams.isLoading then
@@ -208,12 +219,12 @@ view viewParams pageSpecific =
                 |> List.partition hasUnits
     in
     div []
-        [ if viewParams.previewCallsigns == Just [] && not (List.isEmpty viewParams.callsigns) then
+        [ if viewParams.totalCount > 0 && viewParams.previewCallsigns == Just [] && not (List.isEmpty viewParams.callsigns) then
             div [] [ text "Завантаження позивних..." ]
 
           else
             viewCallsignsRow sortedPreview
-        , if List.length viewParams.callsigns > 3 then
+        , if viewParams.totalCount > 3 then
             let
                 body =
                     span
@@ -224,7 +235,7 @@ view viewParams pageSpecific =
                         , style "padding-right" "6px"
                         , style "text-decoration" "underline"
                         ]
-                        [ text ("Показати всі " ++ (viewParams.callsigns |> List.length |> String.fromInt)) ]
+                        [ text ("Показати всі " ++ String.fromInt viewParams.totalCount) ]
 
                 popupBody =
                     if viewParams.isLoading then

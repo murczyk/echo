@@ -39,14 +39,13 @@ type alias Model =
     , locationTexts : Dict String TextLocation
     , openMapRowId : Maybe String
     , callsignsByFreq : Api.ListCallsignsByFreqsRsp
-    , callsignPriorityUnitIds : Dict String (List Int)
-    , priorityRequests : Set.Set String
-    , previewNeedsDetails : Bool
+    , callsignListRequests : Set.Set String
+    , callsignSummaries : Api.ListCallsignsByFreqsSummaryRsp
+    , callsignSummaryRequestIds : Dict String Int
     , altUnitsByFreq : Api.ListAltUnitsByFreqsRsp
     , altUnitsRequestId : Int
     , callsignsInfo : Dict String (List B.CallsignInfo)
     , networksExtra : Dict Int B.Network
-    , networkInfoFailed : Bool
     , rowShowAllPopupStatus : Maybe ( String, ShowAllPopupFor )
     , selCallsignState : Select.State
     , callsignSearchQuery : String

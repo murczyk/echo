@@ -89,14 +89,13 @@ init _ =
             , locationTexts = Dict.empty
             , openMapRowId = Nothing
             , callsignsByFreq = Dict.empty
-            , callsignPriorityUnitIds = Dict.empty
-            , priorityRequests = Set.empty
-            , previewNeedsDetails = False
+            , callsignListRequests = Set.empty
+            , callsignSummaries = Dict.empty
+            , callsignSummaryRequestIds = Dict.empty
             , altUnitsByFreq = Dict.empty
             , altUnitsRequestId = 0
             , callsignsInfo = Dict.empty
             , networksExtra = Dict.empty
-            , networkInfoFailed = False
             , callsigns = []
             , sortingOrder = B.MessageCountDesc
             , groupsMessageCountByDay = Dict.empty
@@ -410,64 +409,48 @@ requestCallsignsInfoForFreq freq model =
         model
 
 
-previewForFreq : Bool -> Dict Int B.Network -> Dict Int B.Unit -> Dict String (List Int) -> Dict String (List B.CallsignInfo) -> B.Freq -> List String -> Maybe (List String)
-previewForFreq allowMissingNetworks networks units priorities callsignsInfo freq callsigns =
-    if List.isEmpty callsigns then
-        Just []
+loadCallsignsForFreq : String -> Model -> Cmd Msg
+loadCallsignsForFreq freq model =
+    case ( model.from.datePosix, model.to.datePosix ) of
+        ( Just from, Just to ) ->
+            Api.list_callsigns_by_freq (CallsignsByFreqsReturnedByApi model.altUnitsRequestId freq)
+                { freqs = [ freq ]
+                , sinceDateInclusiveMs = Time.posixToMillis from
+                , tillDateNoninclusiveMs = Time.posixToMillis to
+                }
 
-    else if allowMissingNetworks || List.all (\networkId -> Dict.member networkId networks) freq.networkIds then
-        case CallsignsPopup.sortCallsignsForPreview freq.freq networks units priorities callsigns of
-            Just preview ->
-                Just preview
-
-            Nothing ->
-                if List.all (\callsign -> Dict.member (String.toLower callsign) callsignsInfo) callsigns then
-                    CallsignsPopup.sortCallsignsNew freq.freq networks
-                        { masterUnits = units
-                        , callsignsInfo = callsignsInfo
-                        , callsigns = callsigns
-                        }
-                        |> List.take 3
-                        |> List.map Tuple.second
-                        |> Just
-
-                else
-                    Nothing
-
-    else
-        Nothing
+        _ ->
+            Cmd.none
 
 
-requestPreviewCallsignsInfo : Shared.Model -> Model -> ( Model, Effect Msg )
-requestPreviewCallsignsInfo shared model =
-    if not model.previewNeedsDetails then
-        ( model, E.none )
+loadCallsignSummaryForFreq : String -> Model -> ( Model, Effect Msg )
+loadCallsignSummaryForFreq freq model =
+    case ( model.from.datePosix, model.to.datePosix ) of
+        ( Just from, Just to ) ->
+            let
+                requestId =
+                    Dict.get freq model.callsignSummaryRequestIds
+                        |> Maybe.withDefault 0
+                        |> (+) 1
+            in
+            ( { model | callsignSummaryRequestIds = Dict.insert freq requestId model.callsignSummaryRequestIds }
+            , E.sendCmd <|
+                Api.list_callsigns_by_freq_summary (CallsignSummariesReturnedByApi model.altUnitsRequestId requestId [ freq ])
+                    { freqs = [ freq ]
+                    , sinceDateInclusiveMs = Time.posixToMillis from
+                    , tillDateNoninclusiveMs = Time.posixToMillis to
+                    }
+            )
 
-    else
-        case shared.masterUnits of
-            Success units ->
-                let
-                    networks =
-                        networksForView shared model
+        _ ->
+            ( model, E.none )
 
-                    previews =
-                        model.freqs
-                            |> List.filterMap
-                                (\freq ->
-                                    Dict.get freq.freq model.callsignsByFreq
-                                        |> Maybe.map (previewForFreq model.networkInfoFailed networks units model.callsignPriorityUnitIds model.callsignsInfo freq)
-                                )
-                in
-                if List.all (\preview -> preview /= Nothing) previews then
-                    requestCallsignsInfo
-                        (List.concat (List.filterMap identity previews))
-                        { model | previewNeedsDetails = False }
 
-                else
-                    ( model, E.none )
-
-            _ ->
-                ( model, E.none )
+isCurrentCallsignSummaryRequest : Model -> Int -> String -> Bool
+isCurrentCallsignSummaryRequest model requestId freq =
+    Dict.get freq model.callsignSummaryRequestIds
+        |> Maybe.withDefault 0
+        |> (==) requestId
 
 
 loadFreqDetails : Shared.Model -> Model -> Int -> Bool -> List B.Freq -> Effect Msg
@@ -496,7 +479,7 @@ loadFreqDetails shared model requestId paginating freqs =
                                 , tillDateNoninclusiveMs = timeTo
                                 }
                             , E.sendCmd <|
-                                Api.list_callsigns_by_freq (CallsignsByFreqsReturnedByApi requestId)
+                                Api.list_callsigns_by_freq_summary (CallsignSummariesReturnedByApi requestId 0 freqsAsString)
                                     { freqs = freqsAsString
                                     , sinceDateInclusiveMs = timeFrom
                                     , tillDateNoninclusiveMs = timeTo
@@ -557,10 +540,9 @@ handleFreqsResponse shared paginating result model =
                         { m2
                             | altUnitsByFreq = Dict.empty
                             , callsignsByFreq = Dict.empty
-                            , callsignPriorityUnitIds = Dict.empty
-                            , priorityRequests = Set.empty
-                            , previewNeedsDetails = False
-                            , networkInfoFailed = False
+                            , callsignListRequests = Set.empty
+                            , callsignSummaries = Dict.empty
+                            , callsignSummaryRequestIds = Dict.empty
                             , callsignsInfo = Dict.empty
                             , callsigns = []
                             , networksExtra = Dict.empty
@@ -571,71 +553,6 @@ handleFreqsResponse shared paginating result model =
             ( updatedModel
             , loadFreqDetails shared updatedModel nextAltUnitsRequestId paginating rsp.freqs
             )
-
-
-handleCallsignsByFreqsResponse : Shared.Model -> Int -> Api.ListCallsignsByFreqsRsp -> Model -> ( Model, Effect Msg )
-handleCallsignsByFreqsResponse shared requestId rsp model =
-    if requestId /= model.altUnitsRequestId then
-        ( model, E.none )
-
-    else
-        let
-            missingPriorities =
-                Dict.values rsp
-                    |> List.concat
-                    |> List.map String.toLower
-                    |> Set.fromList
-                    |> Set.toList
-                    |> List.filter
-                        (\callsign ->
-                            not (Dict.member callsign model.callsignPriorityUnitIds)
-                                && not (Set.member callsign model.priorityRequests)
-                        )
-
-            updatedModel =
-                { model
-                    | callsignsByFreq = Dict.union rsp model.callsignsByFreq
-                    , previewNeedsDetails = True
-                    , priorityRequests = Set.union model.priorityRequests (Set.fromList missingPriorities)
-                }
-
-            ( modelWithPopupCallsigns, popupEffect ) =
-                case updatedModel.rowShowAllPopupStatus of
-                    Just ( freq, ShowAllCallsigns ) ->
-                        requestCallsignsInfoForFreq freq updatedModel
-
-                    _ ->
-                        ( updatedModel, E.none )
-
-            ( modelWithPreviewCallsigns, previewEffect ) =
-                if List.isEmpty missingPriorities then
-                    requestPreviewCallsignsInfo shared modelWithPopupCallsigns
-
-                else
-                    ( modelWithPopupCallsigns
-                    , E.sendCmd <|
-                        Api.list_callsign_priorities (CallsignPrioritiesReturnedByApi requestId missingPriorities)
-                            { callsigns = missingPriorities }
-                    )
-        in
-        ( modelWithPreviewCallsigns, E.batch [ popupEffect, previewEffect ] )
-
-
-handleCallsignPrioritiesResponse : Shared.Model -> Int -> List String -> List B.FreqCallsignPriority -> Model -> ( Model, Effect Msg )
-handleCallsignPrioritiesResponse shared requestId requestedCallsigns priorities model =
-    if requestId /= model.altUnitsRequestId then
-        ( model, E.none )
-
-    else
-        requestPreviewCallsignsInfo shared
-            { model
-                | callsignPriorityUnitIds =
-                    List.foldl
-                        (\priority acc -> Dict.insert (String.toLower priority.callsign) priority.unitIds acc)
-                        model.callsignPriorityUnitIds
-                        priorities
-                , priorityRequests = Set.diff model.priorityRequests (Set.fromList requestedCallsigns)
-            }
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -1085,11 +1002,55 @@ update shared msg model =
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження точок карти" err
             )
 
-        CallsignsByFreqsReturnedByApi requestId (Ok rsp) ->
-            handleCallsignsByFreqsResponse shared requestId rsp model
-
-        CallsignsByFreqsReturnedByApi requestId (Err err) ->
+        CallsignSummariesReturnedByApi requestId summaryRequestId freqs (Ok rsp) ->
             if requestId == model.altUnitsRequestId then
+                let
+                    currentSummaries =
+                        freqs
+                            |> List.filter (isCurrentCallsignSummaryRequest model summaryRequestId)
+                            |> List.map
+                                (\freq ->
+                                    ( freq
+                                    , Dict.get freq rsp
+                                        |> Maybe.withDefault { count = 0, preview = [] }
+                                    )
+                                )
+                            |> Dict.fromList
+
+                    emptySummaryFreqs =
+                        currentSummaries
+                            |> Dict.toList
+                            |> List.filter (\( _, summary ) -> summary.count == 0)
+                            |> List.map Tuple.first
+
+                    rowShowAllPopupStatus =
+                        case model.rowShowAllPopupStatus of
+                            Just ( freq, ShowAllCallsigns ) ->
+                                if List.member freq emptySummaryFreqs then
+                                    Nothing
+
+                                else
+                                    model.rowShowAllPopupStatus
+
+                            _ ->
+                                model.rowShowAllPopupStatus
+                in
+                requestCallsignsInfo
+                    (Dict.values currentSummaries |> List.concatMap .preview)
+                    { model
+                        | callsignSummaries = Dict.union currentSummaries model.callsignSummaries
+                        , callsignsByFreq = List.foldl Dict.remove model.callsignsByFreq emptySummaryFreqs
+                        , callsignListRequests = List.foldl Set.remove model.callsignListRequests emptySummaryFreqs
+                        , rowShowAllPopupStatus = rowShowAllPopupStatus
+                    }
+
+            else
+                ( model, E.none )
+
+        CallsignSummariesReturnedByApi requestId summaryRequestId freqs (Err err) ->
+            if requestId == model.altUnitsRequestId
+                && List.any (isCurrentCallsignSummaryRequest model summaryRequestId) freqs
+            then
                 ( model
                 , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження позивних" err
                 )
@@ -1097,34 +1058,45 @@ update shared msg model =
             else
                 ( model, E.none )
 
-        CallsignPrioritiesReturnedByApi requestId requestedCallsigns (Ok priorities) ->
-            handleCallsignPrioritiesResponse shared requestId requestedCallsigns priorities model
-
-        CallsignPrioritiesReturnedByApi requestId requestedCallsigns (Err err) ->
-            if requestId == model.altUnitsRequestId then
+        CallsignsByFreqsReturnedByApi requestId freq (Ok rsp) ->
+            if requestId == model.altUnitsRequestId && Set.member freq model.callsignListRequests then
                 let
-                    callsigns =
-                        Dict.values model.callsignsByFreq |> List.concat
-
-                    ( updatedModel, detailEffect ) =
-                        requestCallsignsInfo callsigns
-                            { model
-                                | previewNeedsDetails = False
-                                , priorityRequests = Set.diff model.priorityRequests (Set.fromList requestedCallsigns)
-                            }
+                    updatedModel =
+                        { model
+                            | callsignsByFreq = Dict.insert freq (Dict.get freq rsp |> Maybe.withDefault []) model.callsignsByFreq
+                            , callsignListRequests = Set.remove freq model.callsignListRequests
+                        }
                 in
-                ( updatedModel
-                , E.batch
-                    [ detailEffect
-                    , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження пріоритету позивних" err
-                    ]
-                )
+                case updatedModel.rowShowAllPopupStatus of
+                    Just ( openedFreq, ShowAllCallsigns ) ->
+                        if openedFreq == freq then
+                            requestCallsignsInfoForFreq freq updatedModel
+
+                        else
+                            ( updatedModel, E.none )
+
+                    _ ->
+                        ( updatedModel, E.none )
 
             else
                 ( model, E.none )
 
-        PreviewDetailsTick _ ->
-            requestPreviewCallsignsInfo shared model
+        CallsignsByFreqsReturnedByApi requestId freq (Err err) ->
+            if requestId == model.altUnitsRequestId && Set.member freq model.callsignListRequests then
+                ( { model
+                    | rowShowAllPopupStatus =
+                        if model.rowShowAllPopupStatus == Just ( freq, ShowAllCallsigns ) then
+                            Nothing
+
+                        else
+                            model.rowShowAllPopupStatus
+                    , callsignListRequests = Set.remove freq model.callsignListRequests
+                  }
+                , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження позивних" err
+                )
+
+            else
+                ( model, E.none )
 
         AltUnitsByFreqReturnedByApi requestId _ (Ok rsp) ->
             if requestId == model.altUnitsRequestId then
@@ -1177,15 +1149,8 @@ update shared msg model =
 
         NetworksInfoLoaded requestId (Err err) ->
             if requestId == model.altUnitsRequestId then
-                let
-                    ( updatedModel, previewEffect ) =
-                        requestPreviewCallsignsInfo shared { model | networkInfoFailed = True }
-                in
-                ( updatedModel
-                , E.batch
-                    [ previewEffect
-                    , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка дозавантаження мереж" err
-                    ]
+                ( model
+                , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка дозавантаження мереж" err
                 )
 
             else
@@ -1199,8 +1164,7 @@ update shared msg model =
                             |> List.map (\network -> ( network.id, network ))
                             |> Dict.fromList
                 in
-                requestPreviewCallsignsInfo shared
-                    { model | networksExtra = Dict.union newNetworks model.networksExtra }
+                ( { model | networksExtra = Dict.union newNetworks model.networksExtra }, E.none )
 
             else
                 ( model, E.none )
@@ -1225,7 +1189,25 @@ update shared msg model =
         RowShowAllPopupChanged freqToShowAllItemsPopup ->
             case freqToShowAllItemsPopup of
                 Just ( freq, ShowAllCallsigns ) ->
-                    requestCallsignsInfoForFreq freq { model | rowShowAllPopupStatus = freqToShowAllItemsPopup }
+                    let
+                        openedModel =
+                            { model | rowShowAllPopupStatus = freqToShowAllItemsPopup }
+                    in
+                    if Dict.member freq model.callsignsByFreq then
+                        requestCallsignsInfoForFreq freq openedModel
+
+                    else if Set.member freq model.callsignListRequests then
+                        ( openedModel, E.none )
+
+                    else
+                        case ( model.from.datePosix, model.to.datePosix ) of
+                            ( Just _, Just _ ) ->
+                                ( { openedModel | callsignListRequests = Set.insert freq model.callsignListRequests }
+                                , E.sendCmd <| loadCallsignsForFreq freq openedModel
+                                )
+
+                            _ ->
+                                ( model, E.none )
 
                 _ ->
                     ( { model | rowShowAllPopupStatus = freqToShowAllItemsPopup }
@@ -1488,15 +1470,17 @@ update shared msg model =
                     else
                         SelectingNetwork freq Nothing
             in
-            requestPreviewCallsignsInfo shared
-                { model
+            let
+                updatedModel =
+                    { model
                     | freqs = freqs2
                     , networkWorkflowStatus = networkWorkflowStatus
                     , networkDialogUnitSelect = aus2
                     , networkAddLoading = False
                     , networksExtra = Dict.insert network.id network model.networksExtra
-                    , previewNeedsDetails = True
-                }
+                    }
+            in
+            loadCallsignSummaryForFreq freq updatedModel
 
         FreqRemoveFromExistingNetwork freq network ->
             ( { model | networkAddLoading = True }
@@ -1529,14 +1513,16 @@ update shared msg model =
                         Nothing ->
                             model.freqs
             in
-            requestPreviewCallsignsInfo shared
-                { model
+            let
+                updatedModel =
+                    { model
                     | freqs = freqs2
                     , networkWorkflowStatus = SelectingNetwork freq Nothing
                     , networkAddLoading = False
                     , networksExtra = Dict.insert network.id network model.networksExtra
-                    , previewNeedsDetails = True
-                }
+                    }
+            in
+            loadCallsignSummaryForFreq freq updatedModel
 
         NetworkUpdated _ (Err e) ->
             ( model
@@ -1544,12 +1530,14 @@ update shared msg model =
             )
 
         NetworkUpdated freq (Ok network) ->
-            requestPreviewCallsignsInfo shared
-                { model
+            let
+                updatedModel =
+                    { model
                     | networkWorkflowStatus = SelectingNetwork freq Nothing
                     , networksExtra = Dict.insert network.id network model.networksExtra
-                    , previewNeedsDetails = True
-                }
+                    }
+            in
+            loadCallsignSummaryForFreq freq updatedModel
 
         EncryptionsReturnedByApi (Err e) ->
             ( model
@@ -1994,10 +1982,14 @@ freqsTableConfig shared model user =
                         { attributes = []
                         , children =
                             [ let
+                                summary =
+                                    Dict.get freq.freq model.callsignSummaries
+                                        |> Maybe.withDefault { count = 0, preview = [] }
+
                                 callsigns =
                                     case Dict.get freq.freq model.callsignsByFreq of
                                         Nothing ->
-                                            []
+                                            summary.preview
 
                                         Just v ->
                                             v
@@ -2016,15 +2008,16 @@ freqsTableConfig shared model user =
                                             requestedCallsigns =
                                                 Set.fromList model.callsigns
                                         in
-                                        List.any
-                                            (\callsign ->
-                                                let
-                                                    key =
-                                                        String.toLower callsign
-                                                in
-                                                Set.member key requestedCallsigns && not (Dict.member key model.callsignsInfo)
-                                            )
-                                            callsigns
+                                        not (Dict.member freq.freq model.callsignsByFreq)
+                                            || List.any
+                                                (\callsign ->
+                                                    let
+                                                        key =
+                                                            String.toLower callsign
+                                                    in
+                                                    Set.member key requestedCallsigns && not (Dict.member key model.callsignsInfo)
+                                                )
+                                                callsigns
 
                                     else
                                         False
@@ -2034,11 +2027,8 @@ freqsTableConfig shared model user =
                                     CallsignsPopup.view
                                         { isOpened = isOpen
                                         , isLoading = isLoading
-                                        , previewCallsigns =
-                                            Just
-                                                (previewForFreq model.networkInfoFailed knownNetworks units model.callsignPriorityUnitIds model.callsignsInfo freq callsigns
-                                                    |> Maybe.withDefault []
-                                                )
+                                        , previewCallsigns = Just summary.preview
+                                        , totalCount = summary.count
                                         , onClose = RowShowAllPopupChanged Nothing
                                         , onOpen = RowShowAllPopupChanged <| Just ( freq.freq, ShowAllCallsigns )
                                         , callsigns = callsigns
@@ -2047,7 +2037,7 @@ freqsTableConfig shared model user =
                                         }
                                         (FreqsPage
                                             freq.freq
-                                            knownNetworks
+                                            (Dict.filter (\networkId _ -> List.member networkId freq.networkIds) knownNetworks)
                                         )
 
                                 _ ->
@@ -2358,15 +2348,8 @@ changeSortOrder order =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
-    Sub.batch
-        [ Ports.rer_freqs_closeMapRes MapClose
-        , if model.previewNeedsDetails then
-            Time.every 1000 PreviewDetailsTick
-
-          else
-            Sub.none
-        ]
+subscriptions _ =
+    Ports.rer_freqs_closeMapRes MapClose
 
 
 dateAndPanelsBlock : Bool -> Model -> Html Msg

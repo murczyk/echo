@@ -3885,6 +3885,11 @@ export type ListCallsignsByFreqsReq = {
   tillDateNoninclusiveMs: number;
 };
 
+export type FreqCallsignSummary = {
+  count: number;
+  preview: Array<string>;
+};
+
 export type FreqCallsignPriority = {
   callsign: string;
   unitIds: Array<number>;
