@@ -1826,6 +1826,32 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn rvsp_matches_pks_sigint_unit_name() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let hierarchy = unique_unit_label();
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set(format!("{hierarchy} (кт) ПКС")),
+                active: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let unit_v2 = format!("{hierarchy} кт РВСП");
+
+        assert_eq!(
+            resolve_sigint_unit_id(&env.dbx, Some(&unit_v2), None)
+                .await
+                .unwrap(),
+            Some(unit.id)
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn duplicate_exact_sigint_unit_names_are_not_linked() {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();

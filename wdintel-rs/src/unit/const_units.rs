@@ -786,7 +786,7 @@ fn battalions_arr() -> [&'static str; 111] {
     ]
 }
 
-fn standalone_arr() -> [&'static str; 30] {
+fn standalone_arr() -> [&'static str; 32] {
     [
         "ВМФ",
         "КаФл",
@@ -796,7 +796,9 @@ fn standalone_arr() -> [&'static str; 30] {
         "ППО",
         "ВДВ",
         "ПДВ",
+        "КТ",
         "ПКС",
+        "РВСП",
         "ШТОРМ.ОСЕТИЯ",
         "Шторм Z",
         "Шторм V",

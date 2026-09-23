@@ -721,6 +721,7 @@ mod tests {
             &["габат", "габатр"],
             &["шр V", "шр", "шр В"],
             &["об РЕБ", "обРЕБ"],
+            &["ПКС", "РВСП"],
         ] {
             let expected = normalize_unit_formation_name(equivalents[0]);
             for equivalent in equivalents {
@@ -1102,6 +1103,24 @@ mod tests {
         assert_eq!(
             Some("3 а".to_string()),
             to_unit_txt(parse_library_unit(&String::from("334 ошп 3 А")))
+        );
+    }
+
+    #[test]
+    fn parse_library_unit_keeps_command_post_and_rvsp() {
+        let body = r#"Отримано з поста "Пост 6"
+--------------------------------------
+23.09.2026, 19:15:37
+156.4150
+УКХ р/м 5 мср 2 мсб 2 мсп кт РВСП, р-н КРУПЄЦ Курська область
+АКА
+БЕЛЬБЕК
+
+1.  Бельбек, я Ака, 3 карандаша дома. Как принял?"#;
+
+        assert_eq!(
+            Some("5 мср 2 мсб 2 мсп кт рвсп".to_string()),
+            to_unit_txt(parse_library_unit(&body.to_string()))
         );
     }
 
