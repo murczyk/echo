@@ -59,7 +59,6 @@ async function flush() {
     keys.forEach(publish);
   } catch (error) {
     if (requestGeneration !== generation) return;
-    keys.forEach((key) => identities.set(key, null));
     if (!isUnauthorizedError(error)) {
       window.dispatchEvent(
         new CustomEvent(AUTHOR_IDENTITIES_ERROR_EVENT, {

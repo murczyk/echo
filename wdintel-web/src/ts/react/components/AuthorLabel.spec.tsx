@@ -84,6 +84,27 @@ describe('author display names (#3575)', () => {
     expect(host.querySelector('button')).toBeNull();
   });
 
+  it('retries failed identity lookups on remount without caching the failure as a miss', async () => {
+    fetchMock.mockRejectedValueOnce(new Error('Network unavailable'));
+    await act(async () => root.render(<AuthorLabel login="first" />));
+    expect(host.textContent).toBe('first');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => root.render(null));
+    await act(async () => root.render(<AuthorLabel login="first" />));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(host.querySelector('button')?.textContent).toBe('Сокіл');
+  });
+
+  it('keeps successful missing-author lookups cached across remounts', async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ authors: [] })));
+    await act(async () => root.render(<AuthorLabel login="removed" />));
+    await act(async () => root.render(null));
+    await act(async () => root.render(<AuthorLabel login="removed" />));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(host.textContent).toBe('removed');
+  });
+
   it('preserves post and external sender attribution and unresolved identities', async () => {
     fetchMock.mockResolvedValue(new Response(JSON.stringify({ authors: [] })));
     await act(async () =>
