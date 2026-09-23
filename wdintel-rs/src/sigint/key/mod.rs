@@ -82,7 +82,7 @@ pub async fn list_keys(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "Api"],
+        vec!["Rer", "CyberViewer", "Api"],
     )
     .await?;
     let user_login = login_id_from_identity(&user)?;

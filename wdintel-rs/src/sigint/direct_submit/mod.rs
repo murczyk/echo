@@ -62,7 +62,7 @@ pub async fn submit_direct(
     payload: web::Json<DirectSubmitPayload>,
 ) -> Result<web::Json<DirectSubmitRsp>, DirectSubmitApiError> {
     let action = DirectSubmitAction::Save;
-    ensure_base_role(&env.dbx, &user)
+    crate::users::ensure_message_write(&env.dbx, &user)
         .await
         .c(h!())
         .map_err(|err| DirectSubmitApiError::new(err, action))?;
@@ -90,7 +90,7 @@ pub async fn edit_message(
     payload: web::Json<DirectSubmitPayload>,
 ) -> Result<web::Json<DirectSubmitRsp>, DirectSubmitApiError> {
     let action = DirectSubmitAction::Edit;
-    ensure_base_role(&env.dbx, &user)
+    crate::users::ensure_message_write(&env.dbx, &user)
         .await
         .c(h!())
         .map_err(|err| DirectSubmitApiError::new(err, action))?;

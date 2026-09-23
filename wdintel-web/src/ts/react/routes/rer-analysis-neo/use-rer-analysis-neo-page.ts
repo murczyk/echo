@@ -1,3 +1,4 @@
+import { canWriteMessages } from '../../utils/roles';
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
@@ -589,6 +590,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   });
 
   const editor = useAnalysisMessageEditor({
+    canWrite: canWriteMessages(currentUser?.roles),
     messages: data.messages,
     profiles: data.profiles,
     onError: setPageError,

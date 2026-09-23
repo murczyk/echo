@@ -2554,6 +2554,7 @@ mod access_tests {
     fn access_maps_each_exact_device_role() {
         let cases = [
             (ROLE_CYBER, (true, true, true, false)),
+            (crate::config::ROLE_CYBER_VIEWER, (true, true, true, false)),
             (ROLE_DEVICE_SOURCE, (false, true, true, true)),
             (ROLE_ADMIN, (true, true, true, true)),
         ];

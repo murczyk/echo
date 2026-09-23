@@ -201,7 +201,21 @@ pub async fn ensure_base_role_by_id<T>(
 where
     T: ToString + ?Sized,
 {
-    has_any_role(dbx, user_id, vec!["Rer", "Cyber"]).await
+    has_any_role(dbx, user_id, vec!["Rer", "CyberViewer"]).await
+}
+
+pub async fn ensure_message_write(
+    dbx: &DatabaseConnection,
+    user: &Identity,
+) -> Result<(), AppError> {
+    has_any_role(
+        dbx,
+        &login_id_from_identity(user).c(h!())?,
+        vec!["Rer", "Cyber"],
+    )
+    .await
+    .c(h!())?;
+    Ok(())
 }
 
 pub async fn ensure_admin(
@@ -274,6 +288,7 @@ pub(crate) fn role_matches(
                 || roles.contains(&"Bpla".to_string())
                 || roles.contains(&"Rer".to_string())
                 || roles.contains(&"Cyber".to_string())
+                || roles.contains(&crate::config::ROLE_CYBER_VIEWER.to_string())
                 || roles.contains(&"Basic".to_string())
         }
         "UnitsEditor" => {
@@ -291,6 +306,11 @@ pub(crate) fn role_matches(
         "Cyber" => {
             roles.contains(&"Admin".to_string())
                 || roles.contains(&"Cyber".to_string())
+        }
+        "CyberViewer" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"Cyber".to_string())
+                || roles.contains(&crate::config::ROLE_CYBER_VIEWER.to_string())
         }
         "DeviceSource" => {
             roles.contains(&"Admin".to_string())
@@ -1549,7 +1569,7 @@ pub async fn user_sigint_groups_detailed(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "Admin", "Api"],
+        vec!["Rer", "CyberViewer", "Admin", "Api"],
     )
     .await?;
     let login = login_id_from_identity(&user)?;
