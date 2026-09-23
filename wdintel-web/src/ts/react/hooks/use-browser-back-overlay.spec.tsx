@@ -62,6 +62,7 @@ describe('useBrowserBackOverlay', () => {
 
   it('pushes one same-URL history layer in Strict Mode and preserves existing state', async () => {
     const pushState = vi.spyOn(window.history, 'pushState');
+    const back = vi.spyOn(window.history, 'back').mockImplementation(() => undefined);
 
     await act(async () => {
       root.render(
@@ -72,10 +73,23 @@ describe('useBrowserBackOverlay', () => {
     });
 
     expect(pushState).toHaveBeenCalledTimes(1);
+    expect(back).not.toHaveBeenCalled();
     expect(window.location.href).toBe(initialUrl);
     expect(window.history.state).toMatchObject(initialState);
     expect(document.documentElement.classList.contains('echo-browser-back-overlay-open')).toBe(
       true,
+    );
+  });
+
+  it('consumes the active history layer when an open overlay unmounts', async () => {
+    const back = vi.spyOn(window.history, 'back').mockImplementation(() => undefined);
+    await act(async () => root.render(<TestOverlay label="editor" onClose={vi.fn()} />));
+
+    await act(async () => root.render(null));
+
+    expect(back).toHaveBeenCalledOnce();
+    expect(document.documentElement.classList.contains('echo-browser-back-overlay-open')).toBe(
+      false,
     );
   });
 

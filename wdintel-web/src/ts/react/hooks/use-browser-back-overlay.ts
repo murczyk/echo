@@ -163,6 +163,20 @@ function unregisterOverlay(id: string, consumeHistory = false) {
   if (shouldConsumeHistory) window.history.back();
 }
 
+function unregisterOverlayAfterUnmount(id: string) {
+  const overlay = overlays.find((entry) => entry.id === id);
+  const shouldConsumeHistory =
+    overlay === topOverlay() && readOverlayIds(window.history.state).at(-1) === id;
+  unregisterOverlay(id);
+  if (!shouldConsumeHistory) return;
+
+  queueMicrotask(() => {
+    if (overlays.some((entry) => entry.id === id)) return;
+    if (readOverlayIds(window.history.state).at(-1) !== id) return;
+    window.history.back();
+  });
+}
+
 export function useBrowserBackOverlay({
   open,
   onClose,
@@ -193,7 +207,7 @@ export function useBrowserBackOverlay({
 
   useEffect(
     () => () => {
-      unregisterOverlay(idRef.current!);
+      unregisterOverlayAfterUnmount(idRef.current!);
       wasOpenRef.current = false;
     },
     [],
