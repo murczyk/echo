@@ -1104,17 +1104,17 @@ async fn set_sync_completed(
 mod tests {
     use super::*;
     use crate::entities::{
-        datasource_group, echo_gpu_transcription_queue, login, media_summary,
-        ocr_job,
+        area_of_responsibility, datasource_group, echo_gpu_transcription_queue,
+        intel_product, login, media_summary, ocr_job, organism, organism_aor,
         sea_orm_active_enums::{
             SigintInboxItemCallsignSource, SigintInboxItemUnitKind,
         },
-        secret_group_user, settlement, sigint_callsign, sigint_important,
-        sigint_inbox_item, sigint_inbox_item_callsign,
+        secret_group_user, settlement, sigint_callsign, sigint_comment,
+        sigint_important, sigint_inbox_item, sigint_inbox_item_callsign,
         sigint_inbox_item_network, sigint_inbox_item_settlement,
         sigint_inbox_item_unit, sigint_network, sigint_network_callsign,
         sigint_network_freq, sigint_signal, sigint_zone_datasource,
-        signal_group, signal_message, signal_message_group,
+        signal_group, signal_group_aor, signal_message, signal_message_group,
         signal_message_media, signal_message_media_conversion_job,
     };
     use crate::functest::tests::*;
@@ -2587,6 +2587,116 @@ mod tests {
         assert!(!messages[&item_id].inbox_message.important);
     }
 
+    #[actix_web::test]
+    #[serial]
+    async fn comment_changes_queue_parent_snapshots() {
+        let fixture = group_visibility_fixture().await;
+        let comment = mk_signal_message(
+            &fixture.env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("comment".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        intel_product::ActiveModel {
+            intel_message_id: Set(comment.id),
+            source_message_id: Set(fixture.item_id),
+            relation_kind: Set(intel_product::RELATION_KIND_COMMENT),
+            ..Default::default()
+        }
+        .insert(&fixture.env.dbx)
+        .await
+        .unwrap();
+        assert_single_updated_event(
+            &fixture.env,
+            fixture.integration.id,
+            fixture.item_id,
+        )
+        .await;
+        clear_iggy_events(&fixture.env, fixture.integration.id).await;
+
+        signal_message::ActiveModel {
+            id: Set(comment.id),
+            body: Set(Some("edited comment".to_string())),
+            ..Default::default()
+        }
+        .update(&fixture.env.dbx)
+        .await
+        .unwrap();
+        assert_single_updated_event(
+            &fixture.env,
+            fixture.integration.id,
+            fixture.item_id,
+        )
+        .await;
+        clear_iggy_events(&fixture.env, fixture.integration.id).await;
+
+        signal_message::ActiveModel {
+            id: Set(comment.id),
+            deleted: Set(true),
+            ..Default::default()
+        }
+        .update(&fixture.env.dbx)
+        .await
+        .unwrap();
+        assert_single_updated_event(
+            &fixture.env,
+            fixture.integration.id,
+            fixture.item_id,
+        )
+        .await;
+        clear_iggy_events(&fixture.env, fixture.integration.id).await;
+
+        let legacy_comment = mk_sigint_comment(
+            &fixture.env.dbx,
+            sigint_comment::ActiveModel {
+                login_id: Set(fixture.login.id),
+                signal_message_id: Set(fixture.item_id),
+                comment: Set("legacy comment".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_single_updated_event(
+            &fixture.env,
+            fixture.integration.id,
+            fixture.item_id,
+        )
+        .await;
+        clear_iggy_events(&fixture.env, fixture.integration.id).await;
+
+        sigint_comment::ActiveModel {
+            id: Set(legacy_comment.id),
+            comment: Set("edited legacy comment".to_string()),
+            ..Default::default()
+        }
+        .update(&fixture.env.dbx)
+        .await
+        .unwrap();
+        assert_single_updated_event(
+            &fixture.env,
+            fixture.integration.id,
+            fixture.item_id,
+        )
+        .await;
+        clear_iggy_events(&fixture.env, fixture.integration.id).await;
+
+        sigint_comment::Entity::delete_by_id(legacy_comment.id)
+            .exec(&fixture.env.dbx)
+            .await
+            .unwrap();
+        assert_single_updated_event(
+            &fixture.env,
+            fixture.integration.id,
+            fixture.item_id,
+        )
+        .await;
+    }
+
     struct GroupVisibilityFixture {
         env: Arc<Env>,
         login: login::Model,
@@ -2752,6 +2862,92 @@ mod tests {
             true,
         )
         .await;
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn aor_assignment_removals_reconcile_snapshots() {
+        let env = cleanup().await.unwrap();
+        let existing_login = find_test_login(&env.dbx).await.unwrap();
+        let group = find_test_datasource_group(&env.dbx).await.unwrap();
+        let aor = mk_aor(
+            &env.dbx,
+            area_of_responsibility::ActiveModel {
+                left_bound: Set(1_000_000_000.0),
+                right_bound: Set(1_000_001_000.0),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let group_aor_link = mk_signal_group_aor(
+            &env.dbx,
+            signal_group_aor::ActiveModel {
+                master_key: Set(group.group_master_key.clone()),
+                aor_id: Set(aor.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let organism = mk_organism(
+            &env.dbx,
+            <organism::ActiveModel as Default>::default(),
+        )
+        .await
+        .unwrap();
+        let organism_aor_link = mk_organism_aor(
+            &env.dbx,
+            organism_aor::ActiveModel {
+                organism_id: Set(organism.id),
+                aor_id: Set(aor.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                sigint_zone_id: Set(existing_login.sigint_zone_id),
+                organism_id: Set(Some(organism.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let integration = insert_integration(&env, login.id).await;
+        let (item_id, _) = insert_grouped_inbox_item(&env, &group).await;
+        clear_iggy_events(&env, integration.id).await;
+
+        organism_aor::Entity::delete_by_id(organism_aor_link.id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        assert_visibility_reconciliation(&env, &integration, item_id, false)
+            .await;
+        clear_iggy_events(&env, integration.id).await;
+
+        mk_organism_aor(
+            &env.dbx,
+            organism_aor::ActiveModel {
+                organism_id: Set(organism.id),
+                aor_id: Set(aor.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_visibility_reconciliation(&env, &integration, item_id, true)
+            .await;
+        clear_iggy_events(&env, integration.id).await;
+
+        signal_group_aor::Entity::delete_by_id(group_aor_link.id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        assert_visibility_reconciliation(&env, &integration, item_id, false)
+            .await;
     }
 
     #[actix_web::test]

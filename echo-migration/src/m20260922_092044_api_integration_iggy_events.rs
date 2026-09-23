@@ -330,6 +330,21 @@ begin
         if old is not distinct from new then
             return new;
         end if;
+        for item_id in
+            select distinct product.source_message_id
+            from intel_product product
+            join sigint_inbox_item item
+                on item.id = product.source_message_id
+            where product.intel_message_id = new.id
+                and product.relation_kind = 'comment'
+        loop
+            perform queue_api_integration_iggy_event(
+                item_id,
+                jsonb_build_object(
+                    'event_type', 'sigint_inbox_item_updated'
+                )
+            );
+        end loop;
         if exists (select 1 from sigint_inbox_item where id = new.id) then
             perform queue_api_integration_iggy_event(
                 new.id,
@@ -434,6 +449,14 @@ begin
     return coalesce(new, old);
 end;
 $$;
+
+create trigger intel_product_capture_iggy_edit
+after insert or update or delete on intel_product
+for each row execute function capture_api_integration_iggy_related_edit('source_message_id');
+
+create trigger sigint_comment_capture_iggy_edit
+after insert or update or delete on sigint_comment
+for each row execute function capture_api_integration_iggy_related_edit('signal_message_id');
 
 create trigger sigint_inbox_item_unit_capture_iggy_edit
 after insert or update or delete on sigint_inbox_item_unit
@@ -603,6 +626,43 @@ begin
         );
 end;
 $$;
+
+create function capture_api_integration_iggy_aor_assignment()
+returns trigger language plpgsql as $$
+declare
+    target_group_master_keys text[];
+    target_organism_ids bigint[];
+begin
+    if not api_integration_iggy_has_publisher() then
+        return coalesce(new, old);
+    end if;
+    if tg_table_name = 'organism_aor' then
+        target_organism_ids := case tg_op
+            when 'INSERT' then array[new.organism_id]
+            when 'DELETE' then array[old.organism_id]
+            else array[old.organism_id, new.organism_id]
+        end;
+    else
+        target_group_master_keys := case tg_op
+            when 'INSERT' then array[new.master_key]
+            when 'DELETE' then array[old.master_key]
+            else array[old.master_key, new.master_key]
+        end;
+    end if;
+    perform queue_api_integration_iggy_group_visibility_change(
+        target_group_master_keys, null, null, target_organism_ids
+    );
+    return coalesce(new, old);
+end;
+$$;
+
+create trigger organism_aor_capture_iggy_visibility
+after insert or delete or update of organism_id, aor_id on organism_aor
+for each row execute function capture_api_integration_iggy_aor_assignment();
+
+create trigger signal_group_aor_capture_iggy_visibility
+after insert or delete or update of master_key, aor_id on signal_group_aor
+for each row execute function capture_api_integration_iggy_aor_assignment();
 
 create function capture_api_integration_iggy_signal_group_visibility()
 returns trigger language plpgsql as $$
@@ -1128,6 +1188,8 @@ drop trigger if exists ocr_job_capture_iggy_edit on ocr_job;
 drop trigger if exists media_summary_capture_iggy_edit on media_summary;
 drop trigger if exists signal_message_media_conversion_job_capture_iggy_edit on signal_message_media_conversion_job;
 drop trigger if exists signal_message_group_capture_iggy_edit on signal_message_group;
+drop trigger if exists signal_group_aor_capture_iggy_visibility on signal_group_aor;
+drop trigger if exists organism_aor_capture_iggy_visibility on organism_aor;
 drop trigger if exists organism_group_capture_iggy_visibility on organism_group;
 drop trigger if exists login_capture_iggy_group_visibility on login;
 drop trigger if exists sigint_zone_datasource_capture_iggy_visibility on sigint_zone_datasource;
@@ -1136,6 +1198,8 @@ drop trigger if exists secret_group_user_capture_iggy_visibility on secret_group
 drop trigger if exists signal_group_capture_iggy_visibility_delete on signal_group;
 drop trigger if exists signal_group_capture_iggy_visibility_update on signal_group;
 drop trigger if exists sigint_important_capture_iggy_edit on sigint_important;
+drop trigger if exists sigint_comment_capture_iggy_edit on sigint_comment;
+drop trigger if exists intel_product_capture_iggy_edit on intel_product;
 drop trigger if exists signal_message_capture_iggy_edit on signal_message;
 drop trigger if exists sigint_inbox_item_capture_iggy_edit on sigint_inbox_item;
 drop function if exists capture_api_integration_iggy_network_frequency();
@@ -1149,6 +1213,7 @@ drop function if exists capture_api_integration_iggy_inbox_edit();
 drop function if exists capture_api_integration_iggy_related_edit();
 drop function if exists capture_api_integration_iggy_media_result();
 drop function if exists capture_api_integration_iggy_unit_visibility();
+drop function if exists capture_api_integration_iggy_aor_assignment();
 drop function if exists capture_api_integration_iggy_organism_group();
 drop function if exists capture_api_integration_iggy_login_groups();
 drop function if exists capture_api_integration_iggy_zone_group();
