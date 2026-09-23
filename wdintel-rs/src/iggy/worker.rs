@@ -482,6 +482,14 @@ async fn pending_event_action(
     visible_groups: &mut Option<BTreeSet<String>>,
 ) -> Result<PendingEventAction, AppError> {
     if event.sigint_inbox_item_id.is_some() {
+        if event.payload["event_type"] == "sigint_inbox_item_visibility_changed"
+        {
+            return Ok(if message.is_some() {
+                PendingEventAction::Publish
+            } else {
+                PendingEventAction::Revoke
+            });
+        }
         if message.is_some()
             || event.payload["event_type"] == "sigint_inbox_item_deleted"
         {
@@ -647,7 +655,11 @@ fn render_pending_event(
     message: Option<&IggyInboxMessage>,
     action: PendingEventAction,
 ) -> Result<Vec<u8>, AppError> {
-    if event.payload["event_type"] == "sigint_inbox_item_created" {
+    if event.payload["event_type"] == "sigint_inbox_item_created"
+        || (event.payload["event_type"]
+            == "sigint_inbox_item_visibility_changed"
+            && action == PendingEventAction::Publish)
+    {
         return serde_json::to_vec(&(
             event.sigint_inbox_item_id.c(h!())?,
             message.c(h!())?,
@@ -1097,12 +1109,13 @@ mod tests {
         sea_orm_active_enums::{
             SigintInboxItemCallsignSource, SigintInboxItemUnitKind,
         },
-        settlement, sigint_callsign, sigint_inbox_item,
-        sigint_inbox_item_callsign, sigint_inbox_item_network,
-        sigint_inbox_item_settlement, sigint_inbox_item_unit, sigint_network,
-        sigint_network_callsign, sigint_network_freq, sigint_signal,
-        signal_message, signal_message_group, signal_message_media,
-        signal_message_media_conversion_job,
+        secret_group_user, settlement, sigint_callsign, sigint_important,
+        sigint_inbox_item, sigint_inbox_item_callsign,
+        sigint_inbox_item_network, sigint_inbox_item_settlement,
+        sigint_inbox_item_unit, sigint_network, sigint_network_callsign,
+        sigint_network_freq, sigint_signal, sigint_zone_datasource,
+        signal_group, signal_message, signal_message_group,
+        signal_message_media, signal_message_media_conversion_job,
     };
     use crate::functest::tests::*;
     use crate::rer_importer::signals::CNSignal;
@@ -2461,6 +2474,284 @@ mod tests {
             events[0].payload["event_type"],
             "sigint_inbox_item_updated"
         );
+    }
+
+    async fn assert_visibility_reconciliation(
+        env: &Env,
+        integration: &api_integration::Model,
+        item_id: i64,
+        expected_visible: bool,
+    ) {
+        let events =
+            load_pending_events(&env.dbx, integration.id).await.unwrap();
+        let matching_events = events
+            .iter()
+            .filter(|event| {
+                event.sigint_inbox_item_id == Some(item_id)
+                    && event.payload["event_type"]
+                        == "sigint_inbox_item_visibility_changed"
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(matching_events.len(), 1);
+        let event = matching_events[0];
+        let messages = load_pending_event_messages(
+            env,
+            &integration.api_user_login_id,
+            &events,
+        )
+        .await
+        .unwrap();
+        let message = messages.get(&item_id);
+        assert_eq!(message.is_some(), expected_visible);
+        let action = pending_event_action(
+            env,
+            &integration.api_user_login_id,
+            event,
+            message,
+            &mut HashMap::new(),
+            &mut None,
+        )
+        .await
+        .unwrap();
+        let expected_action = if expected_visible {
+            PendingEventAction::Publish
+        } else {
+            PendingEventAction::Revoke
+        };
+        assert_eq!(action, expected_action);
+
+        let payload: serde_json::Value = serde_json::from_slice(
+            &render_pending_event(event, message, action).unwrap(),
+        )
+        .unwrap();
+        if expected_visible {
+            assert_eq!(payload[0], item_id);
+            assert!(payload[1].is_object());
+        } else {
+            assert_eq!(payload["event_type"], "sigint_inbox_item_deleted");
+            assert_eq!(payload["sigint_inbox_item_id"], item_id);
+        }
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn importance_changes_queue_updated_snapshots() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let group = find_test_datasource_group(&env.dbx).await.unwrap();
+        let integration = insert_integration(&env, login.id).await;
+        let (item_id, _) = insert_grouped_inbox_item(&env, &group).await;
+        clear_iggy_events(&env, integration.id).await;
+
+        let important = mk_sigint_important(
+            &env.dbx,
+            sigint_important::ActiveModel {
+                login_id: Set(Some(login.id)),
+                signal_message_id: Set(item_id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_single_updated_event(&env, integration.id, item_id).await;
+        let events =
+            load_pending_events(&env.dbx, integration.id).await.unwrap();
+        let messages = load_pending_event_messages(
+            &env,
+            &integration.api_user_login_id,
+            &events,
+        )
+        .await
+        .unwrap();
+        assert!(messages[&item_id].inbox_message.important);
+        clear_iggy_events(&env, integration.id).await;
+
+        sigint_important::ActiveModel {
+            id: Set(important.id),
+            deleted: Set(true),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        assert_single_updated_event(&env, integration.id, item_id).await;
+        let events =
+            load_pending_events(&env.dbx, integration.id).await.unwrap();
+        let messages = load_pending_event_messages(
+            &env,
+            &integration.api_user_login_id,
+            &events,
+        )
+        .await
+        .unwrap();
+        assert!(!messages[&item_id].inbox_message.important);
+    }
+
+    struct GroupVisibilityFixture {
+        env: Arc<Env>,
+        login: login::Model,
+        group: datasource_group::Model,
+        integration: api_integration::Model,
+        item_id: i64,
+    }
+
+    async fn group_visibility_fixture() -> GroupVisibilityFixture {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let group = find_test_datasource_group(&env.dbx).await.unwrap();
+        let integration = insert_integration(&env, login.id).await;
+        let (item_id, _) = insert_grouped_inbox_item(&env, &group).await;
+        clear_iggy_events(&env, integration.id).await;
+        GroupVisibilityFixture {
+            env,
+            login,
+            group,
+            integration,
+            item_id,
+        }
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn group_state_changes_reconcile_snapshots() {
+        let fixture = group_visibility_fixture().await;
+
+        signal_group::ActiveModel {
+            master_key: Set(fixture.group.group_master_key.clone()),
+            is_archived: Set(true),
+            ..Default::default()
+        }
+        .update(&fixture.env.dbx)
+        .await
+        .unwrap();
+        assert_visibility_reconciliation(
+            &fixture.env,
+            &fixture.integration,
+            fixture.item_id,
+            false,
+        )
+        .await;
+        clear_iggy_events(&fixture.env, fixture.integration.id).await;
+
+        signal_group::ActiveModel {
+            master_key: Set(fixture.group.group_master_key),
+            is_archived: Set(false),
+            ..Default::default()
+        }
+        .update(&fixture.env.dbx)
+        .await
+        .unwrap();
+        assert_visibility_reconciliation(
+            &fixture.env,
+            &fixture.integration,
+            fixture.item_id,
+            true,
+        )
+        .await;
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn secret_group_membership_reconciles_snapshots() {
+        let fixture = group_visibility_fixture().await;
+
+        signal_group::ActiveModel {
+            master_key: Set(fixture.group.group_master_key.clone()),
+            is_secret: Set(true),
+            ..Default::default()
+        }
+        .update(&fixture.env.dbx)
+        .await
+        .unwrap();
+        assert_visibility_reconciliation(
+            &fixture.env,
+            &fixture.integration,
+            fixture.item_id,
+            false,
+        )
+        .await;
+        clear_iggy_events(&fixture.env, fixture.integration.id).await;
+
+        let secret_group_user = mk_secret_group_user(
+            &fixture.env.dbx,
+            secret_group_user::ActiveModel {
+                master_key: Set(fixture.group.group_master_key),
+                login_id: Set(fixture.login.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_visibility_reconciliation(
+            &fixture.env,
+            &fixture.integration,
+            fixture.item_id,
+            true,
+        )
+        .await;
+        clear_iggy_events(&fixture.env, fixture.integration.id).await;
+
+        secret_group_user::Entity::delete_by_id(secret_group_user.id)
+            .exec(&fixture.env.dbx)
+            .await
+            .unwrap();
+        assert_visibility_reconciliation(
+            &fixture.env,
+            &fixture.integration,
+            fixture.item_id,
+            false,
+        )
+        .await;
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn zone_group_membership_reconciles_snapshots() {
+        let fixture = group_visibility_fixture().await;
+
+        let zone_link = sigint_zone_datasource::Entity::find()
+            .filter(
+                sigint_zone_datasource::Column::GroupMasterKey
+                    .eq(fixture.group.group_master_key),
+            )
+            .filter(
+                sigint_zone_datasource::Column::SigintZoneId
+                    .eq(fixture.login.sigint_zone_id.unwrap()),
+            )
+            .one(&fixture.env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        sigint_zone_datasource::Entity::delete_by_id(zone_link.id)
+            .exec(&fixture.env.dbx)
+            .await
+            .unwrap();
+        assert_visibility_reconciliation(
+            &fixture.env,
+            &fixture.integration,
+            fixture.item_id,
+            false,
+        )
+        .await;
+        clear_iggy_events(&fixture.env, fixture.integration.id).await;
+
+        sigint_zone_datasource::ActiveModel {
+            sigint_zone_id: Set(zone_link.sigint_zone_id),
+            datasource_id: Set(zone_link.datasource_id),
+            group_master_key: Set(zone_link.group_master_key),
+            created_at: Set(zone_link.created_at),
+            ..Default::default()
+        }
+        .insert(&fixture.env.dbx)
+        .await
+        .unwrap();
+        assert_visibility_reconciliation(
+            &fixture.env,
+            &fixture.integration,
+            fixture.item_id,
+            true,
+        )
+        .await;
     }
 
     #[actix_web::test]

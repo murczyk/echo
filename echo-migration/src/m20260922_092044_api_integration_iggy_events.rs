@@ -496,6 +496,10 @@ create trigger sigint_inbox_item_point_token_capture_iggy_edit
 after insert or update or delete on sigint_inbox_item_point_token
 for each row execute function capture_api_integration_iggy_related_edit('sigint_inbox_item_id');
 
+create trigger sigint_important_capture_iggy_edit
+after insert or update or delete on sigint_important
+for each row execute function capture_api_integration_iggy_related_edit('signal_message_id');
+
 create trigger signal_message_media_capture_iggy_edit
 after insert or update or delete on signal_message_media
 for each row execute function capture_api_integration_iggy_related_edit('signal_message_id');
@@ -558,6 +562,187 @@ for each row execute function capture_api_integration_iggy_media_result('source_
 create trigger signal_message_group_capture_iggy_edit
 after insert or update or delete on signal_message_group
 for each row execute function capture_api_integration_iggy_related_edit('signal_message_id');
+
+create function queue_api_integration_iggy_group_visibility_change(
+    target_group_master_keys text[], target_login_ids uuid[],
+    target_zone_ids bigint[], target_organism_ids bigint[]
+) returns void language plpgsql as $$
+begin
+    perform 1 from api_integration integration
+    order by integration.id for share;
+    insert into api_integration_iggy_event (
+        api_integration_id, destination_id, sigint_inbox_item_id, payload
+    )
+    select distinct integration.id, destination.id, message_group.signal_message_id,
+        jsonb_build_object(
+            'event_type', 'sigint_inbox_item_visibility_changed'
+        )
+    from api_integration integration
+    join login api_user on api_user.id = integration.api_user_login_id
+    join signal_message_group message_group
+        on message_group.group_master_key is not null
+        and (target_group_master_keys is null
+            or message_group.group_master_key = any(target_group_master_keys))
+    join sigint_inbox_item item on item.id = message_group.signal_message_id
+    left join lateral (
+        select id from api_integration_iggy_destination
+        where api_integration_id = integration.id
+        order by id desc limit 1
+    ) destination on true
+    where integration.sync_enabled and integration.has_iggy_connection
+        and (
+            (target_login_ids is null and target_zone_ids is null
+                and target_organism_ids is null)
+            or api_user.id = any(coalesce(target_login_ids, '{}'::uuid[]))
+            or api_user.sigint_zone_id = any(
+                coalesce(target_zone_ids, '{}'::bigint[])
+            )
+            or api_user.organism_id = any(
+                coalesce(target_organism_ids, '{}'::bigint[])
+            )
+        );
+end;
+$$;
+
+create function capture_api_integration_iggy_signal_group_visibility()
+returns trigger language plpgsql as $$
+begin
+    if not api_integration_iggy_has_publisher() then
+        return coalesce(new, old);
+    end if;
+    perform queue_api_integration_iggy_group_visibility_change(
+        array[old.master_key], null, null, null
+    );
+    return coalesce(new, old);
+end;
+$$;
+
+create trigger signal_group_capture_iggy_visibility_update
+after update of deleted, is_archived, is_secret on signal_group
+for each row when (old.deleted is distinct from new.deleted
+    or old.is_archived is distinct from new.is_archived
+    or old.is_secret is distinct from new.is_secret)
+execute function capture_api_integration_iggy_signal_group_visibility();
+
+create trigger signal_group_capture_iggy_visibility_delete
+before delete on signal_group
+for each row execute function capture_api_integration_iggy_signal_group_visibility();
+
+create function capture_api_integration_iggy_secret_group_user()
+returns trigger language plpgsql as $$
+begin
+    if not api_integration_iggy_has_publisher() then
+        return coalesce(new, old);
+    end if;
+    if tg_op <> 'INSERT' then
+        perform queue_api_integration_iggy_group_visibility_change(
+            array[old.master_key], array[old.login_id], null, null
+        );
+    end if;
+    if tg_op <> 'DELETE' then
+        perform queue_api_integration_iggy_group_visibility_change(
+            array[new.master_key], array[new.login_id], null, null
+        );
+    end if;
+    return coalesce(new, old);
+end;
+$$;
+
+create trigger secret_group_user_capture_iggy_visibility
+after insert or delete or update of master_key, login_id on secret_group_user
+for each row execute function capture_api_integration_iggy_secret_group_user();
+
+create function capture_api_integration_iggy_secret_group_organism()
+returns trigger language plpgsql as $$
+begin
+    if not api_integration_iggy_has_publisher() then
+        return coalesce(new, old);
+    end if;
+    if tg_op <> 'INSERT' then
+        perform queue_api_integration_iggy_group_visibility_change(
+            array[old.master_key], null, null, array[old.organism_id]
+        );
+    end if;
+    if tg_op <> 'DELETE' then
+        perform queue_api_integration_iggy_group_visibility_change(
+            array[new.master_key], null, null, array[new.organism_id]
+        );
+    end if;
+    return coalesce(new, old);
+end;
+$$;
+
+create trigger secret_group_organism_capture_iggy_visibility
+after insert or delete or update of master_key, organism_id on secret_group_organism
+for each row execute function capture_api_integration_iggy_secret_group_organism();
+
+create function capture_api_integration_iggy_zone_group()
+returns trigger language plpgsql as $$
+begin
+    if not api_integration_iggy_has_publisher() then
+        return coalesce(new, old);
+    end if;
+    if tg_op <> 'INSERT' then
+        perform queue_api_integration_iggy_group_visibility_change(
+            array[old.group_master_key], null, array[old.sigint_zone_id], null
+        );
+    end if;
+    if tg_op <> 'DELETE' then
+        perform queue_api_integration_iggy_group_visibility_change(
+            array[new.group_master_key], null, array[new.sigint_zone_id], null
+        );
+    end if;
+    return coalesce(new, old);
+end;
+$$;
+
+create trigger sigint_zone_datasource_capture_iggy_visibility
+after insert or delete or update of sigint_zone_id, datasource_id, group_master_key
+on sigint_zone_datasource
+for each row execute function capture_api_integration_iggy_zone_group();
+
+create function capture_api_integration_iggy_login_groups()
+returns trigger language plpgsql as $$
+begin
+    if not api_integration_iggy_has_publisher() then
+        return new;
+    end if;
+    perform queue_api_integration_iggy_group_visibility_change(
+        null, array[new.id], null, null
+    );
+    return new;
+end;
+$$;
+
+create trigger login_capture_iggy_group_visibility
+after update of sigint_zone_id, organism_id on login
+for each row when (old.sigint_zone_id is distinct from new.sigint_zone_id
+    or old.organism_id is distinct from new.organism_id)
+execute function capture_api_integration_iggy_login_groups();
+
+create function capture_api_integration_iggy_organism_group()
+returns trigger language plpgsql as $$
+begin
+    if not api_integration_iggy_has_publisher() then
+        return coalesce(new, old);
+    end if;
+    if tg_op <> 'INSERT' then
+        perform queue_api_integration_iggy_group_visibility_change(
+            array[old.signal_group_master_key], null, null, null
+        );
+    end if;
+    if tg_op <> 'DELETE' then
+        perform queue_api_integration_iggy_group_visibility_change(
+            array[new.signal_group_master_key], null, null, null
+        );
+    end if;
+    return coalesce(new, old);
+end;
+$$;
+
+create trigger organism_group_capture_iggy_visibility
+after insert or update or delete on organism_group
+for each row execute function capture_api_integration_iggy_organism_group();
 
 create function capture_api_integration_iggy_network_link()
 returns trigger language plpgsql as $$
@@ -943,6 +1128,14 @@ drop trigger if exists ocr_job_capture_iggy_edit on ocr_job;
 drop trigger if exists media_summary_capture_iggy_edit on media_summary;
 drop trigger if exists signal_message_media_conversion_job_capture_iggy_edit on signal_message_media_conversion_job;
 drop trigger if exists signal_message_group_capture_iggy_edit on signal_message_group;
+drop trigger if exists organism_group_capture_iggy_visibility on organism_group;
+drop trigger if exists login_capture_iggy_group_visibility on login;
+drop trigger if exists sigint_zone_datasource_capture_iggy_visibility on sigint_zone_datasource;
+drop trigger if exists secret_group_organism_capture_iggy_visibility on secret_group_organism;
+drop trigger if exists secret_group_user_capture_iggy_visibility on secret_group_user;
+drop trigger if exists signal_group_capture_iggy_visibility_delete on signal_group;
+drop trigger if exists signal_group_capture_iggy_visibility_update on signal_group;
+drop trigger if exists sigint_important_capture_iggy_edit on sigint_important;
 drop trigger if exists signal_message_capture_iggy_edit on signal_message;
 drop trigger if exists sigint_inbox_item_capture_iggy_edit on sigint_inbox_item;
 drop function if exists capture_api_integration_iggy_network_frequency();
@@ -956,6 +1149,12 @@ drop function if exists capture_api_integration_iggy_inbox_edit();
 drop function if exists capture_api_integration_iggy_related_edit();
 drop function if exists capture_api_integration_iggy_media_result();
 drop function if exists capture_api_integration_iggy_unit_visibility();
+drop function if exists capture_api_integration_iggy_organism_group();
+drop function if exists capture_api_integration_iggy_login_groups();
+drop function if exists capture_api_integration_iggy_zone_group();
+drop function if exists capture_api_integration_iggy_secret_group_organism();
+drop function if exists capture_api_integration_iggy_secret_group_user();
+drop function if exists capture_api_integration_iggy_signal_group_visibility();
 drop function if exists capture_api_integration_iggy_destination();
 drop function if exists scrub_api_integration_iggy_destination_credentials(bigint);
 drop function if exists queue_api_integration_iggy_network_frequency_change(bigint, text, text, timestamp without time zone, timestamp without time zone);
@@ -966,6 +1165,7 @@ drop function if exists api_integration_iggy_callsign_ids(text);
 drop function if exists api_integration_iggy_callsign_key(text);
 drop function if exists api_integration_iggy_network_frequency_ids(bigint, text, timestamp without time zone);
 drop function if exists api_integration_iggy_has_publisher();
+drop function if exists queue_api_integration_iggy_group_visibility_change(text[], uuid[], bigint[], bigint[]);
 drop function if exists queue_api_integration_iggy_event(bigint, jsonb);
 drop table if exists api_integration_iggy_event;
 drop table if exists api_integration_iggy_destination;

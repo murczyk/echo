@@ -28,7 +28,7 @@ reused with a different user; obsolete Iggy login credentials are cleared.
 
 | `event_type` suffix | Additional fields | Meaning |
 | --- | --- | --- |
-| `updated` | `message` | Replace the inbox message snapshot after item, message, unit, tag, metadata, point token, media, derived media result, or group edits. |
+| `updated` | `message` | Replace the inbox message snapshot after item, message, importance, unit, tag, metadata, point token, media, derived media result, or group edits. |
 | `deleted` | none | Remove an inbox item after deletion or loss of access to its last visible group. |
 | `network_linked`, `network_unlinked` | `sigint_network_id`, `sigint_network_freq_ids`, `sigint_network_callsign_ids`, `sigint_callsign_ids` | Add or remove the network, its matching frequency IDs, active network callsign IDs, and their catalog callsign IDs. |
 | `network_frequencies_changed` | `sigint_network_id`, `unlinked_sigint_network_freq_ids`, `linked_sigint_network_freq_ids` | Apply an inbox frequency or interception time edit. |
@@ -44,6 +44,11 @@ API user. Deletion events carry only the item ID and are published after
 physical deletion even when the item is no longer visible. For group visibility
 loss, the event is sent only to integrations whose API user could access the
 removed group.
+
+Changes to group state, zone assignments, organisation group selection, and
+secret-group membership reconcile every affected snapshot. Newly visible items
+are replayed as creation upserts, while items that are no longer visible emit
+deletion events.
 
 All activity and frequency interval times use UTC.
 
