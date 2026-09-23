@@ -1,7 +1,7 @@
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { clamp, clampPan, type Point } from '../message-card-image-utils';
+import { clamp, type Point } from '../message-card-image-utils';
 import {
   ATTACHMENT_PREVIEW_DRAG_THRESHOLD_PX,
   getNextWheelZoom,
@@ -15,10 +15,6 @@ type StageSize = { width: number; height: number };
 type GestureStageMetrics = {
   centerX: number;
   centerY: number;
-  fittedImageWidth: number;
-  fittedImageHeight: number;
-  stageWidth: number;
-  stageHeight: number;
 };
 type TouchPoint = Point;
 type TouchGesture =
@@ -42,19 +38,6 @@ type PreviewRegion = 'background' | 'content' | 'protected';
 const DOUBLE_TAP_WINDOW_MS = 350;
 const DOUBLE_TAP_MAX_DISTANCE_PX = 24;
 
-function getFittedImageSize(imageSize: StageSize | null, stage: HTMLDivElement): StageSize {
-  if (imageSize === null || imageSize.width <= 0 || imageSize.height <= 0)
-    return { width: stage.clientWidth, height: stage.clientHeight };
-  const fitScale = Math.min(
-    1,
-    stage.clientWidth / imageSize.width,
-    stage.clientHeight / imageSize.height,
-  );
-  return Number.isFinite(fitScale)
-    ? { width: imageSize.width * fitScale, height: imageSize.height * fitScale }
-    : { width: stage.clientWidth, height: stage.clientHeight };
-}
-
 export function useImageAttachmentPreviewGestures({
   previewKey,
   href,
@@ -76,7 +59,6 @@ export function useImageAttachmentPreviewGestures({
   const imageElementRef = useRef<HTMLImageElement | null>(null);
   const zoomRef = useRef(zoom);
   const panRef = useRef(pan);
-  const imageSizeRef = useRef(imageSize);
   const lockedRef = useRef(interactionLocked);
   const backgroundClickRef = useRef(onBackgroundClick);
   const dragRef = useRef<DragState | null>(null);
@@ -93,7 +75,6 @@ export function useImageAttachmentPreviewGestures({
   } | null>(null);
   lockedRef.current = interactionLocked;
   backgroundClickRef.current = onBackgroundClick;
-  imageSizeRef.current = imageSize;
 
   const applyImageTransform = useCallback((nextZoom: number, nextPan: Point) => {
     const image = imageElementRef.current;
@@ -156,43 +137,13 @@ export function useImageAttachmentPreviewGestures({
     [applyImageTransform, cleanup],
   );
 
-  const clampPreviewPan = useCallback(
-    (point: Point, nextZoom = zoomRef.current, metrics?: GestureStageMetrics | null) => {
-      if (metrics != null)
-        return clampPan(
-          point,
-          metrics.fittedImageWidth,
-          metrics.fittedImageHeight,
-          metrics.stageWidth,
-          metrics.stageHeight,
-          nextZoom,
-        );
-      const stage = stageRef.current;
-      if (stage === null) return point;
-      const size = getFittedImageSize(imageSizeRef.current, stage);
-      return clampPan(
-        point,
-        size.width,
-        size.height,
-        stage.clientWidth,
-        stage.clientHeight,
-        nextZoom,
-      );
-    },
-    [],
-  );
-
-  const updateTransformRefs = useCallback(
-    (nextZoom: number, nextPan: Point, metrics?: GestureStageMetrics | null) => {
-      const clampedZoom = clamp(nextZoom, ZOOM_MIN, ZOOM_MAX);
-      const clampedPan =
-        clampedZoom === ZOOM_MIN ? { x: 0, y: 0 } : clampPreviewPan(nextPan, clampedZoom, metrics);
-      zoomRef.current = clampedZoom;
-      panRef.current = clampedPan;
-      return { zoom: clampedZoom, pan: clampedPan };
-    },
-    [clampPreviewPan],
-  );
+  const updateTransformRefs = useCallback((nextZoom: number, nextPan: Point) => {
+    const clampedZoom = clamp(nextZoom, ZOOM_MIN, ZOOM_MAX);
+    const nextPreviewPan = clampedZoom === ZOOM_MIN ? { x: 0, y: 0 } : nextPan;
+    zoomRef.current = clampedZoom;
+    panRef.current = nextPreviewPan;
+    return { zoom: clampedZoom, pan: nextPreviewPan };
+  }, []);
 
   const setTransform = useCallback(
     (nextZoom: number, nextPan: Point) => {
@@ -206,7 +157,7 @@ export function useImageAttachmentPreviewGestures({
 
   const queueGestureTransform = useCallback(
     (nextZoom: number, nextPan: Point) => {
-      updateTransformRefs(nextZoom, nextPan, gestureStageMetricsRef.current);
+      updateTransformRefs(nextZoom, nextPan);
       if (gestureFrameRef.current !== null) return;
       gestureFrameRef.current = window.requestAnimationFrame(() => {
         gestureFrameRef.current = null;
@@ -230,21 +181,13 @@ export function useImageAttachmentPreviewGestures({
       if (clampedZoom === ZOOM_MIN) return setTransform(ZOOM_MIN, { x: 0, y: 0 });
       const stage = stageRef.current;
       const currentPan = panRef.current;
-      const size = stage === null ? null : getFittedImageSize(imageSizeRef.current, stage);
       const nextPan =
         stage === null
           ? currentPan
-          : clampPan(
-              {
-                x: cursorPoint.x - (clampedZoom / zoomRef.current) * (cursorPoint.x - currentPan.x),
-                y: cursorPoint.y - (clampedZoom / zoomRef.current) * (cursorPoint.y - currentPan.y),
-              },
-              size?.width ?? 0,
-              size?.height ?? 0,
-              stage.clientWidth,
-              stage.clientHeight,
-              clampedZoom,
-            );
+          : {
+              x: cursorPoint.x - (clampedZoom / zoomRef.current) * (cursorPoint.x - currentPan.x),
+              y: cursorPoint.y - (clampedZoom / zoomRef.current) * (cursorPoint.y - currentPan.y),
+            };
       setTransform(clampedZoom, nextPan);
     },
     [setTransform],
@@ -263,14 +206,9 @@ export function useImageAttachmentPreviewGestures({
     const stage = stageRef.current;
     if (stage === null) return null;
     const rect = stage.getBoundingClientRect();
-    const fittedImage = getFittedImageSize(imageSizeRef.current, stage);
     return {
       centerX: rect.left + rect.width / 2,
       centerY: rect.top + rect.height / 2,
-      fittedImageWidth: fittedImage.width,
-      fittedImageHeight: fittedImage.height,
-      stageWidth: stage.clientWidth,
-      stageHeight: stage.clientHeight,
     };
   };
 
@@ -376,7 +314,6 @@ export function useImageAttachmentPreviewGestures({
       return;
     }
     if (zoomRef.current === ZOOM_MIN || stageRef.current === null) return;
-    const stage = stageRef.current;
     const metrics = measureGestureStage();
     gestureStageMetricsRef.current = metrics;
     dragRef.current = {
@@ -384,10 +321,6 @@ export function useImageAttachmentPreviewGestures({
       startX: event.clientX,
       startY: event.clientY,
       origin: panRef.current,
-      fittedImageWidth: metrics?.fittedImageWidth ?? stage.clientWidth,
-      fittedImageHeight: metrics?.fittedImageHeight ?? stage.clientHeight,
-      stageWidth: metrics?.stageWidth ?? stage.clientWidth,
-      stageHeight: metrics?.stageHeight ?? stage.clientHeight,
     };
     addPointerListeners();
     event.currentTarget.setPointerCapture(event.pointerId);

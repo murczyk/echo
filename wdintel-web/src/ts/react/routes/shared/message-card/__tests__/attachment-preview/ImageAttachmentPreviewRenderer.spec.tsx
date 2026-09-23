@@ -363,6 +363,7 @@ function TestImagePreviewDialog(props: TestImagePreviewDialogProps) {
 
 describe('ImageAttachmentPreviewRenderer', () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     dialogProps.splice(0);
     latestActionProps = null;
@@ -886,7 +887,7 @@ describe('ImageAttachmentPreviewRenderer', () => {
     await act(async () => {
       animationFrames[0]?.(performance.now());
     });
-    expect(loadedImage.style.transform).toBe('translate(0px, 0px) scale(4)');
+    expect(loadedImage.style.transform).toBe('translate(15px, 0px) scale(4)');
     expect(loadedImage.style.transition).toBe('none');
 
     await act(async () => {
@@ -937,6 +938,8 @@ describe('ImageAttachmentPreviewRenderer', () => {
     });
     stage.getBoundingClientRect = () =>
       ({ left: 100, top: 100, width: 800, height: 400 }) as DOMRect;
+    loadedImage.getBoundingClientRect = () =>
+      ({ left: 100, top: 100, right: 900, bottom: 500, width: 800, height: 400 }) as DOMRect;
 
     await act(async () => {
       const wheelEvent = new WheelEvent('wheel', { bubbles: true, deltaY: -10 });
@@ -949,12 +952,12 @@ describe('ImageAttachmentPreviewRenderer', () => {
 
     const nextZoom = 100 * Math.exp(10 * 0.0015);
     expect(latestStageProps?.zoom).toBeCloseTo(nextZoom, 8);
-    expect(latestStageProps?.pan.x).toBe(0);
+    expect(latestStageProps?.pan.x).toBeCloseTo(100 - nextZoom, 8);
     expect(latestStageProps?.pan.y).toBe(0);
     root.unmount();
   });
 
-  it('uses fitted image dimensions after the image loads for wheel pan clamping', async () => {
+  it('keeps a bottom image point anchored across repeated wheel zoom', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -977,6 +980,8 @@ describe('ImageAttachmentPreviewRenderer', () => {
     });
     stage.getBoundingClientRect = () =>
       ({ left: 100, top: 100, width: 800, height: 600 }) as DOMRect;
+    loadedImage.getBoundingClientRect = () =>
+      ({ left: 100, top: 100, right: 900, bottom: 700, width: 800, height: 600 }) as DOMRect;
 
     await act(async () => {
       latestStageProps?.onImageLoad(loadedImage);
@@ -987,7 +992,7 @@ describe('ImageAttachmentPreviewRenderer', () => {
       const wheelEvent = new WheelEvent('wheel', { bubbles: true, deltaY });
       Object.defineProperties(wheelEvent, {
         clientX: { value: 500 },
-        clientY: { value: 700 },
+        clientY: { value: 650 },
       });
       stage.dispatchEvent(wheelEvent);
     };
@@ -997,14 +1002,135 @@ describe('ImageAttachmentPreviewRenderer', () => {
     });
 
     expect(latestStageProps?.zoom).toBeCloseTo(200, 8);
-    expect(latestStageProps?.pan.y).toBe(0);
+    expect(latestStageProps?.pan.y).toBeCloseTo(-250, 8);
 
     await act(async () => {
       wheelToZoom(-Math.log(2) / 0.0015);
     });
 
     expect(latestStageProps?.zoom).toBeCloseTo(400, 8);
-    expect(latestStageProps?.pan.y).toBe(0);
+    expect(latestStageProps?.pan.y).toBeCloseTo(-750, 8);
+    root.unmount();
+  });
+
+  it('keeps an off-centre pinch midpoint anchored without edge clamping', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <TestImagePreviewDialog
+          imageHrefs={[{ href: 'https://example.test/image.png' } as never]}
+          open
+          onClose={vi.fn()}
+          onIndexChange={vi.fn()}
+        />,
+      );
+    });
+    await act(async () => {
+      latestStageProps?.onImageLoad(loadedImage);
+      await Promise.resolve();
+    });
+
+    const stage = document.body.querySelector('[data-stage]') as HTMLDivElement;
+    Object.defineProperties(stage, {
+      clientWidth: { configurable: true, value: 100 },
+      clientHeight: { configurable: true, value: 100 },
+    });
+    stage.getBoundingClientRect = () => ({ left: 0, top: 0, width: 100, height: 100 }) as DOMRect;
+    stage.setPointerCapture = vi.fn();
+    stage.releasePointerCapture = vi.fn();
+
+    await act(async () => {
+      for (const [pointerId, clientX] of [
+        [1, 45],
+        [2, 55],
+      ] as const) {
+        stage.dispatchEvent(
+          new PointerEvent('pointerdown', {
+            bubbles: true,
+            pointerId,
+            pointerType: 'touch',
+            clientX,
+            clientY: 80,
+          }),
+        );
+      }
+      for (const [pointerId, clientX] of [
+        [1, 40],
+        [2, 60],
+      ] as const) {
+        stage.dispatchEvent(
+          new PointerEvent('pointermove', {
+            bubbles: true,
+            pointerId,
+            pointerType: 'touch',
+            clientX,
+            clientY: 80,
+          }),
+        );
+      }
+      for (const [pointerId, clientX] of [
+        [2, 60],
+        [1, 40],
+      ] as const) {
+        stage.dispatchEvent(
+          new PointerEvent('pointerup', {
+            bubbles: true,
+            pointerId,
+            pointerType: 'touch',
+            clientX,
+            clientY: 80,
+          }),
+        );
+      }
+    });
+
+    expect(latestStageProps?.zoom).toBe(200);
+    expect(latestStageProps?.pan.y).toBe(-30);
+    root.unmount();
+  });
+
+  it('replaces the copy icon with a transient success check without adding header text', async () => {
+    vi.useFakeTimers();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <TestImagePreviewDialog
+          imageHrefs={[{ href: 'https://example.test/image.png' } as never]}
+          open
+          onClose={vi.fn()}
+          onIndexChange={vi.fn()}
+        />,
+      );
+    });
+    await act(async () => {
+      latestStageProps?.onImageLoad(loadedImage);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await latestActionProps?.onCopyImage();
+      await Promise.resolve();
+    });
+
+    expect(
+      document.body.querySelector('button[aria-label="Зображення скопійовано"]'),
+    ).not.toBeNull();
+    expect(document.body.querySelector('[data-copy-success-icon]')).not.toBeNull();
+    expect(document.body.textContent).not.toContain('Зображення скопійовано');
+
+    await act(async () => {
+      vi.advanceTimersByTime(1500);
+    });
+
+    expect(
+      document.body.querySelector('button[aria-label="Скопіювати зображення"]'),
+    ).not.toBeNull();
+    expect(document.body.querySelector('[data-copy-success-icon]')).toBeNull();
     root.unmount();
   });
 
