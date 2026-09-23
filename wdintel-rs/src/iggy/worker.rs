@@ -1104,19 +1104,20 @@ async fn set_sync_completed(
 mod tests {
     use super::*;
     use crate::entities::{
-        area_of_responsibility, datasource, datasource_group,
+        area_of_responsibility, datasource, datasource_group, device_name,
         echo_gpu_transcription_queue, intel_product, login, media_summary,
         ocr_job, organism, organism_aor, organism_group,
         sea_orm_active_enums::{
             SigintInboxItemCallsignSource, SigintInboxItemUnitKind,
         },
-        secret_group_user, settlement, sigint_callsign, sigint_comment,
-        sigint_important, sigint_inbox_item, sigint_inbox_item_callsign,
-        sigint_inbox_item_network, sigint_inbox_item_settlement,
-        sigint_inbox_item_unit, sigint_network, sigint_network_callsign,
-        sigint_network_freq, sigint_signal, sigint_zone_datasource,
-        signal_group, signal_group_aor, signal_message, signal_message_group,
-        signal_message_media, signal_message_media_conversion_job,
+        secret_group_user, settlement, sigint_bookmark, sigint_callsign,
+        sigint_comment, sigint_important, sigint_inbox_item,
+        sigint_inbox_item_callsign, sigint_inbox_item_network,
+        sigint_inbox_item_settlement, sigint_inbox_item_unit, sigint_network,
+        sigint_network_callsign, sigint_network_freq, sigint_signal,
+        sigint_zone_datasource, signal_group, signal_group_aor, signal_message,
+        signal_message_group, signal_message_media,
+        signal_message_media_conversion_job, system_settings,
     };
     use crate::functest::tests::*;
     use crate::rer_importer::signals::CNSignal;
@@ -2663,6 +2664,142 @@ mod tests {
 
     #[actix_web::test]
     #[serial]
+    async fn bookmark_changes_queue_api_user_snapshots() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let group = find_test_datasource_group(&env.dbx).await.unwrap();
+        let integration = insert_integration(&env, login.id).await;
+        let (item_id, _) = insert_grouped_inbox_item(&env, &group).await;
+        clear_iggy_events(&env, integration.id).await;
+
+        let bookmark = mk_sigint_bookmark(
+            &env.dbx,
+            sigint_bookmark::ActiveModel {
+                login_id: Set(login.id),
+                signal_message_id: Set(item_id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_single_updated_event(&env, integration.id, item_id).await;
+        let events =
+            load_pending_events(&env.dbx, integration.id).await.unwrap();
+        let messages = load_pending_event_messages(
+            &env,
+            &integration.api_user_login_id,
+            &events,
+        )
+        .await
+        .unwrap();
+        assert!(messages[&item_id].inbox_message.bookmarked);
+        clear_iggy_events(&env, integration.id).await;
+
+        sigint_bookmark::ActiveModel {
+            id: Set(bookmark.id),
+            deleted: Set(true),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        assert_single_updated_event(&env, integration.id, item_id).await;
+        let events =
+            load_pending_events(&env.dbx, integration.id).await.unwrap();
+        let messages = load_pending_event_messages(
+            &env,
+            &integration.api_user_login_id,
+            &events,
+        )
+        .await
+        .unwrap();
+        assert!(!messages[&item_id].inbox_message.bookmarked);
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn device_access_role_changes_refresh_snapshots() {
+        let env = cleanup().await.unwrap();
+        system_settings::ActiveModel {
+            devices_section_enabled: Set(true),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let existing_login = find_test_login(&env.dbx).await.unwrap();
+        let login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                roles: Set(serde_json::json!(["Api", "Cyber"])),
+                sigint_zone_id: Set(existing_login.sigint_zone_id),
+                organism_id: Set(existing_login.organism_id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let group = find_test_datasource_group(&env.dbx).await.unwrap();
+        let integration = insert_integration(&env, login.id).await;
+        let (item_id, _) = insert_grouped_inbox_item(&env, &group).await;
+        let device_name = device_name::ActiveModel {
+            name: Set(Some("Iggy test device".to_string())),
+            login_id: Set(login.id),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        sigint_inbox_item::ActiveModel {
+            id: Set(item_id),
+            device_name_id: Set(Some(device_name.id)),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        let events =
+            load_pending_events(&env.dbx, integration.id).await.unwrap();
+        let messages = load_pending_event_messages(
+            &env,
+            &integration.api_user_login_id,
+            &events,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            messages[&item_id].inbox_message.device_name.as_deref(),
+            Some("Iggy test device")
+        );
+        clear_iggy_events(&env, integration.id).await;
+
+        login::ActiveModel {
+            id: Set(login.id),
+            roles: Set(serde_json::json!(["Api"])),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        let events =
+            load_pending_events(&env.dbx, integration.id).await.unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].payload["event_type"],
+            "sigint_inbox_item_visibility_changed"
+        );
+        let messages = load_pending_event_messages(
+            &env,
+            &integration.api_user_login_id,
+            &events,
+        )
+        .await
+        .unwrap();
+        assert_eq!(messages[&item_id].inbox_message.device_name, None);
+    }
+
+    #[actix_web::test]
+    #[serial]
     async fn comment_changes_queue_parent_snapshots() {
         let fixture = group_visibility_fixture().await;
         let comment = mk_signal_message(
@@ -3159,6 +3296,116 @@ mod tests {
             .unwrap();
         assert_visibility_reconciliation(&env, &integration, item_id, false)
             .await;
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn aor_boundary_changes_reconcile_snapshots() {
+        let env = cleanup().await.unwrap();
+        let existing_login = find_test_login(&env.dbx).await.unwrap();
+        let group = find_test_datasource_group(&env.dbx).await.unwrap();
+        let organism_aor = mk_aor(
+            &env.dbx,
+            area_of_responsibility::ActiveModel {
+                left_bound: Set(1_000_000_000.0),
+                right_bound: Set(1_000_001_000.0),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let group_aor = mk_aor(
+            &env.dbx,
+            area_of_responsibility::ActiveModel {
+                left_bound: Set(2_000_000_000.0),
+                right_bound: Set(2_000_001_000.0),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_group_aor(
+            &env.dbx,
+            signal_group_aor::ActiveModel {
+                master_key: Set(group.group_master_key.clone()),
+                aor_id: Set(group_aor.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let organism = mk_organism(&env.dbx, Default::default()).await.unwrap();
+        mk_organism_aor(
+            &env.dbx,
+            organism_aor::ActiveModel {
+                organism_id: Set(organism.id),
+                aor_id: Set(organism_aor.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                sigint_zone_id: Set(existing_login.sigint_zone_id),
+                organism_id: Set(Some(organism.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let integration = insert_integration(&env, login.id).await;
+        let (item_id, _) = insert_grouped_inbox_item(&env, &group).await;
+        clear_iggy_events(&env, integration.id).await;
+
+        area_of_responsibility::ActiveModel {
+            id: Set(group_aor.id),
+            left_bound: Set(1_000_000_500.0),
+            right_bound: Set(1_000_001_500.0),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        assert_visibility_reconciliation(&env, &integration, item_id, true)
+            .await;
+        clear_iggy_events(&env, integration.id).await;
+
+        area_of_responsibility::ActiveModel {
+            id: Set(group_aor.id),
+            left_bound: Set(2_000_000_000.0),
+            right_bound: Set(2_000_001_000.0),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        assert_visibility_reconciliation(&env, &integration, item_id, false)
+            .await;
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn active_integration_prevents_organism_deletion() {
+        let fixture = group_visibility_fixture().await;
+        let organism_id = fixture.login.organism_id.unwrap();
+
+        let result = organism::ActiveModel {
+            id: Set(organism_id),
+            deleted_permanently: Set(true),
+            ..Default::default()
+        }
+        .update(&fixture.env.dbx)
+        .await;
+
+        assert!(result.is_err());
+        let organism = organism::Entity::find_by_id(organism_id)
+            .one(&fixture.env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!organism.deleted_permanently);
     }
 
     #[actix_web::test]
