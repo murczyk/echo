@@ -480,7 +480,7 @@ async fn issue_3569_cyber_viewer_permissions_are_additive() {
 #[actix_web::test]
 #[serial]
 async fn issue_3569_viewer_cannot_create_or_edit_messages_or_reports() {
-    use crate::entities::signal_message;
+    use crate::entities::{bgtask, signal_message};
     use crate::sigint::direct_submit::{edit_message, submit_direct};
     let (env, _guard) = crate::functest::tests::cleanup_locked().await.unwrap();
     let login = find_test_login(&env.dbx).await.unwrap();
@@ -499,6 +499,9 @@ async fn issue_3569_viewer_cannot_create_or_edit_messages_or_reports() {
             .route("/test/session", web::post().to(start_test_user_session))
             .service(submit_direct)
             .service(edit_message)
+            .service(crate::rer_importer::import_csv::rer_csv_import)
+            .service(crate::rer_importer::import_csv::rer_delta_csv_import)
+            .service(crate::rer_importer::import_kmz::rer_delta_kmz_import)
             .service(crate::rer_importer::inbox::inbox_submit)
             .service(crate::tags::inbox_message_tags_add)
             .service(crate::tags::inbox_message_tags_rm)
@@ -515,6 +518,7 @@ async fn issue_3569_viewer_cannot_create_or_edit_messages_or_reports() {
     assert!(response.status().is_success());
     let cookie = response.response().cookies().next().unwrap().into_owned();
     let before = signal_message::Entity::find().all(&env.dbx).await.unwrap();
+    let tasks_before = bgtask::Entity::find().all(&env.dbx).await.unwrap();
     for (uri, payload) in [
         (
             "/api/1.1/submit-direct",
@@ -556,6 +560,34 @@ async fn issue_3569_viewer_cannot_create_or_edit_messages_or_reports() {
         .await;
         assert_eq!(response.status(), actix_web::http::StatusCode::FORBIDDEN);
     }
+    for uri in [
+        "/api/rer/csv-import",
+        "/api/rer/delta-csv-import",
+        "/api/rer/delta-kmz-import",
+    ] {
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(uri)
+                .cookie(cookie.clone())
+                .insert_header((
+                    "Content-Type",
+                    "multipart/form-data; boundary=echo-3569",
+                ))
+                .set_payload(
+                    "--echo-3569\r\nContent-Disposition: form-data; name=\"file\"; filename=\"import.csv\"\r\nContent-Type: text/csv\r\n\r\nforbidden import\r\n--echo-3569--\r\n",
+                )
+                .to_request(),
+        )
+        .await;
+        assert_eq!(
+            response.status(),
+            actix_web::http::StatusCode::FORBIDDEN,
+            "{uri}"
+        );
+    }
+    let tasks_after = bgtask::Entity::find().all(&env.dbx).await.unwrap();
+    assert_eq!(tasks_before, tasks_after);
     let after = signal_message::Entity::find().all(&env.dbx).await.unwrap();
     assert_eq!(before, after);
 }
