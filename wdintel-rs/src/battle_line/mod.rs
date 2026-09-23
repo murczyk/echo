@@ -2291,20 +2291,23 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn shared_update_locks_allow_concurrent_message_ingestion() {
-        let (env, _guard) =
-            crate::functest::tests::cleanup_locked().await.unwrap();
-        let first = env.dbx.begin().await.unwrap();
+        let _guard = crate::functest::tests::lock_cleanup().await;
+        let dbx = crate::new_pg_pool_from_mode(crate::types::Mode::Test)
+            .await
+            .unwrap();
+        let first = dbx.begin().await.unwrap();
         lock_updates_shared(&first).await.unwrap();
 
-        let second = env.dbx.begin().await.unwrap();
+        let second = dbx.begin().await.unwrap();
         second
             .execute_unprepared("set local lock_timeout = '50ms'")
             .await
             .unwrap();
         lock_updates_shared(&second).await.unwrap();
 
-        let exclusive = env.dbx.begin().await.unwrap();
+        let exclusive = dbx.begin().await.unwrap();
         exclusive
             .execute_unprepared("set local lock_timeout = '50ms'")
             .await

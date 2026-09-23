@@ -622,6 +622,7 @@ fn proposed_compound_regiment_brigade_change(
         brigade,
         orbit_values,
         &mut visited,
+        Some((EchoEchelon::Brigade, brigade)),
         &mut attributes,
     )?;
     if let Some(attribute) = attributes
@@ -717,6 +718,7 @@ fn move_attributes(
         source,
         orbit_values,
         &mut visited,
+        None,
         &mut attributes,
     )?;
     if !attributes.iter().any(|attribute| {
@@ -738,6 +740,7 @@ fn relocate_value(
     value: &str,
     orbit_values: &HashMap<EchoEchelon, HashSet<String>>,
     visited: &mut HashSet<EchoEchelon>,
+    redundant_destination: Option<(EchoEchelon, &str)>,
     attributes: &mut Vec<OrbitUnitAttributeChange>,
 ) -> Option<()> {
     if destination_echelon == source_echelon {
@@ -752,7 +755,11 @@ fn relocate_value(
         return Some(());
     }
     if !visited.insert(destination_echelon) {
-        return None;
+        return redundant_destination
+            .is_some_and(|destination| {
+                destination == (destination_echelon, value)
+            })
+            .then_some(());
     }
     let destination = echelon_value(unit, destination_echelon);
     if destination == value {
@@ -770,6 +777,7 @@ fn relocate_value(
                     destination,
                     orbit_values,
                     visited,
+                    redundant_destination,
                     attributes,
                 )?;
             }
@@ -1108,6 +1116,53 @@ mod tests {
                 OrbitUnitAttributeChange {
                     attribute: "brigade",
                     current: String::new(),
+                    proposed: "132 омсбр".to_string(),
+                },
+                OrbitUnitAttributeChange {
+                    attribute: "regiment",
+                    current: "109 осп 132 омсбр".to_string(),
+                    proposed: "109 осп".to_string(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn repairs_compound_regiment_through_division_brigade_cycle() {
+        let mut unit = sigint_unit();
+        unit.regiment = "109 осп 132 омсбр".to_string();
+        unit.brigade = "47 тд".to_string();
+        unit.division = "132 омсбр".to_string();
+        let values = HashMap::from([
+            (
+                EchoEchelon::Regiment,
+                HashSet::from([matching::normalize_name("109 осп")]),
+            ),
+            (
+                EchoEchelon::Brigade,
+                HashSet::from([matching::normalize_name("132 омсбр")]),
+            ),
+            (
+                EchoEchelon::Division,
+                HashSet::from([matching::normalize_name("47 тд")]),
+            ),
+        ]);
+
+        let change =
+            proposed_change(&unit, EchelonMove::RegimentToBrigade, &values)
+                .expect("compound repair must resolve the reciprocal cycle");
+
+        assert_eq!(
+            change.hierarchy_change.attributes,
+            vec![
+                OrbitUnitAttributeChange {
+                    attribute: "division",
+                    current: "132 омсбр".to_string(),
+                    proposed: "47 тд".to_string(),
+                },
+                OrbitUnitAttributeChange {
+                    attribute: "brigade",
+                    current: "47 тд".to_string(),
                     proposed: "132 омсбр".to_string(),
                 },
                 OrbitUnitAttributeChange {
