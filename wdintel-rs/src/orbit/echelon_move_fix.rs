@@ -543,6 +543,12 @@ fn matching_echelons(
         .collect()
 }
 
+fn echelon_values_match(echelon: EchoEchelon, left: &str, right: &str) -> bool {
+    let left = matching::normalize_sigint_name_for_echelon(echelon, left);
+    !left.is_empty()
+        && left == matching::normalize_sigint_name_for_echelon(echelon, right)
+}
+
 fn proposed_change(
     unit: &EchelonMoveUnit,
     echelon_move: EchelonMove,
@@ -573,13 +579,16 @@ fn proposed_change(
         [] if echelon_move.removes_unknown_value() => None,
         _ => return None,
     };
-    let preserved_destination = destination
-        .filter(|destination| echelon_value(unit, *destination) == source)
-        .map(|destination| OrbitUnitAttributeChange {
-            attribute: echelon_attribute(destination),
-            current: source.to_string(),
-            proposed: source.to_string(),
-        });
+    let preserved_destination = destination.and_then(|destination| {
+        let destination_value = echelon_value(unit, destination);
+        echelon_values_match(destination, destination_value, source).then(
+            || OrbitUnitAttributeChange {
+                attribute: echelon_attribute(destination),
+                current: destination_value.to_string(),
+                proposed: destination_value.to_string(),
+            },
+        )
+    });
     let attributes = match destination {
         None => {
             vec![OrbitUnitAttributeChange {
@@ -643,11 +652,12 @@ fn proposed_compound_regiment_brigade_change(
         });
     }
     let preserved_destination =
-        (unit.brigade == brigade).then(|| OrbitUnitAttributeChange {
-            attribute: "brigade",
-            current: brigade.to_string(),
-            proposed: brigade.to_string(),
-        });
+        echelon_values_match(EchoEchelon::Brigade, &unit.brigade, brigade)
+            .then(|| OrbitUnitAttributeChange {
+                attribute: "brigade",
+                current: unit.brigade.clone(),
+                proposed: unit.brigade.clone(),
+            });
     Some(EchelonMoveChange {
         unit_name: unit.name.clone(),
         hierarchy_change: OrbitUnitHierarchyChange {
@@ -693,7 +703,7 @@ fn move_attributes(
     orbit_values: &HashMap<EchoEchelon, HashSet<String>>,
 ) -> Option<Vec<OrbitUnitAttributeChange>> {
     let destination = echelon_value(unit, destination_echelon);
-    if destination != source
+    if !echelon_values_match(destination_echelon, destination, source)
         && matching_echelons(destination, orbit_values) == [source_echelon]
     {
         return Some(vec![
@@ -718,7 +728,7 @@ fn move_attributes(
         source,
         orbit_values,
         &mut visited,
-        None,
+        Some((destination_echelon, source)),
         &mut attributes,
     )?;
     if !attributes.iter().any(|attribute| {
@@ -756,13 +766,14 @@ fn relocate_value(
     }
     if !visited.insert(destination_echelon) {
         return redundant_destination
-            .is_some_and(|destination| {
-                destination == (destination_echelon, value)
+            .is_some_and(|(echelon, redundant_value)| {
+                echelon == destination_echelon
+                    && echelon_values_match(echelon, redundant_value, value)
             })
             .then_some(());
     }
     let destination = echelon_value(unit, destination_echelon);
-    if destination == value {
+    if echelon_values_match(destination_echelon, destination, value) {
         return Some(());
     }
     if !destination.is_empty() {
@@ -1171,6 +1182,81 @@ mod tests {
                     proposed: "109 осп".to_string(),
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn repairs_regiment_through_division_brigade_cycle() {
+        let mut unit = sigint_unit();
+        unit.regiment = "132 омсбр".to_string();
+        unit.brigade = "47 тд".to_string();
+        unit.division = "132 омсбр".to_string();
+        let values = HashMap::from([
+            (
+                EchoEchelon::Brigade,
+                HashSet::from([matching::normalize_name("132 омсбр")]),
+            ),
+            (
+                EchoEchelon::Division,
+                HashSet::from([matching::normalize_name("47 тд")]),
+            ),
+        ]);
+
+        let change =
+            proposed_change(&unit, EchelonMove::RegimentToBrigade, &values)
+                .expect("regiment repair must resolve the reciprocal cycle");
+
+        assert_eq!(
+            change.hierarchy_change.attributes,
+            vec![
+                OrbitUnitAttributeChange {
+                    attribute: "division",
+                    current: "132 омсбр".to_string(),
+                    proposed: "47 тд".to_string(),
+                },
+                OrbitUnitAttributeChange {
+                    attribute: "brigade",
+                    current: "47 тд".to_string(),
+                    proposed: "132 омсбр".to_string(),
+                },
+                OrbitUnitAttributeChange {
+                    attribute: "regiment",
+                    current: "132 омсбр".to_string(),
+                    proposed: String::new(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn clears_normalized_duplicate_brigade_from_division() {
+        let mut unit = sigint_unit();
+        unit.brigade = "132 ОМСБР".to_string();
+        unit.division = "132 омсбр".to_string();
+        let values = HashMap::from([(
+            EchoEchelon::Brigade,
+            HashSet::from([matching::normalize_name("132 омсбр")]),
+        )]);
+
+        let change =
+            proposed_change(&unit, EchelonMove::DivisionToBrigade, &values)
+                .expect("normalized duplicate must be cleared from division");
+
+        assert_eq!(
+            change.hierarchy_change.attributes,
+            vec![OrbitUnitAttributeChange {
+                attribute: "division",
+                current: "132 омсбр".to_string(),
+                proposed: String::new(),
+            }]
+        );
+        assert_eq!(
+            change.preserved_destination,
+            Some(OrbitUnitAttributeChange {
+                attribute: "brigade",
+                current: "132 ОМСБР".to_string(),
+                proposed: "132 ОМСБР".to_string(),
+            })
         );
     }
 
