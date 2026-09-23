@@ -27,10 +27,10 @@ use log::{debug, info, warn};
 use regex::RegexBuilder;
 use sea_orm::sea_query::{Expr, LockBehavior, LockType, OnConflict};
 use sea_orm::{
-    ActiveValue::NotSet, ActiveValue::Set, ColumnTrait, ConnectionTrait,
-    DatabaseConnection, EntityTrait, ExprTrait, JoinType, ModelTrait,
-    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, QueryTrait,
-    RelationTrait, TransactionTrait,
+    ActiveValue::NotSet, ActiveValue::Set, ColumnTrait, Condition,
+    ConnectionTrait, DatabaseConnection, EntityTrait, ExprTrait, JoinType,
+    ModelTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
+    QueryTrait, RelationTrait, TransactionTrait,
 };
 use std::collections::{BTreeSet, HashMap};
 use std::time::Duration as StdDuration;
@@ -192,17 +192,43 @@ fn unit_text_candidates(
 }
 
 fn normalize_structural_text(value: &str) -> String {
-    value
-        .split(|character: char| !character.is_alphanumeric())
-        .filter(|word| !word.is_empty())
-        .map(str::to_lowercase)
-        .join(" ")
+    crate::unit::normalize_unit_formation_name(value)
 }
 
 fn contains_structural_segment(value: &str, segment: &str) -> bool {
     let value = format!(" {} ", normalize_structural_text(value));
     let segment = format!(" {} ", normalize_structural_text(segment));
     value.contains(&segment)
+}
+
+fn equivalent_unit_notion_aliases(word: &str) -> Vec<&str> {
+    let aliases = crate::config::UNIT_FORMATION_EQUIVALENT_NOTIONS
+        .iter()
+        .find_map(|(canonical, aliases)| {
+            (*canonical == word).then_some(*aliases)
+        })
+        .unwrap_or_default();
+    std::iter::once(word)
+        .chain(aliases.iter().copied())
+        .unique()
+        .collect_vec()
+}
+
+fn structural_word_condition(word: &str) -> Condition {
+    equivalent_unit_notion_aliases(word)
+        .into_iter()
+        .map(|alias| {
+            alias
+                .split(|character: char| !character.is_alphanumeric())
+                .filter(|word| !word.is_empty())
+                .fold(Condition::all(), |condition, word| {
+                    condition.add(
+                        orbit_unit::Column::GenerativeUnitNameFull
+                            .ilike(format!("%{word}%")),
+                    )
+                })
+        })
+        .fold(Condition::any(), |condition, alias| condition.add(alias))
 }
 
 async fn structural_candidates<C>(
@@ -214,7 +240,7 @@ where
 {
     let segments = crate::unit::parse_library_unit_segments(unit_v2)
         .into_iter()
-        .map(|segment| normalize_unit_label(&segment))
+        .map(|segment| normalize_structural_text(&segment))
         .filter(|segment| !segment.is_empty())
         .unique()
         .collect_vec();
@@ -237,10 +263,7 @@ where
         .filter(orbit_unit::Column::Deleted.eq(false))
         .filter(orbit_unit::Column::GenerativeUnitNameFull.is_not_null());
     for word in words {
-        query = query.filter(
-            orbit_unit::Column::GenerativeUnitNameFull
-                .ilike(format!("%{word}%")),
-        );
+        query = query.filter(structural_word_condition(&word));
     }
 
     Ok(query
@@ -455,14 +478,7 @@ fn equivalent_sigint_unit_name_variants(
         .chain(
             normalized
                 .split_whitespace()
-                .map(|word| {
-                    crate::config::UNIT_FORMATION_EQUIVALENT_NOTIONS
-                        .iter()
-                        .find_map(|(canonical, aliases)| {
-                            (*canonical == word).then_some(aliases.to_vec())
-                        })
-                        .unwrap_or_else(|| vec![word])
-                })
+                .map(equivalent_unit_notion_aliases)
                 .multi_cartesian_product()
                 .map(|words| words.join(" ")),
         )
@@ -2272,6 +2288,37 @@ mod tests {
         );
         delete_orbit_units(&env.dbx, vec![battalion_orbit, brigade_orbit])
             .await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn structural_matching_normalizes_equivalent_unit_notions() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let hierarchy = unique_unit_label();
+        let orbit_unit = insert_orbit_unit(
+            &env.dbx,
+            &format!("{hierarchy} (кт) ПКС"),
+            None,
+            "brigade",
+            &[unit.id],
+        )
+        .await;
+        let unit_v2 = format!("{hierarchy} кт РВСП");
+
+        assert_eq!(
+            resolve_sigint_unit_id(&env.dbx, Some(&unit_v2), None)
+                .await
+                .unwrap(),
+            Some(unit.id)
+        );
+        delete_orbit_units(&env.dbx, vec![orbit_unit]).await;
     }
 
     #[tokio::test]
