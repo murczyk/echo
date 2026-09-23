@@ -1826,7 +1826,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn rvsp_matches_pks_sigint_unit_name() {
+    async fn rvsp_variants_match_pks_sigint_unit_name() {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
         let hierarchy = unique_unit_label();
@@ -1840,14 +1840,17 @@ mod tests {
         )
         .await
         .unwrap();
-        let unit_v2 = format!("{hierarchy} кт РВСП");
-
-        assert_eq!(
-            resolve_sigint_unit_id(&env.dbx, Some(&unit_v2), None)
-                .await
-                .unwrap(),
-            Some(unit.id)
-        );
+        for qualifier in ["кт\tРВСП", "(кт) РВСП", "(кт) ПКС"]
+        {
+            let unit_v2 = format!("{hierarchy} {qualifier}");
+            assert_eq!(
+                resolve_sigint_unit_id(&env.dbx, Some(&unit_v2), None)
+                    .await
+                    .unwrap(),
+                Some(unit.id),
+                "qualifier: {qualifier:?}"
+            );
+        }
     }
 
     #[tokio::test]

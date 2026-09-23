@@ -434,7 +434,8 @@ fn capture_library_unit(text: &str) -> Vec<UnitInfo> {
         .build()
         .expect("Invalid Regex");
         static ref UNIT_STANDALONE_RE: Regex = RegexBuilder::new(
-            &r#"\b(?<name>$s1)\b"#.replace("$s1", &list_standalone().join("|"))
+            &r#"(?:^|\W)(?<name>$s1)\b"#
+                .replace("$s1", &list_standalone().join("|"))
         )
         .case_insensitive(true)
         .build()
@@ -1107,21 +1108,37 @@ mod tests {
     }
 
     #[test]
-    fn parse_library_unit_keeps_command_post_and_rvsp() {
-        let body = r#"Отримано з поста "Пост 6"
+    fn parse_library_unit_keeps_command_post_and_rvsp_variants() {
+        let body = |qualifier| {
+            format!(
+                r#"Отримано з поста "Пост 6"
 --------------------------------------
 23.09.2026, 19:15:37
 156.4150
-УКХ р/м 5 мср 2 мсб 2 мсп кт РВСП, р-н КРУПЄЦ Курська область
+УКХ р/м 5 мср 2 мсб 2 мсп {qualifier}, р-н КРУПЄЦ Курська область
 АКА
 БЕЛЬБЕК
 
-1.  Бельбек, я Ака, 3 карандаша дома. Как принял?"#;
+1.  Бельбек, я Ака, 3 карандаша дома. Как принял?"#
+            )
+        };
 
-        assert_eq!(
-            Some("5 мср 2 мсб 2 мсп кт рвсп".to_string()),
-            to_unit_txt(parse_library_unit(&body.to_string()))
-        );
+        for qualifier in [
+            "кт РВСП",
+            "кт   РВСП",
+            "кт\tРВСП",
+            "кт\nРВСП",
+            "(кт) РВСП",
+            "(кт) ПКС",
+        ] {
+            let unit = to_unit_txt(parse_library_unit(&body(qualifier)))
+                .expect("expected parsed unit");
+            assert_eq!(
+                normalize_unit_formation_name(&unit),
+                "5 мср 2 мсб 2 мсп кт пкс",
+                "qualifier: {qualifier:?}"
+            );
+        }
     }
 
     #[test]
