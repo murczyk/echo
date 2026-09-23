@@ -96,7 +96,7 @@ impl AgentFixture {
             "human_blocked" => human.deleted = Set(true),
             "human_removed" => human.deleted_permanently = Set(true),
             "human_role_revoked" => {
-                human.roles = Set(serde_json::json!(["Cyber"]))
+                human.roles = Set(serde_json::json!(["Basic"]))
             }
             "organism_disabled" => organism.enabled = Set(false),
             "organism_removed" => organism.deleted_permanently = Set(true),
@@ -156,9 +156,12 @@ fn identity(
 
 #[actix_web::test]
 #[serial]
-async fn disabled_agent_startup_test_is_bound_restricted_and_revocable() {
+async fn issue_3568_cyber_agent_startup_is_bound_restricted_and_revocable() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let fixture = AgentFixture::new(&env).await;
+    let mut human = fixture.human.clone().into_active_model();
+    human.roles = Set(serde_json::json!(["Cyber"]));
+    human.update(&env.dbx).await.unwrap();
     let app = test::init_service(bootstrap_app(env.clone()).await).await;
     let (token, correlation_id) =
         issue_bootstrap(&env, fixture.agent.id, None, true)

@@ -20,6 +20,7 @@ import Maybe exposing (withDefault)
 import Maybe.Extra as MaybeX
 import Pages_.RerAnalysis.Utils
 import Shared.Components.Popup as Popup
+import Shared.Components.AuthorLabel
 import Shared.Components.RerMessage
 import Shared.Components.Watermark as Watermark
 import Shared.MarkedText
@@ -894,10 +895,14 @@ leftColumn ( messageId, message ) ps model =
                         [ class "py-1 px-2 flex items-center"
                         ]
                         [ i [ class "bi bi-person-circle mr-1 text-icons leading-none", title "Відправник" ] []
-                        , span [ class "text-xs" ] [ text <| Maybe.withDefault "" sender.givenName ++ " " ++ Maybe.withDefault "" sender.familyName ]
+                        , span [ class "text-xs" ]
+                            [ Shared.Components.AuthorLabel.sender (Maybe.withDefault "" message.sender)
+                                (Maybe.withDefault "" sender.givenName ++ " " ++ Maybe.withDefault "" sender.familyName)
+                            ]
                         ]
             ]
-        , flip HtmlX.viewMaybe message.freq <|
+        , HtmlX.viewIf (Core.Auth.canUseRadioFeatures ps.user) <|
+          flip HtmlX.viewMaybe message.freq <|
             \freq ->
                 let
                     analysisHref withMap =
@@ -1020,7 +1025,11 @@ rightColumn ( messageId, message ) ps model =
             ListX.unique ps.messageNetworkIds
 
         metadataLinks =
-            Pages_.RerAnalysis.Utils.buildMetadataLinks ps.zone message
+            if Core.Auth.canUseRadioFeatures ps.user then
+                Pages_.RerAnalysis.Utils.buildMetadataLinks ps.zone message
+
+            else
+                []
 
         pointTokenClickUrl =
             if Pages_.RerAnalysis.Utils.messageHasPalitraTag ps.tags message then
@@ -1087,7 +1096,7 @@ rightColumn ( messageId, message ) ps model =
                                     |> Maybe.map .featureStrictNetworks
                                     |> Maybe.withDefault False
                         in
-                        case message.freq of
+                        case (if Core.Auth.canUseRadioFeatures ps.user then message.freq else Just "") of
                             Nothing ->
                                 text " "
 
@@ -1204,7 +1213,7 @@ rightColumn ( messageId, message ) ps model =
                             [ class "d-flex"
                             , style "font-size" ".9rem"
                             ]
-                            [ HtmlX.viewIf (MaybeX.isJust message.freq) <|
+                            [ HtmlX.viewIf (not (Core.Auth.canUseRadioFeatures ps.user) || MaybeX.isJust message.freq) <|
                                 div []
                                     [ freqAndLocBlock
                                     , HtmlX.viewIf Config.featureShowCallsignsMetadata <|

@@ -255,6 +255,10 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::users::types::LoginRsp,
             crate::users::types::Confirm2faReq,
             crate::users::types::User,
+            crate::users::types::AuthorIdentity,
+            crate::users::types::AuthorIdentitiesReq,
+            crate::users::types::AuthorIdentitiesRsp,
+            crate::users::types::DisplayNameSaveReq,
             crate::organism::goi::types::GoiUserIntegration,
             crate::organism::goi::types::GoiReportTabOrderItem,
             crate::organism::goi::types::GoiReportTabOrderListReq,
@@ -1029,6 +1033,10 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::users::types::LoginRsp,
             crate::users::types::Confirm2faReq,
             crate::users::types::User,
+            crate::users::types::AuthorIdentity,
+            crate::users::types::AuthorIdentitiesReq,
+            crate::users::types::AuthorIdentitiesRsp,
+            crate::users::types::DisplayNameSaveReq,
             crate::organism::goi::types::GoiUserIntegration,
             crate::organism::goi::types::GoiReportTabOrderItem,
             crate::organism::goi::types::GoiReportTabOrderListReq,
@@ -1758,6 +1766,11 @@ fn patch_backward_compatible_decoders(
 ) -> Result<String, AppError> {
     let output = patch_rer_duty_query_state_wf_decoder(output).context(h!())?;
     Ok(output
+        .replacen(
+            r#"Json.Decode.field "display_name" (Json.Decode.nullable (Json.Decode.string))"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "display_name" (Json.Decode.nullable (Json.Decode.string)), Json.Decode.succeed Nothing ]"#,
+            1,
+        )
         .replace(
             RER_ANALYSIS_WITHOUT_NETWORK_STRICT_DECODER_RAW,
             RER_ANALYSIS_WITHOUT_NETWORK_COMPAT_DECODER_RAW,

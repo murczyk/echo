@@ -8,6 +8,7 @@ import { isNullOrUndefined } from '../../utils/misc';
 import { PageHeader } from '../../components/PageHeader';
 import { SettingsMyGroupsSection } from './SettingsMyGroupsSection';
 import { SettingsMyOrganismSection } from './SettingsMyOrganismSection';
+import { SettingsProfileSection } from './SettingsProfileSection';
 import { SettingsDutySection } from './SettingsDutySection';
 import { SettingsAudioTranscriptionCard } from './SettingsAudioTranscriptionCard';
 import { SettingsMessageCard } from './SettingsMessageCard';
@@ -21,7 +22,8 @@ import {
   setDutyFilterPersistenceDisabled,
 } from '../rer-duty-neo/duty-filter-persistence';
 
-export type SettingsSection = 'myGroups' | 'myOrganism' | 'duty' | 'analysis' | 'myReports';
+export type SettingsSection =
+  'myGroups' | 'myOrganism' | 'duty' | 'analysis' | 'myReports' | 'profile';
 
 type SettingsNeoPageProps = {
   section?: string;
@@ -47,6 +49,7 @@ function parseSettingsSection(section: string | null | undefined): SettingsSecti
   if (section === 'myReports' || section === 'my-reports') {
     return 'myReports';
   }
+  if (section === 'profile') return 'profile';
   if (section === 'analysis') {
     return 'analysis';
   }
@@ -226,6 +229,12 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
             }}
           >
             <Tab
+              value="profile"
+              label="Профіль"
+              id="settings-neo-tab-profile"
+              aria-controls="settings-neo-panel-profile"
+            />
+            <Tab
               value="myGroups"
               label="Мої групи"
               id="settings-neo-tab-my-groups"
@@ -256,6 +265,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
             />
           </Tabs>
 
+          {settingsSection === 'profile' ? <SettingsProfileSection /> : null}
           {settingsSection === 'duty' ? (
             <SettingsDutySection
               loadInProgress={globalSettings.loadInProgress || dutySettings.loadInProgress}

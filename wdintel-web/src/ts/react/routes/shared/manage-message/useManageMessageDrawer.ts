@@ -1,3 +1,4 @@
+import { canUseRadioFeatures } from '../../../utils/roles';
 import { useState, useEffect, useMemo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -86,6 +87,7 @@ export type UseManageMessageDrawerProps = {
 export function useManageMessageDrawer({
   open,
   cyberEchoEnabled,
+  currentUser,
   onClose,
   onCreated,
   onEditSuccess,
@@ -96,6 +98,7 @@ export function useManageMessageDrawer({
   editSaveInFlight,
   onSubmitEdit,
 }: UseManageMessageDrawerProps) {
+  const radioFeaturesAllowed = canUseRadioFeatures(currentUser?.roles);
   const isEditMode = isPresent(editTarget);
   const isReportCreateMode = isPresent(reportSource) && !isEditMode;
   const isReportEditMode = (isEditMode && editAsReport) || editTargetLoadState.status !== 'idle';
@@ -190,7 +193,7 @@ export function useManageMessageDrawer({
   }, [cyberEchoEnabled, deviceNameInput, formReady]);
 
   useEffect(() => {
-    if (!formReady) return;
+    if (!formReady || !radioFeaturesAllowed) return;
     let active = true;
 
     setPostLoading(true);
@@ -208,7 +211,7 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [postInput, formReady]);
+  }, [postInput, formReady, radioFeaturesAllowed]);
 
   useEffect(() => {
     if (!formReady) return;
@@ -297,7 +300,7 @@ export function useManageMessageDrawer({
   }, [callsignInput, formReady]);
 
   useEffect(() => {
-    if (!formReady) return;
+    if (!formReady || !radioFeaturesAllowed) return;
     let active = true;
 
     setFreqLoading(true);
@@ -315,11 +318,11 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [freqInput, formReady]);
+  }, [freqInput, formReady, radioFeaturesAllowed]);
 
   const resolver = useMemo(
-    () => zodResolver(makeMessageSchema(isEditMode, false, isReportMode)),
-    [isEditMode, isReportMode],
+    () => zodResolver(makeMessageSchema(isEditMode, false, isReportMode, radioFeaturesAllowed)),
+    [isEditMode, isReportMode, radioFeaturesAllowed],
   );
 
   const methods = useForm<MessageFormData>({
@@ -383,7 +386,12 @@ export function useManageMessageDrawer({
     return () => window.removeEventListener('paste', handlePaste);
   }, [formReady, handlePaste]);
 
-  const { parsing, handleParse } = useMessageParser(methods, busy, setErrorMsg);
+  const { parsing, handleParse } = useMessageParser(
+    methods,
+    busy,
+    setErrorMsg,
+    radioFeaturesAllowed,
+  );
 
   const canSubmit = useMemo(() => {
     const selectedGroupKey = formValues.signalGroupMasterKey ?? '';
@@ -748,6 +756,7 @@ export function useManageMessageDrawer({
 
   const { onSubmit } = useMessageSubmit({
     busy,
+    radioFeaturesAllowed,
     cyberEchoEnabled,
     isEditMode,
     isReportMode,
@@ -767,6 +776,7 @@ export function useManageMessageDrawer({
   });
 
   return {
+    radioFeaturesAllowed,
     isEditMode,
     isReportMode,
     isReportCreateMode,

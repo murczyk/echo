@@ -226,7 +226,7 @@ it('renders the real MRT table without crashing on the filter label path', async
   root = createRoot(container);
 
   await act(async () => {
-    root?.render(createElement(RerNetworksNeoPage));
+    root?.render(createElement(RerNetworksNeoPage, { authUserRoles: ['Rer'] }));
     await Promise.resolve();
     await Promise.resolve();
   });
@@ -241,7 +241,7 @@ it('renders resize handles for resizable data columns', async () => {
   root = createRoot(container);
 
   await act(async () => {
-    root?.render(createElement(RerNetworksNeoPage));
+    root?.render(createElement(RerNetworksNeoPage, { authUserRoles: ['Rer'] }));
     await Promise.resolve();
     await Promise.resolve();
   });

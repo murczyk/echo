@@ -1,3 +1,4 @@
+import { useRadioFeatures } from '../../shared/RadioFeatures';
 import { Box, Paper, Tab, Tabs } from '@mui/material';
 
 import type { ComponentProps } from 'react';
@@ -190,6 +191,7 @@ export function NetworkDetailsTabPanel({
   onReloadFrequencies,
   callsignPanelProps,
 }: Props) {
+  const radioFeaturesAllowed = useRadioFeatures();
   return (
     <Paper
       variant="outlined"
@@ -227,16 +229,16 @@ export function NetworkDetailsTabPanel({
         >
           <Tab value="descriptions" label="Обґрунтування" />
           <Tab value="signs" label="Розвід. ознаки" />
-          <Tab value="frequencies" label="Частоти" />
+          {radioFeaturesAllowed ? <Tab value="frequencies" label="Частоти" /> : null}
           <Tab value="callsigns" label="Позивні" />
           {canViewActivityTab ? <Tab value="activity" label="Активність" /> : null}
-          <Tab value="direction-finding" label="Пеленгація" />
+          {radioFeaturesAllowed ? <Tab value="direction-finding" label="Пеленгація" /> : null}
           {canViewRelationsTab ? <Tab value="relations" label="Граф зв'язків" /> : null}
         </Tabs>
       </Box>
 
       <Box sx={{ minHeight: 0, flex: 1, overflow: 'hidden' }}>
-        {activeNetworkDetailsTab === 'frequencies' ? (
+        {radioFeaturesAllowed && activeNetworkDetailsTab === 'frequencies' ? (
           <Box sx={{ p: 2, minHeight: 0, minWidth: 0, flex: 1, display: 'flex', height: '100%' }}>
             <NetworkDetailsFrequenciesPanel
               network={network}
@@ -353,7 +355,7 @@ export function NetworkDetailsTabPanel({
               />
             </Box>
           </Box>
-        ) : activeNetworkDetailsTab === 'direction-finding' ? (
+        ) : radioFeaturesAllowed && activeNetworkDetailsTab === 'direction-finding' ? (
           <Box
             sx={{
               p: 2,

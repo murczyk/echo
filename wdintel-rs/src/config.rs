@@ -6,6 +6,9 @@ use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+pub const USER_DISPLAY_NAME_MAX_LENGTH: usize = 100;
+pub const USER_AUTHOR_IDENTITIES_MAX_BATCH_SIZE: usize = 200;
+
 pub const DEFAULT_PG_HOST: &str = "localhost";
 pub const DEFAULT_PG_PORT: u16 = 5432;
 pub const DEFAULT_PG_USER: &str = "wd";
@@ -402,6 +405,8 @@ pub const SIGINT_SIGNAL_TIMEOUT_MS: u64 = 1000;
 pub const SIGINT_MESSAGE_DATE_ONLY_HOUR: u32 = 12;
 pub const SIGINT_MESSAGE_MAX_ATTACHMENTS: usize = 20;
 pub const SIGINT_FILE_UPLOAD_MAX_BYTES: u64 = 6 * 1024 * 1024 * 1024;
+#[cfg(test)]
+pub const SIGINT_FILE_UPLOAD_TEST_MAX_BYTES: u64 = 1024 * 1024;
 pub const SIGINT_FILE_UPLOAD_FALLBACK_CHANNEL_CAPACITY: usize = 1;
 pub const SIGINT_FILE_UPLOAD_DIRECTORY_CLEANUP_BATCH: usize = 32;
 pub const SIGINT_FILE_UPLOAD_FREE_SPACE_RESERVE_BYTES: u64 = 512 * 1024 * 1024;

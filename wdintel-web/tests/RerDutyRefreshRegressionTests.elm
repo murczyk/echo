@@ -45,10 +45,10 @@ suite =
                                 }
 
                             ( waterfallA, _ ) =
-                                Waterfall.init "wf-a" Nothing
+                                Waterfall.init True "wf-a" Nothing
 
                             ( waterfallB, _ ) =
-                                Waterfall.init "wf-b" Nothing
+                                Waterfall.init True "wf-b" Nothing
 
                             messageA =
                                 callsignMessage "WOLF"
@@ -224,6 +224,7 @@ anonymousUser =
     , sigintZoneId = Nothing
     , organismId = Nothing
     , deltaLogin = Nothing
+    , displayName = Nothing
     , goiConfiguredForOrganism = False
     , goiFullAccessForOrganism = False
     , goiHost = Nothing

@@ -32,7 +32,7 @@ import {
   resolveUnresolvedUnitLabel,
   updateUnresolvedUnitLabelNote,
 } from '../../services/api/unresolved-unit-labels';
-import { hasRole } from '../../utils/roles';
+import { hasRole, hasRerOrCyber } from '../../utils/roles';
 import { SettingsNeoTable } from '../settings-neo/SettingsNeoTable';
 import { UnresolvedUnitLinkDialog } from './UnresolvedUnitLinkDialog';
 
@@ -127,7 +127,7 @@ export function AdminUnitUnparsedPage({
   const [resolveRow, setResolveRow] = useState<UnresolvedUnitLabel | null>(null);
   const canResolve =
     hasRole(authUserRoles, 'Admin') &&
-    hasRole(authUserRoles, 'Rer') &&
+    hasRerOrCyber(authUserRoles) &&
     hasRole(authUserRoles, 'UnitsEditor');
 
   const loadRows = useCallback(

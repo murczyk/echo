@@ -1,3 +1,4 @@
+import { useRadioFeatures } from '../../shared/RadioFeatures';
 import { Box, Divider, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
 
@@ -224,6 +225,7 @@ export function MainContentSections({
   transferTypeLabel: string;
   postItems: Array<{ id: number; label: string }>;
 }) {
+  const radioFeaturesAllowed = useRadioFeatures();
   const mainFields = buildMainFields({
     unitNames,
     network,
@@ -241,6 +243,9 @@ export function MainContentSections({
     transferTypeLabel,
     postItems,
   });
+  const visibleOperationalFields = operationalFields.filter(
+    (field) => radioFeaturesAllowed || !['range', 'transfer', 'radio', 'posts'].includes(field.key),
+  );
   const additionalFields = buildAdditionalFields({ network });
 
   if (layout === 'top') {
@@ -258,7 +263,7 @@ export function MainContentSections({
           layout={layout}
           compact={compact}
           labelWidth="minmax(176px, max-content)"
-          fields={operationalFields}
+          fields={visibleOperationalFields}
         />
         <AdditionalSection
           layout={layout}
@@ -278,7 +283,7 @@ export function MainContentSections({
         layout={layout}
         compact={compact}
         labelWidth={null}
-        fields={operationalFields}
+        fields={visibleOperationalFields}
       />
       <Divider />
       <AdditionalSection

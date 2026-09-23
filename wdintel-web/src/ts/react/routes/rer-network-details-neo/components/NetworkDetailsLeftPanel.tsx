@@ -1,3 +1,4 @@
+import { useRadioFeatures } from '../../shared/RadioFeatures';
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import KeyboardArrowDownOutlinedIcon from '@mui/icons-material/KeyboardArrowDownOutlined';
 import KeyboardArrowLeftOutlinedIcon from '@mui/icons-material/KeyboardArrowLeftOutlined';
@@ -187,11 +188,12 @@ export function NetworkDetailsLeftPanel({
     callsignCount,
     activityLabel,
   };
+  const radioFeaturesAllowed = useRadioFeatures();
   const topSummarySections = buildTopSummarySections({
     snapshot: mainInfoSnapshot,
-    network,
-    rangeLabel,
-    transferTypeLabel,
+    network: radioFeaturesAllowed ? network : network ? { ...network, radioStation: null } : null,
+    rangeLabel: radioFeaturesAllowed ? rangeLabel : '',
+    transferTypeLabel: radioFeaturesAllowed ? transferTypeLabel : '',
     postItems,
   });
   const collapsedTopSummaryItems = buildCollapsedTopSummaryItems({

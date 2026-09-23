@@ -1,6 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
+import { RadioFeaturesProvider } from '../../shared/RadioFeatures';
 import { act } from 'react';
 import type { ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -92,7 +93,11 @@ function renderDialog(overrides: Partial<Parameters<typeof NetworkEtalonkaReport
   };
 
   act(() => {
-    root.render(<NetworkEtalonkaReportDialog {...props} />);
+    root.render(
+      <RadioFeaturesProvider allowed>
+        {<NetworkEtalonkaReportDialog {...props} />}
+      </RadioFeaturesProvider>,
+    );
   });
 
   return {
@@ -185,13 +190,17 @@ describe('NetworkEtalonkaReportDialog', () => {
 
     act(() => {
       view.root.render(
-        <NetworkEtalonkaReportDialog
-          {...view.props}
-          report={{
-            ...view.props.report,
-            fromDateTimeStr: '2026-05-03T12:30',
-          }}
-        />,
+        <RadioFeaturesProvider allowed>
+          {
+            <NetworkEtalonkaReportDialog
+              {...view.props}
+              report={{
+                ...view.props.report,
+                fromDateTimeStr: '2026-05-03T12:30',
+              }}
+            />
+          }
+        </RadioFeaturesProvider>,
       );
     });
 
@@ -220,25 +229,33 @@ describe('NetworkEtalonkaReportDialog', () => {
 
     act(() => {
       view.root.render(
-        <NetworkEtalonkaReportDialog
-          {...view.props}
-          report={{
-            ...view.props.report,
-            dialogOpen: false,
-          }}
-        />,
+        <RadioFeaturesProvider allowed>
+          {
+            <NetworkEtalonkaReportDialog
+              {...view.props}
+              report={{
+                ...view.props.report,
+                dialogOpen: false,
+              }}
+            />
+          }
+        </RadioFeaturesProvider>,
       );
     });
 
     act(() => {
       view.root.render(
-        <NetworkEtalonkaReportDialog
-          {...view.props}
-          report={{
-            ...view.props.report,
-            dialogOpen: true,
-          }}
-        />,
+        <RadioFeaturesProvider allowed>
+          {
+            <NetworkEtalonkaReportDialog
+              {...view.props}
+              report={{
+                ...view.props.report,
+                dialogOpen: true,
+              }}
+            />
+          }
+        </RadioFeaturesProvider>,
       );
     });
 
@@ -381,13 +398,17 @@ describe('NetworkEtalonkaReportDialog', () => {
 
     act(() => {
       queuedView.root.render(
-        <NetworkEtalonkaReportDialog
-          {...queuedView.props}
-          report={{
-            ...queuedView.props.report,
-            progressExpanded: true,
-          }}
-        />,
+        <RadioFeaturesProvider allowed>
+          {
+            <NetworkEtalonkaReportDialog
+              {...queuedView.props}
+              report={{
+                ...queuedView.props.report,
+                progressExpanded: true,
+              }}
+            />
+          }
+        </RadioFeaturesProvider>,
       );
     });
 
@@ -400,13 +421,17 @@ describe('NetworkEtalonkaReportDialog', () => {
 
     act(() => {
       queuedView.root.render(
-        <NetworkEtalonkaReportDialog
-          {...queuedView.props}
-          report={{
-            ...queuedView.props.report,
-            progressExpanded: false,
-          }}
-        />,
+        <RadioFeaturesProvider allowed>
+          {
+            <NetworkEtalonkaReportDialog
+              {...queuedView.props}
+              report={{
+                ...queuedView.props.report,
+                progressExpanded: false,
+              }}
+            />
+          }
+        </RadioFeaturesProvider>,
       );
     });
 

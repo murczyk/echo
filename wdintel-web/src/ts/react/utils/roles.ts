@@ -35,7 +35,9 @@ export function hasRole(roles: readonly string[] | null | undefined, role: UserR
     case 'Bpla':
       return has('Admin') || has('Full') || has('Bpla');
     case 'Basic':
-      return has('Admin') || has('Full') || has('Bpla') || has('Rer') || has('Basic');
+      return (
+        has('Admin') || has('Full') || has('Bpla') || has('Rer') || has('Cyber') || has('Basic')
+      );
     case 'UnitsEditor':
       return has('Admin') || has('UnitsEditor');
     case 'NetworkEditor':
@@ -53,6 +55,14 @@ export function hasRole(roles: readonly string[] | null | undefined, role: UserR
     case 'No2FA':
       return has('No2FA');
   }
+}
+
+export function canUseRadioFeatures(roles: readonly string[] | null | undefined): boolean {
+  return hasRole(roles, 'Rer');
+}
+
+export function hasRerOrCyber(roles: readonly string[] | null | undefined): boolean {
+  return hasAnyRole(roles, ['Rer', 'Cyber']);
 }
 
 export function canReadDevices(roles: readonly string[] | null | undefined): boolean {

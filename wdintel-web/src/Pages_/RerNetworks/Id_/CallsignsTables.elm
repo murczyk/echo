@@ -1808,7 +1808,7 @@ networkCallsignsTableConfig shared model _ =
                                         Just source ->
                                             div []
                                                 [ span [ class "text-sm" ] [ text source.name ]
-                                                , if sourceId == 2 && row.radioFreq /= Nothing then
+                                                , if model.radioFeaturesAllowed && sourceId == 2 && row.radioFreq /= Nothing then
                                                     span [ class "text-xs text-muted-foreground ml-1" ]
                                                         [ text <| Maybe.withDefault "" row.radioFreq ]
 
@@ -1874,7 +1874,7 @@ editCallsignsSidebar model user shared =
 
 
 callsignCreateSidebarContent : Shared.Model -> Model -> Auth.User -> Html CallsignsMsg
-callsignCreateSidebarContent shared model _ =
+callsignCreateSidebarContent shared model user =
     div [ class "flex flex-col h-full" ]
         [ div [ class "flex-1 p-6 overflow-y-auto" ]
             [ h2 [ class "text-lg font-semibold mb-6" ] [ text "Створити позивний мережі" ]
@@ -2139,7 +2139,7 @@ callsignCreateSidebarContent shared model _ =
                             |> Checkbox.view
                         ]
                     ]
-                , if Maybe.andThen .sourceId model.callsignCreateState == Just 2 then
+                , if Core.Auth.canUseRadioFeatures user && Maybe.andThen .sourceId model.callsignCreateState == Just 2 then
                     div []
                         [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота *" ]
                         , input
@@ -2194,7 +2194,7 @@ callsignCreateSidebarContent shared model _ =
                                     Maybe.andThen .sourceId model.callsignCreateState == Just 2
 
                                 roFreqEmpty =
-                                    if isRO then
+                                    if Core.Auth.canUseRadioFeatures user && isRO then
                                         Maybe.andThen .radioFreq model.callsignCreateState
                                             |> Maybe.map (String.trim >> (==) "")
                                             |> Maybe.withDefault True
@@ -2211,7 +2211,7 @@ callsignCreateSidebarContent shared model _ =
 
 
 editCallsignSidebarContent : Shared.Model -> Model -> B.User -> Html CallsignsMsg
-editCallsignSidebarContent shared model _ =
+editCallsignSidebarContent shared model user =
     div [ class "flex flex-col h-full" ]
         [ div [ class "flex-1 p-6 overflow-y-auto" ]
             [ h2 [ class "text-lg font-semibold mb-6" ] [ text "Редагувати позивний мережі" ]
@@ -2476,7 +2476,7 @@ editCallsignSidebarContent shared model _ =
                             |> Checkbox.view
                         ]
                     ]
-                , if Maybe.andThen .sourceId model.editCallsignState == Just 2 then
+                , if Core.Auth.canUseRadioFeatures user && Maybe.andThen .sourceId model.editCallsignState == Just 2 then
                     div []
                         [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота *" ]
                         , input
@@ -2540,7 +2540,7 @@ editCallsignSidebarContent shared model _ =
                                     Maybe.andThen .sourceId model.editCallsignState == Just 2
 
                                 roFreqEmpty =
-                                    if isRO then
+                                    if Core.Auth.canUseRadioFeatures user && isRO then
                                         Maybe.andThen .radioFreq model.editCallsignState
                                             |> Maybe.map (String.trim >> (==) "")
                                             |> Maybe.withDefault True

@@ -1,5 +1,20 @@
 {
   "migrations": {
+    "echo:m20260923_130904_two_factor_auth_enabled": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_backfill" }
+      ]
+    },
+    "echo:m20260922_142506_login_display_name": {
+      "changes": [
+        { "table": "public.login", "strategy": "replicated_snapshot", "targeted_resnapshot": true }
+      ]
+    },
+    "echo:m20260922_185417_duty_exclude_menu_enabled": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_backfill" }
+      ]
+    },
     "echo:m20260919_132912_sigint_unit_changelog_index": {
       "changes": []
     },

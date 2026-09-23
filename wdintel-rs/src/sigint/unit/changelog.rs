@@ -5,7 +5,7 @@ use crate::config::SIGINT_UNIT_CHANGELOG_LIMIT;
 use crate::entities::sigint_unit;
 use crate::error::AppError;
 use crate::types::*;
-use crate::users::{ensure_rer_role, login_id_from_identity};
+use crate::users::{ensure_base_role, login_id_from_identity};
 use actix_web::post;
 use actix_web::web::{Data, Json};
 use chrono::NaiveDateTime;
@@ -71,7 +71,7 @@ pub async fn unit_changelog(
     env: Data<Env>,
     req: Json<UnitDetailsReq>,
 ) -> Result<Json<UnitChangelogRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     let can_view_orbit = super::orbit::can_view_orbit_data(&env.dbx, &login)
         .await

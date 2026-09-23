@@ -856,9 +856,25 @@ async fn target_api_smoke_covers_all_routes() {
     let login = login.update(&env.dbx).await.unwrap();
     let response = post_json!(
         "/api/sigint/device-name/create",
-        json!({"name": "ECHO-3461 denied cyber-only device"})
+        json!({"name": "ECHO-3568 allowed cyber-only device"})
     );
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = post_json!(
+        "/api/sigint/device-name/search",
+        json!({"search": "ECHO-3568 allowed cyber-only"})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = post_json!(
+        "/api/sigint/device-name/resolve",
+        json!({"names": ["ECHO-3568 allowed cyber-only device"]})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let resolved: Value = test::read_body_json(response).await;
+    assert_eq!(resolved["devices"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        resolved["devices"][0]["name"],
+        "ECHO-3568 allowed cyber-only device"
+    );
 
     let mut login = login.into_active_model();
     login.roles = Set(json!(["Rer", ROLE_CYBER]));

@@ -1,3 +1,4 @@
+import { canUseRadioFeatures } from '../../utils/roles';
 import { useCallback } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
@@ -383,7 +384,9 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
 
   const downloadEtalonkaReport = useCallback(async () => {
     const network = state.network;
-    const report = state.etalonkaReport;
+    const report = canUseRadioFeatures(state.currentUser?.roles)
+      ? state.etalonkaReport
+      : { ...state.etalonkaReport, activeFreqsOnly: false };
 
     if (!network || report.running) return;
 
@@ -398,7 +401,7 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
         redirectToLogin();
       }
     }
-  }, [runEtalonkaReportTask, state.etalonkaReport, state.network, setState]);
+  }, [runEtalonkaReportTask, state.etalonkaReport, state.currentUser, state.network, setState]);
 
   return {
     openEtalonkaReportDialog,

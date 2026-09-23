@@ -23,6 +23,7 @@ import Uuid.Barebones
 import Route exposing (Route)
 import Set exposing (Set)
 import Shared.Callsign
+import Shared.Components.AuthorLabel
 import Shared.Components.Watermark as Watermark
 import Shared.MarkedText
 import Shared.Model
@@ -1412,7 +1413,10 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                                     ++ " "
                                     ++ Maybe.withDefault "" profile.familyName
                   in
-                  itemBlock { iconTitle = "Відправник", iconName = "bi-person-circle", label = Just label } []
+                  div [ class "flex items-center" ]
+                    [ i [ class "bi mr-2 text-icons leading-none bi-person-circle", title "Відправник" ] []
+                    , Shared.Components.AuthorLabel.sender (Maybe.withDefault "" message.sender) label
+                    ]
                 , let
                     updatedRouteString =
                         case vps.currentRoute of
@@ -1433,10 +1437,12 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                             [ i [ class "bi bi-box-arrow-up-right cursor-pointer text-action text-sm", title "Відкрити частоту на мапі в окремому вікні" ] [] ]
                         ]
                   in
+                  HtmlX.viewIf (Core.Auth.canUseRadioFeatures vps.user) <|
                   itemBlock { label = message.freq, iconName = "bi-broadcast", iconTitle = "Частота" } actionsBlock
                 , itemBlock { iconTitle = "Координати", iconName = "bi-geo", label = message.coords } []
                 , itemBlock { iconTitle = "Локація", iconName = "bi-geo-alt", label = message.location } []
-                , itemBlock { iconTitle = "Пости", iconName = "bi-binoculars", label = message.post } []
+                , HtmlX.viewIf (Core.Auth.canUseRadioFeatures vps.user) <|
+                  itemBlock { iconTitle = "Пости", iconName = "bi-binoculars", label = message.post } []
                 ]
 
         messageColumn =
@@ -1529,7 +1535,11 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                 ]
 
         metadataLinks =
-            Pages_.RerAnalysis.Utils.buildMetadataLinks vps.zone message
+            if Core.Auth.canUseRadioFeatures vps.user then
+                Pages_.RerAnalysis.Utils.buildMetadataLinks vps.zone message
+
+            else
+                []
 
         markedTextModel =
             message.textMarked
@@ -1706,7 +1716,16 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
         renderOtherComment comment =
             div
                 []
-                [ strong [] [ text (commentAuthorLabel signalMessageSenderLabel comment) ]
+                [ strong []
+                    [ if isPostAuthoredComment comment then
+                        text (commentAuthorLabel signalMessageSenderLabel comment)
+
+                      else if trim comment.login == systemCommentLogin then
+                        Shared.Components.AuthorLabel.sender (Maybe.withDefault "" message.sender) (commentAuthorLabel signalMessageSenderLabel comment)
+
+                      else
+                        Shared.Components.AuthorLabel.view comment.login
+                    ]
                 , text ": "
                 , text comment.comment
                 ]

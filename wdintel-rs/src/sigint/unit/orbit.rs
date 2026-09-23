@@ -16,7 +16,7 @@ use crate::error::AppError;
 use crate::h;
 use crate::types::{debug, warn, Env, ShortContext};
 use crate::users::{
-    ensure_admin, ensure_rer_role, has_role, login_id_from_identity,
+    ensure_admin, ensure_base_role, has_role, login_id_from_identity,
 };
 use actix_web::post;
 use actix_web::web::{Data, Json};
@@ -39,7 +39,7 @@ pub async fn can_view_orbit_data(
     {
         return Ok(false);
     }
-    match has_role(dbx, login_id, "Rer").await {
+    match crate::users::ensure_base_role_by_id(dbx, login_id).await {
         Ok(()) => Ok(true),
         Err(AppError::Forbidden(_)) => Ok(false),
         Err(err) => Err(err),
@@ -848,7 +848,7 @@ pub async fn unit_orbit_children(
     env: Data<Env>,
     req: Json<UnitDetailsReq>,
 ) -> Result<Json<UnitOrbitChildrenRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
     if !can_view_orbit_data(&env.dbx, &login).await? {
         return Err(AppError::Forbidden(
@@ -1088,7 +1088,7 @@ pub async fn orbit_link_candidates(
     env: Data<Env>,
     req: Json<OrbitUnitLinkCandidatesReq>,
 ) -> Result<Json<OrbitUnitLinkCandidatesRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
     ensure_orbit_editor_access(&env.dbx, &login).await?;
     let req = req.into_inner();
@@ -1106,7 +1106,7 @@ pub async fn create_unit_duplicate_candidates(
     env: Data<Env>,
     req: Json<CreateUnitReq>,
 ) -> Result<Json<ListUnitsByIdRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
     has_role(&env.dbx, &login, "UnitsEditor").await.c(h!())?;
     if !can_view_orbit_data(&env.dbx, &login).await? {
@@ -1238,7 +1238,7 @@ pub async fn search_orbit_units(
     env: Data<Env>,
     req: Json<OrbitUnitSearchReq>,
 ) -> Result<Json<OrbitUnitLinkCandidatesRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
     ensure_orbit_editor_access(&env.dbx, &login).await?;
     let units = manual_orbit_link_candidates(&env.dbx, &req.search).await?;
@@ -1251,7 +1251,7 @@ pub async fn import_orbit_unit(
     env: Data<Env>,
     req: Json<ImportOrbitUnitReq>,
 ) -> Result<Json<CreateUnitWithAutoNetworkRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
     ensure_orbit_editor_access(&env.dbx, &login).await?;
     let orbit_unit_id = parse_orbit_unit_id(&req.orbit_unit_id)?;
@@ -1266,7 +1266,7 @@ pub async fn link_orbit_unit(
     env: Data<Env>,
     req: Json<LinkOrbitUnitReq>,
 ) -> Result<Json<()>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
     ensure_orbit_editor_access(&env.dbx, &login).await?;
     let req = req.into_inner();
@@ -1409,7 +1409,7 @@ pub async fn unlink_orbit_unit(
     env: Data<Env>,
     req: Json<LinkOrbitUnitReq>,
 ) -> Result<Json<()>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
     ensure_orbit_editor_access(&env.dbx, &login).await?;
     let req = req.into_inner();
@@ -3495,12 +3495,17 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn rer_role_and_admin_can_view_orbit_data() {
+    async fn issue_3568_rer_cyber_and_admin_can_view_orbit_data() {
         let env = cleanup().await.unwrap();
         let admin_login =
             create_login_with_roles(&env.dbx, "orbit-admin", &["Admin"]).await;
         let rer_login =
             create_login_with_roles(&env.dbx, "orbit-rer", &["Rer"]).await;
+        let cyber_login =
+            create_login_with_roles(&env.dbx, "orbit-cyber", &["Cyber"]).await;
+        assert!(can_view_orbit_data(&env.dbx, &cyber_login.id)
+            .await
+            .unwrap());
         let basic_login =
             create_login_with_roles(&env.dbx, "orbit-basic", &[]).await;
 

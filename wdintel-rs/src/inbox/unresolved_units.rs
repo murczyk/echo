@@ -3,7 +3,7 @@ use crate::error::AppError;
 use crate::h;
 use crate::types::{Env, ShortContext};
 use crate::users::{
-    ensure_admin, ensure_rer_role, has_role, login_id_from_identity,
+    ensure_admin, ensure_base_role, has_role, login_id_from_identity,
 };
 use actix_web::post;
 use actix_web::web::{Data, Json};
@@ -414,7 +414,7 @@ async fn ensure_admin_unit_editor(
     user: &actix_identity::Identity,
 ) -> Result<uuid::Uuid, AppError> {
     ensure_admin(&env.dbx, user).await.c(h!())?;
-    ensure_rer_role(&env.dbx, user).await.c(h!())?;
+    ensure_base_role(&env.dbx, user).await.c(h!())?;
     let login = login_id_from_identity(user).c(h!())?;
     has_role(&env.dbx, &login, "UnitsEditor").await.c(h!())?;
     Ok(login)

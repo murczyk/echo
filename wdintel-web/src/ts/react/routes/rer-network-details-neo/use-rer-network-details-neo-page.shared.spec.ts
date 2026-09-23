@@ -14,6 +14,8 @@ import {
   normalizeNetworkPelengSinceChange,
   normalizeNetworkPelengTillChange,
   canViewNetworkActivityTab,
+  canEditNetwork,
+  canDeleteCatalogCallsign,
   canViewNetworkRelationsTab,
 } from './use-rer-network-details-neo-page.shared';
 import { parseDateInputExclusiveEndInTimeZone, parseDateInputInTimeZone } from '../../utils/misc';
@@ -82,6 +84,7 @@ describe('use-rer-network-details-neo-page.shared date parsing', () => {
 
   it('allows the activity tab only for backend activity roles', () => {
     expect(canViewNetworkActivityTab({ roles: ['Rer'] } as any)).toBe(true);
+    expect(canViewNetworkActivityTab({ roles: ['Cyber'] } as any)).toBe(true);
     expect(canViewNetworkActivityTab({ roles: ['Full'] } as any)).toBe(true);
     expect(canViewNetworkActivityTab({ roles: ['Admin'] } as any)).toBe(true);
     expect(canViewNetworkActivityTab({ roles: ['Api'] } as any)).toBe(false);
@@ -90,9 +93,18 @@ describe('use-rer-network-details-neo-page.shared date parsing', () => {
 
   it('allows the relations tab for Api and the legacy read roles', () => {
     expect(canViewNetworkRelationsTab({ roles: ['Rer'] } as any)).toBe(true);
+    expect(canViewNetworkRelationsTab({ roles: ['Cyber'] } as any)).toBe(true);
     expect(canViewNetworkRelationsTab({ roles: ['Api'] } as any)).toBe(true);
     expect(canViewNetworkRelationsTab({ roles: ['ApiAgent'] } as any)).toBe(true);
     expect(canViewNetworkRelationsTab({ roles: ['Full'] } as any)).toBe(true);
     expect(canViewNetworkRelationsTab({ roles: ['Admin'] } as any)).toBe(true);
+  });
+  it('#3568 preserves editor requirements for Cyber users', () => {
+    expect(canEditNetwork({ roles: ['Cyber'] } as any)).toBe(false);
+    expect(canEditNetwork({ roles: ['UnitsEditor'] } as any)).toBe(false);
+    expect(canEditNetwork({ roles: ['Cyber', 'UnitsEditor'] } as any)).toBe(true);
+    expect(canDeleteCatalogCallsign({ roles: ['Cyber'] } as any)).toBe(false);
+    expect(canDeleteCatalogCallsign({ roles: ['CallsignsEditor'] } as any)).toBe(false);
+    expect(canDeleteCatalogCallsign({ roles: ['Cyber', 'CallsignsEditor'] } as any)).toBe(true);
   });
 });

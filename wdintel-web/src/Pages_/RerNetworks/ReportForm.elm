@@ -3,6 +3,7 @@ module Pages_.RerNetworks.ReportForm exposing
     , view
     )
 
+import Html.Extra
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Pages_.RerNetworks.ReportConfig as ReportConfig exposing (ReportType(..), ReportTypeOption(..))
@@ -14,7 +15,8 @@ import Shared.Components.RadioGroup as RadioGroup
 {-| Конфігурація для форми звіту
 -}
 type alias Config msg =
-    { onReportTypeChanged : ReportTypeOption -> msg
+    { radioFeaturesAllowed : Bool
+    , onReportTypeChanged : ReportTypeOption -> msg
     , onActiveFreqsOnlyChanged : Bool -> msg
     , onIncludeCallsignFullNamesChanged : Bool -> msg
     , onIncludeSigintSignsChanged : Bool -> msg
@@ -128,6 +130,7 @@ commonSettingsView config settings =
             }
             |> Checkbox.withContent [ text "Лише активні частоти" ]
             |> Checkbox.view
+            |> Html.Extra.viewIf config.radioFeaturesAllowed
         , Checkbox.new
             { isChecked = settings.includeCallsignFullNames
             , onToggle = config.onIncludeCallsignFullNamesChanged
@@ -152,6 +155,7 @@ commonSettingsView config settings =
             }
             |> Checkbox.withContent [ text "Включати заголовки та частоти" ]
             |> Checkbox.view
+            |> Html.Extra.viewIf config.radioFeaturesAllowed
         ]
 
 
@@ -166,12 +170,14 @@ extendedSettingsView config settings =
             }
             |> Checkbox.withContent [ text "Включити «Активна з» для частот" ]
             |> Checkbox.view
+            |> Html.Extra.viewIf config.radioFeaturesAllowed
         , Checkbox.new
             { isChecked = settings.includeFreqCreatedAt
             , onToggle = config.onIncludeFreqCreatedAtChanged
             }
             |> Checkbox.withContent [ text "Включити «Дата прив'язки» для частот" ]
             |> Checkbox.view
+            |> Html.Extra.viewIf config.radioFeaturesAllowed
         , Checkbox.new
             { isChecked = settings.includeUnitCallsigns
             , onToggle = config.onIncludeUnitCallsignsChanged
@@ -184,6 +190,7 @@ extendedSettingsView config settings =
             }
             |> Checkbox.withContent [ text "Включити карту пеленгів" ]
             |> Checkbox.view
+            |> Html.Extra.viewIf config.radioFeaturesAllowed
         ]
 
 

@@ -157,6 +157,7 @@ init flagsResult route =
             Just
                 { id = ""
                 , name = "anonymous"
+                , displayName = Nothing
                 , roles = []
                 , sigintZoneId = Nothing
                 , organismId = Nothing
@@ -874,7 +875,7 @@ shouldRedirectUnauthorizedPage : Route.Path.Path -> B.User -> Bool
 shouldRedirectUnauthorizedPage path user =
     case path of
         Route.Path.RerPalitraNeo ->
-            not (Core.Auth.hasRole "Rer" user)
+            not (Core.Auth.hasRerOrCyber user)
 
         Route.Path.Devices ->
             not (Core.Auth.canReadDevices user)

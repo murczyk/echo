@@ -1,3 +1,4 @@
+import { RadioFeaturesProvider } from '../RadioFeatures';
 import React from 'react';
 import { FormProvider, Controller, useFormContext } from 'react-hook-form';
 import {
@@ -421,7 +422,7 @@ export function ManageMessageDrawer(props: Props) {
   };
 
   return (
-    <>
+    <RadioFeaturesProvider allowed={drawerState.radioFeaturesAllowed}>
       <Drawer
         anchor="right"
         open={props.open}
@@ -626,6 +627,7 @@ export function ManageMessageDrawer(props: Props) {
                       />
 
                       <NetworkSection
+                        radioFeaturesAllowed={drawerState.radioFeaturesAllowed}
                         isEditMode={isEditMode}
                         busy={busy}
                         recentValues={recentValues}
@@ -651,11 +653,13 @@ export function ManageMessageDrawer(props: Props) {
 
                       {!isReportMode ? (
                         <>
-                          <DmrSection
-                            showAdvanced={showAdvanced}
-                            busy={busy}
-                            recentValues={recentValues}
-                          />
+                          {drawerState.radioFeaturesAllowed ? (
+                            <DmrSection
+                              showAdvanced={showAdvanced}
+                              busy={busy}
+                              recentValues={recentValues}
+                            />
+                          ) : null}
 
                           <AdvancedFieldsSection
                             showAdvanced={showAdvanced}
@@ -768,6 +772,6 @@ export function ManageMessageDrawer(props: Props) {
         submitting={deleteInFlight}
         disabled={saving}
       />
-    </>
+    </RadioFeaturesProvider>
   );
 }

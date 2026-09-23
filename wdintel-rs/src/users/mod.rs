@@ -17,6 +17,7 @@ use sea_query::Expr;
 use std::collections::{BTreeMap, HashMap};
 use uuid::Uuid;
 
+pub mod display_name;
 pub mod login_totp;
 pub mod totp;
 pub mod totp_challenge;
@@ -186,21 +187,21 @@ pub async fn ensure_basic_role(
     has_role(dbx, &login_id_from_identity(user)?, "Basic").await
 }
 
-pub async fn ensure_rer_role(
+pub async fn ensure_base_role(
     dbx: &sea_orm::DatabaseConnection,
     user: &Identity,
 ) -> Result<(), AppError> {
-    ensure_rer_role_by_id(dbx, &login_id_from_identity(user)?).await
+    ensure_base_role_by_id(dbx, &login_id_from_identity(user).c(h!())?).await
 }
 
-pub async fn ensure_rer_role_by_id<T>(
+pub async fn ensure_base_role_by_id<T>(
     dbx: &sea_orm::DatabaseConnection,
     user_id: &T,
 ) -> Result<(), AppError>
 where
     T: ToString + ?Sized,
 {
-    has_role(dbx, user_id, "Rer").await
+    has_any_role(dbx, user_id, vec!["Rer", "Cyber"]).await
 }
 
 pub async fn ensure_admin(
@@ -272,6 +273,7 @@ pub(crate) fn role_matches(
                 || roles.contains(&"Full".to_string())
                 || roles.contains(&"Bpla".to_string())
                 || roles.contains(&"Rer".to_string())
+                || roles.contains(&"Cyber".to_string())
                 || roles.contains(&"Basic".to_string())
         }
         "UnitsEditor" => {
@@ -569,6 +571,7 @@ pub async fn create_login(
             )),
             password_auth_enabled: Set(true),
             totp_epoch: Set(None),
+            display_name: NotSet,
         },
     )
     .await
@@ -803,6 +806,7 @@ async fn api_user(
         id: login_obj.id.to_string(),
         delta_login,
         name: login_obj.login.clone(),
+        display_name: login_obj.display_name.clone(),
         roles: serde_json::from_value(login_obj.roles).c(h!())?,
         sigint_zone_id: login_obj.sigint_zone_id,
         organism_id: login_obj.organism_id,
@@ -883,6 +887,7 @@ async fn api_user_info(
         id: login_obj.id.to_string(),
         delta_login,
         name: username.clone(),
+        display_name: login_obj.display_name.clone(),
         roles: serde_json::from_value(login_obj.roles).c(h!())?,
         sigint_zone_id: login_obj.sigint_zone_id,
         organism_id: login_obj.organism_id,
@@ -1084,7 +1089,11 @@ async fn begin_totp_login_challenge(
     login_obj: &login::Model,
 ) -> Result<LoginRsp, AppError> {
     // Unattended API clients (echo-agent / Api*) skip interactive TOTP.
-    if login_skips_totp(login_obj).context(h!())? {
+    if login_skips_totp(login_obj).context(h!())?
+        || !crate::system_settings::two_factor_auth_enabled(&env.dbx)
+            .await
+            .c(h!())?
+    {
         start_user_session(env, http_req, login_obj.id, &env.dbx)
             .await
             .context(h!())?;
@@ -1424,6 +1433,7 @@ pub async fn register_user(
         description: NotSet,
         password_auth_enabled: Set(true),
         totp_epoch: Set(None),
+        display_name: NotSet,
     }
     .insert(&txn)
     .await
@@ -1539,7 +1549,7 @@ pub async fn user_sigint_groups_detailed(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Admin", "Api"],
+        vec!["Rer", "Cyber", "Admin", "Api"],
     )
     .await?;
     let login = login_id_from_identity(&user)?;
@@ -1890,6 +1900,7 @@ async fn register_delta_user(
             description: Set(normalize_login_description(description)),
             password_auth_enabled: Set(false),
             totp_epoch: Set(None),
+            display_name: NotSet,
         },
     )
     .await
@@ -2575,6 +2586,7 @@ mod tests {
                 description: Default::default(),
                 password_auth_enabled: Set(false),
                 totp_epoch: Set(None),
+                display_name: NotSet,
             },
         )
         .await
@@ -2650,6 +2662,7 @@ mod tests {
                     description: Default::default(),
                     password_auth_enabled: Set(false),
                     totp_epoch: Set(None),
+                    display_name: NotSet,
                 },
             )
             .await
@@ -2723,6 +2736,7 @@ mod tests {
                     description: Default::default(),
                     password_auth_enabled: Set(false),
                     totp_epoch: Set(None),
+                    display_name: NotSet,
                 },
             )
             .await
@@ -2748,6 +2762,7 @@ mod tests {
                 description: Default::default(),
                 password_auth_enabled: Set(false),
                 totp_epoch: Set(None),
+                display_name: NotSet,
             },
         )
         .await
@@ -2802,6 +2817,7 @@ mod tests {
             description: Default::default(),
             password_auth_enabled: Set(false),
             totp_epoch: Set(None),
+            display_name: NotSet,
         }
         .insert(&env.dbx)
         .await
@@ -2826,6 +2842,7 @@ mod tests {
                 description: Default::default(),
                 password_auth_enabled: Set(false),
                 totp_epoch: Set(None),
+                display_name: NotSet,
             },
         )
         .await
@@ -2936,6 +2953,12 @@ mod tests {
     }
     fn roles(roles: &[&str]) -> Vec<String> {
         roles.iter().map(|role| (*role).to_owned()).collect()
+    }
+
+    #[test]
+    fn issue_3568_cyber_inherits_basic_but_not_rer() {
+        assert!(role_matches(&roles(&["Cyber"]), "Basic").unwrap());
+        assert!(!role_matches(&roles(&["Cyber"]), "Rer").unwrap());
     }
 
     #[test]

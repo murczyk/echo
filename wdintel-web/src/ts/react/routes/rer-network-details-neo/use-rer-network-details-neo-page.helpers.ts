@@ -3,7 +3,7 @@ import { NO_DATA_LABEL } from '../../utils/misc';
 import { FREQUENCY_FORMAT_ERROR } from './use-rer-network-details-neo-page.constants';
 import type { DisplayNetworkStatus } from './use-rer-network-details-neo-page.types';
 import { NETWORK_STATUS_ACTIVE } from './network-status';
-import { hasAnyRole, hasRole } from '../../utils/roles';
+import { hasAnyRole, hasRole, hasRerOrCyber } from '../../utils/roles';
 
 export function formatErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim() !== '') return error.message;
@@ -145,32 +145,32 @@ export function canEditNetwork(user: User | null): boolean {
 export function canManageDescriptions(user: User | null): boolean {
   return (
     hasRole(user?.roles, 'Admin') ||
-    (hasRole(user?.roles, 'UnitsEditor') && hasRole(user?.roles, 'Rer'))
+    (hasRole(user?.roles, 'UnitsEditor') && hasRerOrCyber(user?.roles))
   );
 }
 
 export function canManageNetworkCallsignActions(user: User | null): boolean {
   return (
     hasRole(user?.roles, 'Admin') ||
-    (hasRole(user?.roles, 'UnitsEditor') && hasRole(user?.roles, 'Rer'))
+    (hasRole(user?.roles, 'UnitsEditor') && hasRerOrCyber(user?.roles))
   );
 }
 
 export function canDeleteCatalogCallsign(user: User | null): boolean {
   return (
     hasRole(user?.roles, 'Admin') ||
-    (hasRole(user?.roles, 'CallsignsEditor') && hasRole(user?.roles, 'Rer'))
+    (hasRole(user?.roles, 'CallsignsEditor') && hasRerOrCyber(user?.roles))
   );
 }
 
 export function canViewNetworkActivityTab(user: User | null): boolean {
-  return hasRole(user?.roles, 'Rer');
+  return hasRerOrCyber(user?.roles);
 }
 
 export function canViewNetworkRelationsTab(user: User | null): boolean {
-  return hasAnyRole(user?.roles, ['Rer', 'Api', 'ApiAgent']);
+  return hasAnyRole(user?.roles, ['Rer', 'Cyber', 'Api', 'ApiAgent']);
 }
 
 function canManageNetworkActions(roles: readonly string[] | null | undefined): boolean {
-  return hasRole(roles, 'Admin') || (hasRole(roles, 'UnitsEditor') && hasRole(roles, 'Rer'));
+  return hasRole(roles, 'Admin') || (hasRole(roles, 'UnitsEditor') && hasRerOrCyber(roles));
 }

@@ -5,7 +5,7 @@ use crate::h;
 use crate::types::*;
 use crate::types::{Deserialize, Env, Serialize, ShortContext};
 use crate::users::{
-    ensure_rer_role, has_any_role, has_role, login_id_from_identity,
+    ensure_base_role, has_any_role, has_role, login_id_from_identity,
 };
 use actix_web::post;
 use actix_web::web::Json;
@@ -82,7 +82,7 @@ pub async fn list_keys(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Api"],
+        vec!["Rer", "Cyber", "Api"],
     )
     .await?;
     let user_login = login_id_from_identity(&user)?;
@@ -100,7 +100,7 @@ pub async fn create_key(
     env: actix_web::web::Data<Env>,
     req: Json<CreateEncryptionKeyReq>,
 ) -> Result<Json<EncryptionKeyData>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    ensure_base_role(&env.dbx, &user).await.context(h!())?;
     has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .context(h!())?;
@@ -147,7 +147,7 @@ pub async fn update_key(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateEncryptionKeyReq>,
 ) -> Result<Json<EncryptionKeyData>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    ensure_base_role(&env.dbx, &user).await.context(h!())?;
     has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .context(h!())?;
@@ -196,7 +196,7 @@ pub async fn delete_key(
     env: actix_web::web::Data<Env>,
     req: Json<DeleteEncryptionKeyReq>,
 ) -> Result<Json<EncryptionKeyData>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    ensure_base_role(&env.dbx, &user).await.context(h!())?;
     has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .context(h!())?;

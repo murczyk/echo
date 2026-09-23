@@ -27,6 +27,7 @@ import { navigateWithinSpa } from '../../utils/browser';
 import type { NetworksQuerySnapshot, UiMessage } from './use-rer-networks-neo-page.types';
 
 type MutationArgs = {
+  radioFeaturesAllowed: boolean;
   unitId?: number;
   networks: Network[];
   filters: Pick<NetworksFilterState, 'status' | 'unitText' | 'showOnlyInvestigating'>;
@@ -131,7 +132,11 @@ export function createRerNetworksNeoMutationActions(args: MutationArgs) {
         areaOfResponsibilityIds: [...editDialog.aorIds],
         name: editDialog.name.trim(),
         location: editDialog.location.trim(),
-        radioStation: editDialog.radioStation.trim() === '' ? null : editDialog.radioStation.trim(),
+        radioStation: args.radioFeaturesAllowed
+          ? editDialog.radioStation.trim() === ''
+            ? null
+            : editDialog.radioStation.trim()
+          : (network?.radioStation ?? null),
         purpose: editDialog.purpose.trim() === '' ? null : editDialog.purpose.trim(),
         operationMode:
           editDialog.operationMode.trim() === '' ? null : editDialog.operationMode.trim(),
@@ -170,10 +175,9 @@ export function createRerNetworksNeoMutationActions(args: MutationArgs) {
   async function saveNetworkCreate() {
     if (!args.createDialog) return;
 
-    const includeFrequency = shouldIncludeNetworkCreateFrequency(
-      args.createDialog,
-      args.supportNonRerInterceptions,
-    );
+    const includeFrequency =
+      args.radioFeaturesAllowed &&
+      shouldIncludeNetworkCreateFrequency(args.createDialog, args.supportNonRerInterceptions);
     const validationError = getNetworkUpsertValidationError(args.createDialog, {
       includeFrequency,
     });

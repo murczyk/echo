@@ -5,7 +5,7 @@ use crate::config::{
 use crate::entities::*;
 use crate::error::AppError;
 use crate::types::*;
-use crate::users::{ensure_rer_role, has_any_role, login_id_from_identity};
+use crate::users::{ensure_base_role, has_any_role, login_id_from_identity};
 use actix_identity::Identity;
 use actix_web::post;
 use actix_web::web::Json;
@@ -361,7 +361,7 @@ pub async fn report_docx_task_launch(
     env: actix_web::web::Data<Env>,
     req: Json<types::ReportPreviewReq>,
 ) -> Result<Json<i64>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let user_login = login_id_from_identity(&user)?;
     let req_inner = req.into_inner();
     crate::rer_importer::inbox::require_device_filters(

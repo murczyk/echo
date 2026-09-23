@@ -26,7 +26,7 @@ import {
 } from '../../services/api/bgtask';
 import type { PendingUnitMerge } from '../../services/api/bgtask';
 import { handleNavigateWithinSpaClick } from '../../utils/browser';
-import { hasRole } from '../../utils/roles';
+import { hasRole, hasRerOrCyber } from '../../utils/roles';
 import { SettingsNeoTable } from '../settings-neo/SettingsNeoTable';
 import { MergeUnitDialog } from '../rer-units-neo/components/UnitActionDialogs';
 import { formatUnitError } from '../rer-units-neo/helpers';
@@ -86,7 +86,7 @@ export function AdminUnitDuplicatesPage({
   const [submitting, setSubmitting] = useState(false);
   const mergePollController = useRef<AbortController | null>(null);
   const unitsLoadVersion = useRef(0);
-  const canMerge = hasRole(authUserRoles, 'Rer') && hasRole(authUserRoles, 'UnitsEditor');
+  const canMerge = hasRerOrCyber(authUserRoles) && hasRole(authUserRoles, 'UnitsEditor');
 
   const loadUnits = useCallback(async (signal?: AbortSignal) => {
     const version = ++unitsLoadVersion.current;
