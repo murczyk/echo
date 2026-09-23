@@ -114,6 +114,7 @@ async fn sync_integration(
     let destinations = load_destinations(&env.dbx, api_integration.id)
         .await
         .c(h!())?;
+    let first_destination = destinations.first().c(h!())?;
     let destination = destinations.last().c(h!())?;
     let started_at = Utc::now().naive_utc();
     let pending_events = load_pending_events(&env.dbx, api_integration.id)
@@ -129,16 +130,15 @@ async fn sync_integration(
     let last_sync_at = sync_historical_destinations(
         env,
         api_integration.id,
-        api_integration.last_sync_at.unwrap_or(started_at),
+        api_integration
+            .last_sync_at
+            .unwrap_or(first_destination.active_from),
         started_at,
         &destinations,
         &historical_events,
     )
     .await
     .c(h!())?;
-    prune_old_destinations(&env.dbx, api_integration.id)
-        .await
-        .c(h!())?;
 
     let url = destination.iggy_url.as_deref().c(h!())?;
     let iggy_login = destination.iggy_login.as_deref().c(h!())?;
@@ -181,6 +181,12 @@ async fn sync_integration(
             "Iggy integration {} did not publish any messages",
             api_integration.id,
         );
+        set_sync_completed(&env.dbx, api_integration.id, started_at)
+            .await
+            .c(h!())?;
+        scrub_old_destination_credentials(&env.dbx, api_integration.id)
+            .await
+            .c(h!())?;
         transaction.commit().await.c(h!())?;
         return Ok(());
     }
@@ -207,14 +213,23 @@ async fn sync_integration(
         &client,
     )
     .await;
+    let scrub_result = if sync_result.is_ok() {
+        scrub_old_destination_credentials(&env.dbx, api_integration.id).await
+    } else {
+        Ok(())
+    };
     let release_result = transaction.commit().await.c(h!());
-    let analytics_result = if sync_result.is_ok() && release_result.is_ok() {
+    let analytics_result = if sync_result.is_ok()
+        && scrub_result.is_ok()
+        && release_result.is_ok()
+    {
         maybe_log_analytics_entries(&env.dbx, &client, &api_integration).await
     } else {
         Ok(())
     };
     let shutdown_result = crate::iggy::shutdown(&client).await;
     sync_result.context(h!())?;
+    scrub_result.context(h!())?;
     release_result.context(h!())?;
     analytics_result.context(h!())?;
     shutdown_result.context(h!())?;
@@ -237,13 +252,13 @@ async fn load_destinations(
         .map_err(AppError::from)
 }
 
-async fn prune_old_destinations(
+async fn scrub_old_destination_credentials(
     dbx: &DatabaseConnection,
     api_integration_id: i64,
 ) -> Result<(), AppError> {
     dbx.query_one_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        "select prune_api_integration_iggy_destinations($1)",
+        "select scrub_api_integration_iggy_destination_credentials($1)",
         [api_integration_id.into()],
     ))
     .await
@@ -374,6 +389,9 @@ async fn sync_historical_destinations(
             .cloned()
             .collect::<Vec<_>>();
         if inbox_messages.is_empty() && events.is_empty() {
+            if created_after < completed_at {
+                last_sync_at = completed_at;
+            }
             continue;
         }
         let inbox_messages =
@@ -588,7 +606,10 @@ async fn maybe_log_analytics_entries(
     if has_pending_events {
         return Ok(());
     }
-    log_analytics_entries(client, api_integration).await
+    log_analytics_entries(client, api_integration)
+        .await
+        .context(h!())?;
+    Ok(())
 }
 
 async fn load_pending_event_messages(
@@ -626,6 +647,14 @@ fn render_pending_event(
     message: Option<&IggyInboxMessage>,
     action: PendingEventAction,
 ) -> Result<Vec<u8>, AppError> {
+    if event.payload["event_type"] == "sigint_inbox_item_created" {
+        return serde_json::to_vec(&(
+            event.sigint_inbox_item_id.c(h!())?,
+            message.c(h!())?,
+        ))
+        .c(h!())
+        .map_err(AppError::from);
+    }
     let mut payload = event.payload.clone();
     let fields = payload.as_object_mut().c(h!())?;
     fields.remove("previous_group_master_key");
@@ -664,15 +693,18 @@ async fn load_inbox_messages(
         crate::users::get_organism_login_ids_by_id(&env.dbx, api_user_login_id)
             .await
             .c(h!())?;
-    crate::rer_importer::inbox::get_inbox_messages_created_between(
-        api_user_login_id,
-        &logins,
-        env,
-        &req,
-        created_after,
-        created_till,
+    Ok(
+        crate::rer_importer::inbox::get_inbox_messages_created_between(
+            api_user_login_id,
+            &logins,
+            env,
+            &req,
+            created_after,
+            created_till,
+        )
+        .await
+        .context(h!())?,
     )
-    .await
 }
 
 async fn enrich_inbox_messages(
@@ -721,7 +753,9 @@ async fn load_callsign_ids(
         })
         .cloned()
         .collect::<Vec<_>>();
-    load_callsign_ids_for_texts(env, callsigns).await
+    Ok(load_callsign_ids_for_texts(env, callsigns)
+        .await
+        .context(h!())?)
 }
 
 async fn load_callsign_ids_for_texts(
@@ -1025,14 +1059,15 @@ async fn set_is_working(
     dbx: &DatabaseConnection,
     id: i64,
     is_working: bool,
-) -> Result<(), DbErr> {
+) -> Result<(), AppError> {
     api_integration::ActiveModel {
         id: Set(id),
         is_working: Set(is_working),
         ..Default::default()
     }
     .update(dbx)
-    .await?;
+    .await
+    .c(h!())?;
     Ok(())
 }
 
@@ -1040,7 +1075,7 @@ async fn set_sync_completed(
     dbx: &DatabaseConnection,
     id: i64,
     started_at: NaiveDateTime,
-) -> Result<(), DbErr> {
+) -> Result<(), AppError> {
     api_integration::ActiveModel {
         id: Set(id),
         last_sync_at: Set(Some(started_at)),
@@ -1048,7 +1083,8 @@ async fn set_sync_completed(
         ..Default::default()
     }
     .update(dbx)
-    .await?;
+    .await
+    .c(h!())?;
     Ok(())
 }
 
@@ -1056,7 +1092,8 @@ async fn set_sync_completed(
 mod tests {
     use super::*;
     use crate::entities::{
-        datasource_group, login,
+        datasource_group, echo_gpu_transcription_queue, login, media_summary,
+        ocr_job,
         sea_orm_active_enums::{
             SigintInboxItemCallsignSource, SigintInboxItemUnitKind,
         },
@@ -1064,7 +1101,8 @@ mod tests {
         sigint_inbox_item_callsign, sigint_inbox_item_network,
         sigint_inbox_item_settlement, sigint_inbox_item_unit, sigint_network,
         sigint_network_callsign, sigint_network_freq, sigint_signal,
-        signal_message, signal_message_group,
+        signal_message, signal_message_group, signal_message_media,
+        signal_message_media_conversion_job,
     };
     use crate::functest::tests::*;
     use crate::rer_importer::signals::CNSignal;
@@ -1462,12 +1500,76 @@ mod tests {
 
     #[actix_web::test]
     #[serial]
+    async fn creation_waits_for_concurrent_enablement() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let integration = insert_integration(&env, login.id).await;
+        api_integration::ActiveModel {
+            id: Set(integration.id),
+            sync_enabled: Set(false),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let message_id = message.id;
+        let transaction = env.dbx.begin().await.unwrap();
+        api_integration::ActiveModel {
+            id: Set(integration.id),
+            sync_enabled: Set(true),
+            ..Default::default()
+        }
+        .update(&transaction)
+        .await
+        .unwrap();
+        let dbx = env.dbx.clone();
+        let mut insert = tokio::spawn(async move {
+            mk_sigint_inbox_item(
+                &dbx,
+                sigint_inbox_item::ActiveModel {
+                    id: Set(message_id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        });
+        assert!(timeout(Duration::from_millis(100), &mut insert)
+            .await
+            .is_err());
+        transaction.commit().await.unwrap();
+        timeout(Duration::from_secs(5), insert)
+            .await
+            .unwrap()
+            .unwrap();
+
+        let events =
+            load_pending_events(&env.dbx, integration.id).await.unwrap();
+        assert!(events.iter().any(|event| {
+            event.sigint_inbox_item_id == Some(message_id)
+                && event.payload["event_type"] == "sigint_inbox_item_created"
+        }));
+    }
+
+    #[actix_web::test]
+    #[serial]
     async fn destination_change_keeps_queued_events_on_original_route() {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let integration = insert_integration(&env, login.id).await;
         let other = insert_integration(&env, login.id).await;
         let item_id = insert_inbox_item(&env, Utc::now().naive_utc()).await;
+        clear_iggy_events(&env, integration.id).await;
+        clear_iggy_events(&env, other.id).await;
         sigint_inbox_item::ActiveModel {
             id: Set(item_id),
             location: Set(Some("first edit".to_string())),
@@ -1567,16 +1669,32 @@ mod tests {
         .update(&env.dbx)
         .await
         .unwrap();
-        prune_old_destinations(&env.dbx, integration.id)
+        scrub_old_destination_credentials(&env.dbx, integration.id)
             .await
             .unwrap();
-        assert!(api_integration_iggy_destination::Entity::find_by_id(
-            old_destination.id
-        )
-        .one(&env.dbx)
-        .await
-        .unwrap()
-        .is_none());
+        let old_destination =
+            api_integration_iggy_destination::Entity::find_by_id(
+                old_destination.id,
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(old_destination.iggy_login, None);
+        assert_eq!(old_destination.iggy_password, None);
+
+        let less_privileged_login =
+            mk_login(&env.dbx, Default::default()).await.unwrap();
+        let route_reuse = api_integration::ActiveModel {
+            id: Set(integration.id),
+            api_user_login_id: Set(less_privileged_login.id),
+            iggy_url: Set(old_destination.iggy_url),
+            iggy_inbox_topic: Set(old_destination.iggy_inbox_topic),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await;
+        assert!(route_reuse.is_err());
     }
 
     #[actix_web::test]
@@ -1629,6 +1747,27 @@ mod tests {
         assert!(new_messages.iter().any(|(id, _)| *id == new_item_id));
         assert!(!new_messages.iter().any(|(id, _)| *id == old_item_id));
 
+        let creation_events =
+            load_pending_events(&env.dbx, integration.id).await.unwrap();
+        let old_creation = creation_events
+            .iter()
+            .find(|event| {
+                event.sigint_inbox_item_id == Some(old_item_id)
+                    && event.payload["event_type"]
+                        == "sigint_inbox_item_created"
+            })
+            .unwrap();
+        let new_creation = creation_events
+            .iter()
+            .find(|event| {
+                event.sigint_inbox_item_id == Some(new_item_id)
+                    && event.payload["event_type"]
+                        == "sigint_inbox_item_created"
+            })
+            .unwrap();
+        assert_eq!(old_creation.destination_id, destinations[0].id);
+        assert_eq!(new_creation.destination_id, destinations[1].id);
+
         api_integration_iggy_event::Entity::delete_many()
             .filter(
                 api_integration_iggy_event::Column::ApiIntegrationId
@@ -1637,16 +1776,18 @@ mod tests {
             .exec(&env.dbx)
             .await
             .unwrap();
-        prune_old_destinations(&env.dbx, integration.id)
+        scrub_old_destination_credentials(&env.dbx, integration.id)
             .await
             .unwrap();
-        assert!(api_integration_iggy_destination::Entity::find_by_id(
-            destinations[0].id
-        )
-        .one(&env.dbx)
-        .await
-        .unwrap()
-        .is_some());
+        let old_destination =
+            api_integration_iggy_destination::Entity::find_by_id(
+                destinations[0].id,
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(old_destination.iggy_password.is_some());
         api_integration::ActiveModel {
             id: Set(integration.id),
             last_sync_at: Set(Some(destinations[1].active_from)),
@@ -1655,27 +1796,32 @@ mod tests {
         .update(&env.dbx)
         .await
         .unwrap();
-        prune_old_destinations(&env.dbx, integration.id)
+        scrub_old_destination_credentials(&env.dbx, integration.id)
             .await
             .unwrap();
-        assert!(api_integration_iggy_destination::Entity::find_by_id(
-            destinations[0].id
-        )
-        .one(&env.dbx)
-        .await
-        .unwrap()
-        .is_none());
+        let old_destination =
+            api_integration_iggy_destination::Entity::find_by_id(
+                destinations[0].id,
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(old_destination.iggy_login, None);
+        assert_eq!(old_destination.iggy_password, None);
     }
 
     #[actix_web::test]
     #[serial]
-    async fn unit_deletion_queues_updated_message_without_unit_id() {
+    async fn unit_visibility_refreshes_linked_units_and_matching_callsigns() {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let group = find_test_datasource_group(&env.dbx).await.unwrap();
         let integration = insert_integration(&env, login.id).await;
         let (item_id, _) = insert_grouped_inbox_item(&env, &group).await;
         let unit = mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let callsign_id =
+            insert_callsign(&env, unit.id, Utc::now().naive_utc()).await;
         sigint_inbox_item_unit::ActiveModel {
             item_id: Set(item_id),
             unit_id: Set(unit.id),
@@ -1685,14 +1831,21 @@ mod tests {
         .insert(&env.dbx)
         .await
         .unwrap();
-        api_integration_iggy_event::Entity::delete_many()
-            .filter(
-                api_integration_iggy_event::Column::ApiIntegrationId
-                    .eq(integration.id),
-            )
-            .exec(&env.dbx)
-            .await
-            .unwrap();
+        let (callsign_item_id, _) =
+            insert_grouped_inbox_item(&env, &group).await;
+        sigint_inbox_item_callsign::ActiveModel {
+            sigint_inbox_item_id: Set(callsign_item_id),
+            callsign: Set("iggy-test callsign".to_string()),
+            source: Set(SigintInboxItemCallsignSource::Primary),
+            ordering: Set(0.0),
+            deleted: Set(false),
+            created_by_id: Set(login.id),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        clear_iggy_events(&env, integration.id).await;
 
         sigint_unit::ActiveModel {
             id: Set(unit.id),
@@ -1704,12 +1857,11 @@ mod tests {
         .unwrap();
         let events =
             load_pending_events(&env.dbx, integration.id).await.unwrap();
-        assert_eq!(events.len(), 1);
-        assert_eq!(events[0].sigint_inbox_item_id, Some(item_id));
-        assert_eq!(
-            events[0].payload["event_type"],
-            "sigint_inbox_item_updated"
-        );
+        assert_eq!(events.len(), 2);
+        assert!(events
+            .iter()
+            .all(|event| event.payload["event_type"]
+                == "sigint_inbox_item_updated"));
         let messages = load_pending_event_messages(
             &env,
             &integration.api_user_login_id,
@@ -1718,6 +1870,8 @@ mod tests {
         .await
         .unwrap();
         assert!(messages[&item_id].sigint_unit_ids.is_empty());
+        assert!(messages[&callsign_item_id].sigint_callsign_ids.is_empty());
+        clear_iggy_events(&env, integration.id).await;
 
         sigint_unit::ActiveModel {
             id: Set(unit.id),
@@ -1738,6 +1892,31 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(messages[&item_id].sigint_unit_ids, vec![unit.id]);
+        assert_eq!(
+            messages[&callsign_item_id].sigint_callsign_ids,
+            vec![callsign_id]
+        );
+        clear_iggy_events(&env, integration.id).await;
+
+        sigint_unit::ActiveModel {
+            id: Set(unit.id),
+            active: Set(false),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        let events =
+            load_pending_events(&env.dbx, integration.id).await.unwrap();
+        assert_eq!(events.len(), 2);
+        let messages = load_pending_event_messages(
+            &env,
+            &integration.api_user_login_id,
+            &events,
+        )
+        .await
+        .unwrap();
+        assert!(messages[&callsign_item_id].sigint_callsign_ids.is_empty());
     }
 
     struct AssociationFixture {
@@ -1826,7 +2005,7 @@ mod tests {
         .unwrap();
         let network_callsign = sigint_network_callsign::ActiveModel {
             sigint_network_id: Set(network.id),
-            sigint_callsign: Set("initial".to_string()),
+            sigint_callsign: Set("Iggy-Test Callsign".to_string()),
             sigint_callsign_id: Set(Some(callsign_id)),
             deleted: Set(false),
             created_at: Set(intercepted_at),
@@ -2169,6 +2348,95 @@ mod tests {
         assert_settlement_and_unlinks(&env, &fixture, &item_callsign).await;
     }
 
+    #[actix_web::test]
+    #[serial]
+    async fn network_visibility_queues_frequency_catalog_events() {
+        let env = cleanup().await.unwrap();
+        let fixture = create_association_fixture(&env).await;
+        clear_iggy_events(&env, fixture.integration.id).await;
+
+        sigint_network::ActiveModel {
+            id: Set(fixture.network.id),
+            deleted: Set(true),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        let events = load_pending_events(&env.dbx, fixture.integration.id)
+            .await
+            .unwrap();
+        assert_eq!(events.len(), 2);
+        assert!(events.iter().all(|event| event.payload["event_type"]
+            == "sigint_network_frequency_unlinked"));
+        let frequency_ids = events
+            .iter()
+            .map(|event| {
+                event.payload["sigint_network_freq_id"].as_i64().unwrap()
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            frequency_ids,
+            BTreeSet::from([
+                fixture.first_frequency.id,
+                fixture.second_frequency.id
+            ])
+        );
+        let logins = crate::users::get_organism_login_ids_by_id(
+            &env.dbx,
+            &fixture.integration.api_user_login_id,
+        )
+        .await
+        .unwrap();
+        let messages = crate::rer_importer::inbox::get_inbox_messages_by_ids(
+            &fixture.integration.api_user_login_id,
+            &logins,
+            &env,
+            &[fixture.item_id],
+        )
+        .await
+        .unwrap();
+        let messages = enrich_inbox_messages(&env, messages)
+            .await
+            .unwrap()
+            .into_iter()
+            .collect::<HashMap<_, _>>();
+        assert!(messages[&fixture.item_id]
+            .sigint_network_freq_ids
+            .is_empty());
+        clear_iggy_events(&env, fixture.integration.id).await;
+
+        sigint_inbox_item::ActiveModel {
+            id: Set(fixture.item_id),
+            freq: Set(Some("678.90".to_string())),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        let events = load_pending_events(&env.dbx, fixture.integration.id)
+            .await
+            .unwrap();
+        assert!(events.iter().all(|event| event.payload["event_type"]
+            != "sigint_inbox_item_network_frequencies_changed"));
+        clear_iggy_events(&env, fixture.integration.id).await;
+
+        sigint_network::ActiveModel {
+            id: Set(fixture.network.id),
+            deleted: Set(false),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        let events = load_pending_events(&env.dbx, fixture.integration.id)
+            .await
+            .unwrap();
+        assert_eq!(events.len(), 2);
+        assert!(events.iter().all(|event| event.payload["event_type"]
+            == "sigint_network_frequency_linked"));
+    }
+
     async fn clear_iggy_events(env: &Env, integration_id: i64) {
         api_integration_iggy_event::Entity::delete_many()
             .filter(
@@ -2178,6 +2446,101 @@ mod tests {
             .exec(&env.dbx)
             .await
             .unwrap();
+    }
+
+    async fn assert_single_updated_event(
+        env: &Env,
+        integration_id: i64,
+        item_id: i64,
+    ) {
+        let events =
+            load_pending_events(&env.dbx, integration_id).await.unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].sigint_inbox_item_id, Some(item_id));
+        assert_eq!(
+            events[0].payload["event_type"],
+            "sigint_inbox_item_updated"
+        );
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn derived_media_results_queue_updated_snapshots() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let group = find_test_datasource_group(&env.dbx).await.unwrap();
+        let integration = insert_integration(&env, login.id).await;
+        let (item_id, _) = insert_grouped_inbox_item(&env, &group).await;
+        let media = signal_message_media::ActiveModel {
+            id: Set(uuid::Uuid::new_v4()),
+            signal_message_id: Set(item_id),
+            content_type: Set("audio/ogg".to_string()),
+            file_ext: Set(Some("ogg".to_string())),
+            file_name: Set(Some("recording.ogg".to_string())),
+            size_bytes: Set(1),
+            created_at: Set(Utc::now().naive_utc()),
+            is_encrypted: Set(false),
+            storage_key: Set(None),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        clear_iggy_events(&env, integration.id).await;
+
+        echo_gpu_transcription_queue::ActiveModel {
+            source_id: Set(media.id),
+            state: Set("completed".to_string()),
+            transcribed_value: Set(Some("transcribed".to_string())),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        assert_single_updated_event(&env, integration.id, item_id).await;
+        clear_iggy_events(&env, integration.id).await;
+
+        ocr_job::ActiveModel {
+            media_id: Set(media.id),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        assert_single_updated_event(&env, integration.id, item_id).await;
+        clear_iggy_events(&env, integration.id).await;
+
+        media_summary::ActiveModel {
+            media_id: Set(media.id),
+            source_kind: Set("transcription".to_string()),
+            source_digest: Set("0".repeat(64)),
+            source_text: Set(None),
+            source_char_count: Set(1),
+            state: Set("failed".to_string()),
+            ai_engine_id: Set(None),
+            ai_engine_name: Set("test".to_string()),
+            model_name: Set("test".to_string()),
+            last_error: Set(Some("test".to_string())),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        assert_single_updated_event(&env, integration.id, item_id).await;
+        clear_iggy_events(&env, integration.id).await;
+
+        signal_message_media_conversion_job::ActiveModel {
+            signal_message_id: Set(item_id),
+            source_media_id: Set(media.id),
+            source_file_md5: Set("0".repeat(32)),
+            source_file_name: Set("recording.ogg".to_string()),
+            status: Set("pending".to_string()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        assert_single_updated_event(&env, integration.id, item_id).await;
     }
 
     async fn assert_updated_callsign_ids(
@@ -2204,6 +2567,24 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(messages[&fixture.item_id].sigint_callsign_ids, expected);
+        let network_unlinked = events.iter().find(|event| {
+            event.payload["event_type"] == "sigint_network_callsign_unlinked"
+                && event.payload["sigint_network_callsign_id"]
+                    == fixture.network_callsign.id
+        });
+        assert!(network_unlinked.is_some());
+        let network_linked = events
+            .iter()
+            .find(|event| {
+                event.payload["event_type"] == "sigint_network_callsign_linked"
+                    && event.payload["sigint_network_callsign_id"]
+                        == fixture.network_callsign.id
+            })
+            .unwrap();
+        assert_eq!(
+            network_linked.payload["sigint_callsign_ids"],
+            serde_json::json!(expected)
+        );
     }
 
     #[actix_web::test]
@@ -2240,6 +2621,26 @@ mod tests {
         sigint_callsign::ActiveModel {
             id: Set(fixture.callsign_id),
             deleted: Set(true),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        assert_updated_callsign_ids(&env, &fixture, Vec::new()).await;
+        clear_iggy_events(&env, fixture.integration.id).await;
+
+        sigint_callsign::ActiveModel {
+            id: Set(fixture.callsign_id),
+            deleted: Set(false),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        clear_iggy_events(&env, fixture.integration.id).await;
+        sigint_unit::ActiveModel {
+            id: Set(fixture.unit.id),
+            active: Set(false),
             ..Default::default()
         }
         .update(&env.dbx)
@@ -2350,9 +2751,32 @@ mod tests {
         )
         .await
         .unwrap();
+        let creation_event = events
+            .iter()
+            .find(|event| {
+                event.payload["event_type"] == "sigint_inbox_item_created"
+            })
+            .unwrap();
+        let creation: serde_json::Value = serde_json::from_slice(
+            &render_pending_event(
+                creation_event,
+                Some(&messages[&message.id]),
+                PendingEventAction::Publish,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(creation[0], message.id);
+        assert_eq!(creation[1]["text"], "edited message");
+        let updated_event = events
+            .iter()
+            .find(|event| {
+                event.payload["event_type"] == "sigint_inbox_item_updated"
+            })
+            .unwrap();
         let rendered: serde_json::Value = serde_json::from_slice(
             &render_pending_event(
-                &events[0],
+                updated_event,
                 Some(&messages[&message.id]),
                 PendingEventAction::Publish,
             )

@@ -4462,8 +4462,11 @@ pub async fn get_inbox_messages_by_ids(
     )
     .await
     .c(h!())?;
-    fetch_inbox_messages_with_query(&env.dbx, login, logins, env, &req, &query)
-        .await
+    Ok(fetch_inbox_messages_with_query(
+        &env.dbx, login, logins, env, &req, &query,
+    )
+    .await
+    .context(h!())?)
 }
 
 pub async fn get_inbox_messages_with_conn(

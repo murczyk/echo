@@ -5,6 +5,9 @@
         { "table": "public.system_settings", "strategy": "cdc_backfill" }
       ]
     },
+    "echo:m20260923_091303_sigint_inbox_callsign_iggy_index": {
+      "changes": []
+    },
     "echo:m20260922_142506_login_display_name": {
       "changes": [
         { "table": "public.login", "strategy": "replicated_snapshot", "targeted_resnapshot": true }

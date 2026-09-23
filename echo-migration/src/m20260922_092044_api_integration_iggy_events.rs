@@ -72,7 +72,7 @@ begin
         new.iggy_password, new.iggy_inbox_topic,
         clock_timestamp() at time zone 'utc'
     );
-    perform prune_api_integration_iggy_destinations(new.id);
+    perform scrub_api_integration_iggy_destination_credentials(new.id);
     return new;
 end;
 $$;
@@ -102,14 +102,17 @@ create index api_integration_iggy_event_pending_idx
 create index api_integration_iggy_event_destination_idx
     on api_integration_iggy_event (destination_id);
 
-create function prune_api_integration_iggy_destinations(integration_id bigint)
+create function scrub_api_integration_iggy_destination_credentials(integration_id bigint)
 returns void language sql as $$
-    delete from api_integration_iggy_destination destination
+    update api_integration_iggy_destination destination
+    set iggy_login = null, iggy_password = null
     where destination.api_integration_id = integration_id
         and destination.id <> (
             select max(id) from api_integration_iggy_destination
             where api_integration_id = integration_id
         )
+        and (destination.iggy_login is not null
+            or destination.iggy_password is not null)
         and not exists (
             select 1 from api_integration_iggy_event event
             where event.destination_id = destination.id
@@ -129,7 +132,6 @@ create function queue_api_integration_iggy_event(item_id bigint, event_payload j
 returns void language plpgsql as $$
 begin
     perform 1 from api_integration integration
-    where integration.sync_enabled and integration.has_iggy_connection
     order by integration.id for share;
     insert into api_integration_iggy_event (
         api_integration_id, destination_id, sigint_inbox_item_id, payload
@@ -146,11 +148,18 @@ end;
 $$;
 
 create function api_integration_iggy_has_publisher()
-returns boolean language sql stable as $$
+returns boolean language plpgsql as $$
+declare
+    has_publisher boolean;
+begin
+    perform 1 from api_integration integration
+    order by integration.id for share;
     select exists (
         select 1 from api_integration integration
         where integration.sync_enabled and integration.has_iggy_connection
-    );
+    ) into has_publisher;
+    return has_publisher;
+end;
 $$;
 
 create function api_integration_iggy_network_frequency_ids(
@@ -158,9 +167,10 @@ create function api_integration_iggy_network_frequency_ids(
 ) returns jsonb language sql stable as $$
     select coalesce(jsonb_agg(frequency.id order by frequency.id), '[]'::jsonb)
     from sigint_network_freq frequency
+    join sigint_network network on network.id = frequency.network_id
     where frequency.network_id = target_network_id
         and frequency.freq = item_freq
-        and not frequency.deleted
+        and not frequency.deleted and not network.deleted
         and frequency.active_from <= item_datetime
         and (frequency.active_to is null or item_datetime <= frequency.active_to);
 $$;
@@ -195,12 +205,70 @@ returns jsonb language sql stable as $$
             = api_integration_iggy_callsign_key(item_callsign);
 $$;
 
-create index sigint_inbox_item_callsign_active_iggy_match_key_idx
-    on sigint_inbox_item_callsign (
-        api_integration_iggy_callsign_key(callsign),
-        sigint_inbox_item_id
+create function queue_api_integration_iggy_network_callsign_refresh(callsign_keys text[])
+returns void language plpgsql as $$
+begin
+    if cardinality(callsign_keys) = 0 then
+        return;
+    end if;
+    perform 1 from api_integration integration
+    order by integration.id for share;
+    insert into api_integration_iggy_event (
+        api_integration_id, destination_id, sigint_inbox_item_id, payload
     )
-    where not deleted;
+    select integration.id, destination.id, null,
+        jsonb_build_object(
+            'event_type', 'sigint_network_callsign_unlinked',
+            'sigint_network_id', network_callsign.sigint_network_id,
+            'sigint_network_callsign_id', network_callsign.id,
+            'sigint_callsign_id', network_callsign.sigint_callsign_id,
+            'callsign', network_callsign.sigint_callsign,
+            'sigint_callsign_ids', api_integration_iggy_callsign_ids(
+                network_callsign.sigint_callsign
+            )
+        )
+    from sigint_network_callsign network_callsign
+    cross join api_integration integration
+    left join lateral (
+        select id from api_integration_iggy_destination
+        where api_integration_id = integration.id
+        order by id desc limit 1
+    ) destination on true
+    where not network_callsign.deleted
+        and api_integration_iggy_callsign_key(network_callsign.sigint_callsign)
+            = any(callsign_keys)
+        and integration.sync_enabled and integration.has_iggy_connection
+        and exists (select 1 from sigint_inbox_item_network
+            where sigint_network_id = network_callsign.sigint_network_id);
+    insert into api_integration_iggy_event (
+        api_integration_id, destination_id, sigint_inbox_item_id, payload
+    )
+    select integration.id, destination.id, null,
+        jsonb_build_object(
+            'event_type', 'sigint_network_callsign_linked',
+            'sigint_network_id', network_callsign.sigint_network_id,
+            'sigint_network_callsign_id', network_callsign.id,
+            'sigint_callsign_id', network_callsign.sigint_callsign_id,
+            'callsign', network_callsign.sigint_callsign,
+            'sigint_callsign_ids', api_integration_iggy_callsign_ids(
+                network_callsign.sigint_callsign
+            )
+        )
+    from sigint_network_callsign network_callsign
+    cross join api_integration integration
+    left join lateral (
+        select id from api_integration_iggy_destination
+        where api_integration_id = integration.id
+        order by id desc limit 1
+    ) destination on true
+    where not network_callsign.deleted
+        and api_integration_iggy_callsign_key(network_callsign.sigint_callsign)
+            = any(callsign_keys)
+        and integration.sync_enabled and integration.has_iggy_connection
+        and exists (select 1 from sigint_inbox_item_network
+            where sigint_network_id = network_callsign.sigint_network_id);
+end;
+$$;
 
 create function queue_api_integration_iggy_network_frequency_change(
     item_id bigint, old_freq text, new_freq text,
@@ -251,6 +319,13 @@ begin
     if not api_integration_iggy_has_publisher() then
         return new;
     end if;
+    if tg_table_name = 'sigint_inbox_item' and tg_op = 'INSERT' then
+        perform queue_api_integration_iggy_event(
+            new.id,
+            jsonb_build_object('event_type', 'sigint_inbox_item_created')
+        );
+        return new;
+    end if;
     if tg_table_name = 'signal_message' then
         if old is not distinct from new then
             return new;
@@ -259,9 +334,11 @@ begin
             perform queue_api_integration_iggy_event(
                 new.id,
                 jsonb_build_object(
-                    'event_type', case when new.deleted
-                        then 'sigint_inbox_item_deleted'
-                        else 'sigint_inbox_item_updated' end
+                    'event_type', case
+                        when new.deleted then 'sigint_inbox_item_deleted'
+                        when old.deleted then 'sigint_inbox_item_created'
+                        else 'sigint_inbox_item_updated'
+                    end
                 )
             );
             if old.timestamp is distinct from new.timestamp
@@ -304,7 +381,7 @@ end;
 $$;
 
 create trigger sigint_inbox_item_capture_iggy_edit
-after update on sigint_inbox_item
+after insert or update on sigint_inbox_item
 for each row execute function capture_api_integration_iggy_inbox_edit();
 
 create trigger signal_message_capture_iggy_edit
@@ -366,29 +443,45 @@ create function capture_api_integration_iggy_unit_visibility()
 returns trigger language plpgsql as $$
 begin
     perform 1 from api_integration integration
-    where integration.sync_enabled and integration.has_iggy_connection
     order by integration.id for share;
     insert into api_integration_iggy_event (
         api_integration_id, destination_id, sigint_inbox_item_id, payload
     )
-    select distinct integration.id, destination.id, link.item_id,
+    select distinct integration.id, destination.id, affected.item_id,
         jsonb_build_object('event_type', 'sigint_inbox_item_updated')
-    from sigint_inbox_item_unit link
+    from (
+        select link.item_id
+        from sigint_inbox_item_unit link
+        where link.unit_id = new.id
+        union
+        select inbox_callsign.sigint_inbox_item_id
+        from sigint_callsign catalog_callsign
+        join sigint_inbox_item_callsign inbox_callsign
+            on api_integration_iggy_callsign_key(inbox_callsign.callsign)
+                = api_integration_iggy_callsign_key(catalog_callsign.callsign)
+        where catalog_callsign.unit_id = new.id
+            and not catalog_callsign.deleted and not inbox_callsign.deleted
+    ) affected
     cross join api_integration integration
     left join lateral (
         select id from api_integration_iggy_destination
         where api_integration_id = integration.id
         order by id desc limit 1
     ) destination on true
-    where link.unit_id = new.id
-        and integration.sync_enabled and integration.has_iggy_connection;
+    where integration.sync_enabled and integration.has_iggy_connection;
+    perform queue_api_integration_iggy_network_callsign_refresh(array(
+        select distinct api_integration_iggy_callsign_key(callsign)
+        from sigint_callsign
+        where unit_id = new.id and not deleted
+    ));
     return new;
 end;
 $$;
 
 create trigger sigint_unit_capture_iggy_visibility
-after update of deleted on sigint_unit
-for each row when (old.deleted is distinct from new.deleted)
+after update of deleted, active on sigint_unit
+for each row when (old.deleted is distinct from new.deleted
+    or old.active is distinct from new.active)
 execute function capture_api_integration_iggy_unit_visibility();
 
 create trigger sigint_inbox_item_tag_capture_iggy_edit
@@ -406,6 +499,61 @@ for each row execute function capture_api_integration_iggy_related_edit('sigint_
 create trigger signal_message_media_capture_iggy_edit
 after insert or update or delete on signal_message_media
 for each row execute function capture_api_integration_iggy_related_edit('signal_message_id');
+
+create function capture_api_integration_iggy_media_result()
+returns trigger language plpgsql as $$
+declare
+    old_media_id uuid;
+    new_media_id uuid;
+    item_id bigint;
+begin
+    if not api_integration_iggy_has_publisher() then
+        return coalesce(new, old);
+    end if;
+    if tg_op = 'UPDATE' and old is not distinct from new then
+        return new;
+    end if;
+    if tg_op <> 'INSERT' then
+        old_media_id := (to_jsonb(old) ->> tg_argv[0])::uuid;
+    end if;
+    if tg_op <> 'DELETE' then
+        new_media_id := (to_jsonb(new) ->> tg_argv[0])::uuid;
+    end if;
+    for item_id in
+        select distinct media.signal_message_id
+        from signal_message_media media
+        join sigint_inbox_item item on item.id = media.signal_message_id
+        where media.id = old_media_id or media.id = new_media_id
+    loop
+        perform queue_api_integration_iggy_event(
+            item_id,
+            jsonb_build_object('event_type', 'sigint_inbox_item_updated')
+        );
+    end loop;
+    return coalesce(new, old);
+end;
+$$;
+
+create trigger echo_gpu_transcription_queue_capture_iggy_edit
+after insert or update of source_id, state, transcribed_value or delete
+on echo_gpu_transcription_queue
+for each row execute function capture_api_integration_iggy_media_result('source_id');
+
+create trigger ocr_job_capture_iggy_edit
+after insert or update of media_id, state, quality_status, processed_pages, total_pages,
+    last_error, attempts, submitted_at, completed_at, updated_at, ai_engine_id,
+    ai_engine_name, model_name or delete on ocr_job
+for each row execute function capture_api_integration_iggy_media_result('media_id');
+
+create trigger media_summary_capture_iggy_edit
+after insert or update of media_id, state, last_error, coordinates or delete
+on media_summary
+for each row execute function capture_api_integration_iggy_media_result('media_id');
+
+create trigger signal_message_media_conversion_job_capture_iggy_edit
+after insert or update of source_media_id, status or delete
+on signal_message_media_conversion_job
+for each row execute function capture_api_integration_iggy_media_result('source_media_id');
 
 create trigger signal_message_group_capture_iggy_edit
 after insert or update or delete on signal_message_group
@@ -540,7 +688,6 @@ begin
         return coalesce(new, old);
     end if;
     perform 1 from api_integration integration
-    where integration.sync_enabled and integration.has_iggy_connection
     order by integration.id for share;
     insert into api_integration_iggy_event (
         api_integration_id, destination_id, sigint_inbox_item_id, payload
@@ -559,6 +706,9 @@ begin
         and api_integration_iggy_callsign_key(inbox_callsign.callsign)
             = any(affected_callsign_keys)
         and integration.sync_enabled and integration.has_iggy_connection;
+    perform queue_api_integration_iggy_network_callsign_refresh(
+        affected_callsign_keys
+    );
     return coalesce(new, old);
 end;
 $$;
@@ -675,7 +825,9 @@ begin
             or old.active_from is distinct from new.active_from
             or old.active_to is distinct from new.active_to)
         and exists (select 1 from sigint_inbox_item_network
-            where sigint_network_id = old.network_id) then
+            where sigint_network_id = old.network_id)
+        and exists (select 1 from sigint_network
+            where id = old.network_id and not deleted) then
         perform queue_api_integration_iggy_event(
             null,
             jsonb_build_object(
@@ -695,7 +847,9 @@ begin
             or old.active_from is distinct from new.active_from
             or old.active_to is distinct from new.active_to)
         and exists (select 1 from sigint_inbox_item_network
-            where sigint_network_id = new.network_id) then
+            where sigint_network_id = new.network_id)
+        and exists (select 1 from sigint_network
+            where id = new.network_id and not deleted) then
         perform queue_api_integration_iggy_event(
             null,
             jsonb_build_object(
@@ -711,6 +865,48 @@ begin
     return coalesce(new, old);
 end;
 $$;
+
+create function capture_api_integration_iggy_network_visibility()
+returns trigger language plpgsql as $$
+begin
+    if not api_integration_iggy_has_publisher() then
+        return new;
+    end if;
+    perform 1 from api_integration integration
+    order by integration.id for share;
+    insert into api_integration_iggy_event (
+        api_integration_id, destination_id, sigint_inbox_item_id, payload
+    )
+    select integration.id, destination.id, null,
+        jsonb_build_object(
+            'event_type', case when new.deleted
+                then 'sigint_network_frequency_unlinked'
+                else 'sigint_network_frequency_linked' end,
+            'sigint_network_id', new.id,
+            'sigint_network_freq_id', frequency.id,
+            'freq', frequency.freq,
+            'active_from', frequency.active_from,
+            'active_to', frequency.active_to
+        )
+    from sigint_network_freq frequency
+    cross join api_integration integration
+    left join lateral (
+        select id from api_integration_iggy_destination
+        where api_integration_id = integration.id
+        order by id desc limit 1
+    ) destination on true
+    where frequency.network_id = new.id and not frequency.deleted
+        and integration.sync_enabled and integration.has_iggy_connection
+        and exists (select 1 from sigint_inbox_item_network
+            where sigint_network_id = new.id);
+    return new;
+end;
+$$;
+
+create trigger sigint_network_capture_iggy_visibility
+after update of deleted on sigint_network
+for each row when (old.deleted is distinct from new.deleted)
+execute function capture_api_integration_iggy_network_visibility();
 
 create trigger sigint_network_freq_capture_iggy_link
 after insert or update or delete on sigint_network_freq
@@ -728,6 +924,7 @@ for each row execute function capture_api_integration_iggy_network_frequency();
             .execute_unprepared(
                 r#"
 drop trigger if exists sigint_network_freq_capture_iggy_link on sigint_network_freq;
+drop trigger if exists sigint_network_capture_iggy_visibility on sigint_network;
 drop trigger if exists sigint_network_callsign_capture_iggy_link on sigint_network_callsign;
 drop trigger if exists sigint_inbox_item_settlement_capture_iggy_link on sigint_inbox_item_settlement;
 drop trigger if exists sigint_callsign_capture_iggy_edit on sigint_callsign;
@@ -741,10 +938,15 @@ drop trigger if exists sigint_inbox_item_tag_capture_iggy_edit on sigint_inbox_i
 drop trigger if exists sigint_inbox_item_metadata_capture_iggy_edit on sigint_inbox_item_metadata;
 drop trigger if exists sigint_inbox_item_point_token_capture_iggy_edit on sigint_inbox_item_point_token;
 drop trigger if exists signal_message_media_capture_iggy_edit on signal_message_media;
+drop trigger if exists echo_gpu_transcription_queue_capture_iggy_edit on echo_gpu_transcription_queue;
+drop trigger if exists ocr_job_capture_iggy_edit on ocr_job;
+drop trigger if exists media_summary_capture_iggy_edit on media_summary;
+drop trigger if exists signal_message_media_conversion_job_capture_iggy_edit on signal_message_media_conversion_job;
 drop trigger if exists signal_message_group_capture_iggy_edit on signal_message_group;
 drop trigger if exists signal_message_capture_iggy_edit on signal_message;
 drop trigger if exists sigint_inbox_item_capture_iggy_edit on sigint_inbox_item;
 drop function if exists capture_api_integration_iggy_network_frequency();
+drop function if exists capture_api_integration_iggy_network_visibility();
 drop function if exists capture_api_integration_iggy_network_callsign();
 drop function if exists capture_api_integration_iggy_inbox_settlement();
 drop function if exists capture_api_integration_iggy_catalog_callsign();
@@ -752,14 +954,15 @@ drop function if exists capture_api_integration_iggy_inbox_callsign();
 drop function if exists capture_api_integration_iggy_network_link();
 drop function if exists capture_api_integration_iggy_inbox_edit();
 drop function if exists capture_api_integration_iggy_related_edit();
+drop function if exists capture_api_integration_iggy_media_result();
 drop function if exists capture_api_integration_iggy_unit_visibility();
 drop function if exists capture_api_integration_iggy_destination();
-drop function if exists prune_api_integration_iggy_destinations(bigint);
+drop function if exists scrub_api_integration_iggy_destination_credentials(bigint);
 drop function if exists queue_api_integration_iggy_network_frequency_change(bigint, text, text, timestamp without time zone, timestamp without time zone);
 drop function if exists api_integration_iggy_network_callsign_ids(bigint);
 drop function if exists api_integration_iggy_network_sigint_callsign_ids(bigint);
+drop function if exists queue_api_integration_iggy_network_callsign_refresh(text[]);
 drop function if exists api_integration_iggy_callsign_ids(text);
-drop index if exists sigint_inbox_item_callsign_active_iggy_match_key_idx;
 drop function if exists api_integration_iggy_callsign_key(text);
 drop function if exists api_integration_iggy_network_frequency_ids(bigint, text, timestamp without time zone);
 drop function if exists api_integration_iggy_has_publisher();
