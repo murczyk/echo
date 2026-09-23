@@ -8,7 +8,7 @@ const EDGE_SWIPE_HORIZONTAL_RATIO = 1.2;
 
 type OverlayEntry = {
   id: string;
-  onClose: () => void;
+  onClose: () => boolean | void;
 };
 
 type EdgeGesture = {
@@ -40,26 +40,21 @@ function topOverlay() {
   return overlays.at(-1) ?? null;
 }
 
-function requestOverlayClose(id: string, fallback: () => void) {
+function requestOverlayClose(id: string, onClose: () => boolean | void) {
   const overlay = overlays.find((entry) => entry.id === id);
   if (!overlay) {
-    fallback();
+    onClose();
     return;
   }
   if (overlay !== topOverlay()) return;
+  if (onClose() === false) return;
 
   const historyIds = readOverlayIds(window.history.state);
-  if (historyIds.includes(id)) {
-    overlays = overlays.filter((entry) => entry !== overlay);
-    updateDocumentProtection();
-    window.history.back();
-    overlay.onClose();
-    return;
-  }
-
   overlays = overlays.filter((entry) => entry !== overlay);
   updateDocumentProtection();
-  overlay.onClose();
+  if (historyIds.includes(id)) {
+    window.history.back();
+  }
 }
 
 function handlePopState(event: PopStateEvent) {
@@ -70,7 +65,14 @@ function handlePopState(event: PopStateEvent) {
   const dismissedIds = new Set(dismissed.map((entry) => entry.id));
   overlays = overlays.filter((entry) => !dismissedIds.has(entry.id));
   updateDocumentProtection();
-  dismissed.forEach((entry) => entry.onClose());
+  for (const [index, entry] of dismissed.entries()) {
+    if (entry.onClose() !== false) continue;
+    dismissed
+      .slice(index)
+      .reverse()
+      .forEach((dismissedEntry) => registerOverlay(dismissedEntry.id, dismissedEntry.onClose));
+    break;
+  }
 }
 
 function handleTouchStart(event: TouchEvent) {
@@ -141,7 +143,7 @@ function updateDocumentProtection() {
   else detachListeners();
 }
 
-function registerOverlay(id: string, onClose: () => void) {
+function registerOverlay(id: string, onClose: () => boolean | void) {
   overlays = overlays.filter((entry) => entry.id !== id);
   overlays.push({ id, onClose });
 
@@ -151,23 +153,51 @@ function registerOverlay(id: string, onClose: () => void) {
   updateDocumentProtection();
 }
 
-function unregisterOverlay(id: string) {
+function unregisterOverlay(id: string, consumeHistory = false) {
+  const overlay = overlays.find((entry) => entry.id === id);
+  if (!overlay) return;
+  const shouldConsumeHistory =
+    consumeHistory && overlay === topOverlay() && readOverlayIds(window.history.state).includes(id);
   overlays = overlays.filter((entry) => entry.id !== id);
   updateDocumentProtection();
+  if (shouldConsumeHistory) window.history.back();
 }
 
-export function useBrowserBackOverlay({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function useBrowserBackOverlay({
+  open,
+  onClose,
+  onBrowserBack = onClose,
+}: {
+  open: boolean;
+  onClose: () => boolean | void;
+  onBrowserBack?: () => boolean | void;
+}) {
   const idRef = useRef<string>();
   const onCloseRef = useRef(onClose);
+  const onBrowserBackRef = useRef(onBrowserBack);
+  const wasOpenRef = useRef(false);
   onCloseRef.current = onClose;
+  onBrowserBackRef.current = onBrowserBack;
   if (!idRef.current) idRef.current = `echo-overlay-${++nextOverlayId}`;
 
   useEffect(() => {
-    if (!open) return;
     const id = idRef.current!;
-    registerOverlay(id, () => onCloseRef.current());
-    return () => unregisterOverlay(id);
+    if (open) {
+      registerOverlay(id, () => onBrowserBackRef.current());
+      wasOpenRef.current = true;
+    } else if (wasOpenRef.current) {
+      unregisterOverlay(id, true);
+      wasOpenRef.current = false;
+    }
   }, [open]);
+
+  useEffect(
+    () => () => {
+      unregisterOverlay(idRef.current!);
+      wasOpenRef.current = false;
+    },
+    [],
+  );
 
   return useCallback(() => {
     requestOverlayClose(idRef.current!, () => onCloseRef.current());

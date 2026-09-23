@@ -33,6 +33,8 @@ vi.mock('../../renderers/ImageAttachmentPreviewRenderer', () => ({
     initialAction,
     onInitialActionConsumed,
     onClose,
+    onChildOverlayChange,
+    dismissChildOverlay,
     reportVisible,
     onReportVisibleChange,
   }: {
@@ -41,6 +43,8 @@ vi.mock('../../renderers/ImageAttachmentPreviewRenderer', () => ({
     initialAction?: 'edit-image';
     onInitialActionConsumed?: () => void;
     onClose: () => void;
+    onChildOverlayChange: (open: boolean) => void;
+    dismissChildOverlay: number;
     reportVisible: boolean;
     onReportVisibleChange: (visible: boolean) => void;
   }) => {
@@ -63,6 +67,8 @@ vi.mock('../../renderers/ImageAttachmentPreviewRenderer', () => ({
         <button aria-label="Закрити перегляд" onClick={onClose} />
         <button aria-label="Почати редагування" onClick={() => onEditModeChange?.(true)} />
         <button aria-label="Завершити редагування" onClick={() => onEditModeChange?.(false)} />
+        <button aria-label="Відкрити дочірнє вікно" onClick={() => onChildOverlayChange(true)} />
+        <span data-dismiss-child-overlay={dismissChildOverlay} />
         <input data-image-editor-local-escape onKeyDown={(event) => event.stopPropagation()} />
       </div>
     );
@@ -181,6 +187,74 @@ describe('MessageCardAttachmentPreviewDialog', () => {
     });
 
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('routes browser Back through the image editor close guard', async () => {
+    const prePreviewState = window.history.state;
+    const onClose = vi.fn();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () =>
+      root?.render(
+        <MessageCardAttachmentPreviewDialog
+          item={items[0]!}
+          navigation={{ index: 0, count: 1, onPrevious: vi.fn(), onNext: vi.fn() }}
+          onClose={onClose}
+        />,
+      ),
+    );
+    await act(async () =>
+      (container?.querySelector('[aria-label="Почати редагування"]') as HTMLButtonElement).click(),
+    );
+
+    await act(async () => {
+      window.dispatchEvent(new PopStateEvent('popstate', { state: prePreviewState }));
+    });
+
+    expect(imageEditorEscapeHandler).toHaveBeenCalledOnce();
+    expect(imageEditorEscapeHandler.mock.calls[0]?.[0]).toMatchObject({ key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(document.documentElement.classList.contains('echo-browser-back-overlay-open')).toBe(
+      true,
+    );
+  });
+
+  it('closes a child overlay before closing the preview on browser Back', async () => {
+    const prePreviewState = window.history.state;
+    const onClose = vi.fn();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () =>
+      root?.render(
+        <MessageCardAttachmentPreviewDialog
+          item={items[0]!}
+          navigation={{ index: 0, count: 1, onPrevious: vi.fn(), onNext: vi.fn() }}
+          onClose={onClose}
+        />,
+      ),
+    );
+    await act(async () =>
+      (
+        container?.querySelector('[aria-label="Відкрити дочірнє вікно"]') as HTMLButtonElement
+      ).click(),
+    );
+
+    await act(async () => {
+      window.history.replaceState(prePreviewState, '', '/rer-duty-neo');
+      window.dispatchEvent(new PopStateEvent('popstate', { state: prePreviewState }));
+    });
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(
+      container
+        .querySelector('[data-dismiss-child-overlay]')
+        ?.getAttribute('data-dismiss-child-overlay'),
+    ).toBe('1');
+    expect(document.documentElement.classList.contains('echo-browser-back-overlay-open')).toBe(
+      true,
+    );
   });
 
   it('defers a locally handled editor Escape without closing the preview', async () => {

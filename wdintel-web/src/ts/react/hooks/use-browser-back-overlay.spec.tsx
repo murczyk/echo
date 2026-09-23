@@ -8,8 +8,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useBrowserBackOverlay } from './use-browser-back-overlay';
 
-function TestOverlay({ label, onClose }: { label: string; onClose: () => void }) {
-  const requestClose = useBrowserBackOverlay({ open: true, onClose });
+function TestOverlay({
+  label,
+  open = true,
+  onClose,
+}: {
+  label: string;
+  open?: boolean;
+  onClose: () => boolean | void;
+}) {
+  const requestClose = useBrowserBackOverlay({ open, onClose });
   return (
     <button type="button" data-testid={`close-${label}`} onClick={requestClose}>
       {label}
@@ -76,6 +84,7 @@ describe('useBrowserBackOverlay', () => {
     await act(async () => root.render(<TestOverlay label="editor" onClose={onClose} />));
 
     await act(async () => {
+      window.history.replaceState(initialState, '', initialUrl);
       window.dispatchEvent(new PopStateEvent('popstate', { state: initialState }));
     });
 
@@ -99,6 +108,53 @@ describe('useBrowserBackOverlay', () => {
       window.dispatchEvent(new PopStateEvent('popstate', { state: initialState }));
     });
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the history layer when a direct close is rejected', async () => {
+    const onClose = vi.fn(() => false);
+    const back = vi.spyOn(window.history, 'back').mockImplementation(() => undefined);
+    await act(async () => root.render(<TestOverlay label="editor" onClose={onClose} />));
+
+    container.querySelector<HTMLButtonElement>('[data-testid="close-editor"]')?.click();
+
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(back).not.toHaveBeenCalled();
+    expect(document.documentElement.classList.contains('echo-browser-back-overlay-open')).toBe(
+      true,
+    );
+  });
+
+  it('restores the history layer when a browser Back close is rejected', async () => {
+    const onClose = vi.fn(() => false);
+    const pushState = vi.spyOn(window.history, 'pushState');
+    await act(async () => root.render(<TestOverlay label="editor" onClose={onClose} />));
+
+    await act(async () => {
+      window.history.replaceState(initialState, '', initialUrl);
+      window.dispatchEvent(new PopStateEvent('popstate', { state: initialState }));
+    });
+
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(pushState).toHaveBeenCalledTimes(2);
+    expect(document.documentElement.classList.contains('echo-browser-back-overlay-open')).toBe(
+      true,
+    );
+  });
+
+  it('consumes the active history layer when open changes to false', async () => {
+    const onClose = vi.fn();
+    const back = vi.spyOn(window.history, 'back').mockImplementation(() => undefined);
+    await act(async () => root.render(<TestOverlay label="editor" open onClose={onClose} />));
+
+    await act(async () =>
+      root.render(<TestOverlay label="editor" open={false} onClose={onClose} />),
+    );
+
+    expect(back).toHaveBeenCalledOnce();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(document.documentElement.classList.contains('echo-browser-back-overlay-open')).toBe(
+      false,
+    );
   });
 
   it('dismisses nested overlays top-first and keeps protection for the outer overlay', async () => {

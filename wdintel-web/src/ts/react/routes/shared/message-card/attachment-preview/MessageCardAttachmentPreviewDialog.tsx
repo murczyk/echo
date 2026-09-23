@@ -130,7 +130,27 @@ export function MessageCardAttachmentPreviewDialog({
     blurActiveAttachmentPreviewElement();
     onClose();
   }, [onClose]);
-  const closeDialog = useBrowserBackOverlay({ open: true, onClose: finalizeDialogClose });
+  const closeDialogWithGuards = useCallback(() => {
+    if (childOverlayOpenRef.current) {
+      childOverlayOpenRef.current = false;
+      setChildOverlayOpen(false);
+      setDismissChildOverlay((value) => value + 1);
+      return false;
+    }
+    if (isEditing) {
+      editorEscapeHandlerRef.current?.(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+      );
+      return false;
+    }
+    finalizeDialogClose();
+    return true;
+  }, [finalizeDialogClose, isEditing]);
+  const closeDialog = useBrowserBackOverlay({
+    open: true,
+    onClose: finalizeDialogClose,
+    onBrowserBack: closeDialogWithGuards,
+  });
 
   useEffect(() => {
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
