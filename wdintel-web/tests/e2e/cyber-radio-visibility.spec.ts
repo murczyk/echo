@@ -115,3 +115,18 @@ for (const enabled of [true, false]) {
     }
   });
 }
+
+test('#3568 bare Analysis navigation requests and displays 90 days', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-09-23T12:00:00Z'));
+  await installAnalysisNeoApiMocks(page);
+  const countersRequest = page.waitForRequest('**/api/rer/analysis/stats/count');
+  await page.goto('/rer-analysis-neo');
+  const request = (await countersRequest).postDataJSON();
+  expect(request.till_date_noninclusive_ms - request.since_date_inclusive_ms).toBe(
+    90 * 24 * 60 * 60 * 1000,
+  );
+  await expect(page.getByRole('textbox', { name: /^Інтервал:/ })).toHaveValue(
+    '26.06 00:00 — 24.09 00:00',
+  );
+  await expect(page).toHaveURL(/fromDateTime=2026-06-26T00%3A00/);
+});

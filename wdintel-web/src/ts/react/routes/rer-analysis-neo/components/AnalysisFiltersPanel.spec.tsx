@@ -663,6 +663,7 @@ describe('AnalysisFiltersPanel', () => {
 
   it('renders filters in the expected order with collapsed sections by default', async () => {
     const props = buildProps({
+      counts: { aorsCount: 3 } as AnalysisPageState['counts'],
       aorEntries: [
         { id: 1, name: 'Смуга Б' },
         { id: 2, name: 'Смуга А' },
@@ -1413,6 +1414,26 @@ describe('AnalysisFiltersPanel', () => {
     expect(resetFilters).not.toHaveBeenCalled();
   });
 
+  it('ECHO-3568 hides AORs until counters return more than one value', async () => {
+    const view = await renderComponent(buildProps({ countsLoading: true }));
+    rendered.push(view);
+
+    expect(view.container.textContent).not.toContain('Смуги');
+
+    for (const aorsCount of [0, 1, 2, 1]) {
+      await act(async () => {
+        view.root.render(
+          <RadioFeaturesProvider allowed>
+            <AnalysisFiltersPanel
+              {...buildProps({ counts: { aorsCount } as AnalysisPageState['counts'] })}
+            />
+          </RadioFeaturesProvider>,
+        );
+      });
+      expect(view.container.textContent?.includes('Смуги')).toBe(aorsCount > 1);
+    }
+  });
+
   it('shows static placeholders for filter counters while the initial filters load is still in flight', async () => {
     const view = await renderComponent(
       buildProps({
@@ -1465,6 +1486,7 @@ describe('AnalysisFiltersPanel', () => {
     const view = await renderComponent(
       buildProps({
         loadedSavedFilter,
+        counts: { aorsCount: 2 } as AnalysisPageState['counts'],
       }),
     );
     rendered.push(view);

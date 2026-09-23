@@ -188,28 +188,30 @@ export function AnalysisFiltersPanelSections({
   const tagFilterMode = tagFilterModeFromState(queryState);
   return (
     <>
-      <FilterSection
-        title="Смуги"
-        countLabel={countLabel(
-          'aors',
-          options.aors.length,
-          derived.aorsSelectedCount,
-          counts?.aorsCount ?? options.aors.length,
-        )}
-        expanded={expandedSections.aors}
-        onToggle={() => toggleSection('aors')}
-        onLoad={loadSection('aors')}
-      >
-        <AnalysisFilterField
-          label="Смуги"
-          options={derived.aorOptions}
-          loading={isFilterSectionLoading('aors') || isFilterSectionStale('aors')}
-          emptyLoading={isFilterSectionEmptyLoading('aors', derived.aorOptions.length)}
-          value={queryState.aorsSelected}
-          deferredCommit
-          onChange={(aorsSelected) => updateQueryState({ aorsSelected })}
-        />
-      </FilterSection>
+      {(countsSnapshot?.aorsCount ?? 0) > 1 ? (
+        <FilterSection
+          title="Смуги"
+          countLabel={countLabel(
+            'aors',
+            options.aors.length,
+            derived.aorsSelectedCount,
+            counts?.aorsCount ?? options.aors.length,
+          )}
+          expanded={expandedSections.aors}
+          onToggle={() => toggleSection('aors')}
+          onLoad={loadSection('aors')}
+        >
+          <AnalysisFilterField
+            label="Смуги"
+            options={derived.aorOptions}
+            loading={isFilterSectionLoading('aors') || isFilterSectionStale('aors')}
+            emptyLoading={isFilterSectionEmptyLoading('aors', derived.aorOptions.length)}
+            value={queryState.aorsSelected}
+            deferredCommit
+            onChange={(aorsSelected) => updateQueryState({ aorsSelected })}
+          />
+        </FilterSection>
+      ) : null}
       {radioFeaturesAllowed ? (
         <FilterSection
           title="Частоти"
