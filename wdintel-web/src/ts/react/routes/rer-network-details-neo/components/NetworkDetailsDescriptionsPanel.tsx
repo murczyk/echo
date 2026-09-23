@@ -1,3 +1,4 @@
+import { AuthorLabel } from '../../../components/AuthorLabel';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
@@ -189,7 +190,7 @@ function DescriptionItem({
               sx={{ flexWrap: 'wrap', mt: 0.75, alignItems: 'center', minWidth: 0 }}
             >
               <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
-                {description.login}
+                <AuthorLabel login={description.login} />
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
                 •

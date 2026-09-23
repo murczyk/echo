@@ -1654,6 +1654,7 @@ where
             description: NotSet,
             password_auth_enabled: Set(false),
             totp_epoch: Set(None),
+            display_name: NotSet,
         })
         .collect::<Vec<_>>();
 

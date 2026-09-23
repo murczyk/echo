@@ -17,6 +17,7 @@ use sea_query::Expr;
 use std::collections::{BTreeMap, HashMap};
 use uuid::Uuid;
 
+pub mod display_name;
 pub mod login_totp;
 pub mod totp;
 pub mod totp_challenge;
@@ -569,6 +570,7 @@ pub async fn create_login(
             )),
             password_auth_enabled: Set(true),
             totp_epoch: Set(None),
+            display_name: NotSet,
         },
     )
     .await
@@ -803,6 +805,7 @@ async fn api_user(
         id: login_obj.id.to_string(),
         delta_login,
         name: login_obj.login.clone(),
+        display_name: login_obj.display_name.clone(),
         roles: serde_json::from_value(login_obj.roles).c(h!())?,
         sigint_zone_id: login_obj.sigint_zone_id,
         organism_id: login_obj.organism_id,
@@ -883,6 +886,7 @@ async fn api_user_info(
         id: login_obj.id.to_string(),
         delta_login,
         name: username.clone(),
+        display_name: login_obj.display_name.clone(),
         roles: serde_json::from_value(login_obj.roles).c(h!())?,
         sigint_zone_id: login_obj.sigint_zone_id,
         organism_id: login_obj.organism_id,
@@ -1424,6 +1428,7 @@ pub async fn register_user(
         description: NotSet,
         password_auth_enabled: Set(true),
         totp_epoch: Set(None),
+        display_name: NotSet,
     }
     .insert(&txn)
     .await
@@ -1890,6 +1895,7 @@ async fn register_delta_user(
             description: Set(normalize_login_description(description)),
             password_auth_enabled: Set(false),
             totp_epoch: Set(None),
+            display_name: NotSet,
         },
     )
     .await
@@ -2575,6 +2581,7 @@ mod tests {
                 description: Default::default(),
                 password_auth_enabled: Set(false),
                 totp_epoch: Set(None),
+                display_name: NotSet,
             },
         )
         .await
@@ -2650,6 +2657,7 @@ mod tests {
                     description: Default::default(),
                     password_auth_enabled: Set(false),
                     totp_epoch: Set(None),
+                    display_name: NotSet,
                 },
             )
             .await
@@ -2723,6 +2731,7 @@ mod tests {
                     description: Default::default(),
                     password_auth_enabled: Set(false),
                     totp_epoch: Set(None),
+                    display_name: NotSet,
                 },
             )
             .await
@@ -2748,6 +2757,7 @@ mod tests {
                 description: Default::default(),
                 password_auth_enabled: Set(false),
                 totp_epoch: Set(None),
+                display_name: NotSet,
             },
         )
         .await
@@ -2802,6 +2812,7 @@ mod tests {
             description: Default::default(),
             password_auth_enabled: Set(false),
             totp_epoch: Set(None),
+            display_name: NotSet,
         }
         .insert(&env.dbx)
         .await
@@ -2826,6 +2837,7 @@ mod tests {
                 description: Default::default(),
                 password_auth_enabled: Set(false),
                 totp_epoch: Set(None),
+                display_name: NotSet,
             },
         )
         .await

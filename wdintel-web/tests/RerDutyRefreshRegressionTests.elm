@@ -224,6 +224,7 @@ anonymousUser =
     , sigintZoneId = Nothing
     , organismId = Nothing
     , deltaLogin = Nothing
+    , displayName = Nothing
     , goiConfiguredForOrganism = False
     , goiFullAccessForOrganism = False
     , goiHost = Nothing

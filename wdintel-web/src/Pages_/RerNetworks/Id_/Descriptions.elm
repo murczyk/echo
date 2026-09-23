@@ -14,6 +14,7 @@ import Pages_.RerNetworks.Id_.Model exposing (Model)
 import Pages_.RerNetworks.Id_.Msg exposing (DescriptionsMsg(..))
 import Select
 import Shared
+import Shared.Components.AuthorLabel
 import Shared.Components.Button as Button
 import Shared.Components.ModalDialog as ModalDialog
 import Shared.Components.Sidebar as Sidebar
@@ -341,7 +342,7 @@ descriptionItem description network user shared =
                 [ div [ class "flex items-center gap-2 text-sm text-muted" ]
                     (List.concat
                         [ [ i [ class "bi bi-person-circle", style "color" "var(--color-primary)" ] []
-                          , span [ class "font-medium" ] [ text description.login ]
+                          , span [ class "font-medium" ] [ Shared.Components.AuthorLabel.view description.login ]
                           , span [ style "color" "var(--color-text-muted)" ] [ text "•" ]
                           , span [] [ text <| Utils.Time.renderDateF6 shared.timeZone (Time.millisToPosix description.createdAt) ]
                           ]

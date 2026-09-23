@@ -22,6 +22,7 @@ import type { MapPointShort } from './ts/maps/types';
 import './ts/web-components/analysis-map';
 import './ts/react/analysis-map-search-element';
 import './ts/react/app-navbar-element';
+import { initializeAuthorNotifications } from './ts/react/author-label-element';
 import './ts/react/analysis-map-palitras-element';
 import './ts/react/analysis-map-coord-menu-element';
 import './ts/react/analysis-map-settings-element';
@@ -440,6 +441,7 @@ export const flags = ({ env }) => {
 // to your Elm application, or subscribe to incoming
 // messages from Elm
 export const onReady = ({ app, env }) => {
+  initializeAuthorNotifications();
   // Apply initial theme based on localStorage or system preference
   applyCurrentTheme();
   const syncNavbarHeight = createNavbarHeightSync();

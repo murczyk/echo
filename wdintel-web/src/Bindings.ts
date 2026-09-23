@@ -1644,6 +1644,7 @@ export type Confirm2faReq = {
 export type User = {
   id: string;
   name: string;
+  displayName: string | null;
   roles: Array<string>;
   sigintZoneId: number | null;
   organismId: number | null;
@@ -1653,6 +1654,26 @@ export type User = {
   goiHost: string | null;
   goiIntegrations: Array<GoiUserIntegration>;
   lastReleaseSeen: string | null;
+};
+
+export type AuthorIdentity = {
+  id: string;
+  login: string;
+  displayName: string | null;
+  deltaLogin: string | null;
+};
+
+export type AuthorIdentitiesReq = {
+  logins: Array<string>;
+  ids: Array<string>;
+};
+
+export type AuthorIdentitiesRsp = {
+  authors: Array<AuthorIdentity>;
+};
+
+export type DisplayNameSaveReq = {
+  displayName: string | null;
 };
 
 export type GoiUserIntegration = {

@@ -31,6 +31,8 @@ pub struct Model {
     pub id: Uuid,
     pub password_auth_enabled: bool,
     pub totp_epoch: Option<i64>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub display_name: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

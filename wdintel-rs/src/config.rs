@@ -6,6 +6,9 @@ use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+pub const USER_DISPLAY_NAME_MAX_LENGTH: usize = 100;
+pub const USER_AUTHOR_IDENTITIES_MAX_BATCH_SIZE: usize = 200;
+
 pub const DEFAULT_PG_HOST: &str = "localhost";
 pub const DEFAULT_PG_PORT: u16 = 5432;
 pub const DEFAULT_PG_USER: &str = "wd";

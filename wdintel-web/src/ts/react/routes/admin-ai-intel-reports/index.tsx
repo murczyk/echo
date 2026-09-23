@@ -1,3 +1,4 @@
+import { AuthorLabel } from '../../components/AuthorLabel';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import {
@@ -115,8 +116,8 @@ function AttemptDetailsDialog({
         {attempt ? (
           <Stack spacing={2}>
             <Typography variant="body2">
-              {formatDateTime(attempt.createdAt)} · {attempt.login} · повідомлення{' '}
-              {attempt.sourceMessageId}
+              {formatDateTime(attempt.createdAt)} · <AuthorLabel login={attempt.login} /> ·
+              повідомлення {attempt.sourceMessageId}
             </Typography>
             <Typography variant="body2">
               Движок: {attempt.aiEngineName ?? '—'} · тривалість: {attempt.durationMs} мс · стан:{' '}

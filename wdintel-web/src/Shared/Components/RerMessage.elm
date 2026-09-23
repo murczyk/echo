@@ -23,6 +23,7 @@ import Uuid.Barebones
 import Route exposing (Route)
 import Set exposing (Set)
 import Shared.Callsign
+import Shared.Components.AuthorLabel
 import Shared.Components.Watermark as Watermark
 import Shared.MarkedText
 import Shared.Model
@@ -1412,7 +1413,10 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                                     ++ " "
                                     ++ Maybe.withDefault "" profile.familyName
                   in
-                  itemBlock { iconTitle = "Відправник", iconName = "bi-person-circle", label = Just label } []
+                  div [ class "flex items-center" ]
+                    [ i [ class "bi mr-2 text-icons leading-none bi-person-circle", title "Відправник" ] []
+                    , Shared.Components.AuthorLabel.sender (Maybe.withDefault "" message.sender) label
+                    ]
                 , let
                     updatedRouteString =
                         case vps.currentRoute of
@@ -1706,7 +1710,16 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
         renderOtherComment comment =
             div
                 []
-                [ strong [] [ text (commentAuthorLabel signalMessageSenderLabel comment) ]
+                [ strong []
+                    [ if isPostAuthoredComment comment then
+                        text (commentAuthorLabel signalMessageSenderLabel comment)
+
+                      else if trim comment.login == systemCommentLogin then
+                        Shared.Components.AuthorLabel.sender (Maybe.withDefault "" message.sender) (commentAuthorLabel signalMessageSenderLabel comment)
+
+                      else
+                        Shared.Components.AuthorLabel.view comment.login
+                    ]
                 , text ": "
                 , text comment.comment
                 ]

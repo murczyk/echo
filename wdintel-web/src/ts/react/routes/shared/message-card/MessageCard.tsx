@@ -390,6 +390,7 @@ function MessageCardComponent({
           reportGroupInfos={reportGroupInfos}
           onEditReport={onEditReport}
           signalMessageSenderLabel={senderName?.trim() ? senderName : msg.sender}
+          signalMessageSenderId={msg.sender}
           searchText={searchText}
           onOpenPointsOnMap={onOpenPointsOnMap}
           onAddPointHighlightBlacklist={onAddPointHighlightBlacklist}

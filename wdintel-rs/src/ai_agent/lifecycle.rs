@@ -106,6 +106,7 @@ where
             id: Set(template_login_id),
             password_auth_enabled: Set(false),
             totp_epoch: Set(None),
+            display_name: Set(None),
         }
         .insert(dbx)
         .await
@@ -229,6 +230,7 @@ async fn create_link(
         id: Set(agent_login_id),
         password_auth_enabled: Set(false),
         totp_epoch: Set(None),
+        display_name: Set(None),
     }
     .insert(txn)
     .await
@@ -2028,6 +2030,7 @@ mod tests {
                 password: Set(Some("stale".to_string())),
                 password_auth_enabled: Set(true),
                 totp_epoch: Set(None),
+                display_name: Set(None),
                 roles: Set(json!(["Admin"])),
                 sigint_zone_id: Set(None),
                 organism_id: Set(None),
@@ -2099,6 +2102,7 @@ mod tests {
                 password: Set(None),
                 password_auth_enabled: Set(false),
                 totp_epoch: Set(None),
+                display_name: Set(None),
                 roles: Set(json!(["ApiAgent", "Rer", "Cyber"])),
                 deleted: Set(true),
                 deactivation_reason: Set(Some(DeactivationReasonEnum::Admin)),
