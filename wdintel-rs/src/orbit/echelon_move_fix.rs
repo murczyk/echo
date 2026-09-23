@@ -50,8 +50,9 @@ const ORBIT_ECHELONS: [EchoEchelon; 14] = [
     EchoEchelon::MilitaryDistrict,
     EchoEchelon::ArmyRegion,
 ];
-const ECHELON_MOVES: [EchelonMove; 5] = [
+const ECHELON_MOVES: [EchelonMove; 6] = [
     EchelonMove::RegimentToBrigade,
+    EchelonMove::DivisionToBrigade,
     EchelonMove::CorpsToArmy,
     EchelonMove::Army,
     EchelonMove::MilitaryDistrict,
@@ -61,6 +62,7 @@ const ECHELON_MOVES: [EchelonMove; 5] = [
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EchelonMove {
     RegimentToBrigade,
+    DivisionToBrigade,
     CorpsToArmy,
     Army,
     MilitaryDistrict,
@@ -71,6 +73,7 @@ impl EchelonMove {
     fn label(self) -> &'static str {
         match self {
             Self::RegimentToBrigade => "regiment → brigade",
+            Self::DivisionToBrigade => "division → brigade",
             Self::CorpsToArmy => "corps → army",
             Self::Army => "army",
             Self::MilitaryDistrict => "group of armies",
@@ -81,6 +84,7 @@ impl EchelonMove {
     fn source_echelon(self) -> EchoEchelon {
         match self {
             Self::RegimentToBrigade => EchoEchelon::Regiment,
+            Self::DivisionToBrigade => EchoEchelon::Division,
             Self::CorpsToArmy => EchoEchelon::Corps,
             Self::Army => EchoEchelon::Army,
             Self::MilitaryDistrict => EchoEchelon::MilitaryDistrict,
@@ -90,7 +94,9 @@ impl EchelonMove {
 
     fn accepts_destination(self, destination: EchoEchelon) -> bool {
         match self {
-            Self::RegimentToBrigade => destination == EchoEchelon::Brigade,
+            Self::RegimentToBrigade | Self::DivisionToBrigade => {
+                destination == EchoEchelon::Brigade
+            }
             Self::CorpsToArmy => destination == EchoEchelon::Army,
             Self::Army | Self::MilitaryDistrict | Self::ArmyRegion => true,
         }
@@ -103,6 +109,7 @@ impl EchelonMove {
     fn source_attribute(self) -> &'static str {
         match self {
             Self::RegimentToBrigade => "regiment",
+            Self::DivisionToBrigade => "division",
             Self::CorpsToArmy => "corps",
             Self::Army => "army",
             Self::MilitaryDistrict => "military_district",
@@ -113,6 +120,7 @@ impl EchelonMove {
     fn source_column(self) -> sigint_unit::Column {
         match self {
             Self::RegimentToBrigade => sigint_unit::Column::Regiment,
+            Self::DivisionToBrigade => sigint_unit::Column::Division,
             Self::CorpsToArmy => sigint_unit::Column::Corps,
             Self::Army => sigint_unit::Column::Army,
             Self::MilitaryDistrict => sigint_unit::Column::MilitaryDistrict,
@@ -123,6 +131,7 @@ impl EchelonMove {
     fn source_value(self, unit: &EchelonMoveUnit) -> &str {
         match self {
             Self::RegimentToBrigade => &unit.regiment,
+            Self::DivisionToBrigade => &unit.division,
             Self::CorpsToArmy => &unit.corps,
             Self::Army => &unit.army,
             Self::MilitaryDistrict => &unit.military_district,
@@ -892,6 +901,14 @@ mod tests {
                 "regiment",
             ),
             (
+                EchelonMove::DivisionToBrigade,
+                EchoEchelon::Brigade,
+                "53 зрбр",
+                "",
+                "brigade",
+                "division",
+            ),
+            (
                 EchelonMove::CorpsToArmy,
                 EchoEchelon::Army,
                 "20 ЗВА",
@@ -921,6 +938,10 @@ mod tests {
             match echelon_move {
                 EchelonMove::RegimentToBrigade => {
                     unit.regiment = source.to_string();
+                    unit.brigade = destination.to_string();
+                }
+                EchelonMove::DivisionToBrigade => {
+                    unit.division = source.to_string();
                     unit.brigade = destination.to_string();
                 }
                 EchelonMove::CorpsToArmy => {
