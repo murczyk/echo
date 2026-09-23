@@ -1437,6 +1437,31 @@ mod tests {
 
     #[actix_web::test]
     #[serial]
+    async fn api_user_change_requires_a_new_destination() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let integration = insert_integration(&env, login.id).await;
+        let new_login = mk_login(&env.dbx, Default::default()).await.unwrap();
+
+        let result = api_integration::ActiveModel {
+            id: Set(integration.id),
+            api_user_login_id: Set(new_login.id),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await;
+
+        assert!(result.is_err());
+        let integration = api_integration::Entity::find_by_id(integration.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(integration.api_user_login_id, login.id);
+    }
+
+    #[actix_web::test]
+    #[serial]
     async fn destination_change_keeps_queued_events_on_original_route() {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
@@ -1730,7 +1755,7 @@ mod tests {
     }
 
     async fn create_association_fixture(env: &Env) -> AssociationFixture {
-        let login = mk_login(&env.dbx, Default::default()).await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
         let integration = insert_integration(env, login.id).await;
         let lock = try_lock_integration(&env.dbx, integration.id)
             .await
@@ -1743,6 +1768,18 @@ mod tests {
         lock.commit().await.unwrap();
         let intercepted_at = Utc::now().naive_utc();
         let item_id = insert_inbox_item(env, intercepted_at).await;
+        let group = find_test_datasource_group(&env.dbx).await.unwrap();
+        mk_signal_message_group(
+            &env.dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(item_id),
+                group_master_key: Set(Some(group.group_master_key)),
+                datasource_group_id: Set(Some(group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         let unit = mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
         let callsign_id = insert_callsign(env, unit.id, intercepted_at).await;
         let network = mk_sigint_network(&env.dbx, Default::default())
@@ -1764,6 +1801,21 @@ mod tests {
             &env.dbx,
             sigint_network_freq::ActiveModel {
                 network_id: Set(network.id),
+                freq: Set("123.45".to_string()),
+                active_from: Set(intercepted_at - ChronoDuration::hours(1)),
+                active_to: Set(None),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let unrelated_network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(unrelated_network.id),
                 freq: Set("123.45".to_string()),
                 active_from: Set(intercepted_at - ChronoDuration::hours(1)),
                 active_to: Set(None),
@@ -2115,6 +2167,85 @@ mod tests {
         assert_frequency_transitions(&env, &fixture).await;
         let item_callsign = link_inbox_callsign(&env, &fixture).await;
         assert_settlement_and_unlinks(&env, &fixture, &item_callsign).await;
+    }
+
+    async fn clear_iggy_events(env: &Env, integration_id: i64) {
+        api_integration_iggy_event::Entity::delete_many()
+            .filter(
+                api_integration_iggy_event::Column::ApiIntegrationId
+                    .eq(integration_id),
+            )
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+    }
+
+    async fn assert_updated_callsign_ids(
+        env: &Env,
+        fixture: &AssociationFixture,
+        expected: Vec<i64>,
+    ) {
+        let events = load_pending_events(&env.dbx, fixture.integration.id)
+            .await
+            .unwrap();
+        let event = events
+            .iter()
+            .find(|event| {
+                event.sigint_inbox_item_id == Some(fixture.item_id)
+                    && event.payload["event_type"]
+                        == "sigint_inbox_item_updated"
+            })
+            .unwrap();
+        let messages = load_pending_event_messages(
+            env,
+            &fixture.integration.api_user_login_id,
+            std::slice::from_ref(event),
+        )
+        .await
+        .unwrap();
+        assert_eq!(messages[&fixture.item_id].sigint_callsign_ids, expected);
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn catalog_callsign_edits_queue_updated_snapshots() {
+        let env = cleanup().await.unwrap();
+        let fixture = create_association_fixture(&env).await;
+        link_inbox_callsign(&env, &fixture).await;
+        clear_iggy_events(&env, fixture.integration.id).await;
+
+        let second_callsign_id =
+            insert_callsign(&env, fixture.unit.id, fixture.intercepted_at)
+                .await;
+        assert_updated_callsign_ids(
+            &env,
+            &fixture,
+            vec![fixture.callsign_id, second_callsign_id],
+        )
+        .await;
+        clear_iggy_events(&env, fixture.integration.id).await;
+
+        sigint_callsign::ActiveModel {
+            id: Set(second_callsign_id),
+            callsign: Set("renamed".to_string()),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        assert_updated_callsign_ids(&env, &fixture, vec![fixture.callsign_id])
+            .await;
+        clear_iggy_events(&env, fixture.integration.id).await;
+
+        sigint_callsign::ActiveModel {
+            id: Set(fixture.callsign_id),
+            deleted: Set(true),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        assert_updated_callsign_ids(&env, &fixture, Vec::new()).await;
     }
 
     #[actix_web::test]
