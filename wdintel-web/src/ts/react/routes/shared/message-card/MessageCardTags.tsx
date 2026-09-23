@@ -350,7 +350,9 @@ function MessageCardTagsComponent({
       aria-expanded={showCompactRest}
       aria-label={showCompactRest ? 'Згорнути додаткові теги' : 'Показати додаткові теги'}
     >
-      {showCompactRest ? 'згорнути' : 'розгорнути'}
+      <span className="message-card-tag-expand__label">
+        {showCompactRest ? 'згорнути' : 'розгорнути'}
+      </span>
       {showCompactRest ? (
         <ExpandLessIcon className="message-card-tag-expand__icon" aria-hidden />
       ) : (

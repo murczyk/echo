@@ -755,7 +755,7 @@ describe('FeedColumn', () => {
       'calc(max(12px, env(safe-area-inset-bottom, 0px)) + 47px)',
     );
     expect(scrollWrapper.getAttribute('data-duty-right-offset')).toBe(
-      'max(12px, env(safe-area-inset-right, 0px))',
+      'max(5px, env(safe-area-inset-right, 0px))',
     );
   });
 

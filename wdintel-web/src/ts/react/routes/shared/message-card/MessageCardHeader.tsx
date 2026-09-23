@@ -1029,7 +1029,7 @@ function MessageCardHeaderComponent({
     analysisHref,
   );
   const dateTimeBlock = (
-    <div className="inline-flex flex-wrap items-center gap-2">
+    <div className="message-card-header-timestamps inline-flex flex-wrap items-center">
       {messageTimeBasis === 'creation' ? (
         <div
           className="message-card-timestamp-item"
@@ -1061,6 +1061,7 @@ function MessageCardHeaderComponent({
     <div
       ref={headerRowRef}
       data-message-card-header-row="true"
+      data-message-card-display-mode={displayMode}
       className="flex w-full items-center"
       style={{
         columnGap: headerColumnGap,
@@ -1073,7 +1074,7 @@ function MessageCardHeaderComponent({
         </div>
       </div>
       {!readOnly || isPresent(attachmentArchiveDownload) ? (
-        <div className="flex items-center justify-center">
+        <div className="message-card-header-actions flex items-center justify-center">
           <ActionIconsRow
             id={id}
             msg={msg}
@@ -1106,7 +1107,7 @@ function MessageCardHeaderComponent({
         </div>
       ) : null}
       <div
-        className="flex min-w-0 flex-1 items-center justify-end"
+        className="message-card-header-end flex min-w-0 flex-1 items-center justify-end"
         style={{ paddingRight: `${rightInsetPx}px` }}
       >
         <div ref={rightHeaderContentRef} data-message-card-header-right="true">

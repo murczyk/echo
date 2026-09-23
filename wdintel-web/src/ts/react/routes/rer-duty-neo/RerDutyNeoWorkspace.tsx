@@ -11,6 +11,7 @@ import {
 import type { MessageFeedState } from './utils';
 import { MAX_MESSAGE_FEEDS } from './utils';
 import { CreateMessageFab } from '../shared/manage-message/CreateMessageFab';
+import { DUTY_WORKSPACE_CREATE_MESSAGE_RIGHT_INSET } from '../shared/manage-message/floating-control-geometry';
 
 function dutyFeedColumnMaxWidth(feedCount: number, narrow: boolean): string {
   if (narrow) return '100%';
@@ -512,7 +513,10 @@ export function RerDutyNeoWorkspace({
           </Box>
         </Box>
       )}
-      <CreateMessageFab onClick={openCreateMessageComposer} rightInset={5} />
+      <CreateMessageFab
+        onClick={openCreateMessageComposer}
+        rightInset={DUTY_WORKSPACE_CREATE_MESSAGE_RIGHT_INSET}
+      />
 
       <Backdrop
         open={showLoadingBackdrop}

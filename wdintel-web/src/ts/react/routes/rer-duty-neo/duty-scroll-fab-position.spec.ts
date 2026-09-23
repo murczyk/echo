@@ -16,7 +16,7 @@ describe('resolveDutyScrollFabPosition', () => {
       { narrowScreen: true, workspaceFabAvoidance: 'above' },
       {
         bottom: 'calc(max(12px, env(safe-area-inset-bottom, 0px)) + 47px)',
-        right: 'max(12px, env(safe-area-inset-right, 0px))',
+        right: 'max(5px, env(safe-area-inset-right, 0px))',
       },
     ],
     [

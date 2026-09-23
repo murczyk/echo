@@ -266,8 +266,12 @@ test.describe('message card visual regression', () => {
 
       expect(await rowCount()).toBe(1);
       await page.setViewportSize({ width: 360, height: 900 });
-      if (host === 'duty') await expect.poll(rowCount).toBeGreaterThan(1);
-      else await expect.poll(rowCount).toBe(1);
+      await expect.poll(rowCount).toBe(1);
+      if (host === 'analysis') {
+        await expect(
+          card.locator('[data-message-card-timestamp-item="true"] .message-card-text').first(),
+        ).toHaveCSS('font-size', '14px');
+      }
       const narrowCard = await buildMetrics(card);
       expect(narrowCard.scrollWidth).toBeLessThanOrEqual(narrowCard.clientWidth + 1);
       await page.setViewportSize({ width: 1280, height: 900 });
@@ -328,6 +332,91 @@ test.describe('message card visual regression', () => {
           ((chipBox?.y ?? 0) + (chipBox?.height ?? 0) / 2),
       ),
     ).toBeLessThanOrEqual(1);
+  });
+
+  test('#3570 keeps the narrow Duty header compact and right-aligned', async ({ page }) => {
+    await page.setViewportSize({ width: 412, height: 915 });
+    await installTaggedVisualFixture(page);
+    await page.goto('/rer-duty-neo?state-short=short-1');
+
+    const card = page.locator('.message-card-root').first();
+    await card.evaluate((element) => {
+      const item = element.closest<HTMLElement>('.message-card-item');
+      if (item) item.style.width = '330px';
+    });
+    const actions = card.locator('[aria-label="Дії повідомлення"]');
+    const timestampItems = card.locator('[data-message-card-timestamp-item="true"]');
+    const creationTimestamp = timestampItems.first().locator('.message-card-text');
+    const expandLabel = card.locator('.message-card-tag-expand__label');
+
+    await expect(actions).toBeVisible();
+    const alignment = await card.evaluate((element) => {
+      const cardRect = element.getBoundingClientRect();
+      const cardStyle = getComputedStyle(element);
+      const actionElement = element.querySelector<HTMLElement>('[aria-label="Дії повідомлення"]');
+      const actionRect = actionElement?.getBoundingClientRect();
+      return {
+        rightGap:
+          cardRect.right - Number.parseFloat(cardStyle.paddingRight) - (actionRect?.right ?? 0),
+        topGap: (actionRect?.top ?? 0) - cardRect.top - Number.parseFloat(cardStyle.paddingTop),
+      };
+    });
+    expect(Math.abs(alignment.rightGap)).toBeLessThanOrEqual(2);
+    expect(Math.abs(alignment.topGap)).toBeLessThanOrEqual(2);
+    expect(
+      await actions
+        .locator('.message-card-action-btn')
+        .evaluateAll(
+          (buttons) =>
+            new Set(buttons.map((button) => Math.round(button.getBoundingClientRect().top))).size,
+        ),
+    ).toBe(1);
+    await expect(creationTimestamp).toHaveCSS('font-size', '12px');
+    expect(
+      await timestampItems.evaluateAll((items) => {
+        const [creation, interception] = items.map((item) => item.getBoundingClientRect());
+        return (interception?.top ?? 0) - (creation?.bottom ?? 0);
+      }),
+    ).toBeLessThanOrEqual(1);
+    const metadataSpacing = await card.evaluate((element) => {
+      const timestamps = element.querySelectorAll<HTMLElement>(
+        '[data-message-card-timestamp-item="true"]',
+      );
+      const interception = timestamps.item(timestamps.length - 1).getBoundingClientRect();
+      const metadataRows = new Map<number, { top: number; bottom: number }>();
+      element
+        .querySelectorAll<HTMLElement>(
+          '.message-card-content [data-message-card-metadata-item="true"]',
+        )
+        .forEach((item) => {
+          const rect = item.getBoundingClientRect();
+          const rowKey = Math.round(rect.top);
+          const row = metadataRows.get(rowKey);
+          metadataRows.set(rowKey, {
+            top: Math.min(row?.top ?? rect.top, rect.top),
+            bottom: Math.max(row?.bottom ?? rect.bottom, rect.bottom),
+          });
+        });
+      const [firstRow, secondRow] = [...metadataRows.values()].toSorted(
+        (left, right) => left.top - right.top,
+      );
+      return {
+        headerToMetadata: (firstRow?.top ?? 0) - interception.bottom,
+        betweenMetadataRows: (secondRow?.top ?? 0) - (firstRow?.bottom ?? 0),
+      };
+    });
+    expect(
+      Math.abs(metadataSpacing.headerToMetadata - metadataSpacing.betweenMetadataRows),
+    ).toBeLessThanOrEqual(1);
+    expect(
+      await creationTimestamp.evaluate((element) => {
+        const textRange = document.createRange();
+        textRange.selectNodeContents(element);
+        return textRange.getClientRects().length;
+      }),
+    ).toBe(1);
+    await expect(expandLabel).toHaveCount(1);
+    await expect(expandLabel).toBeHidden();
   });
 
   test('ECHO-3324 preserves semantic card tokens, responsive dividers, and thumbnail geometry', async ({
@@ -585,7 +674,7 @@ test.describe('message card visual regression', () => {
         await expect(networkItems).toHaveCount(2);
         expect(
           await timestamps.evaluateAll((items) => items.map((item) => item.clientHeight)),
-        ).toEqual([25, 25]);
+        ).toEqual(host === 'duty' && cardWidth === 330 ? [18, 25] : [25, 25]);
         const metadataItemCount = await metadataItems.count();
         expect(
           await metadataItems.evaluateAll((items) => items.map((item) => item.clientHeight)),
@@ -744,11 +833,21 @@ test.describe('message card visual regression', () => {
       await page.goto('/rer-duty-neo?state-short=short-1');
 
       const scroller = page.locator('[data-duty-feed-scroller="true"]');
+      const feedContent = page.locator('[data-duty-feed-content-root]');
       const list = page.locator('[data-duty-feed-list="true"]');
       const anchorCard = page.locator('.message-card-root').filter({ hasText: 'Card 41' }).first();
 
+      await expect(feedContent).toBeVisible();
       await expect(scroller).toBeVisible();
       await expect(list).toBeVisible();
+
+      if (viewportWidth <= 1024) {
+        await expect(feedContent).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+        await expect(feedContent).toHaveCSS('border-width', '0px');
+      } else {
+        await expect(feedContent).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+        await expect(feedContent).toHaveCSS('border-width', '1px');
+      }
 
       const compactMetrics = {
         scroller: await buildMetrics(scroller),
@@ -757,8 +856,11 @@ test.describe('message card visual regression', () => {
       };
 
       expect(compactMetrics.scroller.scrollbarGutter).toBe('stable');
-      expect(Number.parseFloat(compactMetrics.scroller.paddingLeft)).toBeCloseTo(12, 1);
+      expect(Number.parseFloat(compactMetrics.scroller.paddingLeft)).toBe(0);
       expect(compactMetrics.card.rect.width).toBeGreaterThan(0);
+      expect(
+        Math.abs(compactMetrics.card.rect.left - compactMetrics.scroller.rect.left),
+      ).toBeLessThanOrEqual(2);
       const compactUsableRightEdge =
         compactMetrics.scroller.rect.right -
         (compactMetrics.scroller.offsetWidth - compactMetrics.scroller.clientWidth);
@@ -782,7 +884,7 @@ test.describe('message card visual regression', () => {
       };
 
       expect(expandedMetrics.scroller.scrollbarGutter).toBe('stable');
-      expect(Number.parseFloat(expandedMetrics.scroller.paddingLeft)).toBeCloseTo(12, 1);
+      expect(Number.parseFloat(expandedMetrics.scroller.paddingLeft)).toBe(0);
       expect(expandedMetrics.scroller.scrollHeight).toBeGreaterThan(
         expandedMetrics.scroller.clientHeight,
       );
