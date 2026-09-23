@@ -47,9 +47,8 @@ export function AuthorLabel({
             aria-label="Інформація про автора"
             className="p-echo-md text-echo-sm"
           >
-            <strong className="break-all">{author.displayName}</strong>
-            <dl className="m-0 mt-echo-sm grid grid-cols-[auto_1fr] gap-x-echo-md gap-y-echo-xs">
-              <dt>Логін</dt>
+            <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-echo-md gap-y-echo-xs">
+              <dt>Логін ЕХО</dt>
               <dd className="m-0 break-all">{author.login}</dd>
               {author.deltaLogin ? (
                 <>
