@@ -1125,6 +1125,11 @@ mod tests {
     }
 
     #[test]
+    fn parse_library_unit_ignores_bare_command_post_qualifier() {
+        assert!(parse_library_unit(&"кт".to_string()).is_empty());
+    }
+
+    #[test]
     fn parse_library_unit_parses_all_unit_names_files() {
         let unit_names_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("data/unit_names");
