@@ -267,7 +267,7 @@ export function FeedColumnHeader({
                     top: 4,
                     bottom: 4,
                     width: '1px',
-                    backgroundColor: 'rgba(148, 163, 184, 0.28)',
+                    backgroundColor: 'divider',
                     zIndex: 1,
                   },
                   '&::before': { left: 0 },

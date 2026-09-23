@@ -20,6 +20,8 @@ let nextOverlayId = 0;
 let overlays: OverlayEntry[] = [];
 let edgeGesture: EdgeGesture = null;
 let listenersAttached = false;
+let unmountHistoryCleanupScheduled = false;
+const pendingUnmountedOverlayIds = new Set<string>();
 
 function readOverlayIds(state: unknown): string[] {
   if (state == null || typeof state !== 'object' || Array.isArray(state)) return [];
@@ -164,16 +166,26 @@ function unregisterOverlay(id: string, consumeHistory = false) {
 }
 
 function unregisterOverlayAfterUnmount(id: string) {
-  const overlay = overlays.find((entry) => entry.id === id);
-  const shouldConsumeHistory =
-    overlay === topOverlay() && readOverlayIds(window.history.state).at(-1) === id;
+  const wasRegistered = overlays.some((entry) => entry.id === id);
+  if (wasRegistered) pendingUnmountedOverlayIds.add(id);
   unregisterOverlay(id);
-  if (!shouldConsumeHistory) return;
+  if (!wasRegistered || unmountHistoryCleanupScheduled) return;
 
+  unmountHistoryCleanupScheduled = true;
   queueMicrotask(() => {
-    if (overlays.some((entry) => entry.id === id)) return;
-    if (readOverlayIds(window.history.state).at(-1) !== id) return;
-    window.history.back();
+    unmountHistoryCleanupScheduled = false;
+    const historyIds = readOverlayIds(window.history.state);
+    let historyLayerCount = 0;
+    for (let index = historyIds.length - 1; index >= 0; index -= 1) {
+      const historyId = historyIds[index]!;
+      if (!pendingUnmountedOverlayIds.has(historyId)) break;
+      if (overlays.some((entry) => entry.id === historyId)) break;
+      historyLayerCount += 1;
+    }
+    pendingUnmountedOverlayIds.clear();
+
+    if (historyLayerCount === 1) window.history.back();
+    else if (historyLayerCount > 1) window.history.go(-historyLayerCount);
   });
 }
 

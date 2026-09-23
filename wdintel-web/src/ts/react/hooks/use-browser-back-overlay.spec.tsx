@@ -93,6 +93,25 @@ describe('useBrowserBackOverlay', () => {
     );
   });
 
+  it('consumes every trailing history layer when nested overlays unmount together', async () => {
+    const back = vi.spyOn(window.history, 'back').mockImplementation(() => undefined);
+    const go = vi.spyOn(window.history, 'go').mockImplementation(() => undefined);
+    await act(async () =>
+      root.render(
+        <>
+          <TestOverlay label="outer" onClose={vi.fn()} />
+          <TestOverlay label="inner" onClose={vi.fn()} />
+        </>,
+      ),
+    );
+
+    await act(async () => root.render(null));
+
+    expect(back).not.toHaveBeenCalled();
+    expect(go).toHaveBeenCalledOnce();
+    expect(go).toHaveBeenCalledWith(-2);
+  });
+
   it('dismisses an overlay when Back restores the pre-overlay state', async () => {
     const onClose = vi.fn();
     await act(async () => root.render(<TestOverlay label="editor" onClose={onClose} />));
