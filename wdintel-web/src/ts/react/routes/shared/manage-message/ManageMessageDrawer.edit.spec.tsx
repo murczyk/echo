@@ -660,6 +660,39 @@ describe('ManageMessageDrawer edit mode', () => {
     root.unmount();
   });
 
+  it('keeps the message editor open when browser Back is requested while saving', async () => {
+    const preEditorState = { screen: 'duty' };
+    window.history.replaceState(preEditorState, '', '/rer-duty-neo');
+    const onClose = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={onClose}
+          editTarget={{ id: 42, message: buildMessage() }}
+          editSaveInFlight
+          onSubmitEdit={vi.fn()}
+        />,
+      );
+    });
+    await act(async () => {
+      window.dispatchEvent(new PopStateEvent('popstate', { state: preEditorState }));
+    });
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(document.documentElement.classList.contains('echo-browser-back-overlay-open')).toBe(
+      true,
+    );
+    root.unmount();
+  });
+
   it('shows an inert report-edit loading shell with an enabled dismissal path', async () => {
     setRecentValues({});
     const onClose = vi.fn();

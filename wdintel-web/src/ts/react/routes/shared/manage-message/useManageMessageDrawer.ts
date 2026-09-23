@@ -745,7 +745,17 @@ export function useManageMessageDrawer({
     onClose();
   };
 
-  const requestDrawerClose = useBrowserBackOverlay({ open, onClose: finalizeDrawerClose });
+  const handleBrowserBack = () => {
+    if (saving) return false;
+    finalizeDrawerClose();
+    return true;
+  };
+
+  const requestDrawerClose = useBrowserBackOverlay({
+    open,
+    onClose: finalizeDrawerClose,
+    onBrowserBack: handleBrowserBack,
+  });
 
   const closeDrawerAfterSubmit = () => requestDrawerClose();
 
