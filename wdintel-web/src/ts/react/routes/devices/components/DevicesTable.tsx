@@ -31,6 +31,8 @@ import {
 import { MrtOverflowText } from '../../../components/mui-customized/table/mrt-overflow';
 import type { useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
 import { DeviceRowActions } from './DeviceRowActions';
+import { DeviceMobileList } from './DeviceMobileList';
+import { useDeviceMobileLayout } from '../use-device-mobile-layout';
 import type { DeviceRowView } from '../helpers';
 
 const defaultMrtOptions = getDefaultMRTOptions<DeviceRowView>();
@@ -174,6 +176,7 @@ export function DevicesTable({
   onTableInitialized,
   columnOrder,
 }: Props) {
+  const mobile = useDeviceMobileLayout();
   const columns = useDevicesTableColumns();
   const isInitialLoading = loading && rows.length === 0;
   const isEmptyResult = !isInitialLoading && rows.length === 0;
@@ -324,6 +327,25 @@ export function DevicesTable({
   useEffect(() => {
     onTableInitializedRef.current(table);
   }, [table]);
+
+  if (mobile)
+    return (
+      <DeviceMobileList
+        table={table}
+        rows={rows}
+        loading={loading}
+        refreshing={refreshing}
+        loadingMore={loadingMore}
+        hasMore={hasMore}
+        total={total}
+        canEdit={canEdit}
+        mutatingDeviceId={mutatingDeviceId}
+        hasFilters={hasFilters}
+        onEdit={onEdit}
+        onLoadMore={onLoadMore}
+        onClearFilters={onClearFilters}
+      />
+    );
 
   return (
     <Box

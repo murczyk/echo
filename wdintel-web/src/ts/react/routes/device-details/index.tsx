@@ -1,7 +1,6 @@
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import EditIcon from '@mui/icons-material/Edit';
-import { Box, Skeleton, Tooltip, useMediaQuery } from '@mui/material';
-import { useTheme } from '@mui/material/styles';
+import { Box, Skeleton, Tooltip } from '@mui/material';
 import { useEffect, useState, useRef, type CSSProperties } from 'react';
 
 import { PageErrorState } from '../../components/PageErrorState';
@@ -20,6 +19,10 @@ import { useDeviceFileJournal } from '../device-files/use-device-file-journal';
 import { DeviceDetailsLeftPanel } from './components/DeviceDetailsLeftPanel';
 import { DeviceDetailsTabPanel, type DeviceDetailsTab } from './components/DeviceDetailsTabPanel';
 import { formatDeviceLifecycleLabel } from './helpers';
+import { useDeviceMobileLayout } from '../devices/use-device-mobile-layout';
+import { DeviceMobileHeader } from './components/DeviceMobileHeader';
+import { DeviceMobileSheet } from '../devices/components/DeviceMobileSheet';
+import { DeviceMobileFilesPanel } from '../device-files/components/DeviceMobileFilesPanel';
 import { useDeviceDetailsPage } from './use-device-details-page';
 import { useDeviceSyncSessions } from './use-device-sync-sessions';
 import { selectDeviceSyncSession } from './url-state';
@@ -91,8 +94,9 @@ export function DeviceDetailsPage({
   syncId?: string | null;
 }) {
   const page = useDeviceDetailsPage({ deviceId, authUserRoles });
-  const theme = useTheme();
-  const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
+  const isMobileLayout = useDeviceMobileLayout();
+  const [mobileInfoOpen, setMobileInfoOpen] = useState(false);
+  const [mobileSessionsOpen, setMobileSessionsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<DeviceDetailsTab>('analytical');
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(syncId !== null);
@@ -105,7 +109,7 @@ export function DeviceDetailsPage({
   const sessions = useDeviceSyncSessions({
     deviceId,
     syncId,
-    open: rightPanelOpen,
+    open: isMobileLayout ? mobileSessionsOpen : rightPanelOpen,
     enabled: page.permissions.canRead && device !== null,
   });
   const tagsState = useDeviceAnalyticsTags({
@@ -177,6 +181,7 @@ export function DeviceDetailsPage({
   }
 
   const showEditAction = page.permissions.canEdit && device !== null && !device.archived;
+  const mobileFileOpen = isMobileLayout && activeTab === 'files' && files.selectedFile !== null;
 
   return (
     <Box
@@ -189,54 +194,69 @@ export function DeviceDetailsPage({
         overflow: 'hidden',
       }}
     >
-      <PageHeader
-        title={
-          <DeviceHeaderTitle
-            deviceName={device === null ? null : (device.name ?? 'Без назви')}
-            archived={device?.archived ?? false}
+      {isMobileLayout ? (
+        !mobileFileOpen && (
+          <DeviceMobileHeader
+            device={device}
+            canEdit={showEditAction}
+            editSubmitting={page.editSubmitting}
+            onEdit={page.openEditDrawer}
+            onInfo={() => setMobileInfoOpen(true)}
+            onSessions={() => setMobileSessionsOpen(true)}
+            syncId={syncId}
+            session={sessions.session}
           />
-        }
-        titleLeadingActions={
-          !isMobileLayout ? (
-            <SidePanelToggleButton
-              side="left"
-              active={leftPanelVisible}
-              label={toggleSidePanelLabel}
-              onClick={() => setLeftPanelOpen((current) => !current)}
+        )
+      ) : (
+        <PageHeader
+          title={
+            <DeviceHeaderTitle
+              deviceName={device === null ? null : (device.name ?? 'Без назви')}
+              archived={device?.archived ?? false}
             />
-          ) : null
-        }
-        titleLeadingGap={2}
-        actions={
-          <div className="flex flex-wrap items-center justify-end gap-echo-sm">
-            {syncId !== null ? (
-              <DeviceSyncSessionFilter
-                session={sessions.session}
-                onReset={() => selectDeviceSyncSession(null)}
+          }
+          titleLeadingActions={
+            !isMobileLayout ? (
+              <SidePanelToggleButton
+                side="left"
+                active={leftPanelVisible}
+                label={toggleSidePanelLabel}
+                onClick={() => setLeftPanelOpen((current) => !current)}
               />
-            ) : null}
-            {showEditAction ? (
-              <Tooltip title="Редагувати">
-                <span>
-                  <PowerIconButton
-                    onClick={page.openEditDrawer}
-                    disabled={page.editSubmitting}
-                    aria-label="Редагувати пристрій"
-                  >
-                    <EditIcon fontSize="small" />
-                  </PowerIconButton>
-                </span>
-              </Tooltip>
-            ) : null}
-            <SidePanelToggleButton
-              side="right"
-              active={rightPanelOpen}
-              label={rightPanelOpen ? 'Згорнути праву панель' : 'Розгорнути праву панель'}
-              onClick={() => setRightPanelOpen((current) => !current)}
-            />
-          </div>
-        }
-      />
+            ) : null
+          }
+          titleLeadingGap={2}
+          actions={
+            <div className="flex flex-wrap items-center justify-end gap-echo-sm">
+              {syncId !== null ? (
+                <DeviceSyncSessionFilter
+                  session={sessions.session}
+                  onReset={() => selectDeviceSyncSession(null)}
+                />
+              ) : null}
+              {showEditAction ? (
+                <Tooltip title="Редагувати">
+                  <span>
+                    <PowerIconButton
+                      onClick={page.openEditDrawer}
+                      disabled={page.editSubmitting}
+                      aria-label="Редагувати пристрій"
+                    >
+                      <EditIcon fontSize="small" />
+                    </PowerIconButton>
+                  </span>
+                </Tooltip>
+              ) : null}
+              <SidePanelToggleButton
+                side="right"
+                active={rightPanelOpen}
+                label={rightPanelOpen ? 'Згорнути праву панель' : 'Розгорнути праву панель'}
+                onClick={() => setRightPanelOpen((current) => !current)}
+              />
+            </div>
+          }
+        />
+      )}
 
       {page.status ? <PowerAlert severity={page.status.kind}>{page.status.text}</PowerAlert> : null}
       {device?.archived ? (
@@ -246,7 +266,11 @@ export function DeviceDetailsPage({
       ) : null}
 
       <div
-        className="relative flex-1 min-h-0 grid grid-cols-1 auto-rows-auto gap-echo-lg overflow-auto echo-lg:grid-cols-[var(--device-columns)] echo-lg:grid-rows-[minmax(0,1fr)] echo-lg:overflow-hidden"
+        className={
+          isMobileLayout
+            ? 'relative flex min-h-0 flex-1 overflow-hidden'
+            : 'relative flex-1 min-h-0 grid grid-cols-1 auto-rows-auto gap-echo-lg overflow-auto echo-lg:grid-cols-[var(--device-columns)] echo-lg:grid-rows-[minmax(0,1fr)] echo-lg:overflow-hidden'
+        }
         style={
           {
             '--device-columns': `${leftPanelVisible ? (activeTab === 'files' ? '320px ' : 'minmax(360px, 420px) ') : ''}minmax(0, 1fr)${rightPanelOpen ? ' 344px' : ''}`,
@@ -254,14 +278,16 @@ export function DeviceDetailsPage({
         }
       >
         {page.loading && device === null ? (
-          leftPanelVisible ? (
+          isMobileLayout ? (
+            <Skeleton variant="rounded" className="h-full w-full" />
+          ) : leftPanelVisible ? (
             <Box sx={{ minHeight: 420, overflow: 'hidden' }}>
               <DeviceDetailsLeftPanel device={null} loading={page.loading} />
             </Box>
           ) : null
         ) : device ? (
           <>
-            {activeTab === 'files' ? (
+            {!isMobileLayout && activeTab === 'files' ? (
               <div
                 hidden={!leftPanelVisible}
                 className="min-w-0 echo-lg:min-h-0 echo-lg:overflow-hidden"
@@ -273,13 +299,33 @@ export function DeviceDetailsPage({
                   onTagFilterChange={setTagFilter}
                 />
               </div>
-            ) : leftPanelVisible ? (
+            ) : !isMobileLayout && leftPanelVisible ? (
               <Box sx={{ minHeight: 0, overflow: 'hidden' }}>
                 <DeviceDetailsLeftPanel device={device} loading={page.loading} />
               </Box>
             ) : null}
-            <div className="min-h-[420px] echo-lg:min-h-0 min-w-0 flex overflow-hidden">
+            <div
+              className={
+                isMobileLayout
+                  ? 'flex min-h-0 min-w-0 flex-1 overflow-hidden'
+                  : 'min-h-[420px] echo-lg:min-h-0 min-w-0 flex overflow-hidden'
+              }
+            >
               <DeviceDetailsTabPanel
+                mobile={isMobileLayout}
+                mobileFiles={
+                  isMobileLayout ? (
+                    <DeviceMobileFilesPanel
+                      session={sessions.session}
+                      deviceId={deviceId}
+                      syncId={syncId}
+                      files={files}
+                      tagsState={tagsState}
+                      tagFilter={tagFilter}
+                      onTagFilterChange={setTagFilter}
+                    />
+                  ) : undefined
+                }
                 activeTab={activeTab}
                 selectedFile={files.selectedFile}
                 journal={journal}
@@ -296,7 +342,7 @@ export function DeviceDetailsPage({
                 onTabChange={setActiveTab}
               />
             </div>
-            {rightPanelOpen ? (
+            {!isMobileLayout && rightPanelOpen ? (
               <DeviceSyncSessionsSidebar
                 deviceId={deviceId}
                 syncId={syncId}
@@ -313,6 +359,34 @@ export function DeviceDetailsPage({
           showSpinner={false}
         />
       </div>
+
+      {isMobileLayout ? (
+        <>
+          <DeviceMobileSheet
+            open={mobileInfoOpen}
+            title="Про пристрій"
+            onClose={() => setMobileInfoOpen(false)}
+          >
+            <DeviceDetailsLeftPanel device={device} loading={page.loading} />
+          </DeviceMobileSheet>
+          <DeviceMobileSheet
+            open={mobileSessionsOpen}
+            title="Сесії синхронізації"
+            onClose={() => setMobileSessionsOpen(false)}
+          >
+            <DeviceSyncSessionsSidebar
+              fullHeight
+              deviceId={deviceId}
+              syncId={syncId}
+              state={sessions}
+              onSelect={(id) => {
+                setMobileSessionsOpen(false);
+                selectDeviceSyncSession(id);
+              }}
+            />
+          </DeviceMobileSheet>
+        </>
+      ) : null}
 
       <DeviceUpsertDrawer
         open={page.editForm !== null}

@@ -22,7 +22,9 @@ export function DeviceSyncSessionsSidebar({
   syncId,
   state,
   onSelect,
+  fullHeight = false,
 }: {
+  fullHeight?: boolean;
   deviceId: string;
   syncId: string | null;
   state: DeviceSyncSessionsState;
@@ -63,7 +65,7 @@ export function DeviceSyncSessionsSidebar({
     <aside
       aria-labelledby="device-sync-sessions-title"
       data-testid="device-sync-sessions-sidebar"
-      className="bg-echo-surface border border-echo-border rounded-echo-md min-w-0 min-h-0 flex flex-col overflow-hidden h-[50vh] echo-lg:h-full"
+      className={`bg-echo-surface border border-echo-border rounded-echo-md min-w-0 min-h-0 flex flex-col overflow-hidden ${fullHeight ? 'h-full' : 'h-[50vh] echo-lg:h-full'}`}
     >
       <header className="p-echo-lg flex flex-col gap-echo-md border-b border-echo-border">
         <div className="flex items-center justify-between gap-echo-sm">

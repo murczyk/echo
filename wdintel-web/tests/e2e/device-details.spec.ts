@@ -121,8 +121,13 @@ test('@smoke #3390 restores the session from the URL and keeps both sidebars in 
     expect(rightBox!.x + rightBox!.width).toBeLessThanOrEqual(width);
   }
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(right).toBeAttached();
-  expect(await right.evaluate((node) => getComputedStyle(node).position)).not.toBe('fixed');
+  await expect(right).toBeHidden();
+  await page.getByRole('button', { name: 'Сесії', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Сесії синхронізації' })).toBeVisible();
+  await expect(right).toBeVisible();
+  await right.getByRole('button', { name: /Усі сесії/ }).click();
+  await expect(page).toHaveURL(`/devices/${DEVICE_ID}?keep=1`);
+  await expect(right).toBeHidden();
 });
 
 test('@smoke #3390 rejects an invalid session URL without showing unfiltered results', async ({
@@ -743,11 +748,15 @@ test('@smoke device details uses tabs, an IDE-style Files sidebar, and a synchro
   await expect(filesSidebar.getByText('duplicate.log', { exact: true })).toHaveCount(2);
 
   await page.setViewportSize({ width: 900, height: 900 });
+  await expect(page.getByRole('button', { name: 'Про пристрій', exact: true })).toBeVisible();
+  await expect(filesSidebar).toBeVisible();
   const tabletSidebarBox = await filesSidebar.boundingBox();
   const tabletMainBox = await mainPanel.boundingBox();
-  expect(tabletMainBox?.y).toBeGreaterThanOrEqual(
-    (tabletSidebarBox?.y ?? 0) + (tabletSidebarBox?.height ?? 0),
+  expect(tabletSidebarBox!.y).toBeGreaterThan(tabletMainBox!.y);
+  expect(tabletSidebarBox!.x + tabletSidebarBox!.width).toBeLessThanOrEqual(
+    tabletMainBox!.x + tabletMainBox!.width,
   );
+  await expect(contentPane).toBeHidden();
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole('button', { name: 'Згорнути ліву панель' })).toBeHidden();
@@ -773,8 +782,15 @@ test('@smoke device details uses tabs, an IDE-style Files sidebar, and a synchro
   await expect(filesSidebar).toContainText('Налаштуйте область і фільтри та виконайте пошук.');
 
   await page.getByRole('tab', { name: 'Журнал' }).click();
-  await expect(journalTable).toBeVisible();
+  await expect(journalTable).toBeHidden();
+  await expect(page.getByRole('list', { name: 'Журнал синхронізації файлів' })).toContainText(
+    '/var/log/journal.log',
+  );
+  await expect(metadataPanel).toBeHidden();
+  await page.getByRole('button', { name: 'Про пристрій', exact: true }).click();
   await expect(metadataPanel).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: 'Про пристрій', exact: true })).toBeFocused();
 
   tracker.deviceArchived = true;
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -1025,6 +1041,7 @@ test('@smoke device files previews read only, explains unavailable states and do
       animations: 'disabled',
     });
     await page.setViewportSize({ width: 390, height: 844 });
+    await expect(pane.locator('header')).toBeVisible();
     const headerBounds = await pane.locator('header').boundingBox();
     const downloadBounds = await pane.getByRole('button', { name: 'Скачати файл' }).boundingBox();
     expect(downloadBounds!.x + downloadBounds!.width).toBeLessThanOrEqual(

@@ -27,6 +27,7 @@ export function useDeviceFiles({
     enabled && selection?.deviceId === deviceId && selection.syncId === syncId
       ? selection.file
       : null;
+  const clearSelectedFile = useCallback(() => setSelection(null), []);
   const selectFile = useCallback(
     (file: DeviceFileTreeEntry) => setSelection({ deviceId, syncId, file }),
     [deviceId, syncId],
@@ -64,7 +65,7 @@ export function useDeviceFiles({
     await Promise.all([load.refreshVisible(), tree.refreshExpanded()]);
   }, [counts.enqueue, counts.reset, load.refreshVisible, load.roots, tree.refreshExpanded]);
 
-  return { ...load, tree, counts, refreshVisible, selectedFile, selectFile };
+  return { ...load, tree, counts, refreshVisible, selectedFile, selectFile, clearSelectedFile };
 }
 
 export type DeviceFilesState = ReturnType<typeof useDeviceFiles>;

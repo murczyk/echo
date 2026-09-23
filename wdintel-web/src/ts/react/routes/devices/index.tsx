@@ -19,6 +19,7 @@ import { DeviceUpsertDrawer } from './components/DeviceUpsertDrawer';
 import { DevicesTable } from './components/DevicesTable';
 import { DevicesToolbar } from './components/DevicesToolbar';
 import { useDevicesPage } from './use-devices-page';
+import { useDeviceMobileLayout } from './use-device-mobile-layout';
 
 const columnOrder = buildDefaultColumnOrder({
   dataColumnIds: ['name', 'aors', 'unit', 'createdBy', 'createdAt', 'updatedAt', 'lifecycle'],
@@ -38,6 +39,7 @@ const defaultColumnVisibility = {
 
 function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
   const page = useDevicesPage({ authUserRoles });
+  const mobile = useDeviceMobileLayout();
   const tableStateContext = useTableStateContext();
   const isDesktopLayout = useMediaQuery((theme) => theme.breakpoints.up('lg'));
 
@@ -100,38 +102,55 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
         useFlexGap
         sx={{ minHeight: 0, height: '100%', overflow: isDesktopLayout ? 'hidden' : 'visible' }}
       >
-        <TablePageToolbar
-          title="Пристрої"
-          titleInfo={
-            <Typography variant="body2" color="text.secondary">
-              {page.total > 0 ? `Знайдено: ${page.total}` : null}
-            </Typography>
-          }
-          titleLeadingActions={
-            !isDesktopLayout ? null : (
-              <SidePanelToggleButton
-                side="left"
-                active={page.sidebarOpen}
-                label={page.sidebarOpen ? 'Згорнути ліву панель' : 'Розгорнути ліву панель'}
-                onClick={() => page.setSidebarOpen((prev: boolean) => !prev)}
-              />
-            )
-          }
-          titleLeadingGap={2}
-          internalActionsHidden
-          actions={
-            page.permissions.canCreate ? (
+        {mobile ? (
+          <header className="flex shrink-0 items-center justify-between gap-echo-sm">
+            <h1 className="m-0 text-[24px]! font-semibold!">Пристрої</h1>
+            {page.permissions.canCreate ? (
               <PowerButton
                 variant="contained"
+                className="!min-h-echo-control-lg"
                 onClick={page.openCreateDialog}
                 disabled={page.creating || page.loading}
-                startIcon={page.creating ? <CircularProgress size={16} /> : <AddIcon />}
+                startIcon={<AddIcon />}
               >
-                Створити пристрій
+                Створити
               </PowerButton>
-            ) : null
-          }
-        />
+            ) : null}
+          </header>
+        ) : (
+          <TablePageToolbar
+            title="Пристрої"
+            titleInfo={
+              <Typography variant="body2" color="text.secondary">
+                {page.total > 0 ? `Знайдено: ${page.total}` : null}
+              </Typography>
+            }
+            titleLeadingActions={
+              !isDesktopLayout ? null : (
+                <SidePanelToggleButton
+                  side="left"
+                  active={page.sidebarOpen}
+                  label={page.sidebarOpen ? 'Згорнути ліву панель' : 'Розгорнути ліву панель'}
+                  onClick={() => page.setSidebarOpen((prev: boolean) => !prev)}
+                />
+              )
+            }
+            titleLeadingGap={2}
+            internalActionsHidden
+            actions={
+              page.permissions.canCreate ? (
+                <PowerButton
+                  variant="contained"
+                  onClick={page.openCreateDialog}
+                  disabled={page.creating || page.loading}
+                  startIcon={page.creating ? <CircularProgress size={16} /> : <AddIcon />}
+                >
+                  Створити пристрій
+                </PowerButton>
+              ) : null
+            }
+          />
+        )}
 
         {page.status ? (
           <PowerAlert severity={page.status.kind}>{page.status.text}</PowerAlert>
