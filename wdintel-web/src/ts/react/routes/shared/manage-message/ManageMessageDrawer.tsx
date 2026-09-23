@@ -1,3 +1,4 @@
+import { canWriteMessages } from '../../../utils/roles';
 import { RadioFeaturesProvider } from '../RadioFeatures';
 import React from 'react';
 import { FormProvider, Controller, useFormContext } from 'react-hook-form';
@@ -346,7 +347,8 @@ function ReportSourceHeader({
 }
 
 export function ManageMessageDrawer(props: Props) {
-  const drawerState = useManageMessageDrawer(props);
+  const canWrite = canWriteMessages(props.currentUser?.roles);
+  const drawerState = useManageMessageDrawer({ ...props, open: props.open && canWrite });
   const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false);
   const [deleteInFlight, setDeleteInFlight] = React.useState(false);
 
@@ -425,7 +427,7 @@ export function ManageMessageDrawer(props: Props) {
     <RadioFeaturesProvider allowed={drawerState.radioFeaturesAllowed}>
       <Drawer
         anchor="right"
-        open={props.open}
+        open={props.open && canWrite}
         onClose={dismissDisabled ? undefined : handleDrawerClose}
         sx={{ zIndex: 1200 }}
         ModalProps={{
@@ -647,7 +649,7 @@ export function ManageMessageDrawer(props: Props) {
                       <LocationsSection
                         busy={busy}
                         recentValues={recentValues}
-                        open={props.open}
+                        open={props.open && canWrite}
                         onError={setErrorMsg}
                       />
 

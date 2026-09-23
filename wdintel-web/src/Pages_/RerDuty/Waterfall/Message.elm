@@ -847,6 +847,7 @@ leftColumn ( messageId, message ) ps model =
                     }
                     |> Popup.withPlacementBottom
                     |> Popup.view
+                    |> HtmlX.viewIf (Core.Auth.canWriteMessages ps.user)
                 , clipboardBlock Message True
                 , HtmlX.viewIf (Core.Auth.hasRole "DeleteMsg" ps.user) <|
                     div
@@ -1321,13 +1322,14 @@ rightColumn ( messageId, message ) ps model =
                                                 ( message.tags, message.inboxTags, ps.tags )
                                     in
                                     [ tagsBlock
+                                        (Core.Auth.canWriteMessages ps.user)
                                         tagIdsForRender
                                         inboxTagsForRender
                                         (ForSelf << ToggleTag model.id)
                                         tagsForRender
                                     , case model.botTagAction of
                                         Just action ->
-                                            if action.messageId == model.id then
+                                            if Core.Auth.canWriteMessages ps.user && action.messageId == model.id then
                                                 div
                                                     [ class "flex gap-2 items-center text-xs bg-[var(--color-card)] border border-[var(--color-border)] rounded px-3 py-2 shadow-sm" ]
                                                     [ button

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   canReadDevices,
+  canWriteMessages,
   canUseMessageDevices,
   hasAnyRole,
   canUseRadioFeatures,
@@ -98,5 +99,24 @@ describe('roles', () => {
     expect(hasAnyRole(['CallsignsEditor'], ['UnitsEditor', 'CallsignsEditor'])).toBe(true);
     expect(hasAnyRole(['DeviceSource'], ['Cyber', 'DeviceSource'])).toBe(true);
     expect(hasAnyRole(['Api'], ['Cyber', 'DeviceSource'])).toBe(false);
+  });
+});
+
+it.each([
+  { extra: [] },
+  { extra: ['Cyber'] },
+  { extra: ['Rer'] },
+  { extra: ['Full'] },
+  { extra: ['Admin'] },
+])('#3569 keeps CyberViewer permissions additive with %j', ({ extra: additionalRoles }) => {
+  const roles = ['CyberViewer', ...additionalRoles];
+  expect(hasRerOrCyber(roles)).toBe(true);
+  expect(hasRole(roles, 'Basic')).toBe(true);
+  expect(canWriteMessages(roles)).toBe(additionalRoles.length > 0);
+  expect(resolveDevicesCapabilities(roles)).toEqual({
+    canRead: true,
+    canCreate: true,
+    canWriteSourceData: true,
+    canWriteAnalyticalData: additionalRoles.includes('Admin'),
   });
 });

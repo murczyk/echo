@@ -1,3 +1,5 @@
+import { MessageWriteAccessContext } from '../shared/message-card/MessageWriteAccess';
+import { canWriteMessages } from '../../utils/roles';
 import { RadioFeaturesProvider } from '../shared/RadioFeatures';
 import { Box } from '@mui/material';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
@@ -77,7 +79,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
     [page.openReport],
   );
 
-  return (
+  const content = (
     <RadioFeaturesProvider allowed={page.radioFeaturesAllowed}>
       <Box
         sx={{
@@ -300,5 +302,10 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
         />
       </Box>
     </RadioFeaturesProvider>
+  );
+  return (
+    <MessageWriteAccessContext.Provider value={canWriteMessages(page.currentUser?.roles)}>
+      {content}
+    </MessageWriteAccessContext.Provider>
   );
 }

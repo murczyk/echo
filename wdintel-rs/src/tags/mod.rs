@@ -379,7 +379,9 @@ async fn inbox_message_tags_add(
     http_req: actix_web::HttpRequest,
     req: Json<InboxMessageTagsAddReq>,
 ) -> Result<Json<()>, AppError> {
-    ensure_base_role(&env.dbx, &user).await.c(h!())?;
+    crate::users::ensure_message_write(&env.dbx, &user)
+        .await
+        .c(h!())?;
     let user_id: uuid::Uuid = login_id_from_identity(&user)?;
 
     let txn: DatabaseTransaction = env.dbx.begin().await.c(h!())?;
@@ -442,7 +444,9 @@ async fn inbox_message_tags_rm(
     http_req: actix_web::HttpRequest,
     req: Json<InboxMessageTagsRmReq>,
 ) -> Result<Json<()>, AppError> {
-    ensure_base_role(&env.dbx, &user).await.c(h!())?;
+    crate::users::ensure_message_write(&env.dbx, &user)
+        .await
+        .c(h!())?;
     let user_id: uuid::Uuid = login_id_from_identity(&user)?;
 
     let txn: DatabaseTransaction = env.dbx.begin().await.c(h!())?;
@@ -572,7 +576,9 @@ async fn inbox_message_tags_model_error(
     http_req: actix_web::HttpRequest,
     req: Json<InboxMessageTagModelErrorReq>,
 ) -> Result<Json<()>, AppError> {
-    ensure_base_role(&env.dbx, &user).await.c(h!())?;
+    crate::users::ensure_message_write(&env.dbx, &user)
+        .await
+        .c(h!())?;
     let user_id: uuid::Uuid = login_id_from_identity(&user)?;
 
     let txn: DatabaseTransaction = env.dbx.begin().await.c(h!())?;

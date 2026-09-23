@@ -1,3 +1,5 @@
+import { MessageWriteAccessContext } from '../shared/message-card/MessageWriteAccess';
+import { canWriteMessages } from '../../utils/roles';
 import { DutyExcludeMenuContext } from '../shared/message-card/DutyExcludeMenu';
 import { RadioFeaturesProvider } from '../shared/RadioFeatures';
 import { canUseRadioFeatures } from '../../utils/roles';
@@ -85,6 +87,7 @@ export function RerDutyNeoPage({
   } = useRerDutyPageSettings();
   const openReportEditor = useCallback(
     (reportId: number) => {
+      if (!canWriteMessages(currentUser?.roles)) return;
       cancelReportEditLoad();
       const controller = new AbortController();
       reportLoadControllerRef.current = controller;
@@ -113,17 +116,18 @@ export function RerDutyNeoPage({
           });
         });
     },
-    [cancelReportEditLoad],
+    [cancelReportEditLoad, currentUser?.roles],
   );
   const openMessageEditor = useCallback(
     (target: { id: number; message: InboxMessage }) => {
+      if (!canWriteMessages(currentUser?.roles)) return;
       cancelReportEditLoad();
       setCreateMessageOpen(false);
       setReportSource(null);
       setEditAsReport(isIntelligenceReport(target.message));
       setEditTarget(target);
     },
-    [cancelReportEditLoad],
+    [cancelReportEditLoad, currentUser?.roles],
   );
   const openReportComposer = useCallback(
     (source: {
@@ -132,13 +136,14 @@ export function RerDutyNeoPage({
       senderName?: string | null;
       etalonDisplayModel: MessageCardEtalonDisplayModel;
     }) => {
+      if (!canWriteMessages(currentUser?.roles)) return;
       cancelReportEditLoad();
       setCreateMessageOpen(false);
       setEditAsReport(false);
       setEditTarget(null);
       setReportSource(source);
     },
-    [cancelReportEditLoad],
+    [cancelReportEditLoad, currentUser?.roles],
   );
   const previousFeedCountRef = useRef(0);
   const radioFeaturesAllowed = canUseRadioFeatures(currentUser?.roles);
@@ -329,12 +334,13 @@ export function RerDutyNeoPage({
   }, [activeFeedIdSafe, flushPendingNewerMessages]);
   const [hasCompletedInitialLoad, setHasCompletedInitialLoad] = useState(false);
   const openCreateMessageComposer = useCallback(() => {
+    if (!canWriteMessages(currentUser?.roles)) return;
     cancelReportEditLoad();
     setEditTarget(null);
     setEditAsReport(false);
     setReportSource(null);
     setCreateMessageOpen(true);
-  }, [cancelReportEditLoad]);
+  }, [cancelReportEditLoad, currentUser?.roles]);
   const closeMessageEditor = useCallback(() => {
     cancelReportEditLoad();
     setCreateMessageOpen(false);
@@ -409,7 +415,7 @@ export function RerDutyNeoPage({
     setDutyNeoDocumentTitleUnreadCount(dutyTabUnreadTotal);
   }, [dutyTabUnreadTotal]);
 
-  return (
+  const content = (
     <RadioFeaturesProvider allowed={radioFeaturesAllowed}>
       <Box
         className="flex flex-col w-full min-h-0"
@@ -503,5 +509,10 @@ export function RerDutyNeoPage({
         />
       </Box>
     </RadioFeaturesProvider>
+  );
+  return (
+    <MessageWriteAccessContext.Provider value={canWriteMessages(currentUser?.roles)}>
+      {content}
+    </MessageWriteAccessContext.Provider>
   );
 }

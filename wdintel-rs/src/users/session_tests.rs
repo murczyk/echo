@@ -438,3 +438,124 @@ async fn blocked_login_and_totp_keep_form_errors() {
         .unwrap()
         .is_none());
 }
+
+#[tokio::test]
+#[serial]
+async fn issue_3569_cyber_viewer_permissions_are_additive() {
+    let (env, _guard) = crate::functest::tests::cleanup_locked().await.unwrap();
+    for extra in [
+        None,
+        Some("Cyber"),
+        Some("Rer"),
+        Some("Full"),
+        Some("Admin"),
+    ] {
+        let mut roles = vec!["CyberViewer"];
+        roles.extend(extra);
+        let login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                roles: Set(serde_json::json!(roles)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        ensure_base_role_by_id(&env.dbx, &login.id).await.unwrap();
+        has_role(&env.dbx, &login.id, "Basic").await.unwrap();
+        let write =
+            has_any_role(&env.dbx, &login.id, vec!["Rer", "Cyber"]).await;
+        assert_eq!(write.is_ok(), extra.is_some());
+        if extra.is_none() {
+            assert!(matches!(write, Err(AppError::Forbidden(_))));
+            assert!(!role_matches(
+                &roles.iter().map(|r| String::from(*r)).collect::<Vec<_>>(),
+                "Rer"
+            )
+            .unwrap());
+        }
+    }
+}
+
+#[actix_web::test]
+#[serial]
+async fn issue_3569_viewer_cannot_create_or_edit_messages_or_reports() {
+    use crate::entities::signal_message;
+    use crate::sigint::direct_submit::{edit_message, submit_direct};
+    let (env, _guard) = crate::functest::tests::cleanup_locked().await.unwrap();
+    let login = find_test_login(&env.dbx).await.unwrap();
+    let mut login = login.into_active_model();
+    login.roles = Set(serde_json::json!(["CyberViewer"]));
+    login.update(&env.dbx).await.unwrap();
+    let store =
+        RedisSessionStore::new(crate::redis_conn_string(&env.config).unwrap())
+            .await
+            .unwrap();
+    let app = actix_test::init_service(
+        App::new()
+            .wrap(IdentityMiddleware::default())
+            .wrap(SessionMiddleware::new(store, Key::generate()))
+            .app_data(web::Data::from(env.clone()))
+            .route("/test/session", web::post().to(start_test_user_session))
+            .service(submit_direct)
+            .service(edit_message)
+            .service(crate::rer_importer::inbox::inbox_submit)
+            .service(crate::tags::inbox_message_tags_add)
+            .service(crate::tags::inbox_message_tags_rm)
+            .service(crate::tags::inbox_message_tags_model_error),
+    )
+    .await;
+    let response = actix_test::call_service(
+        &app,
+        actix_test::TestRequest::post()
+            .uri("/test/session")
+            .to_request(),
+    )
+    .await;
+    assert!(response.status().is_success());
+    let cookie = response.response().cookies().next().unwrap().into_owned();
+    let before = signal_message::Entity::find().all(&env.dbx).await.unwrap();
+    for (uri, payload) in [
+        (
+            "/api/1.1/submit-direct",
+            serde_json::json!({"text": "forbidden"}),
+        ),
+        (
+            "/api/1.1/submit-direct",
+            serde_json::json!({"text": "forbidden report", "parent_signal_message_ids": [1]}),
+        ),
+        (
+            "/api/1.1/message/1/edit",
+            serde_json::json!({"text": "forbidden edit"}),
+        ),
+        (
+            "/api/rer-importer/inbox/submit",
+            serde_json::json!({"messages": []}),
+        ),
+        (
+            "/api/tags/tags-add",
+            serde_json::json!({"message_id": 1, "tag_id": 1}),
+        ),
+        (
+            "/api/tags/tags-rm",
+            serde_json::json!({"message_id": 1, "tag_id": 1}),
+        ),
+        (
+            "/api/tags/tag-model-error",
+            serde_json::json!({"message_id": 1, "tag_id": 1}),
+        ),
+    ] {
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(uri)
+                .cookie(cookie.clone())
+                .set_json(payload)
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), actix_web::http::StatusCode::FORBIDDEN);
+    }
+    let after = signal_message::Entity::find().all(&env.dbx).await.unwrap();
+    assert_eq!(before, after);
+}

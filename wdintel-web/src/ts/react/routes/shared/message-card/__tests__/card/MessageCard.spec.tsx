@@ -1,3 +1,4 @@
+import { MessageWriteAccessContext } from '../../MessageWriteAccess';
 import { DutyExcludeMenuContext } from '../../DutyExcludeMenu';
 /**
  * @vitest-environment happy-dom
@@ -655,6 +656,7 @@ async function renderCard(
     audioTranscriptionEnabled?: boolean;
     dutyExcludeMenuEnabled?: boolean;
     radioFeaturesAllowed?: boolean;
+    canWrite?: boolean;
   } = {},
 ): Promise<Rendered> {
   const container = document.createElement('div');
@@ -706,7 +708,13 @@ async function renderCard(
             enabled={options.audioTranscriptionEnabled ?? true}
           >
             {options.dutyExcludeMenuEnabled == null ? (
-              <MessageCard {...props} />
+              options.canWrite == null ? (
+                <MessageCard {...props} />
+              ) : (
+                <MessageWriteAccessContext.Provider value={options.canWrite}>
+                  <MessageCard {...props} />
+                </MessageWriteAccessContext.Provider>
+              )
             ) : (
               <DutyExcludeMenuContext.Provider value={options.dutyExcludeMenuEnabled}>
                 <MessageCard {...props} />
@@ -4763,6 +4771,83 @@ describe('MessageCard', () => {
 
     expect(view.container.textContent).toContain('tags-loading');
     expect(view.container.textContent).not.toContain('переміщення');
+  });
+
+  it.each(['full', 'compact'] as const)(
+    '#3569 shows only applied, inert viewer tags in %s layout',
+    async (tagsLayout) => {
+      const onToggleTag = vi.fn();
+      const view = await renderCard(
+        {
+          tagsLayout,
+          msg: buildMessage({ tags: [3, 4], inboxTags: [] }),
+          onToggleTag,
+          onEditDetails: vi.fn(),
+          onDelete: undefined,
+        },
+        { canWrite: false },
+      );
+      rendered.push(view);
+      expect(view.container.querySelector('[data-message-card-tag-id="3"]')).not.toBeNull();
+      expect(view.container.querySelector('[data-message-card-tag-id="5"]')).toBeNull();
+      expect(
+        view.container.querySelector('button[aria-label="Створити розвіддонесення"]'),
+      ).toBeNull();
+      expect(view.container.querySelector('button[aria-label="Редагувати"]')).toBeNull();
+      expect(view.container.querySelector('button[aria-label="Додати в закладки"]')).not.toBeNull();
+      expect(view.container.querySelector('button[aria-label="Більше дій"]')).toBeNull();
+      const chip = view.container.querySelector('[data-message-card-tag-id="3"]') as HTMLElement;
+      expect(chip.querySelector('button')).toBeNull();
+      await click(chip);
+      expect(onToggleTag).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([false, true])(
+    '#3569 preserves bot visibility settings for viewer tags (%s)',
+    async (hideBotTags) => {
+      const view = await renderCard(
+        {
+          hideBotTags,
+          tagsLayout: 'full',
+          msg: buildMessage({
+            inboxTags: [
+              { id: 1, tagId: 3, confidence: 1, login: 'other', model: null, organismId: null },
+              { id: 2, tagId: 4, confidence: 1, login: null, model: 'bot', organismId: null },
+            ],
+          }),
+        },
+        { canWrite: false },
+      );
+      rendered.push(view);
+      expect(view.container.querySelector('[data-message-card-tag-id="3"]')).not.toBeNull();
+      expect(view.container.querySelector('[data-message-card-tag-id="4"]') != null).toBe(
+        !hideBotTags,
+      );
+      expect(view.container.querySelector('[data-message-card-tag-id="5"]')).toBeNull();
+    },
+  );
+
+  it('#3569 keeps attachment downloads in the viewer overflow menu', async () => {
+    const view = await renderCard(
+      {
+        onEditDetails: vi.fn(),
+        msg: buildMessage({
+          media: ['first', 'second'].map((id) => ({
+            id,
+            href: `/api/messenger/media/${id}`,
+            contentType: 'text/plain',
+            fileName: `${id}.txt`,
+            sizeBytes: 1,
+          })) as InboxMessage['media'],
+        }),
+      },
+      { canWrite: false },
+    );
+    rendered.push(view);
+    await click(view.container.querySelector('button[aria-label="Більше дій"]') as HTMLElement);
+    expect(queryArchiveDownloadLink(view.container)).not.toBeNull();
+    expect(view.container.textContent).not.toContain('Редагувати');
   });
 
   it('renders tags in read-only mode without mutation controls', async () => {

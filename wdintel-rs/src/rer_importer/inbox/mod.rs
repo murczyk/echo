@@ -288,7 +288,7 @@ async fn inbox_item_context(
     req: Json<InboxItemContextReq>,
 ) -> Result<Json<InboxItemContextRsp>, AppError> {
     let login = login_id_from_identity(&user).context(h!())?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber", "ApiAgent"])
+    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer", "ApiAgent"])
         .await
         .c(h!())?;
     let Some(message_uid) =
@@ -712,7 +712,7 @@ async fn messages_by_id(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "ApiAgent"],
+        vec!["Rer", "CyberViewer", "ApiAgent"],
     )
     .await
     .c(h!())?;
@@ -742,7 +742,7 @@ async fn messages_by_id_with_metadata(
     req: Json<MessageIdsReq>,
 ) -> Result<Json<InboxMessagesRsp>, AppError> {
     let login = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber", "ApiAgent"])
+    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer", "ApiAgent"])
         .await
         .c(h!())?;
     let is_admin = has_role(&env.dbx, &login, "Admin").await.is_ok();
@@ -794,7 +794,7 @@ async fn messages_by_uuid(
 ) -> Result<Json<MessageIdsRsp>, AppError> {
     let req = req.into_inner();
     let login = login_id_from_identity(&user).c(h!())?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber", "ApiAgent"])
+    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer", "ApiAgent"])
         .await
         .c(h!())?;
     let default_req = InboxMessagesReq {
@@ -1145,7 +1145,7 @@ async fn inbox_messages(
     req: Json<InboxMessagesReq>,
 ) -> Result<Json<InboxMessagesApiRsp>, AppError> {
     let user_id = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &user_id, vec!["Rer", "Cyber", "ApiAgent"])
+    has_any_role(&env.dbx, &user_id, vec!["Rer", "CyberViewer", "ApiAgent"])
         .await
         .c(h!())?;
     let is_admin = has_role(&env.dbx, &user_id, "Admin").await.is_ok();
@@ -1916,7 +1916,7 @@ async fn inbox_messages_count(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "ApiAgent"],
+        vec!["Rer", "CyberViewer", "ApiAgent"],
     )
     .await
     .c(h!())?;
@@ -3387,7 +3387,9 @@ async fn comment_save(
     env: actix_web::web::Data<Env>,
     req: Json<InboxCommentSaveReq>,
 ) -> Result<Json<()>, AppError> {
-    ensure_base_role(&env.dbx, &user).await.c(h!())?;
+    crate::users::ensure_message_write(&env.dbx, &user)
+        .await
+        .c(h!())?;
     let login = login_id_from_identity(&user)?;
     let sigint_groups =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -3436,7 +3438,9 @@ async fn submit_legacy_inbox(
     env: &Data<Env>,
     req: InboxSubmitReq,
 ) -> Result<InboxSubmitRsp, AppError> {
-    ensure_base_role(&env.dbx, &user).await.c(h!())?;
+    crate::users::ensure_message_write(&env.dbx, &user)
+        .await
+        .c(h!())?;
     let login = login_id_from_identity(&user)?;
     let logins = crate::users::get_organism_login_ids(&env.dbx, user)
         .await

@@ -1,6 +1,6 @@
 use crate::config::{
-    AI_AGENT_ROLE_API, AI_AGENT_ROLE_CYBER, AI_AGENT_ROLE_RER,
-    AI_AGENT_SETTINGS_ID, AI_AGENT_TEMPLATE_LOGIN_ID,
+    AI_AGENT_ROLE_API, AI_AGENT_ROLE_RER, AI_AGENT_SETTINGS_ID,
+    AI_AGENT_TEMPLATE_LOGIN_ID,
 };
 use crate::entities::{
     ai_agent_allowed_engine, ai_agent_settings, ai_agent_user_link, ai_engine,
@@ -147,7 +147,7 @@ fn has_rer_or_cyber_role(roles: &serde_json::Value) -> bool {
     let Ok(roles) = serde_json::from_value::<Vec<String>>(roles.clone()) else {
         return false;
     };
-    [AI_AGENT_ROLE_RER, AI_AGENT_ROLE_CYBER]
+    [AI_AGENT_ROLE_RER, crate::config::ROLE_CYBER_VIEWER]
         .iter()
         .any(|role| crate::users::role_matches(&roles, role).unwrap_or(false))
 }

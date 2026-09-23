@@ -1341,7 +1341,8 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                                     ]
                                     []
                                 ]
-                        , div
+                        , HtmlX.viewIf (Core.Auth.canWriteMessages vps.user) <|
+                          div
                             [ class "text-center cursor-pointer"
                             , style "font-size" "16px"
                             , title "редагувати додаткові поля"
@@ -1650,6 +1651,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                     ]
                   <|
                     [ tagsBlock
+                        (Core.Auth.canWriteMessages vps.user)
                         message.tags
                         (visibleInboxTags vps.disableBotTags message.inboxTags)
                         (ToggleTag msgId)
@@ -1657,7 +1659,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                     ]
                 , case model.botTagAction of
                     Just action ->
-                        if not vps.disableBotTags && action.messageId == msgId then
+                        if Core.Auth.canWriteMessages vps.user && not vps.disableBotTags && action.messageId == msgId then
                             div
                                 [ class "flex gap-2 items-center text-xs bg-card border border-border rounded px-3 py-2 shadow-sm" ]
                                 [ button
@@ -1684,6 +1686,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                     , style "min-height" "100px"
                     , style "font-size" ".9rem"
                     , placeholder "коментар"
+                    , disabled (not (Core.Auth.canWriteMessages vps.user))
                     , attribute "data-comment-draft" "rer-analysis"
                     , attribute "data-message-id" (String.fromInt msgId)
                     , onInput (ExtendedFormChanged msgId)

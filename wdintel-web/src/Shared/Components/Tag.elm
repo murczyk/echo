@@ -1,4 +1,4 @@
-module Shared.Components.Tag exposing (new, view, withBadge, withOverlays)
+module Shared.Components.Tag exposing (new, view, withBadge, withDisabled, withOverlays)
 
 import Html exposing (..)
 import Html.Attributes exposing (..)
@@ -37,16 +37,28 @@ withOverlays overlays (Config config) =
     Config { config | overlays = overlays }
 
 
+withDisabled : Bool -> Config msg -> Config msg
+withDisabled isDisabled (Config config) =
+    Config { config | isDisabled = isDisabled }
+
+
 view : String -> Config msg -> Html msg
 view label (Config config) =
     div
-        [ class " border-1 border-border rounded-sm text-text py-1 px-2 pointer relative"
-        , classList
-            [ ( "bg-tag-selected text-black border-1 border-border-selected", config.isActive )
+        ([ class " border-1 border-border rounded-sm text-text py-1 px-2 relative"
+         , classList
+            [ ( "pointer", not config.isDisabled )
+            , ( "bg-tag-selected text-black border-1 border-border-selected", config.isActive )
             , ( "opacity-75 hover:opacity-100 bg-tag", not config.isActive )
             ]
-        , onClick <| config.onToggle
-        ]
+         ]
+            ++ (if config.isDisabled then
+                    []
+
+                else
+                    [ onClick config.onToggle ]
+               )
+        )
         ((String.uncons label
             |> Maybe.map (\( head, tail ) -> String.cons (Char.toUpper head) tail)
             |> Maybe.withDefault ""
