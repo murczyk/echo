@@ -1011,6 +1011,13 @@ pub async fn reconcile_active_message_with_staged_media(
     )
     .await
     .c(h!())?;
+    let changed_group_link_message_ids = reset_source_message_group_link(
+        txn,
+        &source_message_before_edit,
+        source_message_was_duplicate_trace,
+    )
+    .await
+    .c(h!())?;
     clear_previous_dedupe_key_if_changed(
         redis,
         source_message.id,
@@ -1018,14 +1025,6 @@ pub async fn reconcile_active_message_with_staged_media(
         previous_attachments_hash.as_deref(),
         &body,
         attachments_hash.as_deref(),
-    )
-    .await
-    .c(h!())?;
-
-    let changed_group_link_message_ids = reset_source_message_group_link(
-        txn,
-        &source_message_before_edit,
-        source_message_was_duplicate_trace,
     )
     .await
     .c(h!())?;
@@ -1479,7 +1478,7 @@ async fn reset_source_message_group_link(
     source_message: &signal_message::Model,
     was_duplicate_trace: bool,
 ) -> anyhow::Result<Vec<i64>> {
-    crate::battle_line::lock_updates(txn).await.c(h!())?;
+    crate::battle_line::lock_updates_shared(txn).await.c(h!())?;
     signal_message_group::Entity::delete_many()
         .filter(
             signal_message_group::Column::SignalMessageId.eq(source_message.id),
@@ -5641,7 +5640,120 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn edit_clears_previous_dedupe_key_for_source_message() {
+    async fn edit_lock_timeout_preserves_previous_dedupe_key() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let mut redis = env.redis.clone();
+        let group_id = format!("edit-dedupe-key-{}", Uuid::new_v4());
+        let datasource = mk_datasource(&txn, Default::default()).await.unwrap();
+        mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                master_key: Set(group_id.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let datasource_group = mk_datasource_group(
+            &txn,
+            datasource_group::ActiveModel {
+                group_master_key: Set(group_id.clone()),
+                datasource_id: Set(datasource.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let timestamp = Utc::now().naive_utc();
+        let previous_body = format!("previous body {}", Uuid::new_v4());
+        let body = format!("edited duplicate body {}", Uuid::new_v4());
+        let source_message = mk_signal_message(
+            &txn,
+            signal_message::ActiveModel {
+                body: Set(Some(previous_body.clone())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                timestamp: Set(Some(timestamp)),
+                deleted: Set(false),
+                echo_inbox_message_id: Set(Some(4343)),
+                attachments_hash: Set(None),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let previous_key = dedupe_redis_key(
+            &dedupe::body_with_attachments_hash(&previous_body, None),
+        );
+        redis::cmd("SET")
+            .arg(&previous_key)
+            .arg(source_message.id.to_string())
+            .query_async::<()>(&mut redis)
+            .await
+            .unwrap();
+        let snapshot = MessageF1 {
+            id: Some("external-4343".to_string()),
+            text: body,
+            sender: None,
+            sender_phone_number: None,
+            group_id: Some(group_id),
+            attachments: vec![],
+            message_source: echo_im::types::MessageSource::Signal,
+            timestamp,
+            internal_id: 4343,
+            reply_to: None,
+            deleted: false,
+        };
+
+        txn.commit().await.unwrap();
+        let holder = env.dbx.begin().await.unwrap();
+        crate::battle_line::lock_updates(&holder).await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        txn.execute_unprepared("set local lock_timeout = '100ms'")
+            .await
+            .unwrap();
+
+        let error = reconcile_active_message(
+            &txn,
+            &mut redis,
+            env.settlements.clone(),
+            &env.rq,
+            &env.config,
+            &env.s3,
+            datasource.id,
+            &snapshot,
+            vec![source_message.clone()],
+        )
+        .await
+        .unwrap_err();
+        assert!(format!("{error:#}").contains("lock timeout"));
+        txn.rollback().await.unwrap();
+        holder.rollback().await.unwrap();
+
+        let stored_message =
+            signal_message::Entity::find_by_id(source_message.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(stored_message, source_message);
+        assert_eq!(
+            redis::cmd("GET")
+                .arg(&previous_key)
+                .query_async::<Option<String>>(&mut redis)
+                .await
+                .unwrap(),
+            Some(source_message.id.to_string())
+        );
+        redis::cmd("DEL")
+            .arg(&previous_key)
+            .query_async::<i64>(&mut redis)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn edit_clears_previous_dedupe_key_under_shared_update_lock() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
         let mut redis = env.redis.clone();
@@ -5721,6 +5833,14 @@ mod tests {
             deleted: false,
         };
 
+        let holder = env.dbx.begin().await.unwrap();
+        crate::battle_line::lock_updates_shared(&holder)
+            .await
+            .unwrap();
+        txn.execute_unprepared("set local lock_timeout = '100ms'")
+            .await
+            .unwrap();
+
         reconcile_active_message(
             &txn,
             &mut redis,
@@ -5767,6 +5887,7 @@ mod tests {
             .await
             .unwrap();
         txn.rollback().await.unwrap();
+        holder.rollback().await.unwrap();
     }
 
     #[tokio::test]
