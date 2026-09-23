@@ -566,6 +566,86 @@ describe('FeedColumn', () => {
     expect(container.querySelector('[data-testid="feed-filter-panel"]')).toBeNull();
   });
 
+  it.each([
+    ['Фільтри', 'feed-filter-panel'],
+    ['Сповіщення', 'feed-notification-panel'],
+    ['Підсвітка', 'feed-keywords-panel'],
+  ])('closes the %s panel on Escape', async (buttonLabel, panelTestId) => {
+    await act(async () => {
+      root.render(<FeedColumn column={buildProps().column} />);
+    });
+
+    const panelButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes(buttonLabel),
+    );
+    expect(panelButton).not.toBeNull();
+
+    await act(async () => {
+      panelButton?.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, cancelable: true, view: window }),
+      );
+    });
+    expect(container.querySelector(`[data-testid="${panelTestId}"]`)).not.toBeNull();
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+
+    expect(container.querySelector(`[data-testid="${panelTestId}"]`)).toBeNull();
+  });
+
+  it.each([
+    ['Фільтри', 'feed-filter-panel'],
+    ['Сповіщення', 'feed-notification-panel'],
+    ['Підсвітка', 'feed-keywords-panel'],
+  ])('closes the %s panel when tapping the feed outside it', async (buttonLabel, panelTestId) => {
+    await act(async () => {
+      root.render(<FeedColumn column={buildProps().column} />);
+    });
+
+    const panelButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes(buttonLabel),
+    );
+    await act(async () => {
+      panelButton?.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, cancelable: true, view: window }),
+      );
+    });
+    expect(container.querySelector(`[data-testid="${panelTestId}"]`)).not.toBeNull();
+
+    await act(async () => {
+      container
+        .querySelector('[data-duty-feed-scroller]')
+        ?.dispatchEvent(
+          new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }),
+        );
+    });
+
+    expect(container.querySelector(`[data-testid="${panelTestId}"]`)).toBeNull();
+  });
+
+  it('lets pointer input pass through the transparent area around an open panel', async () => {
+    await act(async () => {
+      root.render(<FeedColumn column={buildProps().column} />);
+    });
+
+    const filtersButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Фільтри'),
+    );
+    await act(async () => {
+      filtersButton?.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, cancelable: true, view: window }),
+      );
+    });
+
+    const panel = container.querySelector('[data-testid="feed-filter-panel"]');
+    const panelContainer = panel?.parentElement;
+    const transparentOverlay = panelContainer?.parentElement;
+
+    expect(getComputedStyle(transparentOverlay as Element).pointerEvents).toBe('none');
+    expect(getComputedStyle(panelContainer as Element).pointerEvents).toBe('auto');
+  });
+
   it('passes the message id and message to the Duty edit action', async () => {
     const props = buildProps();
     const message = minimalInboxMessage({ text: 'edit me' });
@@ -653,7 +733,34 @@ describe('FeedColumn', () => {
     expect(container.querySelector('[data-testid="feed-notification-panel"]')).toBeNull();
   });
 
-  it('renders a single explicit header action container with the narrow add action', async () => {
+  it('reports whether a header panel is open', async () => {
+    const onPanelOpenChange = vi.fn();
+    const props = buildProps();
+
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} onPanelOpenChange={onPanelOpenChange} />);
+    });
+
+    expect(onPanelOpenChange).toHaveBeenLastCalledWith('feed-1', false);
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="Фільтри"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(onPanelOpenChange).toHaveBeenLastCalledWith('feed-1', true);
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="Фільтри"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(onPanelOpenChange).toHaveBeenLastCalledWith('feed-1', false);
+  });
+
+  it('renders the mobile header as three icon-only controls without the add-feed action', async () => {
     const narrowProps = buildProps();
     narrowProps.column.view.narrowScreen = true;
     narrowProps.column.view.feedCount = 1;
@@ -666,13 +773,46 @@ describe('FeedColumn', () => {
 
     const actionContainer = container.querySelector('[data-duty-feed-header-actions]');
     expect(actionContainer).not.toBeNull();
-    expect(actionContainer?.querySelectorAll('button')).toHaveLength(1);
-    expect(container.querySelector('[data-duty-feed-header-layout="flex"]')).not.toBeNull();
-    expect(container.querySelector('button[aria-label="Додати стрічку"]')).not.toBeNull();
+    expect(actionContainer?.querySelectorAll('button')).toHaveLength(0);
+    const header = container.querySelector('[data-duty-feed-header-layout="flex"]');
+    expect(header?.getAttribute('data-duty-feed-header-variant')).toBe('mobile');
+    expect(getComputedStyle(header as Element).height).toBe('36px');
+    expect(getComputedStyle(header as Element).backgroundColor).toBe('#fff');
+    const controls = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('[data-duty-feed-header-controls] button'),
+    );
+    expect(controls.map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Фільтри',
+      'Сповіщення — Увімкнути сповіщення для стрічки',
+      'Підсвітка',
+    ]);
+    expect(controls.every((button) => button.textContent === '')).toBe(true);
+    const icons = Array.from(header?.querySelectorAll('.MuiSvgIcon-root') ?? []);
+    expect(icons.every((icon) => getComputedStyle(icon).fontSize === '20px')).toBe(true);
+    expect(getComputedStyle(icons[1]).color).toBe(getComputedStyle(icons[0]).color);
+    expect(container.querySelector('button[aria-label="Додати стрічку"]')).toBeNull();
     expect(container.querySelector('button[aria-label="Закрити стрічку"]')).toBeNull();
     expect(container.querySelector('[data-duty-feed-footer-spacer]')).toBeNull();
     expect(container.querySelector('[data-duty-message-create-button]')).toBeNull();
   });
+
+  it.each(['ready', 'degraded', 'unsupported'] as const)(
+    'keeps the %s notification state color in the mobile header',
+    async (state) => {
+      notificationApi.getBellState.mockReturnValue(state);
+      const props = buildProps();
+      props.column.view.narrowScreen = true;
+
+      await act(async () => {
+        root.render(<FeedColumn column={props.column} />);
+      });
+
+      const icons = Array.from(
+        container.querySelectorAll<SVGElement>('[data-duty-feed-header-controls] .MuiSvgIcon-root'),
+      );
+      expect(getComputedStyle(icons[1]).color).not.toBe(getComputedStyle(icons[0]).color);
+    },
+  );
 
   it('renders the add-feed action in a desktop header before close', async () => {
     const props = buildProps();
@@ -689,7 +829,7 @@ describe('FeedColumn', () => {
     expect(buttons).toEqual(['Додати стрічку', 'Закрити стрічку']);
   });
 
-  it('shows add and remove actions together on the active narrow feed when multiple feeds exist', async () => {
+  it('keeps remove but hides add on the active narrow feed when multiple feeds exist', async () => {
     const narrowProps = buildProps();
     narrowProps.column.view.narrowScreen = true;
     narrowProps.column.view.feedCount = 2;
@@ -701,8 +841,8 @@ describe('FeedColumn', () => {
     });
 
     const actionContainer = container.querySelector('[data-duty-feed-header-actions]');
-    expect(actionContainer?.querySelectorAll('button')).toHaveLength(2);
-    expect(container.querySelector('button[aria-label="Додати стрічку"]')).not.toBeNull();
+    expect(actionContainer?.querySelectorAll('button')).toHaveLength(1);
+    expect(container.querySelector('button[aria-label="Додати стрічку"]')).toBeNull();
     expect(container.querySelector('button[aria-label="Закрити стрічку"]')).not.toBeNull();
   });
 
@@ -755,7 +895,7 @@ describe('FeedColumn', () => {
       'calc(max(12px, env(safe-area-inset-bottom, 0px)) + 47px)',
     );
     expect(scrollWrapper.getAttribute('data-duty-right-offset')).toBe(
-      'max(12px, env(safe-area-inset-right, 0px))',
+      'max(5px, env(safe-area-inset-right, 0px))',
     );
   });
 

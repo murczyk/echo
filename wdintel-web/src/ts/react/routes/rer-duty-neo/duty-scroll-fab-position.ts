@@ -1,4 +1,5 @@
 import {
+  DUTY_WORKSPACE_CREATE_MESSAGE_RIGHT_INSET,
   POWER_FLOATING_CONTROL_DESKTOP_RIGHT_INSET,
   POWER_FLOATING_CONTROL_EDGE_INSET,
   POWER_FLOATING_CONTROL_GAP,
@@ -14,6 +15,7 @@ export const DUTY_SCROLL_FAB_STACK_OFFSET = DUTY_SCROLL_FAB_SIZE + DUTY_SCROLL_F
 
 const DUTY_SAFE_BOTTOM = `max(${POWER_FLOATING_CONTROL_EDGE_INSET}px, env(safe-area-inset-bottom, 0px))`;
 const DUTY_SAFE_RIGHT = `max(${POWER_FLOATING_CONTROL_EDGE_INSET}px, env(safe-area-inset-right, 0px))`;
+const DUTY_WORKSPACE_FAB_RIGHT = `max(${DUTY_WORKSPACE_CREATE_MESSAGE_RIGHT_INSET}px, env(safe-area-inset-right, 0px))`;
 
 export function resolveDutyScrollFabPosition({
   narrowScreen,
@@ -25,7 +27,7 @@ export function resolveDutyScrollFabPosition({
   if (workspaceFabAvoidance === 'above') {
     return {
       bottom: `calc(${DUTY_SAFE_BOTTOM} + ${DUTY_SCROLL_FAB_STACK_OFFSET}px)`,
-      right: DUTY_SAFE_RIGHT,
+      right: DUTY_WORKSPACE_FAB_RIGHT,
     };
   }
 

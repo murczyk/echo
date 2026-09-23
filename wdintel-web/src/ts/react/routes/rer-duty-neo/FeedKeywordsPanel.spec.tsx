@@ -1,6 +1,7 @@
 /** @vitest-environment happy-dom */
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
+import { createTheme, ThemeProvider } from '@mui/material';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const editorMock = vi.hoisted(() => vi.fn());
@@ -21,6 +22,7 @@ import { FeedKeywordsPanel } from './FeedKeywordsPanel';
 
 const selected = { id: 1, name: 'Alpha', words: ['alpha'], canEdit: true, canDelete: true };
 const filter = { highlightKeywordSetId: 1, highlightKeywordsEnabled: true } as never;
+const darkTheme = createTheme({ palette: { mode: 'dark' } });
 
 function setup(overrides: Record<string, unknown> = {}) {
   const saveEditorSet = vi.fn().mockResolvedValue(1);
@@ -51,13 +53,15 @@ async function renderPanel() {
   const onFilterChange = vi.fn();
   await act(async () => {
     root.render(
-      <FeedKeywordsPanel
-        feedId="feed-1"
-        filter={filter}
-        keywordSets={[selected as never]}
-        onFilterChange={onFilterChange}
-        onKeywordSetsReload={vi.fn().mockResolvedValue(undefined)}
-      />,
+      <ThemeProvider theme={darkTheme}>
+        <FeedKeywordsPanel
+          feedId="feed-1"
+          filter={filter}
+          keywordSets={[selected as never]}
+          onFilterChange={onFilterChange}
+          onKeywordSetsReload={vi.fn().mockResolvedValue(undefined)}
+        />
+      </ThemeProvider>,
     );
   });
   return { container, root, onFilterChange };

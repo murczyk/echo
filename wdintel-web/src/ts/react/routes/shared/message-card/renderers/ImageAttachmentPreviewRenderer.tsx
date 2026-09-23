@@ -1,5 +1,6 @@
 import type { SyntheticEvent } from 'react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import EditIcon from '@mui/icons-material/Edit';
 import {
@@ -60,6 +61,8 @@ const ImageEditor = lazy(() =>
     default: Component,
   })),
 );
+
+const COPY_SUCCESS_FEEDBACK_MS = 1500;
 
 function ImagePreview({
   image,
@@ -137,26 +140,30 @@ function ImageCopyAction({
       title={
         status === 'copying'
           ? 'Копіювання...'
-          : enabled
-            ? 'Скопіювати зображення'
-            : 'Копіювання зображень недоступне'
+          : status === 'copied'
+            ? 'Зображення скопійовано'
+            : enabled
+              ? 'Скопіювати зображення'
+              : 'Копіювання зображень недоступне'
       }
       enterDelay={300}
     >
       <MessageCardDisabledControlCursorWrapper disabled={!enabled || status === 'copying'}>
         <IconButton
-          aria-label="Скопіювати зображення"
+          aria-label={status === 'copied' ? 'Зображення скопійовано' : 'Скопіювати зображення'}
           size="small"
           onClick={onCopy}
           disabled={!enabled || status === 'copying'}
           sx={{
-            color: 'text.secondary',
+            color: status === 'copied' ? 'success.main' : 'text.secondary',
             '&:hover': { color: 'text.primary', backgroundColor: 'action.hover' },
             '&.Mui-disabled': { color: 'action.disabled' },
           }}
         >
           {status === 'copying' ? (
             <CircularProgress size={16} color="inherit" />
+          ) : status === 'copied' ? (
+            <CheckCircleIcon data-copy-success-icon fontSize="small" />
           ) : (
             <ContentCopyIcon fontSize="small" />
           )}
@@ -167,15 +174,7 @@ function ImageCopyAction({
 }
 
 function ImageCopyStatus({ status }: { status: 'idle' | 'copying' | 'copied' | 'error' }) {
-  const label =
-    status === 'copying'
-      ? 'Копіювання...'
-      : status === 'copied'
-        ? 'Зображення скопійовано'
-        : status === 'error'
-          ? 'Не вдалося скопіювати зображення'
-          : '';
-  if (label === '') return null;
+  if (status !== 'error') return null;
   return (
     <Typography
       variant="caption"
@@ -183,16 +182,11 @@ function ImageCopyStatus({ status }: { status: 'idle' | 'copying' | 'copied' | '
       sx={{
         alignSelf: 'center',
         ml: 0.75,
-        color:
-          status === 'copied'
-            ? 'success.main'
-            : status === 'error'
-              ? 'error.main'
-              : 'text.secondary',
+        color: 'error.main',
         whiteSpace: 'nowrap',
       }}
     >
-      {label}
+      Не вдалося скопіювати зображення
     </Typography>
   );
 }
@@ -269,6 +263,11 @@ export function ImageAttachmentPreviewRenderer({
   useEffect(() => {
     currentHrefRef.current = href;
   }, [href]);
+  useEffect(() => {
+    if (copyStatus !== 'copied') return;
+    const timeout = window.setTimeout(() => setCopyStatus('idle'), COPY_SUCCESS_FEEDBACK_MS);
+    return () => window.clearTimeout(timeout);
+  }, [copyStatus]);
   useEffect(() => {
     onEditModeChange?.(editor.isLocked);
     return () => onEditModeChange?.(false);
@@ -547,6 +546,7 @@ export function ImageAttachmentPreviewRenderer({
       }
       navigation={navigation}
       swipeEnabled={gestures.zoom <= ZOOM_MIN && !editor.isLocked}
+      onSwipeDismiss={close}
     />
   );
 }

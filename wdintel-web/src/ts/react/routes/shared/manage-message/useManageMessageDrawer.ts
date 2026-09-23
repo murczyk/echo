@@ -48,6 +48,7 @@ import { getAccessibleParentMessages, summarizeIntelligenceMessage } from '../in
 import { quickIntelReportSuggestion } from '../../../services/api/ai-intel-report';
 import { isAbortError } from '../../../services/api/client';
 import type { MessageCardEtalonDisplayModel } from '../message-card/message-card.utils';
+import { useBrowserBackOverlay } from '../../../hooks/use-browser-back-overlay';
 
 export type QuickIntelReportSuggestionState =
   | { status: 'idle' | 'loading' | 'applied' }
@@ -734,7 +735,7 @@ export function useManageMessageDrawer({
     };
   }, [formReady, isEditMode, editTarget?.id]);
 
-  const closeDrawerAfterSubmit = () => {
+  const finalizeDrawerClose = () => {
     blurActiveElement();
     uppy.cancelAll();
     reset();
@@ -744,9 +745,23 @@ export function useManageMessageDrawer({
     onClose();
   };
 
+  const handleBrowserBack = () => {
+    if (saving) return false;
+    finalizeDrawerClose();
+    return true;
+  };
+
+  const requestDrawerClose = useBrowserBackOverlay({
+    open,
+    onClose: finalizeDrawerClose,
+    onBrowserBack: handleBrowserBack,
+  });
+
+  const closeDrawerAfterSubmit = () => requestDrawerClose();
+
   const handleDrawerClose = () => {
     if (saving) return;
-    closeDrawerAfterSubmit();
+    requestDrawerClose();
   };
 
   const { onSubmit } = useMessageSubmit({

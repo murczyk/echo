@@ -57,6 +57,20 @@ export function MessageCardAttachmentPreviewProvider({
   const currentItem = attachments[resolvedIndex] ?? null;
 
   useEffect(() => {
+    if (attachments.length <= 1) return;
+    const hrefs = new Set<string>();
+    for (const offset of [-1, 1]) {
+      const item = attachments[normalizePreviewIndex(resolvedIndex + offset, attachments.length)];
+      if (item?.type === 'image' && item.value.href) hrefs.add(item.value.href);
+    }
+    hrefs.forEach((href) => {
+      const image = new Image();
+      image.decoding = 'async';
+      image.src = href;
+    });
+  }, [attachments, resolvedIndex]);
+
+  useEffect(() => {
     if (currentItem != null) onPreviewActivated?.();
   }, [currentItem, onPreviewActivated]);
 

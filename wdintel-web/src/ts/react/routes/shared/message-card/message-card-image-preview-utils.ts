@@ -12,10 +12,6 @@ export type DragState = {
   startX: number;
   startY: number;
   origin: Point;
-  fittedImageWidth: number;
-  fittedImageHeight: number;
-  stageWidth: number;
-  stageHeight: number;
 };
 
 export function normalizeWheelDeltaY(deltaY: number, deltaMode: number, pageSize: number): number {

@@ -40,6 +40,7 @@ import {
 import { isPresent } from '../../utils/misc';
 import { DeleteConfirmDialog } from './dialogs';
 import { useOrganismKeywordSetsEditor } from './useOrganismKeywordSetsEditor';
+import { dutyFeedPanelSurfaceSx } from './feed-panel-styles';
 
 const KEYWORD_WORDS_MAX_HEIGHT = '50vh';
 
@@ -229,7 +230,7 @@ export function FeedKeywordsPanel({
       sx={{
         border: '1px solid',
         borderColor: 'divider',
-        bgcolor: 'background.paper',
+        ...dutyFeedPanelSurfaceSx,
         width: '100%',
         maxWidth: '100%',
         px: { xs: 2, sm: 2.5 },

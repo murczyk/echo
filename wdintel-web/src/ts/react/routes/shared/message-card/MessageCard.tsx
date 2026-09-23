@@ -377,6 +377,7 @@ function MessageCardComponent({
     >
       <MessageCardRoot
         data-message-card-root="true"
+        data-message-card-display-mode={displayMode}
         className="message-card-root relative flex w-full flex-col overflow-hidden"
       >
         {watermarkUserName !== '' && (

@@ -61,6 +61,7 @@ let latestStageProps: {
   pan: { x: number; y: number };
   onImageLoad: (image: HTMLImageElement) => void;
   onStartPan: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onMovePan: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onStopPan: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onDoubleClick: (event: ReactMouseEvent<HTMLDivElement>) => void;
   activationEnabled: boolean;
@@ -252,6 +253,7 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewStage', () => ({
     {
       children?: ReactNode;
       onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
+      onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
       onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => void;
       onPointerLeave: (event: ReactPointerEvent<HTMLDivElement>) => void;
       onDoubleClick: (event: ReactMouseEvent<HTMLDivElement>) => void;
@@ -263,6 +265,7 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewStage', () => ({
       {
         children,
         onPointerDown,
+        onPointerMove,
         onPointerUp,
         onPointerLeave,
         onDoubleClick,
@@ -283,6 +286,7 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewStage', () => ({
         pan: image.props.pan,
         onImageLoad: image.props.onLoad,
         onStartPan: onPointerDown,
+        onMovePan: onPointerMove,
         onStopPan: onPointerUp,
         onDoubleClick,
         activationEnabled,
@@ -296,6 +300,7 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewStage', () => ({
           data-pan-x={String(latestStageProps?.pan.x)}
           data-pan-y={String(latestStageProps?.pan.y)}
           onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerLeave={onPointerLeave}
           onDoubleClick={onDoubleClick}
@@ -358,6 +363,8 @@ function TestImagePreviewDialog(props: TestImagePreviewDialogProps) {
 
 describe('ImageAttachmentPreviewRenderer', () => {
   afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
     dialogProps.splice(0);
     latestActionProps = null;
     latestStageProps = null;
@@ -658,6 +665,251 @@ describe('ImageAttachmentPreviewRenderer', () => {
     root.unmount();
   });
 
+  it('toggles two-times zoom with a double touch tap', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <TestImagePreviewDialog
+          imageHrefs={[{ href: 'https://example.test/image.png' } as never]}
+          open
+          onClose={vi.fn()}
+          onIndexChange={vi.fn()}
+        />,
+      );
+    });
+    await act(async () => {
+      latestStageProps?.onImageLoad(loadedImage);
+      await Promise.resolve();
+    });
+
+    const stage = document.body.querySelector('[data-stage]') as HTMLDivElement;
+    loadedImage.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, right: 320, bottom: 240, width: 320, height: 240 }) as DOMRect;
+    stage.setPointerCapture = vi.fn();
+    stage.releasePointerCapture = vi.fn();
+    const tap = (pointerId: number) => {
+      stage.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          bubbles: true,
+          pointerId,
+          pointerType: 'touch',
+          clientX: 160,
+          clientY: 120,
+        }),
+      );
+      stage.dispatchEvent(
+        new PointerEvent('pointerup', {
+          bubbles: true,
+          pointerId,
+          pointerType: 'touch',
+          clientX: 160,
+          clientY: 120,
+        }),
+      );
+    };
+
+    await act(async () => {
+      tap(1);
+      tap(2);
+    });
+    expect(latestStageProps?.zoom).toBe(200);
+
+    await act(async () => {
+      tap(3);
+      tap(4);
+    });
+    expect(latestStageProps?.zoom).toBe(100);
+    root.unmount();
+  });
+
+  it('coalesces touch pan updates at maximum zoom without repeated layout reads', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <TestImagePreviewDialog
+          imageHrefs={[{ href: 'https://example.test/image.png' } as never]}
+          open
+          onClose={vi.fn()}
+          onIndexChange={vi.fn()}
+        />,
+      );
+    });
+    await act(async () => {
+      latestStageProps?.onImageLoad(loadedImage);
+      await Promise.resolve();
+    });
+
+    const stage = document.body.querySelector('[data-stage]') as HTMLDivElement;
+    Object.defineProperties(stage, {
+      clientWidth: { configurable: true, value: 10 },
+      clientHeight: { configurable: true, value: 10 },
+    });
+    const getStageRect = vi.fn(() => ({ left: 0, top: 0, width: 10, height: 10 }) as DOMRect);
+    stage.getBoundingClientRect = getStageRect;
+    loadedImage.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, right: 10, bottom: 10, width: 10, height: 10 }) as DOMRect;
+    stage.setPointerCapture = vi.fn();
+    stage.releasePointerCapture = vi.fn();
+
+    await act(async () => {
+      stage.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -10000 }));
+    });
+    expect(latestStageProps?.zoom).toBe(400);
+    getStageRect.mockClear();
+
+    const animationFrames: FrameRequestCallback[] = [];
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      animationFrames.push(callback);
+      return animationFrames.length;
+    });
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+
+    await act(async () => {
+      stage.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          bubbles: true,
+          pointerId: 1,
+          pointerType: 'touch',
+          clientX: 5,
+          clientY: 5,
+        }),
+      );
+      for (const clientX of [6, 9, 12]) {
+        stage.dispatchEvent(
+          new PointerEvent('pointermove', {
+            bubbles: true,
+            pointerId: 1,
+            pointerType: 'touch',
+            clientX,
+            clientY: 5,
+          }),
+        );
+      }
+    });
+
+    expect(getStageRect).toHaveBeenCalledTimes(1);
+    expect(animationFrames).toHaveLength(1);
+    expect(latestStageProps?.pan.x).toBe(0);
+
+    await act(async () => {
+      animationFrames[0]?.(performance.now());
+    });
+    expect(loadedImage.style.transform).toBe('translate(7px, 0px) scale(4)');
+
+    await act(async () => {
+      stage.dispatchEvent(
+        new PointerEvent('pointerup', {
+          bubbles: true,
+          pointerId: 1,
+          pointerType: 'touch',
+          clientX: 12,
+          clientY: 5,
+        }),
+      );
+    });
+    expect(latestStageProps?.pan.x).toBe(7);
+    root.unmount();
+  });
+
+  it('coalesces pinch zoom updates into one visual frame', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <TestImagePreviewDialog
+          imageHrefs={[{ href: 'https://example.test/image.png' } as never]}
+          open
+          onClose={vi.fn()}
+          onIndexChange={vi.fn()}
+        />,
+      );
+    });
+    await act(async () => {
+      latestStageProps?.onImageLoad(loadedImage);
+      await Promise.resolve();
+    });
+
+    const stage = document.body.querySelector('[data-stage]') as HTMLDivElement;
+    Object.defineProperties(stage, {
+      clientWidth: { configurable: true, value: 100 },
+      clientHeight: { configurable: true, value: 100 },
+    });
+    stage.getBoundingClientRect = () => ({ left: 0, top: 0, width: 100, height: 100 }) as DOMRect;
+    stage.setPointerCapture = vi.fn();
+    stage.releasePointerCapture = vi.fn();
+
+    const animationFrames: FrameRequestCallback[] = [];
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      animationFrames.push(callback);
+      return animationFrames.length;
+    });
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+
+    await act(async () => {
+      for (const [pointerId, clientX] of [
+        [1, 45],
+        [2, 55],
+      ] as const) {
+        stage.dispatchEvent(
+          new PointerEvent('pointerdown', {
+            bubbles: true,
+            pointerId,
+            pointerType: 'touch',
+            clientX,
+            clientY: 50,
+          }),
+        );
+      }
+      for (const clientX of [65, 75, 85]) {
+        stage.dispatchEvent(
+          new PointerEvent('pointermove', {
+            bubbles: true,
+            pointerId: 2,
+            pointerType: 'touch',
+            clientX,
+            clientY: 50,
+          }),
+        );
+      }
+    });
+
+    expect(animationFrames).toHaveLength(1);
+    expect(latestStageProps?.zoom).toBe(100);
+
+    await act(async () => {
+      animationFrames[0]?.(performance.now());
+    });
+    expect(loadedImage.style.transform).toBe('translate(15px, 0px) scale(4)');
+    expect(loadedImage.style.transition).toBe('none');
+
+    await act(async () => {
+      for (const [pointerId, clientX] of [
+        [2, 85],
+        [1, 45],
+      ] as const) {
+        stage.dispatchEvent(
+          new PointerEvent('pointerup', {
+            bubbles: true,
+            pointerId,
+            pointerType: 'touch',
+            clientX,
+            clientY: 50,
+          }),
+        );
+      }
+    });
+    expect(latestStageProps?.zoom).toBe(400);
+    root.unmount();
+  });
+
   it('preserves the image point under an off-centre wheel cursor', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -686,6 +938,8 @@ describe('ImageAttachmentPreviewRenderer', () => {
     });
     stage.getBoundingClientRect = () =>
       ({ left: 100, top: 100, width: 800, height: 400 }) as DOMRect;
+    loadedImage.getBoundingClientRect = () =>
+      ({ left: 100, top: 100, right: 900, bottom: 500, width: 800, height: 400 }) as DOMRect;
 
     await act(async () => {
       const wheelEvent = new WheelEvent('wheel', { bubbles: true, deltaY: -10 });
@@ -698,12 +952,12 @@ describe('ImageAttachmentPreviewRenderer', () => {
 
     const nextZoom = 100 * Math.exp(10 * 0.0015);
     expect(latestStageProps?.zoom).toBeCloseTo(nextZoom, 8);
-    expect(latestStageProps?.pan.x).toBe(0);
+    expect(latestStageProps?.pan.x).toBeCloseTo(100 - nextZoom, 8);
     expect(latestStageProps?.pan.y).toBe(0);
     root.unmount();
   });
 
-  it('uses fitted image dimensions after the image loads for wheel pan clamping', async () => {
+  it('keeps a bottom image point anchored across repeated wheel zoom', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -726,6 +980,8 @@ describe('ImageAttachmentPreviewRenderer', () => {
     });
     stage.getBoundingClientRect = () =>
       ({ left: 100, top: 100, width: 800, height: 600 }) as DOMRect;
+    loadedImage.getBoundingClientRect = () =>
+      ({ left: 100, top: 100, right: 900, bottom: 700, width: 800, height: 600 }) as DOMRect;
 
     await act(async () => {
       latestStageProps?.onImageLoad(loadedImage);
@@ -736,7 +992,7 @@ describe('ImageAttachmentPreviewRenderer', () => {
       const wheelEvent = new WheelEvent('wheel', { bubbles: true, deltaY });
       Object.defineProperties(wheelEvent, {
         clientX: { value: 500 },
-        clientY: { value: 700 },
+        clientY: { value: 650 },
       });
       stage.dispatchEvent(wheelEvent);
     };
@@ -746,14 +1002,135 @@ describe('ImageAttachmentPreviewRenderer', () => {
     });
 
     expect(latestStageProps?.zoom).toBeCloseTo(200, 8);
-    expect(latestStageProps?.pan.y).toBe(0);
+    expect(latestStageProps?.pan.y).toBeCloseTo(-250, 8);
 
     await act(async () => {
       wheelToZoom(-Math.log(2) / 0.0015);
     });
 
     expect(latestStageProps?.zoom).toBeCloseTo(400, 8);
-    expect(latestStageProps?.pan.y).toBe(0);
+    expect(latestStageProps?.pan.y).toBeCloseTo(-750, 8);
+    root.unmount();
+  });
+
+  it('keeps an off-centre pinch midpoint anchored without edge clamping', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <TestImagePreviewDialog
+          imageHrefs={[{ href: 'https://example.test/image.png' } as never]}
+          open
+          onClose={vi.fn()}
+          onIndexChange={vi.fn()}
+        />,
+      );
+    });
+    await act(async () => {
+      latestStageProps?.onImageLoad(loadedImage);
+      await Promise.resolve();
+    });
+
+    const stage = document.body.querySelector('[data-stage]') as HTMLDivElement;
+    Object.defineProperties(stage, {
+      clientWidth: { configurable: true, value: 100 },
+      clientHeight: { configurable: true, value: 100 },
+    });
+    stage.getBoundingClientRect = () => ({ left: 0, top: 0, width: 100, height: 100 }) as DOMRect;
+    stage.setPointerCapture = vi.fn();
+    stage.releasePointerCapture = vi.fn();
+
+    await act(async () => {
+      for (const [pointerId, clientX] of [
+        [1, 45],
+        [2, 55],
+      ] as const) {
+        stage.dispatchEvent(
+          new PointerEvent('pointerdown', {
+            bubbles: true,
+            pointerId,
+            pointerType: 'touch',
+            clientX,
+            clientY: 80,
+          }),
+        );
+      }
+      for (const [pointerId, clientX] of [
+        [1, 40],
+        [2, 60],
+      ] as const) {
+        stage.dispatchEvent(
+          new PointerEvent('pointermove', {
+            bubbles: true,
+            pointerId,
+            pointerType: 'touch',
+            clientX,
+            clientY: 80,
+          }),
+        );
+      }
+      for (const [pointerId, clientX] of [
+        [2, 60],
+        [1, 40],
+      ] as const) {
+        stage.dispatchEvent(
+          new PointerEvent('pointerup', {
+            bubbles: true,
+            pointerId,
+            pointerType: 'touch',
+            clientX,
+            clientY: 80,
+          }),
+        );
+      }
+    });
+
+    expect(latestStageProps?.zoom).toBe(200);
+    expect(latestStageProps?.pan.y).toBe(-30);
+    root.unmount();
+  });
+
+  it('replaces the copy icon with a transient success check without adding header text', async () => {
+    vi.useFakeTimers();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <TestImagePreviewDialog
+          imageHrefs={[{ href: 'https://example.test/image.png' } as never]}
+          open
+          onClose={vi.fn()}
+          onIndexChange={vi.fn()}
+        />,
+      );
+    });
+    await act(async () => {
+      latestStageProps?.onImageLoad(loadedImage);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await latestActionProps?.onCopyImage();
+      await Promise.resolve();
+    });
+
+    expect(
+      document.body.querySelector('button[aria-label="Зображення скопійовано"]'),
+    ).not.toBeNull();
+    expect(document.body.querySelector('[data-copy-success-icon]')).not.toBeNull();
+    expect(document.body.textContent).not.toContain('Зображення скопійовано');
+
+    await act(async () => {
+      vi.advanceTimersByTime(1500);
+    });
+
+    expect(
+      document.body.querySelector('button[aria-label="Скопіювати зображення"]'),
+    ).not.toBeNull();
+    expect(document.body.querySelector('[data-copy-success-icon]')).toBeNull();
     root.unmount();
   });
 
