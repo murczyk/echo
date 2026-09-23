@@ -1104,8 +1104,9 @@ async fn set_sync_completed(
 mod tests {
     use super::*;
     use crate::entities::{
-        area_of_responsibility, datasource_group, echo_gpu_transcription_queue,
-        intel_product, login, media_summary, ocr_job, organism, organism_aor,
+        area_of_responsibility, datasource, datasource_group,
+        echo_gpu_transcription_queue, intel_product, login, media_summary,
+        ocr_job, organism, organism_aor, organism_group,
         sea_orm_active_enums::{
             SigintInboxItemCallsignSource, SigintInboxItemUnitKind,
         },
@@ -2361,6 +2362,79 @@ mod tests {
         assert_settlement_and_unlinks(&env, &fixture, &item_callsign).await;
     }
 
+    async fn relink_network_callsign_ids(
+        env: &Env,
+        fixture: &AssociationFixture,
+    ) -> serde_json::Value {
+        sigint_inbox_item_network::Entity::delete_many()
+            .filter(
+                sigint_inbox_item_network::Column::SigintInboxItemId
+                    .eq(fixture.item_id),
+            )
+            .filter(
+                sigint_inbox_item_network::Column::SigintNetworkId
+                    .eq(fixture.network.id),
+            )
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        clear_iggy_events(env, fixture.integration.id).await;
+        mk_sigint_inbox_item_network(
+            &env.dbx,
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(fixture.item_id),
+                sigint_network_id: Set(fixture.network.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        load_pending_events(&env.dbx, fixture.integration.id)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|event| {
+                event.payload["event_type"]
+                    == "sigint_inbox_item_network_linked"
+            })
+            .unwrap()
+            .payload["sigint_callsign_ids"]
+            .clone()
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn network_links_use_current_catalog_callsigns() {
+        let env = cleanup().await.unwrap();
+        let fixture = create_association_fixture(&env).await;
+
+        sigint_network_callsign::ActiveModel {
+            id: Set(fixture.network_callsign.id),
+            sigint_callsign_id: Set(None),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        assert_eq!(
+            relink_network_callsign_ids(&env, &fixture).await,
+            serde_json::json!([fixture.callsign_id])
+        );
+
+        sigint_unit::ActiveModel {
+            id: Set(fixture.unit.id),
+            active: Set(false),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        assert_eq!(
+            relink_network_callsign_ids(&env, &fixture).await,
+            serde_json::json!([])
+        );
+    }
+
     #[actix_web::test]
     #[serial]
     async fn network_visibility_queues_frequency_catalog_events() {
@@ -2853,6 +2927,143 @@ mod tests {
             ..Default::default()
         }
         .insert(&fixture.env.dbx)
+        .await
+        .unwrap();
+        assert_visibility_reconciliation(
+            &fixture.env,
+            &fixture.integration,
+            fixture.item_id,
+            true,
+        )
+        .await;
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn datasource_deletion_reconciles_snapshots() {
+        let fixture = group_visibility_fixture().await;
+        let datasource_ids = sigint_zone_datasource::Entity::find()
+            .filter(
+                sigint_zone_datasource::Column::GroupMasterKey
+                    .eq(fixture.group.group_master_key.clone()),
+            )
+            .all(&fixture.env.dbx)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|link| link.datasource_id)
+            .collect::<BTreeSet<_>>();
+        let live_datasource_ids = datasource::Entity::find()
+            .filter(datasource::Column::Id.is_in(datasource_ids))
+            .filter(datasource::Column::Deleted.eq(false))
+            .all(&fixture.env.dbx)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|datasource| datasource.id)
+            .collect::<Vec<_>>();
+        let target_datasource_id = live_datasource_ids[0];
+        for datasource_id in &live_datasource_ids[1..] {
+            datasource::ActiveModel {
+                id: Set(*datasource_id),
+                deleted: Set(true),
+                ..Default::default()
+            }
+            .update(&fixture.env.dbx)
+            .await
+            .unwrap();
+        }
+        clear_iggy_events(&fixture.env, fixture.integration.id).await;
+
+        datasource::ActiveModel {
+            id: Set(target_datasource_id),
+            deleted: Set(true),
+            ..Default::default()
+        }
+        .update(&fixture.env.dbx)
+        .await
+        .unwrap();
+        assert_visibility_reconciliation(
+            &fixture.env,
+            &fixture.integration,
+            fixture.item_id,
+            false,
+        )
+        .await;
+        clear_iggy_events(&fixture.env, fixture.integration.id).await;
+
+        datasource::ActiveModel {
+            id: Set(target_datasource_id),
+            deleted: Set(false),
+            ..Default::default()
+        }
+        .update(&fixture.env.dbx)
+        .await
+        .unwrap();
+        assert_visibility_reconciliation(
+            &fixture.env,
+            &fixture.integration,
+            fixture.item_id,
+            true,
+        )
+        .await;
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn ancestor_moves_reconcile_descendant_snapshots() {
+        let fixture = group_visibility_fixture().await;
+        let moved_ancestor = mk_organism(&fixture.env.dbx, Default::default())
+            .await
+            .unwrap();
+        organism::ActiveModel {
+            id: Set(fixture.login.organism_id.unwrap()),
+            parent_id: Set(Some(moved_ancestor.id)),
+            ..Default::default()
+        }
+        .update(&fixture.env.dbx)
+        .await
+        .unwrap();
+        let restrictive_parent =
+            mk_organism(&fixture.env.dbx, Default::default())
+                .await
+                .unwrap();
+        let restricted_group =
+            mk_signal_group(&fixture.env.dbx, Default::default())
+                .await
+                .unwrap();
+        organism_group::ActiveModel {
+            organism_id: Set(restrictive_parent.id),
+            signal_group_master_key: Set(restricted_group.master_key),
+        }
+        .insert(&fixture.env.dbx)
+        .await
+        .unwrap();
+        clear_iggy_events(&fixture.env, fixture.integration.id).await;
+
+        organism::ActiveModel {
+            id: Set(moved_ancestor.id),
+            parent_id: Set(Some(restrictive_parent.id)),
+            ..Default::default()
+        }
+        .update(&fixture.env.dbx)
+        .await
+        .unwrap();
+        assert_visibility_reconciliation(
+            &fixture.env,
+            &fixture.integration,
+            fixture.item_id,
+            false,
+        )
+        .await;
+        clear_iggy_events(&fixture.env, fixture.integration.id).await;
+
+        organism::ActiveModel {
+            id: Set(moved_ancestor.id),
+            parent_id: Set(None),
+            ..Default::default()
+        }
+        .update(&fixture.env.dbx)
         .await
         .unwrap();
         assert_visibility_reconciliation(

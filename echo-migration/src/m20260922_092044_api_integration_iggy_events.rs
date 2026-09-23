@@ -182,14 +182,6 @@ returns jsonb language sql stable as $$
     where callsign.sigint_network_id = network_id and not callsign.deleted;
 $$;
 
-create function api_integration_iggy_network_sigint_callsign_ids(network_id bigint)
-returns jsonb language sql stable as $$
-    select coalesce(jsonb_agg(distinct callsign.sigint_callsign_id order by callsign.sigint_callsign_id), '[]'::jsonb)
-    from sigint_network_callsign callsign
-    where callsign.sigint_network_id = network_id
-        and not callsign.deleted and callsign.sigint_callsign_id is not null;
-$$;
-
 create function api_integration_iggy_callsign_key(input text)
 returns text language sql immutable strict as $$
     select btrim(regexp_replace(translate(lower(input), U&'\002D\0020\2010\2011\2012\2013\2014\2015\0009\000A\000B\000C\000D\0085\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000', repeat('-', 32)), '-+', '-', 'g'), '-');
@@ -203,6 +195,22 @@ returns jsonb language sql stable as $$
     where not callsign.deleted and not unit.deleted and unit.active
         and btrim(regexp_replace(translate(lower(callsign.callsign), U&'\002D\0020\2010\2011\2012\2013\2014\2015\0009\000A\000B\000C\000D\0085\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000', repeat('-', 32)), '-+', '-', 'g'), '-')
             = api_integration_iggy_callsign_key(item_callsign);
+$$;
+
+create function api_integration_iggy_network_sigint_callsign_ids(network_id bigint)
+returns jsonb language sql stable as $$
+    select coalesce(
+        jsonb_agg(distinct catalog_callsign.id order by catalog_callsign.id),
+        '[]'::jsonb
+    )
+    from sigint_network_callsign network_callsign
+    join sigint_callsign catalog_callsign
+        on api_integration_iggy_callsign_key(catalog_callsign.callsign)
+            = api_integration_iggy_callsign_key(network_callsign.sigint_callsign)
+    join sigint_unit unit on unit.id = catalog_callsign.unit_id
+    where network_callsign.sigint_network_id = network_id
+        and not network_callsign.deleted and not catalog_callsign.deleted
+        and not unit.deleted and unit.active;
 $$;
 
 create function queue_api_integration_iggy_network_callsign_refresh(callsign_keys text[])
@@ -761,6 +769,38 @@ after insert or delete or update of sigint_zone_id, datasource_id, group_master_
 on sigint_zone_datasource
 for each row execute function capture_api_integration_iggy_zone_group();
 
+create function capture_api_integration_iggy_datasource_visibility()
+returns trigger language plpgsql as $$
+declare
+    target_group_master_keys text[];
+    target_zone_ids bigint[];
+begin
+    if not api_integration_iggy_has_publisher() then
+        return new;
+    end if;
+    select array_agg(distinct link.group_master_key)
+    into target_group_master_keys
+    from sigint_zone_datasource link
+    where link.datasource_id = new.id;
+    if target_group_master_keys is null then
+        return new;
+    end if;
+    select array_agg(distinct link.sigint_zone_id)
+    into target_zone_ids
+    from sigint_zone_datasource link
+    where link.group_master_key = any(target_group_master_keys);
+    perform queue_api_integration_iggy_group_visibility_change(
+        target_group_master_keys, null, target_zone_ids, null
+    );
+    return new;
+end;
+$$;
+
+create trigger datasource_capture_iggy_visibility
+after update of deleted on datasource
+for each row when (old.deleted is distinct from new.deleted)
+execute function capture_api_integration_iggy_datasource_visibility();
+
 create function capture_api_integration_iggy_login_groups()
 returns trigger language plpgsql as $$
 begin
@@ -803,6 +843,34 @@ $$;
 create trigger organism_group_capture_iggy_visibility
 after insert or update or delete on organism_group
 for each row execute function capture_api_integration_iggy_organism_group();
+
+create function capture_api_integration_iggy_organism_parent()
+returns trigger language plpgsql as $$
+declare
+    target_organism_ids bigint[];
+begin
+    if not api_integration_iggy_has_publisher() then
+        return new;
+    end if;
+    with recursive descendants(id) as (
+        select new.id
+        union
+        select child.id
+        from organism child
+        join descendants parent on child.parent_id = parent.id
+    )
+    select array_agg(id) into target_organism_ids from descendants;
+    perform queue_api_integration_iggy_group_visibility_change(
+        null, null, null, target_organism_ids
+    );
+    return new;
+end;
+$$;
+
+create trigger organism_capture_iggy_visibility
+after update of parent_id on organism
+for each row when (old.parent_id is distinct from new.parent_id)
+execute function capture_api_integration_iggy_organism_parent();
 
 create function capture_api_integration_iggy_network_link()
 returns trigger language plpgsql as $$
@@ -1190,8 +1258,10 @@ drop trigger if exists signal_message_media_conversion_job_capture_iggy_edit on 
 drop trigger if exists signal_message_group_capture_iggy_edit on signal_message_group;
 drop trigger if exists signal_group_aor_capture_iggy_visibility on signal_group_aor;
 drop trigger if exists organism_aor_capture_iggy_visibility on organism_aor;
+drop trigger if exists organism_capture_iggy_visibility on organism;
 drop trigger if exists organism_group_capture_iggy_visibility on organism_group;
 drop trigger if exists login_capture_iggy_group_visibility on login;
+drop trigger if exists datasource_capture_iggy_visibility on datasource;
 drop trigger if exists sigint_zone_datasource_capture_iggy_visibility on sigint_zone_datasource;
 drop trigger if exists secret_group_organism_capture_iggy_visibility on secret_group_organism;
 drop trigger if exists secret_group_user_capture_iggy_visibility on secret_group_user;
@@ -1214,8 +1284,10 @@ drop function if exists capture_api_integration_iggy_related_edit();
 drop function if exists capture_api_integration_iggy_media_result();
 drop function if exists capture_api_integration_iggy_unit_visibility();
 drop function if exists capture_api_integration_iggy_aor_assignment();
+drop function if exists capture_api_integration_iggy_organism_parent();
 drop function if exists capture_api_integration_iggy_organism_group();
 drop function if exists capture_api_integration_iggy_login_groups();
+drop function if exists capture_api_integration_iggy_datasource_visibility();
 drop function if exists capture_api_integration_iggy_zone_group();
 drop function if exists capture_api_integration_iggy_secret_group_organism();
 drop function if exists capture_api_integration_iggy_secret_group_user();
