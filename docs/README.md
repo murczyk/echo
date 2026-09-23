@@ -56,6 +56,10 @@ flowchart LR
     vector -.-> observability["Optional observability\nSigNoz"]
 ```
 
+SIGINT inbox writes enqueue Iggy events in PostgreSQL transactions. The
+background worker publishes them to the configured Iggy topic; see
+[SIGINT inbox Iggy events](iggy-events.md).
+
 ClickHouse diagnostic storage uses an explicit 1–7 day retention policy for
 both analytics and SigNoz, including archived system logs. See the
 [maintenance runbook](../deploy/clickhouse/README.md#bounded-clickhouse-diagnostic-logs)

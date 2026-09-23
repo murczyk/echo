@@ -125,23 +125,39 @@ async fn list_signals_impl(
     let q = sigint_signal::Entity::find()
         .find_also_related(sigint_unit::Entity)
         .filter(sigint_signal::Column::Deleted.eq(false))
-        .apply_if(req.filter_text.as_ref(), |q, text| {
-            q.filter(
-                Expr::col(sigint_signal::Column::Text)
-                    .ilike(format!("%{text}%")),
-            )
-        })
-        .apply_if(req.filter_meaning.as_ref(), |q, meaning| {
-            q.filter(
-                Expr::col(sigint_signal::Column::Meaning)
-                    .ilike(format!("%{meaning}%")),
-            )
-        })
-        .apply_if(req.filter_unit.as_ref(), |q, unit| {
-            q.filter(
-                Expr::col(sigint_unit::Column::Name).ilike(format!("%{unit}%")),
-            )
-        });
+        .apply_if(
+            req.filter_text
+                .as_ref()
+                .filter(|text| !text.trim().is_empty()),
+            |q, text| {
+                q.filter(
+                    Expr::col(sigint_signal::Column::Text)
+                        .ilike(format!("%{text}%")),
+                )
+            },
+        )
+        .apply_if(
+            req.filter_meaning
+                .as_ref()
+                .filter(|meaning| !meaning.trim().is_empty()),
+            |q, meaning| {
+                q.filter(
+                    Expr::col(sigint_signal::Column::Meaning)
+                        .ilike(format!("%{meaning}%")),
+                )
+            },
+        )
+        .apply_if(
+            req.filter_unit
+                .as_ref()
+                .filter(|unit| !unit.trim().is_empty()),
+            |q, unit| {
+                q.filter(
+                    Expr::col(sigint_unit::Column::Name)
+                        .ilike(format!("%{unit}%")),
+                )
+            },
+        );
     let q = req.sort_by.iter().fold(q, |q, sort_by| match sort_by {
         ListSignalsSortBy::SignalsCreatedAtAsc => {
             q.order_by_asc(sigint_signal::Column::CreatedAt)
@@ -391,6 +407,44 @@ pub fn render_signal(
         active: unit.is_none_or(|u| u.active),
         coordinates: signal.coordinates,
         created_at: signal.created_at.and_utc().timestamp_millis(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::functest::tests::cleanup;
+    use serial_test::serial;
+
+    #[actix_web::test]
+    #[serial]
+    async fn empty_filters_keep_signals_without_unit_or_meaning() {
+        let env = cleanup().await.unwrap();
+        let signal = sigint_signal::ActiveModel {
+            text: Set("unitless signal".to_string()),
+            meaning: Set(None),
+            unit: Set(None),
+            coordinates: Set(None),
+            deleted: Set(false),
+            created_at: Set(chrono::Utc::now().naive_utc()),
+            sigint_origin_id: Set(None),
+            original_id: Set(None),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let req = ListSignalsReq {
+            sort_by: Vec::new(),
+            filter_text: Some(String::new()),
+            filter_meaning: Some(String::new()),
+            filter_unit: Some(String::new()),
+        };
+
+        let signals = list_signals_impl(&env.dbx, &req, Some(100_000))
+            .await
+            .unwrap();
+        assert!(signals.iter().any(|row| row.id == signal.id));
     }
 }
 

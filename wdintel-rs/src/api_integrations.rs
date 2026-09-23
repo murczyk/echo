@@ -111,8 +111,12 @@ pub async fn upsert_api_integration(
     let req = req.into_inner();
     let values = validate_and_normalize(&env.dbx, &req).await?;
     let api_integration = if let Some(id) = req.id {
+        let transaction = env.dbx.begin().await.c(h!())?;
+        crate::iggy::worker::lock_integration_for_update(&transaction, id)
+            .await
+            .context(h!())?;
         let api_integration = api_integration::Entity::find_by_id(id)
-            .one(&env.dbx)
+            .one(&transaction)
             .await
             .c(h!())?
             .ok_or(AppError::NotFound)?;
@@ -131,7 +135,9 @@ pub async fn upsert_api_integration(
         {
             api_integration.is_working = Set(false);
         }
-        let api_integration = api_integration.update(&env.dbx).await.c(h!())?;
+        let api_integration =
+            api_integration.update(&transaction).await.c(h!())?;
+        transaction.commit().await.c(h!())?;
         api_integration
     } else {
         let mut api_integration = api_integration::ActiveModel {

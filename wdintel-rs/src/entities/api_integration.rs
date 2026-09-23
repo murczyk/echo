@@ -32,6 +32,10 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_many = "super::api_integration_iggy_destination::Entity")]
+    ApiIntegrationIggyDestination,
+    #[sea_orm(has_many = "super::api_integration_iggy_event::Entity")]
+    ApiIntegrationIggyEvent,
     #[sea_orm(
         belongs_to = "super::login::Entity",
         from = "Column::ApiUserLoginId",
@@ -40,6 +44,18 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     Login,
+}
+
+impl Related<super::api_integration_iggy_destination::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ApiIntegrationIggyDestination.def()
+    }
+}
+
+impl Related<super::api_integration_iggy_event::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ApiIntegrationIggyEvent.def()
+    }
 }
 
 impl Related<super::login::Entity> for Entity {

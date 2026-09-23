@@ -432,8 +432,10 @@ mod m20260917_150626_signal_message_media_conversion_job;
 mod m20260918_092309_sigint_inbox_item_is_time_null;
 mod m20260919_112759_callsign_match_key_indexes;
 mod m20260919_132912_sigint_unit_changelog_index;
+mod m20260922_092044_api_integration_iggy_events;
 mod m20260922_142506_login_display_name;
 mod m20260922_185417_duty_exclude_menu_enabled;
+mod m20260923_091303_sigint_inbox_callsign_iggy_index;
 mod m20260923_130904_two_factor_auth_enabled;
 
 pub struct Migrator;
@@ -1036,8 +1038,12 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260919_132912_sigint_unit_changelog_index::Migration,
             ),
+            Box::new(m20260922_092044_api_integration_iggy_events::Migration),
             Box::new(m20260922_142506_login_display_name::Migration),
             Box::new(m20260922_185417_duty_exclude_menu_enabled::Migration),
+            Box::new(
+                m20260923_091303_sigint_inbox_callsign_iggy_index::Migration,
+            ),
             Box::new(m20260923_130904_two_factor_auth_enabled::Migration),
         ]
     }

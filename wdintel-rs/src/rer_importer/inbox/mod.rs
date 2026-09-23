@@ -4453,6 +4453,32 @@ pub async fn get_inbox_messages_created_between(
     .await
 }
 
+pub async fn get_inbox_messages_by_ids(
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
+    env: &Env,
+    ids: &[i64],
+) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let req = InboxMessagesReq {
+        since_id_noninclusive: Some(0),
+        nolimit: Some(true),
+        ..Default::default()
+    };
+    let query = build_inbox_query_for_candidate_ids(
+        &env.dbx, login, env, &req, ids, false,
+    )
+    .await
+    .c(h!())?;
+    Ok(fetch_inbox_messages_with_query(
+        &env.dbx, login, logins, env, &req, &query,
+    )
+    .await
+    .context(h!())?)
+}
+
 pub async fn get_inbox_messages_with_conn(
     dbx: &DatabaseConnection,
     login: &uuid::Uuid,
