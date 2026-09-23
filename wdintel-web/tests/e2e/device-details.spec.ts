@@ -239,6 +239,7 @@ function systemSettings() {
     show_peleng_distance_to_battleline: false,
     hide_orbit_data: false,
     disable_bot_tags: false,
+    duty_exclude_menu_enabled: true,
   };
 }
 

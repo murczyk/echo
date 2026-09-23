@@ -23,6 +23,7 @@ import { fallbackFailedMessageUploads, messageUploadFailure } from './message-up
 
 type SubmitOptions = {
   busy: boolean;
+  radioFeaturesAllowed: boolean;
   cyberEchoEnabled: boolean;
   isEditMode: boolean;
   isReportMode: boolean;
@@ -44,6 +45,7 @@ type SubmitOptions = {
 
 export function useMessageSubmit({
   busy,
+  radioFeaturesAllowed,
   cyberEchoEnabled,
   isEditMode,
   isReportMode,
@@ -159,11 +161,13 @@ export function useMessageSubmit({
         if (timestampMs != null) timestamp = new Date(timestampMs).toISOString();
       }
 
-      const dmrRows = (data.dmr ?? []).filter((metadata) =>
+      const dmrRows = (radioFeaturesAllowed ? (data.dmr ?? []) : []).filter((metadata) =>
         Object.values(metadata).some((value) => value?.trim()),
       );
       const primaryCc = optionalInteger(dmrRows[0]?.cc);
-      const networkSignalName = data.network_signal_name?.trim() || undefined;
+      const networkSignalName = radioFeaturesAllowed
+        ? data.network_signal_name?.trim() || undefined
+        : undefined;
       const networkName = data.network_name?.trim() || undefined;
       let networkObj: any;
       if (networkSignalName || networkName) {
@@ -197,7 +201,9 @@ export function useMessageSubmit({
             : data.signalGroupMasterKey?.trim() || (isReportMode ? null : ''),
         device_name_id: deviceNameId,
         upload_urls: uploadUrls.length > 0 ? uploadUrls : null,
-        freq: data.freq || undefined,
+        freq: radioFeaturesAllowed
+          ? data.freq || undefined
+          : (editTarget?.message.freq ?? undefined),
         coords: coordsResult,
         to: data.callsigns || [],
         tags: isEditMode && !tagsLoaded ? undefined : (data.tags ?? []),
@@ -209,11 +215,28 @@ export function useMessageSubmit({
           (!isEditMode && !isReportCreateMode)
             ? timeValue == null
             : undefined,
-        post: data.post || undefined,
+        post: radioFeaturesAllowed
+          ? data.post || undefined
+          : (editTarget?.message.post ?? undefined),
         unit: data.unit || undefined,
         locations: data.locations || [],
         network: networkObj,
-        dmr: dmrArr,
+        dmr: radioFeaturesAllowed
+          ? dmrArr
+          : (editTarget?.message.metadata ?? []).map((metadata) => ({
+              timestamp:
+                editTarget?.message.timestamp != null
+                  ? new Date(editTarget.message.timestamp).toISOString()
+                  : new Date(editTarget?.message.createdAt ?? 0).toISOString(),
+              freq: editTarget?.message.freq ?? '',
+              signal_name: 'DMR',
+              cc: optionalInteger(metadata.colorCode),
+              sender_id: optionalInteger(metadata.senderId),
+              sender_name: metadata.senderName ?? undefined,
+              call_group_id: optionalInteger(metadata.callGroupId),
+              call_group_name: metadata.callGroupName ?? undefined,
+              hash_id: metadata.hashId ?? undefined,
+            })),
         deleted_media_ids: isEditMode ? (data.deleted_media_ids ?? []) : [],
         retained_media_ids: isReportCreateMode ? retainedMediaIds : undefined,
         parent_signal_message_ids: isReportCreateMode ? [reportSource!.id] : undefined,

@@ -901,7 +901,8 @@ leftColumn ( messageId, message ) ps model =
                             ]
                         ]
             ]
-        , flip HtmlX.viewMaybe message.freq <|
+        , HtmlX.viewIf (Core.Auth.canUseRadioFeatures ps.user) <|
+          flip HtmlX.viewMaybe message.freq <|
             \freq ->
                 let
                     analysisHref withMap =
@@ -1024,7 +1025,11 @@ rightColumn ( messageId, message ) ps model =
             ListX.unique ps.messageNetworkIds
 
         metadataLinks =
-            Pages_.RerAnalysis.Utils.buildMetadataLinks ps.zone message
+            if Core.Auth.canUseRadioFeatures ps.user then
+                Pages_.RerAnalysis.Utils.buildMetadataLinks ps.zone message
+
+            else
+                []
 
         pointTokenClickUrl =
             if Pages_.RerAnalysis.Utils.messageHasPalitraTag ps.tags message then
@@ -1091,7 +1096,7 @@ rightColumn ( messageId, message ) ps model =
                                     |> Maybe.map .featureStrictNetworks
                                     |> Maybe.withDefault False
                         in
-                        case message.freq of
+                        case (if Core.Auth.canUseRadioFeatures ps.user then message.freq else Just "") of
                             Nothing ->
                                 text " "
 
@@ -1208,7 +1213,7 @@ rightColumn ( messageId, message ) ps model =
                             [ class "d-flex"
                             , style "font-size" ".9rem"
                             ]
-                            [ HtmlX.viewIf (MaybeX.isJust message.freq) <|
+                            [ HtmlX.viewIf (not (Core.Auth.canUseRadioFeatures ps.user) || MaybeX.isJust message.freq) <|
                                 div []
                                     [ freqAndLocBlock
                                     , HtmlX.viewIf Config.featureShowCallsignsMetadata <|

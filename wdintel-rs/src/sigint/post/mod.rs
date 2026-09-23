@@ -82,7 +82,7 @@ pub async fn post_list(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Api"],
+        vec!["Rer", "Cyber", "Api"],
     )
     .await?;
 
@@ -221,9 +221,13 @@ pub async fn post_name_search(
     env: actix_web::web::Data<Env>,
     req: Json<PostSearchReq>,
 ) -> Result<Json<PostSearchRsp>, AppError> {
-    has_any_role(&env.dbx, &login_id_from_identity(&user)?, vec!["Rer"])
-        .await
-        .c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &login_id_from_identity(&user)?,
+        vec!["Rer", "Cyber"],
+    )
+    .await
+    .c(h!())?;
 
     let search_phrase = req.search.trim();
 

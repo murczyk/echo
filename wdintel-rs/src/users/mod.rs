@@ -187,21 +187,21 @@ pub async fn ensure_basic_role(
     has_role(dbx, &login_id_from_identity(user)?, "Basic").await
 }
 
-pub async fn ensure_rer_role(
+pub async fn ensure_base_role(
     dbx: &sea_orm::DatabaseConnection,
     user: &Identity,
 ) -> Result<(), AppError> {
-    ensure_rer_role_by_id(dbx, &login_id_from_identity(user)?).await
+    ensure_base_role_by_id(dbx, &login_id_from_identity(user).c(h!())?).await
 }
 
-pub async fn ensure_rer_role_by_id<T>(
+pub async fn ensure_base_role_by_id<T>(
     dbx: &sea_orm::DatabaseConnection,
     user_id: &T,
 ) -> Result<(), AppError>
 where
     T: ToString + ?Sized,
 {
-    has_role(dbx, user_id, "Rer").await
+    has_any_role(dbx, user_id, vec!["Rer", "Cyber"]).await
 }
 
 pub async fn ensure_admin(
@@ -273,6 +273,7 @@ pub(crate) fn role_matches(
                 || roles.contains(&"Full".to_string())
                 || roles.contains(&"Bpla".to_string())
                 || roles.contains(&"Rer".to_string())
+                || roles.contains(&"Cyber".to_string())
                 || roles.contains(&"Basic".to_string())
         }
         "UnitsEditor" => {
@@ -1088,7 +1089,11 @@ async fn begin_totp_login_challenge(
     login_obj: &login::Model,
 ) -> Result<LoginRsp, AppError> {
     // Unattended API clients (echo-agent / Api*) skip interactive TOTP.
-    if login_skips_totp(login_obj).context(h!())? {
+    if login_skips_totp(login_obj).context(h!())?
+        || !crate::system_settings::two_factor_auth_enabled(&env.dbx)
+            .await
+            .c(h!())?
+    {
         start_user_session(env, http_req, login_obj.id, &env.dbx)
             .await
             .context(h!())?;
@@ -1544,7 +1549,7 @@ pub async fn user_sigint_groups_detailed(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Admin", "Api"],
+        vec!["Rer", "Cyber", "Admin", "Api"],
     )
     .await?;
     let login = login_id_from_identity(&user)?;
@@ -2948,6 +2953,12 @@ mod tests {
     }
     fn roles(roles: &[&str]) -> Vec<String> {
         roles.iter().map(|role| (*role).to_owned()).collect()
+    }
+
+    #[test]
+    fn issue_3568_cyber_inherits_basic_but_not_rer() {
+        assert!(role_matches(&roles(&["Cyber"]), "Basic").unwrap());
+        assert!(!role_matches(&roles(&["Cyber"]), "Rer").unwrap());
     }
 
     #[test]

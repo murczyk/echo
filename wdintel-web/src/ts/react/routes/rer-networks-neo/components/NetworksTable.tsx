@@ -1,3 +1,4 @@
+import { useRadioFeatures } from '../../shared/RadioFeatures';
 import { Box, Button, CircularProgress } from '@mui/material';
 import type { MRT_ColumnOrderState, MRT_TableInstance } from 'material-react-table';
 import { MaterialReactTable } from 'material-react-table';
@@ -81,9 +82,13 @@ export function NetworksTable({
     onLocationHoverEnter,
     onLocationHoverLeave,
   });
+  const radioFeaturesAllowed = useRadioFeatures();
   const safeColumnFilters = useMemo(
-    () => sanitizeNetworkColumnFilters(tableStateContext.columnFilters),
-    [tableStateContext.columnFilters],
+    () =>
+      sanitizeNetworkColumnFilters(tableStateContext.columnFilters).filter(
+        (filter) => radioFeaturesAllowed || filter.id !== 'freqs',
+      ),
+    [tableStateContext.columnFilters, radioFeaturesAllowed],
   );
   const isInitialLoading = loading && rows.length === 0;
   const isEmptyResult = !isInitialLoading && rows.length === 0;

@@ -329,7 +329,7 @@ describe('useRerAnalysisNeoPage', () => {
       disableBotTags: false,
     });
     currentUserMock.fetchCurrentUser.mockReset();
-    currentUserMock.fetchCurrentUser.mockResolvedValue({ name: 'tester' } as User);
+    currentUserMock.fetchCurrentUser.mockResolvedValue({ name: 'tester', roles: ['Rer'] } as User);
     inboxMessagesMock.fetchInboxWindow.mockReset();
     inboxMessagesMock.fetchInboxWindow.mockResolvedValue(null);
 
@@ -389,6 +389,40 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.rightPanelOpen).toBe(true);
     expect(latest?.rightSidebarTab).toBe('stats');
   });
+
+  it.each([['Cyber'], ['Cyber', 'UnitsEditor', 'NetworkEditor', 'CallsignsEditor']])(
+    '#3568 ignores restored radio filters and hidden tabs for %j',
+    async (...roles) => {
+      currentUserMock.fetchCurrentUser.mockResolvedValue({ name: 'tester', roles } as User);
+      renderHook();
+      await flushEffects();
+      act(() => {
+        latest?.updateQueryState({
+          freqsSelected: ['145.500'],
+          postsSelected: ['hidden-post'],
+          adjacentFreqsRange: 0.025,
+          includeOnlyNewFreqs: true,
+          metadataCc: ['7'],
+          metadataSender: ['101'],
+          onlyWithMetadata: true,
+        });
+        latest?.setCenterTab('summary');
+        latest?.setRightSidebarTab('frequencies');
+      });
+      await flushEffects();
+      expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].queryState).toMatchObject({
+        freqsSelected: [],
+        postsSelected: [],
+        adjacentFreqsRange: 0,
+        includeOnlyNewFreqs: false,
+        metadataCc: [],
+        metadataSender: [],
+        onlyWithMetadata: false,
+      });
+      expect(latest?.centerTab).toBe('messages');
+      expect(latest?.rightSidebarTab).toBe('stats');
+    },
+  );
 
   it('ECHO-3461 strips unauthorized device filters before analysis data receives them', async () => {
     renderHook();

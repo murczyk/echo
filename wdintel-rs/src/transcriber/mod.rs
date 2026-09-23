@@ -860,7 +860,7 @@ pub async fn message_transcriptions(
     path: actix_web::web::Path<(i64,)>,
 ) -> Result<Json<Vec<MessageTranscriptionRsp>>, AppError> {
     let login = crate::users::login_id_from_identity(&user)?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
+    crate::users::ensure_base_role_by_id(&env.dbx, &login)
         .await
         .c(h!())?;
     crate::system_settings::ensure_audio_transcription_enabled(&env.dbx)

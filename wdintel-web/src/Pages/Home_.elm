@@ -142,7 +142,7 @@ aiChatStateDecoder =
 
 canShowAiChat : Auth.User -> Bool
 canShowAiChat user =
-    Core.Auth.hasRole "Rer" user && not (Core.Auth.hasRole "ApiAgent" user)
+    Core.Auth.hasRerOrCyber user && not (Core.Auth.hasRole "ApiAgent" user)
 
 
 viewClassicHome : Auth.User -> Model -> Html Msg
@@ -162,7 +162,7 @@ viewClassicHome user model =
                     , i [ class "bi bi-arrow-up-right text-lg group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform duration-300" ] []
                     ]
                 ]
-            , HtmlX.viewIf (Core.Auth.hasRole "Rer" user) (viewActivity model)
+            , HtmlX.viewIf (Core.Auth.hasRerOrCyber user) (viewActivity model)
             ]
         ]
 

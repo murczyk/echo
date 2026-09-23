@@ -1,7 +1,7 @@
 use crate::config::RER_IMPORTER_IMPORTANT_LIST_LIMIT;
 use crate::error::AppError;
 use crate::types::*;
-use crate::users::ensure_rer_role;
+use crate::users::ensure_base_role;
 use crate::users::login_id_from_identity;
 use crate::{entities::*, utils::*};
 use actix_identity::Identity;
@@ -26,7 +26,7 @@ async fn important_add(
     env: actix_web::web::Data<Env>,
     req: Json<ImportantAddReq>,
 ) -> Result<Json<()>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
     let txn = env.dbx.begin().await.c(h!())?;
     let duplicate_ids =
@@ -92,7 +92,7 @@ async fn importants_list(
     env: actix_web::web::Data<Env>,
     req: Json<ImportantListReq>,
 ) -> Result<Json<Vec<Important>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     // let mut q = sigint_important::Entity::find()
     //     .filter(sigint_important::Column::LoginId.eq(login_id_from_identity(&user)?));
 
@@ -132,7 +132,7 @@ async fn important_rm(
     env: actix_web::web::Data<Env>,
     req: Json<ImportantRmReq>,
 ) -> Result<Json<()>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
 
     sigint_important::Entity::update_many()

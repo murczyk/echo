@@ -2,6 +2,7 @@ module Pages.RerDuty exposing (Model, Msg(..), page, update)
 
 import Api
 import Auth
+import Core.Auth
 import Bindings as B exposing (..)
 import Browser.Events
 import Config
@@ -49,8 +50,8 @@ type alias Model =
     }
 
 
-init : Route () -> () -> ( Model, Effect Msg )
-init route _ =
+init : B.User -> Route () -> () -> ( Model, Effect Msg )
+init user route _ =
     let
         ms : Maybe B.RerDutyQueryState
         ms =
@@ -79,7 +80,7 @@ init route _ =
                         let
                             wfmodel =
                                 Tuple.first
-                                    (Pages_.RerDuty.Waterfall.init wfId (Just wfState))
+                                    (Pages_.RerDuty.Waterfall.init (Core.Auth.canUseRadioFeatures user) wfId (Just wfState))
                         in
                         ( wfId, wfmodel )
                     )
@@ -93,7 +94,7 @@ init route _ =
                                 let
                                     wfcmd =
                                         Tuple.second
-                                            (Pages_.RerDuty.Waterfall.init wfId (Just wfState))
+                                            (Pages_.RerDuty.Waterfall.init (Core.Auth.canUseRadioFeatures user) wfId (Just wfState))
                                 in
                                 --TODO: now it sends msgs to all waterfalls, like we check height of wf-1, but it also send to wf-2
                                 E.map (WaterfallMsg wfId) wfcmd
@@ -134,7 +135,7 @@ type Msg
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
 page user shared req =
     Page.new
-        { init = init req
+        { init = init user req
         , update = update shared user
         , view = view (isDarkMode shared.themeMode) shared user
         , subscriptions = subscriptions
@@ -400,7 +401,7 @@ update shared user msg model =
                     List.any (\( id, _ ) -> id == wfId) model.waterfalls
 
                 ( wfModel, wfCmd ) =
-                    Pages_.RerDuty.Waterfall.init wfId Nothing
+                    Pages_.RerDuty.Waterfall.init (Core.Auth.canUseRadioFeatures user) wfId Nothing
             in
             if isIdDuplicated then
                 ( model, E.none )

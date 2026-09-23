@@ -199,6 +199,14 @@ impl TusHandler {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn new_for_test(storage_dir: String, path_base: &str) -> Self {
+        let mut handler = Self::new(storage_dir, path_base);
+        handler.config.max_size =
+            Some(crate::config::SIGINT_FILE_UPLOAD_TEST_MAX_BYTES);
+        handler
+    }
+
     pub async fn handle_request(
         &self,
         login: &uuid::Uuid,
@@ -1689,7 +1697,7 @@ mod tests {
     }
 
     fn test_handler(temp_dir: &tempfile::TempDir) -> TusHandler {
-        TusHandler::new(
+        TusHandler::new_for_test(
             temp_dir.path().display().to_string(),
             "/api/sigint/file-upload/tus",
         )
@@ -1762,7 +1770,7 @@ mod tests {
     ) {
         let directory = tempfile::tempdir().unwrap();
         let login = Uuid::new_v4();
-        let handler = TusHandler::new(
+        let handler = TusHandler::new_for_test(
             directory.path().display().to_string(),
             "/api/sigint/file-upload/tus",
         );
@@ -1817,7 +1825,7 @@ mod tests {
     async fn fallback_upload_is_available_through_completed_url() {
         let temp_dir = tempfile::tempdir().unwrap();
         let login = Uuid::new_v4();
-        let handler = TusHandler::new(
+        let handler = TusHandler::new_for_test(
             temp_dir.path().display().to_string(),
             "/api/sigint/file-upload/tus",
         );
@@ -1857,7 +1865,7 @@ mod tests {
     async fn fallback_upload_rejects_empty_file_and_removes_temporary_file() {
         let temp_dir = tempfile::tempdir().unwrap();
         let login = Uuid::new_v4();
-        let handler = TusHandler::new(
+        let handler = TusHandler::new_for_test(
             temp_dir.path().display().to_string(),
             "/api/sigint/file-upload/tus",
         );
@@ -1879,7 +1887,7 @@ mod tests {
     async fn fallback_upload_rejects_excess_bytes_and_removes_temporary_file() {
         let temp_dir = tempfile::tempdir().unwrap();
         let login = Uuid::new_v4();
-        let mut handler = TusHandler::new(
+        let mut handler = TusHandler::new_for_test(
             temp_dir.path().display().to_string(),
             "/api/sigint/file-upload/tus",
         );

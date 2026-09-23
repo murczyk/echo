@@ -1,3 +1,4 @@
+import { canUseRadioFeatures } from '../../utils/roles';
 import { useCallback } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { NetworkFreqCallsignsPeriod } from '../../../../Bindings';
@@ -206,7 +207,11 @@ export function useRerNetworkDetailsNeoPageActions({
         areaOfResponsibilityIds: [...editForm.aorIds],
         name: editForm.name,
         location: editForm.location,
-        radioStation: editForm.radioStation.trim() === '' ? null : editForm.radioStation,
+        radioStation: canUseRadioFeatures(state.currentUser?.roles)
+          ? editForm.radioStation.trim() === ''
+            ? null
+            : editForm.radioStation
+          : network.radioStation,
         purpose: editForm.purpose.trim() === '' ? null : editForm.purpose,
         operationMode: editForm.operationMode.trim() === '' ? null : editForm.operationMode,
         operationType: editForm.operationType.trim() === '' ? null : editForm.operationType,

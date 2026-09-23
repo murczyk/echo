@@ -1,6 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
+import { RadioFeaturesProvider } from '../../shared/RadioFeatures';
 import { act, Children, cloneElement, isValidElement } from 'react';
 import type { ComponentProps, ReactElement, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -326,7 +327,9 @@ async function renderComponent(
   document.body.appendChild(container);
   const root = createRoot(container);
   await act(async () => {
-    root.render(<AnalysisFiltersPanel {...props} />);
+    root.render(
+      <RadioFeaturesProvider allowed>{<AnalysisFiltersPanel {...props} />}</RadioFeaturesProvider>,
+    );
   });
   return { container, root };
 }
@@ -533,7 +536,11 @@ describe('AnalysisFiltersPanel', () => {
     });
 
     await act(async () => {
-      view.root.render(<AnalysisFiltersPanel {...buildPage()} />);
+      view.root.render(
+        <RadioFeaturesProvider allowed>
+          {<AnalysisFiltersPanel {...buildPage()} />}
+        </RadioFeaturesProvider>,
+      );
     });
 
     expect(
@@ -656,6 +663,7 @@ describe('AnalysisFiltersPanel', () => {
 
   it('renders filters in the expected order with collapsed sections by default', async () => {
     const props = buildProps({
+      counts: { aorsCount: 3 } as AnalysisPageState['counts'],
       aorEntries: [
         { id: 1, name: 'Смуга Б' },
         { id: 2, name: 'Смуга А' },
@@ -948,12 +956,16 @@ describe('AnalysisFiltersPanel', () => {
     loadFilterSection.mockClear();
     await act(async () => {
       view.root.render(
-        <AnalysisFiltersPanel
-          {...buildProps({
-            filtersLoading: false,
-            loadFilterSection,
-          })}
-        />,
+        <RadioFeaturesProvider allowed>
+          {
+            <AnalysisFiltersPanel
+              {...buildProps({
+                filtersLoading: false,
+                loadFilterSection,
+              })}
+            />
+          }
+        </RadioFeaturesProvider>,
       );
     });
 
@@ -1307,32 +1319,36 @@ describe('AnalysisFiltersPanel', () => {
 
     await act(async () => {
       view.root.render(
-        <AnalysisFiltersPanel
-          {...buildProps({
-            counts: {
-              countOverall: 0,
-              countSelected: 0,
-              groupsCount: 0,
-              sendersCount: 0,
-              freqsCount: 0,
-              callsignsCount: 0,
-              unitsCount: 0,
-              locationsCount: 0,
-              postsCount: 0,
-              tagsCount: 0,
-              aorsCount: 0,
-              networksCount: 0,
-              unitsExactMatchesCount: 0,
-              unitsNonExactMatchesCount: 0,
-            } as AnalysisPageState['counts'],
-            countsLoading: true,
-            queryState: {
-              ...emptyQueryState(),
-              unitsSelected: ['u1'],
-              unitsExactMatchOnly: null,
-            },
-          })}
-        />,
+        <RadioFeaturesProvider allowed>
+          {
+            <AnalysisFiltersPanel
+              {...buildProps({
+                counts: {
+                  countOverall: 0,
+                  countSelected: 0,
+                  groupsCount: 0,
+                  sendersCount: 0,
+                  freqsCount: 0,
+                  callsignsCount: 0,
+                  unitsCount: 0,
+                  locationsCount: 0,
+                  postsCount: 0,
+                  tagsCount: 0,
+                  aorsCount: 0,
+                  networksCount: 0,
+                  unitsExactMatchesCount: 0,
+                  unitsNonExactMatchesCount: 0,
+                } as AnalysisPageState['counts'],
+                countsLoading: true,
+                queryState: {
+                  ...emptyQueryState(),
+                  unitsSelected: ['u1'],
+                  unitsExactMatchOnly: null,
+                },
+              })}
+            />
+          }
+        </RadioFeaturesProvider>,
       );
     });
 
@@ -1398,6 +1414,26 @@ describe('AnalysisFiltersPanel', () => {
     expect(resetFilters).not.toHaveBeenCalled();
   });
 
+  it('ECHO-3568 hides AORs until counters return more than one value', async () => {
+    const view = await renderComponent(buildProps({ countsLoading: true }));
+    rendered.push(view);
+
+    expect(view.container.textContent).not.toContain('Смуги');
+
+    for (const aorsCount of [0, 1, 2, 1]) {
+      await act(async () => {
+        view.root.render(
+          <RadioFeaturesProvider allowed>
+            <AnalysisFiltersPanel
+              {...buildProps({ counts: { aorsCount } as AnalysisPageState['counts'] })}
+            />
+          </RadioFeaturesProvider>,
+        );
+      });
+      expect(view.container.textContent?.includes('Смуги')).toBe(aorsCount > 1);
+    }
+  });
+
   it('shows static placeholders for filter counters while the initial filters load is still in flight', async () => {
     const view = await renderComponent(
       buildProps({
@@ -1450,6 +1486,7 @@ describe('AnalysisFiltersPanel', () => {
     const view = await renderComponent(
       buildProps({
         loadedSavedFilter,
+        counts: { aorsCount: 2 } as AnalysisPageState['counts'],
       }),
     );
     rendered.push(view);

@@ -1,3 +1,4 @@
+import { useRadioFeatures } from '../shared/RadioFeatures';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { Box, FormControl, InputLabel, MenuItem, Select, Tooltip } from '@mui/material';
 import type { SavedFilterDuty } from '../../../../Bindings';
@@ -123,6 +124,7 @@ export function FeedFilterPanelView({
   advanced,
   savedFilters,
 }: FeedFilterPanelViewProps) {
+  const radioFeaturesAllowed = useRadioFeatures();
   return (
     <Box
       className="z-2"
@@ -242,41 +244,45 @@ export function FeedFilterPanelView({
           getBulkCopyText={senders.getBulkCopyText}
         />
 
-        <FeedFilterFrequencySection
-          mode={freqs.mode}
-          onModeChange={freqs.onModeChange}
-          value={freqs.value}
-          onValueChange={freqs.onValueChange}
-          options={freqs.options}
-          placeholder={freqs.placeholder}
-          reloadFreqsLoading={freqs.reloadFreqsLoading}
-          onReloadFreqs={freqs.onReloadFreqs}
-          adjacentFreqsRange={freqs.adjacentFreqsRange}
-          onAdjacentFreqsRangeChange={freqs.onAdjacentFreqsRangeChange}
-        />
+        {radioFeaturesAllowed ? (
+          <FeedFilterFrequencySection
+            mode={freqs.mode}
+            onModeChange={freqs.onModeChange}
+            value={freqs.value}
+            onValueChange={freqs.onValueChange}
+            options={freqs.options}
+            placeholder={freqs.placeholder}
+            reloadFreqsLoading={freqs.reloadFreqsLoading}
+            onReloadFreqs={freqs.onReloadFreqs}
+            adjacentFreqsRange={freqs.adjacentFreqsRange}
+            onAdjacentFreqsRangeChange={freqs.onAdjacentFreqsRangeChange}
+          />
+        ) : null}
 
-        <FeedFilterSelectionSection
-          title="Пост"
-          mode={posts.mode}
-          onModeChange={posts.onModeChange}
-          value={posts.value}
-          onValueChange={posts.onValueChange}
-          options={posts.options}
-          getOptionLabel={posts.getOptionLabel}
-          placeholder={posts.placeholder}
-          autocompleteClassName={posts.autocompleteClassName}
-          bulkPaste
-          bulkPasteSeparators={['\n']}
-          bulkPasteMenuLabel="Додати кілька постів"
-          bulkPasteDialogTitle="Додати кілька постів"
-          bulkPasteInputLabel="Пости"
-          bulkCopy={posts.bulkCopy}
-          bulkCopyMenuLabel={posts.bulkCopyMenuLabel}
-          onBulkCopy={posts.onBulkCopy}
-          getBulkPasteToken={posts.getBulkPasteToken}
-          getBulkPasteAliases={posts.getBulkPasteAliases}
-          getBulkCopyText={posts.getBulkCopyText}
-        />
+        {radioFeaturesAllowed ? (
+          <FeedFilterSelectionSection
+            title="Пост"
+            mode={posts.mode}
+            onModeChange={posts.onModeChange}
+            value={posts.value}
+            onValueChange={posts.onValueChange}
+            options={posts.options}
+            getOptionLabel={posts.getOptionLabel}
+            placeholder={posts.placeholder}
+            autocompleteClassName={posts.autocompleteClassName}
+            bulkPaste
+            bulkPasteSeparators={['\n']}
+            bulkPasteMenuLabel="Додати кілька постів"
+            bulkPasteDialogTitle="Додати кілька постів"
+            bulkPasteInputLabel="Пости"
+            bulkCopy={posts.bulkCopy}
+            bulkCopyMenuLabel={posts.bulkCopyMenuLabel}
+            onBulkCopy={posts.onBulkCopy}
+            getBulkPasteToken={posts.getBulkPasteToken}
+            getBulkPasteAliases={posts.getBulkPasteAliases}
+            getBulkCopyText={posts.getBulkCopyText}
+          />
+        ) : null}
 
         <Box>
           <FeedFilterSelectionSection

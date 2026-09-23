@@ -6,6 +6,156 @@ use actix_session::{storage::RedisSessionStore, SessionMiddleware};
 use actix_web::{cookie::Key, test as actix_test, web, App};
 use serial_test::serial;
 
+async fn request_password_login(
+    env: &Env,
+    login: &str,
+    password: &str,
+) -> (actix_web::http::StatusCode, serde_json::Value, bool) {
+    let store =
+        RedisSessionStore::new(crate::redis_conn_string(&env.config).unwrap())
+            .await
+            .unwrap();
+    let app = actix_test::init_service(
+        App::new()
+            .wrap(IdentityMiddleware::default())
+            .wrap(SessionMiddleware::new(store, Key::generate()))
+            .app_data(web::Data::new(env.clone()))
+            .service(user_login),
+    )
+    .await;
+    let response = actix_test::call_service(
+        &app,
+        actix_test::TestRequest::post()
+            .uri("/api/user/login")
+            .set_json(serde_json::json!({"user": login, "password": password}))
+            .to_request(),
+    )
+    .await;
+    let status = response.status();
+    let has_cookie = response.response().cookies().next().is_some();
+    (
+        status,
+        actix_test::read_body_json(response).await,
+        has_cookie,
+    )
+}
+
+async fn create_password_login_fixture(
+    env: &Env,
+    key: &str,
+    enrolled: bool,
+    secret: &str,
+) -> login::Model {
+    let organism = mk_organism(&env.dbx, Default::default()).await.unwrap();
+    let login = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            password: Set(Some(
+                argon2::hash_encoded(
+                    b"test-password",
+                    b"test-2fa-salt",
+                    &argon2::Config::default(),
+                )
+                .unwrap(),
+            )),
+            password_auth_enabled: Set(true),
+            organism_id: Set(Some(organism.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    if enrolled {
+        crate::entities::login_totp::ActiveModel {
+            login_id: Set(login.id),
+            totp_secret: Set(totp_crypto::encrypt_secret(
+                key, login.id, secret,
+            )
+            .unwrap()),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+    }
+    login
+}
+
+#[actix_web::test]
+#[serial]
+async fn issue_3568_two_factor_setting_controls_password_login() {
+    let (env, _guard) = crate::functest::tests::cleanup_locked().await.unwrap();
+    let key = crate::storage::generate_strongbox_key_b64();
+    let mut with_key = (*env).clone();
+    with_key.config.totp_strongbox_key = Some(key.clone());
+    let mut without_key = with_key.clone();
+    without_key.config.totp_strongbox_key = None;
+    assert!(crate::system_settings::two_factor_auth_enabled(&env.dbx)
+        .await
+        .unwrap());
+
+    for enrolled in [false, true] {
+        let secret = "JBSWY3DPEHPK3PXP";
+        let login =
+            create_password_login_fixture(&env, &key, enrolled, secret).await;
+        for enabled in [None, Some(false), Some(true)] {
+            crate::entities::system_settings::Entity::delete_many()
+                .exec(&env.dbx)
+                .await
+                .unwrap();
+            crate::entities::system_settings::ActiveModel {
+                two_factor_auth_enabled: Set(enabled),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+            let selected_env = if enabled == Some(false) {
+                &without_key
+            } else {
+                &with_key
+            };
+            let (status, body, has_cookie) = request_password_login(
+                selected_env,
+                &login.login,
+                "test-password",
+            )
+            .await;
+            assert_eq!(status, actix_web::http::StatusCode::OK);
+            let response: LoginRsp = serde_json::from_value(body).unwrap();
+            match (enabled, enrolled, response) {
+                (Some(false), _, LoginRsp::Authenticated) => {
+                    assert!(has_cookie)
+                }
+                (None | Some(true), true, LoginRsp::Needs2fa { .. }) => {
+                    assert!(!has_cookie)
+                }
+                (None | Some(true), false, LoginRsp::Needs2faSetup { .. }) => {
+                    assert!(!has_cookie)
+                }
+                unexpected => {
+                    panic!("unexpected login outcome: {unexpected:?}")
+                }
+            }
+            assert_eq!(
+                login_totp::find_secret(&env.dbx, login.id, &key)
+                    .await
+                    .unwrap(),
+                enrolled.then(|| secret.to_string())
+            );
+            if enabled == Some(false) {
+                let (status, _, has_cookie) = request_password_login(
+                    selected_env,
+                    &login.login,
+                    "wrong-password",
+                )
+                .await;
+                assert_eq!(status, actix_web::http::StatusCode::BAD_REQUEST);
+                assert!(!has_cookie);
+            }
+        }
+    }
+}
+
 #[tokio::test]
 #[serial]
 async fn active_login_rejects_ineligible_accounts() {
@@ -52,7 +202,7 @@ async fn active_login_rejects_ineligible_accounts() {
         .await
         .unwrap();
         assert!(matches!(
-            has_role(&env.dbx, &login.id, "Rer").await,
+            ensure_base_role_by_id(&env.dbx, &login.id).await,
             Err(AppError::Unauthenticated)
         ));
         assert!(matches!(
@@ -79,6 +229,56 @@ async fn active_login_rejects_ineligible_accounts() {
         has_role(&env.dbx, &Uuid::now_v7(), "Rer").await,
         Err(AppError::Unauthenticated)
     ));
+}
+
+#[tokio::test]
+#[serial]
+async fn issue_3568_rer_or_cyber_access_preserves_role_boundaries() {
+    let (env, _guard) = crate::functest::tests::cleanup_locked().await.unwrap();
+    for (roles, allowed) in [
+        (vec!["Rer"], true),
+        (vec!["Cyber"], true),
+        (vec!["Rer", "Cyber"], true),
+        (vec!["Admin"], true),
+        (vec!["Full"], true),
+        (vec!["Basic"], false),
+        (vec!["DeviceSource"], false),
+        (vec!["Api"], false),
+        (vec!["ApiAgent"], false),
+        (vec![], false),
+    ] {
+        let login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                roles: Set(serde_json::json!(roles)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let result = ensure_base_role_by_id(&env.dbx, &login.id).await;
+        if allowed {
+            result.unwrap();
+            has_role(&env.dbx, &login.id, "Basic").await.unwrap();
+        } else {
+            assert!(matches!(result, Err(AppError::Forbidden(_))), "{roles:?}");
+        }
+        if roles == ["Cyber"] {
+            for role in ["Rer", "Admin", "UnitsEditor", "CallsignsEditor"] {
+                assert!(matches!(
+                    has_role(&env.dbx, &login.id, role).await,
+                    Err(AppError::Forbidden(_))
+                ));
+            }
+            let mut login = login.into_active_model();
+            login.deleted = Set(true);
+            let login = login.update(&env.dbx).await.unwrap();
+            assert!(matches!(
+                ensure_base_role_by_id(&env.dbx, &login.id).await,
+                Err(AppError::Unauthenticated)
+            ));
+        }
+    }
 }
 
 async fn set_test_login_blocked(

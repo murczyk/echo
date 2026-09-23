@@ -6,7 +6,7 @@ use crate::rer_importer::callsigns::{
 };
 use crate::rer_importer::types::*;
 use crate::types::*;
-use crate::users::ensure_rer_role;
+use crate::users::ensure_base_role;
 use actix_identity::Identity;
 use actix_web::post;
 use actix_web::web::Json;
@@ -19,7 +19,7 @@ async fn rer_callsign_info(
     env: actix_web::web::Data<Env>,
     req: Json<RerCallsignInfoReq>,
 ) -> Result<Json<Vec<CallsignInfo>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
 
     Ok(Json(
         rer_callsign_info_single(&env.dbx, &req.callsign.clone())
@@ -139,7 +139,7 @@ async fn rer_callsign_info_batch(
     env: actix_web::web::Data<Env>,
     req: Json<RerCallsignInfoBatchReq>,
 ) -> Result<Json<Vec<CallsignInfoRes>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let network_callsigns = req
         .callsigns
         .iter()

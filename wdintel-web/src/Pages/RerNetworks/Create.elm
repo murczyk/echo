@@ -2,9 +2,11 @@ module Pages.RerNetworks.Create exposing (Model, Msg, page)
 
 import Api
 import Auth
+import Core.Auth
 import Bindings as B
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
+import Html.Extra
 import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (..)
@@ -129,8 +131,9 @@ type alias Model =
 
 
 init : Route () -> Shared.Model -> () -> ( Model, Effect Msg )
-init _ _ () =
-    ( { formErrors = Dict.empty
+init _ shared () =
+    ( { radioFeaturesAllowed = shared.user |> Maybe.map Core.Auth.canUseRadioFeatures |> Maybe.withDefault False
+      , formErrors = Dict.empty
       , createNetworkState =
             { freqs = Nothing
             , unitIds = Nothing
@@ -342,9 +345,13 @@ init _ _ () =
             , limit = Nothing
             , offset = Nothing
             }
-        , E.loadPostsFromShared { sortBy = Nothing }
+        , (if shared.user |> Maybe.map Core.Auth.canUseRadioFeatures |> Maybe.withDefault False then E.loadPostsFromShared { sortBy = Nothing } else E.none)
         , E.sendCmd (Api.aor_list AorListReturnedByApi { sortBy = Nothing })
-        , E.getEncryptions EncryptionsReturnedByApi
+        , if shared.user |> Maybe.map Core.Auth.canUseRadioFeatures |> Maybe.withDefault False then
+            E.getEncryptions EncryptionsReturnedByApi
+
+          else
+            E.none
         , E.map Callsigns CallsignsTables.initLoad
         ]
     )
@@ -653,7 +660,11 @@ update shared route msg model =
             let
                 -- Check if there's a freq parameter in URL
                 freqFromQuery =
-                    Dict.get "freq" route.query
+                    if model.radioFeaturesAllowed then
+                        Dict.get "freq" route.query
+
+                    else
+                        Nothing
 
                 -- Update model based on URL parameter
                 ( updatedModel, urlEffect ) =
@@ -683,7 +694,7 @@ update shared route msg model =
             ( updatedModel
             , E.batch
                 (urlEffect
-                    :: ((FrequenciesTable.loadFreqsInit network.id
+                    :: (((if model.radioFeaturesAllowed then FrequenciesTable.loadFreqsInit network.id else [])
                             |> List.map (E.map Frequencies)
                         )
                             ++ (CallsignsTables.loadCatalogAndNetworkCallsigns network.id
@@ -779,7 +790,8 @@ view user shared model =
                 , viewMainLayout shared model
                 , if model.networkCreated /= Nothing then
                     div []
-                        [ Html.map Frequencies <| FrequenciesTable.view model user shared
+                        [ Html.Extra.viewIf model.radioFeaturesAllowed <|
+                      Html.map Frequencies <| FrequenciesTable.view model user shared
                         , Html.map Callsigns <| CallsignsTables.view model user shared
                         ]
 
@@ -787,10 +799,14 @@ view user shared model =
                     text ""
                 , viewActionButtons model
                 ]
-            , Html.map Frequencies <| FrequenciesTable.editSidebar model user shared
-            , Html.map Frequencies <| FrequenciesTable.createSidebar model user shared
-            , Html.map Frequencies <| FrequenciesTable.deleteFreqConfirmationModal model
-            , Html.map Frequencies <| FrequenciesTable.freqActivityChartDetailed model shared
+            , Html.Extra.viewIf model.radioFeaturesAllowed <|
+                      Html.map Frequencies <| FrequenciesTable.editSidebar model user shared
+            , Html.Extra.viewIf model.radioFeaturesAllowed <|
+                      Html.map Frequencies <| FrequenciesTable.createSidebar model user shared
+            , Html.Extra.viewIf model.radioFeaturesAllowed <|
+                      Html.map Frequencies <| FrequenciesTable.deleteFreqConfirmationModal model
+            , Html.Extra.viewIf model.radioFeaturesAllowed <|
+                      Html.map Frequencies <| FrequenciesTable.freqActivityChartDetailed model shared
             , Html.map Callsigns <| CallsignsTables.createCallsignsSidebar model user shared
             , Html.map Callsigns <| CallsignsTables.editCallsignsSidebar model user shared
             , Html.map Callsigns <| CallsignsTables.deleteCallsignModal model
@@ -859,7 +875,8 @@ viewMissingFieldsBlock shared model =
                         :: fieldError "name" model.formErrors
                     )
                 ]
-            , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            , Html.Extra.viewIf model.radioFeaturesAllowed <|
+              div [ class "grid grid-cols-3 gap-x-4 items-center" ]
                 [ span [ class "text-[13px] font-medium" ] [ text "Радіостанція" ]
                 , div [ class "col-span-2" ]
                     [ input
@@ -946,7 +963,8 @@ viewMissingFieldsBlock shared model =
                                 defaultOptions
                     ]
                 ]
-            , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            , Html.Extra.viewIf model.radioFeaturesAllowed <|
+              div [ class "grid grid-cols-3 gap-x-4 items-center" ]
                 [ span [ class "text-[13px] font-medium" ] [ text "Пости:" ]
                 , div [ class "col-span-2" ]
                     [ let
@@ -1067,7 +1085,7 @@ viewActionButtons model =
             model.creatingNetwork || not (isFormValid model.createNetworkState)
 
         hasFrequencies =
-            hasAtLeastOneFrequency model
+            not model.radioFeaturesAllowed || hasAtLeastOneFrequency model
 
         disabledTooltip =
             if model.creatingNetwork then

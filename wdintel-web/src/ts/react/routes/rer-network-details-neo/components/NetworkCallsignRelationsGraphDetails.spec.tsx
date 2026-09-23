@@ -1,6 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
+import { RadioFeaturesProvider } from '../../shared/RadioFeatures';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -79,7 +80,11 @@ function renderDetails(
   };
 
   act(() => {
-    root.render(<NetworkCallsignRelationsGraphDetails {...props} />);
+    root.render(
+      <RadioFeaturesProvider allowed>
+        {<NetworkCallsignRelationsGraphDetails {...props} />}
+      </RadioFeaturesProvider>,
+    );
   });
 
   return { container, root };

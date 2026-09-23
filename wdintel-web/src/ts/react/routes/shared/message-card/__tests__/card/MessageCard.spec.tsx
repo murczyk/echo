@@ -1,6 +1,8 @@
+import { DutyExcludeMenuContext } from '../../DutyExcludeMenu';
 /**
  * @vitest-environment happy-dom
  */
+import { RadioFeaturesProvider } from '../../../RadioFeatures';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import type { ComponentProps, ElementType, ReactNode } from 'react';
@@ -651,6 +653,8 @@ async function renderCard(
   options: {
     audioTranscriptionCollapsed?: boolean;
     audioTranscriptionEnabled?: boolean;
+    dutyExcludeMenuEnabled?: boolean;
+    radioFeaturesAllowed?: boolean;
   } = {},
 ): Promise<Rendered> {
   const container = document.createElement('div');
@@ -695,12 +699,22 @@ async function renderCard(
 
   await act(async () => {
     root.render(
-      <AudioTranscriptionPreferencesProvider
-        collapsedByDefault={options.audioTranscriptionCollapsed ?? false}
-        enabled={options.audioTranscriptionEnabled ?? true}
-      >
-        <MessageCard {...props} />
-      </AudioTranscriptionPreferencesProvider>,
+      <RadioFeaturesProvider allowed={options.radioFeaturesAllowed ?? true}>
+        {
+          <AudioTranscriptionPreferencesProvider
+            collapsedByDefault={options.audioTranscriptionCollapsed ?? false}
+            enabled={options.audioTranscriptionEnabled ?? true}
+          >
+            {options.dutyExcludeMenuEnabled == null ? (
+              <MessageCard {...props} />
+            ) : (
+              <DutyExcludeMenuContext.Provider value={options.dutyExcludeMenuEnabled}>
+                <MessageCard {...props} />
+              </DutyExcludeMenuContext.Provider>
+            )}
+          </AudioTranscriptionPreferencesProvider>
+        }
+      </RadioFeaturesProvider>,
     );
   });
 
@@ -769,13 +783,15 @@ async function renderHeader(
       </div>
     );
     root.render(
-      metadataOverrides.useMessageDeviceAccessProvider === false ? (
-        content
-      ) : (
-        <MessageDeviceAccessProvider allowed={metadataOverrides.canUseMessageDevices ?? true}>
-          {content}
-        </MessageDeviceAccessProvider>
-      ),
+      <RadioFeaturesProvider allowed>
+        {metadataOverrides.useMessageDeviceAccessProvider === false ? (
+          content
+        ) : (
+          <MessageDeviceAccessProvider allowed={metadataOverrides.canUseMessageDevices ?? true}>
+            {content}
+          </MessageDeviceAccessProvider>
+        )}
+      </RadioFeaturesProvider>,
     );
   });
 
@@ -1747,9 +1763,13 @@ describe('MessageCard', () => {
 
     await act(async () => {
       view.root.render(
-        <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
-          <MessageCard {...view.props} messageTextPreviewLines={40} />
-        </AudioTranscriptionPreferencesProvider>,
+        <RadioFeaturesProvider allowed>
+          {
+            <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
+              <MessageCard {...view.props} messageTextPreviewLines={40} />
+            </AudioTranscriptionPreferencesProvider>
+          }
+        </RadioFeaturesProvider>,
       );
     });
 
@@ -2306,7 +2326,11 @@ describe('MessageCard', () => {
     ).toBeNull();
 
     await act(async () => {
-      view.root.render(<MessageCardHeader {...view.headerProps!} onEditDetails={vi.fn()} />);
+      view.root.render(
+        <RadioFeaturesProvider allowed>
+          {<MessageCardHeader {...view.headerProps!} onEditDetails={vi.fn()} />}
+        </RadioFeaturesProvider>,
+      );
     });
     const updatedHeaderRow = view.container.querySelector<HTMLElement>(
       '[data-message-card-header-row="true"]',
@@ -2766,6 +2790,28 @@ describe('MessageCard', () => {
     expect(view.container.textContent).not.toContain('Не встановлена');
   });
 
+  it('#3568 disables the quick-exclude menu without removing other Duty actions', async () => {
+    const view = await renderCard({}, { dutyExcludeMenuEnabled: false });
+    rendered.push(view);
+    expect(view.container.querySelector(`button[aria-label="${EXCLUDE_TITLE}"]`)).toBeNull();
+    expect(view.container.querySelector(`button[aria-label="${COPY_TITLE}"]`)).not.toBeNull();
+    expect(latestMenuProps).toHaveLength(0);
+  });
+
+  it('#3568 keeps group exclusion but hides post exclusion for Cyber', async () => {
+    const view = await renderCard(
+      { msg: buildMessage({ post: 'HIDDEN-POST' }) },
+      { radioFeaturesAllowed: false },
+    );
+    rendered.push(view);
+    await click(
+      view.container.querySelector(`button[aria-label="${EXCLUDE_TITLE}"]`) as HTMLButtonElement,
+    );
+    expect(view.container.textContent).toContain('Виключити групу');
+    expect(view.container.textContent).not.toContain('Виключити пост');
+    expect(view.container.textContent).not.toContain('HIDDEN-POST');
+  });
+
   it('opens the exclude menu and applies the selected exclusion', async () => {
     const onExcludeMessageEntity = vi.fn();
     const view = await renderCard({
@@ -3086,9 +3132,13 @@ describe('MessageCard', () => {
 
     await act(async () => {
       view.root.render(
-        <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
-          <MessageCard {...view.props} messageTextPreviewLines={40} />
-        </AudioTranscriptionPreferencesProvider>,
+        <RadioFeaturesProvider allowed>
+          {
+            <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
+              <MessageCard {...view.props} messageTextPreviewLines={40} />
+            </AudioTranscriptionPreferencesProvider>
+          }
+        </RadioFeaturesProvider>,
       );
     });
 
@@ -4518,9 +4568,13 @@ describe('MessageCard', () => {
 
       await act(async () => {
         view.root.render(
-          <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
-            <MessageCard {...nextProps} />
-          </AudioTranscriptionPreferencesProvider>,
+          <RadioFeaturesProvider allowed>
+            {
+              <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
+                <MessageCard {...nextProps} />
+              </AudioTranscriptionPreferencesProvider>
+            }
+          </RadioFeaturesProvider>,
         );
       });
 
@@ -4579,9 +4633,13 @@ describe('MessageCard', () => {
 
       await act(async () => {
         view.root.render(
-          <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
-            <MessageCard {...nextProps} />
-          </AudioTranscriptionPreferencesProvider>,
+          <RadioFeaturesProvider allowed>
+            {
+              <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
+                <MessageCard {...nextProps} />
+              </AudioTranscriptionPreferencesProvider>
+            }
+          </RadioFeaturesProvider>,
         );
       });
 
@@ -4657,9 +4715,13 @@ describe('MessageCard', () => {
 
       await act(async () => {
         view.root.render(
-          <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
-            <MessageCard {...nextProps} />
-          </AudioTranscriptionPreferencesProvider>,
+          <RadioFeaturesProvider allowed>
+            {
+              <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
+                <MessageCard {...nextProps} />
+              </AudioTranscriptionPreferencesProvider>
+            }
+          </RadioFeaturesProvider>,
         );
       });
 

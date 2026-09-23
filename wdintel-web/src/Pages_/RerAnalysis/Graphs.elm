@@ -2,6 +2,7 @@ module Pages_.RerAnalysis.Graphs exposing (graphsBlock)
 
 import Bindings as B
 import Dict
+import Html.Extra
 import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
 import Html.Events as Events exposing (..)
@@ -63,7 +64,7 @@ graphsBlock model _ =
     in
     [ div [ class "flex justify-center items-center" ]
         [ viewGraph model
-        , div [ class "h-[250px] w-[500px]" ] correlationBlock
+        , Html.Extra.viewIf model.radioFeaturesAllowed <| div [ class "h-[250px] w-[500px]" ] correlationBlock
         ]
     ]
 

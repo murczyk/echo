@@ -1,3 +1,4 @@
+import { useRadioFeatures } from '../../shared/RadioFeatures';
 import { Button, Paper, Skeleton, Stack, ToggleButton, ToggleButtonGroup } from '@mui/material';
 import { createElement, useEffect, useId, useMemo, useRef } from 'react';
 
@@ -44,6 +45,7 @@ export function AnalysisGroupsActivityCard({
   selectedFreq,
   onLoad,
 }: Props) {
+  const radioFeaturesAllowed = useRadioFeatures();
   const hostRef = useRef<HTMLElement | null>(null);
   const headingId = useId().replace(/:/g, '-');
   const hasTimeline = Object.keys(groupsActivity?.dataPerDate ?? {}).length > 0;
@@ -108,9 +110,11 @@ export function AnalysisGroupsActivityCard({
         <ToggleButton value="year">{periodLabel('year')}</ToggleButton>
       </ToggleButtonGroup>
       <CompactText component="div" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-        {selectedFreq
-          ? `Частота для графіка: ${selectedFreq}`
-          : 'Усі частоти за поточними фільтрами.'}
+        {!radioFeaturesAllowed
+          ? 'Активність за поточними фільтрами.'
+          : selectedFreq
+            ? `Частота для графіка: ${selectedFreq}`
+            : 'Усі частоти за поточними фільтрами.'}
       </CompactText>
       {chartStatus === 'ready' ? (
         createElement('dashboard-chart', {
@@ -121,7 +125,9 @@ export function AnalysisGroupsActivityCard({
       ) : chartStatus === 'needs-load' ? (
         <Stack spacing={1} alignItems="flex-start">
           <CompactText color="text.secondary">
-            Завантажте активність по датах для всіх частот за поточними фільтрами.
+            {radioFeaturesAllowed
+              ? 'Завантажте активність по датах для всіх частот за поточними фільтрами.'
+              : 'Завантажте активність по датах за поточними фільтрами.'}
           </CompactText>
           <Button variant="outlined" size="small" onClick={() => onLoad()}>
             Завантажити

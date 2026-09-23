@@ -7,7 +7,7 @@ use crate::location::peleng::reset_inbox_pelengs;
 use crate::location::utils;
 use crate::types::*;
 use crate::users::{
-    ensure_rer_role, has_any_role, has_role, login_id_from_identity,
+    ensure_base_role, has_any_role, has_role, login_id_from_identity,
 };
 use actix_web::http::header;
 use actix_web::http::StatusCode;
@@ -168,7 +168,7 @@ async fn messenger_media(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<(Uuid,)>,
 ) -> Result<HttpResponse, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     let media_id = path.0;
     let media = signal_message_media::Entity::find_by_id(media_id)
@@ -622,7 +622,7 @@ async fn rer_message_attachments_zip(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<(i64,)>,
 ) -> Result<HttpResponse, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
     let message_id = path.0;
     let message =
@@ -780,7 +780,7 @@ async fn rer_importer_callsigns(
     env: actix_web::web::Data<Env>,
     req: Json<RerImporterCallsignsReq>,
 ) -> Result<Json<Vec<CallsignWithFrequencies>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let sixty_days_ago_offset =
         OffsetDateTime::now_utc() - TimeDuration::days(60);
     let sixty_days_ago_primitive = PrimitiveDateTime::new(
@@ -904,7 +904,7 @@ async fn list_messages(
     env: actix_web::web::Data<Env>,
     req: actix_web::web::Query<MessagesReq>,
 ) -> Result<Json<Vec<MessageRsp>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
 
     let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
         &env.dbx,
@@ -978,7 +978,7 @@ async fn callsigns_alchemy(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<CallsignsAlchemyRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let callsigns = network_callsign::Entity::find()
         .all(&env.dbx)
         .await
@@ -1068,7 +1068,7 @@ pub async fn unread_counters(
     env: actix_web::web::Data<Env>,
     req: Json<UnreadCountersReq>,
 ) -> Result<Json<UnreadCountersRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let newer_msg_count = match req.only_show_unprocessed {
         Some(true) => sqlx::query(
             r#"
@@ -1109,7 +1109,7 @@ pub async fn signal_group_info(
     env: actix_web::web::Data<Env>,
     req: Json<SignalGroupReq>,
 ) -> Result<Json<SignalGroupRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let m_signal_group = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::MasterKey.eq(&req.master_key))
@@ -1133,7 +1133,7 @@ pub async fn signal_group_info_batch(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Api"],
+        vec!["Rer", "Cyber", "Api"],
     )
     .await?;
     let is_admin = has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
@@ -1162,7 +1162,7 @@ pub async fn signal_groups(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Api"],
+        vec!["Rer", "Cyber", "Api"],
     )
     .await
     .c(h!())?;
@@ -1197,7 +1197,7 @@ pub async fn signal_profile_info(
     env: actix_web::web::Data<Env>,
     req: Json<SignalProfileReq>,
 ) -> Result<Json<Option<SignalProfileRsp>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     // signal_profile::Column::Uuid
     //     .eq(&req.uuid)
     //     .or(signal_profile::Column::GivenName.eq(&req.uuid)),
@@ -1221,7 +1221,7 @@ pub async fn signal_profile_info_batch(
     env: actix_web::web::Data<Env>,
     req: Json<BatchSignalProfileReq>,
 ) -> Result<Json<SignalProfilesRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
     // signal_profile::Column::Uuid
     //     .eq(&req.uuid)
@@ -1239,7 +1239,7 @@ pub async fn signal_profile_save(
     env: actix_web::web::Data<Env>,
     req: Json<SignalProfileSaveReq>,
 ) -> Result<Json<()>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     signal_profile::Entity::insert(signal_profile::ActiveModel {
         uuid: Set(req.uuid.clone()),
         given_name: Set(req.given_name.clone()),
@@ -1702,7 +1702,7 @@ pub async fn latest_senders(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<SignalProfilesRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
     let now = Utc::now();
     let master_keys =
@@ -1740,7 +1740,7 @@ pub async fn senders(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Api"],
+        vec!["Rer", "Cyber", "Api"],
     )
     .await
     .c(h!())?;

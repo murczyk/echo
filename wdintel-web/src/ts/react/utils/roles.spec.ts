@@ -3,6 +3,8 @@ import {
   canReadDevices,
   canUseMessageDevices,
   hasAnyRole,
+  canUseRadioFeatures,
+  hasRerOrCyber,
   hasRole,
   resolveDevicesCapabilities,
 } from './roles';
@@ -35,6 +37,32 @@ describe('roles', () => {
     expect(hasRole(['Admin'], 'NoAutoLogout')).toBe(false);
     expect(hasRole(['No2FA'], 'No2FA')).toBe(true);
     expect(hasRole(['Admin'], 'No2FA')).toBe(false);
+  });
+
+  it.each([
+    [['Cyber'], false],
+    [['Cyber', 'UnitsEditor', 'NetworkEditor', 'CallsignsEditor'], false],
+    [['Rer'], true],
+    [['Rer', 'Cyber'], true],
+    [['Admin'], true],
+    [['Full', 'Cyber'], true],
+    [null, false],
+  ] as const)('#3568 resolves radio access for %j', (roles, expected) => {
+    expect(canUseRadioFeatures(roles)).toBe(expected);
+  });
+
+  it('#3568 admits Rer or Cyber while keeping their permissions distinct', () => {
+    for (const roles of [['Rer'], ['Cyber'], ['Rer', 'Cyber'], ['Admin'], ['Full']]) {
+      expect(hasRerOrCyber(roles)).toBe(true);
+      expect(hasRole(roles, 'Basic')).toBe(true);
+    }
+    for (const roles of [[], ['Basic'], ['DeviceSource'], ['Api'], ['ApiAgent'], null, undefined]) {
+      expect(hasRerOrCyber(roles)).toBe(false);
+    }
+    expect(hasRole(['Cyber'], 'Rer')).toBe(false);
+    expect(hasRole(['Cyber'], 'UnitsEditor')).toBe(false);
+    expect(hasRole(['Cyber'], 'CallsignsEditor')).toBe(false);
+    expect(hasRole(['Rer'], 'Cyber')).toBe(false);
   });
 
   it('resolves Devices capabilities by action instead of role inheritance', () => {

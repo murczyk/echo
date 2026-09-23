@@ -419,7 +419,9 @@ async fn start_for_user_locked(
     human_login_id: Uuid,
     ai_engine: Option<&ai_engine::Model>,
 ) -> Result<LinkedAgent, AppError> {
-    crate::users::ensure_rer_role_by_id(&env.dbx, &human_login_id).await?;
+    crate::users::ensure_base_role_by_id(&env.dbx, &human_login_id)
+        .await
+        .c(h!())?;
     let template = reconcile_template_login(&env.dbx).await?;
     preflight_template(env, template.id).await?;
     let mut linked = ensure_linked_agent(env, human_login_id).await?;

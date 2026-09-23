@@ -9,7 +9,7 @@ use crate::error::AppError;
 use crate::h;
 use crate::types::Env;
 use crate::types::ShortContext;
-use crate::users::ensure_rer_role;
+use crate::users::ensure_base_role;
 use crate::users::login_id_from_identity;
 use actix_identity::Identity;
 use actix_web::post;
@@ -41,7 +41,7 @@ pub async fn report_networks_task_launch(
     env: actix_web::web::Data<Env>,
     req: Json<EtalonkaJimForksReq>,
 ) -> Result<Json<i64>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let user_login = login_id_from_identity(&user).context(h!())?;
     let mut req = req.into_inner();
     normalize_etalonka_report_period(
@@ -69,7 +69,7 @@ pub async fn report_networks_batch_id_task_launch(
     env: actix_web::web::Data<Env>,
     req: Json<EtalonkaNetworkBatchReq>,
 ) -> Result<Json<i64>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let user_login = login_id_from_identity(&user).context(h!())?;
     let mut req = req.into_inner();
     normalize_etalonka_report_period(

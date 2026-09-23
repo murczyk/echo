@@ -1,3 +1,4 @@
+import { useRadioFeatures } from '../../shared/RadioFeatures';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
@@ -212,7 +213,8 @@ function CallsignsTableComponent({
   });
   const [tableContainerHasVerticalOverflow, setTableContainerHasVerticalOverflow] = useState(false);
 
-  const columns = useMemo<AppMrtColumnDef<CallsignRowView>[]>(
+  const radioFeaturesAllowed = useRadioFeatures();
+  const allColumns = useMemo<AppMrtColumnDef<CallsignRowView>[]>(
     () => [
       {
         header: 'Позивний',
@@ -383,6 +385,10 @@ function CallsignsTableComponent({
     [],
   );
 
+  const columns = useMemo(
+    () => allColumns.filter((column) => radioFeaturesAllowed || column.id !== 'radioFreq'),
+    [allColumns, radioFeaturesAllowed],
+  );
   const rowSelection = useMemo(
     () =>
       rows.reduce<Record<string, boolean>>((acc, row) => {

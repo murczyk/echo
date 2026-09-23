@@ -24,7 +24,7 @@ use crate::organism::types::{
     UpdateOrganismGoiSettingsReq,
 };
 use crate::types::*;
-use crate::users::{ensure_admin, ensure_rer_role, login_id_from_identity};
+use crate::users::{ensure_admin, ensure_base_role, login_id_from_identity};
 use crate::utils::string::{
     normalize_optional_trimmed, normalize_trimmed_or_default,
 };
@@ -208,7 +208,7 @@ pub async fn list_current_user_goi_associations(
     env: actix_web::web::Data<Env>,
     req: Json<ListGoiAssociationsReq>,
 ) -> Result<Json<ListGoiAssociationsRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
 
     let user_id = login_id_from_identity(&user)?;
     let login = goi_associations_current_login(&env.dbx, &user_id)
@@ -250,7 +250,7 @@ pub async fn list_current_user_goi_knowledge(
     env: actix_web::web::Data<Env>,
     req: Json<ListGoiKnowledgeReq>,
 ) -> Result<Json<ListGoiKnowledgeRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
 
     let user_id = login_id_from_identity(&user)?;
     let login = goi_associations_current_login(&env.dbx, &user_id)
@@ -292,7 +292,7 @@ pub async fn restart_current_user_goi_service(
     env: actix_web::web::Data<Env>,
     req: Json<RestartCurrentUserGoiServiceReq>,
 ) -> Result<Json<bool>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
 
     let user_id = login_id_from_identity(&user)?;
     let login = goi_associations_current_login(&env.dbx, &user_id)
@@ -324,7 +324,7 @@ pub async fn current_user_goi_control_state(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<CurrentUserGoiControlState>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
 
     let user_id = login_id_from_identity(&user)?;
     let login = goi_associations_current_login(&env.dbx, &user_id)

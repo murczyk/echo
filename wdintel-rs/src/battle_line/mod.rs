@@ -2515,10 +2515,9 @@ values (
     #[tokio::test]
     #[serial_test::serial]
     async fn paginates_units_by_newest_live_network_and_maps_live_points() {
-        let config =
-            crate::config::read_config(crate::types::Mode::Test).unwrap();
-        let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
-        let txn = dbx.begin().await.unwrap();
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
         let now = Utc::now().naive_utc();
         let group = crate::functest::tests::mk_signal_group(
             &txn,
@@ -2889,10 +2888,9 @@ values (
     #[tokio::test]
     #[serial_test::serial]
     async fn maps_configured_aliases_to_canonical_database_settlements() {
-        let config =
-            crate::config::read_config(crate::types::Mode::Test).unwrap();
-        let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
-        let txn = dbx.begin().await.unwrap();
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
         let suffix = uuid::Uuid::now_v7();
         let alias_name = format!("#2287 ALIAS {suffix}").to_uppercase();
         let canonical_name = format!("#2287 CANONICAL {suffix}");
@@ -2939,10 +2937,9 @@ values (
     #[tokio::test]
     #[serial_test::serial]
     async fn restricts_database_matches_to_aor_settlement_catalog() {
-        let config =
-            crate::config::read_config(crate::types::Mode::Test).unwrap();
-        let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
-        let txn = dbx.begin().await.unwrap();
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
         let suffix = uuid::Uuid::now_v7();
         let settlement_name = format!("#2287 SCOPED {suffix}").to_uppercase();
         insert_test_settlement(&txn, 2_287_204, &settlement_name, 10.0, 10.0)
@@ -2994,10 +2991,9 @@ values (
     #[tokio::test]
     #[serial_test::serial]
     async fn restricts_database_matches_to_default_settlement_catalog_2287() {
-        let config =
-            crate::config::read_config(crate::types::Mode::Test).unwrap();
-        let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
-        let txn = dbx.begin().await.unwrap();
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
         let suffix = uuid::Uuid::now_v7();
         let settlement_name = format!("#2287 DEFAULT {suffix}").to_uppercase();
         insert_test_settlement(&txn, 2_287_206, &settlement_name, 10.0, 10.0)
@@ -3049,10 +3045,9 @@ values (
     #[tokio::test]
     #[serial_test::serial]
     async fn resolves_ambiguous_locations_independently_2287() {
-        let config =
-            crate::config::read_config(crate::types::Mode::Test).unwrap();
-        let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
-        let txn = dbx.begin().await.unwrap();
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
         let aor_id = insert_test_battle_line_segment(&txn).await.unwrap();
         let suffix = uuid::Uuid::now_v7();
         let unique_name = format!("#2287 UNIQUE {suffix}");
@@ -3110,10 +3105,9 @@ values (
     #[tokio::test]
     #[serial_test::serial]
     async fn rejects_distant_settlements_by_battle_line_side_2287() {
-        let config =
-            crate::config::read_config(crate::types::Mode::Test).unwrap();
-        let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
-        let txn = dbx.begin().await.unwrap();
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
         let aor_id = insert_test_battle_line_segment(&txn).await.unwrap();
         let suffix = uuid::Uuid::now_v7();
         let west_name = format!("#2287 WEST {suffix}");
@@ -3174,10 +3168,9 @@ values (
     #[tokio::test]
     #[serial_test::serial]
     async fn resolves_battle_line_test_input_by_id_or_message_uid() {
-        let config =
-            crate::config::read_config(crate::types::Mode::Test).unwrap();
-        let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
-        let txn = dbx.begin().await.unwrap();
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
         let message_uid = format!("battle-line-test-{}", uuid::Uuid::now_v7());
         let message = signal_message::ActiveModel {
             message_uid: Set(Some(message_uid.clone())),
@@ -3276,10 +3269,9 @@ values (
     #[tokio::test]
     #[serial_test::serial]
     async fn clips_aor_geometry_to_anchor_ray_sector() {
-        let config =
-            crate::config::read_config(crate::types::Mode::Test).unwrap();
-        let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
-        let txn = dbx.begin().await.unwrap();
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
         txn.execute_unprepared(
             "update battle_line_version set retired_at = now() at time zone 'utc' where retired_at is null",
         )
@@ -3429,10 +3421,9 @@ where aor_id = $1
     #[tokio::test]
     #[serial_test::serial]
     async fn delta_force_import_keeps_peleng_distances_and_settlements() {
-        let config =
-            crate::config::read_config(crate::types::Mode::Test).unwrap();
-        let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
-        let txn = dbx.begin().await.unwrap();
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
         battle_line_aor_geometry::Entity::delete_many()
             .exec(&txn)
             .await

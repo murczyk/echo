@@ -96,6 +96,7 @@ export function createNetworkCallsignDrawerForm(
 
 export function getNetworkCallsignDrawerSaveError(
   form: NetworkCallsignDrawerForm | null,
+  radioFeaturesAllowed = true,
 ): string | null {
   if (!form) return null;
 
@@ -105,7 +106,11 @@ export function getNetworkCallsignDrawerSaveError(
     return 'Джерело є обовʼязковим';
   if (isNetworkCallsignUnitRequired(form) && form.unitId === null)
     return 'Підрозділ є обовʼязковим';
-  if (form.sourceId === NetworkCallsignSourceId.RO && form.radioFreq.trim() === '') {
+  if (
+    radioFeaturesAllowed &&
+    form.sourceId === NetworkCallsignSourceId.RO &&
+    form.radioFreq.trim() === ''
+  ) {
     return 'Для джерела "РО" частота є обовʼязковою';
   }
 
