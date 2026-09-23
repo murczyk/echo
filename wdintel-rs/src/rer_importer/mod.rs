@@ -1133,7 +1133,7 @@ pub async fn signal_group_info_batch(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "Api"],
+        vec!["Rer", "CyberViewer", "Api"],
     )
     .await?;
     let is_admin = has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
@@ -1162,7 +1162,7 @@ pub async fn signal_groups(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "Api"],
+        vec!["Rer", "CyberViewer", "Api"],
     )
     .await
     .c(h!())?;
@@ -1740,7 +1740,7 @@ pub async fn senders(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "Api"],
+        vec!["Rer", "CyberViewer", "Api"],
     )
     .await
     .c(h!())?;

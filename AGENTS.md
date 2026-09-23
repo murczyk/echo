@@ -29,18 +29,17 @@
 ## Code Review Rules
 
 - Follow [CODE_REVIEW.md](./CODE_REVIEW.md).
+- When addressing GitHub PR reviews, verify claims against the code and prior
+  decisions. Do not blindly implement feedback; skip incorrect, irrelevant, or
+  already considered feedback and explain why.
+- Mark GitHub review conversations resolved once they have been addressed.
 
 ## Git
 
 - Name issue branches `<issue-id>-<short-title>`, for example `123-foo-bar`, where the number is the GitHub issue ID.
 - Alternatively, use `<author>/YYYY-MM-DD-<short-title>`, for example `k-bx/2026-09-23-foo-bar`, where the author is a GitHub username, person's name, or callsign.
 - Use lowercase English words separated by hyphens for the short title, usually two or three words describing the issue title or the essence of the work.
-- **Never Commit or Push Without Permission**
-- **NEVER** run `git commit` without explicitly asking the user first
-- **NEVER** run `git push` without explicitly asking the user first
-- Always show the user what changes you've made and ask for permission before committing
-- Use `git status` and `git diff` to show what will be committed
-- Even for urgent fixes or reverts, always ask before committing/pushing. The user needs to be aware of what's being changed in their repository.
+- **Prefer asking before Push Without Permission**, commit/push under a development branch is fine
 - When proposing commit messages, use Conventional Commits with a past-simple summary (for example: `fix(navbar): redirected login correctly`).
 - When asked to suggest or draft a commit message, ALWAYS use `.github/skills/conventional-commit-branch-scope/SKILL.md`.
 - Derive commit scope from the current branch name when possible, and do not replace a branch-derived ticket scope with ad hoc module scopes like `palettes` or `navbar`.

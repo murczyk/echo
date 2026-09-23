@@ -1,3 +1,4 @@
+import { useMessageDeleteAccess, useMessageWriteAccess } from './MessageWriteAccess';
 import { useContext } from 'react';
 import { DutyExcludeMenuContext } from './DutyExcludeMenu';
 import { useRadioFeatures } from '../RadioFeatures';
@@ -225,6 +226,19 @@ function MessageCardComponent({
   messageTextPreviewLines = 20,
   messageTimeBasis = 'interception',
 }: MessageCardProps) {
+  const canWrite = useMessageWriteAccess();
+  const canDelete = useMessageDeleteAccess();
+  if (!canDelete) onDelete = undefined;
+  if (!canWrite) {
+    onEditDetails = undefined;
+    onCreateReport = undefined;
+    onEditReport = undefined;
+    onToggleTag = undefined;
+    onMarkBotTagWrong = undefined;
+    botTagAction = null;
+    analysisCallsignActions = undefined;
+    showCallsignAddForm = false;
+  }
   const displayTimestamp = messageTimeBasis === 'creation' ? msg.createdAt : msg.timestamp;
   const downloadGuard = useMessageCardDownloadGuard();
   const compactLayout = feedCount >= 3;

@@ -103,7 +103,7 @@ describe('AppNavbar', () => {
     expect(logoImg).not.toBeUndefined();
   });
 
-  it.each(['Rer', 'Cyber'])('#3568 renders main navigation for %s', (role) => {
+  it.each(['Rer', 'Cyber', 'CyberViewer'])('#3568 renders main navigation for %s', (role) => {
     const { container } = renderComponent({
       ...defaultProps,
       user: { ...defaultProps.user, roles: [role] },
@@ -229,21 +229,24 @@ describe('AppNavbar', () => {
     expect(container.textContent).not.toContain('Статистика');
   });
 
-  it.each(['Rer', 'Cyber'])('#3568 keeps ApiAgent excluded from %s AI chat access', (role) => {
-    const { container } = renderComponent({
-      ...defaultProps,
-      user: { ...defaultProps.user, roles: [role, 'ApiAgent'] },
-    });
+  it.each(['Rer', 'Cyber', 'CyberViewer'])(
+    '#3568 keeps ApiAgent excluded from %s AI chat access',
+    (role) => {
+      const { container } = renderComponent({
+        ...defaultProps,
+        user: { ...defaultProps.user, roles: [role, 'ApiAgent'] },
+      });
 
-    act(() => {
-      window.dispatchEvent(
-        new CustomEvent('ai-agent-availability', { detail: { enabled: false } }),
-      );
-    });
+      act(() => {
+        window.dispatchEvent(
+          new CustomEvent('ai-agent-availability', { detail: { enabled: false } }),
+        );
+      });
 
-    expect(container.textContent).toContain('Документація');
-    expect(container.textContent).toContain('Статистика');
-  });
+      expect(container.textContent).toContain('Документація');
+      expect(container.textContent).toContain('Статистика');
+    },
+  );
 
   it('renders Admin menu when user has Admin role', () => {
     const { container } = renderComponent({

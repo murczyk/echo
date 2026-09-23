@@ -403,7 +403,7 @@ pub async fn signal_name_search(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber"],
+        vec!["Rer", "CyberViewer"],
     )
     .await
     .c(h!())?;

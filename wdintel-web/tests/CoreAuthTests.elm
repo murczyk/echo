@@ -73,4 +73,17 @@ suite =
                     , \_ -> Expect.equal False (Core.Auth.hasRole "Cyber" (user [ "Rer" ]))
                     ]
                     ()
+        , test "#3569 CyberViewer reads Cyber data with additive message write permissions" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Expect.equal True (Core.Auth.hasRerOrCyber (user [ "CyberViewer" ]))
+                    , \_ -> Expect.equal True (Core.Auth.canReadDevices (user [ "CyberViewer" ]))
+                    , \_ -> Expect.equal False (Core.Auth.canUseRadioFeatures (user [ "CyberViewer" ]))
+                    , \_ -> Expect.equal False (Core.Auth.canWriteMessages (user [ "CyberViewer" ]))
+                    , \_ ->
+                        [ "Cyber", "Rer", "Full", "Admin" ]
+                            |> List.all (\role -> Core.Auth.canWriteMessages (user [ "CyberViewer", role ]))
+                            |> Expect.equal True
+                    ]
+                    ()
         ]
