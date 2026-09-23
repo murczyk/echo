@@ -1,6 +1,7 @@
 /** @vitest-environment happy-dom */
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
+import { createTheme, ThemeProvider } from '@mui/material';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FeedNotificationPanel } from './FeedNotificationPanel';
 
@@ -15,6 +16,7 @@ const api = vi.hoisted(() => ({
   permission: vi.fn(async () => 'denied'),
 }));
 const DUTY_NOTIFICATION_STATUS_CHANGE_EVENT = 'duty-notification-status-change';
+const darkTheme = createTheme({ palette: { mode: 'dark' } });
 vi.mock('./notifications', () => ({
   DUTY_NOTIFICATION_STATUS_CHANGE_EVENT: 'duty-notification-status-change',
   DutyBrowserNotificationStatus: {
@@ -86,7 +88,11 @@ async function renderPanel(
     ...props,
   };
   await act(async () => {
-    root.render(<FeedNotificationPanel {...panelProps} />);
+    root.render(
+      <ThemeProvider theme={darkTheme}>
+        <FeedNotificationPanel {...panelProps} />
+      </ThemeProvider>,
+    );
   });
   cleanup = () => {
     act(() => root.unmount());
@@ -113,6 +119,43 @@ function getButton(container: HTMLElement, label: string): HTMLButtonElement {
 }
 
 describe('FeedNotificationPanel', () => {
+  it('uses the shared duty panel surface', async () => {
+    const { container } = await renderPanel();
+    expect(getComputedStyle(container.firstElementChild as Element).backgroundColor).toBe(
+      '#121212',
+    );
+  });
+
+  it('keeps notification channel cards transparent', async () => {
+    const { container } = await renderPanel();
+    const cards = Array.from(container.querySelectorAll('article'));
+
+    expect(cards).toHaveLength(2);
+    expect(cards.map((card) => getComputedStyle(card).backgroundColor)).toEqual([
+      'transparent',
+      'transparent',
+    ]);
+  });
+
+  it('uses standard 14px regular text for notification channel labels', async () => {
+    const { container } = await renderPanel();
+    const labels = ['Звуковий сигнал', 'Системний банер'].map((label) =>
+      Array.from(container.querySelectorAll('.MuiTypography-root')).find(
+        (element) => element.textContent === label,
+      ),
+    );
+
+    expect(labels.every((label) => label != null)).toBe(true);
+    expect(labels.map((label) => getComputedStyle(label as Element).fontSize)).toEqual([
+      '14px',
+      '14px',
+    ]);
+    expect(labels.map((label) => getComputedStyle(label as Element).fontWeight)).toEqual([
+      '400',
+      '400',
+    ]);
+  });
+
   it('plays sound and reports its status when testing sound', async () => {
     storedSettings = { soundEnabled: true, browserEnabled: false };
     const changed = vi.fn();

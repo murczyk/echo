@@ -117,6 +117,7 @@ describe('MessageCardAttachmentPreviewDialog', () => {
   let container: HTMLDivElement | null = null;
 
   beforeEach(() => {
+    window.history.replaceState({ screen: 'duty' }, '', '/rer-duty-neo');
     const storage = new Map<string, string>();
     Object.defineProperty(globalThis, 'localStorage', {
       configurable: true,
@@ -157,6 +158,29 @@ describe('MessageCardAttachmentPreviewDialog', () => {
     expect(container.querySelector('[data-renderer]')?.getAttribute('data-renderer')).toBe(
       item.type,
     );
+  });
+
+  it('closes when browser Back restores the pre-preview history state', async () => {
+    const prePreviewState = window.history.state;
+    const onClose = vi.fn();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () =>
+      root?.render(
+        <MessageCardAttachmentPreviewDialog
+          item={items[0]!}
+          navigation={{ index: 0, count: 1, onPrevious: vi.fn(), onNext: vi.fn() }}
+          onClose={onClose}
+        />,
+      ),
+    );
+    await act(async () => {
+      window.dispatchEvent(new PopStateEvent('popstate', { state: prePreviewState }));
+    });
+
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   it('defers a locally handled editor Escape without closing the preview', async () => {

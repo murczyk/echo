@@ -16,6 +16,7 @@ import type {
 import { FeedFilterPanel, type FeedFilterPanelModel } from './FeedFilterPanel';
 import { FeedKeywordsPanel } from './FeedKeywordsPanel';
 import { FeedNotificationPanel } from './FeedNotificationPanel';
+import { dutyFeedPanelSurfaceSx } from './feed-panel-styles';
 import type { DutyNotificationBellState } from './notifications';
 import { dutyTopActionButtonSx } from './top-action-styles';
 
@@ -26,6 +27,7 @@ export const DUTY_ICON_ONLY_COLUMN_HEADER_MIN_FEEDS = 4;
 export const DUTY_ICON_ONLY_FEED_TAB_MIN_FEEDS = 4;
 
 type FeedColumnHeaderProps = {
+  narrowScreen: boolean;
   feedCount: number;
   canRemove: boolean;
   showFilters: boolean;
@@ -66,7 +68,7 @@ const columnPanelOverlaySx = {
   display: 'flex',
   alignItems: 'flex-start',
   zIndex: 2,
-  pointerEvents: 'auto',
+  pointerEvents: 'none',
 } as const;
 
 const columnPanelInnerSx = {
@@ -88,6 +90,7 @@ const headerIconButtonSx = {
 } as const;
 
 type HeaderPanelToggleProps = {
+  mobile?: boolean;
   iconOnly: boolean;
   label: string;
   icon?: ReactNode;
@@ -99,6 +102,7 @@ type HeaderPanelToggleProps = {
 };
 
 function HeaderPanelToggle({
+  mobile = false,
   iconOnly,
   label,
   icon,
@@ -127,6 +131,7 @@ function HeaderPanelToggle({
           onClick={onClick}
           sx={{
             ...headerIconButtonSx,
+            ...(mobile ? { height: 36, maxHeight: 36 } : {}),
             width: '100%',
             maxWidth: '100%',
             ...borderSx,
@@ -184,6 +189,7 @@ function HeaderPanelToggle({
 }
 
 export function FeedColumnHeader({
+  narrowScreen,
   feedCount,
   canRemove,
   showFilters,
@@ -210,43 +216,65 @@ export function FeedColumnHeader({
   onNotificationStorageErrorChange,
   onNotificationStatusChanged,
 }: FeedColumnHeaderProps) {
-  const iconOnlyHeader = feedCount >= DUTY_ICON_ONLY_COLUMN_HEADER_MIN_FEEDS;
+  const iconOnlyHeader = narrowScreen || feedCount >= DUTY_ICON_ONLY_COLUMN_HEADER_MIN_FEEDS;
   const hasActiveFilter = filterPanel.hasActiveFilter;
 
   return (
     <Box
       sx={{
-        backgroundColor: 'background.paper',
+        ...dutyFeedPanelSurfaceSx,
         borderRadius: 0,
-        border: '1px solid rgba(148, 163, 184, 0.28)',
+        border: narrowScreen ? 'none' : '1px solid rgba(148, 163, 184, 0.28)',
+        borderBottom: narrowScreen ? '1px solid rgba(148, 163, 184, 0.28)' : undefined,
         flexShrink: 0,
       }}
     >
       <Box
         ref={headerRef}
         data-duty-feed-header-layout="flex"
+        data-duty-feed-header-variant={narrowScreen ? 'mobile' : 'desktop'}
         sx={{
           display: 'flex',
           alignItems: 'stretch',
-          height: 32,
+          height: narrowScreen ? 36 : 32,
           minWidth: 0,
           width: '100%',
           position: 'sticky',
           top: 0,
           zIndex: 1,
-          backgroundColor: 'background.paper',
+          ...dutyFeedPanelSurfaceSx,
           borderBottomLeftRadius: 0,
           borderBottomRightRadius: 0,
           borderBottom: 'none',
           boxShadow: 'none',
           '& .MuiButton-root': {
             minHeight: 0,
-            height: 32,
-            maxHeight: 32,
+            height: narrowScreen ? 36 : 32,
+            maxHeight: narrowScreen ? 36 : 32,
           },
           '& .duty-header-panel-toggle': {
             width: '100%',
           },
+          ...(narrowScreen
+            ? {
+                '& .MuiSvgIcon-root': { fontSize: 20 },
+                '& [data-duty-feed-header-controls] > div:nth-of-type(2)': {
+                  position: 'relative',
+                  borderLeft: 'none',
+                  '&::before, &::after': {
+                    content: '""',
+                    position: 'absolute',
+                    top: 4,
+                    bottom: 4,
+                    width: '1px',
+                    backgroundColor: 'rgba(148, 163, 184, 0.28)',
+                    zIndex: 1,
+                  },
+                  '&::before': { left: 0 },
+                  '&::after': { right: 0 },
+                },
+              }
+            : {}),
         }}
       >
         <Box
@@ -261,6 +289,7 @@ export function FeedColumnHeader({
         >
           <Box sx={{ display: 'flex', flex: '1 1 0', minWidth: 0, minHeight: 0 }}>
             <HeaderPanelToggle
+              mobile={narrowScreen}
               iconOnly={iconOnlyHeader}
               label="Фільтри"
               ariaLabel={hasActiveFilter ? 'Фільтри (активні)' : 'Фільтри'}
@@ -314,6 +343,7 @@ export function FeedColumnHeader({
             ) : null}
             <Box sx={{ display: 'flex', flex: '1 1 0', minWidth: 0, minHeight: 0 }}>
               <HeaderPanelToggle
+                mobile={narrowScreen}
                 iconOnly={iconOnlyHeader}
                 label={
                   iconOnlyHeader
@@ -323,18 +353,23 @@ export function FeedColumnHeader({
                 icon={
                   iconOnlyHeader ? (
                     <NotificationsOutlinedIcon
-                      sx={{ color: bellStateColor[dutyNotificationBellState] }}
+                      sx={
+                        dutyNotificationBellState === 'off'
+                          ? undefined
+                          : { color: bellStateColor[dutyNotificationBellState] }
+                      }
                     />
                   ) : undefined
                 }
                 expanded={showNotificationPanel}
                 onClick={onToggleNotificationPanel}
-                borderRight
+                borderRight={!narrowScreen}
               />
             </Box>
           </Box>
           <Box sx={{ display: 'flex', flex: '1 1 0', minWidth: 0, minHeight: 0 }}>
             <HeaderPanelToggle
+              mobile={narrowScreen}
               iconOnly={iconOnlyHeader}
               label="Підсвітка"
               icon={<SpellcheckIcon />}
@@ -353,7 +388,7 @@ export function FeedColumnHeader({
             minHeight: 0,
           }}
         >
-          {onCreateFeed ? (
+          {onCreateFeed && !narrowScreen ? (
             <Tooltip title="Додати стрічку">
               <IconButton
                 size="small"
@@ -392,14 +427,14 @@ export function FeedColumnHeader({
         </Box>
       </Box>
       {showFilters && (
-        <Box sx={columnPanelOverlaySx}>
+        <Box sx={{ ...columnPanelOverlaySx, top: narrowScreen ? 36 : 32 }}>
           <Box ref={filtersPanelRef} sx={columnPanelInnerSx}>
             <FeedFilterPanel panel={filterPanel} />
           </Box>
         </Box>
       )}
       {showNotificationPanel && (
-        <Box sx={columnPanelOverlaySx}>
+        <Box sx={{ ...columnPanelOverlaySx, top: narrowScreen ? 36 : 32 }}>
           <Box ref={notificationPanelRef} sx={columnPanelInnerSx}>
             <FeedNotificationPanel
               feedId={feedId}
@@ -413,7 +448,7 @@ export function FeedColumnHeader({
         </Box>
       )}
       {showKeywordsPanel && (
-        <Box sx={columnPanelOverlaySx}>
+        <Box sx={{ ...columnPanelOverlaySx, top: narrowScreen ? 36 : 32 }}>
           <Box ref={keywordsPanelRef} sx={columnPanelInnerSx}>
             <FeedKeywordsPanel
               feedId={feedId}

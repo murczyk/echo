@@ -634,6 +634,27 @@ describe('ManageMessageDrawer edit mode', () => {
     uppyMocks.latest = null;
   });
 
+  it('closes the message editor when browser Back restores the pre-editor history state', async () => {
+    const preEditorState = { screen: 'duty' };
+    window.history.replaceState(preEditorState, '', '/rer-duty-neo');
+    const onClose = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer open cyberEchoEnabled={false} currentUser={null} onClose={onClose} />,
+      );
+    });
+    await act(async () => {
+      window.dispatchEvent(new PopStateEvent('popstate', { state: preEditorState }));
+    });
+
+    expect(onClose).toHaveBeenCalledOnce();
+    root.unmount();
+  });
+
   it('shows an inert report-edit loading shell with an enabled dismissal path', async () => {
     setRecentValues({});
     const onClose = vi.fn();

@@ -10,6 +10,7 @@ import { FeedFilterAdvancedSection } from './FeedFilterAdvancedSection';
 import { FeedFilterFrequencySection } from './FeedFilterFrequencySection';
 import { FeedFilterSelectionSection } from './FeedFilterSelectionSection';
 import { FeedFilterDeviceNamesSection } from './FeedFilterDeviceNamesSection';
+import { dutyFeedPanelSurfaceSx } from './feed-panel-styles';
 
 type UnitsExactMatchSelectValue = 'exact' | 'not-exact';
 
@@ -111,7 +112,6 @@ export type FeedFilterPanelViewProps = {
 };
 
 export function FeedFilterPanelView({
-  isDarkMode,
   hasActiveFilter,
   onDiscardCurrentFilter,
   groups,
@@ -157,10 +157,7 @@ export function FeedFilterPanelView({
           alignSelf: 'stretch',
           px: 2,
           py: 2,
-          backgroundColor: 'background.paper',
-          backgroundImage: isDarkMode
-            ? 'linear-gradient(180deg, rgba(16, 20, 28, 0.98) 0%, rgba(12, 16, 24, 0.98) 100%)'
-            : 'none',
+          ...dutyFeedPanelSurfaceSx,
           border: '1px solid',
           borderColor: 'divider',
           borderRadius: 0,

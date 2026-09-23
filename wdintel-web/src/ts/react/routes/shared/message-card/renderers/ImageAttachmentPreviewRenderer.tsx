@@ -547,6 +547,7 @@ export function ImageAttachmentPreviewRenderer({
       }
       navigation={navigation}
       swipeEnabled={gestures.zoom <= ZOOM_MIN && !editor.isLocked}
+      onSwipeDismiss={close}
     />
   );
 }

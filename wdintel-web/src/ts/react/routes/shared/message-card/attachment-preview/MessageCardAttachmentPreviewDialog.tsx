@@ -29,6 +29,7 @@ import {
   AttachmentPreviewStageCarouselNav,
   type AttachmentPreviewStageNavigationSide,
 } from './AttachmentPreviewStageCarouselNav';
+import { useBrowserBackOverlay } from '../../../../hooks/use-browser-back-overlay';
 
 const isDownloadIdle = () => false;
 const allowDownloadStart = () => true;
@@ -125,6 +126,11 @@ export function MessageCardAttachmentPreviewDialog({
     },
     [reportTextPreviewEnabled],
   );
+  const finalizeDialogClose = useCallback(() => {
+    blurActiveAttachmentPreviewElement();
+    onClose();
+  }, [onClose]);
+  const closeDialog = useBrowserBackOverlay({ open: true, onClose: finalizeDialogClose });
 
   useEffect(() => {
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -172,10 +178,6 @@ export function MessageCardAttachmentPreviewDialog({
     return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [childOverlayOpen, isEditing, navigation]);
 
-  const closeDialog = () => {
-    blurActiveAttachmentPreviewElement();
-    onClose();
-  };
   const paperSx: Record<string, unknown> = {
     display: 'flex',
     flexDirection: 'column',
