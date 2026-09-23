@@ -649,7 +649,12 @@ describe('ManageMessageDrawer edit mode', () => {
 
     await act(async () => {
       root.render(
-        <ManageMessageDrawer open cyberEchoEnabled={false} currentUser={null} onClose={onClose} />,
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={onClose}
+        />,
       );
     });
     await act(async () => {
