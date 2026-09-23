@@ -1089,7 +1089,11 @@ async fn begin_totp_login_challenge(
     login_obj: &login::Model,
 ) -> Result<LoginRsp, AppError> {
     // Unattended API clients (echo-agent / Api*) skip interactive TOTP.
-    if login_skips_totp(login_obj).context(h!())? {
+    if login_skips_totp(login_obj).context(h!())?
+        || !crate::system_settings::two_factor_auth_enabled(&env.dbx)
+            .await
+            .c(h!())?
+    {
         start_user_session(env, http_req, login_obj.id, &env.dbx)
             .await
             .context(h!())?;

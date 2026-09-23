@@ -35,6 +35,8 @@ pub struct SystemSettingsCurrentRsp {
     pub hide_orbit_data: bool,
     pub disable_bot_tags: bool,
     pub duty_exclude_menu_enabled: bool,
+    #[serde(default = "default_true")]
+    pub two_factor_auth_enabled: bool,
 }
 
 #[derive(
@@ -75,6 +77,8 @@ pub struct SystemSettingsItem {
     pub show_peleng_distance_to_battleline: bool,
     pub disable_bot_tags: bool,
     pub duty_exclude_menu_enabled: bool,
+    #[serde(default = "default_true")]
+    pub two_factor_auth_enabled: bool,
 }
 
 #[derive(
@@ -135,6 +139,8 @@ pub struct CreateSystemSettingsReq {
     pub disable_bot_tags: bool,
     #[serde(default = "default_true")]
     pub duty_exclude_menu_enabled: bool,
+    #[serde(default = "default_true")]
+    pub two_factor_auth_enabled: bool,
 }
 
 fn default_true() -> bool {

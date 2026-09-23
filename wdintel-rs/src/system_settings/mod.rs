@@ -116,6 +116,9 @@ fn map_system_settings_item(
         show_peleng_distance_to_battleline: settings
             .show_peleng_distance_to_battleline,
         disable_bot_tags: settings.disable_bot_tags.unwrap_or(false),
+        two_factor_auth_enabled: settings
+            .two_factor_auth_enabled
+            .unwrap_or(true),
         duty_exclude_menu_enabled: settings
             .duty_exclude_menu_enabled
             .unwrap_or(true),
@@ -141,6 +144,17 @@ where
         .one(dbx)
         .await
         .c(h!())?)
+}
+
+pub async fn two_factor_auth_enabled<C>(dbx: &C) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
+    Ok(get_active_system_settings(dbx)
+        .await
+        .c(h!())?
+        .and_then(|settings| settings.two_factor_auth_enabled)
+        .unwrap_or(true))
 }
 
 pub async fn get_report_generation_settings<C>(
@@ -626,6 +640,7 @@ fn system_settings_active_model(
         hide_orbit_data: Set(hide_orbit_data),
         disable_bot_tags: Set(Some(req.disable_bot_tags)),
         duty_exclude_menu_enabled: Set(Some(req.duty_exclude_menu_enabled)),
+        two_factor_auth_enabled: Set(Some(req.two_factor_auth_enabled)),
     })
 }
 
@@ -786,6 +801,9 @@ pub async fn current_system_settings(
                 .show_peleng_distance_to_battleline,
             hide_orbit_data: settings.hide_orbit_data,
             disable_bot_tags: settings.disable_bot_tags.unwrap_or(false),
+            two_factor_auth_enabled: settings
+                .two_factor_auth_enabled
+                .unwrap_or(true),
             duty_exclude_menu_enabled: settings
                 .duty_exclude_menu_enabled
                 .unwrap_or(true),
@@ -823,6 +841,7 @@ pub async fn current_system_settings(
             hide_orbit_data: false,
             disable_bot_tags: false,
             duty_exclude_menu_enabled: true,
+            two_factor_auth_enabled: true,
         },
     }))
 }
@@ -976,6 +995,47 @@ mod tests {
             !map_system_settings_item(reactivated)
                 .unwrap()
                 .duty_exclude_menu_enabled
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3568_two_factor_auth_defaults_on_and_preserves_saved_choice()
+    {
+        let _guard = TEST_LOCK.lock().await;
+        let (env, _cleanup_guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let login_id = test_login_id(&env).await;
+        let legacy = insert_settings(&env.dbx, old_ts(), false).await;
+        assert!(
+            map_system_settings_item(legacy)
+                .unwrap()
+                .two_factor_auth_enabled
+        );
+
+        let mut req = settings_req(false);
+        req.two_factor_auth_enabled = false;
+        let disabled =
+            create_system_settings_for_login(&env.dbx, &login_id, &req)
+                .await
+                .unwrap();
+        assert_eq!(disabled.two_factor_auth_enabled, Some(false));
+
+        req.two_factor_auth_enabled = true;
+        create_system_settings_for_login(&env.dbx, &login_id, &req)
+            .await
+            .unwrap();
+        let reactivated = activate_system_settings_for_login(
+            &env.dbx,
+            &login_id,
+            disabled.id,
+        )
+        .await
+        .unwrap();
+        assert!(
+            !map_system_settings_item(reactivated)
+                .unwrap()
+                .two_factor_auth_enabled
         );
     }
 
@@ -1236,6 +1296,7 @@ mod tests {
             show_peleng_distance_to_battleline: false,
             disable_bot_tags: false,
             duty_exclude_menu_enabled: true,
+            two_factor_auth_enabled: true,
         }
     }
 
@@ -1302,6 +1363,7 @@ mod tests {
             hide_orbit_data: Set(false),
             disable_bot_tags: Set(None),
             duty_exclude_menu_enabled: Set(None),
+            two_factor_auth_enabled: Set(None),
         }
         .insert(dbx)
         .await

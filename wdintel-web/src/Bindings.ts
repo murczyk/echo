@@ -4709,6 +4709,7 @@ export type SystemSettingsCurrentRsp = {
   hideOrbitData: boolean;
   disableBotTags: boolean;
   dutyExcludeMenuEnabled: boolean;
+  twoFactorAuthEnabled: boolean;
 };
 
 export type SystemSettingsItem = {
@@ -4746,6 +4747,7 @@ export type SystemSettingsItem = {
   showPelengDistanceToBattleline: boolean;
   disableBotTags: boolean;
   dutyExcludeMenuEnabled: boolean;
+  twoFactorAuthEnabled: boolean;
 };
 
 export type SystemSettingsListRsp = {
@@ -4782,6 +4784,7 @@ export type CreateSystemSettingsReq = {
   showPelengDistanceToBattleline: boolean;
   disableBotTags: boolean;
   dutyExcludeMenuEnabled: boolean;
+  twoFactorAuthEnabled: boolean;
 };
 
 export type ActivateSystemSettingsReq = {

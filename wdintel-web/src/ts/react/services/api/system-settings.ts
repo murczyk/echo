@@ -22,6 +22,7 @@ type SystemSettingsItemRaw = {
   show_peleng_distance_to_battleline?: boolean;
   disable_bot_tags?: boolean | null;
   duty_exclude_menu_enabled?: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'] | null;
+  two_factor_auth_enabled?: SystemSettingsCurrentRsp['twoFactorAuthEnabled'] | null;
   autofix_echoim_missing_messages?: boolean;
   devices_section_enabled?: boolean;
   sigint_comment_parsing_enabled?: boolean;
@@ -56,6 +57,7 @@ type SystemSettingsCurrentRspRaw = {
   hide_orbit_data?: boolean;
   disable_bot_tags?: boolean | null;
   duty_exclude_menu_enabled?: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'] | null;
+  two_factor_auth_enabled?: SystemSettingsCurrentRsp['twoFactorAuthEnabled'] | null;
   autofix_echoim_missing_messages?: boolean;
   devices_section_enabled?: boolean;
   sigint_comment_parsing_enabled?: boolean;
@@ -91,6 +93,7 @@ type CreateSystemSettingsReqRaw = {
   show_peleng_distance_to_battleline: boolean;
   disable_bot_tags: boolean;
   duty_exclude_menu_enabled: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
+  two_factor_auth_enabled: SystemSettingsCurrentRsp['twoFactorAuthEnabled'];
   autofix_echoim_missing_messages: boolean;
   devices_section_enabled: boolean;
   sigint_comment_parsing_enabled: boolean;
@@ -132,6 +135,7 @@ export type SystemSettingsItem = {
   showPelengDistanceToBattleline: boolean;
   disableBotTags: boolean;
   dutyExcludeMenuEnabled: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
+  twoFactorAuthEnabled: SystemSettingsCurrentRsp['twoFactorAuthEnabled'];
   autofixEchoimMissingMessages: boolean;
   devicesSectionEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
@@ -166,6 +170,7 @@ export type SystemSettingsCurrent = {
   hideOrbitData: boolean;
   disableBotTags: boolean;
   dutyExcludeMenuEnabled: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
+  twoFactorAuthEnabled: SystemSettingsCurrentRsp['twoFactorAuthEnabled'];
   autofixEchoimMissingMessages: boolean;
   devicesSectionEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
@@ -197,6 +202,7 @@ export type CreateSystemSettingsInput = {
   showPelengDistanceToBattleline?: boolean;
   disableBotTags: boolean;
   dutyExcludeMenuEnabled?: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
+  twoFactorAuthEnabled?: SystemSettingsCurrentRsp['twoFactorAuthEnabled'];
   autofixEchoimMissingMessages: boolean;
   devicesSectionEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
@@ -235,6 +241,7 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     showPelengDistanceToBattleline: raw.show_peleng_distance_to_battleline ?? false,
     disableBotTags: raw.disable_bot_tags ?? false,
     dutyExcludeMenuEnabled: raw.duty_exclude_menu_enabled ?? true,
+    twoFactorAuthEnabled: raw.two_factor_auth_enabled ?? true,
     autofixEchoimMissingMessages: raw.autofix_echoim_missing_messages ?? false,
     devicesSectionEnabled: raw.devices_section_enabled ?? false,
     sigintCommentParsingEnabled: raw.sigint_comment_parsing_enabled ?? false,
@@ -271,6 +278,7 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
     hideOrbitData: raw.hide_orbit_data ?? false,
     disableBotTags: raw.disable_bot_tags ?? false,
     dutyExcludeMenuEnabled: raw.duty_exclude_menu_enabled ?? true,
+    twoFactorAuthEnabled: raw.two_factor_auth_enabled ?? true,
     autofixEchoimMissingMessages: raw.autofix_echoim_missing_messages ?? false,
     devicesSectionEnabled: raw.devices_section_enabled ?? false,
     sigintCommentParsingEnabled: raw.sigint_comment_parsing_enabled ?? false,
@@ -311,6 +319,7 @@ export async function createSystemSettings(
     show_peleng_distance_to_battleline: input.showPelengDistanceToBattleline ?? false,
     disable_bot_tags: input.disableBotTags,
     duty_exclude_menu_enabled: input.dutyExcludeMenuEnabled ?? true,
+    two_factor_auth_enabled: input.twoFactorAuthEnabled ?? true,
     autofix_echoim_missing_messages: input.autofixEchoimMissingMessages,
     devices_section_enabled: input.devicesSectionEnabled,
     sigint_comment_parsing_enabled: input.sigintCommentParsingEnabled,

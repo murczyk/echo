@@ -51,6 +51,7 @@ pub struct Model {
     pub show_peleng_distance_to_battleline: bool,
     pub disable_bot_tags: Option<bool>,
     pub duty_exclude_menu_enabled: Option<bool>,
+    pub two_factor_auth_enabled: Option<bool>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

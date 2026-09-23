@@ -49,6 +49,7 @@ type SystemSettingsForm = {
   showPelengDistanceToBattleline: boolean;
   disableBotTags: boolean;
   dutyExcludeMenuEnabled: boolean;
+  twoFactorAuthEnabled: boolean;
   dutyTestEnabled: boolean;
   dutyTestSinceMs: number;
   dutyTestLimit: number;
@@ -82,6 +83,7 @@ type SystemSettingsPayload = {
   showPelengDistanceToBattleline: boolean;
   disableBotTags: boolean;
   dutyExcludeMenuEnabled: boolean;
+  twoFactorAuthEnabled: boolean;
   dutyTestEnabled: boolean;
   dutyTestSinceMs: number;
   dutyTestLimit: number;
@@ -115,6 +117,7 @@ const EMPTY_FORM: SystemSettingsForm = {
   showPelengDistanceToBattleline: false,
   disableBotTags: false,
   dutyExcludeMenuEnabled: true,
+  twoFactorAuthEnabled: true,
   dutyTestEnabled: false,
   dutyTestSinceMs: 0,
   dutyTestLimit: 1,
@@ -198,6 +201,7 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     showPelengDistanceToBattleline: item?.showPelengDistanceToBattleline ?? false,
     disableBotTags: item?.disableBotTags ?? false,
     dutyExcludeMenuEnabled: item?.dutyExcludeMenuEnabled ?? true,
+    twoFactorAuthEnabled: item?.twoFactorAuthEnabled ?? true,
     dutyTestEnabled: item?.rerDutyTestEnabled ?? false,
     dutyTestSinceMs: item?.rerDutyTestSinceMs ?? 0,
     dutyTestLimit: item?.rerDutyTestLimit ?? 1,
@@ -234,6 +238,7 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.showPelengDistanceToBattleline === b.showPelengDistanceToBattleline &&
     a.disableBotTags === b.disableBotTags &&
     a.dutyExcludeMenuEnabled === b.dutyExcludeMenuEnabled &&
+    a.twoFactorAuthEnabled === b.twoFactorAuthEnabled &&
     a.dutyTestEnabled === b.dutyTestEnabled &&
     a.dutyTestSinceMs === b.dutyTestSinceMs &&
     a.dutyTestLimit === b.dutyTestLimit &&
@@ -326,6 +331,7 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     showPelengDistanceToBattleline: form.showPelengDistanceToBattleline,
     disableBotTags: form.disableBotTags,
     dutyExcludeMenuEnabled: form.dutyExcludeMenuEnabled,
+    twoFactorAuthEnabled: form.twoFactorAuthEnabled,
     dutyTestEnabled: form.dutyTestEnabled,
     dutyTestSinceMs: form.dutyTestSinceMs,
     dutyTestLimit: form.dutyTestLimit,
@@ -444,6 +450,16 @@ function MainSettingsSection({
           Прапорець «точний збіг за еталонкою» на аналізі увімкнений
         </ButtonBase>
       </Box>
+
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.twoFactorAuthEnabled}
+            onChange={(_, checked) => patchForm({ twoFactorAuthEnabled: checked })}
+          />
+        }
+        label="Двофакторна автентифікація (2FA)"
+      />
 
       <FormControlLabel
         control={
@@ -1012,6 +1028,7 @@ export function AdminSystemSettingsNeoPage() {
         showPelengDistanceToBattleline: payload.showPelengDistanceToBattleline,
         disableBotTags: payload.disableBotTags,
         dutyExcludeMenuEnabled: payload.dutyExcludeMenuEnabled,
+        twoFactorAuthEnabled: payload.twoFactorAuthEnabled,
         autofixEchoimMissingMessages: payload.autofixEchoimMissingMessages,
         devicesSectionEnabled: payload.devicesSectionEnabled,
         sigintCommentParsingEnabled: payload.sigintCommentParsingEnabled,
