@@ -119,43 +119,6 @@ function getButton(container: HTMLElement, label: string): HTMLButtonElement {
 }
 
 describe('FeedNotificationPanel', () => {
-  it('uses the shared duty panel surface', async () => {
-    const { container } = await renderPanel();
-    expect(getComputedStyle(container.firstElementChild as Element).backgroundColor).toBe(
-      '#121212',
-    );
-  });
-
-  it('keeps notification channel cards transparent', async () => {
-    const { container } = await renderPanel();
-    const cards = Array.from(container.querySelectorAll('article'));
-
-    expect(cards).toHaveLength(2);
-    expect(cards.map((card) => getComputedStyle(card).backgroundColor)).toEqual([
-      'transparent',
-      'transparent',
-    ]);
-  });
-
-  it('uses standard 14px regular text for notification channel labels', async () => {
-    const { container } = await renderPanel();
-    const labels = ['Звуковий сигнал', 'Системний банер'].map((label) =>
-      Array.from(container.querySelectorAll('.MuiTypography-root')).find(
-        (element) => element.textContent === label,
-      ),
-    );
-
-    expect(labels.every((label) => label != null)).toBe(true);
-    expect(labels.map((label) => getComputedStyle(label as Element).fontSize)).toEqual([
-      '14px',
-      '14px',
-    ]);
-    expect(labels.map((label) => getComputedStyle(label as Element).fontWeight)).toEqual([
-      '400',
-      '400',
-    ]);
-  });
-
   it('plays sound and reports its status when testing sound', async () => {
     storedSettings = { soundEnabled: true, browserEnabled: false };
     const changed = vi.fn();

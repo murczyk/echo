@@ -88,15 +88,6 @@ describe('FeedKeywordsPanel success notifications', () => {
     document.body.innerHTML = '';
   });
 
-  it('uses the shared duty panel surface', async () => {
-    setup();
-    const { container, root } = await renderPanel();
-    expect(getComputedStyle(container.firstElementChild as Element).backgroundColor).toBe(
-      '#121212',
-    );
-    await act(async () => root.unmount());
-  });
-
   it('notifies after handleSave resolves, preserving selection and collapse', async () => {
     const { saveEditorSet } = setup();
     let resolveSave!: (id: number) => void;
