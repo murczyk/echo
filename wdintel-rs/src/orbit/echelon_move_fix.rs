@@ -557,6 +557,15 @@ fn proposed_change(
     if matching_echelons.contains(&source_echelon) {
         return None;
     }
+    if echelon_move == EchelonMove::RegimentToBrigade {
+        if let Some(change) = proposed_compound_regiment_brigade_change(
+            unit,
+            source,
+            orbit_values,
+        ) {
+            return Some(change);
+        }
+    }
     let destination = match matching_echelons.as_slice() {
         [destination] if echelon_move.accepts_destination(*destination) => {
             Some(*destination)
@@ -595,6 +604,84 @@ fn proposed_change(
         },
         preserved_destination,
     })
+}
+
+fn proposed_compound_regiment_brigade_change(
+    unit: &EchelonMoveUnit,
+    source: &str,
+    orbit_values: &HashMap<EchoEchelon, HashSet<String>>,
+) -> Option<EchelonMoveChange> {
+    let (regiment, brigade) =
+        split_compound_regiment_brigade(source, orbit_values)?;
+    let mut attributes = Vec::with_capacity(ORBIT_ECHELONS.len());
+    let mut visited = HashSet::from([EchoEchelon::Regiment]);
+    relocate_value(
+        unit,
+        EchoEchelon::Regiment,
+        EchoEchelon::Brigade,
+        brigade,
+        orbit_values,
+        &mut visited,
+        &mut attributes,
+    )?;
+    if let Some(attribute) = attributes
+        .iter_mut()
+        .find(|attribute| attribute.attribute == "regiment")
+    {
+        if matching::normalize_name(&attribute.proposed)
+            != matching::normalize_name(regiment)
+        {
+            return None;
+        }
+        attribute.proposed = regiment.to_string();
+    } else {
+        attributes.push(OrbitUnitAttributeChange {
+            attribute: "regiment",
+            current: source.to_string(),
+            proposed: regiment.to_string(),
+        });
+    }
+    let preserved_destination =
+        (unit.brigade == brigade).then(|| OrbitUnitAttributeChange {
+            attribute: "brigade",
+            current: brigade.to_string(),
+            proposed: brigade.to_string(),
+        });
+    Some(EchelonMoveChange {
+        unit_name: unit.name.clone(),
+        hierarchy_change: OrbitUnitHierarchyChange {
+            sigint_unit_id: unit.id,
+            attributes,
+        },
+        preserved_destination,
+    })
+}
+
+fn split_compound_regiment_brigade<'a>(
+    value: &'a str,
+    orbit_values: &HashMap<EchoEchelon, HashSet<String>>,
+) -> Option<(&'a str, &'a str)> {
+    let mut found = None;
+    for (index, character) in value.char_indices() {
+        if !character.is_whitespace() {
+            continue;
+        }
+        let candidate = (value[..index].trim(), value[index..].trim());
+        if candidate.0.is_empty()
+            || candidate.1.is_empty()
+            || matching_echelons(candidate.0, orbit_values)
+                != [EchoEchelon::Regiment]
+            || matching_echelons(candidate.1, orbit_values)
+                != [EchoEchelon::Brigade]
+        {
+            continue;
+        }
+        if found.is_some_and(|found| found != candidate) {
+            return None;
+        }
+        found = Some(candidate);
+    }
+    found
 }
 
 fn move_attributes(
@@ -994,6 +1081,42 @@ mod tests {
         assert!(proposed_change(&unit, EchelonMove::CorpsToArmy, &values,)
             .is_some());
         assert!(proposed_change(&unit, EchelonMove::Army, &values).is_none());
+    }
+
+    #[test]
+    fn splits_regiment_and_brigade_combined_in_regiment_field() {
+        let mut unit = sigint_unit();
+        unit.regiment = "109 осп 132 омсбр".to_string();
+        let values = HashMap::from([
+            (
+                EchoEchelon::Regiment,
+                HashSet::from([matching::normalize_name("109 осп")]),
+            ),
+            (
+                EchoEchelon::Brigade,
+                HashSet::from([matching::normalize_name("132 омсбр")]),
+            ),
+        ]);
+
+        let change =
+            proposed_change(&unit, EchelonMove::RegimentToBrigade, &values)
+                .expect("compound regiment and brigade must be split");
+
+        assert_eq!(
+            change.hierarchy_change.attributes,
+            vec![
+                OrbitUnitAttributeChange {
+                    attribute: "brigade",
+                    current: String::new(),
+                    proposed: "132 омсбр".to_string(),
+                },
+                OrbitUnitAttributeChange {
+                    attribute: "regiment",
+                    current: "109 осп 132 омсбр".to_string(),
+                    proposed: "109 осп".to_string(),
+                },
+            ]
+        );
     }
 
     #[test]
