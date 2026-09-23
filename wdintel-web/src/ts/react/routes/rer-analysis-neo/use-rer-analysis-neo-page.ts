@@ -51,8 +51,40 @@ import { getAnalysisSidebarTabs, type AnalysisCenterTab, type AnalysisSidebarTab
 import { fetchAnalysisCallsignFrequencyMatches } from '../../services/api/analysis';
 import { toErrorMessage } from './use-analysis-data.shared';
 
-function initState(): AnalysisQueryState {
-  return createInitialQueryState(parseQueryStateFromWindow());
+function initState(
+  parsedQueryState: AnalysisQueryState,
+  now: Date,
+  radioFeaturesAllowed: boolean,
+): AnalysisQueryState {
+  return createInitialQueryState(parsedQueryState, now, radioFeaturesAllowed);
+}
+
+function resolveRoleDefaultFromDate({
+  currentUserLoaded,
+  initialFromDateTimeStr,
+  initialParsedFromDateTimeStr,
+  now,
+  queryState,
+  radioFeaturesAllowed,
+}: {
+  currentUserLoaded: boolean;
+  initialFromDateTimeStr: string;
+  initialParsedFromDateTimeStr: string;
+  now: Date;
+  queryState: AnalysisQueryState;
+  radioFeaturesAllowed: boolean;
+}): AnalysisQueryState {
+  if (
+    !currentUserLoaded ||
+    initialParsedFromDateTimeStr !== '' ||
+    queryState.fromDateTimeStr !== initialFromDateTimeStr
+  ) {
+    return queryState;
+  }
+  const roleDefault = createResetQueryState(now, radioFeaturesAllowed);
+  return roleDefault.fromDateTimeStr === queryState.fromDateTimeStr
+    ? queryState
+    : { ...queryState, fromDateTimeStr: roleDefault.fromDateTimeStr };
 }
 
 function stringArraysEqual(left: string[], right: string[]): boolean {
@@ -71,12 +103,20 @@ function inboxWindowMatchesMessages(
 type DeviceAccess =
   { status: 'loading' } | { status: 'allowed' } | { status: 'denied' } | { status: 'error' };
 
-export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPageViewModel {
+export function useRerAnalysisNeoPage(
+  authUserName: string | null,
+  authUserRoles: readonly string[] = [],
+): AnalysisPageViewModel {
   const theme = useTheme();
   const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
   const isStackedFiltersLayout = useMediaQuery(theme.breakpoints.down('lg'));
+  const initialRadioFeaturesAllowed = canUseRadioFeatures(authUserRoles);
   const [initialPanelQueryState] = useState(parseAnalysisPanelQueryStateFromWindow);
-  const [initialQueryState] = useState<AnalysisQueryState>(initState);
+  const [initialNow] = useState(() => new Date());
+  const [initialParsedQueryState] = useState(parseQueryStateFromWindow);
+  const [initialQueryState] = useState<AnalysisQueryState>(() =>
+    initState(initialParsedQueryState, initialNow, initialRadioFeaturesAllowed),
+  );
   const [queryState, setQueryState] = useState<AnalysisQueryState>(initialQueryState);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [currentUserStatus, setCurrentUserStatus] = useState<'loading' | 'success' | 'error'>(
@@ -95,7 +135,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const [hideBotTags, setHideBotTags] = useState(false);
   const [lastResetState, setLastResetState] = useState<AnalysisQueryState>(() =>
     hasMeaningfulUiFiltersBeyondDateRange(initialQueryState)
-      ? createResetQueryState()
+      ? createResetQueryState(initialNow, initialRadioFeaturesAllowed)
       : initialQueryState,
   );
   const [selectedCenterTab, setCenterTabState] = useState<AnalysisCenterTab>('messages');
@@ -167,7 +207,31 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
           ? { status: 'allowed' }
           : { status: 'denied' };
   const canUseDevices = deviceAccess.status === 'allowed';
-  const radioFeaturesAllowed = canUseRadioFeatures(currentUser?.roles);
+  const radioFeaturesAllowed = canUseRadioFeatures(currentUser?.roles ?? authUserRoles);
+  const queryStateWithResolvedRoleDate = useMemo(
+    () =>
+      resolveRoleDefaultFromDate({
+        currentUserLoaded: currentUserStatus === 'success',
+        initialFromDateTimeStr: initialQueryState.fromDateTimeStr,
+        initialParsedFromDateTimeStr: initialParsedQueryState.fromDateTimeStr,
+        now: initialNow,
+        queryState,
+        radioFeaturesAllowed,
+      }),
+    [
+      currentUserStatus,
+      initialNow,
+      initialParsedQueryState.fromDateTimeStr,
+      initialQueryState.fromDateTimeStr,
+      queryState,
+      radioFeaturesAllowed,
+    ],
+  );
+  useEffect(() => {
+    if (queryStateWithResolvedRoleDate !== queryState) {
+      setQueryState(queryStateWithResolvedRoleDate);
+    }
+  }, [queryState, queryStateWithResolvedRoleDate]);
   const centerTab =
     !radioFeaturesAllowed && selectedCenterTab === 'summary' ? 'messages' : selectedCenterTab;
   const rightSidebarTab =
@@ -175,10 +239,12 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const effectiveQueryState = useMemo(
     () =>
       effectiveRadioQuery(
-        deviceAccess.status === 'denied' ? { ...queryState, deviceNamesSelected: [] } : queryState,
+        deviceAccess.status === 'denied'
+          ? { ...queryStateWithResolvedRoleDate, deviceNamesSelected: [] }
+          : queryStateWithResolvedRoleDate,
         radioFeaturesAllowed,
       ),
-    [queryState, deviceAccess.status, radioFeaturesAllowed],
+    [deviceAccess.status, queryStateWithResolvedRoleDate, radioFeaturesAllowed],
   );
   useEffect(() => {
     if (dutySettings.loadInProgress) return;
@@ -575,7 +641,9 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     onError: setPageError,
     onUnauthorized: handleUnauthorized,
     queryState:
-      deviceAccess.status === 'denied' ? { ...queryState, deviceNamesSelected: [] } : queryState,
+      deviceAccess.status === 'denied'
+        ? { ...queryStateWithResolvedRoleDate, deviceNamesSelected: [] }
+        : queryStateWithResolvedRoleDate,
     setQueryState,
   });
 
@@ -786,7 +854,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
 
   const resetFilters = useCallback(() => {
     const nextState = {
-      ...createResetQueryState(),
+      ...createResetQueryState(new Date(), radioFeaturesAllowed),
       messageTimeBasis: dutySettings.messageSortBy,
     };
     savedFilters.applySavedFilter(null);
@@ -795,7 +863,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     setLastResetState(nextState);
     setError(null);
     pushQueryStateToUrl(nextState, newestFirst);
-  }, [data, dutySettings.messageSortBy, savedFilters, newestFirst]);
+  }, [data, dutySettings.messageSortBy, newestFirst, radioFeaturesAllowed, savedFilters]);
 
   const setIncludeOnlyNewFreqs = useCallback(
     (value: boolean) => {

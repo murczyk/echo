@@ -6,6 +6,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { InboxMessage, InboxWindowRsp, SavedFilter, User } from '../../../../../Bindings';
+import { createResetQueryState } from '../helpers';
 import type { AnalysisPageViewModel } from '../types';
 import { useRerAnalysisNeoPage } from '../use-rer-analysis-neo-page';
 
@@ -270,12 +271,12 @@ function buildEditor() {
   };
 }
 
-function renderHook() {
+function renderHook(authUserRoles: string[] = ['Rer']) {
   if (container == null) throw new Error('container not initialized');
 
   root = createRoot(container);
   const Harness = () => {
-    latest = useRerAnalysisNeoPage(null);
+    latest = useRerAnalysisNeoPage(null, authUserRoles);
     return null;
   };
   const rerender = () => {
@@ -369,6 +370,23 @@ describe('useRerAnalysisNeoPage', () => {
     currentAnalysisData = null;
   });
 
+  it('keeps Rer radio features available while the current-user lookup is pending', () => {
+    currentUserMock.fetchCurrentUser.mockReturnValueOnce(new Promise(() => {}));
+
+    renderHook(['Rer']);
+
+    expect(latest?.radioFeaturesAllowed).toBe(true);
+  });
+
+  it('reconciles a bare date range when the user lookup adds Rer access', async () => {
+    renderHook([]);
+    await flushEffects();
+
+    expect(latest?.queryState.fromDateTimeStr).toBe(
+      createResetQueryState(new Date(), true).fromDateTimeStr,
+    );
+  });
+
   it('opens the first available sidebar tab when the right panel is toggled while map stays in the center', async () => {
     renderHook();
     await flushEffects();
@@ -394,14 +412,16 @@ describe('useRerAnalysisNeoPage', () => {
     '#3568 ignores restored radio filters and hidden tabs for %j',
     async (...roles) => {
       currentUserMock.fetchCurrentUser.mockResolvedValue({ name: 'tester', roles } as User);
-      renderHook();
+      renderHook(roles);
       await flushEffects();
       act(() => {
         latest?.updateQueryState({
           freqsSelected: ['145.500'],
+          networksSelected: ['7'],
           postsSelected: ['hidden-post'],
           adjacentFreqsRange: 0.025,
           includeOnlyNewFreqs: true,
+          withoutNetwork: true,
           metadataCc: ['7'],
           metadataSender: ['101'],
           onlyWithMetadata: true,
@@ -412,9 +432,11 @@ describe('useRerAnalysisNeoPage', () => {
       await flushEffects();
       expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].queryState).toMatchObject({
         freqsSelected: [],
+        networksSelected: [],
         postsSelected: [],
         adjacentFreqsRange: 0,
         includeOnlyNewFreqs: false,
+        withoutNetwork: false,
         metadataCc: [],
         metadataSender: [],
         onlyWithMetadata: false,

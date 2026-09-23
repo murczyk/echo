@@ -136,7 +136,10 @@ export function emptyQueryState(): AnalysisQueryState {
   };
 }
 
-function getDefaultAnalysisDateRange(now: Date): {
+function getDefaultAnalysisDateRange(
+  now: Date,
+  radioFeaturesAllowed: boolean,
+): {
   fromDateTimeStr: string;
   toDateTimeStr: string;
 } {
@@ -144,7 +147,9 @@ function getDefaultAnalysisDateRange(now: Date): {
   const startOfTomorrowInAppTz = startOfTodayInAppTz.add(1, 'day');
 
   return {
-    fromDateTimeStr: startOfTomorrowInAppTz.subtract(90, 'day').format('YYYY-MM-DDTHH:mm'),
+    fromDateTimeStr: startOfTomorrowInAppTz
+      .subtract(radioFeaturesAllowed ? 1 : 90, 'day')
+      .format('YYYY-MM-DDTHH:mm'),
     toDateTimeStr: startOfTomorrowInAppTz.format('YYYY-MM-DDTHH:mm'),
   };
 }
@@ -230,11 +235,12 @@ export function removeMessageUidFromWindowUrl(): void {
 export function createInitialQueryState(
   parsed: AnalysisQueryState,
   now: Date = new Date(),
+  radioFeaturesAllowed: boolean = false,
 ): AnalysisQueryState {
   if (parsed.fromDateTimeStr !== '' && parsed.toDateTimeStr !== '')
     return normalizeQueryState(parsed);
 
-  const defaultDateRange = getDefaultAnalysisDateRange(now);
+  const defaultDateRange = getDefaultAnalysisDateRange(now, radioFeaturesAllowed);
   return normalizeQueryState({
     ...emptyQueryState(),
     ...parsed,
@@ -243,8 +249,11 @@ export function createInitialQueryState(
   });
 }
 
-export function createResetQueryState(now: Date = new Date()): AnalysisQueryState {
-  return createInitialQueryState(emptyQueryState(), now);
+export function createResetQueryState(
+  now: Date = new Date(),
+  radioFeaturesAllowed: boolean = false,
+): AnalysisQueryState {
+  return createInitialQueryState(emptyQueryState(), now, radioFeaturesAllowed);
 }
 
 function messageDateInAppTimeZone(

@@ -2,6 +2,7 @@ module CoreAuthTests exposing (suite)
 
 import Bindings exposing (User)
 import Core.Auth
+import Core.RadioFeatures
 import Expect
 import Json.Decode
 import Json.Encode
@@ -71,6 +72,29 @@ suite =
                     , \_ -> Expect.equal True (Core.Auth.hasRole "Basic" (user [ "Cyber" ]))
                     , \_ -> Expect.equal False (Core.Auth.hasRole "Rer" (user [ "Cyber" ]))
                     , \_ -> Expect.equal False (Core.Auth.hasRole "Cyber" (user [ "Rer" ]))
+                    ]
+                    ()
+        , test "#3568 removes hidden network filters without Rer access" <|
+            \_ ->
+                let
+                    normalized =
+                        Core.RadioFeatures.analysisFilters False
+                            { selectedFreqs = Just [ "123.4" ]
+                            , selectedNetworks = Just [ 7 ]
+                            , selectedPosts = Just [ "post" ]
+                            , includePelengLocations = Just True
+                            , metadataCc = Just [ "cc" ]
+                            , metadataSender = Just [ "sender" ]
+                            , metadataReceiver = Just [ "receiver" ]
+                            , metadataHash = Just [ "hash" ]
+                            , onlyWithMetadata = Just True
+                            , withoutNetwork = Just True
+                            , withoutMetadata = Just True
+                            }
+                in
+                Expect.all
+                    [ \_ -> Expect.equal Nothing normalized.selectedNetworks
+                    , \_ -> Expect.equal (Just False) normalized.withoutNetwork
                     ]
                     ()
         , test "#3569 CyberViewer reads Cyber data with additive message write permissions" <|

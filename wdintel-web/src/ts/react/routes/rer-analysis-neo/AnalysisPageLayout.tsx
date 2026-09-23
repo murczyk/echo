@@ -29,10 +29,14 @@ import { MessageDeviceAccessProvider } from '../shared/message-card/MessageDevic
 
 export type RerAnalysisNeoPageProps = {
   authUserName?: string | null;
+  authUserRoles?: string[];
 };
 
-export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPageProps = {}) {
-  const page = useRerAnalysisNeoPage(authUserName);
+export function RerAnalysisNeoPage({
+  authUserName = null,
+  authUserRoles = [],
+}: RerAnalysisNeoPageProps = {}) {
+  const page = useRerAnalysisNeoPage(authUserName, authUserRoles);
   const theme = useTheme();
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
   const reportFocusTargetRef = useRef<HTMLElement | null>(null);
