@@ -1,5 +1,8 @@
-import { MessageWriteAccessContext } from '../shared/message-card/MessageWriteAccess';
-import { canWriteMessages } from '../../utils/roles';
+import {
+  MessageDeleteAccessContext,
+  MessageWriteAccessContext,
+} from '../shared/message-card/MessageWriteAccess';
+import { canWriteMessages, hasRole } from '../../utils/roles';
 import { RadioFeaturesProvider } from '../shared/RadioFeatures';
 import { Box } from '@mui/material';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
@@ -305,7 +308,9 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   );
   return (
     <MessageWriteAccessContext.Provider value={canWriteMessages(page.currentUser?.roles)}>
-      {content}
+      <MessageDeleteAccessContext.Provider value={hasRole(page.currentUser?.roles, 'DeleteMsg')}>
+        {content}
+      </MessageDeleteAccessContext.Provider>
     </MessageWriteAccessContext.Provider>
   );
 }

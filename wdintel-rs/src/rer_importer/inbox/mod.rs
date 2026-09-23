@@ -1982,7 +1982,13 @@ async fn delete_message(
     env: actix_web::web::Data<Env>,
     req: Json<InboxDeleteReq>,
 ) -> Result<Json<()>, AppError> {
-    ensure_base_role(&env.dbx, &user).await.c(h!())?;
+    has_role(
+        &env.dbx,
+        &login_id_from_identity(&user).c(h!())?,
+        "DeleteMsg",
+    )
+    .await
+    .c(h!())?;
     let txn = env.dbx.begin().await.context(h!())?;
     let intelligence_report_parent_ids = intel_product::Entity::find()
         .filter(intel_product::Column::IntelMessageId.eq(req.id))

@@ -1,4 +1,4 @@
-import { useMessageWriteAccess } from './MessageWriteAccess';
+import { useMessageDeleteAccess, useMessageWriteAccess } from './MessageWriteAccess';
 import { useContext } from 'react';
 import { DutyExcludeMenuContext } from './DutyExcludeMenu';
 import { useRadioFeatures } from '../RadioFeatures';
@@ -227,6 +227,8 @@ function MessageCardComponent({
   messageTimeBasis = 'interception',
 }: MessageCardProps) {
   const canWrite = useMessageWriteAccess();
+  const canDelete = useMessageDeleteAccess();
+  if (!canDelete) onDelete = undefined;
   if (!canWrite) {
     onEditDetails = undefined;
     onCreateReport = undefined;

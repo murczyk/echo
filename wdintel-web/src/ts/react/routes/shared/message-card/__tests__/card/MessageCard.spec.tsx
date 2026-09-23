@@ -1,4 +1,4 @@
-import { MessageWriteAccessContext } from '../../MessageWriteAccess';
+import { MessageDeleteAccessContext, MessageWriteAccessContext } from '../../MessageWriteAccess';
 import { DutyExcludeMenuContext } from '../../DutyExcludeMenu';
 /**
  * @vitest-environment happy-dom
@@ -657,6 +657,7 @@ async function renderCard(
     dutyExcludeMenuEnabled?: boolean;
     radioFeaturesAllowed?: boolean;
     canWrite?: boolean;
+    canDelete?: boolean;
   } = {},
 ): Promise<Rendered> {
   const container = document.createElement('div');
@@ -700,7 +701,7 @@ async function renderCard(
   };
 
   await act(async () => {
-    root.render(
+    const content = (
       <RadioFeaturesProvider allowed={options.radioFeaturesAllowed ?? true}>
         {
           <AudioTranscriptionPreferencesProvider
@@ -722,7 +723,16 @@ async function renderCard(
             )}
           </AudioTranscriptionPreferencesProvider>
         }
-      </RadioFeaturesProvider>,
+      </RadioFeaturesProvider>
+    );
+    root.render(
+      options.canDelete == null ? (
+        content
+      ) : (
+        <MessageDeleteAccessContext.Provider value={options.canDelete}>
+          {content}
+        </MessageDeleteAccessContext.Provider>
+      ),
     );
   });
 
@@ -2555,30 +2565,33 @@ describe('MessageCard', () => {
   });
 
   it('orders edit, archive download, and delete in the overflow menu', async () => {
-    const view = await renderCard({
-      displayMode: 'analysis',
-      onEditDetails: vi.fn(),
-      onDelete: vi.fn(),
-      msg: {
-        ...buildMessage(),
-        media: [
-          {
-            id: 'first',
-            href: '/api/messenger/media/first',
-            contentType: 'text/plain',
-            fileName: 'first.txt',
-            sizeBytes: 1,
-          },
-          {
-            id: 'second',
-            href: '/api/messenger/media/second',
-            contentType: 'text/plain',
-            fileName: 'second.txt',
-            sizeBytes: 1,
-          },
-        ] as InboxMessage['media'],
+    const view = await renderCard(
+      {
+        displayMode: 'analysis',
+        onEditDetails: vi.fn(),
+        onDelete: vi.fn(),
+        msg: {
+          ...buildMessage(),
+          media: [
+            {
+              id: 'first',
+              href: '/api/messenger/media/first',
+              contentType: 'text/plain',
+              fileName: 'first.txt',
+              sizeBytes: 1,
+            },
+            {
+              id: 'second',
+              href: '/api/messenger/media/second',
+              contentType: 'text/plain',
+              fileName: 'second.txt',
+              sizeBytes: 1,
+            },
+          ] as InboxMessage['media'],
+        },
       },
-    });
+      { canDelete: true },
+    );
     rendered.push(view);
 
     expect(view.container.querySelector('button[aria-label="Редагувати"]')).toBeNull();
@@ -2681,13 +2694,16 @@ describe('MessageCard', () => {
     const onBookmark = vi.fn();
     const onEditDetails = vi.fn();
     const onDelete = vi.fn();
-    const view = await renderCard({
-      displayMode: 'analysis',
-      onImportant,
-      onBookmark,
-      onEditDetails,
-      onDelete,
-    });
+    const view = await renderCard(
+      {
+        displayMode: 'analysis',
+        onImportant,
+        onBookmark,
+        onEditDetails,
+        onDelete,
+      },
+      { canDelete: true },
+    );
     rendered.push(view);
 
     const overflowButton = view.container.querySelector('button[aria-label="Більше дій"]');
@@ -2721,6 +2737,43 @@ describe('MessageCard', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it.each(['duty', 'analysis'] as const)(
+    'hides deletion and the empty overflow menu without delete access in %s',
+    async (displayMode) => {
+      const view = await renderCard(
+        { displayMode, onDelete: vi.fn(), onEditDetails: vi.fn() },
+        { canWrite: false, canDelete: false },
+      );
+      rendered.push(view);
+      expect(view.container.querySelector('button[aria-label="Більше дій"]')).toBeNull();
+      expect(view.container.textContent).not.toContain('Видалити');
+    },
+  );
+
+  it('hides deletion for message writers without delete access', async () => {
+    const view = await renderCard(
+      { onDelete: vi.fn(), onEditDetails: vi.fn() },
+      { canWrite: true, canDelete: false },
+    );
+    rendered.push(view);
+    const overflow = view.container.querySelector('button[aria-label="Більше дій"]');
+    if (!(overflow instanceof HTMLButtonElement)) throw new Error('overflow button not found');
+    await click(overflow);
+    expect(view.container.textContent).toContain('Редагувати');
+    expect(view.container.textContent).not.toContain('Видалити');
+  });
+
+  it('retains delete access independently of message write access', async () => {
+    const onDelete = vi.fn();
+    const view = await renderCard({ onDelete }, { canWrite: false, canDelete: true });
+    rendered.push(view);
+    const overflow = view.container.querySelector('button[aria-label="Більше дій"]');
+    if (!(overflow instanceof HTMLButtonElement)) throw new Error('overflow button not found');
+    await click(overflow);
+    await click(getButton(view.container, 'Видалити'));
+    expect(onDelete).toHaveBeenCalledTimes(1);
   });
 
   it('renders overflow for an edit-only card', async () => {

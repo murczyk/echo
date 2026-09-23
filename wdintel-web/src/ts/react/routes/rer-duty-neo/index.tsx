@@ -1,5 +1,8 @@
-import { MessageWriteAccessContext } from '../shared/message-card/MessageWriteAccess';
-import { canWriteMessages } from '../../utils/roles';
+import {
+  MessageDeleteAccessContext,
+  MessageWriteAccessContext,
+} from '../shared/message-card/MessageWriteAccess';
+import { canWriteMessages, hasRole } from '../../utils/roles';
 import { DutyExcludeMenuContext } from '../shared/message-card/DutyExcludeMenu';
 import { RadioFeaturesProvider } from '../shared/RadioFeatures';
 import { canUseRadioFeatures } from '../../utils/roles';
@@ -512,7 +515,9 @@ export function RerDutyNeoPage({
   );
   return (
     <MessageWriteAccessContext.Provider value={canWriteMessages(currentUser?.roles)}>
-      {content}
+      <MessageDeleteAccessContext.Provider value={hasRole(currentUser?.roles, 'DeleteMsg')}>
+        {content}
+      </MessageDeleteAccessContext.Provider>
     </MessageWriteAccessContext.Provider>
   );
 }

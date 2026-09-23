@@ -499,6 +499,7 @@ async fn issue_3569_viewer_cannot_create_or_edit_messages_or_reports() {
             .route("/test/session", web::post().to(start_test_user_session))
             .service(submit_direct)
             .service(edit_message)
+            .service(crate::rer_importer::inbox::delete_message)
             .service(crate::rer_importer::import_csv::rer_csv_import)
             .service(crate::rer_importer::import_csv::rer_delta_csv_import)
             .service(crate::rer_importer::import_kmz::rer_delta_kmz_import)
@@ -520,6 +521,10 @@ async fn issue_3569_viewer_cannot_create_or_edit_messages_or_reports() {
     let before = signal_message::Entity::find().all(&env.dbx).await.unwrap();
     let tasks_before = bgtask::Entity::find().all(&env.dbx).await.unwrap();
     for (uri, payload) in [
+        (
+            "/api/rer-importer/delete-message",
+            serde_json::json!({"id": 1}),
+        ),
         (
             "/api/1.1/submit-direct",
             serde_json::json!({"text": "forbidden"}),
@@ -590,4 +595,59 @@ async fn issue_3569_viewer_cannot_create_or_edit_messages_or_reports() {
     assert_eq!(tasks_before, tasks_after);
     let after = signal_message::Entity::find().all(&env.dbx).await.unwrap();
     assert_eq!(before, after);
+}
+
+#[actix_web::test]
+#[serial]
+async fn issue_3569_message_deletion_requires_delete_role() {
+    let (env, _guard) = crate::functest::tests::cleanup_locked().await.unwrap();
+    let login = find_test_login(&env.dbx).await.unwrap();
+    let store =
+        RedisSessionStore::new(crate::redis_conn_string(&env.config).unwrap())
+            .await
+            .unwrap();
+    let app = actix_test::init_service(
+        App::new()
+            .wrap(IdentityMiddleware::default())
+            .wrap(SessionMiddleware::new(store, Key::generate()))
+            .app_data(web::Data::from(env.clone()))
+            .route("/test/session", web::post().to(start_test_user_session))
+            .service(crate::rer_importer::inbox::delete_message),
+    )
+    .await;
+    let response = actix_test::call_service(
+        &app,
+        actix_test::TestRequest::post()
+            .uri("/test/session")
+            .to_request(),
+    )
+    .await;
+    let cookie = response.response().cookies().next().unwrap().into_owned();
+    for (roles, allowed) in [
+        (vec!["CyberViewer"], false),
+        (vec!["Cyber"], false),
+        (vec!["Rer"], false),
+        (vec!["CyberViewer", "DeleteMsg"], true),
+        (vec!["Full"], true),
+        (vec!["Admin"], true),
+    ] {
+        let mut login = login.clone().into_active_model();
+        login.roles = Set(serde_json::json!(roles));
+        login.update(&env.dbx).await.unwrap();
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/rer-importer/delete-message")
+                .cookie(cookie.clone())
+                .set_json(serde_json::json!({"id": i64::MAX}))
+                .to_request(),
+        )
+        .await;
+        let expected = if allowed {
+            actix_web::http::StatusCode::NOT_FOUND
+        } else {
+            actix_web::http::StatusCode::FORBIDDEN
+        };
+        assert_eq!(response.status(), expected, "{roles:?}");
+    }
 }
