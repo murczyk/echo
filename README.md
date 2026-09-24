@@ -260,7 +260,7 @@ just server=echo-gpu deploy-rustdocs
 
 [Delta.md](DELTA.md)
 
-Config with access details for delta is being stored in Hashicorp Vault.
+Config with access details for delta is being stored in Hashicorp Vault. 
 Vault secrets are backed up in Bitwarden.
 One-off commands for backup Vault secrets:
 - backup: OneoffBackupVaultSecretsToBitwarden
