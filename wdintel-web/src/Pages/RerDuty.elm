@@ -29,6 +29,7 @@ import Route exposing (Route)
 import Route.Path
 import Set exposing (Set)
 import Shared
+import Shared.Components.Spinner
 import Shared.Model exposing (isDarkMode)
 import Task
 import Time
@@ -47,11 +48,30 @@ type alias Model =
     , lastPushQuery : Dict String String
     , datasources : List ( Int, Datasource )
     , eventLastId : Maybe String
+    , currentUser : RemoteData ApiError B.User
     }
 
 
 init : B.User -> Route () -> () -> ( Model, Effect Msg )
 init user route _ =
+    if user.name == "anonymous" then
+        ( { navCollapsed = False
+          , waterfalls = []
+          , duplicates = Set.empty
+          , lastPushQuery = route.query
+          , datasources = []
+          , eventLastId = Nothing
+          , currentUser = Loading
+          }
+        , E.sendCmd <| Api.api_user GotCurrentUser
+        )
+
+    else
+        initForUser user route
+
+
+initForUser : B.User -> Route () -> ( Model, Effect Msg )
+initForUser user route =
     let
         ms : Maybe B.RerDutyQueryState
         ms =
@@ -108,6 +128,7 @@ init user route _ =
             , lastPushQuery = route.query
             , datasources = []
             , eventLastId = Nothing
+            , currentUser = Success user
             }
 
         pushUrlCmd =
@@ -130,14 +151,16 @@ type Msg
     | CollapseNavToggle
     | GotDatasourceList (Result ApiError (List ( Int, Datasource )))
     | SwitchTheme
+    | GotCurrentUser (Result ApiError B.User)
+    | RetryCurrentUser
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
 page user shared req =
     Page.new
         { init = init user req
-        , update = update shared user
-        , view = view (isDarkMode shared.themeMode) shared user
+        , update = update shared req
+        , view = view (isDarkMode shared.themeMode) shared
         , subscriptions = subscriptions
         }
         |> Page.withLayout (toLayout user)
@@ -218,8 +241,33 @@ recalcDuplicates model =
         ).duplicates
 
 
-update : Shared.Model -> B.User -> Msg -> Model -> ( Model, Effect Msg )
-update shared user msg model =
+update : Shared.Model -> Route () -> Msg -> Model -> ( Model, Effect Msg )
+update shared route msg model =
+    case model.currentUser of
+        Success user ->
+            updateForUser shared user msg model
+
+        _ ->
+            case msg of
+                GotCurrentUser (Ok user) ->
+                    initForUser user route
+
+                GotCurrentUser (Err err) ->
+                    ( { model | currentUser = Failure err }
+                    , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження користувача" err
+                    )
+
+                RetryCurrentUser ->
+                    ( { model | currentUser = Loading }
+                    , E.sendCmd <| Api.api_user GotCurrentUser
+                    )
+
+                _ ->
+                    ( model, E.none )
+
+
+updateForUser : Shared.Model -> B.User -> Msg -> Model -> ( Model, Effect Msg )
+updateForUser shared user msg model =
     case msg of
         CollapseNavToggle ->
             ( { model | navCollapsed = not model.navCollapsed }
@@ -432,6 +480,12 @@ update shared user msg model =
         SwitchTheme ->
             ( model, E.toggleDarkMode )
 
+        GotCurrentUser _ ->
+            ( model, E.none )
+
+        RetryCurrentUser ->
+            ( model, E.none )
+
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
@@ -613,8 +667,19 @@ body isDarkMode shared user model =
     ]
 
 
-view : Bool -> Shared.Model -> User -> Model -> View Msg
-view dark shared user model =
+view : Bool -> Shared.Model -> Model -> View Msg
+view dark shared model =
     { title = "РЕР-оперативний"
-    , body = body dark shared user model
+    , body =
+        case model.currentUser of
+            Success currentUser ->
+                body dark shared currentUser model
+
+            Failure _ ->
+                [ button [ class "btn btn-primary", onClick RetryCurrentUser ]
+                    [ text "Повторити завантаження користувача" ]
+                ]
+
+            _ ->
+                [ Shared.Components.Spinner.loadingSpinner ]
     }

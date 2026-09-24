@@ -2,9 +2,10 @@ import { expect, test, type Page } from '@playwright/test';
 import { createLoadedInboxResponse, installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
 import { installRerDutyShortStateMocks } from './rer-duty-short-state.fixtures';
 
-async function useRoles(page: Page, roles: string[]) {
-  await page.route('**/api/user', (route) =>
-    route.fulfill({
+async function useRoles(page: Page, roles: string[], ready: Promise<void> = Promise.resolve()) {
+  await page.route('**/api/user', async (route) => {
+    await ready;
+    await route.fulfill({
       json: {
         id: 'operator',
         name: 'operator',
@@ -18,8 +19,172 @@ async function useRoles(page: Page, roles: string[]) {
         goi_integrations: [],
         last_release_seen: null,
       },
-    }),
+    });
+  });
+}
+
+function classicDutyState() {
+  return {
+    waterfalls: ['wf-0', 'wf-1'].map((id, index) => [
+      id,
+      {
+        groups_selected: [`group-${index}`],
+        groups_denied: null,
+        senders_selected: [],
+        denied_senders: ['sender-1'],
+        freqs_selected: ['152.7500', '136.2330', ''],
+        freqs_denied: ['150.0000'],
+        posts_selected: ['post-1'],
+        posts_denied: [],
+        units_selected: null,
+        units_denied: null,
+        selected_unit_ids: null,
+        denied_unit_ids: null,
+        selected_device_names: null,
+        denied_device_names: null,
+        units_exact_match_only: null,
+        last_viewed_message_id: 31199037 + index,
+        highlight_keywords_enabled: null,
+        highlight_keyword_set_id: null,
+      },
+    ]),
+  };
+}
+
+for (const roles of [['Rer'], ['Rer', 'Cyber'], ['Admin'], ['Full'], ['Cyber'], ['CyberViewer']]) {
+  test(`@smoke #3568 classic Duty saved filters wait for ${roles.join('+')} permissions`, async ({
+    page,
+  }) => {
+    await installRerDutyShortStateMocks(page);
+    let releaseUser!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      releaseUser = resolve;
+    });
+    await useRoles(page, roles, ready);
+    const inboxRequests: Record<string, unknown>[] = [];
+    const radioRequests: string[] = [];
+    page.on('request', (request) => {
+      if (new URL(request.url()).pathname === '/api/rer-importer/get-inbox') {
+        inboxRequests.push(request.postDataJSON());
+      }
+      if (/\/(latest-frequencies|stats\/posts)(\?|$)/.test(request.url())) {
+        radioRequests.push(request.url());
+      }
+    });
+    const state = classicDutyState();
+    const userRequested = page.waitForRequest('**/api/user');
+    await page.goto(`/rer-duty?state=${encodeURIComponent(JSON.stringify(state))}`);
+    await userRequested;
+    await expect(page.getByRole('status').filter({ hasText: 'Loading...' })).toBeVisible();
+    await expect(page.locator('button').filter({ has: page.locator('i.bi-gear') })).toHaveCount(0);
+    expect(inboxRequests).toEqual([]);
+    expect(radioRequests).toEqual([]);
+    expect(JSON.parse(new URL(page.url()).searchParams.get('state')!)).toEqual(state);
+    releaseUser();
+
+    const radioAllowed = !['Cyber', 'CyberViewer'].includes(roles[0]);
+    const settings = page.locator('button').filter({ has: page.locator('i.bi-gear') });
+    await expect(settings).toHaveCount(2);
+    await settings.nth(0).click();
+    await settings.nth(1).click();
+    await expect(page.getByText('частота', { exact: true })).toHaveCount(radioAllowed ? 2 : 0);
+    await expect(page.getByText('пост', { exact: true })).toHaveCount(radioAllowed ? 2 : 0);
+    await expect.poll(() => inboxRequests.length).toBeGreaterThanOrEqual(2);
+    for (let index = 0; index < 2; index++) {
+      const request = inboxRequests.find(
+        (body) => JSON.stringify(body.selected_groups) === JSON.stringify([`group-${index}`]),
+      );
+      expect(request).toMatchObject({
+        selected_freqs: radioAllowed ? ['152.7500', '136.2330', ''] : null,
+        denied_freqs: radioAllowed ? ['150.0000'] : null,
+        selected_posts: radioAllowed ? ['post-1'] : null,
+        denied_senders: ['sender-1'],
+        before_id_noninclusive: 31199037 + index,
+      });
+    }
+    if (radioAllowed) await expect.poll(() => radioRequests.length).toBe(4);
+    else expect(radioRequests).toEqual([]);
+    expect(JSON.parse(new URL(page.url()).searchParams.get('state')!)).toEqual(state);
+
+    inboxRequests.length = 0;
+    await page.reload();
+    await expect.poll(() => inboxRequests.length).toBeGreaterThanOrEqual(2);
+    expect(
+      inboxRequests.every(
+        (body) =>
+          JSON.stringify(body.selected_freqs) ===
+          JSON.stringify(radioAllowed ? ['152.7500', '136.2330', ''] : null),
+      ),
+    ).toBe(true);
+  });
+}
+
+test('#3568 classic Duty recovers from a failed user lookup without unfiltered requests', async ({
+  page,
+}) => {
+  await installRerDutyShortStateMocks(page);
+  await page.route('**/api/user', (route) => route.fulfill({ status: 500, body: 'Unavailable' }));
+  const requests: string[] = [];
+  page.on('request', (request) => {
+    if (request.url().includes('/get-inbox')) requests.push(request.url());
+  });
+  await page.goto(`/rer-duty?state=${encodeURIComponent(JSON.stringify(classicDutyState()))}`);
+  const retry = page.getByRole('button', { name: 'Повторити завантаження користувача' });
+  await expect(retry).toBeVisible();
+  expect(requests).toEqual([]);
+  await expect(
+    page.getByText('Помилка завантаження користувача', { exact: true }).first(),
+  ).toBeVisible();
+  await useRoles(page, ['Rer']);
+  await retry.click();
+  await expect(page.locator('button').filter({ has: page.locator('i.bi-gear') })).toHaveCount(2);
+  await expect.poll(() => requests.length).toBeGreaterThan(0);
+});
+
+test('#3568 classic Duty expired authentication returns to login without inbox requests', async ({
+  page,
+}) => {
+  await installRerDutyShortStateMocks(page);
+  await page.route('**/api/user', (route) => route.fulfill({ status: 401, body: 'Unauthorized' }));
+  await page.route('**/api/user/logout', (route) =>
+    route.fulfill({ status: 302, headers: { location: '/login' } }),
   );
+  const requests: string[] = [];
+  page.on('request', (request) => {
+    if (request.url().includes('/get-inbox')) requests.push(request.url());
+  });
+  await page.goto(`/rer-duty?state=${encodeURIComponent(JSON.stringify(classicDutyState()))}`);
+  await expect(page).toHaveURL(/\/login(?:\?|$)/);
+  expect(requests).toEqual([]);
+});
+
+for (const width of [390, 820, 1440]) {
+  test(`#3568 classic Duty blank page and authenticated navigation retain radio filters at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await installRerDutyShortStateMocks(page);
+    await useRoles(page, ['Rer']);
+    await page.goto('/rer-duty');
+    const settings = page.locator('button').filter({ has: page.locator('i.bi-gear') });
+    await settings.focus();
+    await settings.press('Enter');
+    await expect(page.getByText('частота', { exact: true })).toBeVisible();
+    await page.evaluate(() => {
+      history.pushState({}, '', '/');
+      dispatchEvent(new PopStateEvent('popstate'));
+    });
+    await page.goBack();
+    await settings.focus();
+    await settings.press('Enter');
+    await expect(page.getByText('частота', { exact: true })).toBeVisible();
+    if (width === 1440) {
+      await page.getByTitle('нова колонка', { exact: true }).click();
+      await expect(settings).toHaveCount(2);
+      await settings.nth(1).click();
+      await expect(page.getByText('частота', { exact: true })).toHaveCount(2);
+    }
+  });
 }
 
 // https://github.com/echoua/echo/issues/3568
@@ -90,6 +255,12 @@ for (const host of ['duty', 'analysis']) {
     await page.goto(`/rer-${host}`);
     await expect(page.locator('body')).not.toContainText('NAMING ERROR');
     await expect(page.locator('app-navbar')).toBeAttached();
+    if (host === 'duty') {
+      await page
+        .locator('button')
+        .filter({ has: page.locator('i.bi-gear') })
+        .click();
+    }
     await expect(page.getByText('частота', { exact: true })).toHaveCount(0);
     if (host === 'analysis') {
       await expect(page.getByText('мережі', { exact: true })).toHaveCount(0);
