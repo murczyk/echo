@@ -1,3 +1,27 @@
+## CI packages and release branches
+
+`stable` is the long-lived release branch. Pushes to `stable` build and publish
+Debian packages on `echo-build-main`; `main` pushes, PRs targeting either branch,
+and manually dispatched workflows run tests only. Keep `stable` when merging
+its changes into `main`.
+
+GitHub Actions synchronizes the selected checkout into `~/workspace/echo` on
+`echo-build-main`. All jobs using this workspace share one concurrency queue;
+do not run manual builds or change the checkout while CI is using it. The
+hostname and APT component `main` are infrastructure names, not release branches.
+
+Run `just bump-version` on `stable` before publishing changed package contents,
+and commit the generated version updates. Publishing retains the existing
+warning-only behavior for conflicting versions: a green CI run does not prove
+that changed contents replaced an already-published version.
+
+Use `just deploy --server <server>` from `stable` to install CI packages.
+`just deploy` rejects a `main` checkout; deploy `main` explicitly with
+`just deploy-from-local --server <server>` if needed.
+
+When changing this policy, update the workflow on both branches. Updating only
+`stable` leaves the workflow stored on `main` active.
+
 ## server-side setup
 
 For server setup see [[server.md]]

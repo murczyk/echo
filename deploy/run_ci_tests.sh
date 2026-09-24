@@ -4,6 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+bash "$SCRIPT_DIR/ci/test_release_guard.sh"
+
 echo "Running backend test suite..."
 bash "$SCRIPT_DIR/run_backend_tests.sh"
 
