@@ -114,6 +114,7 @@ setDisabled isDisabled ps =
 
 initAnalysisRanges :
     { from : Model
+    , radioFeaturesAllowed : Bool
     , to : Model
     , zone : Time.Zone
     , now : Posix
@@ -138,7 +139,16 @@ initAnalysisRanges ps =
             tomorrowMidnight
 
         defaultFromPosix =
-            Time.Extra.add Time.Extra.Day -90 ps.zone defaultToPosix
+            Time.Extra.add
+                Time.Extra.Day
+                (if ps.radioFeaturesAllowed then
+                    -1
+
+                 else
+                    -90
+                )
+                ps.zone
+                defaultToPosix
 
         dateFromStr =
             if ps.from.dateStr /= "" then

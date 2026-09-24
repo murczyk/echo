@@ -16,6 +16,7 @@ type Msg
     = NoOp
     | ToastMsg Shared.Components.Toast.Msg
     | InitGotTime Posix
+    | GotCurrentUser (Result ApiError B.User)
     | DateRangePickerMsg Shared.Components.DateRangePicker.Msg
     | EventPollTrigger (Maybe String)
     | EventPollReceived (Result ApiError B.LongPollRsp)

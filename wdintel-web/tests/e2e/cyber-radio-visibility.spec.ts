@@ -91,11 +91,29 @@ for (const host of ['duty', 'analysis']) {
     await expect(page.locator('body')).not.toContainText('NAMING ERROR');
     await expect(page.locator('app-navbar')).toBeAttached();
     await expect(page.getByText('частота', { exact: true })).toHaveCount(0);
+    if (host === 'analysis') {
+      await expect(page.getByText('мережі', { exact: true })).toHaveCount(0);
+    }
     await expect(page.getByText('метадані', { exact: true })).toHaveCount(0);
     await expect(page.getByText(/^(пост|пости)$/)).toHaveCount(0);
     await expect(page.getByTitle('підсумкова таблиця', { exact: true })).toHaveCount(0);
   });
 }
+
+test('#3568 Rer classic analysis retains frequency and network filters', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-09-23T12:00:00Z'));
+  await installRerDutyShortStateMocks(page);
+  await installAnalysisNeoApiMocks(page);
+  await useRoles(page, ['Rer']);
+  const countersRequest = page.waitForRequest('**/api/rer/analysis/stats/count');
+  await page.goto('/rer-analysis');
+  const request = (await countersRequest).postDataJSON();
+  expect(request.till_date_noninclusive_ms - request.since_date_inclusive_ms).toBe(
+    24 * 60 * 60 * 1000,
+  );
+  await expect(page.getByText('частоти', { exact: true })).toBeVisible();
+  await expect(page.getByText('мережі', { exact: true })).toBeVisible();
+});
 
 for (const enabled of [true, false]) {
   test(`#3568 Duty minus menu follows the system flag: ${enabled}`, async ({ page }) => {
@@ -116,9 +134,28 @@ for (const enabled of [true, false]) {
   });
 }
 
-test('#3568 bare Analysis navigation requests and displays 90 days', async ({ page }) => {
+test('#3568 bare Rer Analysis navigation requests and displays today', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-09-23T12:00:00Z'));
   await installAnalysisNeoApiMocks(page);
+  await useRoles(page, ['Rer']);
+  const countersRequest = page.waitForRequest('**/api/rer/analysis/stats/count');
+  await page.goto('/rer-analysis-neo');
+  const request = (await countersRequest).postDataJSON();
+  expect(request.till_date_noninclusive_ms - request.since_date_inclusive_ms).toBe(
+    24 * 60 * 60 * 1000,
+  );
+  await expect(page.getByRole('textbox', { name: /^Інтервал:/ })).toHaveValue(
+    '23.09 00:00 — 24.09 00:00',
+  );
+  await expect(page.getByRole('heading', { name: 'Частоти', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Мережі', exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/fromDateTime=2026-09-23T00%3A00/);
+});
+
+test('#3568 bare non-Rer Analysis navigation requests and displays 90 days', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-09-23T12:00:00Z'));
+  await installAnalysisNeoApiMocks(page);
+  await useRoles(page, ['Cyber']);
   const countersRequest = page.waitForRequest('**/api/rer/analysis/stats/count');
   await page.goto('/rer-analysis-neo');
   const request = (await countersRequest).postDataJSON();
@@ -128,5 +165,7 @@ test('#3568 bare Analysis navigation requests and displays 90 days', async ({ pa
   await expect(page.getByRole('textbox', { name: /^Інтервал:/ })).toHaveValue(
     '26.06 00:00 — 24.09 00:00',
   );
+  await expect(page.getByRole('heading', { name: 'Частоти', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Мережі', exact: true })).toHaveCount(0);
   await expect(page).toHaveURL(/fromDateTime=2026-06-26T00%3A00/);
 });

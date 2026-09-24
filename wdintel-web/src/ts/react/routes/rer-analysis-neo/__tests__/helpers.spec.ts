@@ -358,13 +358,24 @@ describe('rer-analysis-neo helpers', () => {
     });
   });
 
-  it('#3568 defaults Analysis to 90 calendar days in the app timezone', () => {
+  it('#3568 defaults non-Rer Analysis to 90 calendar days in the app timezone', () => {
     const state = createInitialQueryState(
       emptyQueryState(),
       new Date(Date.UTC(2026, 0, 15, 22, 30, 0)),
     );
 
     expect(state.fromDateTimeStr).toBe('2025-10-19T00:00');
+    expect(state.toDateTimeStr).toBe('2026-01-17T00:00');
+  });
+
+  it('#3568 defaults Rer Analysis to today in the app timezone', () => {
+    const state = createInitialQueryState(
+      emptyQueryState(),
+      new Date(Date.UTC(2026, 0, 15, 22, 30, 0)),
+      true,
+    );
+
+    expect(state.fromDateTimeStr).toBe('2026-01-16T00:00');
     expect(state.toDateTimeStr).toBe('2026-01-17T00:00');
   });
 

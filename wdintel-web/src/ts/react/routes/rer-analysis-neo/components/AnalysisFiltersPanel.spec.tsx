@@ -322,13 +322,16 @@ function buildProps(
 
 async function renderComponent(
   props: ComponentProps<typeof AnalysisFiltersPanel>,
+  radioFeaturesAllowed: boolean = true,
 ): Promise<Rendered> {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
   await act(async () => {
     root.render(
-      <RadioFeaturesProvider allowed>{<AnalysisFiltersPanel {...props} />}</RadioFeaturesProvider>,
+      <RadioFeaturesProvider allowed={radioFeaturesAllowed}>
+        {<AnalysisFiltersPanel {...props} />}
+      </RadioFeaturesProvider>,
     );
   });
   return { container, root };
@@ -402,6 +405,17 @@ describe('AnalysisFiltersPanel', () => {
 
     expect(disabled.container.textContent).not.toContain('Пристрої');
     expect(enabled.container.textContent).toContain('Пристрої');
+  });
+
+  it('hides frequency and network filters without Rer access', async () => {
+    const view = await renderComponent(buildProps(), false);
+    rendered.push(view);
+
+    const renderedFilterLabels = analysisFilterFieldSpy.mock.calls.map(
+      ([callProps]) => (callProps as { label: string }).label,
+    );
+    expect(renderedFilterLabels).not.toContain('Частоти');
+    expect(renderedFilterLabels).not.toContain('Мережі');
   });
 
   it('passes Elm-parity disabled states into the frequency and network filters', async () => {

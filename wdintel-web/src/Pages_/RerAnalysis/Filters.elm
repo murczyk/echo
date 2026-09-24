@@ -490,15 +490,16 @@ view isDark _ model =
                 , withGreenCircle = False
                 }
                 tabFiltersPosts
-            , filterMenuBlockCountOutOf
-                { unfold = model.unfoldNetworksFilter
-                , toggleMsg = ToggleUnfoldNetworksFilter
-                , label = "мережі"
-                , mCountLabel = List.length model.networksSelected |> zeroToNothing |> mmap String.fromInt
-                , overallLabel = getOverallOptionsCount (\r -> r.networksCount) model.networksStats
-                , withGreenCircle = False
-                }
-                tabFiltersNetworks
+            , HtmlX.viewIf model.radioFeaturesAllowed <|
+                filterMenuBlockCountOutOf
+                    { unfold = model.unfoldNetworksFilter
+                    , toggleMsg = ToggleUnfoldNetworksFilter
+                    , label = "мережі"
+                    , mCountLabel = List.length model.networksSelected |> zeroToNothing |> mmap String.fromInt
+                    , overallLabel = getOverallOptionsCount (\r -> r.networksCount) model.networksStats
+                    , withGreenCircle = False
+                    }
+                    tabFiltersNetworks
             , HtmlX.viewIf model.radioFeaturesAllowed <|
                 filterMenuBlock
                 { unfold = model.unfoldMetadataFilter

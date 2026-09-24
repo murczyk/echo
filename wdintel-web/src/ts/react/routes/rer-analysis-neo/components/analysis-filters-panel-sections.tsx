@@ -297,41 +297,43 @@ export function AnalysisFiltersPanelSections({
           }
         />
       </FilterSection>
-      <FilterSection
-        title="Мережі"
-        countLabel={countLabel(
-          'networks',
-          options.networks.length,
-          derived.networksSelectedCount,
-          counts?.networksCount ?? options.networks.length,
-        )}
-        expanded={expandedSections.networks}
-        onToggle={() => toggleSection('networks')}
-        onLoad={loadSection('networks')}
-      >
-        <AnalysisFilterField
-          label="Мережі"
-          options={derived.networkOptions}
-          disabled={queryState.withoutNetwork}
-          loading={isFilterSectionLoading('networks') || isFilterSectionStale('networks')}
-          emptyLoading={isFilterSectionEmptyLoading('networks', derived.networkOptions.length)}
-          value={queryState.networksSelected}
-          deferredCommit
-          onChange={(networksSelected) => updateQueryState({ networksSelected })}
-        />
-        <Stack spacing={0.5}>
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={queryState.withoutNetwork}
-                onChange={(_event, value) => updateQueryState({ withoutNetwork: value })}
-              />
-            }
-            label="Тільки без мережі"
-            sx={compactCheckboxLabelSx}
+      {radioFeaturesAllowed ? (
+        <FilterSection
+          title="Мережі"
+          countLabel={countLabel(
+            'networks',
+            options.networks.length,
+            derived.networksSelectedCount,
+            counts?.networksCount ?? options.networks.length,
+          )}
+          expanded={expandedSections.networks}
+          onToggle={() => toggleSection('networks')}
+          onLoad={loadSection('networks')}
+        >
+          <AnalysisFilterField
+            label="Мережі"
+            options={derived.networkOptions}
+            disabled={queryState.withoutNetwork}
+            loading={isFilterSectionLoading('networks') || isFilterSectionStale('networks')}
+            emptyLoading={isFilterSectionEmptyLoading('networks', derived.networkOptions.length)}
+            value={queryState.networksSelected}
+            deferredCommit
+            onChange={(networksSelected) => updateQueryState({ networksSelected })}
           />
-        </Stack>
-      </FilterSection>
+          <Stack spacing={0.5}>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={queryState.withoutNetwork}
+                  onChange={(_event, value) => updateQueryState({ withoutNetwork: value })}
+                />
+              }
+              label="Тільки без мережі"
+              sx={compactCheckboxLabelSx}
+            />
+          </Stack>
+        </FilterSection>
+      ) : null}
       <FilterSection
         title="Підрозділи"
         countLabel={countLabel(

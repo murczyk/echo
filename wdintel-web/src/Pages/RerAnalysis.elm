@@ -107,6 +107,8 @@ init user route _ =
         model : Model
         model =
             { radioFeaturesAllowed = Core.Auth.canUseRadioFeatures user
+            , currentUserLoaded = user.name /= "anonymous"
+            , fromDateUsesDefault = initialQueryState.dateFromStr == ""
             , formErrors = Dict.empty
             , toasts = Shared.Components.Toast.init
             , from = Shared.Components.DateTime.init ()
@@ -329,6 +331,11 @@ init user route _ =
     ( m4
     , E.batch
         [ E.getCurrentTime InitGotTime
+        , if user.name == "anonymous" then
+            E.sendCmd <| Api.api_user GotCurrentUser
+
+          else
+            E.none
         , E.getSystemSettings GotSystemSettings
         , E.getAnalysisSavedFilters SavedFiltersGot
         , E.getTags GotTags
@@ -879,7 +886,7 @@ loadInitialFilterStats model =
                     List.length model.groupsSelected > 0
 
                 NetworksFilter ->
-                    List.length model.networksSelected > 0
+                    model.radioFeaturesAllowed && List.length model.networksSelected > 0
 
         all =
             [ AorsFilter, LocationsFilter, PostsFilter, UnitsFilter, FreqsFilter, CallsignsFilter, SendersFilter, GroupsFilter, NetworksFilter ]
@@ -908,6 +915,46 @@ loadInitialStats model =
             loadCoreStats model
     in
     ( m2, E.batch (eff2 :: loadInitialFilterStats model) )
+
+
+resolveAnalysisDateRange : Shared.Model -> Model -> Model
+resolveAnalysisDateRange shared analysis =
+    case analysis.now of
+        Nothing ->
+            analysis
+
+        Just now ->
+            let
+                fromInput =
+                    if analysis.fromDateUsesDefault then
+                        Shared.Components.DateTime.init ()
+
+                    else
+                        analysis.from
+
+                ( from, to ) =
+                    Shared.Components.DateTime.initAnalysisRanges
+                        { from = fromInput
+                        , radioFeaturesAllowed = analysis.radioFeaturesAllowed
+                        , to = analysis.to
+                        , zone = shared.timeZone
+                        , now = now
+                        }
+            in
+            { analysis
+                | from = from
+                , to = to
+                , dateRangePicker = Shared.Components.DateRangePicker.initFromData from to
+            }
+
+
+loadInitialStatsIfReady : Model -> ( Model, Effect Msg )
+loadInitialStatsIfReady analysis =
+    if analysis.currentUserLoaded && analysis.systemSettingsLoaded && analysis.now /= Nothing then
+        loadInitialStats analysis
+
+    else
+        ( analysis, E.none )
 
 
 setFocusedFilterSnapshot : String -> List String -> Model -> Model
@@ -1157,30 +1204,34 @@ update user shared route msg model =
 
         InitGotTime now_ ->
             let
-                ( from, to ) =
-                    Shared.Components.DateTime.initAnalysisRanges
-                        { from = model.from
-                        , to = model.to
-                        , zone = shared.timeZone
-                        , now = now_
-                        }
-
                 m2 =
-                    { model
-                        | from = from
-                        , to = to
-                        , dateRangePicker = Shared.Components.DateRangePicker.initFromData from to
-                        , now = Just now_
-                    }
-
-                ( m3, cmd3 ) =
-                    if m2.systemSettingsLoaded then
-                        loadInitialStats m2
-
-                    else
-                        ( m2, E.none )
+                    { model | now = Just now_ }
+                        |> resolveAnalysisDateRange shared
             in
-            ( m3, cmd3 )
+            loadInitialStatsIfReady m2
+
+        GotCurrentUser (Err e) ->
+            let
+                m2 =
+                    { model | currentUserLoaded = True }
+
+                ( m3, eff3 ) =
+                    loadInitialStatsIfReady m2
+            in
+            ( m3
+            , E.batch
+                [ Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження користувача" e
+                , eff3
+                ]
+            )
+
+        GotCurrentUser (Ok currentUser) ->
+            { model
+                | currentUserLoaded = True
+                , radioFeaturesAllowed = Core.Auth.canUseRadioFeatures currentUser
+            }
+                |> resolveAnalysisDateRange shared
+                |> loadInitialStatsIfReady
 
         GotSystemSettings (Err e) ->
             let
@@ -1188,12 +1239,7 @@ update user shared route msg model =
                     { model | systemSettingsLoaded = True }
 
                 ( m3, eff3 ) =
-                    case model.now of
-                        Just _ ->
-                            loadInitialStats m2
-
-                        Nothing ->
-                            ( m2, E.none )
+                    loadInitialStatsIfReady m2
             in
             ( m3
             , E.batch
@@ -1221,12 +1267,7 @@ update user shared route msg model =
                         }
 
                 ( m3, eff3 ) =
-                    case model.now of
-                        Just _ ->
-                            loadInitialStats m2
-
-                        Nothing ->
-                            ( m2, E.none )
+                    loadInitialStatsIfReady m2
 
                 userSettingsEff =
                     if rsp.enableAudioTranscription then
@@ -1260,7 +1301,11 @@ update user shared route msg model =
                 Shared.Components.DateRangePicker.Submit ->
                     let
                         m3 =
-                            { m2 | from = model.dateRangePicker.from, to = model.dateRangePicker.to }
+                            { m2
+                                | from = model.dateRangePicker.from
+                                , to = model.dateRangePicker.to
+                                , fromDateUsesDefault = False
+                            }
                     in
                     mapSnd (addEff E.none)
                         (loadCoreStatsAndPushUrl
@@ -2586,27 +2631,14 @@ update user shared route msg model =
 
         ClearAllFilters ->
             case model.now of
-                Just now ->
+                Just _ ->
                     let
                         m2 =
                             Query.updModelFromQueryState model emptyQueryState
-
-                        ( from, to ) =
-                            Shared.Components.DateTime.initAnalysisRanges
-                                { from = m2.from
-                                , to = m2.to
-                                , zone = shared.timeZone
-                                , now = now
-                                }
-
-                        m3 =
-                            { m2
-                                | from = from
-                                , to = to
-                                , dateRangePicker = Shared.Components.DateRangePicker.initFromData from to
-                            }
+                                |> (\updatedModel -> { updatedModel | fromDateUsesDefault = True })
+                                |> resolveAnalysisDateRange shared
                     in
-                    loadCoreStatsAndPushUrl (invalidateOptionFilters m3)
+                    loadCoreStatsAndPushUrl (invalidateOptionFilters m2)
 
                 _ ->
                     ( model, E.none )

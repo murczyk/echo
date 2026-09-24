@@ -21,6 +21,8 @@ type alias FocusedFilterSnapshot =
 
 type alias Model =
     { radioFeaturesAllowed : Bool
+    , currentUserLoaded : Bool
+    , fromDateUsesDefault : Bool
     , formErrors : Dict String String
     , toasts : Shared.Components.Toast.Model
     , from : Shared.Components.DateTime.Model
