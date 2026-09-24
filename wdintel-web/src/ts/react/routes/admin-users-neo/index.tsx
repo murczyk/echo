@@ -1,6 +1,8 @@
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import EditIcon from '@mui/icons-material/Edit';
 import LockResetIcon from '@mui/icons-material/LockReset';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import {
   Autocomplete,
   Box,
@@ -618,6 +620,7 @@ function AddUserDialog(props: {
 }) {
   const { open, onClose, onUserCreated, lookups } = props;
   const [form, setForm] = useState<AddUserForm>(EMPTY_ADD_FORM);
+  const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<AddUserErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -673,6 +676,7 @@ function AddUserDialog(props: {
   useEffect(() => {
     if (open) return;
     setForm(EMPTY_ADD_FORM);
+    setShowPassword(false);
     setErrors({});
     setSubmitError(null);
     setIsSubmitting(false);
@@ -716,6 +720,7 @@ function AddUserDialog(props: {
               onChange={(event) => {
                 debugLog('add:delta toggle', event.target.checked);
                 setForm((prev) => ({ ...prev, useDelta: event.target.checked, password: '' }));
+                setShowPassword(false);
                 setErrors((prev) => ({ ...prev, password: undefined }));
               }}
             />
@@ -747,6 +752,8 @@ function AddUserDialog(props: {
 
           <TextField
             label="Пароль"
+            type={showPassword ? 'text' : 'password'}
+            autoComplete="new-password"
             value={form.password}
             onChange={(event) => {
               setForm((prev) => ({ ...prev, password: event.target.value }));
@@ -756,6 +763,22 @@ function AddUserDialog(props: {
             helperText={errors.password || ' '}
             fullWidth
             disabled={isSubmitting || form.useDelta}
+            InputProps={{
+              endAdornment: (
+                <InputAdornment position="end">
+                  <IconButton
+                    type="button"
+                    aria-label={showPassword ? 'Приховати пароль' : 'Показати пароль'}
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    onMouseDown={(event) => event.preventDefault()}
+                    edge="end"
+                    disabled={isSubmitting || form.useDelta}
+                  >
+                    {showPassword ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                  </IconButton>
+                </InputAdornment>
+              ),
+            }}
           />
 
           <TextField
