@@ -149,6 +149,7 @@ test('#3568 bare Rer Analysis navigation requests and displays today', async ({ 
   );
   await expect(page.getByRole('heading', { name: 'Частоти', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Мережі', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Смуги', exact: true })).toBeVisible();
   await expect(page).toHaveURL(/fromDateTime=2026-09-23T00%3A00/);
 });
 
