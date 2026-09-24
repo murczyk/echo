@@ -29,6 +29,7 @@ export type AnalysisFiltersPanelPage = Pick<
   | 'cyberEchoEnabled'
   | 'queryState'
   | 'unitsExactMatchOnlyDefault'
+  | 'analysisAorFilterEnabled'
   | 'saveInFlight'
   | 'savedFilterName'
   | 'savedFilters'

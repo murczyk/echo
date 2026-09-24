@@ -1,3 +1,4 @@
+use crate::config::ANALYSIS_AOR_FILTER_ENABLED_DEFAULT;
 use crate::users::{ensure_admin, login_id_from_identity};
 pub mod types;
 pub mod worker;
@@ -122,6 +123,9 @@ fn map_system_settings_item(
         duty_exclude_menu_enabled: settings
             .duty_exclude_menu_enabled
             .unwrap_or(true),
+        analysis_aor_filter_enabled: settings
+            .analysis_aor_filter_enabled
+            .unwrap_or(ANALYSIS_AOR_FILTER_ENABLED_DEFAULT),
     })
 }
 
@@ -640,6 +644,7 @@ fn system_settings_active_model(
         hide_orbit_data: Set(hide_orbit_data),
         disable_bot_tags: Set(Some(req.disable_bot_tags)),
         duty_exclude_menu_enabled: Set(Some(req.duty_exclude_menu_enabled)),
+        analysis_aor_filter_enabled: Set(Some(req.analysis_aor_filter_enabled)),
         two_factor_auth_enabled: Set(Some(req.two_factor_auth_enabled)),
     })
 }
@@ -807,6 +812,9 @@ pub async fn current_system_settings(
             duty_exclude_menu_enabled: settings
                 .duty_exclude_menu_enabled
                 .unwrap_or(true),
+            analysis_aor_filter_enabled: settings
+                .analysis_aor_filter_enabled
+                .unwrap_or(ANALYSIS_AOR_FILTER_ENABLED_DEFAULT),
         },
         None => SystemSettingsCurrentRsp {
             id: None,
@@ -841,6 +849,7 @@ pub async fn current_system_settings(
             hide_orbit_data: false,
             disable_bot_tags: false,
             duty_exclude_menu_enabled: true,
+            analysis_aor_filter_enabled: ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
             two_factor_auth_enabled: true,
         },
     }))
@@ -995,6 +1004,47 @@ mod tests {
             !map_system_settings_item(reactivated)
                 .unwrap()
                 .duty_exclude_menu_enabled
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3568_analysis_aor_filter_defaults_on_and_preserves_saved_choice(
+    ) {
+        let _guard = TEST_LOCK.lock().await;
+        let (env, _cleanup_guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let login_id = test_login_id(&env).await;
+        let legacy = insert_settings(&env.dbx, old_ts(), false).await;
+        assert!(
+            map_system_settings_item(legacy)
+                .unwrap()
+                .analysis_aor_filter_enabled
+        );
+
+        let mut req = settings_req(false);
+        req.analysis_aor_filter_enabled = false;
+        let disabled =
+            create_system_settings_for_login(&env.dbx, &login_id, &req)
+                .await
+                .unwrap();
+        assert_eq!(disabled.analysis_aor_filter_enabled, Some(false));
+
+        req.analysis_aor_filter_enabled = true;
+        create_system_settings_for_login(&env.dbx, &login_id, &req)
+            .await
+            .unwrap();
+        let reactivated = activate_system_settings_for_login(
+            &env.dbx,
+            &login_id,
+            disabled.id,
+        )
+        .await
+        .unwrap();
+        assert!(
+            !map_system_settings_item(reactivated)
+                .unwrap()
+                .analysis_aor_filter_enabled
         );
     }
 
@@ -1296,6 +1346,7 @@ mod tests {
             show_peleng_distance_to_battleline: false,
             disable_bot_tags: false,
             duty_exclude_menu_enabled: true,
+            analysis_aor_filter_enabled: ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
             two_factor_auth_enabled: true,
         }
     }
@@ -1363,6 +1414,7 @@ mod tests {
             hide_orbit_data: Set(false),
             disable_bot_tags: Set(None),
             duty_exclude_menu_enabled: Set(None),
+            analysis_aor_filter_enabled: Set(None),
             two_factor_auth_enabled: Set(None),
         }
         .insert(dbx)

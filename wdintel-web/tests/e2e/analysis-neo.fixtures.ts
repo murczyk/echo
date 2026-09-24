@@ -1,9 +1,11 @@
 import type { Page, Route } from '@playwright/test';
 import type { InboxMessagesRspRaw } from '../../src/ts/react/services/api/inbox-messages';
 import { networkSettingsResponse } from './fixture-responses';
+import { emptySystemSettingsResponse } from './rer-duty-short-state.fixtures';
 
 type AnalysisNeoMockOptions = {
   enableAudioTranscription?: boolean;
+  analysisAorFilterEnabled?: boolean;
   summaryDelayMs?: number;
   sidebarDelayMs?: number;
   inboxDelayMs?: number;
@@ -234,7 +236,10 @@ export async function installAnalysisNeoApiMocks(
 
     if (pathname === '/api/system-settings/current') {
       await fulfillJson(route, {
-        enable_audio_transcription: options.enableAudioTranscription ?? false,
+        ...emptySystemSettingsResponse(options.enableAudioTranscription),
+        duty_exclude_menu_enabled: true,
+        two_factor_auth_enabled: true,
+        analysis_aor_filter_enabled: options.analysisAorFilterEnabled ?? true,
       });
       return;
     }

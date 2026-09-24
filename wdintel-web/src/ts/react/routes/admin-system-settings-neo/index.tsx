@@ -49,6 +49,7 @@ type SystemSettingsForm = {
   showPelengDistanceToBattleline: boolean;
   disableBotTags: boolean;
   dutyExcludeMenuEnabled: boolean;
+  analysisAorFilterEnabled: boolean;
   twoFactorAuthEnabled: boolean;
   dutyTestEnabled: boolean;
   dutyTestSinceMs: number;
@@ -83,6 +84,7 @@ type SystemSettingsPayload = {
   showPelengDistanceToBattleline: boolean;
   disableBotTags: boolean;
   dutyExcludeMenuEnabled: boolean;
+  analysisAorFilterEnabled: boolean;
   twoFactorAuthEnabled: boolean;
   dutyTestEnabled: boolean;
   dutyTestSinceMs: number;
@@ -117,6 +119,7 @@ const EMPTY_FORM: SystemSettingsForm = {
   showPelengDistanceToBattleline: false,
   disableBotTags: false,
   dutyExcludeMenuEnabled: true,
+  analysisAorFilterEnabled: true,
   twoFactorAuthEnabled: true,
   dutyTestEnabled: false,
   dutyTestSinceMs: 0,
@@ -201,6 +204,7 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     showPelengDistanceToBattleline: item?.showPelengDistanceToBattleline ?? false,
     disableBotTags: item?.disableBotTags ?? false,
     dutyExcludeMenuEnabled: item?.dutyExcludeMenuEnabled ?? true,
+    analysisAorFilterEnabled: item?.analysisAorFilterEnabled ?? true,
     twoFactorAuthEnabled: item?.twoFactorAuthEnabled ?? true,
     dutyTestEnabled: item?.rerDutyTestEnabled ?? false,
     dutyTestSinceMs: item?.rerDutyTestSinceMs ?? 0,
@@ -238,6 +242,7 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.showPelengDistanceToBattleline === b.showPelengDistanceToBattleline &&
     a.disableBotTags === b.disableBotTags &&
     a.dutyExcludeMenuEnabled === b.dutyExcludeMenuEnabled &&
+    a.analysisAorFilterEnabled === b.analysisAorFilterEnabled &&
     a.twoFactorAuthEnabled === b.twoFactorAuthEnabled &&
     a.dutyTestEnabled === b.dutyTestEnabled &&
     a.dutyTestSinceMs === b.dutyTestSinceMs &&
@@ -331,6 +336,7 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     showPelengDistanceToBattleline: form.showPelengDistanceToBattleline,
     disableBotTags: form.disableBotTags,
     dutyExcludeMenuEnabled: form.dutyExcludeMenuEnabled,
+    analysisAorFilterEnabled: form.analysisAorFilterEnabled,
     twoFactorAuthEnabled: form.twoFactorAuthEnabled,
     dutyTestEnabled: form.dutyTestEnabled,
     dutyTestSinceMs: form.dutyTestSinceMs,
@@ -781,6 +787,15 @@ function AnalysisSettingsSection({
         }
         label="Показувати класичний аналіз"
       />
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.analysisAorFilterEnabled}
+            onChange={(_, checked) => patchForm({ analysisAorFilterEnabled: checked })}
+          />
+        }
+        label="Фільтр смуг"
+      />
     </>
   );
 }
@@ -1028,6 +1043,7 @@ export function AdminSystemSettingsNeoPage() {
         showPelengDistanceToBattleline: payload.showPelengDistanceToBattleline,
         disableBotTags: payload.disableBotTags,
         dutyExcludeMenuEnabled: payload.dutyExcludeMenuEnabled,
+        analysisAorFilterEnabled: payload.analysisAorFilterEnabled,
         twoFactorAuthEnabled: payload.twoFactorAuthEnabled,
         autofixEchoimMissingMessages: payload.autofixEchoimMissingMessages,
         devicesSectionEnabled: payload.devicesSectionEnabled,

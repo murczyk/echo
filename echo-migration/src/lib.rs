@@ -437,6 +437,7 @@ mod m20260922_142506_login_display_name;
 mod m20260922_185417_duty_exclude_menu_enabled;
 mod m20260923_091303_sigint_inbox_callsign_iggy_index;
 mod m20260923_130904_two_factor_auth_enabled;
+mod m20260924_131933_analysis_aor_filter_enabled;
 
 pub struct Migrator;
 
@@ -1045,6 +1046,7 @@ impl MigratorTrait for Migrator {
                 m20260923_091303_sigint_inbox_callsign_iggy_index::Migration,
             ),
             Box::new(m20260923_130904_two_factor_auth_enabled::Migration),
+            Box::new(m20260924_131933_analysis_aor_filter_enabled::Migration),
         ]
     }
 }

@@ -299,6 +299,7 @@ function buildProps(
       networks: [],
       queryState: emptyQueryState(),
       unitsExactMatchOnlyDefault: false,
+      analysisAorFilterEnabled: true,
       saveInFlight: false,
       savedFilterName: '',
       savedFilters: [],
@@ -1428,33 +1429,36 @@ describe('AnalysisFiltersPanel', () => {
     expect(resetFilters).not.toHaveBeenCalled();
   });
 
-  it('ECHO-3568 keeps AORs visible with Rer access', async () => {
-    const view = await renderComponent(
-      buildProps({ counts: { aorsCount: 1 } as AnalysisPageState['counts'] }),
-    );
+  it('ECHO-3568 uses the AOR setting independently of roles and counts without changing saved selections', async () => {
+    const updateQueryState = vi.fn();
+    const props = buildProps({
+      queryState: { ...emptyQueryState(), aorsSelected: ['7'] },
+      updateQueryState,
+    });
+    const view = await renderComponent(props);
     rendered.push(view);
-
-    expect(view.container.textContent).toContain('Смуги');
-  });
-
-  it('ECHO-3568 keeps AORs visible while counters load without Rer access', async () => {
-    const view = await renderComponent(buildProps({ countsLoading: true }), false);
-    rendered.push(view);
-
-    expect(view.container.textContent).toContain('Смуги');
-
-    for (const aorsCount of [0, 1, 2, 1]) {
-      await act(async () => {
-        view.root.render(
-          <RadioFeaturesProvider allowed={false}>
-            <AnalysisFiltersPanel
-              {...buildProps({ counts: { aorsCount } as AnalysisPageState['counts'] })}
-            />
-          </RadioFeaturesProvider>,
-        );
-      });
-      expect(view.container.textContent?.includes('Смуги')).toBe(aorsCount > 1);
+    for (const allowed of [true, false]) {
+      for (const enabled of [true, false]) {
+        for (const counts of [null, { aorsCount: 0 }, { aorsCount: 1 }, { aorsCount: 2 }]) {
+          await act(async () => {
+            view.root.render(
+              <RadioFeaturesProvider allowed={allowed}>
+                <AnalysisFiltersPanel
+                  page={{
+                    ...props.page,
+                    counts: counts as AnalysisPageState['counts'],
+                    analysisAorFilterEnabled: enabled,
+                  }}
+                />
+              </RadioFeaturesProvider>,
+            );
+          });
+          expect(view.container.textContent?.includes('Смуги')).toBe(enabled);
+        }
+      }
     }
+    expect(updateQueryState).not.toHaveBeenCalled();
+    expect(props.page.queryState.aorsSelected).toEqual(['7']);
   });
 
   it('shows static placeholders for filter counters while the initial filters load is still in flight', async () => {

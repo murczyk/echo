@@ -211,6 +211,7 @@ type alias Model =
     , unitsExactMatchOnly : Bool
     , unitsExactMatchOnlyExplicit : Bool
     , systemSettingsLoaded : Bool
+    , analysisAorFilterEnabled : Bool
     , audioTranscriptionEnabled : Bool
     , analysisAudioTranscriptionCollapsed : Bool
     , disableBotTags : Bool
