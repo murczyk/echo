@@ -52,6 +52,7 @@ pub struct Model {
     pub disable_bot_tags: Option<bool>,
     pub duty_exclude_menu_enabled: Option<bool>,
     pub two_factor_auth_enabled: Option<bool>,
+    pub analysis_aor_filter_enabled: Option<bool>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

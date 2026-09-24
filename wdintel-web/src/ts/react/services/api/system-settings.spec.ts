@@ -34,6 +34,7 @@ describe('system settings audio transcription mapping', () => {
     expect(settings[0].showPelengDistanceToBattleline).toBe(false);
     expect(settings[0].disableBotTags).toBe(false);
     expect(settings[0].dutyExcludeMenuEnabled).toBe(true);
+    expect(settings[0].analysisAorFilterEnabled).toBe(true);
     expect(settings[0].twoFactorAuthEnabled).toBe(true);
   });
 
@@ -55,6 +56,7 @@ describe('system settings audio transcription mapping', () => {
       defaultNeoAnalysis: false,
       disableBotTags: true,
       dutyExcludeMenuEnabled: false,
+      analysisAorFilterEnabled: false,
       twoFactorAuthEnabled: false,
       autofixEchoimMissingMessages: false,
       devicesSectionEnabled: false,
@@ -76,6 +78,7 @@ describe('system settings audio transcription mapping', () => {
         show_peleng_distance_to_battleline: false,
         disable_bot_tags: true,
         duty_exclude_menu_enabled: false,
+        analysis_aor_filter_enabled: false,
         two_factor_auth_enabled: false,
       }),
     );

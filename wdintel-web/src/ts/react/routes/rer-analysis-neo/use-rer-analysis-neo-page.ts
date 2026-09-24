@@ -132,6 +132,7 @@ export function useRerAnalysisNeoPage(
   const [devicesSectionEnabled, setDevicesSectionEnabled] = useState(false);
   const [audioTranscriptionEnabled, setAudioTranscriptionEnabled] = useState(false);
   const [showPelengDistanceToBattleline, setShowPelengDistanceToBattleline] = useState(false);
+  const [analysisAorFilterEnabled, setAnalysisAorFilterEnabled] = useState(true);
   const [hideBotTags, setHideBotTags] = useState(false);
   const [lastResetState, setLastResetState] = useState<AnalysisQueryState>(() =>
     hasMeaningfulUiFiltersBeyondDateRange(initialQueryState)
@@ -735,6 +736,7 @@ export function useRerAnalysisNeoPage(
         setAudioTranscriptionEnabled(settings.enableAudioTranscription ?? false);
         setShowPelengDistanceToBattleline(settings.showPelengDistanceToBattleline);
         setHideBotTags(settings.disableBotTags ?? false);
+        setAnalysisAorFilterEnabled(settings.analysisAorFilterEnabled ?? true);
         setSystemSettingsStatus('success');
       })
       .catch(() => {
@@ -1269,6 +1271,7 @@ export function useRerAnalysisNeoPage(
     setReportProgressExpanded: report.setReportProgressExpanded,
     toggleReportTaskRunLogs: report.toggleReportTaskRunLogs,
     unitsExactMatchOnlyDefault,
+    analysisAorFilterEnabled,
     supportNonRerInterceptions,
     cyberEchoEnabled: canUseDevices,
     updateReport: report.updateReport,
