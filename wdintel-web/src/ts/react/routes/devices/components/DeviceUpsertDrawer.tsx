@@ -27,6 +27,7 @@ import {
   type DeviceUpsertForm,
 } from '../device-form';
 import { DeviceCustomFieldsEditor } from './DeviceCustomFieldsEditor';
+import { useDeviceMobileLayout } from '../use-device-mobile-layout';
 
 const EMPTY_CUSTOM_FIELD_ROW_ERRORS: Record<string, DeviceCustomFieldDraftError> = {};
 
@@ -78,6 +79,7 @@ export function DeviceUpsertDrawer({
   onChange,
   onSave,
 }: Props) {
+  const mobile = useDeviceMobileLayout();
   const titleId = 'device-upsert-drawer-title';
   const [submitted, setSubmitted] = useState(false);
   const [touched, setTouched] = useState<Partial<Record<TouchedField, true>>>({});
@@ -169,6 +171,7 @@ export function DeviceUpsertDrawer({
                 size="small"
                 onClick={onClose}
                 disabled={saving}
+                className={mobile ? '!size-echo-control-lg' : undefined}
                 aria-label="Закрити форму"
               >
                 <CloseIcon fontSize="small" />
@@ -289,11 +292,16 @@ export function DeviceUpsertDrawer({
 
       <Box sx={{ p: 2.5, borderTop: '1px solid', borderColor: 'divider' }}>
         <Stack direction="row" spacing={1} justifyContent="flex-end">
-          <PowerButton onClick={onClose} disabled={saving}>
+          <PowerButton
+            className={mobile ? '!min-h-echo-control-lg flex-1' : undefined}
+            onClick={onClose}
+            disabled={saving}
+          >
             Скасувати
           </PowerButton>
           <PowerButton
             variant="contained"
+            className={mobile ? '!min-h-echo-control-lg flex-1' : undefined}
             onClick={handleSave}
             disabled={!canTrySave}
             startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <SaveIcon />}

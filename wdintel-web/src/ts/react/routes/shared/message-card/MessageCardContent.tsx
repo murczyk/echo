@@ -284,6 +284,7 @@ export function MessageCardMessageBody({
   reportGroupInfos,
   onEditReport,
   signalMessageSenderLabel,
+  signalMessageSenderId,
   searchText,
   onOpenPointsOnMap,
   onAddPointHighlightBlacklist,
@@ -317,6 +318,7 @@ export function MessageCardMessageBody({
   reportGroupInfos: Record<string, SignalGroupEntry>;
   onEditReport?: (reportId: number) => void;
   signalMessageSenderLabel?: string | null;
+  signalMessageSenderId?: string | null;
   searchText?: string | null;
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
   onAddPointHighlightBlacklist?: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
@@ -1086,6 +1088,7 @@ export function MessageCardMessageBody({
         <MessageCardComments
           messageComments={messageComments}
           signalMessageSenderLabel={signalMessageSenderLabel}
+          signalMessageSenderId={signalMessageSenderId}
         />
       ) : null}
     </div>

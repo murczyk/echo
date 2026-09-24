@@ -63,6 +63,7 @@ export function makeMessageSchema(
   isEditMode: boolean,
   groupOptional = false,
   reportTextRequired = false,
+  radioFeaturesAllowed = true,
 ) {
   return z
     .object({
@@ -74,9 +75,16 @@ export function makeMessageSchema(
       freq: z
         .string()
         .optional()
-        .refine((value) => isEditMode || !value?.trim() || FREQ_FORMAT_REGEX.test(value.trim()), {
-          message: 'Невірний формат частоти (напр. 149.5000)',
-        }),
+        .refine(
+          (value) =>
+            !radioFeaturesAllowed ||
+            isEditMode ||
+            !value?.trim() ||
+            FREQ_FORMAT_REGEX.test(value.trim()),
+          {
+            message: 'Невірний формат частоти (напр. 149.5000)',
+          },
+        ),
       coords: z.string().optional(),
       callsigns: z.array(z.string()).optional(),
       tags: z.array(z.string()).optional(),
@@ -96,7 +104,11 @@ export function makeMessageSchema(
       locations: z.array(z.string()).optional(),
       network_signal_name: z.string().optional(),
       network_name: z.string().optional(),
-      dmr: z.array(dmrMetadataSchema),
+      dmr: z.array(
+        radioFeaturesAllowed
+          ? dmrMetadataSchema
+          : dmrMetadataSchema.extend({ cc: optionalDmrText }),
+      ),
       deleted_media_ids: z.array(z.string()).optional(),
     })
     .superRefine((data, ctx) => {

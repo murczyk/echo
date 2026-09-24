@@ -1,4 +1,11 @@
 import type {
+  DeviceAnalyticsSummaryReq,
+  ListDeviceSyncSessionsReq,
+  ListDeviceSyncSessionsRsp,
+  GetDeviceSyncSessionReq,
+  FileSyncSessionRsp,
+  DeviceSyncSessionSummariesReq,
+  DeviceSyncSessionSummariesRsp,
   AreaOfResponsibility,
   BrowseDeviceFilesReq,
   BrowseDeviceFilesRsp,
@@ -237,7 +244,7 @@ export async function listAnalyticsTags(
 }
 
 export async function getDeviceAnalyticsSummary(
-  req: DeviceAnalyticsReq,
+  req: DeviceAnalyticsSummaryReq,
   options?: RequestOptions,
 ): Promise<DeviceAnalyticsSummaryRsp> {
   const data = await postJson('/api/device/analytics/summary', transformCamelToSnake(req), options);
@@ -303,4 +310,40 @@ export async function listAnalysisRunFiles(
     options,
   );
   return transformSnakeToCamel<ListAnalysisRunFilesRsp>(data);
+}
+
+export async function listDeviceSyncSessions(
+  req: ListDeviceSyncSessionsReq,
+  options?: RequestOptions,
+): Promise<ListDeviceSyncSessionsRsp> {
+  const data = await postJson(
+    '/api/device/files/sessions/list',
+    transformCamelToSnake(req),
+    options,
+  );
+  return transformSnakeToCamel<ListDeviceSyncSessionsRsp>(data);
+}
+
+export async function getDeviceSyncSession(
+  req: GetDeviceSyncSessionReq,
+  options?: RequestOptions,
+): Promise<FileSyncSessionRsp> {
+  const data = await postJson(
+    '/api/device/files/sessions/get',
+    transformCamelToSnake(req),
+    options,
+  );
+  return transformSnakeToCamel<FileSyncSessionRsp>(data);
+}
+
+export async function getDeviceSyncSessionSummaries(
+  req: DeviceSyncSessionSummariesReq,
+  options?: RequestOptions,
+): Promise<DeviceSyncSessionSummariesRsp> {
+  const data = await postJson(
+    '/api/device/files/sessions/summaries',
+    transformCamelToSnake(req),
+    options,
+  );
+  return transformSnakeToCamel<DeviceSyncSessionSummariesRsp>(data);
 }

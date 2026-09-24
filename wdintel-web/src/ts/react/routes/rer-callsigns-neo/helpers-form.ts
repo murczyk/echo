@@ -34,6 +34,7 @@ export function hasAnyDraftValue(row: CallsignDraftRow): boolean {
 export function validateDraftRows(
   rows: CallsignDraftRow[],
   _sourceId: number | null,
+  radioFeaturesAllowed = true,
 ): CallsignDraftValidation {
   if (rows.length === 0) return { valid: false, error: 'Немає рядків для додавання' };
 
@@ -51,7 +52,7 @@ export function validateDraftRows(
   });
   if (emptyIdentityAndLegacyContent) return { valid: false, error: EMPTY_CALLSIGN_ROW_ERROR };
 
-  if (_sourceId === 2) {
+  if (radioFeaturesAllowed && _sourceId === 2) {
     const missingRadioFreq = nonEmptyRows.find((row) => row.radioFreq.trim() === '');
     if (missingRadioFreq) {
       return { valid: false, error: RO_SOURCE_RADIO_FREQ_REQUIRED_ERROR };
@@ -61,7 +62,10 @@ export function validateDraftRows(
   return { valid: true, error: null };
 }
 
-export function validateEditForm(form: CallsignEditForm | null): CallsignDraftValidation {
+export function validateEditForm(
+  form: CallsignEditForm | null,
+  radioFeaturesAllowed = true,
+): CallsignDraftValidation {
   if (!form) return { valid: false, error: 'Не вибрано позивний для редагування' };
   const hasIdentity = form.callsign.trim() !== '' || form.fullName.trim() !== '';
   const hasLegacyContent =
@@ -73,7 +77,7 @@ export function validateEditForm(form: CallsignEditForm | null): CallsignDraftVa
   if (!hasIdentity && !hasLegacyContent) {
     return { valid: false, error: LEGACY_CALLSIGN_CLEAR_ERROR };
   }
-  if (form.sourceId === 2 && form.radioFreq.trim() === '') {
+  if (radioFeaturesAllowed && form.sourceId === 2 && form.radioFreq.trim() === '') {
     return { valid: false, error: RO_SOURCE_RADIO_FREQ_REQUIRED_ERROR };
   }
   return { valid: true, error: null };

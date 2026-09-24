@@ -69,6 +69,7 @@ pub(crate) async fn analysis_run_completed_nofail(env: &Env, run_id: Uuid) {
         let Some(text) = render_analysis_run_completed(
             &env.config.public_host,
             device.id,
+            run.sync_id,
             device.name.as_deref(),
             device.external_url.as_deref(),
             &summary,
@@ -148,8 +149,13 @@ fn render_device_created(
 ) -> Result<String> {
     let mut text = format!(
         "Додано пристрій {}",
-        device_markdown_link(public_host, device.id, device.name.as_deref())
-            .context(h!())?
+        device_markdown_link(
+            public_host,
+            device.id,
+            None,
+            device.name.as_deref(),
+        )
+        .context(h!())?
     );
     if let Some(source) =
         source_link(device.external_url.as_deref()).context(h!())?
@@ -163,6 +169,7 @@ fn render_device_created(
 fn render_analysis_run_completed(
     public_host: &str,
     device_id: Uuid,
+    sync_id: Option<Uuid>,
     name: Option<&str>,
     external_url: Option<&str>,
     summary: &AnalysisRunSummary,
@@ -173,7 +180,8 @@ fn render_analysis_run_completed(
     }
     let mut heading = format!(
         "Завершено аналіз пристрою {}",
-        device_markdown_link(public_host, device_id, name).context(h!())?
+        device_markdown_link(public_host, device_id, sync_id, name)
+            .context(h!())?
     );
     if let Some(source) = source_link(external_url).context(h!())? {
         heading.push(' ');
@@ -217,9 +225,10 @@ fn device_name(device_id: Uuid, name: Option<&str>) -> String {
 fn device_markdown_link(
     public_host: &str,
     device_id: Uuid,
+    sync_id: Option<Uuid>,
     name: Option<&str>,
 ) -> Result<String> {
-    let link = device_link(public_host, device_id).context(h!())?;
+    let link = device_link(public_host, device_id, sync_id).context(h!())?;
     Ok(format!("[{}]({link})", device_name(device_id, name)))
 }
 
@@ -257,11 +266,19 @@ fn markdown_link_destination(url: &Url) -> String {
     destination
 }
 
-fn device_link(public_host: &str, device_id: Uuid) -> Result<String> {
+fn device_link(
+    public_host: &str,
+    device_id: Uuid,
+    sync_id: Option<Uuid>,
+) -> Result<String> {
     let public_host = Host::parse(public_host.trim())
         .context("public host is not a valid URL host")
         .context(h!())?;
-    Ok(format!("https://{public_host}/devices/{device_id}"))
+    let link = format!("https://{public_host}/devices/{device_id}");
+    Ok(match sync_id {
+        Some(sync_id) => format!("{link}?sync_id={sync_id}"),
+        None => link,
+    })
 }
 
 #[cfg(test)]
@@ -322,6 +339,7 @@ mod tests {
     #[test]
     fn completed_analysis_payload_matches_existing_format() {
         let device_id = Uuid::from_u128(0x01a01df4_7cc6_7110_bcf6_6c72132387f8);
+        let sync_id = Uuid::from_u128(0x01a0c381_188d_78b0_aa01_f6dbad3d4434);
         let device = device_fixture(device_id);
         let summary = AnalysisRunSummary {
             file_count: 12_573,
@@ -340,6 +358,7 @@ mod tests {
         let text = render_analysis_run_completed(
             "localhost",
             device.id,
+            Some(sync_id),
             device.name.as_deref(),
             device.external_url.as_deref(),
             &summary,
@@ -353,7 +372,7 @@ mod tests {
             format!(
                 "Завершено аналіз пристрою \
                  [Ймовірно 57 орб 2 рр БпС комп 2 （MSI）]\
-                 (https://localhost/devices/{device_id}) \
+                 (https://localhost/devices/{device_id}?sync_id={sync_id}) \
                  ([Джерело](https://secret.example/device))\n\
                  Файли: 12573, Тег 1: 123, Тег 2: 321"
             )
@@ -375,6 +394,7 @@ mod tests {
         let text = render_analysis_run_completed(
             "localhost",
             device.id,
+            None,
             device.name.as_deref(),
             device.external_url.as_deref(),
             &summary,
@@ -384,6 +404,9 @@ mod tests {
         .expect("a run with tagged files should render a notification");
 
         assert!(text.ends_with("\nНові файли: 7, Тег: 3"));
+        assert!(
+            text.contains(&format!("(https://localhost/devices/{device_id})"))
+        );
     }
 
     #[test]
@@ -399,6 +422,7 @@ mod tests {
             render_analysis_run_completed(
                 "localhost",
                 device.id,
+                None,
                 device.name.as_deref(),
                 device.external_url.as_deref(),
                 &summary,
@@ -414,7 +438,7 @@ mod tests {
         let device_id = Uuid::now_v7();
 
         assert_eq!(
-            device_link("localhost", device_id).unwrap(),
+            device_link("localhost", device_id, None).unwrap(),
             format!("https://localhost/devices/{device_id}")
         );
     }

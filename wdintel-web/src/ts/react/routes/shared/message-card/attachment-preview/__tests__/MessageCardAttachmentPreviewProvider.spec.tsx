@@ -70,6 +70,36 @@ describe('MessageCardAttachmentPreviewProvider', () => {
     container?.remove();
     root = null;
     container = null;
+    vi.unstubAllGlobals();
+  });
+
+  it('preloads the adjacent carousel images', async () => {
+    const preloadedSources: string[] = [];
+    class PreloadImage {
+      set src(value: string) {
+        preloadedSources.push(value);
+      }
+    }
+    vi.stubGlobal('Image', PreloadImage);
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () =>
+      root?.render(
+        <MessageCardAttachmentPreviewProvider
+          attachments={[
+            { type: 'image', value: { id: 'image-1', href: '/image-1.png' } },
+            { type: 'image', value: { id: 'image-2', href: '/image-2.png' } },
+            { type: 'image', value: { id: 'image-3', href: '/image-3.png' } },
+          ]}
+          initialIndex={1}
+          onClose={() => {}}
+        />,
+      ),
+    );
+
+    expect(preloadedSources).toEqual(['/image-1.png', '/image-3.png']);
   });
 
   it('uses one carousel to switch between attachment preview types', async () => {

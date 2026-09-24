@@ -31,7 +31,7 @@ vi.mock('../../../services/api/user-settings', () => ({
   fetchUserSettings: vi.fn().mockResolvedValue({ tagsLayout: 'compact' }),
 }));
 vi.mock('../../../services/api/user', () => ({
-  fetchCurrentUser: vi.fn().mockResolvedValue(null),
+  fetchCurrentUser: vi.fn().mockResolvedValue({ roles: ['Rer'], organismId: null }),
 }));
 vi.mock('../../../services/api/system-settings', () => ({
   currentSystemSettings: vi

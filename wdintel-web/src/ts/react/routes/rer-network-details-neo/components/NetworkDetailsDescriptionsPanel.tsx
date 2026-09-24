@@ -1,3 +1,5 @@
+import { AuthorLabel } from '../../../components/AuthorLabel';
+import { useRadioFeatures } from '../../shared/RadioFeatures';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
@@ -189,7 +191,7 @@ function DescriptionItem({
               sx={{ flexWrap: 'wrap', mt: 0.75, alignItems: 'center', minWidth: 0 }}
             >
               <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
-                {description.login}
+                <AuthorLabel login={description.login} />
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
                 •
@@ -290,6 +292,7 @@ function DescriptionsList({
   onEdit: (description: NetworkDescription) => void;
   onDelete: (description: NetworkDescription) => void;
 }) {
+  const radioFeaturesAllowed = useRadioFeatures();
   if (loading && !network) {
     return (
       <Box sx={{ minHeight: 0, height: '100%' }}>
@@ -310,7 +313,7 @@ function DescriptionsList({
         <Stack spacing={1.5} sx={{ pb: 0.5 }}>
           {descriptions.map((description) => {
             const frequencyLabel =
-              description.networkFrequencyId === null
+              !radioFeaturesAllowed || description.networkFrequencyId === null
                 ? null
                 : (network?.freqs.find((freq) => freq.id === description.networkFrequencyId)
                     ?.freq ?? `#${description.networkFrequencyId}`);

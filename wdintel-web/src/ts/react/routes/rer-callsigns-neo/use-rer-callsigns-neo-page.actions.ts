@@ -28,6 +28,7 @@ import type {
 type SetState<T> = Dispatch<SetStateAction<T>>;
 
 type Args = {
+  radioFeaturesAllowed: boolean;
   permissions: ExportPermission;
   callsigns: Callsign[];
   filters: CallsignsFilterState;
@@ -86,6 +87,7 @@ type Args = {
 };
 
 export function useRerCallsignsNeoPageActions({
+  radioFeaturesAllowed,
   permissions,
   callsigns,
   filters,
@@ -138,6 +140,7 @@ export function useRerCallsignsNeoPageActions({
   runListFetch,
 }: Args) {
   const addActions = useRerCallsignsNeoPageAddActions({
+    radioFeaturesAllowed,
     permissions,
     addUnitId,
     addSourceId,
@@ -264,7 +267,7 @@ export function useRerCallsignsNeoPageActions({
     setEditValidationError(null);
     setStatus(null);
 
-    const validation = validateEditForm(editForm);
+    const validation = validateEditForm(editForm, radioFeaturesAllowed);
     if (!validation.valid) {
       setEditValidationError(validation.error);
       return;
@@ -285,6 +288,7 @@ export function useRerCallsignsNeoPageActions({
     }
   }, [
     editForm,
+    radioFeaturesAllowed,
     refreshLookupsAndStats,
     setCallsigns,
     setEditForm,

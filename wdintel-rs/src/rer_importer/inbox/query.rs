@@ -2094,6 +2094,43 @@ pub(crate) async fn build_inbox_query_for_candidate_ids(
     finish_inbox_query(dbx, login, req, query, apply_page_limit).await
 }
 
+pub(crate) async fn any_accessible_inbox_candidate_id(
+    env: &Env,
+    login: &uuid::Uuid,
+    candidate_ids: &[i64],
+) -> Result<bool, AppError> {
+    if candidate_ids.is_empty() {
+        return Ok(false);
+    }
+    let req = InboxMessagesReq {
+        since_id_noninclusive: Some(0),
+        nolimit: Some(true),
+        ..Default::default()
+    };
+    let query = build_filtered_inbox_query_with_scope(
+        &env.dbx,
+        login,
+        env,
+        &req,
+        None,
+        None,
+        InboxQueryPurpose::Messages,
+        InboxUnitLookupStrategy::Default,
+    )
+    .await
+    .c(h!())?
+    .filter(signal_message::Column::Id.eq_any(candidate_ids.to_vec()))
+    .select_only()
+    .column(signal_message::Column::Id)
+    .limit(1);
+    Ok(query
+        .into_tuple::<i64>()
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .is_some())
+}
+
 async fn finish_inbox_query<'a, 'async_trait, C>(
     dbx: &'a C,
     login: &uuid::Uuid,

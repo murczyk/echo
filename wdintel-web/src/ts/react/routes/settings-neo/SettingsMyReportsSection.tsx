@@ -1,3 +1,7 @@
+import {
+  AUTHOR_COLUMN_META,
+  mrtAuthorCell,
+} from '../../components/mui-customized/table/mrt-author-cell';
 import DownloadIcon from '@mui/icons-material/DownloadOutlined';
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -773,11 +777,8 @@ export function ReportHistoryTableSection({
         {
           accessorKey: 'requestedBy',
           header: 'Автор',
-          meta: { overflowMode: 'text' },
-          Cell: mrtTextCell({
-            displayValue: ({ row }) => row.original.requestedBy,
-            fullValue: ({ row }) => row.original.requestedBy ?? '',
-          }),
+          meta: AUTHOR_COLUMN_META,
+          Cell: mrtAuthorCell((row) => row.requestedBy),
         },
         {
           id: 'errorLog',

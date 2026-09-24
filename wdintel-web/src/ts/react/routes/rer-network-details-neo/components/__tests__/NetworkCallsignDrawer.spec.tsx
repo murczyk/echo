@@ -1,6 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
+import { RadioFeaturesProvider } from '../../../shared/RadioFeatures';
 import { act, useState, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -119,7 +120,7 @@ afterEach(() => {
   }
 });
 
-function renderHarness(initialForm: NetworkCallsignDrawerForm) {
+function renderHarness(initialForm: NetworkCallsignDrawerForm, radioFeaturesAllowed = true) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -154,12 +155,35 @@ function renderHarness(initialForm: NetworkCallsignDrawerForm) {
   }
 
   act(() => {
-    root.render(<Harness />);
+    root.render(
+      <RadioFeaturesProvider allowed={radioFeaturesAllowed}>
+        <Harness />
+      </RadioFeaturesProvider>,
+    );
   });
 
   return { container, root, getCurrentForm: () => currentForm };
 }
 describe('NetworkCallsignDrawer', () => {
+  it('#3568 allows a Cyber network callsign without a hidden RO frequency', () => {
+    const view = renderHarness(
+      {
+        ...createDefaultNetworkCallsignDrawerForm(10, 1),
+        callsign: 'СОКІЛ',
+        sourceId: 2,
+        radioFreq: '',
+        developing: false,
+      },
+      false,
+    );
+    rendered.push(view);
+    expect(view.container.textContent).not.toContain('Частота');
+    const save = [...view.container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Зберегти',
+    );
+    expect(save?.disabled).toBe(false);
+  });
+
   it('allows developing rows to save without a source', () => {
     const view = renderHarness({
       ...createDefaultNetworkCallsignDrawerForm(10, null),

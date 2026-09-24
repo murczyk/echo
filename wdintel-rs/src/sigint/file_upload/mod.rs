@@ -1,4 +1,4 @@
-use crate::users::ensure_rer_role;
+use crate::users::ensure_base_role;
 use crate::users::login_id_from_identity;
 pub mod fallback;
 mod lifecycle;
@@ -87,7 +87,7 @@ async fn ensure_request_allowed(
     user: &actix_identity::Identity,
     env: &Env,
 ) -> Result<(), AppError> {
-    ensure_rer_role(&env.dbx, user).await.c(h!())?;
+    ensure_base_role(&env.dbx, user).await.c(h!())?;
     if env.config.s3_config.is_none() {
         return Err(AppError::BL {
             msg: "s3 config is required for attachment upload".to_string(),

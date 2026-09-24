@@ -89,3 +89,10 @@
 - **Source implementation:** `use-rer-networks-neo-page.load.ts`, `use-rer-networks-neo-page.mutations.ts`
 - **Existing tests:** `wdintel-web/src/ts/react/routes/rer-networks-neo/__tests__/use-rer-networks-neo-page.spec.tsx`
 - **Original Echo issue/PR, if known:** [#3329](https://github.com/echoua/echo/issues/3329), [#3489](https://github.com/echoua/echo/pull/3489)
+
+## Cyber radio metadata
+
+- **Behavior ID:** `react-networks-cyber-radio-metadata`
+- **Expected observable result:** Cyber users cannot select the frequency column and preserve hidden radio metadata when editing a network.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-networks-neo/__tests__/index.cyber-columns.regression.spec.tsx`, `wdintel-web/src/ts/react/routes/rer-networks-neo/__tests__/use-rer-networks-neo-page.spec.tsx`
+- **Original Echo issue/PR, if known:** [#3568](https://github.com/echoua/echo/issues/3568)

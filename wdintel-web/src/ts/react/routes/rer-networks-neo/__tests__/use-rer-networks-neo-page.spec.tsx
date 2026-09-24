@@ -339,6 +339,131 @@ describe('useRerNetworksNeoPage', () => {
     locationReplaceSpy = null;
     vi.useRealTimers();
   });
+
+  // Regression: https://github.com/echoua/echo/issues/3568
+  it.each([
+    { roles: ['Rer', 'UnitsEditor'], supportNonRerInterceptions: true },
+    { roles: ['Cyber', 'UnitsEditor'], supportNonRerInterceptions: false },
+  ])(
+    'creates without frequency for $roles when supportNonRerInterceptions=$supportNonRerInterceptions',
+    async ({ roles, supportNonRerInterceptions }) => {
+      authUserRoles = roles;
+      apiMock.currentSystemSettings.mockResolvedValueOnce({
+        id: 1,
+        rerAnalysisUnitsExactMatchOnlyDefault: false,
+        rerDutyTestEnabled: false,
+        rerDutyInsertHistoricalInterceptions: false,
+        rerDutyTestSinceMs: 0,
+        rerDutyTestLimit: 0,
+        rerDutyPollIntervalSec: 0,
+        rerShortUrlEnabled: false,
+        supportNonRerInterceptions,
+      });
+      await renderHook();
+      await flushEffects();
+      await act(async () => {
+        latest?.setCreateDialog({
+          id: null,
+          name: 'Радіомережа без частоти',
+          location: 'Київ',
+          radioStation: '',
+          purpose: 'для управління підлеглим особовим складом',
+          operationMode: 'дуплекс',
+          operationType: 'ведення службового радіообміну',
+          operationPeriod: 'цілодобово',
+          doNotArchive: false,
+          unitMask: [],
+          status: NETWORK_STATUS_ACTIVE,
+          aorIds: [1],
+          unitIds: [1],
+          postIds: [],
+          freq: '',
+          modulation: 'DMR',
+          encryptionId: null,
+          activeFrom: '',
+          activeTo: '',
+          encryptionKeyIds: [],
+        });
+      });
+      await act(async () => {
+        await latest?.saveNetworkCreate();
+      });
+      expect(apiMock.createNetwork).toHaveBeenCalledWith(
+        expect.objectContaining({ freqs: null, name: 'Радіомережа без частоти' }),
+      );
+      expect(browserMock.navigateWithinSpa).toHaveBeenCalledWith('/rer-networks-neo/3');
+    },
+  );
+
+  // Regression: https://github.com/echoua/echo/issues/3568
+  it('ignores Cyber persisted frequency filters and sorting without erasing preferences', async () => {
+    authUserRoles = ['Cyber', 'UnitsEditor'];
+    tableStateMock.columnFilters = [{ id: 'freqs', value: '153.6250' }] as never;
+    tableStateMock.sorting = [{ id: 'freqs', desc: true }] as never;
+    await renderHook();
+    await flushEffects();
+    expect(apiMock.getEncryptions).not.toHaveBeenCalled();
+    for (const [request] of apiMock.listNetworks.mock.calls) {
+      expect(JSON.stringify(request)).not.toContain('153.6250');
+      expect(JSON.stringify(request)).not.toContain('freqs');
+    }
+    expect(tableStateMock.columnFilters).toEqual([{ id: 'freqs', value: '153.6250' }]);
+    expect(tableStateMock.sorting).toEqual([{ id: 'freqs', desc: true }]);
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3568
+  it.each([
+    ['Rer', 'UnitsEditor'],
+    ['Cyber', 'UnitsEditor'],
+  ])('preserves hidden radio metadata when editing with %s', async (...roles) => {
+    authUserRoles = roles;
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(1, { radioStation: ' original station ' }), buildNetwork(2)],
+      statusCounts: { active: 7, inactive: 1, archived: 1 },
+    });
+    await renderHook();
+    await flushEffects();
+    await act(async () => {
+      latest?.setEditDialog({
+        id: 1,
+        name: 'Network 1',
+        location: 'Location 1',
+        radioStation: ' updated station ',
+        purpose: '',
+        operationMode: '',
+        operationType: '',
+        operationPeriod: '',
+        status: NETWORK_STATUS_ACTIVE,
+        aorIds: [1],
+        unitIds: [1],
+        postIds: [2],
+        freq: '',
+        modulation: 'DMR',
+        encryptionId: null,
+        activeFrom: '',
+        activeTo: '',
+        encryptionKeyIds: [],
+      });
+    });
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(1, { unitIds: [1], postIds: [2] }), buildNetwork(2)],
+      statusCounts: { active: 7, inactive: 1, archived: 1 },
+    });
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [],
+      statusCounts: { active: 7, inactive: 1, archived: 1 },
+    });
+    await act(async () => {
+      await latest?.saveNetworkEdit();
+    });
+    expect(apiMock.updateNetwork).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 1,
+        radioStation: roles.includes('Rer') ? 'updated station' : ' original station ',
+      }),
+    );
+  });
+
   it('refreshes an edited row with updated relations from the server', async () => {
     await renderHook();
     await flushEffects();

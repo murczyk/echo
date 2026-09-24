@@ -35,6 +35,8 @@ pub use super::ai_settlement_worker_job::Entity as AiSettlementWorkerJob;
 pub use super::alert::Entity as Alert;
 pub use super::aor_location_config::Entity as AorLocationConfig;
 pub use super::api_integration::Entity as ApiIntegration;
+pub use super::api_integration_iggy_destination::Entity as ApiIntegrationIggyDestination;
+pub use super::api_integration_iggy_event::Entity as ApiIntegrationIggyEvent;
 pub use super::area_of_responsibility::Entity as AreaOfResponsibility;
 pub use super::area_of_responsibility_report_order::Entity as AreaOfResponsibilityReportOrder;
 pub use super::battle_line_aor_geometry::Entity as BattleLineAorGeometry;

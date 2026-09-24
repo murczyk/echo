@@ -877,8 +877,7 @@ pub mod tests {
     fn build_login(inp: login::ActiveModel) -> login::ActiveModel {
         let mut out = inp.clone();
         if out.login == NotSet {
-            out.login =
-                Set(random_word::get(random_word::Lang::En).to_string());
+            out.login = Set(format!("test-{}", Uuid::new_v4()));
         }
         if out.password == NotSet {
             out.password = Set(None);

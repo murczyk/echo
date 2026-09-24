@@ -42,7 +42,7 @@ use crate::messenger::media::{
 use crate::messenger::media_cache;
 use crate::storage;
 use crate::types::{error, info, warn, Env, ShortContext};
-use crate::users::{ensure_rer_role, login_id_from_identity};
+use crate::users::{ensure_base_role, login_id_from_identity};
 use actix_files::NamedFile;
 use actix_web::http::header;
 use actix_web::{get, HttpRequest, HttpResponse};
@@ -2582,7 +2582,7 @@ pub async fn messenger_media_thumbnail(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<(Uuid,)>,
 ) -> Result<HttpResponse, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
     let media = signal_message_media::Entity::find_by_id(path.0)
         .one(&env.dbx)

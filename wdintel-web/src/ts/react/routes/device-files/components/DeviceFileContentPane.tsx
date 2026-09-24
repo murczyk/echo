@@ -175,9 +175,13 @@ function SelectedFileContent({ file, href }: { file: DeviceFileTreeEntry; href: 
 export function DeviceFileContentPane({
   deviceId,
   file,
+  sessionScoped = false,
+  mobile = false,
 }: {
   deviceId: string;
   file: DeviceFileTreeEntry | null;
+  sessionScoped?: boolean;
+  mobile?: boolean;
 }) {
   const href =
     file?.hasContent && file.fileId != null && file.revision != null
@@ -191,7 +195,12 @@ export function DeviceFileContentPane({
     >
       {file !== null ? (
         <PowerSnackbarProvider key={`${deviceId}/${file.entryId}/${file.revision}/${href}`}>
-          <DeviceFileContentHeader file={file} href={href} />
+          <DeviceFileContentHeader
+            file={file}
+            href={href}
+            sessionScoped={sessionScoped}
+            mobile={mobile}
+          />
           <div className="min-h-0 min-w-0 flex-1 overflow-auto bg-echo-background/50">
             <SelectedFileContent file={file} href={href} />
           </div>

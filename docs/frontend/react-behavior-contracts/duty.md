@@ -105,3 +105,16 @@
 - **Source implementation:** `wdintel-web/src/ts/react/routes/rer-duty-neo/FeedColumnContent.tsx`, `wdintel-web/src/ts/react/routes/shared/message-card/message-card.utils.ts`
 - **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** [#3541](https://github.com/echoua/echo/pull/3541)
+
+## Duty panel ownership
+
+- **Behavior ID:** `react-duty-panel-ownership`
+- **Expected observable result:** Escape and outside interaction close only their owning panel; transparent overlays do not block the feed; narrow layouts retain one mobile header owner while available actions remain reachable.
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
+
+## Duty radio-filter isolation
+
+- **Behavior ID:** `react-duty-radio-filter-isolation`
+- **Expected observable result:** restored frequency and post filters remain saved but do not leak into Cyber or Duty requests when radio features are unavailable.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/duty-creation-order.regression.spec.tsx`
+- **Original Echo issue/PR, if known:** [#3568](https://github.com/echoua/echo/issues/3568)

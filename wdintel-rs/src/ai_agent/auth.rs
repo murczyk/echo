@@ -240,35 +240,63 @@ return value
     .invoke_async(&mut redis)
     .await
     .c(h!())?;
-    let grant: BootstrapGrant =
-        serde_json::from_str(raw.as_deref().ok_or(AppError::Unauthenticated)?)
-            .c(h!())?;
+    let raw = raw
+        .ok_or(AppError::Unauthenticated)
+        .inspect_err(|_| warn!("AI agent bootstrap failed stage=consume_grant"))
+        .c(h!())?;
+    let grant: BootstrapGrant = serde_json::from_str(&raw).c(h!())?;
     if let Err(err) = validate_grant(&env, &grant).await {
+        log_bootstrap_failure(&grant, "validate_grant");
         revoke_after_exchange_failure(&env, &grant).await;
         return Err(err);
     }
     if let Err(err) = activate_credential(&env, &grant).await {
+        log_bootstrap_failure(&grant, "activate_credential");
         revoke_after_exchange_failure(&env, &grant).await;
         return Err(err);
     }
-    if let Err(err) = crate::users::start_user_session(
-        &env,
-        &http_req,
-        grant.login_id,
-        &env.dbx,
-    )
-    .await
-    {
-        revoke_after_exchange_failure(&env, &grant).await;
-        return Err(err);
+    if let Err(err) = start_bootstrap_session(&env, &http_req, &grant).await {
+        log_bootstrap_failure(&grant, "start_session");
+        cleanup_exchange_session(&env, &http_req, &grant).await;
+        return Err(err.into());
     }
     if let Err(err) = bind_agent_session(&env, &http_req, &grant).await {
+        log_bootstrap_failure(&grant, "bind_session");
         cleanup_exchange_session(&env, &http_req, &grant).await;
         return Err(err);
     }
     Ok(Json(AiAgentBootstrapExchangeRsp {
         correlation_id: grant.correlation_id.to_string(),
     }))
+}
+
+async fn start_bootstrap_session(
+    env: &actix_web::web::Data<Env>,
+    http_req: &HttpRequest,
+    grant: &BootstrapGrant,
+) -> anyhow::Result<()> {
+    if grant.allow_disabled {
+        crate::users::initialize_user_session(env, http_req, grant.login_id)
+            .await
+            .c(h!())?;
+    } else {
+        crate::users::start_user_session(
+            env,
+            http_req,
+            grant.login_id,
+            &env.dbx,
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(())
+}
+
+fn log_bootstrap_failure(grant: &BootstrapGrant, stage: &str) {
+    warn!(
+        "AI agent bootstrap failed stage={stage} correlation_id={} login_id={} test={}",
+        grant.correlation_id, grant.login_id, grant.allow_disabled
+    );
 }
 
 async fn bind_agent_session(
@@ -358,7 +386,8 @@ async fn validate_grant(
         .one(&env.dbx)
         .await
         .c(h!())?
-        .is_some();
+        .ok_or(AppError::Unauthenticated)
+        .c(h!())?;
     let login = login::Entity::find_by_id(grant.login_id)
         .one(&env.dbx)
         .await
@@ -366,8 +395,18 @@ async fn validate_grant(
         .filter(|login| {
             !login.deleted_permanently
                 && (grant.allow_disabled || !login.deleted)
-        });
-    if !linked || login.is_none() {
+                && super::middleware::has_exact_agent_security_profile(login)
+        })
+        .ok_or(AppError::Unauthenticated)
+        .c(h!())?;
+    if !super::access::linked_human_scope_is_current(
+        &env.dbx,
+        linked.human_login_id,
+        &login,
+    )
+    .await
+    .c(h!())?
+    {
         return Err(AppError::Unauthenticated);
     }
     if let Some(request_id) = grant.request_id {
@@ -612,6 +651,10 @@ fn provider_capability_correlation_key(correlation_id: Uuid) -> String {
         "{AI_AGENT_PROVIDER_CAPABILITY_CORRELATION_REDIS_PREFIX}{correlation_id}"
     )
 }
+
+#[cfg(test)]
+#[path = "bootstrap_tests.rs"]
+mod bootstrap_tests;
 
 #[cfg(test)]
 mod tests {

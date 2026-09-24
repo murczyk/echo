@@ -18,7 +18,7 @@ pub async fn list_sources(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Api"],
+        vec!["Rer", "CyberViewer", "Api"],
     )
     .await
     .c(h!())?;

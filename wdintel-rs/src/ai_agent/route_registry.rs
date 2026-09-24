@@ -52,7 +52,7 @@ pub const ROUTES: &[ReadOnlyRoute] = &[
         path: "/api/rer-importer/messages-by-uuid",
         skill: "messages_by_uuid",
         label: "Завантаження повідомлень за UUID",
-        request_kind: "messageUuids",
+        request_kind: "json",
     },
     ReadOnlyRoute {
         method: "POST",
@@ -212,7 +212,7 @@ mod tests {
             .iter()
             .find(|route| route.skill == "messages_by_uuid")
             .unwrap();
-        assert_eq!(messages_by_uuid.request_kind, "messageUuids");
+        assert_eq!(messages_by_uuid.request_kind, "json");
     }
 
     #[test]

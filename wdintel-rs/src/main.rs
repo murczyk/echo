@@ -2,7 +2,7 @@
 #![allow(clippy::type_complexity)]
 #![allow(clippy::borrow_interior_mutable_const)]
 #![allow(clippy::ptr_arg)]
-use crate::users::ensure_rer_role_by_id;
+use crate::users::ensure_base_role_by_id;
 
 use crate::config::*;
 use crate::types::*;
@@ -199,7 +199,7 @@ pub async fn oneoff_compare_rer_counts(
 
     for login in ps.logins.iter() {
         let login_id = users::login_id_by_name(&env.dbx, login).await?;
-        ensure_rer_role_by_id(&env.dbx, &login_id).await.c(h!())?;
+        ensure_base_role_by_id(&env.dbx, &login_id).await.c(h!())?;
         let master_keys =
             messenger::group::get_identity_sigint_groups(&env.dbx, &login_id)
                 .await
@@ -1127,6 +1127,7 @@ enum Cmd {
     /// Refreshes historical Redis group statistics through the present.
     OneoffCalculateHistoricStats(OneoffCalculateHistoricStatsPs),
     OneoffDisableIm,
+    /// Disables IM datasources, GOI integrations, and Iggy synchronization.
     OneoffDisableImAndGoi,
     OneoffFixNetworkCallsigns,
     OneoffCountGroupBatches,

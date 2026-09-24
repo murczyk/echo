@@ -9,7 +9,15 @@ import { getDeviceFileContent } from '../../../services/api/devices';
 import { downloadBlob } from '../../../utils/download-blob';
 import { toDeviceFileLoadError } from '../helpers';
 
-function DownloadButton({ href, fileName }: { href: string | null; fileName: string }) {
+function DownloadButton({
+  href,
+  fileName,
+  mobile,
+}: {
+  href: string | null;
+  fileName: string;
+  mobile: boolean;
+}) {
   const { notify } = usePowerSnackbar();
   const [downloading, setDownloading] = useState(false);
   const download = async () => {
@@ -33,7 +41,7 @@ function DownloadButton({ href, fileName }: { href: string | null; fileName: str
       variant="contained"
       disableElevation
       sx={{ textTransform: 'none' }}
-      className="h-echo-control-sm shrink-0"
+      className={mobile ? '!min-h-echo-control-lg w-full shrink-0' : 'h-echo-control-sm shrink-0'}
       startIcon={<DownloadIcon fontSize="small" />}
       onClick={() => void download()}
       disabled={href === null || downloading}
@@ -47,30 +55,47 @@ function DownloadButton({ href, fileName }: { href: string | null; fileName: str
 export function DeviceFileContentHeader({
   file,
   href,
+  sessionScoped = false,
+  mobile = false,
 }: {
   file: DeviceFileTreeEntry;
   href: string | null;
+  sessionScoped?: boolean;
+  mobile?: boolean;
 }) {
   const path = file.absolutePath ?? (file.pathComponents.join(' / ') || file.name);
   return (
-    <header className="flex min-h-echo-control-lg shrink-0 flex-wrap items-center gap-echo-md border-b border-echo-divider-subtle px-echo-lg py-echo-sm echo-sm:h-echo-control-lg echo-sm:flex-nowrap">
+    <header
+      className={
+        mobile
+          ? 'flex shrink-0 flex-col items-start gap-echo-sm border-b border-echo-divider-subtle p-echo-md'
+          : 'flex min-h-echo-control-lg shrink-0 flex-wrap items-center gap-echo-md border-b border-echo-divider-subtle px-echo-lg py-echo-sm echo-sm:h-echo-control-lg echo-sm:flex-nowrap'
+      }
+    >
+      {mobile ? (
+        <p className="m-0 text-[18px] font-semibold [overflow-wrap:anywhere]">{file.name}</p>
+      ) : null}
       <Typography
         component="h2"
         variant="body2"
         id="device-file-content-title"
         title={path}
         tabIndex={0}
-        className="m-0 min-w-0 flex-1 basis-full overflow-x-auto whitespace-nowrap font-normal! text-echo-text echo-sm:basis-auto"
+        className={
+          mobile
+            ? 'm-0 max-w-full font-normal! text-echo-text [overflow-wrap:anywhere]'
+            : 'm-0 min-w-0 flex-1 basis-full overflow-x-auto whitespace-nowrap font-normal! text-echo-text echo-sm:basis-auto'
+        }
       >
         {path}
       </Typography>
       {file.revision != null ? (
         <span className="inline-flex shrink-0 items-center gap-echo-xs whitespace-nowrap rounded-echo-sm bg-echo-success/20 px-echo-sm py-echo-xs text-echo-xs text-[color:color-mix(in_srgb,var(--echo-color-success)_60%,var(--echo-color-text))]">
           <span aria-hidden="true" className="size-echo-xs rounded-full bg-current" />
-          Ревізія {file.revision} · Поточна
+          Ревізія {file.revision} · {sessionScoped ? 'Із вибраної сесії' : 'Поточна'}
         </span>
       ) : null}
-      <DownloadButton href={href} fileName={file.name} />
+      <DownloadButton href={href} fileName={file.name} mobile={mobile} />
     </header>
   );
 }

@@ -1,6 +1,5 @@
 module Shared.Components.DateTime exposing (Model, Msg(..), dateFormErrId, init, initAnalysisRanges, initFromDt, initFromPosix, new, setDateModelValue, setDisabled, setTimeModelValue, update, view)
 
-import Config
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
@@ -115,6 +114,7 @@ setDisabled isDisabled ps =
 
 initAnalysisRanges :
     { from : Model
+    , radioFeaturesAllowed : Bool
     , to : Model
     , zone : Time.Zone
     , now : Posix
@@ -122,9 +122,6 @@ initAnalysisRanges :
     -> ( Model, Model )
 initAnalysisRanges ps =
     let
-        nowHour =
-            Time.toHour ps.zone ps.now
-
         tomorrowMidnight =
             Time.Extra.posixToParts ps.zone ps.now
                 |> (\parts ->
@@ -138,65 +135,43 @@ initAnalysisRanges ps =
                    )
                 |> Time.Extra.partsToPosix ps.zone
 
-        zoneOffsetMillis =
-            Time.Extra.toOffset ps.zone ps.now * 60 * 1000
-
-        dateRound12Hours =
-            ps.now
-                |> Time.posixToMillis
-                |> (\x ->
-                        x
-                            // (1000 * 60 * 60 * 12)
-                            * (1000 * 60 * 60 * 12)
-                            - zoneOffsetMillis
-                   )
-                |> Time.millisToPosix
-
-        dateRound12HoursAfter =
-            ps.now
-                |> Time.posixToMillis
-                |> (\x ->
-                        x
-                            // (1000 * 60 * 60 * 12)
-                            * (1000 * 60 * 60 * 12)
-                            - zoneOffsetMillis
-                            + (1000 * 60 * 60 * 24)
-                   )
-                |> Time.millisToPosix
-
         defaultToPosix =
-            if
-                (ps.to.dateStr == "")
-                    && (ps.to.timeStr == "")
-                    && (nowHour >= Config.analysisHourAfterWhichWeTakeADayTomorrow)
-            then
-                tomorrowMidnight
+            tomorrowMidnight
 
-            else
-                dateRound12HoursAfter
+        defaultFromPosix =
+            Time.Extra.add
+                Time.Extra.Day
+                (if ps.radioFeaturesAllowed then
+                    -1
+
+                 else
+                    -90
+                )
+                ps.zone
+                defaultToPosix
 
         dateFromStr =
             if ps.from.dateStr /= "" then
                 ps.from.dateStr
 
             else
-                Utils.Time.posixToInputValueDate ps.zone dateRound12Hours
+                Utils.Time.posixToInputValueDate ps.zone defaultFromPosix
 
         timeFromStr =
             if ps.from.timeStr /= "" then
                 ps.from.timeStr
 
             else
-                Utils.Time.posixToInputValueTime ps.zone dateRound12Hours
+                Utils.Time.posixToInputValueTime ps.zone defaultFromPosix
 
         dtFromPosix =
             if dateFromStr /= "" && timeFromStr /= "" then
                 MaybeX.or
                     (Utils.Time.mParseDatetimeStr ps.zone (dateFromStr ++ "T" ++ timeFromStr))
-                    (Just dateRound12Hours)
+                    (Just defaultFromPosix)
 
             else
-                Just dateRound12Hours
+                Just defaultFromPosix
 
         dtToPosix =
             if dateToStr /= "" && timeToStr /= "" then

@@ -19,6 +19,8 @@ import {
   MESSAGE_CARD_DOWNLOAD_START_COOLDOWN_MS,
 } from '../MessageCardMedia.tsx';
 import { MessageDeviceAccessProvider } from '../MessageDeviceAccess.tsx';
+import { DutyExcludeMenuContext } from '../DutyExcludeMenu.ts';
+import { MessageDeleteAccessContext, MessageWriteAccessContext } from '../MessageWriteAccess.tsx';
 import { resolveMessageCardEtalonDisplayModel } from '../message-card.utils.ts';
 
 const observedPopoverAnchors: Array<HTMLElement | null> = [];
@@ -65,7 +67,10 @@ function buildMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
   } as InboxMessage;
 }
 
-async function renderCard(overrides: Partial<ComponentProps<typeof MessageCard>> = {}) {
+async function renderCard(
+  overrides: Partial<ComponentProps<typeof MessageCard>> = {},
+  access: { canWrite?: boolean; canDelete?: boolean; dutyExcludeMenuEnabled?: boolean } = {},
+) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -96,7 +101,24 @@ async function renderCard(overrides: Partial<ComponentProps<typeof MessageCard>>
     onDelete: vi.fn(),
     ...overrides,
   } as ComponentProps<typeof MessageCard>;
-  await act(async () => root.render(<MessageCard {...props} />));
+  const card = <MessageCard {...props} />;
+  await act(async () =>
+    root.render(
+      access.canWrite === undefined &&
+        access.canDelete === undefined &&
+        access.dutyExcludeMenuEnabled === undefined ? (
+        card
+      ) : (
+        <DutyExcludeMenuContext.Provider value={access.dutyExcludeMenuEnabled ?? true}>
+          <MessageWriteAccessContext.Provider value={access.canWrite ?? true}>
+            <MessageDeleteAccessContext.Provider value={access.canDelete ?? false}>
+              {card}
+            </MessageDeleteAccessContext.Provider>
+          </MessageWriteAccessContext.Provider>
+        </DutyExcludeMenuContext.Provider>
+      ),
+    ),
+  );
   const view = { container, root, props };
   rendered.push(view);
   return view;
@@ -198,6 +220,129 @@ afterEach(() => {
 });
 
 describe('MessageCard', () => {
+  // Regression: https://github.com/echoua/echo/issues/3569
+  it('does not expose deletion without independent delete access', async () => {
+    const view = await renderCard(
+      { displayMode: 'analysis', onEditDetails: vi.fn(), onDelete: vi.fn() },
+      { canDelete: false },
+    );
+    const overflow = view.container.querySelector('button[aria-label="Більше дій"]');
+    if (!(overflow instanceof HTMLButtonElement)) throw new Error('overflow button not found');
+    await click(overflow);
+    expect(document.body.textContent).toContain('Редагувати');
+    expect(document.body.textContent).not.toContain('Видалити');
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3569
+  it('keeps delete access independent from message write access', async () => {
+    const onDelete = vi.fn();
+    const view = await renderCard(
+      { displayMode: 'analysis', onDelete },
+      { canWrite: false, canDelete: true },
+    );
+    const overflow = view.container.querySelector('button[aria-label="Більше дій"]');
+    if (!(overflow instanceof HTMLButtonElement)) throw new Error('overflow button not found');
+    await click(overflow);
+    const deleteButton = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
+    ).find((item) => item.textContent?.trim() === 'Видалити');
+    if (deleteButton == null) throw new Error('missing Видалити');
+    await click(deleteButton);
+    expect(onDelete).toHaveBeenCalledOnce();
+    expect(document.body.textContent).not.toContain('Редагувати');
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3568
+  it('keeps Cyber group exclusion without disclosing post exclusion data', async () => {
+    const view = await renderCard({
+      displayMode: 'duty',
+      msg: buildMessage({ post: 'HIDDEN-POST' }),
+    });
+    const exclude = view.container.querySelector('button[aria-label="Виключити…"]');
+    if (!(exclude instanceof HTMLButtonElement)) throw new Error('exclude button not found');
+    await click(exclude);
+    expect(document.body.textContent).toContain('Виключити групу');
+    expect(document.body.textContent).not.toContain('Виключити пост');
+    expect(document.body.textContent).not.toContain('HIDDEN-POST');
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3568
+  it('disables Duty exclusion without removing other card actions', async () => {
+    const view = await renderCard({}, { dutyExcludeMenuEnabled: false });
+    expect(view.container.querySelector('button[aria-label="Виключити…"]')).toBeNull();
+    expect(view.container.querySelector('button[aria-label="Копіювати…"]')).not.toBeNull();
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3569
+  it.each(['full', 'compact'] as const)(
+    'shows only applied inert viewer tags in %s layout',
+    async (tagsLayout) => {
+      const onToggleTag = vi.fn();
+      const view = await renderCard(
+        {
+          tagsLayout,
+          msg: buildMessage({ tags: [3], inboxTags: [] }),
+          onToggleTag,
+          onEditDetails: vi.fn(),
+        },
+        { canWrite: false },
+      );
+      const tag = view.container.querySelector('[data-message-card-tag-id="3"]');
+      expect(tag).not.toBeNull();
+      expect(tag?.querySelector('button')).toBeNull();
+      await click(tag as HTMLElement);
+      expect(onToggleTag).not.toHaveBeenCalled();
+    },
+  );
+
+  // Regression: https://github.com/echoua/echo/issues/3569
+  it.each([false, true])('preserves bot-tag visibility for viewers (%s)', async (hideBotTags) => {
+    const view = await renderCard(
+      {
+        hideBotTags,
+        tagsMap: {
+          3: { id: 3, label: 'переміщення', isPalitra: false } as Tag,
+          4: { id: 4, label: 'бот', isPalitra: false } as Tag,
+        },
+        msg: buildMessage({
+          inboxTags: [
+            { id: 1, tagId: 3, confidence: 1, login: 'other', model: null, organismId: null },
+            { id: 2, tagId: 4, confidence: 1, login: null, model: 'bot', organismId: null },
+          ],
+        }),
+      },
+      { canWrite: false },
+    );
+    expect(view.container.querySelector('[data-message-card-tag-id="3"]')).not.toBeNull();
+    expect(view.container.querySelector('[data-message-card-tag-id="4"]') != null).toBe(
+      !hideBotTags,
+    );
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3569
+  it('keeps attachment downloads available to viewers without edit actions', async () => {
+    const view = await renderCard(
+      {
+        onEditDetails: vi.fn(),
+        msg: buildMessage({
+          media: ['first', 'second'].map((id) => ({
+            id,
+            href: `/api/messenger/media/${id}`,
+            contentType: 'text/plain',
+            fileName: `${id}.txt`,
+            sizeBytes: 1,
+          })) as InboxMessage['media'],
+        }),
+      },
+      { canWrite: false },
+    );
+    await openOverflowMenu(view.container);
+    expect(
+      document.body.querySelector('a[href="/api/rer-importer/messages/42/attachments.zip"]'),
+    ).not.toBeNull();
+    expect(document.body.textContent).not.toContain('Редагувати');
+  });
+
   // Regression: https://github.com/echoua/echo/issues/3461
   it('ECHO-3461 hides device metadata without device access', async () => {
     const view = await renderHeader(false);

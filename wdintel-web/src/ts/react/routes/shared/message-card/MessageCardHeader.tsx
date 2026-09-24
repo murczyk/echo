@@ -1,3 +1,5 @@
+import { AuthorLabel } from '../../../components/AuthorLabel';
+import { useRadioFeatures } from '../RadioFeatures';
 import MessageIcon from '@mui/icons-material/Message';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import AccountCircleOutlinedIcon from '@mui/icons-material/AccountCircleOutlined';
@@ -232,11 +234,7 @@ function ActionIconsRow({
     useState<MenuAnchorPosition | null>(null);
   const [stackedLayout, setStackedLayout] = useState(false);
   const canShowPrimaryActions =
-    !readOnly &&
-    isPresent(onBookmark) &&
-    isPresent(onImportant) &&
-    isPresent(onCopyText) &&
-    isPresent(onCopyFreq);
+    !readOnly && isPresent(onBookmark) && isPresent(onImportant) && isPresent(onCopyText);
   const canShowExcludeMenu =
     !readOnly &&
     displayMode === 'duty' &&
@@ -244,7 +242,8 @@ function ActionIconsRow({
     excludeMenuOptions.length > 0;
   const canShowNavigationMenu = !readOnly && navigationMenuItems.length > 0;
   const navigationMenuHasNetwork = navigationMenuItems.some((item) => item.kind === 'network');
-  const hasFrequencyCopy = isPresent(msg.freq) && String(msg.freq).trim() !== '';
+  const hasFrequencyCopy =
+    isPresent(onCopyFreq) && isPresent(msg.freq) && String(msg.freq).trim() !== '';
   const hasCopyTextWithNetwork = isPresent(onCopyTextWithNetwork);
   const hasCopyTextWithNetworkAndNote = isPresent(onCopyTextWithNetworkAndNote);
   const hasEtalonCopy = isPresent(onCopyEtalon);
@@ -772,11 +771,13 @@ function MetaLine({
   title,
   text,
   iconKind,
+  children,
 }: {
   icon: JSX.Element;
   title: string;
   text: string;
   iconKind?: 'group';
+  children?: ReactNode;
 }) {
   return (
     <div className="message-card-header-meta" data-message-card-metadata-item="true" title={text}>
@@ -789,7 +790,7 @@ function MetaLine({
       >
         {icon}
       </span>
-      <HeaderText nowrap>{text}</HeaderText>
+      <HeaderText nowrap>{children ?? text}</HeaderText>
     </div>
   );
 }
@@ -928,6 +929,7 @@ export function MessageCardMetadata({
   etalonDisplayModel: MessageCardEtalonDisplayModel;
   metadataTrigger?: ReactNode;
 }) {
+  const radioFeaturesAllowed = useRadioFeatures();
   const canUseMessageDevices = useMessageDeviceAccess();
   const locationDisplayValue = etalonDisplayModel.locationDisplayValue;
   const showTopGridLocation =
@@ -946,9 +948,11 @@ export function MessageCardMetadata({
           />
         ) : null}
         {isPresent(senderName) ? (
-          <MetaLine icon={<AccountCircleOutlinedIcon />} title="Відправник" text={senderName} />
+          <MetaLine icon={<AccountCircleOutlinedIcon />} title="Відправник" text={senderName}>
+            <AuthorLabel accountId={msg.sender} fallback={senderName} />
+          </MetaLine>
         ) : null}
-        {isPresent(msg.freq) ? (
+        {radioFeaturesAllowed && isPresent(msg.freq) ? (
           <div className="message-card-header-meta" data-message-card-metadata-item="true">
             <span
               className="message-card-header-meta__icon"
@@ -1029,7 +1033,7 @@ function MessageCardHeaderComponent({
     analysisHref,
   );
   const dateTimeBlock = (
-    <div className="inline-flex flex-wrap items-center gap-2">
+    <div className="message-card-header-timestamps inline-flex flex-wrap items-center">
       {messageTimeBasis === 'creation' ? (
         <div
           className="message-card-timestamp-item"
@@ -1061,6 +1065,7 @@ function MessageCardHeaderComponent({
     <div
       ref={headerRowRef}
       data-message-card-header-row="true"
+      data-message-card-display-mode={displayMode}
       className="flex w-full items-center"
       style={{
         columnGap: headerColumnGap,
@@ -1073,7 +1078,7 @@ function MessageCardHeaderComponent({
         </div>
       </div>
       {!readOnly || isPresent(attachmentArchiveDownload) ? (
-        <div className="flex items-center justify-center">
+        <div className="message-card-header-actions flex items-center justify-center">
           <ActionIconsRow
             id={id}
             msg={msg}
@@ -1106,7 +1111,7 @@ function MessageCardHeaderComponent({
         </div>
       ) : null}
       <div
-        className="flex min-w-0 flex-1 items-center justify-end"
+        className="message-card-header-end flex min-w-0 flex-1 items-center justify-end"
         style={{ paddingRight: `${rightInsetPx}px` }}
       >
         <div ref={rightHeaderContentRef} data-message-card-header-right="true">

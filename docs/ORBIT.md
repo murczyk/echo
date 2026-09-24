@@ -190,20 +190,23 @@ manual proposals are not applied.
 This workflow builds separate normalized identity-value sets from every ORBIT
 echelon: other, team/crew, section, squad, platoon, company, battalion,
 regiment, brigade, division, corps, army, group-of-armies, and army-region. It
-first moves brigade values stored as SIGINT regiments and army values stored as
-corps. It then validates each SIGINT army, group-of-armies
-(`military_district`), and army-region field in a separate pass. A value found
-in exactly one other ORBIT echelon is moved there; a value absent from every
-collected ORBIT echelon is removed. Values that match their current echelon or
-are ambiguous between multiple echelons are left unchanged.
+first moves brigade values stored as SIGINT regiments or divisions and army
+values stored as corps. When a regiment field contains a uniquely identifiable
+ORBIT regiment followed by an ORBIT brigade, such as `109 осп 132 омсбр`,
+it retains the regiment part and moves the brigade part to the brigade field. It
+then validates each SIGINT army, group-of-armies (`military_district`), and
+army-region field in a separate pass. A value found in exactly one other ORBIT
+echelon is moved there; a value absent from every collected ORBIT echelon is
+removed. Values that match their current echelon or are ambiguous between
+multiple echelons are left unchanged.
 
-Each move clears the source echelon and replaces the destination echelon with
-that source value. When the destination contains the reciprocal misplaced
-value, the two values are swapped atomically. Other occupied destinations are
-updated only when their existing values can be classified and safely
-relocated; unknown or ambiguous values are preserved by skipping the move. The
-SIGINT unit name is not changed by this workflow. Manual mode presents each
-incorrect source field in its own review dialog.
+Each single-value move clears the source echelon and replaces the destination
+echelon with that source value. When the destination contains the reciprocal
+misplaced value, the two values are swapped atomically. Other occupied
+destinations are updated only when their existing values can be classified and
+safely relocated; unknown or ambiguous values are preserved by skipping the
+move. The SIGINT unit name is not changed by this workflow. Manual mode presents
+each incorrect source field in its own review dialog.
 
 Automatic and manual modes can target active SIGINT units, inactive SIGINT
 units, or both. Manual mode shows the current and proposed values for both

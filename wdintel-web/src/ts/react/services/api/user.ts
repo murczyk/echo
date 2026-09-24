@@ -5,6 +5,8 @@ import { getJson, postJson, postVoid } from './client';
 type UserLike = {
   id?: string;
   name?: string;
+  displayName?: string | null;
+  display_name?: string | null;
   roles?: string[] | null;
   sigintZoneId?: number | null;
   sigint_zone_id?: number | null;
@@ -32,6 +34,7 @@ function normalizeUser(raw: UserLike | null | undefined): User {
   return {
     id: raw?.id ?? '',
     name: raw?.name ?? '',
+    displayName: raw?.displayName ?? raw?.display_name ?? null,
     roles: raw?.roles ?? [],
     sigintZoneId: raw?.sigintZoneId ?? raw?.sigint_zone_id ?? null,
     organismId: raw?.organismId ?? raw?.organism_id ?? null,

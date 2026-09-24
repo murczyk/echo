@@ -249,3 +249,23 @@
 - **Source implementation:** `routes/shared/message-card/` and attachment-preview/coordinate components.
 - **Existing test(s):** `wdintel-web/tests/e2e/message-card-media-preview.spec.ts`
 - **Original Echo issue/PR, if known:** [#3092](https://github.com/echoua/echo/issues/3092), [PR #3482](https://github.com/echoua/echo/pull/3482), [#3324](https://github.com/echoua/echo/issues/3324), [#3368](https://github.com/echoua/echo/issues/3368), [#3380](https://github.com/echoua/echo/issues/3380), [#3453](https://github.com/echoua/echo/issues/3453), [#3460](https://github.com/echoua/echo/issues/3460).
+
+## Duty header regression
+
+- **Behavior ID:** `react-message-card-duty-header`
+- **Expected observable result:** the narrow Duty header remains compact and right-aligned without duplicate timestamp or tag controls.
+- **Existing test(s):** `wdintel-web/tests/e2e/message-card-duty-header.spec.ts`
+- **Original Echo issue/PR, if known:** [#3570](https://github.com/echoua/echo/issues/3570)
+
+## Message-card authorization
+
+- **Behavior ID:** `react-message-card-authorization`
+- **Expected observable result:** write and delete permissions remain independent; viewer cards retain permitted downloads without mutation controls, and Cyber group exclusion does not disclose post exclusion data.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx`
+- **Original Echo issue/PR, if known:** [#3568](https://github.com/echoua/echo/issues/3568), [#3569](https://github.com/echoua/echo/issues/3569)
+
+## Attachment replacement transition
+
+- **Behavior ID:** `react-message-card-attachment-replacement`
+- **Expected observable result:** an attachment replacement is immediately visible without an outgoing animation layer.
+- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.

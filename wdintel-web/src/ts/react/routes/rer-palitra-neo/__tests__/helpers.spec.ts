@@ -112,6 +112,25 @@ function makeRow(
 }
 
 describe('rer-palitra helpers', () => {
+  // Regression: https://github.com/echoua/echo/issues/3568
+  it('permits Cyber palitra management only within its existing scope', () => {
+    const user = makeUser({ roles: ['Cyber'] });
+    expect(getAvailableAccessTypes(user, makeScope())).toEqual(['logins', 'organisms']);
+    expect(canEditScopedLogins(user)).toBe(false);
+    expect(canModifyPalitra(user, makePalitra(1, null))).toBe(true);
+    expect(canModifyPalitra(user, makePalitra(1, null, 'other'))).toBe(false);
+    expect(
+      applyRestrictedAccess(makeForm({ logins: ['other'] }), user, makeScope()).logins,
+    ).toEqual(['operator']);
+    expect(
+      applyRestrictedAccess(
+        makeForm({ accessType: 'organisms', organismIds: [99] }),
+        user,
+        makeScope(),
+      ).organismIds,
+    ).toEqual([5]);
+  });
+
   it('derives available access types from roles and scope', () => {
     expect(getAvailableAccessTypes(makeUser({ roles: ['Admin'] }), makeScope())).toEqual([
       'logins',

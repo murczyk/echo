@@ -842,6 +842,8 @@ export const FeedColumnContent = memo(
         className="flex-1 overflow-hidden min-h-0 p-0 flex flex-col h-full"
         sx={{
           mt: '-1px',
+          bgcolor: narrowScreen ? 'transparent' : undefined,
+          border: narrowScreen ? 0 : undefined,
           borderTopLeftRadius: 0,
           borderTopRightRadius: 0,
           position: 'relative',
@@ -860,7 +862,6 @@ export const FeedColumnContent = memo(
             minHeight: narrowScreen ? 0 : 400,
             overflowY: 'auto',
             overflowX: 'hidden',
-            pl: '12px',
             scrollbarGutter: 'stable',
             boxSizing: 'border-box',
           }}

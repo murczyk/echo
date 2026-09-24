@@ -268,6 +268,7 @@ async fn stage_four_scoped_search_filters_paths_and_cursor() {
     assert_stage_four_duplicate_pagination(repository, &reports_scope, &tree)
         .await;
     assert_stage_four_query_counts(db, &reports_scope).await;
+    assert_full_page_path_components(repository, &tree, timestamp).await;
 
     clear_file_entries(db).await;
 }
@@ -1078,6 +1079,118 @@ async fn assert_stage_four_subtree_and_paths(
             "nested.log".to_string(),
         ]
     );
+}
+
+async fn assert_full_page_path_components(
+    repository: &FileRegistryDb,
+    tree: &StageTwoTree,
+    timestamp: NaiveDateTime,
+) {
+    let db = repository.connection();
+    let second_root_id = Uuid::now_v7();
+    let second_root_path = uuid_label(second_root_id);
+    let mut second_root = root_entry(second_root_id, tree.device_id, timestamp);
+    second_root.name = Set("D:\\".to_string());
+    insert_file_entry(db, second_root).await;
+
+    let mut entries = Vec::new();
+    let mut expected_paths = Vec::new();
+    for index in 0..DEVICE_FILE_PAGE_MAX_LIMIT {
+        let name = format!("path-context-{index}.log");
+        let (parent_id, parent_path, absolute_path, components) =
+            if index % 2 == 0 {
+                (
+                    tree.archive_id,
+                    tree.archive_path.as_str(),
+                    format!("C:\\reports\\archive\\{name}"),
+                    vec![
+                        "reports".to_string(),
+                        "archive".to_string(),
+                        name.clone(),
+                    ],
+                )
+            } else {
+                (
+                    second_root_id,
+                    second_root_path.as_str(),
+                    format!("D:\\{name}"),
+                    vec![name.clone()],
+                )
+            };
+        let entry = crate::file_registry::test_support::insert_entry(
+            db,
+            file_entry_row(
+                Uuid::now_v7(),
+                tree.device_id,
+                parent_id,
+                parent_path,
+                &name,
+                &absolute_path,
+                timestamp,
+            ),
+        )
+        .await;
+        entries.push(query::model::map_tree_model(entry).unwrap());
+        expected_paths.push(components);
+    }
+
+    assert_eq!(
+        query::load_path_components(repository, &entries)
+            .await
+            .unwrap(),
+        expected_paths,
+    );
+    assert_path_components_reject_missing_rows(repository, tree, &entries[0])
+        .await;
+}
+
+async fn assert_path_components_reject_missing_rows(
+    repository: &FileRegistryDb,
+    tree: &StageTwoTree,
+    entry: &TreeEntry,
+) {
+    let TreeEntry::File(file) = entry else {
+        panic!("expected file fixture");
+    };
+    let mut missing_file = file.clone();
+    missing_file.file_id = Uuid::now_v7();
+    missing_file.hierarchy_path =
+        format!("{}.{}", tree.archive_path, uuid_label(missing_file.file_id));
+    assert!(matches!(
+        query::load_path_components(
+            repository,
+            &[TreeEntry::File(missing_file)]
+        )
+        .await,
+        Err(FilesystemError::NotFound)
+    ));
+
+    let mut missing_parent = file.clone();
+    missing_parent.hierarchy_path = format!(
+        "{}.{}.{}",
+        uuid_label(tree.root_id),
+        uuid_label(Uuid::now_v7()),
+        uuid_label(file.file_id),
+    );
+    assert!(matches!(
+        query::load_path_components(
+            repository,
+            &[TreeEntry::File(missing_parent)]
+        )
+        .await,
+        Err(FilesystemError::Invariant("path_context_chain_gap"))
+    ));
+
+    let mut other_device_file = file.clone();
+    other_device_file.device_id = tree.other_device_id;
+    assert!(matches!(
+        query::load_path_components(
+            repository,
+            &[TreeEntry::File(other_device_file)]
+        )
+        .await,
+        Err(FilesystemError::Invariant("path_context_chain_gap"))
+    ));
 }
 
 async fn assert_stage_four_filters(

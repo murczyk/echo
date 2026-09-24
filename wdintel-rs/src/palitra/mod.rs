@@ -18,7 +18,7 @@ use crate::palitra::bl::{
 use crate::palitra::highlight_blacklist::counts_by_palitra_ids;
 use crate::palitra::types::*;
 use crate::types::*;
-use crate::users::{ensure_rer_role, has_role, login_id_from_identity};
+use crate::users::{ensure_base_role, has_role, login_id_from_identity};
 use crate::utils::multipart;
 use actix_multipart::Multipart;
 use actix_web::post;
@@ -560,7 +560,7 @@ pub async fn analyze_kmz(
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
 ) -> Result<Json<AnalyzeKmzResponse>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    ensure_base_role(&env.dbx, &user).await.context(h!())?;
 
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let raw_filename = field
@@ -1077,7 +1077,7 @@ pub async fn list_all_palitras(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<Palitra>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    ensure_base_role(&env.dbx, &user).await.context(h!())?;
     let login = login_id_from_identity(&user)?;
     let palitra = bl::list_all_palitras(login, &env.dbx).await.context(h!())?;
     Ok(Json(palitra))
@@ -1088,7 +1088,7 @@ pub async fn list_all_palitras_v2(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<PalitraReadV2>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    ensure_base_role(&env.dbx, &user).await.context(h!())?;
     let login = login_id_from_identity(&user)?;
     let palitra = bl::list_all_palitras_v2(login, &env.dbx)
         .await
@@ -1101,7 +1101,7 @@ pub async fn list_map_palitras_v2(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<PalitraReadV2>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    ensure_base_role(&env.dbx, &user).await.context(h!())?;
     let login = login_id_from_identity(&user)?;
     let palitra = bl::list_map_palitras_v2(login, &env.dbx)
         .await
@@ -1114,7 +1114,7 @@ pub async fn list_all_palitras_detailed(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<PalitraDetails>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    ensure_base_role(&env.dbx, &user).await.context(h!())?;
     let login = login_id_from_identity(&user)?;
     let palitra = bl::list_all_palitras_detailed(login, &env.dbx)
         .await
@@ -1128,7 +1128,7 @@ pub async fn read_palitra_goi_sync_history(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<i64>,
 ) -> Result<Json<Vec<PalitraChangelogEntry>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    ensure_base_role(&env.dbx, &user).await.context(h!())?;
     let login = login_id_from_identity(&user)?;
     let palitra_id = path.into_inner();
     let is_admin = is_palitra_admin(&env, &login).await.c(h!())?;
@@ -1157,7 +1157,7 @@ pub async fn read_palitra_v2(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<i64>,
 ) -> Result<Json<PalitraReadV2>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    ensure_base_role(&env.dbx, &user).await.context(h!())?;
     let login = login_id_from_identity(&user)?;
     let palitra_id = path.into_inner();
     let palitra = bl::read_palitra_v2(login, palitra_id, &env.dbx)
@@ -1172,7 +1172,7 @@ pub async fn read_palitra_preview_v2(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<i64>,
 ) -> Result<Json<PalitraReadV2>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    ensure_base_role(&env.dbx, &user).await.context(h!())?;
     let login = login_id_from_identity(&user)?;
     let palitra_id = path.into_inner();
     let palitra = bl::read_palitra_preview_v2(login, palitra_id, &env.dbx)
@@ -1187,7 +1187,7 @@ pub async fn list_palitra_points(
     env: actix_web::web::Data<Env>,
     req: Json<PalitraPointsReq>,
 ) -> Result<Json<Vec<PalitraPoints>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    ensure_base_role(&env.dbx, &user).await.context(h!())?;
     let login = login_id_from_identity(&user)?;
     let req = req.into_inner();
     let points =
@@ -1203,7 +1203,7 @@ pub async fn suggest_palitra_point_labels(
     env: actix_web::web::Data<Env>,
     req: Json<PalitraPointLabelSuggestReq>,
 ) -> Result<Json<Vec<PalitraPointLabelSuggestRsp>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    ensure_base_role(&env.dbx, &user).await.context(h!())?;
     let login = login_id_from_identity(&user)?;
     let req = req.into_inner();
     let cache_key = palitra_suggest_cache_key(&login, &req);
@@ -1233,7 +1233,7 @@ pub async fn search_palitra_points(
     env: actix_web::web::Data<Env>,
     req: Json<PalitraSearchPointsReq>,
 ) -> Result<Json<Vec<PalitraPoints>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    ensure_base_role(&env.dbx, &user).await.context(h!())?;
     let login = login_id_from_identity(&user)?;
     let req = req.into_inner();
     let cache_key = palitra_search_cache_key(&login, &req);
@@ -1481,7 +1481,7 @@ pub async fn download_palitras(
     env: actix_web::web::Data<Env>,
     req: Json<PalitraDownloadReq>,
 ) -> Result<HttpResponse, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    ensure_base_role(&env.dbx, &user).await.context(h!())?;
     let login = login_id_from_identity(&user)?;
     let palitra_ids = req
         .into_inner()
@@ -2144,8 +2144,9 @@ async fn ensure_palitra_permissions(
     }
 
     let is_admin = is_palitra_admin(env, login).await.c(h!())?;
-    let is_rer = has_role_or_false(env, login, "Rer").await.c(h!())?;
-    let caller_login_name = if is_rer {
+    let is_rer_or_cyber =
+        has_rer_or_cyber_role_or_false(env, login).await.c(h!())?;
+    let caller_login_name = if is_rer_or_cyber {
         crate::users::login_names_by_ids(&env.dbx, vec![*login])
             .await
             .c(h!())?
@@ -2159,29 +2160,31 @@ async fn ensure_palitra_permissions(
             if is_admin {
                 return Ok(());
             }
-            if !is_rer {
-                bail!("Only Rer may manage login-scoped palitra");
+            if !is_rer_or_cyber {
+                bail!("Only Rer or Cyber may manage login-scoped palitra");
             }
             let all_self = logins.iter().all(|login_id| {
                 Uuid::parse_str(login_id).ok().as_ref() == Some(login)
                     || caller_login_name.as_deref() == Some(login_id.as_str())
             });
             if !all_self {
-                bail!("Rer may only manage palitra scoped to own login");
+                bail!(
+                    "Rer or Cyber may only manage palitra scoped to own login"
+                );
             }
         }
         PalitraAccess::ByOrganisms { organism_ids } => {
             if is_admin {
                 return Ok(());
             }
-            if !is_rer {
-                bail!("Only Rer may manage organism-scoped palitra");
+            if !is_rer_or_cyber {
+                bail!("Only Rer or Cyber may manage organism-scoped palitra");
             }
             let permitted: Vec<_> = scope.organism_ids.to_vec();
             let all_known =
                 organism_ids.iter().all(|id| permitted.contains(id));
             if !all_known {
-                bail!("Rer may only manage palitra scoped to own organism");
+                bail!("Rer or Cyber may only manage palitra scoped to own organism");
             }
         }
         PalitraAccess::ByAor { aor_ids: _ } => {
@@ -2202,12 +2205,12 @@ async fn ensure_palitra_management_permission(
         return Ok(());
     }
 
-    if has_role_or_false(env, login, "Rer").await.c(h!())? {
+    if has_rer_or_cyber_role_or_false(env, login).await.c(h!())? {
         return Ok(());
     }
 
     Err(AppError::Forbidden(
-        "Only Admin or Rer may manage palitra".into(),
+        "Only Admin, Rer or Cyber may manage palitra".into(),
     ))
 }
 
@@ -2258,6 +2261,17 @@ async fn is_palitra_admin(
     login: &uuid::Uuid,
 ) -> Result<bool, AppError> {
     has_role_or_false(env, login, "Admin").await
+}
+
+async fn has_rer_or_cyber_role_or_false(
+    env: &Data<Env>,
+    login: &uuid::Uuid,
+) -> Result<bool, AppError> {
+    match crate::users::ensure_base_role_by_id(&env.dbx, login).await {
+        Ok(()) => Ok(true),
+        Err(AppError::Forbidden(_)) => Ok(false),
+        Err(err) => Err(err),
+    }
 }
 
 async fn has_role_or_false(
@@ -3328,6 +3342,56 @@ fn ensure_unique_zip_entry_name(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[serial_test::serial]
+    #[tokio::test]
+    async fn issue_3568_cyber_palitra_management_preserves_scope() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let login = crate::functest::tests::find_test_login(&env.dbx)
+            .await
+            .unwrap();
+        let mut login = login.into_active_model();
+        login.roles = Set(serde_json::json!(["Cyber"]));
+        let login = login.update(&env.dbx).await.unwrap();
+        let scope = load_user_scope(&env.dbx, &login.id).await.unwrap();
+        assert!(!scope.organism_ids.is_empty());
+        let env = Data::from(env);
+        ensure_palitra_management_permission(&env, &login.id)
+            .await
+            .unwrap();
+        for access in [
+            PalitraAccess::ByLogins {
+                logins: vec![login.id.to_string()],
+            },
+            PalitraAccess::ByLogins {
+                logins: vec![login.login.clone()],
+            },
+            PalitraAccess::ByOrganisms {
+                organism_ids: scope.organism_ids.clone(),
+            },
+        ] {
+            ensure_palitra_permissions(&env, &login.id, &access, &scope)
+                .await
+                .unwrap();
+        }
+        for access in [
+            PalitraAccess::ByLogins {
+                logins: vec![Uuid::now_v7().to_string()],
+            },
+            PalitraAccess::ByLogins { logins: vec![] },
+            PalitraAccess::ByOrganisms {
+                organism_ids: vec![i64::MAX],
+            },
+            PalitraAccess::ByAor { aor_ids: vec![1] },
+        ] {
+            assert!(ensure_palitra_permissions(
+                &env, &login.id, &access, &scope
+            )
+            .await
+            .is_err());
+        }
+    }
 
     #[serial_test::serial]
     #[tokio::test]

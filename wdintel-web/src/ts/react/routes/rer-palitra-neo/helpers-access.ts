@@ -10,7 +10,7 @@ import {
 } from '../../../../Bindings';
 
 import { AccessType, KmzColorOption, PalitraFormState } from './types';
-import { hasAnyRole, hasRole } from '../../utils/roles';
+import { hasAnyRole, hasRole, hasRerOrCyber } from '../../utils/roles';
 
 export const DEFAULT_COLOR_HEX = '#00bcd4';
 
@@ -28,8 +28,8 @@ export function isEditor(user: User | null): boolean {
   return hasAnyRole(user?.roles, ['UnitsEditor', 'CallsignsEditor']);
 }
 
-export function isRer(user: User | null): boolean {
-  return hasRole(user?.roles, 'Rer');
+export function isRerOrCyber(user: User | null): boolean {
+  return hasRerOrCyber(user?.roles);
 }
 
 export function canEditScopedLogins(user: User | null): boolean {
@@ -37,7 +37,7 @@ export function canEditScopedLogins(user: User | null): boolean {
 }
 
 function canUseLoginAccess(user: User | null): boolean {
-  return isAdmin(user) || isRer(user);
+  return isAdmin(user) || isRerOrCyber(user);
 }
 
 function canUseOrganismAccess(user: User | null, myScope: MyScope | null): boolean {
@@ -49,7 +49,7 @@ function canUseAorAccess(user: User | null): boolean {
 }
 
 export function canManagePalitraAccess(user: User | null): boolean {
-  return isAdmin(user) || isRer(user);
+  return isAdmin(user) || isRerOrCyber(user);
 }
 
 export function canModifyPalitra(user: User | null, palitra: Palitra): boolean {

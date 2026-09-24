@@ -1,5 +1,6 @@
 import { Backdrop, Box, ButtonBase, CircularProgress, Skeleton, Tooltip } from '@mui/material';
 import { isPresent } from '../../utils/misc';
+import { useCallback, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
 import { FeedColumn, type FeedColumnHandle } from './FeedColumn';
@@ -11,6 +12,7 @@ import {
 import type { MessageFeedState } from './utils';
 import { MAX_MESSAGE_FEEDS } from './utils';
 import { CreateMessageFab } from '../shared/manage-message/CreateMessageFab';
+import { DUTY_WORKSPACE_CREATE_MESSAGE_RIGHT_INSET } from '../shared/manage-message/floating-control-geometry';
 
 function dutyFeedColumnMaxWidth(feedCount: number, narrow: boolean): string {
   if (narrow) return '100%';
@@ -279,6 +281,18 @@ export function RerDutyNeoWorkspace({
   onSelectFeed,
   showLoadingBackdrop,
 }: RerDutyNeoWorkspaceProps) {
+  const [feedsWithOpenPanels, setFeedsWithOpenPanels] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const handlePanelOpenChange = useCallback((feedId: string, panelOpen: boolean) => {
+    setFeedsWithOpenPanels((current) => {
+      if (current.has(feedId) === panelOpen) return current;
+      const next = new Set(current);
+      if (panelOpen) next.add(feedId);
+      else next.delete(feedId);
+      return next;
+    });
+  }, []);
   const activeFeedIndex = isPresent(activeFeedId)
     ? messageFeeds.findIndex((feed) => feed.id === activeFeedId)
     : -1;
@@ -457,6 +471,7 @@ export function RerDutyNeoWorkspace({
                         columnRefsRef.current[narrowActiveFeed.id] = el;
                       }}
                       column={narrowActiveColumn}
+                      onPanelOpenChange={handlePanelOpenChange}
                     />
                   </Box>
                 ) : null
@@ -503,6 +518,7 @@ export function RerDutyNeoWorkspace({
                                 : undefined,
                           },
                         }}
+                        onPanelOpenChange={handlePanelOpenChange}
                       />
                     );
                   })}
@@ -512,7 +528,12 @@ export function RerDutyNeoWorkspace({
           </Box>
         </Box>
       )}
-      <CreateMessageFab onClick={openCreateMessageComposer} rightInset={5} />
+      {feedsWithOpenPanels.size === 0 ? (
+        <CreateMessageFab
+          onClick={openCreateMessageComposer}
+          rightInset={DUTY_WORKSPACE_CREATE_MESSAGE_RIGHT_INSET}
+        />
+      ) : null}
 
       <Backdrop
         open={showLoadingBackdrop}

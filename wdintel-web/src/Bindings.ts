@@ -1644,6 +1644,7 @@ export type Confirm2faReq = {
 export type User = {
   id: string;
   name: string;
+  displayName: string | null;
   roles: Array<string>;
   sigintZoneId: number | null;
   organismId: number | null;
@@ -1653,6 +1654,26 @@ export type User = {
   goiHost: string | null;
   goiIntegrations: Array<GoiUserIntegration>;
   lastReleaseSeen: string | null;
+};
+
+export type AuthorIdentity = {
+  id: string;
+  login: string;
+  displayName: string | null;
+  deltaLogin: string | null;
+};
+
+export type AuthorIdentitiesReq = {
+  logins: Array<string>;
+  ids: Array<string>;
+};
+
+export type AuthorIdentitiesRsp = {
+  authors: Array<AuthorIdentity>;
+};
+
+export type DisplayNameSaveReq = {
+  displayName: string | null;
 };
 
 export type GoiUserIntegration = {
@@ -1980,6 +2001,7 @@ export type DeviceFile = {
 };
 
 export type ListDeviceFileRootsReq = {
+  syncId: string | null;
   deviceId: string;
 };
 
@@ -1993,6 +2015,7 @@ export type DeviceFileSubtreeCount = {
 };
 
 export type CountDeviceFileSubtreesReq = {
+  syncId: string | null;
   deviceId: string;
   parentEntryId: string | null;
   directoryEntryIds: Array<string>;
@@ -2003,6 +2026,7 @@ export type CountDeviceFileSubtreesRsp = {
 };
 
 export type BrowseDeviceFilesReq = {
+  syncId: string | null;
   deviceId: string;
   parentEntryId: string;
   includeBreadcrumbs: boolean | null;
@@ -2020,6 +2044,7 @@ export type BrowseDeviceFilesRsp = {
 };
 
 export type SearchDeviceFilesReq = {
+  syncId: string | null;
   deviceId: string;
   scopeEntryId: string;
   nameQuery: string | null;
@@ -2053,6 +2078,7 @@ export type DeviceFileJournalEntry = {
 };
 
 export type JournalDeviceFilesReq = {
+  syncId: string | null;
   deviceId: string;
   limit: number | null;
   cursor: string | null;
@@ -2141,6 +2167,38 @@ export type SyncSummary = {
   updatedAt: string;
   completedAt: string | null;
   expiresAt: string | null;
+};
+
+export type ListDeviceSyncSessionsReq = {
+  deviceId: string;
+  createdFrom: string | null;
+  createdTo: string | null;
+  limit: number | null;
+  cursor: string | null;
+};
+
+export type ListDeviceSyncSessionsRsp = {
+  sessions: Array<SyncSummary>;
+  nextCursor: string | null;
+};
+
+export type GetDeviceSyncSessionReq = {
+  deviceId: string;
+  syncId: string;
+};
+
+export type DeviceSyncSessionSummariesReq = {
+  deviceId: string;
+  syncIds: Array<string>;
+};
+
+export type DeviceSyncSessionSummary = {
+  syncId: string;
+  analysis: DeviceAnalyticsSummaryRsp;
+};
+
+export type DeviceSyncSessionSummariesRsp = {
+  summaries: Array<DeviceSyncSessionSummary>;
 };
 
 export type BatchSummary = {
@@ -2371,6 +2429,11 @@ export type DeviceAnalyticsReq = {
   deviceId: string;
 };
 
+export type DeviceAnalyticsSummaryReq = {
+  deviceId: string;
+  syncId: string | null;
+};
+
 export type DeviceAnalyticsTagsRsp = {
   tags: Array<AnalyticsTag>;
 };
@@ -2388,6 +2451,7 @@ export type DeviceAnalyticsSummaryRsp = {
 };
 
 export type DeviceAnalyticsFilesReq = {
+  syncId: string | null;
   deviceId: string;
   tagId: string;
   limit: number | null;
@@ -3802,6 +3866,7 @@ export type ListFreqsReq = {
   sinceDateInclusiveMs: number;
   tillDateNoninclusiveMs: number;
   newOnly: boolean;
+  skipNewStatus: boolean;
   includeNonActive: boolean;
   filterFreq: string | null;
   filterUnit: string | null;
@@ -3839,6 +3904,16 @@ export type ListCallsignsByFreqsReq = {
   freqs: Array<string>;
   sinceDateInclusiveMs: number;
   tillDateNoninclusiveMs: number;
+};
+
+export type FreqCallsignSummary = {
+  count: number;
+  preview: Array<string>;
+};
+
+export type FreqCallsignPriority = {
+  callsign: string;
+  unitIds: Array<number>;
 };
 
 export type ListAltUnitByFreqsReq = {
@@ -4633,6 +4708,8 @@ export type SystemSettingsCurrentRsp = {
   showPelengDistanceToBattleline: boolean;
   hideOrbitData: boolean;
   disableBotTags: boolean;
+  dutyExcludeMenuEnabled: boolean;
+  twoFactorAuthEnabled: boolean;
 };
 
 export type SystemSettingsItem = {
@@ -4669,6 +4746,8 @@ export type SystemSettingsItem = {
   showClassicAnalysis: boolean;
   showPelengDistanceToBattleline: boolean;
   disableBotTags: boolean;
+  dutyExcludeMenuEnabled: boolean;
+  twoFactorAuthEnabled: boolean;
 };
 
 export type SystemSettingsListRsp = {
@@ -4704,6 +4783,8 @@ export type CreateSystemSettingsReq = {
   showClassicAnalysis: boolean;
   showPelengDistanceToBattleline: boolean;
   disableBotTags: boolean;
+  dutyExcludeMenuEnabled: boolean;
+  twoFactorAuthEnabled: boolean;
 };
 
 export type ActivateSystemSettingsReq = {

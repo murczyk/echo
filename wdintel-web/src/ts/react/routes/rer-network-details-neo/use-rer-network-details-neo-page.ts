@@ -27,7 +27,7 @@ import { useRerNetworkDetailsNeoPageLoad } from './use-rer-network-details-neo-p
 import { buildNetworkCallsignRelationFreqState } from './network-relations';
 import { parseDateInputExclusiveEndInTimeZone, parseDateInputInTimeZone } from '../../utils/misc';
 import { buildSelectableUnitOptions, buildUnitLookupOptions } from '../../utils/unit-search';
-import { hasRole } from '../../utils/roles';
+import { canUseRadioFeatures, hasRole } from '../../utils/roles';
 import {
   getPublicNetworkDetailsTab,
   readRequestedNetworkDetailsTab,
@@ -98,6 +98,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     () => hasRole(state.currentUser?.roles, 'Admin'),
     [state.currentUser?.roles],
   );
+  const radioFeaturesAllowed = canUseRadioFeatures(state.currentUser?.roles);
   const networkIdValue = state.network?.id ?? null;
 
   const aorOptions = useMemo(
@@ -332,15 +333,21 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
   const setActiveNetworkDetailsTab = useCallback(
     (activeNetworkDetailsTab: NetworkDetailsNeoPageState['activeNetworkDetailsTab']) => {
       setState((current) => {
+        const nextTab =
+          !canUseRadioFeatures(current.currentUser?.roles) &&
+          (activeNetworkDetailsTab === 'frequencies' ||
+            activeNetworkDetailsTab === 'direction-finding')
+            ? 'descriptions'
+            : activeNetworkDetailsTab;
         if (
-          current.activeNetworkDetailsTab === activeNetworkDetailsTab &&
+          current.activeNetworkDetailsTab === nextTab &&
           current.callsignSectionMode === 'network'
         ) {
           return current;
         }
         return {
           ...current,
-          activeNetworkDetailsTab,
+          activeNetworkDetailsTab: nextTab,
           callsignSectionMode: 'network',
         };
       });
@@ -372,10 +379,11 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
 
   useEffect(() => {
     if (networkIdValue === null) return;
-    if (state.activeNetworkDetailsTab !== 'frequencies') return;
+    if (!radioFeaturesAllowed || state.activeNetworkDetailsTab !== 'frequencies') return;
     if (state.freqsLoaded || state.freqsLoading || state.freqsError !== null) return;
     void actions.loadFrequencies(networkIdValue);
   }, [
+    radioFeaturesAllowed,
     actions.loadFrequencies,
     networkIdValue,
     state.activeNetworkDetailsTab,
@@ -451,7 +459,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
 
   useEffect(() => {
     if (networkIdValue === null) return;
-    if (state.activeNetworkDetailsTab !== 'direction-finding') return;
+    if (!radioFeaturesAllowed || state.activeNetworkDetailsTab !== 'direction-finding') return;
 
     const pelengWindowMatched =
       state.pelengPointsRequestedFrom === pelengSinceMs &&
@@ -465,6 +473,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     if (!pelengDateRangeValid) return;
     void loadPelengPoints(networkIdValue, pelengSinceMs ?? 0, pelengTillMs);
   }, [
+    radioFeaturesAllowed,
     loadPelengPoints,
     pelengDateRangeValid,
     pelengSinceMs,
@@ -510,12 +519,19 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
       return;
     }
 
+    if (!state.currentUserLoaded) return;
     const canResolveGatedTabs = state.currentUserLoaded;
-    const nextTab = resolveRequestedNetworkDetailsTab(
+    const requestedTab = resolveRequestedNetworkDetailsTab(
       requestedNetworkDetailsTab,
       canResolveGatedTabs ? canViewActivityTab : true,
       canResolveGatedTabs ? canViewRelationsTab : true,
     );
+
+    const nextTab =
+      !radioFeaturesAllowed &&
+      (requestedTab === 'frequencies' || requestedTab === 'direction-finding')
+        ? 'descriptions'
+        : requestedTab;
 
     setState((current) =>
       current.activeNetworkDetailsTab === nextTab
@@ -531,6 +547,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
   }, [
     canViewActivityTab,
     canViewRelationsTab,
+    radioFeaturesAllowed,
     requestedNetworkDetailsTab,
     state.activeNetworkDetailsTab,
     state.currentUserLoaded,

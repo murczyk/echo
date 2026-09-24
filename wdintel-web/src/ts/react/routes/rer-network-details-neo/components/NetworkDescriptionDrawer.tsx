@@ -1,3 +1,4 @@
+import { useRadioFeatures } from '../../shared/RadioFeatures';
 import {
   Box,
   Button,
@@ -76,6 +77,7 @@ function NetworkDescriptionDrawerComponent({
   const formBlocked = saving;
   const saveDisabled = saving || form.description.trim() === '';
 
+  const radioFeaturesAllowed = useRadioFeatures();
   const frequencyItems = useMemo(() => {
     return networkFreqs.map((freq) => (
       <MenuItem key={freq.id} value={String(freq.id)}>
@@ -125,23 +127,25 @@ function NetworkDescriptionDrawerComponent({
         <Stack spacing={2.5} sx={{ height: '100%' }}>
           {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
 
-          <FormControl fullWidth size="small" disabled={formBlocked}>
-            <InputLabel id="network-description-freq-label">
-              Частота (необов&apos;язково)
-            </InputLabel>
-            <Select
-              labelId="network-description-freq-label"
-              label="Частота (необов'язково)"
-              value={form.networkFreqId === null ? '' : String(form.networkFreqId)}
-              onChange={handleFrequencyChange}
-              MenuProps={NEO_SELECT_MENU_PROPS}
-            >
-              <MenuItem value="">
-                <em>Без частоти</em>
-              </MenuItem>
-              {frequencyItems}
-            </Select>
-          </FormControl>
+          {radioFeaturesAllowed ? (
+            <FormControl fullWidth size="small" disabled={formBlocked}>
+              <InputLabel id="network-description-freq-label">
+                Частота (необов&apos;язково)
+              </InputLabel>
+              <Select
+                labelId="network-description-freq-label"
+                label="Частота (необов'язково)"
+                value={form.networkFreqId === null ? '' : String(form.networkFreqId)}
+                onChange={handleFrequencyChange}
+                MenuProps={NEO_SELECT_MENU_PROPS}
+              >
+                <MenuItem value="">
+                  <em>Без частоти</em>
+                </MenuItem>
+                {frequencyItems}
+              </Select>
+            </FormControl>
+          ) : null}
 
           <TextField
             label={getTopicLabel()}

@@ -4,7 +4,7 @@ use crate::error::AppError;
 use crate::h;
 use crate::types::info;
 use crate::types::{Deserialize, Env, Serialize, ShortContext};
-use crate::users::ensure_rer_role;
+use crate::users::ensure_base_role;
 use actix_multipart::Multipart;
 use actix_web::http::header;
 use actix_web::post;
@@ -76,7 +76,7 @@ async fn convert_alpinequest_file(
     admission: crate::utils::multipart_admission::MultipartAdmission,
 ) -> Result<Json<i64>, AppError> {
     info!("convert_alpinequest_file started");
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let upload = read_payload(&mut payload).await.c(h!())?;
     let converter_url = env.config.alpine_converter_url.clone().c(h!())?;
 
@@ -159,7 +159,7 @@ async fn download_alpine_result(
     env: actix_web::web::Data<Env>,
     req: Json<AlpineDownloadResultReq>,
 ) -> Result<HttpResponse, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let res = bgtask_res::Entity::find_by_id(req.bgtask_id)
         .one(&env.dbx)
         .await

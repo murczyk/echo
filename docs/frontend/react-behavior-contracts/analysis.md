@@ -38,6 +38,20 @@
 - **Existing test(s):** `wdintel-web/src/ts/react/services/api/__tests__/ai-agent.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded.
 
+## Radio-filter access
+
+- **Behavior ID:** `react-analysis-radio-filter-access`
+- **Expected observable result:** non-Rer users do not receive frequency or network radio controls; restored radio filters and hidden tabs do not become active, while Rer access remains available after current-user reconciliation.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-rer-analysis-neo-page.spec.tsx`, `wdintel-web/src/ts/react/routes/rer-analysis-neo/components/__tests__/AnalysisFiltersPanel.spec.tsx`
+- **Original Echo issue/PR, if known:** [#3568](https://github.com/echoua/echo/issues/3568)
+
+## Analysis role-aware date defaults
+
+- **Behavior ID:** `react-analysis-role-aware-date-defaults`
+- **Expected observable result:** a bare Rer Analysis query defaults to today, while a bare non-Rer query defaults to the preceding 90-day range.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/helpers.spec.ts`, `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-rer-analysis-neo-page.spec.tsx`
+- **Original Echo issue/PR, if known:** [#3568](https://github.com/echoua/echo/issues/3568)
+
 ## Analysis query state normalization
 
 - **Status:** inferred characterization

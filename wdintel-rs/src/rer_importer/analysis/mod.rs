@@ -18,7 +18,7 @@ use crate::sigint::sender::{
 };
 use crate::types::*;
 use crate::users::{
-    ensure_rer_role, ensure_rer_role_by_id, has_any_role, has_role,
+    ensure_base_role, ensure_base_role_by_id, has_any_role, has_role,
     login_id_from_identity,
 };
 use crate::utils::string::*;
@@ -3126,7 +3126,7 @@ pub async fn rer_duty_filters_create(
     env: actix_web::web::Data<Env>,
     req: Json<RerDutyShortStateCreateReq>,
 ) -> Result<Json<RerDutyShortStateCreateRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     if rer_duty_state_has_device_names(&req.state) {
         crate::devices::access::require_message_devices(&env.dbx, &login)
@@ -3151,7 +3151,7 @@ pub async fn rer_duty_filters_get(
     env: actix_web::web::Data<Env>,
     req: Json<RerDutyShortStateGetReq>,
 ) -> Result<Json<RerDutyShortStateGetRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     let req = req.into_inner();
     let mut redis = env.redis.clone();
@@ -3474,7 +3474,7 @@ pub async fn summary_table_freq(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<SummaryTableFreq>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     Ok(Json(summary_table_freq_1(&user, &env, &req).await.c(h!())?))
 }
 
@@ -5208,7 +5208,7 @@ async fn launch_analysis_export_task(
     file_name: Option<String>,
     content_type: Option<String>,
 ) -> Result<Json<i64>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
@@ -5275,7 +5275,7 @@ async fn correlated_freqs(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<CorrelatedFreqsRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
@@ -5649,7 +5649,7 @@ pub async fn edit_freq_unit_name(
     env: actix_web::web::Data<Env>,
     req: Json<EditFreqUnitNameReq>,
 ) -> Result<Json<()>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(
         &env.dbx,
@@ -5852,7 +5852,7 @@ pub async fn saved_filters_list(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<SavedFilter>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
 
     let login = login_id_from_identity(&user).c(h!())?;
     let can_use_message_devices =
@@ -5888,7 +5888,7 @@ pub async fn saved_filters_duty_list(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<SavedFilterDuty>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
 
     let login = login_id_from_identity(&user).c(h!())?;
     let can_use_message_devices =
@@ -5928,7 +5928,7 @@ pub async fn saved_filter_upsert(
     env: actix_web::web::Data<Env>,
     req: Json<SavedFilterUpsertReq>,
 ) -> Result<Json<Vec<SavedFilter>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req.req)
         .await
@@ -5963,7 +5963,7 @@ pub async fn saved_filter_duty_upsert(
     env: actix_web::web::Data<Env>,
     req: Json<SavedFilterDutyUpsertReq>,
 ) -> Result<Json<Vec<SavedFilterDuty>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     if rer_duty_filter_has_device_names(&req.req) {
         crate::devices::access::require_message_devices(&env.dbx, &login)
@@ -6042,7 +6042,7 @@ pub async fn saved_filter_rename(
     req: Json<SavedFilterRenameReq>,
     path: actix_web::web::Path<String>,
 ) -> Result<Json<()>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let filter_type = filter_type_form_path(path.into_inner().as_str())?;
     let saved_filter = sigint_saved_filter::Entity::find_by_id(req.id)
         .filter(
@@ -6068,7 +6068,7 @@ pub async fn saved_filter_delete(
     req: Json<i64>,
     path: actix_web::web::Path<String>,
 ) -> Result<Json<()>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let filter_type = filter_type_form_path(path.into_inner().as_str())?;
     let saved_filter =
         sigint_saved_filter::Entity::find_by_id(req.into_inner())
@@ -6108,7 +6108,7 @@ pub async fn bi_new_callsigns(
     env: &Env,
     req: &AnalysisStatsReq,
 ) -> Result<NewCallsignsRes, AppError> {
-    ensure_rer_role_by_id(&env.dbx, user_id).await.c(h!())?;
+    ensure_base_role_by_id(&env.dbx, user_id).await.c(h!())?;
     let group_master_keys = get_identity_sigint_groups(&env.dbx, user_id)
         .await
         .c(h!())?;
@@ -6205,7 +6205,7 @@ pub async fn bi_new_callsigns_chunked(
     final_end: ReportPeriodEnd,
     min_mentions: i64,
 ) -> Result<NewCallsignsRes, AppError> {
-    ensure_rer_role_by_id(&env.dbx, user_id).await.c(h!())?;
+    ensure_base_role_by_id(&env.dbx, user_id).await.c(h!())?;
     let group_master_keys = get_identity_sigint_groups(&env.dbx, user_id)
         .await
         .c(h!())?;
@@ -6876,7 +6876,7 @@ pub async fn batch_message_comments(
     env: actix_web::web::Data<Env>,
     req: Json<BatchMessageCommentsReq>,
 ) -> Result<Json<MessageComments>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     let message_ids: Vec<i64> =
         req.messages.iter().map(|m| m.message_id).collect();
@@ -7132,7 +7132,7 @@ pub async fn message_comments(
     env: actix_web::web::Data<Env>,
     req: Json<MessageCommentsReq>,
 ) -> Result<Json<Vec<MessageComment>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     let accessible_message_ids =
         accessible_message_ids(&env.dbx, &login, &[req.message_id])
@@ -7188,7 +7188,7 @@ pub async fn message_draft_events(
     env: actix_web::web::Data<Env>,
     req: Json<DraftCommentEventsReq>,
 ) -> Result<HttpResponse, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
 
     let server_ts_ms = chrono::Utc::now().timestamp_millis();
@@ -7225,7 +7225,7 @@ pub async fn activity_daily(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<crate::sigint::freq::types::FreqDailyActivityCount>, AppError>
 {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
@@ -7308,7 +7308,7 @@ pub async fn callsign_relations(
     Json<crate::sigint::network::types::NetworkCallsignRelationsRsp>,
     AppError,
 > {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
@@ -7410,7 +7410,7 @@ pub async fn callsign_frequency_matches(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisCallsignFrequencyMatchesReq>,
 ) -> Result<Json<AnalysisCallsignFrequencyMatchesRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req.req)
         .await
@@ -7498,7 +7498,7 @@ async fn group_stats(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<GroupStatsRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     let is_admin = has_role(&env.dbx, &login, "Admin").await.is_ok();
     require_analysis_device_filter_access(&env.dbx, &login, &req)
@@ -7662,7 +7662,7 @@ async fn sender_stats(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<SenderStatsRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
@@ -7725,7 +7725,7 @@ async fn post_stats(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<PostStatsRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
@@ -7790,7 +7790,7 @@ async fn freq_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<FreqStatsRsp>, AppError> {
     let login = login_id_from_identity(&user).c(h!())?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "Api"])
+    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer", "Api"])
         .await
         .c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
@@ -7850,7 +7850,7 @@ async fn callsign_stats(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<CallsignStatsRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
@@ -7914,7 +7914,7 @@ async fn metadata_stats(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<MetadataStatsRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
@@ -7978,7 +7978,7 @@ async fn tag_stats(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<TagStatsRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
@@ -8045,7 +8045,7 @@ async fn unit_stats(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<UnitStatsRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
@@ -8107,7 +8107,7 @@ async fn location_stats(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<LocationStatsRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
@@ -8187,7 +8187,7 @@ async fn aor_stats(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<AreaOfResponsibilityStatsRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
@@ -8294,7 +8294,7 @@ async fn network_stats(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<NetworkStatsRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
@@ -8416,7 +8416,7 @@ async fn count_stats(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<CountStatsRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
@@ -9646,7 +9646,7 @@ async fn group_stats_count(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
@@ -9711,7 +9711,7 @@ async fn sender_stats_count(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
@@ -9775,7 +9775,7 @@ async fn post_stats_count(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
@@ -9841,7 +9841,7 @@ async fn freq_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     let login = login_id_from_identity(&user).c(h!())?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "Api"])
+    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer", "Api"])
         .await
         .c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
@@ -9908,7 +9908,7 @@ async fn callsign_stats_count(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
@@ -9973,7 +9973,7 @@ async fn tag_stats_count(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
@@ -10040,7 +10040,7 @@ async fn unit_stats_count(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
@@ -10102,7 +10102,7 @@ async fn location_stats_count(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
@@ -10181,7 +10181,7 @@ async fn aor_stats_count(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
@@ -10259,7 +10259,7 @@ async fn network_stats_count(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
@@ -10329,7 +10329,7 @@ async fn stats_deprecated(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<AnalysisStatsRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await

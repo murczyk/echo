@@ -10,6 +10,8 @@ import type { SignalGroupEntry } from '../../../../../Bindings';
 
 const selectionSpy = vi.hoisted(() => vi.fn());
 
+vi.mock('../../shared/RadioFeatures', () => ({ useRadioFeatures: () => true }));
+
 vi.mock('.././FeedFilterSelectionSection', () => ({
   FeedFilterSelectionSection: (props: { title: string }) => {
     selectionSpy(props);

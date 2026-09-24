@@ -1,4 +1,5 @@
 import React from 'react';
+import { useRadioFeatures } from '../../RadioFeatures';
 import { Box, Divider, TextField, Autocomplete } from '@mui/material';
 import { useFormContext, Controller } from 'react-hook-form';
 import type { MessageFormData } from '../manage-message-drawer.schema';
@@ -22,6 +23,7 @@ export function AdvancedFieldsSection({
   signalNameLoading,
   setSignalNameInput,
 }: Props) {
+  const radioFeaturesAllowed = useRadioFeatures();
   const {
     control,
     formState: { errors },
@@ -34,43 +36,45 @@ export function AdvancedFieldsSection({
   return (
     <FormSectionWrapper title="Розширені поля">
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <Controller
-          name="network_signal_name"
-          control={control}
-          render={({ field }) => (
-            <Autocomplete
-              freeSolo
-              forcePopupIcon
-              noOptionsText="Немає варіантів"
-              options={Array.from(
-                new Set([...(recentValues?.network_signal_name || []), ...signalNameOptions]),
-              )}
-              value={field.value ?? ''}
-              loading={signalNameLoading}
-              disabled={busy}
-              onInputChange={(_, newValue, reason) => {
-                if (reason === 'input') {
-                  setSignalNameInput(newValue);
-                  field.onChange(newValue);
-                }
-              }}
-              onChange={(_, newValue) => {
-                field.onChange(newValue || '');
-              }}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="Назва сигнала мережі"
-                  size="small"
-                  fullWidth
-                  error={!!errors.network_signal_name}
-                  helperText={errors.network_signal_name?.message}
-                  disabled={busy}
-                />
-              )}
-            />
-          )}
-        />
+        {radioFeaturesAllowed ? (
+          <Controller
+            name="network_signal_name"
+            control={control}
+            render={({ field }) => (
+              <Autocomplete
+                freeSolo
+                forcePopupIcon
+                noOptionsText="Немає варіантів"
+                options={Array.from(
+                  new Set([...(recentValues?.network_signal_name || []), ...signalNameOptions]),
+                )}
+                value={field.value ?? ''}
+                loading={signalNameLoading}
+                disabled={busy}
+                onInputChange={(_, newValue, reason) => {
+                  if (reason === 'input') {
+                    setSignalNameInput(newValue);
+                    field.onChange(newValue);
+                  }
+                }}
+                onChange={(_, newValue) => {
+                  field.onChange(newValue || '');
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Назва сигнала мережі"
+                    size="small"
+                    fullWidth
+                    error={!!errors.network_signal_name}
+                    helperText={errors.network_signal_name?.message}
+                    disabled={busy}
+                  />
+                )}
+              />
+            )}
+          />
+        ) : null}
 
         <Controller
           name="text"
@@ -89,9 +93,17 @@ export function AdvancedFieldsSection({
           )}
         />
 
-        <Divider />
-
-        <DmrSection showAdvanced={showAdvanced} busy={busy} recentValues={recentValues} embedded />
+        {radioFeaturesAllowed ? (
+          <>
+            <Divider />
+            <DmrSection
+              showAdvanced={showAdvanced}
+              busy={busy}
+              recentValues={recentValues}
+              embedded
+            />
+          </>
+        ) : null}
       </Box>
     </FormSectionWrapper>
   );

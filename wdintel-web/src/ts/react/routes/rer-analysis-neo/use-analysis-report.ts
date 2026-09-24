@@ -23,9 +23,11 @@ import {
   reportTemplateToUiTitle,
   type AnalysisReportState,
 } from './report-helpers';
+import { effectiveRadioReport, effectiveRadioRequest } from './radio-features';
 import type { AnalysisReportTaskRun } from './types';
 
 type Props = {
+  radioFeaturesAllowed?: boolean;
   analysisReq: AnalysisStatsReq | null;
   fromDateTimeStr: string;
   inboxReq: InboxMessagesReq | null;
@@ -95,6 +97,7 @@ function toErrorMessage(error: unknown): string {
 }
 
 export function useAnalysisReport({
+  radioFeaturesAllowed = true,
   analysisReq,
   fromDateTimeStr,
   inboxReq,
@@ -102,7 +105,8 @@ export function useAnalysisReport({
   onUnauthorized,
   toDateTimeStr,
 }: Props): Result {
-  const [report, setReport] = useState(createDefaultReportState);
+  const [storedReport, setReport] = useState(createDefaultReportState);
+  const report = effectiveRadioReport(storedReport, radioFeaturesAllowed);
   const [reportDownloadInFlight, setReportDownloadInFlight] = useState(false);
   const [reportProgressExpanded, setReportProgressExpandedState] = useState(false);
   const [reportTaskRuns, setReportTaskRunsState] = useState<AnalysisReportTaskRun[]>([]);
@@ -202,12 +206,20 @@ export function useAnalysisReport({
 
   const runReportDownload = useCallback(
     async (state: AnalysisReportState, snapshot?: ReportRunSnapshot) => {
-      const runSnapshot: ReportRunSnapshot = snapshot ?? {
-        analysisReq,
+      state = effectiveRadioReport(state, radioFeaturesAllowed);
+      const runSnapshot: ReportRunSnapshot = {
         fromDateTimeStr,
-        inboxReq,
-        report: state,
         toDateTimeStr,
+        ...snapshot,
+        analysisReq: effectiveRadioRequest(
+          snapshot ? snapshot.analysisReq : analysisReq,
+          radioFeaturesAllowed,
+        ),
+        inboxReq: effectiveRadioRequest(
+          snapshot ? snapshot.inboxReq : inboxReq,
+          radioFeaturesAllowed,
+        ),
+        report: state,
       };
       const sessionId = runSessionRef.current + 1;
       runSessionRef.current = sessionId;
@@ -523,6 +535,7 @@ export function useAnalysisReport({
       }
     },
     [
+      radioFeaturesAllowed,
       analysisReq,
       finalizeAbortedReportTaskRun,
       finalizeCancelledReportTaskRun,

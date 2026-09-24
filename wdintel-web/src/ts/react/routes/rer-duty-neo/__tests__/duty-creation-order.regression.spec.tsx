@@ -7,6 +7,7 @@ import { transformCamelToSnake } from '../../../../snake-to-camel';
 import { USER_SETTINGS_UPDATED_EVENT } from '../../../services/api/user-settings';
 import { useRerDutyFeeds } from '../useRerDutyFeeds';
 import { minimalInboxMessage } from '../inbox-message-mocks';
+import { emptyFilter, pushStateToUrl } from '../utils';
 
 type Item = [number, InboxMessage];
 type Request = { path: string; body: Record<string, unknown> };
@@ -18,6 +19,7 @@ let requests: Request[];
 let items: Item[];
 let older: Item[];
 let newer: Item[];
+let radioFeaturesAllowed: boolean;
 
 function message(id: number, createdOffset: number, eventOffset: number): Item {
   return [
@@ -79,7 +81,7 @@ function responseFor(path: string, body: Record<string, unknown>): unknown {
 }
 
 function Harness() {
-  feeds = useRerDutyFeeds('reader', null, { status: 'allowed' });
+  feeds = useRerDutyFeeds('reader', null, { status: 'allowed' }, radioFeaturesAllowed);
   return null;
 }
 
@@ -105,6 +107,7 @@ function ids() {
 describe('Duty creation-time contract', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    radioFeaturesAllowed = true;
     requests = [];
     items = [message(9, 300, -60_000), message(7, 100, 60_000), message(2, 200, 0)];
     older = [];
@@ -137,6 +140,59 @@ describe('Duty creation-time contract', () => {
     container.remove();
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3568
+  it('ignores restored frequency filters in every Duty request and preserves the saved preferences', async () => {
+    radioFeaturesAllowed = false;
+    pushStateToUrl({
+      messageFeeds: [
+        [
+          'mf-0',
+          {
+            ...emptyFilter(),
+            freqsSelected: ['153.6250'],
+            freqsDenied: ['153.6260'],
+            postsSelected: ['POST-1'],
+            postsDenied: ['POST-2'],
+          },
+          { adjacentFreqsRange: 0.005 },
+        ],
+      ],
+    });
+    await mount();
+
+    const inboxRequests = requests.filter(
+      ({ path }) => path.endsWith('/get-inbox') || path.endsWith('/get-inbox-count'),
+    );
+    expect(inboxRequests.length).toBeGreaterThan(0);
+    for (const { body } of inboxRequests) {
+      expect(body).toMatchObject({
+        selected_freqs: null,
+        denied_freqs: null,
+        selected_posts: null,
+        denied_posts: null,
+      });
+    }
+    expect(feeds.messageFeeds[0].filter.freqsSelected).toEqual(['153.6250']);
+    expect(feeds.messageFeeds[0].filter.freqsDenied).toEqual(['153.6260']);
+
+    act(() => root.unmount());
+    container.remove();
+    requests = [];
+    radioFeaturesAllowed = true;
+    container = document.createElement('div');
+    document.body.append(container);
+    root = createRoot(container);
+    await mount();
+
+    const rerInboxRequest = requests.find(({ path }) => path.endsWith('/get-inbox'));
+    expect(rerInboxRequest?.body).toMatchObject({
+      selected_freqs: ['153.6250'],
+      denied_freqs: ['153.6260'],
+      selected_posts: ['POST-1'],
+      denied_posts: ['POST-2'],
+    });
   });
 
   it('keeps creation order through pagination, buffering, and Analysis preference changes', async () => {

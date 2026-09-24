@@ -264,7 +264,7 @@ function Harness() {
       <ManageMessageDrawer
         open={open}
         cyberEchoEnabled
-        currentUser={null}
+        currentUser={{ roles: ['Rer'] } as never}
         onClose={() => setOpen(false)}
         onCreated={() => setOpen(false)}
       />
@@ -389,7 +389,7 @@ describe('duty create-message bridge', () => {
         <ManageMessageDrawer
           open={open}
           cyberEchoEnabled
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as never}
           onClose={() => setOpen(false)}
           onCreated={onCreated}
         />

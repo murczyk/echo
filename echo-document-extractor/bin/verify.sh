@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 TARGET_HOST=${1:-${TARGET_HOST:-echo-document-extractor}}
-ssh -o BatchMode=yes "$TARGET_HOST" sudo bash -s <<'REMOTE'
+status_check=$(base64 <"$SCRIPT_DIR/verify-status.py" | tr -d '\n')
+ssh -o BatchMode=yes "$TARGET_HOST" sudo bash -s -- "$status_check" <<'REMOTE'
 set -euo pipefail
+status_check=$(printf '%s' "$1" | base64 -d)
 units=(echo-document-extractor-firewall.service echo-document-extractor.service echo-document-extractor-worker.service echo-document-extractor-host-cpu-exporter.service echo-document-extractor-otel.service)
 /opt/echo-document-extractor/bin/configure-firewall.sh check >/dev/null
 systemd-analyze verify "${units[@]/#//lib/systemd/system/}"
@@ -18,8 +21,8 @@ curl -fsS "$base/health/live" | grep -F '"live"' >/dev/null
 curl -fsS "$base/health/ready" | grep -F '"ready"' >/dev/null
 ready=0
 for _ in $(seq 1 120); do
-  if curl -fsS -H "Authorization: Bearer $ECHO_DOCUMENT_EXTRACTOR_TOKEN" "$base/v1/status" \
-    | python3 -c 'import json,sys; value=json.load(sys.stdin); assert all(item["healthy"] for item in value["routers"]); assert value["paddle"]["required"] and value["paddle"]["ready"]' \
+  if curl -fsS --max-time 15 -H "Authorization: Bearer $ECHO_DOCUMENT_EXTRACTOR_TOKEN" "$base/v1/status" \
+    | python3 -c "$status_check" \
     >/dev/null 2>&1; then
     ready=1
     break

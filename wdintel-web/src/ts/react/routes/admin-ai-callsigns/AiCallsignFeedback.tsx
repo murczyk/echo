@@ -1,3 +1,4 @@
+import { AuthorLabel } from '../../components/AuthorLabel';
 import { Dialog, DialogContent, DialogTitle, TextField } from '@mui/material';
 import type { ReparseStatus } from '../../../../Bindings';
 import { PowerButton } from '../../components/PowerButton';
@@ -193,8 +194,8 @@ function FeedbackDetails({ feedback }: { feedback: FeedbackState }) {
           {details.map((entry) => (
             <article key={entry.id} className="mb-echo-lg">
               <p>
-                {entry.actor ?? 'Видалений користувач'} ·{' '}
-                {new Date(entry.createdAt).toLocaleString('uk-UA')}
+                <AuthorLabel login={entry.actor} fallback={entry.actor ?? 'Видалений користувач'} />{' '}
+                · {new Date(entry.createdAt).toLocaleString('uk-UA')}
               </p>
               {entry.inboxItemId !== null && (
                 <PowerButton onClick={() => void openMessage(entry.inboxItemId!)}>

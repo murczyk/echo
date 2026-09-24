@@ -21,6 +21,8 @@ import {
 } from '../../../components/mui-customized/table/get-default-table-options';
 import { DeviceAnalyticsTagFilterControls } from './DeviceAnalyticsTagFilterControls';
 import { DeviceFileContentMarker } from './DeviceFileContentMarker';
+import { DeviceMobileJournal } from './DeviceMobileJournal';
+import { useDeviceMobileLayout } from '../../devices/use-device-mobile-layout';
 import type { DeviceAnalyticsTagFilter } from '../types';
 import type { DeviceAnalyticsTagsState } from '../use-device-analytics-tags';
 import type { DeviceFileJournalState } from '../use-device-file-journal';
@@ -114,6 +116,7 @@ export function DeviceFileJournal({
   tagFilter: DeviceAnalyticsTagFilter;
   onTagFilterChange: (filter: DeviceAnalyticsTagFilter) => void;
 }) {
+  const mobile = useDeviceMobileLayout();
   const columns = useJournalColumns();
   const tableContainerRef = useRef<HTMLDivElement | null>(null);
   const [isAtJournalEnd, setIsAtJournalEnd] = useState(false);
@@ -139,11 +142,11 @@ export function DeviceFileJournal({
 
     const observer = new ResizeObserver(syncIsAtJournalEnd);
     observer.observe(element);
-    const tableElement = element.querySelector('table');
+    const tableElement = element.querySelector(mobile ? 'ul' : 'table');
     if (tableElement) observer.observe(tableElement);
 
     return () => observer.disconnect();
-  }, [journal.entries, syncIsAtJournalEnd]);
+  }, [journal.entries, mobile, syncIsAtJournalEnd]);
   const table = useAppMaterialReactTable({
     columns,
     data: journal.entries,
@@ -266,9 +269,30 @@ export function DeviceFileJournal({
         </Box>
       ) : null}
 
-      <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex' }}>
-        <MaterialReactTable table={table} />
-      </Box>
+      {mobile ? (
+        <div
+          ref={tableContainerRef}
+          onScroll={syncIsAtJournalEnd}
+          className="min-h-0 min-w-0 flex-1 overflow-y-auto"
+        >
+          {isInitialLoading ? (
+            <div className="p-echo-lg">
+              <CircularProgress aria-label="Завантаження журналу" />
+            </div>
+          ) : journal.entries.length === 0 ? (
+            <p className="p-echo-lg">Синхронізованих файлів ще немає</p>
+          ) : (
+            <DeviceMobileJournal
+              entries={journal.entries}
+              formatSynchronizedAt={formatSynchronizedAt}
+            />
+          )}
+        </div>
+      ) : (
+        <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex' }}>
+          <MaterialReactTable table={table} />
+        </Box>
+      )}
 
       {journal.loadMoreError !== null ? (
         <PowerAlert

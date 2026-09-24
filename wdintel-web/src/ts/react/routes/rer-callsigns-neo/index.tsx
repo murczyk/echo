@@ -1,3 +1,5 @@
+import { RadioFeaturesProvider } from '../shared/RadioFeatures';
+import { canUseRadioFeatures } from '../../utils/roles';
 import { Box, Button, CircularProgress, Stack, useMediaQuery } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 
@@ -514,13 +516,15 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
 
 export function RerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?: string[] }) {
   return (
-    <TableStateProvider
-      tableId="rer-callsigns-neo"
-      defaultColumnVisibility={DEFAULT_CALLSIGNS_TABLE_COLUMN_VISIBILITY}
-      defaultColumnOrder={DEFAULT_CALLSIGNS_TABLE_COLUMN_ORDER}
-      defaultEnableColumnOrdering={false}
-    >
-      <RerCallsignsNeoPageBody authUserRoles={authUserRoles} />
-    </TableStateProvider>
+    <RadioFeaturesProvider allowed={canUseRadioFeatures(authUserRoles)}>
+      <TableStateProvider
+        tableId="rer-callsigns-neo"
+        defaultColumnVisibility={DEFAULT_CALLSIGNS_TABLE_COLUMN_VISIBILITY}
+        defaultColumnOrder={DEFAULT_CALLSIGNS_TABLE_COLUMN_ORDER}
+        defaultEnableColumnOrdering={false}
+      >
+        <RerCallsignsNeoPageBody authUserRoles={authUserRoles} />
+      </TableStateProvider>
+    </RadioFeaturesProvider>
   );
 }

@@ -1,3 +1,4 @@
+import { useRadioFeatures } from '../../shared/RadioFeatures';
 import type { AnalysisCallsignFrequencyMatchesRsp } from '../../../../../Bindings';
 import type { AnalysisCountItem, AnalysisFilterOption } from '../types';
 import { AnalysisCountBlock } from './AnalysisCountBlock';
@@ -34,6 +35,7 @@ export function AnalysisCallsignsPane({
   onToggleCallsign,
   onToggleFreq,
 }: Props) {
+  const radioFeaturesAllowed = useRadioFeatures();
   return (
     <Stack spacing={0}>
       <AnalysisCountBlock
@@ -46,13 +48,15 @@ export function AnalysisCallsignsPane({
         selectedItemKeys={selectedCallsigns}
       />
       <Box sx={{ borderTop: '1px solid', borderColor: 'divider' }}>
-        <AnalysisCallsignFrequencySearch
-          callsignOptions={callsignOptions}
-          onAddFreq={onAddFreq}
-          onSearch={onSearchFrequencyMatches}
-          onToggleFreq={onToggleFreq}
-          selectedFreqs={selectedFreqs}
-        />
+        {radioFeaturesAllowed ? (
+          <AnalysisCallsignFrequencySearch
+            callsignOptions={callsignOptions}
+            onAddFreq={onAddFreq}
+            onSearch={onSearchFrequencyMatches}
+            onToggleFreq={onToggleFreq}
+            selectedFreqs={selectedFreqs}
+          />
+        ) : null}
       </Box>
     </Stack>
   );

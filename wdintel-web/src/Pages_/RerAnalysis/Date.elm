@@ -44,7 +44,8 @@ dateAndPanelsBlock isDark timeZone model mapFeatureFlag =
                 , style "border-radius" "2px"
                 , style "overflow" "hidden"
                 ]
-                [ toggleButton2
+                [ viewIf model.radioFeaturesAllowed <|
+                  toggleButton2
                     { isDark = isDark
                     , toggleMsg = ToggleUnfoldGraphs
                     , tooltip = "графіки"
@@ -53,7 +54,8 @@ dateAndPanelsBlock isDark timeZone model mapFeatureFlag =
                     }
                     (i [ class "bi bi-bar-chart" ] [])
                     Nothing
-                , toggleButton2
+                , viewIf model.radioFeaturesAllowed <|
+                  toggleButton2
                     { isDark = isDark
                     , toggleMsg = ToggleUnfoldSumTable
                     , tooltip = "сумарна таблиця"

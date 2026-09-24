@@ -36,6 +36,20 @@
 - **Existing tests:** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded
 
+## Profile label identity
+
+- **Behavior ID:** `react-settings-profile-label-identity`
+- **Expected observable result:** saving or clearing a display name preserves the underlying login and failed edits do not erase it.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/settings-neo/__tests__/SettingsProfileSection.spec.tsx`
+- **Original Echo issue/PR, if known:** [#3575](https://github.com/echoua/echo/issues/3575)
+
+## System-setting persistence
+
+- **Behavior ID:** `react-system-settings-persistence`
+- **Expected observable result:** disabling the Duty minus menu or 2FA persists through save and the next load reflects the disabled state.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/admin-system-settings-neo/__tests__/index.spec.tsx`
+- **Original Echo issue/PR, if known:** [#3568](https://github.com/echoua/echo/issues/3568)
+
 ## Settings route and feature presentation
 
 - **Behavior ID:** `react-settings-route-presentation`

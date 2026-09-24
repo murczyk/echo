@@ -95,6 +95,7 @@ export function useAnalysisSummaryData({
   );
 
   const loadSummaryData = useCallback(async () => {
+    if (queryState.radioFeaturesAllowed === false) return;
     const analysisReq = buildAnalysisReq(queryState, optionsFreqValues);
     if (isNullOrUndefined(analysisReq)) {
       summaryRequestRef.current += 1;
@@ -176,6 +177,7 @@ export function useAnalysisSummaryData({
   }, []);
 
   const downloadSummaryXlsx = useCallback(async () => {
+    if (queryState.radioFeaturesAllowed === false) return;
     const analysisReq = buildAnalysisReq(queryState, optionsFreqValues);
     if (isNullOrUndefined(analysisReq)) {
       onError('Перевірте дату та час перед експортом.');

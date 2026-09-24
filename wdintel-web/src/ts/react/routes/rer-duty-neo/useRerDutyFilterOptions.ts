@@ -20,7 +20,7 @@ import { fetchServerInfo } from '../../services/api/server-info';
 export type GroupCatalogError =
   { kind: 'catalog'; message: string } | { kind: 'details'; message: string };
 
-export function useRerDutyFilterOptions() {
+export function useRerDutyFilterOptions(radioFeaturesAllowed = true) {
   const [profiles, setProfiles] = useState<Record<string, SignalProfileEntry | null>>({});
   const [freqs, setFreqs] = useState<string[]>([]);
   const [freqsReady, setFreqsReady] = useState(false);
@@ -53,6 +53,7 @@ export function useRerDutyFilterOptions() {
   }, []);
 
   const reloadLatestFrequencies = useCallback(async () => {
+    if (!radioFeaturesAllowed) return;
     setReloadFreqsLoading(true);
     try {
       const list = await getLatestFrequencies();
@@ -63,13 +64,13 @@ export function useRerDutyFilterOptions() {
     } finally {
       if (mountedRef.current) setReloadFreqsLoading(false);
     }
-  }, []);
+  }, [radioFeaturesAllowed]);
 
   const loadFilterOptions = useCallback(async () => {
     const [sendersResult, freqsResult, postsResult, tagsResult] = await Promise.allSettled([
       getLatestSenders(),
-      getLatestFrequencies(),
-      getPostsList(),
+      radioFeaturesAllowed ? getLatestFrequencies() : Promise.resolve([]),
+      radioFeaturesAllowed ? getPostsList() : Promise.resolve([]),
       getTagsForDisplay(),
     ]);
     if (sendersResult.status === 'fulfilled') {
@@ -102,7 +103,7 @@ export function useRerDutyFilterOptions() {
     } catch (e) {
       console.warn('loadFilterOptions: fetchServerInfo failed', e);
     }
-  }, []);
+  }, [radioFeaturesAllowed]);
 
   const reloadGroupCatalog = useCallback(() => {
     const generation = ++groupRequestGenerationRef.current;

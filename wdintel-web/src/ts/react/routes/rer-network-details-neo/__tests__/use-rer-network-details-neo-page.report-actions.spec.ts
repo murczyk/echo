@@ -115,6 +115,7 @@ function buildNetwork(id: number): Network {
 function Harness() {
   const [state, setState] = useState(() => ({
     ...EMPTY_STATE,
+    currentUser: { roles: ['Rer'] } as never,
     network: buildNetwork(77),
     etalonkaReport: createDefaultNetworkEtalonkaReportState(),
   }));

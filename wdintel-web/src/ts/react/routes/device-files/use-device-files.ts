@@ -9,25 +9,32 @@ import type { DeviceAnalyticsTagFilter } from './types';
 
 export function useDeviceFiles({
   deviceId,
+  syncId = null,
   enabled,
   tagFilter,
 }: {
   deviceId: string;
+  syncId?: string | null;
   enabled: boolean;
   tagFilter: DeviceAnalyticsTagFilter;
 }) {
   const [selection, setSelection] = useState<{
     deviceId: string;
+    syncId: string | null;
     file: DeviceFileTreeEntry;
   } | null>(null);
-  const selectedFile = enabled && selection?.deviceId === deviceId ? selection.file : null;
+  const selectedFile =
+    enabled && selection?.deviceId === deviceId && selection.syncId === syncId
+      ? selection.file
+      : null;
+  const clearSelectedFile = useCallback(() => setSelection(null), []);
   const selectFile = useCallback(
-    (file: DeviceFileTreeEntry) => setSelection({ deviceId, file }),
-    [deviceId],
+    (file: DeviceFileTreeEntry) => setSelection({ deviceId, syncId, file }),
+    [deviceId, syncId],
   );
-  useEffect(() => setSelection(null), [deviceId, enabled]);
-  const load = useDeviceFilesLoad({ deviceId, enabled, tagFilter });
-  const counts = useDeviceFileCounts({ deviceId, enabled });
+  useEffect(() => setSelection(null), [deviceId, syncId, enabled]);
+  const load = useDeviceFilesLoad({ deviceId, syncId, enabled, tagFilter });
+  const counts = useDeviceFileCounts({ deviceId, syncId, enabled });
   const enqueueLoadedDirectories = useCallback(
     (parentEntryId: string, directoryEntryIds: string[]) =>
       counts.enqueue({ parentEntryId, directoryEntryIds }),
@@ -35,6 +42,7 @@ export function useDeviceFiles({
   );
   const tree = useDeviceFileTree({
     deviceId,
+    syncId,
     enabled,
     roots: load.roots,
     onDirectoryMissing: load.handleDirectoryMissing,
@@ -57,7 +65,7 @@ export function useDeviceFiles({
     await Promise.all([load.refreshVisible(), tree.refreshExpanded()]);
   }, [counts.enqueue, counts.reset, load.refreshVisible, load.roots, tree.refreshExpanded]);
 
-  return { ...load, tree, counts, refreshVisible, selectedFile, selectFile };
+  return { ...load, tree, counts, refreshVisible, selectedFile, selectFile, clearSelectedFile };
 }
 
 export type DeviceFilesState = ReturnType<typeof useDeviceFiles>;

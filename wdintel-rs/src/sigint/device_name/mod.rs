@@ -4,7 +4,7 @@ use self::types::{
 };
 use crate::error::AppError;
 use crate::types::*;
-use crate::users::{ensure_rer_role, login_id_from_identity};
+use crate::users::{ensure_base_role, login_id_from_identity};
 use actix_web::post;
 use actix_web::web::Json;
 
@@ -18,7 +18,7 @@ pub async fn device_name_create(
     env: actix_web::web::Data<Env>,
     req: Json<CreateDeviceNameReq>,
 ) -> Result<Json<CreateDeviceNameRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     crate::devices::access::require_message_devices(&env.dbx, &login)
         .await
@@ -37,7 +37,7 @@ pub async fn device_name_search(
     env: actix_web::web::Data<Env>,
     req: Json<DeviceNameSearchReq>,
 ) -> Result<Json<DeviceNameSearchRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     crate::devices::access::require_message_devices(&env.dbx, &login)
         .await
@@ -56,7 +56,7 @@ pub async fn device_name_resolve(
     env: actix_web::web::Data<Env>,
     req: Json<DeviceNameResolveReq>,
 ) -> Result<Json<DeviceNameResolveRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     crate::devices::access::require_message_devices(&env.dbx, &login)
         .await

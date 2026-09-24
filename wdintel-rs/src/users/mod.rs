@@ -17,6 +17,7 @@ use sea_query::Expr;
 use std::collections::{BTreeMap, HashMap};
 use uuid::Uuid;
 
+pub mod display_name;
 pub mod login_totp;
 pub mod totp;
 pub mod totp_challenge;
@@ -61,6 +62,17 @@ pub(crate) async fn start_user_session(
     db: &impl ConnectionTrait,
 ) -> Result<(), AppError> {
     update_last_active_at(db, &login_id).await.c(h!())?;
+    initialize_user_session(env, http_req, login_id)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+pub(crate) async fn initialize_user_session(
+    env: &actix_web::web::Data<Env>,
+    http_req: &HttpRequest,
+    login_id: Uuid,
+) -> anyhow::Result<()> {
     let session_id = Uuid::now_v7();
     crate::session::add_session(&mut env.redis.clone(), session_id, &login_id)
         .await
@@ -175,21 +187,35 @@ pub async fn ensure_basic_role(
     has_role(dbx, &login_id_from_identity(user)?, "Basic").await
 }
 
-pub async fn ensure_rer_role(
+pub async fn ensure_base_role(
     dbx: &sea_orm::DatabaseConnection,
     user: &Identity,
 ) -> Result<(), AppError> {
-    ensure_rer_role_by_id(dbx, &login_id_from_identity(user)?).await
+    ensure_base_role_by_id(dbx, &login_id_from_identity(user).c(h!())?).await
 }
 
-pub async fn ensure_rer_role_by_id<T>(
+pub async fn ensure_base_role_by_id<T>(
     dbx: &sea_orm::DatabaseConnection,
     user_id: &T,
 ) -> Result<(), AppError>
 where
     T: ToString + ?Sized,
 {
-    has_role(dbx, user_id, "Rer").await
+    has_any_role(dbx, user_id, vec!["Rer", "CyberViewer"]).await
+}
+
+pub async fn ensure_message_write(
+    dbx: &DatabaseConnection,
+    user: &Identity,
+) -> Result<(), AppError> {
+    has_any_role(
+        dbx,
+        &login_id_from_identity(user).c(h!())?,
+        vec!["Rer", "Cyber"],
+    )
+    .await
+    .c(h!())?;
+    Ok(())
 }
 
 pub async fn ensure_admin(
@@ -261,6 +287,8 @@ pub(crate) fn role_matches(
                 || roles.contains(&"Full".to_string())
                 || roles.contains(&"Bpla".to_string())
                 || roles.contains(&"Rer".to_string())
+                || roles.contains(&"Cyber".to_string())
+                || roles.contains(&crate::config::ROLE_CYBER_VIEWER.to_string())
                 || roles.contains(&"Basic".to_string())
         }
         "UnitsEditor" => {
@@ -278,6 +306,11 @@ pub(crate) fn role_matches(
         "Cyber" => {
             roles.contains(&"Admin".to_string())
                 || roles.contains(&"Cyber".to_string())
+        }
+        "CyberViewer" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"Cyber".to_string())
+                || roles.contains(&crate::config::ROLE_CYBER_VIEWER.to_string())
         }
         "DeviceSource" => {
             roles.contains(&"Admin".to_string())
@@ -558,6 +591,7 @@ pub async fn create_login(
             )),
             password_auth_enabled: Set(true),
             totp_epoch: Set(None),
+            display_name: NotSet,
         },
     )
     .await
@@ -760,12 +794,13 @@ pub async fn list_logins(
 async fn api_user(
     env: actix_web::web::Data<Env>,
     user: Option<Identity>,
+    http_req: HttpRequest,
 ) -> Result<Json<User>, AppError> {
     let Some(user) = user else {
         return Err(AppError::Unauthenticated);
     };
     let user_id = login_id_from_identity(&user).c(h!())?;
-    let login_obj = match load_active_login(&env.dbx, &user_id)
+    let login_obj = match login_for_user_response(&env.dbx, &http_req, user_id)
         .await
         .map_err(AppError::from)
     {
@@ -791,6 +826,7 @@ async fn api_user(
         id: login_obj.id.to_string(),
         delta_login,
         name: login_obj.login.clone(),
+        display_name: login_obj.display_name.clone(),
         roles: serde_json::from_value(login_obj.roles).c(h!())?,
         sigint_zone_id: login_obj.sigint_zone_id,
         organism_id: login_obj.organism_id,
@@ -800,6 +836,19 @@ async fn api_user(
         goi_integrations: goi.integrations,
         last_release_seen: login_obj.last_release_seen,
     }))
+}
+
+async fn login_for_user_response(
+    db: &impl ConnectionTrait,
+    http_req: &HttpRequest,
+    login_id: Uuid,
+) -> anyhow::Result<login::Model> {
+    if let Some(login) = crate::ai_agent::middleware::test_identity(http_req)
+        .filter(|login| login.id == login_id)
+    {
+        return Ok(login);
+    }
+    load_active_login(db, &login_id).await.c(h!())
 }
 
 #[post("/api/user/release-seen")]
@@ -858,6 +907,7 @@ async fn api_user_info(
         id: login_obj.id.to_string(),
         delta_login,
         name: username.clone(),
+        display_name: login_obj.display_name.clone(),
         roles: serde_json::from_value(login_obj.roles).c(h!())?,
         sigint_zone_id: login_obj.sigint_zone_id,
         organism_id: login_obj.organism_id,
@@ -1059,7 +1109,11 @@ async fn begin_totp_login_challenge(
     login_obj: &login::Model,
 ) -> Result<LoginRsp, AppError> {
     // Unattended API clients (echo-agent / Api*) skip interactive TOTP.
-    if login_skips_totp(login_obj).context(h!())? {
+    if login_skips_totp(login_obj).context(h!())?
+        || !crate::system_settings::two_factor_auth_enabled(&env.dbx)
+            .await
+            .c(h!())?
+    {
         start_user_session(env, http_req, login_obj.id, &env.dbx)
             .await
             .context(h!())?;
@@ -1399,6 +1453,7 @@ pub async fn register_user(
         description: NotSet,
         password_auth_enabled: Set(true),
         totp_epoch: Set(None),
+        display_name: NotSet,
     }
     .insert(&txn)
     .await
@@ -1514,7 +1569,7 @@ pub async fn user_sigint_groups_detailed(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Admin", "Api"],
+        vec!["Rer", "CyberViewer", "Admin", "Api"],
     )
     .await?;
     let login = login_id_from_identity(&user)?;
@@ -1865,6 +1920,7 @@ async fn register_delta_user(
             description: Set(normalize_login_description(description)),
             password_auth_enabled: Set(false),
             totp_epoch: Set(None),
+            display_name: NotSet,
         },
     )
     .await
@@ -2550,6 +2606,7 @@ mod tests {
                 description: Default::default(),
                 password_auth_enabled: Set(false),
                 totp_epoch: Set(None),
+                display_name: NotSet,
             },
         )
         .await
@@ -2625,6 +2682,7 @@ mod tests {
                     description: Default::default(),
                     password_auth_enabled: Set(false),
                     totp_epoch: Set(None),
+                    display_name: NotSet,
                 },
             )
             .await
@@ -2698,6 +2756,7 @@ mod tests {
                     description: Default::default(),
                     password_auth_enabled: Set(false),
                     totp_epoch: Set(None),
+                    display_name: NotSet,
                 },
             )
             .await
@@ -2723,6 +2782,7 @@ mod tests {
                 description: Default::default(),
                 password_auth_enabled: Set(false),
                 totp_epoch: Set(None),
+                display_name: NotSet,
             },
         )
         .await
@@ -2777,6 +2837,7 @@ mod tests {
             description: Default::default(),
             password_auth_enabled: Set(false),
             totp_epoch: Set(None),
+            display_name: NotSet,
         }
         .insert(&env.dbx)
         .await
@@ -2801,6 +2862,7 @@ mod tests {
                 description: Default::default(),
                 password_auth_enabled: Set(false),
                 totp_epoch: Set(None),
+                display_name: NotSet,
             },
         )
         .await
@@ -2911,6 +2973,12 @@ mod tests {
     }
     fn roles(roles: &[&str]) -> Vec<String> {
         roles.iter().map(|role| (*role).to_owned()).collect()
+    }
+
+    #[test]
+    fn issue_3568_cyber_inherits_basic_but_not_rer() {
+        assert!(role_matches(&roles(&["Cyber"]), "Basic").unwrap());
+        assert!(!role_matches(&roles(&["Cyber"]), "Rer").unwrap());
     }
 
     #[test]

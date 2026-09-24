@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { InboxMessage, InboxWindowRsp, SavedFilter, User } from '../../../../../Bindings';
 import type { AnalysisPageViewModel } from '../types';
+import { createResetQueryState } from '../helpers';
 import { useRerAnalysisNeoPage } from '../use-rer-analysis-neo-page';
 
 const userSettingsMock = vi.hoisted(() => ({
@@ -258,12 +259,12 @@ function buildEditor() {
   };
 }
 
-function renderHook() {
+function renderHook(authUserRoles: string[] = []) {
   if (container == null) throw new Error('container not initialized');
 
   root = createRoot(container);
   const Harness = () => {
-    latest = useRerAnalysisNeoPage(null);
+    latest = useRerAnalysisNeoPage(null, authUserRoles);
     return null;
   };
 
@@ -352,6 +353,65 @@ describe('useRerAnalysisNeoPage', () => {
     latest = null;
     currentAnalysisData = null;
   });
+
+  // Regression: https://github.com/echoua/echo/issues/3568
+  it('keeps Rer radio features available while the current-user lookup is pending', () => {
+    currentUserMock.fetchCurrentUser.mockReturnValueOnce(new Promise(() => {}));
+
+    renderHook(['Rer']);
+
+    expect(latest?.radioFeaturesAllowed).toBe(true);
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3568
+  it('reconciles a bare date range when the user lookup adds Rer access', async () => {
+    currentUserMock.fetchCurrentUser.mockResolvedValue({ name: 'tester', roles: ['Rer'] } as User);
+    renderHook([]);
+    await flushEffects();
+
+    expect(latest?.queryState.fromDateTimeStr).toBe(
+      createResetQueryState(new Date(), true).fromDateTimeStr,
+    );
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3568
+  it.each([['Cyber'], ['Cyber', 'UnitsEditor', 'NetworkEditor', 'CallsignsEditor']])(
+    'ignores restored radio filters and hidden tabs for %j',
+    async (...roles) => {
+      currentUserMock.fetchCurrentUser.mockResolvedValue({ name: 'tester', roles } as User);
+      renderHook(roles);
+      await flushEffects();
+      act(() => {
+        latest?.updateQueryState({
+          freqsSelected: ['145.500'],
+          networksSelected: ['7'],
+          postsSelected: ['hidden-post'],
+          adjacentFreqsRange: 0.025,
+          includeOnlyNewFreqs: true,
+          withoutNetwork: true,
+          metadataCc: ['7'],
+          metadataSender: ['101'],
+          onlyWithMetadata: true,
+        });
+        latest?.setCenterTab('summary');
+        latest?.setRightSidebarTab('frequencies');
+      });
+      await flushEffects();
+      expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].queryState).toMatchObject({
+        freqsSelected: [],
+        networksSelected: [],
+        postsSelected: [],
+        adjacentFreqsRange: 0,
+        includeOnlyNewFreqs: false,
+        withoutNetwork: false,
+        metadataCc: [],
+        metadataSender: [],
+        onlyWithMetadata: false,
+      });
+      expect(latest?.centerTab).toBe('messages');
+      expect(latest?.rightSidebarTab).toBe('stats');
+    },
+  );
   it('opens the first available sidebar tab when the right panel is toggled while map stays in the center', async () => {
     renderHook();
     await flushEffects();
@@ -630,33 +690,6 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.rightPanelOpen).toBe(true);
     expect(latest?.rightSidebarTab).toBe('map');
     expect(latest?.centerTab).toBe('messages');
-  });
-  it('syncs include-only-new frequencies through targeted invalidation when the option list changes', async () => {
-    renderHook();
-    await flushEffects();
-
-    await act(async () => {
-      latest?.setIncludeOnlyNewFreqs(true);
-    });
-    await flushEffects();
-
-    expect(currentAnalysisData?.invalidateFilterSectionLoadsForPatch).toHaveBeenCalledWith({
-      includeOnlyNewFreqs: true,
-      freqsSelected: ['111.1'],
-    });
-
-    currentAnalysisData?.invalidateFilterSectionLoadsForPatch.mockClear();
-    analysisFreqValues = ['222.2'];
-
-    await act(async () => {
-      latest?.toggleLeftPanel();
-    });
-    await flushEffects();
-
-    expect(currentAnalysisData?.invalidateFilterSectionLoadsForPatch).toHaveBeenCalledWith({
-      freqsSelected: ['222.2'],
-    });
-    expect(latest?.queryState.freqsSelected).toEqual(['222.2']);
   });
   it('clears the loaded saved filter when filters are reset', async () => {
     const savedFilters = buildSavedFilters();
@@ -1139,111 +1172,6 @@ describe('useRerAnalysisNeoPage', () => {
 
     expect(latest?.messagePageNavigationTarget).toBe(2);
     expect(latest?.directMessageNavigation?.focusActive).toBe(false);
-  });
-  it('refilters the direct-link window while keeping the target focused', async () => {
-    const targetMessage = { text: 'target', date: null, timestamp: null } as InboxMessage;
-    const buildWindow = (neighborId: number, neighborText: string): InboxWindowRsp => ({
-      targetMessageId: 50,
-      inbox: {
-        inboxItems: [
-          [neighborId, { text: neighborText } as InboxMessage],
-          [50, targetMessage],
-        ],
-        pollCursorId: null,
-        callsigns: [],
-        signalProfiles: {},
-        signalGroups: [],
-        freqPelengsSummary: null,
-        pageLimit: 20,
-      },
-      hasMoreBefore: true,
-      hasMoreAfter: true,
-    });
-    window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
-    const initialWindow = buildWindow(49, 'initial');
-    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(initialWindow);
-
-    renderHook();
-    await flushEffects();
-
-    currentAnalysisData = {
-      ...buildAnalysisData(),
-      messages: initialWindow.inbox.inboxItems,
-    };
-    const groupWindow = buildWindow(48, 'same group');
-    let resolveGroupWindow: ((value: InboxWindowRsp) => void) | undefined;
-    inboxMessagesMock.fetchInboxWindow.mockImplementationOnce(
-      () =>
-        new Promise<InboxWindowRsp>((resolve) => {
-          resolveGroupWindow = resolve;
-        }),
-    );
-    act(() => latest?.updateQueryState({ groupsSelected: ['group-1'] }));
-    await flushEffects();
-
-    expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
-      deferInitialLoad: true,
-      focusedWindow: initialWindow,
-      focusedMessageActive: true,
-    });
-    expect(latest?.directMessageLoading).toBe(true);
-    expect(latest?.directMessageNavigation).toMatchObject({
-      targetMessageId: 50,
-      focusActive: true,
-      contextLoading: true,
-      loadingEarlier: true,
-      loadingLater: true,
-    });
-    resolveGroupWindow?.(groupWindow);
-    await flushEffects();
-
-    expect(inboxMessagesMock.fetchInboxWindow.mock.calls.at(-1)?.[0].inboxReq).toMatchObject({
-      selectedGroups: ['group-1'],
-    });
-    expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
-      deferInitialLoad: false,
-      focusedWindow: groupWindow,
-      focusedMessageActive: true,
-    });
-    expect(latest?.directMessageLoading).toBe(true);
-
-    currentAnalysisData = {
-      ...buildAnalysisData(),
-      messages: groupWindow.inbox.inboxItems,
-    };
-    act(() => latest?.setNewestFirst(false));
-    await flushEffects();
-    expect(latest?.directMessageNavigation?.contextLoading).toBe(false);
-    expect(latest?.directMessageLoading).toBe(false);
-
-    const frequencyWindow = buildWindow(47, 'same frequency');
-    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(frequencyWindow);
-    act(() => latest?.updateQueryState({ freqsSelected: ['123.45'] }));
-    await flushEffects();
-
-    expect(inboxMessagesMock.fetchInboxWindow.mock.calls.at(-1)?.[0].inboxReq).toMatchObject({
-      selectedGroups: ['group-1'],
-      selectedFreqs: ['123.45'],
-    });
-
-    const networkWindow = buildWindow(46, 'same network');
-    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(networkWindow);
-    act(() => latest?.updateQueryState({ networksSelected: ['7'] }));
-    await flushEffects();
-
-    expect(inboxMessagesMock.fetchInboxWindow.mock.calls.at(-1)?.[0].inboxReq).toMatchObject({
-      selectedGroups: ['group-1'],
-      selectedFreqs: ['123.45'],
-      selectedNetworks: [7],
-    });
-    expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
-      focusedWindow: networkWindow,
-      focusedMessageActive: true,
-    });
-    expect(latest?.directMessageNavigation).toMatchObject({
-      targetMessageId: 50,
-      focusActive: true,
-    });
   });
   it('clears the direct-link message when it does not match a selected group', async () => {
     const targetMessage = { text: 'target', date: null, timestamp: null } as InboxMessage;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { emptyQueryState, parseQueryStateFromWindow } from '../helpers';
+import { createInitialQueryState, emptyQueryState, parseQueryStateFromWindow } from '../helpers';
 
 describe('rer-analysis-neo URL state', () => {
   it('treats managed URL parameters as authoritative', () => {
@@ -30,5 +30,28 @@ describe('rer-analysis-neo URL state', () => {
     expect(parseQueryStateFromWindow()).toEqual(emptyQueryState());
 
     delete (globalThis as { window?: Window }).window;
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3568
+  it('defaults bare non-Rer Analysis to 90 calendar days in the app timezone', () => {
+    const state = createInitialQueryState(
+      emptyQueryState(),
+      new Date(Date.UTC(2026, 0, 15, 22, 30, 0)),
+    );
+
+    expect(state.fromDateTimeStr).toBe('2025-10-19T00:00');
+    expect(state.toDateTimeStr).toBe('2026-01-17T00:00');
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3568
+  it('defaults bare Rer Analysis to today in the app timezone', () => {
+    const state = createInitialQueryState(
+      emptyQueryState(),
+      new Date(Date.UTC(2026, 0, 15, 22, 30, 0)),
+      true,
+    );
+
+    expect(state.fromDateTimeStr).toBe('2026-01-16T00:00');
+    expect(state.toDateTimeStr).toBe('2026-01-17T00:00');
   });
 });

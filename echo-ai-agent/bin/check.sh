@@ -41,7 +41,8 @@ test_root=$(mktemp -d /tmp/echo-ai-agent-check.XXXXXX)
 cp "$BUNDLE_DIR/package.json" "$BUNDLE_DIR/package-lock.json" "$test_root/"
 cp -a "$BUNDLE_DIR/runner" "$test_root/runner"
 npm ci --prefix "$test_root" --ignore-scripts --no-audit --no-fund
-npm test --prefix "$test_root"
+ECHO_AI_AGENT_ROUTE_REGISTRY="$BUNDLE_DIR/../wdintel-rs/src/ai_agent/route_registry.rs" \
+  npm test --prefix "$test_root"
 if command -v shellcheck >/dev/null 2>&1; then
   mapfile -t shell_scripts < <(find "$BUNDLE_DIR" -type f -name '*.sh' | sort)
   shellcheck "${shell_scripts[@]}" "$BUNDLE_DIR/runner/echo-ai-agent-runner"

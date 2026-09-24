@@ -1,3 +1,4 @@
+import { useRadioFeatures } from '../../shared/RadioFeatures';
 import CloseOutlinedIcon from '@mui/icons-material/CloseOutlined';
 import ArrowBackOutlinedIcon from '@mui/icons-material/ArrowBackOutlined';
 import {
@@ -62,6 +63,7 @@ export function NetworkCallsignRelationsGraphDetails({
     theme.palette.mode === 'dark' ? 0.14 : 0.12,
   );
 
+  const radioFeaturesAllowed = useRadioFeatures();
   return (
     <Box
       sx={{
@@ -129,8 +131,8 @@ export function NetworkCallsignRelationsGraphDetails({
                 </Button>
               ) : null}
               <Typography variant="caption" sx={{ color: graphTheme.overlayTextSecondary }}>
-                {selectedEdge.visibleWeight} перехоплень у {selectedEdge.visibleByFreq.length}{' '}
-                частотах
+                {selectedEdge.visibleWeight} перехоплень
+                {radioFeaturesAllowed ? ` у ${selectedEdge.visibleByFreq.length} частотах` : ''}
               </Typography>
             </Stack>
           ) : selectedNode ? (
@@ -182,14 +184,15 @@ export function NetworkCallsignRelationsGraphDetails({
             {selectedEdge ? (
               <Stack spacing={1.5}>
                 <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>
-                  {selectedEdge.visibleByFreq.map((item) => (
-                    <Chip
-                      key={item.freq}
-                      size="small"
-                      label={`${item.freq} · ${item.weight}`}
-                      sx={{ bgcolor: graphTheme.surfaceBg }}
-                    />
-                  ))}
+                  {radioFeaturesAllowed &&
+                    selectedEdge.visibleByFreq.map((item) => (
+                      <Chip
+                        key={item.freq}
+                        size="small"
+                        label={`${item.freq} · ${item.weight}`}
+                        sx={{ bgcolor: graphTheme.surfaceBg }}
+                      />
+                    ))}
                 </Stack>
                 <Divider sx={{ borderColor: graphTheme.overlayBorder }} />
                 <Typography variant="body2" sx={{ color: graphTheme.overlayTextSecondary }}>
@@ -253,14 +256,17 @@ export function NetworkCallsignRelationsGraphDetails({
                               useFlexGap
                               sx={{ flexWrap: 'wrap' }}
                             >
-                              {edge.visibleByFreq.slice(0, 3).map((item) => (
-                                <Chip
-                                  key={item.freq}
-                                  size="small"
-                                  label={`${item.freq} · ${item.weight}`}
-                                  sx={{ bgcolor: graphTheme.surfaceBg }}
-                                />
-                              ))}
+                              {radioFeaturesAllowed &&
+                                edge.visibleByFreq
+                                  .slice(0, 3)
+                                  .map((item) => (
+                                    <Chip
+                                      key={item.freq}
+                                      size="small"
+                                      label={`${item.freq} · ${item.weight}`}
+                                      sx={{ bgcolor: graphTheme.surfaceBg }}
+                                    />
+                                  ))}
                             </Stack>
                           </Stack>
                         </Paper>
@@ -320,7 +326,7 @@ export function NetworkCallsignRelationsGraphDetails({
                                       .format('DD.MM.YYYY HH:mm')
                                   : 'Час невідомий'}
                               </Typography>
-                              {message.freq ? (
+                              {radioFeaturesAllowed && message.freq ? (
                                 <Chip
                                   size="small"
                                   label={message.freq}

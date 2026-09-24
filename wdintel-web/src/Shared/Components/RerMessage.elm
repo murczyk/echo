@@ -23,6 +23,7 @@ import Uuid.Barebones
 import Route exposing (Route)
 import Set exposing (Set)
 import Shared.Callsign
+import Shared.Components.AuthorLabel
 import Shared.Components.Watermark as Watermark
 import Shared.MarkedText
 import Shared.Model
@@ -1340,7 +1341,8 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                                     ]
                                     []
                                 ]
-                        , div
+                        , HtmlX.viewIf (Core.Auth.canWriteMessages vps.user) <|
+                          div
                             [ class "text-center cursor-pointer"
                             , style "font-size" "16px"
                             , title "редагувати додаткові поля"
@@ -1412,7 +1414,10 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                                     ++ " "
                                     ++ Maybe.withDefault "" profile.familyName
                   in
-                  itemBlock { iconTitle = "Відправник", iconName = "bi-person-circle", label = Just label } []
+                  div [ class "flex items-center" ]
+                    [ i [ class "bi mr-2 text-icons leading-none bi-person-circle", title "Відправник" ] []
+                    , Shared.Components.AuthorLabel.sender (Maybe.withDefault "" message.sender) label
+                    ]
                 , let
                     updatedRouteString =
                         case vps.currentRoute of
@@ -1433,10 +1438,12 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                             [ i [ class "bi bi-box-arrow-up-right cursor-pointer text-action text-sm", title "Відкрити частоту на мапі в окремому вікні" ] [] ]
                         ]
                   in
+                  HtmlX.viewIf (Core.Auth.canUseRadioFeatures vps.user) <|
                   itemBlock { label = message.freq, iconName = "bi-broadcast", iconTitle = "Частота" } actionsBlock
                 , itemBlock { iconTitle = "Координати", iconName = "bi-geo", label = message.coords } []
                 , itemBlock { iconTitle = "Локація", iconName = "bi-geo-alt", label = message.location } []
-                , itemBlock { iconTitle = "Пости", iconName = "bi-binoculars", label = message.post } []
+                , HtmlX.viewIf (Core.Auth.canUseRadioFeatures vps.user) <|
+                  itemBlock { iconTitle = "Пости", iconName = "bi-binoculars", label = message.post } []
                 ]
 
         messageColumn =
@@ -1529,7 +1536,11 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                 ]
 
         metadataLinks =
-            Pages_.RerAnalysis.Utils.buildMetadataLinks vps.zone message
+            if Core.Auth.canUseRadioFeatures vps.user then
+                Pages_.RerAnalysis.Utils.buildMetadataLinks vps.zone message
+
+            else
+                []
 
         markedTextModel =
             message.textMarked
@@ -1640,6 +1651,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                     ]
                   <|
                     [ tagsBlock
+                        (Core.Auth.canWriteMessages vps.user)
                         message.tags
                         (visibleInboxTags vps.disableBotTags message.inboxTags)
                         (ToggleTag msgId)
@@ -1647,7 +1659,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                     ]
                 , case model.botTagAction of
                     Just action ->
-                        if not vps.disableBotTags && action.messageId == msgId then
+                        if Core.Auth.canWriteMessages vps.user && not vps.disableBotTags && action.messageId == msgId then
                             div
                                 [ class "flex gap-2 items-center text-xs bg-card border border-border rounded px-3 py-2 shadow-sm" ]
                                 [ button
@@ -1674,6 +1686,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                     , style "min-height" "100px"
                     , style "font-size" ".9rem"
                     , placeholder "коментар"
+                    , disabled (not (Core.Auth.canWriteMessages vps.user))
                     , attribute "data-comment-draft" "rer-analysis"
                     , attribute "data-message-id" (String.fromInt msgId)
                     , onInput (ExtendedFormChanged msgId)
@@ -1706,7 +1719,16 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
         renderOtherComment comment =
             div
                 []
-                [ strong [] [ text (commentAuthorLabel signalMessageSenderLabel comment) ]
+                [ strong []
+                    [ if isPostAuthoredComment comment then
+                        text (commentAuthorLabel signalMessageSenderLabel comment)
+
+                      else if trim comment.login == systemCommentLogin then
+                        Shared.Components.AuthorLabel.sender (Maybe.withDefault "" message.sender) (commentAuthorLabel signalMessageSenderLabel comment)
+
+                      else
+                        Shared.Components.AuthorLabel.view comment.login
+                    ]
                 , text ": "
                 , text comment.comment
                 ]

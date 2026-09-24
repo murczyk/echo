@@ -22,6 +22,7 @@ export type RerDutyPageSettings = {
   audioTranscriptionCollapsed: boolean;
   audioTranscriptionEnabled: boolean;
   hideBotTags: boolean;
+  dutyExcludeMenuEnabled: boolean;
   collapseMediaPreviews: boolean;
   mediaSummaryEnabled: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
@@ -48,6 +49,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
   const [audioTranscriptionCollapsed, setAudioTranscriptionCollapsed] = useState(false);
   const [audioTranscriptionEnabled, setAudioTranscriptionEnabled] = useState(false);
   const [hideBotTags, setHideBotTags] = useState(false);
+  const [dutyExcludeMenuEnabled, setDutyExcludeMenuEnabled] = useState(false);
   const [collapseMediaPreviews, setCollapseMediaPreviews] = useState(
     DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
   );
@@ -130,6 +132,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         setDevicesSectionEnabled(settings.devicesSectionEnabled);
         setAudioTranscriptionEnabled(settings.enableAudioTranscription ?? false);
         setHideBotTags(settings.disableBotTags ?? false);
+        setDutyExcludeMenuEnabled(settings.dutyExcludeMenuEnabled ?? true);
         setDevicesSettingsStatus('success');
       })
       .catch((error) => {
@@ -186,6 +189,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
     audioTranscriptionCollapsed,
     audioTranscriptionEnabled,
     hideBotTags,
+    dutyExcludeMenuEnabled,
     collapseMediaPreviews,
     mediaSummaryEnabled,
     messageTextPreviewLines,

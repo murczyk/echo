@@ -46,7 +46,8 @@ type alias CallsignTableRow =
 
 
 type alias Model =
-    { formErrors : Dict String String
+    { radioFeaturesAllowed : Bool
+    , formErrors : Dict String String
     , createNetworkState : B.CreateNetworkReq
     , kindSelect : Utils.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , unitSelect : Utils.Select.SelectType Int

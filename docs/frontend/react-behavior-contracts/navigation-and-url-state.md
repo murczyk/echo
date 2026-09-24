@@ -57,6 +57,13 @@
 - **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded.
 
+## Cyber navbar visibility
+
+- **Behavior ID:** `react-navbar-cyber-visibility`
+- **Expected observable result:** Rer, Cyber, and CyberViewer receive only their permitted navigation; frequency and signal-database links require effective Rer access, and ApiAgent remains excluded from AI chat.
+- **Existing test(s):** `wdintel-web/src/ts/react/components/app-navbar/__tests__/AppNavbar.cyber-visibility.regression.spec.tsx`
+- **Original Echo issue/PR, if known:** [#3568](https://github.com/echoua/echo/issues/3568)
+
 ## Navbar menu composition
 
 - **Status:** inferred characterization

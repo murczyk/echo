@@ -1,6 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
+import { RadioFeaturesProvider } from '../../../shared/RadioFeatures';
 import { act, useState, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -166,7 +167,7 @@ function buildForm(overrides: Partial<NetworkUpsertForm> = {}): NetworkUpsertFor
 function renderDrawer(
   form: NetworkUpsertForm | null,
   mode: 'create' | 'edit' = 'create',
-  options: { frequencyOptional?: boolean } = {},
+  options: { frequencyOptional?: boolean; radioFeaturesAllowed?: boolean } = {},
 ): Rendered {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -205,7 +206,11 @@ function renderDrawer(
   }
 
   act(() => {
-    root.render(<Harness />);
+    root.render(
+      <RadioFeaturesProvider allowed={options.radioFeaturesAllowed ?? true}>
+        {<Harness />}
+      </RadioFeaturesProvider>,
+    );
   });
 
   return { container, root, setForm, saveSpy };
@@ -220,6 +225,24 @@ afterEach(() => {
   }
 });
 describe('NetworkEditDrawer', () => {
+  it('#3568 hides radio fields and permits creation without a frequency', () => {
+    const view = renderDrawer(
+      buildForm({ freq: '', radioStation: 'Existing station', location: 'Київ', aorIds: [1] }),
+      'create',
+      { radioFeaturesAllowed: false, frequencyOptional: false },
+    );
+    rendered.push(view);
+    expect(view.container.querySelector('input[aria-label="Частота"]')).toBeNull();
+    expect(view.container.textContent).not.toContain('Радіостанція');
+    const save = [...view.container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Створити',
+    );
+    expect(save).toBeDefined();
+    expect(save?.disabled).toBe(false);
+    act(() => save?.click());
+    expect(view.saveSpy).toHaveBeenCalledOnce();
+  });
+
   it('keeps validation text hidden on initial open and shows it after blur', () => {
     const view = renderDrawer(buildForm({ freq: '123.4567' }));
     rendered.push(view);

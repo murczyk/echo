@@ -1,3 +1,4 @@
+import { useRadioFeatures } from '../../shared/RadioFeatures';
 import { useId, type ReactNode } from 'react';
 import {
   Checkbox,
@@ -88,6 +89,7 @@ export function CallsignFormFields<T extends CommonFormValue>({
     return names.length > 0 ? names.join(', ') : 'Оберіть підтвердження';
   };
 
+  const radioFeaturesAllowed = useRadioFeatures();
   return (
     <Stack spacing={spacing}>
       {controlsFirst && includeUnitSelect ? (
@@ -196,20 +198,22 @@ export function CallsignFormFields<T extends CommonFormValue>({
         spacing={spacing}
         alignItems={{ md: 'center' }}
       >
-        <FormControl fullWidth size={compact ? 'small' : 'medium'}>
-          <TextField
-            label="Частота"
-            value={value.radioFreq}
-            onChange={(event) => onChange({ ...value, radioFreq: event.target.value })}
-            disabled={disabled}
-            fullWidth
-            size={compact ? 'small' : 'medium'}
-            placeholder="Напр. 145.500"
-          />
-          {value.sourceId === 2 ? (
-            <FormHelperText sx={{ ml: 0 }}>{RO_SOURCE_RADIO_FREQ_REQUIRED_ERROR}</FormHelperText>
-          ) : null}
-        </FormControl>
+        {radioFeaturesAllowed ? (
+          <FormControl fullWidth size={compact ? 'small' : 'medium'}>
+            <TextField
+              label="Частота"
+              value={value.radioFreq}
+              onChange={(event) => onChange({ ...value, radioFreq: event.target.value })}
+              disabled={disabled}
+              fullWidth
+              size={compact ? 'small' : 'medium'}
+              placeholder="Напр. 145.500"
+            />
+            {value.sourceId === 2 ? (
+              <FormHelperText sx={{ ml: 0 }}>{RO_SOURCE_RADIO_FREQ_REQUIRED_ERROR}</FormHelperText>
+            ) : null}
+          </FormControl>
+        ) : null}
         <FormControlLabel
           control={
             <Checkbox

@@ -1,3 +1,5 @@
+import { canWriteMessages } from '../../../utils/roles';
+import { RadioFeaturesProvider } from '../RadioFeatures';
 import React from 'react';
 import { FormProvider, Controller, useFormContext } from 'react-hook-form';
 import {
@@ -345,7 +347,8 @@ function ReportSourceHeader({
 }
 
 export function ManageMessageDrawer(props: Props) {
-  const drawerState = useManageMessageDrawer(props);
+  const canWrite = canWriteMessages(props.currentUser?.roles);
+  const drawerState = useManageMessageDrawer({ ...props, open: props.open && canWrite });
   const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false);
   const [deleteInFlight, setDeleteInFlight] = React.useState(false);
 
@@ -421,10 +424,10 @@ export function ManageMessageDrawer(props: Props) {
   };
 
   return (
-    <>
+    <RadioFeaturesProvider allowed={drawerState.radioFeaturesAllowed}>
       <Drawer
         anchor="right"
-        open={props.open}
+        open={props.open && canWrite}
         onClose={dismissDisabled ? undefined : handleDrawerClose}
         sx={{ zIndex: 1200 }}
         ModalProps={{
@@ -626,6 +629,7 @@ export function ManageMessageDrawer(props: Props) {
                       />
 
                       <NetworkSection
+                        radioFeaturesAllowed={drawerState.radioFeaturesAllowed}
                         isEditMode={isEditMode}
                         busy={busy}
                         recentValues={recentValues}
@@ -645,17 +649,19 @@ export function ManageMessageDrawer(props: Props) {
                       <LocationsSection
                         busy={busy}
                         recentValues={recentValues}
-                        open={props.open}
+                        open={props.open && canWrite}
                         onError={setErrorMsg}
                       />
 
                       {!isReportMode ? (
                         <>
-                          <DmrSection
-                            showAdvanced={showAdvanced}
-                            busy={busy}
-                            recentValues={recentValues}
-                          />
+                          {drawerState.radioFeaturesAllowed ? (
+                            <DmrSection
+                              showAdvanced={showAdvanced}
+                              busy={busy}
+                              recentValues={recentValues}
+                            />
+                          ) : null}
 
                           <AdvancedFieldsSection
                             showAdvanced={showAdvanced}
@@ -768,6 +774,6 @@ export function ManageMessageDrawer(props: Props) {
         submitting={deleteInFlight}
         disabled={saving}
       />
-    </>
+    </RadioFeaturesProvider>
   );
 }

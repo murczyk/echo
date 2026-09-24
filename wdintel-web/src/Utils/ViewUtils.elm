@@ -13,18 +13,27 @@ import Utils.Utils exposing (..)
 
 
 tagsBlock :
-    Maybe (List Int)
+    Bool
+    -> Maybe (List Int)
     -> Maybe (List B.InboxMessageTag)
     -> (Int -> msg)
     -> List ( Int, B.Tag )
     -> Html msg
-tagsBlock tagIdsSet inboxTags toggleTagMsg tags =
+tagsBlock canWrite tagIdsSet inboxTags toggleTagMsg tags =
     let
         tagsShown =
-            tags |> List.filter (\( _, x ) -> x.extra /= Just True)
+            tags
+                |> List.filter
+                    (\( tagId, x ) ->
+                        if canWrite then
+                            x.extra /= Just True
+
+                        else
+                            isSet tagId
+                    )
 
         tagsExtra =
-            tags |> List.filter (\( _, x ) -> x.extra == Just True)
+            tags |> List.filter (\( _, x ) -> canWrite && x.extra == Just True)
 
         isSet tagId =
             case inboxTags of
@@ -111,7 +120,7 @@ tagsBlock tagIdsSet inboxTags toggleTagMsg tags =
                         ]
 
                 callout =
-                    if List.isEmpty robots then
+                    if not canWrite || List.isEmpty robots then
                         Nothing
 
                     else
@@ -216,6 +225,7 @@ tagsBlock tagIdsSet inboxTags toggleTagMsg tags =
         List.map
             (\( tagId_, tag_ ) ->
                 Tag.new { isActive = isSet tagId_, onToggle = toggleTagMsg tagId_ }
+                    |> Tag.withDisabled (not canWrite)
                     |> Tag.withOverlays (overlaysFor tagId_)
                     |> Tag.view tag_.label
             )

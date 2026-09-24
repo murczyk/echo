@@ -14,6 +14,8 @@ vi.mock('@mui/material', () => ({
 }));
 
 import { CreateMessageFab } from '../CreateMessageFab';
+import { MessageWriteAccessContext } from '../../message-card/MessageWriteAccess';
+import { canWriteMessages } from '../../../../utils/roles';
 
 // Regression: https://github.com/echoua/echo/issues/3099
 it('blurs the launcher before opening the drawer', async () => {
@@ -30,3 +32,21 @@ it('blurs the launcher before opening the drawer', async () => {
   root.unmount();
   container.remove();
 });
+
+// Regression: https://github.com/echoua/echo/issues/3569
+it.each([['CyberViewer'], ['CyberViewer', 'Cyber'], ['CyberViewer', 'Admin']])(
+  'applies message creation permissions for %j',
+  async (...roles) => {
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    await act(async () =>
+      root.render(
+        <MessageWriteAccessContext.Provider value={canWriteMessages(roles)}>
+          <CreateMessageFab onClick={vi.fn()} />
+        </MessageWriteAccessContext.Provider>,
+      ),
+    );
+    expect(container.querySelector('button') != null).toBe(roles.length > 1);
+    await act(async () => root.unmount());
+  },
+);

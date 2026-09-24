@@ -1,3 +1,4 @@
+import { useRadioFeatures } from '../../shared/RadioFeatures';
 import {
   Box,
   Checkbox,
@@ -182,87 +183,94 @@ export function AnalysisFiltersPanelSections({
         : 'Точний збіг за еталонкою'
       : null;
 
+  const radioFeaturesAllowed = useRadioFeatures();
   const metadataFilterMode = metadataFilterModeFromState(queryState);
   const tagFilterMode = tagFilterModeFromState(queryState);
   return (
     <>
-      <FilterSection
-        title="Смуги"
-        countLabel={countLabel(
-          'aors',
-          options.aors.length,
-          derived.aorsSelectedCount,
-          counts?.aorsCount ?? options.aors.length,
-        )}
-        expanded={expandedSections.aors}
-        onToggle={() => toggleSection('aors')}
-        onLoad={loadSection('aors')}
-      >
-        <AnalysisFilterField
-          label="Смуги"
-          options={derived.aorOptions}
-          loading={isFilterSectionLoading('aors') || isFilterSectionStale('aors')}
-          emptyLoading={isFilterSectionEmptyLoading('aors', derived.aorOptions.length)}
-          value={queryState.aorsSelected}
-          deferredCommit
-          onChange={(aorsSelected) => updateQueryState({ aorsSelected })}
-        />
-      </FilterSection>
-      <FilterSection
-        title="Частоти"
-        countLabel={countLabel(
-          'freqs',
-          options.freqs.length,
-          derived.freqsSelectedCount,
-          counts?.freqsCount ?? options.freqs.length,
-        )}
-        expanded={expandedSections.freqs}
-        onToggle={() => toggleSection('freqs')}
-      >
-        <Stack spacing={1.25}>
+      {(countsSnapshot?.aorsCount ?? 0) > 1 ? (
+        <FilterSection
+          title="Смуги"
+          countLabel={countLabel(
+            'aors',
+            options.aors.length,
+            derived.aorsSelectedCount,
+            counts?.aorsCount ?? options.aors.length,
+          )}
+          expanded={expandedSections.aors}
+          onToggle={() => toggleSection('aors')}
+          onLoad={loadSection('aors')}
+        >
           <AnalysisFilterField
-            label="Частоти"
-            options={options.freqs}
-            disabled={includeOnlyNewFreqs}
-            loading={isSectionLoading('freqs') || isSectionStale('freqs')}
-            emptyLoading={isSectionEmptyLoading('freqs', options.freqs.length)}
-            value={queryState.freqsSelected}
+            label="Смуги"
+            options={derived.aorOptions}
+            loading={isFilterSectionLoading('aors') || isFilterSectionStale('aors')}
+            emptyLoading={isFilterSectionEmptyLoading('aors', derived.aorOptions.length)}
+            value={queryState.aorsSelected}
             deferredCommit
-            bulkPaste
-            bulkPasteSeparators={[',', '\n']}
-            bulkPasteInputLabel="Частоти"
-            preserveSelectionOrder
-            onChange={(freqsSelected) => updateQueryState({ freqsSelected })}
+            onChange={(aorsSelected) => updateQueryState({ aorsSelected })}
           />
-          <FormControl size="small" disabled={includeOnlyNewFreqs}>
-            <InputLabel id="analysis-adjacent-range-label">Включати частоти в діапазоні</InputLabel>
-            <Select
-              labelId="analysis-adjacent-range-label"
-              label="Включати частоти в діапазоні"
-              value={String(queryState.adjacentFreqsRange)}
-              onChange={(event) =>
-                updateQueryState({ adjacentFreqsRange: Number(event.target.value) })
+        </FilterSection>
+      ) : null}
+      {radioFeaturesAllowed ? (
+        <FilterSection
+          title="Частоти"
+          countLabel={countLabel(
+            'freqs',
+            options.freqs.length,
+            derived.freqsSelectedCount,
+            counts?.freqsCount ?? options.freqs.length,
+          )}
+          expanded={expandedSections.freqs}
+          onToggle={() => toggleSection('freqs')}
+        >
+          <Stack spacing={1.25}>
+            <AnalysisFilterField
+              label="Частоти"
+              options={options.freqs}
+              disabled={includeOnlyNewFreqs}
+              loading={isSectionLoading('freqs') || isSectionStale('freqs')}
+              emptyLoading={isSectionEmptyLoading('freqs', options.freqs.length)}
+              value={queryState.freqsSelected}
+              deferredCommit
+              bulkPaste
+              bulkPasteSeparators={[',', '\n']}
+              bulkPasteInputLabel="Частоти"
+              preserveSelectionOrder
+              onChange={(freqsSelected) => updateQueryState({ freqsSelected })}
+            />
+            <FormControl size="small" disabled={includeOnlyNewFreqs}>
+              <InputLabel id="analysis-adjacent-range-label">
+                Включати частоти в діапазоні
+              </InputLabel>
+              <Select
+                labelId="analysis-adjacent-range-label"
+                label="Включати частоти в діапазоні"
+                value={String(queryState.adjacentFreqsRange)}
+                onChange={(event) =>
+                  updateQueryState({ adjacentFreqsRange: Number(event.target.value) })
+                }
+              >
+                {[0, 0.0005, 0.002, 0.005].map((value) => (
+                  <MenuItem key={value} value={String(value)}>
+                    {value === 0 ? '0 кГц' : `${value * 1000} кГц`}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={includeOnlyNewFreqs}
+                  onChange={(_event, value) => setIncludeOnlyNewFreqs(value)}
+                />
               }
-            >
-              {[0, 0.0005, 0.002, 0.005].map((value) => (
-                <MenuItem key={value} value={String(value)}>
-                  {value === 0 ? '0 кГц' : `${value * 1000} кГц`}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={includeOnlyNewFreqs}
-                onChange={(_event, value) => setIncludeOnlyNewFreqs(value)}
-              />
-            }
-            label="Тільки нові частоти"
-            sx={compactCheckboxLabelSx}
-          />
-        </Stack>
-      </FilterSection>
+              label="Тільки нові частоти"
+              sx={compactCheckboxLabelSx}
+            />
+          </Stack>
+        </FilterSection>
+      ) : null}
       <FilterSection
         title="Позивні"
         countLabel={countLabel(
@@ -289,41 +297,43 @@ export function AnalysisFiltersPanelSections({
           }
         />
       </FilterSection>
-      <FilterSection
-        title="Мережі"
-        countLabel={countLabel(
-          'networks',
-          options.networks.length,
-          derived.networksSelectedCount,
-          counts?.networksCount ?? options.networks.length,
-        )}
-        expanded={expandedSections.networks}
-        onToggle={() => toggleSection('networks')}
-        onLoad={loadSection('networks')}
-      >
-        <AnalysisFilterField
-          label="Мережі"
-          options={derived.networkOptions}
-          disabled={queryState.withoutNetwork}
-          loading={isFilterSectionLoading('networks') || isFilterSectionStale('networks')}
-          emptyLoading={isFilterSectionEmptyLoading('networks', derived.networkOptions.length)}
-          value={queryState.networksSelected}
-          deferredCommit
-          onChange={(networksSelected) => updateQueryState({ networksSelected })}
-        />
-        <Stack spacing={0.5}>
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={queryState.withoutNetwork}
-                onChange={(_event, value) => updateQueryState({ withoutNetwork: value })}
-              />
-            }
-            label="Тільки без мережі"
-            sx={compactCheckboxLabelSx}
+      {radioFeaturesAllowed ? (
+        <FilterSection
+          title="Мережі"
+          countLabel={countLabel(
+            'networks',
+            options.networks.length,
+            derived.networksSelectedCount,
+            counts?.networksCount ?? options.networks.length,
+          )}
+          expanded={expandedSections.networks}
+          onToggle={() => toggleSection('networks')}
+          onLoad={loadSection('networks')}
+        >
+          <AnalysisFilterField
+            label="Мережі"
+            options={derived.networkOptions}
+            disabled={queryState.withoutNetwork}
+            loading={isFilterSectionLoading('networks') || isFilterSectionStale('networks')}
+            emptyLoading={isFilterSectionEmptyLoading('networks', derived.networkOptions.length)}
+            value={queryState.networksSelected}
+            deferredCommit
+            onChange={(networksSelected) => updateQueryState({ networksSelected })}
           />
-        </Stack>
-      </FilterSection>
+          <Stack spacing={0.5}>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={queryState.withoutNetwork}
+                  onChange={(_event, value) => updateQueryState({ withoutNetwork: value })}
+                />
+              }
+              label="Тільки без мережі"
+              sx={compactCheckboxLabelSx}
+            />
+          </Stack>
+        </FilterSection>
+      ) : null}
       <FilterSection
         title="Підрозділи"
         countLabel={countLabel(
@@ -423,30 +433,32 @@ export function AnalysisFiltersPanelSections({
           ) : null}
         </FilterSection>
       ) : null}
-      <FilterSection
-        title="Пости"
-        countLabel={countLabel(
-          'posts',
-          options.posts.length,
-          derived.postsSelectedCount,
-          counts?.postsCount ?? options.posts.length,
-        )}
-        expanded={expandedSections.posts}
-        onToggle={() => toggleSection('posts')}
-        onLoad={loadSection('posts')}
-      >
-        <Stack spacing={1.25}>
-          <AnalysisFilterField
-            label="Пости"
-            options={derived.postsOptions}
-            loading={isFilterSectionLoading('posts') || isFilterSectionStale('posts')}
-            emptyLoading={isFilterSectionEmptyLoading('posts', derived.postsOptions.length)}
-            value={queryState.postsSelected}
-            deferredCommit
-            onChange={(postsSelected) => updateQueryState({ postsSelected })}
-          />
-        </Stack>
-      </FilterSection>
+      {radioFeaturesAllowed ? (
+        <FilterSection
+          title="Пости"
+          countLabel={countLabel(
+            'posts',
+            options.posts.length,
+            derived.postsSelectedCount,
+            counts?.postsCount ?? options.posts.length,
+          )}
+          expanded={expandedSections.posts}
+          onToggle={() => toggleSection('posts')}
+          onLoad={loadSection('posts')}
+        >
+          <Stack spacing={1.25}>
+            <AnalysisFilterField
+              label="Пости"
+              options={derived.postsOptions}
+              loading={isFilterSectionLoading('posts') || isFilterSectionStale('posts')}
+              emptyLoading={isFilterSectionEmptyLoading('posts', derived.postsOptions.length)}
+              value={queryState.postsSelected}
+              deferredCommit
+              onChange={(postsSelected) => updateQueryState({ postsSelected })}
+            />
+          </Stack>
+        </FilterSection>
+      ) : null}
       <FilterSection
         title="Локації"
         countLabel={countLabel(
@@ -469,16 +481,18 @@ export function AnalysisFiltersPanelSections({
             deferredCommit
             onChange={(locationsSelected) => updateQueryState({ locationsSelected })}
           />
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={queryState.includePelengLocations}
-                onChange={(_event, value) => updateQueryState({ includePelengLocations: value })}
-              />
-            }
-            label="Включати пеленг-локації"
-            sx={compactCheckboxLabelSx}
-          />
+          {radioFeaturesAllowed ? (
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={queryState.includePelengLocations}
+                  onChange={(_event, value) => updateQueryState({ includePelengLocations: value })}
+                />
+              }
+              label="Включати пеленг-локації"
+              sx={compactCheckboxLabelSx}
+            />
+          ) : null}
         </Stack>
       </FilterSection>
       <FilterSection
@@ -671,103 +685,105 @@ export function AnalysisFiltersPanelSections({
           </Stack>
         </Stack>
       </FilterSection>
-      <FilterSection
-        title="Метадані"
-        countLabel={countLabel(
-          'metadata',
-          derived.metadataOptionsCount,
-          derived.metadataSelectedCount,
-          null,
-        )}
-        expanded={expandedSections.metadata}
-        onToggle={() => toggleSection('metadata')}
-        onLoad={loadSection('metadata')}
-      >
-        <Stack spacing={1.25}>
-          <AnalysisFilterField
-            label="Метадані CC"
-            options={derived.metadataCcsOptions}
-            disabled={queryState.withoutMetadata}
-            loading={isFilterSectionLoading('metadata') || isFilterSectionStale('metadata')}
-            emptyLoading={isFilterSectionEmptyLoading(
-              'metadata',
-              derived.metadataCcsOptions.length,
-            )}
-            value={queryState.metadataCc}
-            onChange={(metadataCc) => updateQueryState({ metadataCc })}
-          />
-          <AnalysisFilterField
-            label="Метадані відправника"
-            options={derived.metadataSendersOptions}
-            disabled={queryState.withoutMetadata}
-            loading={isFilterSectionLoading('metadata') || isFilterSectionStale('metadata')}
-            emptyLoading={isFilterSectionEmptyLoading(
-              'metadata',
-              derived.metadataSendersOptions.length,
-            )}
-            value={queryState.metadataSender}
-            onChange={(metadataSender) => updateQueryState({ metadataSender })}
-          />
-          <AnalysisFilterField
-            label="Метадані отримувача"
-            options={derived.metadataReceiversOptions}
-            disabled={queryState.withoutMetadata}
-            loading={isFilterSectionLoading('metadata') || isFilterSectionStale('metadata')}
-            emptyLoading={isFilterSectionEmptyLoading(
-              'metadata',
-              derived.metadataReceiversOptions.length,
-            )}
-            value={queryState.metadataReceiver}
-            onChange={(metadataReceiver) => updateQueryState({ metadataReceiver })}
-          />
-          <AnalysisFilterField
-            label="Хеш метаданих"
-            options={derived.metadataHashesOptions}
-            disabled={queryState.withoutMetadata}
-            loading={isFilterSectionLoading('metadata') || isFilterSectionStale('metadata')}
-            emptyLoading={isFilterSectionEmptyLoading(
-              'metadata',
-              derived.metadataHashesOptions.length,
-            )}
-            value={queryState.metadataHash}
-            onChange={(metadataHash) => updateQueryState({ metadataHash })}
-          />
-          <Box
-            sx={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 0.75,
-              minWidth: 0,
-            }}
-          >
-            <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
-              Режим метаданих
-            </Typography>
-            <ToggleButtonGroup
-              exclusive
-              fullWidth
-              size="small"
-              color="primary"
-              value={metadataFilterMode}
-              onChange={handleMetadataFilterModeChange}
-              aria-label="Режим метаданих"
+      {radioFeaturesAllowed ? (
+        <FilterSection
+          title="Метадані"
+          countLabel={countLabel(
+            'metadata',
+            derived.metadataOptionsCount,
+            derived.metadataSelectedCount,
+            null,
+          )}
+          expanded={expandedSections.metadata}
+          onToggle={() => toggleSection('metadata')}
+          onLoad={loadSection('metadata')}
+        >
+          <Stack spacing={1.25}>
+            <AnalysisFilterField
+              label="Метадані CC"
+              options={derived.metadataCcsOptions}
+              disabled={queryState.withoutMetadata}
+              loading={isFilterSectionLoading('metadata') || isFilterSectionStale('metadata')}
+              emptyLoading={isFilterSectionEmptyLoading(
+                'metadata',
+                derived.metadataCcsOptions.length,
+              )}
+              value={queryState.metadataCc}
+              onChange={(metadataCc) => updateQueryState({ metadataCc })}
+            />
+            <AnalysisFilterField
+              label="Метадані відправника"
+              options={derived.metadataSendersOptions}
+              disabled={queryState.withoutMetadata}
+              loading={isFilterSectionLoading('metadata') || isFilterSectionStale('metadata')}
+              emptyLoading={isFilterSectionEmptyLoading(
+                'metadata',
+                derived.metadataSendersOptions.length,
+              )}
+              value={queryState.metadataSender}
+              onChange={(metadataSender) => updateQueryState({ metadataSender })}
+            />
+            <AnalysisFilterField
+              label="Метадані отримувача"
+              options={derived.metadataReceiversOptions}
+              disabled={queryState.withoutMetadata}
+              loading={isFilterSectionLoading('metadata') || isFilterSectionStale('metadata')}
+              emptyLoading={isFilterSectionEmptyLoading(
+                'metadata',
+                derived.metadataReceiversOptions.length,
+              )}
+              value={queryState.metadataReceiver}
+              onChange={(metadataReceiver) => updateQueryState({ metadataReceiver })}
+            />
+            <AnalysisFilterField
+              label="Хеш метаданих"
+              options={derived.metadataHashesOptions}
+              disabled={queryState.withoutMetadata}
+              loading={isFilterSectionLoading('metadata') || isFilterSectionStale('metadata')}
+              emptyLoading={isFilterSectionEmptyLoading(
+                'metadata',
+                derived.metadataHashesOptions.length,
+              )}
+              value={queryState.metadataHash}
+              onChange={(metadataHash) => updateQueryState({ metadataHash })}
+            />
+            <Box
               sx={{
-                '& .MuiToggleButton-root': {
-                  textTransform: 'none',
-                  py: 0.75,
-                },
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 0.75,
+                minWidth: 0,
               }}
             >
-              <ToggleButton value="all">Усі</ToggleButton>
-              <ToggleButton value="with">З метаданими</ToggleButton>
-              <ToggleButton value="without">Без метаданих</ToggleButton>
-            </ToggleButtonGroup>
-            <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1.35 }}>
-              {metadataFilterModeHint(metadataFilterMode)}
-            </Typography>
-          </Box>
-        </Stack>
-      </FilterSection>
+              <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
+                Режим метаданих
+              </Typography>
+              <ToggleButtonGroup
+                exclusive
+                fullWidth
+                size="small"
+                color="primary"
+                value={metadataFilterMode}
+                onChange={handleMetadataFilterModeChange}
+                aria-label="Режим метаданих"
+                sx={{
+                  '& .MuiToggleButton-root': {
+                    textTransform: 'none',
+                    py: 0.75,
+                  },
+                }}
+              >
+                <ToggleButton value="all">Усі</ToggleButton>
+                <ToggleButton value="with">З метаданими</ToggleButton>
+                <ToggleButton value="without">Без метаданих</ToggleButton>
+              </ToggleButtonGroup>
+              <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1.35 }}>
+                {metadataFilterModeHint(metadataFilterMode)}
+              </Typography>
+            </Box>
+          </Stack>
+        </FilterSection>
+      ) : null}
     </>
   );
 }

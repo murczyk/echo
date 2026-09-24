@@ -33,6 +33,7 @@ import type {
 
 export type FeedColumnProps = {
   column: FeedColumnModel;
+  onPanelOpenChange?: (feedId: string, panelOpen: boolean) => void;
 };
 
 export type FeedColumnScrollOptions = {
@@ -47,7 +48,7 @@ export type FeedColumnHandle = {
   scrollToMessage?: (id: number, behavior?: ScrollBehavior) => HTMLElement | null;
 };
 export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function FeedColumn(
-  { column },
+  { column, onPanelOpenChange },
   ref,
 ) {
   const { feed, view, filterPanel, keywordsPanel, actions } = column;
@@ -137,6 +138,11 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
   const closeKeywordsPanel = useCallback(() => {
     setShowKeywordsPanel(false);
   }, []);
+  const closeOpenPanels = useCallback(() => {
+    setShowFilters(false);
+    setShowNotificationPanel(false);
+    setShowKeywordsPanel(false);
+  }, []);
   const closeOtherPanels = useCallback((except: 'filters' | 'notifications' | 'keywords') => {
     if (except !== 'filters') setShowFilters(false);
     if (except !== 'notifications') setShowNotificationPanel(false);
@@ -166,13 +172,11 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
   }, [closeOtherPanels]);
   const handleCloseAction = useCallback(() => {
     if (showFilters || showNotificationPanel || showKeywordsPanel) {
-      setShowFilters(false);
-      setShowNotificationPanel(false);
-      setShowKeywordsPanel(false);
+      closeOpenPanels();
       return;
     }
     setRemoveConfirmationOpen(true);
-  }, [showFilters, showNotificationPanel, showKeywordsPanel]);
+  }, [closeOpenPanels, showFilters, showNotificationPanel, showKeywordsPanel]);
   const handleRemoveConfirmed = useCallback(() => {
     setRemoveConfirmationOpen(false);
     onRemoveColumn();
@@ -186,25 +190,47 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
   }, []);
   useDocumentClickAway({
     enabled: showFilters,
-    refs: [columnRef],
+    refs: [headerRef, filtersPanelRef],
     ignoreSelectors: ['.MuiModal-root', '.MuiPopover-root'],
     shouldDismiss: shouldDismissPanelClick,
     onClickAway: closeFilters,
   });
   useDocumentClickAway({
     enabled: showNotificationPanel,
-    refs: [columnRef],
+    refs: [headerRef, notificationPanelRef],
     ignoreSelectors: ['.MuiModal-root', '.MuiPopover-root'],
     shouldDismiss: shouldDismissPanelClick,
     onClickAway: closeNotificationPanel,
   });
   useDocumentClickAway({
     enabled: showKeywordsPanel,
-    refs: [columnRef],
+    refs: [headerRef, keywordsPanelRef],
     ignoreSelectors: ['.MuiModal-root', '.MuiPopover-root'],
     shouldDismiss: shouldDismissPanelClick,
     onClickAway: closeKeywordsPanel,
   });
+
+  useEffect(() => {
+    if (!showFilters && !showNotificationPanel && !showKeywordsPanel) return;
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) closeOpenPanels();
+    };
+
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [closeOpenPanels, showFilters, showKeywordsPanel, showNotificationPanel]);
+
+  const panelOpen = showFilters || showNotificationPanel || showKeywordsPanel;
+  useEffect(() => {
+    onPanelOpenChange?.(feed.id, panelOpen);
+  }, [feed.id, onPanelOpenChange, panelOpen]);
+  useEffect(
+    () => () => {
+      onPanelOpenChange?.(feed.id, false);
+    },
+    [feed.id, onPanelOpenChange],
+  );
 
   useImperativeHandle(
     ref,
@@ -249,6 +275,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
       }}
     >
       <FeedColumnHeader
+        narrowScreen={narrowScreen}
         feedCount={feedCount}
         canRemove={canRemove}
         showFilters={showFilters}

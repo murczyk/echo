@@ -157,8 +157,11 @@ pub async fn oneoff_disable_im_and_goi(mode: Mode) -> Result<(), AppError> {
     let dbx = crate::new_pg_pool_from_config(&config)
         .await
         .context(h!())?;
-    disable_im_datasources(&dbx, "oneoff-disable-im-and-goi").await?;
-    disable_goi_integrations(&dbx).await?;
+    disable_im_datasources(&dbx, "oneoff-disable-im-and-goi")
+        .await
+        .context(h!())?;
+    disable_goi_integrations(&dbx).await.context(h!())?;
+    disable_iggy_integrations(&dbx).await.c(h!())?;
     Ok(())
 }
 
@@ -223,5 +226,25 @@ async fn disable_goi_integrations(
         .context(h!())?;
     info!("oneoff-disable-im-and-goi disable_goi_integrations completed");
 
+    Ok(())
+}
+
+async fn disable_iggy_integrations(
+    db: &DatabaseConnection,
+) -> anyhow::Result<()> {
+    let result = api_integration::Entity::update_many()
+        .set(api_integration::ActiveModel {
+            sync_enabled: Set(false),
+            is_working: Set(false),
+            ..Default::default()
+        })
+        .filter(api_integration::Column::HasIggyConnection.eq(true))
+        .exec(db)
+        .await
+        .c(h!())?;
+    info!(
+        "oneoff-disable-im-and-goi disabled {} Iggy integrations",
+        result.rows_affected
+    );
     Ok(())
 }

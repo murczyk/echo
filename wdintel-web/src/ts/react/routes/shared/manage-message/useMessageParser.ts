@@ -9,6 +9,7 @@ export function useMessageParser(
   methods: UseFormReturn<MessageFormData>,
   busy: boolean,
   setErrorMsg: (msg: string | null) => void,
+  radioFeaturesAllowed = true,
 ) {
   const [parsing, setParsing] = useState(false);
   const { getValues, setValue } = methods;
@@ -42,7 +43,7 @@ export function useMessageParser(
         setValue(name, value, { shouldDirty: true, shouldValidate: true });
       };
       fillText('text', parsed.text);
-      fillText('freq', parsed.freq ?? '');
+      if (radioFeaturesAllowed) fillText('freq', parsed.freq ?? '');
       fillText(
         'coords',
         parsed.coords
@@ -50,7 +51,7 @@ export function useMessageParser(
           .join('\n') ?? '',
       );
       fillText('comment', parsed.comment ?? '');
-      fillText('post', parsed.post ?? '');
+      if (radioFeaturesAllowed) fillText('post', parsed.post ?? '');
       fillText('network_name', parsed.unit ?? '');
       fillText('unit', parsed.unit_v2 ?? '');
       fillList('callsigns', parsed.to);

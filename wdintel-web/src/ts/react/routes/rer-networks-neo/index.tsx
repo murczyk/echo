@@ -1,3 +1,5 @@
+import { RadioFeaturesProvider } from '../shared/RadioFeatures';
+import { canUseRadioFeatures } from '../../utils/roles';
 import { Box, Stack, useMediaQuery } from '@mui/material';
 import type { MRT_SortingState } from 'material-react-table';
 import { useCallback, useEffect, useMemo } from 'react';
@@ -40,9 +42,13 @@ function RerNetworksNeoPageBody({
     () => resolveAorFilterSelectOptions(page.aorOptions),
     [page.aorOptions],
   );
+  const radioFeaturesAllowed = page.radioFeaturesAllowed;
   const safeColumnFilters = useMemo(
-    () => sanitizeNetworkColumnFilters(tableStateContext.columnFilters),
-    [tableStateContext.columnFilters],
+    () =>
+      sanitizeNetworkColumnFilters(tableStateContext.columnFilters).filter(
+        (filter) => radioFeaturesAllowed || filter.id !== 'freqs',
+      ),
+    [tableStateContext.columnFilters, radioFeaturesAllowed],
   );
   const {
     hoverPopover,
@@ -315,16 +321,18 @@ export function RerNetworksNeoPage({
   unitId,
 }: { authUserRoles?: string[]; unitId?: number } = {}) {
   return (
-    <TableStateProvider
-      key={unitId ?? 'all'}
-      tableId={unitId ? 'rer-unit-networks' : 'rer-networks-neo'}
-      defaultColumnOrder={columnOrder}
-      defaultColumnVisibility={{}}
-      defaultEnableColumnOrdering={false}
-      defaultSorting={DEFAULT_NETWORKS_SORTING}
-      sanitizeColumnFilters={sanitizeNetworkColumnFilters}
-    >
-      <RerNetworksNeoPageBody authUserRoles={authUserRoles} unitId={unitId} />
-    </TableStateProvider>
+    <RadioFeaturesProvider allowed={canUseRadioFeatures(authUserRoles)}>
+      <TableStateProvider
+        key={unitId ?? 'all'}
+        tableId={unitId ? 'rer-unit-networks' : 'rer-networks-neo'}
+        defaultColumnOrder={columnOrder}
+        defaultColumnVisibility={{}}
+        defaultEnableColumnOrdering={false}
+        defaultSorting={DEFAULT_NETWORKS_SORTING}
+        sanitizeColumnFilters={sanitizeNetworkColumnFilters}
+      >
+        <RerNetworksNeoPageBody authUserRoles={authUserRoles} unitId={unitId} />
+      </TableStateProvider>
+    </RadioFeaturesProvider>
   );
 }

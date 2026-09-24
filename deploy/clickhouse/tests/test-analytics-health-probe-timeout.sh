@@ -25,6 +25,9 @@ die() {
   printf '%s\n' "$1" >&2
   exit 1
 }
+source_reconciliation_failure_is_transient() {
+  grep -q 'deadlock detected' <<<"$1"
+}
 catalog_psql() {
   cat >/dev/null
   printf '1\n'
@@ -32,7 +35,11 @@ catalog_psql() {
 source_psql() {
   local sql
   sql=$(cat)
-  if [[ "$*" == *pg_current_wal_lsn* ]]; then
+  if [[ ${ECHO_TEST_HEALTH_SCENARIO:-} == deadlock ]] \
+    && grep -q 'UPDATE echo_analytics.heartbeat' <<<"$sql"; then
+    printf 'ERROR: deadlock detected\n' >&2
+    return 1
+  elif [[ "$*" == *pg_current_wal_lsn* ]]; then
     printf '1/20\n'
   elif grep -q pg_replication_slots <<<"$sql"; then
     printf 'reserved|1/10\n'
@@ -72,5 +79,17 @@ if grep -Eq 'checked_at|healthy' "$health_sql"; then
 fi
 grep -q 'source heartbeat was not visible through ClickHouse within 1s' \
   "$error_log"
+
+if PATH="$case_dir/path:$PATH" \
+  ECHO_TEST_HEALTH_SQL="$health_sql" \
+  ECHO_TEST_HEALTH_SCENARIO=deadlock \
+  ANALYTICS_HEALTH_PROBE_TIMEOUT_SECONDS=1 \
+  bash "$case_dir/bin/check-analytics-health.sh" 2>"$error_log"
+then
+  printf 'deadlocked analytics heartbeat unexpectedly passed health check\n' >&2
+  exit 1
+fi
+grep -q 'deadlock detected' "$error_log"
+grep -q 'could not update source analytics heartbeat' "$error_log"
 
 printf 'Analytics health probe timeout tests passed\n'

@@ -1,3 +1,4 @@
+import { AuthorLabel } from '../../components/AuthorLabel';
 import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
 import DriveFileMoveOutlinedIcon from '@mui/icons-material/DriveFileMoveOutlined';
@@ -524,7 +525,7 @@ function RerPalitraNeoPageBody() {
         items={page.bulkDeleteDialogPalitras.map((palitra) => ({
           id: palitra.id,
           primary: palitra.name,
-          secondary: palitra.author ?? undefined,
+          secondary: <AuthorLabel login={palitra.author} />,
         }))}
         submitting={page.bulkDeleteInFlight}
         disabled={page.inFlightDeleteId !== null}

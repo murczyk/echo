@@ -1,6 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
+import type { User } from '../../../../../Bindings';
 import type { ComponentProps, ReactNode, Ref } from 'react';
 import { act, forwardRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -20,6 +21,8 @@ const directSubmitMocks = vi.hoisted(() => ({
   createDeviceName: vi.fn().mockResolvedValue({ id: 1 }),
   parseDirectSubmit: vi.fn(),
   searchNetworkNames: vi.fn().mockResolvedValue([]),
+  searchFreqs: vi.fn().mockResolvedValue([]),
+  searchPostNames: vi.fn().mockResolvedValue([]),
 }));
 const networkMocks = vi.hoisted(() => ({
   getNetworksByIds: vi.fn().mockResolvedValue([]),
@@ -48,12 +51,12 @@ vi.mock('../../../../services/api/inbox-reference-data', () => ({
 vi.mock('../../../../services/api/direct-submit', () => ({
   searchDeviceName: vi.fn().mockResolvedValue(null),
   searchDeviceNames: vi.fn().mockResolvedValue([]),
-  searchPostNames: vi.fn().mockResolvedValue([]),
+  searchPostNames: directSubmitMocks.searchPostNames,
   searchUnitNames: vi.fn().mockResolvedValue([]),
   searchNetworkNames: directSubmitMocks.searchNetworkNames,
   searchSignalNames: vi.fn().mockResolvedValue([]),
   searchCallsignNames: vi.fn().mockResolvedValue([]),
-  searchFreqs: vi.fn().mockResolvedValue([]),
+  searchFreqs: directSubmitMocks.searchFreqs,
   createDeviceName: directSubmitMocks.createDeviceName,
   parseDirectSubmit: directSubmitMocks.parseDirectSubmit,
   submitDirect: directSubmitMocks.submitDirect,
@@ -615,6 +618,8 @@ describe('ManageMessageDrawer edit mode', () => {
     directSubmitMocks.createDeviceName.mockReset();
     directSubmitMocks.createDeviceName.mockResolvedValue({ id: 1 });
     directSubmitMocks.parseDirectSubmit.mockReset();
+    directSubmitMocks.searchFreqs.mockClear();
+    directSubmitMocks.searchPostNames.mockClear();
     directSubmitMocks.searchNetworkNames.mockReset();
     directSubmitMocks.searchNetworkNames.mockResolvedValue([]);
     networkMocks.getNetworksByIds.mockReset();
@@ -635,6 +640,65 @@ describe('ManageMessageDrawer edit mode', () => {
     uppyMocks.latest = null;
   });
 
+  it('closes the message editor when browser Back restores the pre-editor history state', async () => {
+    const preEditorState = { screen: 'duty' };
+    window.history.replaceState(preEditorState, '', '/rer-duty-neo');
+    const onClose = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={onClose}
+        />,
+      );
+    });
+    await act(async () => {
+      window.dispatchEvent(new PopStateEvent('popstate', { state: preEditorState }));
+    });
+
+    expect(onClose).toHaveBeenCalledOnce();
+    root.unmount();
+  });
+
+  it('keeps the message editor open when browser Back is requested while saving', async () => {
+    const preEditorState = { screen: 'duty' };
+    window.history.replaceState(preEditorState, '', '/rer-duty-neo');
+    const onClose = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={onClose}
+          editTarget={{ id: 42, message: buildMessage() }}
+          editSaveInFlight
+          onSubmitEdit={vi.fn()}
+        />,
+      );
+    });
+    await act(async () => {
+      window.dispatchEvent(new PopStateEvent('popstate', { state: preEditorState }));
+    });
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(document.documentElement.classList.contains('echo-browser-back-overlay-open')).toBe(
+      true,
+    );
+    root.unmount();
+  });
+
   it('shows an inert report-edit loading shell with an enabled dismissal path', async () => {
     setRecentValues({});
     const onClose = vi.fn();
@@ -647,7 +711,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={onClose}
           editAsReport
           editTargetLoadState={{ status: 'loading', reportId: 91 }}
@@ -696,7 +760,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           reportSource={{ id: 42, message: buildMessage({ text: 'original card body' }) }}
         />,
@@ -727,7 +791,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           reportSource={{ id: 42, message: buildMessage() }}
         />,
@@ -768,7 +832,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           reportSource={{ id: 42, message: buildMessage() }}
         />,
@@ -814,7 +878,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           reportSource={{ id: 42, message: buildMessage() }}
         />,
@@ -862,7 +926,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           reportSource={{ id: 42, message: buildMessage() }}
         />,
@@ -907,7 +971,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           reportSource={{ id: 42, message: buildMessage() }}
         />,
@@ -921,7 +985,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open={false}
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           reportSource={{ id: 42, message: buildMessage() }}
         />,
@@ -946,7 +1010,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           reportSource={{ id: 42, message: buildMessage() }}
         />,
@@ -1032,7 +1096,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           reportSource={{ id: 42, message: source }}
         />,
@@ -1163,7 +1227,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           reportSource={{ id: 42, message: source, senderName: 'Імʼя Відправника' }}
         />,
@@ -1228,7 +1292,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           reportSource={reportSource}
         />,
@@ -1280,7 +1344,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           editTarget={{ id: 91, message: report }}
           editAsReport
@@ -1362,7 +1426,7 @@ describe('ManageMessageDrawer edit mode', () => {
           <ManageMessageDrawer
             open
             cyberEchoEnabled={false}
-            currentUser={null}
+            currentUser={{ roles: ['Rer'] } as User}
             onClose={vi.fn()}
             editTarget={{ id: 91, message }}
           />,
@@ -1422,7 +1486,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           editTarget={{ id: 91, message }}
           onSubmitEdit={onSubmitEdit}
@@ -1483,7 +1547,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           editTarget={{ id: 91, message: report }}
           editAsReport
@@ -1532,7 +1596,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           editTarget={{ id: 91, message: report }}
           onSubmitEdit={onSubmitEdit}
@@ -1597,7 +1661,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={onClose}
           onDeleteSuccess={onDeleteSuccess}
           editTarget={{ id: 91, message: report }}
@@ -1661,7 +1725,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={onClose}
           editTarget={{ id: 91, message: report }}
           editAsReport
@@ -1697,7 +1761,12 @@ describe('ManageMessageDrawer edit mode', () => {
 
     await act(async () => {
       root.render(
-        <ManageMessageDrawer open cyberEchoEnabled={false} currentUser={null} onClose={vi.fn()} />,
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+        />,
       );
     });
 
@@ -1726,7 +1795,12 @@ describe('ManageMessageDrawer edit mode', () => {
 
     await act(async () => {
       root.render(
-        <ManageMessageDrawer open cyberEchoEnabled currentUser={null} onClose={vi.fn()} />,
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+        />,
       );
       await Promise.resolve();
     });
@@ -1751,7 +1825,12 @@ describe('ManageMessageDrawer edit mode', () => {
 
     await act(async () => {
       root.render(
-        <ManageMessageDrawer open cyberEchoEnabled={false} currentUser={null} onClose={vi.fn()} />,
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+        />,
       );
       await Promise.resolve();
     });
@@ -1800,7 +1879,12 @@ describe('ManageMessageDrawer edit mode', () => {
 
     await act(async () => {
       root.render(
-        <ManageMessageDrawer open cyberEchoEnabled={false} currentUser={null} onClose={vi.fn()} />,
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+        />,
       );
       await Promise.resolve();
     });
@@ -1808,6 +1892,65 @@ describe('ManageMessageDrawer edit mode', () => {
     expect(autocompleteValuesByLabel.get('Група')).toBeNull();
     expect((container.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(
       true,
+    );
+    root.unmount();
+  });
+
+  it('#3568 creates a Cyber message without radio fields and ignores a parsed frequency', async () => {
+    referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
+    referenceDataMocks.getGroupInfosBatch.mockResolvedValue([{ masterKey: 'g-1' }]);
+    directSubmitMocks.parseDirectSubmit.mockResolvedValue({
+      text: 'parsed body',
+      freq: '153.6250',
+      post: 'HIDDEN-PARSED-POST',
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Cyber', 'UnitsEditor'] } as User}
+          onClose={vi.fn()}
+        />,
+      );
+      await Promise.resolve();
+    });
+    await act(async () => {
+      autocompleteOnChangeByLabel.get('Група')?.(null, { masterKey: 'g-1' });
+      textFieldPropsByLabel.get('Текст повідомлення')?.onChange?.({ target: { value: 'body' } });
+      await Promise.resolve();
+    });
+    const parse = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Розпарсити',
+    )!;
+    await act(async () => {
+      parse.click();
+    });
+    const advanced = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Розширені поля',
+    )!;
+    await act(async () => {
+      advanced.click();
+    });
+    expect(container.querySelector('[aria-label="Коротке повідомлення"]')).not.toBeNull();
+    expect(container.textContent).not.toContain('Частота (МГц)');
+    expect(container.textContent).not.toContain('DMR метадані');
+    expect(container.textContent).not.toContain('Назва сигнала мережі');
+    expect(directSubmitMocks.searchFreqs).not.toHaveBeenCalled();
+    expect(directSubmitMocks.searchPostNames).not.toHaveBeenCalled();
+    expect(autocompleteOnChangeByLabel.has('Пост')).toBe(false);
+    const submit = container.querySelector('button[type="submit"]') as HTMLButtonElement;
+    expect(submit.disabled).toBe(false);
+    await act(async () => {
+      container
+        .querySelector('form')!
+        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    expect(directSubmitMocks.submitDirect).toHaveBeenCalledWith(
+      expect.objectContaining({ freq: undefined, post: undefined, dmr: [] }),
     );
     root.unmount();
   });
@@ -1821,7 +1964,12 @@ describe('ManageMessageDrawer edit mode', () => {
 
     await act(async () => {
       root.render(
-        <ManageMessageDrawer open cyberEchoEnabled={false} currentUser={null} onClose={vi.fn()} />,
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+        />,
       );
       await Promise.resolve();
     });
@@ -1864,7 +2012,12 @@ describe('ManageMessageDrawer edit mode', () => {
 
     await act(async () => {
       root.render(
-        <ManageMessageDrawer open cyberEchoEnabled={false} currentUser={null} onClose={vi.fn()} />,
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+        />,
       );
       await Promise.resolve();
     });
@@ -1914,7 +2067,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           editTarget={{
             id: 42,
@@ -1952,7 +2105,12 @@ describe('ManageMessageDrawer edit mode', () => {
 
     await act(async () => {
       root.render(
-        <ManageMessageDrawer open cyberEchoEnabled={false} currentUser={null} onClose={vi.fn()} />,
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+        />,
       );
       await Promise.resolve();
     });
@@ -2002,7 +2160,12 @@ describe('ManageMessageDrawer edit mode', () => {
 
     await act(async () => {
       root.render(
-        <ManageMessageDrawer open cyberEchoEnabled={false} currentUser={null} onClose={vi.fn()} />,
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+        />,
       );
       await Promise.resolve();
     });
@@ -2041,7 +2204,12 @@ describe('ManageMessageDrawer edit mode', () => {
 
     await act(async () => {
       root.render(
-        <ManageMessageDrawer open cyberEchoEnabled={false} currentUser={null} onClose={vi.fn()} />,
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+        />,
       );
       await Promise.resolve();
     });
@@ -2085,7 +2253,12 @@ describe('ManageMessageDrawer edit mode', () => {
 
     await act(async () => {
       root.render(
-        <ManageMessageDrawer open cyberEchoEnabled={false} currentUser={null} onClose={vi.fn()} />,
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+        />,
       );
       await Promise.resolve();
     });
@@ -2133,7 +2306,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           editTarget={{ id: 1, message: buildMessage({ media }) }}
           onSubmitEdit={vi.fn()}
@@ -2205,7 +2378,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           editTarget={{ id: 1, message: buildMessage({ text: '', media }) }}
           onSubmitEdit={vi.fn()}
@@ -2256,7 +2429,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open={open}
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={() => {
             onClose();
             setOpen(false);
@@ -2340,7 +2513,12 @@ describe('ManageMessageDrawer edit mode', () => {
 
     await act(async () => {
       root.render(
-        <ManageMessageDrawer open cyberEchoEnabled={false} currentUser={null} onClose={vi.fn()} />,
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+        />,
       );
       await Promise.resolve();
     });
@@ -2387,7 +2565,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           editTarget={{
             id: 42,
@@ -2468,7 +2646,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open={open}
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           editTarget={{ id: 42, message }}
           onSubmitEdit={onSubmitEdit}
@@ -2545,7 +2723,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           editTarget={{
             id: 3008768,
@@ -2598,7 +2776,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           editTarget={{
             id: 55,
@@ -2666,7 +2844,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           editTarget={{
             id: 77,
@@ -2711,7 +2889,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           editTarget={{ id: 88, message: buildMessage({ tags: originalTags }) }}
           editSaveInFlight={false}
@@ -2745,7 +2923,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           editTarget={{
             id: 90,
@@ -2783,7 +2961,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           editTarget={{
             id: 90,
@@ -2813,63 +2991,74 @@ describe('ManageMessageDrawer edit mode', () => {
     root.unmount();
   });
 
-  it('preserves every DMR metadata row in the edit payload', async () => {
-    directSubmitMocks.editDirectSubmit.mockResolvedValue({
-      signal_message_id: 91,
-      message: buildMessage(),
-    });
-    const metadataBase = {
-      colorCodeStartIndex: null,
-      colorCodeEndIndex: null,
-      callGroupId: null,
-      callGroupIdStartIndex: null,
-      callGroupIdEndIndex: null,
-      callGroupName: null,
-      callGroupNameStartIndex: null,
-      callGroupNameEndIndex: null,
-      senderIdStartIndex: null,
-      senderIdEndIndex: null,
-      senderName: null,
-      senderNameStartIndex: null,
-      senderNameEndIndex: null,
-      hashId: null,
-      hashIdStartIndex: null,
-      hashIdEndIndex: null,
-    };
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    await act(async () => {
-      root.render(
-        <ManageMessageDrawer
-          open
-          cyberEchoEnabled={false}
-          currentUser={null}
-          onClose={vi.fn()}
-          editTarget={{
-            id: 91,
-            message: buildMessage({
-              metadata: [
-                { ...metadataBase, colorCode: '3', senderId: '101' },
-                { ...metadataBase, colorCode: '3', senderId: '202' },
-              ],
-            }),
-          }}
-        />,
-      );
-    });
+  it.each([['Rer'], ['Cyber'], ['Cyber', 'UnitsEditor']])(
+    '#3568 preserves every DMR metadata row in an edit for %j',
+    async (...roles) => {
+      directSubmitMocks.editDirectSubmit.mockResolvedValue({
+        signal_message_id: 91,
+        message: buildMessage(),
+      });
+      const metadataBase = {
+        colorCodeStartIndex: null,
+        colorCodeEndIndex: null,
+        callGroupId: null,
+        callGroupIdStartIndex: null,
+        callGroupIdEndIndex: null,
+        callGroupName: null,
+        callGroupNameStartIndex: null,
+        callGroupNameEndIndex: null,
+        senderIdStartIndex: null,
+        senderIdEndIndex: null,
+        senderName: null,
+        senderNameStartIndex: null,
+        senderNameEndIndex: null,
+        hashId: null,
+        hashIdStartIndex: null,
+        hashIdEndIndex: null,
+      };
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={{ roles } as User}
+            onClose={vi.fn()}
+            editTarget={{
+              id: 91,
+              message: buildMessage({
+                post: 'ORIGINAL-POST',
+                metadata: [
+                  { ...metadataBase, colorCode: '3', senderId: '101' },
+                  { ...metadataBase, colorCode: '3', senderId: '202' },
+                ],
+              }),
+            }}
+          />,
+        );
+      });
 
-    const form = container.querySelector('form') as HTMLFormElement;
-    await act(async () => {
-      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-    });
+      const form = container.querySelector('form') as HTMLFormElement;
+      await act(async () => {
+        form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      });
 
-    expect(directSubmitMocks.editDirectSubmit.mock.calls[0][1].dmr).toMatchObject([
-      { cc: 3, sender_id: 101, signal_name: 'DMR' },
-      { cc: 3, sender_id: 202, signal_name: 'DMR' },
-    ]);
-    root.unmount();
-  });
+      if (!roles.includes('Rer')) {
+        expect(container.textContent).not.toContain('Частота (МГц)');
+        expect(container.textContent).not.toContain('DMR метадані');
+        expect(container.textContent).not.toContain('Колірний код (CC)');
+        expect(directSubmitMocks.searchFreqs).not.toHaveBeenCalled();
+      }
+      expect(directSubmitMocks.editDirectSubmit.mock.calls[0][1].post).toBe('ORIGINAL-POST');
+      expect(directSubmitMocks.editDirectSubmit.mock.calls[0][1].dmr).toMatchObject([
+        { cc: 3, sender_id: 101, signal_name: 'DMR' },
+        { cc: 3, sender_id: 202, signal_name: 'DMR' },
+      ]);
+      root.unmount();
+    },
+  );
 
   it('clears the form when reopening in create mode after an edit (regression: no state leak)', async () => {
     const container = document.createElement('div');
@@ -2882,7 +3071,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           editTarget={{ id: 42, message: buildMessage() }}
           editSaveInFlight={false}
@@ -2901,7 +3090,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open={false}
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           editTarget={null}
           onCreated={vi.fn()}
@@ -2915,7 +3104,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           editTarget={null}
           onCreated={vi.fn()}
@@ -2952,7 +3141,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open={open}
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={() => {
             onClose();
             setOpen(false);
@@ -3014,7 +3203,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open={open}
           cyberEchoEnabled
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={() => {
             onClose();
             setOpen(false);
@@ -3067,7 +3256,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
           editTarget={{ id: 124, message: buildMessage() }}
           onSubmitEdit={onSubmitEdit}
@@ -3111,7 +3300,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open={open}
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={() => {
             onClose();
             setOpen(false);
@@ -3152,7 +3341,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={onClose}
           editTarget={{ id: 125, message: buildMessage() }}
           onSubmitEdit={onSubmitEdit}
@@ -3186,7 +3375,7 @@ describe('ManageMessageDrawer edit mode', () => {
         <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
-          currentUser={null}
+          currentUser={{ roles: ['Rer'] } as User}
           onClose={onClose}
           editTarget={{ id: 126, message: buildMessage() }}
           onEditSuccess={onEditSuccess}

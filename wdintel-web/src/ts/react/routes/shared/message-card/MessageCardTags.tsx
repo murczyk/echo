@@ -1,3 +1,4 @@
+import { useMessageWriteAccess } from './MessageWriteAccess';
 import {
   memo,
   useCallback,
@@ -158,9 +159,18 @@ function MessageCardTagsComponent({
   const compactMeasureRef = useRef<HTMLDivElement | null>(null);
   /** Natural chip widths from a full (unpacked) render; never update from the overflow-hidden row. */
   const measuredChipWidthsRef = useRef<Map<number, number>>(new Map());
+  const canWrite = useMessageWriteAccess();
+  interactive = interactive && canWrite;
   const rows = useMemo(
-    () => buildMessageCardTagRows(msg, tagsMap, tagsOrder, tagContributionsOrganismId, hideBotTags),
-    [msg, tagsMap, tagsOrder, tagContributionsOrganismId, hideBotTags],
+    () =>
+      buildMessageCardTagRows(
+        msg,
+        tagsMap,
+        tagsOrder,
+        tagContributionsOrganismId,
+        hideBotTags,
+      ).filter((row) => canWrite || row.isSet),
+    [msg, tagsMap, tagsOrder, tagContributionsOrganismId, hideBotTags, canWrite],
   );
   const rowsById = useMemo(() => new Map(rows.map((row) => [row.tagId, row] as const)), [rows]);
   const activeBotTagId = botTagAction?.tagId ?? null;
@@ -308,6 +318,7 @@ function MessageCardTagsComponent({
   );
   const hasRest = restRows.length > 0;
   const botPrompt =
+    canWrite &&
     botTagAction != null &&
     onCancelBotTagAction != null &&
     onMarkBotTagWrong != null &&
@@ -320,6 +331,8 @@ function MessageCardTagsComponent({
         onMarkBotTagWrong={onMarkBotTagWrong}
       />
     ) : null;
+
+  if (rows.length === 0) return null;
 
   if (tagsLayout === 'full') {
     return (
@@ -350,7 +363,9 @@ function MessageCardTagsComponent({
       aria-expanded={showCompactRest}
       aria-label={showCompactRest ? 'Згорнути додаткові теги' : 'Показати додаткові теги'}
     >
-      {showCompactRest ? 'згорнути' : 'розгорнути'}
+      <span className="message-card-tag-expand__label">
+        {showCompactRest ? 'згорнути' : 'розгорнути'}
+      </span>
       {showCompactRest ? (
         <ExpandLessIcon className="message-card-tag-expand__icon" aria-hidden />
       ) : (

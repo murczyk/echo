@@ -1,3 +1,7 @@
+import { useMessageDeleteAccess, useMessageWriteAccess } from './MessageWriteAccess';
+import { useContext } from 'react';
+import { DutyExcludeMenuContext } from './DutyExcludeMenu';
+import { useRadioFeatures } from '../RadioFeatures';
 import { styled } from '@mui/material/styles';
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
@@ -222,6 +226,19 @@ function MessageCardComponent({
   messageTextPreviewLines = 20,
   messageTimeBasis = 'interception',
 }: MessageCardProps) {
+  const canWrite = useMessageWriteAccess();
+  const canDelete = useMessageDeleteAccess();
+  if (!canDelete) onDelete = undefined;
+  if (!canWrite) {
+    onEditDetails = undefined;
+    onCreateReport = undefined;
+    onEditReport = undefined;
+    onToggleTag = undefined;
+    onMarkBotTagWrong = undefined;
+    botTagAction = null;
+    analysisCallsignActions = undefined;
+    showCallsignAddForm = false;
+  }
   const displayTimestamp = messageTimeBasis === 'creation' ? msg.createdAt : msg.timestamp;
   const downloadGuard = useMessageCardDownloadGuard();
   const compactLayout = feedCount >= 3;
@@ -244,21 +261,31 @@ function MessageCardComponent({
   const onCopyLocationAction =
     etalonDisplayModel.copyLocationValue == null ? undefined : onCopyLocation;
   const pointEtalons = useMemo(() => getPointEtalonsFromMessage(msg, tagsMap), [msg, tagsMap]);
+  const radioFeaturesAllowed = useRadioFeatures();
+  const dutyExcludeMenuEnabled = useContext(DutyExcludeMenuContext);
   const excludeSources = useMemo(
     () => ({
       group: { value: msg.groupMasterKey, label: groupName },
       sender: { value: msg.sender, label: senderName },
-      freq: { value: msg.freq, label: msg.freq },
-      post: { value: msg.post, label: msg.post },
+      freq: { value: radioFeaturesAllowed ? msg.freq : null, label: msg.freq },
+      post: { value: radioFeaturesAllowed ? msg.post : null, label: msg.post },
     }),
-    [msg.groupMasterKey, groupName, msg.sender, senderName, msg.freq, msg.post],
+    [
+      radioFeaturesAllowed,
+      msg.groupMasterKey,
+      groupName,
+      msg.sender,
+      senderName,
+      msg.freq,
+      msg.post,
+    ],
   );
   const excludeMenuOptions = useMemo(
     () =>
-      displayMode === 'duty'
+      displayMode === 'duty' && dutyExcludeMenuEnabled
         ? buildVisibleExcludeMenuOptions(filterState, excludeSources)
         : EMPTY_EXCLUDE_OPTIONS,
-    [displayMode, filterState, excludeSources],
+    [displayMode, dutyExcludeMenuEnabled, filterState, excludeSources],
   );
   const mapHref = useMemo(
     () =>
@@ -285,7 +312,7 @@ function MessageCardComponent({
     [analysisDestination, displayMode, msg],
   );
   const metadataTrigger =
-    displayMode === 'analysis' && hasVisibleDmrMetadata(msg) ? (
+    radioFeaturesAllowed && displayMode === 'analysis' && hasVisibleDmrMetadata(msg) ? (
       <MessageCardDmrMetadataPopover msg={msg} />
     ) : undefined;
   const canDownloadAllAttachments = canDownloadAllMessageAttachments(msg.media ?? []);
@@ -326,7 +353,7 @@ function MessageCardComponent({
     onImportant,
     onCreateReport,
     onCopyText,
-    onCopyFreq,
+    onCopyFreq: radioFeaturesAllowed ? onCopyFreq : undefined,
     onCopyTextWithNetwork,
     onCopyTextWithNetworkAndNote,
     onCopyMessageLink,
@@ -350,6 +377,7 @@ function MessageCardComponent({
     >
       <MessageCardRoot
         data-message-card-root="true"
+        data-message-card-display-mode={displayMode}
         className="message-card-root relative flex w-full flex-col overflow-hidden"
       >
         {watermarkUserName !== '' && (
@@ -390,6 +418,7 @@ function MessageCardComponent({
           reportGroupInfos={reportGroupInfos}
           onEditReport={onEditReport}
           signalMessageSenderLabel={senderName?.trim() ? senderName : msg.sender}
+          signalMessageSenderId={msg.sender}
           searchText={searchText}
           onOpenPointsOnMap={onOpenPointsOnMap}
           onAddPointHighlightBlacklist={onAddPointHighlightBlacklist}

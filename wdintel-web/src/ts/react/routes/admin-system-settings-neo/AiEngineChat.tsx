@@ -1,3 +1,4 @@
+import { AuthorLabel } from '../../components/AuthorLabel';
 import AddCommentOutlinedIcon from '@mui/icons-material/AddCommentOutlined';
 import SendIcon from '@mui/icons-material/Send';
 import {
@@ -237,7 +238,11 @@ export function AiEngineChat({ aiEngine }: { aiEngine: AiEngineItem }) {
                   >
                     <ListItemText
                       primary={chat.title}
-                      secondary={`${chat.createdBy} · ${formatDate(chat.updatedAt)}`}
+                      secondary={
+                        <>
+                          <AuthorLabel login={chat.createdBy} /> · {formatDate(chat.updatedAt)}
+                        </>
+                      }
                       primaryTypographyProps={{ noWrap: true }}
                       secondaryTypographyProps={{ noWrap: true }}
                     />
