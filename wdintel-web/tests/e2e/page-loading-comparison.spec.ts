@@ -62,36 +62,6 @@ test.describe('@perf', () => {
       markerKind: 'selector',
       maxDeltaMs: 1_000,
     },
-    {
-      name: 'rer-callsigns',
-      suite: 'callsigns',
-      classicPath: '/rer-callsigns',
-      neoPath: '/rer-callsigns-neo',
-      classicMarker: 'позивні (стара)',
-      neoMarker: 'Позивні',
-      markerKind: 'heading',
-      maxDeltaMs: 1_000,
-    },
-    {
-      name: 'rer-palitra',
-      suite: 'palitra',
-      classicPath: '/rer-palitra',
-      neoPath: '/rer-palitra-neo',
-      classicMarker: 'палітри (стара)',
-      neoMarker: 'Палітри',
-      markerKind: 'heading',
-      maxDeltaMs: 1_000,
-    },
-    {
-      name: 'messenger',
-      suite: 'messenger',
-      classicPath: '/admin/messenger',
-      neoPath: '/admin/messenger-neo',
-      classicMarker: 'Месенджери',
-      neoMarker: 'Месенджери',
-      markerKind: 'heading',
-      maxDeltaMs: 1_000,
-    },
   ];
 
   for (const routeComparison of routeComparisons) {

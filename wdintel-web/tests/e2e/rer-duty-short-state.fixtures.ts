@@ -25,6 +25,7 @@ type ShortStateFixtureOptions = {
     | { tagsLayout: string; disableAutoScroll: boolean; messageSortBy?: MessageTimeBasis }
     | Promise<{ tagsLayout: string; disableAutoScroll: boolean; messageSortBy?: MessageTimeBasis }>;
   userSettingsFailure?: boolean;
+  dutyExcludeMenuEnabled?: boolean;
 };
 
 type ShortStateFixtureHandle = {
@@ -201,6 +202,7 @@ export async function installRerDutyShortStateMocks(
         systemSettingsCurrentResponse({
           enableAudioTranscription: options.enableAudioTranscription,
           shortUrlEnabled: true,
+          dutyExcludeMenuEnabled: options.dutyExcludeMenuEnabled,
         }),
       );
       resolveSystemSettingsReady();

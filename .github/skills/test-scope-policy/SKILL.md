@@ -30,6 +30,11 @@ concurrency/idempotency/destructive-data safeguards, meaningful integration
 behavior, or valuable Playwright coverage. Preserve `@regression` in Playwright
 titles because `e2e:regression` selects titles.
 
+E2E is not part of CI/CD, but affected Playwright suites must execute and pass
+before merging; Playwright discovery is not verification. Browser coverage does
+not justify deleting stronger Vitest coverage unless it exercises the same
+failure boundary.
+
 ## Reject by default
 
 - Trivial helpers, formatters, static rendering, labels, defaults, and small

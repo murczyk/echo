@@ -45,6 +45,10 @@ or use `No direct default-suite test; behavior is preserved by this contract.`.
 Removing a nonqualifying test must not leave user-visible behavior undocumented.
 For Playwright, preserve `@regression` title tags because `e2e:regression`
 selects title tags, not source comments.
+E2E is not part of CI/CD, but affected Playwright suites must execute and pass
+before merging; Playwright discovery is not verification. Browser coverage must
+not justify deleting stronger Vitest coverage unless it exercises the same
+failure boundary.
 
 ## Duty behavior contract
 

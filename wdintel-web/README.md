@@ -1,6 +1,5 @@
 # my new project
-
-> 🌳 built with [elm-spa](https://elm-spa.dev)
+> 🌳  built with [elm-spa](https://elm-spa.dev)
 
 ## dependencies
 
@@ -51,8 +50,10 @@ npm run e2e:regression
 npm run e2e:all
 ```
 
-Do not replace Vitest coverage with browser coverage until the blocking
-Playwright workflow is enabled and stable.
+E2E is not part of CI/CD, but affected Playwright suites must execute and pass
+before merging; discovery alone is not verification. Browser coverage must not
+justify deleting stronger Vitest coverage unless it exercises the same failure
+boundary.
 
 ## learn more
 

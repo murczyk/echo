@@ -240,6 +240,7 @@ function systemSettings() {
     hide_orbit_data: false,
     disable_bot_tags: false,
     duty_exclude_menu_enabled: true,
+    two_factor_auth_enabled: true,
   };
 }
 

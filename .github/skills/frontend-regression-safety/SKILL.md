@@ -54,6 +54,10 @@ Use at the end of any task that changes frontend behavior, API calls, UI states,
 - For message-card preview E2E changes, including shared preview shell/config/capabilities, preview dialogs/stages/actions/controls, `MessageCardContent`, and attachment-preview classification, run `cd wdintel-web && npx playwright test tests/e2e/message-card-media-preview.spec.ts`, and keep the smoke cases tagged `@smoke`.
 - If Chromium is unavailable, report the exact failure and request approval before running `cd wdintel-web && npm run e2e:install`; rerun the focused spec after installation.
 - If the local server or browser still cannot run, report the exact blocker and do not claim full E2E verification.
+- E2E is not part of CI/CD, but affected Playwright suites must execute and pass
+  before merging; discovery is not verification. Browser coverage does not
+  justify deleting stronger Vitest coverage unless it exercises the same failure
+  boundary.
 - Add or extend tests only when they qualify under `CODE_REVIEW.md`. Do not create isolated coverage for trivial helpers, defaults, formatting, static rendering/configuration, or mocked implementation sequencing.
 - For issue/PR-linked regressions, include the stable Echo issue or pull-request reference in the test and exercise the real failure mode at the lowest faithful test level.
 - Run `npm run test:structure-check` when changing React test placement or support modules. Review each test's concrete behavior and failure mode rather than relying on labels.

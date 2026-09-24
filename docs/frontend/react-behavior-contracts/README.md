@@ -29,6 +29,9 @@ Test admission is a review decision, not an in-source label. New React specs
 belong directly in the nearest production-owned `__tests__/` directory; existing
 tests are not removed solely because they lack metadata. `npm run test:ts`
 includes the structural check for that placement and referenced test paths.
+E2E is not part of CI/CD, but affected Playwright suites must execute and pass
+before merging; discovery is not verification. Browser coverage does not justify
+deleting stronger Vitest coverage unless it exercises the same failure boundary.
 
 ## Entry template
 

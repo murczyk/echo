@@ -5,9 +5,10 @@
 
 ### React test admission (when applicable)
 
-- [ ] Every retained default React test is annotated as parser, safeguard, or an
-      Echo-linked regression.
-- [ ] Removed or replaced coverage has a documented behavior contract and, when
-      replaced, an uncommitted mutation-proof result.
-- [ ] Browser coverage is not used as replacement evidence unless the blocking
-      Playwright workflow is stable.
+- [ ] New or retained tests comply with `CODE_REVIEW.md` based on observable
+      behavior and a concrete failure mode.
+- [ ] Removed unique behavior is documented in a maintained behavior contract.
+- [ ] React test placement passes `npm run test:structure-check`.
+- [ ] Affected Playwright suites were executed successfully; discovery alone is
+      not verification.
+- [ ] No unrelated production behavior was changed.

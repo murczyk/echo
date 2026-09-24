@@ -24,6 +24,7 @@ async function fulfillJson(route: Route, body: unknown, delayMs = 0): Promise<vo
 
 function emptyUserResponse() {
   return {
+    id: 'operator',
     name: 'operator',
     roles: ['Rer', 'Admin'],
     sigint_zone_id: null,
@@ -33,6 +34,7 @@ function emptyUserResponse() {
     goi_full_access_for_organism: false,
     goi_host: null,
     goi_integrations: [],
+    last_release_seen: null,
   };
 }
 

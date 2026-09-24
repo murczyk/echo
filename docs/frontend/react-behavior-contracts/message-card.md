@@ -245,9 +245,9 @@
 
 - **Status:** issue-backed regressions
 - **Behavior ID:** `react-message-card-browser-regressions`
-- **Expected observable result:** message references become available and navigate correctly (#3092 / PR #3482); attachment and coordinate tiles remain aligned (#3324); preview gestures preserve protected OCR and summary content (#3368); coordinate hover previews remain stable (#3380); MGRS and Palitra points remain visible in thumbnail and fullscreen maps (#3453); and navigation-edge controls remain revealed (#3460).
+- **Expected observable result:** message references become available and navigate correctly, including middle-click navigation (#3092 / PR #3482); attachment and coordinate tiles remain aligned (#3324); preview gestures preserve protected OCR and summary content (#3368); coordinate hover previews remain stable (#3380); MGRS and Palitra points remain visible in thumbnail and fullscreen maps (#3453); and navigation-edge controls remain revealed (#3460).
 - **Source implementation:** `routes/shared/message-card/` and attachment-preview/coordinate components.
-- **Existing test(s):** `wdintel-web/tests/e2e/message-card-media-preview.spec.ts`
+- **Existing test(s):** `wdintel-web/tests/e2e/message-card-message-reference.spec.ts`, `wdintel-web/tests/e2e/message-card-media-preview.spec.ts`
 - **Original Echo issue/PR, if known:** [#3092](https://github.com/echoua/echo/issues/3092), [PR #3482](https://github.com/echoua/echo/pull/3482), [#3324](https://github.com/echoua/echo/issues/3324), [#3368](https://github.com/echoua/echo/issues/3368), [#3380](https://github.com/echoua/echo/issues/3380), [#3453](https://github.com/echoua/echo/issues/3453), [#3460](https://github.com/echoua/echo/issues/3460).
 
 ## Duty header regression

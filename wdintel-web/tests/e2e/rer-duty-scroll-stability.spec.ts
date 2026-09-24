@@ -739,10 +739,10 @@ test('#3360 lets an OFF arrow land an explicitly requested tail page @regression
 });
 
 // Regression: https://github.com/echoua/echo/issues/3400
-test('#3400 releases narrow-screen arrow loading when its scroll owner is replaced @regression', async ({
+test('#3400 releases arrow loading when its scroll owner is replaced @regression', async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 800, height: 900 });
+  await page.setViewportSize({ width: 1280, height: 900 });
   const arrowRequestStarted = createDeferred<void>();
   const arrowResponse = createDeferred<InboxMessagesRspRaw>();
   let newerRequestCount = 0;
@@ -770,6 +770,7 @@ test('#3400 releases narrow-screen arrow loading when its scroll owner is replac
   await page.goto('/rer-duty-neo?state-short=short-1');
   const arrow = page.getByRole('button', { name: 'Завантажити нові та перейти вниз' });
   await page.getByRole('button', { name: 'Додати стрічку' }).click();
+  await page.setViewportSize({ width: 800, height: 900 });
   await expect(page.getByRole('tab', { name: 'Стрічка 1' })).toBeVisible();
   await page.getByRole('tab', { name: 'Стрічка 1' }).click();
   await expect(page.locator('[data-duty-message-id="40"]')).toBeAttached();
