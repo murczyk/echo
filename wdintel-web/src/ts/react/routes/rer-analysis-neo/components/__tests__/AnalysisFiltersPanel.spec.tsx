@@ -1430,16 +1430,25 @@ describe('AnalysisFiltersPanel', () => {
   });
 
   // Regression: https://github.com/echoua/echo/issues/3568
-  it('ECHO-3568 hides AORs until counters return more than one value', async () => {
-    const view = await renderComponent(buildProps({ countsLoading: true }));
+  it('ECHO-3568 keeps AORs visible with Rer access', async () => {
+    const view = await renderComponent(
+      buildProps({ counts: { aorsCount: 1 } as AnalysisPageState['counts'] }),
+    );
     rendered.push(view);
 
-    expect(view.container.textContent).not.toContain('Смуги');
+    expect(view.container.textContent).toContain('Смуги');
+  });
+
+  it('ECHO-3568 keeps AORs visible while counters load without Rer access', async () => {
+    const view = await renderComponent(buildProps({ countsLoading: true }), false);
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('Смуги');
 
     for (const aorsCount of [0, 1, 2, 1]) {
       await act(async () => {
         view.root.render(
-          <RadioFeaturesProvider allowed>
+          <RadioFeaturesProvider allowed={false}>
             <AnalysisFiltersPanel
               {...buildProps({ counts: { aorsCount } as AnalysisPageState['counts'] })}
             />

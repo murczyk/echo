@@ -188,7 +188,7 @@ export function AnalysisFiltersPanelSections({
   const tagFilterMode = tagFilterModeFromState(queryState);
   return (
     <>
-      {(countsSnapshot?.aorsCount ?? 0) > 1 ? (
+      {radioFeaturesAllowed || countsSnapshot == null || countsSnapshot.aorsCount > 1 ? (
         <FilterSection
           title="Смуги"
           countLabel={countLabel(

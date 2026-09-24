@@ -154,6 +154,7 @@ test.describe('Cyber radio visibility @regression #3568', () => {
     );
     await expect(page.getByRole('heading', { name: 'Частоти', exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Мережі', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Смуги', exact: true })).toBeVisible();
     await expect(page).toHaveURL(/fromDateTime=2026-09-23T00%3A00/);
   });
 
