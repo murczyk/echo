@@ -925,12 +925,14 @@ async fn load_effective_aor_ids(
             .query_all_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 r#"
-select inbox_network.sigint_inbox_item_id, network_aor.aor_id
+select inbox_network.sigint_inbox_item_id, aor.id as aor_id
 from sigint_inbox_item_network inbox_network
 left join sigint_network_aor network_aor
     on network_aor.network_id = inbox_network.sigint_network_id
+left join area_of_responsibility aor
+    on aor.id = network_aor.aor_id and aor.deleted = false
 where inbox_network.sigint_inbox_item_id = any($1)
-order by inbox_network.sigint_inbox_item_id, network_aor.aor_id
+order by inbox_network.sigint_inbox_item_id, aor.id
                 "#,
                 [inbox_item_ids.to_vec().into()],
             ))
@@ -962,7 +964,7 @@ order by inbox_network.sigint_inbox_item_id, network_aor.aor_id
             .query_all_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 r#"
-select message_groups.item_id, group_aor.aor_id
+select message_groups.item_id, aor.id as aor_id
 from (
     select message_group.signal_message_id as item_id,
         coalesce(message_group.group_master_key, datasource_group.group_master_key)
@@ -985,7 +987,9 @@ from (
 ) message_groups
 join signal_group_aor group_aor
     on group_aor.master_key = message_groups.group_master_key
-order by message_groups.item_id, group_aor.aor_id
+join area_of_responsibility aor
+    on aor.id = group_aor.aor_id and aor.deleted = false
+order by message_groups.item_id, aor.id
                 "#,
                 [group_scoped_item_ids.into()],
             ))
@@ -1808,6 +1812,77 @@ mod tests {
             enriched_aor_ids(&env, fixture.item_id).await,
             vec![fixture.group_aor_ids[0], fixture.group_aor_ids[2]]
         );
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn soft_deleted_aors_are_excluded_and_queue_snapshot_events() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let integration = insert_integration(&env, login.id).await;
+        let fixture = insert_inbox_aor_fixture(&env).await;
+        clear_iggy_events(&env, integration.id).await;
+
+        area_of_responsibility::ActiveModel {
+            id: Set(fixture.group_aor_ids[2]),
+            deleted: Set(true),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        assert_queued_aor_event(
+            &env,
+            &integration,
+            fixture.item_id,
+            &fixture.group_aor_ids[..2],
+        )
+        .await;
+        clear_iggy_events(&env, integration.id).await;
+
+        area_of_responsibility::ActiveModel {
+            id: Set(fixture.group_aor_ids[2]),
+            deleted: Set(false),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+
+        let network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        mk_sigint_inbox_item_network(
+            &env.dbx,
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(fixture.item_id),
+                sigint_network_id: Set(network.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_network_aor(
+            &env.dbx,
+            sigint_network_aor::ActiveModel {
+                network_id: Set(network.id),
+                aor_id: Set(fixture.group_aor_ids[2]),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        clear_iggy_events(&env, integration.id).await;
+
+        area_of_responsibility::ActiveModel {
+            id: Set(fixture.group_aor_ids[2]),
+            deleted: Set(true),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        assert_queued_aor_event(&env, &integration, fixture.item_id, &[]).await;
     }
 
     #[actix_web::test]

@@ -303,6 +303,32 @@ create trigger sigint_network_aor_capture_iggy_aors
 after insert or update of network_id, aor_id or delete on sigint_network_aor
 for each row execute function capture_api_integration_iggy_network_aors();
 
+create function capture_api_integration_iggy_aor_state()
+returns trigger language plpgsql as $$
+begin
+    if not api_integration_iggy_has_publisher() then
+        return new;
+    end if;
+    perform queue_api_integration_iggy_bulk_aor_changes(
+        array(
+            select distinct master_key from signal_group_aor
+            where aor_id = new.id
+        ),
+        array(
+            select distinct network_id from sigint_network_aor
+            where aor_id = new.id
+        ),
+        null
+    );
+    return new;
+end;
+$$;
+
+create trigger area_of_responsibility_capture_iggy_aors
+after update of deleted on area_of_responsibility
+for each row when (old.deleted is distinct from new.deleted)
+execute function capture_api_integration_iggy_aor_state();
+
 create function capture_api_integration_iggy_legacy_message_aors()
 returns trigger language plpgsql as $$
 begin
@@ -357,6 +383,8 @@ for each row execute function capture_api_integration_iggy_datasource_group_aors
             .get_connection()
             .execute_unprepared(
                 r#"
+drop trigger if exists area_of_responsibility_capture_iggy_aors
+    on area_of_responsibility;
 drop trigger if exists sigint_network_aor_capture_iggy_aors on sigint_network_aor;
 drop trigger if exists signal_group_aor_capture_iggy_visibility_then_aors
     on signal_group_aor;
@@ -368,6 +396,7 @@ drop trigger if exists signal_message_capture_iggy_legacy_aors on signal_message
 drop trigger if exists datasource_group_capture_iggy_aors on datasource_group;
 drop function if exists capture_api_integration_iggy_datasource_group_aors();
 drop function if exists capture_api_integration_iggy_legacy_message_aors();
+drop function if exists capture_api_integration_iggy_aor_state();
 drop function if exists capture_api_integration_iggy_network_aors();
 drop function if exists capture_api_integration_iggy_group_aors();
 drop function if exists capture_api_integration_iggy_inbox_network_aors();
