@@ -103,6 +103,7 @@ describe('AppNavbar', () => {
     expect(logoImg).not.toBeUndefined();
   });
 
+  // Regression: https://github.com/echoua/echo/issues/3568
   it.each(['Rer', 'Cyber', 'CyberViewer'])('#3568 renders main navigation for %s', (role) => {
     const { container } = renderComponent({
       ...defaultProps,
@@ -117,6 +118,7 @@ describe('AppNavbar', () => {
     expect(content).not.toContain('Адмін');
   });
 
+  // Regression: https://github.com/echoua/echo/issues/3568
   it.each([
     ['Cyber'],
     ['Cyber', 'UnitsEditor'],
@@ -229,6 +231,7 @@ describe('AppNavbar', () => {
     expect(container.textContent).not.toContain('Статистика');
   });
 
+  // Regression: https://github.com/echoua/echo/issues/3568
   it.each(['Rer', 'Cyber', 'CyberViewer'])(
     '#3568 keeps ApiAgent excluded from %s AI chat access',
     (role) => {

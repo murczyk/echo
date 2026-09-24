@@ -407,6 +407,7 @@ describe('AnalysisFiltersPanel', () => {
     expect(enabled.container.textContent).toContain('Пристрої');
   });
 
+  // Regression: https://github.com/echoua/echo/issues/3568
   it('hides frequency and network filters without Rer access', async () => {
     const view = await renderComponent(buildProps(), false);
     rendered.push(view);
@@ -1428,6 +1429,7 @@ describe('AnalysisFiltersPanel', () => {
     expect(resetFilters).not.toHaveBeenCalled();
   });
 
+  // Regression: https://github.com/echoua/echo/issues/3568
   it('ECHO-3568 hides AORs until counters return more than one value', async () => {
     const view = await renderComponent(buildProps({ countsLoading: true }));
     rendered.push(view);

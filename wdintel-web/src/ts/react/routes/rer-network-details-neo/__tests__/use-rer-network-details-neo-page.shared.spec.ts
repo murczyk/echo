@@ -102,6 +102,7 @@ describe('use-rer-network-details-neo-page.shared date parsing', () => {
     expect(canViewNetworkRelationsTab({ roles: ['Full'] } as any)).toBe(true);
     expect(canViewNetworkRelationsTab({ roles: ['Admin'] } as any)).toBe(true);
   });
+  // Regression: https://github.com/echoua/echo/issues/3568
   it('#3568 preserves editor requirements for Cyber users', () => {
     expect(canEditNetwork({ roles: ['Cyber'] } as any)).toBe(false);
     expect(canEditNetwork({ roles: ['UnitsEditor'] } as any)).toBe(false);
