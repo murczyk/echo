@@ -656,6 +656,12 @@ update req msg model =
                         , retryCount = newRetryCount
                         , retryDelay = newRetryDelay
                     }
+
+                retryEffect =
+                    E.sendCmd <| Task.perform (\_ -> EventServiceRetryPolling) (Process.sleep (toFloat newRetryDelay))
+
+                shouldNotifyAboutPersistentFailure =
+                    eventService.retryCount == 5
             in
             if not model.eventService.isPolling then
                 ( model, E.none )
@@ -665,7 +671,14 @@ update req msg model =
 
             else
                 ( { model | eventService = newEventService }
-                , E.sendCmd <| Task.perform (\_ -> EventServiceRetryPolling) (Process.sleep (toFloat newRetryDelay))
+                , if shouldNotifyAboutPersistentFailure then
+                    E.batch
+                        [ retryEffect
+                        , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка отримання оновлень" error
+                        ]
+
+                  else
+                    retryEffect
                 )
 
         EventServiceRetryPolling ->

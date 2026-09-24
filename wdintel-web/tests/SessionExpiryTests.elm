@@ -80,7 +80,7 @@ tests =
                                 Shared.update route (Msg.EventServiceEventsReceived (Err (httpError 500))) shared
                         in
                         Expect.equal ( True, 1 ) ( updated.eventService.isPolling, updated.eventService.retryCount )
-        , test "event polling keeps retrying after repeated temporary failures" <|
+        , test "persistent event failure is reported once while polling keeps retrying" <|
             \_ ->
                 withSession <|
                     \route shared ->
@@ -91,14 +91,18 @@ tests =
                             exhausted =
                                 { shared | eventService = { eventService | retryCount = 5, retryDelay = 30000 } }
 
-                            ( updated, effect ) =
+                            ( updated, persistentFailureEffect ) =
                                 Shared.update route (Msg.EventServiceEventsReceived (Err (httpError 500))) exhausted
+
+                            ( _, laterFailureEffect ) =
+                                Shared.update route (Msg.EventServiceEventsReceived (Err (httpError 500))) updated
                         in
                         Expect.all
                             [ \_ -> Expect.equal True updated.eventService.isPolling
                             , \_ -> Expect.equal 6 updated.eventService.retryCount
                             , \_ -> Expect.equal 30000 updated.eventService.retryDelay
-                            , \_ -> Expect.notEqual E.none effect
+                            , \_ -> Expect.equal True (isBatchEffect persistentFailureEffect)
+                            , \_ -> Expect.equal False (isBatchEffect laterFailureEffect)
                             ]
                             ()
         , test "keep-alive 401 stops queued ticks and ignores late responses" <|
@@ -146,6 +150,11 @@ tests =
 httpError : Int -> ApiError
 httpError status =
     { httpError = Http.BadStatus status, formErrors = Dict.empty, errors = [] }
+
+
+isBatchEffect : E.Effect msg -> Bool
+isBatchEffect effect =
+    String.startsWith "Batch" (Debug.toString effect)
 
 
 withSession : (Route () -> Shared.Model -> Expectation) -> Expectation
