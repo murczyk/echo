@@ -647,9 +647,6 @@ update req msg model =
                 newRetryDelay =
                     min 30000 (model.eventService.retryDelay * 2)
 
-                shouldRetry =
-                    newRetryCount <= 5 && model.eventService.isPolling
-
                 eventService =
                     model.eventService
 
@@ -666,14 +663,9 @@ update req msg model =
             else if error.httpError == Http.BadStatus 401 then
                 update req SignOut model
 
-            else if shouldRetry then
+            else
                 ( { model | eventService = newEventService }
                 , E.sendCmd <| Task.perform (\_ -> EventServiceRetryPolling) (Process.sleep (toFloat newRetryDelay))
-                )
-
-            else
-                ( { model | eventService = { newEventService | isPolling = False } }
-                , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка отримання оновлень" error
                 )
 
         EventServiceRetryPolling ->

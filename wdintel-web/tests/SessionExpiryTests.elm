@@ -71,7 +71,7 @@ tests =
                                     ( updated.eventService == signedOut.eventService, effect == E.none )
                                 )
                             |> Expect.equal (List.repeat (List.length lateMessages) ( True, True ))
-        , test "temporary event failures retain bounded retries" <|
+        , test "temporary event failures retain polling" <|
             \_ ->
                 withSession <|
                     \route shared ->
@@ -80,6 +80,27 @@ tests =
                                 Shared.update route (Msg.EventServiceEventsReceived (Err (httpError 500))) shared
                         in
                         Expect.equal ( True, 1 ) ( updated.eventService.isPolling, updated.eventService.retryCount )
+        , test "event polling keeps retrying after repeated temporary failures" <|
+            \_ ->
+                withSession <|
+                    \route shared ->
+                        let
+                            eventService =
+                                shared.eventService
+
+                            exhausted =
+                                { shared | eventService = { eventService | retryCount = 5, retryDelay = 30000 } }
+
+                            ( updated, effect ) =
+                                Shared.update route (Msg.EventServiceEventsReceived (Err (httpError 500))) exhausted
+                        in
+                        Expect.all
+                            [ \_ -> Expect.equal True updated.eventService.isPolling
+                            , \_ -> Expect.equal 6 updated.eventService.retryCount
+                            , \_ -> Expect.equal 30000 updated.eventService.retryDelay
+                            , \_ -> Expect.notEqual E.none effect
+                            ]
+                            ()
         , test "keep-alive 401 stops queued ticks and ignores late responses" <|
             \_ ->
                 withSession <|
