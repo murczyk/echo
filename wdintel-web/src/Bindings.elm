@@ -8426,6 +8426,105 @@ unitChangelogRspEncoder struct =
         ]
 
 
+type UnitActivityPeriod
+    = Day
+    | Week
+    | Month
+    | ThreeMonths
+
+
+unitActivityPeriodEncoder : UnitActivityPeriod -> Json.Encode.Value
+unitActivityPeriodEncoder enum =
+    case enum of
+        Day ->
+            Json.Encode.string "Day"
+        Week ->
+            Json.Encode.string "Week"
+        Month ->
+            Json.Encode.string "Month"
+        ThreeMonths ->
+            Json.Encode.string "ThreeMonths"
+
+type alias UnitActivityReq =
+    { unitId : Int
+    , period : UnitActivityPeriod
+    }
+
+
+unitActivityReqEncoder : UnitActivityReq -> Json.Encode.Value
+unitActivityReqEncoder struct =
+    Json.Encode.object
+        [ ( "unit_id", (Json.Encode.int) struct.unitId )
+        , ( "period", (unitActivityPeriodEncoder) struct.period )
+        ]
+
+
+type alias UnitActivityBucket =
+    { startedAt : Int
+    , interceptionCount : Int
+    }
+
+
+unitActivityBucketEncoder : UnitActivityBucket -> Json.Encode.Value
+unitActivityBucketEncoder struct =
+    Json.Encode.object
+        [ ( "started_at", (Json.Encode.int) struct.startedAt )
+        , ( "interception_count", (Json.Encode.int) struct.interceptionCount )
+        ]
+
+
+type alias UnitActivityRsp =
+    { buckets : List (UnitActivityBucket)
+    }
+
+
+unitActivityRspEncoder : UnitActivityRsp -> Json.Encode.Value
+unitActivityRspEncoder struct =
+    Json.Encode.object
+        [ ( "buckets", (Json.Encode.list (unitActivityBucketEncoder)) struct.buckets )
+        ]
+
+
+type alias CleanupOrbitOtherUnitsReq =
+    { ignoreActive : Bool
+    }
+
+
+cleanupOrbitOtherUnitsReqEncoder : CleanupOrbitOtherUnitsReq -> Json.Encode.Value
+cleanupOrbitOtherUnitsReqEncoder struct =
+    Json.Encode.object
+        [ ( "ignore_active", (Json.Encode.bool) struct.ignoreActive )
+        ]
+
+
+type alias CleanupOrbitOtherUnitRoadblock =
+    { id : Int
+    , name : String
+    }
+
+
+cleanupOrbitOtherUnitRoadblockEncoder : CleanupOrbitOtherUnitRoadblock -> Json.Encode.Value
+cleanupOrbitOtherUnitRoadblockEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        ]
+
+
+type alias CleanupOrbitOtherUnitsRsp =
+    { deletedCount : Int
+    , activeUnits : List (CleanupOrbitOtherUnitRoadblock)
+    }
+
+
+cleanupOrbitOtherUnitsRspEncoder : CleanupOrbitOtherUnitsRsp -> Json.Encode.Value
+cleanupOrbitOtherUnitsRspEncoder struct =
+    Json.Encode.object
+        [ ( "deleted_count", (Json.Encode.int) struct.deletedCount )
+        , ( "active_units", (Json.Encode.list (cleanupOrbitOtherUnitRoadblockEncoder)) struct.activeUnits )
+        ]
+
+
 type alias UnitAttachmentAor =
     { id : Int
     , name : String
@@ -8725,9 +8824,9 @@ orbitParentUnitEncoder struct =
 
 
 type alias OrbitChildUnit =
-    { sigintUnitId : Int
+    { sigintUnitId : Maybe (Int)
     , name : String
-    , active : Bool
+    , active : Maybe (Bool)
     , orbitUnitIds : List (String)
     , isGenerative : Bool
     , isOperational : Bool
@@ -8737,9 +8836,9 @@ type alias OrbitChildUnit =
 orbitChildUnitEncoder : OrbitChildUnit -> Json.Encode.Value
 orbitChildUnitEncoder struct =
     Json.Encode.object
-        [ ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        [ ( "sigint_unit_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sigintUnitId )
         , ( "name", (Json.Encode.string) struct.name )
-        , ( "active", (Json.Encode.bool) struct.active )
+        , ( "active", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.active )
         , ( "orbit_unit_ids", (Json.Encode.list (Json.Encode.string)) struct.orbitUnitIds )
         , ( "is_generative", (Json.Encode.bool) struct.isGenerative )
         , ( "is_operational", (Json.Encode.bool) struct.isOperational )
@@ -12208,6 +12307,7 @@ type alias SystemSettingsCurrentRsp =
     , dutyExcludeMenuEnabled : Bool
     , analysisAorFilterEnabled : Bool
     , twoFactorAuthEnabled : Bool
+    , excludeOrbitOtherUnits : Bool
     }
 
 
@@ -12246,6 +12346,7 @@ systemSettingsCurrentRspEncoder struct =
         , ( "duty_exclude_menu_enabled", (Json.Encode.bool) struct.dutyExcludeMenuEnabled )
         , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
         , ( "two_factor_auth_enabled", (Json.Encode.bool) struct.twoFactorAuthEnabled )
+        , ( "exclude_orbit_other_units", (Json.Encode.bool) struct.excludeOrbitOtherUnits )
         ]
 
 
@@ -12286,6 +12387,7 @@ type alias SystemSettingsItem =
     , dutyExcludeMenuEnabled : Bool
     , analysisAorFilterEnabled : Bool
     , twoFactorAuthEnabled : Bool
+    , excludeOrbitOtherUnits : Bool
     }
 
 
@@ -12328,6 +12430,7 @@ systemSettingsItemEncoder struct =
         , ( "duty_exclude_menu_enabled", (Json.Encode.bool) struct.dutyExcludeMenuEnabled )
         , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
         , ( "two_factor_auth_enabled", (Json.Encode.bool) struct.twoFactorAuthEnabled )
+        , ( "exclude_orbit_other_units", (Json.Encode.bool) struct.excludeOrbitOtherUnits )
         ]
 
 
@@ -12375,6 +12478,7 @@ type alias CreateSystemSettingsReq =
     , dutyExcludeMenuEnabled : Bool
     , analysisAorFilterEnabled : Bool
     , twoFactorAuthEnabled : Bool
+    , excludeOrbitOtherUnits : Bool
     }
 
 
@@ -12412,6 +12516,7 @@ createSystemSettingsReqEncoder struct =
         , ( "duty_exclude_menu_enabled", (Json.Encode.bool) struct.dutyExcludeMenuEnabled )
         , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
         , ( "two_factor_auth_enabled", (Json.Encode.bool) struct.twoFactorAuthEnabled )
+        , ( "exclude_orbit_other_units", (Json.Encode.bool) struct.excludeOrbitOtherUnits )
         ]
 
 
@@ -21002,6 +21107,87 @@ unitChangelogRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "entries" (Json.Decode.list (unitChangelogEntryDecoder))))
 
 
+unitActivityPeriodDecoder : Json.Decode.Decoder UnitActivityPeriod
+unitActivityPeriodDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Day" ->
+                            Json.Decode.succeed Day
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Week" ->
+                            Json.Decode.succeed Week
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Month" ->
+                            Json.Decode.succeed Month
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "ThreeMonths" ->
+                            Json.Decode.succeed ThreeMonths
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+unitActivityReqDecoder : Json.Decode.Decoder UnitActivityReq
+unitActivityReqDecoder =
+    Json.Decode.succeed UnitActivityReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "period" (unitActivityPeriodDecoder)))
+
+
+unitActivityBucketDecoder : Json.Decode.Decoder UnitActivityBucket
+unitActivityBucketDecoder =
+    Json.Decode.succeed UnitActivityBucket
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "started_at" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interception_count" (Json.Decode.int)))
+
+
+unitActivityRspDecoder : Json.Decode.Decoder UnitActivityRsp
+unitActivityRspDecoder =
+    Json.Decode.succeed UnitActivityRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "buckets" (Json.Decode.list (unitActivityBucketDecoder))))
+
+
+cleanupOrbitOtherUnitsReqDecoder : Json.Decode.Decoder CleanupOrbitOtherUnitsReq
+cleanupOrbitOtherUnitsReqDecoder =
+    Json.Decode.succeed CleanupOrbitOtherUnitsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ignore_active" (Json.Decode.bool)))
+
+
+cleanupOrbitOtherUnitRoadblockDecoder : Json.Decode.Decoder CleanupOrbitOtherUnitRoadblock
+cleanupOrbitOtherUnitRoadblockDecoder =
+    Json.Decode.succeed CleanupOrbitOtherUnitRoadblock
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+
+
+cleanupOrbitOtherUnitsRspDecoder : Json.Decode.Decoder CleanupOrbitOtherUnitsRsp
+cleanupOrbitOtherUnitsRspDecoder =
+    Json.Decode.succeed CleanupOrbitOtherUnitsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_units" (Json.Decode.list (cleanupOrbitOtherUnitRoadblockDecoder))))
+
+
 unitAttachmentAorDecoder : Json.Decode.Decoder UnitAttachmentAor
 unitAttachmentAorDecoder =
     Json.Decode.succeed UnitAttachmentAor
@@ -21178,9 +21364,9 @@ orbitParentUnitDecoder =
 orbitChildUnitDecoder : Json.Decode.Decoder OrbitChildUnit
 orbitChildUnitDecoder =
     Json.Decode.succeed OrbitChildUnit
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_unit_ids" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_generative" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_operational" (Json.Decode.bool)))
@@ -23312,6 +23498,7 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duty_exclude_menu_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "two_factor_auth_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "exclude_orbit_other_units" (Json.Decode.bool)))
 
 
 systemSettingsItemDecoder : Json.Decode.Decoder SystemSettingsItem
@@ -23353,6 +23540,7 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duty_exclude_menu_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "two_factor_auth_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "exclude_orbit_other_units" (Json.Decode.bool)))
 
 
 systemSettingsListRspDecoder : Json.Decode.Decoder SystemSettingsListRsp
@@ -23395,6 +23583,7 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duty_exclude_menu_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "two_factor_auth_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "exclude_orbit_other_units" (Json.Decode.bool)))
 
 
 activateSystemSettingsReqDecoder : Json.Decode.Decoder ActivateSystemSettingsReq

@@ -24,6 +24,7 @@ use sea_query::types::IntoColumnRef;
 use sea_query::{Expr, OnConflict, SimpleExpr};
 use std::collections::{BTreeSet, HashMap};
 
+pub mod activity;
 pub mod attachment;
 pub mod changelog;
 pub mod labels;
@@ -31,6 +32,7 @@ mod merge_task;
 pub(crate) use merge_task::guard_capacity as unit_merge_guard_capacity;
 pub mod orbit;
 pub mod types;
+pub mod worker;
 
 pub(crate) async fn recover_abandoned_merge_tasks(
     dbx: &DatabaseConnection,
@@ -460,13 +462,13 @@ async fn read_units_with_orbit_visibility(
             }
             ListUnitsSortBy::UnitOrbitLinkedAsc => {
                 units = units
-                    .order_by_asc(Expr::cust(unit_has_orbit_sql()))
+                    .order_by_asc(Expr::cust(unit_orbit_status_rank_sql()))
                     .order_by_asc(sigint_unit::Column::Name)
                     .order_by_asc(sigint_unit::Column::Id);
             }
             ListUnitsSortBy::UnitOrbitLinkedDesc => {
                 units = units
-                    .order_by_desc(Expr::cust(unit_has_orbit_sql()))
+                    .order_by_desc(Expr::cust(unit_orbit_status_rank_sql()))
                     .order_by_asc(sigint_unit::Column::Name)
                     .order_by_asc(sigint_unit::Column::Id);
             }
@@ -593,6 +595,21 @@ fn unit_has_orbit_sql() -> &'static str {
             AND link.is_suppressed = false
             AND orbit_unit.deleted = false
     )"#
+}
+
+fn unit_orbit_status_rank_sql() -> &'static str {
+    r#"case
+        when EXISTS (
+            SELECT 1
+            FROM orbit_unit_sigint_unit link
+            INNER JOIN orbit_unit ON orbit_unit.unit_id = link.orbit_unit_id
+            WHERE link.sigint_unit_id = "sigint_unit"."id"
+                AND link.is_suppressed = false
+                AND orbit_unit.deleted = false
+        ) then 0
+        when "sigint_unit"."present_in_orbit" is false then 2
+        else 1
+    end"#
 }
 
 fn apply_unit_presence_filters(
@@ -1746,6 +1763,9 @@ async fn update_unit_for_login(
         if let Some(present_in_orbit) = req.present_in_orbit {
             unit.present_in_orbit = Set(present_in_orbit);
         }
+        if let Some(is_deduplicate_candidate) = req.is_deduplicate_candidate {
+            unit.is_deduplicate_candidate = Set(is_deduplicate_candidate);
+        }
     }
     let unit = unit.update(&transaction).await.context(h!())?;
     let unit_json_new = unit_json(&transaction, req.id).await?;
@@ -2001,19 +2021,37 @@ async fn delete_unit_for_login(
     let transaction = begin_unit_merge_transaction(dbx, &[unit_id])
         .await
         .c(h!())?;
-    merge_task::ensure_no_conflicting_merge(&transaction, unit_id, unit_id)
+    let unit = delete_unit_in_transaction(&transaction, login, unit_id, true)
+        .await
+        .c(h!())?;
+    transaction.commit().await.context(h!())?;
+    Ok(unit)
+}
+
+pub(crate) async fn delete_unit_in_transaction<C>(
+    dbx: &C,
+    login: &uuid::Uuid,
+    unit_id: i64,
+    reconcile_deduplicate_candidates: bool,
+) -> Result<sigint_unit::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    merge_task::ensure_no_conflicting_merge(dbx, unit_id, unit_id)
         .await
         .context(h!())?;
-    changelog::set_author(&transaction, login).await.c(h!())?;
+    changelog::set_author(dbx, login).await.c(h!())?;
     let unit = sigint_unit::Entity::find_by_id(unit_id)
-        .one(&transaction)
+        .lock_exclusive()
+        .one(dbx)
         .await
         .context(h!())?
-        .ok_or(AppError::NotFound)?;
+        .ok_or(AppError::NotFound)
+        .context(h!())?;
     let previous_unit = unit.clone();
-    let unit_json_old = unit_json(&transaction, unit.id).await?;
+    let unit_json_old = unit_json(dbx, unit.id).await.context(h!())?;
     crate::stats::enqueue_group_stats_recalculation_for_linked_unit(
-        &transaction,
+        dbx,
         unit.id,
         format!("deleted unit {}", unit.id),
     )
@@ -2021,8 +2059,8 @@ async fn delete_unit_for_login(
     .context(h!())?;
     let mut unit = unit.into_active_model();
     unit.deleted = Set(true);
-    let unit = unit.update(&transaction).await.context(h!())?;
-    let unit_json_new = unit_json(&transaction, unit.id).await?;
+    let unit = unit.update(dbx).await.context(h!())?;
+    let unit_json_new = unit_json(dbx, unit.id).await.context(h!())?;
     sigint_unit_changelog::ActiveModel {
         id: NotSet,
         sigint_unit_id: Set(unit.id),
@@ -2033,20 +2071,23 @@ async fn delete_unit_for_login(
         old_value: Set(Some(unit_json_old)),
         req: Set(None),
     }
-    .insert(&transaction)
+    .insert(dbx)
     .await
     .context(h!())?;
     if previous_unit.active {
         reconcile_parent_unit_activity(
-            &transaction,
+            dbx,
             login,
             std::slice::from_ref(&previous_unit),
         )
-        .await?;
+        .await
+        .context(h!())?;
     }
-    crate::orbit::reconcile_sigint_unit_deduplicate_candidates(&transaction)
-        .await?;
-    transaction.commit().await.context(h!())?;
+    if reconcile_deduplicate_candidates {
+        crate::orbit::reconcile_sigint_unit_deduplicate_candidates(dbx)
+            .await
+            .context(h!())?;
+    }
     Ok(unit)
 }
 
@@ -3651,6 +3692,7 @@ mod tests {
             duty_exclude_menu_enabled: Set(None),
             analysis_aor_filter_enabled: Set(None),
             two_factor_auth_enabled: Set(None),
+            exclude_orbit_other_units: Set(None),
         }
         .insert(dbx)
         .await
@@ -4368,6 +4410,7 @@ mod tests {
                 name: Set("B regular".to_string()),
                 active: Set(true),
                 is_deduplicate_candidate: Set(Some(false)),
+                present_in_orbit: Set(Some(false)),
                 ..Default::default()
             },
         )
@@ -4450,7 +4493,7 @@ mod tests {
                 sort_by: Some(ListUnitsSortBy::UnitOrbitLinkedDesc),
                 ..Default::default()
             },
-            &[linked_candidate.id, regular.id, unreviewed.id],
+            &[regular.id, unreviewed.id, linked_candidate.id],
         )
         .await;
         assert_listed_unit_ids(
@@ -4459,7 +4502,7 @@ mod tests {
                 sort_by: Some(ListUnitsSortBy::UnitOrbitLinkedAsc),
                 ..Default::default()
             },
-            &[regular.id, unreviewed.id, linked_candidate.id],
+            &[linked_candidate.id, unreviewed.id, regular.id],
         )
         .await;
     }
@@ -6199,7 +6242,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn unit_update_preserves_server_derived_deduplicate_candidate() {
+    async fn unit_update_changes_and_audits_deduplicate_candidate() {
         let env = cleanup().await.unwrap();
         let login_id = test_login_id(&env).await;
         let unit = crate::functest::tests::mk_sigint_unit(
@@ -6221,7 +6264,23 @@ mod tests {
             .unwrap();
 
         assert_eq!(unit.comment, "updated");
-        assert_eq!(unit.is_deduplicate_candidate, Some(true));
+        assert_eq!(unit.is_deduplicate_candidate, Some(false));
+        let changelog = sigint_unit_changelog::Entity::find()
+            .filter(sigint_unit_changelog::Column::SigintUnitId.eq(unit.id))
+            .filter(sigint_unit_changelog::Column::Action.eq("update"))
+            .order_by_desc(sigint_unit_changelog::Column::Id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            changelog.old_value.unwrap()["is_deduplicate_candidate"],
+            true
+        );
+        assert_eq!(
+            changelog.new_value.unwrap()["is_deduplicate_candidate"],
+            false
+        );
     }
 
     #[tokio::test]
@@ -6295,6 +6354,7 @@ mod tests {
                 army_region: Set("ЗС РФ".to_string()),
                 orbit_note: Set(Some("Orbit note".to_string())),
                 present_in_orbit: Set(Some(false)),
+                is_deduplicate_candidate: Set(Some(true)),
                 ..Default::default()
             },
         )
@@ -6320,6 +6380,7 @@ mod tests {
         assert_eq!(unit.army_region, "ЗС РФ");
         assert_eq!(unit.orbit_note.as_deref(), Some("Orbit note"));
         assert_eq!(unit.present_in_orbit, Some(false));
+        assert_eq!(unit.is_deduplicate_candidate, Some(true));
         assert_eq!(unit.comment, "updated");
     }
 

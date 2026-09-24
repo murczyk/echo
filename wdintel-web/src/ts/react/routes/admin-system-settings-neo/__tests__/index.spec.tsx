@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   save: vi.fn(),
   replayStatus: vi.fn(),
+  cleanup: vi.fn(),
   notify: vi.fn(),
 }));
 
@@ -14,6 +15,7 @@ vi.mock('../../../services/api/system-settings', () => ({
   listSystemSettings: mocks.list,
   createSystemSettings: mocks.save,
   getRerDutyTestReplayStatus: mocks.replayStatus,
+  cleanupOrbitOtherUnits: mocks.cleanup,
 }));
 vi.mock('../../../components/PowerSnackbar', () => ({
   usePowerSnackbar: () => ({ notify: mocks.notify }),
@@ -96,6 +98,8 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
       generatedCount: 0,
       nextEmitAtMs: null,
     });
+    mocks.cleanup.mockReset();
+    mocks.cleanup.mockResolvedValue({ deletedCount: 0, activeUnits: [] });
     mocks.notify.mockReset();
   });
   afterEach(() => {
@@ -245,5 +249,82 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     const reloaded = await renderPage();
     expect(menuToggle(reloaded.container)?.checked).toBe(false);
     await act(async () => reloaded.root.unmount());
+  });
+  it('keeps classic menu toggles in their respective tabs', async () => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo#duty');
+    const { container, root } = await renderPage();
+    const tabs = Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]'));
+
+    expect(container.textContent).toContain('Показувати класичний оперативний');
+    expect(container.textContent).not.toContain('Показувати класичний аналіз');
+
+    await act(async () => tabs.find((tab) => tab.textContent === 'Аналіз')?.click());
+
+    expect(container.textContent).not.toContain('Показувати класичний оперативний');
+    expect(container.textContent).toContain('Показувати класичний аналіз');
+    await act(async () => root.unmount());
+  });
+
+  it('reads the active tab from the anchor and has no provider tab', async () => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo#duty');
+    const replaceState = vi.spyOn(window.history, 'replaceState');
+    const pushState = vi.spyOn(window.history, 'pushState');
+    const { container, root } = await renderPage();
+    const tabs = Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]'));
+    const dutyTab = tabs.find((tab) => tab.textContent?.includes('Оперативний'));
+    const analysisTab = tabs.find((tab) => tab.textContent?.includes('Аналіз'));
+
+    expect(dutyTab?.getAttribute('aria-selected')).toBe('true');
+    expect(tabs.some((tab) => tab.textContent?.includes('ШІ'))).toBe(false);
+    await act(async () => analysisTab?.click());
+
+    expect(window.location.hash).toBe('#analysis');
+    expect(replaceState).toHaveBeenCalledOnce();
+    expect(pushState).not.toHaveBeenCalled();
+    await act(async () => root.unmount());
+  });
+
+  it('shows cache maintenance without the settings save button', async () => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo#cache');
+    const { container, root } = await renderPage();
+
+    expect(container.textContent).toContain('Перерахунок кешу');
+    expect(button(container, 'зберегти')).toBeUndefined();
+    await act(async () => root.unmount());
+  });
+
+  it('double-confirms Orbit cleanup and allows roadblock override', async () => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo#integrations');
+    mocks.cleanup
+      .mockResolvedValueOnce({
+        deletedCount: 0,
+        activeUnits: [{ id: 7, name: 'Active unit' }],
+      })
+      .mockResolvedValueOnce({
+        deletedCount: 2,
+        activeUnits: [{ id: 7, name: 'Active unit' }],
+      });
+    const { root } = await renderPage();
+
+    await act(async () => button(document.body, 'Видалити підрозділи управління')?.click());
+    expect(mocks.cleanup).not.toHaveBeenCalled();
+    await act(async () => button(document.body, 'Продовжити')?.click());
+    expect(mocks.cleanup).not.toHaveBeenCalled();
+    await act(async () => button(document.body, 'Так, видалити')?.click());
+    await act(async () => Promise.resolve());
+
+    expect(mocks.cleanup).toHaveBeenCalledWith(false);
+    expect(document.body.textContent).toContain('Операцію заблоковано');
+    expect(document.body.querySelector('a[href="/rer-units/7"]')?.textContent).toBe('Active unit');
+
+    await act(async () => button(document.body, 'Ігнорувати та продовжити')?.click());
+    await act(async () => Promise.resolve());
+
+    expect(mocks.cleanup).toHaveBeenLastCalledWith(true);
+    expect(mocks.notify).toHaveBeenCalledWith({
+      severity: 'success',
+      message: 'Видалено підрозділів: 2.',
+    });
+    await act(async () => root.unmount());
   });
 });

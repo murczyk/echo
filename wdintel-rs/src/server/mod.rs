@@ -691,6 +691,13 @@ fn spawn_background_workers(
         )
         .await;
     });
+    let unit_activation_env = env.clone();
+    spawn_named_worker("inactive_unit_activation_worker", bg_set, async move {
+        crate::sigint::unit::worker::run_inactive_unit_activation_worker_nofail(
+                unit_activation_env,
+            )
+            .await;
+    });
     let daily_network_env = env.clone();
     spawn_named_worker(
         "inbox_network_daily_consistency_worker",
@@ -1272,6 +1279,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::unit::delete_unit_duplicate)
             .service(crate::sigint::unit::units_search)
             .service(crate::sigint::unit::attachment::unit_details)
+            .service(crate::sigint::unit::activity::unit_activity)
             .service(crate::sigint::unit::changelog::unit_changelog)
             .service(crate::sigint::unit::labels::create_unit_label)
             .service(crate::sigint::unit::labels::delete_unit_label)
@@ -1294,6 +1302,9 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
                 crate::inbox::unresolved_units::resolve_unresolved_unit_label,
             )
             .service(crate::sigint::unit::orbit::unit_orbit_children)
+            .service(
+                crate::sigint::unit::orbit::cleanup_orbit_other_units,
+            )
             .service(crate::sigint::unit::orbit::list_unit_duplicates)
             .service(crate::sigint::unit::orbit::list_inconsistent_units)
             .service(crate::sigint::unit::orbit::orbit_link_candidates)

@@ -120,6 +120,9 @@ fn map_system_settings_item(
         two_factor_auth_enabled: settings
             .two_factor_auth_enabled
             .unwrap_or(true),
+        exclude_orbit_other_units: settings
+            .exclude_orbit_other_units
+            .unwrap_or(true),
         duty_exclude_menu_enabled: settings
             .duty_exclude_menu_enabled
             .unwrap_or(true),
@@ -158,6 +161,17 @@ where
         .await
         .c(h!())?
         .and_then(|settings| settings.two_factor_auth_enabled)
+        .unwrap_or(true))
+}
+
+pub async fn exclude_orbit_other_units<C>(dbx: &C) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
+    Ok(get_active_system_settings(dbx)
+        .await
+        .c(h!())?
+        .and_then(|settings| settings.exclude_orbit_other_units)
         .unwrap_or(true))
 }
 
@@ -646,6 +660,7 @@ fn system_settings_active_model(
         duty_exclude_menu_enabled: Set(Some(req.duty_exclude_menu_enabled)),
         analysis_aor_filter_enabled: Set(Some(req.analysis_aor_filter_enabled)),
         two_factor_auth_enabled: Set(Some(req.two_factor_auth_enabled)),
+        exclude_orbit_other_units: Set(Some(req.exclude_orbit_other_units)),
     })
 }
 
@@ -809,6 +824,9 @@ pub async fn current_system_settings(
             two_factor_auth_enabled: settings
                 .two_factor_auth_enabled
                 .unwrap_or(true),
+            exclude_orbit_other_units: settings
+                .exclude_orbit_other_units
+                .unwrap_or(true),
             duty_exclude_menu_enabled: settings
                 .duty_exclude_menu_enabled
                 .unwrap_or(true),
@@ -851,6 +869,7 @@ pub async fn current_system_settings(
             duty_exclude_menu_enabled: true,
             analysis_aor_filter_enabled: ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
             two_factor_auth_enabled: true,
+            exclude_orbit_other_units: true,
         },
     }))
 }
@@ -1348,6 +1367,7 @@ mod tests {
             duty_exclude_menu_enabled: true,
             analysis_aor_filter_enabled: ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
             two_factor_auth_enabled: true,
+            exclude_orbit_other_units: true,
         }
     }
 
@@ -1416,6 +1436,7 @@ mod tests {
             duty_exclude_menu_enabled: Set(None),
             analysis_aor_filter_enabled: Set(None),
             two_factor_auth_enabled: Set(None),
+            exclude_orbit_other_units: Set(None),
         }
         .insert(dbx)
         .await
