@@ -9,6 +9,7 @@ use crate::config::{
     INBOX_ITEM_UNIT_SYNC_INSERT_BATCH_SIZE,
     INBOX_ITEM_UNIT_SYNC_QUERY_BATCH_SIZE,
     INBOX_UNIT_EQUIVALENT_NAME_VARIANT_LIMIT,
+    INBOX_UNIT_STRUCTURAL_PREFILTER_MIN_TRIGRAM_CHARS,
 };
 use crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind;
 use crate::entities::{
@@ -214,8 +215,30 @@ fn equivalent_unit_notion_aliases(word: &str) -> Vec<&str> {
         .collect_vec()
 }
 
-fn structural_word_condition(word: &str) -> Condition {
-    equivalent_unit_notion_aliases(word)
+fn structural_alias_has_trigram(alias: &str) -> bool {
+    alias
+        .split(|character: char| !character.is_alphanumeric())
+        .any(|word| {
+            word.chars().count()
+                >= INBOX_UNIT_STRUCTURAL_PREFILTER_MIN_TRIGRAM_CHARS
+        })
+}
+
+fn structural_word_condition(word: &str) -> (Condition, bool) {
+    let normalized = normalize_structural_text(word);
+    let aliases = equivalent_unit_notion_aliases(&normalized);
+    let aliases = if aliases
+        .iter()
+        .all(|alias| structural_alias_has_trigram(alias))
+    {
+        aliases
+    } else {
+        vec![word]
+    };
+    let has_trigram = aliases
+        .iter()
+        .all(|alias| structural_alias_has_trigram(alias));
+    let condition = aliases
         .into_iter()
         .map(|alias| {
             alias
@@ -228,7 +251,8 @@ fn structural_word_condition(word: &str) -> Condition {
                     )
                 })
         })
-        .fold(Condition::any(), |condition, alias| condition.add(alias))
+        .fold(Condition::any(), |condition, alias| condition.add(alias));
+    (condition, has_trigram)
 }
 
 async fn structural_candidates<C>(
@@ -238,16 +262,17 @@ async fn structural_candidates<C>(
 where
     C: ConnectionTrait,
 {
-    let segments = crate::unit::parse_library_unit_segments(unit_v2)
-        .into_iter()
-        .map(|segment| normalize_structural_text(&segment))
+    let parsed_segments = crate::unit::parse_library_unit_segments(unit_v2);
+    let segments = parsed_segments
+        .iter()
+        .map(|segment| normalize_structural_text(segment))
         .filter(|segment| !segment.is_empty())
         .unique()
         .collect_vec();
     if segments.is_empty() {
         return Ok(Vec::new());
     }
-    let words = segments
+    let words = parsed_segments
         .iter()
         .flat_map(|segment| {
             segment
@@ -262,8 +287,30 @@ where
         .find_also_related(orbit_unit_echelon::Entity)
         .filter(orbit_unit::Column::Deleted.eq(false))
         .filter(orbit_unit::Column::GenerativeUnitNameFull.is_not_null());
+    let mut has_trigram_prefilter = false;
     for word in words {
-        query = query.filter(structural_word_condition(&word));
+        let (condition, has_trigram) = structural_word_condition(&word);
+        query = query.filter(condition);
+        has_trigram_prefilter |= has_trigram;
+    }
+    if !has_trigram_prefilter {
+        // Pair short words so pg_trgm can constrain the candidate query.
+        let anchor = parsed_segments
+            .iter()
+            .filter(|segment| {
+                segment
+                    .split(|character: char| !character.is_alphanumeric())
+                    .filter(|word| !word.is_empty())
+                    .count()
+                    > 1
+            })
+            .max_by_key(|segment| segment.chars().count());
+        if let Some(anchor) = anchor {
+            query =
+                query.filter(orbit_unit::Column::GenerativeUnitNameFull.ilike(
+                    format!("%{}%", collapse_unit_label_whitespace(anchor)),
+                ));
+        }
     }
 
     Ok(query
