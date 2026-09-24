@@ -5,6 +5,9 @@
         { "table": "public.system_settings", "strategy": "cdc_backfill" }
       ]
     },
+    "echo:m20260924_124644_api_integration_iggy_aors": {
+      "changes": []
+    },
     "echo:m20260923_130904_two_factor_auth_enabled": {
       "changes": [
         { "table": "public.system_settings", "strategy": "cdc_backfill" }

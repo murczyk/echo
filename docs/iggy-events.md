@@ -2,7 +2,7 @@
 
 The configured inbox topic carries the existing creation record as a JSON pair
 `[sigint_inbox_item_id, inbox_message]`. The message includes the existing
-`sigint_callsign_ids`, `sigint_unit_ids`, `sigint_signal_ids`, and
+`aor_ids`, `sigint_callsign_ids`, `sigint_unit_ids`, `sigint_signal_ids`, and
 `sigint_network_freq_ids` enrichment fields. `activity_at_ms` is the
 interception time used for network frequency matching.
 Creations are also retained in the transactional outbox, preventing a
@@ -34,6 +34,7 @@ reused with a different user; obsolete Iggy login credentials are cleared.
 | `network_frequencies_changed` | `sigint_network_id`, `unlinked_sigint_network_freq_ids`, `linked_sigint_network_freq_ids` | Apply an inbox frequency or interception time edit. |
 | `callsign_linked`, `callsign_unlinked` | `sigint_inbox_item_callsign_id`, `callsign`, `sigint_callsign_ids` | Apply an inbox callsign edit. |
 | `settlement_linked`, `settlement_unlinked` | `settlement_id` | Apply a resolved settlement link change. |
+| `aors_changed` | `aor_ids` | Replace the item's complete effective AOR ID list. |
 
 Every suffix above is prefixed by `sigint_inbox_item_`. Network frequency IDs
 match the inbox item's `freq` and interception time against the network's
@@ -49,6 +50,15 @@ Changes to group state, zone assignments, organisation group selection, and
 secret-group membership reconcile every affected snapshot. Newly visible items
 are replayed as creation upserts, while items that are no longer visible emit
 deletion events.
+
+An item's effective `aor_ids` are sorted and unique. When the item has at least
+one network link, they are the union of the AORs assigned to every linked
+network; a linked network set with no AOR assignments produces an empty list.
+Without network links, they are the union of the AORs assigned to every message
+group. Network-link, network-AOR, message-group, group-AOR, and applicable
+datasource-group changes enqueue `sigint_inbox_item_aors_changed`. The event is
+a current snapshot, so retries or several changes before publication can repeat
+the same list.
 
 All activity and frequency interval times use UTC.
 
@@ -66,3 +76,17 @@ integration's API user can see at least one currently linked inbox item:
 
 Catalog callsign and unit visibility changes refresh network callsign text
 matches with an unlink/link pair.
+
+## REST reference dictionaries
+
+Authenticated users with the `Api` role can load the dictionaries referenced
+by these events:
+
+- `GET /api/1.1/settlements` returns every canonical settlement ordered by ID,
+  including its kind, administrative names, coordinates, and tag.
+- `GET /api/1.1/tags` returns every tag ordered by ID, including disabled tags
+  and tags owned by any organisation. Each row includes its label, display
+  metadata, flags, and optional owner organisation ID.
+
+These routes are API-role-only and do not change the organism-scoped UI tag
+routes.

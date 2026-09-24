@@ -31,6 +31,7 @@ struct IggyInboxMessage {
     #[serde(flatten)]
     inbox_message: InboxMessage,
     activity_at_ms: i64,
+    aor_ids: Vec<i64>,
     sigint_callsign_ids: Vec<i64>,
     sigint_unit_ids: Vec<i64>,
     sigint_signal_ids: Vec<i64>,
@@ -686,6 +687,13 @@ fn render_pending_event(
             "message".into(),
             serde_json::to_value(message.c(h!())?).c(h!())?,
         );
+    } else if fields.get("event_type").and_then(|value| value.as_str())
+        == Some("sigint_inbox_item_aors_changed")
+    {
+        fields.insert(
+            "aor_ids".into(),
+            serde_json::to_value(&message.c(h!())?.aor_ids).c(h!())?,
+        );
     }
     serde_json::to_vec(&payload).c(h!()).map_err(AppError::from)
 }
@@ -726,6 +734,9 @@ async fn enrich_inbox_messages(
     let callsign_ids = load_callsign_ids(env, &inbox_messages).await.c(h!())?;
     let inbox_item_ids =
         inbox_messages.iter().map(|(id, _)| *id).collect::<Vec<_>>();
+    let mut aor_ids = load_effective_aor_ids(&env.dbx, &inbox_item_ids)
+        .await
+        .c(h!())?;
     let mut network_freq_ids = load_network_freq_ids(&env.dbx, &inbox_item_ids)
         .await
         .c(h!())?;
@@ -738,11 +749,13 @@ async fn enrich_inbox_messages(
         .map(|(id, inbox_message)| -> Result<_, AppError> {
             let network_freq_ids =
                 network_freq_ids.remove(&id).unwrap_or_default();
+            let aor_ids = aor_ids.remove(&id).unwrap_or_default();
             Ok((
                 id,
                 enrich_inbox_message(
                     inbox_message,
                     &callsign_ids,
+                    aor_ids,
                     network_freq_ids,
                     *activity_datetimes.get(&id).c(h!())?,
                 ),
@@ -816,6 +829,7 @@ async fn load_callsign_ids_for_texts(
 fn enrich_inbox_message(
     inbox_message: InboxMessage,
     callsign_ids: &HashMap<String, BTreeSet<i64>>,
+    aor_ids: Vec<i64>,
     sigint_network_freq_ids: Vec<i64>,
     activity_at_ms: i64,
 ) -> IggyInboxMessage {
@@ -847,6 +861,7 @@ fn enrich_inbox_message(
     IggyInboxMessage {
         inbox_message,
         activity_at_ms,
+        aor_ids,
         sigint_callsign_ids,
         sigint_unit_ids,
         sigint_signal_ids,
@@ -896,6 +911,99 @@ async fn load_activity_datetimes(
         }
     }
     Ok(activity_datetimes)
+}
+
+async fn load_effective_aor_ids(
+    dbx: &DatabaseConnection,
+    inbox_item_ids: &[i64],
+) -> Result<HashMap<i64, Vec<i64>>, AppError> {
+    let mut aor_ids_by_inbox_item = HashMap::<i64, BTreeSet<i64>>::new();
+    for inbox_item_ids in inbox_item_ids
+        .chunks(crate::config::API_INTEGRATION_IGGY_ENRICHMENT_ID_BATCH_SIZE)
+    {
+        let rows = dbx
+            .query_all_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+select inbox_network.sigint_inbox_item_id, network_aor.aor_id
+from sigint_inbox_item_network inbox_network
+left join sigint_network_aor network_aor
+    on network_aor.network_id = inbox_network.sigint_network_id
+where inbox_network.sigint_inbox_item_id = any($1)
+order by inbox_network.sigint_inbox_item_id, network_aor.aor_id
+                "#,
+                [inbox_item_ids.to_vec().into()],
+            ))
+            .await
+            .c(h!())?;
+        let mut network_linked_item_ids = BTreeSet::new();
+        for row in rows {
+            let inbox_item_id =
+                row.try_get("", "sigint_inbox_item_id").c(h!())?;
+            let aor_id: Option<i64> = row.try_get("", "aor_id").c(h!())?;
+            network_linked_item_ids.insert(inbox_item_id);
+            if let Some(aor_id) = aor_id {
+                aor_ids_by_inbox_item
+                    .entry(inbox_item_id)
+                    .or_default()
+                    .insert(aor_id);
+            }
+        }
+
+        let group_scoped_item_ids = inbox_item_ids
+            .iter()
+            .filter(|id| !network_linked_item_ids.contains(id))
+            .copied()
+            .collect::<Vec<_>>();
+        if group_scoped_item_ids.is_empty() {
+            continue;
+        }
+        let rows = dbx
+            .query_all_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+select message_groups.item_id, group_aor.aor_id
+from (
+    select message_group.signal_message_id as item_id,
+        coalesce(message_group.group_master_key, datasource_group.group_master_key)
+            as group_master_key
+    from signal_message_group message_group
+    left join datasource_group
+        on datasource_group.id = message_group.datasource_group_id
+    where message_group.signal_message_id = any($1)
+
+    union
+
+    select message.id as item_id, datasource_group.group_master_key
+    from signal_message message
+    join datasource_group on datasource_group.id = message.datasource_group_id
+    where message.id = any($1)
+        and not exists (
+            select 1 from signal_message_group message_group
+            where message_group.signal_message_id = message.id
+        )
+) message_groups
+join signal_group_aor group_aor
+    on group_aor.master_key = message_groups.group_master_key
+order by message_groups.item_id, group_aor.aor_id
+                "#,
+                [group_scoped_item_ids.into()],
+            ))
+            .await
+            .c(h!())?;
+        for row in rows {
+            let inbox_item_id = row.try_get("", "item_id").c(h!())?;
+            let aor_id = row.try_get("", "aor_id").c(h!())?;
+            aor_ids_by_inbox_item
+                .entry(inbox_item_id)
+                .or_default()
+                .insert(aor_id);
+        }
+    }
+    Ok(aor_ids_by_inbox_item
+        .into_iter()
+        .map(|(id, aor_ids)| (id, aor_ids.into_iter().collect()))
+        .collect())
 }
 
 async fn load_network_freq_ids(
@@ -1114,9 +1222,9 @@ mod tests {
         sigint_comment, sigint_important, sigint_inbox_item,
         sigint_inbox_item_callsign, sigint_inbox_item_network,
         sigint_inbox_item_settlement, sigint_inbox_item_unit, sigint_network,
-        sigint_network_callsign, sigint_network_freq, sigint_signal,
-        sigint_zone_datasource, signal_group, signal_group_aor, signal_message,
-        signal_message_group, signal_message_media,
+        sigint_network_aor, sigint_network_callsign, sigint_network_freq,
+        sigint_signal, sigint_zone_datasource, signal_group, signal_group_aor,
+        signal_message, signal_message_group, signal_message_media,
         signal_message_media_conversion_job, system_settings,
     };
     use crate::functest::tests::*;
@@ -1425,6 +1533,155 @@ mod tests {
         inbox_message
     }
 
+    struct InboxAorFixture {
+        item_id: i64,
+        group_master_keys: [String; 2],
+        group_aor_ids: [i64; 3],
+        second_datasource_group: datasource_group::Model,
+        second_message_group: signal_message_group::Model,
+    }
+
+    async fn insert_inbox_aor_fixture(env: &Env) -> InboxAorFixture {
+        let first_group =
+            mk_signal_group(&env.dbx, Default::default()).await.unwrap();
+        let second_group =
+            mk_signal_group(&env.dbx, Default::default()).await.unwrap();
+        let first_aor = mk_aor(&env.dbx, Default::default()).await.unwrap();
+        let second_aor = mk_aor(&env.dbx, Default::default()).await.unwrap();
+        let third_aor = mk_aor(&env.dbx, Default::default()).await.unwrap();
+        for (group_master_key, aor_id) in [
+            (first_group.master_key.clone(), first_aor.id),
+            (first_group.master_key.clone(), second_aor.id),
+            (second_group.master_key.clone(), second_aor.id),
+            (second_group.master_key.clone(), third_aor.id),
+        ] {
+            mk_signal_group_aor(
+                &env.dbx,
+                signal_group_aor::ActiveModel {
+                    master_key: Set(group_master_key),
+                    aor_id: Set(aor_id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        let item_id = insert_inbox_item(env, Utc::now().naive_utc()).await;
+        mk_signal_message_group(
+            &env.dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(item_id),
+                group_master_key: Set(Some(first_group.master_key.clone())),
+                datasource_group_id: Set(None),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let second_datasource_group = mk_datasource_group(
+            &env.dbx,
+            datasource_group::ActiveModel {
+                group_master_key: Set(second_group.master_key.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let second_message_group = mk_signal_message_group(
+            &env.dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(item_id),
+                group_master_key: Set(None),
+                datasource_group_id: Set(Some(second_datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        InboxAorFixture {
+            item_id,
+            group_master_keys: [
+                first_group.master_key,
+                second_group.master_key,
+            ],
+            group_aor_ids: [first_aor.id, second_aor.id, third_aor.id],
+            second_datasource_group,
+            second_message_group,
+        }
+    }
+
+    async fn enriched_aor_ids(env: &Env, item_id: i64) -> Vec<i64> {
+        let inbox_message: InboxMessage = InboxInsertPayload {
+            text: "AOR test".to_string(),
+            ..Default::default()
+        }
+        .into();
+        enrich_inbox_messages(env, vec![(item_id, inbox_message)])
+            .await
+            .unwrap()
+            .remove(0)
+            .1
+            .aor_ids
+    }
+
+    async fn assert_queued_aor_event(
+        env: &Env,
+        integration: &api_integration::Model,
+        item_id: i64,
+        expected_aor_ids: &[i64],
+    ) {
+        let events =
+            load_pending_events(&env.dbx, integration.id).await.unwrap();
+        let event = events
+            .iter()
+            .rev()
+            .find(|event| {
+                event.sigint_inbox_item_id == Some(item_id)
+                    && event.payload["event_type"]
+                        == "sigint_inbox_item_aors_changed"
+            })
+            .unwrap();
+        let inbox_message: InboxMessage = InboxInsertPayload {
+            text: "AOR event test".to_string(),
+            ..Default::default()
+        }
+        .into();
+        let message =
+            enrich_inbox_messages(env, vec![(item_id, inbox_message)])
+                .await
+                .unwrap()
+                .remove(0)
+                .1;
+        let payload: serde_json::Value = serde_json::from_slice(
+            &render_pending_event(
+                event,
+                Some(&message),
+                PendingEventAction::Publish,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(payload["event_type"], "sigint_inbox_item_aors_changed");
+        assert_eq!(payload["sigint_inbox_item_id"], item_id);
+        assert_eq!(payload["aor_ids"], serde_json::json!(expected_aor_ids));
+    }
+
+    async fn queued_event_types(
+        env: &Env,
+        integration: &api_integration::Model,
+        item_id: i64,
+    ) -> Vec<String> {
+        load_pending_events(&env.dbx, integration.id)
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|event| event.sigint_inbox_item_id == Some(item_id))
+            .map(|event| {
+                event.payload["event_type"].as_str().unwrap().to_string()
+            })
+            .collect()
+    }
+
     #[actix_web::test]
     #[serial]
     async fn inbox_event_contains_dictionary_ids_and_stays_compatible() {
@@ -1483,9 +1740,219 @@ mod tests {
                 open_ended_network_freq_id
             ])
         );
+        assert_eq!(event[1]["aor_ids"], serde_json::json!([]));
         let old_message: InboxMessage =
             serde_json::from_value(event[1].clone()).unwrap();
         assert_eq!(old_message.text, "interception");
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn inbox_aor_enrichment_prefers_all_networks_over_all_groups() {
+        let env = cleanup().await.unwrap();
+        let fixture = insert_inbox_aor_fixture(&env).await;
+        assert_eq!(
+            enriched_aor_ids(&env, fixture.item_id).await,
+            fixture.group_aor_ids
+        );
+
+        let first_network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        mk_sigint_inbox_item_network(
+            &env.dbx,
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(fixture.item_id),
+                sigint_network_id: Set(first_network.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert!(enriched_aor_ids(&env, fixture.item_id).await.is_empty());
+
+        mk_sigint_network_aor(
+            &env.dbx,
+            sigint_network_aor::ActiveModel {
+                network_id: Set(first_network.id),
+                aor_id: Set(fixture.group_aor_ids[2]),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let second_network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        mk_sigint_inbox_item_network(
+            &env.dbx,
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(fixture.item_id),
+                sigint_network_id: Set(second_network.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_network_aor(
+            &env.dbx,
+            sigint_network_aor::ActiveModel {
+                network_id: Set(second_network.id),
+                aor_id: Set(fixture.group_aor_ids[0]),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            enriched_aor_ids(&env, fixture.item_id).await,
+            vec![fixture.group_aor_ids[0], fixture.group_aor_ids[2]]
+        );
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn effective_aor_change_sources_queue_snapshot_events() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let integration = insert_integration(&env, login.id).await;
+        let fixture = insert_inbox_aor_fixture(&env).await;
+        clear_iggy_events(&env, integration.id).await;
+
+        let mut second_datasource_group =
+            fixture.second_datasource_group.clone().into_active_model();
+        second_datasource_group.group_master_key =
+            Set(fixture.group_master_keys[0].clone());
+        let second_datasource_group =
+            second_datasource_group.update(&env.dbx).await.unwrap();
+        assert_queued_aor_event(
+            &env,
+            &integration,
+            fixture.item_id,
+            &fixture.group_aor_ids[..2],
+        )
+        .await;
+        clear_iggy_events(&env, integration.id).await;
+
+        let mut second_datasource_group =
+            second_datasource_group.into_active_model();
+        second_datasource_group.group_master_key =
+            Set(fixture.group_master_keys[1].clone());
+        second_datasource_group.update(&env.dbx).await.unwrap();
+        clear_iggy_events(&env, integration.id).await;
+
+        signal_message_group::Entity::delete_by_id(
+            fixture.second_message_group.id,
+        )
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+        assert_eq!(
+            queued_event_types(&env, &integration, fixture.item_id).await,
+            [
+                "sigint_inbox_item_updated",
+                "sigint_inbox_item_aors_changed"
+            ]
+        );
+        assert_queued_aor_event(
+            &env,
+            &integration,
+            fixture.item_id,
+            &fixture.group_aor_ids[..2],
+        )
+        .await;
+        clear_iggy_events(&env, integration.id).await;
+
+        let fourth_aor = mk_aor(&env.dbx, Default::default()).await.unwrap();
+        mk_signal_group_aor(
+            &env.dbx,
+            signal_group_aor::ActiveModel {
+                master_key: Set(fixture.group_master_keys[0].clone()),
+                aor_id: Set(fourth_aor.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            queued_event_types(&env, &integration, fixture.item_id).await,
+            [
+                "sigint_inbox_item_visibility_changed",
+                "sigint_inbox_item_aors_changed"
+            ]
+        );
+        let mut expected_group_aor_ids = fixture.group_aor_ids[..2].to_vec();
+        expected_group_aor_ids.push(fourth_aor.id);
+        expected_group_aor_ids.sort_unstable();
+        assert_queued_aor_event(
+            &env,
+            &integration,
+            fixture.item_id,
+            &expected_group_aor_ids,
+        )
+        .await;
+        clear_iggy_events(&env, integration.id).await;
+
+        let network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let network_link = mk_sigint_inbox_item_network(
+            &env.dbx,
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(fixture.item_id),
+                sigint_network_id: Set(network.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            queued_event_types(&env, &integration, fixture.item_id).await,
+            [
+                "sigint_inbox_item_network_linked",
+                "sigint_inbox_item_aors_changed"
+            ]
+        );
+        assert_queued_aor_event(&env, &integration, fixture.item_id, &[]).await;
+        clear_iggy_events(&env, integration.id).await;
+
+        mk_sigint_network_aor(
+            &env.dbx,
+            sigint_network_aor::ActiveModel {
+                network_id: Set(network.id),
+                aor_id: Set(fixture.group_aor_ids[2]),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_queued_aor_event(
+            &env,
+            &integration,
+            fixture.item_id,
+            &[fixture.group_aor_ids[2]],
+        )
+        .await;
+        clear_iggy_events(&env, integration.id).await;
+
+        sigint_inbox_item_network::Entity::delete_by_id(network_link.id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(
+            queued_event_types(&env, &integration, fixture.item_id).await,
+            [
+                "sigint_inbox_item_network_unlinked",
+                "sigint_inbox_item_aors_changed"
+            ]
+        );
+        assert_queued_aor_event(
+            &env,
+            &integration,
+            fixture.item_id,
+            &expected_group_aor_ids,
+        )
+        .await;
     }
 
     #[actix_web::test]
@@ -2237,6 +2704,7 @@ mod tests {
         let message = enrich_inbox_message(
             build_inbox_message(unit.id, 0, network.id),
             &callsign_ids,
+            vec![],
             vec![first_frequency.id, second_frequency.id],
             intercepted_at.and_utc().timestamp_millis(),
         );
