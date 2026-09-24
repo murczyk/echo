@@ -216,6 +216,26 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     await act(async () => reloaded.root.unmount());
   });
 
+  it('#3568 saves the Analysis AOR-filter flag and reloads the disabled choice', async () => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo#analysis');
+    const first = await renderPage();
+    const menuToggle = (container: HTMLElement) =>
+      Array.from(container.querySelectorAll('label'))
+        .find((label) => label.textContent?.includes('Фільтр смуг'))
+        ?.querySelector<HTMLInputElement>('input');
+    expect(menuToggle(first.container)?.checked).toBe(true);
+    await act(async () => menuToggle(first.container)?.click());
+    await act(async () => button(first.container, 'зберегти')?.click());
+    expect(mocks.save).toHaveBeenCalledWith(
+      expect.objectContaining({ analysisAorFilterEnabled: false }),
+    );
+    await act(async () => first.root.unmount());
+    mocks.list.mockResolvedValue([{ id: 2, deleted: false, analysisAorFilterEnabled: false }]);
+    const reloaded = await renderPage();
+    expect(menuToggle(reloaded.container)?.checked).toBe(false);
+    await act(async () => reloaded.root.unmount());
+  });
+
   it('#3568 saves the 2FA flag and reloads the disabled choice', async () => {
     window.history.replaceState({}, '', '/admin/system-settings-neo#main');
     const first = await renderPage();

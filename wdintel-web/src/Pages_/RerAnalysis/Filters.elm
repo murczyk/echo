@@ -416,7 +416,8 @@ view isDark _ model =
                             ]
                         ]
             in
-            [ filterMenuBlockCountOutOf
+            [ HtmlX.viewIf model.analysisAorFilterEnabled <|
+              filterMenuBlockCountOutOf
                 { unfold = model.unfoldAorsFilter
                 , toggleMsg = ToggleUnfoldAorsFilter
                 , label = "смуги"

@@ -301,6 +301,7 @@ init user route _ =
             , unitsExactMatchOnly = True
             , unitsExactMatchOnlyExplicit = False
             , systemSettingsLoaded = False
+            , analysisAorFilterEnabled = True
             , audioTranscriptionEnabled = False
             , analysisAudioTranscriptionCollapsed = False
             , disableBotTags = False
@@ -1256,6 +1257,7 @@ update user shared route msg model =
                             | systemSettingsLoaded = True
                             , audioTranscriptionEnabled = rsp.enableAudioTranscription
                             , disableBotTags = rsp.disableBotTags
+                            , analysisAorFilterEnabled = rsp.analysisAorFilterEnabled
                         }
 
                     else
@@ -1264,6 +1266,7 @@ update user shared route msg model =
                             , systemSettingsLoaded = True
                             , audioTranscriptionEnabled = rsp.enableAudioTranscription
                             , disableBotTags = rsp.disableBotTags
+                            , analysisAorFilterEnabled = rsp.analysisAorFilterEnabled
                         }
 
                 ( m3, eff3 ) =

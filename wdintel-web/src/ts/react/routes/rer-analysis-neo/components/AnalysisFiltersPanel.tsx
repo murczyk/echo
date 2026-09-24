@@ -59,6 +59,7 @@ export function AnalysisFiltersPanel({
     options,
     queryState,
     unitsExactMatchOnlyDefault,
+    analysisAorFilterEnabled,
     saveInFlight,
     savedFilterName,
     savedFilters,
@@ -207,6 +208,7 @@ export function AnalysisFiltersPanel({
                   options={options}
                   queryState={queryState}
                   unitsExactMatchOnlyDefault={unitsExactMatchOnlyDefault}
+                  analysisAorFilterEnabled={analysisAorFilterEnabled}
                   setIncludeOnlyNewFreqs={setIncludeOnlyNewFreqs}
                   toggleSection={toggleSection}
                   updateQueryState={updateQueryState}
@@ -268,6 +270,7 @@ export function AnalysisFiltersPanel({
                   options={options}
                   queryState={queryState}
                   unitsExactMatchOnlyDefault={unitsExactMatchOnlyDefault}
+                  analysisAorFilterEnabled={analysisAorFilterEnabled}
                   setIncludeOnlyNewFreqs={setIncludeOnlyNewFreqs}
                   toggleSection={toggleSection}
                   updateQueryState={updateQueryState}

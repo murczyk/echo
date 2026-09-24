@@ -6,6 +6,7 @@ import { networkSettingsResponse } from './fixture-responses';
 type ShortStateFixtureOptions = {
   enableAudioTranscription?: boolean;
   dutyExcludeMenuEnabled?: boolean;
+  analysisAorFilterEnabled?: boolean;
   shortStateId?: string;
   shortState?: unknown;
   inboxResponse?: InboxMessagesRspRaw | null | Promise<InboxMessagesRspRaw | null>;
@@ -67,7 +68,7 @@ function emptyUserSettingsResponse(disableAutoScroll = false) {
   };
 }
 
-function emptySystemSettingsResponse(enableAudioTranscription = false) {
+export function emptySystemSettingsResponse(enableAudioTranscription = false) {
   return {
     id: null,
     rer_analysis_units_exact_match_only_default: false,
@@ -234,6 +235,8 @@ export async function installRerDutyShortStateMocks(
       await fulfillJson(route, {
         ...emptySystemSettingsResponse(options.enableAudioTranscription),
         duty_exclude_menu_enabled: options.dutyExcludeMenuEnabled ?? true,
+        two_factor_auth_enabled: true,
+        analysis_aor_filter_enabled: options.analysisAorFilterEnabled ?? true,
       });
       resolveSystemSettingsReady();
       return;
