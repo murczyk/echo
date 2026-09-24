@@ -59,7 +59,7 @@ async fn load_unit_activity(
             "1 day",
         ),
         UnitActivityPeriod::ThreeMonths => (
-            "date_trunc('week', now() at time zone 'utc') - interval '12 weeks'",
+            "date_trunc('week', now() at time zone 'utc') - interval '11 weeks'",
             "date_trunc('week', now() at time zone 'utc')",
             "1 week",
         ),
