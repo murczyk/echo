@@ -5,9 +5,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 test_dir="$(mktemp -d)"
 trap 'rm -rf "$test_dir"' EXIT
 
-mkdir -p "$test_dir/deploy/ci" "$test_dir/home"
+mkdir -p "$test_dir/deploy/ci"
 cp "$SCRIPT_DIR/on_build_main.sh" "$SCRIPT_DIR/require_stable_release.sh" "$test_dir/deploy/ci/"
-export HOME="$test_dir/home"
 git -C "$test_dir" init -q
 git -C "$test_dir" -c user.name=CI -c user.email=ci@example.invalid \
   -c commit.gpgsign=false commit -q --allow-empty -m fixture
