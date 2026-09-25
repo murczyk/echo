@@ -32,6 +32,8 @@ import {
   buildCatalogLoadingRows,
   buildNetworkColumnOrder,
   CATALOG_COLUMNS_VISIBILITY,
+  compareCallsignRowsBySorting,
+  getPrimaryCallsignSortingItem,
   NETWORK_CALLSIGN_COLUMN_SIZES,
 } from './NetworkCallsignsTableShared';
 import { NetworkCallsignSourceCell } from './NetworkCallsignSourceUi';
@@ -132,6 +134,13 @@ function NetworkCallsignsCatalogTableContent({
   const isInitialLoading = loading && rows.length === 0;
   const isBusy = loading || inFlightAddIds.length > 0;
   const loadingRows = useMemo(() => buildCatalogLoadingRows(), []);
+  const sortedRows = useMemo(() => {
+    const primarySorting = getPrimaryCallsignSortingItem(tableStateContext.sorting);
+    if (!primarySorting) return rows;
+    return rows
+      .slice()
+      .sort((left, right) => compareCallsignRowsBySorting(left, right, primarySorting));
+  }, [rows, tableStateContext.sorting]);
   const columns = useMemo<AppMrtColumnDef<NetworkCallsignCatalogRowView>[]>(
     () => [
       {
@@ -139,6 +148,7 @@ function NetworkCallsignsCatalogTableContent({
         accessorKey: 'callsign',
         id: 'callsign',
         size: NETWORK_CALLSIGN_COLUMN_SIZES.callsign,
+        enableSorting: true,
         meta: { overflowMode: 'text' },
         Cell: mrtTextCell({
           displayValue: ({ row }) => formatMrtCellTextValue(row.original.callsign),
@@ -151,6 +161,7 @@ function NetworkCallsignsCatalogTableContent({
         accessorKey: 'position',
         id: 'position',
         size: NETWORK_CALLSIGN_COLUMN_SIZES.position,
+        enableSorting: true,
         meta: { overflowMode: 'text' },
         Cell: mrtTextCell({
           displayValue: ({ row }) => formatMrtCellTextValue(row.original.position),
@@ -162,6 +173,7 @@ function NetworkCallsignsCatalogTableContent({
         accessorKey: 'unitName',
         id: 'unitName',
         size: NETWORK_CALLSIGN_COLUMN_SIZES.unitName,
+        enableSorting: true,
         meta: { overflowMode: 'text' },
         Cell: mrtTextCell({
           displayValue: ({ row }) => formatMrtCellTextValue(row.original.unitName),
@@ -173,18 +185,19 @@ function NetworkCallsignsCatalogTableContent({
         accessorFn: (row) => row.lastDatetime,
         id: 'lastDatetime',
         size: NETWORK_CALLSIGN_COLUMN_SIZES.lastDatetime,
+        enableSorting: true,
         meta: { overflowMode: 'text' },
         Cell: mrtTextCell({
           displayValue: ({ row }) => formatDateTime24(row.original.lastDatetime),
           fullValue: ({ row }) => formatDateTime24(row.original.lastDatetime),
         }),
-        enableSorting: false,
       },
       {
         header: 'К-сть',
         accessorKey: 'messageCount',
         id: 'messageCount',
         size: NETWORK_CALLSIGN_COLUMN_SIZES.messageCount,
+        enableSorting: true,
         meta: { overflowMode: 'text' },
         Cell: mrtTextCell({
           displayValue: ({ row }) => String(row.original.messageCount),
@@ -196,6 +209,7 @@ function NetworkCallsignsCatalogTableContent({
         accessorKey: 'comment',
         id: 'comment',
         size: NETWORK_CALLSIGN_COLUMN_SIZES.comment,
+        enableSorting: false,
         meta: { overflowMode: 'text' },
         Cell: mrtTextCell({
           displayValue: ({ row }) => formatMrtCellTextValue(row.original.comment),
@@ -207,12 +221,12 @@ function NetworkCallsignsCatalogTableContent({
         accessorFn: (row) => row.dateBoundAt,
         id: 'dateBoundAt',
         size: 150,
+        enableSorting: true,
         meta: { overflowMode: 'text' },
         Cell: mrtTextCell({
           displayValue: ({ row }) => formatDateTime24(row.original.dateBoundAt),
           fullValue: ({ row }) => formatDateTime24(row.original.dateBoundAt),
         }),
-        enableSorting: false,
       },
       {
         header: 'Джерело',
@@ -221,6 +235,7 @@ function NetworkCallsignsCatalogTableContent({
         size: NETWORK_CALLSIGN_COLUMN_SIZES.sourceName,
         grow: false,
         enableResizing: false,
+        enableSorting: true,
         meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
         Cell: mrtCustomCell(({ row }) => (
           <NetworkCallsignSourceCell sourceName={row.original.sourceName} />
@@ -232,7 +247,7 @@ function NetworkCallsignsCatalogTableContent({
 
   const table = useAppMaterialReactTable({
     columns,
-    data: isInitialLoading ? loadingRows : rows,
+    data: isInitialLoading ? loadingRows : sortedRows,
     localization: NETWORK_MRT_LOCALIZATION,
     enableColumnActions: true,
     enableRowSelection: false,
@@ -242,7 +257,9 @@ function NetworkCallsignsCatalogTableContent({
     enableColumnFilters: true,
     columnFilterDisplayMode: 'popover',
     enableGlobalFilter: false,
-    enableSorting: false,
+    enableSorting: true,
+    manualSorting: true,
+    enableMultiSort: false,
     enablePagination: false,
     enableBottomToolbar: false,
     enableTopToolbar: false,
@@ -252,6 +269,7 @@ function NetworkCallsignsCatalogTableContent({
     onColumnVisibilityChange: tableStateContext.onColumnVisibilityChange,
     onColumnOrderChange: tableStateContext.onColumnOrderChange,
     onColumnSizingChange: tableStateContext.onColumnSizingChange,
+    onSortingChange: tableStateContext.onSortingChange,
     displayColumnDefOptions: {
       ...catalogMRTOptions.displayColumnDefOptions,
       'mrt-row-actions': {
@@ -294,6 +312,7 @@ function NetworkCallsignsCatalogTableContent({
       columnVisibility: tableStateContext.columnVisibility,
       columnSizing: tableStateContext.columnSizing,
       density: tableStateContext.density,
+      sorting: tableStateContext.sorting,
     },
     defaultColumn: { size: 180, renderColumnActionsMenuItems },
     muiTablePaperProps: ({ table }) => ({
