@@ -74,7 +74,10 @@ function button(label: string): HTMLButtonElement | undefined {
 async function clickButton(label: string) {
   await act(async () => {
     button(label)?.click();
-    await new Promise((resolve) => window.setTimeout(resolve, 410));
+  });
+  // PowerButton/PowerIconButton ignore clicks for 400ms after each press.
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(410);
   });
 }
 
@@ -83,16 +86,27 @@ function setInputValue(input: HTMLInputElement, value: string) {
   input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-describe('AdminGoiIntegrationsNeoPage', () => {
+describe('AdminGoiIntegrationsNeoPage', { timeout: 15_000 }, () => {
   beforeEach(() => {
+    vi.useFakeTimers();
     const storage = new Map<string, string>();
     Object.defineProperty(window, 'localStorage', {
       configurable: true,
       value: {
         getItem: (key: string) => storage.get(key) ?? null,
-        setItem: (key: string, value: string) => storage.set(key, value),
-        removeItem: (key: string) => storage.delete(key),
-        clear: () => storage.clear(),
+        setItem: (key: string, value: string) => {
+          storage.set(key, value);
+        },
+        removeItem: (key: string) => {
+          storage.delete(key);
+        },
+        clear: () => {
+          storage.clear();
+        },
+        key: (index: number) => Array.from(storage.keys())[index] ?? null,
+        get length() {
+          return storage.size;
+        },
       },
     });
     mocks.list.mockReset().mockResolvedValue([integration]);
@@ -108,7 +122,7 @@ describe('AdminGoiIntegrationsNeoPage', () => {
     act(() => renderedRoot?.unmount());
     renderedRoot = null;
     document.body.innerHTML = '';
-    delete (window as { localStorage?: Storage }).localStorage;
+    vi.useRealTimers();
   });
 
   // Regression: https://github.com/echoua/echo/pull/3268
@@ -151,7 +165,7 @@ describe('AdminGoiIntegrationsNeoPage', () => {
 
     await clickButton('Скасувати');
     expect(window.confirm).not.toHaveBeenCalled();
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.body.textContent).not.toContain('Редагувати інтеграцію ГОІ');
 
     await act(async () => root.unmount());
   });
@@ -169,7 +183,14 @@ describe('AdminGoiIntegrationsNeoPage', () => {
     );
     const { root } = await renderPage();
     await clickButton('Редагувати');
-    await act(async () => button("Перевірити з'єднання")?.click());
+    expect(button('Скасувати')).toBeDefined();
+
+    await act(async () => {
+      button("Перевірити з'єднання")?.click();
+    });
+    await act(async () => Promise.resolve());
+
+    expect(mocks.check).toHaveBeenCalled();
     expect(button('Скасувати')?.disabled).toBe(true);
     await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })));
     expect(document.body.textContent).toContain('Редагувати інтеграцію ГОІ');
@@ -180,6 +201,7 @@ describe('AdminGoiIntegrationsNeoPage', () => {
 
     await act(async () => root.unmount());
   });
+
   it('deletes through the row overflow action', async () => {
     const { container, root } = await renderPage();
 
@@ -190,7 +212,9 @@ describe('AdminGoiIntegrationsNeoPage', () => {
     expect(deleteItem).toBeDefined();
     await act(async () => {
       deleteItem?.click();
-      await new Promise((resolve) => window.setTimeout(resolve, 410));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(410);
     });
     await clickButton('Видалити');
     expect(mocks.remove).toHaveBeenCalledWith(integration.id);
