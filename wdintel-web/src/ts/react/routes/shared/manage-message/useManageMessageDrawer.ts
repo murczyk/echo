@@ -125,6 +125,7 @@ export function useManageMessageDrawer({
     status: 'idle',
   });
   const [quickSuggestionAttempt, setQuickSuggestionAttempt] = useState(0);
+  const [discardConfirmationOpen, setDiscardConfirmationOpen] = useState(false);
   const reportCopyLoaded =
     isReportCreateMode && reportCopyLoadedSourceId === (reportSource?.id ?? null);
 
@@ -392,6 +393,7 @@ export function useManageMessageDrawer({
     attachmentErrorMsg,
     setAttachmentErrorMsg,
   } = useMessageUppy(busy, retainedAttachmentCount);
+  const hasUnsavedChanges = formState.isDirty || uppyFiles.length > 0;
 
   useEffect(() => {
     if (!formReady) return;
@@ -818,6 +820,7 @@ export function useManageMessageDrawer({
     blurActiveElement();
     uppy.cancelAll();
     reset();
+    setDiscardConfirmationOpen(false);
     setDeviceNameInput('');
     setShowAdvanced(false);
     setErrorMsg(null);
@@ -826,6 +829,10 @@ export function useManageMessageDrawer({
 
   const handleBrowserBack = () => {
     if (saving) return false;
+    if (hasUnsavedChanges) {
+      setDiscardConfirmationOpen(true);
+      return false;
+    }
     finalizeDrawerClose();
     return true;
   };
@@ -840,6 +847,17 @@ export function useManageMessageDrawer({
 
   const handleDrawerClose = () => {
     if (saving) return;
+    if (hasUnsavedChanges) {
+      setDiscardConfirmationOpen(true);
+      return;
+    }
+    requestDrawerClose();
+  };
+
+  const cancelDiscard = () => setDiscardConfirmationOpen(false);
+
+  const confirmDiscard = () => {
+    setDiscardConfirmationOpen(false);
     requestDrawerClose();
   };
 
@@ -939,6 +957,10 @@ export function useManageMessageDrawer({
     retryAutoParseSettings: dutySettings.retryLoad,
     handleToggleAutoParse,
     handleDrawerClose,
+    closeDrawerWithoutConfirmation: closeDrawerAfterSubmit,
+    discardConfirmationOpen,
+    cancelDiscard,
+    confirmDiscard,
     onSubmit,
     recentValues,
   };

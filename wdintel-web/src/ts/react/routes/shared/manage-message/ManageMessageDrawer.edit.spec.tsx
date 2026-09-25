@@ -110,6 +110,8 @@ vi.mock('../../../components/ConfirmDangerDialog', () => ({
     onConfirm,
     title,
     description,
+    cancelLabel = 'Скасувати видалення',
+    confirmLabel = 'Підтвердити видалення',
     submitting,
   }: {
     open: boolean;
@@ -117,6 +119,8 @@ vi.mock('../../../components/ConfirmDangerDialog', () => ({
     onConfirm: () => void;
     title?: ReactNode;
     description?: ReactNode;
+    cancelLabel?: ReactNode;
+    confirmLabel?: ReactNode;
     submitting?: boolean;
   }) =>
     open ? (
@@ -124,10 +128,10 @@ vi.mock('../../../components/ConfirmDangerDialog', () => ({
         <div>{title}</div>
         <div>{description}</div>
         <button type="button" onClick={onClose} disabled={submitting}>
-          Скасувати видалення
+          {cancelLabel}
         </button>
         <button type="button" onClick={onConfirm} disabled={submitting}>
-          Підтвердити видалення
+          {confirmLabel}
         </button>
       </div>
     ) : null,
@@ -816,7 +820,7 @@ describe('ManageMessageDrawer edit mode', () => {
     root.unmount();
   });
 
-  it('shows an inert report-edit loading shell with an enabled dismissal path', async () => {
+  it('shows an inert report-edit loading shell without a header close action', async () => {
     setRecentValues({});
     const onClose = vi.fn();
     const container = document.createElement('div');
@@ -848,20 +852,136 @@ describe('ManageMessageDrawer edit mode', () => {
     expect(referenceDataMocks.getUserSigintGroups).not.toHaveBeenCalled();
     expect(drawerOnClose).toBeDefined();
 
-    const closeIcon = container.querySelector('button[aria-label="Закрити"]') as HTMLButtonElement;
-    expect(closeIcon.disabled).toBe(false);
-    act(() => closeIcon.click());
-    expect(onClose).toHaveBeenCalledOnce();
+    expect(container.querySelector('button[aria-label="Закрити"]')).toBeNull();
 
     const cancel = Array.from(container.querySelectorAll('button')).find(
       (button) => button.textContent === 'Скасувати',
     );
     expect(cancel).toBeDefined();
     act(() => cancel?.click());
-    expect(onClose).toHaveBeenCalledTimes(2);
+    expect(onClose).toHaveBeenCalledOnce();
 
     act(() => drawerOnClose?.({}, 'escapeKeyDown'));
-    expect(onClose).toHaveBeenCalledTimes(3);
+    expect(onClose).toHaveBeenCalledTimes(2);
+
+    root.unmount();
+  });
+
+  it('asks before discarding changed form values and keeps editing when cancelled', async () => {
+    const onClose = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={onClose}
+        />,
+      );
+      await Promise.resolve();
+    });
+    await act(async () => {
+      textFieldPropsByLabel
+        .get('Текст повідомлення')
+        ?.onChange?.({ target: { value: 'новий текст' } });
+      await Promise.resolve();
+    });
+
+    const cancel = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Скасувати',
+    );
+    act(() => cancel?.click());
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="alertdialog"]')?.textContent).toContain(
+      'Відхилити незбережені зміни?',
+    );
+
+    const continueEditing = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Продовжити редагування',
+    );
+    act(() => continueEditing?.click());
+
+    expect(container.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(textFieldPropsByLabel.get('Текст повідомлення')?.value).toBe('новий текст');
+    expect(onClose).not.toHaveBeenCalled();
+
+    root.unmount();
+  });
+
+  it('asks before discarding an added attachment from the backdrop', async () => {
+    const onClose = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={onClose}
+        />,
+      );
+      await Promise.resolve();
+    });
+    await act(async () => {
+      uppyMocks.latest?.addFile({ name: 'evidence.jpg', data: new Blob(['evidence']) });
+      await Promise.resolve();
+    });
+
+    act(() => drawerOnClose?.({}, 'backdropClick'));
+    expect(onClose).not.toHaveBeenCalled();
+
+    const discard = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Відхилити зміни',
+    );
+    act(() => discard?.click());
+    expect(onClose).toHaveBeenCalledOnce();
+
+    root.unmount();
+  });
+
+  it('asks before closing a changed form through browser Back', async () => {
+    const preEditorState = { screen: 'duty' };
+    window.history.replaceState(preEditorState, '', '/rer-duty-neo');
+    const onClose = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={onClose}
+        />,
+      );
+      await Promise.resolve();
+    });
+    await act(async () => {
+      textFieldPropsByLabel
+        .get('Текст повідомлення')
+        ?.onChange?.({ target: { value: 'новий текст' } });
+      await Promise.resolve();
+    });
+    await act(async () => {
+      window.dispatchEvent(new PopStateEvent('popstate', { state: preEditorState }));
+      await Promise.resolve();
+    });
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="alertdialog"]')).not.toBeNull();
+    expect(document.documentElement.classList.contains('echo-browser-back-overlay-open')).toBe(
+      true,
+    );
 
     root.unmount();
   });

@@ -18,7 +18,6 @@ import {
   FormControlLabel,
   Switch,
 } from '@mui/material';
-import CloseIcon from '@mui/icons-material/Close';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
@@ -402,6 +401,10 @@ export function ManageMessageDrawer(props: Props) {
     retryAutoParseSettings,
     handleToggleAutoParse,
     handleDrawerClose,
+    closeDrawerWithoutConfirmation,
+    discardConfirmationOpen,
+    cancelDiscard,
+    confirmDiscard,
     onSubmit,
     recentValues,
   } = drawerState;
@@ -443,7 +446,7 @@ export function ManageMessageDrawer(props: Props) {
 
     setDeleteInFlight(false);
     setDeleteConfirmOpen(false);
-    handleDrawerClose();
+    closeDrawerWithoutConfirmation();
     try {
       await props.onDeleteSuccess?.(reportDeleteId);
     } catch (error) {
@@ -497,9 +500,6 @@ export function ManageMessageDrawer(props: Props) {
                   ? 'Редагувати повідомлення'
                   : 'Створити повідомлення'}
             </Typography>
-            <IconButton aria-label="Закрити" onClick={handleDrawerClose} disabled={dismissDisabled}>
-              <CloseIcon />
-            </IconButton>
           </Box>
 
           <Box sx={{ flex: 1, p: 2.5, overflowY: 'auto' }}>
@@ -864,6 +864,16 @@ export function ManageMessageDrawer(props: Props) {
           ) : null}
         </div>
       </Drawer>
+      <ConfirmDangerDialog
+        open={discardConfirmationOpen}
+        onClose={cancelDiscard}
+        onConfirm={confirmDiscard}
+        title="Відхилити незбережені зміни?"
+        description="Усі незбережені зміни буде втрачено."
+        cancelLabel="Продовжити редагування"
+        confirmLabel="Відхилити зміни"
+        disabled={dismissDisabled}
+      />
       <ConfirmDangerDialog
         open={deleteConfirmOpen}
         onClose={() => setDeleteConfirmOpen(false)}
