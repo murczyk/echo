@@ -94,6 +94,8 @@ pub struct DirectSubmitParseRsp {
     pub coords: Vec<GeoCoordinates>,
     pub to: Vec<String>,
     pub timestamp: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_time_null: Option<bool>,
     pub comment: Option<String>,
     pub post: Option<String>,
     pub unit: Option<String>,

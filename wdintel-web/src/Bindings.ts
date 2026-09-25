@@ -5900,4 +5900,5 @@ export type UserDutySettingsDto = {
   dutyCollapseMediaPreviews: boolean;
   mediaSummaryEnabled: boolean;
   messageSortBy: MessageTimeBasis;
+  messageAutoParseEnabled: boolean;
 };

@@ -260,6 +260,7 @@ export type DirectSubmitParseResponse = {
   coords: SubmitCoordinates[];
   to: string[];
   timestamp?: string;
+  is_time_null?: boolean;
   comment?: string;
   post?: string;
   unit?: string;

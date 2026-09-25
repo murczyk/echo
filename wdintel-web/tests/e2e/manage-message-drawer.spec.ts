@@ -128,6 +128,60 @@ async function openLinkedMessageEditDrawer(
 }
 
 test.describe('@smoke manage message drawer linked-message regressions', () => {
+  test('ownership journey preserves manual fields while parsed values follow source text', async ({
+    page,
+  }) => {
+    await openCreateMessageDrawer(page, 'duty');
+    await page.route('**/api/1.1/submit-direct/parse', async (route) => {
+      const body = route.request().postDataJSON() as { full_body?: string };
+      const firstVersion = body.full_body?.includes('перша версія');
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          text: '',
+          freq: firstVersion ? '149.500' : '151.000',
+          coords: firstVersion ? [{ lat: 49.123457, lon: 37.234568 }] : [],
+          to: [],
+          locations: [],
+        }),
+      });
+    });
+    const source = page.getByRole('textbox', { name: 'Текст повідомлення' });
+
+    await source.fill('49.123457, 37.234568 частота 149.500 перша версія');
+    await page.getByRole('button', { name: 'Розпарсити', exact: true }).click();
+    await expect(page.getByText('37U CQ 71194 42681')).toBeVisible();
+    await expect(page.getByLabel('Частота (МГц)')).toHaveValue('149.500');
+
+    const coordinateInput = page.getByRole('textbox', { name: 'Додати координату' });
+    await coordinateInput.fill('49.22346, 37.33457');
+    await coordinateInput.press('Enter');
+    await expect(page.getByRole('button', { name: /^Видалити координату/ })).toHaveCount(2);
+    await page.getByLabel('Частота (МГц)').fill('150.000');
+
+    await source.fill('частота 151.000 друга версія');
+    await page.getByRole('button', { name: 'Розпарсити', exact: true }).click();
+
+    await expect(page.getByRole('button', { name: /^Видалити координату/ })).toHaveCount(1);
+    await expect(page.getByText('37U CQ 71194 42681')).toHaveCount(0);
+    await expect(page.getByLabel('Частота (МГц)')).toHaveValue('150.000');
+    const frequencyFeedback = page.getByTestId('parser-feedback-freq');
+    await expect(frequencyFeedback).toHaveAttribute('data-state', 'conflict');
+
+    await page.waitForTimeout(3100);
+    await expect(frequencyFeedback).toHaveAttribute('data-state', 'conflict');
+    await page.getByRole('button', { name: 'Взяти частоту із тексту' }).click();
+    await expect(page.getByLabel('Частота (МГц)')).toHaveValue('151.000');
+    await expect(frequencyFeedback).toHaveAttribute('data-state', 'updated');
+    await expect(frequencyFeedback).toHaveAttribute('data-state', 'idle', { timeout: 4000 });
+    await expect(page.getByRole('button', { name: /^Видалити координату/ })).toHaveCount(1);
+
+    await source.fill('');
+
+    await expect(page.getByLabel('Частота (МГц)')).toHaveValue('151.000');
+    await expect(page.getByRole('button', { name: /^Видалити координату/ })).toHaveCount(1);
+  });
+
   for (const host of ['duty', 'analysis'] as const satisfies ManageMessageDrawerHost[]) {
     test(`${host} creates an ordinary message drawer at the viewport right edge`, async ({
       page,
