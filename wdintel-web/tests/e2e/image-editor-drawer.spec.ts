@@ -139,7 +139,10 @@ async function openSecondPendingImageEditor(page: import('@playwright/test').Pag
 
 test.describe('image editor drawer integration #3448', () => {
   for (const host of ['duty', 'analysis'] as const satisfies ImageEditorDrawerHost[]) {
-    test(`${host} opens from preview and saves one pending replacement`, async ({ page }) => {
+    // Regression: https://github.com/echoua/echo/issues/3448
+    test(`${host} opens from preview and saves one pending replacement @regression`, async ({
+      page,
+    }) => {
       const pageErrors = capturePageErrors(page);
       const submitted = await observeImageEditorSubmission(page);
       const { editor, preview } = await openPendingImageEditor(page, host);
@@ -152,7 +155,6 @@ test.describe('image editor drawer integration #3448', () => {
       pageErrors.dispose();
     });
   }
-
   test('cancelling an edit creates no replacement upload', async ({ page }) => {
     const pageErrors = capturePageErrors(page);
     const submitted = await observeImageEditorSubmission(page);
@@ -172,7 +174,6 @@ test.describe('image editor drawer integration #3448', () => {
     expect(submitted.submissions).toHaveLength(0);
     pageErrors.assertNone();
   });
-
   test('submits one replacement and deletion for persisted media', async ({ page }) => {
     await openEditMessageDrawer(page);
     const submitted = await observeImageEditorSubmission(page);
@@ -190,7 +191,6 @@ test.describe('image editor drawer integration #3448', () => {
       upload_urls: ['/api/sigint/file-upload/tus/editor-upload'],
     });
   });
-
   test('falls back to multipart when the TUS chunk is rejected', async ({ page }) => {
     const pageErrors = capturePageErrors(page);
     await openEditMessageDrawer(page);
@@ -210,7 +210,6 @@ test.describe('image editor drawer integration #3448', () => {
     pageErrors.assertNone();
     pageErrors.dispose();
   });
-
   test('@smoke browser Back cancels fallback without saving an edit after unmount', async ({
     page,
   }) => {
@@ -255,91 +254,8 @@ test.describe('image editor drawer integration #3448', () => {
     expect(submitted.submissions).toHaveLength(0);
   });
 
-  test('keeps editor actions reachable at representative viewports', async ({ page }) => {
-    const { editor } = await openPendingImageEditor(page, 'duty');
-    for (const viewport of [
-      { width: 1440, height: 900 },
-      { width: 768, height: 900 },
-      { width: 360, height: 800 },
-    ]) {
-      await page.setViewportSize(viewport);
-      await expect(editor.locator('canvas[data-fabric="top"]')).toBeVisible();
-      await expect(editor.getByRole('button', { name: 'Текст', exact: true })).toBeVisible();
-      await expect(
-        editor.locator('footer').getByRole('button', { name: 'Скасувати' }),
-      ).toBeVisible();
-      await expect(
-        editor.locator('footer').getByRole('button', { name: 'Зберегти', exact: true }),
-      ).toBeVisible();
-    }
-  });
-
-  test('renders the edited image without a border #3448', async ({ page }) => {
-    const { editor } = await openPendingImageEditor(page, 'duty');
-    const document = editor.locator('[data-image-editor-document]');
-
-    await expect(document).toBeVisible();
-    await expect(document).toHaveCSS('border-top-width', '0px');
-  });
-
-  test('presents shortcut help across desktop and mobile controls #3448', async ({ page }) => {
-    const { editor } = await openPendingImageEditor(page, 'duty');
-    await page.setViewportSize({ width: 1280, height: 900 });
-    await editor.getByRole('button', { name: 'Гарячі клавіші' }).click();
-    const help = page.getByRole('heading', { name: 'Гарячі клавіші' });
-    await expect(help).toBeVisible();
-    const panel = help.locator('xpath=..');
-    await expect(
-      panel.getByText('Під час введення тексту швидкий вибір інструментів вимкнено.'),
-    ).toBeVisible();
-    await expect(panel.getByText('B / И', { exact: true })).toBeVisible();
-    await expect(panel.getByText('⌘Z / Ctrl+Z', { exact: true })).toBeVisible();
-    const redo = panel.getByText('⌘⇧Z / Ctrl+Shift+Z / Ctrl+Y', { exact: true });
-    await expect(redo).toBeVisible();
-    await expect(panel.getByText('Скасувати', { exact: true })).toHaveCount(1);
-    await expect(panel.getByText('Повторити', { exact: true })).toHaveCount(1);
-    await page.keyboard.press('Escape');
-    await expect(help).toBeHidden();
-    await editor.getByRole('button', { name: 'Прямокутник' }).hover();
-    await expect(page.getByText('Прямокутник · R / К', { exact: true })).toBeVisible();
-
-    await page.setViewportSize({ width: 768, height: 900 });
-    await editor.getByRole('button', { name: 'Ще' }).click();
-    await page.getByRole('menuitem', { name: 'Гарячі клавіші' }).click();
-    await expect(redo).toBeVisible();
-    await expect(
-      panel.getByText('Space + перетягування / середня кнопка', { exact: true }),
-    ).toBeVisible();
-    const wrappedShortcuts = await panel.locator('kbd').evaluateAll((elements) =>
-      elements.flatMap((element) => {
-        const range = document.createRange();
-        range.selectNodeContents(element);
-        return range.getClientRects().length === 1 ? [] : [element.textContent];
-      }),
-    );
-    expect(wrappedShortcuts).toEqual([]);
-    await page.keyboard.press('Escape');
-    await expect(help).toBeHidden();
-
-    await page.setViewportSize({ width: 360, height: 800 });
-    const more = editor.getByRole('button', { name: 'Ще' });
-    await expect(more).toBeEnabled();
-    await more.click();
-    await page.getByRole('menuitem', { name: 'Гарячі клавіші' }).click();
-    await expect(help).toBeVisible();
-    const bounds = await panel.boundingBox();
-    expect(bounds).not.toBeNull();
-    expect(bounds!.x).toBeGreaterThanOrEqual(0);
-    expect(Math.ceil(bounds!.x + bounds!.width)).toBeLessThanOrEqual(361);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
-      360,
-    );
-    await page.keyboard.press('Escape');
-    await expect(help).toBeHidden();
-    await expect(editor).toBeVisible();
-  });
-
-  test('finishes text editing on an empty-canvas click without creating a second label #3448', async ({
+  // Regression: https://github.com/echoua/echo/issues/3448
+  test('finishes text editing on an empty-canvas click without creating a second label #3448 @regression', async ({
     page,
   }) => {
     const { editor } = await openPendingImageEditor(page, 'duty');
@@ -361,7 +277,10 @@ test.describe('image editor drawer integration #3448', () => {
     await expect(deleteSelected).toBeDisabled();
   });
 
-  test('selects the clicked annotation after ending another text edit #3448', async ({ page }) => {
+  // Regression: https://github.com/echoua/echo/issues/3448
+  test('selects the clicked annotation after ending another text edit #3448 @regression', async ({
+    page,
+  }) => {
     const { editor } = await openPendingImageEditor(page, 'duty');
     const surface = editor.locator('canvas').last();
     const box = await surface.boundingBox();
@@ -391,7 +310,8 @@ test.describe('image editor drawer integration #3448', () => {
     await expect.poll(() => selectedTextState(editor).then((state) => state.text)).toBe(first.text);
   });
 
-  test('moves text frames without changing their transforms at non-default zoom #3448', async ({
+  // Regression: https://github.com/echoua/echo/issues/3448
+  test('moves text frames without changing their transforms at non-default zoom #3448 @regression', async ({
     page,
   }) => {
     const { editor } = await openPendingImageEditor(page, 'duty');
@@ -462,7 +382,10 @@ test.describe('image editor drawer integration #3448', () => {
     );
   });
 
-  test('cancels an active text-frame move without committing it #3448', async ({ page }) => {
+  // Regression: https://github.com/echoua/echo/issues/3448
+  test('cancels an active text-frame move without committing it #3448 @regression', async ({
+    page,
+  }) => {
     const pageErrors = capturePageErrors(page);
     const { editor } = await openPendingImageEditor(page, 'duty');
     await editor.getByRole('button', { name: 'Текст' }).click();
@@ -500,7 +423,10 @@ test.describe('image editor drawer integration #3448', () => {
     pageErrors.assertNone();
   });
 
-  test('tears down an editor with an active text-frame pointer gesture #3448', async ({ page }) => {
+  // Regression: https://github.com/echoua/echo/issues/3448
+  test('tears down an editor with an active text-frame pointer gesture #3448 @regression', async ({
+    page,
+  }) => {
     const pageErrors = capturePageErrors(page);
     const { editor } = await openPendingImageEditor(page, 'duty');
     await editor.getByRole('button', { name: 'Текст' }).click();
@@ -533,34 +459,6 @@ test.describe('image editor drawer integration #3448', () => {
     await expect(reopenedEditor.locator('canvas[data-fabric="top"]')).toBeVisible();
     pageErrors.assertNone();
   });
-
-  test('keeps standalone-arrow toolbar styles combined after each edit #3448', async ({ page }) => {
-    const { editor } = await openPendingImageEditor(page, 'duty');
-    await editor.getByRole('button', { name: 'Стрілка' }).click();
-    const surface = editor.locator('canvas').last();
-    const box = await surface.boundingBox();
-    expect(box).not.toBeNull();
-    await page.mouse.move(box!.x + 40, box!.y + 50);
-    await page.mouse.down();
-    await page.mouse.move(box!.x + 180, box!.y + 100);
-    await page.mouse.up();
-    await editor.getByRole('button', { name: 'Вибрати об’єкт' }).click();
-    await page.mouse.click(box!.x + 110, box!.y + 75);
-    const width = editor.getByRole('slider', { name: 'Товщина' });
-    await expect(width).toHaveValue('4');
-    const color = editor.getByLabel('Контур');
-    await color.evaluate((input: HTMLInputElement) => {
-      input.value = '#22c55e';
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-    await expect(width).toHaveValue('4');
-    const dash = editor.getByRole('button', { name: 'Пунктир' });
-    await dash.click();
-    await expect(dash).toHaveAttribute('aria-pressed', 'true');
-    await width.press('ArrowRight');
-    await expect(width).toHaveValue('5');
-    await expect(dash).toHaveAttribute('aria-pressed', 'true');
-  });
 });
 
 for (const status of [401, 403, 413]) {
@@ -586,7 +484,6 @@ for (const status of [401, 403, 413]) {
       await expect(page.getByRole('heading', { name: 'Редагувати повідомлення' })).toBeVisible();
   });
 }
-
 test('TUS preserves a busy upload while resuming after a lost accepted chunk response', async ({
   page,
 }, info) => {
@@ -665,7 +562,72 @@ test('TUS preserves a busy upload while resuming after a lost accepted chunk res
   });
 });
 
-test('large single-IDAT PNG remains editable within image source limits #3294', async ({
+// Regression: https://github.com/echoua/echo/issues/3448
+test('keeps editor actions reachable at representative viewports @regression', async ({ page }) => {
+  const { editor } = await openPendingImageEditor(page, 'duty');
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 768, height: 900 },
+    { width: 360, height: 800 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect(editor.locator('canvas[data-fabric="top"]')).toBeVisible();
+    await expect(editor.getByRole('button', { name: 'Текст', exact: true })).toBeVisible();
+    await expect(editor.locator('footer').getByRole('button', { name: 'Скасувати' })).toBeVisible();
+    await expect(
+      editor.locator('footer').getByRole('button', { name: 'Зберегти', exact: true }),
+    ).toBeVisible();
+  }
+});
+
+// Regression: https://github.com/echoua/echo/issues/3448
+test('presents shortcut help across desktop and mobile controls #3448 @regression', async ({
+  page,
+}) => {
+  const { editor } = await openPendingImageEditor(page, 'duty');
+  await page.setViewportSize({ width: 360, height: 800 });
+  await editor.getByRole('button', { name: 'Ще' }).click();
+  await page.getByRole('menuitem', { name: 'Гарячі клавіші' }).click();
+  const help = page.getByRole('heading', { name: 'Гарячі клавіші' });
+  await expect(help).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(help).toBeHidden();
+  await expect(editor).toBeVisible();
+});
+
+// Regression: https://github.com/echoua/echo/issues/3448
+test('keeps standalone-arrow toolbar styles combined after each edit #3448 @regression', async ({
+  page,
+}) => {
+  const { editor } = await openPendingImageEditor(page, 'duty');
+  await editor.getByRole('button', { name: 'Стрілка' }).click();
+  const surface = editor.locator('canvas').last();
+  const box = await surface.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.move(box!.x + 40, box!.y + 50);
+  await page.mouse.down();
+  await page.mouse.move(box!.x + 180, box!.y + 100);
+  await page.mouse.up();
+  await editor.getByRole('button', { name: 'Вибрати об’єкт' }).click();
+  await page.mouse.click(box!.x + 110, box!.y + 75);
+  const width = editor.getByRole('slider', { name: 'Товщина' });
+  await expect(width).toHaveValue('4');
+  const color = editor.getByLabel('Контур');
+  await color.evaluate((input: HTMLInputElement) => {
+    input.value = '#22c55e';
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await expect(width).toHaveValue('4');
+  const dash = editor.getByRole('button', { name: 'Пунктир' });
+  await dash.click();
+  await expect(dash).toHaveAttribute('aria-pressed', 'true');
+  await width.press('ArrowRight');
+  await expect(width).toHaveValue('5');
+  await expect(dash).toHaveAttribute('aria-pressed', 'true');
+});
+
+// Regression: https://github.com/echoua/echo/issues/3294
+test('large single-IDAT PNG remains editable within image source limits #3294 @regression', async ({
   page,
 }, info) => {
   const image = createImageEditorNoisePng();

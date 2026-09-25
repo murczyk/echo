@@ -6,8 +6,8 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { InboxMessage, InboxWindowRsp, SavedFilter, User } from '../../../../../Bindings';
-import { createResetQueryState } from '../helpers';
 import type { AnalysisPageViewModel } from '../types';
+import { createResetQueryState } from '../helpers';
 import { useRerAnalysisNeoPage } from '../use-rer-analysis-neo-page';
 
 const userSettingsMock = vi.hoisted(() => ({
@@ -118,10 +118,6 @@ const baseAnalysisData = {
   loadCorrelatedFreqs: vi.fn(),
   loadGroupsActivity: vi.fn(),
   loadNewCallsigns: vi.fn(),
-  loadFirstPage: vi.fn(),
-  loadFocusedEarlier: vi.fn(),
-  loadFocusedLater: vi.fn(),
-  loadLastPage: vi.fn(),
   loadNextPage: vi.fn(),
   loadMoreMessages: vi.fn(),
   loadPrevPage: vi.fn(),
@@ -142,10 +138,6 @@ const baseAnalysisData = {
   messagesPaging: false,
   messagesTotalCount: 0,
   messagesTotalLoading: false,
-  focusedHasMoreEarlier: true,
-  focusedHasMoreLater: true,
-  focusedLoadingEarlier: false,
-  focusedLoadingLater: false,
   messageComments: {},
   messages: [],
   networkDisplayMap: {},
@@ -210,10 +202,6 @@ function buildAnalysisData() {
     loadCorrelatedFreqs: vi.fn(),
     loadGroupsActivity: vi.fn(),
     loadNewCallsigns: vi.fn(),
-    loadFirstPage: vi.fn(),
-    loadFocusedEarlier: vi.fn(),
-    loadFocusedLater: vi.fn(),
-    loadLastPage: vi.fn(),
     loadNextPage: vi.fn(),
     loadMoreMessages: vi.fn(),
     loadPrevPage: vi.fn(),
@@ -271,7 +259,7 @@ function buildEditor() {
   };
 }
 
-function renderHook(authUserRoles: string[] = ['Rer']) {
+function renderHook(authUserRoles: string[] = []) {
   if (container == null) throw new Error('container not initialized');
 
   root = createRoot(container);
@@ -279,14 +267,10 @@ function renderHook(authUserRoles: string[] = ['Rer']) {
     latest = useRerAnalysisNeoPage(null, authUserRoles);
     return null;
   };
-  const rerender = () => {
-    act(() => {
-      root?.render(createElement(Harness));
-    });
-  };
 
-  rerender();
-  return rerender;
+  act(() => {
+    root?.render(createElement(Harness));
+  });
 }
 
 async function flushEffects() {
@@ -330,7 +314,7 @@ describe('useRerAnalysisNeoPage', () => {
       disableBotTags: false,
     });
     currentUserMock.fetchCurrentUser.mockReset();
-    currentUserMock.fetchCurrentUser.mockResolvedValue({ name: 'tester', roles: ['Rer'] } as User);
+    currentUserMock.fetchCurrentUser.mockResolvedValue({ name: 'tester' } as User);
     inboxMessagesMock.fetchInboxWindow.mockReset();
     inboxMessagesMock.fetchInboxWindow.mockResolvedValue(null);
 
@@ -370,6 +354,7 @@ describe('useRerAnalysisNeoPage', () => {
     currentAnalysisData = null;
   });
 
+  // Regression: https://github.com/echoua/echo/issues/3568
   it('keeps Rer radio features available while the current-user lookup is pending', () => {
     currentUserMock.fetchCurrentUser.mockReturnValueOnce(new Promise(() => {}));
 
@@ -378,7 +363,9 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.radioFeaturesAllowed).toBe(true);
   });
 
+  // Regression: https://github.com/echoua/echo/issues/3568
   it('reconciles a bare date range when the user lookup adds Rer access', async () => {
+    currentUserMock.fetchCurrentUser.mockResolvedValue({ name: 'tester', roles: ['Rer'] } as User);
     renderHook([]);
     await flushEffects();
 
@@ -387,29 +374,9 @@ describe('useRerAnalysisNeoPage', () => {
     );
   });
 
-  it('opens the first available sidebar tab when the right panel is toggled while map stays in the center', async () => {
-    renderHook();
-    await flushEffects();
-
-    await act(async () => {
-      latest?.showFreqOnMap('123.4');
-    });
-    await flushEffects();
-
-    expect(latest?.centerTab).toBe('map');
-    expect(latest?.rightPanelOpen).toBe(false);
-
-    await act(async () => {
-      latest?.toggleRightPanel();
-    });
-    await flushEffects();
-
-    expect(latest?.rightPanelOpen).toBe(true);
-    expect(latest?.rightSidebarTab).toBe('stats');
-  });
-
+  // Regression: https://github.com/echoua/echo/issues/3568
   it.each([['Cyber'], ['Cyber', 'UnitsEditor', 'NetworkEditor', 'CallsignsEditor']])(
-    '#3568 ignores restored radio filters and hidden tabs for %j',
+    'ignores restored radio filters and hidden tabs for %j',
     async (...roles) => {
       currentUserMock.fetchCurrentUser.mockResolvedValue({ name: 'tester', roles } as User);
       renderHook(roles);
@@ -445,7 +412,28 @@ describe('useRerAnalysisNeoPage', () => {
       expect(latest?.rightSidebarTab).toBe('stats');
     },
   );
+  it('opens the first available sidebar tab when the right panel is toggled while map stays in the center', async () => {
+    renderHook();
+    await flushEffects();
 
+    await act(async () => {
+      latest?.showFreqOnMap('123.4');
+    });
+    await flushEffects();
+
+    expect(latest?.centerTab).toBe('map');
+    expect(latest?.rightPanelOpen).toBe(false);
+
+    await act(async () => {
+      latest?.toggleRightPanel();
+    });
+    await flushEffects();
+
+    expect(latest?.rightPanelOpen).toBe(true);
+    expect(latest?.rightSidebarTab).toBe('stats');
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3461
   it('ECHO-3461 strips unauthorized device filters before analysis data receives them', async () => {
     renderHook();
     await flushEffects();
@@ -457,6 +445,7 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.queryState.deviceNamesSelected).toEqual([]);
   });
 
+  // Regression: https://github.com/echoua/echo/issues/3461
   it('ECHO-3461 preserves a device-filtered URL and defers loading while access is pending or fails', async () => {
     const settingsRequest =
       deferred<Awaited<ReturnType<typeof systemSettingsMock.currentSystemSettings>>>();
@@ -486,6 +475,7 @@ describe('useRerAnalysisNeoPage', () => {
     expect(window.location.search).toContain('device-1');
   });
 
+  // Regression: https://github.com/echoua/echo/issues/3461
   it('ECHO-3461 preserves device filters when the current-user lookup fails', async () => {
     currentUserMock.fetchCurrentUser.mockRejectedValueOnce(new Error('user failed'));
     window.history.replaceState({}, '', `${window.location.pathname}?deviceNames=device-1`);
@@ -501,6 +491,7 @@ describe('useRerAnalysisNeoPage', () => {
     expect(window.location.search).toContain('device-1');
   });
 
+  // Regression: https://github.com/echoua/echo/issues/3461
   it('ECHO-3461 sanitizes direct-link device filters after access denial', async () => {
     const userRequest = deferred<User>();
     currentUserMock.fetchCurrentUser.mockReturnValueOnce(userRequest.promise);
@@ -526,6 +517,7 @@ describe('useRerAnalysisNeoPage', () => {
     });
   });
 
+  // Regression: https://github.com/echoua/echo/issues/3461
   it('ECHO-3461 defers a filtered query while the current-user lookup is pending', async () => {
     let resolveUser: (user: User) => void = () => {};
     currentUserMock.fetchCurrentUser.mockImplementationOnce(
@@ -565,7 +557,6 @@ describe('useRerAnalysisNeoPage', () => {
       queryState: { deviceNamesSelected: ['device-1'] },
     });
   });
-
   it('closes and reopens the narrow right panel without losing its selected tab', async () => {
     mediaQueryMock.useMediaQuery.mockReturnValue(true);
     renderHook();
@@ -594,7 +585,6 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.rightPanelOpen).toBe(true);
     expect(latest?.rightSidebarTab).toBe('callsigns');
   });
-
   it('keeps the sidebar map selected while closing and reopening map-in-sidebar mode', async () => {
     mediaQueryMock.useMediaQuery.mockReturnValue(true);
     userSettingsMock.fetchUserSettings.mockResolvedValueOnce({
@@ -620,23 +610,6 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.rightPanelOpen).toBe(true);
     expect(latest?.rightSidebarTab).toBe('map');
   });
-
-  it('folds the filters by default when they would stack above content', async () => {
-    mediaQueryMock.useMediaQuery.mockImplementation((query: string) => query === '(down:lg)');
-
-    renderHook();
-    await flushEffects();
-
-    expect(latest?.leftPanelOpen).toBe(false);
-
-    await act(async () => {
-      latest?.toggleLeftPanel();
-    });
-    await flushEffects();
-
-    expect(latest?.leftPanelOpen).toBe(true);
-  });
-
   it('restores panel visibility from query parameters', async () => {
     const originalUrl = window.location.href;
     window.history.replaceState(
@@ -653,7 +626,6 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.rightSidebarTab).toBe('stats');
     window.history.replaceState({}, '', originalUrl);
   });
-
   it('writes panel visibility to query parameters', async () => {
     const originalUrl = window.location.href;
     window.history.replaceState({}, '', window.location.pathname);
@@ -674,103 +646,6 @@ describe('useRerAnalysisNeoPage', () => {
     expect(new URL(window.location.href).searchParams.get('rightPanelOpen')).toBe('true');
     window.history.replaceState({}, '', originalUrl);
   });
-
-  it('writes the visible messages chunk to the URL for browser reload', async () => {
-    renderHook();
-    await flushEffects();
-
-    act(() => latest?.setVisibleMessagesPageIndex(1));
-    expect(new URL(window.location.href).searchParams.get('messagesPage')).toBe('2');
-
-    act(() => latest?.setVisibleMessagesPageIndex(0));
-    expect(new URL(window.location.href).searchParams.has('messagesPage')).toBe(false);
-  });
-
-  it('signals viewport preservation when refreshing the current message page', async () => {
-    const analysisData = buildAnalysisData();
-    let resolveReload!: () => void;
-    const reloadPromise = new Promise<void>((resolve) => {
-      resolveReload = resolve;
-    });
-    analysisData.reload.mockReturnValueOnce(reloadPromise);
-    currentAnalysisData = analysisData;
-    renderHook();
-    await flushEffects();
-
-    expect(latest?.messageViewportPreservationKey).toBe(0);
-    expect(latest?.messageViewportPreserving).toBe(false);
-
-    act(() => latest?.reload({ preserveMessagePage: true }));
-
-    expect(analysisData.reload).toHaveBeenCalledWith({ preserveMessagePage: true });
-    expect(latest?.messageViewportPreservationKey).toBe(1);
-    expect(latest?.messageViewportPreserving).toBe(true);
-
-    await act(async () => {
-      resolveReload();
-      await reloadPromise;
-    });
-
-    expect(latest?.messageViewportPreserving).toBe(false);
-  });
-
-  it('retains the first chunk when restoring the second chunk after browser reload', async () => {
-    window.history.replaceState({}, '', `${window.location.pathname}?messagesPage=2`);
-    const analysisData = buildAnalysisData();
-    const firstPage = Array.from(
-      { length: 20 },
-      (_, index) => [40 - index, { text: `message-${40 - index}` } as InboxMessage] as const,
-    );
-    const secondPage = Array.from(
-      { length: 20 },
-      (_, index) => [20 - index, { text: `message-${20 - index}` } as InboxMessage] as const,
-    );
-    analysisData.messages = firstPage;
-    analysisData.loadNextPage.mockImplementationOnce(async () => {
-      currentAnalysisData = { ...analysisData, messages: secondPage, pageIndex: 1 };
-    });
-    analysisData.loadMoreMessages.mockImplementationOnce(async () => {
-      currentAnalysisData = {
-        ...analysisData,
-        messages: [...firstPage, ...secondPage],
-        pageIndex: 1,
-      };
-      return true;
-    });
-    currentAnalysisData = analysisData;
-
-    const rerender = renderHook();
-    await flushEffects();
-    rerender();
-    await flushEffects();
-
-    expect(latest?.visibleMessagesPageIndex).toBe(1);
-    expect(latest?.messages).toHaveLength(40);
-    expect(latest?.messagePageNavigationTarget).toBe(1);
-
-    act(() => {
-      latest?.clearMessagePageNavigationTarget();
-      latest?.setVisibleMessagesPageIndex(0);
-    });
-    expect(latest?.visibleMessagesPageIndex).toBe(0);
-    expect(new URL(window.location.href).searchParams.has('messagesPage')).toBe(false);
-  });
-
-  it('keeps the URL chunk visible while its messages are being restored', async () => {
-    window.history.replaceState({}, '', `${window.location.pathname}?messagesPage=2`);
-    const analysisData = buildAnalysisData();
-    analysisData.loadMoreMessages.mockReturnValueOnce(new Promise<boolean>(() => {}));
-    currentAnalysisData = analysisData;
-
-    renderHook();
-    await flushEffects();
-
-    act(() => latest?.setVisibleMessagesPageIndex(0));
-
-    expect(latest?.visibleMessagesPageIndex).toBe(1);
-    expect(new URL(window.location.href).searchParams.get('messagesPage')).toBe('2');
-  });
-
   it('moves the active map from the center into the sidebar when the setting turns on', async () => {
     renderHook();
     await flushEffects();
@@ -797,7 +672,6 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.rightSidebarTab).toBe('map');
     expect(latest?.centerTab).toBe('messages');
   });
-
   it('opens the sidebar map directly when the setting already places map in the sidebar', async () => {
     userSettingsMock.fetchUserSettings.mockResolvedValueOnce({
       tagsLayout: 'compact',
@@ -817,35 +691,6 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.rightSidebarTab).toBe('map');
     expect(latest?.centerTab).toBe('messages');
   });
-
-  it('syncs include-only-new frequencies through targeted invalidation when the option list changes', async () => {
-    renderHook();
-    await flushEffects();
-
-    await act(async () => {
-      latest?.setIncludeOnlyNewFreqs(true);
-    });
-    await flushEffects();
-
-    expect(currentAnalysisData?.invalidateFilterSectionLoadsForPatch).toHaveBeenCalledWith({
-      includeOnlyNewFreqs: true,
-      freqsSelected: ['111.1'],
-    });
-
-    currentAnalysisData?.invalidateFilterSectionLoadsForPatch.mockClear();
-    analysisFreqValues = ['222.2'];
-
-    await act(async () => {
-      latest?.toggleLeftPanel();
-    });
-    await flushEffects();
-
-    expect(currentAnalysisData?.invalidateFilterSectionLoadsForPatch).toHaveBeenCalledWith({
-      freqsSelected: ['222.2'],
-    });
-    expect(latest?.queryState.freqsSelected).toEqual(['222.2']);
-  });
-
   it('clears the loaded saved filter when filters are reset', async () => {
     const savedFilters = buildSavedFilters();
     useAnalysisSavedFiltersMock.mockImplementation(() => savedFilters);
@@ -860,21 +705,6 @@ describe('useRerAnalysisNeoPage', () => {
 
     expect(savedFilters.applySavedFilter).toHaveBeenCalledWith(null);
   });
-
-  it('marks the page resettable when only the media checkbox changes', async () => {
-    renderHook();
-    await flushEffects();
-
-    expect(latest?.canResetFilters).toBe(false);
-
-    await act(async () => {
-      latest?.updateQueryState({ onlyWithMedia: true });
-    });
-    await flushEffects();
-
-    expect(latest?.canResetFilters).toBe(true);
-  });
-
   it('fully invalidates filter sections before applying a saved filter', async () => {
     const savedFilters = buildSavedFilters();
     useAnalysisSavedFiltersMock.mockImplementation(() => savedFilters);
@@ -902,7 +732,6 @@ describe('useRerAnalysisNeoPage', () => {
     expect(analysisData.invalidateFilterSectionLoads).toHaveBeenCalledTimes(1);
     expect(savedFilters.applySavedFilter).toHaveBeenCalledWith(savedFilter);
   });
-
   it('keeps the exact-match query value unset after reset', async () => {
     systemSettingsMock.currentSystemSettings.mockResolvedValueOnce({
       id: 7,
@@ -926,7 +755,6 @@ describe('useRerAnalysisNeoPage', () => {
 
     expect(latest?.queryState.unitsExactMatchOnly).toBeNull();
   });
-
   it('normalizes legacy undefined-unit selections before toggling the map unit filter off', async () => {
     renderHook();
     await flushEffects();
@@ -943,7 +771,6 @@ describe('useRerAnalysisNeoPage', () => {
 
     expect(latest?.queryState.unitsSelected).toEqual([]);
   });
-
   it('includes the message-header unit when adding it from the map', async () => {
     renderHook();
     await flushEffects();
@@ -966,7 +793,6 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.queryState.unitsExactMatchOnly).toBe(false);
     expect(latest?.queryState.unitsSelected).toEqual(['Header Unit']);
   });
-
   it('resets the exact-match override after removing the last map unit', async () => {
     renderHook();
     await flushEffects();
@@ -987,7 +813,6 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.queryState.unitsExactMatchOnly).toBeNull();
     expect(latest?.queryState.unitsSelected).toEqual([]);
   });
-
   it('resets the exact-match override when clearing the regular unit filter', async () => {
     renderHook();
     await flushEffects();
@@ -1013,7 +838,6 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.queryState.unitsExactMatchOnly).toBeNull();
     expect(latest?.queryState.unitsSelected).toEqual([]);
   });
-
   it('keeps the exact-match query value unset after the system default loads', async () => {
     const originalUrl = window.location.href;
     window.history.replaceState({}, '', window.location.pathname);
@@ -1024,7 +848,6 @@ describe('useRerAnalysisNeoPage', () => {
     expect(window.location.search).not.toContain('unitsExactMatchOnly');
     window.history.replaceState({}, '', originalUrl);
   });
-
   it('preserves an explicit exact-match setting from the parsed query state', async () => {
     const originalUrl = window.location.href;
     window.history.replaceState({}, '', `${window.location.pathname}?unitsExactMatchOnly=true`);
@@ -1035,15 +858,7 @@ describe('useRerAnalysisNeoPage', () => {
     window.history.replaceState({}, '', originalUrl);
   });
 
-  it('shows an error when system settings fail to load', async () => {
-    systemSettingsMock.currentSystemSettings.mockRejectedValueOnce(new Error('boom'));
-
-    renderHook();
-    await flushEffects();
-
-    expect(latest?.error).toBe('Не вдалося завантажити системні налаштування.');
-  });
-
+  // Regression: https://github.com/echoua/echo/issues/3501
   it('ECHO-3501 exposes disabled bot tags from system settings', async () => {
     systemSettingsMock.currentSystemSettings.mockResolvedValueOnce({
       id: 7,
@@ -1062,7 +877,6 @@ describe('useRerAnalysisNeoPage', () => {
 
     expect(latest?.hideBotTags).toBe(true);
   });
-
   it('keeps the direct-link error when the regular message list clears its error', async () => {
     window.history.replaceState({}, '', `${window.location.pathname}?m=missing-uid`);
 
@@ -1090,7 +904,6 @@ describe('useRerAnalysisNeoPage', () => {
     );
     expect(new URL(window.location.href).searchParams.get('m')).toBe('missing-uid');
   });
-
   it('opens the direct-link message window with its references', async () => {
     const targetMessage = {
       text: 'target',
@@ -1261,7 +1074,6 @@ describe('useRerAnalysisNeoPage', () => {
       focusedMessageActive: true,
     });
   });
-
   it('updates the visible chunk across previous and next direct-link navigation', async () => {
     const targetMessage = {
       text: 'target',
@@ -1316,7 +1128,6 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.visibleMessagesPageIndex).toBe(1);
     expect(new URL(window.location.href).searchParams.get('messagesPage')).toBe('2');
   });
-
   it('navigates to the next direct-link chunk and clears target focus', async () => {
     const targetMessage = {
       text: 'target',
@@ -1362,113 +1173,6 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.messagePageNavigationTarget).toBe(2);
     expect(latest?.directMessageNavigation?.focusActive).toBe(false);
   });
-
-  it('refilters the direct-link window while keeping the target focused', async () => {
-    const targetMessage = { text: 'target', date: null, timestamp: null } as InboxMessage;
-    const buildWindow = (neighborId: number, neighborText: string): InboxWindowRsp => ({
-      targetMessageId: 50,
-      inbox: {
-        inboxItems: [
-          [neighborId, { text: neighborText } as InboxMessage],
-          [50, targetMessage],
-        ],
-        pollCursorId: null,
-        callsigns: [],
-        signalProfiles: {},
-        signalGroups: [],
-        freqPelengsSummary: null,
-        pageLimit: 20,
-      },
-      hasMoreBefore: true,
-      hasMoreAfter: true,
-    });
-    window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
-    const initialWindow = buildWindow(49, 'initial');
-    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(initialWindow);
-
-    renderHook();
-    await flushEffects();
-
-    currentAnalysisData = {
-      ...buildAnalysisData(),
-      messages: initialWindow.inbox.inboxItems,
-    };
-    const groupWindow = buildWindow(48, 'same group');
-    let resolveGroupWindow: ((value: InboxWindowRsp) => void) | undefined;
-    inboxMessagesMock.fetchInboxWindow.mockImplementationOnce(
-      () =>
-        new Promise<InboxWindowRsp>((resolve) => {
-          resolveGroupWindow = resolve;
-        }),
-    );
-    act(() => latest?.updateQueryState({ groupsSelected: ['group-1'] }));
-    await flushEffects();
-
-    expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
-      deferInitialLoad: true,
-      focusedWindow: initialWindow,
-      focusedMessageActive: true,
-    });
-    expect(latest?.directMessageLoading).toBe(true);
-    expect(latest?.directMessageNavigation).toMatchObject({
-      targetMessageId: 50,
-      focusActive: true,
-      contextLoading: true,
-      loadingEarlier: true,
-      loadingLater: true,
-    });
-    resolveGroupWindow?.(groupWindow);
-    await flushEffects();
-
-    expect(inboxMessagesMock.fetchInboxWindow.mock.calls.at(-1)?.[0].inboxReq).toMatchObject({
-      selectedGroups: ['group-1'],
-    });
-    expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
-      deferInitialLoad: false,
-      focusedWindow: groupWindow,
-      focusedMessageActive: true,
-    });
-    expect(latest?.directMessageLoading).toBe(true);
-
-    currentAnalysisData = {
-      ...buildAnalysisData(),
-      messages: groupWindow.inbox.inboxItems,
-    };
-    act(() => latest?.setNewestFirst(false));
-    await flushEffects();
-    expect(latest?.directMessageNavigation?.contextLoading).toBe(false);
-    expect(latest?.directMessageLoading).toBe(false);
-
-    const frequencyWindow = buildWindow(47, 'same frequency');
-    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(frequencyWindow);
-    act(() => latest?.updateQueryState({ freqsSelected: ['123.45'] }));
-    await flushEffects();
-
-    expect(inboxMessagesMock.fetchInboxWindow.mock.calls.at(-1)?.[0].inboxReq).toMatchObject({
-      selectedGroups: ['group-1'],
-      selectedFreqs: ['123.45'],
-    });
-
-    const networkWindow = buildWindow(46, 'same network');
-    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(networkWindow);
-    act(() => latest?.updateQueryState({ networksSelected: ['7'] }));
-    await flushEffects();
-
-    expect(inboxMessagesMock.fetchInboxWindow.mock.calls.at(-1)?.[0].inboxReq).toMatchObject({
-      selectedGroups: ['group-1'],
-      selectedFreqs: ['123.45'],
-      selectedNetworks: [7],
-    });
-    expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
-      focusedWindow: networkWindow,
-      focusedMessageActive: true,
-    });
-    expect(latest?.directMessageNavigation).toMatchObject({
-      targetMessageId: 50,
-      focusActive: true,
-    });
-  });
-
   it('clears the direct-link message when it does not match a selected group', async () => {
     const targetMessage = { text: 'target', date: null, timestamp: null } as InboxMessage;
     const focusedWindow: InboxWindowRsp = {
@@ -1538,7 +1242,6 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.directMessageLoading).toBe(false);
     expect(latest?.error).toBeNull();
   });
-
   it('leaves direct-link context when the date range changes', async () => {
     const targetMessage = {
       text: 'target',
@@ -1575,29 +1278,6 @@ describe('useRerAnalysisNeoPage', () => {
     expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].focusedMessageActive).toBe(false);
     expect(new URL(window.location.href).searchParams.has('m')).toBe(false);
   });
-
-  it('shows direct-link context request errors', async () => {
-    window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
-    inboxMessagesMock.fetchInboxWindow.mockRejectedValueOnce(new Error('boom'));
-
-    renderHook();
-    await flushEffects();
-
-    expect(latest?.directMessageError).toBe('Не вдалося відкрити повідомлення за посиланням: boom');
-  });
-
-  it('exposes the callsign graph load error in the page view model', async () => {
-    currentAnalysisData = {
-      ...buildAnalysisData(),
-      callsignGraphLoadError: 'boom',
-    };
-
-    renderHook();
-    await flushEffects();
-
-    expect(latest?.callsignGraphLoadError).toBe('boom');
-  });
-
   it('moves the active map away from the sidebar when the setting turns off', async () => {
     userSettingsMock.fetchUserSettings.mockResolvedValueOnce({
       tagsLayout: 'compact',

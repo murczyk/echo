@@ -94,9 +94,21 @@ just test-fe
 ```
 
 This runs the frontend test pipeline in `wdintel-web`:
+
 - `elm-test`
-- `vitest`
+- the full Vitest suite (`npm run test:ts`)
 - the generated frontend test setup
+
+React test-structure commands are available from `wdintel-web`:
+
+```bash
+npm run test:structure-check
+npm run test:ts
+```
+
+`test:structure-check` validates test placement, test-support imports, and
+referenced test paths. `test:ts` runs token validation and this structural check
+before the complete Vitest suite.
 
 Frontend end-to-end checks:
 
@@ -105,17 +117,31 @@ cd wdintel-web
 npm run e2e
 ```
 
-This runs the Playwright smoke suite for the current React/Elm hybrid frontend. For the slower loading comparisons, use:
+This runs the Playwright smoke suite for the current React/Elm hybrid frontend.
+E2E is not part of CI/CD, but affected Playwright suites must be executed and
+green before merging. Playwright discovery is not execution. Browser coverage
+does not justify deleting stronger Vitest coverage unless it exercises the same
+failure boundary. Run browser regressions selected by their `@regression`
+Playwright title tag with:
+
+```bash
+npm run e2e:regression
+```
+
+Run every browser test locally with:
+
+```bash
+npm run e2e:all
+```
+
+For the slower loading comparisons, use:
 
 ```bash
 npm run e2e:perf
 ```
 
-To run only the direct-link group and sender reference tests, use:
-
-```bash
-npm run e2e:analysis-references
-```
+This is a non-blocking local inspection: it has no controlled environment or
+stable performance budget and is not a CI gate.
 
 Before running Playwright locally for the first time, install the browser once:
 

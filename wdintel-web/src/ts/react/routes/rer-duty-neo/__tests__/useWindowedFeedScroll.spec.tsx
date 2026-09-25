@@ -223,7 +223,6 @@ function installResizeObserverMock() {
 function createItemLayouts(ids: number[], startTop = 0, height = 50): Map<number, ItemLayout> {
   return new Map(ids.map((id, index) => [id, { top: startTop + index * height, height }]));
 }
-
 describe('useWindowedFeedScroll', () => {
   let container: HTMLElement;
   let root: Root;

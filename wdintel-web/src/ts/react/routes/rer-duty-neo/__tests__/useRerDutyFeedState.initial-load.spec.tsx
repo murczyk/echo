@@ -27,7 +27,6 @@ import { persistDutyFilterState, readPersistedDutyFilterState } from '../duty-fi
 const fixture = createDutyFeedStateFixture();
 const hoisted = getDutyApiMocks();
 const { deferred, expectTailCountRequest, mountLoadedFeed, runNextRaf, startPoll } = fixture;
-
 describe('useRerDutyFeedState — initial loading and reloads', () => {
   let container: HTMLElement;
   let root: Root;

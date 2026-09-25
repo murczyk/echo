@@ -40,7 +40,6 @@ test.describe('@perf', () => {
       await context.close();
     }
   }
-
   test('rer-analysis-neo first load is not slower than rer-analysis', async ({
     browser,
   }, testInfo) => {
@@ -59,7 +58,6 @@ test.describe('@perf', () => {
     expect(neo.titleMs).toBeLessThanOrEqual(classic.titleMs + 750);
     expect(neo.shellMs).toBeLessThanOrEqual(classic.shellMs + 750);
   });
-
   test('rer-analysis-neo reaches the shell quickly on a delayed backend', async ({ page }) => {
     await installAnalysisNeoApiMocks(page, {
       summaryDelayMs: 1_500,

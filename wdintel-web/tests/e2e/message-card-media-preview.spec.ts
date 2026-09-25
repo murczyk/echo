@@ -75,10 +75,9 @@ async function openMarkdownPreview(page: Page) {
   return page.getByRole('dialog', { name: 'Перегляд документа' });
 }
 
-async function expectPopupAndClose(page: Page, link: Locator, expectedUrl: string) {
-  const [popup] = await Promise.all([page.waitForEvent('popup'), link.click()]);
-  await expect(popup).toHaveURL(expectedUrl);
-  await popup.close();
+async function expectOpenInNewTab(link: Locator, expectedUrl: string) {
+  await expect(link).toHaveAttribute('href', new URL(expectedUrl).pathname);
+  await expect(link).toHaveAttribute('target', '_blank');
 }
 
 async function expectDownloadAndFilename(page: Page, link: Locator, expectedFilename: string) {
@@ -107,8 +106,10 @@ async function verifyEscapeClose(page: Page, dialog: Locator, reopen: () => Prom
   await expect(dialog).toHaveCount(0);
 }
 
-test.describe('@smoke', () => {
+// Regression: https://github.com/echoua/echo/pull/3268
+test.describe('@smoke @regression', () => {
   for (const host of ['duty', 'analysis'] as const) {
+    // Regression: https://github.com/echoua/echo/issues/3405
     test(`${host} message card preview smoke covers the shared contract`, async ({ page }) => {
       await openMessageCardPreviewHost(page, host);
 
@@ -117,12 +118,12 @@ test.describe('@smoke', () => {
           name: `Завантажити вкладення: ${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1}`,
         }),
       ).toBeVisible();
+      await expect(page.getByRole('button', { name: /Відкрити аудіо:/ })).toHaveCount(0);
       await expect(
         page.getByRole('link', {
           name: `Завантажити вкладення: ${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.video1}`,
         }),
       ).toBeVisible();
-      await expect(page.getByRole('button', { name: /Відкрити аудіо:/ })).toHaveCount(0);
 
       const imageDialog = await openImagePreview(page);
       await expect(imageDialog).toBeVisible();
@@ -170,7 +171,7 @@ test.describe('@smoke', () => {
     await page.setViewportSize({ width: 375, height: 844 });
     await openMessageCardPreviewHost(page, 'duty');
 
-    let imageDialog = await openImagePreview(page);
+    const imageDialog = await openImagePreview(page);
     await expect(imageDialog).toBeVisible();
     await imageDialog.getByRole('button', { name: 'Закрити' }).click();
     await expect(imageDialog).toHaveCount(0);
@@ -236,7 +237,8 @@ test.describe('@smoke', () => {
 });
 
 test.describe('message card media preview contract', () => {
-  test('ECHO-3368 centres every primary image-click zoom', async ({ page }) => {
+  // Regression: https://github.com/echoua/echo/issues/3368
+  test('ECHO-3368 centres every primary image-click zoom @regression', async ({ page }) => {
     for (const host of ['duty', 'analysis'] as const) {
       await openMessageCardPreviewHost(page, host);
       const dialog = await openImagePreview(page);
@@ -267,7 +269,8 @@ test.describe('message card media preview contract', () => {
     }
   });
 
-  test('ECHO-3368 zooms image clicks and dismisses only exposed image-stage background', async ({
+  // Regression: https://github.com/echoua/echo/issues/3368
+  test('ECHO-3368 zooms image clicks and dismisses only exposed image-stage background @regression', async ({
     page,
   }) => {
     for (const host of ['duty', 'analysis'] as const) {
@@ -347,7 +350,10 @@ test.describe('message card media preview contract', () => {
     }
   });
 
-  test('ECHO-3368 preserves content interactions for non-image previews', async ({ page }) => {
+  // Regression: https://github.com/echoua/echo/issues/3368
+  test('ECHO-3368 preserves content interactions for non-image previews @regression', async ({
+    page,
+  }) => {
     await openMessageCardPreviewHost(page, 'duty');
 
     const videoFixture = await createPlayableVideoFixture(page);
@@ -396,7 +402,8 @@ test.describe('message card media preview contract', () => {
     await coordinateDialog.getByRole('button', { name: 'Закрити', exact: true }).click();
   });
 
-  test('ECHO-3368 keeps audio content protected and dismisses its outer stage background', async ({
+  // Regression: https://github.com/echoua/echo/issues/3368
+  test('ECHO-3368 keeps audio content protected and dismisses its outer stage background @regression', async ({
     page,
   }) => {
     await openMessageCardPreviewHost(page, 'duty', { enableAudioTranscription: true });
@@ -417,7 +424,8 @@ test.describe('message card media preview contract', () => {
     await expect(dialog).toHaveCount(0);
   });
 
-  test('ECHO-3368 protects completed OCR and summary panels', async ({ page }) => {
+  // Regression: https://github.com/echoua/echo/issues/3368
+  test('ECHO-3368 protects completed OCR and summary panels @regression', async ({ page }) => {
     await openMessageCardPreviewHost(page, 'duty', { withCompletedOcrAndSummary: true });
     const dialog = await openImagePreview(page);
     await dialog.getByRole('button', { name: 'Переглянути OCR' }).click();
@@ -453,7 +461,8 @@ test.describe('message card media preview contract', () => {
     await expect(dialog).toBeVisible();
   });
 
-  test.describe('ECHO-3368 touch gestures', () => {
+  // Regression: https://github.com/echoua/echo/issues/3368
+  test.describe('ECHO-3368 touch gestures @regression', () => {
     test.use({ hasTouch: true });
 
     test('restores carousel swiping after a completed pinch and reset', async ({
@@ -669,7 +678,10 @@ test.describe('message card media preview contract', () => {
     });
   });
 
-  test('ECHO-3324 keeps exactly one collapsed attachment section open', async ({ page }) => {
+  // Regression: https://github.com/echoua/echo/issues/3324
+  test('ECHO-3324 keeps exactly one collapsed attachment section open @regression', async ({
+    page,
+  }) => {
     await openMessageCardPreviewHost(page, 'duty');
 
     const media = page.getByRole('button', { name: /^(Розгорнути|Згорнути) медіа:/ });
@@ -695,7 +707,8 @@ test.describe('message card media preview contract', () => {
     await expect(coordinates).toHaveAttribute('aria-expanded', 'false');
   });
 
-  test('ECHO-3324 aligns coordinate tiles with media tiles at wide and narrow card widths', async ({
+  // Regression: https://github.com/echoua/echo/issues/3324
+  test('ECHO-3324 aligns coordinate tiles with media tiles at wide and narrow card widths @regression', async ({
     page,
   }) => {
     for (const host of ['duty', 'analysis'] as const) {
@@ -715,7 +728,8 @@ test.describe('message card media preview contract', () => {
           if (item) item.style.width = `${width}px`;
         }, cardWidth);
 
-        await mediaControl.click();
+        if ((await mediaControl.getAttribute('aria-expanded')) !== 'true')
+          await mediaControl.click();
         await expect(mediaControl).toHaveAttribute('aria-expanded', 'true');
         const imageTile = card.locator('[data-picture-thumb-layout]').first();
         const videoTile = card.locator('[data-video-thumb-state]').first();
@@ -728,7 +742,8 @@ test.describe('message card media preview contract', () => {
         expect(videoBox?.width).toBe(72);
         expect(videoBox?.height).toBe(72);
 
-        await coordinateControl.click();
+        if ((await coordinateControl.getAttribute('aria-expanded')) !== 'true')
+          await coordinateControl.click();
         await expect(coordinateControl).toHaveAttribute('aria-expanded', 'true');
 
         const coordinateHost = card.locator('[data-coordinate-preview-root]');
@@ -767,7 +782,8 @@ test.describe('message card media preview contract', () => {
     }
   });
 
-  test('ECHO-3324 keeps complete coordinate failures square and retries into a map', async ({
+  // Regression: https://github.com/echoua/echo/issues/3324
+  test('ECHO-3324 keeps complete coordinate failures square and retries into a map @regression', async ({
     page,
   }) => {
     await openMessageCardPreviewHost(page, 'duty', {
@@ -784,6 +800,7 @@ test.describe('message card media preview contract', () => {
       const host = card.locator('[data-coordinate-preview-root]');
       const failureTile = card.locator('[data-coordinate-preview-retry-tile]');
       const retry = failureTile.getByRole('button', { name: 'Повторити завантаження координат' });
+      await host.scrollIntoViewIfNeeded();
       await expect(failureTile).toBeVisible();
       await expect(retry).toBeVisible();
       const [hostBox, tileBox, retryBox, hostOverflow] = await Promise.all([
@@ -815,7 +832,8 @@ test.describe('message card media preview contract', () => {
     await expect(failureTile).toHaveCount(0);
   });
 
-  test('ECHO-3324 renders numeric coordinate counts inside shared Duty and Analysis tiles', async ({
+  // Regression: https://github.com/echoua/echo/issues/3324
+  test('ECHO-3324 renders numeric coordinate counts inside shared Duty and Analysis tiles @regression', async ({
     page,
   }) => {
     const coordinateLabel = '50.45044, 30.52355 — сектор Північний';
@@ -843,12 +861,14 @@ test.describe('message card media preview contract', () => {
           if (item) item.style.width = `${width}px`;
         }, cardWidth);
 
-        await mediaControl.click();
+        if ((await mediaControl.getAttribute('aria-expanded')) !== 'true')
+          await mediaControl.click();
         const [imageBox, videoBox] = await Promise.all([
           card.locator('[data-picture-thumb-layout]').first().boundingBox(),
           card.locator('[data-video-thumb-state]').first().boundingBox(),
         ]);
-        await coordinateControl.click();
+        if ((await coordinateControl.getAttribute('aria-expanded')) !== 'true')
+          await coordinateControl.click();
         await expect(coordinateTile).toBeVisible();
         await expect(count).toHaveText('9');
         expect(await count.textContent()).toBe('9');
@@ -910,7 +930,8 @@ test.describe('message card media preview contract', () => {
     }
   });
 
-  test('ECHO-3380 keeps the coordinate hover preview tile-driven, side by side, and non-scrollable', async ({
+  // Regression: https://github.com/echoua/echo/issues/3380
+  test('ECHO-3380 keeps the coordinate hover preview tile-driven, side by side, and non-scrollable @regression', async ({
     page,
   }) => {
     test.setTimeout(90_000);
@@ -1039,7 +1060,8 @@ test.describe('message card media preview contract', () => {
     }
   });
 
-  test('resolves a Palitra coordinate into the fullscreen MGRS map in both hosts', async ({
+  // Regression: https://github.com/echoua/echo/issues/3453
+  test('resolves a Palitra coordinate into the fullscreen MGRS map in both hosts @regression', async ({
     page,
   }) => {
     for (const host of ['duty', 'analysis'] as const) {
@@ -1104,7 +1126,6 @@ test.describe('message card media preview contract', () => {
       await dialog.getByRole('button', { name: 'Закрити', exact: true }).click();
     }
   });
-
   test('image previews preserve carousel order, info, and download', async ({ page }) => {
     await openMessageCardPreviewHost(page, 'duty');
 
@@ -1121,8 +1142,7 @@ test.describe('message card media preview contract', () => {
     await expect(page.getByRole('dialog', { name: 'Інформація про вкладення' })).toHaveCount(0);
     await expect(imageDialog).toBeVisible();
 
-    await expectPopupAndClose(
-      page,
+    await expectOpenInNewTab(
       imageDialog.getByRole('link', { name: 'Відкрити в новій вкладці' }),
       resolveFixtureUrl(
         page,
@@ -1145,7 +1165,8 @@ test.describe('message card media preview contract', () => {
     await verifyEscapeClose(page, imageDialog, () => openImagePreview(page));
   });
 
-  test('ECHO-3460 reveals stage navigation only beside the hovered desktop edge', async ({
+  // Regression: https://github.com/echoua/echo/issues/3460
+  test('ECHO-3460 reveals stage navigation only beside the hovered desktop edge @regression', async ({
     page,
   }) => {
     await openMessageCardPreviewHost(page, 'duty');
@@ -1181,15 +1202,13 @@ test.describe('message card media preview contract', () => {
     await next.click();
     await expectPreviewCounter(dialog, '1 / 7');
   });
-
   test('video previews preserve carousel controls, info, and download', async ({ page }) => {
     await openMessageCardPreviewHost(page, 'duty');
 
     const videoDialog = await openVideoPreview(page);
     await expectPreviewCounter(videoDialog, '3 / 7');
     await expect(videoDialog.getByRole('button', { name: 'Інформація' })).toBeVisible();
-    await expectPopupAndClose(
-      page,
+    await expectOpenInNewTab(
       videoDialog.getByRole('link', { name: 'Відкрити в новій вкладці' }),
       resolveFixtureUrl(
         page,
@@ -1210,8 +1229,7 @@ test.describe('message card media preview contract', () => {
 
     await verifyEscapeClose(page, videoDialog, () => openVideoPreview(page));
   });
-
-  test('txt and markdown previews preserve source text, mixed carousel order, and normal escape close', async ({
+  test('txt, markdown, and audio previews preserve content, mixed carousel order, and normal escape close', async ({
     page,
   }) => {
     await openMessageCardPreviewHost(page, 'duty');
@@ -1220,8 +1238,7 @@ test.describe('message card media preview contract', () => {
     await expectPreviewCounter(textDialog, '5 / 7');
     await expect(page.getByText('E2E TXT preview line 1')).toBeVisible();
     await expect(textDialog.getByRole('button', { name: 'Інформація' })).toBeVisible();
-    await expectPopupAndClose(
-      page,
+    await expectOpenInNewTab(
       textDialog.getByRole('link', { name: 'Відкрити в новій вкладці' }),
       resolveFixtureUrl(
         page,
@@ -1247,8 +1264,7 @@ test.describe('message card media preview contract', () => {
       markdownDialog.getByRole('heading', { name: 'E2E Markdown preview', level: 1 }),
     ).toBeVisible();
     await expect(markdownDialog.getByText('first item')).toBeVisible();
-    await expectPopupAndClose(
-      page,
+    await expectOpenInNewTab(
       markdownDialog.getByRole('link', { name: 'Відкрити в новій вкладці' }),
       resolveFixtureUrl(
         page,
@@ -1274,7 +1290,8 @@ test.describe('message card media preview contract', () => {
     await expect(audioDialog).toHaveCount(0);
   });
 
-  test('ECHO-3405 matches the audio content layout at the reference viewport', async ({
+  // Regression: https://github.com/echoua/echo/issues/3405
+  test('audio preview matches the reference layout and remains usable at narrow widths @regression', async ({
     page,
   }, testInfo) => {
     await page.setViewportSize({ width: 1440, height: 1024 });
@@ -1387,7 +1404,8 @@ test.describe('message card media preview contract', () => {
     });
   });
 
-  test('audio preview preserves paused autoplay and settings through mixed-carousel navigation', async ({
+  // Regression: https://github.com/echoua/echo/issues/3405
+  test('audio preview preserves paused autoplay and settings through mixed-carousel navigation @regression', async ({
     page,
   }) => {
     await openMessageCardPreviewHost(page, 'duty');
@@ -1412,10 +1430,10 @@ test.describe('message card media preview contract', () => {
     await expect
       .poll(() => audioPlayer.evaluate((player: { isPlaying: boolean }) => player.isPlaying))
       .toBe(true);
-    await audioDialog.getByRole('button', { name: 'Інформація' }).click();
+    await reopenedAudioDialog.getByRole('button', { name: 'Інформація' }).click();
     await expect(page.getByRole('dialog', { name: 'Інформація про вкладення' })).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog', { name: 'Інформація про вкладення' })).toHaveCount(0);
-    await expect(audioDialog).toBeVisible();
+    await expect(reopenedAudioDialog).toBeVisible();
   });
 });

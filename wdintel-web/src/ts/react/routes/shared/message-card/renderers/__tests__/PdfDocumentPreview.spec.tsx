@@ -88,8 +88,7 @@ vi.mock('react-pdf', () => {
 });
 
 import { pdfjs } from 'react-pdf';
-import { PdfDocumentPreview } from '../PdfDocumentPreview';
-
+import { PdfDocumentPreview } from '../PdfDocumentPreview.tsx';
 describe('PdfDocumentPreview', () => {
   afterEach(() => {
     document.body.innerHTML = '';

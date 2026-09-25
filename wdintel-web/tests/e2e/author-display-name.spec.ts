@@ -1,7 +1,8 @@
 import { expect, test } from '@playwright/test';
 import { installRouteLoadComparisonMocks } from './page-loading-comparison.fixtures';
 
-test('@smoke #3575 profile saves update classic author widgets and keyboard panels', async ({
+// Regression: https://github.com/echoua/echo/issues/3575
+test('@smoke @regression #3575 profile saves update classic author widgets and keyboard panels', async ({
   page,
 }) => {
   await installRouteLoadComparisonMocks(page, 'palitra');
