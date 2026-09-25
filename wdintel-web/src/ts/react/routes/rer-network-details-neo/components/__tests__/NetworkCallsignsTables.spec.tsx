@@ -15,7 +15,7 @@ const childMockState = vi.hoisted(() => ({
   interceptedPeriod: null as string | null,
 }));
 
-vi.mock('.././NetworkCallsignsNetworkTable', () => ({
+vi.mock('../NetworkCallsignsNetworkTable', () => ({
   NetworkCallsignsNetworkTable: (props: { loadingError: string | null; period: string }) => {
     childMockState.networkCallsignsError = props.loadingError;
     childMockState.networkPeriod = props.period;
@@ -23,7 +23,7 @@ vi.mock('.././NetworkCallsignsNetworkTable', () => ({
   },
 }));
 
-vi.mock('./NetworkCallsignsCatalogTable', () => ({
+vi.mock('../NetworkCallsignsCatalogTable', () => ({
   NetworkCallsignsCatalogTable: (props: { loadingError: string | null; period: string }) => {
     childMockState.catalogCallsignsError = props.loadingError;
     childMockState.catalogPeriod = props.period;
@@ -31,20 +31,20 @@ vi.mock('./NetworkCallsignsCatalogTable', () => ({
   },
 }));
 
-vi.mock('./NetworkFreqCallsignPeriodSettings', () => ({
+vi.mock('../NetworkFreqCallsignPeriodSettings', () => ({
   NetworkFreqCallsignPeriodSettings: (props: { period: string }) => (
     <div data-testid="intercepted-period-settings">{props.period}</div>
   ),
 }));
 
-vi.mock('./NetworkCallsignsInterceptedPanel', () => ({
+vi.mock('../NetworkCallsignsInterceptedPanel', () => ({
   NetworkCallsignsInterceptedPanel: (props: { loadingError: string | null }) => {
     childMockState.interceptedCallsignsError = props.loadingError;
     return <div data-testid="intercepted-panel">intercepted</div>;
   },
 }));
 
-import { NetworkDetailsCallsignsPanel } from '.././NetworkCallsignsTables';
+import { NetworkDetailsCallsignsPanel } from '../NetworkCallsignsTables';
 
 type Rendered = {
   container: HTMLDivElement;
