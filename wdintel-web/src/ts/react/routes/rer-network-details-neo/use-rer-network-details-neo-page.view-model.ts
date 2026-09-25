@@ -1,6 +1,7 @@
 import { useRerNetworkDetailsNeoPageActions } from './use-rer-network-details-neo-page.actions';
 import type { NetworkDetailsNeoPageState } from './use-rer-network-details-neo-page.shared';
 import type { NetworkGroupActivityPeriod } from '../../../../Bindings';
+import { excludeNetworkOwnedInterceptedCallsigns } from './network-callsigns.tab';
 
 type Actions = ReturnType<typeof useRerNetworkDetailsNeoPageActions>;
 
@@ -193,7 +194,10 @@ export function buildRerNetworkDetailsNeoPageViewModel({
     toggleCallsignInterceptedExpanded: actions.toggleCallsignInterceptedExpanded,
     networkCallsigns: state.networkCallsigns,
     catalogCallsignGroups: state.catalogCallsignGroups,
-    unknownInterceptedCallsigns: state.unknownInterceptedCallsigns,
+    unknownInterceptedCallsigns: excludeNetworkOwnedInterceptedCallsigns(
+      state.unknownInterceptedCallsigns,
+      state.networkCallsigns,
+    ),
     networkCallsignsLoaded: state.networkCallsignsLoaded,
     networkCallsignsLoading: state.networkCallsignsLoading,
     networkCallsignsError: state.networkCallsignsError,
