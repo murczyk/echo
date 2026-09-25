@@ -1,3 +1,5 @@
+import { canUseRadioFeatures } from '../../utils/roles';
+import { RadioFeaturesProvider } from '../shared/RadioFeatures';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -153,129 +155,131 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
   }
 
   return (
-    <Box
-      sx={{
-        height: '100%',
-        minHeight: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 2,
-        overflow: 'hidden',
-      }}
-    >
-      <PageHeader
-        title={title}
-        titleLeadingActions={
-          !isMobileLayout ? (
-            <SidePanelToggleButton
-              side="left"
-              active={leftPanelVisible}
-              label={toggleSidePanelLabel}
-              onClick={() => setLeftPanelOpen((current) => !current)}
-              disabled={isTopPanel}
-            />
-          ) : null
-        }
-        titleLeadingGap={2}
-        actions={
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Button
-              component="a"
-              href={analysisHref || undefined}
-              target="_blank"
-              rel="noopener noreferrer"
-              disabled={!page.network}
-            >
-              Переглянути в Аналізі
-            </Button>
-            <Button
-              onClick={() => {
-                saveRerNetworkDetailsPreferredView('classic');
-                navigateWithinSpa(classicHref);
-              }}
-            >
-              До класичної версії
-            </Button>
-            <Tooltip title="Скопіювати назву і район">
-              <span>
+    <RadioFeaturesProvider allowed={canUseRadioFeatures(page.currentUser?.roles)}>
+      <Box
+        sx={{
+          height: '100%',
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 2,
+          overflow: 'hidden',
+        }}
+      >
+        <PageHeader
+          title={title}
+          titleLeadingActions={
+            !isMobileLayout ? (
+              <SidePanelToggleButton
+                side="left"
+                active={leftPanelVisible}
+                label={toggleSidePanelLabel}
+                onClick={() => setLeftPanelOpen((current) => !current)}
+                disabled={isTopPanel}
+              />
+            ) : null
+          }
+          titleLeadingGap={2}
+          actions={
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Button
+                component="a"
+                href={analysisHref || undefined}
+                target="_blank"
+                rel="noopener noreferrer"
+                disabled={!page.network}
+              >
+                Переглянути в Аналізі
+              </Button>
+              <Button
+                onClick={() => {
+                  saveRerNetworkDetailsPreferredView('classic');
+                  navigateWithinSpa(classicHref);
+                }}
+              >
+                До класичної версії
+              </Button>
+              <Tooltip title="Скопіювати назву і район">
+                <span>
+                  <IconButton
+                    onClick={page.handleCopyNetworkInfo}
+                    disabled={!page.network}
+                    aria-label="Скопіювати назву і район мережі"
+                  >
+                    <ContentCopyOutlinedIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <Tooltip title="Дії">
                 <IconButton
-                  onClick={page.handleCopyNetworkInfo}
-                  disabled={!page.network}
-                  aria-label="Скопіювати назву і район мережі"
+                  onClick={(event) => page.openMenu(event.currentTarget)}
+                  aria-haspopup="true"
+                  aria-controls={page.menuAnchorEl ? 'network-details-actions-menu' : undefined}
+                  aria-label="Дії з мережею"
                 >
-                  <ContentCopyOutlinedIcon fontSize="small" />
+                  <MoreVertOutlinedIcon fontSize="small" />
                 </IconButton>
-              </span>
-            </Tooltip>
-            <Tooltip title="Дії">
-              <IconButton
-                onClick={(event) => page.openMenu(event.currentTarget)}
-                aria-haspopup="true"
-                aria-controls={page.menuAnchorEl ? 'network-details-actions-menu' : undefined}
-                aria-label="Дії з мережею"
+              </Tooltip>
+              <Menu
+                id="network-details-actions-menu"
+                open={page.menuAnchorEl !== null}
+                anchorEl={page.menuAnchorEl}
+                onClose={page.closeMenu}
               >
-                <MoreVertOutlinedIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-            <Menu
-              id="network-details-actions-menu"
-              open={page.menuAnchorEl !== null}
-              anchorEl={page.menuAnchorEl}
-              onClose={page.closeMenu}
-            >
-              <MenuItem onClick={page.openEditDrawer} disabled={!page.canEdit || !page.network}>
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <EditIcon fontSize="small" />
-                  <span>Редагувати</span>
-                </Stack>
-              </MenuItem>
-              <MenuItem onClick={page.openEtalonkaReportDialog} disabled={!page.network}>
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <SummarizeOutlinedIcon fontSize="small" />
-                  <span>Еталонний опис</span>
-                </Stack>
-              </MenuItem>
-              <MenuItem
-                onClick={page.openDeleteDialog}
-                disabled={!page.canDelete || !page.network}
-                sx={{ color: 'error.main' }}
-              >
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <DeleteIcon fontSize="small" />
-                  <span>Видалити</span>
-                </Stack>
-              </MenuItem>
-            </Menu>
-          </Stack>
-        }
-      />
+                <MenuItem onClick={page.openEditDrawer} disabled={!page.canEdit || !page.network}>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <EditIcon fontSize="small" />
+                    <span>Редагувати</span>
+                  </Stack>
+                </MenuItem>
+                <MenuItem onClick={page.openEtalonkaReportDialog} disabled={!page.network}>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <SummarizeOutlinedIcon fontSize="small" />
+                    <span>Еталонний опис</span>
+                  </Stack>
+                </MenuItem>
+                <MenuItem
+                  onClick={page.openDeleteDialog}
+                  disabled={!page.canDelete || !page.network}
+                  sx={{ color: 'error.main' }}
+                >
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <DeleteIcon fontSize="small" />
+                    <span>Видалити</span>
+                  </Stack>
+                </MenuItem>
+              </Menu>
+            </Stack>
+          }
+        />
 
-      {page.error ? <PowerAlert severity="error">{page.error}</PowerAlert> : null}
-      {page.referenceWarning ? (
-        <PowerAlert severity="warning">{page.referenceWarning}</PowerAlert>
-      ) : null}
-      {page.callsignWarning ? (
-        <PowerAlert severity="warning">{page.callsignWarning}</PowerAlert>
-      ) : null}
-      {page.copyStatus ? (
-        <PowerAlert severity={page.copyStatusTone === 'error' ? 'error' : 'success'}>
-          {page.copyStatus}
-        </PowerAlert>
-      ) : null}
+        {page.error ? <PowerAlert severity="error">{page.error}</PowerAlert> : null}
+        {page.referenceWarning ? (
+          <PowerAlert severity="warning">{page.referenceWarning}</PowerAlert>
+        ) : null}
+        {page.callsignWarning ? (
+          <PowerAlert severity="warning">{page.callsignWarning}</PowerAlert>
+        ) : null}
+        {page.copyStatus ? (
+          <PowerAlert severity={page.copyStatusTone === 'error' ? 'error' : 'success'}>
+            {page.copyStatus}
+          </PowerAlert>
+        ) : null}
 
-      <NetworkDetailsNeoPageBody
-        page={page}
-        networkId={networkId}
-        leftPanelVisible={leftPanelVisible}
-        panelPlacement={panelPlacement}
-        topPanelCollapsed={topPanelCollapsed}
-        showAllAors={showAllAors}
-        onToggleShowAllAors={() => setShowAllAors((current) => !current)}
-        onSetPanelPlacement={setPanelPlacement}
-        onSetTopPanelCollapsed={setTopPanelCollapsed}
-        onToggleTopPanelCollapsed={() => setTopPanelCollapsed((current) => !current)}
-      />
-      <NetworkDetailsNeoPageDialogs page={page} />
-    </Box>
+        <NetworkDetailsNeoPageBody
+          page={page}
+          networkId={networkId}
+          leftPanelVisible={leftPanelVisible}
+          panelPlacement={panelPlacement}
+          topPanelCollapsed={topPanelCollapsed}
+          showAllAors={showAllAors}
+          onToggleShowAllAors={() => setShowAllAors((current) => !current)}
+          onSetPanelPlacement={setPanelPlacement}
+          onSetTopPanelCollapsed={setTopPanelCollapsed}
+          onToggleTopPanelCollapsed={() => setTopPanelCollapsed((current) => !current)}
+        />
+        <NetworkDetailsNeoPageDialogs page={page} />
+      </Box>
+    </RadioFeaturesProvider>
   );
 }

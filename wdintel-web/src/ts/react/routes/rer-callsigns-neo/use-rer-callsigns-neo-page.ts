@@ -1,3 +1,4 @@
+import { canUseRadioFeatures } from '../../utils/roles';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import type { Callsign, CallsignUnitStatRow, Source, Unit, User } from '../../../../Bindings';
 import {
@@ -49,7 +50,14 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   const [filters, setFilters] = useState<CallsignsFilterState>(() =>
     readInitialCallsignsFiltersFromUrl(),
   );
-  const [sort, setSort] = useState<CallsignsSortState>(() => readInitialCallsignsSortFromUrl());
+  const [storedSort, setSort] = useState<CallsignsSortState>(() =>
+    readInitialCallsignsSortFromUrl(),
+  );
+  const radioFeaturesAllowed = canUseRadioFeatures(user?.roles ?? authUserRoles);
+  const sort = useMemo(
+    () => (!radioFeaturesAllowed && storedSort?.column === 'radioFreq' ? null : storedSort),
+    [radioFeaturesAllowed, storedSort],
+  );
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => readInitialSidebarOpenFromUrl());
   const [selectedSidebarUnitFilter, setSelectedSidebarUnitFilter] =
     useState<SelectedSidebarUnitFilter | null>(() => readInitialSidebarFilterFromUrl());
@@ -162,6 +170,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   ]);
 
   const actions = useRerCallsignsNeoPageActions({
+    radioFeaturesAllowed,
     permissions,
     callsigns,
     filters,
@@ -235,8 +244,8 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   }, [filters, runListFetch, setRefreshing, setStatus, sort, selectedSidebarUnitFilter]);
 
   useEffect(() => {
-    syncCallsignsStateToUrl(filters, sort, sidebarOpen, selectedSidebarUnitFilter);
-  }, [filters, selectedSidebarUnitFilter, sidebarOpen, sort]);
+    syncCallsignsStateToUrl(filters, storedSort, sidebarOpen, selectedSidebarUnitFilter);
+  }, [filters, selectedSidebarUnitFilter, sidebarOpen, storedSort]);
 
   useEffect(() => {
     function onPopState() {

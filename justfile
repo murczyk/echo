@@ -794,6 +794,10 @@ migrate-signal-bots-to-jvm server non_interactive="false" yolo="false":
 deploy _server_pos="" server silent="false":
     #!/bin/bash
     set -euo pipefail
+    if [[ "$(git -C "{{ justfile_directory() }}" branch --show-current)" == "main" ]]; then
+      echo "main is deployed only with just deploy-from-local --server <server>." >&2
+      exit 1
+    fi
     # Enable tracing if DEBUG=1 or TRACE=1 is set in environment
     if [[ "${DEBUG:-0}" == "1" || "${TRACE:-0}" == "1" ]]; then
       set -x

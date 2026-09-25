@@ -1,4 +1,5 @@
 use super::types::*;
+use crate::config::RER_REPORT_ENRICHMENT_ID_BATCH_SIZE;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::rer_importer::highlight::CNCallsign;
@@ -17,7 +18,7 @@ use docx_rs::*;
 use rust_xlsxwriter::{
     ColNum, ExcelDateTime, Format, FormatAlign, RowNum, Workbook, Worksheet,
 };
-use sea_orm::*;
+use sea_orm::{sea_query::Alias, *};
 use serde::de::DeserializeOwned;
 use std::collections::*;
 use std::path::Path;
@@ -222,6 +223,7 @@ pub async fn report_docx_kind_reo(
         env,
         &read_db,
         range_khz,
+        &current_req.selected_aors,
         only_comments_from_current_organism,
         no_comments,
     )
@@ -885,6 +887,7 @@ async fn collect_report(
     env: &Env,
     dbx: &DatabaseConnection,
     range_khz: f64,
+    selected_aors: &Option<Vec<i64>>,
     only_comments_from_current_organism: bool,
     no_comments: bool,
 ) -> anyhow::Result<Report> {
@@ -925,9 +928,10 @@ async fn collect_report(
         );
     }
 
-    let networks = collect_message_networks(&messages, range_khz, dbx)
-        .await
-        .c(h!())?;
+    let networks =
+        collect_message_networks(&messages, range_khz, selected_aors, dbx)
+            .await
+            .c(h!())?;
 
     let mut callsigns_set = HashSet::new();
     for (_id, message) in &messages {
@@ -1250,9 +1254,15 @@ async fn collect_report(
 async fn collect_message_networks(
     messages: &Vec<(i64, ReoInboxMessage)>,
     range_khz: f64,
+    selected_aors: &Option<Vec<i64>>,
     db: &DatabaseConnection,
 ) -> anyhow::Result<NetworkSummaryData> {
     info!("collect_report: loading all_networks from DB");
+
+    let selected_aor_network_ids =
+        load_network_ids_in_selected_aors(messages, selected_aors, db)
+            .await
+            .c(h!())?;
 
     let mut message_to_networks_map =
         HashMap::<i64, Vec<NetworkSummaryKey>>::new();
@@ -1267,6 +1277,12 @@ async fn collect_message_networks(
             continue;
         };
         for network_id in network_ids {
+            if selected_aor_network_ids
+                .as_ref()
+                .is_some_and(|allowed| !allowed.contains(network_id))
+            {
+                continue;
+            }
             let key = NetworkSummaryKey {
                 network_id: Some(*network_id),
                 freq: freq.clone(),
@@ -1340,7 +1356,13 @@ async fn collect_message_networks(
             .filter(|x| !x.is_empty())
             .cloned()
         else {
-            messages_without_networks.insert(*message_id, message.clone());
+            if !message
+                .network_ids
+                .as_ref()
+                .is_some_and(|network_ids| !network_ids.is_empty())
+            {
+                messages_without_networks.insert(*message_id, message.clone());
+            }
             continue;
         };
         for key in message_network_ids {
@@ -1392,6 +1414,52 @@ async fn collect_message_networks(
         message_to_networks_map,
         message_to_undefined_networks_map,
     })
+}
+
+async fn load_network_ids_in_selected_aors(
+    messages: &[(i64, ReoInboxMessage)],
+    selected_aors: &Option<Vec<i64>>,
+    db: &DatabaseConnection,
+) -> anyhow::Result<Option<HashSet<i64>>> {
+    let linked_aor_alias = Alias::new("reo_network_aor_filter");
+    let Some(condition) =
+        crate::rer_importer::analysis::selected_aor_overlap_condition(
+            linked_aor_alias.clone(),
+            selected_aors,
+        )
+    else {
+        return Ok(None);
+    };
+
+    let network_ids = messages
+        .iter()
+        .flat_map(|(_, message)| message.network_ids.iter().flatten().copied())
+        .unique()
+        .collect_vec();
+    let mut allowed_network_ids = HashSet::new();
+    for network_ids in network_ids.chunks(RER_REPORT_ENRICHMENT_ID_BATCH_SIZE) {
+        allowed_network_ids.extend(
+            sigint_network_aor::Entity::find()
+                .join_as(
+                    JoinType::InnerJoin,
+                    sigint_network_aor::Relation::AreaOfResponsibility.def(),
+                    linked_aor_alias.clone(),
+                )
+                .filter(
+                    sigint_network_aor::Column::NetworkId
+                        .is_in(network_ids.to_vec()),
+                )
+                .filter(condition.clone())
+                .select_only()
+                .column(sigint_network_aor::Column::NetworkId)
+                .distinct()
+                .into_tuple::<i64>()
+                .all(db)
+                .await
+                .c(h!())?,
+        );
+    }
+    Ok(Some(allowed_network_ids))
 }
 
 fn process_messages_without_networks(
@@ -1498,4 +1566,135 @@ fn get_network_summaries_for_message_id(
         }
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::functest::tests::{
+        cleanup, find_test_aor, mk_aor, mk_sigint_network,
+        mk_sigint_network_aor,
+    };
+    use sea_orm::ActiveValue::Set;
+    use serial_test::serial;
+
+    async fn mk_reo_test_aor(
+        db: &DatabaseConnection,
+        name: &str,
+        left_bound: f64,
+        right_bound: f64,
+        now: NaiveDateTime,
+    ) -> anyhow::Result<area_of_responsibility::Model> {
+        mk_aor(
+            db,
+            area_of_responsibility::ActiveModel {
+                name: Set(name.to_string()),
+                left_bound: Set(left_bound),
+                right_bound: Set(right_bound),
+                created_at: Set(now),
+                updated_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())
+    }
+
+    async fn mk_reo_test_network(
+        db: &DatabaseConnection,
+        aor_id: i64,
+        now: NaiveDateTime,
+    ) -> anyhow::Result<sigint_network::Model> {
+        let network = mk_sigint_network(
+            db,
+            sigint_network::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+        mk_sigint_network_aor(
+            db,
+            sigint_network_aor::ActiveModel {
+                network_id: Set(network.id),
+                aor_id: Set(aor_id),
+                created_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+        Ok(network)
+    }
+
+    fn reo_test_message(
+        now: NaiveDateTime,
+        network_ids: Option<Vec<i64>>,
+    ) -> ReoInboxMessage {
+        ReoInboxMessage {
+            timestamp: Some(now.and_utc().timestamp_millis()),
+            freq: Some("1000".to_string()),
+            coords: None,
+            callsigns: Vec::new(),
+            callsigns_alg2: Vec::new(),
+            callsign_tokens: Vec::new(),
+            network_ids,
+            group_master_key: None,
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn reo_report_excludes_networks_from_other_aors() -> anyhow::Result<()>
+    {
+        let env = cleanup().await.context(h!())?;
+        let db = &env.dbx;
+        let selected_aor = find_test_aor(db).await.context(h!())?;
+        let now = Utc::now().naive_utc();
+        let nested_aor = mk_reo_test_aor(db, "Nested REO AOR", 10.0, 20.0, now)
+            .await
+            .context(h!())?;
+        let other_aor = mk_reo_test_aor(db, "Other REO AOR", 200.0, 300.0, now)
+            .await
+            .context(h!())?;
+        let selected_network = mk_reo_test_network(db, nested_aor.id, now)
+            .await
+            .context(h!())?;
+        let other_network = mk_reo_test_network(db, other_aor.id, now)
+            .await
+            .context(h!())?;
+        let messages = vec![
+            (
+                1,
+                reo_test_message(
+                    now,
+                    Some(vec![selected_network.id, other_network.id]),
+                ),
+            ),
+            (2, reo_test_message(now, Some(vec![other_network.id]))),
+            (3, reo_test_message(now, None)),
+        ];
+
+        let networks = collect_message_networks(
+            &messages,
+            0.0,
+            &Some(vec![selected_aor.id]),
+            db,
+        )
+        .await
+        .context(h!())?;
+
+        let message_network_ids = networks
+            .message_to_networks_map
+            .get(&1)
+            .context(h!())?
+            .iter()
+            .filter_map(|key| key.network_id)
+            .collect_vec();
+        assert_eq!(message_network_ids, vec![selected_network.id]);
+        assert!(!networks.message_to_networks_map.contains_key(&2));
+        assert!(!networks.message_to_undefined_networks_map.contains_key(&2));
+        assert!(networks.message_to_undefined_networks_map.contains_key(&3));
+        Ok(())
+    }
 }

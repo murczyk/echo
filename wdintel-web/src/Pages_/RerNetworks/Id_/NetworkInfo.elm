@@ -4,6 +4,7 @@ import Auth
 import Bindings as B
 import Core.Auth
 import Dict
+import Html.Extra
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
@@ -35,7 +36,8 @@ view network model user shared =
         )
     , div [ class "bg-w dark:bg-[#1C1C21] p-[16px]" ] <|
         activityBlock shared model
-    , div [ class "bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col" ]
+    , Html.Extra.viewIf model.radioFeaturesAllowed <|
+      div [ class "bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col" ]
         [ h4 [] [ text "Пеленги" ]
         , let
             mapPoints =
@@ -215,13 +217,13 @@ viewNetworkInfoReadonly user network shared model =
             , infoRow shared "Район функціонування/розгортання" (text network.location)
             , infoRow shared "Призначення" (text <| Maybe.withDefault "" network.purpose)
             , infoRow shared "Склад кореспондентів" (text <| String.fromInt (List.length (RD.withDefault [] model.callsigns)))
-            , infoRow shared "Вид передачі" (text <| freqKinds network.freqs)
+            , Html.Extra.viewIf model.radioFeaturesAllowed <| infoRow shared "Вид передачі" (text <| freqKinds network.freqs)
             , infoRow shared "Режим роботи радіомережі" (text <| Maybe.withDefault "" network.operationMode)
             , infoRow shared "Характер роботи" (text <| Maybe.withDefault "" network.operationType)
             , infoRow shared "Період функціонування" (text <| Maybe.withDefault "" network.operationPeriod)
             , infoRow shared "Активність" (text <| createActivityStr network.activeFrom network.activeTo shared.timeZone)
-            , infoRow shared "Пости" (postNames shared network.postIds)
-            , infoRow shared "Радіостанція" (text <| Maybe.withDefault "" network.radioStation)
+            , Html.Extra.viewIf model.radioFeaturesAllowed <| infoRow shared "Пости" (postNames shared network.postIds)
+            , Html.Extra.viewIf model.radioFeaturesAllowed <| infoRow shared "Радіостанція" (text <| Maybe.withDefault "" network.radioStation)
             , infoRow shared "Статус" (text (networkStatusLabel network.status))
             ]
         , if Core.Auth.hasRole "Admin" user || Core.Auth.hasRole "UnitsEditor" user then
@@ -420,7 +422,8 @@ viewNetworkInfoForm updNetworkReq network networkFreqs shared model =
             , div [ class "col-span-2 h-[40px] flex items-center" ]
                 [ RD.withDefault [] model.callsigns |> List.length |> String.fromInt |> text ]
             ]
-        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+        , Html.Extra.viewIf model.radioFeaturesAllowed <|
+          div [ class "grid grid-cols-3 gap-x-4 items-center" ]
             [ span [ class "text-[13px] font-medium" ] [ text "Вид передачі:" ]
             , div [ class "col-span-2 h-[40px] flex items-center" ]
                 [ List.map (\freqObj -> freqObj.modulation) networkFreqs
@@ -472,7 +475,8 @@ viewNetworkInfoForm updNetworkReq network networkFreqs shared model =
             , div [ class "col-span-2 h-[40px] flex items-center" ]
                 [ text <| createActivityStr network.activeFrom network.activeTo shared.timeZone ]
             ]
-        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+        , Html.Extra.viewIf model.radioFeaturesAllowed <|
+          div [ class "grid grid-cols-3 gap-x-4 items-center" ]
             [ span [ class "text-[13px] font-medium" ] [ text "Пости:" ]
             , div [ class "col-span-2 h-[40px] flex items-center" ]
                 [ div [ class "w-full" ]
@@ -505,7 +509,8 @@ viewNetworkInfoForm updNetworkReq network networkFreqs shared model =
                     ]
                 ]
             ]
-        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+        , Html.Extra.viewIf model.radioFeaturesAllowed <|
+          div [ class "grid grid-cols-3 gap-x-4 items-center" ]
             [ span [ class "text-[13px] font-medium" ] [ text "Радіостанція:" ]
             , div [ class "col-span-2" ]
                 [ input

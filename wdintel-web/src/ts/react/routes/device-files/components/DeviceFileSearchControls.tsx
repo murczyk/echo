@@ -6,7 +6,7 @@ import dayjs from 'dayjs';
 
 import { PowerButton } from '../../../components/PowerButton';
 import { PowerDateTimePicker } from '../../../components/PowerDateTimePicker';
-import { createDefaultFileSearchDraft } from '../helpers';
+import { createDefaultFileSearchDraft, validateFileSearchDraft } from '../helpers';
 import type {
   DeviceAnalyticsTagFilter,
   DeviceFileSearchDraft,
@@ -14,6 +14,9 @@ import type {
 } from '../types';
 import type { DeviceAnalyticsTagsState } from '../use-device-analytics-tags';
 import { DeviceAnalyticsTagFilterControls } from './DeviceAnalyticsTagFilterControls';
+
+import { DeviceMobileSheet } from '../../devices/components/DeviceMobileSheet';
+import { useDeviceMobileLayout } from '../../devices/use-device-mobile-layout';
 
 const ADVANCED_FILTERS_ID = 'device-file-search-advanced-filters';
 
@@ -50,7 +53,86 @@ export function DeviceFileSearchControls({
   onResetScopeToRoot,
   onTagFilterChange,
 }: Props) {
+  const mobile = useDeviceMobileLayout();
   const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
+
+  const advancedFilters = (
+    <div className="min-w-0 space-y-echo-md pt-echo-sm">
+      <DeviceAnalyticsTagFilterControls
+        compact
+        tagsState={tagsState}
+        filter={tagFilter}
+        onChange={onTagFilterChange}
+      />
+      <TextField
+        label="MIME-типи"
+        value={draft.mimeTypes}
+        onChange={(event) => onChange({ ...draft, mimeTypes: event.target.value })}
+        helperText="Через кому"
+        fullWidth
+        size="small"
+      />
+      <TextField
+        label="Розширення"
+        value={draft.extensions}
+        onChange={(event) => onChange({ ...draft, extensions: event.target.value })}
+        helperText="Через кому"
+        fullWidth
+        size="small"
+      />
+      <FormGroup row aria-label="Тип запису">
+        {(['directory', 'file'] as const).map((kind) => (
+          <FormControlLabel
+            key={kind}
+            control={
+              <Switch
+                size="small"
+                checked={draft.kinds.includes(kind)}
+                onChange={(_, checked) =>
+                  onChange({
+                    ...draft,
+                    kinds: checked
+                      ? [...draft.kinds, kind]
+                      : draft.kinds.filter((item) => item !== kind),
+                  })
+                }
+              />
+            }
+            label={kind === 'directory' ? 'Каталоги' : 'Файли'}
+          />
+        ))}
+      </FormGroup>
+      <PowerDateTimePicker
+        label="Змінено від"
+        value={draft.modifiedFrom === null ? null : dayjs(draft.modifiedFrom)}
+        allowEmpty
+        onChange={(value) =>
+          onChange({
+            ...draft,
+            modifiedFrom: value?.isValid() ? value.toISOString() : null,
+          })
+        }
+        slotProps={{ textField: { size: 'small', fullWidth: true } }}
+      />
+      <PowerDateTimePicker
+        label="Змінено до"
+        value={draft.modifiedTo === null ? null : dayjs(draft.modifiedTo)}
+        allowEmpty
+        onChange={(value) =>
+          onChange({
+            ...draft,
+            modifiedTo: value?.isValid() ? value.toISOString() : null,
+          })
+        }
+        slotProps={{ textField: { size: 'small', fullWidth: true } }}
+      />
+      {validationErrors.modifiedRange ? (
+        <p className="m-0 text-echo-xs text-echo-error" role="alert">
+          {validationErrors.modifiedRange}
+        </p>
+      ) : null}
+    </div>
+  );
 
   return (
     <section aria-label="Пошук файлів" className="min-w-0">
@@ -98,7 +180,11 @@ export function DeviceFileSearchControls({
             aria-controls={ADVANCED_FILTERS_ID}
             onClick={() => setAdvancedFiltersOpen((current) => !current)}
           >
-            {advancedFiltersOpen ? 'Сховати додаткові фільтри' : 'Показати додаткові фільтри'}
+            {mobile
+              ? 'Фільтри'
+              : advancedFiltersOpen
+                ? 'Сховати додаткові фільтри'
+                : 'Показати додаткові фільтри'}
           </PowerButton>
           <div className="flex min-w-0 flex-wrap justify-end gap-echo-sm">
             <PowerButton
@@ -126,83 +212,42 @@ export function DeviceFileSearchControls({
           </div>
         </div>
 
-        <Collapse id={ADVANCED_FILTERS_ID} in={advancedFiltersOpen} timeout="auto">
-          <div className="min-w-0 space-y-echo-md pt-echo-sm">
-            <DeviceAnalyticsTagFilterControls
-              compact
-              tagsState={tagsState}
-              filter={tagFilter}
-              onChange={onTagFilterChange}
-            />
-            <TextField
-              label="MIME-типи"
-              value={draft.mimeTypes}
-              onChange={(event) => onChange({ ...draft, mimeTypes: event.target.value })}
-              helperText="Через кому"
-              fullWidth
-              size="small"
-            />
-            <TextField
-              label="Розширення"
-              value={draft.extensions}
-              onChange={(event) => onChange({ ...draft, extensions: event.target.value })}
-              helperText="Через кому"
-              fullWidth
-              size="small"
-            />
-            <FormGroup row aria-label="Тип запису">
-              {(['directory', 'file'] as const).map((kind) => (
-                <FormControlLabel
-                  key={kind}
-                  control={
-                    <Switch
-                      size="small"
-                      checked={draft.kinds.includes(kind)}
-                      onChange={(_, checked) =>
-                        onChange({
-                          ...draft,
-                          kinds: checked
-                            ? [...draft.kinds, kind]
-                            : draft.kinds.filter((item) => item !== kind),
-                        })
-                      }
-                    />
-                  }
-                  label={kind === 'directory' ? 'Каталоги' : 'Файли'}
-                />
-              ))}
-            </FormGroup>
-            <PowerDateTimePicker
-              label="Змінено від"
-              value={draft.modifiedFrom === null ? null : dayjs(draft.modifiedFrom)}
-              allowEmpty
-              onChange={(value) =>
-                onChange({
-                  ...draft,
-                  modifiedFrom: value?.isValid() ? value.toISOString() : null,
-                })
-              }
-              slotProps={{ textField: { size: 'small', fullWidth: true } }}
-            />
-            <PowerDateTimePicker
-              label="Змінено до"
-              value={draft.modifiedTo === null ? null : dayjs(draft.modifiedTo)}
-              allowEmpty
-              onChange={(value) =>
-                onChange({
-                  ...draft,
-                  modifiedTo: value?.isValid() ? value.toISOString() : null,
-                })
-              }
-              slotProps={{ textField: { size: 'small', fullWidth: true } }}
-            />
-            {validationErrors.modifiedRange ? (
-              <p className="m-0 text-echo-xs text-echo-error" role="alert">
-                {validationErrors.modifiedRange}
-              </p>
-            ) : null}
-          </div>
-        </Collapse>
+        {mobile ? (
+          <DeviceMobileSheet
+            title="Додаткові фільтри"
+            open={advancedFiltersOpen}
+            onClose={() => setAdvancedFiltersOpen(false)}
+          >
+            <div id={ADVANCED_FILTERS_ID} className="space-y-echo-lg p-echo-lg">
+              {advancedFilters}
+              <div className="flex flex-wrap gap-echo-sm">
+                <PowerButton
+                  className="!min-h-echo-control-lg flex-1"
+                  disabled={searching}
+                  onClick={() => onChange(createDefaultFileSearchDraft())}
+                >
+                  Очистити
+                </PowerButton>
+                <PowerButton
+                  className="!min-h-echo-control-lg flex-1"
+                  variant="contained"
+                  disabled={!scopeSelected || searching}
+                  onClick={() => {
+                    onSearch();
+                    if (!validateFileSearchDraft(draft).modifiedRange)
+                      setAdvancedFiltersOpen(false);
+                  }}
+                >
+                  Знайти
+                </PowerButton>
+              </div>
+            </div>
+          </DeviceMobileSheet>
+        ) : (
+          <Collapse id={ADVANCED_FILTERS_ID} in={advancedFiltersOpen} timeout="auto">
+            {advancedFilters}
+          </Collapse>
+        )}
       </form>
     </section>
   );

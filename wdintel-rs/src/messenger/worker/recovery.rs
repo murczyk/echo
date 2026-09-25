@@ -2943,6 +2943,9 @@ mod tests {
             show_peleng_distance_to_battleline: Set(false),
             hide_orbit_data: Set(false),
             disable_bot_tags: Set(None),
+            duty_exclude_menu_enabled: Set(None),
+            analysis_aor_filter_enabled: Set(None),
+            two_factor_auth_enabled: Set(None),
         }
         .insert(dbx)
         .await

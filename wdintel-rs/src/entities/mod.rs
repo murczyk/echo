@@ -37,6 +37,8 @@ pub mod ai_settlement_worker_job;
 pub mod alert;
 pub mod aor_location_config;
 pub mod api_integration;
+pub mod api_integration_iggy_destination;
+pub mod api_integration_iggy_event;
 pub mod area_of_responsibility;
 pub mod area_of_responsibility_report_order;
 pub mod battle_line_aor_geometry;

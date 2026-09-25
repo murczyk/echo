@@ -71,7 +71,7 @@ tests =
                                     ( updated.eventService == signedOut.eventService, effect == E.none )
                                 )
                             |> Expect.equal (List.repeat (List.length lateMessages) ( True, True ))
-        , test "temporary event failures retain bounded retries" <|
+        , test "temporary event failures retain polling" <|
             \_ ->
                 withSession <|
                     \route shared ->
@@ -80,6 +80,31 @@ tests =
                                 Shared.update route (Msg.EventServiceEventsReceived (Err (httpError 500))) shared
                         in
                         Expect.equal ( True, 1 ) ( updated.eventService.isPolling, updated.eventService.retryCount )
+        , test "persistent event failure is reported once while polling keeps retrying" <|
+            \_ ->
+                withSession <|
+                    \route shared ->
+                        let
+                            eventService =
+                                shared.eventService
+
+                            exhausted =
+                                { shared | eventService = { eventService | retryCount = 5, retryDelay = 30000 } }
+
+                            ( updated, persistentFailureEffect ) =
+                                Shared.update route (Msg.EventServiceEventsReceived (Err (httpError 500))) exhausted
+
+                            ( _, laterFailureEffect ) =
+                                Shared.update route (Msg.EventServiceEventsReceived (Err (httpError 500))) updated
+                        in
+                        Expect.all
+                            [ \_ -> Expect.equal True updated.eventService.isPolling
+                            , \_ -> Expect.equal 6 updated.eventService.retryCount
+                            , \_ -> Expect.equal 30000 updated.eventService.retryDelay
+                            , \_ -> Expect.equal True (isBatchEffect persistentFailureEffect)
+                            , \_ -> Expect.equal False (isBatchEffect laterFailureEffect)
+                            ]
+                            ()
         , test "keep-alive 401 stops queued ticks and ignores late responses" <|
             \_ ->
                 withSession <|
@@ -125,6 +150,11 @@ tests =
 httpError : Int -> ApiError
 httpError status =
     { httpError = Http.BadStatus status, formErrors = Dict.empty, errors = [] }
+
+
+isBatchEffect : E.Effect msg -> Bool
+isBatchEffect effect =
+    String.startsWith "Batch" (Debug.toString effect)
 
 
 withSession : (Route () -> Shared.Model -> Expectation) -> Expectation

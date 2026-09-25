@@ -21,6 +21,7 @@ export type UseMessageParserOptions = {
   autoParseEnabled?: boolean;
   isEditMode?: boolean;
   isReportMode?: boolean;
+  radioFeaturesAllowed?: boolean;
   debounceMs?: number;
   onPristineSourceCleared?: () => void;
 };
@@ -56,6 +57,7 @@ export function useMessageParser(
   const autoParseEnabled = options?.autoParseEnabled ?? false;
   const isEditMode = options?.isEditMode ?? false;
   const isReportMode = options?.isReportMode ?? false;
+  const radioFeaturesAllowed = options?.radioFeaturesAllowed ?? true;
   const parserActive = active && !isEditMode && !isReportMode;
   const debounceMs = options?.debounceMs ?? DEFAULT_MESSAGE_PARSE_DEBOUNCE_MS;
   const onPristineSourceCleared = options?.onPristineSourceCleared;
@@ -209,9 +211,12 @@ export function useMessageParser(
       });
       if (requestId !== latestRequestIdRef.current || !parserActiveRef.current) return;
       lastParsedBodyRef.current = currentRawBody;
-      applyParserResult(
-        reconcileParserSnapshot(ownershipRef.current, getValues(), toParserSnapshot(parsed)),
-      );
+      const snapshot = toParserSnapshot(parsed);
+      if (!radioFeaturesAllowed) {
+        snapshot.scalars.freq = undefined;
+        snapshot.scalars.post = undefined;
+      }
+      applyParserResult(reconcileParserSnapshot(ownershipRef.current, getValues(), snapshot));
       setParseStatus('success');
     } catch (error: any) {
       if (requestId !== latestRequestIdRef.current || !parserActiveRef.current) return;
@@ -225,7 +230,7 @@ export function useMessageParser(
         setParsing(false);
       }
     }
-  }, [applyParserResult, busy, getValues, setErrorMsg]);
+  }, [applyParserResult, busy, getValues, radioFeaturesAllowed, setErrorMsg]);
 
   const acceptParsedField = useCallback(
     (field: ParserFieldName) => {

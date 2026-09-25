@@ -1,3 +1,4 @@
+import { useRadioFeatures } from '../../RadioFeatures';
 import React from 'react';
 import { Box, TextField, Autocomplete, Stack } from '@mui/material';
 import { useFormContext, Controller } from 'react-hook-form';
@@ -48,6 +49,7 @@ export function MetadataSection({
   setUnitInput,
   unitLocked,
 }: Props) {
+  const radioFeaturesAllowed = useRadioFeatures();
   const {
     control,
     formState: { errors },
@@ -117,33 +119,35 @@ export function MetadataSection({
             gap: 2,
           }}
         >
-          <ParserFieldFeedback field="post" label="пост">
-            <Controller
-              name="post"
-              control={control}
-              render={({ field }) => (
-                <Autocomplete
-                  freeSolo
-                  forcePopupIcon
-                  noOptionsText="Немає варіантів"
-                  options={Array.from(new Set([...(recentValues?.post || []), ...postOptions]))}
-                  value={field.value ?? ''}
-                  loading={postLoading}
-                  disabled={busy}
-                  onInputChange={(_, newValue, reason) => {
-                    if (reason === 'input') {
-                      setPostInput(newValue);
-                      field.onChange(newValue);
-                    }
-                  }}
-                  onChange={(_, newValue) => field.onChange(newValue || '')}
-                  renderInput={(params) => (
-                    <TextField {...params} label="Пост" size="small" fullWidth disabled={busy} />
-                  )}
-                />
-              )}
-            />
-          </ParserFieldFeedback>
+          {radioFeaturesAllowed ? (
+            <ParserFieldFeedback field="post" label="пост">
+              <Controller
+                name="post"
+                control={control}
+                render={({ field }) => (
+                  <Autocomplete
+                    freeSolo
+                    forcePopupIcon
+                    noOptionsText="Немає варіантів"
+                    options={Array.from(new Set([...(recentValues?.post || []), ...postOptions]))}
+                    value={field.value ?? ''}
+                    loading={postLoading}
+                    disabled={busy}
+                    onInputChange={(_, newValue, reason) => {
+                      if (reason === 'input') {
+                        setPostInput(newValue);
+                        field.onChange(newValue);
+                      }
+                    }}
+                    onChange={(_, newValue) => field.onChange(newValue || '')}
+                    renderInput={(params) => (
+                      <TextField {...params} label="Пост" size="small" fullWidth disabled={busy} />
+                    )}
+                  />
+                )}
+              />
+            </ParserFieldFeedback>
+          ) : null}
 
           <ParserFieldFeedback field="unit" label="підрозділ">
             <Controller

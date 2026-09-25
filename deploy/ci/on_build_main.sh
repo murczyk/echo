@@ -90,6 +90,12 @@ main() {
   shift || true
 
   case "$command" in
+    build-debs|publish|redis-mark|cleanup-failure)
+      bash "$SCRIPT_DIR/require_stable_release.sh"
+      ;;
+  esac
+
+  case "$command" in
     run-tests)
       run_tests
       ;;

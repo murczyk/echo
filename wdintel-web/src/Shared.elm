@@ -157,6 +157,7 @@ init flagsResult route =
             Just
                 { id = ""
                 , name = "anonymous"
+                , displayName = Nothing
                 , roles = []
                 , sigintZoneId = Nothing
                 , organismId = Nothing
@@ -646,9 +647,6 @@ update req msg model =
                 newRetryDelay =
                     min 30000 (model.eventService.retryDelay * 2)
 
-                shouldRetry =
-                    newRetryCount <= 5 && model.eventService.isPolling
-
                 eventService =
                     model.eventService
 
@@ -658,6 +656,12 @@ update req msg model =
                         , retryCount = newRetryCount
                         , retryDelay = newRetryDelay
                     }
+
+                retryEffect =
+                    E.sendCmd <| Task.perform (\_ -> EventServiceRetryPolling) (Process.sleep (toFloat newRetryDelay))
+
+                shouldNotifyAboutPersistentFailure =
+                    eventService.retryCount == 5
             in
             if not model.eventService.isPolling then
                 ( model, E.none )
@@ -665,14 +669,16 @@ update req msg model =
             else if error.httpError == Http.BadStatus 401 then
                 update req SignOut model
 
-            else if shouldRetry then
-                ( { model | eventService = newEventService }
-                , E.sendCmd <| Task.perform (\_ -> EventServiceRetryPolling) (Process.sleep (toFloat newRetryDelay))
-                )
-
             else
-                ( { model | eventService = { newEventService | isPolling = False } }
-                , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка отримання оновлень" error
+                ( { model | eventService = newEventService }
+                , if shouldNotifyAboutPersistentFailure then
+                    E.batch
+                        [ retryEffect
+                        , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка отримання оновлень" error
+                        ]
+
+                  else
+                    retryEffect
                 )
 
         EventServiceRetryPolling ->
@@ -874,7 +880,7 @@ shouldRedirectUnauthorizedPage : Route.Path.Path -> B.User -> Bool
 shouldRedirectUnauthorizedPage path user =
     case path of
         Route.Path.RerPalitraNeo ->
-            not (Core.Auth.hasRole "Rer" user)
+            not (Core.Auth.hasRerOrCyber user)
 
         Route.Path.Devices ->
             not (Core.Auth.canReadDevices user)

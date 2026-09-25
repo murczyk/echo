@@ -350,7 +350,10 @@ export function filterSectionsForInitialLoad(
     sections.add(section);
   });
   additionalSections.forEach((section) => sections.add(section));
-  return Array.from(sections);
+  return Array.from(sections).filter(
+    (section) =>
+      queryState.radioFeaturesAllowed !== false || !['posts', 'metadata'].includes(section),
+  );
 }
 
 function toFilterOptions<T>(
@@ -839,10 +842,10 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
             },
             params.signal ? { signal: params.signal } : undefined,
           );
-      const freqsPromise = fetchAnalysisFreqs(
-        analysisReq,
-        params.signal ? { signal: params.signal } : undefined,
-      );
+      const freqsPromise =
+        params.queryState.radioFeaturesAllowed === false
+          ? Promise.resolve({ freqs: [] })
+          : fetchAnalysisFreqs(analysisReq, params.signal ? { signal: params.signal } : undefined);
       void freqsPromise.catch(() => undefined);
 
       let inboxRsp: Awaited<ReturnType<typeof fetchInboxMessages>>;

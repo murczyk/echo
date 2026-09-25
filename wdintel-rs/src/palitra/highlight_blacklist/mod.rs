@@ -5,7 +5,7 @@ use crate::palitra::types::{
     PalitraName, PalitraResolveNamesReq,
 };
 use crate::types::{Env, ShortContext};
-use crate::users::{ensure_rer_role, login_id_from_identity};
+use crate::users::{ensure_base_role, login_id_from_identity};
 use actix_web::web::{Data, Json, Path};
 use actix_web::{delete, get, post};
 use sea_orm::ConnectionTrait;
@@ -72,7 +72,7 @@ pub async fn resolve_palitra_names(
     env: Data<Env>,
     req: Json<PalitraResolveNamesReq>,
 ) -> Result<Json<Vec<PalitraName>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     Ok(Json(
         resolve_accessible_names(&env.dbx, login, &req.palitra_ids)
@@ -136,7 +136,7 @@ async fn ensure_access(
     env: &Data<Env>,
     palitra_id: i64,
 ) -> Result<uuid::Uuid, AppError> {
-    ensure_rer_role(&env.dbx, user).await.c(h!())?;
+    ensure_base_role(&env.dbx, user).await.c(h!())?;
     let login = login_id_from_identity(user).c(h!())?;
     let accessible_palitra_ids =
         super::bl::collect_accessible_palitra_ids(login, &env.dbx)

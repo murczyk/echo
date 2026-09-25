@@ -25,7 +25,7 @@ type Props = {
 
 function FileEntryMetadata({ entry }: { entry: DeviceFileTreeEntry }) {
   return (
-    <div className="flex min-w-0 flex-wrap gap-x-echo-sm gap-y-echo-xs text-echo-xs text-echo-text-muted">
+    <div className="flex min-w-0 flex-wrap gap-x-echo-sm gap-y-echo-xs text-echo-xs text-echo-text-muted max-echo-lg:[overflow-wrap:anywhere]">
       <span>MIME: {entry.mimeType ?? '—'}</span>
       <span>Розширення: {entry.extension ?? '—'}</span>
       <span>Змінено у джерелі: {formatDeviceDateTime(entry.fileMetadataModifiedAt)}</span>
@@ -75,7 +75,7 @@ function DeviceFileSearchResultRow({
               type="button"
               underline="hover"
               onClick={() => onSelectFile(entry)}
-              className="block max-w-full truncate text-echo-sm font-semibold text-echo-text"
+              className="block max-w-full truncate text-echo-sm font-semibold text-echo-text max-echo-lg:min-h-echo-control-lg max-echo-lg:whitespace-normal max-echo-lg:text-left max-echo-lg:[overflow-wrap:anywhere]"
               title={entry.name}
               aria-description={entry.hasContent ? undefined : 'Контент файлу відсутній'}
             >

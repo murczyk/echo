@@ -39,7 +39,7 @@ import {
   uploadCurrentUserGoiCategories,
 } from '../../services/api/goi-settings';
 import { downloadBlob } from '../../utils/download-blob';
-import { hasRole } from '../../utils/roles';
+import { hasRole, hasRerOrCyber } from '../../utils/roles';
 import { GoiReportTabOrderSection } from './GoiReportTabOrderSection';
 
 const ECHO_MESSENGERS_DOC_URL = '/docs/goi-messengers/';
@@ -555,7 +555,7 @@ export function GoiSettingsPage() {
         if (abortController.signal.aborted) return;
         setCurrentUser(nextCurrentUser);
 
-        const nextIntegrations = hasRole(nextCurrentUser.roles, 'Rer')
+        const nextIntegrations = hasRerOrCyber(nextCurrentUser.roles)
           ? await fetchCurrentUserGoiIntegrations(abortController.signal)
           : [];
         if (abortController.signal.aborted) return;

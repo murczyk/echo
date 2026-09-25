@@ -1,3 +1,4 @@
+import { useMessageWriteAccess } from '../message-card/MessageWriteAccess';
 import { Fab } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import {
@@ -14,6 +15,8 @@ export function CreateMessageFab({
   onClick,
   rightInset = POWER_FLOATING_CONTROL_EDGE_INSET,
 }: Props) {
+  const canWrite = useMessageWriteAccess();
+  if (!canWrite) return null;
   return (
     <Fab
       color="primary"

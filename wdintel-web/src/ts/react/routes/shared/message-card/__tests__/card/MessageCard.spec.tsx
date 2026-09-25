@@ -1,6 +1,9 @@
+import { MessageDeleteAccessContext, MessageWriteAccessContext } from '../../MessageWriteAccess';
+import { DutyExcludeMenuContext } from '../../DutyExcludeMenu';
 /**
  * @vitest-environment happy-dom
  */
+import { RadioFeaturesProvider } from '../../../RadioFeatures';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import type { ComponentProps, ElementType, ReactNode } from 'react';
@@ -651,6 +654,10 @@ async function renderCard(
   options: {
     audioTranscriptionCollapsed?: boolean;
     audioTranscriptionEnabled?: boolean;
+    dutyExcludeMenuEnabled?: boolean;
+    radioFeaturesAllowed?: boolean;
+    canWrite?: boolean;
+    canDelete?: boolean;
   } = {},
 ): Promise<Rendered> {
   const container = document.createElement('div');
@@ -694,13 +701,38 @@ async function renderCard(
   };
 
   await act(async () => {
+    const content = (
+      <RadioFeaturesProvider allowed={options.radioFeaturesAllowed ?? true}>
+        {
+          <AudioTranscriptionPreferencesProvider
+            collapsedByDefault={options.audioTranscriptionCollapsed ?? false}
+            enabled={options.audioTranscriptionEnabled ?? true}
+          >
+            {options.dutyExcludeMenuEnabled == null ? (
+              options.canWrite == null ? (
+                <MessageCard {...props} />
+              ) : (
+                <MessageWriteAccessContext.Provider value={options.canWrite}>
+                  <MessageCard {...props} />
+                </MessageWriteAccessContext.Provider>
+              )
+            ) : (
+              <DutyExcludeMenuContext.Provider value={options.dutyExcludeMenuEnabled}>
+                <MessageCard {...props} />
+              </DutyExcludeMenuContext.Provider>
+            )}
+          </AudioTranscriptionPreferencesProvider>
+        }
+      </RadioFeaturesProvider>
+    );
     root.render(
-      <AudioTranscriptionPreferencesProvider
-        collapsedByDefault={options.audioTranscriptionCollapsed ?? false}
-        enabled={options.audioTranscriptionEnabled ?? true}
-      >
-        <MessageCard {...props} />
-      </AudioTranscriptionPreferencesProvider>,
+      options.canDelete == null ? (
+        content
+      ) : (
+        <MessageDeleteAccessContext.Provider value={options.canDelete}>
+          {content}
+        </MessageDeleteAccessContext.Provider>
+      ),
     );
   });
 
@@ -769,13 +801,15 @@ async function renderHeader(
       </div>
     );
     root.render(
-      metadataOverrides.useMessageDeviceAccessProvider === false ? (
-        content
-      ) : (
-        <MessageDeviceAccessProvider allowed={metadataOverrides.canUseMessageDevices ?? true}>
-          {content}
-        </MessageDeviceAccessProvider>
-      ),
+      <RadioFeaturesProvider allowed>
+        {metadataOverrides.useMessageDeviceAccessProvider === false ? (
+          content
+        ) : (
+          <MessageDeviceAccessProvider allowed={metadataOverrides.canUseMessageDevices ?? true}>
+            {content}
+          </MessageDeviceAccessProvider>
+        )}
+      </RadioFeaturesProvider>,
     );
   });
 
@@ -1747,9 +1781,13 @@ describe('MessageCard', () => {
 
     await act(async () => {
       view.root.render(
-        <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
-          <MessageCard {...view.props} messageTextPreviewLines={40} />
-        </AudioTranscriptionPreferencesProvider>,
+        <RadioFeaturesProvider allowed>
+          {
+            <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
+              <MessageCard {...view.props} messageTextPreviewLines={40} />
+            </AudioTranscriptionPreferencesProvider>
+          }
+        </RadioFeaturesProvider>,
       );
     });
 
@@ -2306,7 +2344,11 @@ describe('MessageCard', () => {
     ).toBeNull();
 
     await act(async () => {
-      view.root.render(<MessageCardHeader {...view.headerProps!} onEditDetails={vi.fn()} />);
+      view.root.render(
+        <RadioFeaturesProvider allowed>
+          {<MessageCardHeader {...view.headerProps!} onEditDetails={vi.fn()} />}
+        </RadioFeaturesProvider>,
+      );
     });
     const updatedHeaderRow = view.container.querySelector<HTMLElement>(
       '[data-message-card-header-row="true"]',
@@ -2523,30 +2565,33 @@ describe('MessageCard', () => {
   });
 
   it('orders edit, archive download, and delete in the overflow menu', async () => {
-    const view = await renderCard({
-      displayMode: 'analysis',
-      onEditDetails: vi.fn(),
-      onDelete: vi.fn(),
-      msg: {
-        ...buildMessage(),
-        media: [
-          {
-            id: 'first',
-            href: '/api/messenger/media/first',
-            contentType: 'text/plain',
-            fileName: 'first.txt',
-            sizeBytes: 1,
-          },
-          {
-            id: 'second',
-            href: '/api/messenger/media/second',
-            contentType: 'text/plain',
-            fileName: 'second.txt',
-            sizeBytes: 1,
-          },
-        ] as InboxMessage['media'],
+    const view = await renderCard(
+      {
+        displayMode: 'analysis',
+        onEditDetails: vi.fn(),
+        onDelete: vi.fn(),
+        msg: {
+          ...buildMessage(),
+          media: [
+            {
+              id: 'first',
+              href: '/api/messenger/media/first',
+              contentType: 'text/plain',
+              fileName: 'first.txt',
+              sizeBytes: 1,
+            },
+            {
+              id: 'second',
+              href: '/api/messenger/media/second',
+              contentType: 'text/plain',
+              fileName: 'second.txt',
+              sizeBytes: 1,
+            },
+          ] as InboxMessage['media'],
+        },
       },
-    });
+      { canDelete: true },
+    );
     rendered.push(view);
 
     expect(view.container.querySelector('button[aria-label="Редагувати"]')).toBeNull();
@@ -2649,13 +2694,16 @@ describe('MessageCard', () => {
     const onBookmark = vi.fn();
     const onEditDetails = vi.fn();
     const onDelete = vi.fn();
-    const view = await renderCard({
-      displayMode: 'analysis',
-      onImportant,
-      onBookmark,
-      onEditDetails,
-      onDelete,
-    });
+    const view = await renderCard(
+      {
+        displayMode: 'analysis',
+        onImportant,
+        onBookmark,
+        onEditDetails,
+        onDelete,
+      },
+      { canDelete: true },
+    );
     rendered.push(view);
 
     const overflowButton = view.container.querySelector('button[aria-label="Більше дій"]');
@@ -2689,6 +2737,43 @@ describe('MessageCard', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it.each(['duty', 'analysis'] as const)(
+    'hides deletion and the empty overflow menu without delete access in %s',
+    async (displayMode) => {
+      const view = await renderCard(
+        { displayMode, onDelete: vi.fn(), onEditDetails: vi.fn() },
+        { canWrite: false, canDelete: false },
+      );
+      rendered.push(view);
+      expect(view.container.querySelector('button[aria-label="Більше дій"]')).toBeNull();
+      expect(view.container.textContent).not.toContain('Видалити');
+    },
+  );
+
+  it('hides deletion for message writers without delete access', async () => {
+    const view = await renderCard(
+      { onDelete: vi.fn(), onEditDetails: vi.fn() },
+      { canWrite: true, canDelete: false },
+    );
+    rendered.push(view);
+    const overflow = view.container.querySelector('button[aria-label="Більше дій"]');
+    if (!(overflow instanceof HTMLButtonElement)) throw new Error('overflow button not found');
+    await click(overflow);
+    expect(view.container.textContent).toContain('Редагувати');
+    expect(view.container.textContent).not.toContain('Видалити');
+  });
+
+  it('retains delete access independently of message write access', async () => {
+    const onDelete = vi.fn();
+    const view = await renderCard({ onDelete }, { canWrite: false, canDelete: true });
+    rendered.push(view);
+    const overflow = view.container.querySelector('button[aria-label="Більше дій"]');
+    if (!(overflow instanceof HTMLButtonElement)) throw new Error('overflow button not found');
+    await click(overflow);
+    await click(getButton(view.container, 'Видалити'));
+    expect(onDelete).toHaveBeenCalledTimes(1);
   });
 
   it('renders overflow for an edit-only card', async () => {
@@ -2764,6 +2849,28 @@ describe('MessageCard', () => {
     expect(view.container.textContent).not.toContain('Копіювати частоту');
     expect(view.container.textContent).not.toContain("Копіювати прив'язку");
     expect(view.container.textContent).not.toContain('Не встановлена');
+  });
+
+  it('#3568 disables the quick-exclude menu without removing other Duty actions', async () => {
+    const view = await renderCard({}, { dutyExcludeMenuEnabled: false });
+    rendered.push(view);
+    expect(view.container.querySelector(`button[aria-label="${EXCLUDE_TITLE}"]`)).toBeNull();
+    expect(view.container.querySelector(`button[aria-label="${COPY_TITLE}"]`)).not.toBeNull();
+    expect(latestMenuProps).toHaveLength(0);
+  });
+
+  it('#3568 keeps group exclusion but hides post exclusion for Cyber', async () => {
+    const view = await renderCard(
+      { msg: buildMessage({ post: 'HIDDEN-POST' }) },
+      { radioFeaturesAllowed: false },
+    );
+    rendered.push(view);
+    await click(
+      view.container.querySelector(`button[aria-label="${EXCLUDE_TITLE}"]`) as HTMLButtonElement,
+    );
+    expect(view.container.textContent).toContain('Виключити групу');
+    expect(view.container.textContent).not.toContain('Виключити пост');
+    expect(view.container.textContent).not.toContain('HIDDEN-POST');
   });
 
   it('opens the exclude menu and applies the selected exclusion', async () => {
@@ -3086,9 +3193,13 @@ describe('MessageCard', () => {
 
     await act(async () => {
       view.root.render(
-        <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
-          <MessageCard {...view.props} messageTextPreviewLines={40} />
-        </AudioTranscriptionPreferencesProvider>,
+        <RadioFeaturesProvider allowed>
+          {
+            <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
+              <MessageCard {...view.props} messageTextPreviewLines={40} />
+            </AudioTranscriptionPreferencesProvider>
+          }
+        </RadioFeaturesProvider>,
       );
     });
 
@@ -4518,9 +4629,13 @@ describe('MessageCard', () => {
 
       await act(async () => {
         view.root.render(
-          <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
-            <MessageCard {...nextProps} />
-          </AudioTranscriptionPreferencesProvider>,
+          <RadioFeaturesProvider allowed>
+            {
+              <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
+                <MessageCard {...nextProps} />
+              </AudioTranscriptionPreferencesProvider>
+            }
+          </RadioFeaturesProvider>,
         );
       });
 
@@ -4579,9 +4694,13 @@ describe('MessageCard', () => {
 
       await act(async () => {
         view.root.render(
-          <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
-            <MessageCard {...nextProps} />
-          </AudioTranscriptionPreferencesProvider>,
+          <RadioFeaturesProvider allowed>
+            {
+              <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
+                <MessageCard {...nextProps} />
+              </AudioTranscriptionPreferencesProvider>
+            }
+          </RadioFeaturesProvider>,
         );
       });
 
@@ -4657,9 +4776,13 @@ describe('MessageCard', () => {
 
       await act(async () => {
         view.root.render(
-          <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
-            <MessageCard {...nextProps} />
-          </AudioTranscriptionPreferencesProvider>,
+          <RadioFeaturesProvider allowed>
+            {
+              <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
+                <MessageCard {...nextProps} />
+              </AudioTranscriptionPreferencesProvider>
+            }
+          </RadioFeaturesProvider>,
         );
       });
 
@@ -4701,6 +4824,83 @@ describe('MessageCard', () => {
 
     expect(view.container.textContent).toContain('tags-loading');
     expect(view.container.textContent).not.toContain('переміщення');
+  });
+
+  it.each(['full', 'compact'] as const)(
+    '#3569 shows only applied, inert viewer tags in %s layout',
+    async (tagsLayout) => {
+      const onToggleTag = vi.fn();
+      const view = await renderCard(
+        {
+          tagsLayout,
+          msg: buildMessage({ tags: [3, 4], inboxTags: [] }),
+          onToggleTag,
+          onEditDetails: vi.fn(),
+          onDelete: undefined,
+        },
+        { canWrite: false },
+      );
+      rendered.push(view);
+      expect(view.container.querySelector('[data-message-card-tag-id="3"]')).not.toBeNull();
+      expect(view.container.querySelector('[data-message-card-tag-id="5"]')).toBeNull();
+      expect(
+        view.container.querySelector('button[aria-label="Створити розвіддонесення"]'),
+      ).toBeNull();
+      expect(view.container.querySelector('button[aria-label="Редагувати"]')).toBeNull();
+      expect(view.container.querySelector('button[aria-label="Додати в закладки"]')).not.toBeNull();
+      expect(view.container.querySelector('button[aria-label="Більше дій"]')).toBeNull();
+      const chip = view.container.querySelector('[data-message-card-tag-id="3"]') as HTMLElement;
+      expect(chip.querySelector('button')).toBeNull();
+      await click(chip);
+      expect(onToggleTag).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([false, true])(
+    '#3569 preserves bot visibility settings for viewer tags (%s)',
+    async (hideBotTags) => {
+      const view = await renderCard(
+        {
+          hideBotTags,
+          tagsLayout: 'full',
+          msg: buildMessage({
+            inboxTags: [
+              { id: 1, tagId: 3, confidence: 1, login: 'other', model: null, organismId: null },
+              { id: 2, tagId: 4, confidence: 1, login: null, model: 'bot', organismId: null },
+            ],
+          }),
+        },
+        { canWrite: false },
+      );
+      rendered.push(view);
+      expect(view.container.querySelector('[data-message-card-tag-id="3"]')).not.toBeNull();
+      expect(view.container.querySelector('[data-message-card-tag-id="4"]') != null).toBe(
+        !hideBotTags,
+      );
+      expect(view.container.querySelector('[data-message-card-tag-id="5"]')).toBeNull();
+    },
+  );
+
+  it('#3569 keeps attachment downloads in the viewer overflow menu', async () => {
+    const view = await renderCard(
+      {
+        onEditDetails: vi.fn(),
+        msg: buildMessage({
+          media: ['first', 'second'].map((id) => ({
+            id,
+            href: `/api/messenger/media/${id}`,
+            contentType: 'text/plain',
+            fileName: `${id}.txt`,
+            sizeBytes: 1,
+          })) as InboxMessage['media'],
+        }),
+      },
+      { canWrite: false },
+    );
+    rendered.push(view);
+    await click(view.container.querySelector('button[aria-label="Більше дій"]') as HTMLElement);
+    expect(queryArchiveDownloadLink(view.container)).not.toBeNull();
+    expect(view.container.textContent).not.toContain('Редагувати');
   });
 
   it('renders tags in read-only mode without mutation controls', async () => {

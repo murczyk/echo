@@ -11,21 +11,27 @@ import type { MessageFeedState } from './utils';
 import { MAX_MESSAGE_FEEDS } from './utils';
 
 const renderedFeedColumns = new Map<string, FeedColumnModel>();
+const panelOpenChangeByFeed = new Map<string, (feedId: string, panelOpen: boolean) => void>();
 const createMessageFabPropsHistory = vi.hoisted(
   () => [] as Array<{ onClick?: () => void; rightInset?: number }>,
 );
 
 vi.mock('./FeedColumn', () => ({
-  FeedColumn: forwardRef<HTMLDivElement, { column: FeedColumnModel }>(function FeedColumnMock(
-    { column },
-    ref,
-  ) {
+  FeedColumn: forwardRef<
+    HTMLDivElement,
+    {
+      column: FeedColumnModel;
+      onPanelOpenChange?: (feedId: string, panelOpen: boolean) => void;
+    }
+  >(function FeedColumnMock({ column, onPanelOpenChange }, ref) {
     useLayoutEffect(() => {
       renderedFeedColumns.set(column.feed.id, column);
+      if (onPanelOpenChange) panelOpenChangeByFeed.set(column.feed.id, onPanelOpenChange);
       return () => {
         renderedFeedColumns.delete(column.feed.id);
+        panelOpenChangeByFeed.delete(column.feed.id);
       };
-    }, [column]);
+    }, [column, onPanelOpenChange]);
     return <div ref={ref} data-testid={`feed-column-${column.feed.id}`} />;
   }),
 }));
@@ -184,6 +190,7 @@ describe('RerDutyNeoWorkspace', () => {
 
   beforeEach(() => {
     renderedFeedColumns.clear();
+    panelOpenChangeByFeed.clear();
     createMessageFabPropsHistory.splice(0);
   });
 
@@ -194,6 +201,7 @@ describe('RerDutyNeoWorkspace', () => {
       document.body.innerHTML = '';
     });
     renderedFeedColumns.clear();
+    panelOpenChangeByFeed.clear();
   });
 
   it('renders the initial loading header per feed instead of a shared top toolbar', async () => {
@@ -705,6 +713,45 @@ describe('RerDutyNeoWorkspace', () => {
     expect(desktopFab).not.toBeNull();
     expect(container.contains(desktopFab)).toBe(true);
     expect(createMessageFabPropsHistory.at(-1)?.rightInset).toBe(5);
+  });
+
+  it('hides the create-message FAB while any feed header panel is open', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const columnRefsRef = { current: {} as Record<string, null> };
+    const messageFeeds = [{ ...buildFeed('feed-1'), loading: false }];
+
+    await act(async () => {
+      root.render(
+        <RerDutyNeoWorkspace
+          activeFeedId="feed-1"
+          buildFeedColumnModel={buildFeedColumnModel}
+          columnRefsRef={columnRefsRef}
+          createMessageFeed={() => {}}
+          openCreateMessageComposer={() => {}}
+          isInitialLoading={false}
+          messageFeeds={messageFeeds}
+          narrowScreen
+          onSelectFeed={() => {}}
+          showLoadingBackdrop={false}
+        />,
+      );
+    });
+
+    expect(container.querySelector('button[aria-label="Додати повідомлення"]')).not.toBeNull();
+
+    await act(async () => {
+      panelOpenChangeByFeed.get('feed-1')?.('feed-1', true);
+    });
+
+    expect(container.querySelector('button[aria-label="Додати повідомлення"]')).toBeNull();
+
+    await act(async () => {
+      panelOpenChangeByFeed.get('feed-1')?.('feed-1', false);
+    });
+
+    expect(container.querySelector('button[aria-label="Додати повідомлення"]')).not.toBeNull();
   });
 
   it('does not mutate the source column view when enabling scroll tracking', async () => {

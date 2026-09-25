@@ -1,3 +1,4 @@
+import { AuthorLabel } from '../../components/AuthorLabel';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import {
   Box,
@@ -63,7 +64,9 @@ function ReportMetadata({
         <MetadataItem label="ID">
           <CopyableReportId id={row.id} />
         </MetadataItem>
-        <MetadataItem label="Автор">{row.requestedBy || '—'}</MetadataItem>
+        <MetadataItem label="Автор">
+          <AuthorLabel login={row.requestedBy} />
+        </MetadataItem>
         <MetadataItem label="Створено">{formatReportDateOrDash(row.createdAt)}</MetadataItem>
         <MetadataItem label="Останній запуск">{formatReportDateOrDash(row.startedAt)}</MetadataItem>
         <MetadataItem label="Завершено">{formatReportDateOrDash(row.completedAt)}</MetadataItem>

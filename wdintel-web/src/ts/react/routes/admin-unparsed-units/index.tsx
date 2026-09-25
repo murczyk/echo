@@ -10,7 +10,7 @@ import {
   listUnresolvedUnitMessages,
   resolveUnresolvedUnitLabel,
 } from '../../services/api/unresolved-unit-labels';
-import { hasRole } from '../../utils/roles';
+import { hasRole, hasRerOrCyber } from '../../utils/roles';
 import { UnresolvedUnitLinkDialog } from '../admin-unit-unparsed/UnresolvedUnitLinkDialog';
 
 function formatError(error: unknown): string {
@@ -82,9 +82,9 @@ export function AdminUnparsedUnitsPage({
   const linkControllerRef = useRef<AbortController | null>(null);
   const canResolve =
     hasRole(authUserRoles, 'Admin') &&
-    hasRole(authUserRoles, 'Rer') &&
+    hasRerOrCyber(authUserRoles) &&
     hasRole(authUserRoles, 'UnitsEditor');
-  const canCreate = hasRole(authUserRoles, 'Rer') && hasRole(authUserRoles, 'UnitsEditor');
+  const canCreate = hasRerOrCyber(authUserRoles) && hasRole(authUserRoles, 'UnitsEditor');
 
   useEffect(() => {
     loadMoreControllerRef.current?.abort();

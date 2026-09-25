@@ -416,7 +416,8 @@ view isDark _ model =
                             ]
                         ]
             in
-            [ filterMenuBlockCountOutOf
+            [ HtmlX.viewIf model.analysisAorFilterEnabled <|
+              filterMenuBlockCountOutOf
                 { unfold = model.unfoldAorsFilter
                 , toggleMsg = ToggleUnfoldAorsFilter
                 , label = "смуги"
@@ -443,7 +444,8 @@ view isDark _ model =
                 , withGreenCircle = False
                 }
                 tabFiltersSenders
-            , filterMenuBlockCountOutOf
+            , HtmlX.viewIf model.radioFeaturesAllowed <|
+                filterMenuBlockCountOutOf
                 { unfold = model.unfoldFreqsFilter
                 , toggleMsg = ToggleUnfoldFreqsFilter
                 , label = "частоти"
@@ -479,7 +481,8 @@ view isDark _ model =
                 , withGreenCircle = not model.includePelengLocations
                 }
                 tabFiltersLocations
-            , filterMenuBlockCountOutOf
+            , HtmlX.viewIf model.radioFeaturesAllowed <|
+              filterMenuBlockCountOutOf
                 { unfold = model.unfoldPostsFilter
                 , toggleMsg = ToggleUnfoldPostsFilter
                 , label = "пости"
@@ -488,16 +491,18 @@ view isDark _ model =
                 , withGreenCircle = False
                 }
                 tabFiltersPosts
-            , filterMenuBlockCountOutOf
-                { unfold = model.unfoldNetworksFilter
-                , toggleMsg = ToggleUnfoldNetworksFilter
-                , label = "мережі"
-                , mCountLabel = List.length model.networksSelected |> zeroToNothing |> mmap String.fromInt
-                , overallLabel = getOverallOptionsCount (\r -> r.networksCount) model.networksStats
-                , withGreenCircle = False
-                }
-                tabFiltersNetworks
-            , filterMenuBlock
+            , HtmlX.viewIf model.radioFeaturesAllowed <|
+                filterMenuBlockCountOutOf
+                    { unfold = model.unfoldNetworksFilter
+                    , toggleMsg = ToggleUnfoldNetworksFilter
+                    , label = "мережі"
+                    , mCountLabel = List.length model.networksSelected |> zeroToNothing |> mmap String.fromInt
+                    , overallLabel = getOverallOptionsCount (\r -> r.networksCount) model.networksStats
+                    , withGreenCircle = False
+                    }
+                    tabFiltersNetworks
+            , HtmlX.viewIf model.radioFeaturesAllowed <|
+                filterMenuBlock
                 { unfold = model.unfoldMetadataFilter
                 , toggleMsg = ToggleUnfoldMetadataFilter
                 , label = "метадані"
@@ -815,6 +820,7 @@ view isDark _ model =
                             , i [ class "bi-question-circle text-xs text-gray-500 dark:text-gray-400" ] []
                             ]
                         |> Shared.Components.Checkbox.view
+                        |> HtmlX.viewIf model.radioFeaturesAllowed
                     ]
                 ]
 

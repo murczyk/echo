@@ -47,7 +47,7 @@ pub(super) fn pause_promotion_for_test(file_id: Uuid) {
 impl Fixture {
     fn new() -> Self {
         let directory = tempfile::tempdir().unwrap();
-        let handler = TusHandler::new(
+        let handler = TusHandler::new_for_test(
             directory.path().display().to_string(),
             TUS_PATH_BASE,
         );
@@ -458,7 +458,7 @@ async fn chunked_upload_survives_handler_restart_and_resolves_exact_media_bytes(
         .to_str()
         .unwrap();
     assert_eq!(offset(&patch(&fixture, location, 0, b"first").await), 5);
-    let restarted = TusHandler::new(
+    let restarted = TusHandler::new_for_test(
         fixture.directory.path().display().to_string(),
         TUS_PATH_BASE,
     );
@@ -844,7 +844,7 @@ async fn invalid_create_lengths_and_versions_do_not_reserve_files() {
     for (length, expected) in [
         ("0", StatusCode::BAD_REQUEST),
         (
-            &(crate::config::SIGINT_FILE_UPLOAD_MAX_BYTES + 1).to_string(),
+            &(crate::config::SIGINT_FILE_UPLOAD_TEST_MAX_BYTES + 1).to_string(),
             StatusCode::PAYLOAD_TOO_LARGE,
         ),
     ] {
@@ -1380,7 +1380,7 @@ async fn failed_tus_uploads_allow_every_attachment_to_complete_through_fallback(
     let count = crate::config::SIGINT_MESSAGE_MAX_ATTACHMENTS;
     for _ in 0..count {
         let location = fixture
-            .create(crate::config::SIGINT_FILE_UPLOAD_MAX_BYTES)
+            .create(crate::config::SIGINT_FILE_UPLOAD_TEST_MAX_BYTES)
             .await;
         assert_eq!(
             patch(&fixture, &location, 1, b"abc").await.status(),
@@ -1415,7 +1415,9 @@ async fn failed_tus_uploads_allow_every_attachment_to_complete_through_fallback(
 #[actix_web::test]
 async fn multiple_large_attachments_remain_resumable_without_an_aggregate_login_limit(
 ) {
-    let fixture = Fixture::new();
+    let mut fixture = Fixture::new();
+    fixture.handler.config.max_size =
+        Some(crate::config::SIGINT_FILE_UPLOAD_MAX_BYTES);
     let length = 3 * 1024 * 1024 * 1024 / 2;
     for _ in 0..3 {
         let location = fixture.create(length).await;
@@ -1676,10 +1678,10 @@ async fn cancelled_fallback_stream_removes_pending_file() {
     .await;
 
     let first = fixture
-        .create(crate::config::SIGINT_FILE_UPLOAD_MAX_BYTES)
+        .create(crate::config::SIGINT_FILE_UPLOAD_TEST_MAX_BYTES)
         .await;
     let second = fixture
-        .create(crate::config::SIGINT_FILE_UPLOAD_MAX_BYTES)
+        .create(crate::config::SIGINT_FILE_UPLOAD_TEST_MAX_BYTES)
         .await;
     for location in [first, second] {
         assert_eq!(

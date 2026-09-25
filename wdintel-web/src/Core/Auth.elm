@@ -1,4 +1,4 @@
-module Core.Auth exposing (canReadDevices, hasRole, serverModeIs)
+module Core.Auth exposing (canReadDevices, canUseRadioFeatures, canWriteMessages, hasRerOrCyber, hasRole, serverModeIs)
 
 import Bindings as B exposing (User)
 
@@ -36,6 +36,8 @@ hasRole role user =
                 || List.member "Full" user.roles
                 || List.member "Bpla" user.roles
                 || List.member "Rer" user.roles
+                || List.member "Cyber" user.roles
+                || List.member "CyberViewer" user.roles
                 || List.member "Basic" user.roles
 
         "UnitsEditor" ->
@@ -53,6 +55,11 @@ hasRole role user =
         "Cyber" ->
             List.member "Admin" user.roles
                 || List.member "Cyber" user.roles
+
+        "CyberViewer" ->
+            List.member "Admin" user.roles
+                || List.member "Cyber" user.roles
+                || List.member "CyberViewer" user.roles
 
         "DeviceSource" ->
             List.member "Admin" user.roles
@@ -78,9 +85,19 @@ hasRole role user =
             False
 
 
+hasRerOrCyber : User -> Bool
+hasRerOrCyber user =
+    hasRole "Rer" user || hasRole "CyberViewer" user
+
+
+canUseRadioFeatures : User -> Bool
+canUseRadioFeatures user =
+    hasRole "Rer" user
+
+
 canReadDevices : User -> Bool
 canReadDevices user =
-    hasRole "Cyber" user
+    hasRole "CyberViewer" user
 
 
 serverModeIs : String -> Maybe B.ServerInfo -> Bool
@@ -92,3 +109,8 @@ serverModeIs mode mServerInfo =
         Just serverInfo ->
             (serverInfo.mode == "debug")
                 || (mode == serverInfo.mode)
+
+
+canWriteMessages : User -> Bool
+canWriteMessages user =
+    hasRole "Rer" user || hasRole "Cyber" user

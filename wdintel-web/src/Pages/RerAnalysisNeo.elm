@@ -4,7 +4,7 @@ import Auth
 import Config
 import Effect as E exposing (Effect)
 import Html exposing (div, node)
-import Html.Attributes exposing (class, classList)
+import Html.Attributes exposing (attribute, class, classList)
 import Layouts
 import Page exposing (Page)
 import Route exposing (Route)
@@ -26,7 +26,7 @@ page user _ _ =
         { init = init
         , update = update
         , subscriptions = subscriptions
-        , view = view
+        , view = view user
         }
         |> Page.withLayout (toLayout user)
 
@@ -58,8 +58,8 @@ subscriptions _ =
     Sub.none
 
 
-view : Model -> View Msg
-view _ =
+view : Auth.User -> Model -> View Msg
+view user _ =
     { title = "РЕР-аналіз"
     , body =
         [ div
@@ -68,7 +68,9 @@ view _ =
             ]
             [ div [ class "flex-1 min-h-0 w-full" ]
                 [ node "rer-analysis-neo"
-                    [ class "block w-full h-full" ]
+                    [ class "block w-full h-full"
+                    , attribute "data-auth-user-roles" (String.join "," user.roles)
+                    ]
                     []
                 ]
             ]

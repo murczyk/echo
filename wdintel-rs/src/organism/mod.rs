@@ -4,7 +4,7 @@ use crate::error::AppError;
 use crate::organism::bl::*;
 use crate::types::*;
 use crate::users::{
-    ensure_admin, ensure_rer_role, has_any_role, has_role,
+    ensure_admin, ensure_base_role, has_any_role, has_role,
     login_id_from_identity,
 };
 use actix_web::post;
@@ -168,7 +168,7 @@ pub async fn organism_logins(
         Err(AppError::Forbidden(_)) => false,
         Err(err) => return Err(err),
     };
-    let has_palitra_access = match ensure_rer_role(&env.dbx, &user).await {
+    let has_palitra_access = match ensure_base_role(&env.dbx, &user).await {
         Ok(()) => true,
         Err(AppError::Forbidden(_)) => false,
         Err(err) => return Err(err),

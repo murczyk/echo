@@ -13,6 +13,8 @@ vi.mock('@mui/material', () => ({
   ),
 }));
 
+import { MessageWriteAccessContext } from '../message-card/MessageWriteAccess';
+import { canWriteMessages } from '../../../utils/roles';
 import { CreateMessageFab } from './CreateMessageFab';
 
 it('blurs the launcher before opening the drawer', async () => {
@@ -29,3 +31,20 @@ it('blurs the launcher before opening the drawer', async () => {
   root.unmount();
   container.remove();
 });
+
+it.each([['CyberViewer'], ['CyberViewer', 'Cyber'], ['CyberViewer', 'Admin']])(
+  '#3569 applies message creation permissions for %j',
+  async (...roles) => {
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    await act(async () =>
+      root.render(
+        <MessageWriteAccessContext.Provider value={canWriteMessages(roles)}>
+          <CreateMessageFab onClick={vi.fn()} />
+        </MessageWriteAccessContext.Provider>,
+      ),
+    );
+    expect(container.querySelector('button') != null).toBe(roles.length > 1);
+    await act(async () => root.unmount());
+  },
+);

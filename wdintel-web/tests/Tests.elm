@@ -1,5 +1,6 @@
 module Tests exposing (..)
 
+import AnalysisDateRangeTests
 import CoordinatesTests
 import CoreAuthTests
 import Le.Block.UnitTests
@@ -14,7 +15,8 @@ import UnitHierarchyTests
 suite : Test
 suite =
     describe "All Tests"
-        [ Le.Block.UnitTests.suite
+        [ AnalysisDateRangeTests.suite
+        , Le.Block.UnitTests.suite
         , CoreAuthTests.suite
         , Le.Callsign.HintStrategyTests.suite
         , Le.Callsign.MessageHintTests.suite

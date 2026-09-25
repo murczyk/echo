@@ -149,6 +149,24 @@ describe('rer-palitra helpers', () => {
     expect(canEditScopedLogins(makeUser({ roles: [] }))).toBe(false);
   });
 
+  it('#3568 permits Cyber palitra management only within its existing scope', () => {
+    const user = makeUser({ roles: ['Cyber'] });
+    expect(getAvailableAccessTypes(user, makeScope())).toEqual(['logins', 'organisms']);
+    expect(canEditScopedLogins(user)).toBe(false);
+    expect(canModifyPalitra(user, makePalitra(1, null))).toBe(true);
+    expect(canModifyPalitra(user, makePalitra(1, null, 'other'))).toBe(false);
+    expect(
+      applyRestrictedAccess(makeForm({ logins: ['other'] }), user, makeScope()).logins,
+    ).toEqual(['operator']);
+    expect(
+      applyRestrictedAccess(
+        makeForm({ accessType: 'organisms', organismIds: [99] }),
+        user,
+        makeScope(),
+      ).organismIds,
+    ).toEqual([5]);
+  });
+
   it('allows palitra row mutations only for admins or Rer users who authored the palitra', () => {
     const palitra = makePalitra(1, null, 'operator');
 

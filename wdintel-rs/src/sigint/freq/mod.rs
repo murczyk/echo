@@ -8,7 +8,7 @@ use crate::rer_importer::callsigns::{
 use crate::rer_importer::types::RerCallsignInfoBatchReq;
 use crate::sigint::sender::message_ids_for_senders;
 use crate::types::*;
-use crate::users::{ensure_rer_role, has_any_role, login_id_from_identity};
+use crate::users::{ensure_base_role, has_any_role, login_id_from_identity};
 use crate::utils::*;
 use actix_web::post;
 use actix_web::web::{Data, Json};
@@ -37,7 +37,7 @@ pub async fn freq_activity_daily(
     env: actix_web::web::Data<Env>,
     req: Json<FreqStatsReq>,
 ) -> Result<Json<FreqDailyActivityCount>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
     let req = req.into_inner();
     let freq = req.freq;
@@ -144,7 +144,7 @@ pub async fn list_alt_unit_by_freqs(
     env: actix_web::web::Data<Env>,
     req: Json<ListAltUnitByFreqsReq>,
 ) -> Result<Json<HashMap<String, Vec<FreqAltUnitMessageCount>>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
     let mut alt_units = signal_message::Entity::find()
@@ -209,7 +209,7 @@ pub async fn list_points_by_freq(
     env: actix_web::web::Data<Env>,
     req: Json<ListPointsByFreqReq>,
 ) -> Result<Json<ListPointsByFreqRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
     let points = signal_message::Entity::find()
@@ -258,7 +258,7 @@ pub async fn list_groups_by_freqs_per_day(
     req: Json<ListGroupsByFreqsPerDayReq>,
 ) -> Result<Json<HashMap<String, HashMap<i64, HashMap<String, i64>>>>, AppError>
 {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
     let dt_cutoff = dt_till - chrono::Duration::days(10);
     let mut dt_since =
@@ -391,7 +391,7 @@ pub async fn list_callsigns_by_freqs(
     env: actix_web::web::Data<Env>,
     req: Json<ListCallsignsByFreqsReq>,
 ) -> Result<Json<HashMap<String, Vec<String>>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let callsigns_by_freq =
         load_callsigns_by_freqs(&env, &user, &req).await.c(h!())?;
     Ok(Json(
@@ -408,7 +408,7 @@ pub async fn list_callsigns_by_freqs_summary(
     env: actix_web::web::Data<Env>,
     req: Json<ListCallsignsByFreqsReq>,
 ) -> Result<Json<HashMap<String, FreqCallsignSummary>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let callsigns_by_freq =
         load_callsigns_by_freqs(&env, &user, &req).await.c(h!())?;
     let summaries =
@@ -484,7 +484,7 @@ pub async fn list_callsign_priorities(
     env: actix_web::web::Data<Env>,
     req: Json<RerCallsignInfoBatchReq>,
 ) -> Result<Json<Vec<FreqCallsignPriority>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let unit_ids_by_callsign =
         load_callsign_priority_unit_ids(&env.dbx, &req.callsigns)
             .await
@@ -703,7 +703,7 @@ pub async fn list_freqs(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Api"],
+        vec!["Rer", "CyberViewer", "Api"],
     )
     .await?;
     let login = login_id_from_identity(&user)?;
@@ -1067,7 +1067,7 @@ pub async fn list_freqs_v2(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Api"],
+        vec!["Rer", "CyberViewer", "Api"],
     )
     .await?;
     let login = login_id_from_identity(&user)?;
@@ -1484,7 +1484,7 @@ pub async fn latest_frequencies(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<String>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
     let groups =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -1563,7 +1563,7 @@ pub async fn freq_unit_stats(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<FreqUnitStatsRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
 
     #[derive(FromQueryResult)]
     struct Row {
@@ -1647,7 +1647,7 @@ pub async fn callsigns_for_filter(
     req: Json<CallsignsForFreqReq>,
 ) -> Result<Json<CallsignsForFreqRsp>, AppError> {
     println!("getting filters for callsigns-filter call: {:?}", req.freq);
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
 
     let req = req.into_inner();
@@ -1703,7 +1703,7 @@ pub async fn freq_exists(
     env: actix_web::web::Data<Env>,
     req: Json<FreqExistsReq>,
 ) -> Result<Json<()>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
 
     let master_keys =
@@ -1758,7 +1758,7 @@ pub async fn list_freqs_for_period(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Api"],
+        vec!["Rer", "CyberViewer", "Api"],
     )
     .await?;
     let login = login_id_from_identity(&user)?;
@@ -1807,9 +1807,13 @@ pub async fn freq_search(
     env: actix_web::web::Data<Env>,
     req: Json<FreqSearchReq>,
 ) -> Result<Json<FreqSearchRsp>, AppError> {
-    has_any_role(&env.dbx, &login_id_from_identity(&user)?, vec!["Rer"])
-        .await
-        .c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &login_id_from_identity(&user)?,
+        vec!["Rer", "CyberViewer"],
+    )
+    .await
+    .c(h!())?;
 
     let search_phrase = req.search.trim().to_lowercase();
 

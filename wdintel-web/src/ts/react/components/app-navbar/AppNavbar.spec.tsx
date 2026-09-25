@@ -103,10 +103,10 @@ describe('AppNavbar', () => {
     expect(logoImg).not.toBeUndefined();
   });
 
-  it('renders main navigation elements for Rer role', () => {
+  it.each(['Rer', 'Cyber', 'CyberViewer'])('#3568 renders main navigation for %s', (role) => {
     const { container } = renderComponent({
       ...defaultProps,
-      user: { ...defaultProps.user, roles: ['Rer'] },
+      user: { ...defaultProps.user, roles: [role] },
     });
     const content = container.textContent;
     expect(content).toContain('Оперативний');
@@ -116,6 +116,27 @@ describe('AppNavbar', () => {
     // Admin should not be present
     expect(content).not.toContain('Адмін');
   });
+
+  it.each([
+    ['Cyber'],
+    ['Cyber', 'UnitsEditor'],
+    ['Rer'],
+    ['Rer', 'Cyber'],
+    ['Admin'],
+    ['Full', 'Cyber'],
+  ])(
+    '#3568 hides frequency and signal database links only without effective Rer: %j',
+    (...roles) => {
+      const { container } = renderComponent({
+        ...defaultProps,
+        user: { ...defaultProps.user, roles },
+      });
+      const allowed = roles.some((role) => ['Rer', 'Admin', 'Full'].includes(role));
+      expect(Boolean(container.querySelector('a[href="/rer-signals"]'))).toBe(allowed);
+      expect(Boolean(container.querySelector('a[href="/rer-freqs"]'))).toBe(allowed);
+      expect(container.querySelector('a[href="/rer-networks-neo"]')).not.toBeNull();
+    },
+  );
 
   it('uses the same mobile left padding for linked and button menu entries', () => {
     const { container } = renderComponent({
@@ -208,21 +229,24 @@ describe('AppNavbar', () => {
     expect(container.textContent).not.toContain('Статистика');
   });
 
-  it('keeps documentation and statistics links for users without AI chat role', () => {
-    const { container } = renderComponent({
-      ...defaultProps,
-      user: { ...defaultProps.user, roles: ['Rer', 'ApiAgent'] },
-    });
+  it.each(['Rer', 'Cyber', 'CyberViewer'])(
+    '#3568 keeps ApiAgent excluded from %s AI chat access',
+    (role) => {
+      const { container } = renderComponent({
+        ...defaultProps,
+        user: { ...defaultProps.user, roles: [role, 'ApiAgent'] },
+      });
 
-    act(() => {
-      window.dispatchEvent(
-        new CustomEvent('ai-agent-availability', { detail: { enabled: false } }),
-      );
-    });
+      act(() => {
+        window.dispatchEvent(
+          new CustomEvent('ai-agent-availability', { detail: { enabled: false } }),
+        );
+      });
 
-    expect(container.textContent).toContain('Документація');
-    expect(container.textContent).toContain('Статистика');
-  });
+      expect(container.textContent).toContain('Документація');
+      expect(container.textContent).toContain('Статистика');
+    },
+  );
 
   it('renders Admin menu when user has Admin role', () => {
     const { container } = renderComponent({
@@ -356,7 +380,7 @@ describe('AppNavbar', () => {
     const content = container.textContent;
     expect(content).toContain('База даних');
     expect(content).toContain('Пристрої');
-    expect(content).not.toContain('Мережі');
+    expect(content).toContain('Мережі');
   });
 
   it('hides Devices when the Devices section is disabled or read role is missing', () => {

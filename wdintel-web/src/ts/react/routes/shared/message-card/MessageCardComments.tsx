@@ -1,3 +1,4 @@
+import { AuthorLabel } from '../../../components/AuthorLabel';
 import { Box, Button, Stack, Typography } from '@mui/material';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -24,9 +25,11 @@ function commentAuthorLabel(
 export function MessageCardComments({
   messageComments,
   signalMessageSenderLabel,
+  signalMessageSenderId,
 }: {
   messageComments: MessageComment[];
   signalMessageSenderLabel?: string | null;
+  signalMessageSenderId?: string | null;
 }) {
   const [showOtherCommentsRest, setShowOtherCommentsRest] = useState(false);
   const hasOtherCommentsRest = messageComments.length > OTHER_COMMENTS_PREVIEW_COUNT;
@@ -97,7 +100,16 @@ export function MessageCardComments({
               minWidth: 0,
             }}
           >
-            {commentAuthorLabel(comment, signalMessageSenderLabel)}
+            {comment.sigintPostName?.trim() ? (
+              comment.sigintPostName.trim()
+            ) : comment.login.trim() === SYSTEM_COMMENT_LOGIN ? (
+              <AuthorLabel
+                accountId={signalMessageSenderId}
+                fallback={commentAuthorLabel(comment, signalMessageSenderLabel)}
+              />
+            ) : (
+              <AuthorLabel login={comment.login} />
+            )}
           </Typography>
           <Typography
             variant="body2"

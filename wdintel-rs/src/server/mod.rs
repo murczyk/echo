@@ -1138,6 +1138,8 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::users::api_user_info)
             .service(crate::users::user_logout)
             .service(crate::users::settings_save)
+            .service(crate::users::display_name::save)
+            .service(crate::users::display_name::authors)
             .service(crate::user_settings::user_settings_get)
             .service(crate::user_settings::user_settings_put)
             .service(crate::users::user_sigint_groups)

@@ -1,6 +1,7 @@
 /** @vitest-environment happy-dom */
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
+import { createTheme, ThemeProvider } from '@mui/material';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FeedNotificationPanel } from './FeedNotificationPanel';
 
@@ -15,6 +16,7 @@ const api = vi.hoisted(() => ({
   permission: vi.fn(async () => 'denied'),
 }));
 const DUTY_NOTIFICATION_STATUS_CHANGE_EVENT = 'duty-notification-status-change';
+const darkTheme = createTheme({ palette: { mode: 'dark' } });
 vi.mock('./notifications', () => ({
   DUTY_NOTIFICATION_STATUS_CHANGE_EVENT: 'duty-notification-status-change',
   DutyBrowserNotificationStatus: {
@@ -86,7 +88,11 @@ async function renderPanel(
     ...props,
   };
   await act(async () => {
-    root.render(<FeedNotificationPanel {...panelProps} />);
+    root.render(
+      <ThemeProvider theme={darkTheme}>
+        <FeedNotificationPanel {...panelProps} />
+      </ThemeProvider>,
+    );
   });
   cleanup = () => {
     act(() => root.unmount());

@@ -1,3 +1,4 @@
+import { useRadioFeatures } from '../../shared/RadioFeatures';
 import ExpandMoreOutlinedIcon from '@mui/icons-material/ExpandMoreOutlined';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import {
@@ -130,9 +131,10 @@ function NetworkEditDrawerComponent({
   frequencyOptional = false,
   unitMaskVisible = false,
 }: Props) {
+  const radioFeaturesAllowed = useRadioFeatures();
   const titleId = 'network-edit-drawer-title';
   const includeFrequency =
-    form !== null && mode === 'create'
+    radioFeaturesAllowed && form !== null && mode === 'create'
       ? shouldIncludeNetworkCreateFrequency(form, frequencyOptional)
       : false;
   const validation = getNetworkUpsertValidationError(form, { includeFrequency });
@@ -418,34 +420,38 @@ function NetworkEditDrawerComponent({
                     label="Не архівувати автоматично"
                   />
 
-                  <Autocomplete<LookupOption, true, false, false>
-                    multiple
-                    disableCloseOnSelect
-                    filterSelectedOptions
-                    fullWidth
-                    size="small"
-                    options={postOptions}
-                    value={selectedPosts}
-                    loading={referenceLoading}
-                    disabled={formBlocked}
-                    loadingText={LOADING_TEXT}
-                    noOptionsText={referenceLoading ? LOADING_TEXT : 'Немає варіантів'}
-                    getOptionLabel={(option) => option.label}
-                    isOptionEqualToValue={(option, value) => option.id === value.id}
-                    onChange={handleAutocompleteChange('postIds')}
-                    filterOptions={networkEditLookupFilterOptions}
-                    slotProps={NEO_AUTOCOMPLETE_SLOT_PROPS}
-                    renderInput={(params) => <TextField {...params} label="Пости" size="small" />}
-                  />
+                  {radioFeaturesAllowed ? (
+                    <Autocomplete<LookupOption, true, false, false>
+                      multiple
+                      disableCloseOnSelect
+                      filterSelectedOptions
+                      fullWidth
+                      size="small"
+                      options={postOptions}
+                      value={selectedPosts}
+                      loading={referenceLoading}
+                      disabled={formBlocked}
+                      loadingText={LOADING_TEXT}
+                      noOptionsText={referenceLoading ? LOADING_TEXT : 'Немає варіантів'}
+                      getOptionLabel={(option) => option.label}
+                      isOptionEqualToValue={(option, value) => option.id === value.id}
+                      onChange={handleAutocompleteChange('postIds')}
+                      filterOptions={networkEditLookupFilterOptions}
+                      slotProps={NEO_AUTOCOMPLETE_SLOT_PROPS}
+                      renderInput={(params) => <TextField {...params} label="Пости" size="small" />}
+                    />
+                  ) : null}
 
-                  <TextField
-                    label="Радіостанція"
-                    value={form.radioStation}
-                    onChange={(event) => onChange({ ...form, radioStation: event.target.value })}
-                    disabled={formBlocked}
-                    fullWidth
-                    size="small"
-                  />
+                  {radioFeaturesAllowed ? (
+                    <TextField
+                      label="Радіостанція"
+                      value={form.radioStation}
+                      onChange={(event) => onChange({ ...form, radioStation: event.target.value })}
+                      disabled={formBlocked}
+                      fullWidth
+                      size="small"
+                    />
+                  ) : null}
 
                   {mode === 'edit' ? (
                     <FormControl fullWidth size="small" disabled={formBlocked}>
@@ -465,7 +471,7 @@ function NetworkEditDrawerComponent({
                 </Stack>
               </DrawerSection>
 
-              {mode === 'create' ? (
+              {radioFeaturesAllowed && mode === 'create' ? (
                 <>
                   <Box
                     sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 1.75 }}

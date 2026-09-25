@@ -14,7 +14,7 @@ use crate::h;
 use crate::logging::warn;
 use crate::messenger::media::MediaUploadInput;
 use crate::types::{Env, ShortContext};
-use crate::users::{ensure_rer_role, login_id_from_identity};
+use crate::users::{ensure_base_role, login_id_from_identity};
 use actix_web::http::header;
 use actix_web::{get, web, HttpResponse};
 use md5::{Digest, Md5};
@@ -374,7 +374,7 @@ async fn authorized_job(
     ),
     AppError,
 > {
-    ensure_rer_role(&env.dbx, user).await.c(h!())?;
+    ensure_base_role(&env.dbx, user).await.c(h!())?;
     let login = login_id_from_identity(user).c(h!())?;
     let media = signal_message_media::Entity::find_by_id(media_id)
         .one(&env.dbx)

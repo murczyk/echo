@@ -1,6 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
+import { RadioFeaturesProvider } from '../../shared/RadioFeatures';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { describe, expect, it, vi } from 'vitest';
@@ -37,19 +38,23 @@ describe('AnalysisCallsignsPane', () => {
 
     act(() => {
       root.render(
-        <AnalysisCallsignsPane
-          callsignOptions={[]}
-          loading={false}
-          onClearCallsign={onClearCallsign}
-          onAddFreq={onAddFreq}
-          selectedCallsigns={['ALPHA']}
-          selectedFreqs={[]}
-          topCallsigns={[{ key: 'ALPHA', count: 2 }]}
-          onAddCallsign={onAddCallsign}
-          onSearchFrequencyMatches={onSearchFrequencyMatches}
-          onToggleCallsign={onToggleCallsign}
-          onToggleFreq={onToggleFreq}
-        />,
+        <RadioFeaturesProvider allowed>
+          {
+            <AnalysisCallsignsPane
+              callsignOptions={[]}
+              loading={false}
+              onClearCallsign={onClearCallsign}
+              onAddFreq={onAddFreq}
+              selectedCallsigns={['ALPHA']}
+              selectedFreqs={[]}
+              topCallsigns={[{ key: 'ALPHA', count: 2 }]}
+              onAddCallsign={onAddCallsign}
+              onSearchFrequencyMatches={onSearchFrequencyMatches}
+              onToggleCallsign={onToggleCallsign}
+              onToggleFreq={onToggleFreq}
+            />
+          }
+        </RadioFeaturesProvider>,
       );
     });
 

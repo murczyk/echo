@@ -18,6 +18,7 @@ import type { CallsignDraftRow, ExportPermission, UiStatus } from './types';
 type SetState<T> = Dispatch<SetStateAction<T>>;
 
 type Args = {
+  radioFeaturesAllowed: boolean;
   permissions: ExportPermission;
   addUnitId: number | null;
   addSourceId: number | null;
@@ -40,6 +41,7 @@ type Args = {
 };
 
 export function useRerCallsignsNeoPageAddActions({
+  radioFeaturesAllowed,
   permissions,
   addUnitId,
   addSourceId,
@@ -191,7 +193,7 @@ export function useRerCallsignsNeoPageAddActions({
       return;
     }
 
-    const validation = validateDraftRows(addRows, addSourceId);
+    const validation = validateDraftRows(addRows, addSourceId, radioFeaturesAllowed);
     if (!validation.valid) {
       if (validation.error === 'Заповніть хоча б один рядок') return;
       setAddValidationError(validation.error);
@@ -255,6 +257,7 @@ export function useRerCallsignsNeoPageAddActions({
     addSourceId,
     addUnitId,
     permissions.canEdit,
+    radioFeaturesAllowed,
     refreshLookupsAndStats,
     resetAddDrawerState,
     setAddDuplicateHintsEnabled,

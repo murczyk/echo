@@ -15,6 +15,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import type { CSSProperties } from 'react';
 
 import type { DeviceFileRoot, DeviceFileTreeEntry } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -91,6 +92,8 @@ function DeviceFileRow({
   return (
     <Box
       component="li"
+      className="max-echo-lg:pl-[min(calc(var(--device-tree-depth)*8px+8px),40px)]!"
+      style={{ '--device-tree-depth': depth } as CSSProperties}
       sx={{
         minWidth: 0,
         display: 'flex',
@@ -108,7 +111,7 @@ function DeviceFileRow({
         onClick={() => files.selectFile(entry)}
         className={`min-h-echo-control-md min-w-0 rounded-echo-sm! ${selected ? 'bg-echo-primary/15!' : ''} ${entry.hasContent ? '' : 'opacity-55'}`}
       >
-        <Box sx={{ width: 36, flexShrink: 0 }} />
+        <Box className="max-echo-lg:hidden" sx={{ width: 36, flexShrink: 0 }} />
         <InsertDriveFileOutlinedIcon
           fontSize="small"
           color={selected ? 'primary' : 'action'}
@@ -149,7 +152,7 @@ function BranchStatus({
 }) {
   if (branch?.loading) {
     return (
-      <Box component="li" sx={{ py: 1, pl: 5 + depth * 2 }}>
+      <Box component="li" className="max-echo-lg:pl-echo-lg!" sx={{ py: 1, pl: 5 + depth * 2 }}>
         <CircularProgress size={20} aria-label={`Завантаження каталогу ${node.name}`} />
       </Box>
     );
@@ -157,7 +160,11 @@ function BranchStatus({
 
   if (branch?.error) {
     return (
-      <Box component="li" sx={{ px: 1, pl: 2 + depth * 2, py: 0.5 }}>
+      <Box
+        component="li"
+        className="max-echo-lg:pl-echo-lg!"
+        sx={{ px: 1, pl: 2 + depth * 2, py: 0.5 }}
+      >
         <PowerAlert
           severity="error"
           autoHideDuration={null}
@@ -177,6 +184,7 @@ function BranchStatus({
     return (
       <Typography
         component="li"
+        className="max-echo-lg:pl-echo-lg!"
         variant="caption"
         color="text.secondary"
         sx={{ display: 'block', py: 0.75, pl: 5 + depth * 2, pr: 1 }}
@@ -199,8 +207,15 @@ function DeviceFileDirectory({ node, depth, files }: DirectoryProps) {
     subtreeFileCount === null ? null : fileCountDescription(subtreeFileCount);
 
   return (
-    <Box component="li" sx={{ minWidth: 0 }}>
-      <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', pl: depth * 2, pr: 0.5 }}>
+    <Box
+      component="li"
+      style={{ '--device-tree-depth': depth } as CSSProperties}
+      sx={{ minWidth: 0 }}
+    >
+      <Box
+        className="max-echo-lg:pl-[min(calc(var(--device-tree-depth)*8px),32px)]!"
+        sx={{ minWidth: 0, display: 'flex', alignItems: 'center', pl: depth * 2, pr: 0.5 }}
+      >
         <PowerIconButton
           size="small"
           aria-expanded={expanded}
@@ -266,7 +281,11 @@ function DeviceFileDirectory({ node, depth, files }: DirectoryProps) {
             ),
           )}
           {branch?.loadMoreError ? (
-            <Box component="li" sx={{ px: 1, pl: 2 + depth * 2, py: 0.5 }}>
+            <Box
+              component="li"
+              className="max-echo-lg:pl-echo-lg!"
+              sx={{ px: 1, pl: 2 + depth * 2, py: 0.5 }}
+            >
               <PowerAlert
                 severity="error"
                 autoHideDuration={null}
@@ -284,7 +303,11 @@ function DeviceFileDirectory({ node, depth, files }: DirectoryProps) {
             </Box>
           ) : null}
           {branch?.nextCursor !== null && branch?.nextCursor !== undefined ? (
-            <Box component="li" sx={{ py: 0.75, pl: 5 + depth * 2, pr: 1 }}>
+            <Box
+              component="li"
+              className="max-echo-lg:pl-echo-lg!"
+              sx={{ py: 0.75, pl: 5 + depth * 2, pr: 1 }}
+            >
               <PowerButton
                 size="small"
                 variant="text"

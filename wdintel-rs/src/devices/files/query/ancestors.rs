@@ -5,9 +5,11 @@ use crate::devices::files::{
 };
 use crate::file_registry::entities::file_entry;
 use crate::h;
-use sea_orm::sea_query::{Alias, Expr, Func, SimpleExpr};
+use sea_orm::sea_query::{
+    extension::postgres::PgFunc, Alias, Expr, Func, SimpleExpr,
+};
 use sea_orm::{
-    ColumnTrait, Condition, ConnectionTrait, EntityTrait, QueryFilter,
+    ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter,
     QueryOrder, Select,
 };
 use std::collections::HashMap;
@@ -42,7 +44,7 @@ pub(in crate::devices::files) async fn load_path_components(
         .iter()
         .map(tree_entry_hierarchy_path)
         .collect::<Vec<_>>();
-    let rows = path_context_query(device_id, &hierarchy_paths)
+    let rows = path_context_query(device_id, &hierarchy_paths)?
         .all(db)
         .await
         .map_err(|error| {
@@ -55,19 +57,20 @@ pub(in crate::devices::files) async fn load_path_components(
 pub(super) fn path_context_query(
     device_id: Uuid,
     hierarchy_paths: &[&str],
-) -> Select<file_entry::Entity> {
-    let path_conditions = hierarchy_paths.iter().fold(
-        Condition::any(),
-        |conditions, hierarchy_path| {
-            conditions.add(ltree::ancestor_expr(hierarchy_path))
-        },
-    );
+) -> Result<Select<file_entry::Entity>, FilesystemError> {
+    let mut entry_ids = Vec::new();
+    for hierarchy_path in hierarchy_paths {
+        entry_ids.extend(ltree::hierarchy_entry_ids(hierarchy_path)?);
+    }
+    entry_ids.sort_unstable();
+    entry_ids.dedup();
 
-    file_entry::Entity::find()
+    Ok(file_entry::Entity::find()
         .filter(file_entry::Column::DeviceId.eq(device_id))
-        .filter(path_conditions)
-        .order_by_asc(hierarchy_depth_expr())
-        .order_by_asc(file_entry::Column::Id)
+        .filter(
+            Expr::col((file_entry::Entity, file_entry::Column::Id))
+                .eq(PgFunc::any(Expr::val(entry_ids))),
+        ))
 }
 
 pub(super) fn breadcrumbs_query(

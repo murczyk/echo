@@ -5,7 +5,7 @@ use crate::event_stream::fanout;
 use crate::event_stream::types::*;
 use crate::types::*;
 use crate::users::{
-    ensure_rer_role, has_any_role, has_role, login_id_from_identity,
+    ensure_base_role, has_any_role, has_role, login_id_from_identity,
 };
 use actix_web::post;
 use actix_web::web::Json;
@@ -26,7 +26,7 @@ pub async fn list_signals(
     env: actix_web::web::Data<Env>,
     req: Json<ListSignalsReq>,
 ) -> Result<Json<ListSignalsRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     const LIMIT: u64 = 100000;
 
     let signals = list_signals_impl(&env.dbx, &req.0, Some(LIMIT))
@@ -46,7 +46,7 @@ pub async fn list_signals_csv(
     req: Json<ListSignalsReq>,
     http_req: actix_web::HttpRequest,
 ) -> Result<actix_web::HttpResponse, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
 
     let signals = list_signals_impl(&env.dbx, &req.0, None).await.c(h!())?;
     let sigint_unit_ids: Vec<i64> = signals
@@ -125,23 +125,39 @@ async fn list_signals_impl(
     let q = sigint_signal::Entity::find()
         .find_also_related(sigint_unit::Entity)
         .filter(sigint_signal::Column::Deleted.eq(false))
-        .apply_if(req.filter_text.as_ref(), |q, text| {
-            q.filter(
-                Expr::col(sigint_signal::Column::Text)
-                    .ilike(format!("%{text}%")),
-            )
-        })
-        .apply_if(req.filter_meaning.as_ref(), |q, meaning| {
-            q.filter(
-                Expr::col(sigint_signal::Column::Meaning)
-                    .ilike(format!("%{meaning}%")),
-            )
-        })
-        .apply_if(req.filter_unit.as_ref(), |q, unit| {
-            q.filter(
-                Expr::col(sigint_unit::Column::Name).ilike(format!("%{unit}%")),
-            )
-        });
+        .apply_if(
+            req.filter_text
+                .as_ref()
+                .filter(|text| !text.trim().is_empty()),
+            |q, text| {
+                q.filter(
+                    Expr::col(sigint_signal::Column::Text)
+                        .ilike(format!("%{text}%")),
+                )
+            },
+        )
+        .apply_if(
+            req.filter_meaning
+                .as_ref()
+                .filter(|meaning| !meaning.trim().is_empty()),
+            |q, meaning| {
+                q.filter(
+                    Expr::col(sigint_signal::Column::Meaning)
+                        .ilike(format!("%{meaning}%")),
+                )
+            },
+        )
+        .apply_if(
+            req.filter_unit
+                .as_ref()
+                .filter(|unit| !unit.trim().is_empty()),
+            |q, unit| {
+                q.filter(
+                    Expr::col(sigint_unit::Column::Name)
+                        .ilike(format!("%{unit}%")),
+                )
+            },
+        );
     let q = req.sort_by.iter().fold(q, |q, sort_by| match sort_by {
         ListSignalsSortBy::SignalsCreatedAtAsc => {
             q.order_by_asc(sigint_signal::Column::CreatedAt)
@@ -180,7 +196,7 @@ pub async fn signal_unit_stats(
     env: actix_web::web::Data<Env>,
     _req: Json<()>,
 ) -> Result<Json<SignalUnitStatsRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     #[derive(FromQueryResult)]
     struct Row {
         unit_id: i64,
@@ -230,7 +246,7 @@ pub async fn create_signal(
     env: actix_web::web::Data<Env>,
     req: Json<CreateSignalReq>,
 ) -> Result<Json<i64>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .c(h!())?;
@@ -289,7 +305,7 @@ pub async fn update_signal(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateSignalReq>,
 ) -> Result<Json<i64>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .c(h!())?;
@@ -343,7 +359,7 @@ pub async fn delete_signal(
     env: actix_web::web::Data<Env>,
     req: Json<i64>,
 ) -> Result<Json<i64>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .c(h!())?;
@@ -394,15 +410,57 @@ pub fn render_signal(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::functest::tests::cleanup;
+    use serial_test::serial;
+
+    #[actix_web::test]
+    #[serial]
+    async fn empty_filters_keep_signals_without_unit_or_meaning() {
+        let env = cleanup().await.unwrap();
+        let signal = sigint_signal::ActiveModel {
+            text: Set("unitless signal".to_string()),
+            meaning: Set(None),
+            unit: Set(None),
+            coordinates: Set(None),
+            deleted: Set(false),
+            created_at: Set(chrono::Utc::now().naive_utc()),
+            sigint_origin_id: Set(None),
+            original_id: Set(None),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let req = ListSignalsReq {
+            sort_by: Vec::new(),
+            filter_text: Some(String::new()),
+            filter_meaning: Some(String::new()),
+            filter_unit: Some(String::new()),
+        };
+
+        let signals = list_signals_impl(&env.dbx, &req, Some(100_000))
+            .await
+            .unwrap();
+        assert!(signals.iter().any(|row| row.id == signal.id));
+    }
+}
+
 #[post("/api/sigint/signal-name/search")]
 pub async fn signal_name_search(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
     req: Json<SignalSearchReq>,
 ) -> Result<Json<SignalSearchRsp>, AppError> {
-    has_any_role(&env.dbx, &login_id_from_identity(&user)?, vec!["Rer"])
-        .await
-        .c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &login_id_from_identity(&user)?,
+        vec!["Rer", "CyberViewer"],
+    )
+    .await
+    .c(h!())?;
 
     let search_phrase = req.search.trim();
 

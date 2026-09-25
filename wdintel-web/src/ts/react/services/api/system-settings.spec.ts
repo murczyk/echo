@@ -33,6 +33,9 @@ describe('system settings audio transcription mapping', () => {
     expect(settings[0].enableAudioTranscription).toBe(false);
     expect(settings[0].showPelengDistanceToBattleline).toBe(false);
     expect(settings[0].disableBotTags).toBe(false);
+    expect(settings[0].dutyExcludeMenuEnabled).toBe(true);
+    expect(settings[0].analysisAorFilterEnabled).toBe(true);
+    expect(settings[0].twoFactorAuthEnabled).toBe(true);
   });
 
   it('writes the audio transcription flag in create requests', async () => {
@@ -52,6 +55,9 @@ describe('system settings audio transcription mapping', () => {
       supportNonRerInterceptions: false,
       defaultNeoAnalysis: false,
       disableBotTags: true,
+      dutyExcludeMenuEnabled: false,
+      analysisAorFilterEnabled: false,
+      twoFactorAuthEnabled: false,
       autofixEchoimMissingMessages: false,
       devicesSectionEnabled: false,
       sigintCommentParsingEnabled: false,
@@ -71,6 +77,9 @@ describe('system settings audio transcription mapping', () => {
         rer_duty_test_replay_interval_sec: 3,
         show_peleng_distance_to_battleline: false,
         disable_bot_tags: true,
+        duty_exclude_menu_enabled: false,
+        analysis_aor_filter_enabled: false,
+        two_factor_auth_enabled: false,
       }),
     );
   });

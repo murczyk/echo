@@ -19,6 +19,7 @@ import Page exposing (Page)
 import Route exposing (Route)
 import Route.Path
 import Shared
+import Shared.Components.AuthorLabel
 import Shared.Components.Button as Button
 import Shared.Components.ModalDialog as ModalDialog
 import Shared.Components.Spinner
@@ -1164,8 +1165,12 @@ changelogEntryView shared entry =
                     (Utils.Time.renderDateTimeF1 shared.timeZone
                         (Time.millisToPosix entry.createdAt)
                         ++ " · "
-                        ++ changelogAuthor entry.author
                     )
+                , if entry.author == "system" then
+                    text (changelogAuthor entry.author)
+
+                  else
+                    Shared.Components.AuthorLabel.view entry.author
                 ]
             ]
         , if List.isEmpty entry.changes then

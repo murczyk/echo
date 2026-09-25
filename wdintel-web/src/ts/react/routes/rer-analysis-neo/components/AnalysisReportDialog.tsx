@@ -1,3 +1,4 @@
+import { canUseRadioFeatures } from '../../../utils/roles';
 import DownloadIcon from '@mui/icons-material/Download';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -321,11 +322,12 @@ export function AnalysisReportDialog({
   focusReturnTargetRef,
   fallbackFocusTargetRef,
 }: Props) {
+  const radioFeaturesAllowed = canUseRadioFeatures(currentUser?.roles);
   const titleId = useId().replace(/:/g, '-');
   const appliedFilters = describeAppliedReportFilters(queryState, report);
   const builderMode = reportTemplateToMode(report.template);
   const hasAdvancedReportAccess = canUseAdvancedReports(currentUser);
-  const visibleReportTemplateOptions = supportNonRerInterceptions
+  const availableReportTemplateOptions = supportNonRerInterceptions
     ? [
         ...reportTemplateOptions,
         {
@@ -340,6 +342,11 @@ export function AnalysisReportDialog({
         },
       ]
     : reportTemplateOptions;
+  const visibleReportTemplateOptions = availableReportTemplateOptions.filter(
+    (option) =>
+      radioFeaturesAllowed ||
+      !['pelengs', 'reo', 'mouse', 'report_125', 'posts_docx'].includes(option.id),
+  );
   const isBabakOrInterception = report.template === 'babak' || report.template === 'interception';
   const disableBabakUnitCommentsFilter = report.template === 'babak' && report.withoutComments;
   const showReportTagsOnlyThisUnit = [
@@ -464,7 +471,10 @@ export function AnalysisReportDialog({
             <Tabs
               value={builderMode}
               onChange={(_event, value) =>
-                onUpdate({ template: value === 'exports' ? 'summary_table' : 'tags' })
+                onUpdate({
+                  template:
+                    value === 'exports' ? (radioFeaturesAllowed ? 'summary_table' : 'kmz') : 'tags',
+                })
               }
               variant="scrollable"
               allowScrollButtonsMobile
@@ -522,29 +532,31 @@ export function AnalysisReportDialog({
               </Stack>
             ) : (
               <Box sx={analysisReportTemplateGridSx}>
-                {exportTemplateOptions.map((option) => (
-                  <Button
-                    key={option.id}
-                    variant={report.template === option.id ? 'contained' : 'outlined'}
-                    onClick={() => onUpdate({ template: option.id })}
-                    sx={{
-                      alignItems: 'flex-start',
-                      justifyContent: 'flex-start',
-                      textAlign: 'left',
-                      p: 2,
-                      minWidth: 0,
-                      width: '100%',
-                      height: '100%',
-                    }}
-                  >
-                    <Stack alignItems="flex-start" spacing={0.75}>
-                      <Typography variant="subtitle2">{option.title}</Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {option.description}
-                      </Typography>
-                    </Stack>
-                  </Button>
-                ))}
+                {exportTemplateOptions
+                  .filter((option) => radioFeaturesAllowed || option.id !== 'summary_table')
+                  .map((option) => (
+                    <Button
+                      key={option.id}
+                      variant={report.template === option.id ? 'contained' : 'outlined'}
+                      onClick={() => onUpdate({ template: option.id })}
+                      sx={{
+                        alignItems: 'flex-start',
+                        justifyContent: 'flex-start',
+                        textAlign: 'left',
+                        p: 2,
+                        minWidth: 0,
+                        width: '100%',
+                        height: '100%',
+                      }}
+                    >
+                      <Stack alignItems="flex-start" spacing={0.75}>
+                        <Typography variant="subtitle2">{option.title}</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {option.description}
+                        </Typography>
+                      </Stack>
+                    </Button>
+                  ))}
               </Box>
             )}
           </Stack>
@@ -569,7 +581,9 @@ export function AnalysisReportDialog({
                   }
                 >
                   <MenuItem value="ByTime">За часом</MenuItem>
-                  <MenuItem value="ByFreqThenTime">За частотою та часом</MenuItem>
+                  {radioFeaturesAllowed ? (
+                    <MenuItem value="ByFreqThenTime">За частотою та часом</MenuItem>
+                  ) : null}
                 </Select>
               </FormControl>
               <ReportCheckboxLabel
@@ -601,28 +615,32 @@ export function AnalysisReportDialog({
               alignItems={{ sm: 'center' }}
               flexWrap="wrap"
             >
-              <FormControl size="small" sx={{ flex: '1 1 240px', maxWidth: 300, minWidth: 220 }}>
-                <InputLabel id="analysis-report-aggregation-label">Агрегація</InputLabel>
-                <Select
-                  labelId="analysis-report-aggregation-label"
-                  label="Агрегація"
-                  value={report.senderAggregation}
-                  onChange={(event) =>
-                    onUpdate({
-                      senderAggregation: event.target
-                        .value as AnalysisReportState['senderAggregation'],
-                    })
-                  }
-                >
-                  <MenuItem value="ByProfile">Профілі</MenuItem>
-                  <MenuItem value="ByPost">Пости</MenuItem>
-                </Select>
-              </FormControl>
-              <ReportCheckboxLabel
-                checked={report.senderAdvancedFreqs}
-                label="Розширений звіт"
-                onChange={(value) => onUpdate({ senderAdvancedFreqs: value })}
-              />
+              {radioFeaturesAllowed ? (
+                <FormControl size="small" sx={{ flex: '1 1 240px', maxWidth: 300, minWidth: 220 }}>
+                  <InputLabel id="analysis-report-aggregation-label">Агрегація</InputLabel>
+                  <Select
+                    labelId="analysis-report-aggregation-label"
+                    label="Агрегація"
+                    value={report.senderAggregation}
+                    onChange={(event) =>
+                      onUpdate({
+                        senderAggregation: event.target
+                          .value as AnalysisReportState['senderAggregation'],
+                      })
+                    }
+                  >
+                    <MenuItem value="ByProfile">Профілі</MenuItem>
+                    <MenuItem value="ByPost">Пости</MenuItem>
+                  </Select>
+                </FormControl>
+              ) : null}
+              {radioFeaturesAllowed ? (
+                <ReportCheckboxLabel
+                  checked={report.senderAdvancedFreqs}
+                  label="Розширений звіт"
+                  onChange={(value) => onUpdate({ senderAdvancedFreqs: value })}
+                />
+              ) : null}
             </Stack>
           ) : null}
 
@@ -633,23 +651,25 @@ export function AnalysisReportDialog({
               alignItems={{ sm: 'center' }}
               flexWrap="wrap"
             >
-              <FormControl size="small" sx={{ flex: '1 1 180px', maxWidth: 240, minWidth: 180 }}>
-                <InputLabel id="analysis-report-reo-adjacent-label">Суміжні частоти</InputLabel>
-                <Select
-                  labelId="analysis-report-reo-adjacent-label"
-                  label="Суміжні частоти"
-                  value={String(report.reoAdjacentFreqsDistance)}
-                  onChange={(event) =>
-                    onUpdate({ reoAdjacentFreqsDistance: Number(event.target.value) })
-                  }
-                >
-                  {REPORT_ADJACENT_FREQS_OPTIONS.map((option) => (
-                    <MenuItem key={option} value={String(option)}>
-                      {(option * 1000).toFixed(option === 0 ? 0 : 1)} кГц
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
+              {radioFeaturesAllowed ? (
+                <FormControl size="small" sx={{ flex: '1 1 180px', maxWidth: 240, minWidth: 180 }}>
+                  <InputLabel id="analysis-report-reo-adjacent-label">Суміжні частоти</InputLabel>
+                  <Select
+                    labelId="analysis-report-reo-adjacent-label"
+                    label="Суміжні частоти"
+                    value={String(report.reoAdjacentFreqsDistance)}
+                    onChange={(event) =>
+                      onUpdate({ reoAdjacentFreqsDistance: Number(event.target.value) })
+                    }
+                  >
+                    {REPORT_ADJACENT_FREQS_OPTIONS.map((option) => (
+                      <MenuItem key={option} value={String(option)}>
+                        {(option * 1000).toFixed(option === 0 ? 0 : 1)} кГц
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              ) : null}
               <FormControl size="small" sx={{ flex: '1 1 180px', maxWidth: 220, minWidth: 180 }}>
                 <InputLabel id="analysis-report-reo-file-label">Формат</InputLabel>
                 <Select

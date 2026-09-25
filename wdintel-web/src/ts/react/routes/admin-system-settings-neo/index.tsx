@@ -48,6 +48,9 @@ type SystemSettingsForm = {
   showClassicAnalysis: boolean;
   showPelengDistanceToBattleline: boolean;
   disableBotTags: boolean;
+  dutyExcludeMenuEnabled: boolean;
+  analysisAorFilterEnabled: boolean;
+  twoFactorAuthEnabled: boolean;
   dutyTestEnabled: boolean;
   dutyTestSinceMs: number;
   dutyTestLimit: number;
@@ -80,6 +83,9 @@ type SystemSettingsPayload = {
   showClassicAnalysis: boolean;
   showPelengDistanceToBattleline: boolean;
   disableBotTags: boolean;
+  dutyExcludeMenuEnabled: boolean;
+  analysisAorFilterEnabled: boolean;
+  twoFactorAuthEnabled: boolean;
   dutyTestEnabled: boolean;
   dutyTestSinceMs: number;
   dutyTestLimit: number;
@@ -112,6 +118,9 @@ const EMPTY_FORM: SystemSettingsForm = {
   showClassicAnalysis: true,
   showPelengDistanceToBattleline: false,
   disableBotTags: false,
+  dutyExcludeMenuEnabled: true,
+  analysisAorFilterEnabled: true,
+  twoFactorAuthEnabled: true,
   dutyTestEnabled: false,
   dutyTestSinceMs: 0,
   dutyTestLimit: 1,
@@ -194,6 +203,9 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     showClassicAnalysis: item?.showClassicAnalysis ?? true,
     showPelengDistanceToBattleline: item?.showPelengDistanceToBattleline ?? false,
     disableBotTags: item?.disableBotTags ?? false,
+    dutyExcludeMenuEnabled: item?.dutyExcludeMenuEnabled ?? true,
+    analysisAorFilterEnabled: item?.analysisAorFilterEnabled ?? true,
+    twoFactorAuthEnabled: item?.twoFactorAuthEnabled ?? true,
     dutyTestEnabled: item?.rerDutyTestEnabled ?? false,
     dutyTestSinceMs: item?.rerDutyTestSinceMs ?? 0,
     dutyTestLimit: item?.rerDutyTestLimit ?? 1,
@@ -229,6 +241,9 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.showClassicAnalysis === b.showClassicAnalysis &&
     a.showPelengDistanceToBattleline === b.showPelengDistanceToBattleline &&
     a.disableBotTags === b.disableBotTags &&
+    a.dutyExcludeMenuEnabled === b.dutyExcludeMenuEnabled &&
+    a.analysisAorFilterEnabled === b.analysisAorFilterEnabled &&
+    a.twoFactorAuthEnabled === b.twoFactorAuthEnabled &&
     a.dutyTestEnabled === b.dutyTestEnabled &&
     a.dutyTestSinceMs === b.dutyTestSinceMs &&
     a.dutyTestLimit === b.dutyTestLimit &&
@@ -320,6 +335,9 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     showClassicAnalysis: form.showClassicAnalysis,
     showPelengDistanceToBattleline: form.showPelengDistanceToBattleline,
     disableBotTags: form.disableBotTags,
+    dutyExcludeMenuEnabled: form.dutyExcludeMenuEnabled,
+    analysisAorFilterEnabled: form.analysisAorFilterEnabled,
+    twoFactorAuthEnabled: form.twoFactorAuthEnabled,
     dutyTestEnabled: form.dutyTestEnabled,
     dutyTestSinceMs: form.dutyTestSinceMs,
     dutyTestLimit: form.dutyTestLimit,
@@ -438,6 +456,16 @@ function MainSettingsSection({
           Прапорець «точний збіг за еталонкою» на аналізі увімкнений
         </ButtonBase>
       </Box>
+
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.twoFactorAuthEnabled}
+            onChange={(_, checked) => patchForm({ twoFactorAuthEnabled: checked })}
+          />
+        }
+        label="Двофакторна автентифікація (2FA)"
+      />
 
       <FormControlLabel
         control={
@@ -589,6 +617,15 @@ function DutySettingsSection({
       <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
         Меню
       </Typography>
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.dutyExcludeMenuEnabled}
+            onChange={(_, checked) => patchForm({ dutyExcludeMenuEnabled: checked })}
+          />
+        }
+        label="Меню - (мінус) в оперативному"
+      />
       <FormControlLabel
         control={
           <Switch
@@ -749,6 +786,15 @@ function AnalysisSettingsSection({
           />
         }
         label="Показувати класичний аналіз"
+      />
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.analysisAorFilterEnabled}
+            onChange={(_, checked) => patchForm({ analysisAorFilterEnabled: checked })}
+          />
+        }
+        label="Фільтр смуг"
       />
     </>
   );
@@ -996,6 +1042,9 @@ export function AdminSystemSettingsNeoPage() {
         showClassicAnalysis: payload.showClassicAnalysis,
         showPelengDistanceToBattleline: payload.showPelengDistanceToBattleline,
         disableBotTags: payload.disableBotTags,
+        dutyExcludeMenuEnabled: payload.dutyExcludeMenuEnabled,
+        analysisAorFilterEnabled: payload.analysisAorFilterEnabled,
+        twoFactorAuthEnabled: payload.twoFactorAuthEnabled,
         autofixEchoimMissingMessages: payload.autofixEchoimMissingMessages,
         devicesSectionEnabled: payload.devicesSectionEnabled,
         sigintCommentParsingEnabled: payload.sigintCommentParsingEnabled,

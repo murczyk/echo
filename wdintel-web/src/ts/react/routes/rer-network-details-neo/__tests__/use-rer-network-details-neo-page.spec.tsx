@@ -307,6 +307,22 @@ describe('useRerNetworkDetailsNeoPage unit options', () => {
     expect(loadMockState.loadPelengPoints).toHaveBeenCalledTimes(0);
   });
 
+  it.each(['frequencies', 'direction-finding'])(
+    '#3568 redirects a Cyber direct link to %s without loading radio data',
+    async (tab) => {
+      loadMockState.currentUser = { roles: ['Cyber', 'UnitsEditor'] } as User;
+      window.history.replaceState({}, '', `/rer-networks/42?tab=${tab}`);
+      renderHookHarness();
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(latestPage?.activeNetworkDetailsTab).toBe('descriptions');
+      expect(actionMockState.loadFrequencies).not.toHaveBeenCalled();
+      expect(loadMockState.loadPelengPoints).not.toHaveBeenCalled();
+    },
+  );
+
   it('honors the direction-finding tab URL override', async () => {
     window.history.replaceState({}, '', '/rer-networks/42?tab=direction-finding');
 

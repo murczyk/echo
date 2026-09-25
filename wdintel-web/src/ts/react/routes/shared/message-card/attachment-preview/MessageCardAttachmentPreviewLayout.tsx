@@ -13,6 +13,7 @@ export function MessageCardAttachmentPreviewLayout({
   infoPopover,
   navigation,
   swipeEnabled = true,
+  onSwipeDismiss,
 }: {
   stage: ReactNode;
   header?: ReactNode;
@@ -20,13 +21,15 @@ export function MessageCardAttachmentPreviewLayout({
   infoPopover?: ReactNode;
   navigation?: MessageCardPreviewNavigation;
   swipeEnabled?: boolean;
+  onSwipeDismiss?: () => void;
 }) {
   const [stageContainerEl, setStageContainerEl] = useState<HTMLDivElement | null>(null);
 
-  useAttachmentPreviewSwipe({
+  const swipeMotion = useAttachmentPreviewSwipe({
     stageEl: stageContainerEl,
     navigation,
     enabled: swipeEnabled,
+    onDismiss: onSwipeDismiss,
   });
 
   return (
@@ -59,7 +62,22 @@ export function MessageCardAttachmentPreviewLayout({
             backgroundColor: (theme) => getAttachmentPreviewStageBg(theme),
           }}
         >
-          {stage}
+          <Box
+            data-attachment-preview-swipe-content
+            sx={{
+              flex: '1 1 0',
+              height: 0,
+              minHeight: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              transform: swipeMotion.transform,
+              opacity: swipeMotion.opacity,
+              transition: swipeMotion.transition,
+              willChange: 'transform, opacity',
+            }}
+          >
+            {stage}
+          </Box>
           {/* Controls Overlay (part of content stage area, above the divider) */}
           {controls ? (
             <Box

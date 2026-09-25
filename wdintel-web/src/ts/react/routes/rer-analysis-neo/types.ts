@@ -96,6 +96,7 @@ export type AnalysisQueryState = Omit<
   deviceNamesSelected: string[];
   /** User preference; intentionally not saved in URLs or saved filters. */
   messageTimeBasis?: MessageTimeBasis;
+  radioFeaturesAllowed?: boolean;
 };
 
 export type AnalysisFilterOptions = {
@@ -165,17 +166,28 @@ export type AnalysisReloadOptions = {
 export type AnalysisSidebarTab =
   'map' | 'stats' | 'frequencies' | 'callsigns' | 'graph' | 'newCallsigns';
 
-export function getAnalysisCenterTabs(analysisMapInSidebar: boolean): AnalysisCenterTab[] {
-  return analysisMapInSidebar ? ['messages', 'summary'] : ['messages', 'map', 'summary'];
+export function getAnalysisCenterTabs(
+  analysisMapInSidebar: boolean,
+  radioFeaturesAllowed = true,
+): AnalysisCenterTab[] {
+  const tabs: AnalysisCenterTab[] = analysisMapInSidebar
+    ? ['messages', 'summary']
+    : ['messages', 'map', 'summary'];
+  return tabs.filter((tab) => radioFeaturesAllowed || tab !== 'summary');
 }
 
-export function getAnalysisSidebarTabs(analysisMapInSidebar: boolean): AnalysisSidebarTab[] {
-  return analysisMapInSidebar
+export function getAnalysisSidebarTabs(
+  analysisMapInSidebar: boolean,
+  radioFeaturesAllowed = true,
+): AnalysisSidebarTab[] {
+  const tabs: AnalysisSidebarTab[] = analysisMapInSidebar
     ? ['map', 'stats', 'frequencies', 'callsigns', 'graph', 'newCallsigns']
     : ['stats', 'frequencies', 'callsigns', 'graph', 'newCallsigns'];
+  return tabs.filter((tab) => radioFeaturesAllowed || tab !== 'frequencies');
 }
 
 export type AnalysisPageState = {
+  radioFeaturesAllowed: boolean;
   authUserName: string | null;
   aorEntries: AnalysisAorEntry[];
   canResetFilters: boolean;
@@ -248,6 +260,7 @@ export type AnalysisPageState = {
   visibleMessagesPageIndex: number;
   newestFirst: boolean;
   unitsExactMatchOnlyDefault: boolean | null;
+  analysisAorFilterEnabled: boolean;
   supportNonRerInterceptions: boolean;
   cyberEchoEnabled: boolean;
   options: AnalysisFilterOptions;

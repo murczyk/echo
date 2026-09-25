@@ -1,3 +1,7 @@
+import {
+  AUTHOR_COLUMN_META,
+  mrtAuthorCell,
+} from '../../../components/mui-customized/table/mrt-author-cell';
 import DeleteIcon from '@mui/icons-material/Delete';
 import {
   Box,
@@ -132,11 +136,8 @@ export function PalitraHighlightBlacklistDialog({
         enableGlobalFilter: false,
         enableColumnFilter: false,
         enableResizing: true,
-        meta: { overflowMode: 'text' },
-        Cell: mrtTextCell({
-          displayValue: ({ row }) => row.original.createdByLogin || '—',
-          fullValue: ({ row }) => row.original.createdByLogin || '—',
-        }),
+        meta: AUTHOR_COLUMN_META,
+        Cell: mrtAuthorCell((row) => row.createdByLogin),
         minSize: 160,
         size: 220,
       },

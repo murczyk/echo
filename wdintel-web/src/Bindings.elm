@@ -4273,6 +4273,7 @@ confirm2faReqEncoder struct =
 type alias User =
     { id : String
     , name : String
+    , displayName : Maybe (String)
     , roles : List (String)
     , sigintZoneId : Maybe (Int)
     , organismId : Maybe (Int)
@@ -4290,6 +4291,7 @@ userEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.string) struct.id )
         , ( "name", (Json.Encode.string) struct.name )
+        , ( "display_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.displayName )
         , ( "roles", (Json.Encode.list (Json.Encode.string)) struct.roles )
         , ( "sigint_zone_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sigintZoneId )
         , ( "organism_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.organismId )
@@ -4299,6 +4301,62 @@ userEncoder struct =
         , ( "goi_host", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.goiHost )
         , ( "goi_integrations", (Json.Encode.list (goiUserIntegrationEncoder)) struct.goiIntegrations )
         , ( "last_release_seen", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastReleaseSeen )
+        ]
+
+
+type alias AuthorIdentity =
+    { id : String
+    , login : String
+    , displayName : Maybe (String)
+    , deltaLogin : Maybe (String)
+    }
+
+
+authorIdentityEncoder : AuthorIdentity -> Json.Encode.Value
+authorIdentityEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "login", (Json.Encode.string) struct.login )
+        , ( "display_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.displayName )
+        , ( "delta_login", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.deltaLogin )
+        ]
+
+
+type alias AuthorIdentitiesReq =
+    { logins : List (String)
+    , ids : List (String)
+    }
+
+
+authorIdentitiesReqEncoder : AuthorIdentitiesReq -> Json.Encode.Value
+authorIdentitiesReqEncoder struct =
+    Json.Encode.object
+        [ ( "logins", (Json.Encode.list (Json.Encode.string)) struct.logins )
+        , ( "ids", (Json.Encode.list (Json.Encode.string)) struct.ids )
+        ]
+
+
+type alias AuthorIdentitiesRsp =
+    { authors : List (AuthorIdentity)
+    }
+
+
+authorIdentitiesRspEncoder : AuthorIdentitiesRsp -> Json.Encode.Value
+authorIdentitiesRspEncoder struct =
+    Json.Encode.object
+        [ ( "authors", (Json.Encode.list (authorIdentityEncoder)) struct.authors )
+        ]
+
+
+type alias DisplayNameSaveReq =
+    { displayName : Maybe (String)
+    }
+
+
+displayNameSaveReqEncoder : DisplayNameSaveReq -> Json.Encode.Value
+displayNameSaveReqEncoder struct =
+    Json.Encode.object
+        [ ( "display_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.displayName )
         ]
 
 
@@ -12097,6 +12155,9 @@ type alias SystemSettingsCurrentRsp =
     , showPelengDistanceToBattleline : Bool
     , hideOrbitData : Bool
     , disableBotTags : Bool
+    , dutyExcludeMenuEnabled : Bool
+    , analysisAorFilterEnabled : Bool
+    , twoFactorAuthEnabled : Bool
     }
 
 
@@ -12132,6 +12193,9 @@ systemSettingsCurrentRspEncoder struct =
         , ( "show_peleng_distance_to_battleline", (Json.Encode.bool) struct.showPelengDistanceToBattleline )
         , ( "hide_orbit_data", (Json.Encode.bool) struct.hideOrbitData )
         , ( "disable_bot_tags", (Json.Encode.bool) struct.disableBotTags )
+        , ( "duty_exclude_menu_enabled", (Json.Encode.bool) struct.dutyExcludeMenuEnabled )
+        , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
+        , ( "two_factor_auth_enabled", (Json.Encode.bool) struct.twoFactorAuthEnabled )
         ]
 
 
@@ -12169,6 +12233,9 @@ type alias SystemSettingsItem =
     , showClassicAnalysis : Bool
     , showPelengDistanceToBattleline : Bool
     , disableBotTags : Bool
+    , dutyExcludeMenuEnabled : Bool
+    , analysisAorFilterEnabled : Bool
+    , twoFactorAuthEnabled : Bool
     }
 
 
@@ -12208,6 +12275,9 @@ systemSettingsItemEncoder struct =
         , ( "show_classic_analysis", (Json.Encode.bool) struct.showClassicAnalysis )
         , ( "show_peleng_distance_to_battleline", (Json.Encode.bool) struct.showPelengDistanceToBattleline )
         , ( "disable_bot_tags", (Json.Encode.bool) struct.disableBotTags )
+        , ( "duty_exclude_menu_enabled", (Json.Encode.bool) struct.dutyExcludeMenuEnabled )
+        , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
+        , ( "two_factor_auth_enabled", (Json.Encode.bool) struct.twoFactorAuthEnabled )
         ]
 
 
@@ -12252,6 +12322,9 @@ type alias CreateSystemSettingsReq =
     , showClassicAnalysis : Bool
     , showPelengDistanceToBattleline : Bool
     , disableBotTags : Bool
+    , dutyExcludeMenuEnabled : Bool
+    , analysisAorFilterEnabled : Bool
+    , twoFactorAuthEnabled : Bool
     }
 
 
@@ -12286,6 +12359,9 @@ createSystemSettingsReqEncoder struct =
         , ( "show_classic_analysis", (Json.Encode.bool) struct.showClassicAnalysis )
         , ( "show_peleng_distance_to_battleline", (Json.Encode.bool) struct.showPelengDistanceToBattleline )
         , ( "disable_bot_tags", (Json.Encode.bool) struct.disableBotTags )
+        , ( "duty_exclude_menu_enabled", (Json.Encode.bool) struct.dutyExcludeMenuEnabled )
+        , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
+        , ( "two_factor_auth_enabled", (Json.Encode.bool) struct.twoFactorAuthEnabled )
         ]
 
 
@@ -17318,6 +17394,7 @@ userDecoder =
     Json.Decode.succeed User
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "display_name" (Json.Decode.nullable (Json.Decode.string)), Json.Decode.succeed Nothing ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "roles" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_zone_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_id" (Json.Decode.nullable (Json.Decode.int))))
@@ -17327,6 +17404,34 @@ userDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_host" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_integrations" (Json.Decode.list (goiUserIntegrationDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_release_seen" (Json.Decode.nullable (Json.Decode.string))))
+
+
+authorIdentityDecoder : Json.Decode.Decoder AuthorIdentity
+authorIdentityDecoder =
+    Json.Decode.succeed AuthorIdentity
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "display_name" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "delta_login" (Json.Decode.nullable (Json.Decode.string))))
+
+
+authorIdentitiesReqDecoder : Json.Decode.Decoder AuthorIdentitiesReq
+authorIdentitiesReqDecoder =
+    Json.Decode.succeed AuthorIdentitiesReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "logins" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ids" (Json.Decode.list (Json.Decode.string))))
+
+
+authorIdentitiesRspDecoder : Json.Decode.Decoder AuthorIdentitiesRsp
+authorIdentitiesRspDecoder =
+    Json.Decode.succeed AuthorIdentitiesRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "authors" (Json.Decode.list (authorIdentityDecoder))))
+
+
+displayNameSaveReqDecoder : Json.Decode.Decoder DisplayNameSaveReq
+displayNameSaveReqDecoder =
+    Json.Decode.succeed DisplayNameSaveReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "display_name" (Json.Decode.nullable (Json.Decode.string))))
 
 
 goiUserIntegrationDecoder : Json.Decode.Decoder GoiUserIntegration
@@ -22603,6 +22708,9 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_peleng_distance_to_battleline" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hide_orbit_data" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_bot_tags" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duty_exclude_menu_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "two_factor_auth_enabled" (Json.Decode.bool)))
 
 
 systemSettingsItemDecoder : Json.Decode.Decoder SystemSettingsItem
@@ -22641,6 +22749,9 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_analysis" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_peleng_distance_to_battleline" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_bot_tags" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duty_exclude_menu_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "two_factor_auth_enabled" (Json.Decode.bool)))
 
 
 systemSettingsListRspDecoder : Json.Decode.Decoder SystemSettingsListRsp
@@ -22680,6 +22791,9 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_analysis" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_peleng_distance_to_battleline" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_bot_tags" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duty_exclude_menu_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "two_factor_auth_enabled" (Json.Decode.bool)))
 
 
 activateSystemSettingsReqDecoder : Json.Decode.Decoder ActivateSystemSettingsReq

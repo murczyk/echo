@@ -1,5 +1,6 @@
 module Pages_.RerAnalysis.Query exposing (analysisStatsDefaultParams, analysisStatsParams, canonicalUnitIdFromValue, emptyQueryState, isCanonicalUnitIdValue, modelQueryState, normalizeUnitNameFromMap, normalizeUnitSelections, partitionUnitSelections, unitIdFilterValue, updModelFromQueryState, updModelFromSavedFilter)
 
+import Core.RadioFeatures
 import Bindings as B
 import Pages_.RerAnalysis.Model exposing (..)
 import Shared.Components.DateTime
@@ -295,6 +296,7 @@ analysisStatsParams dtFromPosix dtToPosix model =
                     |> List.filterMap String.toInt
                     |> emptyToNothing
     in
+    Core.RadioFeatures.analysisFilters model.radioFeaturesAllowed <|
     normalizeAnalysisStatsReqMetadata
         { sinceDateInclusiveMs = Time.posixToMillis dtFromPosix
         , tillDateNoninclusiveMs = Time.posixToMillis dtToPosix

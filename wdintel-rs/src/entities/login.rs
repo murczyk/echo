@@ -31,6 +31,8 @@ pub struct Model {
     pub id: Uuid,
     pub password_auth_enabled: bool,
     pub totp_epoch: Option<i64>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub display_name: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -45,6 +47,8 @@ pub enum Relation {
     AiIntelReportAttempt,
     #[sea_orm(has_many = "super::api_integration::Entity")]
     ApiIntegration,
+    #[sea_orm(has_many = "super::api_integration_iggy_destination::Entity")]
+    ApiIntegrationIggyDestination,
     #[sea_orm(has_many = "super::area_of_responsibility::Entity")]
     AreaOfResponsibility,
     #[sea_orm(has_many = "super::area_of_responsibility_report_order::Entity")]
@@ -196,6 +200,12 @@ impl Related<super::ai_intel_report_attempt::Entity> for Entity {
 impl Related<super::api_integration::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::ApiIntegration.def()
+    }
+}
+
+impl Related<super::api_integration_iggy_destination::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ApiIntegrationIggyDestination.def()
     }
 }
 

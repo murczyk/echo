@@ -1,3 +1,4 @@
+import { AuthorLabel } from '../../components/AuthorLabel';
 import {
   CircularProgress,
   Dialog,
@@ -609,7 +610,7 @@ function AdminTagsNeoEditPageBody(props: AdminTagsNeoEditPageProps) {
                       </div>
                       <div className="text-muted-foreground text-sm">
                         <i className="bi bi-person text-icons mr-2"></i>
-                        {error.removedByLogin}
+                        <AuthorLabel login={error.removedByLogin} />
                       </div>
                     </div>
                   </div>

@@ -12,6 +12,7 @@ import { buildMessageCardDisplayLabels } from '../shared/message-card/message-ca
 import type { MessageCardEtalonDisplayModel } from '../shared/message-card/message-card.utils';
 
 type Props = {
+  canWrite?: boolean;
   messages: Array<[number, InboxMessage]>;
   profiles: Record<string, SignalProfileEntry | null>;
   onError: (message: string) => void;
@@ -90,6 +91,7 @@ export function enqueueMessageSave<T>(
 }
 
 export function useAnalysisMessageEditor({
+  canWrite = true,
   messages,
   profiles,
   onError,
@@ -149,6 +151,7 @@ export function useAnalysisMessageEditor({
 
   const openEditor = useCallback(
     (messageId: number) => {
+      if (!canWrite) return;
       const entry = messages.find(([id]) => id === messageId) ?? null;
       if (isNullOrUndefined(entry)) return;
       cancelReportEditLoad();
@@ -156,7 +159,7 @@ export function useAnalysisMessageEditor({
       setEditorEditAsReport(isIntelligenceReport(entry[1]));
       setEditorMessage({ id: entry[0], message: entry[1] });
     },
-    [cancelReportEditLoad, messages],
+    [canWrite, cancelReportEditLoad, messages],
   );
 
   const closeEditor = useCallback(() => {
@@ -170,6 +173,7 @@ export function useAnalysisMessageEditor({
 
   const openReportCreator = useCallback(
     (messageId: number, etalonDisplayModel: MessageCardEtalonDisplayModel) => {
+      if (!canWrite) return;
       const entry = messages.find(([id]) => id === messageId) ?? null;
       if (isNullOrUndefined(entry)) return;
       cancelReportEditLoad();
@@ -181,11 +185,12 @@ export function useAnalysisMessageEditor({
       });
       setReportSource({ id: entry[0], message: entry[1], senderName, etalonDisplayModel });
     },
-    [cancelReportEditLoad, messages, profiles],
+    [canWrite, cancelReportEditLoad, messages, profiles],
   );
 
   const openReportEditor = useCallback(
     (messageId: number) => {
+      if (!canWrite) return;
       cancelReportEditLoad();
       const controller = new AbortController();
       reportLoadControllerRef.current = controller;
@@ -212,7 +217,7 @@ export function useAnalysisMessageEditor({
           });
         });
     },
-    [cancelReportEditLoad],
+    [canWrite, cancelReportEditLoad],
   );
 
   const retryEditTargetLoad = useCallback(() => {

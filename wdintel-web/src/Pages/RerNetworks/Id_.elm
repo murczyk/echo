@@ -6,6 +6,7 @@ import Bindings as B
 import Core.Auth
 import Dict
 import Effect as E exposing (Effect)
+import Html.Extra
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Layouts
@@ -91,7 +92,8 @@ init route shared () =
                 Nothing ->
                     NotAsked
     in
-    ( { network = Loading
+    ( { radioFeaturesAllowed = shared.user |> Maybe.map Core.Auth.canUseRadioFeatures |> Maybe.withDefault False
+      , network = Loading
       , networkId = networkId
       , classicNetworkLoading = not neoView
       , callsigns = NotAsked
@@ -330,7 +332,7 @@ init route shared () =
             E.none
 
           else
-            loadClassicNetworkData networkId
+            loadClassicNetworkData (shared.user |> Maybe.map Core.Auth.canUseRadioFeatures |> Maybe.withDefault False) networkId
         , E.sendSharedMsg <|
             SharedMsg.SetRerNetworkDetailsPreferredView
                 (if neoView then
@@ -515,7 +517,7 @@ update shared msg model =
                 , editAorSelect = editAorSelect2
               }
             , E.batch
-                ([ case res.activeFrom of
+                ([ case (if model.radioFeaturesAllowed then res.activeFrom else Nothing) of
                     Just activeFrom ->
                         E.getNetworkPoints MapPointsReturnedByApi
                             { networkId = res.id
@@ -532,10 +534,10 @@ update shared msg model =
                     }
 
                  --TODO: do not load if loaded already
-                 , E.loadPostsFromShared { sortBy = Nothing }
+                 , (if shared.user |> Maybe.map Core.Auth.canUseRadioFeatures |> Maybe.withDefault False then E.loadPostsFromShared { sortBy = Nothing } else E.none)
                  , E.getSignalsForNetwork SignalsForNetworkLoaded { networkId = res.id }
                  ]
-                    ++ (FrequenciesTable.loadFreqsInit res.id |> List.map (E.map Frequencies))
+                    ++ ((if model.radioFeaturesAllowed then FrequenciesTable.loadFreqsInit res.id else []) |> List.map (E.map Frequencies))
                     ++ (CallsignsTables.loadCatalogAndNetworkCallsigns res.id |> List.map (E.map Callsigns))
                 )
             )
@@ -900,7 +902,7 @@ update shared msg model =
                             E.getNetworkReportBatch ReportDownloadReturnedByApi
                                 { networkIds = [ network.id ]
                                 , sortBy = Nothing
-                                , etalonkaType = ReportConfig.toApiEtalonkaType reportType ctx
+                                , etalonkaType = ReportConfig.toApiEtalonkaType (if model.radioFeaturesAllowed then reportType else ReportUpdate.updateCommonSetting "activeFreqsOnly" False reportType) ctx
                                 }
                     in
                     ( { model | reportDownloadInProgress = True }
@@ -1037,7 +1039,7 @@ update shared msg model =
                 else
                     ( { model | classicNetworkLoading = True }
                     , E.batch
-                        [ loadClassicNetworkData model.networkId
+                        [ loadClassicNetworkData model.radioFeaturesAllowed model.networkId
                         , E.sendSharedMsg <|
                             SharedMsg.SetRerNetworkDetailsPreferredView Classic
                         ]
@@ -1255,8 +1257,10 @@ contentBlock user shared route network model =
             [ Html.map Descriptions <| Descriptions.view network model user shared
             ]
         ]
-    , Html.map Frequencies <| FrequenciesTable.view model user shared
-    , Html.map Keys <| KeysTable.view model user
+    , Html.Extra.viewIf model.radioFeaturesAllowed <|
+                      Html.map Frequencies <| FrequenciesTable.view model user shared
+    , Html.Extra.viewIf model.radioFeaturesAllowed <|
+                      Html.map Keys <| KeysTable.view model user
     , Html.map Callsigns <| CallsignsTables.view shared model user
     ]
 
@@ -1319,11 +1323,14 @@ view user shared route model =
                     , Html.map Callsigns <| CallsignsTables.createCallsignsSidebar model user shared
                     , Html.map Callsigns <| CallsignsTables.editCallsignsSidebar model user shared
                     , Html.map Callsigns <| CallsignsTables.deleteCallsignModal model
-                    , Html.map Keys <| KeysTable.editSidebar model user shared
-                    , Html.map Keys <| KeysTable.createSidebar model user shared
+                    , Html.Extra.viewIf model.radioFeaturesAllowed <|
+                      Html.map Keys <| KeysTable.editSidebar model user shared
+                    , Html.Extra.viewIf model.radioFeaturesAllowed <|
+                      Html.map Keys <| KeysTable.createSidebar model user shared
                     , let
                         reportFormConfig =
-                            { onReportTypeChanged = ReportTypeChanged
+                            { radioFeaturesAllowed = model.radioFeaturesAllowed
+                            , onReportTypeChanged = ReportTypeChanged
                             , onActiveFreqsOnlyChanged = ReportActiveFreqsOnlyChanged
                             , onIncludeCallsignFullNamesChanged = ReportIncludeCallsignFullNamesChanged
                             , onIncludeSigintSignsChanged = ReportIncludeSigintSignsChanged
@@ -1377,11 +1384,16 @@ view user shared route model =
                             ]
                       in
                       ModalDialog.modalDialog (model.deleteNetworkConfirmation /= Nothing) DeleteNetworkCanceledByUser [] deleteDialogContent
-                    , Html.map Frequencies <| FrequenciesTable.editSidebar model user shared
-                    , Html.map Frequencies <| FrequenciesTable.createSidebar model user shared
-                    , Html.map Frequencies <| FrequenciesTable.deleteFreqConfirmationModal model
-                    , Html.map Frequencies <| FrequenciesTable.freqActivityChartDetailed model shared
-                    , Html.map Keys <| KeysTable.deleteKeyConfirmationModal model
+                    , Html.Extra.viewIf model.radioFeaturesAllowed <|
+                      Html.map Frequencies <| FrequenciesTable.editSidebar model user shared
+                    , Html.Extra.viewIf model.radioFeaturesAllowed <|
+                      Html.map Frequencies <| FrequenciesTable.createSidebar model user shared
+                    , Html.Extra.viewIf model.radioFeaturesAllowed <|
+                      Html.map Frequencies <| FrequenciesTable.deleteFreqConfirmationModal model
+                    , Html.Extra.viewIf model.radioFeaturesAllowed <|
+                      Html.map Frequencies <| FrequenciesTable.freqActivityChartDetailed model shared
+                    , Html.Extra.viewIf model.radioFeaturesAllowed <|
+                      Html.map Keys <| KeysTable.deleteKeyConfirmationModal model
                     , Html.map Descriptions <| Descriptions.viewDeleteConfirmation model
                     ]
                 ]
@@ -1394,20 +1406,20 @@ isNeoView route =
     Dict.get "view" route.query /= Just "classic"
 
 
-loadClassicNetworkData : Maybe Int -> Effect Msg
-loadClassicNetworkData networkId =
+loadClassicNetworkData : Bool -> Maybe Int -> Effect Msg
+loadClassicNetworkData radioFeaturesAllowed networkId =
     case networkId of
         Just id ->
             E.batch
                 [ E.getSingleNetwork NetworkReturnedByApi id
-                , E.getEncryptions EncryptionsReturnedByApi
+                , (if radioFeaturesAllowed then E.getEncryptions EncryptionsReturnedByApi else E.none)
                 , E.sendCmd (Api.aor_list AorListReturnedByApi { sortBy = Nothing })
                 , E.map Callsigns CallsignsTables.initLoad
-                , E.map Keys (KeysTable.initLoad id)
+                , (if radioFeaturesAllowed then E.map Keys (KeysTable.initLoad id) else E.none)
                 ]
 
         Nothing ->
             E.batch
-                [ E.getEncryptions EncryptionsReturnedByApi
+                [ (if radioFeaturesAllowed then E.getEncryptions EncryptionsReturnedByApi else E.none)
                 , E.sendCmd (Api.aor_list AorListReturnedByApi { sortBy = Nothing })
                 ]

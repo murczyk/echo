@@ -20,7 +20,7 @@ type alias Model =
 
 init : Auth.User -> Route () -> ( Model, Effect Msg )
 init user route =
-    if user.name == "anonymous" || Core.Auth.hasRole "Rer" user then
+    if user.name == "anonymous" || Core.Auth.hasRerOrCyber user then
         ( {}, E.replaceRoute { path = Route.Path.RerUnitsNeo, query = route.query, hash = route.hash } )
 
     else

@@ -55,6 +55,7 @@ function emptySystemSettingsResponse() {
     default_neo_analysis: false,
     do_not_store_duplicate_echoim_failures: false,
     disable_bot_tags: false,
+    duty_exclude_menu_enabled: true,
   };
 }
 

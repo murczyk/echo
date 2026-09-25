@@ -1,6 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
+import { RadioFeaturesProvider } from '../../shared/RadioFeatures';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -125,7 +126,11 @@ function renderGraph(overrides: Partial<GraphProps> = {}) {
   };
 
   act(() => {
-    root.render(<NetworkCallsignRelationsGraph {...props} />);
+    root.render(
+      <RadioFeaturesProvider allowed>
+        {<NetworkCallsignRelationsGraph {...props} />}
+      </RadioFeaturesProvider>,
+    );
   });
 
   return { container, root, deferred, props };
@@ -185,11 +190,15 @@ describe('NetworkCallsignRelationsGraph', () => {
 
     await act(async () => {
       view.root.render(
-        <NetworkCallsignRelationsGraph
-          {...view.props}
-          relationsSearch="alp"
-          relationsMinIntensity={2}
-        />,
+        <RadioFeaturesProvider allowed>
+          {
+            <NetworkCallsignRelationsGraph
+              {...view.props}
+              relationsSearch="alp"
+              relationsMinIntensity={2}
+            />
+          }
+        </RadioFeaturesProvider>,
       );
     });
 

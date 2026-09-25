@@ -1,3 +1,4 @@
+import { canUseRadioFeatures } from '../../../utils/roles';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -49,6 +50,7 @@ import { getAccessibleParentMessages, summarizeIntelligenceMessage } from '../in
 import { quickIntelReportSuggestion } from '../../../services/api/ai-intel-report';
 import { isAbortError } from '../../../services/api/client';
 import type { MessageCardEtalonDisplayModel } from '../message-card/message-card.utils';
+import { useBrowserBackOverlay } from '../../../hooks/use-browser-back-overlay';
 
 export type QuickIntelReportSuggestionState =
   | { status: 'idle' | 'loading' | 'applied' }
@@ -87,6 +89,7 @@ export type UseManageMessageDrawerProps = {
 export function useManageMessageDrawer({
   open,
   cyberEchoEnabled,
+  currentUser,
   onClose,
   onCreated,
   onEditSuccess,
@@ -97,6 +100,7 @@ export function useManageMessageDrawer({
   editSaveInFlight,
   onSubmitEdit,
 }: UseManageMessageDrawerProps) {
+  const radioFeaturesAllowed = canUseRadioFeatures(currentUser?.roles);
   const isEditMode = isPresent(editTarget);
   const isReportCreateMode = isPresent(reportSource) && !isEditMode;
   const isReportEditMode = (isEditMode && editAsReport) || editTargetLoadState.status !== 'idle';
@@ -191,7 +195,7 @@ export function useManageMessageDrawer({
   }, [cyberEchoEnabled, deviceNameInput, formReady]);
 
   useEffect(() => {
-    if (!formReady) return;
+    if (!formReady || !radioFeaturesAllowed) return;
     let active = true;
 
     setPostLoading(true);
@@ -209,7 +213,7 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [postInput, formReady]);
+  }, [postInput, formReady, radioFeaturesAllowed]);
 
   useEffect(() => {
     if (!formReady) return;
@@ -298,7 +302,7 @@ export function useManageMessageDrawer({
   }, [callsignInput, formReady]);
 
   useEffect(() => {
-    if (!formReady) return;
+    if (!formReady || !radioFeaturesAllowed) return;
     let active = true;
 
     setFreqLoading(true);
@@ -316,11 +320,11 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [freqInput, formReady]);
+  }, [freqInput, formReady, radioFeaturesAllowed]);
 
   const resolver = useMemo(
-    () => zodResolver(makeMessageSchema(isEditMode, false, isReportMode)),
-    [isEditMode, isReportMode],
+    () => zodResolver(makeMessageSchema(isEditMode, false, isReportMode, radioFeaturesAllowed)),
+    [isEditMode, isReportMode, radioFeaturesAllowed],
   );
 
   const methods = useForm<MessageFormData>({
@@ -455,6 +459,7 @@ export function useManageMessageDrawer({
     autoParseEnabled,
     isEditMode,
     isReportMode,
+    radioFeaturesAllowed,
     onPristineSourceCleared: resetPristineCreateFields,
   });
   const handleAcceptParsedField = useCallback(
@@ -809,7 +814,7 @@ export function useManageMessageDrawer({
     };
   }, [formReady, isEditMode, editTarget?.id]);
 
-  const closeDrawerAfterSubmit = () => {
+  const finalizeDrawerClose = () => {
     blurActiveElement();
     uppy.cancelAll();
     reset();
@@ -819,13 +824,28 @@ export function useManageMessageDrawer({
     onClose();
   };
 
+  const handleBrowserBack = () => {
+    if (saving) return false;
+    finalizeDrawerClose();
+    return true;
+  };
+
+  const requestDrawerClose = useBrowserBackOverlay({
+    open,
+    onClose: finalizeDrawerClose,
+    onBrowserBack: handleBrowserBack,
+  });
+
+  const closeDrawerAfterSubmit = () => requestDrawerClose();
+
   const handleDrawerClose = () => {
     if (saving) return;
-    closeDrawerAfterSubmit();
+    requestDrawerClose();
   };
 
   const { onSubmit } = useMessageSubmit({
     busy,
+    radioFeaturesAllowed,
     cyberEchoEnabled,
     isEditMode,
     isReportMode,
@@ -845,6 +865,7 @@ export function useManageMessageDrawer({
   });
 
   return {
+    radioFeaturesAllowed,
     isEditMode,
     isReportMode,
     isReportCreateMode,

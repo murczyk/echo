@@ -65,6 +65,7 @@ export type FeedStateDeps = {
   /** When true, duty page must not auto-scroll / follow new messages (user prefs). */
   disableAutoScroll: boolean;
   deviceAccess: DeviceAccess;
+  radioFeaturesAllowed?: boolean;
   onFeedRemoved?: (feedId: string) => void;
 };
 
@@ -81,6 +82,7 @@ function getDutyPollIntervalMs(pollIntervalSec: number): number {
 
 export function useRerDutyFeedState(deps: FeedStateDeps) {
   const deviceAccess = deps.deviceAccess;
+  const radioFeaturesAllowed = deps.radioFeaturesAllowed !== false;
   const { freqs, setProfiles, setGroupInfos } = deps;
   const [messageFeeds, setMessageFeeds] = useState<MessageFeedState[]>(() => {
     const state = parseStateFromUrl();
@@ -98,11 +100,14 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     deviceAccess.status === 'allowed' ||
     deviceAccess.status === 'denied' ||
     (deviceAccess.status === 'error' && !hasDeviceFilters);
-  const needsFrequencyCatalog = messageFeeds.some(
-    (feed) =>
-      feed.adjacentFreqsRange > 0 &&
-      ((feed.filter.freqsSelected?.length ?? 0) > 0 || (feed.filter.freqsDenied?.length ?? 0) > 0),
-  );
+  const needsFrequencyCatalog =
+    radioFeaturesAllowed &&
+    messageFeeds.some(
+      (feed) =>
+        feed.adjacentFreqsRange > 0 &&
+        ((feed.filter.freqsSelected?.length ?? 0) > 0 ||
+          (feed.filter.freqsDenied?.length ?? 0) > 0),
+    );
   const effectiveFiltersReady = deps.freqsReady || !needsFrequencyCatalog;
   const {
     error,
@@ -557,7 +562,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         | 'reportTagsOnlyThisUnit'
       >,
     ) => {
-      const range = feed.adjacentFreqsRange ?? 0;
+      const range = radioFeaturesAllowed ? (feed.adjacentFreqsRange ?? 0) : 0;
       const expandedSelected =
         range > 0 && freqs.length > 0
           ? [
@@ -582,13 +587,15 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           : feed.filter;
       return buildInboxReq({
         ...opts,
-        filter,
+        filter: radioFeaturesAllowed
+          ? filter
+          : { ...filter, freqsSelected: [], freqsDenied: [], postsSelected: [], postsDenied: [] },
         expandedFreqsSelected: expandedSelected,
         expandedFreqsDenied: expandedDenied,
         highlightSignals: feed.highlightSignalsEnabled ?? false,
       });
     },
-    [deviceAccess.status, freqs],
+    [deviceAccess.status, freqs, radioFeaturesAllowed],
   );
 
   useEffect(() => {

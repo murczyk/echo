@@ -2,6 +2,8 @@ module Pages.RerAnalysis exposing (Model, Msg, init, page, update)
 
 import Api
 import Auth
+import Core.RadioFeatures
+import Core.Auth
 import Bindings as B
 import Config
 import Core.Callsigns.MessageHint as MessageHint
@@ -10,6 +12,7 @@ import Core.Types exposing (ApiError)
 import Date
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
+import Html.Extra
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onInput)
@@ -76,8 +79,8 @@ normalizeUnitNameFromMap unitName =
         trimmed
 
 
-init : Route () -> () -> ( Model, Effect Msg )
-init route _ =
+init : B.User -> Route () -> () -> ( Model, Effect Msg )
+init user route _ =
     let
         ms : Maybe B.RerAnalysisQueryState
         ms =
@@ -103,7 +106,10 @@ init route _ =
 
         model : Model
         model =
-            { formErrors = Dict.empty
+            { radioFeaturesAllowed = Core.Auth.canUseRadioFeatures user
+            , currentUserLoaded = user.name /= "anonymous"
+            , fromDateUsesDefault = initialQueryState.dateFromStr == ""
+            , formErrors = Dict.empty
             , toasts = Shared.Components.Toast.init
             , from = Shared.Components.DateTime.init ()
             , to = Shared.Components.DateTime.init ()
@@ -295,6 +301,7 @@ init route _ =
             , unitsExactMatchOnly = True
             , unitsExactMatchOnlyExplicit = False
             , systemSettingsLoaded = False
+            , analysisAorFilterEnabled = True
             , audioTranscriptionEnabled = False
             , analysisAudioTranscriptionCollapsed = False
             , disableBotTags = False
@@ -325,6 +332,11 @@ init route _ =
     ( m4
     , E.batch
         [ E.getCurrentTime InitGotTime
+        , if user.name == "anonymous" then
+            E.sendCmd <| Api.api_user GotCurrentUser
+
+          else
+            E.none
         , E.getSystemSettings GotSystemSettings
         , E.getAnalysisSavedFilters SavedFiltersGot
         , E.getTags GotTags
@@ -344,6 +356,7 @@ getInboxReq model =
         ( selectedUnitIds, selectedLegacyUnits ) =
             Query.partitionUnitSelections (Query.normalizeUnitSelections model.unitsSelected)
     in
+    Core.RadioFeatures.inboxFilters model.radioFeaturesAllowed <|
     { sinceIdNoninclusive = Nothing
     , beforeIdNoninclusive = Nothing
     , aroundMessageRef = Nothing
@@ -455,7 +468,8 @@ cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
             ( selectedUnitIds, selectedLegacyUnits ) =
                 Query.partitionUnitSelections (Query.normalizeUnitSelections model.unitsSelected)
         in
-        E.getCallsignsGraph GotCallsignGraph
+        E.getCallsignsGraph GotCallsignGraph <|
+            Core.RadioFeatures.analysisFilters model.radioFeaturesAllowed <|
             { sinceDateInclusiveMs = Time.posixToMillis dtFromPosix
             , tillDateNoninclusiveMs = Time.posixToMillis dtToPosix
             , selectedGroups = emptyToNothing model.groupsSelected
@@ -593,7 +607,7 @@ removeMapPointsForMissingMessages requestedMessageIds messages mapPoints =
 
 loadMetadataStatsIfNeeded : Model -> Effect Msg
 loadMetadataStatsIfNeeded model =
-    case ( model.unfoldMetadataFilter, model.from.datePosix, model.to.datePosix ) of
+    case ( model.radioFeaturesAllowed && model.unfoldMetadataFilter, model.from.datePosix, model.to.datePosix ) of
         ( True, Just dtFromPosix, Just dtToPosix ) ->
             E.getMetadataStats GotStatsMetadata
                 (Query.analysisStatsParams dtFromPosix dtToPosix model)
@@ -627,7 +641,7 @@ loadSumTableOnly model =
                     Query.analysisStatsParams dtFromPosix dtToPosix model
 
                 loadingSumTable =
-                    not (Utils.Time.isMoreThanThresholdApart dtFromPosix dtToPosix)
+                    model.radioFeaturesAllowed && not (Utils.Time.isMoreThanThresholdApart dtFromPosix dtToPosix)
 
                 sumTable =
                     if loadingSumTable then
@@ -660,7 +674,7 @@ loadCoreStats model =
                     not (Utils.Time.isMoreThanThresholdApart dtFromPosix dtToPosix)
 
                 loadingSumTable =
-                    model.unfoldSumTable && not (Utils.Time.isMoreThanThresholdApart dtFromPosix dtToPosix)
+                    model.radioFeaturesAllowed && model.unfoldSumTable && not (Utils.Time.isMoreThanThresholdApart dtFromPosix dtToPosix)
 
                 cmdLoadSummaryTable isLoading =
                     if isLoading then
@@ -732,7 +746,7 @@ loadCoreStats model =
                                 ( { model | mapPoints = NeedsReload data }, E.none )
 
                 ( m3, eff3 ) =
-                    case ( m2.groupsMessageCountByDay, List.head m2.freqsSelected ) of
+                    case ( m2.groupsMessageCountByDay, if m2.radioFeaturesAllowed then List.head m2.freqsSelected else Nothing ) of
                         ( NotAsked, Just freq ) ->
                             if m2.unfoldGraphs then
                                 ( m2
@@ -855,7 +869,7 @@ loadInitialFilterStats model =
                     List.length model.locationsSelected > 0
 
                 PostsFilter ->
-                    List.length model.postsSelected > 0
+                    model.radioFeaturesAllowed && List.length model.postsSelected > 0
 
                 UnitsFilter ->
                     List.length model.unitsSelected > 0
@@ -864,7 +878,7 @@ loadInitialFilterStats model =
                     List.length model.callsignsSelected > 0
 
                 FreqsFilter ->
-                    List.length model.freqsSelected > 0
+                    model.radioFeaturesAllowed && List.length model.freqsSelected > 0
 
                 SendersFilter ->
                     List.length model.sendersSelected > 0
@@ -873,7 +887,7 @@ loadInitialFilterStats model =
                     List.length model.groupsSelected > 0
 
                 NetworksFilter ->
-                    List.length model.networksSelected > 0
+                    model.radioFeaturesAllowed && List.length model.networksSelected > 0
 
         all =
             [ AorsFilter, LocationsFilter, PostsFilter, UnitsFilter, FreqsFilter, CallsignsFilter, SendersFilter, GroupsFilter, NetworksFilter ]
@@ -902,6 +916,46 @@ loadInitialStats model =
             loadCoreStats model
     in
     ( m2, E.batch (eff2 :: loadInitialFilterStats model) )
+
+
+resolveAnalysisDateRange : Shared.Model -> Model -> Model
+resolveAnalysisDateRange shared analysis =
+    case analysis.now of
+        Nothing ->
+            analysis
+
+        Just now ->
+            let
+                fromInput =
+                    if analysis.fromDateUsesDefault then
+                        Shared.Components.DateTime.init ()
+
+                    else
+                        analysis.from
+
+                ( from, to ) =
+                    Shared.Components.DateTime.initAnalysisRanges
+                        { from = fromInput
+                        , radioFeaturesAllowed = analysis.radioFeaturesAllowed
+                        , to = analysis.to
+                        , zone = shared.timeZone
+                        , now = now
+                        }
+            in
+            { analysis
+                | from = from
+                , to = to
+                , dateRangePicker = Shared.Components.DateRangePicker.initFromData from to
+            }
+
+
+loadInitialStatsIfReady : Model -> ( Model, Effect Msg )
+loadInitialStatsIfReady analysis =
+    if analysis.currentUserLoaded && analysis.systemSettingsLoaded && analysis.now /= Nothing then
+        loadInitialStats analysis
+
+    else
+        ( analysis, E.none )
 
 
 setFocusedFilterSnapshot : String -> List String -> Model -> Model
@@ -950,7 +1004,7 @@ menuItemWithCount itemName count =
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
 page user shared req =
     Page.new
-        { init = init req
+        { init = init user req
         , update = update user shared req
         , view = view shared user req
         , subscriptions = subscriptions
@@ -1151,30 +1205,34 @@ update user shared route msg model =
 
         InitGotTime now_ ->
             let
-                ( from, to ) =
-                    Shared.Components.DateTime.initAnalysisRanges
-                        { from = model.from
-                        , to = model.to
-                        , zone = shared.timeZone
-                        , now = now_
-                        }
-
                 m2 =
-                    { model
-                        | from = from
-                        , to = to
-                        , dateRangePicker = Shared.Components.DateRangePicker.initFromData from to
-                        , now = Just now_
-                    }
-
-                ( m3, cmd3 ) =
-                    if m2.systemSettingsLoaded then
-                        loadInitialStats m2
-
-                    else
-                        ( m2, E.none )
+                    { model | now = Just now_ }
+                        |> resolveAnalysisDateRange shared
             in
-            ( m3, cmd3 )
+            loadInitialStatsIfReady m2
+
+        GotCurrentUser (Err e) ->
+            let
+                m2 =
+                    { model | currentUserLoaded = True }
+
+                ( m3, eff3 ) =
+                    loadInitialStatsIfReady m2
+            in
+            ( m3
+            , E.batch
+                [ Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження користувача" e
+                , eff3
+                ]
+            )
+
+        GotCurrentUser (Ok currentUser) ->
+            { model
+                | currentUserLoaded = True
+                , radioFeaturesAllowed = Core.Auth.canUseRadioFeatures currentUser
+            }
+                |> resolveAnalysisDateRange shared
+                |> loadInitialStatsIfReady
 
         GotSystemSettings (Err e) ->
             let
@@ -1182,12 +1240,7 @@ update user shared route msg model =
                     { model | systemSettingsLoaded = True }
 
                 ( m3, eff3 ) =
-                    case model.now of
-                        Just _ ->
-                            loadInitialStats m2
-
-                        Nothing ->
-                            ( m2, E.none )
+                    loadInitialStatsIfReady m2
             in
             ( m3
             , E.batch
@@ -1204,6 +1257,7 @@ update user shared route msg model =
                             | systemSettingsLoaded = True
                             , audioTranscriptionEnabled = rsp.enableAudioTranscription
                             , disableBotTags = rsp.disableBotTags
+                            , analysisAorFilterEnabled = rsp.analysisAorFilterEnabled
                         }
 
                     else
@@ -1212,15 +1266,11 @@ update user shared route msg model =
                             , systemSettingsLoaded = True
                             , audioTranscriptionEnabled = rsp.enableAudioTranscription
                             , disableBotTags = rsp.disableBotTags
+                            , analysisAorFilterEnabled = rsp.analysisAorFilterEnabled
                         }
 
                 ( m3, eff3 ) =
-                    case model.now of
-                        Just _ ->
-                            loadInitialStats m2
-
-                        Nothing ->
-                            ( m2, E.none )
+                    loadInitialStatsIfReady m2
 
                 userSettingsEff =
                     if rsp.enableAudioTranscription then
@@ -1254,7 +1304,11 @@ update user shared route msg model =
                 Shared.Components.DateRangePicker.Submit ->
                     let
                         m3 =
-                            { m2 | from = model.dateRangePicker.from, to = model.dateRangePicker.to }
+                            { m2
+                                | from = model.dateRangePicker.from
+                                , to = model.dateRangePicker.to
+                                , fromDateUsesDefault = False
+                            }
                     in
                     mapSnd (addEff E.none)
                         (loadCoreStatsAndPushUrl
@@ -2312,7 +2366,7 @@ update user shared route msg model =
                         m2 =
                             { model | unfoldGraphs = not model.unfoldGraphs }
                     in
-                    case ( m2.groupsMessageCountByDay, List.head m2.freqsSelected ) of
+                    case ( m2.groupsMessageCountByDay, if m2.radioFeaturesAllowed then List.head m2.freqsSelected else Nothing ) of
                         ( NotAsked, Just freq ) ->
                             if m2.unfoldGraphs then
                                 ( { m2 | groupsMessageCountByDay = Loading }
@@ -2580,27 +2634,14 @@ update user shared route msg model =
 
         ClearAllFilters ->
             case model.now of
-                Just now ->
+                Just _ ->
                     let
                         m2 =
                             Query.updModelFromQueryState model emptyQueryState
-
-                        ( from, to ) =
-                            Shared.Components.DateTime.initAnalysisRanges
-                                { from = m2.from
-                                , to = m2.to
-                                , zone = shared.timeZone
-                                , now = now
-                                }
-
-                        m3 =
-                            { m2
-                                | from = from
-                                , to = to
-                                , dateRangePicker = Shared.Components.DateRangePicker.initFromData from to
-                            }
+                                |> (\updatedModel -> { updatedModel | fromDateUsesDefault = True })
+                                |> resolveAnalysisDateRange shared
                     in
-                    loadCoreStatsAndPushUrl (invalidateOptionFilters m3)
+                    loadCoreStatsAndPushUrl (invalidateOptionFilters m2)
 
                 _ ->
                     ( model, E.none )
@@ -3804,7 +3845,7 @@ update user shared route msg model =
                         , reportTagsOnlyThisUnit = Just model.reportTagsOnlyThisUnitForReport
                         , tagReportSortBy =
                             if model.reportTemplate == RTTags then
-                                Just model.reportTagSortBySelect.selected
+                                Just (if model.radioFeaturesAllowed then model.reportTagSortBySelect.selected else B.ByTime)
 
                             else
                                 Nothing
@@ -4388,7 +4429,7 @@ update user shared route msg model =
             )
 
         GroupsActivityPeriodChanged period ->
-            case ( model.from.datePosix, model.to.datePosix, List.head model.freqsSelected ) of
+            case ( model.from.datePosix, model.to.datePosix, if model.radioFeaturesAllowed then List.head model.freqsSelected else Nothing ) of
                 ( Just dtFromPosix, Just dtToPosix, Just freq ) ->
                     let
                         sinceDate =
@@ -4492,10 +4533,10 @@ reportTemplateToApiType model template =
 
         RTSenders y ->
             if y == Senders then
-                Just (B.Senders { aggregation = B.ByProfile, advancedFreqs = model.reportAdvancedSenders })
+                Just (B.Senders { aggregation = B.ByProfile, advancedFreqs = model.radioFeaturesAllowed && model.reportAdvancedSenders })
 
             else
-                Just (B.Senders { aggregation = B.ByPost, advancedFreqs = model.reportAdvancedSenders })
+                Just (B.Senders { aggregation = B.ByPost, advancedFreqs = model.radioFeaturesAllowed && model.reportAdvancedSenders })
 
         RTNaUshnom ->
             Just B.Naushnom
@@ -4587,7 +4628,8 @@ editSidebarContent model =
                                     ]
                                     []
                                 ]
-                            , div []
+                            , Html.Extra.viewIf model.radioFeaturesAllowed <|
+                              div []
                                 [ label [ class "block text-sm font-medium mb-2" ] [ text "Частота" ]
                                 , input
                                     [ type_ "text"
@@ -4609,7 +4651,8 @@ editSidebarContent model =
                                     ]
                                     []
                                 ]
-                            , div []
+                            , Html.Extra.viewIf model.radioFeaturesAllowed <|
+                              div []
                                 [ label [ class "block text-sm font-medium mb-2" ] [ text "Пост" ]
                                 , input
                                     [ type_ "text"

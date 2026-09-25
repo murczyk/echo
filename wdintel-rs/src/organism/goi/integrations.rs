@@ -37,7 +37,7 @@ use crate::organism::types::{
 use crate::sigint::aor::report_order;
 use crate::types::*;
 use crate::users::{
-    ensure_admin, ensure_rer_role, ensure_rer_role_by_id, has_role,
+    ensure_admin, ensure_base_role, ensure_base_role_by_id, has_role,
     login_id_from_identity,
 };
 use crate::utils::string::{
@@ -353,7 +353,7 @@ pub async fn list_current_user_goi_integrations(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<ListCurrentUserGoiIntegrationsRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
 
     let user_id = login_id_from_identity(&user)?;
     let is_admin = goi_pause_worker_user_is_admin(&env.dbx, &user_id).await;
@@ -376,7 +376,7 @@ pub async fn update_current_user_goi_pause_worker(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateGoiIntegrationPauseWorkerReq>,
 ) -> Result<Json<GoiUserIntegration>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
 
     let user_id = login_id_from_identity(&user)?;
     let req = req.into_inner();
@@ -475,7 +475,7 @@ pub async fn list_current_user_goi_associations(
     env: actix_web::web::Data<Env>,
     req: Json<ListGoiAssociationsReq>,
 ) -> Result<Json<ListGoiAssociationsRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
 
     let user_id = login_id_from_identity(&user)?;
     let req = req.into_inner();
@@ -537,7 +537,7 @@ pub async fn launch_current_user_goi_associations_report(
     env: actix_web::web::Data<Env>,
     req: Json<ListGoiAssociationsReq>,
 ) -> Result<Json<i64>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let user_id = login_id_from_identity(&user).c(h!())?;
     let mut req = req.into_inner();
     goi_associations_period(&req, true).c(h!())?;
@@ -619,7 +619,7 @@ pub async fn list_current_user_goi_knowledge(
     env: actix_web::web::Data<Env>,
     req: Json<ListGoiKnowledgeReq>,
 ) -> Result<Json<ListGoiKnowledgeRsp>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
 
     let user_id = login_id_from_identity(&user)?;
     let req = req.into_inner();
@@ -670,7 +670,7 @@ async fn resolve_report_tab_order_organism_id(
 ) -> Result<Option<i64>, AppError> {
     match integration_id {
         Some(integration_id) => {
-            ensure_rer_role_by_id(dbx, user_id).await?;
+            ensure_base_role_by_id(dbx, user_id).await.c(h!())?;
             let integration = load_accessible_integration_for_user(
                 dbx,
                 user_id,
@@ -703,7 +703,7 @@ pub async fn restart_current_user_goi_service(
     env: actix_web::web::Data<Env>,
     req: Json<RestartGoiIntegrationServiceReq>,
 ) -> Result<Json<bool>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
 
     let user_id = login_id_from_identity(&user)?;
     let integrations =
@@ -738,7 +738,7 @@ pub async fn unlink_current_user_goi_whatsapp(
     env: actix_web::web::Data<Env>,
     req: Json<UnlinkGoiIntegrationWhatsappReq>,
 ) -> Result<Json<bool>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
 
     let user_id = login_id_from_identity(&user)?;
     let integrations =
@@ -773,7 +773,7 @@ pub async fn download_current_user_goi_palettes(
     env: actix_web::web::Data<Env>,
     req: Json<DownloadGoiIntegrationPalettesReq>,
 ) -> Result<HttpResponse, AppError> {
-    ensure_rer_role(&env.dbx, &user).await?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
 
     let user_id = login_id_from_identity(&user)?;
     let req = req.into_inner();
@@ -812,7 +812,7 @@ pub async fn upload_current_user_goi_categories(
     integration_id: ActixPath<i64>,
     mut payload: Multipart,
 ) -> Result<Json<bool>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await?;
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
 
     let user_id = login_id_from_identity(&user)?;
     let integration = load_accessible_integration_for_user(

@@ -1,6 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
+import { RadioFeaturesProvider } from '../../shared/RadioFeatures';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -215,7 +216,11 @@ function renderPanel(
   };
 
   act(() => {
-    root.render(<NetworkCallsignRelationsPanel {...(props as any)} />);
+    root.render(
+      <RadioFeaturesProvider allowed>
+        {<NetworkCallsignRelationsPanel {...(props as any)} />}
+      </RadioFeaturesProvider>,
+    );
   });
 
   return { container, root, props };
@@ -287,11 +292,15 @@ describe('NetworkCallsignRelationsPanel', () => {
 
     act(() => {
       view.root.render(
-        <NetworkCallsignRelationsPanel
-          {...(view.props as any)}
-          relationsMinIntensity={25}
-          relationsEnabledFreqs={['652.111']}
-        />,
+        <RadioFeaturesProvider allowed>
+          {
+            <NetworkCallsignRelationsPanel
+              {...(view.props as any)}
+              relationsMinIntensity={25}
+              relationsEnabledFreqs={['652.111']}
+            />
+          }
+        </RadioFeaturesProvider>,
       );
     });
 
@@ -309,12 +318,16 @@ describe('NetworkCallsignRelationsPanel', () => {
 
     act(() => {
       view.root.render(
-        <NetworkCallsignRelationsPanel
-          {...(view.props as any)}
-          relationsMinIntensity={25}
-          relationsEnabledFreqs={['652.111']}
-          relationsSearch=""
-        />,
+        <RadioFeaturesProvider allowed>
+          {
+            <NetworkCallsignRelationsPanel
+              {...(view.props as any)}
+              relationsMinIntensity={25}
+              relationsEnabledFreqs={['652.111']}
+              relationsSearch=""
+            />
+          }
+        </RadioFeaturesProvider>,
       );
     });
 
@@ -331,12 +344,16 @@ describe('NetworkCallsignRelationsPanel', () => {
 
     act(() => {
       view.root.render(
-        <NetworkCallsignRelationsPanel
-          {...(view.props as any)}
-          relationsMinIntensity={25}
-          relationsEnabledFreqs={['652.111']}
-          relationsSearch="alpha"
-        />,
+        <RadioFeaturesProvider allowed>
+          {
+            <NetworkCallsignRelationsPanel
+              {...(view.props as any)}
+              relationsMinIntensity={25}
+              relationsEnabledFreqs={['652.111']}
+              relationsSearch="alpha"
+            />
+          }
+        </RadioFeaturesProvider>,
       );
     });
 
@@ -430,13 +447,17 @@ describe('NetworkCallsignRelationsPanel', () => {
 
     act(() => {
       view.root.render(
-        <NetworkCallsignRelationsPanel
-          {...(view.props as any)}
-          relations={null}
-          relationsLoaded={false}
-          relationsLoading={true}
-          relationsError={null}
-        />,
+        <RadioFeaturesProvider allowed>
+          {
+            <NetworkCallsignRelationsPanel
+              {...(view.props as any)}
+              relations={null}
+              relationsLoaded={false}
+              relationsLoading={true}
+              relationsError={null}
+            />
+          }
+        </RadioFeaturesProvider>,
       );
     });
 
@@ -450,13 +471,17 @@ describe('NetworkCallsignRelationsPanel', () => {
 
     act(() => {
       view.root.render(
-        <NetworkCallsignRelationsPanel
-          {...(view.props as any)}
-          relations={null}
-          relationsLoaded={true}
-          relationsLoading={false}
-          relationsError={null}
-        />,
+        <RadioFeaturesProvider allowed>
+          {
+            <NetworkCallsignRelationsPanel
+              {...(view.props as any)}
+              relations={null}
+              relationsLoaded={true}
+              relationsLoading={false}
+              relationsError={null}
+            />
+          }
+        </RadioFeaturesProvider>,
       );
     });
 
@@ -512,7 +537,9 @@ describe('NetworkCallsignRelationsPanel', () => {
 
     act(() => {
       view.root.render(
-        <NetworkCallsignRelationsPanel {...(view.props as any)} relationsLoading={true} />,
+        <RadioFeaturesProvider allowed>
+          {<NetworkCallsignRelationsPanel {...(view.props as any)} relationsLoading={true} />}
+        </RadioFeaturesProvider>,
       );
     });
 
@@ -575,13 +602,17 @@ describe('NetworkCallsignRelationsPanel', () => {
 
     act(() => {
       view.root.render(
-        <NetworkCallsignRelationsPanel
-          {...(view.props as any)}
-          relations={createSparseRelations()}
-          relationsSearch=""
-          relationsMinIntensity={12}
-          relationsShowLabels={false}
-        />,
+        <RadioFeaturesProvider allowed>
+          {
+            <NetworkCallsignRelationsPanel
+              {...(view.props as any)}
+              relations={createSparseRelations()}
+              relationsSearch=""
+              relationsMinIntensity={12}
+              relationsShowLabels={false}
+            />
+          }
+        </RadioFeaturesProvider>,
       );
     });
 

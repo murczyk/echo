@@ -1697,9 +1697,8 @@ mod tests {
     #[tokio::test]
     async fn removed_resolved_upload_fails_staging_and_rolls_back_earlier_objects(
     ) {
-        let (env, _guard) = cleanup_locked().await.unwrap();
         let temporary = tempfile::tempdir().unwrap();
-        let handler = crate::sigint::file_upload::tus::TusHandler::new(
+        let handler = crate::sigint::file_upload::tus::TusHandler::new_for_test(
             temporary.path().display().to_string(),
             crate::sigint::file_upload::TUS_PATH_BASE,
         );
@@ -1732,7 +1731,8 @@ mod tests {
                 content_type: None,
             },
         );
-        let mut config = env.config.clone();
+        let mut config =
+            crate::config::read_config(crate::types::Mode::Test).unwrap();
         config.s3_config = Some(crate::config::S3Config {
             s3_access_key_id: "test".into(),
             s3_secret_access_key: "test".into(),

@@ -1,6 +1,6 @@
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import WebAssetIcon from '@mui/icons-material/WebAsset';
-import { Switch, Typography } from '@mui/material';
+import { Box, Switch, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 
@@ -23,6 +23,7 @@ import {
   setStoredDutyNotificationSettingsForFeed,
   testBrowserNotification,
 } from './notifications';
+import { dutyFeedPanelSurfaceSx } from './feed-panel-styles';
 
 export type FeedNotificationPanelProps = {
   feedId: string;
@@ -37,7 +38,10 @@ export type FeedNotificationPanelProps = {
 
 function NotificationChannelCard({ children }: { children: ReactNode }) {
   return (
-    <article className="flex h-full flex-col items-stretch gap-3 rounded-echo-lg border border-echo-border bg-echo-surface-raised p-echo-lg">
+    <article
+      className="flex h-full flex-col items-stretch gap-3 rounded-echo-lg border border-echo-border p-echo-lg"
+      style={{ backgroundColor: 'transparent' }}
+    >
       {children}
     </article>
   );
@@ -126,7 +130,11 @@ export function FeedNotificationPanel({
     browserStatus !== DutyBrowserNotificationStatus.NotRequested;
 
   return (
-    <section className="w-full max-w-full border border-echo-border bg-echo-surface-raised px-echo-lg py-echo-md">
+    <Box
+      component="section"
+      className="w-full max-w-full border border-echo-border px-echo-lg py-echo-md"
+      sx={dutyFeedPanelSurfaceSx}
+    >
       <Typography variant="subtitle2">Сповіщення цієї стрічки</Typography>
       <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(min(100%,22rem),1fr))] gap-3">
         <NotificationChannelCard>
@@ -136,7 +144,7 @@ export function FeedNotificationPanel({
                 <VolumeUpIcon fontSize="small" />
               </span>
               <span className="min-w-0">
-                <Typography component="span" fontWeight={600} variant="body1">
+                <Typography component="span" fontWeight={400} variant="body2">
                   Звуковий сигнал
                 </Typography>
               </span>
@@ -190,7 +198,7 @@ export function FeedNotificationPanel({
                 <WebAssetIcon fontSize="small" />
               </span>
               <span className="min-w-0">
-                <Typography component="span" fontWeight={600} variant="body1">
+                <Typography component="span" fontWeight={400} variant="body2">
                   Системний банер
                 </Typography>
               </span>
@@ -302,7 +310,7 @@ export function FeedNotificationPanel({
         onTestSound={testSound}
         open={helpTopic !== null}
       />
-    </section>
+    </Box>
   );
 }
 

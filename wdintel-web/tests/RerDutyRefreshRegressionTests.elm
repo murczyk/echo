@@ -6,6 +6,7 @@ import Expect
 import Json.Decode
 import Json.Encode
 import Le.Waterfall.MessagesTests exposing (messageStub)
+import Page
 import Pages.RerDuty
 import Pages_.RerDuty.Waterfall as Waterfall
 import Pages_.RerDuty.Waterfall.Messages as Messages
@@ -15,6 +16,7 @@ import Shared
 import String
 import Test exposing (Test, describe, test)
 import Url
+import Utils.RemoteData exposing (RemoteData(..))
 
 
 suite : Test
@@ -42,13 +44,14 @@ suite =
                                 , lastPushQuery = Dict.empty
                                 , datasources = []
                                 , eventLastId = Nothing
+                                , currentUser = Success anonymousUser
                                 }
 
                             ( waterfallA, _ ) =
-                                Waterfall.init "wf-a" Nothing
+                                Waterfall.init True "wf-a" Nothing
 
                             ( waterfallB, _ ) =
-                                Waterfall.init "wf-b" Nothing
+                                Waterfall.init True "wf-b" Nothing
 
                             messageA =
                                 callsignMessage "WOLF"
@@ -80,7 +83,7 @@ suite =
                             ( updatedModel, _ ) =
                                 Pages.RerDuty.update
                                     shared
-                                    anonymousUser
+                                    route
                                     (Pages.RerDuty.InboxMessagesUpdated (Ok { messages = [ ( 1, messageA ), ( 2, messageB ), ( 99, ghost ) ] }))
                                     model
 
@@ -116,6 +119,48 @@ suite =
 
                             _ ->
                                 Expect.fail "expected both waterfalls to remain present"
+        , test "#3568 saved Duty columns wait for the real user's radio permissions" <|
+            \_ ->
+                let
+                    state =
+                        Json.Encode.object
+                            [ ( "waterfalls"
+                              , Json.Encode.list identity
+                                    [ Json.Encode.list identity [ Json.Encode.string "wf-saved", dutyFilter [] ] ]
+                              )
+                            ]
+                            |> Json.Encode.encode 0
+                in
+                case Url.fromString ("http://localhost/rer-duty?state=" ++ Url.percentEncode state) of
+                    Nothing ->
+                        Expect.fail "invalid test url"
+
+                    Just url ->
+                        let
+                            route =
+                                Route.fromUrl () url
+
+                            ( shared, _ ) =
+                                Shared.init (Ok { isDark = False, now = 0 }) route
+
+                            ( waiting, _ ) =
+                                Page.init (Pages.RerDuty.page anonymousUser shared route) ()
+
+                            user =
+                                { anonymousUser | name = "operator", roles = [ "Rer" ] }
+
+                            ( ready, _ ) =
+                                Pages.RerDuty.update shared route (Pages.RerDuty.GotCurrentUser (Ok user)) waiting
+                        in
+                        Expect.all
+                            [ \_ -> Expect.equal [] waiting.waterfalls
+                            , \_ -> Expect.equal route.query waiting.lastPushQuery
+                            , \_ ->
+                                ready.waterfalls
+                                    |> List.map (\( id, waterfall ) -> ( id, waterfall.radioFeaturesAllowed ))
+                                    |> Expect.equal [ ( "wf-saved", True ) ]
+                            ]
+                            ()
         , test "legacy saved Duty filters keep waterfall state when device fields are absent" <|
             \_ ->
                 case Json.Decode.decodeValue B.rerDutyQueryStateDecoder legacyDutyState of
@@ -224,6 +269,7 @@ anonymousUser =
     , sigintZoneId = Nothing
     , organismId = Nothing
     , deltaLogin = Nothing
+    , displayName = Nothing
     , goiConfiguredForOrganism = False
     , goiFullAccessForOrganism = False
     , goiHost = Nothing

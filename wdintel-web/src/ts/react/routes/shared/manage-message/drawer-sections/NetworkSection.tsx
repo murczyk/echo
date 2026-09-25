@@ -8,6 +8,7 @@ import type { NetworkSearchResult } from '../../../../services/api/direct-submit
 import { ParserFieldFeedback } from '../MessageParserFeedback';
 
 type Props = {
+  radioFeaturesAllowed: boolean;
   isEditMode: boolean;
   busy: boolean;
   recentValues: any;
@@ -25,6 +26,7 @@ type Props = {
 };
 
 export function NetworkSection({
+  radioFeaturesAllowed,
   isEditMode,
   busy,
   recentValues,
@@ -50,7 +52,7 @@ export function NetworkSection({
   } = useFormContext<MessageFormData>();
 
   return (
-    <FormSectionWrapper title="Мережа та радіо">
+    <FormSectionWrapper title={radioFeaturesAllowed ? 'Мережа та радіо' : 'Мережа'}>
       <Box
         sx={{
           display: 'grid',
@@ -58,42 +60,44 @@ export function NetworkSection({
           gap: 2,
         }}
       >
-        <ParserFieldFeedback field="freq" label="частоту">
-          <Controller
-            name="freq"
-            control={control}
-            render={({ field }) => (
-              <Autocomplete
-                freeSolo
-                forcePopupIcon
-                noOptionsText="Немає варіантів"
-                options={Array.from(new Set([...(recentValues?.freq || []), ...freqOptions]))}
-                value={field.value ?? ''}
-                loading={freqLoading}
-                disabled={busy}
-                onInputChange={(_, newValue, reason) => {
-                  if (reason === 'input') {
-                    setFreqInput(newValue);
-                    field.onChange(newValue);
-                  }
-                }}
-                onChange={(_, newValue) => field.onChange(newValue || '')}
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    label="Частота (МГц)"
-                    placeholder="напр. 149.5000"
-                    size="small"
-                    fullWidth
-                    error={!!errors.freq}
-                    helperText={errors.freq?.message}
-                    disabled={busy}
-                  />
-                )}
-              />
-            )}
-          />
-        </ParserFieldFeedback>
+        {radioFeaturesAllowed ? (
+          <ParserFieldFeedback field="freq" label="частоту">
+            <Controller
+              name="freq"
+              control={control}
+              render={({ field }) => (
+                <Autocomplete
+                  freeSolo
+                  forcePopupIcon
+                  noOptionsText="Немає варіантів"
+                  options={Array.from(new Set([...(recentValues?.freq || []), ...freqOptions]))}
+                  value={field.value ?? ''}
+                  loading={freqLoading}
+                  disabled={busy}
+                  onInputChange={(_, newValue, reason) => {
+                    if (reason === 'input') {
+                      setFreqInput(newValue);
+                      field.onChange(newValue);
+                    }
+                  }}
+                  onChange={(_, newValue) => field.onChange(newValue || '')}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Частота (МГц)"
+                      placeholder="напр. 149.5000"
+                      size="small"
+                      fullWidth
+                      error={!!errors.freq}
+                      helperText={errors.freq?.message}
+                      disabled={busy}
+                    />
+                  )}
+                />
+              )}
+            />
+          </ParserFieldFeedback>
+        ) : null}
 
         <ParserFieldFeedback field="network_name" label="мережу">
           <Controller
@@ -161,7 +165,7 @@ export function NetworkSection({
                       field.onChange(newValue);
                       setSelectedNetwork(null);
                       setUnitLocked(false);
-                      if (newValue) {
+                      if (radioFeaturesAllowed && newValue) {
                         setValue('network_signal_name', 'DMR', { shouldValidate: true });
                       }
                     }
@@ -172,7 +176,7 @@ export function NetworkSection({
                     field.onChange(name);
                     selectedNetworkRef.current = network;
                     setSelectedNetwork(network);
-                    if (name) {
+                    if (radioFeaturesAllowed && name) {
                       setValue('network_signal_name', 'DMR', { shouldValidate: true });
                     }
 

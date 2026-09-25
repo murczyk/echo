@@ -36,13 +36,17 @@ export function DeviceFilesSidebar({
   tagsState,
   tagFilter,
   onTagFilterChange,
+  fullHeight = false,
 }: {
+  fullHeight?: boolean;
   files: DeviceFilesState;
   tagsState: DeviceAnalyticsTagsState;
   tagFilter: DeviceAnalyticsTagFilter;
   onTagFilterChange: (filter: DeviceAnalyticsTagFilter) => void;
 }) {
-  const [mode, setMode] = useState(DeviceFilesSidebarMode.Explorer);
+  const [mode, setMode] = useState(
+    files.searchActive ? DeviceFilesSidebarMode.Search : DeviceFilesSidebarMode.Explorer,
+  );
   const searchRoot =
     files.searchScope === null
       ? null
@@ -85,7 +89,7 @@ export function DeviceFilesSidebar({
       aria-labelledby="device-files-sidebar-title"
       data-testid="device-files-sidebar"
       aria-busy={files.rootsLoading || files.rootsRefreshing}
-      className="flex max-h-[50vh] min-h-0 min-w-0 flex-col overflow-hidden rounded-echo-md border border-echo-border bg-echo-surface echo-lg:h-full echo-lg:max-h-none"
+      className={`max-echo-lg:[&_button]:min-h-echo-control-lg max-echo-lg:[&_.MuiIconButton-root]:size-echo-control-lg max-echo-lg:[&_.MuiListItemButton-root]:min-h-echo-control-lg flex min-h-0 min-w-0 flex-col overflow-hidden rounded-echo-md border border-echo-border bg-echo-surface ${fullHeight ? 'h-full' : 'max-h-[50vh] echo-lg:h-full echo-lg:max-h-none'}`}
     >
       <header className="flex h-[58px] shrink-0 items-center justify-between gap-echo-sm border-b border-echo-border px-echo-lg py-echo-sm">
         <h2
