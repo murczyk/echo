@@ -3,6 +3,7 @@ import { Box, Button, Stack, Typography } from '@mui/material';
 import { useEffect, useMemo } from 'react';
 import { MaterialReactTable } from 'material-react-table';
 
+import type { NetworkFreqCallsignsPeriod } from '../../../../../Bindings';
 import type { NetworkCallsignCatalogRowView } from '../network-callsigns.types';
 import {
   MrtRowActionButton,
@@ -34,6 +35,7 @@ import {
   NETWORK_CALLSIGN_COLUMN_SIZES,
 } from './NetworkCallsignsTableShared';
 import { NetworkCallsignSourceCell } from './NetworkCallsignSourceUi';
+import { NetworkFreqCallsignPeriodSettings } from './NetworkFreqCallsignPeriodSettings';
 import {
   TableStateProvider,
   useTableStateContext,
@@ -55,6 +57,9 @@ type Props = {
   loading: boolean;
   loadingError: string | null;
   canManage: boolean;
+  period: NetworkFreqCallsignsPeriod;
+  periodSettingsDisabled: boolean;
+  onPeriodChange: (period: NetworkFreqCallsignsPeriod) => void;
   onAddKnownCallsign: (knownCallsignId: number) => void;
   onReload: () => void;
   inFlightAddIds: number[];
@@ -67,6 +72,9 @@ export function NetworkCallsignsCatalogTable({
   loading,
   loadingError,
   canManage,
+  period,
+  periodSettingsDisabled,
+  onPeriodChange,
   onAddKnownCallsign,
   onReload,
   inFlightAddIds,
@@ -95,6 +103,9 @@ export function NetworkCallsignsCatalogTable({
         loading={loading}
         loadingError={loadingError}
         canManage={canManage}
+        period={period}
+        periodSettingsDisabled={periodSettingsDisabled}
+        onPeriodChange={onPeriodChange}
         onAddKnownCallsign={onAddKnownCallsign}
         onReload={onReload}
         inFlightAddIds={inFlightAddIds}
@@ -110,6 +121,9 @@ function NetworkCallsignsCatalogTableContent({
   loading,
   loadingError,
   canManage,
+  period,
+  periodSettingsDisabled,
+  onPeriodChange,
   onAddKnownCallsign,
   onReload,
   inFlightAddIds,
@@ -370,7 +384,17 @@ function NetworkCallsignsCatalogTableContent({
             {countLabel}
           </Typography>
         </Stack>
-        <InternalTableActions table={table} rowNumberAppearanceControl />
+        <InternalTableActions
+          table={table}
+          rowNumberAppearanceControl
+          leadingInternalActions={
+            <NetworkFreqCallsignPeriodSettings
+              period={period}
+              disabled={periodSettingsDisabled}
+              onChange={onPeriodChange}
+            />
+          }
+        />
       </Box>
 
       {loadingError && rows.length > 0 ? (

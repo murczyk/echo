@@ -236,43 +236,49 @@ describe('use-rer-network-details-neo-page.load', () => {
     ).toEqual(['652.111', '852.111']);
   });
 
-  it('loads Everything candidates with activity and splits catalog and intercepted rows', async () => {
+  it('loads Catalog and Intercepted candidates separately with activity', async () => {
     installDefaultApiMocks();
     renderHookHarness();
 
     const networkCallsignsDeferred = createDeferred<{ networkCallsigns: NetworkCallsign[] }>();
     const sourcesDeferred = createDeferred<Source[]>();
-    const candidateDeferred = createDeferred<{ callsigns: NetworkCallsignRes[] }>();
+    const catalogDeferred = createDeferred<{ callsigns: NetworkCallsignRes[] }>();
+    const interceptedDeferred = createDeferred<{ callsigns: NetworkCallsignRes[] }>();
 
     callsignsApiMock.listNetworkCallsigns.mockReturnValue(networkCallsignsDeferred.promise);
     callsignsApiMock.listSources.mockReturnValue(sourcesDeferred.promise);
-    callsignsApiMock.getNetworkCallsigns.mockReturnValue(candidateDeferred.promise);
+    callsignsApiMock.getNetworkCallsigns.mockImplementation((req: { section: string }) => {
+      if (req.section === 'Catalog') return catalogDeferred.promise;
+      if (req.section === 'Intercepted') return interceptedDeferred.promise;
+      return Promise.resolve({ callsigns: [] });
+    });
 
     await act(async () => {
       void latestLoadCallsigns?.(42);
     });
 
     await act(async () => {
-      candidateDeferred.resolve({
+      catalogDeferred.resolve({
         callsigns: [
           createCallsignGroup({
             callsign: 'БАРС-4',
             knownCallsigns: [createKnownCallsign()],
-          }),
-          createCallsignGroup({
-            callsign: 'СОКІЛ-1',
-            knownCallsigns: [],
           }),
         ],
       });
       await Promise.resolve();
     });
 
-    expect(callsignsApiMock.getNetworkCallsigns).toHaveBeenCalledTimes(1);
     expect(callsignsApiMock.getNetworkCallsigns).toHaveBeenCalledWith({
       networkId: 42,
       includeActivityInfo: true,
-      section: 'Everything',
+      section: 'Catalog',
+      period: 'Last21Days',
+    });
+    expect(callsignsApiMock.getNetworkCallsigns).toHaveBeenCalledWith({
+      networkId: 42,
+      includeActivityInfo: true,
+      section: 'Intercepted',
       period: 'Last21Days',
     });
     expect(callsignsApiMock.listNetworkCallsigns).toHaveBeenCalledWith({
@@ -283,11 +289,26 @@ describe('use-rer-network-details-neo-page.load', () => {
     expect(latestState?.networkCallsignsLoading).toBe(true);
     expect(latestState?.catalogCallsignsLoaded).toBe(true);
     expect(latestState?.catalogCallsignsLoading).toBe(false);
-    expect(latestState?.interceptedCallsignsLoaded).toBe(true);
-    expect(latestState?.interceptedCallsignsLoading).toBe(false);
+    expect(latestState?.interceptedCallsignsLoaded).toBe(false);
+    expect(latestState?.interceptedCallsignsLoading).toBe(true);
     expect(latestState?.callsignsLoading).toBe(true);
     expect(latestState?.catalogCallsignGroups.map((group) => group.callsign)).toEqual(['БАРС-4']);
     expect(latestState?.catalogCallsignGroups[0]?.messageCount).toBe(8);
+
+    await act(async () => {
+      interceptedDeferred.resolve({
+        callsigns: [
+          createCallsignGroup({
+            callsign: 'СОКІЛ-1',
+            knownCallsigns: [],
+          }),
+        ],
+      });
+      await Promise.resolve();
+    });
+
+    expect(latestState?.interceptedCallsignsLoaded).toBe(true);
+    expect(latestState?.interceptedCallsignsLoading).toBe(false);
     expect(latestState?.unknownInterceptedCallsigns.map((group) => group.callsign)).toEqual([
       'СОКІЛ-1',
     ]);
@@ -354,11 +375,16 @@ describe('use-rer-network-details-neo-page.load', () => {
 
     const networkCallsignsDeferred = createDeferred<{ networkCallsigns: NetworkCallsign[] }>();
     const sourcesDeferred = createDeferred<Source[]>();
-    const candidateDeferred = createDeferred<{ callsigns: NetworkCallsignRes[] }>();
+    const catalogDeferred = createDeferred<{ callsigns: NetworkCallsignRes[] }>();
+    const interceptedDeferred = createDeferred<{ callsigns: NetworkCallsignRes[] }>();
 
     callsignsApiMock.listNetworkCallsigns.mockReturnValue(networkCallsignsDeferred.promise);
     callsignsApiMock.listSources.mockReturnValue(sourcesDeferred.promise);
-    callsignsApiMock.getNetworkCallsigns.mockReturnValue(candidateDeferred.promise);
+    callsignsApiMock.getNetworkCallsigns.mockImplementation((req: { section: string }) => {
+      if (req.section === 'Catalog') return catalogDeferred.promise;
+      if (req.section === 'Intercepted') return interceptedDeferred.promise;
+      return Promise.resolve({ callsigns: [] });
+    });
     callsignsApiMock.getNetworkCallsignsActivity.mockResolvedValue({ callsignsActivity: [] });
 
     await act(async () => {
@@ -366,7 +392,8 @@ describe('use-rer-network-details-neo-page.load', () => {
     });
 
     await act(async () => {
-      candidateDeferred.resolve({
+      catalogDeferred.resolve({ callsigns: [] });
+      interceptedDeferred.resolve({
         callsigns: [
           createCallsignGroup({
             callsign: 'СОКІЛ-1',
@@ -390,6 +417,5 @@ describe('use-rer-network-details-neo-page.load', () => {
     });
 
     expect(latestState?.unknownInterceptedCallsigns).toEqual([]);
-    expect(latestState?.networkCallsignGroups.map((group) => group.callsign)).toEqual(['СОКІЛ-1']);
   });
 });
