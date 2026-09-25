@@ -1,8 +1,10 @@
 import AddIcon from '@mui/icons-material/Add';
+import CheckIcon from '@mui/icons-material/Check';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import {
   Box,
-  Chip,
   IconButton,
   InputAdornment,
   Stack,
@@ -11,25 +13,28 @@ import {
   Typography,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
-import { useMemo, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
 
-import { getCoordinateText } from '../../../../../maps/coordinate-format';
+import { copyTextToClipboard } from '../../../../../copy-to-clipboard';
+import { getCoordinateMgrsText, getCoordinateText } from '../../../../../maps/coordinate-format';
 import {
   isCoordinateBlockFullyParsed,
   parseCoordinateBlock,
-  type CoordinateInputFormat,
   type ParsedCoordinate,
 } from '../../../../../maps/coordinate-parser';
 import { COORDINATE_PANEL_MAX_HEIGHT_PX } from './coordinate-input.constants';
 
-const FORMAT_LABELS: Record<CoordinateInputFormat, string> = {
-  wgs84: 'WGS-84',
-  dms: 'DMS',
-  mgrs: 'MGRS',
-  utm: 'UTM',
-  sk42: 'СК-42',
-  usk2000: 'УСК-2000',
-};
+const COPY_FEEDBACK_MS = 1200;
+
+type CopyStatus = 'idle' | 'copying' | 'copied' | 'error';
 
 type Props = {
   value: string;
@@ -49,15 +54,121 @@ function coordinateDuplicateKey(point: ParsedCoordinate): string {
   return getCoordinateText('wgs', point);
 }
 
+function coordinateIdentityKeys(point: ParsedCoordinate): string[] {
+  const wgs = coordinateDuplicateKey(point);
+  const mgrs = getCoordinateMgrsText(point);
+  return mgrs ? [wgs, mgrs] : [wgs];
+}
+
+function parseUniqueCoordinates(value: string): ParsedCoordinate[] {
+  const keys = new Set<string>();
+  return parseCoordinateBlock(value).filter((point) => {
+    const pointKeys = coordinateIdentityKeys(point);
+    if (pointKeys.some((key) => keys.has(key))) return false;
+    pointKeys.forEach((key) => keys.add(key));
+    return true;
+  });
+}
+
 function serializeCoordinates(points: ParsedCoordinate[]): string {
   return points.map((point) => getCoordinateText('wgs', point)).join('\n');
 }
 
+function CoordinateCopyButton({
+  value,
+  index,
+  disabled,
+}: {
+  value: string | null;
+  index: number;
+  disabled: boolean;
+}) {
+  const [status, setStatus] = useState<CopyStatus>('idle');
+  const resetTimeoutRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (resetTimeoutRef.current != null) window.clearTimeout(resetTimeoutRef.current);
+    },
+    [],
+  );
+
+  const scheduleReset = () => {
+    if (resetTimeoutRef.current != null) window.clearTimeout(resetTimeoutRef.current);
+    resetTimeoutRef.current = window.setTimeout(() => setStatus('idle'), COPY_FEEDBACK_MS);
+  };
+
+  const handleCopy = () => {
+    if (!value) return;
+    setStatus('copying');
+    void copyTextToClipboard(value)
+      .then(() => {
+        setStatus('copied');
+        scheduleReset();
+      })
+      .catch(() => {
+        setStatus('error');
+        scheduleReset();
+      });
+  };
+
+  const title =
+    status === 'copied'
+      ? 'Скопійовано'
+      : status === 'error'
+        ? 'Не вдалося скопіювати'
+        : 'Копіювати MGRS';
+
+  return (
+    <>
+      <IconButton
+        size="small"
+        title={title}
+        aria-label={`Копіювати координату ${index + 1}`}
+        onClick={handleCopy}
+        disabled={disabled || !value || status === 'copying'}
+        sx={{ p: 0.5 }}
+      >
+        {status === 'copied' ? (
+          <CheckIcon fontSize="small" />
+        ) : status === 'error' ? (
+          <ErrorOutlineIcon fontSize="small" />
+        ) : (
+          <ContentCopyIcon
+            fontSize="small"
+            sx={{ transform: 'scale(0.82)', transformOrigin: 'center' }}
+          />
+        )}
+      </IconButton>
+      {status === 'copied' || status === 'error' ? (
+        <Box
+          component="span"
+          role="status"
+          aria-live="polite"
+          sx={{
+            position: 'absolute',
+            width: 1,
+            height: 1,
+            p: 0,
+            m: -1,
+            overflow: 'hidden',
+            clip: 'rect(0 0 0 0)',
+            whiteSpace: 'nowrap',
+            border: 0,
+          }}
+        >
+          {status === 'copied' ? 'Скопійовано' : 'Не вдалося скопіювати'}
+        </Box>
+      ) : null}
+    </>
+  );
+}
+
 export function duplicateCoordinateHint(currentValue: string, input: string): string | null {
-  const currentKeys = new Set(parseCoordinateBlock(currentValue).map(coordinateDuplicateKey));
-  const parsed = parseCoordinateBlock(input);
+  const currentKeys = new Set(parseUniqueCoordinates(currentValue).flatMap(coordinateIdentityKeys));
+  const parsed = parseUniqueCoordinates(input);
   const duplicateCount = parsed.filter((point) =>
-    currentKeys.has(coordinateDuplicateKey(point)),
+    coordinateIdentityKeys(point).some((key) => currentKeys.has(key)),
   ).length;
   if (duplicateCount === 0) return null;
   if (duplicateCount < parsed.length) {
@@ -67,12 +178,12 @@ export function duplicateCoordinateHint(currentValue: string, input: string): st
 }
 
 export function matchingCoordinateKeys(currentValue: string, input: string): Set<string> {
-  const inputKeys = new Set(parseCoordinateBlock(input).map(coordinateDuplicateKey));
+  const inputKeys = new Set(parseUniqueCoordinates(input).flatMap(coordinateIdentityKeys));
 
   return new Set(
-    parseCoordinateBlock(currentValue)
-      .map(coordinateDuplicateKey)
-      .filter((key) => inputKeys.has(key)),
+    parseUniqueCoordinates(currentValue)
+      .filter((point) => coordinateIdentityKeys(point).some((key) => inputKeys.has(key)))
+      .map(coordinateDuplicateKey),
   );
 }
 
@@ -85,8 +196,8 @@ export function mergeCoordinateInput(
   parsed: number;
   fullyParsed: boolean;
 } {
-  const current = parseCoordinateBlock(currentValue);
-  const parsed = parseCoordinateBlock(input);
+  const current = parseUniqueCoordinates(currentValue);
+  const parsed = parseUniqueCoordinates(input);
   const fullyParsed = isCoordinateBlockFullyParsed(input);
   if (!fullyParsed) {
     return {
@@ -96,11 +207,11 @@ export function mergeCoordinateInput(
       fullyParsed,
     };
   }
-  const keys = new Set(current.map(coordinateDuplicateKey));
+  const keys = new Set(current.flatMap(coordinateIdentityKeys));
   const added = parsed.filter((point) => {
-    const key = coordinateDuplicateKey(point);
-    if (keys.has(key)) return false;
-    keys.add(key);
+    const pointKeys = coordinateIdentityKeys(point);
+    if (pointKeys.some((key) => keys.has(key))) return false;
+    pointKeys.forEach((key) => keys.add(key));
     return true;
   });
 
@@ -114,7 +225,7 @@ export function mergeCoordinateInput(
 
 export function removeCoordinateAt(value: string, index: number): string {
   return serializeCoordinates(
-    parseCoordinateBlock(value).filter((_, pointIndex) => pointIndex !== index),
+    parseUniqueCoordinates(value).filter((_, pointIndex) => pointIndex !== index),
   );
 }
 
@@ -127,7 +238,7 @@ export function CoordinateListInput({
   error,
   previewSlot,
 }: Props) {
-  const points = useMemo(() => parseCoordinateBlock(value), [value]);
+  const points = useMemo(() => parseUniqueCoordinates(value), [value]);
   const [input, setInput] = useState('');
   const [inputError, setInputError] = useState<string | null>(null);
   const [inputHint, setInputHint] = useState<string | null>(null);
@@ -261,6 +372,7 @@ export function CoordinateListInput({
             <Stack spacing={0.5}>
               {points.map((point, index) => {
                 const isMatching = matchingKeys.has(coordinateDuplicateKey(point));
+                const mgrsText = getCoordinateMgrsText(point);
 
                 return (
                   <Box
@@ -269,9 +381,9 @@ export function CoordinateListInput({
                     sx={(theme) => ({
                       display: 'flex',
                       alignItems: 'center',
-                      gap: 1,
+                      gap: 0,
                       minWidth: 0,
-                      px: 1,
+                      px: 0.5,
                       py: 0.5,
                       borderBottom: 1,
                       borderColor: 'divider',
@@ -285,22 +397,19 @@ export function CoordinateListInput({
                       },
                     })}
                   >
-                    {point.format !== 'wgs84' ? (
-                      <Chip
-                        label={FORMAT_LABELS[point.format]}
-                        size="small"
-                        variant="outlined"
-                        sx={{ flexShrink: 0, height: 24 }}
-                      />
-                    ) : null}
                     <Typography
                       variant="body2"
-                      noWrap
-                      title={getCoordinateText('wgs', point)}
-                      sx={{ flex: 1, minWidth: 0, fontVariantNumeric: 'tabular-nums' }}
+                      title={mgrsText ?? undefined}
+                      sx={{
+                        flex: 1,
+                        minWidth: 0,
+                        fontVariantNumeric: 'tabular-nums',
+                        whiteSpace: 'nowrap',
+                      }}
                     >
-                      {getCoordinateText('wgs', point)}
+                      {mgrsText ?? 'MGRS недоступний'}
                     </Typography>
+                    <CoordinateCopyButton value={mgrsText} index={index} disabled={disabled} />
                     <IconButton
                       size="small"
                       aria-label={`Видалити координату ${index + 1}`}
@@ -309,6 +418,7 @@ export function CoordinateListInput({
                         onBlur();
                       }}
                       disabled={disabled}
+                      sx={{ p: 0.5 }}
                     >
                       <DeleteOutlineIcon fontSize="small" />
                     </IconButton>

@@ -35,6 +35,8 @@ pub struct SystemSettingsCurrentRsp {
     pub hide_orbit_data: bool,
     pub disable_bot_tags: bool,
     pub duty_exclude_menu_enabled: bool,
+    #[serde(default = "default_analysis_aor_filter_enabled")]
+    pub analysis_aor_filter_enabled: bool,
     #[serde(default = "default_true")]
     pub two_factor_auth_enabled: bool,
 }
@@ -77,6 +79,8 @@ pub struct SystemSettingsItem {
     pub show_peleng_distance_to_battleline: bool,
     pub disable_bot_tags: bool,
     pub duty_exclude_menu_enabled: bool,
+    #[serde(default = "default_analysis_aor_filter_enabled")]
+    pub analysis_aor_filter_enabled: bool,
     #[serde(default = "default_true")]
     pub two_factor_auth_enabled: bool,
 }
@@ -139,8 +143,14 @@ pub struct CreateSystemSettingsReq {
     pub disable_bot_tags: bool,
     #[serde(default = "default_true")]
     pub duty_exclude_menu_enabled: bool,
+    #[serde(default = "default_analysis_aor_filter_enabled")]
+    pub analysis_aor_filter_enabled: bool,
     #[serde(default = "default_true")]
     pub two_factor_auth_enabled: bool,
+}
+
+fn default_analysis_aor_filter_enabled() -> bool {
+    crate::config::ANALYSIS_AOR_FILTER_ENABLED_DEFAULT
 }
 
 fn default_true() -> bool {
@@ -202,6 +212,7 @@ mod tests {
         assert!(!req.enable_audio_transcription);
         assert!(!req.show_peleng_distance_to_battleline);
         assert!(!req.disable_bot_tags);
+        assert!(req.analysis_aor_filter_enabled);
         assert_eq!(req.rer_duty_test_replay_interval_sec, 1);
     }
 }

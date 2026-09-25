@@ -35,7 +35,9 @@ export type DutySettingsHook = DutySettingsValue & {
   setMediaSummaryEnabled: (value: boolean) => void;
   setMessageTextPreviewLines: (value: MessageTextPreviewLineLimit) => void;
   setMessageSortBy: (value: MessageTimeBasis) => void;
+  setMessageAutoParseEnabled: (value: boolean) => void;
   scheduleSave: (nextSettings: DutySettingsSaveRequest) => void;
+  retryLoad: () => void;
 };
 
 function normalizeDutySettings(
@@ -57,6 +59,7 @@ function normalizeDutySettings(
     dutyCollapseMediaPreviews:
       settings?.dutyCollapseMediaPreviews ?? DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
     mediaSummaryEnabled: settings?.mediaSummaryEnabled ?? DEFAULT_MEDIA_SUMMARY_ENABLED,
+    messageAutoParseEnabled: settings?.messageAutoParseEnabled ?? false,
   };
 }
 
@@ -66,6 +69,7 @@ export function useDutySettings(): DutySettingsHook {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveInProgress, setSaveInProgress] = useState(false);
+  const [loadRevision, setLoadRevision] = useState(0);
   const pendingSaveRef = useRef<DutySettingsSaveRequest | null>(null);
   const saveRunningRef = useRef(false);
 
@@ -95,7 +99,13 @@ export function useDutySettings(): DutySettingsHook {
     return () => {
       abortController.abort();
     };
-  }, [applySettings]);
+  }, [applySettings, loadRevision]);
+
+  const retryLoad = useCallback(() => {
+    setLoadError(null);
+    setLoadInProgress(true);
+    setLoadRevision((revision) => revision + 1);
+  }, []);
 
   useEffect(() => {
     const onSettingsUpdated = (event: Event) => {
@@ -181,6 +191,9 @@ export function useDutySettings(): DutySettingsHook {
     setMessageTextPreviewLines: (value) =>
       setSettings((current) => ({ ...current, messageTextPreviewLines: value })),
     setMessageSortBy: (value) => setSettings((current) => ({ ...current, messageSortBy: value })),
+    setMessageAutoParseEnabled: (value) =>
+      setSettings((current) => ({ ...current, messageAutoParseEnabled: value })),
     scheduleSave,
+    retryLoad,
   };
 }

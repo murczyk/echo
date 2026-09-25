@@ -1,5 +1,13 @@
 {
   "migrations": {
+    "echo:m20260924_131933_analysis_aor_filter_enabled": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_backfill" }
+      ]
+    },
+    "echo:m20260924_124644_api_integration_iggy_aors": {
+      "changes": []
+    },
     "echo:m20260923_130904_two_factor_auth_enabled": {
       "changes": [
         { "table": "public.system_settings", "strategy": "cdc_backfill" }
@@ -134,6 +142,15 @@
     },
     "echo:m20260911_091429_signal_message_created_at_id_index": {
       "changes": []
+    },
+    "echo:m20260919_131822_add_message_auto_parse_enabled_to_user_settings": {
+      "changes": [
+        {
+          "table": "public.user_settings",
+          "strategy": "replicated_snapshot",
+          "targeted_resnapshot": true
+        }
+      ]
     },
     "echo:m20260910_000000_add_message_sort_by_to_user_settings": {
       "changes": [

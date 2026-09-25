@@ -5,6 +5,8 @@ import { networkSettingsResponse, systemSettingsCurrentResponse } from './fixtur
 
 type ShortStateFixtureOptions = {
   enableAudioTranscription?: boolean;
+  dutyExcludeMenuEnabled?: boolean;
+  analysisAorFilterEnabled?: boolean;
   shortStateId?: string;
   shortState?: unknown;
   inboxResponse?: InboxMessagesRspRaw | null | Promise<InboxMessagesRspRaw | null>;
@@ -25,7 +27,6 @@ type ShortStateFixtureOptions = {
     | { tagsLayout: string; disableAutoScroll: boolean; messageSortBy?: MessageTimeBasis }
     | Promise<{ tagsLayout: string; disableAutoScroll: boolean; messageSortBy?: MessageTimeBasis }>;
   userSettingsFailure?: boolean;
-  dutyExcludeMenuEnabled?: boolean;
 };
 
 type ShortStateFixtureHandle = {
@@ -203,6 +204,7 @@ export async function installRerDutyShortStateMocks(
           enableAudioTranscription: options.enableAudioTranscription,
           shortUrlEnabled: true,
           dutyExcludeMenuEnabled: options.dutyExcludeMenuEnabled,
+          analysisAorFilterEnabled: options.analysisAorFilterEnabled,
         }),
       );
       resolveSystemSettingsReady();

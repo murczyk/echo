@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { createLoadedInboxResponse, installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
 import { installRerDutyShortStateMocks } from './rer-duty-short-state.fixtures';
+import { toLegacyRerAnalysisQueryState } from '../../src/ts/rer-analysis-query-state-legacy';
 
 async function useRoles(page: Page, roles: string[], ready: Promise<void> = Promise.resolve()) {
   await page.route('**/api/user', async (route) => {
@@ -201,6 +202,39 @@ test.describe('Cyber radio visibility @regression #3568', () => {
   }
 
   // https://github.com/echoua/echo/issues/3568
+  for (const neo of [false, true]) {
+    for (const role of ['Rer', 'Cyber']) {
+      for (const enabled of [true, false]) {
+        test(`@smoke #3568 ${neo ? 'Neo' : 'classic'} Analysis AOR filter setting ${enabled} preserves ${role} saved selections`, async ({
+          page,
+        }) => {
+          await installRerDutyShortStateMocks(page);
+          await installAnalysisNeoApiMocks(page, { analysisAorFilterEnabled: enabled });
+          await useRoles(page, [role]);
+          const query = neo
+            ? 'aors=7'
+            : `state=${encodeURIComponent(JSON.stringify(toLegacyRerAnalysisQueryState({ aorsSelected: ['7'] })))}`;
+          const endpoint = neo
+            ? '**/api/rer/analysis/stats/count'
+            : '**/api/rer-importer/get-inbox';
+          const filteredRequest = page.waitForRequest(endpoint);
+          await page.goto(`/rer-analysis${neo ? '-neo' : ''}?${query}`);
+          expect((await filteredRequest).postDataJSON().selected_aors).toEqual([7]);
+          const filter = neo
+            ? page.getByRole('heading', { name: 'Смуги', exact: true })
+            : page.getByText('смуги', { exact: true });
+          if (enabled) await expect(filter).toBeVisible();
+          else await expect(filter).toHaveCount(0);
+          const reloadedRequest = page.waitForRequest(endpoint);
+          await page.reload();
+          expect((await reloadedRequest).postDataJSON().selected_aors).toEqual([7]);
+          if (enabled) await expect(filter).toBeVisible();
+          else await expect(filter).toHaveCount(0);
+        });
+      }
+    }
+  }
+
   for (const width of [390, 820, 1440]) {
     for (const host of ['duty', 'analysis'] as const) {
       test(`@smoke #3568 Cyber ${host} keeps messages and hides radio UI at ${width}px`, async ({

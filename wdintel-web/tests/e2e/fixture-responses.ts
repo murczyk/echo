@@ -35,6 +35,7 @@ type SystemSettingsCurrentFixture = {
   hide_orbit_data: boolean;
   disable_bot_tags: boolean;
   duty_exclude_menu_enabled: boolean;
+  analysis_aor_filter_enabled: boolean;
   two_factor_auth_enabled: boolean;
 };
 
@@ -42,10 +43,12 @@ export function systemSettingsCurrentResponse({
   enableAudioTranscription = false,
   shortUrlEnabled = false,
   dutyExcludeMenuEnabled = true,
+  analysisAorFilterEnabled = true,
 }: {
   enableAudioTranscription?: boolean;
   shortUrlEnabled?: boolean;
   dutyExcludeMenuEnabled?: boolean;
+  analysisAorFilterEnabled?: boolean;
 } = {}): SystemSettingsCurrentFixture {
   return {
     id: null,
@@ -78,6 +81,7 @@ export function systemSettingsCurrentResponse({
     hide_orbit_data: false,
     disable_bot_tags: false,
     duty_exclude_menu_enabled: dutyExcludeMenuEnabled,
+    analysis_aor_filter_enabled: analysisAorFilterEnabled,
     two_factor_auth_enabled: true,
   };
 }

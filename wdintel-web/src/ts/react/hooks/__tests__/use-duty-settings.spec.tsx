@@ -74,4 +74,33 @@ describe('useDutySettings', () => {
 
     expect(latestSettings?.messageTextPreviewLines).toBeNull();
   });
+  it('defaults an absent preview limit to 20', async () => {
+    fetchUserSettingsMock.mockResolvedValue({});
+
+    renderHook();
+    await act(async () => {});
+
+    expect(latestSettings?.messageTextPreviewLines).toBe(20);
+    expect(latestSettings?.mediaSummaryEnabled).toBe(false);
+  });
+
+  it('retries a failed settings load and applies the recovered settings', async () => {
+    fetchUserSettingsMock
+      .mockRejectedValueOnce(new Error('network unavailable'))
+      .mockResolvedValueOnce({ messageAutoParseEnabled: true });
+
+    renderHook();
+    await act(async () => {});
+
+    expect(latestSettings?.loadError).toBe('Не вдалося завантажити налаштування.');
+
+    await act(async () => {
+      latestSettings?.retryLoad();
+      await Promise.resolve();
+    });
+
+    expect(fetchUserSettingsMock).toHaveBeenCalledTimes(2);
+    expect(latestSettings?.loadError).toBeNull();
+    expect(latestSettings?.messageAutoParseEnabled).toBe(true);
+  });
 });

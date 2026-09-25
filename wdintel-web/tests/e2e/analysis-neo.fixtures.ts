@@ -4,6 +4,7 @@ import { networkSettingsResponse, systemSettingsCurrentResponse } from './fixtur
 
 type AnalysisNeoMockOptions = {
   enableAudioTranscription?: boolean;
+  analysisAorFilterEnabled?: boolean;
   summaryDelayMs?: number;
   sidebarDelayMs?: number;
   inboxDelayMs?: number;
@@ -254,6 +255,7 @@ export async function installAnalysisNeoApiMocks(
         route,
         systemSettingsCurrentResponse({
           enableAudioTranscription: options.enableAudioTranscription,
+          analysisAorFilterEnabled: options.analysisAorFilterEnabled,
         }),
       );
       return;

@@ -4709,6 +4709,7 @@ export type SystemSettingsCurrentRsp = {
   hideOrbitData: boolean;
   disableBotTags: boolean;
   dutyExcludeMenuEnabled: boolean;
+  analysisAorFilterEnabled: boolean;
   twoFactorAuthEnabled: boolean;
 };
 
@@ -4747,6 +4748,7 @@ export type SystemSettingsItem = {
   showPelengDistanceToBattleline: boolean;
   disableBotTags: boolean;
   dutyExcludeMenuEnabled: boolean;
+  analysisAorFilterEnabled: boolean;
   twoFactorAuthEnabled: boolean;
 };
 
@@ -4784,6 +4786,7 @@ export type CreateSystemSettingsReq = {
   showPelengDistanceToBattleline: boolean;
   disableBotTags: boolean;
   dutyExcludeMenuEnabled: boolean;
+  analysisAorFilterEnabled: boolean;
   twoFactorAuthEnabled: boolean;
 };
 
@@ -5897,4 +5900,5 @@ export type UserDutySettingsDto = {
   dutyCollapseMediaPreviews: boolean;
   mediaSummaryEnabled: boolean;
   messageSortBy: MessageTimeBasis;
+  messageAutoParseEnabled: boolean;
 };

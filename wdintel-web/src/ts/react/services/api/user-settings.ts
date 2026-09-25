@@ -24,6 +24,7 @@ export type UserDutySettings = {
   showClassicAnalysis: boolean;
   dutyCollapseMediaPreviews: boolean;
   mediaSummaryEnabled: boolean;
+  messageAutoParseEnabled: boolean;
 };
 
 export type MessageTimeBasis = 'interception' | 'creation';
@@ -43,6 +44,7 @@ type UserDutySettingsWire = Omit<
   | 'dutyCollapseMediaPreviews'
   | 'mediaSummaryEnabled'
   | 'messageSortBy'
+  | 'messageAutoParseEnabled'
 > & {
   messageTextPreviewLines?: string | null;
   tagsLayout: DutyTagsLayoutWire;
@@ -55,6 +57,7 @@ type UserDutySettingsWire = Omit<
   dutyCollapseMediaPreviews?: boolean | null;
   mediaSummaryEnabled?: boolean | null;
   messageSortBy?: MessageTimeBasis | null;
+  messageAutoParseEnabled?: boolean | null;
 };
 
 function normalizeMessageTextPreviewLines(
@@ -124,6 +127,7 @@ function normalizeUserDutySettings(raw: UserDutySettingsWire): UserDutySettings 
     dutyCollapseMediaPreviews:
       raw.dutyCollapseMediaPreviews ?? DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
     mediaSummaryEnabled: raw.mediaSummaryEnabled ?? DEFAULT_MEDIA_SUMMARY_ENABLED,
+    messageAutoParseEnabled: raw.messageAutoParseEnabled ?? false,
   };
 }
 
@@ -151,6 +155,7 @@ export async function saveUserSettings(
       showClassicAnalysis: body.showClassicAnalysis,
       dutyCollapseMediaPreviews: body.dutyCollapseMediaPreviews,
       mediaSummaryEnabled: body.mediaSummaryEnabled,
+      messageAutoParseEnabled: body.messageAutoParseEnabled,
     },
     { signal },
   );
