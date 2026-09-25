@@ -1253,6 +1253,40 @@ mod tests {
     }
 
     #[test]
+    fn extract_datetime_non_rer_header_with_time_has_precision() {
+        let input = "123 прк  | 2026-09-01\n05-52\nbody";
+        let tz = crate::config::get_tz();
+        let lnow = tz.with_ymd_and_hms(2026, 9, 19, 12, 0, 0).unwrap();
+        let precision = extract_datetime_with_precision(lnow, input)
+            .unwrap()
+            .unwrap();
+        let expected = NaiveDate::from_ymd_opt(2026, 9, 1)
+            .unwrap()
+            .and_hms_opt(5, 52, 0)
+            .unwrap();
+
+        assert_eq!(precision.datetime, expected);
+        assert!(precision.has_time);
+    }
+
+    #[test]
+    fn extract_datetime_buran_date_only_has_no_time() {
+        let input = "Дата: 2026-09-01;\nТекст:\n- Повідомлення";
+        let tz = crate::config::get_tz();
+        let lnow = tz.with_ymd_and_hms(2026, 9, 19, 12, 0, 0).unwrap();
+        let precision = extract_datetime_with_precision(lnow, input)
+            .unwrap()
+            .unwrap();
+        let expected = NaiveDate::from_ymd_opt(2026, 9, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+
+        assert_eq!(precision.datetime, expected);
+        assert!(!precision.has_time);
+    }
+
+    #[test]
     fn legacy_extract_datetime_ignores_non_rer_header_date_only() {
         let input = "123 прк  | 2026-09-01\nbody";
         let tz = crate::config::get_tz();
