@@ -26,6 +26,36 @@ export type {
 } from './windowed-feed-scroll-shared';
 
 const ANCHOR_RESTORE_LAYOUT_STABLE_FRAMES = 3;
+const INTERACTIVE_FALLBACK_WHEEL_TARGET_SELECTOR = [
+  'a',
+  'button',
+  'input',
+  'select',
+  'summary',
+  'textarea',
+  'option',
+  '[contenteditable]:not([contenteditable="false"])',
+  '[role="button"]',
+  '[role="checkbox"]',
+  '[role="combobox"]',
+  '[role="gridcell"]',
+  '[role="link"]',
+  '[role="listbox"]',
+  '[role="menu"]',
+  '[role="menuitem"]',
+  '[role="menuitemcheckbox"]',
+  '[role="menuitemradio"]',
+  '[role="option"]',
+  '[role="radio"]',
+  '[role="scrollbar"]',
+  '[role="searchbox"]',
+  '[role="slider"]',
+  '[role="spinbutton"]',
+  '[role="switch"]',
+  '[role="tab"]',
+  '[role="textbox"]',
+  '[role="treeitem"]',
+].join(', ');
 
 function centeredItemScrollTop(scroller: HTMLElement, target: HTMLElement): number {
   const scrollerRect = scroller.getBoundingClientRect();
@@ -342,19 +372,33 @@ export function useWindowedFeedScroll({
     }
     const scroller = refs.scrollerRef.current;
     if (!scroller) return;
-    const isNestedScrollableTarget = (target: EventTarget | null) => {
+    const isExcludedFallbackWheelTarget = (target: EventTarget | null) => {
       if (!(target instanceof Element)) return false;
       for (
         let node: Element | null = target;
         node !== null && node !== scroller;
         node = node.parentElement
       ) {
-        if (node.scrollHeight > node.clientHeight + 1) return true;
+        if (
+          node.scrollHeight > node.clientHeight + 1 ||
+          node.matches(INTERACTIVE_FALLBACK_WHEEL_TARGET_SELECTOR)
+        ) {
+          return true;
+        }
       }
       return false;
     };
     const onWheel = (event: WheelEvent) => {
-      if (event.ctrlKey || event.deltaY === 0 || isNestedScrollableTarget(event.target)) return;
+      if (
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey ||
+        event.metaKey ||
+        event.deltaY === 0 ||
+        isExcludedFallbackWheelTarget(event.target)
+      ) {
+        return;
+      }
       triggerNonScrollableFallbackRef.current(event.deltaY < 0 ? 'older' : 'newer');
     };
     const onKeyDown = (event: KeyboardEvent) => {

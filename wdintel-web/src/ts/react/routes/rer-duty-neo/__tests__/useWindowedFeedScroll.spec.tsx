@@ -454,6 +454,81 @@ describe('useWindowedFeedScroll', () => {
     expect(onLoadOlder).toHaveBeenCalledTimes(1);
   });
 
+  it('#3615 ignores modified, interactive, editable, and nested-scrollable wheel targets', async () => {
+    const onLoadOlder = vi.fn();
+    const onLoadNewer = vi.fn();
+    const onFlushPendingNewer = vi.fn();
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={[1, 2]}
+          onLoadOlder={onLoadOlder}
+          onLoadNewer={onLoadNewer}
+          onFlushPendingNewer={onFlushPendingNewer}
+          pendingNewerFlushNeeded
+        />,
+      );
+    });
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setClampedScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 100 });
+    const button = document.createElement('button');
+    const buttonIcon = document.createElement('span');
+    button.append(buttonIcon);
+    const input = document.createElement('input');
+    const editable = document.createElement('div');
+    editable.setAttribute('contenteditable', 'true');
+    const ariaButton = document.createElement('div');
+    ariaButton.setAttribute('role', 'button');
+    const nestedScroller = document.createElement('div');
+    const nestedContent = document.createElement('span');
+    nestedScroller.append(nestedContent);
+    Object.defineProperty(nestedScroller, 'clientHeight', { configurable: true, value: 10 });
+    Object.defineProperty(nestedScroller, 'scrollHeight', { configurable: true, value: 20 });
+    scroller.append(button, input, editable, ariaButton, nestedScroller);
+    await flushLoadNewerIdle();
+    onLoadOlder.mockClear();
+    onLoadNewer.mockClear();
+    onFlushPendingNewer.mockClear();
+
+    await act(async () => {
+      const modifiers = ['ctrlKey', 'shiftKey', 'altKey', 'metaKey'] as const;
+      modifiers.forEach((modifier) => {
+        const upward = new WheelEvent('wheel', { bubbles: true, deltaY: -120 });
+        const downward = new WheelEvent('wheel', { bubbles: true, deltaY: 120 });
+        Object.defineProperty(upward, modifier, { value: true });
+        Object.defineProperty(downward, modifier, { value: true });
+        scroller.dispatchEvent(upward);
+        scroller.dispatchEvent(downward);
+        expect(onLoadOlder, modifier).not.toHaveBeenCalled();
+        expect(onLoadNewer, modifier).not.toHaveBeenCalled();
+        expect(onFlushPendingNewer, modifier).not.toHaveBeenCalled();
+      });
+      [button, buttonIcon, input, editable, ariaButton, nestedContent].forEach((target) => {
+        target.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 120 }));
+        expect(onLoadOlder, target.tagName).not.toHaveBeenCalled();
+        expect(onLoadNewer, target.tagName).not.toHaveBeenCalled();
+        expect(onFlushPendingNewer, target.tagName).not.toHaveBeenCalled();
+      });
+      scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 0 }));
+      expect(onLoadOlder, 'zero delta').not.toHaveBeenCalled();
+      expect(onLoadNewer, 'zero delta').not.toHaveBeenCalled();
+      expect(onFlushPendingNewer, 'zero delta').not.toHaveBeenCalled();
+      await Promise.resolve();
+    });
+
+    expect(onLoadNewer).not.toHaveBeenCalled();
+    expect(onFlushPendingNewer).not.toHaveBeenCalled();
+
+    await act(async () => {
+      scroller
+        .querySelector('[data-testid="item-1"]')
+        ?.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 120 }));
+      await Promise.resolve();
+    });
+    expect(onFlushPendingNewer).toHaveBeenCalledTimes(1);
+    expect(onLoadNewer).not.toHaveBeenCalled();
+  });
+
   it('#3615 requests newer pages from deliberate downward input without loading history', async () => {
     const onLoadOlder = vi.fn();
     const onLoadNewer = vi.fn();

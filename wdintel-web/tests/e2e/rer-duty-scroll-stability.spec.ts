@@ -213,6 +213,57 @@ test('#3615 uses real downward wheel input to page an underfilled historical win
   expect(olderCursors).toEqual([]);
 });
 
+// Regression: https://github.com/echoua/echo/issues/3615
+test('#3615 preserves native overflow scrolling over a message-card button @regression', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await installRerDutyShortStateMocks(page, {
+    userSettingsResponse: { tagsLayout: 'compact', disableAutoScroll: true },
+    inboxResponse: buildInboxResponse(initialInboxIds),
+  });
+  await page.goto('/rer-duty-neo?state-short=short-1');
+  const scroller = page.locator('[data-duty-feed-scroller="true"]');
+  await expect(page.locator('[data-duty-message-id="40"]')).toBeAttached();
+  await expect
+    .poll(() => scroller.evaluate((element) => element.scrollHeight > element.clientHeight + 1))
+    .toBe(true);
+  await scroller.evaluate(async (element) => {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  });
+  const startingScrollTop = await scroller.evaluate((element) => {
+    const maximumScrollTop = element.scrollHeight - element.clientHeight;
+    if (maximumScrollTop <= 200) throw new Error('Duty feed has no safe interior scroll position');
+    element.scrollTop = Math.round(maximumScrollTop / 2);
+    return element.scrollTop;
+  });
+  expect(startingScrollTop).toBeGreaterThan(0);
+  const cardId = await scroller.evaluate((element) => {
+    const scrollerRect = element.getBoundingClientRect();
+    const card = Array.from(element.querySelectorAll<HTMLElement>('[data-duty-message-id]')).find(
+      (item) => {
+        const rect = item.getBoundingClientRect();
+        return (
+          rect.top >= scrollerRect.top &&
+          rect.bottom <= scrollerRect.bottom &&
+          item.querySelector('button')
+        );
+      },
+    );
+    if (!card?.dataset.dutyMessageId) throw new Error('No fully visible message-card button');
+    return card.dataset.dutyMessageId;
+  });
+  const cardButton = page.locator(`[data-duty-message-id="${cardId}"] button`).first();
+  const bounds = await cardButton.boundingBox();
+  if (!bounds) throw new Error('Message card button is not visible');
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.mouse.wheel(0, 480);
+  await expect
+    .poll(() => scroller.evaluate((element, start) => element.scrollTop > start, startingScrollTop))
+    .toBe(true);
+});
+
 // Regression: https://github.com/echoua/echo/issues/3546
 test('uses creation time for Duty ordering and display with an event-time Analysis preference @smoke @regression', async ({
   page,
