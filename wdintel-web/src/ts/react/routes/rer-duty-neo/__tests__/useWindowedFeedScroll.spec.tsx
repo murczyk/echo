@@ -529,7 +529,7 @@ describe('useWindowedFeedScroll', () => {
     expect(onLoadNewer).not.toHaveBeenCalled();
   });
 
-  it('#3615 requests newer pages from deliberate downward input without loading history', async () => {
+  it('#3615 requests newer pages from deliberate Down and PageDown input when the unread runway is full', async () => {
     const onLoadOlder = vi.fn();
     const onLoadNewer = vi.fn();
     await act(async () => {
@@ -539,22 +539,56 @@ describe('useWindowedFeedScroll', () => {
           onLoadOlder={onLoadOlder}
           onLoadNewer={onLoadNewer}
           hasReachedStart
-          unreadPrefetchNeeded
+          unreadPrefetchNeeded={false}
         />,
       );
     });
     const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
     setClampedScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 100 });
-    onLoadOlder.mockClear();
-    onLoadNewer.mockClear();
+    expect(onLoadNewer).not.toHaveBeenCalled();
 
     await act(async () => {
-      scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 120 }));
+      scroller.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Down' }));
+      await Promise.resolve();
+      await Promise.resolve();
+      scroller.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'PageDown' }));
       await Promise.resolve();
     });
 
-    expect(onLoadNewer).toHaveBeenCalledTimes(1);
+    expect(onLoadNewer).toHaveBeenCalledTimes(2);
     expect(onLoadOlder).not.toHaveBeenCalled();
+  });
+
+  it('#3615 coalesces deliberate newer input while a full unread runway request is active', async () => {
+    let resolveRequest!: () => void;
+    const onLoadNewer = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRequest = resolve;
+        }),
+    );
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={[176, 177, 178, 179, 180]}
+          onLoadNewer={onLoadNewer}
+          unreadPrefetchNeeded={false}
+        />,
+      );
+    });
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setClampedScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 100 });
+
+    await act(async () => {
+      scroller.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Down' }));
+      scroller.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'PageDown' }));
+    });
+
+    expect(onLoadNewer).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      resolveRequest();
+      await Promise.resolve();
+    });
   });
 
   it('#3615 permits a deliberate retry after a failed older attempt', async () => {

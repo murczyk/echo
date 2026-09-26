@@ -327,11 +327,7 @@ export function useWindowedFeedScroll({
         }
       } else if (refs.pendingNewerFlushNeededRef.current) {
         if (typeof callbacks.onFlushPendingNewer !== 'function') return;
-      } else if (
-        refs.loadingNewerRef.current ||
-        !refs.unreadPrefetchNeededRef.current ||
-        typeof callbacks.onLoadNewer !== 'function'
-      ) {
+      } else if (refs.loadingNewerRef.current || typeof callbacks.onLoadNewer !== 'function') {
         return;
       }
 
