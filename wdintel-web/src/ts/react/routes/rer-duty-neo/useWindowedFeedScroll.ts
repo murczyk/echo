@@ -29,6 +29,7 @@ const ANCHOR_RESTORE_LAYOUT_STABLE_FRAMES = 3;
 const INTERACTIVE_FALLBACK_WHEEL_TARGET_SELECTOR = [
   'a',
   'button',
+  '[data-audio-player-host]',
   'input',
   'select',
   'summary',

@@ -474,6 +474,10 @@ describe('useWindowedFeedScroll', () => {
     const button = document.createElement('button');
     const buttonIcon = document.createElement('span');
     button.append(buttonIcon);
+    const audioPlayerHost = document.createElement('div');
+    audioPlayerHost.dataset.audioPlayerHost = 'true';
+    const audioPlayer = document.createElement('custom-audio-player');
+    audioPlayerHost.append(audioPlayer);
     const input = document.createElement('input');
     const editable = document.createElement('div');
     editable.setAttribute('contenteditable', 'true');
@@ -484,7 +488,7 @@ describe('useWindowedFeedScroll', () => {
     nestedScroller.append(nestedContent);
     Object.defineProperty(nestedScroller, 'clientHeight', { configurable: true, value: 10 });
     Object.defineProperty(nestedScroller, 'scrollHeight', { configurable: true, value: 20 });
-    scroller.append(button, input, editable, ariaButton, nestedScroller);
+    scroller.append(button, audioPlayerHost, input, editable, ariaButton, nestedScroller);
     await flushLoadNewerIdle();
     onLoadOlder.mockClear();
     onLoadNewer.mockClear();
@@ -503,7 +507,16 @@ describe('useWindowedFeedScroll', () => {
         expect(onLoadNewer, modifier).not.toHaveBeenCalled();
         expect(onFlushPendingNewer, modifier).not.toHaveBeenCalled();
       });
-      [button, buttonIcon, input, editable, ariaButton, nestedContent].forEach((target) => {
+      [
+        button,
+        buttonIcon,
+        audioPlayerHost,
+        audioPlayer,
+        input,
+        editable,
+        ariaButton,
+        nestedContent,
+      ].forEach((target) => {
         target.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 120 }));
         expect(onLoadOlder, target.tagName).not.toHaveBeenCalled();
         expect(onLoadNewer, target.tagName).not.toHaveBeenCalled();
