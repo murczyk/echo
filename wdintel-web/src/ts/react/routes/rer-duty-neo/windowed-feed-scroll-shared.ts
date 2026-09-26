@@ -59,12 +59,12 @@ export type ReachedBottomContext = {
 };
 
 export type WindowedFeedScrollCallbacks = {
-  onLoadOlder: () => void;
-  onLoadNewer?: () => void;
+  onLoadOlder: () => void | Promise<unknown>;
+  onLoadNewer?: () => void | Promise<unknown>;
   onFlushPendingNewer?: (context: {
     physicallyAtBottom: boolean;
     visibleAnchorIds: readonly number[];
-  }) => void;
+  }) => void | Promise<unknown>;
   onScrollToTop?: () => void;
   onReachedBottom?: (context: ReachedBottomContext) => boolean | void;
   onLeftBottom?: () => void;
@@ -79,8 +79,8 @@ export type UseWindowedFeedScrollOptions = {
   loadingOlder: boolean;
   loadingNewer?: boolean;
   hasReachedStart: boolean;
-  onLoadOlder: () => void;
-  onLoadNewer?: () => void;
+  onLoadOlder: () => void | Promise<unknown>;
+  onLoadNewer?: () => void | Promise<unknown>;
   onScrollToTop?: () => void;
   onReachedBottom?: (context: ReachedBottomContext) => boolean | void;
   onLeftBottom?: () => void;
@@ -109,7 +109,7 @@ export type UseWindowedFeedScrollOptions = {
   onFlushPendingNewer?: (context: {
     physicallyAtBottom: boolean;
     visibleAnchorIds: readonly number[];
-  }) => void;
+  }) => void | Promise<unknown>;
 };
 
 export type WindowedFeedScrollHandle = {
@@ -170,6 +170,8 @@ export type WindowedFeedScrollRefs = {
   isWatchModeRef: MutableRefObject<boolean>;
   autoScrollAllowedRef: MutableRefObject<boolean>;
   loadingNewerRef: MutableRefObject<boolean>;
+  loadingOlderRef: MutableRefObject<boolean>;
+  hasReachedStartRef: MutableRefObject<boolean>;
   unreadPrefetchNeededRef: MutableRefObject<boolean>;
   pendingNewerFlushNeededRef: MutableRefObject<boolean>;
   enabledRef: MutableRefObject<boolean>;

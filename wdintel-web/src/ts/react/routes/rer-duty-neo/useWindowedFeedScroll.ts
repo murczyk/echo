@@ -83,6 +83,8 @@ export function useWindowedFeedScroll({
     topStatus,
     isWatchMode,
     autoScrollAllowed,
+    loadingOlder,
+    hasReachedStart,
     loadingNewer,
     unreadPrefetchNeeded,
     pendingNewerFlushNeeded,
@@ -92,6 +94,8 @@ export function useWindowedFeedScroll({
   refs.isWatchModeRef.current = isWatchMode;
   refs.autoScrollAllowedRef.current = autoScrollAllowed;
   refs.loadingNewerRef.current = loadingNewer;
+  refs.loadingOlderRef.current = loadingOlder;
+  refs.hasReachedStartRef.current = hasReachedStart;
   refs.unreadPrefetchNeededRef.current = unreadPrefetchNeeded;
   refs.pendingNewerFlushNeededRef.current = pendingNewerFlushNeeded;
   refs.itemIdsRef.current = itemIds;
@@ -256,6 +260,127 @@ export function useWindowedFeedScroll({
   }, [debugFeedId, refs]);
 
   useEffect(() => stopDirectItemTracking, [stopDirectItemTracking]);
+
+  const fallbackInputRef = useRef<{ direction: 'older' | 'newer'; generation: number } | null>(
+    null,
+  );
+  const fallbackInputGenerationRef = useRef(0);
+  const clearFallbackInput = useCallback(() => {
+    fallbackInputGenerationRef.current += 1;
+    fallbackInputRef.current = null;
+  }, []);
+
+  const triggerNonScrollableFallback = useCallback(
+    (direction: 'older' | 'newer') => {
+      const scroller = refs.scrollerRef.current;
+      if (
+        !refs.enabledRef.current ||
+        !scroller ||
+        refs.itemIdsRef.current.length === 0 ||
+        scroller.clientHeight <= 0 ||
+        scroller.scrollHeight > scroller.clientHeight + 1 ||
+        refs.loadingOlderRef.current ||
+        refs.loadingNewerRef.current ||
+        fallbackInputRef.current !== null
+      ) {
+        return;
+      }
+
+      const callbacks = refs.callbacksRef.current;
+      if (direction === 'older') {
+        if (refs.loadingOlderRef.current || refs.hasReachedStartRef.current) return;
+        follow.stopBottomSettle();
+        follow.clearFollowScroll();
+        if (refs.liveBottomFollowRef.current) {
+          refs.liveBottomFollowRef.current = false;
+          refs.callbacksRef.current.onLeftBottom?.();
+        }
+      } else if (refs.pendingNewerFlushNeededRef.current) {
+        if (typeof callbacks.onFlushPendingNewer !== 'function') return;
+      } else if (
+        refs.loadingNewerRef.current ||
+        !refs.unreadPrefetchNeededRef.current ||
+        typeof callbacks.onLoadNewer !== 'function'
+      ) {
+        return;
+      }
+
+      anchors.captureAnchorSnapshot();
+      const generation = fallbackInputGenerationRef.current;
+      fallbackInputRef.current = { direction, generation };
+      recordDutyScrollDebugEvent(debugFeedId, 'non-scrollable-input', direction);
+      let attempt: void | Promise<unknown>;
+      try {
+        attempt =
+          direction === 'older'
+            ? callbacks.onLoadOlder()
+            : refs.pendingNewerFlushNeededRef.current
+              ? callbacks.onFlushPendingNewer?.({
+                  physicallyAtBottom: refs.physicallyAtBottomRef.current === true,
+                  visibleAnchorIds:
+                    refs.anchorSnapshotRef.current?.anchors.map((anchor) => anchor.id) ?? [],
+                })
+              : callbacks.onLoadNewer?.();
+      } catch (error) {
+        clearFallbackInput();
+        throw error;
+      }
+      const settleFallbackInput = () => {
+        if (fallbackInputGenerationRef.current === generation) fallbackInputRef.current = null;
+      };
+      void Promise.resolve(attempt).then(settleFallbackInput, settleFallbackInput);
+    },
+    [anchors, clearFallbackInput, debugFeedId, follow, refs],
+  );
+  const triggerNonScrollableFallbackRef = useRef(triggerNonScrollableFallback);
+  triggerNonScrollableFallbackRef.current = triggerNonScrollableFallback;
+
+  useEffect(() => {
+    if (!enabled) {
+      clearFallbackInput();
+      return;
+    }
+    const scroller = refs.scrollerRef.current;
+    if (!scroller) return;
+    const isNestedScrollableTarget = (target: EventTarget | null) => {
+      if (!(target instanceof Element)) return false;
+      for (
+        let node: Element | null = target;
+        node !== null && node !== scroller;
+        node = node.parentElement
+      ) {
+        if (node.scrollHeight > node.clientHeight + 1) return true;
+      }
+      return false;
+    };
+    const onWheel = (event: WheelEvent) => {
+      if (event.ctrlKey || event.deltaY === 0 || isNestedScrollableTarget(event.target)) return;
+      triggerNonScrollableFallbackRef.current(event.deltaY < 0 ? 'older' : 'newer');
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.target !== scroller ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.metaKey ||
+        event.shiftKey
+      ) {
+        return;
+      }
+      if (event.key === 'ArrowUp' || event.key === 'Up' || event.key === 'PageUp') {
+        triggerNonScrollableFallbackRef.current('older');
+      } else if (event.key === 'ArrowDown' || event.key === 'Down' || event.key === 'PageDown') {
+        triggerNonScrollableFallbackRef.current('newer');
+      }
+    };
+    scroller.addEventListener('wheel', onWheel, { passive: true });
+    scroller.addEventListener('keydown', onKeyDown);
+    return () => {
+      clearFallbackInput();
+      scroller.removeEventListener('wheel', onWheel);
+      scroller.removeEventListener('keydown', onKeyDown);
+    };
+  }, [clearFallbackInput, enabled, refs, resetKey]);
 
   useEffect(() => {
     const targetId = directItemTargetIdRef.current;

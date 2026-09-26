@@ -81,13 +81,13 @@ export type FeedColumnModel = {
     onAddPointHighlightBlacklist?: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
   };
   actions: {
-    onLoadOlder: () => void;
-    onLoadNewer?: () => void;
+    onLoadOlder: () => void | Promise<unknown>;
+    onLoadNewer?: () => void | Promise<unknown>;
     /** Push buffered newer pages into the visible window (scroll-idle / follow). */
     onFlushPendingNewer?: (context: {
       physicallyAtBottom: boolean;
       visibleAnchorIds: readonly number[];
-    }) => void;
+    }) => void | Promise<unknown>;
     onRemoveColumn: () => void;
     onMessageBookmark: (msgId: number, currentlyBookmarked: boolean) => void;
     onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;

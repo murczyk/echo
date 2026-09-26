@@ -33,6 +33,7 @@ function TestScroller(props: {
   initialPositioningReady?: boolean;
   unreadPrefetchNeeded?: boolean;
   pendingNewerFlushNeeded?: boolean;
+  resetKey?: string;
   itemHeightPx?: number;
   bottomLoadBufferPx?: number;
 }) {
@@ -56,6 +57,7 @@ function TestScroller(props: {
     initialPositioningReady: props.initialPositioningReady ?? true,
     unreadPrefetchNeeded: props.unreadPrefetchNeeded,
     pendingNewerFlushNeeded: props.pendingNewerFlushNeeded,
+    resetKey: props.resetKey,
     topLoadBufferPx: 80,
     bottomLoadBufferPx: props.bottomLoadBufferPx ?? 80,
     atBottomThresholdPx: 10,
@@ -346,6 +348,287 @@ describe('useWindowedFeedScroll', () => {
 
     expect(onLoadOlder).not.toHaveBeenCalled();
     expect(onLoadNewer).not.toHaveBeenCalled();
+  });
+
+  it('#3615 pages an underfilled feed only from deliberate upward wheel input', async () => {
+    const onLoadOlder = vi.fn();
+    const onLoadNewer = vi.fn();
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={[196, 197, 198, 199, 200]}
+          onLoadOlder={onLoadOlder}
+          onLoadNewer={onLoadNewer}
+        />,
+      );
+    });
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setClampedScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 100 });
+
+    await act(async () => {
+      scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -120 }));
+      await Promise.resolve();
+    });
+
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
+    expect(onLoadNewer).not.toHaveBeenCalled();
+  });
+
+  it('#3615 coalesces underfilled wheel pagination until the request settles', async () => {
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const onLoadOlder = vi.fn(() => pending);
+    await act(async () => {
+      root.render(<TestScroller ids={[1, 2]} onLoadOlder={onLoadOlder} />);
+    });
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setClampedScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 100 });
+
+    await act(async () => {
+      scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -120 }));
+      scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -120 }));
+    });
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      finish();
+      await Promise.resolve();
+      await Promise.resolve();
+      scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -120 }));
+    });
+    expect(onLoadOlder).toHaveBeenCalledTimes(2);
+  });
+
+  it('#3615 flushes buffered newer messages on downward input without loading history', async () => {
+    const onLoadOlder = vi.fn();
+    const onLoadNewer = vi.fn();
+    const onFlushPendingNewer = vi.fn();
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={[1, 2]}
+          onLoadOlder={onLoadOlder}
+          onLoadNewer={onLoadNewer}
+          onFlushPendingNewer={onFlushPendingNewer}
+          hasReachedStart
+          pendingNewerFlushNeeded
+        />,
+      );
+    });
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setClampedScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 100 });
+    onLoadOlder.mockClear();
+    onLoadNewer.mockClear();
+    onFlushPendingNewer.mockClear();
+
+    await act(async () => {
+      scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 120 }));
+      await Promise.resolve();
+    });
+
+    expect(onFlushPendingNewer).toHaveBeenCalled();
+    expect(onLoadOlder).not.toHaveBeenCalled();
+    expect(onLoadNewer).not.toHaveBeenCalled();
+  });
+
+  it('#3615 supports focused keyboard paging but ignores modified and nested-control input', async () => {
+    const onLoadOlder = vi.fn();
+    await act(async () => {
+      root.render(<TestScroller ids={[1, 2]} onLoadOlder={onLoadOlder} />);
+    });
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setClampedScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 100 });
+
+    await act(async () => {
+      scroller.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'PageUp' }));
+      await Promise.resolve();
+      scroller.dispatchEvent(
+        new KeyboardEvent('keydown', { bubbles: true, key: 'PageUp', ctrlKey: true }),
+      );
+      container
+        .querySelector('[data-testid="scroll-bottom"]')
+        ?.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'PageUp' }));
+    });
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
+  });
+
+  it('#3615 requests newer pages from deliberate downward input without loading history', async () => {
+    const onLoadOlder = vi.fn();
+    const onLoadNewer = vi.fn();
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={[176, 177, 178, 179, 180]}
+          onLoadOlder={onLoadOlder}
+          onLoadNewer={onLoadNewer}
+          hasReachedStart
+          unreadPrefetchNeeded
+        />,
+      );
+    });
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setClampedScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 100 });
+    onLoadOlder.mockClear();
+    onLoadNewer.mockClear();
+
+    await act(async () => {
+      scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 120 }));
+      await Promise.resolve();
+    });
+
+    expect(onLoadNewer).toHaveBeenCalledTimes(1);
+    expect(onLoadOlder).not.toHaveBeenCalled();
+  });
+
+  it('#3615 permits a deliberate retry after a failed older attempt', async () => {
+    const onLoadOlder = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(new Error('temporary failure'))
+      .mockResolvedValueOnce(undefined);
+    await act(async () => {
+      root.render(<TestScroller ids={[1, 2]} onLoadOlder={onLoadOlder} />);
+    });
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setClampedScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 100 });
+
+    await act(async () => {
+      scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -120 }));
+      await Promise.resolve();
+      await Promise.resolve();
+      scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -120 }));
+    });
+
+    expect(onLoadOlder).toHaveBeenCalledTimes(2);
+  });
+
+  it('#3615 does not load exhausted history from upward input', async () => {
+    const onLoadOlder = vi.fn();
+    await act(async () => {
+      root.render(<TestScroller ids={[1, 2]} hasReachedStart onLoadOlder={onLoadOlder} />);
+    });
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setClampedScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 100 });
+
+    await act(async () => {
+      scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -120 }));
+      scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -120 }));
+    });
+
+    expect(onLoadOlder).not.toHaveBeenCalled();
+  });
+
+  it('#3615 clears an in-flight input guard on disable and ignores disabled input', async () => {
+    let finish!: () => void;
+    const onLoadOlder = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await act(async () => {
+      root.render(<TestScroller ids={[1, 2]} onLoadOlder={onLoadOlder} resetKey="first" />);
+    });
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setClampedScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 100 });
+    await act(async () => {
+      scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -120 }));
+      root.render(
+        <TestScroller ids={[1, 2]} onLoadOlder={onLoadOlder} enabled={false} resetKey="second" />,
+      );
+      scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -120 }));
+      finish();
+      await Promise.resolve();
+    });
+
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
+  });
+
+  it('#3615 keeps the current generation guarded when a prior attempt settles', async () => {
+    let resolveA!: () => void;
+    let resolveB!: () => void;
+    let resolveC!: () => void;
+    const attemptA = new Promise<void>((resolve) => {
+      resolveA = resolve;
+    });
+    const attemptB = new Promise<void>((resolve) => {
+      resolveB = resolve;
+    });
+    const attemptC = new Promise<void>((resolve) => {
+      resolveC = resolve;
+    });
+    const onLoadOlder = vi
+      .fn()
+      .mockReturnValueOnce(attemptA)
+      .mockReturnValueOnce(attemptB)
+      .mockReturnValueOnce(attemptC);
+
+    await act(async () => {
+      root.render(<TestScroller ids={[1, 2]} onLoadOlder={onLoadOlder} resetKey="first" />);
+    });
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setClampedScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 100 });
+    await act(async () => {
+      scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -120 }));
+    });
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      setClampedScrollMetrics(scroller, { scrollTop: 0, clientHeight: 0, scrollHeight: 0 });
+      root.render(<TestScroller ids={[1, 2]} onLoadOlder={onLoadOlder} resetKey="second" />);
+      await Promise.resolve();
+    });
+    setClampedScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 100 });
+    await act(async () => {
+      scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -120 }));
+    });
+    expect(onLoadOlder).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      resolveA();
+      await Promise.resolve();
+      await Promise.resolve();
+      scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -120 }));
+    });
+    expect(onLoadOlder).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      resolveB();
+      await Promise.resolve();
+      await Promise.resolve();
+      scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -120 }));
+    });
+    expect(onLoadOlder).toHaveBeenCalledTimes(3);
+
+    await act(async () => {
+      resolveC();
+      await Promise.resolve();
+    });
+  });
+
+  it('#3615 removes fallback listeners when an in-flight feed unmounts', async () => {
+    let finish!: () => void;
+    const onLoadOlder = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await act(async () => {
+      root.render(<TestScroller ids={[1, 2]} onLoadOlder={onLoadOlder} />);
+    });
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setClampedScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 100 });
+    await act(async () => {
+      scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -120 }));
+      root.unmount();
+      scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -120 }));
+      finish();
+      await Promise.resolve();
+    });
+
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
   });
 
   it('resets bottom state when the feed becomes disabled without cancelling follow', async () => {
