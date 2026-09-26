@@ -164,7 +164,7 @@ describe('useDutyFeedColumnActions', () => {
     ) => void;
     act(() => createReport(40, message, etalonDisplayModel));
 
-    expect(openReportComposer).toHaveBeenCalledWith({
+    expect(openReportComposer).toHaveBeenCalledWith('mf-0', {
       id: 40,
       message,
       senderName: 'Імʼя Відправника',

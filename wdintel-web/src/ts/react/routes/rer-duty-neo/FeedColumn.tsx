@@ -267,7 +267,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         narrowScreen ? 'shrink-0 grow-0 basis-full' : 'shrink-0',
       ].join(' ')}
       sx={{
-        width: maxWidth ?? '100%',
+        width: '100%',
         maxWidth: maxWidth ?? '100%',
         position: 'relative',
         scrollSnapAlign: narrowScreen ? 'start' : undefined,

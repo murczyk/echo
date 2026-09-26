@@ -15,14 +15,17 @@ export type RerDutyFeedsBundle = ReturnType<typeof useRerDutyFeeds>;
 
 export type DutyFeedColumnActionsDeps = {
   feeds: RerDutyFeedsBundle;
-  openReportEditor: (reportId: number) => void;
-  openMessageEditor: (target: { id: number; message: InboxMessage }) => void;
-  openReportComposer: (source: {
-    id: number;
-    message: InboxMessage;
-    senderName?: string | null;
-    etalonDisplayModel: MessageCardEtalonDisplayModel;
-  }) => void;
+  openReportEditor: (feedId: string, reportId: number) => void;
+  openMessageEditor: (feedId: string, target: { id: number; message: InboxMessage }) => void;
+  openReportComposer: (
+    feedId: string,
+    source: {
+      id: number;
+      message: InboxMessage;
+      senderName?: string | null;
+      etalonDisplayModel: MessageCardEtalonDisplayModel;
+    },
+  ) => void;
 };
 
 /**
@@ -92,16 +95,21 @@ export function useDutyFeedColumnActions(
           groupInfos: deps.feeds.groupInfos,
           profiles: deps.feeds.profiles,
         });
-        deps.openReportComposer({ id: messageId, message, senderName, etalonDisplayModel });
+        deps.openReportComposer(feedId, {
+          id: messageId,
+          message,
+          senderName,
+          etalonDisplayModel,
+        });
       },
       onMessageEditReport: (reportId) => {
-        deps.openReportEditor(reportId);
+        deps.openReportEditor(feedId, reportId);
       },
       onMessageExcludeEntity: (entity, value) =>
         applyFilter(feedId, excludeMessageEntityFromFilters(feed.filter, entity, value)),
       onMessageToggleTag: (msgId, tagId) => handleToggleTag(feedId, msgId, tagId),
       onMessageEdit: (messageId, message) => {
-        deps.openMessageEditor({ id: messageId, message });
+        deps.openMessageEditor(feedId, { id: messageId, message });
       },
       onScrollToTop: () => {
         cancelFollowTail(feedId);

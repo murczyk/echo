@@ -135,6 +135,7 @@ type Props = {
   networks?: Network[];
   unitsMap?: Record<number, Unit>;
   directMessageNavigation: AnalysisDirectMessageNavigation | null;
+  editorSourceMessageId: number | null;
 };
 
 function getMissingBottomScrollSpace(container: HTMLElement): number {
@@ -568,6 +569,7 @@ function AnalysisMessagesPaneComponent({
   networks,
   unitsMap,
   directMessageNavigation,
+  editorSourceMessageId,
 }: Props) {
   const theme = useTheme();
   const { notify } = useOptionalPowerSnackbar();
@@ -640,6 +642,15 @@ function AnalysisMessagesPaneComponent({
   useEffect(() => {
     referenceTimeMsRef.current = Date.now();
   }, [messages]);
+
+  useEffect(() => {
+    if (editorSourceMessageId == null) return;
+    const targetElement = scrollContainerRef.current?.querySelector<HTMLElement>(
+      `[data-message-id="${editorSourceMessageId}"]`,
+    );
+    if (!targetElement) return;
+    return scrollToAndHighlightMessage(targetElement, { scroll: false });
+  }, [editorSourceMessageId, messages]);
 
   useLayoutEffect(() => {
     if (preserveScrollOnPageChangeRef.current) {
@@ -1135,6 +1146,7 @@ function AnalysisMessagesPaneComponent({
     >
       <Box
         ref={scrollContainerRef}
+        data-analysis-message-scroller
         tabIndex={directMessageNavigation?.focusActive ? 0 : undefined}
         onScroll={handleScroll}
         onWheel={clearFocusOnScrollStart}

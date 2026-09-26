@@ -13,6 +13,8 @@ import type { MessageFeedState } from './utils';
 import { MAX_MESSAGE_FEEDS } from './utils';
 import { CreateMessageFab } from '../shared/manage-message/CreateMessageFab';
 import { DUTY_WORKSPACE_CREATE_MESSAGE_RIGHT_INSET } from '../shared/manage-message/floating-control-geometry';
+import { useObservedWidth } from '../../hooks/use-observed-width';
+import { shouldUseActiveFeedLayout } from './duty-editor-layout';
 
 function dutyFeedColumnMaxWidth(feedCount: number, narrow: boolean): string {
   if (narrow) return '100%';
@@ -267,6 +269,8 @@ type RerDutyNeoWorkspaceProps = {
   narrowScreen: boolean;
   onSelectFeed: Dispatch<SetStateAction<string | null>>;
   showLoadingBackdrop: boolean;
+  editorOpen?: boolean;
+  editorEmbeddedOpen?: boolean;
 };
 
 export function RerDutyNeoWorkspace({
@@ -280,7 +284,10 @@ export function RerDutyNeoWorkspace({
   narrowScreen,
   onSelectFeed,
   showLoadingBackdrop,
+  editorOpen = false,
+  editorEmbeddedOpen = false,
 }: RerDutyNeoWorkspaceProps) {
+  const { ref: workspaceRef, width: availableWidth } = useObservedWidth<HTMLDivElement>();
   const [feedsWithOpenPanels, setFeedsWithOpenPanels] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -293,18 +300,24 @@ export function RerDutyNeoWorkspace({
       return next;
     });
   }, []);
-  const activeFeedIndex = isPresent(activeFeedId)
-    ? messageFeeds.findIndex((feed) => feed.id === activeFeedId)
-    : -1;
+  const activeFeedOnly = shouldUseActiveFeedLayout({
+    narrowScreen,
+    editorEmbeddedOpen,
+    availableWidth,
+    feedCount: messageFeeds.length,
+  });
   const showAddButton = messageFeeds.length < MAX_MESSAGE_FEEDS;
   const compactFeedTabs = messageFeeds.length >= DUTY_ICON_ONLY_FEED_TAB_MIN_FEEDS;
-  const narrowActiveFeed =
-    narrowScreen && messageFeeds.length > 0
+  const activeOnlyFeed =
+    activeFeedOnly && messageFeeds.length > 0
       ? (messageFeeds.find((feed) => feed.id === activeFeedId) ?? messageFeeds[0])
       : null;
-  const narrowActiveColumn = narrowActiveFeed
+  const activeFeedIndex = activeOnlyFeed
+    ? messageFeeds.findIndex((feed) => feed.id === activeOnlyFeed.id)
+    : -1;
+  const activeOnlyColumn = activeOnlyFeed
     ? (() => {
-        const column = buildFeedColumnModel(narrowActiveFeed);
+        const column = buildFeedColumnModel(activeOnlyFeed);
         return {
           ...column,
           view: {
@@ -323,9 +336,10 @@ export function RerDutyNeoWorkspace({
   return (
     <Box className="flex flex-1 min-h-0 w-full overflow-hidden">
       {isInitialLoading ? (
-        <DutyNeoInitialLoadingSkeleton feedCount={messageFeeds.length} narrow={narrowScreen} />
+        <DutyNeoInitialLoadingSkeleton feedCount={messageFeeds.length} narrow={activeFeedOnly} />
       ) : (
         <Box
+          ref={editorEmbeddedOpen ? workspaceRef : undefined}
           data-duty-workspace-main
           className="h-full min-h-0 w-full overflow-hidden flex gap-2"
           sx={{
@@ -333,7 +347,7 @@ export function RerDutyNeoWorkspace({
           }}
         >
           <Box className="flex flex-1 min-w-0 min-h-0 flex-col gap-2">
-            {narrowScreen && messageFeeds.length > 1 && isPresent(activeFeedId) && (
+            {activeFeedOnly && messageFeeds.length > 1 && activeOnlyFeed && (
               <Box
                 sx={{
                   flexShrink: 0,
@@ -365,7 +379,7 @@ export function RerDutyNeoWorkspace({
                     }}
                   >
                     {messageFeeds.map((feed, index) => {
-                      const selected = feed.id === activeFeedId;
+                      const selected = feed.id === activeOnlyFeed.id;
                       const tabLabel = `Стрічка ${index + 1}`;
                       return (
                         <ButtonBase
@@ -453,10 +467,10 @@ export function RerDutyNeoWorkspace({
               </Box>
             )}
             <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}>
-              {narrowScreen ? (
-                narrowActiveColumn && narrowActiveFeed ? (
+              {activeFeedOnly ? (
+                activeOnlyColumn && activeOnlyFeed ? (
                   <Box
-                    key={narrowActiveFeed.id}
+                    key={activeOnlyFeed.id}
                     data-duty-feed-column-active="true"
                     sx={{
                       position: 'absolute',
@@ -468,9 +482,9 @@ export function RerDutyNeoWorkspace({
                   >
                     <FeedColumn
                       ref={(el) => {
-                        columnRefsRef.current[narrowActiveFeed.id] = el;
+                        columnRefsRef.current[activeOnlyFeed.id] = el;
                       }}
-                      column={narrowActiveColumn}
+                      column={activeOnlyColumn}
                       onPanelOpenChange={handlePanelOpenChange}
                     />
                   </Box>
@@ -528,7 +542,7 @@ export function RerDutyNeoWorkspace({
           </Box>
         </Box>
       )}
-      {feedsWithOpenPanels.size === 0 ? (
+      {!editorOpen && feedsWithOpenPanels.size === 0 ? (
         <CreateMessageFab
           onClick={openCreateMessageComposer}
           rightInset={DUTY_WORKSPACE_CREATE_MESSAGE_RIGHT_INSET}

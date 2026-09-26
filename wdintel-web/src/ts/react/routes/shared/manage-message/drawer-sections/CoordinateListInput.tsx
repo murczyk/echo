@@ -3,10 +3,13 @@ import CheckIcon from '@mui/icons-material/Check';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
 import {
   Box,
   IconButton,
   InputAdornment,
+  Menu,
+  MenuItem,
   Stack,
   TextField,
   Tooltip,
@@ -127,7 +130,12 @@ function CoordinateCopyButton({
         aria-label={`Копіювати координату ${index + 1}`}
         onClick={handleCopy}
         disabled={disabled || !value || status === 'copying'}
-        sx={{ p: 0.5 }}
+        sx={{
+          display: 'none',
+          p: 0.5,
+          flexShrink: 0,
+          '@container (min-width: 200px)': { display: 'inline-flex' },
+        }}
       >
         {status === 'copied' ? (
           <CheckIcon fontSize="small" />
@@ -158,6 +166,113 @@ function CoordinateCopyButton({
           }}
         >
           {status === 'copied' ? 'Скопійовано' : 'Не вдалося скопіювати'}
+        </Box>
+      ) : null}
+    </>
+  );
+}
+
+function CoordinateActionsMenu({
+  value,
+  index,
+  disabled,
+  onDelete,
+}: {
+  value: string | null;
+  index: number;
+  disabled: boolean;
+  onDelete: () => void;
+}) {
+  const [anchorElement, setAnchorElement] = useState<HTMLElement | null>(null);
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'error'>('idle');
+  const resetTimeoutRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (resetTimeoutRef.current != null) window.clearTimeout(resetTimeoutRef.current);
+    },
+    [],
+  );
+
+  const scheduleReset = () => {
+    if (resetTimeoutRef.current != null) window.clearTimeout(resetTimeoutRef.current);
+    resetTimeoutRef.current = window.setTimeout(() => setCopyStatus('idle'), COPY_FEEDBACK_MS);
+  };
+
+  const handleCopy = () => {
+    setAnchorElement(null);
+    if (!value) return;
+    void copyTextToClipboard(value)
+      .then(() => {
+        setCopyStatus('copied');
+        scheduleReset();
+      })
+      .catch(() => {
+        setCopyStatus('error');
+        scheduleReset();
+      });
+  };
+
+  return (
+    <>
+      <Box
+        sx={{
+          display: 'flex',
+          flexShrink: 0,
+          '@container (min-width: 200px)': { display: 'none' },
+        }}
+      >
+        <IconButton
+          size="small"
+          aria-label={`Дії координати ${index + 1}`}
+          aria-controls={anchorElement ? `coordinate-actions-${index}` : undefined}
+          aria-haspopup="menu"
+          aria-expanded={anchorElement ? 'true' : undefined}
+          onClick={(event) => setAnchorElement(event.currentTarget)}
+          disabled={disabled}
+          sx={{ width: 24, height: 24, p: 0.25 }}
+        >
+          <MoreVertIcon sx={{ fontSize: 18 }} />
+        </IconButton>
+      </Box>
+      {anchorElement ? (
+        <Menu
+          id={`coordinate-actions-${index}`}
+          anchorEl={anchorElement}
+          open
+          onClose={() => setAnchorElement(null)}
+        >
+          <MenuItem onClick={handleCopy} disabled={!value}>
+            Копіювати
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              setAnchorElement(null);
+              onDelete();
+            }}
+          >
+            Видалити
+          </MenuItem>
+        </Menu>
+      ) : null}
+      {copyStatus !== 'idle' ? (
+        <Box
+          component="span"
+          role="status"
+          aria-live="polite"
+          sx={{
+            position: 'absolute',
+            width: 1,
+            height: 1,
+            p: 0,
+            m: -1,
+            overflow: 'hidden',
+            clip: 'rect(0 0 0 0)',
+            whiteSpace: 'nowrap',
+            border: 0,
+          }}
+        >
+          {copyStatus === 'copied' ? 'Скопійовано' : 'Не вдалося скопіювати'}
         </Box>
       ) : null}
     </>
@@ -347,7 +462,12 @@ export function CoordinateListInput({
       />
 
       <Box
-        sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, alignItems: 'flex-start' }}
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+          gap: 2,
+          alignItems: 'flex-start',
+        }}
       >
         <Box
           sx={{
@@ -359,13 +479,13 @@ export function CoordinateListInput({
             borderRadius: 2,
             border: 1,
             borderColor: 'divider',
-            bgcolor: 'background.paper',
             p: points.length > 0 ? 0.75 : 1,
             overflowY: 'auto',
             display: points.length > 0 ? 'block' : 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             boxSizing: 'border-box',
+            containerType: 'inline-size',
           }}
         >
           {points.length > 0 ? (
@@ -404,11 +524,21 @@ export function CoordinateListInput({
                         flex: 1,
                         minWidth: 0,
                         fontVariantNumeric: 'tabular-nums',
+                        fontSize: 'clamp(0.625rem, 7cqi, 0.75rem)',
                         whiteSpace: 'nowrap',
                       }}
                     >
                       {mgrsText ?? 'MGRS недоступний'}
                     </Typography>
+                    <CoordinateActionsMenu
+                      value={mgrsText}
+                      index={index}
+                      disabled={disabled}
+                      onDelete={() => {
+                        onChange(removeCoordinateAt(value, index));
+                        onBlur();
+                      }}
+                    />
                     <CoordinateCopyButton value={mgrsText} index={index} disabled={disabled} />
                     <IconButton
                       size="small"
@@ -418,7 +548,12 @@ export function CoordinateListInput({
                         onBlur();
                       }}
                       disabled={disabled}
-                      sx={{ p: 0.5 }}
+                      sx={{
+                        display: 'none',
+                        p: 0.5,
+                        flexShrink: 0,
+                        '@container (min-width: 200px)': { display: 'inline-flex' },
+                      }}
                     >
                       <DeleteOutlineIcon fontSize="small" />
                     </IconButton>
@@ -430,7 +565,7 @@ export function CoordinateListInput({
             <Typography
               variant="caption"
               color="text.secondary"
-              sx={{ fontSize: 11, textAlign: 'center' }}
+              sx={{ fontSize: 12, textAlign: 'center' }}
             >
               Координати ще не додані
             </Typography>

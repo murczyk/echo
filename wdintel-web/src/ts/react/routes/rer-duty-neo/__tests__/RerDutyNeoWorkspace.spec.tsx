@@ -739,4 +739,100 @@ describe('RerDutyNeoWorkspace', () => {
     expect(renderedFeedColumns.get(messageFeeds[0].id)?.view).not.toBe(sourceView);
     expect(renderedFeedColumns.get(messageFeeds[0].id)?.view.scrollTrackingEnabled).toBe(true);
   });
+
+  it('mounts only the active feed when an embedded editor leaves insufficient width', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      width: 1200,
+      height: 800,
+      x: 0,
+      y: 0,
+      top: 0,
+      right: 1200,
+      bottom: 800,
+      left: 0,
+      toJSON: () => ({}),
+    });
+    const messageFeeds = Array.from({ length: 4 }, (_, index) => ({
+      ...buildFeed(`feed-${index + 1}`),
+      loading: false,
+    }));
+
+    await act(async () => {
+      root.render(
+        <RerDutyNeoWorkspace
+          activeFeedId="feed-3"
+          buildFeedColumnModel={buildFeedColumnModel}
+          columnRefsRef={{ current: {} }}
+          createMessageFeed={() => {}}
+          openCreateMessageComposer={() => {}}
+          isInitialLoading={false}
+          messageFeeds={messageFeeds}
+          narrowScreen={false}
+          onSelectFeed={() => {}}
+          showLoadingBackdrop={false}
+          editorOpen
+          editorEmbeddedOpen
+        />,
+      );
+    });
+
+    expect(container.querySelectorAll('[data-testid^="feed-column-"]')).toHaveLength(1);
+    expect(container.querySelector('[data-testid="feed-column-feed-3"]')).not.toBeNull();
+    expect(container.querySelector('[role="tablist"][aria-label="Стрічки"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Додати повідомлення"]')).toBeNull();
+  });
+
+  it('restores all feed columns and the create action after the embedded editor closes', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    let measuredWidth = 1200;
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+      () =>
+        ({
+          width: measuredWidth,
+          height: 800,
+          x: 0,
+          y: 0,
+          top: 0,
+          right: measuredWidth,
+          bottom: 800,
+          left: 0,
+          toJSON: () => ({}),
+        }) as DOMRect,
+    );
+    const messageFeeds = Array.from({ length: 4 }, (_, index) => ({
+      ...buildFeed(`feed-${index + 1}`),
+      loading: false,
+    }));
+    const render = (editorOpen: boolean, editorEmbeddedOpen: boolean) =>
+      root.render(
+        <RerDutyNeoWorkspace
+          activeFeedId="feed-3"
+          buildFeedColumnModel={buildFeedColumnModel}
+          columnRefsRef={{ current: {} }}
+          createMessageFeed={() => {}}
+          openCreateMessageComposer={() => {}}
+          isInitialLoading={false}
+          messageFeeds={messageFeeds}
+          narrowScreen={false}
+          onSelectFeed={() => {}}
+          showLoadingBackdrop={false}
+          editorOpen={editorOpen}
+          editorEmbeddedOpen={editorEmbeddedOpen}
+        />,
+      );
+
+    await act(async () => render(true, true));
+    expect(container.querySelectorAll('[data-testid^="feed-column-"]')).toHaveLength(1);
+
+    measuredWidth = 1840;
+    await act(async () => render(false, false));
+    expect(container.querySelectorAll('[data-testid^="feed-column-"]')).toHaveLength(4);
+    expect(renderedFeedColumns.has('feed-3')).toBe(true);
+    expect(container.querySelector('[aria-label="Додати повідомлення"]')).not.toBeNull();
+  });
 });

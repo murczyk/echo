@@ -62,6 +62,12 @@ export type ReportEditLoadState =
   | { status: 'loading'; reportId: number }
   | { status: 'error'; reportId: number; message: string };
 
+export type ManageMessageIntentChange = {
+  key: string;
+  commit: () => void;
+  focusTarget?: HTMLElement | null;
+};
+
 export type UseManageMessageDrawerProps = {
   open: boolean;
   cyberEchoEnabled: boolean;
@@ -84,6 +90,7 @@ export type UseManageMessageDrawerProps = {
   editTargetLoadState?: ReportEditLoadState;
   editSaveInFlight?: boolean;
   onSubmitEdit?: (id: number, message: InboxMessage) => void | Promise<void>;
+  interactionActive?: boolean;
 };
 
 export function useManageMessageDrawer({
@@ -99,6 +106,7 @@ export function useManageMessageDrawer({
   editTargetLoadState = { status: 'idle' },
   editSaveInFlight,
   onSubmitEdit,
+  interactionActive = true,
 }: UseManageMessageDrawerProps) {
   const radioFeaturesAllowed = canUseRadioFeatures(currentUser?.roles);
   const isEditMode = isPresent(editTarget);
@@ -126,6 +134,9 @@ export function useManageMessageDrawer({
   });
   const [quickSuggestionAttempt, setQuickSuggestionAttempt] = useState(0);
   const [discardConfirmationOpen, setDiscardConfirmationOpen] = useState(false);
+  const pendingIntentChangeRef = useRef<ManageMessageIntentChange | null>(null);
+  const editorRootRef = useRef<HTMLDivElement>(null);
+  const editorOwnsInteractionRef = useRef(false);
   const reportCopyLoaded =
     isReportCreateMode && reportCopyLoadedSourceId === (reportSource?.id ?? null);
 
@@ -396,10 +407,34 @@ export function useManageMessageDrawer({
   const hasUnsavedChanges = formState.isDirty || uppyFiles.length > 0;
 
   useEffect(() => {
-    if (!formReady) return;
-    window.addEventListener('paste', handlePaste);
-    return () => window.removeEventListener('paste', handlePaste);
-  }, [formReady, handlePaste]);
+    if (!formReady || !interactionActive) {
+      editorOwnsInteractionRef.current = false;
+      return;
+    }
+    const updateOwnership = (event: Event) => {
+      const root = editorRootRef.current;
+      editorOwnsInteractionRef.current = Boolean(
+        root && event.target instanceof Node && root.contains(event.target),
+      );
+    };
+    const handleScopedPaste = (event: ClipboardEvent) => {
+      const root = editorRootRef.current;
+      if (!root) return;
+      const targetInside = event.target instanceof Node && root.contains(event.target);
+      const focusInside =
+        document.activeElement instanceof Node && root.contains(document.activeElement);
+      if (!targetInside && !focusInside && !editorOwnsInteractionRef.current) return;
+      handlePaste(event);
+    };
+    document.addEventListener('pointerdown', updateOwnership, true);
+    document.addEventListener('focusin', updateOwnership, true);
+    window.addEventListener('paste', handleScopedPaste);
+    return () => {
+      document.removeEventListener('pointerdown', updateOwnership, true);
+      document.removeEventListener('focusin', updateOwnership, true);
+      window.removeEventListener('paste', handleScopedPaste);
+    };
+  }, [formReady, handlePaste, interactionActive]);
 
   const dutySettings = useDutySettings();
   const autoParseEnabled = dutySettings.messageAutoParseEnabled;
@@ -824,12 +859,14 @@ export function useManageMessageDrawer({
     setDeviceNameInput('');
     setShowAdvanced(false);
     setErrorMsg(null);
+    pendingIntentChangeRef.current = null;
     onClose();
   };
 
   const handleBrowserBack = () => {
     if (saving) return false;
     if (hasUnsavedChanges) {
+      pendingIntentChangeRef.current = null;
       setDiscardConfirmationOpen(true);
       return false;
     }
@@ -848,16 +885,42 @@ export function useManageMessageDrawer({
   const handleDrawerClose = () => {
     if (saving) return;
     if (hasUnsavedChanges) {
+      pendingIntentChangeRef.current = null;
       setDiscardConfirmationOpen(true);
       return;
     }
     requestDrawerClose();
   };
 
-  const cancelDiscard = () => setDiscardConfirmationOpen(false);
+  const requestIntentChange = useCallback(
+    (change: ManageMessageIntentChange) => {
+      if (saving) return;
+      if (!hasUnsavedChanges) {
+        change.commit();
+        return;
+      }
+      pendingIntentChangeRef.current = change;
+      setDiscardConfirmationOpen(true);
+    },
+    [hasUnsavedChanges, saving],
+  );
+
+  const cancelDiscard = () => {
+    pendingIntentChangeRef.current = null;
+    setDiscardConfirmationOpen(false);
+  };
 
   const confirmDiscard = () => {
     setDiscardConfirmationOpen(false);
+    const pendingIntentChange = pendingIntentChangeRef.current;
+    pendingIntentChangeRef.current = null;
+    if (pendingIntentChange) {
+      uppy.cancelAll();
+      reset();
+      setErrorMsg(null);
+      pendingIntentChange.commit();
+      return;
+    }
     requestDrawerClose();
   };
 
@@ -958,6 +1021,8 @@ export function useManageMessageDrawer({
     handleToggleAutoParse,
     handleDrawerClose,
     closeDrawerWithoutConfirmation: closeDrawerAfterSubmit,
+    requestIntentChange,
+    editorRootRef,
     discardConfirmationOpen,
     cancelDiscard,
     confirmDiscard,

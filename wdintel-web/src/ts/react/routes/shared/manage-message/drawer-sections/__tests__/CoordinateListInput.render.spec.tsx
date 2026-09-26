@@ -243,7 +243,7 @@ describe('CoordinateListInput feedback', () => {
     await act(async () => root.unmount());
   });
 
-  it('keeps the full MGRS and compact actions on one row', async () => {
+  it('keeps the full MGRS visible while coordinate actions adapt to the panel width', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -270,11 +270,21 @@ describe('CoordinateListInput feedback', () => {
     const deleteIcon = deleteButton?.querySelector<SVGElement>('[data-testid="DeleteOutlineIcon"]');
     const mgrsText = container.querySelector<HTMLElement>('[title="37U CQ 71194 42680"]');
     const coordinateRow = mgrsText?.parentElement;
+    const coordinateGrid = coordinateRow?.parentElement?.parentElement?.parentElement;
+    const actionsButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Дії координати 1"]',
+    );
 
     expect(copyButton).not.toBeNull();
     expect(deleteButton).not.toBeNull();
+    expect(actionsButton).not.toBeNull();
     expect(mgrsText?.textContent).toBe('37U CQ 71194 42680');
     expect(window.getComputedStyle(mgrsText!).whiteSpace).toBe('nowrap');
+    expect(window.getComputedStyle(mgrsText!).overflow).not.toBe('hidden');
+    expect(window.getComputedStyle(mgrsText!).textOverflow).not.toBe('ellipsis');
+    expect(window.getComputedStyle(coordinateGrid!).gridTemplateColumns).toBe(
+      'minmax(0, 1fr) minmax(0, 1fr)',
+    );
     expect(window.getComputedStyle(coordinateRow!).gap).toBe('0px');
     expect(window.getComputedStyle(coordinateRow!).paddingLeft).toBe('4px');
     expect(window.getComputedStyle(copyButton!).paddingLeft).toBe('4px');

@@ -112,6 +112,18 @@
 - **Expected observable result:** Escape and outside interaction close only their owning panel; transparent overlays do not block the feed; narrow layouts retain one mobile header owner while available actions remain reachable.
 - **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 
+## Duty embedded-editor feed layout
+
+- **Status:** normative
+- **Behavior ID:** `react-duty-embedded-editor-feed-layout`
+- **Affected route/component:** Duty workspace and shared message editor.
+- **Expected observable result:** While the embedded message editor is open, desktop multi-feed mode keeps all columns only when every feed receives at least `360px`; otherwise it reuses active-feed tabs and mounts only the active feed tree. A lone feed always contracts to the remaining workspace width while retaining `960px` only as its maximum width, so cards never clip at intermediate viewport sizes. Closing the editor restores all desktop columns and feed state.
+- **Responsive and keyboard requirements:** the temporary active-feed layout trades simultaneous feed visibility for readable cards, independent feed/editor scrolling, and fewer mounted message trees. Editor-closed desktop behavior remains unchanged.
+- **Known race/idempotency constraints:** changing between all-feed and active-feed presentation must preserve each feed's data, selection, unread state, and scroll state.
+- **Source implementation:** `routes/rer-duty-neo/RerDutyNeoWorkspace.tsx`, `routes/rer-duty-neo/duty-editor-layout.ts`, `routes/rer-duty-neo/index.tsx`.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/RerDutyNeoWorkspace.spec.tsx`, `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/duty-editor-layout.spec.ts`, `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/index.spec.tsx`.
+- **Original Echo issue/PR, if known:** [#3547](https://github.com/echoua/echo/issues/3547)
+
 ## Duty radio-filter isolation
 
 - **Behavior ID:** `react-duty-radio-filter-isolation`

@@ -2,33 +2,28 @@
  * @vitest-environment happy-dom
  */
 import type { ReactNode } from 'react';
-import { act } from 'react';
+import { act, forwardRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@mui/material', () => ({
-  Box: ({
-    children,
-    component = 'div',
-    onSubmit,
-    onKeyDown,
-    className,
-    sx,
-    ...props
-  }: {
-    children?: ReactNode;
-    component?: string;
-    onSubmit?: (event: Event) => void;
-    onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void;
-    className?: string;
-  } & Record<string, unknown>) => {
+  Box: forwardRef<HTMLElement, Record<string, unknown>>(function MockBox(
+    { children, component = 'div', onSubmit, onKeyDown, className, sx, ...props },
+    ref,
+  ) {
     const Component = component as keyof HTMLElementTagNameMap;
     return (
-      <Component className={className} onSubmit={onSubmit} onKeyDown={onKeyDown} {...props}>
-        {children}
+      <Component
+        ref={ref as never}
+        className={className as string | undefined}
+        onSubmit={onSubmit as never}
+        onKeyDown={onKeyDown as never}
+        {...props}
+      >
+        {children as ReactNode}
       </Component>
     );
-  },
+  }),
 }));
 
 import { PowerForm } from '../PowerForm';
@@ -44,12 +39,14 @@ function renderComponent(node: ReactNode) {
 }
 
 function wireRequestSubmit(form: HTMLFormElement) {
+  const requestSubmit = vi.fn(() => {
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  });
   Object.defineProperty(form, 'requestSubmit', {
     configurable: true,
-    value: vi.fn(() => {
-      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-    }),
+    value: requestSubmit,
   });
+  return requestSubmit;
 }
 
 function buildKeyboardEvent(
@@ -197,6 +194,86 @@ describe('PowerForm', () => {
 
     expect(metaEvent.defaultPrevented).toBe(true);
     expect(ctrlEvent.defaultPrevented).toBe(true);
+    expect(onSubmit).not.toHaveBeenCalled();
+    root.unmount();
+  });
+
+  it('submits globally only while this form owns the active interaction', async () => {
+    const addEventListener = vi.spyOn(window, 'addEventListener');
+    const onSubmit = vi.fn((event: Event) => {
+      event.preventDefault();
+    });
+    const { container, root } = renderComponent(
+      <>
+        <PowerForm globalSubmitShortcut onSubmit={onSubmit}>
+          <input aria-label="editor" />
+        </PowerForm>
+        <input aria-label="filter" />
+      </>,
+    );
+    const form = container.querySelector('form') as HTMLFormElement;
+    const editor = container.querySelector('[aria-label="editor"]') as HTMLInputElement;
+    const filter = container.querySelector('[aria-label="filter"]') as HTMLInputElement;
+    const requestSubmit = wireRequestSubmit(form);
+    await act(async () => undefined);
+    expect(addEventListener).toHaveBeenCalledWith('keydown', expect.any(Function));
+    const globalKeydown = addEventListener.mock.calls.find(
+      ([type, listener]) =>
+        type === 'keydown' && (listener as Function).name === 'handleGlobalSubmit',
+    )?.[1] as EventListener | undefined;
+    expect(globalKeydown).toBeTruthy();
+    expect(String(globalKeydown)).toContain('requestSubmit');
+    const shortcut = () =>
+      new KeyboardEvent('keydown', {
+        bubbles: true,
+        cancelable: true,
+        key: 'Enter',
+        ctrlKey: true,
+      });
+    expect(shortcut()).toMatchObject({ key: 'Enter', ctrlKey: true, defaultPrevented: false });
+
+    act(() => {
+      filter.focus();
+      globalKeydown?.(shortcut());
+    });
+    expect(requestSubmit).not.toHaveBeenCalled();
+
+    act(() => {
+      editor.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      globalKeydown?.(shortcut());
+    });
+    expect(requestSubmit).toHaveBeenCalledTimes(1);
+    root.unmount();
+    addEventListener.mockRestore();
+  });
+
+  it('disables the global shortcut after rerender', () => {
+    const onSubmit = vi.fn((event: Event) => {
+      event.preventDefault();
+    });
+    const { container, root } = renderComponent(
+      <PowerForm globalSubmitShortcut onSubmit={onSubmit}>
+        <input aria-label="editor" />
+      </PowerForm>,
+    );
+    wireRequestSubmit(container.querySelector('form') as HTMLFormElement);
+
+    act(() => {
+      root.render(
+        <PowerForm globalSubmitShortcut={false} onSubmit={onSubmit}>
+          <input aria-label="editor" />
+        </PowerForm>,
+      );
+      document.body.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          bubbles: true,
+          cancelable: true,
+          key: 'Enter',
+          metaKey: true,
+        }),
+      );
+    });
+
     expect(onSubmit).not.toHaveBeenCalled();
     root.unmount();
   });

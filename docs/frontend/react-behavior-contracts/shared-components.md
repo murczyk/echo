@@ -313,6 +313,24 @@
 - **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded.
 
+## Manage-message editor surface and interaction ownership
+
+- **Status:** normative
+- **Behavior ID:** `react-manage-message-editor-surface`
+- **Affected route/component:** shared Manage Message editor on Duty and Analysis.
+- **User role or permission:** users permitted to create or edit messages and intelligence reports.
+- **Preconditions:** a create/edit intent is active on a supported route.
+- **User action or external event:** the editor opens, its intent changes, the viewport changes, parsing completes, permission is revoked, or the user closes/navigates back.
+- **Expected observable result:** viewports below `1024px` use the existing full-screen modal. Wider viewports embed the editor as a flat, shadowless right workspace column. Duty keeps width `clamp(440px, 40vw, 640px)`, a `16px` gap from the feed, the default surface background, an editor-edge divider, and one main form column. Analysis may request a full-width, flush, transparent, borderless embedded surface that reuses its center workspace divider and adapts its form columns to the measured editor width. The embedded surface uses a short slide/fade entrance animation, disabled when reduced motion is requested, and scrolls independently from the feed. Browser Back closes the editor before leaving the route. Replacing or closing a dirty intent requires confirmation, while a confirmed replacement does not add an extra history entry.
+- **Loading/empty/error/success behavior:** asynchronous report loading and automatic parsing stay attached to the intent that initiated them; permission loss closes the editor and presents the established notification.
+- **URL, localStorage, or user-settings persistence:** no editor draft or presentation mode is persisted; history state owns the open surface so Back can close it.
+- **API endpoint and compatibility requirements:** existing message and intelligence-report mutation contracts remain unchanged.
+- **Responsive and keyboard requirements:** paste-to-parse and Cmd/Ctrl+Enter submission run only when the editor owns the interaction; an unmounted editor cannot consume page shortcuts or paste. Escape closes an embedded editor only while focus belongs to it and follows the same dirty-state guard. Closing restores focus to the invoking control when it is still available.
+- **Known race/idempotency constraints:** a pending dirty-intent confirmation must preserve the current draft until accepted; late parse/load completion cannot reactivate or retarget a different editor intent.
+- **Source implementation:** `routes/shared/manage-message/ManageMessageDrawer.tsx`, `routes/shared/manage-message/useManageMessageDrawer.ts`, `routes/shared/manage-message/ManageMessageEditorSurface.tsx`, `components/PowerForm.tsx`.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/manage-message/__tests__/ManageMessageDrawer.edit.spec.tsx`, `wdintel-web/src/ts/react/routes/shared/manage-message/__tests__/ManageMessageEditorSurface.spec.tsx`, `wdintel-web/src/ts/react/routes/shared/manage-message/__tests__/manage-message-editor-layout.spec.ts`, `wdintel-web/src/ts/react/components/__tests__/PowerForm.spec.tsx`.
+- **Original Echo issue/PR, if known:** [#3547](https://github.com/echoua/echo/issues/3547)
+
 ## Portal-aware outside dismissal
 
 - **Status:** inferred characterization

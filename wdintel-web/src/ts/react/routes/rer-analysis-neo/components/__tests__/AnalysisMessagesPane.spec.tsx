@@ -61,7 +61,7 @@ vi.mock('../../../shared/message-card/MessageCard', () => ({
     hideBotTags?: boolean;
     analysisCallsignActions?: { onAddCallsign: () => void; onRemoveCallsign: () => void };
   }) => (
-    <div data-testid={`message-card-${props.id}`}>
+    <div data-testid={`message-card-${props.id}`} data-message-id={props.id}>
       <span data-testid={`sender-${props.id}`}>{props.senderName ?? ''}</span>
       <span data-testid={`tags-layout-${props.id}`}>{props.tagsLayout ?? 'unset'}</span>
       <span data-testid={`hide-bot-tags-${props.id}`}>{String(props.hideBotTags ?? false)}</span>
@@ -193,6 +193,14 @@ function buildProps(
     showCallsignAddForm: false,
     viewportPreservationKey: 0,
     onViewportCaptureChange: vi.fn(),
+    onVisiblePageChange: vi.fn(),
+    onPageNavigationHandled: vi.fn(),
+    pageNavigationTarget: null,
+    scrollResetKey: 'initial',
+    directMessageNavigation: null,
+    onOpenPointsOnMap: vi.fn(),
+    onAddPointHighlightBlacklist: vi.fn().mockResolvedValue(undefined),
+    editorSourceMessageId: null,
     ...overrides,
   };
 }
@@ -232,6 +240,25 @@ describe('AnalysisMessagesPane', () => {
       });
       item.container.remove();
     }
+  });
+
+  it('highlights the editor source without scrolling the message viewport', async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    const renderedPane = await renderComponent(
+      buildProps({ messages: [[7, buildMessage()]], editorSourceMessageId: 7 }),
+    );
+    rendered.push(renderedPane);
+
+    expect(scrollIntoView).not.toHaveBeenCalled();
+    expect(
+      renderedPane.container
+        .querySelector('[data-testid="message-card-7"] span')
+        ?.getAttribute('style'),
+    ).toContain('outline');
   });
 
   it('shows the empty state when there are no messages', async () => {
