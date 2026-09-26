@@ -1,0 +1,153 @@
+# Execution record
+
+- 2026-09-25 08:10–08:25 UTC: read-only inventory, dependencies, ZFS send
+  dry runs, application health checks and transfer probes.
+- User selected 15 minutes per-guest outage and seven-day source retention;
+  explicitly required source autostart off and target autostart on.
+- 2026-09-25 08:32 UTC: implementation authorized. Stage 1 only until later
+  showtime. All ten source guests running; target pools healthy, selected IDs
+  and datasets free, cluster quorate.
+- Documentation is in `archive/2026-09-25-hetzner-migration/` as corrected
+  by the user. No files were created in `../archive/`.
+- 2026-09-25T08:40:57+00:00: Guest 128: base snapshot held; stream estimate 0.70 GiB; source remains running.
+- 2026-09-25T08:41:01+00:00: Guest 127: base snapshot held; stream estimate 51.32 GiB; source remains running.
+- 2026-09-25T08:41:05+00:00: Guest 126: base snapshot held; stream estimate 41.28 GiB; source remains running.
+- 2026-09-25T08:41:09+00:00: Guest 129: base snapshot held; stream estimate 55.32 GiB; source remains running.
+- 2026-09-25T08:41:13+00:00: Guest 647: base snapshot held; stream estimate 0.76 GiB; source remains running.
+- 2026-09-25T08:41:18+00:00: Guest 650: base snapshot held; stream estimate 1.28 GiB; source remains running.
+- 2026-09-25T08:41:22+00:00: Guest 421: base snapshot held; stream estimate 5.56 GiB; source remains running.
+- 2026-09-25T08:41:26+00:00: Guest 420: base snapshot held; stream estimate 0.78 GiB; source remains running.
+- 2026-09-25T08:41:30+00:00: Guest 131: base snapshot held; stream estimate 55.04 GiB; source remains running.
+- 2026-09-25T08:41:34+00:00: Guest 405: base snapshot held; stream estimate 183.18 GiB; source remains running.
+- 2026-09-25T08:41:36+00:00: All ten base snapshots held and effective target configs staged outside /etc/pve.
+- 2026-09-25T08:42:39+00:00: Guest 647: paused; source unchanged. Operator pause requested through .state/STOP
+- 2026-09-25T08:42:39+00:00: Guest 128: paused; source unchanged. Operator pause requested through .state/STOP
+- 2026-09-25T08:43:15+00:00: Controlled interruption test: both first streams retained valid resume tokens matching their original snapshot GUIDs; target copies stayed read-only and unmounted. Resuming without a full resend.
+- 2026-09-25T08:43:23+00:00: Guest 128: resuming interrupted receive.
+- 2026-09-25T08:43:23+00:00: Guest 647: resuming interrupted receive.
+- 2026-09-25T08:44:46+00:00: Precreated the dedicated CT 420 bind dataset on pve-hz-1 with POSIX ACLs/SA xattrs; read-only, unmounted, canmount=noauto. No guest registered.
+- 2026-09-25T08:45:39+00:00: Guest 128 ct-echo-vllm-router: base verified on pve-hz-3-ziggy; source still running; no cutover.
+- 2026-09-25T08:45:59+00:00: Guest 647 ct-oblik-os-vault: base verified on pve-hz-3-ziggy; source still running; no cutover.
+- 2026-09-25T08:46:54+00:00: Supervised launch checks complete: resumed bases 128 and 647 verified; 127 and 650 copying. All ten source guests remain running with onboot=1; destination cluster has none of the ten guest configs registered. Seven safeguard tests passed; privileged rsync dry runs passed at both ends. Persistent tmux job continues the remaining allowlisted queue.
+- 2026-09-25T08:51:13+00:00: Guest 650 ct-kmz-converter: base verified on pve-hz-3-ziggy; source still running; no cutover.
+- 2026-09-25T09:12:23+00:00: Guest 421 ct-mattermost-cbr: base verified on pve-hz-3-ziggy; source still running; no cutover.
+- 2026-09-25T10:36:33+00:00: CT 420: separate bind-mount base copied; target read-only and unmounted.
+- 2026-09-25T10:36:33+00:00: Guest 420 ct-gitlab-backup: base verified on pve-hz-1-ziggy; source still running; no cutover.
+- 2026-09-25T11:57:14+00:00: Guest 127 ct-echo-cbr-staging: base verified on pve-hz-1-ziggy; source still running; no cutover.
+- 2026-09-25T12:42:08+00:00: Guest 131: transfer attempt 1 failed (RuntimeError); partial receive retained. See private transfer logs.
+- 2026-09-25T12:42:09+00:00: Guest 126: transfer attempt 1 failed (RuntimeError); partial receive retained. See private transfer logs.
+- 2026-09-25T14:30:47+00:00: Status audit at user request: 6 bases verified; worker received KeyboardInterrupt at 12:42 UTC and exited without its normal failure notification. 126/131 partial; 129/405 queued. Per-guest notifications now unconditional; SIGINT/SIGTERM/SIGHUP now request a persistent safe pause with notification. Clarifying whether the interruption was intentional before restart.
+- 2026-09-25T14:31:41+00:00: User explicitly requested resuming remaining base copies. Restarted detached worker with the current SSH agent socket; every guest now receives a deduplicated completion notification. Already verified bases are rechecked, and 126/131 resume from saved tokens. No cutover authorized.
+- 2026-09-25T14:32:00+00:00: Guest 647 ct-oblik-os-vault: base verified on pve-hz-3-ziggy; source still running; no cutover.
+- 2026-09-25T14:32:00+00:00: Guest 128 ct-echo-vllm-router: base verified on pve-hz-3-ziggy; source still running; no cutover.
+- 2026-09-25T14:32:18+00:00: Guest 127 ct-echo-cbr-staging: base verified on pve-hz-1-ziggy; source still running; no cutover.
+- 2026-09-25T14:32:19+00:00: Guest 650 ct-kmz-converter: base verified on pve-hz-3-ziggy; source still running; no cutover.
+- 2026-09-25T14:32:27+00:00: Guest 126: resuming interrupted receive.
+- 2026-09-25T14:32:40+00:00: Guest 421 ct-mattermost-cbr: base verified on pve-hz-3-ziggy; source still running; no cutover.
+- 2026-09-25T14:33:00+00:00: Guest 420 ct-gitlab-backup: base verified on pve-hz-1-ziggy; source still running; no cutover.
+- 2026-09-25T14:33:07+00:00: Guest 131: resuming interrupted receive.
+- 2026-09-25T14:33:25+00:00: Resume confirmed: CBR production (126) and CI (131) are transferring from saved offsets, with byte counters increasing. Six bases are verified: 128, 127, 647, 650, 421, and 420 including /backup. AI-agent VM (129) and SigNoz (405) remain queued. Mattermost will notify after every verified guest base. All source guests remain online; no cutover performed.
+- 2026-09-25T14:54:12+00:00: 14:54 UTC status: both resumed transfers are progressing without new errors; all four host capacity checks passed. Six bases verified. CBR production (126) is approximately 42% copied, ETA 16:35 UTC; CI (131) approximately 71%, ETA 16:00 UTC. At the observed roughly 4.2 MiB/s per source, queued AI-agent VM (129) should finish around 20:30 UTC and SigNoz (405) around 04:30-05:30 UTC on 26 September. Overall base-copy ETA about 14 hours if current speeds hold. Source services remain on the original hosts; no cutover performed.
+- 2026-09-25T15:54:46+00:00: Guest 131 ct-ci-neo: base verified on pve-hz-1-ziggy; source still running; no cutover.
+- 2026-09-25T16:24:04+00:00: Guest 126 ct-echo-cbr: base verified on pve-hz-3-ziggy; source still running; no cutover.
+- 2026-09-25T19:50:04+00:00: Guest 129 srv-echo-ai-agent-vm: base verified on pve-hz-1-ziggy; source still running; no cutover.
+- 2026-09-26T03:13:47+00:00: Guest 405 ct-signoz-echo: base verified on pve-hz-3-ziggy; source still running; no cutover.
+- 2026-09-26T03:14:52+00:00: Stage 1 complete: ten base snapshots and CT 420 bind mount verified. Awaiting showtime.
+- 2026-09-26T07:36:44+00:00: User authorized showtime. Beginning live preflight and warm incrementals; sequential guest cutovers follow validation.
+- 2026-09-26T07:38:38+00:00: Guest 127: warm incremental 0.216 GiB; source remains running.
+- 2026-09-26T07:38:39+00:00: Guest 650: warm incremental 0.008 GiB; source remains running.
+- 2026-09-26T07:38:55+00:00: Guest 650: warm incremental verified.
+- 2026-09-26T07:39:07+00:00: Guest 420: warm incremental 0.009 GiB; source remains running.
+- 2026-09-26T07:39:24+00:00: Guest 420: warm incremental verified.
+- 2026-09-26T07:39:36+00:00: Guest 131: warm incremental 0.123 GiB; source remains running.
+- 2026-09-26T07:39:39+00:00: Guest 127: warm incremental verified.
+- 2026-09-26T07:39:52+00:00: Guest 126: warm incremental 1.835 GiB; source remains running.
+- 2026-09-26T07:40:14+00:00: Guest 131: warm incremental verified.
+- 2026-09-26T07:40:28+00:00: Guest 421: warm incremental 0.043 GiB; source remains running.
+- 2026-09-26T07:40:52+00:00: Guest 421: warm incremental verified.
+- 2026-09-26T07:41:06+00:00: Guest 647: warm incremental 0.001 GiB; source remains running.
+- 2026-09-26T07:41:14+00:00: Guest 127: source stopped gracefully, onboot=0, migration lock applied.
+- 2026-09-26T07:41:18+00:00: Guest 127: final incremental 0.017 GiB.
+- 2026-09-26T07:41:21+00:00: Guest 647: warm incremental verified.
+- 2026-09-26T07:41:34+00:00: Guest 405: warm incremental 17.838 GiB; source remains running.
+- 2026-09-26T07:41:53+00:00: Guest 127: started on pve-hz-1-ziggy; source remains stopped/locked; validating applications.
+- 2026-09-26T07:42:47+00:00: Guest 127 validation passed: Original Tailscale identity and external HTTP 200; DHCP/default route, DNS and internet HTTPS; PostgreSQL SELECT 1 and Redis PONG; App, background/report workers, Python, nginx and vector active; Signal bot count preserved; All three router pools reachable; Authenticated OCR /v1/status HTTP 200 with healthy routers and one worker. Pre-existing binfmt-support failure unchanged.
+- 2026-09-26T07:42:55+00:00: Migrated 127 ct-echo-cbr-staging to pve-hz-1-ziggy; application/network checks passed. Source stopped, locked and onboot=0; destination running with onboot=1. Shutdown-to-validation elapsed 1m 54s. Source copies and final snapshots retained.
+- 2026-09-26T07:43:29+00:00: Guest 650: source stopped gracefully, onboot=0, migration lock applied.
+- 2026-09-26T07:43:34+00:00: Guest 650: final incremental 0.004 GiB.
+- 2026-09-26T07:44:08+00:00: Guest 650: started on pve-hz-3-ziggy; source remains stopped/locked; validating applications.
+- 2026-09-26T07:45:38+00:00: Guest 650: destination Tailscale NeedsLogin (nodeKeyExpired=false, machineAuthorized=false); internet and application services active. Investigating before accepting cutover.
+- 2026-09-26T07:46:22+00:00: Guest 650: saved Tailscale state, final snapshot and machine-id hashes match the source exactly. Existing tailnet account must authorize login. User notified here and in Mattermost; source stays stopped/locked. Other guests remain in their current safe state.
+- 2026-09-26T07:46:46+00:00: Guest 126: warm incremental verified.
+- 2026-09-26T07:47:00+00:00: Guest 129: warm incremental 0.183 GiB; source remains running.
+- 2026-09-26T07:47:50+00:00: Guest 129: warm incremental verified.
+- 2026-09-26T07:48:04+00:00: Guest 128: warm incremental 0.075 GiB; source remains running.
+- 2026-09-26T07:48:34+00:00: Guest 128: warm incremental verified.
+- 2026-09-26T07:50:16+00:00: Guest 650 reauthorized in original operator-osint2 tailnet; assigned 100.102.183.11 rather than original .12. Awaiting user address restoration/acceptance. GPX-to-KML API returned HTTP 200; validating geometry separately.
+- 2026-09-26T07:51:12+00:00: Guest 650: supported GPX-to-KML conversion verified HTTP 200 with output geometry. KMZ input itself is unsupported by the existing converter; initial synthetic KMZ-input probe was not a migration regression.
+- 2026-09-26T07:52:13+00:00: Backup configuration prepared on pve-hz-1-ziggy, restricted to migrated guest names and Proxmox config; timer not enabled yet.
+- 2026-09-26T07:52:27+00:00: Migrated 650 ct-kmz-converter to pve-hz-3-ziggy; application/network checks passed. Source stopped, locked and onboot=0; destination running with onboot=1. Shutdown-to-validation elapsed 9m 6s. Source copies and final snapshots retained.
+- 2026-09-26T07:52:30+00:00: Backup configuration prepared on pve-hz-3-ziggy, restricted to migrated guest names and Proxmox config; timer not enabled yet.
+- 2026-09-26T07:52:57+00:00: Guest 420: source stopped gracefully, onboot=0, migration lock applied.
+- 2026-09-26T07:53:02+00:00: Guest 420: final incremental 0.008 GiB.
+- 2026-09-26T07:54:13+00:00: Guest 420: final /backup copy and checksum/metadata comparisons verified at both hops.
+- 2026-09-26T07:54:32+00:00: Guest 420: started on pve-hz-1-ziggy; source remains stopped/locked; validating applications.
+- 2026-09-26T07:54:47+00:00: Guest 420: validation passed: Original Tailscale address; DNS, DHCP default route and internet HTTPS; Application services active; All 32 backup files and 12,538,081,280 bytes present; final rsync checksum audit passed.
+- 2026-09-26T07:55:15+00:00: Migrated 420 ct-gitlab-backup to pve-hz-1-ziggy; application/network checks passed. Source stopped, locked and onboot=0; destination running with onboot=1. Shutdown-to-validation elapsed 2m 28s. Source copies and final snapshots retained.
+- 2026-09-26T07:55:38+00:00: Guest 131: source stopped gracefully, onboot=0, migration lock applied.
+- 2026-09-26T07:55:43+00:00: Guest 131: final incremental 0.080 GiB.
+- 2026-09-26T07:56:31+00:00: Guest 131: started on pve-hz-1-ziggy; source remains stopped/locked; validating applications.
+- 2026-09-26T07:56:51+00:00: CT 420 dedicated bind-volume backup installed, nightly weekly-interval timer enabled, first resumable ZFS backup started to echo-gpu-hammer. Retention: 1 source / 4 target backup snapshots; migration snapshots excluded.
+- 2026-09-26T08:00:04+00:00: Guest 131: corrected inherited host Tailscale resolver loop; explicit public resolvers configured in PVE and networkd. Signed APT repository metadata is served. Rebooting target to verify DNS persists before acceptance.
+- 2026-09-26T08:00:40+00:00: Guest 131: validation passed: Original Tailscale address; DNS, DHCP default route and internet HTTPS; Application services active; CI nginx HTTP 200.
+- 2026-09-26T08:01:20+00:00: Migrated 131 ct-ci-neo to pve-hz-1-ziggy; application/network checks passed. Source stopped, locked and onboot=0; destination running with onboot=1. Shutdown-to-validation elapsed 5m 48s. Source copies and final snapshots retained.
+- 2026-09-26T08:01:48+00:00: Guest 421: source stopped gracefully, onboot=0, migration lock applied.
+- 2026-09-26T08:01:53+00:00: Guest 421: final incremental 0.009 GiB.
+- 2026-09-26T08:02:29+00:00: Guest 421: started on pve-hz-3-ziggy; source remains stopped/locked; validating applications.
+- 2026-09-26T08:02:41+00:00: Guest 421: validation passed: Original Tailscale address; DNS, DHCP default route and internet HTTPS; Application services active; PostgreSQL query succeeded; Mattermost API ping HTTP 200.
+- 2026-09-26T08:03:24+00:00: Migrated 421 ct-mattermost-cbr to pve-hz-3-ziggy; application/network checks passed. Source stopped, locked and onboot=0; destination running with onboot=1. Shutdown-to-validation elapsed 1m 46s. Source copies and final snapshots retained.
+- 2026-09-26T08:03:48+00:00: Guest 647: source stopped gracefully, onboot=0, migration lock applied.
+- 2026-09-26T08:03:53+00:00: Guest 647: final incremental 0.001 GiB.
+- 2026-09-26T08:04:22+00:00: Guest 647: destination-only unseal readiness now uses loopback with verified TLS hostname; retry/timeout override installed. Keys were not logged.
+- 2026-09-26T08:04:28+00:00: Guest 647: started on pve-hz-3-ziggy; source remains stopped/locked; validating applications.
+- 2026-09-26T08:05:07+00:00: Guest 647: validation passed: Original Tailscale address; DNS, DHCP default route and internet HTTPS; Application services active; Vault initialized and unsealed with verified TLS.
+- 2026-09-26T08:05:19+00:00: Other warm copies completed. Safely interrupting only SigNoz warm sender/receiver to resume at 10 MiB/s, reusing the prior two-source aggregate migration budget. Source 405 remains online; partial receive is resumable.
+- 2026-09-26T08:05:44+00:00: Guest 405: warm incremental 17.838 GiB; source remains running.
+- 2026-09-26T08:05:54+00:00: First backup from Hetzner verified: KMZ converter snapshot GUID matches echo-gpu-hammer repository. New backup authentication/transport works.
+- 2026-09-26T08:06:18+00:00: Guest 647: validation passed: Original Tailscale address; DNS, DHCP default route and internet HTTPS; Application services active; Vault initialized and unsealed with verified TLS.
+- 2026-09-26T08:07:15+00:00: Migrated 647 ct-oblik-os-vault to pve-hz-3-ziggy; application/network checks passed. Source stopped, locked and onboot=0; destination running with onboot=1. Shutdown-to-validation elapsed 3m 33s. Source copies and final snapshots retained.
+- 2026-09-26T08:07:39+00:00: Guest 129: source stopped gracefully, onboot=0, migration lock applied.
+- 2026-09-26T08:07:44+00:00: Guest 129: final incremental 0.008 GiB.
+- 2026-09-26T08:08:16+00:00: Guest 129: started on pve-hz-1-ziggy; source remains stopped/locked; validating applications.
+- 2026-09-26T08:08:47+00:00: Guest 129: original Tailscale, internet, dispatcher and Incus storage verified; all 17 instances match the stopped source baseline.
+- 2026-09-26T08:09:22+00:00: Migrated 129 srv-echo-ai-agent-vm to pve-hz-1-ziggy; application/network checks passed. Source stopped, locked and onboot=0; destination running with onboot=1. Shutdown-to-validation elapsed 1m 49s. Source copies and final snapshots retained.
+- 2026-09-26T08:09:40+00:00: Guest 128: router services stopped before guest networking, allowing their graceful shutdown.
+- 2026-09-26T08:09:45+00:00: All four guests placed on pve-hz-1 are migrated and validated. Weekly backup coverage timer enabled (nightly checks at 01:00 UTC); first full guest/config backups started. CT 420 bind backup is covered separately.
+- 2026-09-26T08:09:47+00:00: Guest 128: source stopped gracefully, onboot=0, migration lock applied.
+- 2026-09-26T08:09:51+00:00: Guest 128: final incremental 0.011 GiB.
+- 2026-09-26T08:10:27+00:00: Guest 128: started on pve-hz-3-ziggy; source remains stopped/locked; validating applications.
+- 2026-09-26T08:10:41+00:00: Guest 128: validation passed: Original Tailscale address; DNS, DHCP default route and internet HTTPS; Application services active; All three router health endpoints; All three GPU workers reachable.
+- 2026-09-26T08:10:45+00:00: Guest 127: validation passed: Original Tailscale address; DNS, DHCP default route and internet HTTPS; Application services active; PostgreSQL query succeeded; Redis and web HTTP; Messaging bot units running; All three router health endpoints; Authenticated OCR readiness.
+- 2026-09-26T08:11:43+00:00: Migrated 128 ct-echo-vllm-router to pve-hz-3-ziggy; application/network checks passed. Source stopped, locked and onboot=0; destination running with onboot=1. Shutdown-to-validation elapsed 2m 4s. Source copies and final snapshots retained.
+- 2026-09-26T08:12:10+00:00: Guest 126: source stopped gracefully, onboot=0, migration lock applied.
+- 2026-09-26T08:12:15+00:00: Guest 126: final incremental 0.207 GiB.
+- 2026-09-26T08:12:35+00:00: pve-hz-1 Proxmox configuration backup verified on echo-gpu-hammer by snapshot GUID; initial guest backups continue.
+- 2026-09-26T08:13:28+00:00: Guest 126: started on pve-hz-3-ziggy; source remains stopped/locked; validating applications.
+- 2026-09-26T08:14:13+00:00: Guest 126: validation passed: Original Tailscale address; DNS, DHCP default route and internet HTTPS; Application services active; PostgreSQL query succeeded; Redis and web HTTP; Messaging bot units running; All three router health endpoints; Authenticated OCR readiness.
+- 2026-09-26T08:18:31+00:00: Guest 126: all 10 Signal bots match source baseline. All 3 WhatsApp bots had identical missing-phone-number errors and >1.3 million restarts before shutdown, verified directly against stopped source persistent journals; no migration regression. Existing WhatsApp configuration unchanged.
+- 2026-09-26T08:18:47+00:00: Migrated 126 ct-echo-cbr to pve-hz-3-ziggy; application/network checks passed. Source stopped, locked and onboot=0; destination running with onboot=1. Shutdown-to-validation elapsed 6m 47s. Source copies and final snapshots retained.
+- 2026-09-26T08:21:35+00:00: Final verification passed for all nine completed guests: source stopped, onboot=0 and migration lock; target running with onboot=1; matching final snapshot GUIDs and migration holds on both copies.
+- 2026-09-26T08:28:09+00:00: Guest 405: warm incremental verified.
+- 2026-09-26T08:28:27+00:00: Guest 405: warm incremental 1.237 GiB; source remains running.
+- 2026-09-26T08:31:15+00:00: Guest 405: warm incremental verified.
+- 2026-09-26T08:33:21+00:00: Guest 405: source stopped gracefully, onboot=0, migration lock applied.
+- 2026-09-26T08:33:25+00:00: Guest 405: final incremental 0.285 GiB.
+- 2026-09-26T08:34:34+00:00: Guest 405: started on pve-hz-3-ziggy; source remains stopped/locked; validating applications.
+- 2026-09-26T08:35:07+00:00: Guest 405: validation passed: Original Tailscale address; DNS, DHCP default route and internet HTTPS; Application services active; SigNoz API health HTTP 200.
+- 2026-09-26T08:35:13+00:00: Guest 405: end-to-end external OTLP log ingestion and fresh production metrics verified.
+- 2026-09-26T08:35:31+00:00: Migrated 405 ct-signoz-echo to pve-hz-3-ziggy; application/network checks passed. Source stopped, locked and onboot=0; destination running with onboot=1. Shutdown-to-validation elapsed 3m 54s. Source copies and final snapshots retained.
+- 2026-09-26T08:35:57+00:00: Guest 405 verified: original Tailscale address, all eight application/collector/prober/exporter/bridge services active, API healthy, synthetic external OTLP log stored in ClickHouse and production metrics newer than target boot (age 4.9 seconds). Early connection-refused probes occurred during normal startup; retry passed without configuration changes.
+- 2026-09-26T08:35:57+00:00: All six pve-hz-3 guests are now migrated and validated. Weekly backup timer enabled (nightly checks at 04:00 UTC), and first full guest/config backup job started. Both targets now have active backup coverage; initial large backups are still seeding.
+- 2026-09-26T08:36:59+00:00: pve-hz-3 Proxmox configuration backup also verified by matching receiver snapshot GUID. KMZ and both target configuration backups are complete; larger guest/bind backups continue.
+- 2026-09-26T08:37:42+00:00: Final audit complete for all ten guests: stopped/locked sources with autostart disabled, running destinations with autostart enabled, matching held final snapshots, both cluster nodes quorate and pools ONLINE. Final report written to FINAL.md. Source retention extends through at least 2026-10-03 09:00 UTC and verified backup acceptance; initial large backup jobs continue.
+- 2026-09-26T08:38:03+00:00: Final migration completion notification delivered to Mattermost, including placements, autostart guarantees, verified telemetry, backup seeding status and the pre-existing WhatsApp issue.
