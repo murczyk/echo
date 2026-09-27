@@ -31,7 +31,7 @@ const MAX_INPUT_BYTES = 512 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.09.27.2";
+const HARNESS_RELEASE = "2026.09.27.3";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -1906,7 +1906,8 @@ export async function writeModelsFile(
   const explicitNoReasoning =
     payload.providerTransport === "echo_gateway" &&
     (/^gpt-5\.6-(?:sol|luna)(?:-|$)/.test(payload.modelName) ||
-      payload.modelName === "gpt-6-sol");
+      payload.modelName === "gpt-6-sol" ||
+      payload.modelName === "gpt-6-luna");
   await writeFile(
     modelsPath,
     JSON.stringify({

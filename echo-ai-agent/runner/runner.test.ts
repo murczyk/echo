@@ -187,10 +187,10 @@ test("writes only the fixed Echo gateway base and scoped capability", async () =
   }
 });
 
-test("#3064 GPT-6 Sol tool requests explicitly disable reasoning through the Echo gateway", async () => {
+test("#3064 GPT-6 Sol and Luna tool requests explicitly disable reasoning through the Echo gateway", async () => {
   const directory = await mkdtemp(join(tmpdir(), "echo-ai-agent-test-"));
   try {
-    for (const modelName of ["gpt-5.6-sol", "gpt-5.6-luna", "gpt-6-sol"]) {
+    for (const modelName of ["gpt-5.6-sol", "gpt-5.6-luna", "gpt-6-sol", "gpt-6-luna"]) {
       const payload = validatePayload(
         {
           ...normalPayload,
@@ -912,7 +912,7 @@ test("announces the runner protocol and harness release", () => {
   assert.deepEqual(runnerHello(), {
     type: "runner_hello",
     protocolVersion: 1,
-    harnessRelease: "2026.09.27.2",
+    harnessRelease: "2026.09.27.3",
   });
 });
 
