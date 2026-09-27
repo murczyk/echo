@@ -62,6 +62,34 @@ Python service (optional, for NLP stuff only):
 just dev-py
 ```
 
+On Linux, start all four commands in a detached tmux session:
+
+```bash
+just dev-tmux
+```
+
+The session is named after the checkout, for example `echo-main-dev`, with
+`dev-back`, `dev-bgworker`, `dev-front`, and `dev-py` windows. In tmux, use
+`<bind> s` to select it; outside tmux, use the attach command printed by the
+launcher. Running the command again reuses the existing session. Exited windows
+remain visible so errors can be inspected.
+
+```bash
+just dev-tmux-stop
+```
+
+Stopping waits for all worker descendants, including the report worker, to exit.
+Closing a window or killing the tmux session also cleans up its workers. Detaching
+keeps them running. To restart everything, stop the session and run `just dev-tmux`
+again. The launcher requires Python 3.9+, tmux, and just; it needs no sudo or systemd.
+
+If another checkout has a running Echo dev environment, startup refuses to replace
+it. Use `just dev-tmux --force` to stop that environment first, or
+`just dev-tmux-stop --all` to stop all of your Echo dev environments across
+directories. This also detects workers started with the individual dev commands.
+Run `python3 deploy/test_dev_tmux.py` to check startup and cleanup in isolated tmux
+servers with fixture workers.
+
 nginx macos: see [[deploy/README]]
 
 Then open http://wildducks.localhost

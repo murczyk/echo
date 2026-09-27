@@ -112,6 +112,16 @@ active-servers:
 evaluate:
     @just --evaluate
 
+# Start four development windows in a detached session on the current tmux server (Linux).
+[arg('force', long='force', value='true')]
+dev-tmux force="false":
+    python3 deploy/dev-tmux.py start {{ if force == "true" { "--force" } else { "" } }}
+
+# Stop the managed tmux session and all worker descendants.
+[arg('all', long='all', value='true')]
+dev-tmux-stop all="false":
+    python3 deploy/dev-tmux.py stop {{ if all == "true" { "--all" } else { "" } }}
+
 dev-front:
     bash deploy/dev-front.sh
 
