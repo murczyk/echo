@@ -325,10 +325,10 @@ preflight against the current fixed template. A release/template mismatch
 fails closed and leaves the current release active; replacing a protected
 template remains a separate, explicitly audited operation.
 
-Release `2026.09.27.1` temporarily accepts runner handshakes from
-`2026.08.25.2`, `2026.08.25.1`, `2026.08.22.1`, and `2026.08.05.2` so namespaces can rotate
+Release `2026.09.27.2` temporarily accepts runner handshakes from
+`2026.09.27.1`, `2026.08.25.2`, `2026.08.25.1`, `2026.08.22.1`, and `2026.08.05.2` so namespaces can rotate
 independently on the shared host. New templates and clones must use
-`2026.09.27.1`; dispatcher
+`2026.09.27.2`; dispatcher
 preflight attests that release, and status/list output exposes each instance's
 `harness_release` for the rollout audit. Echo refuses to start an instance
 whose release does not match its typed skill registry. Remove the

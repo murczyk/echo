@@ -187,6 +187,31 @@ test("writes only the fixed Echo gateway base and scoped capability", async () =
   }
 });
 
+test("#3064 GPT-6 Sol tool requests explicitly disable reasoning through the Echo gateway", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "echo-ai-agent-test-"));
+  try {
+    for (const modelName of ["gpt-5.6-sol", "gpt-5.6-luna", "gpt-6-sol"]) {
+      const payload = validatePayload(
+        {
+          ...normalPayload,
+          modelName,
+          providerTransport: "echo_gateway",
+          providerApiKey: "A".repeat(43),
+        },
+        false,
+      );
+      const modelsPath = await writeModelsFile(directory, payload);
+      const models = JSON.parse(await readFile(modelsPath, "utf8"));
+      const provider = models.providers["echo-vllm"];
+      assert.equal(provider.compat.supportsReasoningEffort, true);
+      assert.equal(provider.models[0].reasoning, true);
+      assert.equal(provider.models[0].thinkingLevelMap.off, "none");
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("rejects unsupported gateway transports and missing capabilities", () => {
   assert.throws(
     () =>
@@ -887,7 +912,7 @@ test("announces the runner protocol and harness release", () => {
   assert.deepEqual(runnerHello(), {
     type: "runner_hello",
     protocolVersion: 1,
-    harnessRelease: "2026.09.27.1",
+    harnessRelease: "2026.09.27.2",
   });
 });
 

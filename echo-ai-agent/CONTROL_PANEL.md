@@ -6,8 +6,8 @@ Run from an Echo checkout:
 just ai-control-panel
 just ai-control-panel --host echo-extra
 just ai-control-panel scan --json
-just ai-control-panel upgrade --host local --release 2026.09.27.1 --reconcile-orphans --dry-run
-just ai-control-panel upgrade --host local --release 2026.09.27.1 --reconcile-orphans
+just ai-control-panel upgrade --host local --release 2026.09.27.2 --reconcile-orphans --dry-run
+just ai-control-panel upgrade --host local --release 2026.09.27.2 --reconcile-orphans
 just ai-control-panel recover --host local
 target/debug/wdintel-rs --mode=debug ai-control-panel --repo /path/to/echo
 ```

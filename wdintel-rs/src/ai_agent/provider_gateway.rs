@@ -1,6 +1,7 @@
 use super::auth;
 use crate::config::{
-    AI_AGENT_OPENAI_API_BASE, AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX,
+    AI_AGENT_OPENAI_API_BASE, AI_AGENT_OPENAI_GPT_6_SOL,
+    AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX,
     AI_AGENT_PROVIDER_CONTEXT_LIMIT_MESSAGE, AI_AGENT_PROVIDER_ERROR_MAX_BYTES,
     AI_AGENT_PROVIDER_ERROR_MESSAGE_MAX_CHARS, AI_AGENT_PROVIDER_GATEWAY_PATH,
     AI_AGENT_PROVIDER_OUTPUT_LIMIT_MESSAGE,
@@ -115,6 +116,7 @@ fn normalize_reasoning_effort(
     body.remove("reasoning_effort");
     if expected_model_name
         .starts_with(AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX)
+        || expected_model_name == AI_AGENT_OPENAI_GPT_6_SOL
     {
         body.insert(
             "reasoning_effort".to_string(),
@@ -424,14 +426,25 @@ mod tests {
     }
 
     #[test]
-    fn forces_reasoning_effort_none_for_gpt_5_models() {
-        let body = br#"{
-            "model":"gpt-5.6-luna",
-            "messages":[{"role":"user","content":"hello"}],
-            "reasoning_effort":"high"
-        }"#;
-        let (body, _) = validate_request_body(body, "gpt-5.6-luna").unwrap();
-        assert_eq!(body["reasoning_effort"], "none");
+    fn forces_reasoning_effort_none_for_chat_tool_models() {
+        for engine in ["gpt-5.6-luna", "gpt-5.6-sol", "gpt-6-sol"] {
+            for effort in [None, Some("high")] {
+                let mut body = json!({
+                    "model": engine,
+                    "messages": [{"role": "user", "content": "hello"}],
+                    "tools": [{"type": "function", "function": {
+                        "name": "echo_probe", "parameters": {"type": "object"}
+                    }}]
+                });
+                if let Some(effort) = effort {
+                    body["reasoning_effort"] = json!(effort);
+                }
+                let (body, _) =
+                    validate_request_body(body.to_string().as_bytes(), engine)
+                        .unwrap();
+                assert_eq!(body["reasoning_effort"], "none");
+            }
+        }
     }
 
     #[test]

@@ -131,6 +131,11 @@ dev-tmux force="false":
 dev-tmux-stop all="false":
     python3 deploy/dev-tmux.py stop {{ if all == "true" { "--all" } else { "" } }}
 
+# Restart this checkout's managed dev environment after stopping its workers.
+dev-tmux-restart:
+    just dev-tmux-stop
+    just dev-tmux
+
 dev-front:
     bash deploy/dev-front.sh
 
