@@ -20,8 +20,8 @@ import {
   Typography,
 } from '@mui/material';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import type { AiAgentMessageCitation } from '../../../../Bindings';
+import { CitationMarkdown } from './CitationMarkdown';
 
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
@@ -64,6 +64,7 @@ export type LiveRequest = {
   progress: string[];
   tools: ToolActivity[];
   sources: Source[];
+  citations?: AiAgentMessageCitation[];
   lastSequence: number;
   streamError: string | null;
 };
@@ -206,7 +207,7 @@ export function activeRequestsFromConversation(
   const assistantByRequestId = new Map(
     conversation.messages
       .filter((message) => message.role === 'assistant')
-      .map((message) => [message.requestId, message.content]),
+      .map((message) => [message.requestId, message]),
   );
   return conversation.messages
     .filter((message) => message.role === 'user' && !TERMINAL_STATES.has(message.requestState))
@@ -216,7 +217,8 @@ export function activeRequestsFromConversation(
       prompt: message.content,
       createdAt: message.createdAt,
       state: message.requestState,
-      assistantText: assistantByRequestId.get(message.requestId) ?? '',
+      assistantText: assistantByRequestId.get(message.requestId)?.content ?? '',
+      citations: assistantByRequestId.get(message.requestId)?.citations ?? [],
       progress: [],
       tools: [],
       sources: [],
@@ -253,12 +255,22 @@ export function applyAiAgentEvent(request: LiveRequest, event: AiAgentEvent): Li
       return { ...next, state: 'running' };
     case 'assistant_delta':
       return { ...next, assistantText: request.assistantText + (event.text ?? '') };
+    case 'assistant_snapshot':
+      return { ...next, assistantText: event.text ?? '' };
     case 'progress':
       return { ...next, progress: appendUnique(request.progress, event.text) };
     case 'tool_start':
     case 'tool_update':
     case 'tool_end':
       return { ...next, tools: updateTool(request.tools, event) };
+    case 'message_citations': {
+      const citations = new Map(
+        (request.citations ?? []).map((item) => [item.messageIdentifier, item]),
+      );
+      for (const citation of event.citations ?? [])
+        citations.set(citation.messageIdentifier, citation);
+      return { ...next, citations: [...citations.values()] };
+    }
     case 'source': {
       const source = {
         title: event.sourceUrl ? (event.sourceTitle ?? 'Джерело') : 'Дані Echo',
@@ -293,7 +305,13 @@ export function shouldIgnoreStreamError(
   return signal.aborted || Boolean(request && TERMINAL_STATES.has(request.state));
 }
 
-function MarkdownContent({ children }: { children: string }) {
+function MarkdownContent({
+  children,
+  citations,
+}: {
+  children: string;
+  citations: AiAgentMessageCitation[];
+}) {
   return (
     <Box
       sx={{
@@ -303,7 +321,7 @@ function MarkdownContent({ children }: { children: string }) {
         '& p': { my: 1 },
         '& ul, & ol': { my: 1, pl: 3 },
         '& li': { mb: 0.5 },
-        '& a': { color: 'text.primary', textDecoration: 'underline' },
+        '& a:not(.echo-chip)': { color: 'text.primary', textDecoration: 'underline' },
         '& blockquote': { m: 0, my: 1, pl: 2, borderLeft: 2, borderColor: 'divider' },
         '& code': {
           px: 0.5,
@@ -319,14 +337,18 @@ function MarkdownContent({ children }: { children: string }) {
         '& th, & td': { border: 1, borderColor: 'divider', px: 1, py: 0.75, textAlign: 'left' },
       }}
     >
-      <ReactMarkdown skipHtml disallowedElements={['img']} remarkPlugins={[remarkGfm]}>
-        {children}
-      </ReactMarkdown>
+      <CitationMarkdown citations={citations}>{children}</CitationMarkdown>
     </Box>
   );
 }
 
-function AssistantMessage({ content }: { content: string }) {
+function AssistantMessage({
+  content,
+  citations = [],
+}: {
+  content: string;
+  citations?: AiAgentMessageCitation[];
+}) {
   return (
     <Box
       sx={{
@@ -344,14 +366,14 @@ function AssistantMessage({ content }: { content: string }) {
       <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 0.5 }}>
         ЕХО Агент
       </Typography>
-      <MarkdownContent>{content}</MarkdownContent>
+      <MarkdownContent citations={citations}>{content}</MarkdownContent>
     </Box>
   );
 }
 
 function ConversationMessage({ message }: { message: AiAgentMessage }) {
   if (message.role === 'assistant') {
-    return <AssistantMessage content={message.content} />;
+    return <AssistantMessage content={message.content} citations={message.citations} />;
   }
 
   const stateMessage =
@@ -425,7 +447,9 @@ function LiveResponse({ request }: { request: LiveRequest }) {
         </Card>
       ) : null}
 
-      {request.assistantText ? <AssistantMessage content={request.assistantText} /> : null}
+      {request.assistantText ? (
+        <AssistantMessage content={request.assistantText} citations={request.citations} />
+      ) : null}
 
       {request.state === 'failed' ? (
         <PowerAlert severity="error">{GENERIC_REQUEST_FAILURE}</PowerAlert>
@@ -456,6 +480,7 @@ function LiveRequestView({
     requestId: request.id,
     requestState: request.state,
     role: 'user',
+    citations: [],
     content: request.prompt,
     createdAt: request.createdAt,
   };
@@ -731,7 +756,7 @@ export function AiAgentChat({
     const assistantByRequestId = new Map(
       conversation.messages
         .filter((message) => message.role === 'assistant')
-        .map((message) => [message.requestId, message.content]),
+        .map((message) => [message.requestId, message]),
     );
     replaceLiveRequests(
       liveRequestsRef.current.map((request) => {
@@ -740,7 +765,8 @@ export function AiAgentChat({
         return {
           ...request,
           state: userMessage.requestState,
-          assistantText: assistantByRequestId.get(request.id) ?? request.assistantText,
+          assistantText: assistantByRequestId.get(request.id)?.content ?? request.assistantText,
+          citations: assistantByRequestId.get(request.id)?.citations ?? request.citations,
         };
       }),
     );
@@ -1076,6 +1102,7 @@ export function AiAgentChat({
                       requestId: pendingSubmission.id,
                       requestState: 'queued',
                       role: 'user',
+                      citations: [],
                       content: pendingSubmission.prompt,
                       createdAt: pendingSubmission.createdAt,
                     }}

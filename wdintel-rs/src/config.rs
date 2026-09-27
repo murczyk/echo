@@ -234,7 +234,7 @@ pub const AI_AGENT_PROVIDER_GATEWAY_PATH: &str =
     "/api/ai-agent/provider/v1/chat/completions";
 pub const AI_AGENT_OPENAI_API_BASE: &str = "https://api.openai.com/v1";
 pub const AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX: &str = "gpt-5";
-pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.08.25.2";
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.09.27.1";
 pub const AI_AGENT_INBOX_MAX_DAYS: i64 = 31;
 pub const AI_AGENT_USER_FAILURE_MESSAGE: &str =
     "Не вдалося виконати запит. Спробуйте ще раз.";
@@ -1066,6 +1066,9 @@ DELETE FROM api_integration;
 UPDATE area_of_responsibility SET updated_by_login_id = NULL;
 DELETE FROM sigint_key_share_policy;
 DELETE FROM device;
+DELETE FROM ai_agent_request;
+DELETE FROM ai_agent_conversation;
+DELETE FROM ai_agent_user_link;
 DELETE FROM login WHERE login <> 'system';
 DELETE FROM delta_login;
 DELETE FROM sigint_zone;

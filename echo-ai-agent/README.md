@@ -322,10 +322,10 @@ preflight against the current fixed template. A release/template mismatch
 fails closed and leaves the current release active; replacing a protected
 template remains a separate, explicitly audited operation.
 
-Release `2026.08.25.2` temporarily accepts runner handshakes from
-`2026.08.25.1`, `2026.08.22.1`, and `2026.08.05.2` so namespaces can rotate
+Release `2026.09.27.1` temporarily accepts runner handshakes from
+`2026.08.25.2`, `2026.08.25.1`, `2026.08.22.1`, and `2026.08.05.2` so namespaces can rotate
 independently on the shared host. New templates and clones must use
-`2026.08.25.2`; dispatcher
+`2026.09.27.1`; dispatcher
 preflight attests that release, and status/list output exposes each instance's
 `harness_release` for the rollout audit. Echo refuses to start an instance
 whose release does not match its typed skill registry. Remove the
@@ -334,3 +334,27 @@ recreated and verified.
 
 Production Echo servers can be added without another VM or host rebuild; each
 onboarding remains a separate authorized deployment action.
+
+## Message citations
+
+The harness adds canonical analysis links to message-bearing tool results and
+instructs every provider to cite message-derived quotes and claims inline.
+Compaction keeps each delivered message's `citation` together with its text.
+`message_citations` events contain only `{messageId, messageIdentifier}` records
+for sources actually delivered after tool compaction. A draft link whose target
+is a message id or identifier from this turn or an earlier answer is rewritten
+to that citation URL, and a `джерело` link that matches nothing is removed. If
+the draft still cites none of the citations delivered this turn, or none of the
+prior citations when the user asks to keep a source, one repair pass may rewrite
+it. An empty, truncated, or failed repair is discarded. If that repair still
+drops every prior source, the first prior citation link is kept;
+`assistant_snapshot` then replaces the streamed text. Echo persists citation
+events in the existing event table and includes referenced records in
+conversation responses and restored assistant history. API activity `source`
+events remain separate.
+
+The chat renders only registered references as citation chips. It loads current,
+access-checked message bodies and group metadata in batches; previews revalidate
+access on hover/focus. Dates use event time in Europe/Kyiv, omit unknown times,
+and omit the year only when it is current. Full preview bodies are independent
+of the compacted tool context. See the [citation rollout](DEPLOYMENT.md#message-citations-release-202609271).

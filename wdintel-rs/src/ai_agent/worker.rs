@@ -641,23 +641,22 @@ async fn run_request_inner(
                         });
                     }
                     if let Some((event_type, payload)) = events::normalize_runner_event(event) {
-                        let delta = if event_type == "assistant_delta" {
-                            events::assistant_delta(&payload).map(str::to_string)
-                        } else {
-                            None
+                        let update = events::assistant_text_update(&event_type, &payload);
+                        let (response_bytes, next_chars) = match &update {
+                            Some(events::AssistantTextUpdate::Replace(text)) => {
+                                (text.len(), text.chars().count())
+                            }
+                            Some(events::AssistantTextUpdate::Append(delta)) => (
+                                response.len().saturating_add(delta.len()),
+                                response_chars.saturating_add(delta.chars().count()),
+                            ),
+                            None => (response.len(), response_chars),
                         };
-                        if let Some(delta) = delta.as_deref() {
-                            response_chars = response_chars
-                                .saturating_add(delta.chars().count());
-                        }
-                        let response_bytes = response.len().saturating_add(
-                            delta.as_deref().map_or(0, str::len),
-                        );
                         if !stream_limits_allow(
                             runner_event_count,
                             runner_event_bytes,
                             response_bytes,
-                            response_chars,
+                            next_chars,
                         ) {
                             let _ = stream.terminate().await;
                             return Err(AppError::BL {
@@ -676,8 +675,17 @@ async fn run_request_inner(
                             let _ = stream.terminate().await;
                             return Ok(RunOutcome::Cancelled);
                         }
-                        if let Some(delta) = delta {
-                            response.push_str(&delta);
+                        match update {
+                            Some(events::AssistantTextUpdate::Replace(text)) => {
+                                response.clear();
+                                response.push_str(&text);
+                                response_chars = next_chars;
+                            }
+                            Some(events::AssistantTextUpdate::Append(delta)) => {
+                                response.push_str(&delta);
+                                response_chars = next_chars;
+                            }
+                            None => {}
                         }
                     }
                 }
@@ -818,12 +826,23 @@ async fn load_history(
         .all(&env.dbx)
         .await
         .c(h!())?;
+    let request_ids = requests
+        .iter()
+        .map(|request| request.id)
+        .collect::<Vec<_>>();
+    let mut citations = super::citations::load(&env.dbx, &request_ids)
+        .await
+        .c(h!())?;
     let requests = requests.into_iter().rev();
     Ok(requests
         .flat_map(|request| {
+            let response = request.response.unwrap_or_default();
+            let citations = super::citations::referenced(
+                citations.remove(&request.id).unwrap_or_default(), &response,
+            );
             [
                 json!({ "role": "user", "content": request.prompt }),
-                json!({ "role": "assistant", "content": request.response.unwrap_or_default() }),
+                json!({ "role": "assistant", "content": response, "citations": citations }),
             ]
         })
         .collect())

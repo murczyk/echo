@@ -77,6 +77,7 @@ push_template_files() {
     "$BUNDLE_DIR/template/configure-network.sh" \
     "$BUNDLE_DIR/runner/echo-ai-agent-runner" \
     "$BUNDLE_DIR/runner/runner.ts" \
+    "$BUNDLE_DIR/runner/citations.ts" \
     "$AGENT_TEMPLATE/var/tmp/echo-ai-agent-template/"
   incus exec "$AGENT_TEMPLATE" -- mkdir -p \
     /var/tmp/echo-ai-agent-template/skills/echo-read-only

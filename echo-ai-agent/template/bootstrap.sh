@@ -105,6 +105,7 @@ ln -sfn "$PI_ROOT/node_modules/.bin/pi" /usr/local/bin/pi
 
 install -d -m 0755 /usr/local/sbin
 install -m 0644 "$STAGE/runner.ts" "$PI_ROOT/runner.ts"
+install -m 0644 "$STAGE/citations.ts" "$PI_ROOT/citations.ts"
 install -m 0755 "$STAGE/echo-ai-agent-runner" /usr/local/bin/echo-ai-agent-runner
 install -m 0755 "$STAGE/configure-network.sh" \
   /usr/local/sbin/echo-ai-agent-configure-network

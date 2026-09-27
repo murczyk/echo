@@ -458,3 +458,80 @@ async fn request_bootstrap_requires_active_account_and_running_request() {
         .unwrap();
     fixture.cleanup(&env).await;
 }
+
+// Regression: https://github.com/echoua/echo/issues/3064
+#[actix_web::test]
+#[serial]
+async fn message_citations_survive_reload_without_cross_request_sources() {
+    use crate::ai_agent::{conversation_detail, events};
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = AgentFixture::new(&env).await;
+    let request = running_request(&env, &fixture).await;
+    let payload = serde_json::json!({"citations": [
+        {"messageId": 77, "messageIdentifier": "source-77"},
+        {"messageId": 78, "messageIdentifier": "unused-78"}
+    ]});
+    for _ in 0..2 {
+        assert!(events::append_runner(
+            &env.dbx,
+            request.id,
+            "message_citations",
+            payload.clone()
+        )
+        .await
+        .unwrap());
+    }
+    let mut completed = request.clone().into_active_model();
+    completed.state = Set("completed".to_string());
+    completed.response = Set(Some(
+        "Evidence [джерело](/rer-analysis-neo?m=source-77)".to_string(),
+    ));
+    completed.update(&env.dbx).await.unwrap();
+    let other = running_request(&env, &fixture).await;
+    assert!(events::append_runner(
+        &env.dbx,
+        other.id,
+        "message_citations",
+        serde_json::json!({
+            "citations": [{"messageId": 99, "messageIdentifier": "other-99"}]
+        }),
+    )
+    .await
+    .unwrap());
+    let conversation =
+        ai_agent_conversation::Entity::find_by_id(request.conversation_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+    let detail = conversation_detail(&env.dbx, conversation).await.unwrap();
+    assert!(detail.messages[0].citations.is_empty());
+    assert_eq!(detail.messages[1].citations.len(), 1);
+    assert_eq!(detail.messages[1].citations[0].message_id, 77);
+    assert!(!events::append_runner(
+        &env.dbx,
+        request.id,
+        "message_citations",
+        payload
+    )
+    .await
+    .unwrap());
+    assert!(events::normalize_runner_event(serde_json::json!({
+        "type": "message_citations", "citations": [{"messageId": -1, "messageIdentifier": "invalid"}]
+    })).is_none());
+    for stale in [&request, &other] {
+        ai_agent_request::Entity::delete_by_id(stale.id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        ai_agent_conversation::Entity::delete_by_id(stale.conversation_id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        ai_engine::Entity::delete_by_id(stale.ai_engine_id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+    }
+    fixture.cleanup(&env).await;
+}

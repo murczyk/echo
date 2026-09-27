@@ -46,6 +46,17 @@ describe('applyAiAgentEvent', () => {
     expect(replayed.lastSequence).toBe(2);
   });
 
+  it('replaces streamed text with an assistant snapshot', () => {
+    const streamed = applyAiAgentEvent(request(), event(1, 'assistant_delta', 'Чернетка'));
+    const replaced = applyAiAgentEvent(
+      streamed,
+      event(2, 'assistant_snapshot', 'Готово [джерело](/rer-analysis-neo?m=1)'),
+    );
+
+    expect(replaced.assistantText).toBe('Готово [джерело](/rer-analysis-neo?m=1)');
+    expect(replaced.lastSequence).toBe(2);
+  });
+
   it('keeps progress and tool activity separate from assistant text', () => {
     const progress = applyAiAgentEvent(request(), event(1, 'progress', 'Шукаю дані'));
     const tool = applyAiAgentEvent(progress, {

@@ -18,10 +18,12 @@ const EVENT_TYPES: &[&str] = &[
     "request_start",
     "progress",
     "assistant_delta",
+    "assistant_snapshot",
     "tool_start",
     "tool_update",
     "tool_end",
     "source",
+    "message_citations",
     "completion",
     "cancellation",
     "error",
@@ -38,10 +40,12 @@ const HIDDEN_EVENT_TYPES: &[&str] = &[
 const RUNNER_EVENT_TYPES: &[&str] = &[
     "progress",
     "assistant_delta",
+    "assistant_snapshot",
     "tool_start",
     "tool_update",
     "tool_end",
     "source",
+    "message_citations",
 ];
 
 pub async fn append_runner(
@@ -157,10 +161,49 @@ pub fn normalize_runner_event(event: Value) -> Option<(String, Value)> {
         payload.remove("event_type");
     }
     payload = sanitize(payload);
+    if event_type == "message_citations" {
+        let citations = super::citations::parse(&payload)?;
+        payload = serde_json::json!({ "citations": citations });
+    }
+    if event_type == "assistant_snapshot" {
+        let text = payload.get("text").and_then(Value::as_str)?;
+        if text.is_empty() {
+            return None;
+        }
+        let stored = serde_json::json!({ "text": text });
+        let Ok(encoded) = serde_json::to_vec(&stored) else {
+            return None;
+        };
+        if encoded.len() > AI_AGENT_EVENT_PAYLOAD_MAX_BYTES {
+            return None;
+        }
+        payload = stored;
+    }
     if event_type == "progress" {
         payload = normalize_progress(payload);
     }
     Some((event_type, payload))
+}
+
+#[derive(Debug)]
+pub enum AssistantTextUpdate {
+    Append(String),
+    Replace(String),
+}
+
+pub fn assistant_text_update(
+    event_type: &str,
+    payload: &Value,
+) -> Option<AssistantTextUpdate> {
+    match event_type {
+        "assistant_snapshot" => Some(AssistantTextUpdate::Replace(
+            payload.get("text")?.as_str()?.to_string(),
+        )),
+        "assistant_delta" => Some(AssistantTextUpdate::Append(
+            assistant_delta(payload)?.to_string(),
+        )),
+        _ => None,
+    }
 }
 
 pub fn assistant_delta(payload: &Value) -> Option<&str> {
@@ -175,6 +218,7 @@ fn normalize_event_type(event_type: &str) -> String {
     match event_type {
         "requestStart" => "request_start",
         "assistantDelta" => "assistant_delta",
+        "assistantSnapshot" => "assistant_snapshot",
         "toolStart" => "tool_start",
         "toolUpdate" => "tool_update",
         "toolEnd" => "tool_end",
@@ -293,6 +337,52 @@ mod tests {
         let encoded = payload.to_string();
         assert!(!encoded.contains("secret-"));
         assert!(encoded.contains("visible"));
+    }
+
+    #[test]
+    fn snapshot_replaces_text_and_drops_empty_or_oversized_payloads() {
+        let (_, payload) = normalize_runner_event(serde_json::json!({
+            "type": "assistant_snapshot",
+            "text": "Final [джерело](/rer-analysis-neo?m=77)"
+        }))
+        .unwrap();
+        match assistant_text_update("assistant_snapshot", &payload) {
+            Some(AssistantTextUpdate::Replace(text)) => {
+                assert!(text.contains("m=77"));
+            }
+            other => panic!("expected replacement, got {other:?}"),
+        }
+        assert!(normalize_runner_event(serde_json::json!({
+            "type": "assistant_snapshot",
+            "text": ""
+        }))
+        .is_none());
+        let huge = "x".repeat(crate::config::AI_AGENT_EVENT_PAYLOAD_MAX_BYTES);
+        assert!(normalize_runner_event(serde_json::json!({
+            "type": "assistant_snapshot",
+            "text": huge
+        }))
+        .is_none());
+        let mut response = "draft".to_string();
+        let mut response_chars = response.chars().count();
+        if let Some(AssistantTextUpdate::Append(delta)) = assistant_text_update(
+            "assistant_delta",
+            &serde_json::json!({ "delta": " more" }),
+        ) {
+            response_chars =
+                response_chars.saturating_add(delta.chars().count());
+            response.push_str(&delta);
+        }
+        if let Some(AssistantTextUpdate::Replace(text)) =
+            assistant_text_update("assistant_snapshot", &payload)
+        {
+            response.clear();
+            response.push_str(&text);
+            response_chars = text.chars().count();
+        }
+        assert_eq!(response, payload["text"].as_str().unwrap());
+        assert_eq!(response_chars, response.chars().count());
+        assert!(!response.contains("draft"));
     }
 
     #[test]

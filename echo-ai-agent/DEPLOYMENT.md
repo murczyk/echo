@@ -192,3 +192,30 @@ Host rollback retains storage, instances, keys, and administrative SSH:
 (cd echo-ai-agent && \
   just rollback --server=echo-ai-agent-vm --dangerously-acknowledge)
 ```
+
+### Message citations release 2026.09.27.1
+
+This release adds `message_citations` runner events, an `assistant_snapshot`
+event for the final cited answer, and citation metadata in conversation history.
+Install the matching backend, frontend, and runner. Old conversation responses
+remain readable with no citations. Historical answers are not regenerated.
+
+Apply the Echo migration `m20260927_112500_ai_agent_citation_events` before
+starting a backend that stores the new events. Rolling that migration back
+deletes stored `message_citations` and `assistant_snapshot` events, then
+restores the previous event-type check. Saved answer text stays on the request.
+Upgrade Echo first, then follow
+the namespace rollout with `HARNESS_RELEASE=2026.09.27.1`. The dispatcher
+continues accepting `2026.08.25.2` and its existing predecessors while other
+namespaces transition. Include both `runner.ts` and `citations.ts` in the
+template. Verify no active requests before replacing the stopped template;
+recreate only the approved namespace's containers after Echo is upgraded.
+Preserve the preceding release for rollback. Validate staging before production.
+Do not roll the shared dispatcher back while newer containers remain.
+
+Acceptance requires replaying real requests with their original Kyiv time context
+and access scope on Gemma and both configured OpenAI engines. Verify supporting
+sources, labels, full previews, analysis links, follow-up requests, and reload.
+Keep production prompts, message bodies, credentials, and raw evaluation output
+outside Git. A copied database restore discards AI conversation/runtime records:
+export replay inputs first and retain the local agent profile during restore.

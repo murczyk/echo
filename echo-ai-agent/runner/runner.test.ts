@@ -23,6 +23,7 @@ import {
   sourceEvent,
   systemPrompt,
   testConnection,
+  completedRepairText,
   validateFinalAssistantMessage,
   validatePayload,
   validateSkill,
@@ -879,13 +880,14 @@ test("guides last-three-days gist follow-ups through inbox pagination and UID co
   assert.match(prompt, /“за останню добу” mean the rolling 24 hours/);
   assert.match(prompt, /never inside body/);
   assert.match(prompt, /Never ask the user/);
+  assert.match(prompt, /Copy the citation field from the message unchanged/);
 });
 
 test("announces the runner protocol and harness release", () => {
   assert.deepEqual(runnerHello(), {
     type: "runner_hello",
     protocolVersion: 1,
-    harnessRelease: "2026.08.25.2",
+    harnessRelease: "2026.09.27.1",
   });
 });
 
@@ -954,4 +956,287 @@ test("suppresses progress lifecycle and labels route lifecycle events", () => {
       errorSummary: "Не вдалося завантажити дані за вказаними параметрами.",
     },
   );
+});
+
+// Regression: https://github.com/echoua/echo/issues/3064
+test("registers only complete message references surviving tool compaction", async () => {
+  const { prepareMessageCitations, deliveredCitations, citationHref } =
+    await import("./citations.ts");
+  const item = [
+    77,
+    {
+      message_uuid: "019fc7f7-9770-7f83-9c1a-211af29b02e6",
+      message_uid: "legacy / uid",
+      text: "Source body",
+      citation: "https://untrusted.invalid",
+    },
+  ];
+  for (const [skill, body, requestKind] of [
+    [
+      "inbox_messages",
+      { inbox_items: [item], page_limit: 20 },
+      "inboxMessages",
+    ],
+    ["interception_context", { message: item }, "interceptionContext"],
+    ["messages_by_id", { messages: [item] }, "messageIds"],
+    ["messages_by_uuid", { messages: [item] }, "json"],
+  ] as const) {
+    const prepared = prepareMessageCitations(skill, body);
+    const text = compactToolResponse({ skill, requestKind }, prepared.body, 64);
+    assert.equal(deliveredCitations(text, prepared.citations).length, 1);
+    assert.ok(text.includes(citationHref(prepared.citations[0])));
+    assert.ok(!text.includes("untrusted.invalid"));
+    assert.deepEqual(deliveredCitations("{}", prepared.citations), []);
+  }
+  assert.deepEqual(
+    prepareMessageCitations("daily_activity", { messages: [item] }).citations,
+    [],
+  );
+  const fallback = prepareMessageCitations("messages_by_id", {
+    messages: [
+      [78, { text: "Legacy body", message_uid: "legacy / uid" }],
+      [79, { text: "No UID" }],
+    ],
+  });
+  assert.match(citationHref(fallback.citations[0]), /m=legacy\+%2F\+uid$/);
+  assert.equal(fallback.citations[1].messageIdentifier, "79");
+});
+
+test("keeps citation text when a full inbox page exceeds the response budget", async () => {
+  const { prepareMessageCitations, deliveredCitations } =
+    await import("./citations.ts");
+  const items = Array.from({ length: 20 }, (_, index) => [
+    index + 1,
+    {
+      message_uuid: `019fc7f7-9770-7f83-9c1a-211af29b${String(index).padStart(4, "0")}`,
+      text: "x".repeat(6_000),
+      image_recognized: ["image"],
+    },
+  ]);
+  const prepared = prepareMessageCitations("inbox_messages", {
+    inbox_items: items,
+    page_limit: 20,
+  });
+  const text = compactToolResponse(
+    { skill: "inbox_messages", requestKind: "inboxMessages" },
+    prepared.body,
+    8,
+  );
+  const parsed = JSON.parse(text);
+  assert.equal(parsed.messages.length, 20);
+  assert.ok(text.length <= 96_000);
+  for (const message of parsed.messages) {
+    assert.equal(typeof message.citation, "string");
+    assert.equal(message.citation.includes("untrusted"), false);
+    assert.ok(message.text.length > 0);
+  }
+  assert.equal(deliveredCitations(text, prepared.citations).length, 20);
+});
+
+test("projects bulky message lookups without dropping citation or text", async () => {
+  const { prepareMessageCitations, deliveredCitations } =
+    await import("./citations.ts");
+  const bulky: Record<string, unknown> = {
+    text: "quoted body",
+    message_uuid: "11111111-1111-7111-8111-111111111111",
+  };
+  for (let index = 0; index < 80; index += 1)
+    bulky[`extra_${index}`] = "x".repeat(500);
+  const prepared = prepareMessageCitations("messages_by_id", {
+    messages: [[5, bulky]],
+  });
+  const text = compactToolResponse(
+    { skill: "messages_by_id", requestKind: "messageIds" },
+    prepared.body,
+    8,
+  );
+  const parsed = JSON.parse(text);
+  assert.equal(parsed.messages.length, 1);
+  assert.match(parsed.messages[0].text, /quoted body/);
+  assert.match(
+    parsed.messages[0].citation,
+    /m=11111111-1111-7111-8111-111111111111$/,
+  );
+  assert.equal(text.includes("extra_0"), false);
+  assert.equal(deliveredCitations(text, prepared.citations).length, 1);
+  const missing = prepareMessageCitations("interception_context", {
+    message: null,
+    group_master_keys: [],
+  });
+  const empty = compactToolResponse(
+    { skill: "interception_context", requestKind: "interceptionContext" },
+    missing.body,
+    64,
+  );
+  assert.equal(JSON.parse(empty).message, null);
+  assert.deepEqual(deliveredCitations(empty, missing.citations), []);
+});
+
+test("continues a truncated inbox page from the last kept message", () => {
+  const items = [41, 40, 39].map((id) => [
+    id,
+    {
+      text: "y".repeat(4_000),
+      message_uuid: `00000000-0000-7000-8000-${String(id).padStart(12, "0")}`,
+    },
+  ]);
+  const text = compactToolResponse(
+    { skill: "inbox_messages", requestKind: "inboxMessages" },
+    { inbox_items: items, page_limit: 20 },
+    64,
+    700,
+  );
+  const parsed = JSON.parse(text);
+  assert.ok(parsed.messages.length >= 1);
+  assert.ok(parsed.messages.length < 3);
+  for (const message of parsed.messages) assert.ok(message.text.length > 0);
+  assert.equal(
+    parsed.nextCursor,
+    parsed.messages[parsed.messages.length - 1].id,
+  );
+});
+
+test("canonicalizes registered citations and ignores a repair that adds none", async () => {
+  const {
+    canonicalizeAnswer,
+    chooseCitedAnswer,
+    citationsForCanonical,
+    citationsForRepair,
+    preserveRequestedCitation,
+    needsCitationRepair,
+    citationRepairPrompt,
+    assistantSnapshotEvent,
+    prepareMessageCitations,
+  } = await import("./citations.ts");
+  const citation = { messageId: 77, messageIdentifier: "source-77" };
+  const href = "/rer-analysis-neo?m=source-77";
+  const bare = `Evidence ${href} only.`;
+  assert.equal(
+    canonicalizeAnswer(bare, [citation]),
+    `Evidence [джерело](${href}) only.`,
+  );
+  assert.equal(needsCitationRepair(bare, [citation]), false);
+  assert.equal(
+    canonicalizeAnswer(
+      `No [джерело](/rer-analysis-neo?m=other) and [note](/rer-analysis-neo?m=other).`,
+      [citation],
+    ),
+    "No  and note.",
+  );
+  assert.equal(needsCitationRepair("No sources.", [citation]), true);
+  assert.equal(needsCitationRepair("No sources.", []), false);
+  assert.deepEqual(
+    prepareMessageCitations("daily_activity", { messages: [] }).citations,
+    [],
+  );
+  const repaired = chooseCitedAnswer(
+    "No sources.",
+    `Used [джерело](${href}).`,
+    [citation],
+  );
+  assert.equal(repaired, `Used [джерело](${href}).`);
+  assert.equal(
+    chooseCitedAnswer("No sources.", "Still none.", [citation]),
+    "No sources.",
+  );
+  assert.equal(
+    chooseCitedAnswer(`Used [джерело](${href}).`, "Rewritten without a link.", [
+      citation,
+    ]),
+    `Used [джерело](${href}).`,
+  );
+  assert.ok(
+    citationRepairPrompt("draft", [citation]).includes(`[джерело](${href})`),
+  );
+  assert.equal(assistantSnapshotEvent("same", "same"), null);
+  assert.deepEqual(assistantSnapshotEvent("draft", repaired), {
+    type: "assistant_snapshot",
+    text: repaired,
+  });
+  assert.equal(assistantSnapshotEvent("draft", "x".repeat(300_000)), null);
+  const citations = [
+    { messageId: 7, messageIdentifier: "7" },
+    { messageId: 77, messageIdentifier: "77" },
+  ];
+  const prefixed = canonicalizeAnswer("See /rer-analysis-neo?m=7.", citations);
+  assert.equal(prefixed.includes("/rer-analysis-neo?m=77"), false);
+  assert.match(prefixed, /\/rer-analysis-neo\?m=7\)/);
+  const longer = canonicalizeAnswer("See /rer-analysis-neo?m=77.", citations);
+  assert.match(longer, /\/rer-analysis-neo\?m=77\)/);
+  assert.equal(longer.includes("/rer-analysis-neo?m=7)"), false);
+  const byId = canonicalizeAnswer(
+    "Count [джерело](echo_daily_activity). Claim [джерело](77) and [джерело](7, 77).",
+    citations,
+  );
+  assert.equal(byId.includes("echo_daily_activity"), false);
+  assert.equal(
+    byId,
+    `Count . Claim [джерело](/rer-analysis-neo?m=77) and [джерело](/rer-analysis-neo?m=7)[джерело](/rer-analysis-neo?m=77).`,
+  );
+  assert.equal(needsCitationRepair(byId, citations), false);
+  assert.equal(
+    canonicalizeAnswer("[джерело](/rer-analysis-neo?m=7).", [
+      { messageId: 7, messageIdentifier: "uuid-7" },
+    ]),
+    "[джерело](/rer-analysis-neo?m=uuid-7).",
+  );
+  assert.equal(
+    canonicalizeAnswer("[note](see 7).", citations),
+    "[note](see 7).",
+  );
+  assert.deepEqual(citationsForRepair([citation], citations, "без джерела"), [
+    citation,
+  ]);
+  assert.deepEqual(citationsForRepair([], citations, "дякую"), []);
+  assert.deepEqual(
+    citationsForRepair([], citations, "залиш посилання"),
+    citations,
+  );
+  assert.equal(
+    preserveRequestedCitation("Уточнення.", citations, 0),
+    "Уточнення.\n\n[джерело](/rer-analysis-neo?m=7)",
+  );
+  assert.equal(
+    preserveRequestedCitation(`Used [джерело](${href}).`, [citation], 0),
+    `Used [джерело](${href}).`,
+  );
+  assert.equal(
+    preserveRequestedCitation("Уточнення.", citations, 1),
+    "Уточнення.",
+  );
+  const historical = "[джерело](/rer-analysis-neo?m=77).";
+  assert.equal(
+    chooseCitedAnswer(historical, null, [], citations),
+    historical,
+  );
+  assert.equal(
+    chooseCitedAnswer("[джерело](77).", null, [], citations),
+    "[джерело](/rer-analysis-neo?m=77).",
+  );
+  const fresh = { messageId: 8, messageIdentifier: "new" };
+  assert.equal(
+    chooseCitedAnswer(
+      historical,
+      "[джерело](/rer-analysis-neo?m=new).",
+      [fresh],
+      citationsForCanonical([fresh], citations),
+    ),
+    "[джерело](/rer-analysis-neo?m=new).",
+  );
+  assert.equal(
+    chooseCitedAnswer(historical, historical, [fresh], citations),
+    historical,
+  );
+});
+
+test("discards a truncated or empty citation repair", () => {
+  const assistant = (text: string, stopReason = "stop") => ({
+    role: "assistant",
+    stopReason,
+    content: [{ type: "text", text }],
+  });
+  assert.equal(completedRepairText([assistant("Done.")]), "Done.");
+  assert.equal(completedRepairText([assistant("Cut", "length")]), null);
+  assert.equal(completedRepairText([assistant("   ")]), null);
+  assert.equal(completedRepairText([]), null);
 });
