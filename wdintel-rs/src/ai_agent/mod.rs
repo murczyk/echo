@@ -5,7 +5,7 @@ mod chat_monitoring;
 mod citations;
 pub(crate) mod dispatcher;
 mod events;
-mod lifecycle;
+pub(crate) mod lifecycle;
 pub mod middleware;
 pub mod profile;
 pub mod provider_gateway;

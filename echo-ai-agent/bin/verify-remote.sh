@@ -239,6 +239,9 @@ running=$(incus list --format json | jq \
     | select(.status == "RUNNING")] | length')
 ((running <= AGENT_MAX_RUNNING)) || die "more than $AGENT_MAX_RUNNING agents are running"
 
+if incus info "echo-ai-agent-template-${HARNESS_RELEASE//./-}" >/dev/null 2>&1; then
+  AGENT_TEMPLATE="echo-ai-agent-template-${HARNESS_RELEASE//./-}"
+fi
 if incus info "$AGENT_TEMPLATE" >/dev/null 2>&1; then
   expect_equal template_status \
     "$(incus list "$AGENT_TEMPLATE" --format csv -c s)" STOPPED

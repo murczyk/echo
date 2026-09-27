@@ -235,6 +235,9 @@ pub const AI_AGENT_PROVIDER_GATEWAY_PATH: &str =
 pub const AI_AGENT_OPENAI_API_BASE: &str = "https://api.openai.com/v1";
 pub const AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX: &str = "gpt-5";
 pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.09.27.1";
+pub const AI_CONTROL_PANEL_LOCK_KEY: i64 = 0x4543484f41494350;
+pub const AI_CONTROL_PANEL_POLL_MS: u64 = 100;
+pub const AI_CONTROL_PANEL_LOG_LINES: usize = 500;
 pub const AI_AGENT_INBOX_MAX_DAYS: i64 = 31;
 pub const AI_AGENT_USER_FAILURE_MESSAGE: &str =
     "Не вдалося виконати запит. Спробуйте ще раз.";

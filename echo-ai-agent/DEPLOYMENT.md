@@ -4,6 +4,10 @@ One `echo-ai-agent-vm` serves every Echo deployment. Run section 1 once, then
 repeat sections 2–6 for each authorized Echo server with a separate key and
 namespace.
 
+For fleet inventory and guarded harness-only upgrades, use
+[`just ai-control-panel`](CONTROL_PANEL.md). It retains templates by release
+and upgrades selected namespaces without changing other namespaces' selections.
+
 ## 1. Deploy the host
 
 From the repository root:

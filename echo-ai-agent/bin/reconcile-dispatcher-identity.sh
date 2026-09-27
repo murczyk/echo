@@ -65,5 +65,9 @@ printf '%s\n' "$namespace" >"$mapping_tmp"
 chown root:root "$mapping_tmp"
 chmod 0644 "$mapping_tmp"
 mv -f "$mapping_tmp" "$namespace_file"
+install -d -o root -g root -m 0755 /run/lock/echo-ai-agent-rollout
+if [[ ! -e "/run/lock/echo-ai-agent-rollout/$namespace.lock" ]]; then
+  install -o root -g root -m 0644 /dev/null "/run/lock/echo-ai-agent-rollout/$namespace.lock"
+fi
 install -d -o "$dispatcher_user" -g "$DISPATCH_GROUP" -m 0700 "$runtime_home"
 printf '%s\n' "$dispatcher_user"

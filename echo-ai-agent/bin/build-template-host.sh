@@ -12,6 +12,10 @@ source "$BUNDLE_DIR/config/host.env"
 source "$BUNDLE_DIR/versions.env"
 
 dangerously_acknowledge=${1:-}
+if [[ -n ${2:-} ]]; then
+  [[ $2 == "echo-ai-agent-template-${HARNESS_RELEASE//./-}" ]] || exit 2
+  AGENT_TEMPLATE=$2
+fi
 artifact_dir=
 template_created=0
 

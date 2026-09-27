@@ -1227,6 +1227,9 @@ pub async fn lock_user_lifecycle(
     txn: &DatabaseTransaction,
     human_login_id: Uuid,
 ) -> Result<(), AppError> {
+    crate::ai_control_panel::probe::lock_lifecycle(txn)
+        .await
+        .c(h!())?;
     txn.query_one_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "select pg_advisory_xact_lock($1)",
@@ -1241,6 +1244,12 @@ async fn try_lock_user_lifecycle(
     txn: &DatabaseTransaction,
     human_login_id: Uuid,
 ) -> Result<bool, AppError> {
+    if !crate::ai_control_panel::probe::try_lock_lifecycle(txn)
+        .await
+        .c(h!())?
+    {
+        return Ok(false);
+    }
     let row = txn
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,

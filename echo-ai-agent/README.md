@@ -13,8 +13,11 @@ The fixed template is
 `echo-ai-agent-<linked-login-uuid>`. The dispatcher accepts an optional UUIDv7
 template override only when the corresponding instance is stopped and has
 `user.echo.ai.template.ready=true`.
-Ready templates are also bound to the installed `HARNESS_RELEASE`; a release
-change cannot silently reuse stale runner or bootstrap code.
+The [AI control panel](CONTROL_PANEL.md) retains additional immutable templates
+named `echo-ai-agent-template-<release-with-hyphens>` and pins each namespace to a release.
+The fixed UUID remains the logical template ID used by Echo. Preflight reports
+the namespace's selected harness separately from the shared dispatcher release;
+every selected template must match its pinned release and isolation metadata.
 
 ## Topology and limits
 
