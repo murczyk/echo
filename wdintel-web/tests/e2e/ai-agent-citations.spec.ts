@@ -6,11 +6,8 @@ test('@smoke @regression #3064 saved AI citations show full previews and open an
   page,
 }) => {
   await installAnalysisNeoApiMocks(page);
-  await page.addInitScript(() =>
-    sessionStorage.setItem('echo.ai-agent.active-conversation-id', 'citation-conversation'),
-  );
   const conversation = {
-    id: 'citation-conversation',
+    id: '11111111-1111-4111-8111-111111111111',
     title: 'Citation replay',
     aiEngineId: 'engine',
     createdAt: 1,
@@ -71,7 +68,7 @@ test('@smoke @regression #3064 saved AI citations show full previews and open an
       },
     }),
   );
-  await page.goto('/');
+  await page.goto(`/?conversation=${conversation.id}`);
   const chip = page.locator('ai-agent-chat').getByRole('link', { name: '26.09.2025 11:23 Натрій' });
   await expect(chip).toBeVisible({ timeout: 20000 });
   await chip.hover();

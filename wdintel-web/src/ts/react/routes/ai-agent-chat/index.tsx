@@ -22,6 +22,13 @@ import {
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import type { AiAgentMessageCitation } from '../../../../Bindings';
 import { CitationMarkdown } from './CitationMarkdown';
+import { ConversationHistoryItem } from './ConversationHistoryItem';
+import {
+  AI_AGENT_NEW_CONVERSATION_EVENT,
+  conversationIdFromUrl,
+  isConversationId,
+  writeConversationUrl,
+} from './conversation-url';
 
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
@@ -35,11 +42,13 @@ import {
   AiAgentMessage,
   AiAgentRequestState,
   cancelAiAgentRequest,
+  deleteAiAgentConversation,
   getAiAgentConfiguration,
   getAiAgentConversation,
   listAiAgentConversations,
   submitAiAgentRequest,
 } from '../../services/api/ai-agent';
+import { HttpRequestError } from '../../services/api/client';
 import { streamAiAgentEventsWithReconnect } from './stream';
 
 type ToolActivity = {
@@ -184,21 +193,6 @@ function formatConversationTime(timestamp: number): string {
   return Number.isNaN(date.getTime())
     ? ''
     : new Intl.DateTimeFormat('uk-UA', { dateStyle: 'short', timeStyle: 'short' }).format(date);
-}
-
-function storedActiveConversationId(): string | null {
-  try {
-    return window.sessionStorage.getItem(ACTIVE_CONVERSATION_STORAGE_KEY);
-  } catch (_) {
-    return null;
-  }
-}
-
-function storeActiveConversationId(id: string | null) {
-  try {
-    if (id) window.sessionStorage.setItem(ACTIVE_CONVERSATION_STORAGE_KEY, id);
-    else window.sessionStorage.removeItem(ACTIVE_CONVERSATION_STORAGE_KEY);
-  } catch (_) {}
 }
 
 export function activeRequestsFromConversation(
@@ -562,6 +556,7 @@ export function AiAgentChat({
   const [cancellingIds, setCancellingIds] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(true);
   const [loadingConversation, setLoadingConversation] = useState(false);
+  const [conversationLoadFailed, setConversationLoadFailed] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
@@ -571,17 +566,42 @@ export function AiAgentChat({
   const activeConversationIdRef = useRef<string | null>(null);
   const submittingRef = useRef(false);
   const refreshSequenceRef = useRef(0);
+  const viewSequenceRef = useRef(0);
+  const listSequenceRef = useRef(0);
+  const deletedIdsRef = useRef(new Set<string>());
+  const requestedConversationIdRef = useRef<string | null>(null);
+  const defaultProviderIdRef = useRef('');
+  const readyRef = useRef(false);
   const mountedRef = useRef(true);
   const followOutputRef = useRef(false);
   const outputAnchorRef = useRef<HTMLDivElement | null>(null);
   const collapsedHistoryToggleRef = useRef<HTMLButtonElement | null>(null);
   const { notify } = usePowerSnackbar();
+  const navigationRef = useRef(syncConversationUrl);
+  navigationRef.current = syncConversationUrl;
+  const resetRef = useRef(resetConversationView);
+  resetRef.current = resetConversationView;
 
   useEffect(() => {
     mountedRef.current = true;
+    try {
+      window.sessionStorage.removeItem(ACTIVE_CONVERSATION_STORAGE_KEY);
+    } catch (_) {}
+    const navigate = () => {
+      if (readyRef.current) void navigationRef.current();
+    };
+    const reset = () => {
+      requestedConversationIdRef.current = null;
+      resetRef.current();
+    };
+    window.addEventListener('popstate', navigate);
+    window.addEventListener(AI_AGENT_NEW_CONVERSATION_EVENT, reset);
     void loadPage();
     return () => {
       mountedRef.current = false;
+      viewSequenceRef.current += 1;
+      window.removeEventListener('popstate', navigate);
+      window.removeEventListener(AI_AGENT_NEW_CONVERSATION_EVENT, reset);
       for (const controller of streamAbortRefs.current.values()) controller.abort();
       streamAbortRefs.current.clear();
     };
@@ -629,15 +649,15 @@ export function AiAgentChat({
       const nextConfiguration = await getAiAgentConfiguration();
       if (!mountedRef.current) return;
       setConfiguration(nextConfiguration);
-      setProviderId(
-        nextConfiguration.defaultProviderId ?? nextConfiguration.providers[0]?.id ?? '',
-      );
+      defaultProviderIdRef.current =
+        nextConfiguration.defaultProviderId ?? nextConfiguration.providers[0]?.id ?? '';
+      setProviderId(defaultProviderIdRef.current);
       if (nextConfiguration.enabled) {
         const nextConversations = await listAiAgentConversations();
         if (!mountedRef.current) return;
-        setConversations(nextConversations);
-        await restoreStoredConversation();
-        if (!mountedRef.current) return;
+        applyConversationList(nextConversations);
+        readyRef.current = true;
+        void navigationRef.current();
         onAvailabilityChange?.('enabled');
       } else {
         onAvailabilityChange?.('disabled');
@@ -654,26 +674,15 @@ export function AiAgentChat({
     }
   }
 
-  async function restoreStoredConversation() {
-    const conversationId = storedActiveConversationId();
-    if (!conversationId) return;
-    try {
-      const conversation = await getAiAgentConversation(conversationId);
-      if (mountedRef.current) activateConversation(conversation);
-    } catch (_) {
-      if (!mountedRef.current) return;
-      storeActiveConversationId(null);
-      notify({
-        severity: 'error',
-        message: 'Не вдалося відновити останню розмову.',
-      });
-    }
+  function applyConversationList(next: AiAgentConversation[]) {
+    setConversations(next.filter((conversation) => !deletedIdsRef.current.has(conversation.id)));
   }
 
   async function refreshConversationList() {
+    const sequence = ++listSequenceRef.current;
     try {
       const next = await listAiAgentConversations();
-      if (mountedRef.current) setConversations(next);
+      if (mountedRef.current && sequence === listSequenceRef.current) applyConversationList(next);
     } catch (loadError) {
       if (!mountedRef.current) return;
       notify({
@@ -685,23 +694,22 @@ export function AiAgentChat({
 
   async function refreshConversation(conversationId: string) {
     const refreshSequence = ++refreshSequenceRef.current;
+    const viewSequence = viewSequenceRef.current;
     try {
-      const [conversation, nextConversations] = await Promise.all([
-        getAiAgentConversation(conversationId),
-        listAiAgentConversations(),
-      ]);
+      const conversation = await getAiAgentConversation(conversationId);
       if (
         !mountedRef.current ||
+        viewSequence !== viewSequenceRef.current ||
         refreshSequence !== refreshSequenceRef.current ||
         activeConversationIdRef.current !== conversationId
       ) {
         return;
       }
       setMessages(conversation.messages);
-      setConversations(nextConversations);
+      void refreshConversationList();
       reconcileLiveRequests(conversation);
     } catch (reloadError) {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || viewSequence !== viewSequenceRef.current) return;
       notify({
         severity: 'error',
         message: `Не вдалося оновити історію розмови: ${errorMessage(reloadError)}`,
@@ -709,34 +717,61 @@ export function AiAgentChat({
     }
   }
 
-  async function openConversation(id: string) {
-    if (!id) {
-      startNewConversation();
+  async function syncConversationUrl() {
+    if (window.location.pathname !== '/') {
+      requestedConversationIdRef.current = null;
+      resetConversationView();
       return;
     }
-    if (hasActiveRequests()) return;
+    const id = conversationIdFromUrl();
+    if (id === requestedConversationIdRef.current) return;
+    requestedConversationIdRef.current = id;
+    if (id === null) {
+      resetConversationView();
+    } else if (!isConversationId(id) || deletedIdsRef.current.has(id)) {
+      startNewConversation(true);
+      notify({ severity: 'error', message: 'Посилання на розмову недійсне або розмову видалено.' });
+    } else {
+      await openConversation(id);
+    }
+  }
+
+  function selectConversation(id: string) {
+    closeHistoryPanel();
+    if (requestedConversationIdRef.current === id && conversationLoadFailed) {
+      void openConversation(id);
+    } else {
+      writeConversationUrl(id);
+    }
+  }
+
+  async function openConversation(id: string) {
+    const viewSequence = resetConversationView();
     setLoadingConversation(true);
-    setError(null);
-    const refreshSequence = ++refreshSequenceRef.current;
     try {
       const conversation = await getAiAgentConversation(id);
-      if (!mountedRef.current || refreshSequence !== refreshSequenceRef.current) return;
+      if (!mountedRef.current || viewSequence !== viewSequenceRef.current) return;
       activateConversation(conversation);
-      closeHistoryPanel();
     } catch (loadError) {
       const message = `Не вдалося відкрити розмову: ${errorMessage(loadError)}`;
-      if (!mountedRef.current) return;
-      setError(message);
+      if (!mountedRef.current || viewSequence !== viewSequenceRef.current) return;
+      if (loadError instanceof HttpRequestError && [403, 404].includes(loadError.status)) {
+        startNewConversation(true);
+      } else {
+        setConversationLoadFailed(true);
+        setError(message);
+      }
       notify({ severity: 'error', message });
     } finally {
-      if (mountedRef.current) setLoadingConversation(false);
+      if (mountedRef.current && viewSequence === viewSequenceRef.current) {
+        setLoadingConversation(false);
+      }
     }
   }
 
   function activateConversation(conversation: AiAgentConversationDetail) {
     clearLiveRequests();
     activeConversationIdRef.current = conversation.id;
-    storeActiveConversationId(conversation.id);
     setActiveConversationId(conversation.id);
     setMessages(conversation.messages);
     if (conversation.providerId) setProviderId(conversation.providerId);
@@ -772,22 +807,37 @@ export function AiAgentChat({
     );
   }
 
-  function startNewConversation() {
-    if (hasActiveRequests()) return;
+  function resetConversationView() {
+    viewSequenceRef.current += 1;
     refreshSequenceRef.current += 1;
     activeConversationIdRef.current = null;
-    storeActiveConversationId(null);
+    submittingRef.current = false;
     setActiveConversationId(null);
+    setProviderId(defaultProviderIdRef.current);
     setMessages([]);
     clearLiveRequests();
     setDraft('');
+    setPendingSubmission(null);
+    setSubmitting(false);
+    setLoadingConversation(false);
+    setConversationLoadFailed(false);
+    setError(null);
+    followOutputRef.current = false;
+    return viewSequenceRef.current;
   }
 
-  function hasActiveRequests() {
-    return (
-      submittingRef.current ||
-      liveRequestsRef.current.some((request) => !TERMINAL_STATES.has(request.state))
-    );
+  function startNewConversation(replace = false) {
+    requestedConversationIdRef.current = null;
+    resetConversationView();
+    writeConversationUrl(null, replace);
+  }
+
+  async function deleteConversation(id: string) {
+    await deleteAiAgentConversation(id);
+    if (!mountedRef.current) return;
+    deletedIdsRef.current.add(id);
+    setConversations((current) => current.filter((conversation) => conversation.id !== id));
+    if (requestedConversationIdRef.current === id) startNewConversation(true);
   }
 
   function handleEvent(requestId: string, event: AiAgentEvent) {
@@ -799,6 +849,7 @@ export function AiAgentChat({
 
   async function connectToRequest(requestId: string, conversationId: string) {
     if (streamAbortRefs.current.has(requestId)) return;
+    const viewSequence = viewSequenceRef.current;
     const controller = new AbortController();
     streamAbortRefs.current.set(requestId, controller);
     updateLiveRequest(requestId, (request) => ({ ...request, streamError: null }));
@@ -814,12 +865,16 @@ export function AiAgentChat({
               .filter((request) => request.id === requestId)
               .some((request) => TERMINAL_STATES.has(request.state)),
           ),
-        onEvent: (event) => handleEvent(requestId, event),
+        onEvent: (event) => {
+          if (!controller.signal.aborted && viewSequence === viewSequenceRef.current) {
+            handleEvent(requestId, event);
+          }
+        },
       });
     } catch (_) {
       const current = liveRequestsRef.current.find((request) => request.id === requestId);
       if (!shouldIgnoreStreamError(controller.signal, current)) {
-        const terminal = await reconcileRequestState(requestId, conversationId);
+        const terminal = await reconcileRequestState(requestId, conversationId, viewSequence);
         const reconciled = liveRequestsRef.current.find((request) => request.id === requestId);
         if (!terminal && !shouldIgnoreStreamError(controller.signal, reconciled)) {
           updateLiveRequest(requestId, (request) => ({
@@ -836,15 +891,19 @@ export function AiAgentChat({
     }
 
     const current = liveRequestsRef.current.find((request) => request.id === requestId);
-    if (current && TERMINAL_STATES.has(current.state)) {
+    if (!controller.signal.aborted && current && TERMINAL_STATES.has(current.state)) {
       await refreshConversation(conversationId);
     }
   }
 
-  async function reconcileRequestState(requestId: string, conversationId: string) {
+  async function reconcileRequestState(
+    requestId: string,
+    conversationId: string,
+    viewSequence: number,
+  ) {
     try {
       const conversation = await getAiAgentConversation(conversationId);
-      if (!mountedRef.current || activeConversationIdRef.current !== conversationId) return false;
+      if (!mountedRef.current || viewSequence !== viewSequenceRef.current) return false;
       setMessages(conversation.messages);
       reconcileLiveRequests(conversation);
       const requestMessage = conversation.messages.find(
@@ -859,7 +918,15 @@ export function AiAgentChat({
   async function submit(event: FormEvent) {
     event.preventDefault();
     const prompt = draft.trim();
-    if (!prompt || !providerId || submittingRef.current) return;
+    if (
+      !prompt ||
+      !providerId ||
+      submittingRef.current ||
+      loadingConversation ||
+      conversationLoadFailed
+    )
+      return;
+    const viewSequence = viewSequenceRef.current;
 
     followOutputRef.current = viewportIsNearBottom();
     submittingRef.current = true;
@@ -875,9 +942,12 @@ export function AiAgentChat({
         message: prompt,
       });
       if (!mountedRef.current) return;
+      void refreshConversationList();
+      if (viewSequence !== viewSequenceRef.current) return;
       activeConversationIdRef.current = created.conversationId;
-      storeActiveConversationId(created.conversationId);
+      requestedConversationIdRef.current = created.conversationId;
       setActiveConversationId(created.conversationId);
+      writeConversationUrl(created.conversationId);
       replaceLiveRequests([
         ...liveRequestsRef.current,
         {
@@ -896,27 +966,34 @@ export function AiAgentChat({
       ]);
       setPendingSubmission(null);
       void connectToRequest(created.id, created.conversationId);
-      void refreshConversationList();
     } catch (submitError) {
       const message = `Не вдалося надіслати запит: ${errorMessage(submitError)}`;
       if (!mountedRef.current) return;
+      if (viewSequence !== viewSequenceRef.current) {
+        notify({ severity: 'error', message });
+        return;
+      }
       setDraft((current) => current || prompt);
       setPendingSubmission(null);
       setError(message);
       notify({ severity: 'error', message });
     } finally {
-      submittingRef.current = false;
-      if (mountedRef.current) setSubmitting(false);
+      if (mountedRef.current && viewSequence === viewSequenceRef.current) {
+        submittingRef.current = false;
+        setSubmitting(false);
+      }
     }
   }
 
   async function cancelRequest(id: string) {
     const request = liveRequestsRef.current.find((item) => item.id === id);
     if (!request || TERMINAL_STATES.has(request.state) || cancellingIdsRef.current.has(id)) return;
+    const viewSequence = viewSequenceRef.current;
     cancellingIdsRef.current = new Set(cancellingIdsRef.current).add(id);
     setCancellingIds(cancellingIdsRef.current);
     try {
       const state = await cancelAiAgentRequest(id);
+      if (!mountedRef.current || viewSequence !== viewSequenceRef.current) return;
       updateLiveRequest(id, (current) => ({ ...current, state }));
       void refreshConversation(request.conversationId);
     } catch (cancelError) {
@@ -992,7 +1069,6 @@ export function AiAgentChat({
         <Divider />
         <List sx={AI_AGENT_CHAT_PANEL_LIST_SX}>
           <ListItemButton
-            disabled={interactionLocked}
             onClick={() => {
               startNewConversation();
               closeHistoryPanel();
@@ -1003,19 +1079,14 @@ export function AiAgentChat({
             <ListItemText primary="Нова розмова" />
           </ListItemButton>
           {conversations.map((conversation) => (
-            <ListItemButton
+            <ConversationHistoryItem
               key={conversation.id}
+              conversation={conversation}
               selected={conversation.id === activeConversationId}
-              disabled={interactionLocked || loadingConversation}
-              onClick={() => void openConversation(conversation.id)}
-              sx={AI_AGENT_CHAT_PANEL_LIST_ITEM_SX}
-            >
-              <ListItemText
-                primary={conversation.title}
-                secondary={formatConversationTime(conversation.updatedAt)}
-                slotProps={{ primary: { noWrap: true }, secondary: { noWrap: true } }}
-              />
-            </ListItemButton>
+              timestamp={formatConversationTime(conversation.updatedAt)}
+              onSelect={() => selectConversation(conversation.id)}
+              onDelete={() => deleteConversation(conversation.id)}
+            />
           ))}
         </List>
       </Box>
@@ -1037,8 +1108,7 @@ export function AiAgentChat({
                 <IconButton
                   type="button"
                   aria-label="Нова розмова"
-                  disabled={interactionLocked}
-                  onClick={startNewConversation}
+                  onClick={() => startNewConversation()}
                 >
                   <AddCommentOutlinedIcon />
                 </IconButton>
@@ -1064,6 +1134,13 @@ export function AiAgentChat({
         >
           <Stack spacing={1.5} sx={{ flex: 1, minHeight: 0 }}>
             {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
+            {conversationLoadFailed ? (
+              <PowerButton
+                onClick={() => void openConversation(requestedConversationIdRef.current!)}
+              >
+                Спробувати ще раз
+              </PowerButton>
+            ) : null}
 
             <Stack spacing={1.5} sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pr: 0.5 }}>
               {loadingConversation ? (
@@ -1137,7 +1214,9 @@ export function AiAgentChat({
                 variant="standard"
                 placeholder="Повідомлення"
                 value={draft}
-                disabled={submitting || loadingConversation || !selectedProvider}
+                disabled={
+                  submitting || loadingConversation || conversationLoadFailed || !selectedProvider
+                }
                 slotProps={{ input: { disableUnderline: true } }}
                 onChange={(event) => setDraft(event.target.value)}
                 onKeyDown={(event) => {
@@ -1186,7 +1265,13 @@ export function AiAgentChat({
                 <IconButton
                   type="submit"
                   aria-label="Надіслати"
-                  disabled={submitting || !draft.trim() || !selectedProvider}
+                  disabled={
+                    submitting ||
+                    loadingConversation ||
+                    conversationLoadFailed ||
+                    !draft.trim() ||
+                    !selectedProvider
+                  }
                   size="small"
                   sx={{
                     bgcolor: 'text.primary',
