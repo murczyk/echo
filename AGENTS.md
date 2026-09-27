@@ -48,6 +48,13 @@
 - Derive commit scope from the current branch name when possible, and do not replace a branch-derived ticket scope with ad hoc module scopes like `palettes` or `navbar`.
 - Do not mention Cursor (or other editor/assistant products) in commit messages; keep summaries about the codebase only.
 
+## Issue dashboard
+
+- The main issue dashboard is https://github.com/orgs/echoua/projects/1/views/1.
+- When asking the user for a ticket number, if `gh` is installed and authenticated, search the project's `Ready` column for relevant issues and suggest existing options with their numbers and links.
+- Also suggest creating a new issue. If the user chooses this option, create the issue, add it to the project, and set its status to `In Progress`.
+- Ensure the selected or newly created issue belongs to the project. Suggest labels (tags) based on similar recent issues in `Done`, `Testing`, and `Ready` from the current user and other users.
+
 ## Changelog
 
 - Every new `CHANGELOG.md` entry must include a GitHub reference in the beginning: issue (`[#123](https://github.com/echoua/echo/issues/123)`), unless the user explicitly identifies the work as a no-ticket hotfix. For an explicit no-ticket hotfix, omit the reference entirely and do not add a placeholder.
