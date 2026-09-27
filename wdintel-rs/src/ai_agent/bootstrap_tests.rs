@@ -9,7 +9,9 @@ use actix_web::{
     http::StatusCode,
     test, web, App,
 };
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, IntoActiveModel};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, IntoActiveModel, TransactionTrait,
+};
 use serial_test::serial;
 use std::sync::Arc;
 
@@ -464,6 +466,7 @@ async fn request_bootstrap_requires_active_account_and_running_request() {
 #[serial]
 async fn message_citations_survive_reload_without_cross_request_sources() {
     use crate::ai_agent::{conversation_detail, events};
+    use crate::entities::ai_agent_request_event;
     let (env, _guard) = cleanup_locked().await.unwrap();
     let fixture = AgentFixture::new(&env).await;
     let request = running_request(&env, &fixture).await;
@@ -481,11 +484,10 @@ async fn message_citations_survive_reload_without_cross_request_sources() {
         .await
         .unwrap());
     }
+    let response = "Evidence [джерело](/rer-analysis-neo?m=source-77)";
     let mut completed = request.clone().into_active_model();
     completed.state = Set("completed".to_string());
-    completed.response = Set(Some(
-        "Evidence [джерело](/rer-analysis-neo?m=source-77)".to_string(),
-    ));
+    completed.response = Set(Some(response.to_string()));
     completed.update(&env.dbx).await.unwrap();
     let other = running_request(&env, &fixture).await;
     assert!(events::append_runner(
@@ -508,6 +510,45 @@ async fn message_citations_survive_reload_without_cross_request_sources() {
     assert!(detail.messages[0].citations.is_empty());
     assert_eq!(detail.messages[1].citations.len(), 1);
     assert_eq!(detail.messages[1].citations[0].message_id, 77);
+    let txn = env.dbx.begin().await.unwrap();
+    crate::ai_agent::citations::persist_referenced(&txn, request.id, response)
+        .await
+        .unwrap();
+    txn.commit().await.unwrap();
+    let citation_events = ai_agent_request_event::Entity::find()
+        .filter(ai_agent_request_event::Column::RequestId.eq(request.id))
+        .filter(
+            ai_agent_request_event::Column::EventType.eq("message_citations"),
+        )
+        .all(&env.dbx)
+        .await
+        .unwrap();
+    assert_eq!(citation_events.len(), 1);
+    let stored =
+        crate::ai_agent::citations::parse(&citation_events[0].payload).unwrap();
+    assert_eq!(stored.len(), 1);
+    assert_eq!(stored[0].message_id, 77);
+    let detail = conversation_detail(
+        &env.dbx,
+        ai_agent_conversation::Entity::find_by_id(request.conversation_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(detail.messages[1].citations.len(), 1);
+    assert_eq!(detail.messages[1].citations[0].message_id, 77);
+    let other_events = ai_agent_request_event::Entity::find()
+        .filter(ai_agent_request_event::Column::RequestId.eq(other.id))
+        .filter(
+            ai_agent_request_event::Column::EventType.eq("message_citations"),
+        )
+        .all(&env.dbx)
+        .await
+        .unwrap();
+    assert_eq!(other_events.len(), 1);
     assert!(!events::append_runner(
         &env.dbx,
         request.id,

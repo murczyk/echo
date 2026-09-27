@@ -707,6 +707,7 @@ pub(super) async fn conversation_detail(
         .c(h!())?;
     let request_ids = requests
         .iter()
+        .filter(|request| request.response.is_some())
         .map(|request| request.id)
         .collect::<Vec<_>>();
     let mut citations = citations::load(dbx, &request_ids).await.c(h!())?;

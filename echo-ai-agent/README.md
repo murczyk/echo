@@ -348,10 +348,10 @@ the draft still cites none of the citations delivered this turn, or none of the
 prior citations when the user asks to keep a source, one repair pass may rewrite
 it. An empty, truncated, or failed repair is discarded. If that repair still
 drops every prior source, the first prior citation link is kept;
-`assistant_snapshot` then replaces the streamed text. Echo persists citation
-events in the existing event table and includes referenced records in
-conversation responses and restored assistant history. API activity `source`
-events remain separate.
+`assistant_snapshot` then replaces the streamed text. Saving an answer replaces
+that request's per-tool `message_citations` events with the records the answer
+references. Conversation responses and restored assistant history include those
+records. API activity `source` events remain separate.
 
 The chat renders only registered references as citation chips. It loads current,
 access-checked message bodies and group metadata in batches; previews revalidate

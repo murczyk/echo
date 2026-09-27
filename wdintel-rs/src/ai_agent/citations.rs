@@ -3,11 +3,11 @@ use crate::entities::ai_agent_request_event;
 use crate::h;
 use crate::types::ShortContext;
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
-    QuerySelect,
+    ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait,
+    QueryFilter, QueryOrder, QuerySelect,
 };
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 pub(super) fn parse(payload: &Value) -> Option<Vec<AiAgentMessageCitation>> {
@@ -25,7 +25,7 @@ pub(super) fn parse(payload: &Value) -> Option<Vec<AiAgentMessageCitation>> {
 }
 
 pub(super) async fn load(
-    dbx: &DatabaseConnection,
+    dbx: &impl ConnectionTrait,
     request_ids: &[Uuid],
 ) -> anyhow::Result<HashMap<Uuid, Vec<AiAgentMessageCitation>>> {
     let mut result: HashMap<Uuid, Vec<AiAgentMessageCitation>> = HashMap::new();
@@ -48,17 +48,39 @@ pub(super) async fn load(
         .all(dbx)
         .await
         .c(h!())?;
+    let mut seen: HashMap<Uuid, HashSet<String>> = HashMap::new();
     for (request_id, payload) in events {
         for citation in parse(&payload).unwrap_or_default() {
-            let entries = result.entry(request_id).or_default();
-            if !entries.iter().any(|entry| {
-                entry.message_identifier == citation.message_identifier
-            }) {
-                entries.push(citation);
+            if !seen
+                .entry(request_id)
+                .or_default()
+                .insert(citation.message_identifier.clone())
+            {
+                continue;
             }
+            result.entry(request_id).or_default().push(citation);
         }
     }
     Ok(result)
+}
+
+pub(super) async fn persist_referenced(
+    txn: &DatabaseTransaction,
+    request_id: Uuid,
+    response: &str,
+) -> anyhow::Result<()> {
+    let citations = referenced(
+        load(txn, &[request_id])
+            .await
+            .c(h!())?
+            .remove(&request_id)
+            .unwrap_or_default(),
+        response,
+    );
+    super::events::replace_message_citations(txn, request_id, &citations)
+        .await
+        .c(h!())?;
+    Ok(())
 }
 
 fn citation_href_in_content(content: &str, identifier: &str) -> bool {

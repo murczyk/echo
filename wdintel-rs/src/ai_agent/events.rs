@@ -1,10 +1,11 @@
+use super::types::AiAgentMessageCitation;
 use crate::config::{
     AI_AGENT_EVENT_PAYLOAD_MAX_BYTES, AI_AGENT_PROGRESS_MAX_CHARS,
 };
 use crate::entities::{ai_agent_request, ai_agent_request_event};
 use crate::error::AppError;
 use crate::h;
-use crate::types::ShortContext;
+use crate::types::{Context, ShortContext};
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection,
@@ -90,6 +91,58 @@ async fn append_while_running(
     append_in_transaction(&txn, request_id, event_type, payload).await?;
     txn.commit().await.c(h!())?;
     Ok(true)
+}
+
+pub(super) async fn replace_message_citations(
+    txn: &DatabaseTransaction,
+    request_id: Uuid,
+    citations: &[AiAgentMessageCitation],
+) -> Result<(), AppError> {
+    ai_agent_request_event::Entity::delete_many()
+        .filter(ai_agent_request_event::Column::RequestId.eq(request_id))
+        .filter(
+            ai_agent_request_event::Column::EventType.eq("message_citations"),
+        )
+        .exec(txn)
+        .await
+        .c(h!())?;
+    for payload in citation_event_payloads(citations) {
+        append_in_transaction(txn, request_id, "message_citations", payload)
+            .await
+            .context(h!())?;
+    }
+    Ok(())
+}
+
+fn citation_payload_fits(citations: &[&AiAgentMessageCitation]) -> bool {
+    let payload = serde_json::json!({ "citations": citations });
+    serde_json::to_vec(&payload)
+        .map(|encoded| encoded.len() <= AI_AGENT_EVENT_PAYLOAD_MAX_BYTES)
+        .unwrap_or(false)
+}
+
+fn citation_event_payloads(citations: &[AiAgentMessageCitation]) -> Vec<Value> {
+    let mut payloads = Vec::new();
+    let mut batch: Vec<&AiAgentMessageCitation> = Vec::new();
+    for citation in citations {
+        batch.push(citation);
+        if citation_payload_fits(&batch) {
+            continue;
+        }
+        batch.pop();
+        if !batch.is_empty() {
+            payloads.push(serde_json::json!({ "citations": &batch }));
+            batch.clear();
+        }
+        batch.push(citation);
+        if !citation_payload_fits(&batch) {
+            batch.clear();
+        }
+    }
+    if !batch.is_empty() {
+        payloads.push(serde_json::json!({ "citations": &batch }));
+    }
+    payloads
 }
 
 pub async fn append_in_transaction(
@@ -406,6 +459,31 @@ mod tests {
             }))
             .is_none());
         }
+    }
+
+    #[test]
+    fn citation_events_stay_within_the_payload_cap() {
+        let citations = (0..500)
+            .map(|index| {
+                let prefix = format!("{index:03}-");
+                AiAgentMessageCitation {
+                    message_id: index + 1,
+                    message_identifier: format!(
+                        "{prefix}{}",
+                        "m".repeat(512 - prefix.len())
+                    ),
+                }
+            })
+            .collect::<Vec<_>>();
+        let payloads = citation_event_payloads(&citations);
+        assert!(payloads.len() >= 2);
+        let mut count = 0_usize;
+        for payload in &payloads {
+            let encoded = serde_json::to_vec(payload).unwrap();
+            assert!(encoded.len() <= AI_AGENT_EVENT_PAYLOAD_MAX_BYTES);
+            count += payload["citations"].as_array().unwrap().len();
+        }
+        assert_eq!(count, citations.len());
     }
 
     #[test]

@@ -891,6 +891,9 @@ async fn complete_request(
         now,
     )
     .await?;
+    super::citations::persist_referenced(&txn, request_id, &response)
+        .await
+        .c(h!())?;
     events::append_in_transaction(
         &txn,
         request_id,
