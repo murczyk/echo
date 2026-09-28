@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { UseFormReturn } from 'react-hook-form';
 
+import { useOptionalPowerSnackbar } from '../../../components/PowerSnackbar';
 import { parseDirectSubmit } from '../../../services/api/direct-submit';
 import type { MessageFormData } from './manage-message-drawer.schema';
 import {
@@ -46,6 +47,9 @@ export function useMessageParser(
   setErrorMsg: (msg: string | null) => void,
   options?: UseMessageParserOptions,
 ) {
+  const { notify } = useOptionalPowerSnackbar();
+  const notifyRef = useRef(notify);
+  notifyRef.current = notify;
   const [parsing, setParsing] = useState(false);
   const [parseStatus, setParseStatus] = useState<MessageParseStatus>('idle');
   const [parserFeedback, setParserFeedback] = useState<ParserFeedback | null>(null);
@@ -80,6 +84,13 @@ export function useMessageParser(
   const observedBodyRef = useRef(fullBody ?? '');
   const observedSignalGroupRef = useRef(signalGroupMasterKey ?? '');
   const lastParsedBodyRef = useRef<string | null>(null);
+
+  useEffect(
+    () => () => {
+      latestRequestIdRef.current += 1;
+    },
+    [],
+  );
 
   const publishFeedback = useCallback((result: ParserReconcileResult) => {
     if (result.changedFields.length === 0 && result.conflictFields.length === 0) {
@@ -207,6 +218,7 @@ export function useMessageParser(
     try {
       const parsed = await parseDirectSubmit({
         full_body: currentBody,
+        include_ai_callsigns: true,
         ...(signalGroupMasterKey ? { signal_group_master_key: signalGroupMasterKey } : {}),
       });
       if (requestId !== latestRequestIdRef.current || !parserActiveRef.current) return;
@@ -218,6 +230,9 @@ export function useMessageParser(
       }
       applyParserResult(reconcileParserSnapshot(ownershipRef.current, getValues(), snapshot));
       setParseStatus('success');
+      if (parsed.ai_callsign_warning) {
+        notifyRef.current({ severity: 'warning', message: parsed.ai_callsign_warning });
+      }
     } catch (error: any) {
       if (requestId !== latestRequestIdRef.current || !parserActiveRef.current) return;
       lastParsedBodyRef.current = currentRawBody;

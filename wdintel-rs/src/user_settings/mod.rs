@@ -54,7 +54,7 @@ fn model_to_dto(m: &user_settings::Model) -> UserDutySettingsDto {
         },
         message_auto_parse_enabled: m
             .message_auto_parse_enabled
-            .unwrap_or(false),
+            .unwrap_or_else(types::default_message_auto_parse_enabled),
     }
 }
 
@@ -192,6 +192,9 @@ async fn load_login(
 }
 
 #[cfg(test)]
+mod functional_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -200,14 +203,14 @@ mod tests {
         let body = serde_json::json!({ "tagsLayout": "compact" });
         let mut incoming = UserDutySettingsDto::default();
         let existing = UserDutySettingsDto {
-            message_auto_parse_enabled: true,
+            message_auto_parse_enabled: false,
             message_sort_by: MessageTimeBasis::MessageCreation,
             ..UserDutySettingsDto::default()
         };
 
         preserve_omitted_compatibility_fields(&body, &mut incoming, &existing);
 
-        assert!(incoming.message_auto_parse_enabled);
+        assert!(!incoming.message_auto_parse_enabled);
         assert_eq!(incoming.message_sort_by, MessageTimeBasis::MessageCreation);
     }
 
@@ -218,7 +221,7 @@ mod tests {
             "messageAutoParseEnabled": false,
             "messageSortBy": "interception"
         });
-        let mut incoming = UserDutySettingsDto::default();
+        let mut incoming = serde_json::from_value(body.clone()).unwrap();
         let existing = UserDutySettingsDto {
             message_auto_parse_enabled: true,
             message_sort_by: MessageTimeBasis::MessageCreation,

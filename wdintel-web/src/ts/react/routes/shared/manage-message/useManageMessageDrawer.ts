@@ -458,7 +458,7 @@ export function useManageMessageDrawer({
     acceptParsedField,
   } = useMessageParser(methods, busy, setErrorMsg, {
     active: formReady,
-    autoParseEnabled,
+    autoParseEnabled: autoParseEnabled && !dutySettings.loadInProgress && !dutySettings.loadError,
     isEditMode,
     isReportMode,
     radioFeaturesAllowed,

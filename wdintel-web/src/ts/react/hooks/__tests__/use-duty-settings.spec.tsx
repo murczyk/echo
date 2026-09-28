@@ -82,6 +82,7 @@ describe('useDutySettings', () => {
 
     expect(latestSettings?.messageTextPreviewLines).toBe(20);
     expect(latestSettings?.mediaSummaryEnabled).toBe(false);
+    expect(latestSettings?.messageAutoParseEnabled).toBe(true);
   });
 
   it('retries a failed settings load and applies the recovered settings', async () => {

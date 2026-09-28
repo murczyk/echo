@@ -4,6 +4,7 @@ import { getJson, putJson } from './client';
 import {
   DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
   DEFAULT_MEDIA_SUMMARY_ENABLED,
+  DEFAULT_MESSAGE_AUTO_PARSE_ENABLED,
 } from '../../hooks/duty-settings-defaults';
 import type { TagsLayoutVariant } from '../../routes/rer-duty-neo/utils';
 
@@ -127,7 +128,7 @@ function normalizeUserDutySettings(raw: UserDutySettingsWire): UserDutySettings 
     dutyCollapseMediaPreviews:
       raw.dutyCollapseMediaPreviews ?? DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
     mediaSummaryEnabled: raw.mediaSummaryEnabled ?? DEFAULT_MEDIA_SUMMARY_ENABLED,
-    messageAutoParseEnabled: raw.messageAutoParseEnabled ?? false,
+    messageAutoParseEnabled: raw.messageAutoParseEnabled ?? DEFAULT_MESSAGE_AUTO_PARSE_ENABLED,
   };
 }
 
