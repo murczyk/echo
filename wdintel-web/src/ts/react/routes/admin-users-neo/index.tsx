@@ -98,14 +98,14 @@ const STATUS_FILTER_OPTIONS = [
 
 const DEFAULT_COLUMNS_VISIBILITY = {
   login: true,
-  id: true,
+  id: false,
   roles: true,
   organism: true,
-  zone: true,
-  deltaLogin: true,
+  zone: false,
+  deltaLogin: false,
   createdAt: true,
   status: true,
-  description: true,
+  description: false,
 };
 
 const DEFAULT_COLUMN_ORDER = [

@@ -96,13 +96,13 @@ const ENABLED_FILTER_OPTIONS = withExplicitSelectAllOption([
 ]);
 
 const DEFAULT_COLUMNS_VISIBILITY = {
-  id: true,
+  id: false,
   name: true,
-  parent: true,
-  roles: true,
+  parent: false,
+  roles: false,
   aors: true,
-  groups: true,
-  limitGroups: true,
+  groups: false,
+  limitGroups: false,
   enabled: true,
   loginsCount: true,
   createdAt: true,
