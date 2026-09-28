@@ -1,5 +1,8 @@
 {
   "migrations": {
+    "echo:m20260927_112500_ai_agent_citation_events": {
+      "changes": []
+    },
     "echo:m20260924_131933_analysis_aor_filter_enabled": {
       "changes": [
         { "table": "public.system_settings", "strategy": "cdc_backfill" }

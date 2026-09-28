@@ -2,6 +2,24 @@
 
 - Read README.md to understand the general project purpose
 
+## Documentation scope
+
+- Keep `README.md` and `docs/README.md` human-readable, system-level overviews.
+  Prefer brevity, but scope matters more than length: cover only topics important
+  to understanding or operating the overall system. Use brief descriptions and
+  links to major components and relevant documentation subsections, leaving
+  detailed explanations at those destinations. Do not treat these overviews as
+  feature inventories, changelogs, or agent work logs.
+- Default to leaving both files unchanged when implementing a feature or fix.
+  Edit them only when existing overview text becomes inaccurate or essential
+  project setup or high-level architecture changes.
+- Put durable feature details, commands, rollout/recovery procedures, and
+  troubleshooting in documentation beside the owning component or a focused
+  `docs/` page. Put task history and validation summaries in the PR or issue.
+- When an overview edit is necessary, update the relevant existing text with
+  the smallest useful change. Do not append a section or link for every feature,
+  or copy implementation steps and detailed instructions into these files.
+
 ## Code style and checking
 
 - keep code formatted with `cargo fmt`

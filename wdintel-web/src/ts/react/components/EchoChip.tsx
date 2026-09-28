@@ -1,20 +1,32 @@
-import type { AriaAttributes, MouseEventHandler, ReactNode, Ref } from 'react';
+import type { AriaAttributes, HTMLAttributes, MouseEventHandler, ReactNode, Ref } from 'react';
 import { forwardRef, memo } from 'react';
 
 export type EchoChipTone = 'primary' | 'neutral' | 'tag';
 
-type EchoChipProps = AriaAttributes & {
-  label: ReactNode;
-  href?: string;
-  onClick?: MouseEventHandler<HTMLButtonElement>;
-  selected?: boolean;
-  tone?: EchoChipTone;
-  title?: string;
-  className?: string;
-  labelClassName?: string;
-  'data-testid'?: string;
-  [key: `data-${string}`]: string | boolean | undefined;
-};
+type EchoChipProps = AriaAttributes &
+  Pick<
+    HTMLAttributes<HTMLElement>,
+    | 'onFocus'
+    | 'onBlur'
+    | 'onMouseEnter'
+    | 'onMouseLeave'
+    | 'onMouseMove'
+    | 'onPointerDown'
+    | 'onTouchStart'
+  > & {
+    target?: '_blank' | '_self';
+    rel?: string;
+    label: ReactNode;
+    href?: string;
+    onClick?: MouseEventHandler<HTMLButtonElement>;
+    selected?: boolean;
+    tone?: EchoChipTone;
+    title?: string;
+    className?: string;
+    labelClassName?: string;
+    'data-testid'?: string;
+    [key: `data-${string}`]: string | boolean | undefined;
+  };
 
 const toneClassNames: Record<EchoChipTone, string> = {
   primary: 'echo-chip--primary',
