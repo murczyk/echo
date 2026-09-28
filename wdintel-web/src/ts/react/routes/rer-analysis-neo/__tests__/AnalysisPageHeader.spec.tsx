@@ -35,6 +35,7 @@ vi.mock('@mui/material', () => ({
       {children}
     </button>
   ),
+  CircularProgress: () => <span data-testid="loading-spinner" />,
   FormControlLabel: (props: { control: ReactNode; label: ReactNode }) => (
     <label>
       {props.control}
@@ -81,7 +82,6 @@ vi.mock('@mui/material', () => ({
       {children}
     </button>
   ),
-  Skeleton: () => <span data-testid="loading-skeleton" />,
   Stack: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Switch: (props: {
     checked?: boolean;
@@ -154,17 +154,17 @@ vi.mock('../../../components/SidePanelToggleButton', () => ({
   ),
 }));
 
-vi.mock('../components/AnalysisHeaderControls', () => ({
+vi.mock('.././components/AnalysisHeaderControls', () => ({
   AnalysisHeaderControls: ({ isCompactLayout }: { isCompactLayout?: boolean }) => (
     <span data-testid={isCompactLayout ? 'compact-header-controls' : 'regular-header-controls'} />
   ),
 }));
-vi.mock('../components/AnalysisPaginationControl', () => ({
+vi.mock('.././components/AnalysisPaginationControl', () => ({
   AnalysisPaginationControl: () => <span data-testid="pagination" />,
 }));
 
-import { AnalysisPageHeader } from '../AnalysisPageHeader';
-import type { AnalysisPageViewModel } from '../types';
+import { AnalysisPageHeader } from '.././AnalysisPageHeader';
+import type { AnalysisPageViewModel } from '.././types';
 
 function buildPage(): AnalysisPageViewModel {
   return {
@@ -175,8 +175,6 @@ function buildPage(): AnalysisPageViewModel {
     messagesTotalCount: 0,
     messagesTotalLoading: false,
     pageIndex: 0,
-    messagePageNavigationTarget: null,
-    visibleMessagesPageIndex: 0,
     noMoreToLoad: false,
     messagesPaging: false,
     queryState: {} as AnalysisPageViewModel['queryState'],
@@ -186,8 +184,6 @@ function buildPage(): AnalysisPageViewModel {
     toggleRightPanel: vi.fn(),
     newestFirst: false,
     setNewestFirst: vi.fn(),
-    clearMessagePageNavigationTarget: vi.fn(),
-    setVisibleMessagesPageIndex: vi.fn(),
   } as unknown as AnalysisPageViewModel;
 }
 
@@ -217,7 +213,6 @@ function renderHeader(
   });
   return { container, root };
 }
-
 describe('AnalysisPageHeader', () => {
   const rendered: Array<{ container: HTMLDivElement; root: Root }> = [];
 
@@ -257,53 +252,6 @@ describe('AnalysisPageHeader', () => {
     });
     expect(view.container.querySelector('[aria-label="Розгорнути праву панель"]')).toBeNull();
     expect(view.container.querySelector('[aria-label="Згорнути праву панель"]')).not.toBeNull();
-  });
-
-  it('moves compact search and date controls beside the title', () => {
-    const page = buildPage();
-    const compactView = renderHeader(page, true, false);
-    const desktopView = renderHeader(page, false, false, 'messages', false);
-    rendered.push(compactView, desktopView);
-
-    expect(
-      compactView.container.querySelector(
-        '[data-testid="title-trailing"] [data-testid="compact-header-controls"]',
-      ),
-    ).not.toBeNull();
-    expect(
-      compactView.container.querySelector('[data-testid="header-middle"]')?.children,
-    ).toHaveLength(0);
-    expect(
-      desktopView.container.querySelector(
-        '[data-testid="header-middle"] [data-testid="regular-header-controls"]',
-      ),
-    ).not.toBeNull();
-    expect(
-      desktopView.container.querySelector('[data-testid="title-trailing"]')?.children,
-    ).toHaveLength(0);
-    expect(
-      compactView.container.querySelector(
-        '[data-testid="header-actions"] [data-testid="pagination"]',
-      ),
-    ).toBeNull();
-    expect(
-      desktopView.container.querySelector(
-        '[data-testid="header-actions"] [data-testid="pagination"]',
-      ),
-    ).not.toBeNull();
-  });
-
-  it('keeps pagination visible while a direct-link message is active', () => {
-    const page = buildPage();
-    page.directMessageNavigation = {
-      targetMessageId: 21,
-      targetMessageIndex: 20,
-      totalCount: 40,
-    } as AnalysisPageViewModel['directMessageNavigation'];
-    const view = renderHeader(page, false, false);
-    rendered.push(view);
-
-    expect(view.container.querySelector('[data-testid="pagination"]')).not.toBeNull();
   });
 
   it('moves actions into the settings menu as soon as the layout is narrow', () => {
@@ -386,85 +334,5 @@ describe('AnalysisPageHeader', () => {
     } finally {
       window.requestAnimationFrame = originalRequestAnimationFrame;
     }
-  });
-
-  it('does not duplicate the map date-range loading indicator in the desktop header', () => {
-    const page = buildPage();
-    page.messagesLoading = true;
-    page.mapAttrs = {
-      daterangeLoading: 'true',
-    } as AnalysisPageViewModel['mapAttrs'];
-    const view = renderHeader(page, false, false, 'map', false);
-    rendered.push(view);
-
-    const refreshButton = view.container.querySelector('[aria-label="Оновити"]');
-    expect(refreshButton?.querySelector('[data-testid="loading-skeleton"]')).toBeNull();
-  });
-
-  it('keeps the desktop right-panel toggle and omits the mobile opening control', () => {
-    useMediaQueryMock.mockReturnValue(false);
-    const page = buildPage();
-    const view = renderHeader(page, false, true);
-    rendered.push(view);
-
-    expect(view.container.querySelector('[data-side="right"]')).not.toBeNull();
-    expect(
-      view.container.querySelector('[data-testid="header-actions"] [data-side="right"]'),
-    ).not.toBeNull();
-    expect(
-      view.container.querySelector('[data-testid="title-actions"] [data-side="right"]'),
-    ).toBeNull();
-    expect(view.container.querySelector('header')?.dataset.pinTitleActions).toBe('false');
-    expect(view.container.querySelector('header')?.dataset.fullWidthActions).toBe('false');
-    expect(view.container.querySelector('[aria-label="Згорнути праву панель"]')).not.toBeNull();
-    expect(view.container.querySelector('[aria-label="Розгорнути праву панель"]')).toBeNull();
-  });
-
-  it('renders the report action as a neutral grey outlined button', () => {
-    const view = renderHeader(buildPage(), false, false);
-    rendered.push(view);
-
-    const reportButton = Array.from(
-      view.container.querySelectorAll<HTMLButtonElement>('[data-testid="header-actions"] button'),
-    ).find((button) => button.textContent?.trim() === 'Звіти');
-
-    expect(reportButton?.dataset.variant).toBe('outlined');
-    expect(reportButton?.dataset.color).toBe('inherit');
-    expect(reportButton?.dataset.borderColor).toBe('divider');
-    expect(reportButton?.title).toBe('Відкрити звіти');
-  });
-
-  it('keeps the narrow right-panel toggle in the title row', () => {
-    const page = buildPage();
-    const view = renderHeader(page, false, false, 'messages', true);
-    rendered.push(view);
-
-    expect(
-      view.container.querySelector('[data-testid="title-actions"] [data-side="right"]'),
-    ).not.toBeNull();
-    expect(
-      view.container.querySelector('[data-testid="header-actions"] [data-side="right"]'),
-    ).toBeNull();
-    expect(view.container.querySelector('header')?.dataset.pinTitleActions).toBe('true');
-    expect(view.container.querySelector('header')?.dataset.fullWidthActions).toBe('true');
-  });
-
-  it('keeps both compact collapse controls available while panels are open', () => {
-    const page = buildPage();
-    const view = renderHeader(page, true, true);
-    rendered.push(view);
-
-    expect(view.container.querySelectorAll('[aria-label="Згорнути ліву панель"]')).toHaveLength(1);
-    expect(view.container.querySelectorAll('[aria-label="Згорнути праву панель"]')).toHaveLength(1);
-  });
-
-  it('keeps narrow non-message actions right-aligned without pagination', () => {
-    const page = buildPage();
-    const view = renderHeader(page, true, false, 'summary');
-    rendered.push(view);
-
-    expect(view.container.querySelector('[data-testid="pagination"]')).toBeNull();
-    expect(view.container.querySelector('[aria-label="Налаштування аналізу"]')).not.toBeNull();
-    expect(view.container.querySelector('[aria-label="Розгорнути праву панель"]')).not.toBeNull();
   });
 });

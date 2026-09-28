@@ -6,12 +6,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAnalysisMessageList } from '../use-analysis-message-list';
 import { emptyQueryState } from '../helpers';
-import type {
-  CallsignInfoRes,
-  InboxMessage,
-  SignalGroupEntry,
-  SignalProfileEntry,
-} from '../../../../../Bindings';
+import type { CallsignInfoRes, InboxMessage } from '../../../../../Bindings';
 
 const fetchAnalysisCallsignInfosMock = vi.hoisted(() => vi.fn());
 const fetchInboxMessagesMock = vi.hoisted(() => vi.fn());
@@ -57,11 +52,8 @@ type Harness = {
   root: Root;
   latest: ReturnType<typeof useAnalysisMessageList>;
   setDeferInitialLoad: React.Dispatch<React.SetStateAction<boolean>>;
-  setNewestFirst: React.Dispatch<React.SetStateAction<boolean>>;
   setQueryState: React.Dispatch<React.SetStateAction<ReturnType<typeof buildQueryState>>>;
   summaryCallsignsInfo: Record<string, CallsignInfoRes>;
-  groupInfos: Record<string, SignalGroupEntry>;
-  profiles: Record<string, SignalProfileEntry | null>;
   onError: ReturnType<typeof vi.fn>;
   onUnauthorized: ReturnType<typeof vi.fn>;
 };
@@ -85,7 +77,6 @@ function renderHook(
   newestFirst = true,
   initialDeferInitialLoad = false,
   initialSummaryCallsignsInfo: Record<string, CallsignInfoRes> = {},
-  focusedMessage: { id: number; active: boolean } = { id: 0, active: false },
 ): Harness {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -94,27 +85,21 @@ function renderHook(
 
   function TestComponent() {
     const [deferInitialLoad, setDeferInitialLoad] = useState(initialDeferInitialLoad);
-    const [currentNewestFirst, setNewestFirst] = useState(newestFirst);
     const [currentQueryState, setCurrentQueryState] = useState(queryState);
     harness.setDeferInitialLoad = setDeferInitialLoad;
-    harness.setNewestFirst = setNewestFirst;
     harness.setQueryState = setCurrentQueryState;
     harness.onError ??= vi.fn();
     harness.onUnauthorized ??= vi.fn().mockReturnValue(false);
     const [summaryCallsignsInfo, setSummaryCallsignsInfo] = useState<
       Record<string, CallsignInfoRes>
     >(initialSummaryCallsignsInfo);
+    const [, setGroupInfos] = useState({});
+    const [, setProfiles] = useState({});
     harness.summaryCallsignsInfo = summaryCallsignsInfo;
-    const [groupInfos, setGroupInfos] = useState<Record<string, SignalGroupEntry>>({});
-    const [profiles, setProfiles] = useState<Record<string, SignalProfileEntry | null>>({});
-    harness.groupInfos = groupInfos;
-    harness.profiles = profiles;
     harness.latest = useAnalysisMessageList({
       deferInitialLoad,
-      focusedMessageId: focusedMessage.id,
-      focusedMessageActive: focusedMessage.active,
       loadMissingNetworksForMessages,
-      newestFirst: currentNewestFirst,
+      newestFirst,
       onError: harness.onError,
       onUnauthorized: harness.onUnauthorized,
       optionsFreqValues: [],
@@ -132,7 +117,6 @@ function renderHook(
 
   return harness;
 }
-
 describe('useAnalysisMessageList pagination', () => {
   const harnesses: Harness[] = [];
 
@@ -191,7 +175,6 @@ describe('useAnalysisMessageList pagination', () => {
     });
     expect(fetchAnalysisCallsignInfosMock).toHaveBeenCalledWith(['alpha']);
   });
-
   it('does not merge a stale enrichment response or remove a newer owner', async () => {
     const h = renderHook();
     harnesses.push(h);
@@ -225,7 +208,6 @@ describe('useAnalysisMessageList pagination', () => {
     });
     expect(h.summaryCallsignsInfo.old).toBeDefined();
   });
-
   it('deduplicates completed and in-flight enrichment requests', async () => {
     const h = renderHook();
     harnesses.push(h);
@@ -253,7 +235,6 @@ describe('useAnalysisMessageList pagination', () => {
     await act(async () => Promise.resolve());
     expect(h.summaryCallsignsInfo).toEqual({ alpha, wolf });
   });
-
   it('does not let scoped data suppress unscoped callsign enrichment', async () => {
     const scoped = {
       callsign: 'WOLF',
@@ -306,7 +287,6 @@ describe('useAnalysisMessageList pagination', () => {
     expect(h.summaryCallsignsInfo.wolf.networkHints.map(({ id }) => id)).toEqual([10, 20]);
     expect(h.summaryCallsignsInfo.wolf.res.map(({ id }) => id)).toEqual([7]);
   });
-
   it('releases failed enrichment ownership for a later legitimate list update', async () => {
     const h = renderHook();
     harnesses.push(h);
@@ -494,107 +474,6 @@ describe('useAnalysisMessageList pagination', () => {
     expect(h.latest.messages).toEqual([...page(1), ...page(2)]);
   });
 
-  it('paginates direct-link messages in both directions without date limits', async () => {
-    const queryState = {
-      ...buildQueryState(),
-      groupsSelected: ['group-1'],
-      networksSelected: ['17'],
-      freqsSelected: ['123.45'],
-    };
-    const h = renderHook(
-      queryState,
-      vi.fn().mockResolvedValue(undefined),
-      false,
-      false,
-      {},
-      { id: 50, active: true },
-    );
-    harnesses.push(h);
-    act(() => h.latest.setMessages(page(50)));
-    const earlierResponse = {
-      inboxItems: [...page(49), ...page(48)],
-      callsigns: [],
-      signalGroups: [{ masterKey: 'group-1', name: 'Група Альфа' }],
-      signalProfiles: {
-        'sender-1': { givenName: 'Іван', familyName: 'Петренко' },
-      },
-      pageLimit: 2,
-    };
-    const laterResponse = {
-      inboxItems: [...page(51), ...page(52)],
-      callsigns: [],
-      pageLimit: 20,
-    };
-    const earlierLoad = deferred<typeof earlierResponse>();
-    const laterLoad = deferred<typeof laterResponse>();
-    fetchInboxMessagesMock
-      .mockReturnValueOnce(earlierLoad.promise)
-      .mockReturnValueOnce(laterLoad.promise);
-
-    let earlierPromise!: Promise<boolean>;
-    let laterPromise!: Promise<boolean>;
-    act(() => {
-      earlierPromise = h.latest.loadFocusedEarlier();
-      laterPromise = h.latest.loadFocusedLater();
-    });
-
-    expect(fetchInboxMessagesMock).toHaveBeenCalledTimes(2);
-    expect(h.latest.focusedLoadingEarlier).toBe(true);
-    expect(h.latest.focusedLoadingLater).toBe(true);
-
-    await act(async () => {
-      laterLoad.resolve(laterResponse);
-      earlierLoad.resolve(earlierResponse);
-      await Promise.all([earlierPromise, laterPromise]);
-    });
-
-    expect(h.latest.messages.map(([id]) => id)).toEqual([48, 49, 50, 51, 52]);
-    expect(fetchInboxMessagesMock.mock.calls[0][0]).toMatchObject({
-      beforeIdNoninclusive: 50,
-      sinceIdNoninclusive: null,
-      sinceDateInclusiveMs: null,
-      tillDateInclusiveMs: null,
-      newestFirst: true,
-      selectedGroups: ['group-1'],
-      selectedNetworks: [17],
-      selectedFreqs: ['123.45'],
-    });
-    expect(fetchInboxMessagesMock.mock.calls[1][0]).toMatchObject({
-      beforeIdNoninclusive: null,
-      sinceIdNoninclusive: 50,
-      sinceDateInclusiveMs: null,
-      tillDateInclusiveMs: null,
-      newestFirst: false,
-    });
-    expect(h.latest.focusedHasMoreEarlier).toBe(true);
-    expect(h.latest.focusedHasMoreLater).toBe(false);
-    expect(h.latest.focusedLoadingEarlier).toBe(false);
-    expect(h.latest.focusedLoadingLater).toBe(false);
-    expect(h.groupInfos['group-1']?.name).toBe('Група Альфа');
-    expect(h.profiles['sender-1']).toEqual({ givenName: 'Іван', familyName: 'Петренко' });
-  });
-
-  it('reverses messages around the direct-link target without moving its list index', async () => {
-    const h = renderHook(
-      buildQueryState(),
-      vi.fn().mockResolvedValue(undefined),
-      false,
-      false,
-      {},
-      { id: 50, active: true },
-    );
-    harnesses.push(h);
-    act(() =>
-      h.latest.setMessages([...page(48), ...page(49), ...page(50), ...page(51), ...page(52)]),
-    );
-    expect(h.latest.messages.map(([id]) => id)).toEqual([48, 49, 50, 51, 52]);
-
-    act(() => h.setNewestFirst(true));
-
-    expect(h.latest.messages.map(([id]) => id)).toEqual([52, 51, 50, 49, 48]);
-    expect(fetchInboxMessagesMock).not.toHaveBeenCalled();
-  });
-
   it('updates messages and pageIndex together before message hydration finishes', async () => {
     const hydration = deferred<void>();
     const h = renderHook(
@@ -625,7 +504,6 @@ describe('useAnalysisMessageList pagination', () => {
       await nextPagePromise;
     });
   });
-
   it('does not advance a stale page request after message hydration', async () => {
     const hydration = deferred<void>();
     const h = renderHook(
@@ -925,7 +803,6 @@ describe('useAnalysisMessageList pagination', () => {
       sinceIdNoninclusive: null,
     });
   });
-
   it('re-enriches preserved-page messages after page-request invalidation', async () => {
     const h = renderHook();
     harnesses.push(h);
@@ -971,7 +848,6 @@ describe('useAnalysisMessageList pagination', () => {
       freshResponse.networkHints[0],
     ]);
   });
-
   it('ignores an in-flight enrichment response after page-request invalidation', async () => {
     const h = renderHook();
     harnesses.push(h);

@@ -1,7 +1,7 @@
+import type { CallsignsLoadPeriods } from './use-rer-network-details-neo-page.load';
 import { canUseRadioFeatures } from '../../utils/roles';
 import { useCallback } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
-import type { NetworkFreqCallsignsPeriod } from '../../../../Bindings';
 
 import {
   deleteNetwork,
@@ -40,7 +40,7 @@ type Args = {
   unitNames: string[];
   reloadGeneration: MutableRefObject<number>;
   currentNetworkIdRef: MutableRefObject<number | null>;
-  loadCallsigns: (networkId: number, period?: NetworkFreqCallsignsPeriod) => Promise<void>;
+  loadCallsigns: (networkId: number, periods?: CallsignsLoadPeriods) => Promise<void>;
 };
 
 function syncNetworkRelations(editForm: NetworkEditForm) {

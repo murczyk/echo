@@ -19,6 +19,37 @@ SQL, trivial helpers, defaults, formatting, or mocks without protecting a
 real failure mode. Prefer a focused fixture in an existing functional or
 parser test over adding another isolated unit test.
 
+Do not classify outbound serializers, request builders, defaults, local
+validation, eligibility maps, merging/deduplication, sorting, or formatting as
+parser coverage. A parser fixture consumes operational API, URL,
+pasted/user-entered structured-text, or file-format input.
+
+Test classification is a review decision, not an in-source label. Do not delete
+an existing test merely because it lacks metadata, and do not let a convincing
+comment or renamed test make weak coverage valuable. Judge new tests by the
+behavior and failure mode they protect. Inspect heterogeneous suites test by
+test; never assign one broad justification to all their cases. Keep issue- or
+PR-linked regressions, critical safeguards, operational parsing, meaningful
+integration behavior, database-backed flows, and valuable Playwright coverage.
+When removing a test leaves product knowledge without another maintained home,
+describe that behavior in the appropriate behavior contract first.
+
+React Vitest specs under `src/ts/react` are direct children of the nearest
+production-owned `__tests__` directory, with exactly one `__tests__` path
+segment and no test-owned directory below it. Do not accept recovery,
+characterization, nested-test, temporary holding paths, or placement
+exceptions. Use descriptive names for collisions and preserve resolved imports
+and `vi.mock` targets when relocating tests. Playwright remains in `tests/e2e`.
+Behavior contracts must name complete, existing repository-relative test paths,
+or use `No direct default-suite test; behavior is preserved by this contract.`.
+Removing a nonqualifying test must not leave user-visible behavior undocumented.
+For Playwright, preserve `@regression` title tags because `e2e:regression`
+selects title tags, not source comments.
+E2E is not part of CI/CD, but affected Playwright suites must execute and pass
+before merging; Playwright discovery is not verification. Browser coverage must
+not justify deleting stronger Vitest coverage unless it exercises the same
+failure boundary.
+
 ## Duty behavior contract
 
 For changes to Duty Neo, shared message settings/cards, or inbox ordering and

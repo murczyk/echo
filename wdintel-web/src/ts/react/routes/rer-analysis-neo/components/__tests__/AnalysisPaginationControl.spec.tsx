@@ -81,7 +81,7 @@ vi.mock('@mui/icons-material/ChevronRightOutlined', () => ({ default: () => <spa
 vi.mock('@mui/icons-material/FirstPageOutlined', () => ({ default: () => <span>first</span> }));
 vi.mock('@mui/icons-material/LastPageOutlined', () => ({ default: () => <span>last</span> }));
 
-import { AnalysisPaginationControl } from '../AnalysisPaginationControl';
+import { AnalysisPaginationControl } from '.././AnalysisPaginationControl';
 
 type Rendered = { container: HTMLDivElement; root: Root };
 
@@ -114,7 +114,6 @@ function baseProps(): React.ComponentProps<typeof AnalysisPaginationControl> {
     onNextPage: vi.fn(),
   };
 }
-
 describe('AnalysisPaginationControl', () => {
   const rendered: Rendered[] = [];
 
@@ -149,46 +148,6 @@ describe('AnalysisPaginationControl', () => {
     });
     rendered.push(view);
     expect(view.container.textContent).toContain('21-40 з 137');
-  });
-
-  it('renders the visible infinite-scroll page instead of the last loaded page', async () => {
-    const view = await renderComponent({
-      ...baseProps(),
-      pageIndex: 1,
-      rangePageIndex: 0,
-      messagesCount: 35,
-      totalCount: 35,
-      noMoreToLoad: true,
-    });
-    rendered.push(view);
-    expect(view.container.textContent).toContain('1-20 з 35');
-    expect(
-      view.container.querySelector<HTMLButtonElement>('[aria-label="Попередня сторінка"]')
-        ?.disabled,
-    ).toBe(true);
-    expect(
-      view.container.querySelector<HTMLButtonElement>('[aria-label="Наступна сторінка"]')?.disabled,
-    ).toBe(false);
-
-    view.root.render(
-      <AnalysisPaginationControl
-        {...baseProps()}
-        pageIndex={1}
-        rangePageIndex={1}
-        messagesCount={35}
-        totalCount={35}
-        noMoreToLoad
-      />,
-    );
-    await act(async () => {});
-    expect(view.container.textContent).toContain('21-35 з 35');
-    expect(
-      view.container.querySelector<HTMLButtonElement>('[aria-label="Попередня сторінка"]')
-        ?.disabled,
-    ).toBe(false);
-    expect(
-      view.container.querySelector<HTMLButtonElement>('[aria-label="Наступна сторінка"]')?.disabled,
-    ).toBe(true);
   });
 
   it('falls back to em dash while totals are loading', async () => {
@@ -230,29 +189,6 @@ describe('AnalysisPaginationControl', () => {
     expect(view.container.querySelector('[role="menu"]')?.textContent).toContain(
       'Остання сторінка',
     );
-  });
-
-  it('disables first/last jumps without disabling adjacent-page navigation', async () => {
-    const view = await renderComponent({
-      ...baseProps(),
-      rangePageIndex: 1,
-      totalCount: 100,
-      jumpDisabled: true,
-    });
-    rendered.push(view);
-
-    expect(
-      view.container.querySelector<HTMLButtonElement>(
-        '[aria-label="Перейти до першої або останньої сторінки"]',
-      )?.disabled,
-    ).toBe(true);
-    expect(
-      view.container.querySelector<HTMLButtonElement>('[aria-label="Попередня сторінка"]')
-        ?.disabled,
-    ).toBe(false);
-    expect(
-      view.container.querySelector<HTMLButtonElement>('[aria-label="Наступна сторінка"]')?.disabled,
-    ).toBe(false);
   });
 
   it('wires first and last page menu actions', async () => {

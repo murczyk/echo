@@ -53,6 +53,7 @@ type Props = Pick<
   isFilterSectionStale: (section: AnalysisFilterSectionId) => boolean;
   loadFilterSection: (section: AnalysisFilterSectionId) => Promise<void>;
   unitsExactMatchOnlyDefault: boolean | null;
+  analysisAorFilterEnabled: boolean;
   toggleSection: (section: FilterSectionId) => void;
 };
 
@@ -115,6 +116,7 @@ export function AnalysisFiltersPanelSections({
   options,
   queryState,
   unitsExactMatchOnlyDefault,
+  analysisAorFilterEnabled,
   setIncludeOnlyNewFreqs,
   toggleSection,
   updateQueryState,
@@ -188,7 +190,7 @@ export function AnalysisFiltersPanelSections({
   const tagFilterMode = tagFilterModeFromState(queryState);
   return (
     <>
-      {(countsSnapshot?.aorsCount ?? 0) > 1 ? (
+      {analysisAorFilterEnabled ? (
         <FilterSection
           title="Смуги"
           countLabel={countLabel(

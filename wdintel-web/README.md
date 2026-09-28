@@ -30,6 +30,31 @@ elm-spa build  # production build
 elm-spa watch  # runs build as you code (without the server)
 ```
 
+## testing
+
+```bash
+npm run test:ts                 # complete React Vitest migration suite
+npm run test:structure-check     # placement and referenced-path validation
+```
+
+Test admission is a review decision based on the behavior and failure mode a
+case protects. React tests live in production-owned `__tests__/` directories;
+the structure check rejects placement drift and production imports of recognized
+test-only support modules.
+
+Browser commands are intentionally separate:
+
+```bash
+npm run e2e:smoke
+npm run e2e:regression
+npm run e2e:all
+```
+
+E2E is not part of CI/CD, but affected Playwright suites must execute and pass
+before merging; discovery alone is not verification. Browser coverage must not
+justify deleting stronger Vitest coverage unless it exercises the same failure
+boundary.
+
 ## learn more
 
 You can learn more at [elm-spa.dev](https://elm-spa.dev)

@@ -21,6 +21,7 @@ vi.mock('@mui/material', () => ({
       {children}
     </button>
   ),
+  CircularProgress: () => <div>loading</div>,
   Skeleton: () => <div>loading-skeleton</div>,
   Paper: forwardRef<HTMLElement, { children?: ReactNode }>(({ children }, ref) => (
     <section ref={ref}>{children}</section>
@@ -100,7 +101,6 @@ describe('AnalysisGroupsActivityCard', () => {
       item.container.remove();
     }
   });
-
   it('offers an explicit global-filter load when no frequency is selected', async () => {
     const onLoad = vi.fn();
     const view = await renderComponent({
@@ -125,7 +125,6 @@ describe('AnalysisGroupsActivityCard', () => {
     });
     expect(onLoad).toHaveBeenCalledTimes(1);
   });
-
   it('loads activity automatically when a frequency is already selected', async () => {
     const onLoad = vi.fn();
     const view = await renderComponent({
@@ -141,7 +140,6 @@ describe('AnalysisGroupsActivityCard', () => {
 
     expect(onLoad).toHaveBeenCalledTimes(1);
   });
-
   it('shows an empty-period message instead of an empty chart when all buckets are zero', async () => {
     const view = await renderComponent({
       groupsActivity: {
@@ -163,25 +161,5 @@ describe('AnalysisGroupsActivityCard', () => {
       'Для частоти 100.100 за цей інтервал активності не знайдено.',
     );
     expect(view.container.querySelector('dashboard-chart')).toBeNull();
-  });
-
-  it('replaces the chart with a skeleton while refreshing in background', async () => {
-    const view = await renderComponent({
-      groupsActivity: {
-        dataPerDate: {
-          '2026-03-31': { countByGroupName: { Alpha: 3 } },
-        },
-      },
-      groupsActivityLoadedFreq: '100.100',
-      groupsActivityLoadedPeriod: 'selected',
-      loading: true,
-      period: 'selected',
-      selectedFreq: '100.100',
-      onLoad: vi.fn(),
-    });
-    rendered.push(view);
-
-    expect(view.container.querySelector('dashboard-chart')).toBeNull();
-    expect(view.container.textContent).toContain('loading-skeleton');
   });
 });

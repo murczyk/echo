@@ -856,6 +856,7 @@ export const FeedColumnContent = memo(
           data-duty-feed-scroller="true"
           component="div"
           className="rer-duty-feed-scroll"
+          tabIndex={0}
           onScroll={scroll.handleScroll}
           sx={{
             flex: 1,

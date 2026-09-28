@@ -240,6 +240,7 @@ function systemSettings() {
     hide_orbit_data: false,
     disable_bot_tags: false,
     duty_exclude_menu_enabled: true,
+    two_factor_auth_enabled: true,
   };
 }
 
@@ -535,7 +536,6 @@ async function installMocks(page: Page): Promise<ApiTracker> {
   });
   return tracker;
 }
-
 test('@smoke device details uses tabs, an IDE-style Files sidebar, and a synchronization journal', async ({
   page,
 }) => {
@@ -802,7 +802,6 @@ test('@smoke device details uses tabs, an IDE-style Files sidebar, and a synchro
   await expect(archivedFilesSidebar.getByText('root.log', { exact: true })).toBeVisible();
   expect(browserFailures).toEqual([]);
 });
-
 test('@smoke device creation requires and submits a name for DeviceSource', async ({ page }) => {
   const browserFailures: string[] = [];
   page.on('console', (message) => {
@@ -832,7 +831,8 @@ test('@smoke device creation requires and submits a name for DeviceSource', asyn
   expect(browserFailures).toEqual([]);
 });
 
-test('@smoke device files previews read only, explains unavailable states and downloads original bytes', async ({
+// Regression: https://github.com/echoua/echo/pull/3500
+test('@smoke @regression device files previews read only, explains unavailable states and downloads original bytes', async ({
   page,
   baseURL,
 }) => {

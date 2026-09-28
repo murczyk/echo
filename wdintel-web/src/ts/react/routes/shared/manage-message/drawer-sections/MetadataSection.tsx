@@ -7,6 +7,7 @@ import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { PowerDatePicker } from '../../../../components/PowerDateTimePicker';
 import { FormSectionWrapper } from './FormSectionWrapper';
+import { ParserFieldFeedback } from '../MessageParserFeedback';
 import {
   normalizeCallsign,
   normalizeMultiValue,
@@ -65,46 +66,50 @@ export function MetadataSection({
             gap: 2,
           }}
         >
-          <Controller
-            name="date"
-            control={control}
-            render={({ field }) => (
-              <PowerDatePicker
-                label="Дата перехоплення"
-                value={field.value}
-                allowEmpty
-                onChange={(newValue) => field.onChange(newValue)}
-                disabled={busy}
-                slotProps={{ textField: { size: 'small', fullWidth: true } }}
-              />
-            )}
-          />
-
-          <Controller
-            name="time"
-            control={control}
-            render={({ field, fieldState }) => (
-              <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale="uk">
-                <TimePicker
-                  label="Час перехоплення"
-                  value={field.value ?? null}
-                  ampm={false}
+          <ParserFieldFeedback field="date" label="дату">
+            <Controller
+              name="date"
+              control={control}
+              render={({ field }) => (
+                <PowerDatePicker
+                  label="Дата перехоплення"
+                  value={field.value}
+                  allowEmpty
                   onChange={(newValue) => field.onChange(newValue)}
                   disabled={busy}
-                  slotProps={{
-                    field: { clearable: true },
-                    clearButton: { title: 'Очистити час', 'aria-label': 'Очистити час' },
-                    textField: {
-                      size: 'small',
-                      fullWidth: true,
-                      error: Boolean(fieldState.error),
-                      helperText: fieldState.error?.message,
-                    },
-                  }}
+                  slotProps={{ textField: { size: 'small', fullWidth: true } }}
                 />
-              </LocalizationProvider>
-            )}
-          />
+              )}
+            />
+          </ParserFieldFeedback>
+
+          <ParserFieldFeedback field="time" label="час">
+            <Controller
+              name="time"
+              control={control}
+              render={({ field, fieldState }) => (
+                <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale="uk">
+                  <TimePicker
+                    label="Час перехоплення"
+                    value={field.value ?? null}
+                    ampm={false}
+                    onChange={(newValue) => field.onChange(newValue)}
+                    disabled={busy}
+                    slotProps={{
+                      field: { clearable: true },
+                      clearButton: { title: 'Очистити час', 'aria-label': 'Очистити час' },
+                      textField: {
+                        size: 'small',
+                        fullWidth: true,
+                        error: Boolean(fieldState.error),
+                        helperText: fieldState.error?.message,
+                      },
+                    }}
+                  />
+                </LocalizationProvider>
+              )}
+            />
+          </ParserFieldFeedback>
         </Box>
 
         <Box
@@ -115,64 +120,68 @@ export function MetadataSection({
           }}
         >
           {radioFeaturesAllowed ? (
+            <ParserFieldFeedback field="post" label="пост">
+              <Controller
+                name="post"
+                control={control}
+                render={({ field }) => (
+                  <Autocomplete
+                    freeSolo
+                    forcePopupIcon
+                    noOptionsText="Немає варіантів"
+                    options={Array.from(new Set([...(recentValues?.post || []), ...postOptions]))}
+                    value={field.value ?? ''}
+                    loading={postLoading}
+                    disabled={busy}
+                    onInputChange={(_, newValue, reason) => {
+                      if (reason === 'input') {
+                        setPostInput(newValue);
+                        field.onChange(newValue);
+                      }
+                    }}
+                    onChange={(_, newValue) => field.onChange(newValue || '')}
+                    renderInput={(params) => (
+                      <TextField {...params} label="Пост" size="small" fullWidth disabled={busy} />
+                    )}
+                  />
+                )}
+              />
+            </ParserFieldFeedback>
+          ) : null}
+
+          <ParserFieldFeedback field="unit" label="підрозділ">
             <Controller
-              name="post"
+              name="unit"
               control={control}
               render={({ field }) => (
                 <Autocomplete
                   freeSolo
                   forcePopupIcon
                   noOptionsText="Немає варіантів"
-                  options={Array.from(new Set([...(recentValues?.post || []), ...postOptions]))}
+                  options={Array.from(new Set([...(recentValues?.unit || []), ...unitOptions]))}
                   value={field.value ?? ''}
-                  loading={postLoading}
-                  disabled={busy}
+                  loading={unitLoading}
+                  disabled={busy || unitLocked}
                   onInputChange={(_, newValue, reason) => {
                     if (reason === 'input') {
-                      setPostInput(newValue);
+                      setUnitInput(newValue);
                       field.onChange(newValue);
                     }
                   }}
                   onChange={(_, newValue) => field.onChange(newValue || '')}
                   renderInput={(params) => (
-                    <TextField {...params} label="Пост" size="small" fullWidth disabled={busy} />
+                    <TextField
+                      {...params}
+                      label="Підрозділ"
+                      size="small"
+                      fullWidth
+                      disabled={busy || unitLocked}
+                    />
                   )}
                 />
               )}
             />
-          ) : null}
-
-          <Controller
-            name="unit"
-            control={control}
-            render={({ field }) => (
-              <Autocomplete
-                freeSolo
-                forcePopupIcon
-                noOptionsText="Немає варіантів"
-                options={Array.from(new Set([...(recentValues?.unit || []), ...unitOptions]))}
-                value={field.value ?? ''}
-                loading={unitLoading}
-                disabled={busy || unitLocked}
-                onInputChange={(_, newValue, reason) => {
-                  if (reason === 'input') {
-                    setUnitInput(newValue);
-                    field.onChange(newValue);
-                  }
-                }}
-                onChange={(_, newValue) => field.onChange(newValue || '')}
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    label="Підрозділ"
-                    size="small"
-                    fullWidth
-                    disabled={busy || unitLocked}
-                  />
-                )}
-              />
-            )}
-          />
+          </ParserFieldFeedback>
         </Box>
 
         <Controller
@@ -190,41 +199,47 @@ export function MetadataSection({
             />
           )}
         />
-        <Controller
-          name="callsigns"
-          control={control}
-          render={({ field }) => (
-            <Stack spacing={1}>
-              <Autocomplete
-                multiple
-                freeSolo
-                autoSelect
-                noOptionsText="Немає варіантів"
-                options={Array.from(
-                  new Set(
-                    [...(recentValues?.callsigns || []), ...callsignOptions].map(normalizeCallsign),
-                  ),
-                )}
-                value={field.value || []}
-                inputValue={callsignInput}
-                loading={callsignLoading}
-                onInputChange={(_, newValue) => setCallsignInput(normalizeCallsign(newValue))}
-                onChange={(_, newValue) =>
-                  field.onChange(normalizeMultiValue((newValue as string[]).map(normalizeCallsign)))
-                }
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    label="Позивні"
-                    size="small"
-                    placeholder="Розділяйте комою або Enter"
-                  />
-                )}
-                disabled={busy}
-              />
-            </Stack>
-          )}
-        />
+        <ParserFieldFeedback field="callsigns" label="позивні">
+          <Controller
+            name="callsigns"
+            control={control}
+            render={({ field }) => (
+              <Stack spacing={1}>
+                <Autocomplete
+                  multiple
+                  freeSolo
+                  autoSelect
+                  noOptionsText="Немає варіантів"
+                  options={Array.from(
+                    new Set(
+                      [...(recentValues?.callsigns || []), ...callsignOptions].map(
+                        normalizeCallsign,
+                      ),
+                    ),
+                  )}
+                  value={field.value || []}
+                  inputValue={callsignInput}
+                  loading={callsignLoading}
+                  onInputChange={(_, newValue) => setCallsignInput(normalizeCallsign(newValue))}
+                  onChange={(_, newValue) =>
+                    field.onChange(
+                      normalizeMultiValue((newValue as string[]).map(normalizeCallsign)),
+                    )
+                  }
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Позивні"
+                      size="small"
+                      placeholder="Розділяйте комою або Enter"
+                    />
+                  )}
+                  disabled={busy}
+                />
+              </Stack>
+            )}
+          />
+        </ParserFieldFeedback>
       </FormSectionWrapper>
     </>
   );

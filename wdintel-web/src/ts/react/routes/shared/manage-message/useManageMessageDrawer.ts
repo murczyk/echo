@@ -1,8 +1,10 @@
 import { canUseRadioFeatures } from '../../../utils/roles';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import dayjs from 'dayjs';
+
+import { useDutySettings } from '../../../hooks/use-duty-settings';
 
 import {
   getUserSigintGroups,
@@ -123,6 +125,7 @@ export function useManageMessageDrawer({
     status: 'idle',
   });
   const [quickSuggestionAttempt, setQuickSuggestionAttempt] = useState(0);
+  const [discardConfirmationOpen, setDiscardConfirmationOpen] = useState(false);
   const reportCopyLoaded =
     isReportCreateMode && reportCopyLoadedSourceId === (reportSource?.id ?? null);
 
@@ -334,6 +337,17 @@ export function useManageMessageDrawer({
 
   const { control, formState, getValues, setValue, reset } = methods;
   const formValues = useWatch({ control });
+  const getInitialCreateFormValues = useCallback(
+    (): MessageFormData => ({
+      ...EMPTY_FORM_VALUES,
+      date: dayjs(),
+      time: null,
+      signalGroupMasterKey: recentValues.group[0] ?? '',
+      deviceName: cyberEchoEnabled ? (recentValues.deviceName[0] ?? '') : '',
+      unit: recentValues.unit[0] ?? '',
+    }),
+    [cyberEchoEnabled, recentValues],
+  );
 
   const existingMedia: MessageMediaInfo[] = useMemo(() => {
     const rawList = isEditMode
@@ -379,6 +393,7 @@ export function useManageMessageDrawer({
     attachmentErrorMsg,
     setAttachmentErrorMsg,
   } = useMessageUppy(busy, retainedAttachmentCount);
+  const hasUnsavedChanges = formState.isDirty || uppyFiles.length > 0;
 
   useEffect(() => {
     if (!formReady) return;
@@ -386,20 +401,90 @@ export function useManageMessageDrawer({
     return () => window.removeEventListener('paste', handlePaste);
   }, [formReady, handlePaste]);
 
-  const { parsing, handleParse } = useMessageParser(
-    methods,
-    busy,
-    setErrorMsg,
+  const dutySettings = useDutySettings();
+  const autoParseEnabled = dutySettings.messageAutoParseEnabled;
+  const autoParseSettingsDisabled =
+    dutySettings.loadInProgress || Boolean(dutySettings.loadError) || dutySettings.saveInProgress;
+  const autoParseBeforeSaveRef = useRef<boolean | null>(null);
+  const setMessageAutoParseEnabledRef = useRef(dutySettings.setMessageAutoParseEnabled);
+  setMessageAutoParseEnabledRef.current = dutySettings.setMessageAutoParseEnabled;
+  const handleToggleAutoParse = useCallback(
+    (enabled: boolean) => {
+      if (autoParseSettingsDisabled) return;
+      autoParseBeforeSaveRef.current = dutySettings.messageAutoParseEnabled;
+      dutySettings.setMessageAutoParseEnabled(enabled);
+      dutySettings.scheduleSave({
+        ...dutySettings,
+        messageAutoParseEnabled: enabled,
+      });
+    },
+    [autoParseSettingsDisabled, dutySettings],
+  );
+
+  useEffect(() => {
+    if (dutySettings.saveError) {
+      if (autoParseBeforeSaveRef.current !== null) {
+        setMessageAutoParseEnabledRef.current(autoParseBeforeSaveRef.current);
+        autoParseBeforeSaveRef.current = null;
+      }
+      setErrorMsg(dutySettings.saveError);
+      return;
+    }
+    if (!dutySettings.saveInProgress) autoParseBeforeSaveRef.current = null;
+  }, [dutySettings.saveError, dutySettings.saveInProgress]);
+
+  const resetPristineCreateFields = useCallback(() => {
+    reset({
+      ...getInitialCreateFormValues(),
+      signalGroupMasterKey: getValues('signalGroupMasterKey'),
+    });
+    setDeviceNameInput('');
+    setPostInput('');
+    setUnitInput('');
+    setNetworkNameInput('');
+    setCallsignInput('');
+    setFreqInput('');
+    setSelectedNetwork(null);
+    setUnitLocked(false);
+  }, [getInitialCreateFormValues, getValues, reset]);
+
+  const {
+    parsing,
+    parseStatus,
+    parserFeedback,
+    debounceKey,
+    handleBodyChange,
+    handleParse,
+    acceptParsedField,
+  } = useMessageParser(methods, busy, setErrorMsg, {
+    active: formReady,
+    autoParseEnabled: autoParseEnabled && !dutySettings.loadInProgress && !dutySettings.loadError,
+    isEditMode,
+    isReportMode,
     radioFeaturesAllowed,
+    onPristineSourceCleared: resetPristineCreateFields,
+  });
+  const handleAcceptParsedField = useCallback(
+    (field: Parameters<typeof acceptParsedField>[0]) => {
+      if (field === 'network_name') {
+        setSelectedNetwork(null);
+        setNetworkNameInput('');
+        setUnitLocked(false);
+      }
+      acceptParsedField(field);
+    },
+    [acceptParsedField],
   );
 
   const canSubmit = useMemo(() => {
     const selectedGroupKey = formValues.signalGroupMasterKey ?? '';
     const reportDestinationMissing = isReportMode && !selectedGroupKey.trim();
+    const parserBlocksSubmit =
+      parsing || parseStatus === 'debouncing' || (autoParseEnabled && parseStatus === 'error');
 
     return isManageMessageSubmitEligible({
       busy: busy || (isReportCreateMode && !reportCopyLoaded),
-      parsing,
+      parsing: parserBlocksSubmit,
       schemaValid: formState.isValid || reportDestinationMissing,
       isEditMode,
       allowMissingGroup: isReportMode,
@@ -419,6 +504,7 @@ export function useManageMessageDrawer({
     });
   }, [
     busy,
+    autoParseEnabled,
     editTarget,
     existingMedia,
     formState.isValid,
@@ -427,6 +513,7 @@ export function useManageMessageDrawer({
     isEditMode,
     isReportCreateMode,
     isReportMode,
+    parseStatus,
     parsing,
     reportCopyLoaded,
     signalGroups,
@@ -537,14 +624,7 @@ export function useManageMessageDrawer({
       // Seed deviceName only when its field is actually rendered (cyberEchoEnabled);
       // otherwise SystemSection hides it while useMessageSubmit would still call
       // createDeviceName and send a stale device_name_id the user never chose.
-      reset({
-        ...EMPTY_FORM_VALUES,
-        date: dayjs(),
-        time: null,
-        signalGroupMasterKey: recentValues.group[0] ?? '',
-        deviceName: cyberEchoEnabled ? (recentValues.deviceName[0] ?? '') : '',
-        unit: recentValues.unit[0] ?? '',
-      });
+      reset(getInitialCreateFormValues());
     }
   }, [
     formReady,
@@ -555,6 +635,7 @@ export function useManageMessageDrawer({
     reportSource?.id,
     recentValues,
     cyberEchoEnabled,
+    getInitialCreateFormValues,
   ]);
 
   useEffect(() => {
@@ -739,6 +820,7 @@ export function useManageMessageDrawer({
     blurActiveElement();
     uppy.cancelAll();
     reset();
+    setDiscardConfirmationOpen(false);
     setDeviceNameInput('');
     setShowAdvanced(false);
     setErrorMsg(null);
@@ -747,6 +829,10 @@ export function useManageMessageDrawer({
 
   const handleBrowserBack = () => {
     if (saving) return false;
+    if (hasUnsavedChanges) {
+      setDiscardConfirmationOpen(true);
+      return false;
+    }
     finalizeDrawerClose();
     return true;
   };
@@ -761,6 +847,17 @@ export function useManageMessageDrawer({
 
   const handleDrawerClose = () => {
     if (saving) return;
+    if (hasUnsavedChanges) {
+      setDiscardConfirmationOpen(true);
+      return;
+    }
+    requestDrawerClose();
+  };
+
+  const cancelDiscard = () => setDiscardConfirmationOpen(false);
+
+  const confirmDiscard = () => {
+    setDiscardConfirmationOpen(false);
     requestDrawerClose();
   };
 
@@ -804,6 +901,10 @@ export function useManageMessageDrawer({
     formDisabled: busy,
     saving,
     parsing,
+    parseStatus,
+    parserFeedback,
+    debounceKey,
+    handleBodyChange,
     errorMsg,
     setErrorMsg,
     tagOptions,
@@ -849,7 +950,17 @@ export function useManageMessageDrawer({
     methods,
     canSubmit,
     handleParse,
+    acceptParsedField: handleAcceptParsedField,
+    autoParseEnabled,
+    autoParseSettingsDisabled,
+    autoParseSettingsLoadError: dutySettings.loadError,
+    retryAutoParseSettings: dutySettings.retryLoad,
+    handleToggleAutoParse,
     handleDrawerClose,
+    closeDrawerWithoutConfirmation: closeDrawerAfterSubmit,
+    discardConfirmationOpen,
+    cancelDiscard,
+    confirmDiscard,
     onSubmit,
     recentValues,
   };

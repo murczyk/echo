@@ -52,6 +52,23 @@ fn model_to_dto(m: &user_settings::Model) -> UserDutySettingsDto {
             Some("creation") => MessageTimeBasis::MessageCreation,
             _ => MessageTimeBasis::MessageInterception,
         },
+        message_auto_parse_enabled: m
+            .message_auto_parse_enabled
+            .unwrap_or_else(types::default_message_auto_parse_enabled),
+    }
+}
+
+fn preserve_omitted_compatibility_fields(
+    body: &serde_json::Value,
+    incoming: &mut UserDutySettingsDto,
+    existing: &UserDutySettingsDto,
+) {
+    if body.get("messageSortBy").is_none() {
+        incoming.message_sort_by = existing.message_sort_by;
+    }
+    if body.get("messageAutoParseEnabled").is_none() {
+        incoming.message_auto_parse_enabled =
+            existing.message_auto_parse_enabled;
     }
 }
 
@@ -83,16 +100,19 @@ pub async fn user_settings_put(
     let login_id = login_id_from_identity(&user)?;
     load_login(&env.dbx, &login_id).await.c(h!())?;
     let body = req.into_inner();
-    let has_explicit_message_sort_by = body.get("messageSortBy").is_some();
-    let mut dto: UserDutySettingsDto = serde_json::from_value(body).c(h!())?;
-    if !has_explicit_message_sort_by {
-        dto.message_sort_by = user_settings::Entity::find()
+    let needs_existing = body.get("messageSortBy").is_none()
+        || body.get("messageAutoParseEnabled").is_none();
+    let mut dto: UserDutySettingsDto =
+        serde_json::from_value(body.clone()).c(h!())?;
+    if needs_existing {
+        let existing = user_settings::Entity::find()
             .filter(user_settings::Column::LoginId.eq(login_id))
             .one(&env.dbx)
             .await
             .c(h!())?
-            .map(|settings| model_to_dto(&settings).message_sort_by)
+            .map(|settings| model_to_dto(&settings))
             .unwrap_or_default();
+        preserve_omitted_compatibility_fields(&body, &mut dto, &existing);
     }
     let now = Utc::now().naive_utc();
     user_settings::Entity::insert(user_settings::ActiveModel {
@@ -129,6 +149,7 @@ pub async fn user_settings_put(
             MessageTimeBasis::MessageInterception => "interception".to_owned(),
             MessageTimeBasis::MessageCreation => "creation".to_owned(),
         })),
+        message_auto_parse_enabled: Set(Some(dto.message_auto_parse_enabled)),
         updated_at: Set(now),
     })
     .on_conflict(
@@ -146,6 +167,7 @@ pub async fn user_settings_put(
                 user_settings::Column::DutyCollapseMediaPreviews,
                 user_settings::Column::MediaSummaryEnabled,
                 user_settings::Column::MessageSortBy,
+                user_settings::Column::MessageAutoParseEnabled,
                 user_settings::Column::UpdatedAt,
             ])
             .to_owned(),
@@ -167,4 +189,51 @@ async fn load_login(
         .c(h!())?
         .ok_or(AppError::NotFound)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod functional_tests;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn omitted_auto_parse_setting_preserves_the_stored_value() {
+        let body = serde_json::json!({ "tagsLayout": "compact" });
+        let mut incoming = UserDutySettingsDto::default();
+        let existing = UserDutySettingsDto {
+            message_auto_parse_enabled: false,
+            message_sort_by: MessageTimeBasis::MessageCreation,
+            ..UserDutySettingsDto::default()
+        };
+
+        preserve_omitted_compatibility_fields(&body, &mut incoming, &existing);
+
+        assert!(!incoming.message_auto_parse_enabled);
+        assert_eq!(incoming.message_sort_by, MessageTimeBasis::MessageCreation);
+    }
+
+    #[test]
+    fn explicit_auto_parse_setting_overwrites_the_stored_value() {
+        let body = serde_json::json!({
+            "tagsLayout": "compact",
+            "messageAutoParseEnabled": false,
+            "messageSortBy": "interception"
+        });
+        let mut incoming = serde_json::from_value(body.clone()).unwrap();
+        let existing = UserDutySettingsDto {
+            message_auto_parse_enabled: true,
+            message_sort_by: MessageTimeBasis::MessageCreation,
+            ..UserDutySettingsDto::default()
+        };
+
+        preserve_omitted_compatibility_fields(&body, &mut incoming, &existing);
+
+        assert!(!incoming.message_auto_parse_enabled);
+        assert_eq!(
+            incoming.message_sort_by,
+            MessageTimeBasis::MessageInterception
+        );
+    }
 }

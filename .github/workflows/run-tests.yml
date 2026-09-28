@@ -2,9 +2,9 @@ name: CI Build Test and Publish (amd64)
 
 on:
   push:
-    branches: [main]
+    branches: [stable, main]
   pull_request:
-    branches: [main]
+    branches: [stable, main]
   workflow_dispatch:
 
 jobs:
@@ -15,7 +15,8 @@ jobs:
       contents: read
       packages: read
     concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}
+      group: echo-build-main-workspace
+      queue: max
       cancel-in-progress: false
     runs-on: [self-hosted, Linux, X64]
     env:
@@ -25,8 +26,7 @@ jobs:
       ECHO_BUILD_MAIN_SSH_TARGET: ${{ secrets.ECHO_BUILD_MAIN_SSH_TARGET || 'echo-build-main' }}
       ECHO_BUILD_MAIN_SSH_KEY: ${{ secrets.ECHO_BUILD_MAIN_SSH_KEY }}
       ECHO_BUILD_MAIN_WORKDIR: ${{ secrets.ECHO_BUILD_MAIN_WORKDIR || '~/workspace/echo' }}
-      # Optional echo-ci SSH configuration. If these secrets are not set, the
-      # publish step is skipped and we only upload GitHub artifacts.
+      # Optional echo-ci SSH configuration; publishing falls back to host SSH configuration.
       ECHO_CI_SSH_HOST: ${{ secrets.ECHO_CI_SSH_HOST }}
       ECHO_CI_SSH_USER: ${{ secrets.ECHO_CI_SSH_USER }}
       ECHO_CI_SSH_KEY: ${{ secrets.ECHO_CI_SSH_KEY }}
@@ -108,18 +108,18 @@ jobs:
         run: bash deploy/ci/run_on_build_main.sh sync
 
       - name: Run combined FE/BE tests on echo-build-main
-        if: github.event_name != 'push' || github.ref != 'refs/heads/main'
+        if: github.event_name != 'push' || github.ref != 'refs/heads/stable'
         timeout-minutes: 30
         shell: "bash --noprofile --norc {0}"
         run: bash deploy/ci/run_on_build_main.sh stage run-tests
 
       - name: Mark deploy started in redis on echo-build-main
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/stable'
         shell: "bash --noprofile --norc {0}"
         run: bash deploy/ci/run_on_build_main.sh stage redis-mark started
 
       - name: Build deb packages on echo-build-main
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/stable'
         shell: "bash --noprofile --norc {0}"
         run: bash deploy/ci/run_on_build_main.sh stage build-debs
 
@@ -136,17 +136,17 @@ jobs:
       # Publish directly from this job for speed. Do not gate on secrets;
       # the script falls back to runner-configured SSH when explicit secrets are absent.
       - name: Publish to echo-ci from echo-build-main
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/stable'
         shell: "bash --noprofile --norc {0}"
         run: bash deploy/ci/run_on_build_main.sh stage publish
 
       - name: Mark deploy finished in redis on echo-build-main
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/stable'
         shell: "bash --noprofile --norc {0}"
         run: bash deploy/ci/run_on_build_main.sh stage redis-mark finished
 
       - name: Discord notification - CI failure
-        if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/stable'
         env:
           DISCORD_WEBHOOK_URL_CI: ${{ secrets.DISCORD_WEBHOOK_URL_CI }}
         shell: "bash --noprofile --norc {0}"
@@ -157,7 +157,7 @@ jobs:
             ci_failure "" "CI Build Failed" \
             "Build failed in workflow 'CI Build Test and Publish (amd64)'." || true
 
-      - name: Remove remote target on failure
-        if: failure()
+      - name: Remove remote packages on release failure
+        if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/stable'
         shell: "bash --noprofile --norc {0}"
         run: bash deploy/ci/run_on_build_main.sh stage cleanup-failure

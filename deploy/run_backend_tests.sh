@@ -7,9 +7,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
-# Push and manual workflow runs do not provide GITHUB_BASE_REF. The CI
-# workflow targets main, so use it when the pull-request-only variable is absent.
-export GITHUB_BASE_REF="${GITHUB_BASE_REF:-main}"
+# Preserve PR targets; manual stable runs compare against stable.
+if [[ "${GITHUB_REF:-}" == "refs/heads/stable" ]]; then
+    export GITHUB_BASE_REF="${GITHUB_BASE_REF:-stable}"
+else
+    export GITHUB_BASE_REF="${GITHUB_BASE_REF:-main}"
+fi
 
 python3 -m unittest scripts/ci/test_check_analytics_migrations.py
 python3 scripts/ci/check_analytics_migrations.py

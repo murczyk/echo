@@ -60,6 +60,7 @@ Implementation plan (active-only desktop → pending soak → cheap cards → op
 - **Idle viewport offload (multi-feed):** after ~10s without pointer/wheel/touch on a feed, off-viewport rows in that column become height placeholders; interaction remounts the full 40-window. All columns stay visible.
 - **Collapsed media (Duty, [#3161](https://github.com/echoua/echo/issues/3161)):** optional setting (default of) hides audio / photo·video / coordinates behind a reveal banner until clicked. Toggle in Settings → Оперативний.
 - Arrow down: explicit load (if needed) → one landing → hard unread catch-up. It does not authorize later background following. FAB shows a spinner while newer `get-inbox` is in flight.
+- **Underfilled window fallback ([#3615](https://github.com/echoua/echo/issues/3615)):** when the mounted window does not overflow, a deliberate upward wheel or focused Up/PageUp requests older history; a downward wheel or focused Down/PageDown flushes buffered newer items or requests a newer page. It never runs on mount, never drains history automatically, ignores nested controls and modified/zoom input, and coalesces input until the directional attempt settles. Native scrolling remains the owner once the window overflows. Regression: `wdintel-web/tests/e2e/rer-duty-scroll-stability.spec.ts` and `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useWindowedFeedScroll.spec.tsx`.
 
 ## Do not
 

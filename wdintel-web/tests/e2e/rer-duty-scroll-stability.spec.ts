@@ -26,6 +26,15 @@ function buildInboxResponse(ids: number[]): InboxMessagesRspRaw {
   };
 }
 
+function buildShortInboxResponse(ids: number[]): InboxMessagesRspRaw {
+  const response = buildInboxResponse(ids);
+  response.inbox_items = ids.map((id) => [
+    id,
+    { ...buildInboxMessage(id), text: `Card ${id}` } as never,
+  ]);
+  return response;
+}
+
 const compactTagIds = Array.from({ length: 18 }, (_, index) => index + 1);
 const compactTagsResponse = compactTagIds.map((id) => [
   id,
@@ -118,8 +127,145 @@ async function readBottomDistance(scroller: Locator) {
 
 const initialInboxIds = Array.from({ length: 40 }, (_, index) => index + 1);
 
-// https://github.com/echoua/echo/issues/3546
-test('uses creation time for Duty ordering and display with an event-time Analysis preference @smoke', async ({
+// Regression: https://github.com/echoua/echo/issues/3615
+test('#3615 uses real upward wheel input to page an underfilled OFF feed @regression', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 3440, height: 1440 });
+  const olderCursors: number[] = [];
+  await installRerDutyShortStateMocks(page, {
+    userSettingsResponse: { tagsLayout: 'compact', disableAutoScroll: true },
+    inboxResponseForRequest: (request) => {
+      const beforeId = readBeforeId(request);
+      if (beforeId === 196) {
+        olderCursors.push(beforeId);
+        return buildInboxResponse(Array.from({ length: 20 }, (_, index) => index + 176));
+      }
+      if (beforeId != null || readSinceId(request) != null) return buildInboxResponse([]);
+      return buildShortInboxResponse([196, 197, 198, 199, 200]);
+    },
+  });
+
+  await page.goto('/rer-duty-neo?state-short=short-1');
+  const scroller = page.locator('[data-duty-feed-scroller="true"]');
+  await expect(page.locator('[data-duty-message-id]')).toHaveCount(5);
+  await expect
+    .poll(() => scroller.evaluate((element) => element.scrollHeight <= element.clientHeight + 1))
+    .toBe(true);
+
+  const bounds = await scroller.boundingBox();
+  if (!bounds) throw new Error('Duty feed scroller is not visible');
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.mouse.wheel(0, -240);
+
+  await expect.poll(() => olderCursors).toEqual([196]);
+  await expect(page.locator('[data-duty-message-id="176"]')).toBeVisible();
+  await expect
+    .poll(() => scroller.evaluate((element) => element.scrollHeight > element.clientHeight + 1))
+    .toBe(true);
+
+  await scroller.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await page.mouse.wheel(0, 480);
+  await expect.poll(() => scroller.evaluate((element) => element.scrollTop > 0)).toBe(true);
+});
+
+// Regression: https://github.com/echoua/echo/issues/3615
+test('#3615 uses real downward wheel input to page an underfilled historical window @regression', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 3440, height: 1440 });
+  const newerCursors: number[] = [];
+  const olderCursors: number[] = [];
+  await installRerDutyShortStateMocks(page, {
+    userSettingsResponse: { tagsLayout: 'compact', disableAutoScroll: true },
+    inboxResponseForRequest: (request) => {
+      const beforeId = readBeforeId(request);
+      const sinceId = readSinceId(request);
+      if (beforeId != null) {
+        olderCursors.push(beforeId);
+        return buildInboxResponse([]);
+      }
+      if (sinceId === 180) {
+        newerCursors.push(sinceId);
+        return buildInboxResponse(Array.from({ length: 20 }, (_, index) => index + 181));
+      }
+      if (sinceId != null) return buildInboxResponse([]);
+      return buildShortInboxResponse([176, 177, 178, 179, 180]);
+    },
+  });
+
+  await page.goto('/rer-duty-neo?state-short=short-1');
+  const scroller = page.locator('[data-duty-feed-scroller="true"]');
+  await expect(page.locator('[data-duty-message-id]')).toHaveCount(5);
+  await expect
+    .poll(() => scroller.evaluate((element) => element.scrollHeight <= element.clientHeight + 1))
+    .toBe(true);
+
+  const bounds = await scroller.boundingBox();
+  if (!bounds) throw new Error('Duty feed scroller is not visible');
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.mouse.wheel(0, 240);
+
+  await expect.poll(() => newerCursors).toEqual([180]);
+  await expect(page.locator('[data-duty-message-id="181"]')).toBeVisible();
+  expect(olderCursors).toEqual([]);
+});
+
+// Regression: https://github.com/echoua/echo/issues/3615
+test('#3615 preserves native overflow scrolling over a message-card button @regression', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await installRerDutyShortStateMocks(page, {
+    userSettingsResponse: { tagsLayout: 'compact', disableAutoScroll: true },
+    inboxResponse: buildInboxResponse(initialInboxIds),
+  });
+  await page.goto('/rer-duty-neo?state-short=short-1');
+  const scroller = page.locator('[data-duty-feed-scroller="true"]');
+  await expect(page.locator('[data-duty-message-id="40"]')).toBeAttached();
+  await expect
+    .poll(() => scroller.evaluate((element) => element.scrollHeight > element.clientHeight + 1))
+    .toBe(true);
+  await scroller.evaluate(async (element) => {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  });
+  const startingScrollTop = await scroller.evaluate((element) => {
+    const maximumScrollTop = element.scrollHeight - element.clientHeight;
+    if (maximumScrollTop <= 200) throw new Error('Duty feed has no safe interior scroll position');
+    element.scrollTop = Math.round(maximumScrollTop / 2);
+    return element.scrollTop;
+  });
+  expect(startingScrollTop).toBeGreaterThan(0);
+  const cardId = await scroller.evaluate((element) => {
+    const scrollerRect = element.getBoundingClientRect();
+    const card = Array.from(element.querySelectorAll<HTMLElement>('[data-duty-message-id]')).find(
+      (item) => {
+        const rect = item.getBoundingClientRect();
+        return (
+          rect.top >= scrollerRect.top &&
+          rect.bottom <= scrollerRect.bottom &&
+          item.querySelector('button')
+        );
+      },
+    );
+    if (!card?.dataset.dutyMessageId) throw new Error('No fully visible message-card button');
+    return card.dataset.dutyMessageId;
+  });
+  const cardButton = page.locator(`[data-duty-message-id="${cardId}"] button`).first();
+  const bounds = await cardButton.boundingBox();
+  if (!bounds) throw new Error('Message card button is not visible');
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.mouse.wheel(0, 480);
+  await expect
+    .poll(() => scroller.evaluate((element, start) => element.scrollTop > start, startingScrollTop))
+    .toBe(true);
+});
+
+// Regression: https://github.com/echoua/echo/issues/3546
+test('uses creation time for Duty ordering and display with an event-time Analysis preference @smoke @regression', async ({
   page,
 }) => {
   const createdAt = Date.UTC(2026, 8, 19, 8);
@@ -157,7 +303,6 @@ test('uses creation time for Duty ordering and display with an event-time Analys
   );
   expect(fixture.getLastInboxRequest()).toMatchObject({ sort_by: 'IMSCreatedAt' });
 });
-
 test('keeps a compact-tag reading anchor stable while prepending an older chunk', async ({
   page,
 }) => {
@@ -237,7 +382,8 @@ test('keeps a compact-tag reading anchor stable while prepending an older chunk'
   ).toBeLessThanOrEqual(1);
 });
 
-test('#3496 reloads the newest chunk after it was evicted by history paging @smoke', async ({
+// Regression: https://github.com/echoua/echo/issues/3496
+test('#3496 reloads the newest chunk after it was evicted by history paging @smoke @regression', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -289,7 +435,10 @@ test('#3496 reloads the newest chunk after it was evicted by history paging @smo
   expect(newerSinceIds).toContain(40);
 });
 
-test('#3496 lets the arrow land on a newest chunk evicted by history paging', async ({ page }) => {
+// Regression: https://github.com/echoua/echo/issues/3496
+test('#3496 lets the arrow land on a newest chunk evicted by history paging @regression', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   const arrowRequestStarted = createDeferred<void>();
   const arrowResponse = createDeferred<InboxMessagesRspRaw>();
@@ -339,7 +488,10 @@ test('#3496 lets the arrow land on a newest chunk evicted by history paging', as
   expect(newerRequests).toEqual([{ sinceId: 40, nolimit: true }]);
 });
 
-test('#3360 lands initially when ON settings resolve before the inbox', async ({ page }) => {
+// Regression: https://github.com/echoua/echo/issues/3360
+test('#3360 lands initially when ON settings resolve before the inbox @regression', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   const inboxResponse = createDeferred<InboxMessagesRspRaw>();
   await installRerDutyShortStateMocks(page, {
@@ -354,7 +506,8 @@ test('#3360 lands initially when ON settings resolve before the inbox', async ({
   await expect.poll(() => readBottomDistance(scroller)).toBeLessThanOrEqual(1);
 });
 
-test('#3360 defers an ON initial landing until settings resolve', async ({ page }) => {
+// Regression: https://github.com/echoua/echo/issues/3360
+test('#3360 defers an ON initial landing until settings resolve @regression', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   const settingsResponse = createDeferred<{ tagsLayout: string; disableAutoScroll: boolean }>();
   await installRerDutyShortStateMocks(page, {
@@ -371,7 +524,8 @@ test('#3360 defers an ON initial landing until settings resolve', async ({ page 
   await expect.poll(() => readBottomDistance(scroller)).toBeLessThanOrEqual(1);
 });
 
-test('lands at the newest message with auto-scroll OFF after settings resolve', async ({
+// Regression: https://github.com/echoua/echo/issues/3360
+test('lands at the newest message with auto-scroll OFF after settings resolve @regression', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -391,7 +545,10 @@ test('lands at the newest message with auto-scroll OFF after settings resolve', 
   await expect(page.locator('[data-duty-message-id="40"]')).toBeInViewport();
 });
 
-test('#3360 preserves manual reading while ON settings are pending', async ({ page }) => {
+// Regression: https://github.com/echoua/echo/issues/3360
+test('#3360 preserves manual reading while ON settings are pending @regression', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   const settingsResponse = createDeferred<{ tagsLayout: string; disableAutoScroll: boolean }>();
   await installRerDutyShortStateMocks(page, {
@@ -410,7 +567,8 @@ test('#3360 preserves manual reading while ON settings are pending', async ({ pa
   await expect.poll(() => readBottomDistance(scroller)).toBeGreaterThan(1);
 });
 
-test('#3360 does not restart OFF initialization when ON is selected while reading history', async ({
+// Regression: https://github.com/echoua/echo/issues/3360
+test('#3360 does not restart OFF initialization when ON is selected while reading history @regression', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -437,7 +595,8 @@ test('#3360 does not restart OFF initialization when ON is selected while readin
   await expect.poll(() => readBottomDistance(scroller)).toBeGreaterThan(1);
 });
 
-test('#3360 blocks initial landing when settings fail to load', async ({ page }) => {
+// Regression: https://github.com/echoua/echo/issues/3360
+test('#3360 blocks initial landing when settings fail to load @regression', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await installRerDutyShortStateMocks(page, {
     userSettingsFailure: true,
@@ -450,7 +609,8 @@ test('#3360 blocks initial landing when settings fail to load', async ({ page })
   await expect.poll(() => readBottomDistance(scroller)).toBeGreaterThan(1);
 });
 
-test('follows only while the bottom arrow is hidden and preserves the reading anchor @smoke', async ({
+// Regression: https://github.com/echoua/echo/pull/3268
+test('follows only while the bottom arrow is hidden and preserves the reading anchor @smoke @regression', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -529,7 +689,10 @@ test('follows only while the bottom arrow is hidden and preserves the reading an
   await expect(bottomButton).toHaveCount(0);
 });
 
-test('lands an OFF feed at the newest message during its initial load @smoke', async ({ page }) => {
+// Regression: https://github.com/echoua/echo/issues/3360
+test('lands an OFF feed at the newest message during its initial load @smoke @regression', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await installRerDutyShortStateMocks(page, {
     disableAutoScroll: true,
@@ -544,7 +707,10 @@ test('lands an OFF feed at the newest message during its initial load @smoke', a
   await expect(list.locator('[data-duty-message-id="40"]')).toBeInViewport();
 });
 
-test('lands an OFF feed at the newest message after remounting the route', async ({ page }) => {
+// Regression: https://github.com/echoua/echo/issues/3360
+test('lands an OFF feed at the newest message after remounting the route @regression', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await installRerDutyShortStateMocks(page, {
     disableAutoScroll: true,
@@ -561,7 +727,8 @@ test('lands an OFF feed at the newest message after remounting the route', async
   await expect(list.locator('[data-duty-message-id="40"]')).toBeInViewport();
 });
 
-test('#3360 uses a verified nonanimated landing when reduced motion is preferred', async ({
+// Regression: https://github.com/echoua/echo/issues/3360
+test('#3360 uses a verified nonanimated landing when reduced motion is preferred @regression', async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -576,7 +743,8 @@ test('#3360 uses a verified nonanimated landing when reduced motion is preferred
   await expect.poll(() => readBottomDistance(scroller)).toBeLessThanOrEqual(1);
 });
 
-test('#3360 makes OFF arrivals at the physical bottom reachable by scrolling downward', async ({
+// Regression: https://github.com/echoua/echo/issues/3360
+test('#3360 makes OFF arrivals at the physical bottom reachable by scrolling downward @regression', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -634,7 +802,8 @@ test('#3360 makes OFF arrivals at the physical bottom reachable by scrolling dow
   await expect.poll(() => readBottomDistance(scroller)).toBeLessThanOrEqual(1);
 });
 
-test('#3360 lets manual OFF reading reveal buffered arrivals without following them', async ({
+// Regression: https://github.com/echoua/echo/issues/3360
+test('#3360 lets manual OFF reading reveal buffered arrivals without following them @regression', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -672,7 +841,10 @@ test('#3360 lets manual OFF reading reveal buffered arrivals without following t
   await expect(list.locator('[data-duty-message-id="1"]')).toBeAttached();
 });
 
-test('#3360 lets an OFF arrow land an explicitly requested tail page', async ({ page }) => {
+// Regression: https://github.com/echoua/echo/issues/3360
+test('#3360 lets an OFF arrow land an explicitly requested tail page @regression', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   const arrowRequestStarted = createDeferred<void>();
   const arrowResponse = createDeferred<InboxMessagesRspRaw>();
@@ -712,10 +884,11 @@ test('#3360 lets an OFF arrow land an explicitly requested tail page', async ({ 
   await expect(page.getByText('Завантажено нові повідомлення')).toBeVisible();
 });
 
-test('#3400 releases narrow-screen arrow loading when its scroll owner is replaced', async ({
+// Regression: https://github.com/echoua/echo/issues/3400
+test('#3400 releases arrow loading when its scroll owner is replaced @regression', async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 800, height: 900 });
+  await page.setViewportSize({ width: 1280, height: 900 });
   const arrowRequestStarted = createDeferred<void>();
   const arrowResponse = createDeferred<InboxMessagesRspRaw>();
   let newerRequestCount = 0;
@@ -743,6 +916,7 @@ test('#3400 releases narrow-screen arrow loading when its scroll owner is replac
   await page.goto('/rer-duty-neo?state-short=short-1');
   const arrow = page.getByRole('button', { name: 'Завантажити нові та перейти вниз' });
   await page.getByRole('button', { name: 'Додати стрічку' }).click();
+  await page.setViewportSize({ width: 800, height: 900 });
   await expect(page.getByRole('tab', { name: 'Стрічка 1' })).toBeVisible();
   await page.getByRole('tab', { name: 'Стрічка 1' }).click();
   await expect(page.locator('[data-duty-message-id="40"]')).toBeAttached();
@@ -766,7 +940,8 @@ test('#3400 releases narrow-screen arrow loading when its scroll owner is replac
   await expect(page.getByLabel('Завантаження нових повідомлень')).toHaveCount(0);
 });
 
-test('#3360 verifies an OFF arrow landing when a positive count has no newer page', async ({
+// Regression: https://github.com/echoua/echo/issues/3360
+test('#3360 verifies an OFF arrow landing when a positive count has no newer page @regression', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -804,7 +979,8 @@ test('#3360 verifies an OFF arrow landing when a positive count has no newer pag
   await expect(page.getByText('Завантажено нові повідомлення')).toBeVisible();
 });
 
-test('#3360 uses an instant verified landing for reduced-motion arrow navigation', async ({
+// Regression: https://github.com/echoua/echo/issues/3360
+test('#3360 uses an instant verified landing for reduced-motion arrow navigation @regression', async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -842,7 +1018,8 @@ test('#3360 uses an instant verified landing for reduced-motion arrow navigation
   await expect.poll(() => readBottomDistance(scroller)).toBeLessThanOrEqual(1);
 });
 
-test('#3360 releases an arrow loading state when a pending count navigation is cancelled', async ({
+// Regression: https://github.com/echoua/echo/issues/3360
+test('#3360 releases an arrow loading state when a pending count navigation is cancelled @regression', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -882,7 +1059,8 @@ test('#3360 releases an arrow loading state when a pending count navigation is c
   await expect(arrow).toBeEnabled();
 });
 
-test('#3360 keeps an OFF reading anchor stable while a long snackbar error is shown @smoke', async ({
+// Regression: https://github.com/echoua/echo/issues/3360
+test('#3360 keeps an OFF reading anchor stable while a long snackbar error is shown @smoke @regression', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -935,7 +1113,10 @@ test('#3360 keeps an OFF reading anchor stable while a long snackbar error is sh
   await expect.poll(() => readAnchorOffset(anchor)).toBeCloseTo(anchorBefore.offsetTop, 0);
 });
 
-test('#3400 keeps an unbroken snackbar error within the narrow viewport', async ({ page }) => {
+// Regression: https://github.com/echoua/echo/issues/3400
+test('#3400 keeps an unbroken snackbar error within the narrow viewport @regression', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const longError = 'unbroken-server-error-'.repeat(80);
   await installRerDutyShortStateMocks(page, {

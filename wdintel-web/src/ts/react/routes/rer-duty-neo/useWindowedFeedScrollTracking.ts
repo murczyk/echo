@@ -82,7 +82,7 @@ export function useWindowedFeedScrollTracking(args: {
   }, [refs]);
 
   const scheduleLoadNewerIdle = useCallback(
-    (onLoadNewer: () => void) => {
+    (onLoadNewer: () => void | Promise<unknown>) => {
       cancelLoadNewerIdle();
       refs.loadNewerIdleTimeoutRef.current = setTimeout(() => {
         refs.loadNewerIdleTimeoutRef.current = null;

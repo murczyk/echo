@@ -1465,6 +1465,24 @@ function defaultProviderRuntimeProfile(
   engine: AiEngineItem,
 ): AiAgentSettings['providerRuntimeProfiles'][number] {
   const modelName = engine.modelName.toLowerCase();
+  if (modelName === 'gpt-6-sol') {
+    return {
+      aiEngineId: engine.id,
+      contextWindowTokens: 1_050_000,
+      maxOutputTokens: 65_536,
+      compactionReserveTokens: 131_072,
+      compactionKeepRecentTokens: 49_152,
+    };
+  }
+  if (modelName === 'gpt-6-luna') {
+    return {
+      aiEngineId: engine.id,
+      contextWindowTokens: 1_050_000,
+      maxOutputTokens: 32_768,
+      compactionReserveTokens: 131_072,
+      compactionKeepRecentTokens: 32_768,
+    };
+  }
   if (modelName === 'gpt-5.6-sol') {
     return {
       aiEngineId: engine.id,

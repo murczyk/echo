@@ -52,8 +52,20 @@ pub async fn parse_signal_message(
         (None, false)
     };
 
-    parse_signal_message_body(env, &env.dbx, &body, aor_id, is_aviation_group)
-        .await
+    let mut parsed = parse_signal_message_body(
+        env,
+        &env.dbx,
+        &body,
+        aor_id,
+        is_aviation_group,
+    )
+    .await
+    .c(h!())?;
+    if payload.include_ai_callsigns {
+        super::callsigns::enrich(env, &body, is_aviation_group, &mut parsed)
+            .await;
+    }
+    Ok(parsed)
 }
 
 pub async fn copy_signal_messages(
@@ -299,14 +311,18 @@ where
         };
     let timezone = crate::config::get_tz();
     let local_now = chrono::Local::now().with_timezone(&timezone);
-    let timestamp =
-        crate::rer_importer::datetime::extract_datetime(local_now, body)?
-            .and_then(|datetime| {
-                timezone.from_local_datetime(&datetime).single()
-            })
-            .map(|datetime| {
-                datetime.to_rfc3339_opts(SecondsFormat::Secs, true)
-            });
+    let extracted_dt =
+        crate::rer_importer::datetime::extract_datetime_with_precision(
+            local_now, body,
+        )
+        .c(h!())?;
+    let timestamp = extracted_dt.as_ref().and_then(|dt| {
+        timezone
+            .from_local_datetime(&dt.datetime)
+            .single()
+            .map(|datetime| datetime.to_rfc3339_opts(SecondsFormat::Secs, true))
+    });
+    let is_time_null = extracted_dt.map(|dt| !dt.has_time);
     let comment_blacklist =
         crate::sigint::comments::load_blacklist(dbx).await?;
     let comments = crate::sigint::parser::parse_comments_with_blacklist(
@@ -315,6 +331,7 @@ where
     );
 
     Ok(DirectSubmitParseRsp {
+        ai_callsign_warning: None,
         text: text.body,
         freq: crate::rer_importer::frequency::extract_freq(body)?
             .map(|freq| crate::rer_importer::frequency::etalon(&freq)),
@@ -327,6 +344,7 @@ where
             .collect(),
         to: callsigns,
         timestamp,
+        is_time_null,
         comment: comments.bottom.or(comments.top),
         post: crate::rer_importer::post::extract_post(body)?,
         unit,
@@ -1417,6 +1435,22 @@ mod tests {
                 .unwrap();
         assert_eq!(parsed.unit.as_deref(), Some(label));
         assert_eq!(parsed.unit_v2.as_deref(), Some(unit.name.as_str()));
+        assert_eq!(parsed.is_time_null, Some(false));
+        assert!(parsed.timestamp.is_some());
+
+        let body_no_time = format!("{label}  | 2026-09-16\n- С тест");
+        let parsed_no_time = parse_signal_message_body(
+            &env,
+            &env.dbx,
+            &body_no_time,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(parsed_no_time.unit.as_deref(), Some(label));
+        assert_eq!(parsed_no_time.is_time_null, Some(true));
+        assert!(parsed_no_time.timestamp.is_some());
     }
 
     #[tokio::test]

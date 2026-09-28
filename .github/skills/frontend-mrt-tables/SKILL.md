@@ -80,9 +80,10 @@ Use when editing `material-react-table` usage in `wdintel-web/src/ts/react`, esp
 - Relevant tests and build checks pass.
 
 ## Targeted checks
-- `cd wdintel-web && npx vitest run src/ts/react/components/MrtRowActionButton.spec.tsx`
-- `cd wdintel-web && npx vitest run src/ts/react/components/mui-customized/menu.spec.tsx`
-- `cd wdintel-web && npx vitest run src/ts/react/components/mui-customized/table/get-default-table-options.spec.ts`
+- `cd wdintel-web && npm run test:structure-check`
+- Run meaningful affected coverage admitted by `CODE_REVIEW.md`, based on its
+  observable behavior and concrete failure mode.
+- Manually verify internal-column order, stale local-storage normalization, and overflow disclosure when no faithful test boundary exists.
 - `just build-front`
 
 ## Assumptions

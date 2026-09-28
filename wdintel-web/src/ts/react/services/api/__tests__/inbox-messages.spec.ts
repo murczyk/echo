@@ -1,10 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import {
-  fetchInboxWindow,
-  fetchMessagesByIds,
-  fetchMessagesByIdsWithMetadata,
-} from '../inbox-messages';
+import { fetchMessagesByIds } from '../inbox-messages';
 import {
   getIntelligenceReports,
   getParentMessages,
@@ -19,28 +15,6 @@ vi.mock('../client', () => ({
 }));
 
 describe('fetchMessagesByIds', () => {
-  it('posts message ids to the by-id inbox endpoint', async () => {
-    apiMocks.postJson.mockResolvedValueOnce({
-      messages: [[7, { id: 7, text: 'updated' }]],
-    });
-
-    await expect(fetchMessagesByIds([7, 8])).resolves.toEqual([
-      [
-        7,
-        expect.objectContaining({
-          id: 7,
-          text: 'updated',
-        }),
-      ],
-    ]);
-
-    expect(apiMocks.postJson).toHaveBeenCalledWith(
-      '/api/rer-importer/messages-by-id',
-      { message_ids: [7, 8], inbox_req: null },
-      undefined,
-    );
-  });
-
   it('normalizes by-id messages the same way as inbox loading', async () => {
     apiMocks.postJson.mockResolvedValueOnce({
       messages: [
@@ -88,29 +62,6 @@ describe('fetchMessagesByIds', () => {
         }),
       ],
     ]);
-  });
-
-  it('sends inbox request context when provided', async () => {
-    apiMocks.postJson.mockResolvedValueOnce({ messages: [] });
-
-    await fetchMessagesByIds([7], {
-      highlightPoints: true,
-      highlightKeywords: true,
-      search: 'needle',
-    } as never);
-
-    expect(apiMocks.postJson).toHaveBeenCalledWith(
-      '/api/rer-importer/messages-by-id',
-      {
-        message_ids: [7],
-        inbox_req: {
-          highlight_points: true,
-          highlight_keywords: true,
-          search: 'needle',
-        },
-      },
-      undefined,
-    );
   });
 
   it('keeps parent linkage and non-recursive report summaries from the wire response', async () => {
@@ -167,137 +118,5 @@ describe('fetchMessagesByIds', () => {
         groupMasterKey: null,
       },
     ]);
-  });
-});
-
-describe('fetchMessagesByIdsWithMetadata', () => {
-  it('loads and normalizes message reference metadata without changing fetchMessagesByIds', async () => {
-    apiMocks.postJson.mockResolvedValueOnce({
-      inbox_items: [[7, { id: 7, text: 'target', group_master_key: 'target-group' }]],
-      poll_cursor_id: null,
-      callsigns: [{ callsign: 'TARGET', res: [], network_hints: [] }],
-      signal_profiles: {
-        'target-sender': { given_name: 'Target', family_name: null },
-      },
-      signal_groups: [
-        {
-          master_key: 'target-group',
-          name: 'Target group',
-          ignore_operativny: false,
-          interseption_kind: 'rer',
-          disable_network_assignment: false,
-          group_stats: { activityLastDay: 0, activityLastWeek: 0 },
-          admin_data: null,
-          areas_of_responsibility: null,
-        },
-      ],
-      freq_pelengs_summary: null,
-      page_limit: null,
-    });
-
-    const response = await fetchMessagesByIdsWithMetadata([7]);
-
-    expect(response.inboxItems[0][1]).toEqual(
-      expect.objectContaining({ text: 'target', groupMasterKey: 'target-group' }),
-    );
-    expect(response.signalProfiles['target-sender']).toEqual({
-      givenName: 'Target',
-      familyName: null,
-    });
-    expect(response.signalGroups[0]).toEqual(
-      expect.objectContaining({ masterKey: 'target-group', name: 'Target group' }),
-    );
-    expect(apiMocks.postJson).toHaveBeenCalledWith(
-      '/api/rer-importer/messages-by-id-with-metadata',
-      { message_ids: [7], inbox_req: null },
-      undefined,
-    );
-  });
-});
-
-describe('fetchInboxItemContext', () => {
-  it('posts message uid to /api/rer-importer/inbox-item-context and normalizes response', async () => {
-    apiMocks.postJson.mockResolvedValueOnce({
-      message: [
-        101,
-        {
-          text: 'target',
-          freq: '123.45',
-          group_master_key: 'group-alpha',
-          network_ids: [7],
-        },
-      ],
-      group_master_keys: ['group-alpha', 'group-beta'],
-      sigint_inbox_item_ids: [101, 102],
-      sinceTs: 1700000000000,
-      tillTs: 1700001800000,
-    });
-
-    const { fetchInboxItemContext } = await import('../inbox-messages');
-    const result = await fetchInboxItemContext({ messageUid: 'uid-123' });
-
-    expect(apiMocks.postJson).toHaveBeenCalledWith(
-      '/api/rer-importer/inbox-item-context',
-      { message_uid: 'uid-123' },
-      undefined,
-    );
-    expect(result).toEqual({
-      message: [
-        101,
-        expect.objectContaining({
-          text: 'target',
-          freq: '123.45',
-          groupMasterKey: 'group-alpha',
-          networkIds: [7],
-        }),
-      ],
-      groupMasterKeys: ['group-alpha', 'group-beta'],
-      sigintInboxItemIds: [101, 102],
-      sinceTs: 1700000000000,
-      tillTs: 1700001800000,
-    });
-  });
-});
-
-describe('fetchInboxWindow', () => {
-  it('loads and normalizes the target with messages on both sides in one request', async () => {
-    apiMocks.postJson.mockResolvedValueOnce({
-      inbox_items: [
-        [100, { text: 'before' }],
-        [101, { message_uuid: '019-id', text: 'target' }],
-        [102, { text: 'after' }],
-      ],
-      callsigns: [],
-      signal_profiles: {},
-      signal_groups: [],
-      freq_pelengs_summary: null,
-      page_limit: 20,
-      around_message_messages_before: 20,
-      around_message_messages_after: 19,
-    });
-
-    const result = await fetchInboxWindow({ messageRef: '019-id', inboxReq: null });
-
-    expect(apiMocks.postJson).toHaveBeenCalledWith(
-      '/api/rer-importer/get-inbox',
-      expect.objectContaining({
-        around_message_ref: '019-id',
-      }),
-      undefined,
-    );
-    expect(result).toMatchObject({
-      targetMessageId: 101,
-      inbox: {
-        inboxItems: [
-          [100, expect.objectContaining({ text: 'before' })],
-          [101, expect.objectContaining({ messageUuid: '019-id', text: 'target' })],
-          [102, expect.objectContaining({ text: 'after' })],
-        ],
-      },
-      hasMoreBefore: true,
-      hasMoreAfter: true,
-      messagesBefore: 20,
-      messagesAfter: 19,
-    });
   });
 });

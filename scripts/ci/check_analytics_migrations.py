@@ -108,13 +108,55 @@ def parse_exclusions(contents: str) -> set[str]:
     return exclusions
 
 
+CONSTRAINT_ACTION_RE = re.compile(
+    r"^\s*(?:add|drop|validate)\s+constraint\b",
+    re.IGNORECASE,
+)
+
+
+def statement_after(contents: str, start: int) -> str:
+    semicolon = contents.find(";", start)
+    if semicolon < 0:
+        return contents[start:]
+    return contents[start:semicolon]
+
+
+def sql_actions(body: str) -> list[str]:
+    actions: list[str] = []
+    depth = 0
+    start = 0
+    for index, char in enumerate(body):
+        if char == "(":
+            depth += 1
+        elif char == ")" and depth:
+            depth -= 1
+        elif char == "," and depth == 0:
+            actions.append(body[start:index])
+            start = index + 1
+    actions.append(body[start:])
+    return [action for action in actions if action.strip()]
+
+
+def constraint_only_alter(body: str) -> bool:
+    # Check constraints do not change the column catalog ClickHouse syncs.
+    # Treat them like indexes: declare an empty analytics impact list.
+    # Column changes may omit the COLUMN keyword, including beside a constraint.
+    actions = sql_actions(body)
+    return bool(actions) and all(CONSTRAINT_ACTION_RE.match(action) for action in actions)
+
+
 def detect_ddl(contents: str) -> list[DdlChange]:
     changes: list[DdlChange] = []
     for match in DDL_RE.finditer(contents):
+        operation = match.group("operation").lower()
+        if operation == "alter" and constraint_only_alter(
+            statement_after(contents, match.end())
+        ):
+            continue
         table = match.group("table").lower()
         if "." not in table:
             table = f"public.{table}"
-        changes.append(DdlChange(match.group("operation").lower(), table))
+        changes.append(DdlChange(operation, table))
     return changes
 
 
