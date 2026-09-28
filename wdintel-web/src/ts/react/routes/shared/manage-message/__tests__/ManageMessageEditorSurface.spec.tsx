@@ -165,6 +165,48 @@ describe('ManageMessageEditorSurface', () => {
     expect(document.querySelector('[data-manage-message-presentation="embedded"]')).toBeNull();
   });
 
+  it('keeps an embedded surface mounted for its exit animation before removing it', async () => {
+    vi.useFakeTimers();
+    await act(async () =>
+      root.render(
+        <ManageMessageEditorSurface
+          dismissDisabled={false}
+          onRequestClose={vi.fn()}
+          open
+          presentation="embedded"
+          titleId="message-editor-title"
+        >
+          <EditorContent />
+        </ManageMessageEditorSurface>,
+      ),
+    );
+
+    await act(async () =>
+      root.render(
+        <ManageMessageEditorSurface
+          dismissDisabled={false}
+          onRequestClose={vi.fn()}
+          open={false}
+          presentation="embedded"
+          titleId="message-editor-title"
+        >
+          <EditorContent />
+        </ManageMessageEditorSurface>,
+      ),
+    );
+
+    const exitingSurface = document.querySelector<HTMLElement>(
+      '[data-manage-message-presentation="embedded"]',
+    );
+    expect(exitingSurface?.style.animationName).toBe('manage-message-editor-exit');
+    expect(exitingSurface?.getAttribute('aria-hidden')).toBe('true');
+    expect(exitingSurface?.hasAttribute('inert')).toBe(true);
+
+    await act(async () => vi.advanceTimersByTimeAsync(180));
+    expect(document.querySelector('[data-manage-message-presentation="embedded"]')).toBeNull();
+    vi.useRealTimers();
+  });
+
   it('requests close on Escape only while focus belongs to the embedded editor', async () => {
     const onRequestClose = vi.fn();
     await act(async () =>

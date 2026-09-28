@@ -18,22 +18,22 @@ describe('analysisWorkspaceColumns', () => {
     {
       left: false,
       right: false,
-      expected: 'minmax(0, 1fr)',
+      expected: '0px minmax(0, 1fr) minmax(0, 0fr)',
     },
     {
       left: false,
       right: true,
-      expected: 'minmax(360px, 1fr) minmax(0, 1fr)',
+      expected: '0px minmax(0, 1fr) minmax(0, 1fr)',
     },
     {
       left: true,
       right: false,
-      expected: '400px minmax(360px, 1fr)',
+      expected: '400px minmax(0, 1fr) minmax(0, 0fr)',
     },
     {
       left: true,
       right: true,
-      expected: '400px minmax(360px, 1fr) minmax(0, 1fr)',
+      expected: '400px minmax(0, 1fr) minmax(0, 1fr)',
     },
   ])('builds the workspace for left=$left and right=$right', ({ left, right, expected }) => {
     expect(

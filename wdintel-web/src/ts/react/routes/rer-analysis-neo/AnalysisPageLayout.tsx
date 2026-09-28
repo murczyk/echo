@@ -24,7 +24,11 @@ import {
   ManageMessageDrawer,
   type ManageMessageEditorHandle,
 } from '../shared/manage-message/ManageMessageDrawer';
-import { useManageMessageEditorPresentation } from '../shared/manage-message/ManageMessageEditorSurface';
+import {
+  MANAGE_MESSAGE_EDITOR_TRANSITION_EASING,
+  MANAGE_MESSAGE_EDITOR_TRANSITION_MS,
+  useManageMessageEditorPresentation,
+} from '../shared/manage-message/ManageMessageEditorSurface';
 import { getAnalysisCenterTabs } from './types';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
 import { AudioTranscriptionPreferencesProvider } from '../shared/message-card/MessageCardAudioTranscription';
@@ -61,6 +65,7 @@ export function RerAnalysisNeoPage({
   const isAnalysisCompactLayout = useMediaQuery(theme.breakpoints.down('md'));
   const isNarrowLayout = useMediaQuery(theme.breakpoints.down('lg'));
   const editorPresentation = useManageMessageEditorPresentation();
+  const reduceEditorMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const centerTabsId = useId().replace(/:/g, '-');
   const messagesTabId = `${centerTabsId}-messages-tab`;
   const summaryTabId = `${centerTabsId}-summary-tab`;
@@ -337,6 +342,16 @@ export function RerAnalysisNeoPage({
           }
         >
           <Box
+            data-analysis-workspace
+            style={{
+              gridTemplateColumns: analysisWorkspaceColumns({
+                inlineLeftPanelVisible,
+                inlineRightDockVisible,
+              }),
+              transition: reduceEditorMotion
+                ? 'none'
+                : `grid-template-columns ${MANAGE_MESSAGE_EDITOR_TRANSITION_MS}ms ${MANAGE_MESSAGE_EDITOR_TRANSITION_EASING}`,
+            }}
             sx={{
               height: '100%',
               minHeight: 0,
@@ -345,134 +360,134 @@ export function RerAnalysisNeoPage({
               overflow: 'hidden',
               alignItems: 'stretch',
               gridTemplateRows: 'minmax(0,1fr)',
-              gridTemplateColumns: analysisWorkspaceColumns({
-                inlineLeftPanelVisible,
-                inlineRightDockVisible,
-              }),
             }}
           >
-            {inlineLeftPanelVisible ? (
-              <AnalysisLeftPanel
-                page={page}
-                leftPanelVisible
-                isCompactLayout={isAnalysisCompactLayout}
-              />
-            ) : null}
-            <PointBlacklistPaletteNamesCacheProvider>
-              <MessageDeviceAccessProvider allowed={page.cyberEchoEnabled}>
-                {showLoadingSkeletons ? (
-                  <AnalysisLoadingSkeletons
-                    rightPanelVisible={inlineRightDockVisible && rightPanelVisible}
-                  />
-                ) : (
-                  <AudioTranscriptionPreferencesProvider
-                    collapsedByDefault={page.audioTranscriptionCollapsed}
-                    enabled={page.audioTranscriptionEnabled}
-                  >
-                    <AnalysisCenterPanel
-                      page={centerPage}
-                      centerTab={centerTab}
-                      centerTabs={centerTabs}
-                      isCompactLayout={isAnalysisCompactLayout}
-                      isNarrowLayout={isNarrowLayout}
-                      rightPanelVisible={inlineRightDockVisible}
-                      editorSourceMessageId={editorSourceMessageId}
-                      messagesPanelId={messagesPanelId}
-                      messagesTabId={messagesTabId}
-                      summaryPanelId={summaryPanelId}
-                      summaryTabId={summaryTabId}
-                      mapPanelId={mapPanelId}
-                      mapTabId={mapTabId}
-                    />
-                  </AudioTranscriptionPreferencesProvider>
-                )}
-              </MessageDeviceAccessProvider>
-            </PointBlacklistPaletteNamesCacheProvider>
-            <AnalysisRightDock
-              presentation={inlineRightDockVisible ? 'embedded' : 'modal'}
-              editorOpen={editorOpen}
-              analyticsOpen={rightPanelVisible}
-              editor={
-                <ManageMessageDrawer
-                  ref={editorRef}
-                  open={editorOpen}
-                  intentKey={editorIntentKey ?? 'closed'}
-                  presentation={editorPresentation}
-                  adaptiveEmbeddedForm
-                  fillEmbeddedSurface
-                  transparentEmbeddedSurface
-                  focusFallbackRef={createMessageFabRef}
-                  cyberEchoEnabled={page.cyberEchoEnabled}
-                  currentUser={page.currentUser}
-                  editTarget={page.editorMessage}
-                  editAsReport={page.editorEditAsReport}
-                  editTargetLoadState={page.editTargetLoadState}
-                  onRetryEditTargetLoad={page.retryEditTargetLoad}
-                  reportSource={page.reportSource}
-                  editSaveInFlight={page.editorSaveInFlight}
-                  onClose={closeMessageEditor}
-                  onSubmitEdit={
-                    page.editorMessage && !page.editorEditAsReport
-                      ? async (_id, message) => {
-                          await Promise.resolve(page.saveEditor(message));
-                        }
-                      : undefined
-                  }
-                  onEditSuccess={() => {
-                    page.reload();
-                  }}
-                  onDeleteSuccess={() => {
-                    page.reload();
-                    notify({
-                      message: 'Розвіддонесення успішно видалено.',
-                      severity: 'success',
-                    });
-                  }}
-                  onCreated={async () => {
-                    setCreateMessageOpen(false);
-                    setEditorSourceMessageId(null);
-                    page.reload();
-                    notify({
-                      message: page.reportSource
-                        ? 'Розвіддонесення успішно створено.'
-                        : 'Повідомлення успішно створено.',
-                      severity: 'success',
-                    });
-                  }}
+            <Box sx={{ minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
+              {inlineLeftPanelVisible ? (
+                <AnalysisLeftPanel
+                  page={page}
+                  leftPanelVisible
+                  isCompactLayout={isAnalysisCompactLayout}
                 />
-              }
-              analytics={
-                inlineRightDockVisible ? (
-                  showLoadingSkeletons ? (
-                    <AnalysisLoadingSkeletons centerVisible={false} rightPanelVisible />
-                  ) : (
-                    <AnalysisRightPanel
-                      page={page}
-                      rightPanelVisible
-                      isCompactLayout={isAnalysisCompactLayout}
+              ) : null}
+            </Box>
+            <Box sx={{ minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
+              <PointBlacklistPaletteNamesCacheProvider>
+                <MessageDeviceAccessProvider allowed={page.cyberEchoEnabled}>
+                  {showLoadingSkeletons ? (
+                    <AnalysisLoadingSkeletons
+                      rightPanelVisible={inlineRightDockVisible && rightPanelVisible}
                     />
-                  )
-                ) : (
-                  <AnalysisFullscreenPanelDrawer
-                    anchor="right"
-                    title="Аналітична панель"
-                    open={rightPanelVisible && !modalEditorOpen}
-                    onClose={page.toggleRightPanel}
-                  >
-                    {showLoadingSkeletons ? (
+                  ) : (
+                    <AudioTranscriptionPreferencesProvider
+                      collapsedByDefault={page.audioTranscriptionCollapsed}
+                      enabled={page.audioTranscriptionEnabled}
+                    >
+                      <AnalysisCenterPanel
+                        page={centerPage}
+                        centerTab={centerTab}
+                        centerTabs={centerTabs}
+                        isCompactLayout={isAnalysisCompactLayout}
+                        isNarrowLayout={isNarrowLayout}
+                        rightPanelVisible={inlineRightDockVisible}
+                        editorSourceMessageId={editorSourceMessageId}
+                        messagesPanelId={messagesPanelId}
+                        messagesTabId={messagesTabId}
+                        summaryPanelId={summaryPanelId}
+                        summaryTabId={summaryTabId}
+                        mapPanelId={mapPanelId}
+                        mapTabId={mapTabId}
+                      />
+                    </AudioTranscriptionPreferencesProvider>
+                  )}
+                </MessageDeviceAccessProvider>
+              </PointBlacklistPaletteNamesCacheProvider>
+            </Box>
+            <Box sx={{ minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
+              <AnalysisRightDock
+                presentation={inlineRightDockVisible ? 'embedded' : 'modal'}
+                editorOpen={editorOpen}
+                analyticsOpen={rightPanelVisible}
+                editor={
+                  <ManageMessageDrawer
+                    ref={editorRef}
+                    open={editorOpen}
+                    intentKey={editorIntentKey ?? 'closed'}
+                    presentation={editorPresentation}
+                    adaptiveEmbeddedForm
+                    fillEmbeddedSurface
+                    transparentEmbeddedSurface
+                    focusFallbackRef={createMessageFabRef}
+                    cyberEchoEnabled={page.cyberEchoEnabled}
+                    currentUser={page.currentUser}
+                    editTarget={page.editorMessage}
+                    editAsReport={page.editorEditAsReport}
+                    editTargetLoadState={page.editTargetLoadState}
+                    onRetryEditTargetLoad={page.retryEditTargetLoad}
+                    reportSource={page.reportSource}
+                    editSaveInFlight={page.editorSaveInFlight}
+                    onClose={closeMessageEditor}
+                    onSubmitEdit={
+                      page.editorMessage && !page.editorEditAsReport
+                        ? async (_id, message) => {
+                            await Promise.resolve(page.saveEditor(message));
+                          }
+                        : undefined
+                    }
+                    onEditSuccess={() => {
+                      page.reload();
+                    }}
+                    onDeleteSuccess={() => {
+                      page.reload();
+                      notify({
+                        message: 'Розвіддонесення успішно видалено.',
+                        severity: 'success',
+                      });
+                    }}
+                    onCreated={async () => {
+                      page.reload();
+                      notify({
+                        message: page.reportSource
+                          ? 'Розвіддонесення успішно створено.'
+                          : 'Повідомлення успішно створено.',
+                        severity: 'success',
+                      });
+                    }}
+                  />
+                }
+                analytics={
+                  inlineRightDockVisible ? (
+                    showLoadingSkeletons ? (
                       <AnalysisLoadingSkeletons centerVisible={false} rightPanelVisible />
                     ) : (
                       <AnalysisRightPanel
                         page={page}
                         rightPanelVisible
                         isCompactLayout={isAnalysisCompactLayout}
-                        showNarrowCloseButton={false}
                       />
-                    )}
-                  </AnalysisFullscreenPanelDrawer>
-                )
-              }
-            />
+                    )
+                  ) : (
+                    <AnalysisFullscreenPanelDrawer
+                      anchor="right"
+                      title="Аналітична панель"
+                      open={rightPanelVisible && !modalEditorOpen}
+                      onClose={page.toggleRightPanel}
+                    >
+                      {showLoadingSkeletons ? (
+                        <AnalysisLoadingSkeletons centerVisible={false} rightPanelVisible />
+                      ) : (
+                        <AnalysisRightPanel
+                          page={page}
+                          rightPanelVisible
+                          isCompactLayout={isAnalysisCompactLayout}
+                          showNarrowCloseButton={false}
+                        />
+                      )}
+                    </AnalysisFullscreenPanelDrawer>
+                  )
+                }
+              />
+            </Box>
           </Box>
         </Box>
 

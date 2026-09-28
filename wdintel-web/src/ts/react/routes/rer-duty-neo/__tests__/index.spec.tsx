@@ -12,6 +12,7 @@ const useRerDutyFeedsMock = vi.hoisted(() => vi.fn());
 const notifyMock = vi.hoisted(() => vi.fn());
 const fetchInboxItemContextMock = vi.hoisted(() => vi.fn());
 const fetchMessagesByIdsMock = vi.hoisted(() => vi.fn());
+const useMediaQueryMock = vi.hoisted(() => vi.fn(() => false));
 const nextCreatedResponse = vi.hoisted(() => ({
   value: null as null | { signal_message_id: number },
 }));
@@ -166,6 +167,7 @@ vi.mock('../../shared/manage-message/ManageMessageDrawer', () => ({
       onEditSuccess,
       onDeleteSuccess,
       intentKey,
+      presentation,
     }: {
       open: boolean;
       onClose: () => void;
@@ -178,6 +180,7 @@ vi.mock('../../shared/manage-message/ManageMessageDrawer', () => ({
       onEditSuccess?: (result: { signal_message_id: number }) => Promise<void> | void;
       onDeleteSuccess?: (messageId: number) => Promise<void> | void;
       intentKey?: string;
+      presentation?: 'modal' | 'embedded';
     },
     ref,
   ) {
@@ -238,7 +241,7 @@ vi.mock('../../shared/manage-message/ManageMessageDrawer', () => ({
           aria-label="Створити повідомлення"
           onClick={async () => {
             if (nextCreatedResponse.value) {
-              onClose();
+              if (presentation !== 'embedded') onClose();
               await onCreated?.(nextCreatedResponse.value);
             }
           }}
@@ -321,7 +324,7 @@ vi.mock('@mui/material', () => ({
   ),
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Typography: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  useMediaQuery: () => false,
+  useMediaQuery: useMediaQueryMock,
   useTheme: () => ({ breakpoints: { down: () => false } }),
 }));
 
@@ -486,6 +489,8 @@ async function click(element: Element | null) {
 describe('RerDutyNeoPage creation workflow', () => {
   beforeEach(() => {
     useRerDutyFeedsMock.mockReset();
+    useMediaQueryMock.mockReset();
+    useMediaQueryMock.mockReturnValue(false);
     notifyMock.mockReset();
     fetchInboxItemContextMock.mockReset();
     fetchMessagesByIdsMock.mockReset();
@@ -527,6 +532,24 @@ describe('RerDutyNeoPage creation workflow', () => {
     await act(async () => {
       root.unmount();
     });
+  });
+
+  it('keeps the embedded composer open after creation', async () => {
+    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1024px)');
+    nextCreatedResponse.value = { signal_message_id: 101 };
+    const { container, root, state } = await renderPage();
+
+    await click(container.querySelector('button[aria-label="Додати повідомлення"]'));
+    await click(container.querySelector('button[aria-label="Створити повідомлення"]'));
+
+    expect(container.querySelector('[data-testid="composer"]')).not.toBeNull();
+    expect(state.reloadEmptyFeeds).toHaveBeenCalledTimes(1);
+    expect(notifyMock).toHaveBeenCalledWith({
+      message: 'Повідомлення успішно створено.',
+      severity: 'success',
+    });
+
+    await act(async () => root.unmount());
   });
 
   it('opens edit mode, submits the returned message, and closes the drawer', async () => {
@@ -684,6 +707,34 @@ describe('RerDutyNeoPage creation workflow', () => {
     expect(notifyMock).not.toHaveBeenCalled();
     expect(state.reloadEmptyFeeds).not.toHaveBeenCalled();
     root.unmount();
+  });
+
+  it('animates the embedded editor track without replacing the feed layout', async () => {
+    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1024px)');
+    const { container, root } = await renderPage();
+    const layout = container.querySelector<HTMLElement>('[data-duty-editor-layout]');
+
+    expect(layout?.style.display).toBe('grid');
+    expect(layout?.style.gridTemplateColumns).toBe('minmax(0, 1fr) minmax(0, 0fr)');
+    expect(layout?.style.transition).toContain('grid-template-columns');
+
+    await click(container.querySelector('button[aria-label="Додати повідомлення"]'));
+
+    expect(layout?.style.gridTemplateColumns).toBe('minmax(0, 1fr) minmax(0, 1fr)');
+    expect(layout?.style.columnGap).toBe('8px');
+    await act(async () => root.unmount());
+  });
+
+  it('removes spatial editor layout motion when the user prefers reduced motion', async () => {
+    useMediaQueryMock.mockImplementation(
+      (query) => query === '(min-width:1024px)' || query === '(prefers-reduced-motion: reduce)',
+    );
+    const { container, root } = await renderPage();
+
+    expect(
+      container.querySelector<HTMLElement>('[data-duty-editor-layout]')?.style.transition,
+    ).toBe('none');
+    await act(async () => root.unmount());
   });
 
   it('applies each frequency mode transfer as one complete filter update', async () => {

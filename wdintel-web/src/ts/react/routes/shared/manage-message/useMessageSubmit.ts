@@ -41,6 +41,7 @@ type SubmitOptions = {
   onCreated?: (result: DirectSubmitResponse) => void | Promise<void>;
   onEditSuccess?: (result: DirectSubmitResponse) => void | Promise<void>;
   handleDrawerCloseAfterSubmit: () => void;
+  handleCreateSuccess: (data: MessageFormData) => void;
 };
 
 export function useMessageSubmit({
@@ -62,6 +63,7 @@ export function useMessageSubmit({
   onCreated,
   onEditSuccess,
   handleDrawerCloseAfterSubmit,
+  handleCreateSuccess,
 }: SubmitOptions) {
   const mounted = useRef(false);
   const submission = useRef<AbortController | null>(null);
@@ -268,7 +270,7 @@ export function useMessageSubmit({
         const result = await submitDirect(payload);
         signal.throwIfAborted();
         addValues(recentValues);
-        handleDrawerCloseAfterSubmit();
+        handleCreateSuccess(data);
         createdResult = result;
       }
     } catch (error: unknown) {

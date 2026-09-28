@@ -91,6 +91,8 @@ export type UseManageMessageDrawerProps = {
   editSaveInFlight?: boolean;
   onSubmitEdit?: (id: number, message: InboxMessage) => void | Promise<void>;
   interactionActive?: boolean;
+  keepOpenAfterCreate?: boolean;
+  intentKey?: string;
 };
 
 export function useManageMessageDrawer({
@@ -107,6 +109,8 @@ export function useManageMessageDrawer({
   editSaveInFlight,
   onSubmitEdit,
   interactionActive = true,
+  keepOpenAfterCreate = false,
+  intentKey,
 }: UseManageMessageDrawerProps) {
   const radioFeaturesAllowed = canUseRadioFeatures(currentUser?.roles);
   const isEditMode = isPresent(editTarget);
@@ -134,6 +138,7 @@ export function useManageMessageDrawer({
   });
   const [quickSuggestionAttempt, setQuickSuggestionAttempt] = useState(0);
   const [discardConfirmationOpen, setDiscardConfirmationOpen] = useState(false);
+  const [createSucceeded, setCreateSucceeded] = useState(false);
   const pendingIntentChangeRef = useRef<ManageMessageIntentChange | null>(null);
   const editorRootRef = useRef<HTMLDivElement>(null);
   const editorOwnsInteractionRef = useRef(false);
@@ -882,6 +887,42 @@ export function useManageMessageDrawer({
 
   const closeDrawerAfterSubmit = () => requestDrawerClose();
 
+  const handleCreateSuccess = useCallback(
+    (submittedValues: MessageFormData) => {
+      if (!keepOpenAfterCreate) {
+        closeDrawerAfterSubmit();
+        return;
+      }
+      uppy.cancelAll();
+      reset({
+        ...getInitialCreateFormValues(),
+        signalGroupMasterKey: submittedValues.signalGroupMasterKey ?? '',
+        deviceName: cyberEchoEnabled ? (submittedValues.deviceName ?? '') : '',
+        unit: submittedValues.unit ?? '',
+      });
+      setDeviceNameInput('');
+      setPostInput('');
+      setUnitInput('');
+      setNetworkNameInput('');
+      setCallsignInput('');
+      setFreqInput('');
+      setSelectedNetwork(null);
+      setUnitLocked(false);
+      setShowAdvanced(false);
+      setErrorMsg(null);
+      setCreateSucceeded(true);
+    },
+    [cyberEchoEnabled, getInitialCreateFormValues, keepOpenAfterCreate, reset, uppy],
+  );
+
+  useEffect(() => {
+    if (formState.isDirty) setCreateSucceeded(false);
+  }, [formState.isDirty]);
+
+  useEffect(() => {
+    setCreateSucceeded(false);
+  }, [intentKey, open]);
+
   const handleDrawerClose = () => {
     if (saving) return;
     if (hasUnsavedChanges) {
@@ -943,6 +984,7 @@ export function useManageMessageDrawer({
     onCreated,
     onEditSuccess,
     handleDrawerCloseAfterSubmit: closeDrawerAfterSubmit,
+    handleCreateSuccess,
   });
 
   return {
@@ -1028,5 +1070,6 @@ export function useManageMessageDrawer({
     confirmDiscard,
     onSubmit,
     recentValues,
+    createSucceeded,
   };
 }

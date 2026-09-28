@@ -434,6 +434,7 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
     const drawerState = useManageMessageDrawer({
       ...props,
       interactionActive,
+      keepOpenAfterCreate: presentation === 'embedded',
       onClose: handleClosed,
       open: props.open && canWrite,
     });
@@ -490,6 +491,7 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
       editorRootRef,
       onSubmit,
       recentValues,
+      createSucceeded,
     } = drawerState;
     const [settingsAnchorEl, setSettingsAnchorEl] = React.useState<null | HTMLElement>(null);
     const isSettingsOpen = Boolean(settingsAnchorEl);
@@ -532,6 +534,11 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
         messageTextRef.current.focus();
       });
     }, [busy, intentKey, isEditMode, isReportMode, props.open]);
+
+    React.useEffect(() => {
+      if (!createSucceeded || isReportMode) return;
+      return scheduleAfterPaint(() => messageTextRef.current?.focus());
+    }, [createSucceeded, isReportMode]);
 
     const focusEditor = React.useCallback(() => {
       const root = editorRootRef.current;
@@ -678,7 +685,6 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
                       {errorMsg}
                     </PowerAlert>
                   )}
-
                   <MessageParserFeedbackProvider
                     feedback={parserFeedback}
                     onAccept={acceptParsedField}
@@ -1031,7 +1037,7 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
               </Box>
               <Box sx={{ display: 'flex', gap: 2, ml: 'auto' }}>
                 <Button onClick={handleDrawerClose} disabled={dismissDisabled}>
-                  Скасувати
+                  Закрити
                 </Button>
                 <Button
                   type="submit"

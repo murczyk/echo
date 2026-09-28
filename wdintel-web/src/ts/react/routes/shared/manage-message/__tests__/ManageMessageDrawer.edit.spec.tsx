@@ -890,11 +890,11 @@ describe('ManageMessageDrawer edit mode', () => {
 
     expect(container.querySelector('button[aria-label="Закрити"]')).toBeNull();
 
-    const cancel = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === 'Скасувати',
+    const close = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Закрити',
     );
-    expect(cancel).toBeDefined();
-    act(() => cancel?.click());
+    expect(close).toBeDefined();
+    act(() => close?.click());
     expect(onClose).toHaveBeenCalledOnce();
 
     act(() => drawerOnClose?.({}, 'escapeKeyDown'));
@@ -927,10 +927,10 @@ describe('ManageMessageDrawer edit mode', () => {
       await Promise.resolve();
     });
 
-    const cancel = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === 'Скасувати',
+    const close = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Закрити',
     );
-    act(() => cancel?.click());
+    act(() => close?.click());
 
     expect(onClose).not.toHaveBeenCalled();
     expect(container.querySelector('[role="alertdialog"]')?.textContent).toContain(
@@ -2289,10 +2289,10 @@ describe('ManageMessageDrawer edit mode', () => {
 
     expect(drawerModalProps?.closeAfterTransition).toBe(true);
     await act(async () => {
-      const cancelButton = Array.from(container.querySelectorAll('button')).find(
-        (button) => button.textContent?.trim() === 'Скасувати',
+      const closeButton = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent?.trim() === 'Закрити',
       );
-      cancelButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      closeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
     });
     expect(document.activeElement).toBe(fallback);
@@ -3023,6 +3023,94 @@ describe('ManageMessageDrawer edit mode', () => {
     expect(container.querySelector('form')).toBeNull();
     expect(container.textContent).not.toContain('Сталася помилка');
     root.unmount();
+  });
+
+  it('keeps an embedded create editor open, resets it, and restores text focus after success', async () => {
+    const onClose = vi.fn();
+    const onCreated = vi.fn();
+    referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
+    referenceDataMocks.getGroupInfosBatch.mockResolvedValue([
+      { masterKey: 'g-1', name: 'Group 1' },
+    ]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          presentation="embedded"
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={onClose}
+          onCreated={onCreated}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(
+      Array.from(container.querySelectorAll('button')).some(
+        (button) => button.textContent === 'Закрити',
+      ),
+    ).toBe(true);
+    expect(container.textContent).not.toContain('Скасувати');
+
+    await act(async () => {
+      autocompleteOnChangeByLabel.get('Група')?.(null, {
+        masterKey: 'g-1',
+        name: 'Group 1',
+      });
+      textFieldPropsByLabel.get('Текст повідомлення')?.onChange?.({
+        target: { value: 'new message body' },
+      });
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      container
+        .querySelector('form')
+        ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      for (let index = 0; index < 5; index += 1) await Promise.resolve();
+    });
+
+    const messageText = container.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="Текст повідомлення"]',
+    );
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onCreated).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('form')).not.toBeNull();
+    expect(messageText?.value).toBe('');
+    expect(container.textContent).not.toContain('Повідомлення успішно створено.');
+    expect(document.activeElement).toBe(messageText);
+    expect(
+      Array.from(container.querySelectorAll('button')).some(
+        (button) => button.textContent === 'Закрити',
+      ),
+    ).toBe(true);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          intentKey="create-message:next"
+          presentation="embedded"
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={onClose}
+          onCreated={onCreated}
+        />,
+      );
+    });
+    expect(
+      Array.from(container.querySelectorAll('button')).some(
+        (button) => button.textContent === 'Закрити',
+      ),
+    ).toBe(true);
+    expect(container.textContent).not.toContain('Скасувати');
+
+    await act(async () => root.unmount());
   });
 
   it('blocks submission while parsing and restores eligibility after parsing completes', async () => {

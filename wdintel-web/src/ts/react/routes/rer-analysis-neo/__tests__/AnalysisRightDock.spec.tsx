@@ -79,4 +79,30 @@ describe('AnalysisRightDock', () => {
     expect(editorPanel.style.height).toBe('100%');
     root.unmount();
   });
+
+  it('keeps the editor panel mounted while the dock track finishes closing', async () => {
+    vi.useFakeTimers();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const render = (editorOpen: boolean) =>
+      root.render(
+        <AnalysisRightDock
+          presentation="embedded"
+          editorOpen={editorOpen}
+          analyticsOpen={false}
+          editor={<div data-testid="editor-mount-counter">1</div>}
+          analytics={<div data-testid="analytics">analytics</div>}
+        />,
+      );
+
+    act(() => render(true));
+    act(() => render(false));
+    expect(container.querySelector('[data-analysis-dock-panel="editor"]')).not.toBeNull();
+
+    await act(async () => vi.advanceTimersByTimeAsync(180));
+    expect(container.querySelector('[data-analysis-dock-panel="editor"]')).toBeNull();
+    root.unmount();
+    vi.useRealTimers();
+  });
 });

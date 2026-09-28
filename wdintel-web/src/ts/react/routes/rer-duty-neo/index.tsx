@@ -30,7 +30,11 @@ import {
   ManageMessageDrawer,
   type ManageMessageEditorHandle,
 } from '../shared/manage-message/ManageMessageDrawer';
-import { useManageMessageEditorPresentation } from '../shared/manage-message/ManageMessageEditorSurface';
+import {
+  MANAGE_MESSAGE_EDITOR_TRANSITION_EASING,
+  MANAGE_MESSAGE_EDITOR_TRANSITION_MS,
+  useManageMessageEditorPresentation,
+} from '../shared/manage-message/ManageMessageEditorSurface';
 import type { ReportEditLoadState } from '../shared/manage-message/useManageMessageDrawer';
 import { AudioTranscriptionPreferencesProvider } from '../shared/message-card/MessageCardAudioTranscription';
 import { fetchInboxItemContext, fetchMessagesByIds } from '../../services/api/inbox-messages';
@@ -401,6 +405,7 @@ export function RerDutyNeoPage({
           : null;
   const editorOpen = editorIntentKey !== null;
   const editorPresentation = useManageMessageEditorPresentation();
+  const reduceEditorMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const editorEmbeddedOpen = editorOpen && editorPresentation === 'embedded';
   const previousCanWriteRef = useRef<boolean | null>(null);
 
@@ -428,7 +433,6 @@ export function RerDutyNeoPage({
 
   useEffect(() => () => cancelReportEditLoad(), [cancelReportEditLoad]);
   const handleCreatedMessage = useCallback(() => {
-    setCreateMessageOpen(false);
     // Do not reloadFeeds(): that re-pins the scroller to the bottom.
     reloadEmptyFeeds();
     notify({
@@ -496,10 +500,23 @@ export function RerDutyNeoPage({
     <RadioFeaturesProvider allowed={radioFeaturesAllowed}>
       <Box
         className="w-full min-h-0"
+        data-duty-editor-layout
+        style={{
+          display: editorPresentation === 'embedded' ? 'grid' : 'flex',
+          gridTemplateColumns:
+            editorPresentation === 'embedded'
+              ? editorEmbeddedOpen
+                ? 'minmax(0, 1fr) minmax(0, 1fr)'
+                : 'minmax(0, 1fr) minmax(0, 0fr)'
+              : undefined,
+          columnGap:
+            editorPresentation === 'embedded' ? (editorEmbeddedOpen ? '8px' : '0px') : undefined,
+          transition:
+            editorPresentation === 'embedded' && !reduceEditorMotion
+              ? `grid-template-columns ${MANAGE_MESSAGE_EDITOR_TRANSITION_MS}ms ${MANAGE_MESSAGE_EDITOR_TRANSITION_EASING}, column-gap ${MANAGE_MESSAGE_EDITOR_TRANSITION_MS}ms ${MANAGE_MESSAGE_EDITOR_TRANSITION_EASING}`
+              : 'none',
+        }}
         sx={{
-          display: editorEmbeddedOpen ? 'grid' : 'flex',
-          gridTemplateColumns: editorEmbeddedOpen ? 'repeat(2, minmax(0, 1fr))' : undefined,
-          columnGap: editorEmbeddedOpen ? '8px' : undefined,
           zoom: narrowScreen ? DUTY_MOBILE_ROOT_ZOOM : 1,
           height: narrowScreen
             ? `calc((${DUTY_VIEWPORT_HEIGHT}) / ${DUTY_MOBILE_ROOT_ZOOM})`
@@ -557,11 +574,11 @@ export function RerDutyNeoPage({
         <Box
           data-duty-editor-dock={editorEmbeddedOpen ? 'true' : undefined}
           sx={{
-            display: editorEmbeddedOpen ? 'flex' : 'contents',
-            position: editorEmbeddedOpen ? 'relative' : undefined,
+            display: editorPresentation === 'embedded' ? 'flex' : 'contents',
+            position: editorPresentation === 'embedded' ? 'relative' : undefined,
             minWidth: 0,
             minHeight: 0,
-            overflow: editorEmbeddedOpen ? 'hidden' : undefined,
+            overflow: editorPresentation === 'embedded' ? 'hidden' : undefined,
             '&::before': editorEmbeddedOpen
               ? {
                   content: '""',

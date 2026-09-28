@@ -1,11 +1,21 @@
 import { Drawer, Paper, useMediaQuery } from '@mui/material';
-import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 
 export const MANAGE_MESSAGE_EDITOR_MIN_WIDTH = 1024;
 export const MANAGE_MESSAGE_EDITOR_WIDTH = 'clamp(440px, 40vw, 640px)';
 export const MANAGE_MESSAGE_EDITOR_GAP = 16;
+export const MANAGE_MESSAGE_EDITOR_TRANSITION_MS = 180;
+export const MANAGE_MESSAGE_EDITOR_TRANSITION_EASING = 'cubic-bezier(0.2, 0, 0, 1)';
+const MANAGE_MESSAGE_EDITOR_EXIT_MS = 140;
 
 export type ManageMessageEditorPresentation = 'modal' | 'embedded';
 
@@ -36,6 +46,27 @@ export function ManageMessageEditorSurface({
 }: ManageMessageEditorSurfaceProps) {
   const embeddedSurfaceRef = useRef<HTMLElement | null>(null);
   const reduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
+  const [embeddedMounted, setEmbeddedMounted] = useState(presentation === 'embedded' && open);
+
+  useEffect(() => {
+    if (presentation !== 'embedded') {
+      setEmbeddedMounted(false);
+      return;
+    }
+    if (open) {
+      setEmbeddedMounted(true);
+      return;
+    }
+    const timeoutId = window.setTimeout(
+      () => setEmbeddedMounted(false),
+      reduceMotion ? 0 : MANAGE_MESSAGE_EDITOR_EXIT_MS,
+    );
+    return () => window.clearTimeout(timeoutId);
+  }, [open, presentation, reduceMotion]);
+
+  useLayoutEffect(() => {
+    embeddedSurfaceRef.current?.toggleAttribute('inert', !open);
+  }, [embeddedMounted, open]);
 
   useEffect(() => {
     if (presentation !== 'embedded' || !open || dismissDisabled) return;
@@ -85,13 +116,14 @@ export function ManageMessageEditorSurface({
     );
   }
 
-  if (!open) return null;
+  if (!embeddedMounted) return null;
 
   return (
     <Paper
       ref={embeddedSurfaceRef}
       component="aside"
       aria-labelledby={titleId}
+      aria-hidden={open ? undefined : true}
       data-manage-message-presentation="embedded"
       elevation={0}
       style={
@@ -102,10 +134,13 @@ export function ManageMessageEditorSurface({
           height: '100%',
           marginLeft: transparentEmbeddedSurface ? 0 : `${MANAGE_MESSAGE_EDITOR_GAP}px`,
           backgroundColor: transparentEmbeddedSurface ? 'transparent' : undefined,
-          animationName: 'manage-message-editor-enter',
-          animationDuration: reduceMotion ? '0s' : '180ms',
-          animationTimingFunction: 'cubic-bezier(0.2, 0, 0, 1)',
+          animationName: open ? 'manage-message-editor-enter' : 'manage-message-editor-exit',
+          animationDuration: reduceMotion
+            ? '0s'
+            : `${open ? MANAGE_MESSAGE_EDITOR_TRANSITION_MS : MANAGE_MESSAGE_EDITOR_EXIT_MS}ms`,
+          animationTimingFunction: MANAGE_MESSAGE_EDITOR_TRANSITION_EASING,
           animationFillMode: 'both',
+          pointerEvents: open ? undefined : 'none',
         } as CSSProperties
       }
       sx={{
@@ -125,6 +160,16 @@ export function ManageMessageEditorSurface({
           to: {
             opacity: 1,
             transform: 'translateX(0)',
+          },
+        },
+        '@keyframes manage-message-editor-exit': {
+          from: {
+            opacity: 1,
+            transform: 'translateX(0)',
+          },
+          to: {
+            opacity: 0,
+            transform: 'translateX(16px)',
           },
         },
       }}

@@ -598,6 +598,7 @@ describe('RerAnalysisNeoPage', () => {
     expect(createdDrawer?.open).toBe(true);
 
     await act(async () => {
+      createdDrawer?.onClose();
       await createdDrawer?.onCreated?.({ signal_message_id: 17 });
     });
 
@@ -607,6 +608,72 @@ describe('RerAnalysisNeoPage', () => {
     await act(async () => {
       root.unmount();
     });
+  });
+
+  it('keeps the embedded create editor open while refreshing analysis after success', async () => {
+    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1024px)');
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="create-message-fab"]')?.click();
+    });
+
+    const createdDrawer = manageMessageDrawerPropsHistory.at(-1);
+    expect(createdDrawer?.presentation).toBe('embedded');
+
+    await act(async () => {
+      await createdDrawer?.onCreated?.({ signal_message_id: 17 });
+    });
+
+    expect(container.querySelector('[data-testid="manage-message-drawer"]')).not.toBeNull();
+    expect(useRerAnalysisNeoPageMock.mock.results[0]?.value.reload).toHaveBeenCalledTimes(1);
+    expect(notifyMock).toHaveBeenCalledWith({
+      message: 'Повідомлення успішно створено.',
+      severity: 'success',
+    });
+
+    await act(async () => root.unmount());
+  });
+
+  it('animates the embedded editor track while preserving the analysis workspace', async () => {
+    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1024px)');
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+    const workspace = container.querySelector<HTMLElement>('[data-analysis-workspace]');
+    expect(workspace?.style.gridTemplateColumns).toBe('0px minmax(0, 1fr) minmax(0, 0fr)');
+    expect(workspace?.style.transition).toContain('grid-template-columns');
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="create-message-fab"]')?.click();
+    });
+
+    expect(workspace?.style.gridTemplateColumns).toBe('0px minmax(0, 1fr) minmax(0, 1fr)');
+    await act(async () => root.unmount());
+  });
+
+  it('removes spatial editor layout motion when the user prefers reduced motion', async () => {
+    useMediaQueryMock.mockImplementation(
+      (query) => query === '(min-width:1024px)' || query === '(prefers-reduced-motion: reduce)',
+    );
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+
+    expect(
+      container.querySelector<HTMLElement>('[data-analysis-workspace]')?.style.transition,
+    ).toBe('none');
+    await act(async () => root.unmount());
   });
 
   it('saves the selected edit and refreshes the analysis result', async () => {

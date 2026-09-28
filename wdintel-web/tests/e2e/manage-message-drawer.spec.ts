@@ -282,7 +282,7 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       await expectEmbeddedEditor(page);
       await expect(source).toHaveValue(`${host} responsive draft`);
 
-      await page.getByRole('button', { name: 'Скасувати', exact: true }).click();
+      await page.getByRole('button', { name: 'Закрити', exact: true }).click();
       await page.getByRole('button', { name: 'Відхилити зміни' }).click();
       await expect(page.locator('[data-manage-message-presentation]')).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Додати повідомлення' })).toBeFocused();
@@ -479,7 +479,7 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
         )
         .toBe(scenario.mainColumns);
 
-      await page.getByRole('button', { name: 'Скасувати', exact: true }).click();
+      await page.getByRole('button', { name: 'Закрити', exact: true }).click();
       await expect(page.locator('[data-duty-feed-column]')).toHaveCount(4);
     }
   });

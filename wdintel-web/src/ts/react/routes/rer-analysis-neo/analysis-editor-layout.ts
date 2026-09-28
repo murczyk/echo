@@ -42,13 +42,9 @@ export function analysisWorkspaceColumns({
   inlineLeftPanelVisible: boolean;
   inlineRightDockVisible: boolean;
 }): string {
-  if (!inlineLeftPanelVisible && !inlineRightDockVisible) return 'minmax(0, 1fr)';
-
   return [
-    inlineLeftPanelVisible ? '400px' : null,
-    'minmax(360px, 1fr)',
-    inlineRightDockVisible ? analysisRightDockColumn(false) : null,
-  ]
-    .filter(Boolean)
-    .join(' ');
+    inlineLeftPanelVisible ? '400px' : '0px',
+    'minmax(0, 1fr)',
+    inlineRightDockVisible ? analysisRightDockColumn(false) : 'minmax(0, 0fr)',
+  ].join(' ');
 }

@@ -1,6 +1,9 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
-import type { ManageMessageEditorPresentation } from '../shared/manage-message/ManageMessageEditorSurface';
+import {
+  MANAGE_MESSAGE_EDITOR_TRANSITION_MS,
+  type ManageMessageEditorPresentation,
+} from '../shared/manage-message/ManageMessageEditorSurface';
 
 type Props = {
   presentation: ManageMessageEditorPresentation;
@@ -17,6 +20,25 @@ export function AnalysisRightDock({
   editor,
   analytics,
 }: Props) {
+  const [editorMounted, setEditorMounted] = useState(editorOpen);
+
+  useEffect(() => {
+    if (editorOpen) {
+      setEditorMounted(true);
+      return;
+    }
+    if (analyticsOpen) {
+      setEditorMounted(false);
+      return;
+    }
+    const timeoutId = window.setTimeout(
+      () => setEditorMounted(false),
+      MANAGE_MESSAGE_EDITOR_TRANSITION_MS,
+    );
+    return () => window.clearTimeout(timeoutId);
+  }, [analyticsOpen, editorOpen]);
+  const editorVisible = editorOpen || editorMounted;
+
   return (
     <aside
       data-testid="analysis-right-dock"
@@ -27,12 +49,12 @@ export function AnalysisRightDock({
         minWidth: 0,
         minHeight: 0,
         display:
-          presentation === 'modal' ? 'contents' : editorOpen || analyticsOpen ? 'flex' : 'none',
+          presentation === 'modal' ? 'contents' : editorVisible || analyticsOpen ? 'flex' : 'none',
         flexDirection: 'column',
         overflow: 'hidden',
       }}
     >
-      {editorOpen ? (
+      {editorVisible ? (
         <div
           data-analysis-dock-panel="editor"
           style={{
