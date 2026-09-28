@@ -3754,6 +3754,62 @@ describe('ManageMessageDrawer edit mode', () => {
   });
 
   describe('auto-parse setting', () => {
+    it('#3620 waits for settings and respects a saved opt-out before auto-parsing', async () => {
+      vi.useFakeTimers();
+      dutySettingsMocks.messageAutoParseEnabled = true;
+      dutySettingsMocks.loadInProgress = true;
+      directSubmitMocks.parseDirectSubmit.mockResolvedValue({
+        text: '',
+        coords: [],
+        to: [],
+        locations: [],
+      });
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      const render = async () => {
+        await act(async () => {
+          root.render(
+            <ManageMessageDrawer
+              open
+              cyberEchoEnabled={false}
+              currentUser={{ roles: ['Rer'] } as User}
+              onClose={vi.fn()}
+            />,
+          );
+          await Promise.resolve();
+        });
+      };
+      await render();
+      await act(async () => {
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: 'Ярус, прием' } });
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(directSubmitMocks.parseDirectSubmit).not.toHaveBeenCalled();
+      dutySettingsMocks.loadInProgress = false;
+      dutySettingsMocks.messageAutoParseEnabled = false;
+      await render();
+      await act(async () => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(directSubmitMocks.parseDirectSubmit).not.toHaveBeenCalled();
+      dutySettingsMocks.messageAutoParseEnabled = true;
+      await render();
+      await act(async () => {
+        vi.advanceTimersByTime(700);
+        await Promise.resolve();
+      });
+      expect(directSubmitMocks.parseDirectSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ include_ai_callsigns: true }),
+      );
+      root.unmount();
+      vi.useRealTimers();
+    });
+
     it('keeps manual parsing enabled and ignores an empty source', async () => {
       const container = document.createElement('div');
       document.body.appendChild(container);

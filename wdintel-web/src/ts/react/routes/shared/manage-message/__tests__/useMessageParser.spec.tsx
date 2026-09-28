@@ -11,10 +11,15 @@ import { useMessageParser } from '../useMessageParser';
 
 const apiMocks = vi.hoisted(() => ({
   parseDirectSubmit: vi.fn(),
+  notify: vi.fn(),
 }));
 
 vi.mock('../../../../services/api/direct-submit', () => ({
   parseDirectSubmit: apiMocks.parseDirectSubmit,
+}));
+
+vi.mock('../../../../components/PowerSnackbar', () => ({
+  useOptionalPowerSnackbar: () => ({ notify: apiMocks.notify }),
 }));
 
 type ParserResult = ReturnType<typeof useMessageParser>;
@@ -93,6 +98,7 @@ describe('useMessageParser ownership', () => {
 
   beforeEach(() => {
     apiMocks.parseDirectSubmit.mockReset();
+    apiMocks.notify.mockReset();
     setErrorMsg = vi.fn();
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -103,6 +109,44 @@ describe('useMessageParser ownership', () => {
     act(() => root.unmount());
     container.remove();
     vi.useRealTimers();
+  });
+
+  it('#3620 keeps ordinary results usable and warns when AI enrichment fails', async () => {
+    apiMocks.parseDirectSubmit.mockResolvedValue(
+      response({
+        freq: '149.500',
+        to: ['ярус'],
+        ai_callsign_warning: 'ШІ недоступний',
+      }),
+    );
+    await mount();
+    await setSource('Ярус, частота 149.500');
+    await parse();
+    expect(apiMocks.parseDirectSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ include_ai_callsigns: true }),
+    );
+    expect(latest.methods.getValues('freq')).toBe('149.500');
+    expect(latest.methods.getValues('callsigns')).toEqual(['ЯРУС']);
+    expect(latest.parser.parseStatus).toBe('success');
+    expect(latest.parser.parsing).toBe(false);
+    expect(apiMocks.notify).toHaveBeenCalledWith({
+      severity: 'warning',
+      message: 'ШІ недоступний',
+    });
+    expect(setErrorMsg).not.toHaveBeenCalledWith(expect.any(String));
+  });
+
+  it('#3620 preserves manually removed callsigns when later AI results repeat them', async () => {
+    apiMocks.parseDirectSubmit.mockResolvedValue(response({ to: ['ярус', 'фипка'] }));
+    await mount();
+    await setSource('Ярус, Фипка, прием');
+    await parse();
+    await act(async () => {
+      latest.methods.setValue('callsigns', ['ярус', 'ручний']);
+    });
+    await setSource('Ярус, Фипка, прием повторно');
+    await parse();
+    expect(latest.methods.getValues('callsigns')).toEqual(['РУЧНИЙ', 'ЯРУС']);
   });
 
   it('does not overwrite a manually corrected parsed field on a later parse', async () => {
@@ -240,7 +284,7 @@ describe('useMessageParser ownership', () => {
     });
     expect(apiMocks.parseDirectSubmit).toHaveBeenCalledOnce();
     expect(apiMocks.parseDirectSubmit).toHaveBeenCalledWith(
-      expect.objectContaining({ full_body: 'друга' }),
+      expect.objectContaining({ full_body: 'друга', include_ai_callsigns: true }),
     );
   });
 
@@ -263,11 +307,12 @@ describe('useMessageParser ownership', () => {
     await setSource('тимчасова зміна');
     await setSource('однаковий текст');
     await act(async () => {
-      resolveFirst(response({ freq: '149.500' }));
+      resolveFirst(response({ freq: '149.500', ai_callsign_warning: 'stale warning' }));
       await pending;
     });
 
     expect(latest.methods.getValues('freq')).toBe('');
+    expect(apiMocks.notify).not.toHaveBeenCalled();
   });
 
   it('reparses for a new signal group and ignores the previous group response', async () => {
@@ -308,13 +353,38 @@ describe('useMessageParser ownership', () => {
     expect(apiMocks.parseDirectSubmit).toHaveBeenCalledTimes(2);
     expect(apiMocks.parseDirectSubmit).toHaveBeenNthCalledWith(1, {
       full_body: 'незмінний текст',
+      include_ai_callsigns: true,
       signal_group_master_key: 'g-1',
     });
     expect(apiMocks.parseDirectSubmit).toHaveBeenNthCalledWith(2, {
       full_body: 'незмінний текст',
+      include_ai_callsigns: true,
       signal_group_master_key: 'g-2',
     });
     expect(latest.methods.getValues('freq')).toBe('151.000');
+  });
+
+  it('#3620 discards an AI warning after the drawer unmounts', async () => {
+    let resolveParse!: (value: DirectSubmitParseResponse) => void;
+    apiMocks.parseDirectSubmit.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveParse = resolve;
+        }),
+    );
+    await mount();
+    await setSource('Ярус, прием');
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = latest.parser.handleParse();
+    });
+    act(() => root.unmount());
+    root = createRoot(container);
+    await act(async () => {
+      resolveParse(response({ ai_callsign_warning: 'stale warning' }));
+      await pending;
+    });
+    expect(apiMocks.notify).not.toHaveBeenCalled();
   });
 
   it('invalidates an in-flight response when the parser becomes inactive', async () => {

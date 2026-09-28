@@ -51,6 +51,9 @@ const LONG_POLL_DEPLOYMENT_MAINTENANCE_COMPAT_DECODER: &str = r#"|> Json.Decode.
 const MESSAGE_IS_TIME_NULL_STRICT_DECODER: &str = r#"Json.Decode.field "is_time_null" (Json.Decode.nullable (Json.Decode.bool))"#;
 const MESSAGE_IS_TIME_NULL_COMPAT_DECODER: &str = r#"Json.Decode.oneOf [ Json.Decode.field "is_time_null" (Json.Decode.nullable (Json.Decode.bool)), Json.Decode.succeed Nothing ]"#;
 
+const DIRECT_SUBMIT_AI_CALLSIGN_WARNING_STRICT_DECODER: &str = r#"Json.Decode.field "ai_callsign_warning" (Json.Decode.nullable (Json.Decode.string))"#;
+const DIRECT_SUBMIT_AI_CALLSIGN_WARNING_COMPAT_DECODER: &str = r#"Json.Decode.oneOf [ Json.Decode.field "ai_callsign_warning" (Json.Decode.nullable (Json.Decode.string)), Json.Decode.succeed Nothing ]"#;
+
 pub fn main_gen_elm() -> Result<(), AppError> {
     let mut target = vec![];
     elm_rs::export!("Bindings", &mut target, {
@@ -515,6 +518,8 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::device_name::types::DeviceNameSearchReq,
             crate::sigint::device_name::types::DeviceNameSearchResult,
             crate::sigint::device_name::types::DeviceNameSearchRsp,
+            crate::sigint::direct_submit::types::DirectSubmitParsePayload,
+            crate::sigint::direct_submit::types::DirectSubmitParseRsp,
             crate::sigint::device_name::types::DeviceNameResolveReq,
             crate::sigint::device_name::types::DeviceNameResolveRsp,
             crate::sigint::device_name::types::CreateDeviceNameReq,
@@ -1280,6 +1285,8 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::device_name::types::DeviceNameSearchReq,
             crate::sigint::device_name::types::DeviceNameSearchResult,
             crate::sigint::device_name::types::DeviceNameSearchRsp,
+            crate::sigint::direct_submit::types::DirectSubmitParsePayload,
+            crate::sigint::direct_submit::types::DirectSubmitParseRsp,
             crate::sigint::device_name::types::DeviceNameResolveReq,
             crate::sigint::device_name::types::DeviceNameResolveRsp,
             crate::sigint::device_name::types::CreateDeviceNameReq,
@@ -1816,6 +1823,10 @@ fn patch_backward_compatible_decoders(
         .replace(
             MESSAGE_IS_TIME_NULL_STRICT_DECODER,
             MESSAGE_IS_TIME_NULL_COMPAT_DECODER,
+        )
+        .replace(
+            DIRECT_SUBMIT_AI_CALLSIGN_WARNING_STRICT_DECODER,
+            DIRECT_SUBMIT_AI_CALLSIGN_WARNING_COMPAT_DECODER,
         )
         .replace(
             LONG_POLL_DEPLOYMENT_MAINTENANCE_STRICT_DECODER,
