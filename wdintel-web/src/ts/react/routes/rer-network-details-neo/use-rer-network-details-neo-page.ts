@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRerNetworkDetailsNeoPageActions } from './use-rer-network-details-neo-page.actions';
 import { buildRerNetworkDetailsNeoPageViewModel } from './use-rer-network-details-neo-page.view-model';
 import {
@@ -13,10 +13,6 @@ import {
   canViewNetworkRelationsTab,
   formatNetworkFreqRange,
   formatTransferTypeLabel,
-  normalizeNetworkRelationsSinceChange,
-  normalizeNetworkRelationsTillChange,
-  normalizeNetworkPelengSinceChange,
-  normalizeNetworkPelengTillChange,
   networkStatusDisplay,
   sortDescriptionsByCreatedAtDesc,
   type NetworkDetailsNeoPageState,
@@ -24,8 +20,8 @@ import {
 } from './use-rer-network-details-neo-page.shared';
 import { sortNetworkAorsForDisplay } from '../rer-networks-neo/helpers';
 import { useRerNetworkDetailsNeoPageLoad } from './use-rer-network-details-neo-page.load';
-import { buildNetworkCallsignRelationFreqState } from './network-relations';
-import { parseDateInputExclusiveEndInTimeZone, parseDateInputInTimeZone } from '../../utils/misc';
+import { useRerNetworkDetailsNeoPageTabControls } from './use-rer-network-details-neo-page.tab-controls';
+import { useRerNetworkDetailsNeoPageTabEffects } from './use-rer-network-details-neo-page.tab-effects';
 import { buildSelectableUnitOptions, buildUnitLookupOptions } from '../../utils/unit-search';
 import { canUseRadioFeatures, hasRole } from '../../utils/roles';
 import {
@@ -155,337 +151,23 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     loadCallsigns,
   });
 
-  const setRelationsSearch = useCallback(
-    (relationsSearch: string) => {
-      setState((current) => ({ ...current, relationsSearch }));
-    },
-    [setState],
+  const tabControls = useRerNetworkDetailsNeoPageTabControls(
+    setState,
+    setRequestedNetworkDetailsTab,
   );
 
-  const setRelationsEnabledFreqs = useCallback(
-    (relationsEnabledFreqs: string[]) => {
-      setState((current) => {
-        const { defaultEnabledFreqs, resolvedEnabledFreqs } = buildNetworkCallsignRelationFreqState(
-          current.relations,
-          relationsEnabledFreqs,
-        );
-        const relationsEnabledFreqsCustomized =
-          resolvedEnabledFreqs.length !== defaultEnabledFreqs.length ||
-          resolvedEnabledFreqs.some((freq) => !defaultEnabledFreqs.includes(freq));
-
-        return {
-          ...current,
-          relationsEnabledFreqs: resolvedEnabledFreqs,
-          relationsEnabledFreqsCustomized,
-        };
-      });
-    },
-    [setState],
-  );
-
-  const setRelationsMinIntensity = useCallback(
-    (relationsMinIntensity: number) => {
-      setState((current) => ({ ...current, relationsMinIntensity }));
-    },
-    [setState],
-  );
-
-  const setRelationsShowLabels = useCallback(
-    (relationsShowLabels: boolean) => {
-      setState((current) => ({ ...current, relationsShowLabels }));
-    },
-    [setState],
-  );
-
-  const setRelationsSelectedNodeId = useCallback(
-    (relationsSelectedNodeId: string | null) => {
-      setState((current) => ({
-        ...current,
-        relationsSelectedNodeId,
-        relationsSelectedEdgeId: null,
-      }));
-    },
-    [setState],
-  );
-
-  const setRelationsSelectedEdgeId = useCallback(
-    (relationsSelectedEdgeId: string | null) => {
-      setState((current) => ({
-        ...current,
-        relationsSelectedEdgeId,
-        relationsSelectedNodeId: null,
-      }));
-    },
-    [setState],
-  );
-
-  const setRelationsSince = useCallback(
-    (relationsSince: string) => {
-      setState((current) => {
-        const next = normalizeNetworkRelationsSinceChange(
-          current.relationsSince,
-          current.relationsTill,
-          relationsSince,
-        );
-        return {
-          ...current,
-          ...next,
-          relationsLoaded: false,
-          relationsError: null,
-        };
-      });
-    },
-    [setState],
-  );
-
-  const setRelationsTill = useCallback(
-    (relationsTill: string) => {
-      setState((current) => {
-        const next = normalizeNetworkRelationsTillChange(
-          current.relationsSince,
-          current.relationsTill,
-          relationsTill,
-        );
-        return {
-          ...current,
-          ...next,
-          relationsLoaded: false,
-          relationsError: null,
-        };
-      });
-    },
-    [setState],
-  );
-
-  const setPelengSince = useCallback(
-    (pelengSince: string) => {
-      setState((current) => {
-        const next = normalizeNetworkPelengSinceChange(
-          current.pelengSince,
-          current.pelengTill,
-          pelengSince,
-        );
-        return {
-          ...current,
-          ...next,
-          pelengPointsLoaded: false,
-          pelengPointsError: null,
-        };
-      });
-    },
-    [setState],
-  );
-
-  const setPelengTill = useCallback(
-    (pelengTill: string) => {
-      setState((current) => {
-        const next = normalizeNetworkPelengTillChange(
-          current.pelengSince,
-          current.pelengTill,
-          pelengTill,
-        );
-        return {
-          ...current,
-          ...next,
-          pelengPointsLoaded: false,
-          pelengPointsError: null,
-        };
-      });
-    },
-    [setState],
-  );
-
-  const setPelengSearch = useCallback(
-    (pelengSearch: string) => {
-      setState((current) => ({ ...current, pelengSearch }));
-    },
-    [setState],
-  );
-
-  const setPelengEnabledFreqs = useCallback(
-    (pelengEnabledFreqs: string[]) => {
-      setState((current) => ({ ...current, pelengEnabledFreqs: [...pelengEnabledFreqs] }));
-    },
-    [setState],
-  );
-
-  const setPelengShowLabels = useCallback(
-    (pelengShowLabels: boolean) => {
-      setState((current) => ({ ...current, pelengShowLabels }));
-    },
-    [setState],
-  );
-
-  const setPelengBaseLayerId = useCallback(
-    (pelengBaseLayerId: NetworkDetailsNeoPageState['pelengBaseLayerId']) => {
-      setState((current) => ({ ...current, pelengBaseLayerId }));
-    },
-    [setState],
-  );
-
-  const setPelengHeatmapEnabled = useCallback(
-    (pelengHeatmapEnabled: boolean) => {
-      setState((current) => ({ ...current, pelengHeatmapEnabled }));
-    },
-    [setState],
-  );
-
-  const setActiveNetworkDetailsTab = useCallback(
-    (activeNetworkDetailsTab: NetworkDetailsNeoPageState['activeNetworkDetailsTab']) => {
-      setState((current) => {
-        const nextTab =
-          !canUseRadioFeatures(current.currentUser?.roles) &&
-          (activeNetworkDetailsTab === 'frequencies' ||
-            activeNetworkDetailsTab === 'direction-finding')
-            ? 'descriptions'
-            : activeNetworkDetailsTab;
-        if (
-          current.activeNetworkDetailsTab === nextTab &&
-          current.callsignSectionMode === 'network'
-        ) {
-          return current;
-        }
-        return {
-          ...current,
-          activeNetworkDetailsTab: nextTab,
-          callsignSectionMode: 'network',
-        };
-      });
-      setRequestedNetworkDetailsTab(getPublicNetworkDetailsTab(activeNetworkDetailsTab));
-      updateCurrentNetworkDetailsTabUrl(activeNetworkDetailsTab, 'push');
-    },
-    [setState],
-  );
-
-  const relationsDateRangeValid = useMemo(() => {
-    const since = parseDateInputInTimeZone(state.relationsSince);
-    const till = parseDateInputInTimeZone(state.relationsTill);
-    if (since === null || till === null) return false;
-    return since <= till;
-  }, [state.relationsSince, state.relationsTill]);
-
-  const pelengSinceMs = useMemo(
-    () => parseDateInputInTimeZone(state.pelengSince),
-    [state.pelengSince],
-  );
-  const pelengTillMs = useMemo(
-    () => parseDateInputExclusiveEndInTimeZone(state.pelengTill),
-    [state.pelengTill],
-  );
-  const pelengDateRangeValid = useMemo(() => {
-    if (pelengSinceMs === null || pelengTillMs === null) return false;
-    return pelengSinceMs <= pelengTillMs;
-  }, [pelengSinceMs, pelengTillMs]);
-
-  useEffect(() => {
-    if (networkIdValue === null) return;
-    if (!radioFeaturesAllowed || state.activeNetworkDetailsTab !== 'frequencies') return;
-    if (state.freqsLoaded || state.freqsLoading || state.freqsError !== null) return;
-    void actions.loadFrequencies(networkIdValue);
-  }, [
+  useRerNetworkDetailsNeoPageTabEffects({
+    state,
+    networkIdValue,
     radioFeaturesAllowed,
-    actions.loadFrequencies,
-    networkIdValue,
-    state.activeNetworkDetailsTab,
-    state.freqsError,
-    state.freqsLoaded,
-    state.freqsLoading,
-  ]);
-
-  useEffect(() => {
-    if (networkIdValue === null) return;
-    if (state.activeNetworkDetailsTab !== 'callsigns') return;
-    if (state.callsignsLoaded || state.callsignsLoading || state.callsignsError !== null) return;
-    void loadCallsigns(networkIdValue, state.networkCallsignsPeriod);
-  }, [
-    loadCallsigns,
-    networkIdValue,
-    state.activeNetworkDetailsTab,
-    state.callsignsError,
-    state.callsignsLoaded,
-    state.callsignsLoading,
-    state.networkCallsignsPeriod,
-  ]);
-
-  useEffect(() => {
-    if (networkIdValue === null) return;
-    if (state.activeNetworkDetailsTab !== 'relations') return;
-    if (!state.currentUserLoaded) return;
-    if (!canViewRelationsTab) return;
-    if (!relationsDateRangeValid) return;
-    if (state.relationsLoaded || state.relationsLoading || state.relationsError !== null) return;
-    const since = parseDateInputInTimeZone(state.relationsSince);
-    const till = parseDateInputExclusiveEndInTimeZone(state.relationsTill);
-    if (since === null || till === null) return;
-    void loadRelations(networkIdValue, since, till);
-  }, [
-    loadRelations,
-    state.activeNetworkDetailsTab,
-    canViewRelationsTab,
-    state.currentUserLoaded,
-    state.network,
-    state.relationsError,
-    state.relationsLoaded,
-    state.relationsLoading,
-    state.relationsSince,
-    state.relationsTill,
-    relationsDateRangeValid,
-    networkIdValue,
-  ]);
-
-  useEffect(() => {
-    if (networkIdValue === null) return;
-    if (state.activeNetworkDetailsTab !== 'activity') return;
-    if (!state.currentUserLoaded) return;
-    if (!canViewActivityTab) return;
-    if (
-      state.networkActivityLoaded ||
-      state.networkActivityLoading ||
-      state.networkActivityError !== null
-    )
-      return;
-    void loadNetworkActivity(networkIdValue, state.networkActivityPeriod);
-  }, [
     canViewActivityTab,
+    canViewRelationsTab,
+    loadFrequencies: actions.loadFrequencies,
+    loadCallsigns,
+    loadRelations,
     loadNetworkActivity,
-    networkIdValue,
-    state.activeNetworkDetailsTab,
-    state.currentUserLoaded,
-    state.networkActivityError,
-    state.networkActivityLoaded,
-    state.networkActivityLoading,
-    state.networkActivityPeriod,
-  ]);
-
-  useEffect(() => {
-    if (networkIdValue === null) return;
-    if (!radioFeaturesAllowed || state.activeNetworkDetailsTab !== 'direction-finding') return;
-
-    const pelengWindowMatched =
-      state.pelengPointsRequestedFrom === pelengSinceMs &&
-      state.pelengPointsRequestedTo === pelengTillMs;
-
-    if (
-      pelengWindowMatched &&
-      (state.pelengPointsLoaded || state.pelengPointsLoading || state.pelengPointsError !== null)
-    )
-      return;
-    if (!pelengDateRangeValid) return;
-    void loadPelengPoints(networkIdValue, pelengSinceMs ?? 0, pelengTillMs);
-  }, [
-    radioFeaturesAllowed,
     loadPelengPoints,
-    pelengDateRangeValid,
-    pelengSinceMs,
-    pelengTillMs,
-    state.activeNetworkDetailsTab,
-    networkIdValue,
-    state.pelengPointsError,
-    state.pelengPointsLoaded,
-    state.pelengPointsLoading,
-    state.pelengPointsRequestedFrom,
-    state.pelengPointsRequestedTo,
-  ]);
+  });
 
   const postItems = useMemo(() => {
     const postIds = state.network?.postIds ?? [];
@@ -575,22 +257,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     postOptions,
     confirmationDescriptions,
     signDescriptions,
-    setRelationsSearch,
-    setRelationsEnabledFreqs,
-    setRelationsMinIntensity,
-    setRelationsShowLabels,
-    setRelationsSelectedNodeId,
-    setRelationsSelectedEdgeId,
-    setRelationsSince,
-    setRelationsTill,
-    setPelengSince,
-    setPelengTill,
-    setPelengSearch,
-    setPelengEnabledFreqs,
-    setPelengShowLabels,
-    setPelengBaseLayerId,
-    setPelengHeatmapEnabled,
-    setActiveNetworkDetailsTab,
+    ...tabControls,
     loadRelations,
     loadPelengPoints,
     loadNetworkActivity,

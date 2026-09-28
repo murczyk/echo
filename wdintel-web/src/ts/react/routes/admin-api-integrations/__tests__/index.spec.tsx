@@ -62,20 +62,34 @@ function button(label: string): HTMLButtonElement | undefined {
 async function clickButton(label: string) {
   await act(async () => {
     button(label)?.click();
-    await new Promise((resolve) => window.setTimeout(resolve, 410));
+  });
+  // PowerButton/PowerIconButton ignore clicks for 400ms after each press.
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(410);
   });
 }
 
-describe('AdminApiIntegrationsPage', () => {
+describe('AdminApiIntegrationsPage', { timeout: 15_000 }, () => {
   beforeEach(() => {
+    vi.useFakeTimers();
     const storage = new Map<string, string>();
     Object.defineProperty(window, 'localStorage', {
       configurable: true,
       value: {
         getItem: (key: string) => storage.get(key) ?? null,
-        setItem: (key: string, value: string) => storage.set(key, value),
-        removeItem: (key: string) => storage.delete(key),
-        clear: () => storage.clear(),
+        setItem: (key: string, value: string) => {
+          storage.set(key, value);
+        },
+        removeItem: (key: string) => {
+          storage.delete(key);
+        },
+        clear: () => {
+          storage.clear();
+        },
+        key: (index: number) => Array.from(storage.keys())[index] ?? null,
+        get length() {
+          return storage.size;
+        },
       },
     });
     mocks.list.mockReset().mockResolvedValue([integration]);
@@ -83,13 +97,13 @@ describe('AdminApiIntegrationsPage', () => {
     mocks.upsert.mockReset();
     mocks.remove.mockReset().mockResolvedValue(undefined);
     mocks.testConnection.mockReset();
-    window.localStorage.clear();
   });
 
   afterEach(() => {
     document.body.innerHTML = '';
-    delete (window as { localStorage?: Storage }).localStorage;
+    vi.useRealTimers();
   });
+
   it('deletes through the overflow action and confirmation dialog', async () => {
     const { container, root } = await renderPage();
 
@@ -100,7 +114,9 @@ describe('AdminApiIntegrationsPage', () => {
     expect(deleteItem).toBeDefined();
     await act(async () => {
       deleteItem?.click();
-      await new Promise((resolve) => window.setTimeout(resolve, 410));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(410);
     });
     expect(mocks.remove).not.toHaveBeenCalled();
     await clickButton('Видалити');
