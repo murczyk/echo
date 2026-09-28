@@ -106,10 +106,16 @@ export type ManageMessageEditorHandle = {
 
 function scheduleAfterPaint(callback: () => void) {
   if (typeof window.requestAnimationFrame === 'function') {
-    window.requestAnimationFrame(callback);
-  } else {
-    queueMicrotask(callback);
+    const frameId = window.requestAnimationFrame(callback);
+    return () => window.cancelAnimationFrame(frameId);
   }
+  let cancelled = false;
+  queueMicrotask(() => {
+    if (!cancelled) callback();
+  });
+  return () => {
+    cancelled = true;
+  };
 }
 
 function ReportTextRow({
@@ -401,6 +407,10 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
       adaptiveEmbeddedForm ? editorWidth : null,
     );
     const embeddedMainColumns = adaptiveEmbeddedForm ? embeddedFormLayout.mainColumns : 1;
+    const compactMessageBody = adaptiveEmbeddedForm && embeddedFormLayout.density === 'compact';
+    const wideMessageBody = adaptiveEmbeddedForm && embeddedFormLayout.density === 'wide';
+    const messageBodyRows = compactMessageBody ? 6 : wideMessageBody ? 4 : 12;
+    const messageBodyMinHeight = compactMessageBody ? 162 : wideMessageBody ? 130 : null;
     const canWrite = canWriteMessages(props.currentUser?.roles);
     const returnFocusRef = React.useRef<HTMLElement | null>(null);
     const wasOpenRef = React.useRef(false);
@@ -494,6 +504,8 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
     const dismissDisabled = saving || deleteInFlight;
     const busy = formDisabled || deleteInFlight;
     const parseDisabled = busy || parsing;
+    const messageTextRef = React.useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+    const focusedMessageIntentRef = React.useRef<string | null>(null);
     const reportEditLoading = props.editTargetLoadState?.status === 'loading';
     const reportEditError = props.editTargetLoadState?.status === 'error';
     const isReportEditIntent =
@@ -505,6 +517,22 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
         )?.name ?? props.reportSource.message.groupMasterKey)
       : null;
     const titleId = React.useId();
+
+    React.useEffect(() => {
+      if (!props.open) {
+        focusedMessageIntentRef.current = null;
+        return;
+      }
+      if (busy || isEditMode || isReportMode || focusedMessageIntentRef.current === intentKey) {
+        return;
+      }
+      return scheduleAfterPaint(() => {
+        if (!messageTextRef.current) return;
+        focusedMessageIntentRef.current = intentKey;
+        messageTextRef.current.focus();
+      });
+    }, [busy, intentKey, isEditMode, isReportMode, props.open]);
+
     const focusEditor = React.useCallback(() => {
       const root = editorRootRef.current;
       const target = root?.querySelector<HTMLElement>(
@@ -685,6 +713,18 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
                               : { xs: '1fr', md: 'minmax(0, 1fr) minmax(0, 1fr)' },
                           gap: 3,
                           alignItems: 'start',
+                          '& .MuiInputBase-root': {
+                            fontSize: {
+                              xs: 'var(--echo-typography-font-size-lg)',
+                              sm: 'var(--echo-typography-font-size-base)',
+                            },
+                          },
+                          '& .MuiInputLabel-root:not(.MuiInputLabel-shrink)': {
+                            fontSize: {
+                              xs: 'var(--echo-typography-font-size-lg)',
+                              sm: 'var(--echo-typography-font-size-base)',
+                            },
+                          },
                         }}
                       >
                         {isReportMode ? (
@@ -811,8 +851,18 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
                                       label="Текст повідомлення"
                                       fullWidth
                                       multiline
-                                      rows={12}
+                                      rows={messageBodyRows}
+                                      inputRef={messageTextRef}
                                       disabled={busy}
+                                      sx={
+                                        messageBodyMinHeight != null
+                                          ? {
+                                              '& .MuiInputBase-root': {
+                                                minHeight: messageBodyMinHeight,
+                                              },
+                                            }
+                                          : undefined
+                                      }
                                     />
                                   )}
                                 />

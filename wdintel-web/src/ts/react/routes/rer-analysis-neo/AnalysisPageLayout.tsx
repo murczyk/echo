@@ -52,6 +52,7 @@ export function RerAnalysisNeoPage({
   const { ref: layoutRef, width: layoutWidth } = useObservedWidth<HTMLDivElement>();
   const reportFocusTargetRef = useRef<HTMLElement | null>(null);
   const reportFallbackFocusRef = useRef<HTMLDivElement | null>(null);
+  const createMessageFabRef = useRef<HTMLButtonElement | null>(null);
   const { notify } = usePowerSnackbar();
   useEffect(() => {
     if (!page.directMessageError) return;
@@ -133,6 +134,17 @@ export function RerAnalysisNeoPage({
         document.activeElement instanceof HTMLElement ? document.activeElement : null;
       const applyIntent = () => {
         if (page.rightPanelOpen) page.toggleRightPanel();
+        if (key === 'create-message') {
+          if (
+            isPresent(page.editorMessage) ||
+            isPresent(page.reportSource) ||
+            page.editTargetLoadState.status !== 'idle'
+          ) {
+            page.closeEditor();
+          }
+        } else {
+          setCreateMessageOpen(false);
+        }
         setEditorSourceMessageId(sourceMessageId);
         commit();
       };
@@ -142,7 +154,15 @@ export function RerAnalysisNeoPage({
         applyIntent();
       }
     },
-    [page.currentUser?.roles, page.rightPanelOpen, page.toggleRightPanel],
+    [
+      page.closeEditor,
+      page.currentUser?.roles,
+      page.editTargetLoadState.status,
+      page.editorMessage,
+      page.reportSource,
+      page.rightPanelOpen,
+      page.toggleRightPanel,
+    ],
   );
   const openCreateMessageComposer = useCallback(() => {
     requestEditorIntent('create-message', null, () => setCreateMessageOpen(true));
@@ -381,7 +401,7 @@ export function RerAnalysisNeoPage({
                   adaptiveEmbeddedForm
                   fillEmbeddedSurface
                   transparentEmbeddedSurface
-                  focusFallbackRef={reportFallbackFocusRef}
+                  focusFallbackRef={createMessageFabRef}
                   cyberEchoEnabled={page.cyberEchoEnabled}
                   currentUser={page.currentUser}
                   editTarget={page.editorMessage}
@@ -487,7 +507,7 @@ export function RerAnalysisNeoPage({
         />
 
         {!analysisMapVisible && !editorOpen ? (
-          <CreateMessageFab onClick={openCreateMessageComposer} />
+          <CreateMessageFab ref={createMessageFabRef} onClick={openCreateMessageComposer} />
         ) : null}
       </Box>
     </RadioFeaturesProvider>

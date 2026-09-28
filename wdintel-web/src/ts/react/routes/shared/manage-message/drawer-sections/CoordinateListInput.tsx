@@ -480,6 +480,7 @@ export function CoordinateListInput({
             border: 1,
             borderColor: 'divider',
             p: points.length > 0 ? 0.75 : 1,
+            px: points.length > 0 ? 0 : 1,
             overflowY: 'auto',
             display: points.length > 0 ? 'block' : 'flex',
             alignItems: 'center',
@@ -524,7 +525,7 @@ export function CoordinateListInput({
                         flex: 1,
                         minWidth: 0,
                         fontVariantNumeric: 'tabular-nums',
-                        fontSize: 'clamp(0.625rem, 7cqi, 0.75rem)',
+                        fontSize: 'clamp(0.75rem, 7cqi, 1rem)',
                         whiteSpace: 'nowrap',
                       }}
                     >

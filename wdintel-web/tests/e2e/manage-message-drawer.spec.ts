@@ -186,6 +186,24 @@ async function openCreateEditorWithLinkedMessage(
 
 test.describe('@smoke manage message drawer linked-message regressions', () => {
   test.describe.configure({ timeout: 60_000 });
+  test('analysis focuses the message text when creation opens', async ({ page }) => {
+    await openCreateMessageDrawer(page, 'analysis');
+
+    await expect(page.getByRole('textbox', { name: 'Текст повідомлення' })).toBeFocused();
+  });
+
+  test('analysis restores focus to the create action after closing with Escape', async ({
+    page,
+  }) => {
+    await openCreateMessageDrawer(page, 'analysis');
+
+    await page.getByRole('textbox', { name: 'Текст повідомлення' }).press('Escape');
+
+    await expect(page.locator('[data-manage-message-presentation]')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Додати повідомлення' })).toBeFocused();
+    await expect(page.locator('[data-manage-message-focus-fallback]')).not.toBeFocused();
+  });
+
   test('ownership journey preserves manual fields while parsed values follow source text', async ({
     page,
   }) => {
@@ -261,7 +279,11 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       await page.getByRole('button', { name: 'Скасувати', exact: true }).click();
       await page.getByRole('button', { name: 'Відхилити зміни' }).click();
       await expect(page.locator('[data-manage-message-presentation]')).toHaveCount(0);
-      await expect(page.locator('[data-manage-message-focus-fallback]')).toBeFocused();
+      await expect(
+        host === 'analysis'
+          ? page.getByRole('button', { name: 'Додати повідомлення' })
+          : page.locator('[data-manage-message-focus-fallback]'),
+      ).toBeFocused();
     });
     test(`${host} edits a message with an intelligence report as a message`, async ({ page }) => {
       await openLinkedMessageEditDrawer(page, host, 'with-report');
@@ -347,6 +369,8 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       await requestReport();
       await page.getByRole('button', { name: 'Відхилити зміни' }).click();
       await expect(page.getByRole('heading', { name: 'Створити розвіддонесення' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Створити повідомлення' })).toHaveCount(0);
+      await expect(page.locator('[data-manage-message-presentation]')).toHaveCount(1);
       await expect(page.locator('.MuiBackdrop-root:visible')).toHaveCount(0);
     });
   }
@@ -478,7 +502,8 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
         editorWidth: 512,
         density: 'single',
         mainColumns: 1,
-        sectionColumns: 1,
+        pairedColumns: 1,
+        nestedSectionColumns: 1,
       },
       {
         width: 1440,
@@ -486,15 +511,17 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
         editorWidth: 720,
         density: 'compact',
         mainColumns: 2,
-        sectionColumns: 2,
+        pairedColumns: 2,
+        nestedSectionColumns: 1,
       },
       {
         width: 1600,
         leftPanelOpen: true,
         editorWidth: 600,
-        density: 'single',
+        density: 'compact',
         mainColumns: 1,
-        sectionColumns: 1,
+        pairedColumns: 2,
+        nestedSectionColumns: 2,
       },
       {
         width: 3440,
@@ -502,7 +529,8 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
         editorWidth: 1520,
         density: 'wide',
         mainColumns: 2,
-        sectionColumns: 2,
+        pairedColumns: 2,
+        nestedSectionColumns: 2,
       },
     ] as const;
 
@@ -543,7 +571,58 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
             return 0;
           }),
         )
-        .toBe(scenario.sectionColumns);
+        .toBe(scenario.pairedColumns);
+      const frequencyInput = page.getByLabel('Частота (МГц)');
+      await expect
+        .poll(() =>
+          frequencyInput.evaluate((element) => {
+            const form = element.closest('form');
+            let parent = element.parentElement;
+            while (parent && parent !== form) {
+              const style = getComputedStyle(parent);
+              if (style.display === 'grid') return style.gridTemplateColumns.split(' ').length;
+              parent = parent.parentElement;
+            }
+            return 0;
+          }),
+        )
+        .toBe(scenario.pairedColumns);
+      const groupInput = page.getByRole('combobox', { name: 'Група', exact: true });
+      await expect
+        .poll(() =>
+          groupInput.evaluate((element) => {
+            const form = element.closest('form');
+            let parent = element.parentElement;
+            while (parent && parent !== form) {
+              const style = getComputedStyle(parent);
+              if (style.display === 'grid') return style.gridTemplateColumns.split(' ').length;
+              parent = parent.parentElement;
+            }
+            return 0;
+          }),
+        )
+        .toBe(scenario.nestedSectionColumns);
+
+      if (scenario.mainColumns === 2) {
+        const [messageBounds, unitBounds] = await Promise.all([
+          page.getByRole('textbox', { name: 'Текст повідомлення' }).evaluate((element) => {
+            const inputRoot = element.closest('.MuiInputBase-root');
+            if (!inputRoot) throw new Error('Message input root not found');
+            const bounds = inputRoot.getBoundingClientRect();
+            return { bottom: bounds.bottom, height: bounds.height, top: bounds.top };
+          }),
+          page.getByRole('combobox', { name: 'Підрозділ' }).evaluate((element) => {
+            const inputRoot = element.closest('.MuiInputBase-root');
+            if (!inputRoot) throw new Error('Unit input root not found');
+            const bounds = inputRoot.getBoundingClientRect();
+            return { bottom: bounds.bottom, height: bounds.height, top: bounds.top };
+          }),
+        ]);
+        expect(
+          Math.abs(messageBounds.bottom - unitBounds.bottom),
+          JSON.stringify({ messageBounds, unitBounds, width: scenario.width }),
+        ).toBeLessThanOrEqual(2);
+      }
 
       const editorHeader = page
         .getByRole('heading', { name: 'Створити повідомлення' })
@@ -598,6 +677,10 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
 
         const coordinateText = page.getByText(/^37U CQ \d{5} \d{5}$/);
         await expect(coordinateText).toBeVisible();
+        const coordinateFontSize = await coordinateText.evaluate((element) =>
+          Number.parseFloat(getComputedStyle(element).fontSize),
+        );
+        expect(coordinateFontSize).toBeGreaterThan(scenario.width === 1440 ? 10.5 : 13.5);
         await expect
           .poll(() =>
             coordinateText.evaluate((element) => element.scrollWidth <= element.clientWidth),
@@ -614,6 +697,73 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
           await expect(copyAction).toBeVisible();
         }
       }
+    }
+  });
+
+  test('Analysis gives Network the full row when radio fields are unavailable', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 3440, height: 900 });
+    await installAnalysisNeoApiMocks(page, {
+      inboxResponse: createOverflowingInboxResponse(),
+      userRoles: ['Cyber'],
+    });
+    await page.goto('/rer-analysis-neo?leftPanelOpen=true');
+    await expect(page.getByText('Analysis narrow fixture message 0')).toBeVisible();
+    await page.getByRole('button', { name: 'Додати повідомлення' }).click();
+
+    await expect(page.getByLabel('Частота (МГц)')).toHaveCount(0);
+    const networkWidths = await page.getByLabel('Мережа').evaluate((element) => {
+      const feedback = element.closest('[data-testid="parser-feedback-network_name"]');
+      const grid = feedback?.parentElement;
+      if (!feedback || !grid) throw new Error('Network grid not found');
+      return {
+        field: feedback.getBoundingClientRect().width,
+        grid: grid.getBoundingClientRect().width,
+      };
+    });
+    expect(networkWidths.field).toBeCloseTo(networkWidths.grid, 0);
+  });
+
+  test('Analysis editor matches the app text scale while keeping phone inputs zoom-safe', async ({
+    page,
+  }) => {
+    await installAnalysisNeoApiMocks(page, { inboxResponse: createOverflowingInboxResponse() });
+
+    for (const scenario of [
+      { width: 375, fontSize: '16px' },
+      { width: 1440, fontSize: '14px' },
+    ]) {
+      await page.setViewportSize({ width: scenario.width, height: 900 });
+      await page.goto('/rer-analysis-neo?leftPanelOpen=false');
+      await expect(page.getByText('Analysis narrow fixture message 0')).toBeVisible();
+      await page.getByRole('button', { name: 'Додати повідомлення' }).click();
+
+      const fields = [
+        page.getByRole('textbox', { name: 'Текст повідомлення' }),
+        page.getByRole('combobox', { name: 'Підрозділ' }),
+        page.getByLabel('Дата перехоплення'),
+      ];
+      await expect
+        .poll(() =>
+          Promise.all(
+            fields.map((field) => field.evaluate((element) => getComputedStyle(element).fontSize)),
+          ),
+        )
+        .toEqual(fields.map(() => scenario.fontSize));
+
+      const emptyFieldLabels = ['Пост', 'Теги', 'Позивні'].map((label) =>
+        page.locator('label').filter({ hasText: label }),
+      );
+      await expect
+        .poll(() =>
+          Promise.all(
+            emptyFieldLabels.map((label) =>
+              label.evaluate((element) => getComputedStyle(element).fontSize),
+            ),
+          ),
+        )
+        .toEqual(emptyFieldLabels.map(() => scenario.fontSize));
     }
   });
 

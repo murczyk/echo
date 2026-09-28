@@ -58,9 +58,12 @@ export function NetworkSection({
           display: 'grid',
           gridTemplateColumns: {
             xs: '1fr',
-            sm: 'repeat(var(--manage-message-section-columns, 2), minmax(0, 1fr))',
+            sm: 'repeat(var(--manage-message-metadata-columns, 2), minmax(0, 1fr))',
           },
           gap: 2,
+          '& > :last-child': {
+            gridColumn: radioFeaturesAllowed ? undefined : '1 / -1',
+          },
         }}
       >
         {radioFeaturesAllowed ? (

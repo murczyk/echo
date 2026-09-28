@@ -1016,6 +1016,32 @@ describe('RerAnalysisNeoPage', () => {
     root.unmount();
   });
 
+  it('replaces the create-message intent with create-report', async () => {
+    const page = buildPage();
+    page.openReportCreator.mockImplementation((messageId: number) => {
+      page.reportSource = { id: messageId, message: {} } as never;
+    });
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="create-message-fab"]')?.click();
+    });
+    expect(manageMessageDrawerPropsHistory.at(-1)?.intentKey).toBe('create-message');
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="analysis-create-report"]')?.click();
+    });
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+
+    expect(manageMessageDrawerPropsHistory.at(-1)?.intentKey).toBe('create-report:42');
+    root.unmount();
+  });
+
   it('closes and notifies when write permission is revoked', async () => {
     const page = buildPage();
     useRerAnalysisNeoPageMock.mockReturnValue(page);

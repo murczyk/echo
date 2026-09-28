@@ -9,8 +9,20 @@ describe('resolveManageMessageEmbeddedFormLayout', () => {
       expected: { density: 'single', mainColumns: 1, sectionColumns: 1, metadataColumns: 1 },
     },
     {
-      width: 719,
+      width: 559,
       expected: { density: 'single', mainColumns: 1, sectionColumns: 1, metadataColumns: 1 },
+    },
+    {
+      width: 560,
+      expected: { density: 'compact', mainColumns: 1, sectionColumns: 2, metadataColumns: 2 },
+    },
+    {
+      width: 600,
+      expected: { density: 'compact', mainColumns: 1, sectionColumns: 2, metadataColumns: 2 },
+    },
+    {
+      width: 719,
+      expected: { density: 'compact', mainColumns: 1, sectionColumns: 2, metadataColumns: 2 },
     },
     {
       width: 720,

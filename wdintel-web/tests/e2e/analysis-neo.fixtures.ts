@@ -3,6 +3,7 @@ import type { InboxMessagesRspRaw } from '../../src/ts/react/services/api/inbox-
 import { networkSettingsResponse, systemSettingsCurrentResponse } from './fixture-responses';
 
 type AnalysisNeoMockOptions = {
+  userRoles?: string[];
   enableAudioTranscription?: boolean;
   analysisAorFilterEnabled?: boolean;
   summaryDelayMs?: number;
@@ -237,7 +238,7 @@ export async function installAnalysisNeoApiMocks(
       await fulfillJson(route, {
         id: 'analysis-tester',
         name: 'analysis-tester',
-        roles: ['Rer'],
+        roles: options.userRoles ?? ['Rer'],
         sigint_zone_id: null,
         organism_id: null,
         delta_login: null,
