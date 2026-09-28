@@ -18,7 +18,7 @@ import {
   ANALYSIS_MESSAGES_PAGE_SIZE,
   createInitialQueryState,
   createResetQueryState,
-  extendQueryDateRangeForDirectMessage,
+  adjustQueryDateRangeForDirectMessage,
   hasMeaningfulUiFiltersBeyondDateRange,
   parseQueryStateFromWindow,
   pushQueryStateToUrl,
@@ -194,6 +194,7 @@ export function useRerAnalysisNeoPage(
     targetMessageUid !== null,
   );
   const targetMessageLoadedRef = useRef(false);
+  const targetMessageRequestRef = useRef(0);
   const targetMessageIdRef = useRef<number | null>(null);
   const targetMessageContextSawReloadRef = useRef(false);
   const [centerTabPending, startCenterTabTransition] = useTransition();
@@ -209,6 +210,11 @@ export function useRerAnalysisNeoPage(
           : { status: 'denied' };
   const canUseDevices = deviceAccess.status === 'allowed';
   const radioFeaturesAllowed = canUseRadioFeatures(currentUser?.roles ?? authUserRoles);
+  const directQueryBoundaryRef = useRef({
+    fromDateTimeStr: initialQueryState.fromDateTimeStr,
+    toDateTimeStr: initialQueryState.toDateTimeStr,
+    search: initialQueryState.search,
+  });
   const queryStateWithResolvedRoleDate = useMemo(
     () =>
       resolveRoleDefaultFromDate({
@@ -230,6 +236,11 @@ export function useRerAnalysisNeoPage(
   );
   useEffect(() => {
     if (queryStateWithResolvedRoleDate !== queryState) {
+      directQueryBoundaryRef.current = {
+        fromDateTimeStr: queryStateWithResolvedRoleDate.fromDateTimeStr,
+        toDateTimeStr: queryStateWithResolvedRoleDate.toDateTimeStr,
+        search: queryStateWithResolvedRoleDate.search,
+      };
       setQueryState(queryStateWithResolvedRoleDate);
     }
   }, [queryState, queryStateWithResolvedRoleDate]);
@@ -255,11 +266,6 @@ export function useRerAnalysisNeoPage(
         : { ...current, messageTimeBasis: dutySettings.messageSortBy },
     );
   }, [dutySettings.loadInProgress, dutySettings.messageSortBy]);
-  const directQueryBoundaryRef = useRef({
-    fromDateTimeStr: initialQueryState.fromDateTimeStr,
-    toDateTimeStr: initialQueryState.toDateTimeStr,
-    search: initialQueryState.search,
-  });
   const directMessageWindowQueryState = useMemo(
     () =>
       effectiveRadioQuery(
@@ -287,10 +293,16 @@ export function useRerAnalysisNeoPage(
     ],
   );
 
+  const directMessageDefaultsPending =
+    currentUserStatus === 'loading' ||
+    queryStateWithResolvedRoleDate !== queryState ||
+    queryState.messageTimeBasis !== dutySettings.messageSortBy;
+
   useEffect(() => {
     if (
       !targetMessageUid ||
       !targetMessageContextActive ||
+      directMessageDefaultsPending ||
       dutySettings.loadInProgress ||
       deviceAccess.status === 'loading' ||
       (deviceAccess.status === 'error' &&
@@ -299,6 +311,8 @@ export function useRerAnalysisNeoPage(
       return;
     }
     let cancelled = false;
+    const requestId = ++targetMessageRequestRef.current;
+    const isCurrentRequest = () => !cancelled && requestId === targetMessageRequestRef.current;
     const isContextRefresh = targetMessageLoadedRef.current;
     if (isContextRefresh) {
       targetMessageContextSawReloadRef.current = false;
@@ -312,7 +326,7 @@ export function useRerAnalysisNeoPage(
       inboxReq: buildInboxReq(directMessageWindowQueryState, [], true),
     })
       .then((res) => {
-        if (cancelled) return;
+        if (!isCurrentRequest()) return;
         if (res == null) {
           if (isContextRefresh) {
             setTargetMessageWindow(null);
@@ -335,7 +349,7 @@ export function useRerAnalysisNeoPage(
         )?.[1];
         if (targetMessage != null) {
           setQueryState((current) => {
-            const next = extendQueryDateRangeForDirectMessage(current, targetMessage);
+            const next = adjustQueryDateRangeForDirectMessage(current, targetMessage);
             if (next === current) return current;
             directQueryBoundaryRef.current = {
               fromDateTimeStr: next.fromDateTimeStr,
@@ -349,7 +363,7 @@ export function useRerAnalysisNeoPage(
         if (isContextRefresh) setTargetMessageContextResponsePending(false);
       })
       .catch((err) => {
-        if (cancelled) return;
+        if (!isCurrentRequest()) return;
         if (!targetMessageLoadedRef.current) {
           setTargetMessageContextActive(false);
         }
@@ -361,12 +375,13 @@ export function useRerAnalysisNeoPage(
         );
       })
       .finally(() => {
-        if (!cancelled) setTargetMessageLoading(false);
+        if (isCurrentRequest()) setTargetMessageLoading(false);
       });
     return () => {
       cancelled = true;
     };
   }, [
+    directMessageDefaultsPending,
     directMessageWindowQueryState,
     deviceAccess.status,
     dutySettings.loadInProgress,
@@ -379,11 +394,20 @@ export function useRerAnalysisNeoPage(
     removeMessageUidFromWindowUrl();
   }, []);
 
+  const clearTargetMessageContext = useCallback(() => {
+    targetMessageRequestRef.current += 1;
+    setTargetMessageContextActive(false);
+    setTargetMessageLoading(false);
+    setTargetMessageContextLoading(false);
+    setTargetMessageContextResponsePending(false);
+    clearTargetMessageFocus();
+  }, [clearTargetMessageFocus]);
+
   useEffect(() => {
     const nextBoundary = {
-      fromDateTimeStr: queryState.fromDateTimeStr,
-      toDateTimeStr: queryState.toDateTimeStr,
-      search: queryState.search,
+      fromDateTimeStr: queryStateWithResolvedRoleDate.fromDateTimeStr,
+      toDateTimeStr: queryStateWithResolvedRoleDate.toDateTimeStr,
+      search: queryStateWithResolvedRoleDate.search,
     };
     const previousBoundary = directQueryBoundaryRef.current;
     directQueryBoundaryRef.current = nextBoundary;
@@ -395,13 +419,12 @@ export function useRerAnalysisNeoPage(
     ) {
       return;
     }
-    setTargetMessageContextActive(false);
-    clearTargetMessageFocus();
+    clearTargetMessageContext();
   }, [
-    clearTargetMessageFocus,
-    queryState.fromDateTimeStr,
-    queryState.search,
-    queryState.toDateTimeStr,
+    clearTargetMessageContext,
+    queryStateWithResolvedRoleDate.fromDateTimeStr,
+    queryStateWithResolvedRoleDate.search,
+    queryStateWithResolvedRoleDate.toDateTimeStr,
     targetMessageContextActive,
   ]);
 
@@ -808,10 +831,23 @@ export function useRerAnalysisNeoPage(
     (patch: Partial<AnalysisQueryState>) => {
       const normalizedPatch =
         patch.unitsSelected?.length === 0 ? { ...patch, unitsExactMatchOnly: null } : patch;
+      const boundary = directQueryBoundaryRef.current;
+      if (
+        targetMessageContextActive &&
+        ((patch.fromDateTimeStr != null && patch.fromDateTimeStr !== boundary.fromDateTimeStr) ||
+          (patch.toDateTimeStr != null && patch.toDateTimeStr !== boundary.toDateTimeStr) ||
+          (patch.search != null && patch.search !== boundary.search))
+      ) {
+        clearTargetMessageContext();
+      }
       data.invalidateFilterSectionLoadsForPatch(normalizedPatch);
       setQueryState((current) => normalizeQueryState({ ...current, ...normalizedPatch }));
     },
-    [data.invalidateFilterSectionLoadsForPatch],
+    [
+      clearTargetMessageContext,
+      data.invalidateFilterSectionLoadsForPatch,
+      targetMessageContextActive,
+    ],
   );
 
   const applySavedFilter = useCallback(
