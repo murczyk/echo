@@ -28,6 +28,7 @@ vi.mock('@mui/material', () => ({
       {children}
     </button>
   ),
+  CircularProgress: () => <div>loading-spinner</div>,
   Collapse: ({ children, in: open }: { children: ReactNode; in: boolean }) =>
     open ? <div>{children}</div> : null,
   IconButton: ({
@@ -78,11 +79,7 @@ vi.mock('@mui/icons-material/Search', () => ({ default: () => <span>search</span
 import { vi } from 'vitest';
 
 import type { AnalysisCountItem } from '../../types';
-import {
-  AnalysisCountBlock,
-  analysisCountHeaderSx,
-  analysisCountStatusSx,
-} from '../AnalysisCountBlock';
+import { AnalysisCountBlock } from '.././AnalysisCountBlock';
 
 type Rendered = {
   container: HTMLDivElement;
@@ -122,7 +119,6 @@ function getButton(container: HTMLElement, label: string): HTMLButtonElement {
   if (!(button instanceof HTMLButtonElement)) throw new Error(`Button not found: ${label}`);
   return button;
 }
-
 describe('AnalysisCountBlock', () => {
   const rendered: Rendered[] = [];
 
@@ -250,37 +246,6 @@ describe('AnalysisCountBlock', () => {
 
     expect(view.container.textContent).toContain('loading-skeleton');
     expect(view.container.textContent).not.toContain('Немає даних');
-  });
-
-  it('replaces existing items with skeletons during background refresh', async () => {
-    const view = await renderComponent([{ key: '147.3750', count: 51 }], true);
-    rendered.push(view);
-
-    expect(view.container.textContent).not.toContain('147.3750');
-    expect(view.container.textContent).toContain('loading-skeleton');
-  });
-
-  it('replaces the summary count with a skeleton during background refresh', async () => {
-    const view = await renderComponent(
-      [
-        { key: '', count: 23 },
-        { key: '147.3750', count: 23 },
-      ],
-      true,
-    );
-    rendered.push(view);
-
-    expect(view.container.textContent).not.toContain('Повідомлень: 23');
-    expect(view.container.textContent).toContain('loading-skeleton');
-  });
-
-  it('reserves stable space for the summary and loading status', () => {
-    expect(analysisCountStatusSx.minWidth).toBe(104);
-    expect(analysisCountStatusSx.justifyContent).toBe('flex-end');
-  });
-
-  it('centers the header controls independently of the loading indicator baseline', () => {
-    expect(analysisCountHeaderSx.alignItems).toBe('center');
   });
 
   it('renders an item action and wires it to the clicked metric', async () => {

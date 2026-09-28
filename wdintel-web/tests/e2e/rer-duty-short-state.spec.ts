@@ -2,7 +2,8 @@ import { expect, test } from '@playwright/test';
 
 import { installRerDutyShortStateMocks } from './rer-duty-short-state.fixtures';
 
-test.describe('@smoke', () => {
+// Regression: https://github.com/echoua/echo/pull/3268
+test.describe('@smoke @regression', () => {
   test('blocked Duty session returns to login and stops background requests', async ({ page }) => {
     await installRerDutyShortStateMocks(page);
     let blocked = false;
@@ -44,14 +45,15 @@ test.describe('@smoke', () => {
       },
     );
 
+    await page.clock.install();
     await page.goto('/rer-duty-neo');
+    await page.clock.runFor(5000);
     await expect.poll(() => countRequests).toBeGreaterThan(0);
     blocked = true;
     releaseLongPoll();
     await expect(page).toHaveURL(/\/login(?:\?|$)/);
-    await expect(page.locator('form')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'увійти' })).toBeVisible();
     const requestsAfterLogout = backgroundRequests;
-    await page.clock.install();
     await page.clock.runFor(5000);
 
     expect(backgroundRequests).toBe(requestsAfterLogout);

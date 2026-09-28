@@ -1,7 +1,7 @@
 import type { Page, Route } from '@playwright/test';
 import type { MessageTimeBasis } from '../../src/ts/react/services/api/user-settings';
 import type { InboxMessagesRspRaw } from '../../src/ts/react/services/api/inbox-messages';
-import { networkSettingsResponse } from './fixture-responses';
+import { networkSettingsResponse, systemSettingsCurrentResponse } from './fixture-responses';
 
 type ShortStateFixtureOptions = {
   enableAudioTranscription?: boolean;
@@ -65,40 +65,6 @@ function emptyUserSettingsResponse(disableAutoScroll = false) {
   return {
     tagsLayout: 'compact',
     disableAutoScroll,
-  };
-}
-
-export function emptySystemSettingsResponse(enableAudioTranscription = false) {
-  return {
-    id: null,
-    rer_analysis_units_exact_match_only_default: false,
-    rer_duty_test_enabled: false,
-    rer_duty_insert_historical_interceptions: false,
-    rer_duty_test_since_ms: 0,
-    rer_duty_test_limit: 1,
-    rer_duty_poll_interval_sec: 1,
-    rer_duty_test_replay_interval_sec: 1,
-    short_url_enabled: false,
-    support_non_rer_interceptions: false,
-    default_neo_analysis: false,
-    autofix_echoim_missing_messages: false,
-    peleng_bounds_enabled: false,
-    peleng_bounds_top_left_lat: null,
-    peleng_bounds_top_left_lng: null,
-    peleng_bounds_bottom_right_lat: null,
-    peleng_bounds_bottom_right_lng: null,
-    devices_section_enabled: false,
-    sigint_comment_parsing_enabled: false,
-    do_not_store_duplicate_echoim_failures: false,
-    goi_association_message_uid_worker_enabled: false,
-    report_chunking_hours: 1,
-    limit_big_reports: false,
-    enable_audio_transcription: enableAudioTranscription,
-    show_classic_duty: false,
-    show_classic_analysis: false,
-    show_peleng_distance_to_battleline: false,
-    hide_orbit_data: false,
-    disable_bot_tags: false,
   };
 }
 
@@ -171,14 +137,14 @@ function defaultShortState() {
       [
         'mf-0',
         {
-          groups_selected: ['group-1'],
-          senders_selected: null,
-          denied_senders: null,
-          freqs_selected: null,
-          freqs_denied: null,
-          posts_selected: null,
-          posts_denied: null,
-          last_viewed_message_id: null,
+          groupsSelected: ['group-1'],
+          sendersSelected: null,
+          deniedSenders: null,
+          freqsSelected: null,
+          freqsDenied: null,
+          postsSelected: null,
+          postsDenied: null,
+          lastViewedMessageId: null,
         },
       ],
     ],
@@ -232,12 +198,15 @@ export async function installRerDutyShortStateMocks(
     }
 
     if (pathname === '/api/system-settings/current') {
-      await fulfillJson(route, {
-        ...emptySystemSettingsResponse(options.enableAudioTranscription),
-        duty_exclude_menu_enabled: options.dutyExcludeMenuEnabled ?? true,
-        two_factor_auth_enabled: true,
-        analysis_aor_filter_enabled: options.analysisAorFilterEnabled ?? true,
-      });
+      await fulfillJson(
+        route,
+        systemSettingsCurrentResponse({
+          enableAudioTranscription: options.enableAudioTranscription,
+          shortUrlEnabled: true,
+          dutyExcludeMenuEnabled: options.dutyExcludeMenuEnabled,
+          analysisAorFilterEnabled: options.analysisAorFilterEnabled,
+        }),
+      );
       resolveSystemSettingsReady();
       return;
     }

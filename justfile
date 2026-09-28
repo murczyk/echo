@@ -9,6 +9,7 @@ no_bgworker := "false"
 dev_back_args := if no_bgworker == "true" { "--no-bgworker" } else { "" }
 server := ""
 active_servers := "echo-staging echo-cbr-staging echo-cbr echo-kharkiv2 echo-kupiansk echo-siversk echo-zp2 echo-skhid echo-pivnich"
+ai_servers := "echo-cbr-staging echo-cbr"
 target := ""
 backup_key_id := `if [ -f "./deploy/config-backup.toml" ]; then tomlq backup_key_id -f ./deploy/config-backup.toml; else echo ""; fi`
 backup_key := `if [ -f "./deploy/config-backup.toml" ]; then tomlq backup_key -f ./deploy/config-backup.toml; else echo ""; fi`
@@ -106,11 +107,34 @@ setup-pgbackrest server backup_name="" daily_restore="false":
 _print-servers:
     @echo "❌ Server parameter not recognized. Value: {{ server }}"
 
-active-servers:
+servers-active:
     @echo "{{ active_servers }}"
+
+servers-ai:
+    @echo "{{ ai_servers }}"
+
+# Inspect AI harnesses using the dev binary; dev-tmux owns rebuilds/restarts.
+ai-control-panel *args:
+    @test -x target/debug/wdintel-rs || (cd wdintel-rs && cargo build --bin wdintel-rs)
+    ./target/debug/wdintel-rs --mode=debug ai-control-panel {{ args }}
 
 evaluate:
     @just --evaluate
+
+# Start four development windows in a detached session on the current tmux server (Linux).
+[arg('force', long='force', value='true')]
+dev-tmux force="false":
+    python3 deploy/dev-tmux.py start {{ if force == "true" { "--force" } else { "" } }}
+
+# Stop the managed tmux session and all worker descendants.
+[arg('all', long='all', value='true')]
+dev-tmux-stop all="false":
+    python3 deploy/dev-tmux.py stop {{ if all == "true" { "--all" } else { "" } }}
+
+# Restart this checkout's managed dev environment after stopping its workers.
+dev-tmux-restart:
+    just dev-tmux-stop
+    just dev-tmux
 
 dev-front:
     bash deploy/dev-front.sh

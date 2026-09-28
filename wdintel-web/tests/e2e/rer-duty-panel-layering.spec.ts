@@ -51,7 +51,6 @@ async function clickCount(page: Page, key: string): Promise<number> {
     key,
   );
 }
-
 test('keeps image and video download controls below an open Duty filter panel', async ({
   page,
 }) => {

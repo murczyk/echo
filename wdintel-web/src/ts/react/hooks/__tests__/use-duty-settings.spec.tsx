@@ -1,0 +1,107 @@
+/**
+ * @vitest-environment happy-dom
+ */
+import { act, createElement } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { USER_SETTINGS_UPDATED_EVENT } from '../../services/api/user-settings';
+import { useDutySettings } from '../use-duty-settings';
+
+const fetchUserSettingsMock = vi.hoisted(() => vi.fn());
+
+vi.mock('../../services/api/user-settings', () => ({
+  USER_SETTINGS_UPDATED_EVENT: 'user-settings-updated',
+  fetchUserSettings: fetchUserSettingsMock,
+  saveUserSettings: vi.fn(),
+}));
+
+let rendered: { container: HTMLDivElement; root: Root } | null = null;
+let latestSettings: ReturnType<typeof useDutySettings> | null = null;
+
+function HookProbe() {
+  latestSettings = useDutySettings();
+  return null;
+}
+
+function renderHook() {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  act(() => {
+    root.render(createElement(HookProbe));
+  });
+
+  rendered = { container, root };
+}
+
+afterEach(() => {
+  if (rendered !== null) {
+    act(() => rendered?.root.unmount());
+    rendered.container.remove();
+    rendered = null;
+  }
+  latestSettings = null;
+});
+
+beforeEach(() => {
+  fetchUserSettingsMock.mockReset();
+});
+
+describe('useDutySettings', () => {
+  it('preserves Off from the initial settings load', async () => {
+    fetchUserSettingsMock.mockResolvedValue({ messageTextPreviewLines: null });
+
+    renderHook();
+    await act(async () => {});
+
+    expect(latestSettings?.messageTextPreviewLines).toBeNull();
+  });
+  it('preserves Off from a user-settings update event', async () => {
+    fetchUserSettingsMock.mockResolvedValue({ messageTextPreviewLines: 20 });
+
+    renderHook();
+    await act(async () => {});
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent(USER_SETTINGS_UPDATED_EVENT, {
+          detail: { messageTextPreviewLines: null },
+        }),
+      );
+    });
+
+    expect(latestSettings?.messageTextPreviewLines).toBeNull();
+  });
+  it('defaults an absent preview limit to 20', async () => {
+    fetchUserSettingsMock.mockResolvedValue({});
+
+    renderHook();
+    await act(async () => {});
+
+    expect(latestSettings?.messageTextPreviewLines).toBe(20);
+    expect(latestSettings?.mediaSummaryEnabled).toBe(false);
+    expect(latestSettings?.messageAutoParseEnabled).toBe(true);
+  });
+
+  it('retries a failed settings load and applies the recovered settings', async () => {
+    fetchUserSettingsMock
+      .mockRejectedValueOnce(new Error('network unavailable'))
+      .mockResolvedValueOnce({ messageAutoParseEnabled: true });
+
+    renderHook();
+    await act(async () => {});
+
+    expect(latestSettings?.loadError).toBe('Не вдалося завантажити налаштування.');
+
+    await act(async () => {
+      latestSettings?.retryLoad();
+      await Promise.resolve();
+    });
+
+    expect(fetchUserSettingsMock).toHaveBeenCalledTimes(2);
+    expect(latestSettings?.loadError).toBeNull();
+    expect(latestSettings?.messageAutoParseEnabled).toBe(true);
+  });
+});

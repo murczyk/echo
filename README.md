@@ -62,6 +62,34 @@ Python service (optional, for NLP stuff only):
 just dev-py
 ```
 
+On Linux, start all four commands in a detached tmux session:
+
+```bash
+just dev-tmux
+```
+
+The session is named after the checkout, for example `echo-main-dev`, with
+`dev-back`, `dev-bgworker`, `dev-front`, and `dev-py` windows. In tmux, use
+`<bind> s` to select it; outside tmux, use the attach command printed by the
+launcher. Running the command again reuses the existing session. Exited windows
+remain visible so errors can be inspected.
+
+```bash
+just dev-tmux-stop
+```
+
+Stopping waits for all worker descendants, including the report worker, to exit.
+Closing a window or killing the tmux session also cleans up its workers. Detaching
+keeps them running. To restart everything, stop the session and run `just dev-tmux`
+again. The launcher requires Python 3.9+, tmux, and just; it needs no sudo or systemd.
+
+If another checkout has a running Echo dev environment, startup refuses to replace
+it. Use `just dev-tmux --force` to stop that environment first, or
+`just dev-tmux-stop --all` to stop all of your Echo dev environments across
+directories. This also detects workers started with the individual dev commands.
+Run `python3 deploy/test_dev_tmux.py` to check startup and cleanup in isolated tmux
+servers with fixture workers.
+
 nginx macos: see [[deploy/README]]
 
 Then open http://wildducks.localhost
@@ -94,9 +122,21 @@ just test-fe
 ```
 
 This runs the frontend test pipeline in `wdintel-web`:
+
 - `elm-test`
-- `vitest`
+- the full Vitest suite (`npm run test:ts`)
 - the generated frontend test setup
+
+React test-structure commands are available from `wdintel-web`:
+
+```bash
+npm run test:structure-check
+npm run test:ts
+```
+
+`test:structure-check` validates test placement, test-support imports, and
+referenced test paths. `test:ts` runs token validation and this structural check
+before the complete Vitest suite.
 
 Frontend end-to-end checks:
 
@@ -105,17 +145,31 @@ cd wdintel-web
 npm run e2e
 ```
 
-This runs the Playwright smoke suite for the current React/Elm hybrid frontend. For the slower loading comparisons, use:
+This runs the Playwright smoke suite for the current React/Elm hybrid frontend.
+E2E is not part of CI/CD, but affected Playwright suites must be executed and
+green before merging. Playwright discovery is not execution. Browser coverage
+does not justify deleting stronger Vitest coverage unless it exercises the same
+failure boundary. Run browser regressions selected by their `@regression`
+Playwright title tag with:
+
+```bash
+npm run e2e:regression
+```
+
+Run every browser test locally with:
+
+```bash
+npm run e2e:all
+```
+
+For the slower loading comparisons, use:
 
 ```bash
 npm run e2e:perf
 ```
 
-To run only the direct-link group and sender reference tests, use:
-
-```bash
-npm run e2e:analysis-references
-```
+This is a non-blocking local inspection: it has no controlled environment or
+stable performance budget and is not a CI gate.
 
 Before running Playwright locally for the first time, install the browser once:
 

@@ -1,7 +1,6 @@
 import type { Page, Route } from '@playwright/test';
 import type { InboxMessagesRspRaw } from '../../src/ts/react/services/api/inbox-messages';
-import { networkSettingsResponse } from './fixture-responses';
-import { emptySystemSettingsResponse } from './rer-duty-short-state.fixtures';
+import { networkSettingsResponse, systemSettingsCurrentResponse } from './fixture-responses';
 
 type AnalysisNeoMockOptions = {
   enableAudioTranscription?: boolean;
@@ -234,13 +233,31 @@ export async function installAnalysisNeoApiMocks(
     const url = new URL(request.url());
     const { pathname } = url;
 
-    if (pathname === '/api/system-settings/current') {
+    if (pathname === '/api/user') {
       await fulfillJson(route, {
-        ...emptySystemSettingsResponse(options.enableAudioTranscription),
-        duty_exclude_menu_enabled: true,
-        two_factor_auth_enabled: true,
-        analysis_aor_filter_enabled: options.analysisAorFilterEnabled ?? true,
+        id: 'analysis-tester',
+        name: 'analysis-tester',
+        roles: ['Rer'],
+        sigint_zone_id: null,
+        organism_id: null,
+        delta_login: null,
+        goi_configured_for_organism: false,
+        goi_full_access_for_organism: false,
+        goi_host: null,
+        goi_integrations: [],
+        last_release_seen: null,
       });
+      return;
+    }
+
+    if (pathname === '/api/system-settings/current') {
+      await fulfillJson(
+        route,
+        systemSettingsCurrentResponse({
+          enableAudioTranscription: options.enableAudioTranscription,
+          analysisAorFilterEnabled: options.analysisAorFilterEnabled,
+        }),
+      );
       return;
     }
 

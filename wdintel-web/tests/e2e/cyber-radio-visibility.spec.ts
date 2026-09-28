@@ -52,324 +52,344 @@ function classicDutyState() {
   };
 }
 
-for (const roles of [['Rer'], ['Rer', 'Cyber'], ['Admin'], ['Full'], ['Cyber'], ['CyberViewer']]) {
-  test(`@smoke #3568 classic Duty saved filters wait for ${roles.join('+')} permissions`, async ({
-    page,
-  }) => {
-    await installRerDutyShortStateMocks(page);
-    let releaseUser!: () => void;
-    const ready = new Promise<void>((resolve) => {
-      releaseUser = resolve;
-    });
-    await useRoles(page, roles, ready);
-    const inboxRequests: Record<string, unknown>[] = [];
-    const radioRequests: string[] = [];
-    page.on('request', (request) => {
-      if (new URL(request.url()).pathname === '/api/rer-importer/get-inbox') {
-        inboxRequests.push(request.postDataJSON());
-      }
-      if (/\/(latest-frequencies|stats\/posts)(\?|$)/.test(request.url())) {
-        radioRequests.push(request.url());
-      }
-    });
-    const state = classicDutyState();
-    const userRequested = page.waitForRequest('**/api/user');
-    await page.goto(`/rer-duty?state=${encodeURIComponent(JSON.stringify(state))}`);
-    await userRequested;
-    await expect(page.getByRole('status').filter({ hasText: 'Loading...' })).toBeVisible();
-    await expect(page.locator('button').filter({ has: page.locator('i.bi-gear') })).toHaveCount(0);
-    expect(inboxRequests).toEqual([]);
-    expect(radioRequests).toEqual([]);
-    expect(JSON.parse(new URL(page.url()).searchParams.get('state')!)).toEqual(state);
-    releaseUser();
-
-    const radioAllowed = !['Cyber', 'CyberViewer'].includes(roles[0]);
-    const settings = page.locator('button').filter({ has: page.locator('i.bi-gear') });
-    await expect(settings).toHaveCount(2);
-    await settings.nth(0).click();
-    await settings.nth(1).click();
-    await expect(page.getByText('частота', { exact: true })).toHaveCount(radioAllowed ? 2 : 0);
-    await expect(page.getByText('пост', { exact: true })).toHaveCount(radioAllowed ? 2 : 0);
-    await expect.poll(() => inboxRequests.length).toBeGreaterThanOrEqual(2);
-    for (let index = 0; index < 2; index++) {
-      const request = inboxRequests.find(
-        (body) => JSON.stringify(body.selected_groups) === JSON.stringify([`group-${index}`]),
+// Regression: https://github.com/echoua/echo/issues/3568
+test.describe('Cyber radio visibility @regression #3568', () => {
+  for (const roles of [
+    ['Rer'],
+    ['Rer', 'Cyber'],
+    ['Admin'],
+    ['Full'],
+    ['Cyber'],
+    ['CyberViewer'],
+  ]) {
+    test(`@smoke #3568 classic Duty saved filters wait for ${roles.join('+')} permissions`, async ({
+      page,
+    }) => {
+      await installRerDutyShortStateMocks(page);
+      let releaseUser!: () => void;
+      const ready = new Promise<void>((resolve) => {
+        releaseUser = resolve;
+      });
+      await useRoles(page, roles, ready);
+      const inboxRequests: Record<string, unknown>[] = [];
+      const radioRequests: string[] = [];
+      page.on('request', (request) => {
+        if (new URL(request.url()).pathname === '/api/rer-importer/get-inbox') {
+          inboxRequests.push(request.postDataJSON());
+        }
+        if (/\/(latest-frequencies|stats\/posts)(\?|$)/.test(request.url())) {
+          radioRequests.push(request.url());
+        }
+      });
+      const state = classicDutyState();
+      const userRequested = page.waitForRequest('**/api/user');
+      await page.goto(`/rer-duty?state=${encodeURIComponent(JSON.stringify(state))}`);
+      await userRequested;
+      await expect(page.getByRole('status').filter({ hasText: 'Loading...' })).toBeVisible();
+      await expect(page.locator('button').filter({ has: page.locator('i.bi-gear') })).toHaveCount(
+        0,
       );
-      expect(request).toMatchObject({
-        selected_freqs: radioAllowed ? ['152.7500', '136.2330', ''] : null,
-        denied_freqs: radioAllowed ? ['150.0000'] : null,
-        selected_posts: radioAllowed ? ['post-1'] : null,
-        denied_senders: ['sender-1'],
-        before_id_noninclusive: 31199037 + index,
-      });
-    }
-    if (radioAllowed) await expect.poll(() => radioRequests.length).toBe(4);
-    else expect(radioRequests).toEqual([]);
-    expect(JSON.parse(new URL(page.url()).searchParams.get('state')!)).toEqual(state);
+      expect(inboxRequests).toEqual([]);
+      expect(radioRequests).toEqual([]);
+      expect(JSON.parse(new URL(page.url()).searchParams.get('state')!)).toEqual(state);
+      releaseUser();
 
-    inboxRequests.length = 0;
-    await page.reload();
-    await expect.poll(() => inboxRequests.length).toBeGreaterThanOrEqual(2);
-    expect(
-      inboxRequests.every(
-        (body) =>
-          JSON.stringify(body.selected_freqs) ===
-          JSON.stringify(radioAllowed ? ['152.7500', '136.2330', ''] : null),
-      ),
-    ).toBe(true);
-  });
-}
+      const radioAllowed = !['Cyber', 'CyberViewer'].includes(roles[0]);
+      const settings = page.locator('button').filter({ has: page.locator('i.bi-gear') });
+      await expect(settings).toHaveCount(2);
+      await settings.nth(0).click();
+      await settings.nth(1).click();
+      await expect(page.getByText('частота', { exact: true })).toHaveCount(radioAllowed ? 2 : 0);
+      await expect(page.getByText('пост', { exact: true })).toHaveCount(radioAllowed ? 2 : 0);
+      await expect.poll(() => inboxRequests.length).toBeGreaterThanOrEqual(2);
+      for (let index = 0; index < 2; index++) {
+        const request = inboxRequests.find(
+          (body) => JSON.stringify(body.selected_groups) === JSON.stringify([`group-${index}`]),
+        );
+        expect(request).toMatchObject({
+          selected_freqs: radioAllowed ? ['152.7500', '136.2330', ''] : null,
+          denied_freqs: radioAllowed ? ['150.0000'] : null,
+          selected_posts: radioAllowed ? ['post-1'] : null,
+          denied_senders: ['sender-1'],
+          before_id_noninclusive: 31199037 + index,
+        });
+      }
+      if (radioAllowed) await expect.poll(() => radioRequests.length).toBe(4);
+      else expect(radioRequests).toEqual([]);
+      expect(JSON.parse(new URL(page.url()).searchParams.get('state')!)).toEqual(state);
 
-test('#3568 classic Duty recovers from a failed user lookup without unfiltered requests', async ({
-  page,
-}) => {
-  await installRerDutyShortStateMocks(page);
-  await page.route('**/api/user', (route) => route.fulfill({ status: 500, body: 'Unavailable' }));
-  const requests: string[] = [];
-  page.on('request', (request) => {
-    if (request.url().includes('/get-inbox')) requests.push(request.url());
-  });
-  await page.goto(`/rer-duty?state=${encodeURIComponent(JSON.stringify(classicDutyState()))}`);
-  const retry = page.getByRole('button', { name: 'Повторити завантаження користувача' });
-  await expect(retry).toBeVisible();
-  expect(requests).toEqual([]);
-  await expect(
-    page.getByText('Помилка завантаження користувача', { exact: true }).first(),
-  ).toBeVisible();
-  await useRoles(page, ['Rer']);
-  await retry.click();
-  await expect(page.locator('button').filter({ has: page.locator('i.bi-gear') })).toHaveCount(2);
-  await expect.poll(() => requests.length).toBeGreaterThan(0);
-});
+      inboxRequests.length = 0;
+      await page.reload();
+      await expect.poll(() => inboxRequests.length).toBeGreaterThanOrEqual(2);
+      expect(
+        inboxRequests.every(
+          (body) =>
+            JSON.stringify(body.selected_freqs) ===
+            JSON.stringify(radioAllowed ? ['152.7500', '136.2330', ''] : null),
+        ),
+      ).toBe(true);
+    });
+  }
 
-test('#3568 classic Duty expired authentication returns to login without inbox requests', async ({
-  page,
-}) => {
-  await installRerDutyShortStateMocks(page);
-  await page.route('**/api/user', (route) => route.fulfill({ status: 401, body: 'Unauthorized' }));
-  await page.route('**/api/user/logout', (route) =>
-    route.fulfill({ status: 302, headers: { location: '/login' } }),
-  );
-  const requests: string[] = [];
-  page.on('request', (request) => {
-    if (request.url().includes('/get-inbox')) requests.push(request.url());
-  });
-  await page.goto(`/rer-duty?state=${encodeURIComponent(JSON.stringify(classicDutyState()))}`);
-  await expect(page).toHaveURL(/\/login(?:\?|$)/);
-  expect(requests).toEqual([]);
-});
-
-for (const width of [390, 820, 1440]) {
-  test(`#3568 classic Duty blank page and authenticated navigation retain radio filters at ${width}px`, async ({
+  test('#3568 classic Duty recovers from a failed user lookup without unfiltered requests', async ({
     page,
   }) => {
-    await page.setViewportSize({ width, height: 900 });
     await installRerDutyShortStateMocks(page);
-    await useRoles(page, ['Rer']);
-    await page.goto('/rer-duty');
-    const settings = page.locator('button').filter({ has: page.locator('i.bi-gear') });
-    await settings.focus();
-    await settings.press('Enter');
-    await expect(page.getByText('частота', { exact: true })).toBeVisible();
-    await page.evaluate(() => {
-      history.pushState({}, '', '/');
-      dispatchEvent(new PopStateEvent('popstate'));
+    await page.route('**/api/user', (route) => route.fulfill({ status: 500, body: 'Unavailable' }));
+    const requests: string[] = [];
+    page.on('request', (request) => {
+      if (request.url().includes('/get-inbox')) requests.push(request.url());
     });
-    await page.goBack();
-    await settings.focus();
-    await settings.press('Enter');
-    await expect(page.getByText('частота', { exact: true })).toBeVisible();
-    if (width === 1440) {
-      await page.getByTitle('нова колонка', { exact: true }).click();
-      await expect(settings).toHaveCount(2);
-      await settings.nth(1).click();
-      await expect(page.getByText('частота', { exact: true })).toHaveCount(2);
-    }
+    await page.goto(`/rer-duty?state=${encodeURIComponent(JSON.stringify(classicDutyState()))}`);
+    const retry = page.getByRole('button', { name: 'Повторити завантаження користувача' });
+    await expect(retry).toBeVisible();
+    expect(requests).toEqual([]);
+    await expect(
+      page.getByText('Помилка завантаження користувача', { exact: true }).first(),
+    ).toBeVisible();
+    await useRoles(page, ['Rer']);
+    await retry.click();
+    await expect(page.locator('button').filter({ has: page.locator('i.bi-gear') })).toHaveCount(2);
+    await expect.poll(() => requests.length).toBeGreaterThan(0);
   });
-}
 
-// https://github.com/echoua/echo/issues/3568
-for (const neo of [false, true]) {
-  for (const role of ['Rer', 'Cyber']) {
-    for (const enabled of [true, false]) {
-      test(`@smoke #3568 ${neo ? 'Neo' : 'classic'} Analysis AOR filter setting ${enabled} preserves ${role} saved selections`, async ({
-        page,
-      }) => {
-        await installRerDutyShortStateMocks(page);
-        await installAnalysisNeoApiMocks(page, { analysisAorFilterEnabled: enabled });
-        await useRoles(page, [role]);
-        const query = neo
-          ? 'aors=7'
-          : `state=${encodeURIComponent(JSON.stringify(toLegacyRerAnalysisQueryState({ aorsSelected: ['7'] })))}`;
-        const endpoint = neo ? '**/api/rer/analysis/stats/count' : '**/api/rer-importer/get-inbox';
-        const filteredRequest = page.waitForRequest(endpoint);
-        await page.goto(`/rer-analysis${neo ? '-neo' : ''}?${query}`);
-        expect((await filteredRequest).postDataJSON().selected_aors).toEqual([7]);
-        const filter = neo
-          ? page.getByRole('heading', { name: 'Смуги', exact: true })
-          : page.getByText('смуги', { exact: true });
-        if (enabled) await expect(filter).toBeVisible();
-        else await expect(filter).toHaveCount(0);
-        const reloadedRequest = page.waitForRequest(endpoint);
-        await page.reload();
-        expect((await reloadedRequest).postDataJSON().selected_aors).toEqual([7]);
-        if (enabled) await expect(filter).toBeVisible();
-        else await expect(filter).toHaveCount(0);
-      });
-    }
-  }
-}
+  test('#3568 classic Duty expired authentication returns to login without inbox requests', async ({
+    page,
+  }) => {
+    await installRerDutyShortStateMocks(page);
+    await page.route('**/api/user', (route) =>
+      route.fulfill({ status: 401, body: 'Unauthorized' }),
+    );
+    await page.route('**/api/user/logout', (route) =>
+      route.fulfill({ status: 302, headers: { location: '/login' } }),
+    );
+    const requests: string[] = [];
+    page.on('request', (request) => {
+      if (request.url().includes('/get-inbox')) requests.push(request.url());
+    });
+    await page.goto(`/rer-duty?state=${encodeURIComponent(JSON.stringify(classicDutyState()))}`);
+    await expect(page).toHaveURL(/\/login(?:\?|$)/);
+    expect(requests).toEqual([]);
+  });
 
-for (const width of [390, 820, 1440]) {
-  for (const host of ['duty', 'analysis'] as const) {
-    test(`@smoke #3568 Cyber ${host} keeps messages and hides radio UI at ${width}px`, async ({
+  for (const width of [390, 820, 1440]) {
+    test(`#3568 classic Duty blank page and authenticated navigation retain radio filters at ${width}px`, async ({
       page,
     }) => {
       await page.setViewportSize({ width, height: 900 });
-      const inboxResponse = createLoadedInboxResponse();
-      if (host === 'duty') await installRerDutyShortStateMocks(page, { inboxResponse });
-      else await installAnalysisNeoApiMocks(page, { inboxResponse });
-      await useRoles(page, ['Cyber', 'UnitsEditor']);
-      const radioRequests: string[] = [];
-      page.on('request', (request) => {
-        if (
-          /\/(latest-frequencies|stats\/freqs|stats\/metadata|summary-table)(\?|$)/.test(
-            request.url(),
-          )
-        )
-          radioRequests.push(request.url());
+      await installRerDutyShortStateMocks(page);
+      await useRoles(page, ['Rer']);
+      await page.goto('/rer-duty');
+      const settings = page.locator('button').filter({ has: page.locator('i.bi-gear') });
+      await settings.focus();
+      await settings.press('Enter');
+      await expect(page.getByText('частота', { exact: true })).toBeVisible();
+      await page.evaluate(() => {
+        history.pushState({}, '', '/');
+        dispatchEvent(new PopStateEvent('popstate'));
       });
-      await page.goto(`/rer-${host === 'duty' ? 'duty' : 'analysis'}-neo`);
+      await page.goBack();
+      await settings.focus();
+      await settings.press('Enter');
+      await expect(page.getByText('частота', { exact: true })).toBeVisible();
+      if (width === 1440) {
+        await page.getByTitle('нова колонка', { exact: true }).click();
+        await expect(settings).toHaveCount(2);
+        await settings.nth(1).click();
+        await expect(page.getByText('частота', { exact: true })).toHaveCount(2);
+      }
+    });
+  }
+
+  // https://github.com/echoua/echo/issues/3568
+  for (const neo of [false, true]) {
+    for (const role of ['Rer', 'Cyber']) {
+      for (const enabled of [true, false]) {
+        test(`@smoke #3568 ${neo ? 'Neo' : 'classic'} Analysis AOR filter setting ${enabled} preserves ${role} saved selections`, async ({
+          page,
+        }) => {
+          await installRerDutyShortStateMocks(page);
+          await installAnalysisNeoApiMocks(page, { analysisAorFilterEnabled: enabled });
+          await useRoles(page, [role]);
+          const query = neo
+            ? 'aors=7'
+            : `state=${encodeURIComponent(JSON.stringify(toLegacyRerAnalysisQueryState({ aorsSelected: ['7'] })))}`;
+          const endpoint = neo
+            ? '**/api/rer/analysis/stats/count'
+            : '**/api/rer-importer/get-inbox';
+          const filteredRequest = page.waitForRequest(endpoint);
+          await page.goto(`/rer-analysis${neo ? '-neo' : ''}?${query}`);
+          expect((await filteredRequest).postDataJSON().selected_aors).toEqual([7]);
+          const filter = neo
+            ? page.getByRole('heading', { name: 'Смуги', exact: true })
+            : page.getByText('смуги', { exact: true });
+          if (enabled) await expect(filter).toBeVisible();
+          else await expect(filter).toHaveCount(0);
+          const reloadedRequest = page.waitForRequest(endpoint);
+          await page.reload();
+          expect((await reloadedRequest).postDataJSON().selected_aors).toEqual([7]);
+          if (enabled) await expect(filter).toBeVisible();
+          else await expect(filter).toHaveCount(0);
+        });
+      }
+    }
+  }
+
+  for (const width of [390, 820, 1440]) {
+    for (const host of ['duty', 'analysis'] as const) {
+      test(`@smoke #3568 Cyber ${host} keeps messages and hides radio UI at ${width}px`, async ({
+        page,
+      }) => {
+        await page.setViewportSize({ width, height: 900 });
+        const inboxResponse = createLoadedInboxResponse();
+        if (host === 'duty') await installRerDutyShortStateMocks(page, { inboxResponse });
+        else await installAnalysisNeoApiMocks(page, { inboxResponse });
+        await useRoles(page, ['Cyber', 'UnitsEditor']);
+        const radioRequests: string[] = [];
+        page.on('request', (request) => {
+          if (
+            /\/(latest-frequencies|stats\/freqs|stats\/metadata|summary-table)(\?|$)/.test(
+              request.url(),
+            )
+          )
+            radioRequests.push(request.url());
+        });
+        await page.goto(`/rer-${host === 'duty' ? 'duty' : 'analysis'}-neo`);
+        await expect(
+          page.getByText('Analysis summary fixture message', { exact: true }),
+        ).toBeVisible();
+        await expect(
+          page.locator('[data-message-card-metadata-item]').filter({ hasText: '123.4' }),
+        ).toHaveCount(0);
+        await expect(page.getByRole('tab', { name: /Підсумкова таблиця|Частоти/ })).toHaveCount(0);
+        if (host === 'duty') {
+          await page.getByRole('button', { name: 'Фільтри', exact: true }).click();
+          await expect(page.getByLabel('Панель фільтрів')).toBeVisible();
+          await expect(page.getByLabel('Панель фільтрів').getByText(/частот|пост/i)).toHaveCount(0);
+        }
+        expect(radioRequests).toEqual([]);
+      });
+    }
+  }
+
+  test('@smoke #3568 Cyber direct frequency URL redirects home', async ({ page }) => {
+    await installRerDutyShortStateMocks(page);
+    await useRoles(page, ['Cyber']);
+    await page.goto('/rer-freqs');
+    await expect(page).toHaveURL(/\/$/);
+  });
+
+  for (const roles of [['Rer'], ['Rer', 'Cyber'], ['Admin'], ['Full', 'Cyber']]) {
+    test(`#3568 ${roles.join('+')} retains radio controls`, async ({ page }) => {
+      await installRerDutyShortStateMocks(page, { inboxResponse: createLoadedInboxResponse() });
+      await useRoles(page, roles);
+      await page.goto('/rer-duty-neo');
+      await expect(
+        page.locator('[data-message-card-metadata-item]').filter({ hasText: '123.4' }),
+      ).toBeVisible();
+      await page.getByRole('button', { name: 'Фільтри', exact: true }).click();
+      await expect(
+        page.getByLabel('Панель фільтрів').getByRole('heading', { name: 'Частота', exact: true }),
+      ).toBeVisible();
+    });
+  }
+
+  for (const host of ['duty', 'analysis']) {
+    test(`#3568 Cyber classic ${host} hides radio filters`, async ({ page }) => {
+      await installRerDutyShortStateMocks(page);
+      if (host === 'analysis') await installAnalysisNeoApiMocks(page);
+      await useRoles(page, ['Cyber', 'UnitsEditor']);
+      await page.goto(`/rer-${host}`);
+      await expect(page.locator('body')).not.toContainText('NAMING ERROR');
+      await expect(page.locator('app-navbar')).toBeAttached();
+      if (host === 'duty') {
+        await page
+          .locator('button')
+          .filter({ has: page.locator('i.bi-gear') })
+          .click();
+      }
+      await expect(page.getByText('частота', { exact: true })).toHaveCount(0);
+      if (host === 'analysis') {
+        await expect(page.getByText('мережі', { exact: true })).toHaveCount(0);
+      }
+      await expect(page.getByText('метадані', { exact: true })).toHaveCount(0);
+      await expect(page.getByText(/^(пост|пости)$/)).toHaveCount(0);
+      await expect(page.getByTitle('підсумкова таблиця', { exact: true })).toHaveCount(0);
+    });
+  }
+
+  test('#3568 Rer classic analysis retains frequency and network filters', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-09-23T12:00:00Z'));
+    await installRerDutyShortStateMocks(page);
+    await installAnalysisNeoApiMocks(page);
+    await useRoles(page, ['Rer']);
+    const countersRequest = page.waitForRequest('**/api/rer/analysis/stats/count');
+    await page.goto('/rer-analysis');
+    const request = (await countersRequest).postDataJSON();
+    expect(request.till_date_noninclusive_ms - request.since_date_inclusive_ms).toBe(
+      24 * 60 * 60 * 1000,
+    );
+    await expect(page.getByText('частоти', { exact: true })).toBeVisible();
+    await expect(page.getByText('мережі', { exact: true })).toBeVisible();
+  });
+
+  for (const enabled of [true, false]) {
+    test(`#3568 Duty minus menu follows the system flag: ${enabled}`, async ({ page }) => {
+      await installRerDutyShortStateMocks(page, {
+        inboxResponse: createLoadedInboxResponse(),
+        dutyExcludeMenuEnabled: enabled,
+      });
+      await page.goto('/rer-duty-neo');
       await expect(
         page.getByText('Analysis summary fixture message', { exact: true }),
       ).toBeVisible();
-      await expect(
-        page.locator('[data-message-card-metadata-item]').filter({ hasText: '123.4' }),
-      ).toHaveCount(0);
-      await expect(page.getByRole('tab', { name: /Підсумкова таблиця|Частоти/ })).toHaveCount(0);
-      if (host === 'duty') {
-        await page.getByRole('button', { name: 'Фільтри', exact: true }).click();
-        await expect(page.getByLabel('Панель фільтрів')).toBeVisible();
-        await expect(page.getByLabel('Панель фільтрів').getByText(/частот|пост/i)).toHaveCount(0);
+      const minus = page.getByRole('button', { name: 'Виключити…', exact: true });
+      if (enabled) {
+        await expect(minus).toBeVisible();
+        await minus.click();
+        await expect(
+          page.getByRole('menuitem').filter({ hasText: 'Виключити групу' }),
+        ).toBeVisible();
+      } else {
+        await expect(minus).toHaveCount(0);
       }
-      expect(radioRequests).toEqual([]);
     });
   }
-}
 
-test('@smoke #3568 Cyber direct frequency URL redirects home', async ({ page }) => {
-  await installRerDutyShortStateMocks(page);
-  await useRoles(page, ['Cyber']);
-  await page.goto('/rer-freqs');
-  await expect(page).toHaveURL(/\/$/);
-});
-
-for (const roles of [['Rer'], ['Rer', 'Cyber'], ['Admin'], ['Full', 'Cyber']]) {
-  test(`#3568 ${roles.join('+')} retains radio controls`, async ({ page }) => {
-    await installRerDutyShortStateMocks(page, { inboxResponse: createLoadedInboxResponse() });
-    await useRoles(page, roles);
-    await page.goto('/rer-duty-neo');
-    await expect(
-      page.locator('[data-message-card-metadata-item]').filter({ hasText: '123.4' }),
-    ).toBeVisible();
-    await page.getByRole('button', { name: 'Фільтри', exact: true }).click();
-    await expect(
-      page.getByLabel('Панель фільтрів').getByRole('heading', { name: 'Частота', exact: true }),
-    ).toBeVisible();
+  test('#3568 bare Rer Analysis navigation requests and displays today', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-09-23T12:00:00Z'));
+    await installAnalysisNeoApiMocks(page);
+    await useRoles(page, ['Rer']);
+    const countersRequest = page.waitForRequest('**/api/rer/analysis/stats/count');
+    await page.goto('/rer-analysis-neo');
+    const request = (await countersRequest).postDataJSON();
+    expect(request.till_date_noninclusive_ms - request.since_date_inclusive_ms).toBe(
+      24 * 60 * 60 * 1000,
+    );
+    await expect(page.getByRole('textbox', { name: /^Інтервал:/ })).toHaveValue(
+      '23.09 00:00 — 24.09 00:00',
+    );
+    await expect(page.getByRole('heading', { name: 'Частоти', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Мережі', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Смуги', exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/fromDateTime=2026-09-23T00%3A00/);
   });
-}
 
-for (const host of ['duty', 'analysis']) {
-  test(`#3568 Cyber classic ${host} hides radio filters`, async ({ page }) => {
-    await installRerDutyShortStateMocks(page);
-    if (host === 'analysis') await installAnalysisNeoApiMocks(page);
-    await useRoles(page, ['Cyber', 'UnitsEditor']);
-    await page.goto(`/rer-${host}`);
-    await expect(page.locator('body')).not.toContainText('NAMING ERROR');
-    await expect(page.locator('app-navbar')).toBeAttached();
-    if (host === 'duty') {
-      await page
-        .locator('button')
-        .filter({ has: page.locator('i.bi-gear') })
-        .click();
-    }
-    await expect(page.getByText('частота', { exact: true })).toHaveCount(0);
-    if (host === 'analysis') {
-      await expect(page.getByText('мережі', { exact: true })).toHaveCount(0);
-    }
-    await expect(page.getByText('метадані', { exact: true })).toHaveCount(0);
-    await expect(page.getByText(/^(пост|пости)$/)).toHaveCount(0);
-    await expect(page.getByTitle('підсумкова таблиця', { exact: true })).toHaveCount(0);
+  test('#3568 bare non-Rer Analysis navigation requests and displays 90 days', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-09-23T12:00:00Z'));
+    await installAnalysisNeoApiMocks(page);
+    await useRoles(page, ['Cyber']);
+    const countersRequest = page.waitForRequest('**/api/rer/analysis/stats/count');
+    await page.goto('/rer-analysis-neo');
+    const request = (await countersRequest).postDataJSON();
+    expect(request.till_date_noninclusive_ms - request.since_date_inclusive_ms).toBe(
+      90 * 24 * 60 * 60 * 1000,
+    );
+    await expect(page.getByRole('textbox', { name: /^Інтервал:/ })).toHaveValue(
+      '26.06 00:00 — 24.09 00:00',
+    );
+    await expect(page.getByRole('heading', { name: 'Частоти', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Мережі', exact: true })).toHaveCount(0);
+    await expect(page).toHaveURL(/fromDateTime=2026-06-26T00%3A00/);
   });
-}
-
-test('#3568 Rer classic analysis retains frequency and network filters', async ({ page }) => {
-  await page.clock.setFixedTime(new Date('2026-09-23T12:00:00Z'));
-  await installRerDutyShortStateMocks(page);
-  await installAnalysisNeoApiMocks(page);
-  await useRoles(page, ['Rer']);
-  const countersRequest = page.waitForRequest('**/api/rer/analysis/stats/count');
-  await page.goto('/rer-analysis');
-  const request = (await countersRequest).postDataJSON();
-  expect(request.till_date_noninclusive_ms - request.since_date_inclusive_ms).toBe(
-    24 * 60 * 60 * 1000,
-  );
-  await expect(page.getByText('частоти', { exact: true })).toBeVisible();
-  await expect(page.getByText('мережі', { exact: true })).toBeVisible();
-});
-
-for (const enabled of [true, false]) {
-  test(`#3568 Duty minus menu follows the system flag: ${enabled}`, async ({ page }) => {
-    await installRerDutyShortStateMocks(page, {
-      inboxResponse: createLoadedInboxResponse(),
-      dutyExcludeMenuEnabled: enabled,
-    });
-    await page.goto('/rer-duty-neo');
-    await expect(page.getByText('Analysis summary fixture message', { exact: true })).toBeVisible();
-    const minus = page.getByRole('button', { name: 'Виключити…', exact: true });
-    if (enabled) {
-      await expect(minus).toBeVisible();
-      await minus.click();
-      await expect(page.getByRole('menuitem').filter({ hasText: 'Виключити групу' })).toBeVisible();
-    } else {
-      await expect(minus).toHaveCount(0);
-    }
-  });
-}
-
-test('#3568 bare Rer Analysis navigation requests and displays today', async ({ page }) => {
-  await page.clock.setFixedTime(new Date('2026-09-23T12:00:00Z'));
-  await installAnalysisNeoApiMocks(page);
-  await useRoles(page, ['Rer']);
-  const countersRequest = page.waitForRequest('**/api/rer/analysis/stats/count');
-  await page.goto('/rer-analysis-neo');
-  const request = (await countersRequest).postDataJSON();
-  expect(request.till_date_noninclusive_ms - request.since_date_inclusive_ms).toBe(
-    24 * 60 * 60 * 1000,
-  );
-  await expect(page.getByRole('textbox', { name: /^Інтервал:/ })).toHaveValue(
-    '23.09 00:00 — 24.09 00:00',
-  );
-  await expect(page.getByRole('heading', { name: 'Частоти', exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Мережі', exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Смуги', exact: true })).toBeVisible();
-  await expect(page).toHaveURL(/fromDateTime=2026-09-23T00%3A00/);
-});
-
-test('#3568 bare non-Rer Analysis navigation requests and displays 90 days', async ({ page }) => {
-  await page.clock.setFixedTime(new Date('2026-09-23T12:00:00Z'));
-  await installAnalysisNeoApiMocks(page);
-  await useRoles(page, ['Cyber']);
-  const countersRequest = page.waitForRequest('**/api/rer/analysis/stats/count');
-  await page.goto('/rer-analysis-neo');
-  const request = (await countersRequest).postDataJSON();
-  expect(request.till_date_noninclusive_ms - request.since_date_inclusive_ms).toBe(
-    90 * 24 * 60 * 60 * 1000,
-  );
-  await expect(page.getByRole('textbox', { name: /^Інтервал:/ })).toHaveValue(
-    '26.06 00:00 — 24.09 00:00',
-  );
-  await expect(page.getByRole('heading', { name: 'Частоти', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('heading', { name: 'Мережі', exact: true })).toHaveCount(0);
-  await expect(page).toHaveURL(/fromDateTime=2026-06-26T00%3A00/);
 });

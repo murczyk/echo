@@ -18,9 +18,9 @@ from typing import Any, NoReturn
 INSTANCE_PREFIX = "echo-ai-agent-"
 TEMPLATE_NAME = "echo-ai-agent-019fc7f7-9770-7f83-9c1a-211af29b02e6"
 PROFILE_NAME = "echo-ai-agent"
-HARNESS_RELEASE = "2026.08.25.2"
+HARNESS_RELEASE = "2026.09.27.3"
 COMPATIBLE_RUNNER_RELEASES = frozenset(
-    {HARNESS_RELEASE, "2026.08.25.1", "2026.08.22.1", "2026.08.05.2"}
+    {HARNESS_RELEASE, "2026.09.27.2", "2026.09.27.1", "2026.08.25.2", "2026.08.25.1", "2026.08.22.1", "2026.08.05.2"}
 )
 RUNNER_PROTOCOL_VERSION = 1
 NODE_VERSION = "24.19.0"
@@ -35,6 +35,8 @@ MAX_EVENT_CHARACTERS = 1024 * 1024
 STDERR_CHUNK_CHARACTERS = 4096
 STDERR_TAIL_BYTES = 8 * 1024
 LOCK_PATH = Path("/run/lock/echo-ai-agent-dispatcher.lock")
+NAMESPACE_RELEASES = Path("/etc/echo-ai-agent/namespace-releases")
+ROLLOUT_LOCK_ROOT = Path("/run/lock/echo-ai-agent-rollout")
 UUID7_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 )
@@ -215,6 +217,7 @@ def namespace_agents(namespace: str) -> list[dict[str, Any]]:
 
 def running_agent_count() -> int:
     count = 0
+    by_namespace: dict[str, int] = {}
     for record in incus_instances():
         name = str(record.get("name", ""))
         config = record.get("config") or {}
@@ -225,10 +228,40 @@ def running_agent_count() -> int:
             and str(record.get("status", "")).upper() == "RUNNING"
         ):
             count += 1
+            namespace = config.get("user.echo.ai.namespace", "")
+            by_namespace[namespace] = by_namespace.get(namespace, 0) + 1
+    for marker in NAMESPACE_RELEASES.glob("*.maintenance"):
+        try:
+            reserved = json.loads(marker.read_text()).get("reserved_slots", 0)
+            if not isinstance(reserved, int) or not 0 <= reserved <= MAX_RUNNING:
+                fail("invalid rollout capacity reservation")
+            count += max(0, reserved - by_namespace.get(marker.stem, 0))
+        except (OSError, ValueError):
+            fail("invalid rollout capacity reservation")
     return count
 
 
-def require_template(body: dict[str, Any]) -> dict[str, Any]:
+def namespace_template(namespace: str | None) -> dict[str, Any] | None:
+    if namespace is None:
+        return None
+    path = NAMESPACE_RELEASES / f"{namespace}.json"
+    if not path.exists():
+        return None
+    metadata = path.lstat()
+    if path.is_symlink() or metadata.st_uid != 0 or metadata.st_mode & 0o022:
+        fail("namespace release mapping is unsafe")
+    try:
+        selection = json.loads(path.read_text())
+    except (OSError, ValueError):
+        fail("namespace release mapping is invalid")
+    if selection.get("release") not in COMPATIBLE_RUNNER_RELEASES:
+        fail("namespace release is not supported by this dispatcher")
+    if not re.fullmatch(r"echo-ai-agent-(?:template-[0-9-]+|[0-9a-f-]{36})", selection.get("template", "")):
+        fail("namespace template name is invalid")
+    return selection
+
+
+def require_template(body: dict[str, Any], namespace: str | None = None) -> dict[str, Any]:
     template_id = body.get("template_id")
     if template_id is None:
         name = TEMPLATE_NAME
@@ -236,13 +269,20 @@ def require_template(body: dict[str, Any]) -> dict[str, Any]:
         name = f"{INSTANCE_PREFIX}{template_id}"
     else:
         fail("template_id must be a lowercase UUIDv7")
+    selection = namespace_template(namespace)
+    expected_release = HARNESS_RELEASE
+    if selection is not None:
+        if name != TEMPLATE_NAME:
+            fail("namespace-pinned templates require the logical template ID")
+        name = selection["template"]
+        expected_release = selection["release"]
     record = instance_record(name)
     if record is None:
         fail("selected template does not exist")
     config = record.get("config") or {}
     if config.get("user.echo.ai.template.ready") != "true":
         fail("selected template is not marked ready")
-    if config.get("user.echo.ai.harness_release") != HARNESS_RELEASE:
+    if config.get("user.echo.ai.harness_release") != expected_release:
         fail("selected template belongs to another harness release")
     if config.get("user.echo.ai.node_version") != NODE_VERSION:
         fail("selected template has an unexpected Node version")
@@ -344,13 +384,14 @@ def remove_proxy(name: str, device: str) -> None:
 
 def op_preflight(namespace: str, body: dict[str, Any]) -> dict[str, Any]:
     server = incus_versions()
-    template = require_template(body)
+    template = require_template(body, namespace)
     template_name = str(template["name"])
-    template_id = template_name.removeprefix(INSTANCE_PREFIX)
+    template_id = (TEMPLATE_NAME if namespace_template(namespace) else template_name).removeprefix(INSTANCE_PREFIX)
     return {
         "namespace": namespace,
         "incus": server,
-        "harness_release": HARNESS_RELEASE,
+        "harness_release": template["config"]["user.echo.ai.harness_release"],
+        "dispatcher_release": HARNESS_RELEASE,
         "template_id": template_id,
         "template_name": template_name,
         "template_ready": True,
@@ -372,7 +413,7 @@ def op_clone(namespace: str, body: dict[str, Any]) -> dict[str, Any]:
     name = instance_name(body)
     if instance_record(name) is not None:
         fail("agent instance already exists")
-    template = require_template(body)
+    template = require_template(body, namespace)
     template_name = str(template["name"])
     run(["incus", "copy", template_name, name, "--profile", PROFILE_NAME])
     try:
@@ -705,14 +746,7 @@ def serve(namespace: str) -> int:
                     fail("request exceeds input limit")
                 request = parse_request(raw_line)
                 request_id = request.request_id
-                if request.operation in MUTATING_OPERATIONS:
-                    fcntl.flock(lock_file, fcntl.LOCK_EX)
-                    try:
-                        result = dispatch(request, namespace)
-                    finally:
-                        fcntl.flock(lock_file, fcntl.LOCK_UN)
-                else:
-                    result = dispatch(request, namespace)
+                result = dispatch_with_rollout_lock(request, namespace, lock_file)
                 emit({"id": request_id, "ok": True, "done": True, "result": result})
             except DispatchError as error:
                 emit(
@@ -724,6 +758,31 @@ def serve(namespace: str) -> int:
                     }
                 )
     return 0
+
+
+def dispatch_with_rollout_lock(request: Request, namespace: str, lock_file: Any) -> dict[str, Any]:
+    guarded = request.operation in MUTATING_OPERATIONS or request.operation in {"run_request", "test_connection"}
+    if not guarded:
+        return dispatch(request, namespace)
+    maintenance = NAMESPACE_RELEASES / f"{namespace}.maintenance"
+    if maintenance.exists() and request.operation != "test_connection":
+        fail("namespace upgrade is in progress; retry after recovery")
+    namespace_lock = ROLLOUT_LOCK_ROOT / f"{namespace}.lock"
+    if not namespace_lock.exists():
+        fail("namespace rollout lock is not provisioned")
+    with namespace_lock.open("r", encoding="utf-8") as lease:
+        try:
+            fcntl.flock(lease, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except BlockingIOError:
+            fail("namespace upgrade is in progress")
+        if maintenance.exists() and request.operation != "test_connection":
+            fail("namespace upgrade is in progress; retry after recovery")
+        exclusive = request.operation in MUTATING_OPERATIONS
+        fcntl.flock(lock_file, fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
+        try:
+            return dispatch(request, namespace)
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
 def main() -> int:

@@ -107,7 +107,7 @@ function buildParams(overrides: Partial<Parameters<typeof useAnalysisReloadOrche
     refreshMessageCounts: vi.fn(),
     setAorEntries: noopSetter as Dispatch<SetStateAction<AnalysisAorEntry[]>>,
     setCounts: noopSetter as Dispatch<
-      SetStateAction<import('../../../../Bindings').CountStatsRsp | null>
+      SetStateAction<import('../../../../../Bindings').CountStatsRsp | null>
     >,
     setCountsLoading: noopSetter as Dispatch<SetStateAction<boolean>>,
     setFiltersLoading: noopSetter as Dispatch<SetStateAction<boolean>>,
@@ -115,11 +115,11 @@ function buildParams(overrides: Partial<Parameters<typeof useAnalysisReloadOrche
     setMapLoading: noopSetter as Dispatch<SetStateAction<boolean>>,
     setMapDateRange: noopSetter as Dispatch<SetStateAction<{ startDate: number; endDate: number }>>,
     setMapNetworkUnits: noopSetter as Dispatch<
-      SetStateAction<import('../../../../Bindings').NetworkUnit[]>
+      SetStateAction<import('../../../../../Bindings').NetworkUnit[]>
     >,
     setMapOpenMessages: noopSetter as Dispatch<SetStateAction<Array<[number, InboxMessage]>>>,
     setMapPoints: noopSetter as Dispatch<
-      SetStateAction<import('../../../../Bindings').FreqDetailedPoint[]>
+      SetStateAction<import('../../../../../Bindings').FreqDetailedPoint[]>
     >,
     setMessages: noopSetter as Dispatch<SetStateAction<Array<[number, InboxMessage]>>>,
     setMessagesLoading: noopSetter as Dispatch<SetStateAction<boolean>>,
@@ -135,7 +135,7 @@ function buildParams(overrides: Partial<Parameters<typeof useAnalysisReloadOrche
     setOptions: noopSetter as Dispatch<SetStateAction<AnalysisFilterOptions>>,
     setProfiles: noopSetter as Dispatch<SetStateAction<Record<string, SignalProfileEntry | null>>>,
     setSummaryCallsignsInfo: noopSetter as Dispatch<
-      SetStateAction<Record<string, import('../../../../Bindings').CallsignInfoRes>>
+      SetStateAction<Record<string, import('../../../../../Bindings').CallsignInfoRes>>
     >,
     setTagsMap: noopSetter as Dispatch<SetStateAction<Record<number, Tag>>>,
     setTagsOrder: noopSetter as Dispatch<SetStateAction<number[]>>,
@@ -190,7 +190,6 @@ afterEach(() => {
   container = null;
   vi.useRealTimers();
 });
-
 describe('useAnalysisReloadOrchestrator', () => {
   it('runs the initial reload immediately', async () => {
     vi.useFakeTimers();
@@ -324,7 +323,6 @@ describe('useAnalysisReloadOrchestrator', () => {
 
     expect(nextLoadMapPalitras).toHaveBeenCalledTimes(1);
   });
-
   it('debounces rapid reload trigger updates and keeps only the latest reload', async () => {
     vi.useFakeTimers();
     const params = buildParams();
@@ -360,7 +358,6 @@ describe('useAnalysisReloadOrchestrator', () => {
       search: 'bravo',
     });
   });
-
   it('reschedules an aborted key when the user reverts before the debounce fires', async () => {
     vi.useFakeTimers();
     let resolveInitialReload: (() => void) | null = null;
@@ -412,7 +409,6 @@ describe('useAnalysisReloadOrchestrator', () => {
       await Promise.resolve();
     });
   });
-
   it('blocks summary reloads until the debounced reload settles', async () => {
     vi.useFakeTimers();
     let resolveNextReload: (() => void) | null = null;
@@ -468,7 +464,6 @@ describe('useAnalysisReloadOrchestrator', () => {
 
     expect(nextLoadSummaryData).toHaveBeenCalledTimes(1);
   });
-
   it('aborts the previous reload when a newer reload starts', async () => {
     vi.useFakeTimers();
     let resolveFirstReload: (() => void) | null = null;
@@ -510,7 +505,6 @@ describe('useAnalysisReloadOrchestrator', () => {
       await Promise.resolve();
     });
   });
-
   it('aborts the active reload and clears pending debounce timers on unmount', async () => {
     vi.useFakeTimers();
     let resolveFirstReload: (() => void) | null = null;

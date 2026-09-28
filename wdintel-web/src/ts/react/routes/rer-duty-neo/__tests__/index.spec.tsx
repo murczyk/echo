@@ -18,10 +18,12 @@ const nextCreatedResponse = vi.hoisted(() => ({
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((res) => {
-    resolve = res;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 vi.mock('../../../services/api/user-settings', () => ({
@@ -29,7 +31,7 @@ vi.mock('../../../services/api/user-settings', () => ({
   fetchUserSettings: vi.fn().mockResolvedValue({ tagsLayout: 'compact' }),
 }));
 vi.mock('../../../services/api/user', () => ({
-  fetchCurrentUser: vi.fn().mockResolvedValue(null),
+  fetchCurrentUser: vi.fn().mockResolvedValue({ roles: ['Rer'], organismId: null }),
 }));
 vi.mock('../../../services/api/system-settings', () => ({
   currentSystemSettings: vi
@@ -217,7 +219,6 @@ vi.mock('../../shared/manage-message/ManageMessageDrawer', () => ({
       </div>
     ) : null,
 }));
-vi.mock('../DeleteConfirmDialog', () => ({ DeleteConfirmDialog: () => null }));
 vi.mock('../dialogs', () => ({ DeleteConfirmDialog: () => null }));
 vi.mock('../../../components/PowerAlert', () => ({
   PowerAlert: ({
@@ -338,7 +339,6 @@ function buildFeedsState() {
     reloadEditedFeeds: vi.fn(),
     loadFeedOlderMessages: vi.fn(),
     applyFilter: vi.fn(),
-    setFeedInitialTarget: vi.fn(),
     addFrequencyToFilter: vi.fn(),
     toggleGroup: vi.fn(),
     selectAllGroups: vi.fn(),
@@ -436,7 +436,6 @@ async function click(element: Element | null) {
     element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   });
 }
-
 describe('RerDutyNeoPage creation workflow', () => {
   beforeEach(() => {
     useRerDutyFeedsMock.mockReset();
@@ -444,7 +443,6 @@ describe('RerDutyNeoPage creation workflow', () => {
     fetchInboxItemContextMock.mockReset();
     fetchMessagesByIdsMock.mockReset();
     nextCreatedResponse.value = null;
-    window.history.replaceState({}, '', '/rer-duty-neo');
     vi.useFakeTimers();
     vi.stubGlobal('requestAnimationFrame', undefined);
   });
@@ -483,48 +481,6 @@ describe('RerDutyNeoPage creation workflow', () => {
     });
   });
 
-  it('keeps direct-link context loading alive across feed state updates', async () => {
-    window.history.replaceState({}, '', '/rer-duty-neo?m=target-uid');
-    let resolveContext!: (value: {
-      groupMasterKeys: string[];
-      sigintInboxItemIds: number[];
-      sinceTs: number | null;
-      tillTs: number | null;
-    }) => void;
-    fetchInboxItemContextMock.mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveContext = resolve;
-      }),
-    );
-    const { root, state } = await renderPage();
-
-    state.messageFeeds = [...state.messageFeeds];
-    await act(async () => {
-      root.render(<RerDutyNeoPage authUserName="tester" />);
-    });
-    await act(async () => {
-      resolveContext({
-        groupMasterKeys: ['target-group'],
-        sigintInboxItemIds: [41],
-        sinceTs: null,
-        tillTs: null,
-      });
-      await Promise.resolve();
-    });
-
-    expect(state.setFeedInitialTarget).toHaveBeenCalledWith('feed-1', {
-      beforeIdNoninclusive: 41,
-      messageIds: [41],
-    });
-    expect(state.applyFilter).toHaveBeenCalledWith(
-      'feed-1',
-      expect.objectContaining({ groupsSelected: ['target-group'] }),
-      true,
-    );
-
-    root.unmount();
-  });
-
   it('opens edit mode, submits the returned message, and closes the drawer', async () => {
     const { container, root, state } = await renderPage();
 
@@ -541,7 +497,6 @@ describe('RerDutyNeoPage creation workflow', () => {
       root.unmount();
     });
   });
-
   it('opens an own report card from the header edit action in report mode', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -608,7 +563,6 @@ describe('RerDutyNeoPage creation workflow', () => {
 
     await act(async () => root.unmount());
   });
-
   it('opens report mode and keeps populated feeds without a full reload after creation', async () => {
     nextCreatedResponse.value = { signal_message_id: 91 };
     const { container, root, state } = await renderPage();

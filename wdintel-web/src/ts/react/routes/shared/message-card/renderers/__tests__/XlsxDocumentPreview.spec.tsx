@@ -6,7 +6,7 @@ import { createRoot } from 'react-dom/client';
 import { act } from 'react-dom/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../workers/worker-client', () => ({
+vi.mock('../../workers/worker-client.ts', () => ({
   runWorkerTask: vi.fn(async () => ({
     sheets: [
       {
@@ -20,19 +20,18 @@ vi.mock('../../workers/worker-client', () => ({
   })),
 }));
 
-vi.mock('../../xlsx/XlsxGrid', () => ({
+vi.mock('../../xlsx/XlsxGrid.tsx', () => ({
   XlsxGrid: ({ rows }: { rows: string[][] }) => <div data-grid data-rows={rows.length} />,
 }));
 
-vi.mock('../../xlsx/XlsxSheetTabs', () => ({
+vi.mock('../../xlsx/XlsxSheetTabs.tsx', () => ({
   XlsxSheetTabs: ({ sheetNames }: { sheetNames: string[] }) => (
     <div data-tabs data-count={sheetNames.length} />
   ),
 }));
 
-import { XlsxDocumentPreview } from '../XlsxDocumentPreview';
-import { runWorkerTask } from '../../workers/worker-client';
-
+import { XlsxDocumentPreview } from '../XlsxDocumentPreview.tsx';
+import { runWorkerTask } from '../../workers/worker-client.ts';
 describe('XlsxDocumentPreview', () => {
   afterEach(() => {
     document.body.innerHTML = '';

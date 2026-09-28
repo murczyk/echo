@@ -1,6 +1,8 @@
 import { HttpRequestError, postJson } from './client';
 import type { RequestOptions } from './client';
 import type {
+  DirectSubmitParsePayload,
+  DirectSubmitParseRsp,
   DeviceNameResolveReq,
   DeviceNameResolveRsp,
   DeviceNameSearchResult,
@@ -249,23 +251,23 @@ function normalizeDirectSubmitResponse(raw: DirectSubmitResponseRaw): DirectSubm
   };
 }
 
-export type DirectSubmitParseRequest = {
-  full_body: string;
-  signal_group_master_key?: string;
+type SnakeCase<Key extends string> = Key extends `${infer Head}${infer Tail}`
+  ? `${Head extends Lowercase<Head> ? '' : '_'}${Lowercase<Head>}${SnakeCase<Tail>}`
+  : Key;
+type SnakeCaseFields<Value> = {
+  [Key in keyof Value as Key extends string ? SnakeCase<Key> : Key]: Value[Key];
 };
 
-export type DirectSubmitParseResponse = {
-  text: string;
-  freq?: string;
-  coords: SubmitCoordinates[];
-  to: string[];
-  timestamp?: string;
-  comment?: string;
-  post?: string;
-  unit?: string;
-  unit_v2?: string;
-  locations: string[];
-};
+export type DirectSubmitParseRequest = Pick<
+  SnakeCaseFields<DirectSubmitParsePayload>,
+  'full_body'
+> &
+  Partial<SnakeCaseFields<DirectSubmitParsePayload>>;
+export type DirectSubmitParseResponse = Pick<
+  SnakeCaseFields<DirectSubmitParseRsp>,
+  'text' | 'coords' | 'to' | 'locations'
+> &
+  Partial<SnakeCaseFields<DirectSubmitParseRsp>>;
 
 export function formatDirectSubmitError(
   error: unknown,

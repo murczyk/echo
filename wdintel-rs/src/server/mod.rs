@@ -1179,6 +1179,8 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::api_integrations::upsert_api_integration)
             .service(crate::api_integrations::delete_api_integration)
             .service(crate::api_integrations::test_iggy_connection)
+            .service(crate::api_integrations::list_api_settlements)
+            .service(crate::api_integrations::list_api_tags)
             .service(crate::devices::devices::list)
             .service(crate::devices::devices::unit_stats)
             .service(crate::devices::devices::aors)

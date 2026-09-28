@@ -97,7 +97,6 @@ afterEach(() => {
   document.body.innerHTML = '';
   vi.clearAllMocks();
 });
-
 describe('useRerCallsignsNeoPage duplicate hints', () => {
   it('exposes selectable units without blank-name entries', () => {
     const page = renderHookHarness();
@@ -173,6 +172,7 @@ describe('useRerCallsignsNeoPage duplicate hints', () => {
 });
 
 describe('useRerCallsignsNeoPage unit filters', () => {
+  // Regression: https://github.com/echoua/echo/issues/3387
   it('keeps the selected hierarchy while filtering the unit column for echo-3387', () => {
     const page = renderHookHarness();
     const hierarchyFilter = {

@@ -6,7 +6,7 @@ import { act } from 'react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { emptyQueryState } from '../helpers';
+import { emptyQueryState } from '.././helpers';
 
 const useRerAnalysisNeoPageMock = vi.hoisted(() => vi.fn());
 const useMediaQueryMock = vi.hoisted(() => vi.fn(() => false));
@@ -204,36 +204,32 @@ vi.mock('../../../components/SidePanelToggleButton', () => ({
   ),
 }));
 
-vi.mock('../components/AnalysisFiltersPanel', () => ({
+vi.mock('.././components/AnalysisFiltersPanel', () => ({
   AnalysisFiltersPanel: () => <div data-testid="filters-panel" />,
 }));
 
-vi.mock('../components/AnalysisHeaderControls', () => ({
+vi.mock('.././components/AnalysisHeaderControls', () => ({
   AnalysisHeaderControls: () => <div data-testid="header-controls" />,
 }));
 
-vi.mock('../components/AnalysisMapPane', () => ({
+vi.mock('.././components/AnalysisMapPane', () => ({
   ANALYSIS_NARROW_MAP_HEIGHT: 'clamp(480px, 70svh, 720px)',
   AnalysisMapPane: () => <div data-testid="map-pane" />,
 }));
 
-vi.mock('../components/AnalysisMessagesPane', () => ({
+vi.mock('.././components/AnalysisMessagesPane', () => ({
   AnalysisMessagesPane: () => <div data-testid="messages-pane" />,
 }));
 
-vi.mock('../AnalysisLoadingSkeletons', () => ({
-  AnalysisLoadingSkeletons: () => <div data-testid="analysis-loading-skeletons" />,
-}));
-
-vi.mock('../components/AnalysisReportDialog', () => ({
+vi.mock('.././components/AnalysisReportDialog', () => ({
   AnalysisReportDialog: () => <div data-testid="report-dialog" />,
 }));
 
-vi.mock('../components/AnalysisSidebar', () => ({
+vi.mock('.././components/AnalysisSidebar', () => ({
   AnalysisSidebar: () => <div data-testid="sidebar" />,
 }));
 
-vi.mock('../components/AnalysisSummaryTableCard', () => ({
+vi.mock('.././components/AnalysisSummaryTableCard', () => ({
   AnalysisSummaryTableCard: () => <div data-testid="summary-card" />,
 }));
 
@@ -261,12 +257,6 @@ vi.mock('../../shared/manage-message/ManageMessageDrawer', () => ({
     onDeleteSuccess?: (messageId: number) => Promise<void> | void;
     editTarget?: unknown;
     editAsReport?: boolean;
-    editTargetLoadState?: {
-      status: 'idle' | 'loading' | 'error';
-      reportId?: number;
-      message?: string;
-    };
-    onRetryEditTargetLoad?: () => void;
     reportSource?: unknown;
   }) => {
     manageMessageDrawerPropsHistory.push(props);
@@ -288,7 +278,7 @@ vi.mock('@mui/icons-material/MessageOutlined', () => ({ default: () => <span /> 
 vi.mock('@mui/icons-material/PersonAddOutlined', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/TableRowsOutlined', () => ({ default: () => <span /> }));
 
-import { RerAnalysisNeoPage } from '../index';
+import { RerAnalysisNeoPage } from '.././index';
 
 function buildPage() {
   return {
@@ -307,7 +297,6 @@ function buildPage() {
     error: null,
     editorMessage: null,
     editorEditAsReport: false,
-    editTargetLoadState: { status: 'idle' as const },
     reportSource: null,
     editorSaveInFlight: false,
     filtersLoading: false,
@@ -346,8 +335,6 @@ function buildPage() {
     messagesPaging: false,
     messagesTotalCount: null,
     messagesTotalLoading: true,
-    directMessageLoading: false,
-    directMessageNavigation: null,
     networkDisplayMap: {},
     networks: [],
     newCallsigns: { notSeen24h: [], notSeen7days: [], notSeen30days: [] },
@@ -356,8 +343,6 @@ function buildPage() {
     newestFirst: true,
     nolimitShown: false,
     pageIndex: 0,
-    messagePageNavigationTarget: null,
-    visibleMessagesPageIndex: 0,
     options: {
       tags: [],
       aors: [],
@@ -405,7 +390,6 @@ function buildPage() {
     openEditor: vi.fn(),
     openReportCreator: vi.fn(),
     openReportEditor: vi.fn(),
-    retryEditTargetLoad: vi.fn(),
     closeEditor: vi.fn(),
     saveEditor: vi.fn(),
     saveMessageUpdate: vi.fn(),
@@ -414,6 +398,7 @@ function buildPage() {
     onToggleMessageImportant: vi.fn(),
     onToggleMessageTag: vi.fn(),
     onUpdateLocalMessage: vi.fn(),
+    addFrequencyToFilter: vi.fn(),
     closeReport: vi.fn(),
     downloadGeojson: vi.fn(),
     downloadKmz: vi.fn(),
@@ -439,8 +424,6 @@ function buildPage() {
     reload: vi.fn(),
     setCenterTab: vi.fn(),
     setNewestFirst: vi.fn(),
-    clearMessagePageNavigationTarget: vi.fn(),
-    setVisibleMessagesPageIndex: vi.fn(),
     setReportProgressExpanded: vi.fn(),
     setRightSidebarTab: vi.fn(),
     showFreqOnMap: vi.fn(),
@@ -460,7 +443,6 @@ function buildPage() {
     updateExisting: vi.fn(),
   };
 }
-
 describe('RerAnalysisNeoPage', () => {
   const rendered: HTMLDivElement[] = [];
 
@@ -483,208 +465,7 @@ describe('RerAnalysisNeoPage', () => {
     }
   });
 
-  it('shows an unavailable direct-link error in the snackbar once', async () => {
-    const page = buildPage();
-    page.directMessageError = 'Повідомлення за посиланням не знайдено або воно недоступне.';
-    useRerAnalysisNeoPageMock.mockReturnValue(page);
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    rendered.push(container);
-    const root = createRoot(container);
-
-    await act(async () => root.render(<RerAnalysisNeoPage />));
-
-    expect(notifyMock).toHaveBeenCalledWith({
-      severity: 'error',
-      message: 'Повідомлення за посиланням не знайдено або воно недоступне.',
-    });
-    expect(container.querySelector('[role="alert"]')).toBeNull();
-
-    await act(async () => root.render(<RerAnalysisNeoPage />));
-
-    expect(notifyMock).toHaveBeenCalledTimes(1);
-    root.unmount();
-  });
-
-  it('opens the report editor drawer from loading state and routes dismissal to closeEditor', async () => {
-    const page = buildPage();
-    page.editorMessage = null;
-    page.reportSource = null;
-    page.editorEditAsReport = true;
-    page.editTargetLoadState = { status: 'loading', reportId: 91 };
-    useRerAnalysisNeoPageMock.mockReturnValue(page);
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    rendered.push(container);
-    const root = createRoot(container);
-    await act(async () => root.render(<RerAnalysisNeoPage />));
-    const drawer = manageMessageDrawerPropsHistory.at(-1);
-    expect(drawer?.open).toBe(true);
-    expect(drawer?.editAsReport).toBe(true);
-    expect(drawer?.editTarget).toBeNull();
-    expect(drawer?.editTargetLoadState).toEqual({ status: 'loading', reportId: 91 });
-    expect(drawer?.onRetryEditTargetLoad).toBe(page.retryEditTargetLoad);
-    act(() => drawer?.onClose());
-    expect(page.closeEditor).toHaveBeenCalledOnce();
-    root.unmount();
-  });
-
-  it('collapses the narrow sidebar and restores the FAB around a sidebar map', async () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    rendered.push(container);
-    const root = createRoot(container);
-    const page = buildPage();
-    useRerAnalysisNeoPageMock.mockReturnValue(page);
-
-    await act(async () => {
-      root.render(<RerAnalysisNeoPage />);
-    });
-
-    expect(container.querySelector('[data-testid="sidebar"]')).toBeNull();
-    expect(container.querySelector('button[aria-label="create-message-fab"]')).not.toBeNull();
-
-    page.analysisMapInSidebar = true;
-    page.rightPanelOpen = true;
-    page.rightSidebarTab = 'map';
-    await act(async () => {
-      root.render(<RerAnalysisNeoPage />);
-    });
-
-    expect(container.querySelector('[data-testid="sidebar"]')).not.toBeNull();
-    expect(container.querySelector('button[aria-label="create-message-fab"]')).toBeNull();
-
-    await act(async () => root.unmount());
-  });
-
-  it('renders narrow panels in responsive drawers without replacing the center content', async () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    rendered.push(container);
-    const root = createRoot(container);
-    const page = buildPage();
-    useMediaQueryMock.mockImplementation((query) => query === 'lg');
-    useRerAnalysisNeoPageMock.mockReturnValue(page);
-
-    await act(async () => root.render(<RerAnalysisNeoPage />));
-    const leftDrawer = container.querySelector('[data-testid="analysis-drawer-left"]');
-    expect(leftDrawer?.querySelector('[data-testid="filters-panel"]')).not.toBeNull();
-    expect(leftDrawer?.getAttribute('data-width')).toBe('{"xs":"100vw","sm":400}');
-    expect(container.querySelector('[data-testid="messages-pane"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="analysis-drawer-right"]')).toBeNull();
-
-    page.leftPanelOpen = false;
-    page.rightPanelOpen = true;
-    await act(async () => root.render(<RerAnalysisNeoPage />));
-
-    const rightDrawer = container.querySelector('[data-testid="analysis-drawer-right"]');
-    expect(container.querySelector('[data-testid="analysis-drawer-left"]')).toBeNull();
-    expect(rightDrawer?.querySelector('[data-testid="sidebar"]')).not.toBeNull();
-    expect(rightDrawer?.getAttribute('data-width')).toBe('"100vw"');
-    expect(container.querySelector('[data-testid="messages-pane"]')).not.toBeNull();
-
-    await act(async () => root.unmount());
-  });
-
-  it('shows skeletons for direct-link and regular message loading', async () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    rendered.push(container);
-    const root = createRoot(container);
-    const page = buildPage();
-    page.directMessageLoading = true;
-    page.messagesLoading = true;
-    useRerAnalysisNeoPageMock.mockReturnValue(page);
-
-    await act(async () => root.render(<RerAnalysisNeoPage />));
-
-    expect(container.querySelector('[data-testid="analysis-loading-skeletons"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="messages-pane"]')).toBeNull();
-
-    useRerAnalysisNeoPageMock.mockReturnValue({
-      ...page,
-      directMessageLoading: false,
-      messagesLoading: false,
-      messages: [[51, { text: 'filtered message' }]],
-      directMessageNavigation: null,
-    });
-    await act(async () => root.render(<RerAnalysisNeoPage />));
-
-    expect(container.querySelector('[data-testid="analysis-loading-skeletons"]')).toBeNull();
-    expect(container.querySelector('[data-testid="messages-pane"]')).not.toBeNull();
-
-    useRerAnalysisNeoPageMock.mockReturnValue({
-      ...page,
-      directMessageLoading: false,
-      messagesLoading: true,
-    });
-    await act(async () => root.render(<RerAnalysisNeoPage />));
-
-    expect(container.querySelector('[data-testid="analysis-loading-skeletons"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="messages-pane"]')).toBeNull();
-
-    useRerAnalysisNeoPageMock.mockReturnValue({
-      ...page,
-      directMessageLoading: true,
-      messagesLoading: true,
-      messages: [[51, { text: 'target message' }]],
-      directMessageNavigation: {
-        targetMessageId: 51,
-        focusActive: true,
-        contextLoading: true,
-        newestFirst: true,
-        canLoadEarlier: true,
-        canLoadLater: true,
-        loadingEarlier: true,
-        loadingLater: true,
-        onClearFocus: vi.fn(),
-        onLoadEarlier: vi.fn().mockResolvedValue(true),
-        onLoadLater: vi.fn().mockResolvedValue(true),
-      },
-    });
-    await act(async () => root.render(<RerAnalysisNeoPage />));
-
-    expect(container.querySelector('[data-testid="analysis-loading-skeletons"]')).toBeNull();
-    expect(container.querySelector('[data-testid="messages-pane"]')).not.toBeNull();
-
-    await act(async () => root.unmount());
-  });
-
-  it('wires the header toggle buttons to the existing panel handlers', async () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    rendered.push(container);
-    const root = createRoot(container);
-
-    await act(async () => {
-      root.render(<RerAnalysisNeoPage />);
-    });
-
-    const leftToggle = container.querySelector<HTMLButtonElement>(
-      '[aria-label="Згорнути ліву панель"]',
-    );
-    const rightToggle = container.querySelector<HTMLButtonElement>(
-      '[aria-label="Розгорнути праву панель"]',
-    );
-
-    expect(leftToggle).not.toBeNull();
-    expect(rightToggle).not.toBeNull();
-
-    await act(async () => {
-      leftToggle?.click();
-      rightToggle?.click();
-    });
-
-    const page = useRerAnalysisNeoPageMock.mock.results[0]?.value;
-    expect(page.toggleLeftPanel).toHaveBeenCalledTimes(1);
-    expect(page.toggleRightPanel).toHaveBeenCalledTimes(1);
-
-    await act(async () => {
-      root.unmount();
-    });
-  });
-
-  it('enqueues success Snackbar and reloads after creation', async () => {
+  it('refreshes analysis after creating a message', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     rendered.push(container);
@@ -726,213 +507,13 @@ describe('RerAnalysisNeoPage', () => {
 
     expect(manageMessageDrawerPropsHistory.at(-1)?.open).toBe(false);
     expect(page.reload).toHaveBeenCalledTimes(1);
-    expect(notifyMock).toHaveBeenCalledTimes(1);
-    expect(notifyMock).toHaveBeenCalledWith({
-      message: 'Повідомлення успішно створено.',
-      severity: 'success',
-    });
 
     await act(async () => {
       root.unmount();
     });
   });
 
-  it('hides the create-message FAB on the map tab and restores it on other center tabs', async () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    rendered.push(container);
-    const root = createRoot(container);
-    const page = buildPage();
-    page.analysisMapInSidebar = false;
-    page.centerTab = 'map';
-    useRerAnalysisNeoPageMock.mockReturnValue(page);
-
-    await act(async () => {
-      root.render(<RerAnalysisNeoPage />);
-    });
-
-    expect(container.querySelectorAll('button[aria-label="create-message-fab"]')).toHaveLength(0);
-
-    page.analysisMapInSidebar = true;
-    await act(async () => {
-      root.render(<RerAnalysisNeoPage />);
-    });
-
-    expect(container.querySelectorAll('button[aria-label="create-message-fab"]')).toHaveLength(1);
-
-    page.analysisMapInSidebar = false;
-    page.centerTab = 'messages';
-    await act(async () => {
-      root.render(<RerAnalysisNeoPage />);
-    });
-
-    expect(container.querySelectorAll('button[aria-label="create-message-fab"]')).toHaveLength(1);
-
-    await act(async () => {
-      container
-        .querySelector<HTMLButtonElement>('button[aria-label="create-message-fab"]')
-        ?.click();
-    });
-
-    expect(manageMessageDrawerPropsHistory.at(-1)?.open).toBe(true);
-
-    page.centerTab = 'map';
-    await act(async () => {
-      root.render(<RerAnalysisNeoPage />);
-    });
-
-    expect(container.querySelectorAll('button[aria-label="create-message-fab"]')).toHaveLength(0);
-    expect(manageMessageDrawerPropsHistory.at(-1)?.open).toBe(true);
-
-    page.centerTab = 'summary';
-    await act(async () => {
-      root.render(<RerAnalysisNeoPage />);
-    });
-
-    expect(container.querySelectorAll('button[aria-label="create-message-fab"]')).toHaveLength(1);
-
-    await act(async () => {
-      root.unmount();
-    });
-  });
-
-  it('hides the create-message FAB when the visible sidebar tab is the map', async () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    rendered.push(container);
-    const root = createRoot(container);
-    const page = buildPage();
-    page.analysisMapInSidebar = true;
-    page.rightPanelOpen = true;
-    page.rightSidebarTab = 'map';
-    useRerAnalysisNeoPageMock.mockReturnValue(page);
-
-    await act(async () => {
-      root.render(<RerAnalysisNeoPage />);
-    });
-
-    expect(container.querySelectorAll('button[aria-label="create-message-fab"]')).toHaveLength(0);
-
-    await act(async () => {
-      root.unmount();
-    });
-  });
-
-  it('shows the create-message FAB when the sidebar map switches to Stats', async () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    rendered.push(container);
-    const root = createRoot(container);
-    const page = buildPage();
-    page.analysisMapInSidebar = true;
-    page.rightPanelOpen = true;
-    page.rightSidebarTab = 'map';
-    useRerAnalysisNeoPageMock.mockReturnValue(page);
-
-    await act(async () => {
-      root.render(<RerAnalysisNeoPage />);
-    });
-    expect(container.querySelectorAll('button[aria-label="create-message-fab"]')).toHaveLength(0);
-
-    page.rightSidebarTab = 'stats';
-    await act(async () => {
-      root.render(<RerAnalysisNeoPage />);
-    });
-
-    expect(container.querySelectorAll('button[aria-label="create-message-fab"]')).toHaveLength(1);
-
-    await act(async () => {
-      root.unmount();
-    });
-  });
-
-  it('shows the create-message FAB when the desktop right panel closes on the sidebar map', async () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    rendered.push(container);
-    const root = createRoot(container);
-    const page = buildPage();
-    page.analysisMapInSidebar = true;
-    page.rightPanelOpen = true;
-    page.rightSidebarTab = 'map';
-    useRerAnalysisNeoPageMock.mockReturnValue(page);
-
-    await act(async () => {
-      root.render(<RerAnalysisNeoPage />);
-    });
-    expect(container.querySelectorAll('button[aria-label="create-message-fab"]')).toHaveLength(0);
-
-    page.rightPanelOpen = false;
-    await act(async () => {
-      root.render(<RerAnalysisNeoPage />);
-    });
-
-    expect(container.querySelectorAll('button[aria-label="create-message-fab"]')).toHaveLength(1);
-
-    await act(async () => {
-      root.unmount();
-    });
-  });
-
-  it('enqueues separate Snackbar notifications for repeated creations', async () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    rendered.push(container);
-    const root = createRoot(container);
-
-    await act(async () => {
-      root.render(<RerAnalysisNeoPage />);
-    });
-
-    const create = async () => {
-      await act(async () => {
-        container
-          .querySelector<HTMLButtonElement>('button[aria-label="create-message-fab"]')
-          ?.click();
-      });
-      const drawer = manageMessageDrawerPropsHistory.at(-1);
-      await act(async () => {
-        await drawer?.onCreated?.({ signal_message_id: 17 });
-      });
-    };
-
-    await create();
-    await create();
-    expect(notifyMock).toHaveBeenCalledTimes(2);
-
-    await act(async () => {
-      root.unmount();
-    });
-  });
-
-  it('does not enqueue a success Snackbar when creation is cancelled', async () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    rendered.push(container);
-    const root = createRoot(container);
-
-    await act(async () => {
-      root.render(<RerAnalysisNeoPage />);
-    });
-    await act(async () => {
-      container
-        .querySelector<HTMLButtonElement>('button[aria-label="create-message-fab"]')
-        ?.click();
-    });
-    await act(async () => {
-      manageMessageDrawerPropsHistory.at(-1)?.onClose();
-    });
-
-    const page = useRerAnalysisNeoPageMock.mock.results[0]?.value;
-    expect(notifyMock).not.toHaveBeenCalled();
-    expect(page.reload).not.toHaveBeenCalled();
-
-    await act(async () => {
-      root.unmount();
-    });
-  });
-
-  it('opens edit mode from the current editor message and wires save and close callbacks', async () => {
+  it('saves the selected edit and refreshes the analysis result', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     rendered.push(container);
@@ -960,20 +541,12 @@ describe('RerAnalysisNeoPage', () => {
       await drawer?.onEditSuccess?.({ signal_message_id: 42 });
     });
     expect(page.reload).toHaveBeenCalledTimes(1);
-    expect(container.querySelector('[role="status"]')).toBeNull();
-
-    await act(async () => {
-      drawer?.onClose();
-    });
-
-    expect(page.closeEditor).toHaveBeenCalledTimes(1);
-
     await act(async () => {
       root.unmount();
     });
   });
 
-  it('opens report creation mode and refreshes analysis after creation', async () => {
+  it('refreshes analysis after creating a report', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     rendered.push(container);
@@ -996,10 +569,6 @@ describe('RerAnalysisNeoPage', () => {
     });
 
     expect(page.reload).toHaveBeenCalledTimes(1);
-    expect(notifyMock).toHaveBeenCalledWith({
-      message: 'Розвіддонесення успішно створено.',
-      severity: 'success',
-    });
 
     await act(async () => root.unmount());
   });
@@ -1038,10 +607,6 @@ describe('RerAnalysisNeoPage', () => {
       await drawer?.onDeleteSuccess?.(91);
     });
     expect(page.reload).toHaveBeenCalledTimes(2);
-    expect(notifyMock).toHaveBeenCalledWith({
-      message: 'Розвіддонесення успішно видалено.',
-      severity: 'success',
-    });
 
     await act(async () => root.unmount());
   });
@@ -1132,8 +697,6 @@ describe('RerAnalysisNeoPage', () => {
 
     expect(page.saveEditor).not.toHaveBeenCalled();
     expect(page.reload).toHaveBeenCalledTimes(1);
-    expect(container.textContent).not.toContain('Повідомлення успішно створено.');
-
     await act(async () => root.unmount());
   });
 

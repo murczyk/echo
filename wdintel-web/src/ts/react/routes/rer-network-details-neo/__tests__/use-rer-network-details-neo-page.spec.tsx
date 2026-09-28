@@ -271,7 +271,6 @@ afterEach(() => {
   document.body.innerHTML = '';
   vi.clearAllMocks();
 });
-
 describe('useRerNetworkDetailsNeoPage unit options', () => {
   it('filters blank-name units before building lookup options', () => {
     const page = renderHookHarness();

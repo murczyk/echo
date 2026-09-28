@@ -32,6 +32,7 @@ import { normalizeCallsignDisplay } from '../network-callsigns.utils';
 import { NetworkCallsignsCatalogTable } from './NetworkCallsignsCatalogTable';
 import { NetworkCallsignsInterceptedPanel } from './NetworkCallsignsInterceptedPanel';
 import { NetworkCallsignsNetworkTable } from './NetworkCallsignsNetworkTable';
+import { NetworkFreqCallsignPeriodSettings } from './NetworkFreqCallsignPeriodSettings';
 import { formatCountLabel } from './NetworkCallsignsTableShared';
 import { NO_DATA_LABEL } from '../../../utils/misc';
 
@@ -130,8 +131,12 @@ export type Props = {
   onSectionModeChange: (next: NetworkCallsignSectionMode) => void;
   statusFilter: NetworkCallsignStatusFilter;
   onStatusFilterChange: (next: NetworkCallsignStatusFilter) => void;
-  period: NetworkFreqCallsignsPeriod;
-  onPeriodChange: (period: NetworkFreqCallsignsPeriod) => void;
+  networkPeriod: NetworkFreqCallsignsPeriod;
+  onNetworkPeriodChange: (period: NetworkFreqCallsignsPeriod) => void;
+  catalogPeriod: NetworkFreqCallsignsPeriod;
+  onCatalogPeriodChange: (period: NetworkFreqCallsignsPeriod) => void;
+  interceptedPeriod: NetworkFreqCallsignsPeriod;
+  onInterceptedPeriodChange: (period: NetworkFreqCallsignsPeriod) => void;
   interceptedExpanded: boolean;
   onToggleInterceptedExpanded: () => void;
   onOpenCreateDrawer: () => void;
@@ -165,8 +170,12 @@ export function NetworkDetailsCallsignsPanel({
   onSectionModeChange,
   statusFilter,
   onStatusFilterChange,
-  period,
-  onPeriodChange,
+  networkPeriod,
+  onNetworkPeriodChange,
+  catalogPeriod,
+  onCatalogPeriodChange,
+  interceptedPeriod,
+  onInterceptedPeriodChange,
   interceptedExpanded,
   onToggleInterceptedExpanded,
   onOpenCreateDrawer,
@@ -376,11 +385,9 @@ export function NetworkDetailsCallsignsPanel({
               canManage={canManage}
               statusFilter={statusFilter}
               onStatusFilterChange={onStatusFilterChange}
-              period={period}
-              periodSettingsDisabled={
-                networkCallsignsLoading || catalogCallsignsLoading || interceptedCallsignsLoading
-              }
-              onPeriodChange={onPeriodChange}
+              period={networkPeriod}
+              periodSettingsDisabled={networkCallsignsLoading}
+              onPeriodChange={onNetworkPeriodChange}
               onOpenEditDrawer={onOpenEditDrawer}
               onOpenDeleteDialog={onOpenDeleteDialog}
               onSetMarkerMode={onSetMarkerMode}
@@ -415,6 +422,9 @@ export function NetworkDetailsCallsignsPanel({
               loading={catalogCallsignsLoading}
               loadingError={catalogCallsignsError}
               canManage={canManage}
+              period={catalogPeriod}
+              periodSettingsDisabled={catalogCallsignsLoading}
+              onPeriodChange={onCatalogPeriodChange}
               onAddKnownCallsign={onAddKnownCallsign}
               onReload={onReload}
               inFlightAddIds={inFlightAddIds}
@@ -441,6 +451,11 @@ export function NetworkDetailsCallsignsPanel({
                     )}
               </Typography>
             </Stack>
+            <NetworkFreqCallsignPeriodSettings
+              period={interceptedPeriod}
+              disabled={interceptedCallsignsLoading}
+              onChange={onInterceptedPeriodChange}
+            />
           </Stack>
           <Box sx={{ pb: 2 }}>
             <NetworkCallsignsInterceptedPanel

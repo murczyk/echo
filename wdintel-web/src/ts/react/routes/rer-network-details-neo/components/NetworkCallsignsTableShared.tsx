@@ -1,5 +1,5 @@
 import { Box, Stack } from '@mui/material';
-import type { MRT_ColumnOrderState } from 'material-react-table';
+import type { MRT_ColumnOrderState, MRT_SortingState } from 'material-react-table';
 
 import type {
   NetworkCallsignCatalogRowView,
@@ -58,6 +58,86 @@ export const CATALOG_COLUMNS_VISIBILITY = {
 };
 
 export const NETWORK_CALLSIGN_SOURCE_COLUMN_SIZE = 150;
+
+export const NETWORK_CALLSIGN_SORTABLE_COLUMN_IDS = new Set([
+  'callsign',
+  'position',
+  'unitName',
+  'lastDatetime',
+  'messageCount',
+  'dateBoundAt',
+  'sourceName',
+]);
+
+const UK_COLLATOR = new Intl.Collator('uk', { sensitivity: 'base', numeric: true });
+
+type CallsignSortableRow = {
+  callsign: string;
+  position: string;
+  unitName: string;
+  lastDatetime: number | null;
+  messageCount: number;
+  sourceName: string;
+  dateBoundAt?: number | null;
+};
+
+function compareText(left: string, right: string): number {
+  return UK_COLLATOR.compare(left, right);
+}
+
+function compareNullableNumber(
+  left: number | null | undefined,
+  right: number | null | undefined,
+): number {
+  if (left == null && right == null) return 0;
+  if (left == null) return 1;
+  if (right == null) return -1;
+  return left - right;
+}
+
+export function compareCallsignRowsBySorting(
+  left: CallsignSortableRow,
+  right: CallsignSortableRow,
+  sorting: { id: string; desc: boolean },
+): number {
+  let result = 0;
+
+  switch (sorting.id) {
+    case 'callsign':
+      result = compareText(left.callsign, right.callsign);
+      break;
+    case 'position':
+      result = compareText(left.position, right.position);
+      break;
+    case 'unitName':
+      result = compareText(left.unitName, right.unitName);
+      break;
+    case 'lastDatetime':
+      result = compareNullableNumber(left.lastDatetime, right.lastDatetime);
+      break;
+    case 'messageCount':
+      result = left.messageCount - right.messageCount;
+      break;
+    case 'dateBoundAt':
+      result = compareNullableNumber(left.dateBoundAt, right.dateBoundAt);
+      break;
+    case 'sourceName':
+      result = compareText(left.sourceName, right.sourceName);
+      break;
+    default:
+      result = compareText(left.callsign, right.callsign);
+      break;
+  }
+
+  return sorting.desc ? -result : result;
+}
+
+export function getPrimaryCallsignSortingItem(
+  sorting: MRT_SortingState,
+): { id: string; desc: boolean } | null {
+  const primary = sorting.find((item) => NETWORK_CALLSIGN_SORTABLE_COLUMN_IDS.has(item.id));
+  return primary ?? null;
+}
 
 export function formatCountLabel(value: number) {
   return value.toLocaleString('uk-UA');

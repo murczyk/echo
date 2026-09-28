@@ -1,0 +1,16 @@
+.ai-conversation-history-item .ai-conversation-menu-button {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ai-conversation-history-item:focus-within .ai-conversation-menu-button {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ai-conversation-history-item:hover .ai-conversation-menu-button {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}

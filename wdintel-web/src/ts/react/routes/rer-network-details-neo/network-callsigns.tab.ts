@@ -189,6 +189,22 @@ export function mergeNetworkCallsigns(
   return [...byId.values()];
 }
 
+export function excludeNetworkOwnedInterceptedCallsigns(
+  interceptedCallsigns: NetworkCallsignInterceptedView[],
+  networkCallsigns: NetworkCallsign[],
+): NetworkCallsignInterceptedView[] {
+  if (interceptedCallsigns.length === 0 || networkCallsigns.length === 0) {
+    return interceptedCallsigns;
+  }
+
+  const knownNetworkCallsigns = new Set(
+    networkCallsigns.map((networkCallsign) => normalizeCallsignDisplay(networkCallsign.callsign)),
+  );
+  return interceptedCallsigns.filter(
+    (item) => !knownNetworkCallsigns.has(normalizeCallsignDisplay(item.callsign)),
+  );
+}
+
 export function flattenCatalogCallsignRows(
   groups: NetworkCallsignCatalogGroupView[],
 ): NetworkCallsignCatalogRowView[] {

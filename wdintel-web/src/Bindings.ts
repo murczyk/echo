@@ -3525,6 +3525,27 @@ export type DeviceNameSearchRsp = {
   devices: Array<DeviceNameSearchResult>;
 };
 
+export type DirectSubmitParsePayload = {
+  fullBody: string;
+  includeAiCallsigns: boolean;
+  signalGroupMasterKey: string | null;
+};
+
+export type DirectSubmitParseRsp = {
+  aiCallsignWarning: string | null;
+  text: string;
+  freq: string | null;
+  coords: Array<GeoCoordinates>;
+  to: Array<string>;
+  timestamp: string | null;
+  isTimeNull: boolean | null;
+  comment: string | null;
+  post: string | null;
+  unit: string | null;
+  unitV2: string | null;
+  locations: Array<string>;
+};
+
 export type DeviceNameResolveReq = {
   names: Array<string>;
 };
@@ -4965,12 +4986,18 @@ export type AiAgentConversationUpdateReq = {
   title: string;
 };
 
+export type AiAgentMessageCitation = {
+  messageId: number;
+  messageIdentifier: string;
+};
+
 export type AiAgentMessageItem = {
   requestId: string;
   requestState: string;
   role: string;
   content: string;
   createdAt: number;
+  citations: Array<AiAgentMessageCitation>;
 };
 
 export type AiAgentConversationDetail = {
@@ -5900,4 +5927,5 @@ export type UserDutySettingsDto = {
   dutyCollapseMediaPreviews: boolean;
   mediaSummaryEnabled: boolean;
   messageSortBy: MessageTimeBasis;
+  messageAutoParseEnabled: boolean;
 };

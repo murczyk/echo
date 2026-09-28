@@ -6,6 +6,8 @@ use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+pub const APP_BUILD_VERSION: &str = env!("ECHO_BUILD_VERSION");
+
 pub const USER_DISPLAY_NAME_MAX_LENGTH: usize = 100;
 pub const USER_AUTHOR_IDENTITIES_MAX_BATCH_SIZE: usize = 200;
 
@@ -99,6 +101,7 @@ pub const AI_CALLSIGN_MESSAGE_MAX_CHARS: usize = 100_000;
 pub const AI_CALLSIGN_MAX_CALLSIGNS: usize = 500;
 pub const AI_CALLSIGN_MAX_CHARS: usize = 255;
 pub const AI_CALLSIGN_MAX_CONCURRENT_REQUESTS: usize = 4;
+pub const DIRECT_SUBMIT_AI_CALLSIGN_TIMEOUT_SECS: u64 = 10;
 pub const AI_CALLSIGN_WORKER_IDLE_SLEEP_MS: u64 = 1_000;
 pub const AI_CALLSIGN_WORKER_RETRY_BASE_SECS: i64 = 5;
 pub const AI_CALLSIGN_WORKER_RETRY_MAX_SECS: i64 = 300;
@@ -234,7 +237,12 @@ pub const AI_AGENT_PROVIDER_GATEWAY_PATH: &str =
     "/api/ai-agent/provider/v1/chat/completions";
 pub const AI_AGENT_OPENAI_API_BASE: &str = "https://api.openai.com/v1";
 pub const AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX: &str = "gpt-5";
-pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.08.25.2";
+pub const AI_AGENT_OPENAI_GPT_6_SOL: &str = "gpt-6-sol";
+pub const AI_AGENT_OPENAI_GPT_6_LUNA: &str = "gpt-6-luna";
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.09.27.3";
+pub const AI_CONTROL_PANEL_LOCK_KEY: i64 = 0x4543484f41494350;
+pub const AI_CONTROL_PANEL_POLL_MS: u64 = 100;
+pub const AI_CONTROL_PANEL_LOG_LINES: usize = 500;
 pub const AI_AGENT_INBOX_MAX_DAYS: i64 = 31;
 pub const AI_AGENT_USER_FAILURE_MESSAGE: &str =
     "Не вдалося виконати запит. Спробуйте ще раз.";
@@ -1066,6 +1074,9 @@ DELETE FROM api_integration;
 UPDATE area_of_responsibility SET updated_by_login_id = NULL;
 DELETE FROM sigint_key_share_policy;
 DELETE FROM device;
+DELETE FROM ai_agent_request;
+DELETE FROM ai_agent_conversation;
+DELETE FROM ai_agent_user_link;
 DELETE FROM login WHERE login <> 'system';
 DELETE FROM delta_login;
 DELETE FROM sigint_zone;

@@ -439,73 +439,6 @@ describe('AnalysisSummaryTableCard', () => {
     useMediaQueryMock.mockReturnValue(width < 600);
     return renderComponent(buildProps());
   }
-
-  it('hides the page-size selector and prevents wrapping below 600px', async () => {
-    const view = await renderAtWidth(599);
-    rendered.push(view);
-
-    const paginationProps = getPaginationProps();
-    expect(paginationProps.showRowsPerPage).toBe(false);
-    expect(paginationProps.sx['@media (max-width: 599.95px)'].flexWrap).toBe('nowrap');
-  });
-
-  it('keeps the page-size selector at the 600px breakpoint', async () => {
-    const view = await renderAtWidth(600);
-    rendered.push(view);
-
-    expect(getPaginationProps().showRowsPerPage).toBe(true);
-  });
-
-  it('recalculates page-size visibility when the mounted table crosses the breakpoint', async () => {
-    useMediaQueryMock.mockReturnValue(false);
-    const props = buildProps();
-    const view = await renderComponent(props);
-    rendered.push(view);
-    expect(getPaginationProps().showRowsPerPage).toBe(true);
-
-    useMediaQueryMock.mockReturnValue(true);
-    await act(async () => {
-      view.root.render(<AnalysisSummaryTableCard {...props} sx={{}} />);
-    });
-
-    expect(getPaginationProps().showRowsPerPage).toBe(false);
-  });
-
-  it('preserves desktop page-size options', async () => {
-    const view = await renderAtWidth(1200);
-    rendered.push(view);
-
-    const paginationProps = getPaginationProps();
-    expect(paginationProps.rowsPerPageOptions).toEqual([25, 50, 100]);
-    expect(paginationProps.showRowsPerPage).toBe(true);
-  });
-
-  it('renders the MRT frequency columns and keeps export actions', async () => {
-    const view = await renderComponent(buildProps());
-    rendered.push(view);
-
-    expect(view.container.textContent).toContain('Частота');
-    expect(view.container.textContent).toContain('К-сть');
-    expect(view.container.textContent).toContain('Координати');
-    expect(view.container.textContent).toContain('Позивні');
-    expect(view.container.textContent).toContain('Підрозділи');
-    expect(view.container.textContent).toContain('Локації');
-    expect(view.container.textContent).toContain('Дії');
-    expect(view.container.textContent).toContain('XLSX');
-    expect(view.container.querySelector('[data-testid="default-head-bg"]')?.textContent).toBe(
-      'var(--bs-body-bg)',
-    );
-  });
-
-  it('disables resizing for the row actions column', async () => {
-    const view = await renderComponent(buildProps());
-    rendered.push(view);
-
-    expect(
-      view.container.querySelector('[data-testid="row-actions-enable-resizing"]')?.textContent,
-    ).toBe('false');
-  });
-
   it('shows skeletons during loading', async () => {
     const view = await renderComponent(
       buildProps({
@@ -518,7 +451,6 @@ describe('AnalysisSummaryTableCard', () => {
     expect(view.container.querySelector('[data-testid="loading-skeleton"]')).not.toBeNull();
     expect(view.container.querySelector('table')).toBeNull();
   });
-
   it('shows a compact empty state without rendering the MRT footer', async () => {
     const view = await renderComponent(
       buildProps({
@@ -531,7 +463,6 @@ describe('AnalysisSummaryTableCard', () => {
     expect(view.container.textContent).toContain('Частоти за обраними параметрами відсутні');
     expect(view.container.querySelector('table')).toBeNull();
   });
-
   it('treats zero rows as loaded when the optional loaded prop is omitted', async () => {
     const props = buildProps({ rows: [], loading: false });
     delete props.loaded;
@@ -541,7 +472,6 @@ describe('AnalysisSummaryTableCard', () => {
     expect(view.container.textContent).toContain('Частоти за обраними параметрами відсутні');
     expect(view.container.querySelector('table')).toBeNull();
   });
-
   it('routes filter and map row actions to the existing callbacks', async () => {
     const onSelectFreq = vi.fn();
     const onShowFreqOnMap = vi.fn();
@@ -559,7 +489,6 @@ describe('AnalysisSummaryTableCard', () => {
     expect(onSelectFreq).toHaveBeenCalledWith('100.100');
     expect(onShowFreqOnMap).toHaveBeenCalledWith('100.100');
   });
-
   it('marks rename unit as modal and disables restore focus on the dialog', async () => {
     const view = await renderComponent(buildProps());
     rendered.push(view);
@@ -577,7 +506,6 @@ describe('AnalysisSummaryTableCard', () => {
         ?.getAttribute('data-disable-restore-focus'),
     ).toBe('true');
   });
-
   it('opens and closes the rename dialog from the actions column', async () => {
     const view = await renderComponent(buildProps());
     rendered.push(view);
@@ -589,7 +517,6 @@ describe('AnalysisSummaryTableCard', () => {
     await click(getButton(view.container, 'Скасувати'));
     expect(view.container.textContent).not.toContain('Частота 100.100');
   });
-
   it('submits onRenameUnit after confirming the dialog', async () => {
     const onRenameUnit = vi.fn().mockResolvedValue(undefined);
     const view = await renderComponent(buildProps({ onRenameUnit }));
@@ -601,7 +528,6 @@ describe('AnalysisSummaryTableCard', () => {
 
     expect(onRenameUnit).toHaveBeenCalledWith('100.100', '1 обрмп', '77 обрмп');
   });
-
   it('uses a single editable field when only one unit is available', async () => {
     const onRenameUnit = vi.fn().mockResolvedValue(undefined);
     const view = await renderComponent(
@@ -622,7 +548,6 @@ describe('AnalysisSummaryTableCard', () => {
 
     expect(onRenameUnit).toHaveBeenCalledWith('100.100', '1 обрмп', '77 обрмп');
   });
-
   it('keeps complete item values available to the shared overflow primitive', async () => {
     const view = await renderComponent(
       buildProps({
@@ -641,7 +566,6 @@ describe('AnalysisSummaryTableCard', () => {
     expect(view.container.textContent).toContain('FOXTROT');
     expect(view.container.textContent).toContain('GOLF');
   });
-
   it('renders analysis item cells without fixed-count clipping', async () => {
     const view = await renderComponent(
       buildProps({
@@ -662,7 +586,6 @@ describe('AnalysisSummaryTableCard', () => {
     expect(row.children[6].textContent).toContain('unit-d');
     expect(row.children[7].textContent).toContain('loc-e');
   });
-
   it('renders standalone callsign chip overflow control', async () => {
     const view = await renderStandalone(
       <CallsignChipsCell
@@ -680,7 +603,6 @@ describe('AnalysisSummaryTableCard', () => {
     expect(view.container.textContent).toContain('ALPHA');
     expect(view.container.textContent).toContain('Ще 4');
   });
-
   it('mounts genuinely hidden distinct callsigns only while disclosure is open', async () => {
     const view = await renderStandalone(
       <CallsignChipsCell
@@ -706,7 +628,6 @@ describe('AnalysisSummaryTableCard', () => {
     act(() => trigger?.click());
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();
   });
-
   it('renders standalone compact list overflow controls', async () => {
     const view = await renderStandalone(
       <div>

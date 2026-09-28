@@ -80,20 +80,44 @@ pub struct DirectSubmitCopyReq {
     pub message_ids: Vec<i64>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    elm_rs::Elm,
+    elm_rs::ElmEncode,
+    elm_rs::ElmDecode,
+)]
 pub struct DirectSubmitParsePayload {
     pub full_body: String,
+    #[serde(default)]
+    pub include_ai_callsigns: bool,
     #[serde(default)]
     pub signal_group_master_key: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    elm_rs::Elm,
+    elm_rs::ElmEncode,
+    elm_rs::ElmDecode,
+)]
 pub struct DirectSubmitParseRsp {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ai_callsign_warning: Option<String>,
     pub text: String,
     pub freq: Option<String>,
     pub coords: Vec<GeoCoordinates>,
     pub to: Vec<String>,
     pub timestamp: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_time_null: Option<bool>,
     pub comment: Option<String>,
     pub post: Option<String>,
     pub unit: Option<String>,

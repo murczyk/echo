@@ -41,7 +41,6 @@ import {
   buildNetworkCallsignTabData,
   createNetworkCallsignActivityMap,
 } from './network-callsigns.tab';
-import { normalizeCallsignDisplay } from './network-callsigns.utils';
 import {
   buildNetworkCallsignRelationFreqState,
   resolveNetworkCallsignRelationFreqs,
@@ -50,6 +49,12 @@ import {
 type ReloadGenerationRef = MutableRefObject<number>;
 
 type SetState = Dispatch<SetStateAction<NetworkDetailsNeoPageState>>;
+
+export type CallsignsLoadPeriods = {
+  network?: NetworkFreqCallsignsPeriod;
+  catalog?: NetworkFreqCallsignsPeriod;
+  intercepted?: NetworkFreqCallsignsPeriod;
+};
 
 type CallsignSectionState = Pick<
   NetworkDetailsNeoPageState,
@@ -63,12 +68,6 @@ type CallsignSectionState = Pick<
   | 'interceptedCallsignsLoading'
   | 'interceptedCallsignsError'
 >;
-
-type CallsignDerivedDataOverrides = {
-  networkCallsignGroups?: NetworkDetailsNeoPageState['networkCallsignGroups'];
-  callsignActivityMap?: NetworkDetailsNeoPageState['callsignActivityMap'];
-  networkCallsigns?: NetworkDetailsNeoPageState['networkCallsigns'];
-};
 
 function deriveCallsignsLoading(sectionState: CallsignSectionState): boolean {
   return (
@@ -131,17 +130,6 @@ function updateCallsignSectionState(
   return buildCallsignSectionFlags(current, next);
 }
 
-function recomputeCallsignDerivedData(
-  current: NetworkDetailsNeoPageState,
-  overrides: CallsignDerivedDataOverrides = {},
-) {
-  const networkCallsignGroups = overrides.networkCallsignGroups ?? current.networkCallsignGroups;
-  const callsignActivityMap = overrides.callsignActivityMap ?? current.callsignActivityMap;
-  const networkCallsigns = overrides.networkCallsigns ?? current.networkCallsigns;
-
-  return buildNetworkCallsignTabData(networkCallsignGroups, callsignActivityMap, networkCallsigns);
-}
-
 export function deriveRelationsEnabledFreqs(
   currentRelationsEnabledFreqs: string[],
   currentRelations: NetworkCallsignRelationsRsp | null,
@@ -184,7 +172,7 @@ export function useRerNetworkDetailsNeoPageLoad(
   reloadGeneration: ReloadGenerationRef,
 ): {
   reload: () => () => void;
-  loadCallsigns: (networkId: number, period?: NetworkFreqCallsignsPeriod) => Promise<void>;
+  loadCallsigns: (networkId: number, periods?: CallsignsLoadPeriods) => Promise<void>;
   loadRelations: (
     networkId: number,
     sinceDateInclusiveMs: number,
@@ -230,8 +218,6 @@ export function useRerNetworkDetailsNeoPageLoad(
 
       setState((current) => ({
         ...current,
-        networkCallsigns: [],
-        callsignCount: null,
         networkCallsignsLoaded: false,
         networkCallsignsLoading: true,
         networkCallsignsError: null,
@@ -255,9 +241,6 @@ export function useRerNetworkDetailsNeoPageLoad(
         if (!isCurrent()) return;
         setState((current) => ({
           ...current,
-          ...recomputeCallsignDerivedData(current, {
-            networkCallsigns: networkCallsignsRes.networkCallsigns,
-          }),
           networkCallsigns: networkCallsignsRes.networkCallsigns,
           sources,
           callsignCount: networkCallsignsRes.networkCallsigns.length,
@@ -289,18 +272,208 @@ export function useRerNetworkDetailsNeoPageLoad(
     [reloadGeneration, setState],
   );
 
-  const loadCandidateCallsigns = useCallback(
+  const loadCatalogCallsigns = useCallback(
     async (targetNetworkId: number, period: NetworkFreqCallsignsPeriod) => {
       const generation = reloadGeneration.current;
       const requestId = ++catalogCallsignsLoadRequestIdRef.current;
+      const isCurrent = () =>
+        reloadGeneration.current === generation &&
+        catalogCallsignsLoadRequestIdRef.current === requestId;
+
+      if (!Number.isFinite(targetNetworkId) || targetNetworkId <= 0) {
+        if (!isCurrent()) return;
+        setState((current) => ({
+          ...current,
+          catalogCallsignsLoaded: false,
+          catalogCallsignsLoading: false,
+          catalogCallsignsError: 'Некоректний ID мережі',
+          ...updateCallsignSectionState(current, {
+            catalogCallsignsLoaded: false,
+            catalogCallsignsLoading: false,
+            catalogCallsignsError: 'Некоректний ID мережі',
+          }),
+        }));
+        return;
+      }
+
+      setState((current) => ({
+        ...current,
+        catalogCallsignsLoaded: false,
+        catalogCallsignsLoading: true,
+        catalogCallsignsError: null,
+        ...updateCallsignSectionState(current, {
+          catalogCallsignsLoaded: false,
+          catalogCallsignsLoading: true,
+          catalogCallsignsError: null,
+        }),
+      }));
+
+      try {
+        const callsignsRes = await getNetworkCallsigns({
+          networkId: targetNetworkId,
+          includeActivityInfo: true,
+          section: 'Catalog',
+          period,
+        });
+        if (!isCurrent()) return;
+
+        const activityMap = createNetworkCallsignActivityMap(
+          callsignsRes.callsigns.map((item) => ({
+            callsign: item.callsign,
+            activity: {
+              messageCount: item.messageCount,
+              lastDatetime: item.lastDatetime,
+              freqs: item.freqs,
+            },
+          })),
+        );
+        setState((current) => {
+          const derived = buildNetworkCallsignTabData(
+            callsignsRes.callsigns,
+            activityMap,
+            current.networkCallsigns,
+          );
+          const nextActivityMap = new Map(current.callsignActivityMap);
+          activityMap.forEach((value, key) => nextActivityMap.set(key, value));
+          return {
+            ...current,
+            callsignActivityMap: nextActivityMap,
+            catalogCallsignGroups: derived.catalogCallsignGroups,
+            catalogCallsignsLoaded: true,
+            catalogCallsignsLoading: false,
+            catalogCallsignsError: null,
+            ...updateCallsignSectionState(current, {
+              catalogCallsignsLoaded: true,
+              catalogCallsignsLoading: false,
+              catalogCallsignsError: null,
+            }),
+          };
+        });
+      } catch (error) {
+        if (!isCurrent()) return;
+        const errorMessage = formatErrorMessage(error);
+        setState((current) => ({
+          ...current,
+          catalogCallsignsLoaded: false,
+          catalogCallsignsLoading: false,
+          catalogCallsignsError: errorMessage,
+          ...updateCallsignSectionState(current, {
+            catalogCallsignsLoaded: false,
+            catalogCallsignsLoading: false,
+            catalogCallsignsError: errorMessage,
+          }),
+        }));
+      }
+    },
+    [reloadGeneration, setState],
+  );
+
+  const loadInterceptedCallsigns = useCallback(
+    async (targetNetworkId: number, period: NetworkFreqCallsignsPeriod) => {
+      const generation = reloadGeneration.current;
+      const requestId = ++interceptedCallsignsLoadRequestIdRef.current;
+      const isCurrent = () =>
+        reloadGeneration.current === generation &&
+        interceptedCallsignsLoadRequestIdRef.current === requestId;
+
+      if (!Number.isFinite(targetNetworkId) || targetNetworkId <= 0) {
+        if (!isCurrent()) return;
+        setState((current) => ({
+          ...current,
+          interceptedCallsignsLoaded: false,
+          interceptedCallsignsLoading: false,
+          interceptedCallsignsError: 'Некоректний ID мережі',
+          ...updateCallsignSectionState(current, {
+            interceptedCallsignsLoaded: false,
+            interceptedCallsignsLoading: false,
+            interceptedCallsignsError: 'Некоректний ID мережі',
+          }),
+        }));
+        return;
+      }
+
+      setState((current) => ({
+        ...current,
+        interceptedCallsignsLoaded: false,
+        interceptedCallsignsLoading: true,
+        interceptedCallsignsError: null,
+        ...updateCallsignSectionState(current, {
+          interceptedCallsignsLoaded: false,
+          interceptedCallsignsLoading: true,
+          interceptedCallsignsError: null,
+        }),
+      }));
+
+      try {
+        const callsignsRes = await getNetworkCallsigns({
+          networkId: targetNetworkId,
+          includeActivityInfo: true,
+          section: 'Intercepted',
+          period,
+        });
+        if (!isCurrent()) return;
+
+        const activityMap = createNetworkCallsignActivityMap(
+          callsignsRes.callsigns.map((item) => ({
+            callsign: item.callsign,
+            activity: {
+              messageCount: item.messageCount,
+              lastDatetime: item.lastDatetime,
+              freqs: item.freqs,
+            },
+          })),
+        );
+        setState((current) => {
+          // Keep the intercepted period payload intact. Network-owned rows are
+          // hidden at display time so narrowing the network period can restore them.
+          const derived = buildNetworkCallsignTabData(callsignsRes.callsigns, activityMap, []);
+          const nextActivityMap = new Map(current.callsignActivityMap);
+          activityMap.forEach((value, key) => nextActivityMap.set(key, value));
+          return {
+            ...current,
+            callsignActivityMap: nextActivityMap,
+            unknownInterceptedCallsigns: derived.unknownInterceptedCallsigns,
+            interceptedCallsignsLoaded: true,
+            interceptedCallsignsLoading: false,
+            interceptedCallsignsError: null,
+            ...updateCallsignSectionState(current, {
+              interceptedCallsignsLoaded: true,
+              interceptedCallsignsLoading: false,
+              interceptedCallsignsError: null,
+            }),
+          };
+        });
+      } catch (error) {
+        if (!isCurrent()) return;
+        const errorMessage = formatErrorMessage(error);
+        setState((current) => ({
+          ...current,
+          interceptedCallsignsLoaded: false,
+          interceptedCallsignsLoading: false,
+          interceptedCallsignsError: errorMessage,
+          ...updateCallsignSectionState(current, {
+            interceptedCallsignsLoaded: false,
+            interceptedCallsignsLoading: false,
+            interceptedCallsignsError: errorMessage,
+          }),
+        }));
+      }
+    },
+    [reloadGeneration, setState],
+  );
+
+  const loadCandidateCallsignsCombined = useCallback(
+    async (targetNetworkId: number, period: NetworkFreqCallsignsPeriod) => {
+      const generation = reloadGeneration.current;
+      const catalogRequestId = ++catalogCallsignsLoadRequestIdRef.current;
       const interceptedRequestId = ++interceptedCallsignsLoadRequestIdRef.current;
       const isCurrent = () =>
         reloadGeneration.current === generation &&
-        catalogCallsignsLoadRequestIdRef.current === requestId &&
+        catalogCallsignsLoadRequestIdRef.current === catalogRequestId &&
         interceptedCallsignsLoadRequestIdRef.current === interceptedRequestId;
 
       if (!Number.isFinite(targetNetworkId) || targetNetworkId <= 0) {
-        if (!isCurrent()) return null;
+        if (!isCurrent()) return;
         setState((current) => ({
           ...current,
           catalogCallsignsLoaded: false,
@@ -318,7 +491,7 @@ export function useRerNetworkDetailsNeoPageLoad(
             interceptedCallsignsError: 'Некоректний ID мережі',
           }),
         }));
-        return null;
+        return;
       }
 
       setState((current) => ({
@@ -339,16 +512,52 @@ export function useRerNetworkDetailsNeoPageLoad(
         }),
       }));
 
-      let callsignsRes: Awaited<ReturnType<typeof getNetworkCallsigns>>;
       try {
-        callsignsRes = await getNetworkCallsigns({
+        const callsignsRes = await getNetworkCallsigns({
           networkId: targetNetworkId,
           includeActivityInfo: true,
           section: 'Everything',
           period,
         });
+        if (!isCurrent()) return;
+
+        const activityMap = createNetworkCallsignActivityMap(
+          callsignsRes.callsigns.map((item) => ({
+            callsign: item.callsign,
+            activity: {
+              messageCount: item.messageCount,
+              lastDatetime: item.lastDatetime,
+              freqs: item.freqs,
+            },
+          })),
+        );
+        setState((current) => {
+          const derived = buildNetworkCallsignTabData(callsignsRes.callsigns, activityMap, []);
+          const nextActivityMap = new Map(current.callsignActivityMap);
+          activityMap.forEach((value, key) => nextActivityMap.set(key, value));
+          return {
+            ...current,
+            callsignActivityMap: nextActivityMap,
+            catalogCallsignGroups: derived.catalogCallsignGroups,
+            unknownInterceptedCallsigns: derived.unknownInterceptedCallsigns,
+            catalogCallsignsLoaded: true,
+            catalogCallsignsLoading: false,
+            catalogCallsignsError: null,
+            interceptedCallsignsLoaded: true,
+            interceptedCallsignsLoading: false,
+            interceptedCallsignsError: null,
+            ...updateCallsignSectionState(current, {
+              catalogCallsignsLoaded: true,
+              catalogCallsignsLoading: false,
+              catalogCallsignsError: null,
+              interceptedCallsignsLoaded: true,
+              interceptedCallsignsLoading: false,
+              interceptedCallsignsError: null,
+            }),
+          };
+        });
       } catch (error) {
-        if (!isCurrent()) return null;
+        if (!isCurrent()) return;
         const errorMessage = formatErrorMessage(error);
         setState((current) => ({
           ...current,
@@ -367,61 +576,51 @@ export function useRerNetworkDetailsNeoPageLoad(
             interceptedCallsignsError: errorMessage,
           }),
         }));
-        return null;
       }
-
-      if (!isCurrent()) return null;
-      const activityMap = createNetworkCallsignActivityMap(
-        callsignsRes.callsigns.map((item) => ({
-          callsign: item.callsign,
-          activity: {
-            messageCount: item.messageCount,
-            lastDatetime: item.lastDatetime,
-            freqs: item.freqs,
-          },
-        })),
-      );
-      setState((current) => {
-        const derived = recomputeCallsignDerivedData(current, {
-          networkCallsignGroups: callsignsRes.callsigns,
-          callsignActivityMap: activityMap,
-        });
-        return {
-          ...current,
-          networkCallsignGroups: callsignsRes.callsigns,
-          callsignActivityMap: activityMap,
-          catalogCallsignGroups: derived.catalogCallsignGroups,
-          unknownInterceptedCallsigns: derived.unknownInterceptedCallsigns,
-          catalogCallsignsLoaded: true,
-          catalogCallsignsLoading: false,
-          catalogCallsignsError: null,
-          interceptedCallsignsLoaded: true,
-          interceptedCallsignsLoading: false,
-          interceptedCallsignsError: null,
-          ...updateCallsignSectionState(current, {
-            catalogCallsignsLoaded: true,
-            catalogCallsignsLoading: false,
-            catalogCallsignsError: null,
-            interceptedCallsignsLoaded: true,
-            interceptedCallsignsLoading: false,
-            interceptedCallsignsError: null,
-          }),
-        };
-      });
-
-      return callsignsRes.callsigns;
     },
     [reloadGeneration, setState],
   );
 
   const loadCallsigns = useCallback(
-    async (targetNetworkId: number, period: NetworkFreqCallsignsPeriod = 'Last21Days') => {
-      await Promise.all([
-        loadNetworkCallsigns(targetNetworkId, period),
-        loadCandidateCallsigns(targetNetworkId, period),
-      ]);
+    async (
+      targetNetworkId: number,
+      periods: CallsignsLoadPeriods = {
+        network: 'Last21Days',
+        catalog: 'Last21Days',
+        intercepted: 'Last21Days',
+      },
+    ) => {
+      const tasks: Array<Promise<void>> = [];
+      if (periods.network !== undefined) {
+        tasks.push(loadNetworkCallsigns(targetNetworkId, periods.network));
+      }
+
+      const catalogPeriod = periods.catalog;
+      const interceptedPeriod = periods.intercepted;
+      if (
+        catalogPeriod !== undefined &&
+        interceptedPeriod !== undefined &&
+        catalogPeriod === interceptedPeriod
+      ) {
+        // Same period: one Everything request avoids duplicate analytics work.
+        tasks.push(loadCandidateCallsignsCombined(targetNetworkId, catalogPeriod));
+      } else {
+        if (catalogPeriod !== undefined) {
+          tasks.push(loadCatalogCallsigns(targetNetworkId, catalogPeriod));
+        }
+        if (interceptedPeriod !== undefined) {
+          tasks.push(loadInterceptedCallsigns(targetNetworkId, interceptedPeriod));
+        }
+      }
+
+      await Promise.all(tasks);
     },
-    [loadCandidateCallsigns, loadNetworkCallsigns],
+    [
+      loadCandidateCallsignsCombined,
+      loadCatalogCallsigns,
+      loadInterceptedCallsigns,
+      loadNetworkCallsigns,
+    ],
   );
 
   const loadRelations = useCallback(

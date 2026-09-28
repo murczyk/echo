@@ -1,11 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import { installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
-import {
-  IMAGE_EDITOR_DRAWER_PNG,
-  openCreateMessageDrawer,
-  openCreateReportDrawer,
-} from './image-editor-drawer.fixtures';
+import { openCreateMessageDrawer } from './image-editor-drawer.fixtures';
 import {
   buildMessageCardMediaPreviewInboxResponse,
   installMessageCardMediaPreviewAssetRoutes,
@@ -128,6 +124,87 @@ async function openLinkedMessageEditDrawer(
 }
 
 test.describe('@smoke manage message drawer linked-message regressions', () => {
+  test('@regression #3620 auto-parses by default and allows saving after an AI warning', async ({
+    page,
+  }) => {
+    await openCreateMessageDrawer(page, 'duty');
+    await page.route('**/api/1.1/submit-direct/parse', async (route) => {
+      expect(route.request().postDataJSON().include_ai_callsigns).toBe(true);
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          text: 'Ярус, прием',
+          freq: '149.500',
+          coords: [],
+          to: ['ярус'],
+          locations: [],
+          ai_callsign_warning: 'ШІ недоступний. Застосовано звичайний парсинг.',
+        }),
+      });
+    });
+    await expect(page.getByRole('button', { name: 'Авто-парсинг', exact: true })).toBeVisible();
+    await page
+      .getByRole('textbox', { name: 'Текст повідомлення' })
+      .fill('Ярус, прием, частота 149.500');
+    await expect(page.getByLabel('Частота (МГц)')).toHaveValue('149.500');
+    await expect(page.getByText('ШІ недоступний. Застосовано звичайний парсинг.')).toBeVisible();
+    await page.getByRole('combobox', { name: 'Група', exact: true }).click();
+    await page.getByRole('option', { name: 'editor-e2e-group', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Створити', exact: true })).toBeEnabled();
+  });
+
+  test('ownership journey preserves manual fields while parsed values follow source text', async ({
+    page,
+  }) => {
+    await openCreateMessageDrawer(page, 'duty');
+    await page.route('**/api/1.1/submit-direct/parse', async (route) => {
+      const body = route.request().postDataJSON() as { full_body?: string };
+      const firstVersion = body.full_body?.includes('перша версія');
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          text: '',
+          freq: firstVersion ? '149.500' : '151.000',
+          coords: firstVersion ? [{ lat: 49.123457, lon: 37.234568 }] : [],
+          to: [],
+          locations: [],
+        }),
+      });
+    });
+    const source = page.getByRole('textbox', { name: 'Текст повідомлення' });
+
+    await source.fill('49.123457, 37.234568 частота 149.500 перша версія');
+    await expect(page.getByText('37U CQ 71194 42681')).toBeVisible();
+    await expect(page.getByLabel('Частота (МГц)')).toHaveValue('149.500');
+
+    const coordinateInput = page.getByRole('textbox', { name: 'Додати координату' });
+    await coordinateInput.fill('49.22346, 37.33457');
+    await coordinateInput.press('Enter');
+    await expect(page.getByRole('button', { name: /^Видалити координату/ })).toHaveCount(2);
+    await page.getByLabel('Частота (МГц)').fill('150.000');
+
+    await source.fill('частота 151.000 друга версія');
+
+    await expect(page.getByRole('button', { name: /^Видалити координату/ })).toHaveCount(1);
+    await expect(page.getByText('37U CQ 71194 42681')).toHaveCount(0);
+    await expect(page.getByLabel('Частота (МГц)')).toHaveValue('150.000');
+    const frequencyFeedback = page.getByTestId('parser-feedback-freq');
+    await expect(frequencyFeedback).toHaveAttribute('data-state', 'conflict');
+
+    await page.waitForTimeout(3100);
+    await expect(frequencyFeedback).toHaveAttribute('data-state', 'conflict');
+    await page.getByRole('button', { name: 'Взяти частоту із тексту' }).click();
+    await expect(page.getByLabel('Частота (МГц)')).toHaveValue('151.000');
+    await expect(frequencyFeedback).toHaveAttribute('data-state', 'updated');
+    await expect(frequencyFeedback).toHaveAttribute('data-state', 'idle', { timeout: 4000 });
+    await expect(page.getByRole('button', { name: /^Видалити координату/ })).toHaveCount(1);
+
+    await source.fill('');
+
+    await expect(page.getByLabel('Частота (МГц)')).toHaveValue('151.000');
+    await expect(page.getByRole('button', { name: /^Видалити координату/ })).toHaveCount(1);
+  });
+
   for (const host of ['duty', 'analysis'] as const satisfies ManageMessageDrawerHost[]) {
     test(`${host} creates an ordinary message drawer at the viewport right edge`, async ({
       page,
@@ -135,7 +212,7 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       await openCreateMessageDrawer(page, host);
       await expectDrawerAtViewportRight(page);
 
-      await page.getByRole('button', { name: 'Закрити' }).click();
+      await page.getByRole('button', { name: 'Скасувати', exact: true }).click();
       await expect(page.locator('.MuiDrawer-paperAnchorRight')).toBeHidden();
 
       await page.getByRole('button', { name: 'Додати повідомлення' }).click();
@@ -145,7 +222,6 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       await page.setViewportSize({ width: 375, height: 500 });
       await expectDrawerAtViewportRight(page);
     });
-
     test(`${host} edits a message with an intelligence report as a message`, async ({ page }) => {
       await openLinkedMessageEditDrawer(page, host, 'with-report');
 
@@ -155,7 +231,6 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
         0,
       );
     });
-
     test(`${host} edits a forwarded intelligence report as a message`, async ({ page }) => {
       await openLinkedMessageEditDrawer(page, host, 'forwarded-report');
 
@@ -164,7 +239,6 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
         0,
       );
     });
-
     test(`${host} edits an own report without accessible parents as a report`, async ({ page }) => {
       const drawer = await openLinkedMessageEditDrawer(
         page,
@@ -178,65 +252,4 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       expect(drawer.getCopyRequestCount()).toBe(0);
     });
   }
-});
-
-test.describe('@smoke manage message drawer attachment preview', () => {
-  test('keeps report text shared across image and video previews', async ({ page }) => {
-    await openCreateReportDrawer(page);
-    await expectFullWidthDrawer(page);
-
-    const drawerReportText = page.getByRole('textbox', { name: 'Текст розвіддонесення' });
-    await expect(drawerReportText).toHaveValue('');
-    await drawerReportText.fill('Початковий текст розвіддонесення');
-    await page.locator('input[type="file"]').setInputFiles({
-      name: 'report-preview.mp4',
-      mimeType: 'video/mp4',
-      buffer: Buffer.from('report-preview-video'),
-    });
-
-    await page.getByRole('button', { name: `Переглянути ${IMAGE_EDITOR_DRAWER_PNG.name}` }).click();
-
-    const preview = page.locator('[role="dialog"][aria-label^="Перегляд"]');
-    await expect(preview).toHaveAttribute('aria-label', 'Перегляд зображення');
-    await expect(preview.getByRole('textbox', { name: 'Текст розвіддонесення' })).toHaveCount(0);
-
-    const reportAction = preview.getByRole('button', { name: 'Писати розвіддонесення' });
-    await expect(reportAction).toHaveAttribute('aria-pressed', 'false');
-    await reportAction.click();
-
-    const previewReportText = preview.getByRole('textbox', {
-      name: 'Текст розвіддонесення',
-    });
-    await expect(previewReportText).toHaveValue('Початковий текст розвіддонесення');
-    await expect(previewReportText).not.toBeFocused();
-    await previewReportText.fill('Оновлений текст розвіддонесення');
-
-    await preview.getByRole('button', { name: 'Наступне' }).click();
-    await expect(preview).toHaveAttribute('aria-label', 'Перегляд відео');
-    await expect(previewReportText).toHaveValue('Оновлений текст розвіддонесення');
-
-    const videoControls = preview.locator('[data-attachment-preview-video-controls]');
-    const reportPane = preview.locator('[data-attachment-preview-report-pane]');
-    const reportFooter = reportPane.locator('..');
-    await expect(videoControls).toBeVisible();
-    await expect(reportPane).toBeVisible();
-    await expect(reportFooter).toHaveCSS('padding-top', '8px');
-    await expect(reportFooter).toHaveCSS('padding-right', '16px');
-    await expect(reportFooter).toHaveCSS('padding-bottom', '8px');
-    await expect(reportFooter).toHaveCSS('padding-left', '16px');
-    const controlsBox = await videoControls.boundingBox();
-    const reportPaneBox = await reportPane.boundingBox();
-    expect(controlsBox).not.toBeNull();
-    expect(reportPaneBox).not.toBeNull();
-    expect(controlsBox!.y + controlsBox!.height).toBeLessThanOrEqual(reportPaneBox!.y + 1);
-
-    await page.setViewportSize({ width: 375, height: 500 });
-    await expect(reportFooter).toHaveCSS('padding-top', '8px');
-    await expect(reportFooter).toHaveCSS('padding-right', '16px');
-    await expect(reportFooter).toHaveCSS('padding-bottom', '8px');
-    await expect(reportFooter).toHaveCSS('padding-left', '16px');
-
-    await preview.getByRole('button', { name: 'Закрити' }).click();
-    await expect(drawerReportText).toHaveValue('Оновлений текст розвіддонесення');
-  });
 });

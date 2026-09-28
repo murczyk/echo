@@ -14,23 +14,12 @@ export const MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES = {
   audio: 'e2e-audio.wav',
   text: 'e2e-preview.txt',
   markdown: 'e2e-preview.md',
-  download: 'e2e-download.bin',
 } as const;
 
 const MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX = '/test-assets/message-card-media-preview';
-const MESSAGE_CARD_POLISH_NETWORKS = [
-  { id: 301, name: 'E2E Альфа', unit_ids: [1], location: null },
-  { id: 302, name: 'E2E Браво', unit_ids: [], location: null },
-];
 
 const TRANSPARENT_PNG_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4////fwAJ+wP7bq8W2QAAAABJRU5ErkJggg==';
-const LARGE_IMAGE_SVG = `
-  <svg xmlns="http://www.w3.org/2000/svg" width="900" height="1600" viewBox="0 0 900 1600">
-    <rect width="900" height="1600" fill="#1b365d"/>
-    <circle cx="640" cy="300" r="180" fill="#f5a623"/>
-    <text x="80" y="1200" fill="white" font-size="80">E2E attachment</text>
-  </svg>`;
 
 export type DeferredMediaResponse = {
   waitForRequest: () => Promise<void>;
@@ -63,6 +52,12 @@ export function createDeferredMediaResponse(): DeferredMediaResponse {
     },
   };
 }
+const LARGE_IMAGE_SVG = `
+  <svg xmlns="http://www.w3.org/2000/svg" width="900" height="1600" viewBox="0 0 900 1600">
+    <rect width="900" height="1600" fill="#1b365d"/>
+    <circle cx="640" cy="300" r="180" fill="#f5a623"/>
+    <text x="80" y="1200" fill="white" font-size="80">E2E attachment</text>
+  </svg>`;
 
 function buildValidWavAudioFixture(): Buffer {
   const sampleRate = 8_000;
@@ -129,20 +124,31 @@ function buildMessageCardMediaPreviewMessage({
   const audio = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.audio}`;
   const text = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.text}`;
   const markdown = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.markdown}`;
-  const download = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.download}`;
 
   return {
     messageUid: 'e2e-message-card-preview',
     text: messageText ?? 'E2E message-card media preview fixture',
     media: [
-      ...(withCompletedOcrAndSummary
+      ...(withPartialCoordinateError || withCompleteCoordinateError || coordinateLabel != null
         ? [
             {
-              id: 'e2e-image-1',
-              content_type: 'image/svg+xml',
-              file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1,
-              size_bytes: 1_024,
-              href: image1,
+              id: 'e2e-coordinate-error',
+              content_type: 'text/plain',
+              file_name: 'e2e-coordinate-source.txt',
+              size_bytes: 128,
+              href: text,
+              summary: { state: 'completed', lastError: null, hasCoordinates: true },
+            },
+          ]
+        : []),
+      {
+        id: 'e2e-image-1',
+        content_type: 'image/png',
+        file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1,
+        size_bytes: 512,
+        href: image1,
+        ...(withCompletedOcrAndSummary
+          ? {
               ocr: {
                 state: 'completed',
                 qualityStatus: 'accepted',
@@ -157,9 +163,16 @@ function buildMessageCardMediaPreviewMessage({
                 modelName: null,
               },
               summary: { state: 'completed', lastError: null, hasCoordinates: false },
-            },
-          ]
-        : []),
+            }
+          : {}),
+      },
+      {
+        id: 'e2e-image-2',
+        content_type: 'image/png',
+        file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image2,
+        size_bytes: 768,
+        href: image2,
+      },
       {
         id: 'e2e-video-1',
         content_type: 'video/mp4',
@@ -196,25 +209,6 @@ function buildMessageCardMediaPreviewMessage({
         href: audio,
         transcription: 'E2E audio transcription\nwith a second line',
       },
-      {
-        id: 'e2e-download',
-        content_type: 'application/octet-stream',
-        file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.download,
-        size_bytes: 256,
-        href: download,
-      },
-      ...(withPartialCoordinateError || withCompleteCoordinateError || coordinateLabel != null
-        ? [
-            {
-              id: 'e2e-coordinate-error',
-              content_type: 'application/octet-stream',
-              file_name: 'e2e-coordinate-error.bin',
-              size_bytes: 64,
-              href: download,
-              summary: { state: 'completed', has_coordinates: true },
-            },
-          ]
-        : []),
     ],
     images: [image1, image2],
     imageRecognized: [],
@@ -250,22 +244,6 @@ function buildMessageCardMediaPreviewMessage({
     networkIds: withPolishContent ? [301, 302] : null,
     inboxTags: null,
     metadata: [],
-    intelligenceReports: withPolishContent
-      ? [
-          {
-            id: 202,
-            isAccessible: true,
-            isDeleted: false,
-            text: 'E2E intelligence report',
-            attachmentsCount: 0,
-            timestamp: 1_720_000_001_000,
-            date: '13.07.2026',
-            time: '12:35',
-            groupName: null,
-            groupMasterKey: 'e2e-group',
-          },
-        ]
-      : [],
   };
 }
 
@@ -375,11 +353,6 @@ export async function installMessageCardMediaPreviewAssetRoutes(
       return;
     }
 
-    if (fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.download) {
-      await fulfillAsset(route, Buffer.from('e2e-download'), 'application/octet-stream');
-      return;
-    }
-
     await route.fulfill({ status: 404, body: 'Not found' });
   });
 }
@@ -417,11 +390,7 @@ async function installMessageCardMediaPreviewHostFixture(
   const networkInfoResponse = withPolishContent ? MESSAGE_CARD_POLISH_NETWORKS : undefined;
 
   if (host === 'analysis') {
-    await installAnalysisNeoApiMocks(page, {
-      inboxResponse,
-      networkInfoResponse,
-      enableAudioTranscription,
-    });
+    await installAnalysisNeoApiMocks(page, { inboxResponse, enableAudioTranscription });
   } else {
     await installRerDutyShortStateMocks(page, {
       inboxResponse,
@@ -581,25 +550,23 @@ export async function openMessageCardPreviewHost(
     deferredImageResponse ? { waitUntil: 'domcontentloaded' } : undefined,
   );
 
-  const ensureAttachmentExpanded = async (name: RegExp) => {
-    const control = page.getByRole('button', { name });
-    await expect(control).toBeVisible();
-    if ((await control.getAttribute('aria-expanded')) !== 'true') {
-      await control.click();
-      await expect(control).toHaveAttribute('aria-expanded', 'true');
-    }
-  };
+  const media = page.getByRole('button', { name: /^(Розгорнути|Згорнути) медіа:/ });
+  await expect(media).toBeVisible();
+  if ((await media.getAttribute('aria-expanded')) !== 'true') {
+    await media.click();
+    await expect(media).toHaveAttribute('aria-expanded', 'true');
+  }
+  await expect(page.getByRole('button', { name: 'Відкрити зображення' })).toHaveCount(2);
+  await expect(page.getByRole('button', { name: 'Відкрити відео' })).toHaveCount(2);
 
-  await ensureAttachmentExpanded(/^Розгорнути медіа:|^Згорнути медіа:/);
   if (revealAudio) {
-    await ensureAttachmentExpanded(/^Розгорнути аудіо:|^Згорнути аудіо:/);
+    const audio = page.getByRole('button', { name: /^(Розгорнути|Згорнути) аудіо:/ });
+    if ((await audio.getAttribute('aria-expanded')) !== 'true') await audio.click();
   }
   if (revealCoordinates) {
-    await ensureAttachmentExpanded(/^Розгорнути координати:|^Згорнути координати:/);
-  }
-
-  if (!revealAudio && !revealCoordinates) {
-    await expect(page.getByRole('button', { name: 'Відкрити зображення' })).toHaveCount(2);
-    await expect(page.getByRole('button', { name: 'Відкрити відео' })).toHaveCount(2);
+    const coordinates = page.getByRole('button', {
+      name: /^(Розгорнути|Згорнути) координати:/,
+    });
+    if ((await coordinates.getAttribute('aria-expanded')) !== 'true') await coordinates.click();
   }
 }
