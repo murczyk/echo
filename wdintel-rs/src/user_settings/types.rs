@@ -98,12 +98,16 @@ pub struct UserDutySettingsDto {
     pub media_summary_enabled: bool,
     #[serde(default)]
     pub message_sort_by: MessageTimeBasis,
-    #[serde(default)]
+    #[serde(default = "default_message_auto_parse_enabled")]
     pub message_auto_parse_enabled: bool,
 }
 
 fn default_duty_collapse_media_previews() -> bool {
     false
+}
+
+pub(super) fn default_message_auto_parse_enabled() -> bool {
+    true
 }
 
 fn default_media_summary_enabled() -> bool {
@@ -125,7 +129,7 @@ impl Default for UserDutySettingsDto {
             duty_collapse_media_previews: false,
             media_summary_enabled: false,
             message_sort_by: MessageTimeBasis::MessageInterception,
-            message_auto_parse_enabled: false,
+            message_auto_parse_enabled: default_message_auto_parse_enabled(),
         }
     }
 }

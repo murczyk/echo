@@ -210,6 +210,35 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
     await expect(page.locator('[data-manage-message-focus-fallback]')).toHaveCount(0);
   });
 
+  test('@regression #3620 auto-parses by default and allows saving after an AI warning', async ({
+    page,
+  }) => {
+    await openCreateMessageDrawer(page, 'duty');
+    await page.route('**/api/1.1/submit-direct/parse', async (route) => {
+      expect(route.request().postDataJSON().include_ai_callsigns).toBe(true);
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          text: 'Ярус, прием',
+          freq: '149.500',
+          coords: [],
+          to: ['ярус'],
+          locations: [],
+          ai_callsign_warning: 'ШІ недоступний. Застосовано звичайний парсинг.',
+        }),
+      });
+    });
+    await expect(page.getByRole('button', { name: 'Авто-парсинг', exact: true })).toBeVisible();
+    await page
+      .getByRole('textbox', { name: 'Текст повідомлення' })
+      .fill('Ярус, прием, частота 149.500');
+    await expect(page.getByLabel('Частота (МГц)')).toHaveValue('149.500');
+    await expect(page.getByText('ШІ недоступний. Застосовано звичайний парсинг.')).toBeVisible();
+    await page.getByRole('combobox', { name: 'Група', exact: true }).click();
+    await page.getByRole('option', { name: 'editor-e2e-group', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Створити', exact: true })).toBeEnabled();
+  });
+
   test('ownership journey preserves manual fields while parsed values follow source text', async ({
     page,
   }) => {
@@ -231,7 +260,6 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
     const source = page.getByRole('textbox', { name: 'Текст повідомлення' });
 
     await source.fill('49.123457, 37.234568 частота 149.500 перша версія');
-    await page.getByRole('button', { name: 'Розпарсити', exact: true }).click();
     await expect(page.getByText('37U CQ 71194 42681')).toBeVisible();
     await expect(page.getByLabel('Частота (МГц)')).toHaveValue('149.500');
 
@@ -242,7 +270,6 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
     await page.getByLabel('Частота (МГц)').fill('150.000');
 
     await source.fill('частота 151.000 друга версія');
-    await page.getByRole('button', { name: 'Розпарсити', exact: true }).click();
 
     await expect(page.getByRole('button', { name: /^Видалити координату/ })).toHaveCount(1);
     await expect(page.getByText('37U CQ 71194 42681')).toHaveCount(0);

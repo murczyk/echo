@@ -9149,6 +9149,56 @@ deviceNameSearchRspEncoder struct =
         ]
 
 
+type alias DirectSubmitParsePayload =
+    { fullBody : String
+    , includeAiCallsigns : Bool
+    , signalGroupMasterKey : Maybe (String)
+    }
+
+
+directSubmitParsePayloadEncoder : DirectSubmitParsePayload -> Json.Encode.Value
+directSubmitParsePayloadEncoder struct =
+    Json.Encode.object
+        [ ( "full_body", (Json.Encode.string) struct.fullBody )
+        , ( "include_ai_callsigns", (Json.Encode.bool) struct.includeAiCallsigns )
+        , ( "signal_group_master_key", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.signalGroupMasterKey )
+        ]
+
+
+type alias DirectSubmitParseRsp =
+    { aiCallsignWarning : Maybe (String)
+    , text : String
+    , freq : Maybe (String)
+    , coords : List (GeoCoordinates)
+    , to : List (String)
+    , timestamp : Maybe (String)
+    , isTimeNull : Maybe (Bool)
+    , comment : Maybe (String)
+    , post : Maybe (String)
+    , unit : Maybe (String)
+    , unitV2 : Maybe (String)
+    , locations : List (String)
+    }
+
+
+directSubmitParseRspEncoder : DirectSubmitParseRsp -> Json.Encode.Value
+directSubmitParseRspEncoder struct =
+    Json.Encode.object
+        [ ( "ai_callsign_warning", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiCallsignWarning )
+        , ( "text", (Json.Encode.string) struct.text )
+        , ( "freq", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.freq )
+        , ( "coords", (Json.Encode.list (geoCoordinatesEncoder)) struct.coords )
+        , ( "to", (Json.Encode.list (Json.Encode.string)) struct.to )
+        , ( "timestamp", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.timestamp )
+        , ( "is_time_null", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isTimeNull )
+        , ( "comment", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.comment )
+        , ( "post", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.post )
+        , ( "unit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.unit )
+        , ( "unit_v2", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.unitV2 )
+        , ( "locations", (Json.Encode.list (Json.Encode.string)) struct.locations )
+        ]
+
+
 type alias DeviceNameResolveReq =
     { names : List (String)
     }
@@ -20842,6 +20892,31 @@ deviceNameSearchRspDecoder : Json.Decode.Decoder DeviceNameSearchRsp
 deviceNameSearchRspDecoder =
     Json.Decode.succeed DeviceNameSearchRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "devices" (Json.Decode.list (deviceNameSearchResultDecoder))))
+
+
+directSubmitParsePayloadDecoder : Json.Decode.Decoder DirectSubmitParsePayload
+directSubmitParsePayloadDecoder =
+    Json.Decode.succeed DirectSubmitParsePayload
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "full_body" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_ai_callsigns" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signal_group_master_key" (Json.Decode.nullable (Json.Decode.string))))
+
+
+directSubmitParseRspDecoder : Json.Decode.Decoder DirectSubmitParseRsp
+directSubmitParseRspDecoder =
+    Json.Decode.succeed DirectSubmitParseRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "ai_callsign_warning" (Json.Decode.nullable (Json.Decode.string)), Json.Decode.succeed Nothing ]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coords" (Json.Decode.list (geoCoordinatesDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "to" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "timestamp" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "is_time_null" (Json.Decode.nullable (Json.Decode.bool)), Json.Decode.succeed Nothing ]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_v2" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations" (Json.Decode.list (Json.Decode.string))))
 
 
 deviceNameResolveReqDecoder : Json.Decode.Decoder DeviceNameResolveReq

@@ -2,6 +2,7 @@ use crate::users::ensure_base_role;
 use crate::users::login_id_from_identity;
 mod api_error;
 pub mod bl;
+mod callsigns;
 pub mod query;
 pub mod types;
 

@@ -4,6 +4,7 @@ import { DEFAULT_DUTY_TAGS_LAYOUT, type TagsLayoutVariant } from '../routes/rer-
 import {
   DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
   DEFAULT_MEDIA_SUMMARY_ENABLED,
+  DEFAULT_MESSAGE_AUTO_PARSE_ENABLED,
 } from './duty-settings-defaults';
 import {
   USER_SETTINGS_UPDATED_EVENT,
@@ -59,7 +60,8 @@ function normalizeDutySettings(
     dutyCollapseMediaPreviews:
       settings?.dutyCollapseMediaPreviews ?? DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
     mediaSummaryEnabled: settings?.mediaSummaryEnabled ?? DEFAULT_MEDIA_SUMMARY_ENABLED,
-    messageAutoParseEnabled: settings?.messageAutoParseEnabled ?? false,
+    messageAutoParseEnabled:
+      settings?.messageAutoParseEnabled ?? DEFAULT_MESSAGE_AUTO_PARSE_ENABLED,
   };
 }
 

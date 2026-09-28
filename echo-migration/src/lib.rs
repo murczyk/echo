@@ -442,6 +442,8 @@ mod m20260924_124644_api_integration_iggy_aors;
 mod m20260924_131933_analysis_aor_filter_enabled;
 mod m20260927_112500_ai_agent_citation_events;
 
+mod m20260928_145311_enable_message_auto_parse;
+
 pub struct Migrator;
 
 #[async_trait::async_trait]
@@ -1055,6 +1057,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260924_124644_api_integration_iggy_aors::Migration),
             Box::new(m20260924_131933_analysis_aor_filter_enabled::Migration),
             Box::new(m20260927_112500_ai_agent_citation_events::Migration),
+            Box::new(m20260928_145311_enable_message_auto_parse::Migration),
         ]
     }
 }

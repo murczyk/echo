@@ -52,8 +52,20 @@ pub async fn parse_signal_message(
         (None, false)
     };
 
-    parse_signal_message_body(env, &env.dbx, &body, aor_id, is_aviation_group)
-        .await
+    let mut parsed = parse_signal_message_body(
+        env,
+        &env.dbx,
+        &body,
+        aor_id,
+        is_aviation_group,
+    )
+    .await
+    .c(h!())?;
+    if payload.include_ai_callsigns {
+        super::callsigns::enrich(env, &body, is_aviation_group, &mut parsed)
+            .await;
+    }
+    Ok(parsed)
 }
 
 pub async fn copy_signal_messages(
@@ -319,6 +331,7 @@ where
     );
 
     Ok(DirectSubmitParseRsp {
+        ai_callsign_warning: None,
         text: text.body,
         freq: crate::rer_importer::frequency::extract_freq(body)?
             .map(|freq| crate::rer_importer::frequency::etalon(&freq)),

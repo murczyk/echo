@@ -1,2 +1,3 @@
 export const DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS = true;
 export const DEFAULT_MEDIA_SUMMARY_ENABLED = false;
+export const DEFAULT_MESSAGE_AUTO_PARSE_ENABLED = true;
