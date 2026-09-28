@@ -256,7 +256,7 @@ export function MessageSummaryPreview({
       triggerFocusedRef.current = true;
       cancelClose();
       cancelOpen();
-      if (interactionDismissedRef.current) return;
+      interactionDismissedRef.current = false;
       openPreview(event.currentTarget);
     },
     onBlur: (event) => {

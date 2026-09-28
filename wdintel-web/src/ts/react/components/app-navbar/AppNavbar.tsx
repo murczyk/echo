@@ -17,6 +17,8 @@ import { ProfileDropdown } from './ProfileDropdown';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { fetchUserSettings, USER_SETTINGS_UPDATED_EVENT } from '../../services/api/user-settings';
 import { canReadDevices, canUseRadioFeatures, hasRole, hasRerOrCyber } from '../../utils/roles';
+import { shouldHandleAsSpaClick } from '../../utils/browser';
+import { AI_AGENT_NEW_CONVERSATION_EVENT } from '../../routes/ai-agent-chat/conversation-url';
 
 function filterTranscriptionSettings(items: Menu[], enabled: boolean): Menu[] {
   return items.flatMap<Menu>((item): Menu[] => {
@@ -506,7 +508,11 @@ export function AppNavbar({
             <a
               className="app-navbar-logo flex shrink-0 items-center space-x-2"
               href="/"
-              onClick={(e) => handleInternalLinkClick(e, '/')}
+              onClick={(e) => {
+                if (!shouldHandleAsSpaClick(e)) return;
+                window.dispatchEvent(new Event(AI_AGENT_NEW_CONVERSATION_EVENT));
+                handleInternalLinkClick(e, '/');
+              }}
             >
               <div className="relative h-7 w-8">
                 <div className="main-image absolute" style={{ height: '28px', width: '28px' }}>

@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   conversation: vi.fn(),
   submit: vi.fn(),
   cancel: vi.fn(),
+  delete: vi.fn(),
   stream: vi.fn(),
   notify: vi.fn(),
 }));
@@ -27,6 +28,7 @@ vi.mock('../../../services/api/ai-agent', async (importOriginal) => ({
   getAiAgentConversation: mocks.conversation,
   submitAiAgentRequest: mocks.submit,
   cancelAiAgentRequest: mocks.cancel,
+  deleteAiAgentConversation: mocks.delete,
 }));
 vi.mock('../stream', () => ({
   streamAiAgentEventsWithReconnect: mocks.stream,
@@ -36,6 +38,8 @@ vi.mock('../../../components/PowerSnackbar', () => ({
 }));
 
 import { AiAgentChat } from '..';
+import { AI_AGENT_NEW_CONVERSATION_EVENT } from '../conversation-url';
+import { HttpRequestError } from '../../../services/api/client';
 
 const PROVIDER = {
   id: 'provider-1',
@@ -46,7 +50,7 @@ const PROVIDER = {
 };
 
 const CONVERSATION = {
-  id: 'conversation-1',
+  id: '11111111-1111-4111-8111-111111111111',
   title: 'Розвіддані',
   providerId: PROVIDER.id,
   createdAt: 1_700_000_000_000,
@@ -131,6 +135,7 @@ function streamEvent(
 }
 
 beforeEach(async () => {
+  window.history.replaceState({}, '', '/');
   window.sessionStorage.clear();
   connections = new Map();
   mocks.configuration.mockResolvedValue({
@@ -141,6 +146,7 @@ beforeEach(async () => {
   mocks.conversations.mockResolvedValue([]);
   mocks.conversation.mockResolvedValue({ ...CONVERSATION, messages: [] });
   mocks.cancel.mockResolvedValue('cancelled');
+  mocks.delete.mockResolvedValue(undefined);
   mocks.stream.mockImplementation(
     ({ requestId, signal, onEvent }: { requestId: string } & StreamConnection) =>
       new Promise<void>((resolve, reject) => {
@@ -291,9 +297,7 @@ describe('AiAgentChat request queue', () => {
     });
     expect(container.querySelector('[data-testid="live-request-request-1"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="live-request-request-2"]')).not.toBeNull();
-    expect(window.sessionStorage.getItem('echo.ai-agent.active-conversation-id')).toBe(
-      CONVERSATION.id,
-    );
+    expect(window.location.search).toBe(`?conversation=${CONVERSATION.id}`);
 
     await act(async () => streamEvent('request-2', 1, 'request_start', ''));
     await act(async () => streamEvent('request-2', 2, 'assistant_delta', 'Друга відповідь'));
@@ -373,6 +377,7 @@ describe('AiAgentChat request queue', () => {
     expect((container.querySelector('textarea') as HTMLTextAreaElement).value).toBe(
       'Не втратити цей текст',
     );
+    expect(window.location.search).toBe('');
     expect(mocks.notify).toHaveBeenCalledWith({
       severity: 'error',
       message: 'Не вдалося надіслати запит: мережа недоступна',
@@ -515,7 +520,7 @@ describe('AiAgentChat conversation controls', () => {
     });
   });
 
-  it('opens prior conversations from a side panel without edit or delete controls', async () => {
+  it('opens prior conversations from a side panel and updates the URL', async () => {
     mocks.conversations.mockResolvedValue([CONVERSATION]);
 
     await act(async () => root.unmount());
@@ -530,11 +535,11 @@ describe('AiAgentChat conversation controls', () => {
       container.querySelector('[aria-label="Провайдер ШІ"]')?.getAttribute('aria-disabled'),
     ).toBe('true');
     expect(document.body.querySelector('[aria-label="Перейменувати розмову"]')).toBeNull();
-    expect(document.body.querySelector('[aria-label="Видалити розмову"]')).toBeNull();
+    expect(window.location.search).toBe(`?conversation=${CONVERSATION.id}`);
   });
 
   it('restores the active conversation and reconnects every queued or running request', async () => {
-    window.sessionStorage.setItem('echo.ai-agent.active-conversation-id', CONVERSATION.id);
+    window.history.replaceState({}, '', `/?conversation=${CONVERSATION.id}`);
     mocks.conversations.mockResolvedValue([CONVERSATION]);
     mocks.conversation.mockResolvedValue({
       ...CONVERSATION,
@@ -575,7 +580,7 @@ describe('AiAgentChat conversation controls', () => {
   });
 
   it('renders restored failed and cancelled requests inline without repeat toasts', async () => {
-    window.sessionStorage.setItem('echo.ai-agent.active-conversation-id', CONVERSATION.id);
+    window.history.replaceState({}, '', `/?conversation=${CONVERSATION.id}`);
     mocks.conversations.mockResolvedValue([CONVERSATION]);
     mocks.conversation.mockResolvedValue({
       ...CONVERSATION,
@@ -609,5 +614,234 @@ describe('AiAgentChat conversation controls', () => {
     expect(container.textContent).toContain('Запит скасовано.');
     expect(mocks.stream).not.toHaveBeenCalled();
     expect(mocks.notify).not.toHaveBeenCalled();
+  });
+});
+
+// Regression: https://github.com/echoua/echo/issues/3064
+async function navigateToConversation(id: string | null) {
+  await act(async () => {
+    window.history.pushState({}, '', id === null ? '/' : `/?conversation=${id}`);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
+  await flush();
+}
+
+async function resetFromLogo() {
+  await act(async () => {
+    window.dispatchEvent(new Event(AI_AGENT_NEW_CONVERSATION_EVENT));
+    window.history.pushState({}, '', '/');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
+  await flush();
+}
+
+async function reloadChat() {
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await act(async () => root.render(<AiAgentChat />));
+  await flush();
+}
+
+async function openDeleteDialog() {
+  if (container.querySelector('aside')?.getAttribute('aria-hidden') === 'true') {
+    await act(async () => clickAriaButton('Розгорнути ліву панель'));
+  }
+  await act(async () => clickAriaButton(`Меню розмови «${CONVERSATION.title}»`));
+  await flush();
+  const item = document.body.querySelector('[role="menuitem"]');
+  expect(item?.textContent).toBe('Видалити');
+  await act(async () => item?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+  await flush();
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((complete) => {
+    resolve = complete;
+  });
+  return { promise, resolve };
+}
+
+describe('#3064 conversation navigation races', () => {
+  it('ignores legacy storage and resets a draft even when the logo already points to /', async () => {
+    window.sessionStorage.setItem('echo.ai-agent.active-conversation-id', CONVERSATION.id);
+    await reloadChat();
+    expect(mocks.conversation).not.toHaveBeenCalled();
+    expect(window.sessionStorage.getItem('echo.ai-agent.active-conversation-id')).toBeNull();
+    setTextarea('Чернетка');
+    await resetFromLogo();
+    expect((container.querySelector('textarea') as HTMLTextAreaElement).value).toBe('');
+    expect(window.location.search).toBe('');
+  });
+
+  it('detaches the stream without cancelling the server request and restores it on return', async () => {
+    mocks.submit.mockResolvedValueOnce({
+      id: 'background',
+      conversationId: CONVERSATION.id,
+      state: 'running',
+    });
+    setTextarea('Продовжуй у фоні');
+    submitForm();
+    await flush();
+    const connection = connections.get('background')!;
+    await resetFromLogo();
+    expect(connection.signal.aborted).toBe(true);
+    expect(mocks.cancel).not.toHaveBeenCalled();
+    await act(async () => connection.onEvent({ sequence: 1, type: 'error' } as AiAgentEvent));
+    expect(mocks.notify).not.toHaveBeenCalled();
+    mocks.conversation.mockResolvedValueOnce({
+      ...CONVERSATION,
+      messages: [
+        {
+          id: 'user',
+          requestId: 'background',
+          requestState: 'running',
+          role: 'user',
+          content: 'Продовжуй у фоні',
+          createdAt: 1,
+        },
+      ],
+    });
+    await navigateToConversation(CONVERSATION.id);
+    expect(container.textContent).toContain('Продовжуй у фоні');
+    expect(connections.get('background')?.signal.aborted).toBe(false);
+    expect(mocks.stream).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not let an old submission reclaim the URL or unlock a newer pending submission', async () => {
+    const old = deferred<{ id: string; conversationId: string; state: string }>();
+    const next = deferred<{ id: string; conversationId: string; state: string }>();
+    mocks.submit.mockReturnValueOnce(old.promise).mockReturnValueOnce(next.promise);
+    setTextarea('Старий запит');
+    submitForm();
+    await flush();
+    expect(window.location.search).toBe('');
+    await resetFromLogo();
+    setTextarea('Новий запит');
+    submitForm();
+    await flush();
+    await act(async () =>
+      old.resolve({ id: 'old', conversationId: CONVERSATION.id, state: 'running' }),
+    );
+    await flush();
+    expect(window.location.search).toBe('');
+    expect(container.textContent).not.toContain('Старий запит');
+    expect(
+      container.querySelector('[data-testid="pending-ai-agent-request"]')?.textContent,
+    ).toContain('Новий запит');
+    expect((container.querySelector('textarea') as HTMLTextAreaElement).disabled).toBe(true);
+    expect(mocks.stream).not.toHaveBeenCalled();
+    const nextId = '22222222-2222-4222-8222-222222222222';
+    await act(async () => next.resolve({ id: 'new', conversationId: nextId, state: 'queued' }));
+    await flush();
+    expect(window.location.search).toBe(`?conversation=${nextId}`);
+    expect(container.textContent).toContain('Новий запит');
+    expect((container.querySelector('textarea') as HTMLTextAreaElement).disabled).toBe(false);
+  });
+
+  it('discards late conversation loads after returning to a fresh dialogue', async () => {
+    const old = deferred<unknown>();
+    mocks.conversation.mockReturnValueOnce(old.promise);
+    window.history.replaceState({}, '', `/?conversation=${CONVERSATION.id}`);
+    await reloadChat();
+    await resetFromLogo();
+    expect((container.querySelector('textarea') as HTMLTextAreaElement).disabled).toBe(false);
+    setTextarea('Нова чернетка');
+    await act(async () =>
+      old.resolve({
+        ...CONVERSATION,
+        messages: [
+          {
+            id: 'old',
+            requestId: 'old',
+            requestState: 'completed',
+            role: 'assistant',
+            content: 'Застаріла відповідь',
+            createdAt: 1,
+          },
+        ],
+      }),
+    );
+    await flush();
+    expect(window.location.search).toBe('');
+    expect(container.textContent).not.toContain('Застаріла відповідь');
+    expect((container.querySelector('textarea') as HTMLTextAreaElement).value).toBe(
+      'Нова чернетка',
+    );
+  });
+
+  it('clears invalid or unavailable bookmarks but retains a transiently failed URL for retry', async () => {
+    await navigateToConversation('not-a-uuid');
+    expect(window.location.search).toBe('');
+    expect(mocks.conversation).not.toHaveBeenCalled();
+    mocks.conversation.mockRejectedValueOnce(new HttpRequestError(404, 'Розмову не знайдено'));
+    await navigateToConversation(CONVERSATION.id);
+    expect(window.location.search).toBe('');
+    mocks.conversation.mockRejectedValueOnce(new HttpRequestError(503, 'Тимчасово недоступно'));
+    await navigateToConversation(CONVERSATION.id);
+    expect(window.location.search).toBe(`?conversation=${CONVERSATION.id}`);
+    expect((container.querySelector('textarea') as HTMLTextAreaElement).disabled).toBe(true);
+    await act(async () => clickButton('Спробувати ще раз'));
+    await flush();
+    expect(window.location.search).toBe(`?conversation=${CONVERSATION.id}`);
+    expect((container.querySelector('textarea') as HTMLTextAreaElement).disabled).toBe(false);
+    expect(mocks.notify).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('#3064 history deletion safeguards', () => {
+  beforeEach(async () => {
+    mocks.conversations.mockResolvedValue([CONVERSATION]);
+    await reloadChat();
+  });
+
+  it('requires confirmation, keeps failed deletions, and only resets the viewed conversation after success', async () => {
+    await selectConversation();
+    await openDeleteDialog();
+    expect(mocks.delete).not.toHaveBeenCalled();
+    await act(async () => clickButton('Скасувати', document.body));
+    await flush();
+    expect(mocks.delete).not.toHaveBeenCalled();
+    await openDeleteDialog();
+    mocks.delete.mockRejectedValueOnce(new Error('Неможливо видалити розмову з активним запитом'));
+    await act(async () => clickButton('Видалити', document.body));
+    await flush();
+    expect(window.location.search).toBe(`?conversation=${CONVERSATION.id}`);
+    expect(container.querySelector('aside')?.textContent).toContain(CONVERSATION.title);
+    expect(mocks.notify).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('активним запитом') }),
+    );
+    const deletion = deferred<void>();
+    mocks.delete.mockReturnValueOnce(deletion.promise);
+    await act(async () => {
+      clickButton('Видалити', document.body);
+      clickButton('Видалити', document.body);
+    });
+    await flush();
+    expect(mocks.delete).toHaveBeenCalledTimes(2);
+    expect(window.location.search).toBe(`?conversation=${CONVERSATION.id}`);
+    await act(async () => deletion.resolve());
+    await flush();
+    expect(window.location.search).toBe('');
+    expect(container.querySelector('aside')?.textContent).not.toContain(CONVERSATION.title);
+  });
+
+  it('keeps a different viewed conversation and filters deleted rows from late history responses', async () => {
+    const listing = deferred<unknown>();
+    mocks.conversations.mockReturnValueOnce(listing.promise);
+    const otherId = '22222222-2222-4222-8222-222222222222';
+    mocks.submit.mockResolvedValueOnce({ id: 'other', conversationId: otherId, state: 'running' });
+    setTextarea('Інша розмова');
+    submitForm();
+    await flush();
+    await openDeleteDialog();
+    await act(async () => clickButton('Видалити', document.body));
+    await flush();
+    expect(window.location.search).toBe(`?conversation=${otherId}`);
+    expect(container.textContent).toContain('Інша розмова');
+    await act(async () => listing.resolve([CONVERSATION]));
+    await flush();
+    expect(container.querySelector('aside')?.textContent).not.toContain(CONVERSATION.title);
+    expect(connections.get('other')?.signal.aborted).toBe(false);
   });
 });

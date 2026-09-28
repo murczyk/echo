@@ -71,12 +71,23 @@ pub struct AiAgentConversationUpdateReq {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 #[serde(rename_all = "camelCase")]
+pub struct AiAgentMessageCitation {
+    pub message_id: i64,
+    pub message_identifier: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
 pub struct AiAgentMessageItem {
     pub request_id: String,
     pub request_state: String,
     pub role: String,
     pub content: String,
     pub created_at: i64,
+    #[serde(default)]
+    pub citations: Vec<AiAgentMessageCitation>,
 }
 
 #[derive(
