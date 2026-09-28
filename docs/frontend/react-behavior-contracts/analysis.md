@@ -107,7 +107,8 @@ Otherwise the range moves around the message while preserving its size:
 - Custom datetime ranges preserve their elapsed duration and center on the
   message's minute; odd minute counts put the extra minute after that minute.
 - Interception mode uses the message's date and time, falling back to its
-  timestamp when unavailable. A date without a time uses midnight. Creation
+  timestamp when unavailable. A date without a time uses midnight; `isTimeNull`
+  overrides any legacy placeholder time. Creation
   mode uses only `createdAt`; a missing creation timestamp leaves dates unchanged.
 - Invalid ranges are left for the existing date validation. Future dates are
   not clamped to today.

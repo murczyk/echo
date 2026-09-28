@@ -256,7 +256,10 @@ export function createResetQueryState(
   return createInitialQueryState(emptyQueryState(), now, radioFeaturesAllowed);
 }
 
-type DirectLinkMessageTime = Pick<InboxMessage, 'date' | 'time' | 'timestamp' | 'createdAt'>;
+type DirectLinkMessageTime = Pick<
+  InboxMessage,
+  'date' | 'time' | 'isTimeNull' | 'timestamp' | 'createdAt'
+>;
 
 function directMessageTimeMs(
   message: DirectLinkMessageTime,
@@ -271,7 +274,7 @@ function directMessageTimeMs(
     const date = message.date.replace(/^(\d{2})\.(\d{2})\.(\d{4})$/, '$3-$2-$1');
     const timestamp = combineDateTimeToMs(
       date,
-      message.time?.slice(0, 5) || '00:00',
+      message.isTimeNull === true ? '00:00' : message.time?.slice(0, 5) || '00:00',
       APP_TIME_ZONE,
     );
     if (timestamp != null) return timestamp;

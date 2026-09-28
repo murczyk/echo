@@ -93,6 +93,7 @@ describe('rer-analysis-neo direct-link dates', () => {
         date,
         time: '12:00',
         timestamp: null,
+        isTimeNull: null,
         createdAt: null,
       });
       expect(next).toEqual({
@@ -115,6 +116,7 @@ describe('rer-analysis-neo direct-link dates', () => {
           date: '2026-08-20',
           time,
           timestamp: null,
+          isTimeNull: null,
           createdAt: null,
         }),
       ).toBe(state);
@@ -131,6 +133,7 @@ describe('rer-analysis-neo direct-link dates', () => {
         date: '20.08.2026',
         time: '14:35:45',
         timestamp: Date.UTC(2026, 0, 1),
+        isTimeNull: null,
         createdAt: null,
       }),
     ).toEqual({ ...state, fromDateTimeStr: '2026-08-20T13:35', toDateTimeStr: '2026-08-20T15:35' });
@@ -146,6 +149,7 @@ describe('rer-analysis-neo direct-link dates', () => {
         date: null,
         time: null,
         timestamp: Date.UTC(2026, 7, 20, 11, 35),
+        isTimeNull: null,
         createdAt: null,
       }),
     ).toEqual({ ...state, fromDateTimeStr: '2026-08-20T13:35', toDateTimeStr: '2026-08-20T15:35' });
@@ -162,6 +166,7 @@ describe('rer-analysis-neo direct-link dates', () => {
         date: '2026-01-01',
         time: '10:00',
         timestamp: Date.UTC(2026, 0, 1),
+        isTimeNull: null,
         createdAt: Date.UTC(2026, 7, 28, 21),
       }),
     ).toEqual({ ...state, fromDateTimeStr: '2026-08-29T00:00', toDateTimeStr: '2026-08-30T00:00' });
@@ -178,6 +183,7 @@ describe('rer-analysis-neo direct-link dates', () => {
         date: null,
         time: null,
         timestamp: null,
+        isTimeNull: null,
         createdAt: Date.UTC(2026, 7, 20, 9, 35, 10),
       }),
     ).toEqual({ ...state, fromDateTimeStr: '2026-08-20T12:35', toDateTimeStr: '2026-08-20T12:36' });
@@ -190,13 +196,36 @@ describe('rer-analysis-neo direct-link dates', () => {
         date: '2026-01-01',
         time: '10:00',
         timestamp: Date.UTC(2026, 0, 1),
+        isTimeNull: null,
         createdAt: null,
       }),
     ).toBe(state);
   });
 
+  it('ignores legacy placeholder times for date-only messages in custom ranges', () => {
+    const state = createQueryState({
+      fromDateTimeStr: '2026-08-28T10:00',
+      toDateTimeStr: '2026-08-28T14:00',
+    });
+    expect(
+      adjustQueryDateRangeForDirectMessage(state, {
+        date: '2026-08-20',
+        time: '12:00:00',
+        isTimeNull: true,
+        timestamp: Date.UTC(2026, 7, 20, 9),
+        createdAt: null,
+      }),
+    ).toEqual({ ...state, fromDateTimeStr: '2026-08-19T22:00', toDateTimeStr: '2026-08-20T02:00' });
+  });
+
   it('uses midnight for a date-only linked message and retains invalid ranges', () => {
-    const message = { date: '2026-08-20', time: null, timestamp: null, createdAt: null };
+    const message = {
+      date: '2026-08-20',
+      time: null,
+      timestamp: null,
+      isTimeNull: null,
+      createdAt: null,
+    };
     const state = createQueryState({
       fromDateTimeStr: '2026-08-28T00:00',
       toDateTimeStr: '2026-08-29T00:00',
