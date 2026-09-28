@@ -4965,12 +4965,18 @@ export type AiAgentConversationUpdateReq = {
   title: string;
 };
 
+export type AiAgentMessageCitation = {
+  messageId: number;
+  messageIdentifier: string;
+};
+
 export type AiAgentMessageItem = {
   requestId: string;
   requestState: string;
   role: string;
   content: string;
   createdAt: number;
+  citations: Array<AiAgentMessageCitation>;
 };
 
 export type AiAgentConversationDetail = {

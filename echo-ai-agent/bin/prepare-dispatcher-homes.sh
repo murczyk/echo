@@ -24,6 +24,8 @@ else
 fi
 chown root:"$DISPATCH_GROUP" "$DISPATCH_LOCK_PATH"
 chmod 0660 "$DISPATCH_LOCK_PATH"
+install -d -o root -g root -m 0755 /run/lock/echo-ai-agent-rollout
+install -d -o root -g root -m 0755 /etc/echo-ai-agent/namespace-releases
 
 shopt -s nullglob
 for namespace_file in "$DISPATCH_NAMESPACE_DIR"/*; do
@@ -32,6 +34,10 @@ for namespace_file in "$DISPATCH_NAMESPACE_DIR"/*; do
   dispatcher_user=$(basename "$namespace_file")
   namespace=$(<"$namespace_file")
   expected_user=$("$SCRIPT_DIR/dispatcher-identity.sh" "$namespace")
+  rollout_lock="/run/lock/echo-ai-agent-rollout/$namespace.lock"
+  if [[ ! -e "$rollout_lock" ]]; then
+    install -o root -g root -m 0644 /dev/null "$rollout_lock"
+  fi
   [[ "$dispatcher_user" == "$expected_user" ]] \
     || die "dispatcher namespace mapping has an unexpected user"
   account=$(getent passwd "$dispatcher_user")

@@ -127,6 +127,9 @@ pub async fn update_settings(
         lifecycle::preflight_template(&env, template_login_id).await?;
     }
     let txn = env.dbx.begin().await.c(h!())?;
+    crate::ai_control_panel::probe::lock_lifecycle(&txn)
+        .await
+        .c(h!())?;
     let settings = ai_agent_settings::Entity::find_by_id(
         crate::config::AI_AGENT_SETTINGS_ID,
     )
@@ -465,10 +468,14 @@ pub async fn update_dispatcher(
         });
     }
     let now = Utc::now().naive_utc();
+    let txn = env.dbx.begin().await.c(h!())?;
+    crate::ai_control_panel::probe::lock_lifecycle(&txn)
+        .await
+        .c(h!())?;
     let dispatcher = match ai_agent_dispatcher::Entity::find_by_id(
         crate::config::AI_AGENT_DISPATCHER_ID,
     )
-    .one(&env.dbx)
+    .one(&txn)
     .await
     .c(h!())?
     {
@@ -481,7 +488,7 @@ pub async fn update_dispatcher(
             dispatcher.last_tested_at = Set(None);
             dispatcher.last_test_error = Set(None);
             dispatcher.updated_at = Set(now);
-            dispatcher.update(&env.dbx).await.c(h!())?
+            dispatcher.update(&txn).await.c(h!())?
         }
         None => ai_agent_dispatcher::ActiveModel {
             id: Set(crate::config::AI_AGENT_DISPATCHER_ID),
@@ -494,11 +501,12 @@ pub async fn update_dispatcher(
             created_at: Set(now),
             updated_at: Set(now),
         }
-        .insert(&env.dbx)
+        .insert(&txn)
         .await
         .c(h!())?,
     };
     dispatcher::DispatcherClient::from_record(&dispatcher)?;
+    txn.commit().await.c(h!())?;
     Ok(Json(dispatcher_item(Some(dispatcher)).await))
 }
 

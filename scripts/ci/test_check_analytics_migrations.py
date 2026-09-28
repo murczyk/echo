@@ -42,6 +42,34 @@ class AnalyticsMigrationCheckTests(unittest.TestCase):
             [MODULE.DdlChange(operation="alter", table="public.sample")],
         )
 
+    def test_constraint_only_alter_is_not_column_catalog_ddl(self) -> None:
+        contents = """
+alter table sample drop constraint sample_check;
+alter table sample add constraint sample_check check (id > 0);
+"""
+        self.assertEqual(MODULE.detect_ddl(contents), [])
+        mixed = """
+alter table sample add constraint sample_check check (id > 0);
+alter table sample add column enabled boolean, add constraint enabled_check check (enabled);
+alter table sample add enabled boolean default true, add constraint enabled_check check (enabled);
+"""
+        self.assertEqual(
+            MODULE.detect_ddl(mixed),
+            [
+                MODULE.DdlChange(operation="alter", table="public.sample"),
+                MODULE.DdlChange(operation="alter", table="public.sample"),
+            ],
+        )
+        self.assertEqual(
+            MODULE.detect_ddl("alter table sample add enabled boolean;"),
+            [MODULE.DdlChange(operation="alter", table="public.sample")],
+        )
+        migration = (
+            MODULE.REPO_ROOT
+            / "echo-migration/src/m20260927_112500_ai_agent_citation_events.rs"
+        ).read_text()
+        self.assertEqual(MODULE.detect_ddl(migration), [])
+
     def test_excluded_strategy_requires_canonical_exclusion(self) -> None:
         errors = MODULE.validate_change(
             "echo:m1",

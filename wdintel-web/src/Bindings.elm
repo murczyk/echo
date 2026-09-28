@@ -12823,12 +12823,27 @@ aiAgentConversationUpdateReqEncoder struct =
         ]
 
 
+type alias AiAgentMessageCitation =
+    { messageId : Int
+    , messageIdentifier : String
+    }
+
+
+aiAgentMessageCitationEncoder : AiAgentMessageCitation -> Json.Encode.Value
+aiAgentMessageCitationEncoder struct =
+    Json.Encode.object
+        [ ( "messageId", (Json.Encode.int) struct.messageId )
+        , ( "messageIdentifier", (Json.Encode.string) struct.messageIdentifier )
+        ]
+
+
 type alias AiAgentMessageItem =
     { requestId : String
     , requestState : String
     , role : String
     , content : String
     , createdAt : Int
+    , citations : List (AiAgentMessageCitation)
     }
 
 
@@ -12840,6 +12855,7 @@ aiAgentMessageItemEncoder struct =
         , ( "role", (Json.Encode.string) struct.role )
         , ( "content", (Json.Encode.string) struct.content )
         , ( "createdAt", (Json.Encode.int) struct.createdAt )
+        , ( "citations", (Json.Encode.list (aiAgentMessageCitationEncoder)) struct.citations )
         ]
 
 
@@ -23025,6 +23041,13 @@ aiAgentConversationUpdateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "title" (Json.Decode.string)))
 
 
+aiAgentMessageCitationDecoder : Json.Decode.Decoder AiAgentMessageCitation
+aiAgentMessageCitationDecoder =
+    Json.Decode.succeed AiAgentMessageCitation
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageId" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageIdentifier" (Json.Decode.string)))
+
+
 aiAgentMessageItemDecoder : Json.Decode.Decoder AiAgentMessageItem
 aiAgentMessageItemDecoder =
     Json.Decode.succeed AiAgentMessageItem
@@ -23033,6 +23056,7 @@ aiAgentMessageItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "role" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "citations" (Json.Decode.list (aiAgentMessageCitationDecoder))))
 
 
 aiAgentConversationDetailDecoder : Json.Decode.Decoder AiAgentConversationDetail
