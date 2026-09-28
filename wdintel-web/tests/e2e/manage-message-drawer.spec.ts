@@ -279,6 +279,10 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       await expect(source).toHaveValue(`${host} responsive draft`);
 
       await page.setViewportSize({ width: 1024, height: 800 });
+      await expectModalEditor(page);
+      await expect(source).toHaveValue(`${host} responsive draft`);
+
+      await page.setViewportSize({ width: 1280, height: 800 });
       await expectEmbeddedEditor(page);
       await expect(source).toHaveValue(`${host} responsive draft`);
 
@@ -433,11 +437,10 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
     };
     const dutyMocks = await installRerDutyShortStateMocks(page, { shortState });
     const scenarios = [
-      { width: 1024, visibleFeeds: 1, tabsVisible: true, density: 'single', mainColumns: 1 },
       { width: 1280, visibleFeeds: 1, tabsVisible: true, density: 'compact', mainColumns: 1 },
       { width: 1440, visibleFeeds: 1, tabsVisible: true, density: 'compact', mainColumns: 1 },
       { width: 1600, visibleFeeds: 1, tabsVisible: true, density: 'compact', mainColumns: 2 },
-      { width: 3440, visibleFeeds: 4, tabsVisible: false, density: 'wide', mainColumns: 2 },
+      { width: 3440, visibleFeeds: 4, tabsVisible: false, density: 'compact', mainColumns: 2 },
     ];
     await page.setViewportSize({ width: scenarios[0]!.width, height: 800 });
     await page.goto('/rer-duty-neo?state-short=short-1');
@@ -451,18 +454,8 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       const editor = page.locator('[data-manage-message-presentation="embedded"]');
       await expect(editor).toBeVisible();
       await expect
-        .poll(() =>
-          page.evaluate(() => {
-            const workspace = document
-              .querySelector<HTMLElement>('[data-duty-workspace-main]')
-              ?.getBoundingClientRect();
-            const editorBounds = document
-              .querySelector<HTMLElement>('[data-manage-message-presentation="embedded"]')
-              ?.getBoundingClientRect();
-            return workspace && editorBounds ? editorBounds.width - workspace.width : null;
-          }),
-        )
-        .toBeCloseTo(0, 0);
+        .poll(() => editor.evaluate((element) => element.getBoundingClientRect().width))
+        .toBeLessThanOrEqual(800);
       await expect(page.getByRole('tablist', { name: 'Стрічки' })).toHaveCount(
         scenario.tabsVisible ? 1 : 0,
       );
@@ -484,8 +477,8 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
     }
   });
 
-  test('Duty gives the feed and adaptive editor equal tracks with an 8px gap', async ({ page }) => {
-    await page.setViewportSize({ width: 1220, height: 800 });
+  test('Duty caps the adaptive editor and preserves an 8px workspace gap', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 800 });
     const inboxResponse = buildMessageCardMediaPreviewInboxResponse({
       messageText: 'E2E responsive card width',
     });
@@ -524,6 +517,9 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
             cardRight: card.right,
             editorLeft: editor.left,
             editorWidth: editor.width,
+            layoutWidth: document
+              .querySelector<HTMLElement>('[data-duty-editor-layout]')!
+              .getBoundingClientRect().width,
             editorBackground: getComputedStyle(
               document.querySelector<HTMLElement>('[data-manage-message-presentation="embedded"]')!,
             ).backgroundColor,
@@ -537,7 +533,11 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
     expect(bounds!.cardLeft).toBeGreaterThanOrEqual(bounds!.workspaceLeft);
     expect(bounds!.cardRight).toBeLessThanOrEqual(bounds!.workspaceRight);
     expect(bounds!.editorLeft - bounds!.workspaceRight).toBeCloseTo(8, 0);
-    expect(bounds!.editorWidth).toBeCloseTo(bounds!.workspaceWidth, 0);
+    expect(bounds!.editorWidth).toBeCloseTo(
+      Math.min(800, Math.max(640, bounds!.layoutWidth * 0.48)),
+      0,
+    );
+    expect(bounds!.workspaceWidth).toBeGreaterThan(600);
     expect(bounds!.editorBackground).toBe('rgba(0, 0, 0, 0)');
     expect(bounds!.editorBorderLeft).toBe('none');
     await expect(page.locator('#create-message-form')).toHaveAttribute(
@@ -567,46 +567,46 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       .toBe(2);
   });
 
-  test('Analysis editor follows the fluid right track from 1024px through ultrawide', async ({
+  test('Analysis editor uses a viable minimum and stays capped through ultrawide', async ({
     page,
   }) => {
     await installAnalysisNeoApiMocks(page, { inboxResponse: createOverflowingInboxResponse() });
     const scenarios = [
       {
-        width: 1024,
+        width: 1280,
         leftPanelOpen: false,
-        editorWidth: 512,
-        density: 'single',
+        editorWidth: 640,
+        density: 'compact',
         mainColumns: 1,
-        pairedColumns: 1,
-        nestedSectionColumns: 1,
+        pairedColumns: 2,
+        nestedSectionColumns: 2,
       },
       {
         width: 1440,
         leftPanelOpen: false,
-        editorWidth: 720,
-        density: 'compact',
-        mainColumns: 2,
-        pairedColumns: 2,
-        nestedSectionColumns: 1,
-      },
-      {
-        width: 1600,
-        leftPanelOpen: true,
-        editorWidth: 600,
+        editorWidth: 691,
         density: 'compact',
         mainColumns: 1,
         pairedColumns: 2,
         nestedSectionColumns: 2,
       },
       {
-        width: 3440,
+        width: 1600,
         leftPanelOpen: true,
-        editorWidth: 1520,
-        density: 'wide',
+        editorWidth: 768,
+        density: 'compact',
         mainColumns: 2,
         pairedColumns: 2,
-        nestedSectionColumns: 2,
+        nestedSectionColumns: 1,
+      },
+      {
+        width: 3440,
+        leftPanelOpen: true,
+        editorWidth: 800,
+        density: 'compact',
+        mainColumns: 2,
+        pairedColumns: 2,
+        nestedSectionColumns: 1,
       },
     ] as const;
 
@@ -756,7 +756,7 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
         const coordinateFontSize = await coordinateText.evaluate((element) =>
           Number.parseFloat(getComputedStyle(element).fontSize),
         );
-        expect(coordinateFontSize).toBeGreaterThan(scenario.width === 1440 ? 10.5 : 13.5);
+        expect(coordinateFontSize).toBeGreaterThan(11.5);
         await expect
           .poll(() =>
             coordinateText.evaluate((element) => element.scrollWidth <= element.clientWidth),
@@ -765,7 +765,7 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
 
         const compactActions = page.getByRole('button', { name: 'Дії координати 1' });
         const copyAction = page.getByRole('button', { name: 'Копіювати координату 1' });
-        if (scenario.width === 1440) {
+        if (scenario.mainColumns === 2) {
           await expect(compactActions).toBeVisible();
           await expect(copyAction).toBeHidden();
         } else {
@@ -807,6 +807,7 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
     await installAnalysisNeoApiMocks(page, { inboxResponse: createOverflowingInboxResponse() });
 
     for (const scenario of [
+      { width: 320, fontSize: '16px' },
       { width: 375, fontSize: '16px' },
       { width: 1440, fontSize: '14px' },
     ]) {

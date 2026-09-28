@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { shouldUseActiveFeedLayout } from '../duty-editor-layout';
+import { dutyEditorLayoutColumns, shouldUseActiveFeedLayout } from '../duty-editor-layout';
+
+describe('dutyEditorLayoutColumns', () => {
+  it('caps an open embedded editor and collapses its closed track', () => {
+    expect(dutyEditorLayoutColumns(true)).toBe('minmax(0, 1fr) clamp(640px, 48%, 800px)');
+    expect(dutyEditorLayoutColumns(false)).toBe('minmax(0, 1fr) minmax(0, 0fr)');
+  });
+});
 
 describe('shouldUseActiveFeedLayout', () => {
   it.each([

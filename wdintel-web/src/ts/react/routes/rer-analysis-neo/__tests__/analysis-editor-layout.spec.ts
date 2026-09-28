@@ -7,8 +7,8 @@ import {
 } from '../analysis-editor-layout';
 
 describe('analysisRightDockColumn', () => {
-  it('gives the editor the same fluid grid track as Analytics', () => {
-    expect(analysisRightDockColumn(true)).toBe('minmax(0, 1fr)');
+  it('caps the editor while keeping Analytics fluid', () => {
+    expect(analysisRightDockColumn(true)).toBe('clamp(640px, 48%, 800px)');
     expect(analysisRightDockColumn(false)).toBe('minmax(0, 1fr)');
   });
 });
@@ -40,8 +40,19 @@ describe('analysisWorkspaceColumns', () => {
       analysisWorkspaceColumns({
         inlineLeftPanelVisible: left,
         inlineRightDockVisible: right,
+        editorOpen: false,
       }),
     ).toBe(expected);
+  });
+
+  it('uses the capped track when the right dock contains the editor', () => {
+    expect(
+      analysisWorkspaceColumns({
+        inlineLeftPanelVisible: false,
+        inlineRightDockVisible: true,
+        editorOpen: true,
+      }),
+    ).toBe('0px minmax(0, 1fr) clamp(640px, 48%, 800px)');
   });
 });
 

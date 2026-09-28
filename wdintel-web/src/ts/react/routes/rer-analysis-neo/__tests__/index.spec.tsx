@@ -611,7 +611,7 @@ describe('RerAnalysisNeoPage', () => {
   });
 
   it('keeps the embedded create editor open while refreshing analysis after success', async () => {
-    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1024px)');
+    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1200px)');
     const container = document.createElement('div');
     document.body.appendChild(container);
     rendered.push(container);
@@ -640,7 +640,7 @@ describe('RerAnalysisNeoPage', () => {
   });
 
   it('animates the embedded editor track while preserving the analysis workspace', async () => {
-    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1024px)');
+    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1200px)');
     const container = document.createElement('div');
     document.body.appendChild(container);
     rendered.push(container);
@@ -655,13 +655,15 @@ describe('RerAnalysisNeoPage', () => {
       container.querySelector<HTMLButtonElement>('[aria-label="create-message-fab"]')?.click();
     });
 
-    expect(workspace?.style.gridTemplateColumns).toBe('0px minmax(0, 1fr) minmax(0, 1fr)');
+    expect(workspace?.style.gridTemplateColumns).toBe(
+      '0px minmax(0, 1fr) clamp(640px, 48%, 800px)',
+    );
     await act(async () => root.unmount());
   });
 
   it('removes spatial editor layout motion when the user prefers reduced motion', async () => {
     useMediaQueryMock.mockImplementation(
-      (query) => query === '(min-width:1024px)' || query === '(prefers-reduced-motion: reduce)',
+      (query) => query === '(min-width:1200px)' || query === '(prefers-reduced-motion: reduce)',
     );
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -886,34 +888,20 @@ describe('RerAnalysisNeoPage', () => {
     });
   });
 
-  it('opens generic create in the embedded dock without changing Summary', async () => {
+  it.each(['summary', 'map'] as const)('hides generic create on the %s tab', async (centerTab) => {
     const page = buildPage();
-    page.centerTab = 'summary';
+    page.centerTab = centerTab;
     useRerAnalysisNeoPageMock.mockReturnValue(page);
-    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1024px)');
     const container = document.createElement('div');
     document.body.appendChild(container);
     rendered.push(container);
     const root = createRoot(container);
 
     await act(async () => root.render(<RerAnalysisNeoPage />));
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>('[aria-label="create-message-fab"]')?.click();
-    });
 
-    expect(page.setCenterTab).not.toHaveBeenCalled();
-    expect(manageMessageDrawerPropsHistory.at(-1)).toMatchObject({
-      open: true,
-      intentKey: 'create-message',
-      presentation: 'embedded',
-      adaptiveEmbeddedForm: true,
-      fillEmbeddedSurface: true,
-      transparentEmbeddedSurface: true,
-    });
     expect(
       container.querySelector<HTMLButtonElement>('[aria-label="create-message-fab"]'),
     ).toBeNull();
-    expect(container.querySelector('[data-testid="analysis-right-dock"]')).not.toBeNull();
     root.unmount();
   });
 
@@ -924,7 +912,7 @@ describe('RerAnalysisNeoPage', () => {
       page.rightPanelOpen = !page.rightPanelOpen;
     });
     useRerAnalysisNeoPageMock.mockReturnValue(page);
-    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1024px)');
+    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1200px)');
     const container = document.createElement('div');
     document.body.appendChild(container);
     rendered.push(container);
@@ -953,7 +941,7 @@ describe('RerAnalysisNeoPage', () => {
       page.rightPanelOpen = !page.rightPanelOpen;
     });
     useRerAnalysisNeoPageMock.mockReturnValue(page);
-    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1024px)');
+    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1200px)');
     editorGuardMocks.dirty = true;
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -1010,7 +998,7 @@ describe('RerAnalysisNeoPage', () => {
     page.editorMessage = { id: 42, message: { messageUid: 'm-42' } as never };
     page.rightPanelOpen = true;
     useRerAnalysisNeoPageMock.mockReturnValue(page);
-    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1024px)');
+    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1200px)');
     const container = document.createElement('div');
     document.body.appendChild(container);
     rendered.push(container);
@@ -1136,7 +1124,7 @@ describe('RerAnalysisNeoPage', () => {
     const page = buildPage();
     page.editorMessage = { id: 42, message: { messageUid: 'm-42' } as never };
     useRerAnalysisNeoPageMock.mockReturnValue(page);
-    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1024px)');
+    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1200px)');
     let width = 1360;
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
       () =>
@@ -1175,7 +1163,7 @@ describe('RerAnalysisNeoPage', () => {
   it('dismisses filters that were inline before an embedded editor opens', async () => {
     const page = buildPage();
     useRerAnalysisNeoPageMock.mockReturnValue(page);
-    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1024px)');
+    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1200px)');
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
       () =>
         ({

@@ -343,14 +343,13 @@ function ReportSourceHeader({
   return (
     <Box
       data-testid="report-source-header"
+      style={{ flexWrap: 'wrap', overflowX: 'visible' }}
       sx={{
         gridColumn: '1 / -1',
         display: 'flex',
         alignItems: 'center',
-        flexWrap: 'nowrap',
         gap: 2,
         minWidth: 0,
-        overflowX: 'auto',
         pb: 0.5,
         '& .message-card-header-meta__icon': {
           color: 'text.secondary',
@@ -463,6 +462,10 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
       debounceKey,
       errorMsg,
       setErrorMsg,
+      reportCopyError,
+      retryReportCopy,
+      referenceDataError,
+      retryReferenceData,
       tagOptions,
       deviceNameOptions,
       deviceNamesLoading,
@@ -678,6 +681,28 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
                       sx={{ mb: 2 }}
                     >
                       {autoParseSettingsLoadError}
+                    </PowerAlert>
+                  ) : null}
+                  {reportCopyError ? (
+                    <PowerAlert
+                      severity="error"
+                      autoHideDuration={null}
+                      dismissible={false}
+                      action={<Button onClick={retryReportCopy}>Повторити копіювання</Button>}
+                      sx={{ mb: 2 }}
+                    >
+                      {reportCopyError}
+                    </PowerAlert>
+                  ) : null}
+                  {referenceDataError ? (
+                    <PowerAlert
+                      severity="error"
+                      autoHideDuration={null}
+                      dismissible={false}
+                      action={<Button onClick={retryReferenceData}>Повторити завантаження</Button>}
+                      sx={{ mb: 2 }}
+                    >
+                      {referenceDataError}
                     </PowerAlert>
                   ) : null}
                   {errorMsg && (

@@ -6,8 +6,10 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  MANAGE_MESSAGE_EDITOR_EMBEDDED_MIN_LAYOUT_WIDTH,
   MANAGE_MESSAGE_EDITOR_WIDTH,
   ManageMessageEditorSurface,
+  resolveManageMessageEditorPresentation,
 } from '../ManageMessageEditorSurface';
 
 function EditorContent(): ReactNode {
@@ -142,9 +144,14 @@ describe('ManageMessageEditorSurface', () => {
       ),
     );
 
-    expect(document.querySelector('[data-manage-message-presentation="modal"]')).not.toBeNull();
+    const modal = document.querySelector('[data-manage-message-presentation="modal"]');
+    expect(modal).not.toBeNull();
     expect(document.querySelector('.MuiBackdrop-root')).not.toBeNull();
-    expect(document.querySelector<HTMLElement>('.MuiDrawer-paper')?.style.width).toBe('100vw');
+    const paper = document.querySelector<HTMLElement>('.MuiDrawer-paper');
+    expect(paper?.style.width).toBe('100vw');
+    expect(paper?.getAttribute('role')).toBe('dialog');
+    expect(paper?.getAttribute('aria-modal')).toBe('true');
+    expect(paper?.getAttribute('aria-labelledby')).toBe('message-editor-title');
   });
 
   it('does not render a closed embedded surface', async () => {
@@ -235,5 +242,17 @@ describe('ManageMessageEditorSurface', () => {
     editorButton.focus();
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     expect(onRequestClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('resolveManageMessageEditorPresentation', () => {
+  it('embeds only when the measured layout can fit the workspace and editor', () => {
+    expect(resolveManageMessageEditorPresentation(null)).toBe('modal');
+    expect(
+      resolveManageMessageEditorPresentation(MANAGE_MESSAGE_EDITOR_EMBEDDED_MIN_LAYOUT_WIDTH - 1),
+    ).toBe('modal');
+    expect(
+      resolveManageMessageEditorPresentation(MANAGE_MESSAGE_EDITOR_EMBEDDED_MIN_LAYOUT_WIDTH),
+    ).toBe('embedded');
   });
 });

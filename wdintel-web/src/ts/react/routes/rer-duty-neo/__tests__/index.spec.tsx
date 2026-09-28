@@ -535,7 +535,7 @@ describe('RerDutyNeoPage creation workflow', () => {
   });
 
   it('keeps the embedded composer open after creation', async () => {
-    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1024px)');
+    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1200px)');
     nextCreatedResponse.value = { signal_message_id: 101 };
     const { container, root, state } = await renderPage();
 
@@ -710,7 +710,7 @@ describe('RerDutyNeoPage creation workflow', () => {
   });
 
   it('animates the embedded editor track without replacing the feed layout', async () => {
-    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1024px)');
+    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1200px)');
     const { container, root } = await renderPage();
     const layout = container.querySelector<HTMLElement>('[data-duty-editor-layout]');
 
@@ -720,14 +720,14 @@ describe('RerDutyNeoPage creation workflow', () => {
 
     await click(container.querySelector('button[aria-label="Додати повідомлення"]'));
 
-    expect(layout?.style.gridTemplateColumns).toBe('minmax(0, 1fr) minmax(0, 1fr)');
+    expect(layout?.style.gridTemplateColumns).toBe('minmax(0, 1fr) clamp(640px, 48%, 800px)');
     expect(layout?.style.columnGap).toBe('8px');
     await act(async () => root.unmount());
   });
 
   it('removes spatial editor layout motion when the user prefers reduced motion', async () => {
     useMediaQueryMock.mockImplementation(
-      (query) => query === '(min-width:1024px)' || query === '(prefers-reduced-motion: reduce)',
+      (query) => query === '(min-width:1200px)' || query === '(prefers-reduced-motion: reduce)',
     );
     const { container, root } = await renderPage();
 

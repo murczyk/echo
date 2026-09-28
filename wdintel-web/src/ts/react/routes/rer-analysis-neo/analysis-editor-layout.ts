@@ -31,20 +31,22 @@ export function shouldInlineAnalysisLeftPanel({
   return layoutWidth - ANALYSIS_LEFT_PANEL_WIDTH - editorWidth >= ANALYSIS_MIN_CENTER_WIDTH;
 }
 
-export function analysisRightDockColumn(_editorOpen: boolean): string {
-  return 'minmax(0, 1fr)';
+export function analysisRightDockColumn(editorOpen: boolean): string {
+  return editorOpen ? 'clamp(640px, 48%, 800px)' : 'minmax(0, 1fr)';
 }
 
 export function analysisWorkspaceColumns({
   inlineLeftPanelVisible,
   inlineRightDockVisible,
+  editorOpen,
 }: {
   inlineLeftPanelVisible: boolean;
   inlineRightDockVisible: boolean;
+  editorOpen: boolean;
 }): string {
   return [
     inlineLeftPanelVisible ? '400px' : '0px',
     'minmax(0, 1fr)',
-    inlineRightDockVisible ? analysisRightDockColumn(false) : 'minmax(0, 0fr)',
+    inlineRightDockVisible ? analysisRightDockColumn(editorOpen) : 'minmax(0, 0fr)',
   ].join(' ');
 }

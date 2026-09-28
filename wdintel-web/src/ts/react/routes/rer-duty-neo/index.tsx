@@ -46,6 +46,8 @@ import {
   scrollToAndHighlightMessage,
   type MessageCardEtalonDisplayModel,
 } from '../shared/message-card/message-card.utils';
+import { useObservedWidth } from '../../hooks/use-observed-width';
+import { dutyEditorLayoutColumns } from './duty-editor-layout';
 
 export type RerDutyNeoPageProps = {
   /** Auth user display name from the host page (avoids duplicate /api/user request). */
@@ -404,7 +406,8 @@ export function RerDutyNeoPage({
           ? `edit-report:${editTargetLoadState.reportId}`
           : null;
   const editorOpen = editorIntentKey !== null;
-  const editorPresentation = useManageMessageEditorPresentation();
+  const { ref: editorLayoutRef, width: editorLayoutWidth } = useObservedWidth<HTMLDivElement>();
+  const editorPresentation = useManageMessageEditorPresentation(editorLayoutWidth);
   const reduceEditorMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const editorEmbeddedOpen = editorOpen && editorPresentation === 'embedded';
   const previousCanWriteRef = useRef<boolean | null>(null);
@@ -499,15 +502,14 @@ export function RerDutyNeoPage({
   const content = (
     <RadioFeaturesProvider allowed={radioFeaturesAllowed}>
       <Box
+        ref={editorLayoutRef}
         className="w-full min-h-0"
         data-duty-editor-layout
         style={{
           display: editorPresentation === 'embedded' ? 'grid' : 'flex',
           gridTemplateColumns:
             editorPresentation === 'embedded'
-              ? editorEmbeddedOpen
-                ? 'minmax(0, 1fr) minmax(0, 1fr)'
-                : 'minmax(0, 1fr) minmax(0, 0fr)'
+              ? dutyEditorLayoutColumns(editorEmbeddedOpen)
               : undefined,
           columnGap:
             editorPresentation === 'embedded' ? (editorEmbeddedOpen ? '8px' : '0px') : undefined,

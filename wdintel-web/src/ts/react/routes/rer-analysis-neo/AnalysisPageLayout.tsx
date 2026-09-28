@@ -64,7 +64,7 @@ export function RerAnalysisNeoPage({
   }, [notify, page.directMessageError]);
   const isAnalysisCompactLayout = useMediaQuery(theme.breakpoints.down('md'));
   const isNarrowLayout = useMediaQuery(theme.breakpoints.down('lg'));
-  const editorPresentation = useManageMessageEditorPresentation();
+  const editorPresentation = useManageMessageEditorPresentation(layoutWidth);
   const reduceEditorMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const centerTabsId = useId().replace(/:/g, '-');
   const messagesTabId = `${centerTabsId}-messages-tab`;
@@ -347,6 +347,7 @@ export function RerAnalysisNeoPage({
               gridTemplateColumns: analysisWorkspaceColumns({
                 inlineLeftPanelVisible,
                 inlineRightDockVisible,
+                editorOpen,
               }),
               transition: reduceEditorMotion
                 ? 'none'
@@ -521,7 +522,7 @@ export function RerAnalysisNeoPage({
           onUpdate={page.updateReport}
         />
 
-        {!analysisMapVisible && !editorOpen ? (
+        {centerTab === 'messages' && !editorOpen ? (
           <CreateMessageFab ref={createMessageFabRef} onClick={openCreateMessageComposer} />
         ) : null}
       </Box>

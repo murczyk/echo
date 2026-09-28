@@ -856,6 +856,34 @@ describe('ManageMessageDrawer edit mode', () => {
     root.unmount();
   });
 
+  it('blocks a page unload while the editor has unsaved changes', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+        />,
+      );
+    });
+    await act(async () => {
+      textFieldPropsByLabel
+        .get('Текст повідомлення')
+        ?.onChange?.({ target: { value: 'Незбережена чернетка' } });
+    });
+
+    const event = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+
+    root.unmount();
+  });
+
   it('shows an inert report-edit loading shell without a header close action', async () => {
     setRecentValues({});
     const onClose = vi.fn();
@@ -1284,6 +1312,111 @@ describe('ManageMessageDrawer edit mode', () => {
     );
     expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.value).toBe('');
 
+    root.unmount();
+  });
+
+  it('shows a retry action when copying a report source fails', async () => {
+    directSubmitMocks.copyDirectSubmit
+      .mockRejectedValueOnce(new Error('copy failed'))
+      .mockResolvedValueOnce({
+        payloads: [{ full_body: 'copied after retry', parent_signal_message_ids: [42] }],
+      });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+          reportSource={{ id: 42, message: buildMessage({ text: 'source card body' }) }}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('copy failed');
+    const retry = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Повторити копіювання',
+    );
+    expect(retry).toBeDefined();
+
+    await act(async () => {
+      retry?.click();
+      await Promise.resolve();
+    });
+
+    expect(directSubmitMocks.copyDirectSubmit).toHaveBeenCalledTimes(2);
+    expect(textFieldPropsByLabel.get('Текст оригінального повідомлення')?.value).toBe(
+      'copied after retry',
+    );
+    expect(container.textContent).not.toContain('copy failed');
+    root.unmount();
+  });
+
+  it('wraps report source metadata instead of hiding it behind horizontal scrolling', async () => {
+    directSubmitMocks.copyDirectSubmit.mockResolvedValue({
+      payloads: [{ full_body: 'copied source', parent_signal_message_ids: [42] }],
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+          reportSource={{ id: 42, message: buildMessage() }}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    const header = container.querySelector<HTMLElement>('[data-testid="report-source-header"]');
+    expect(header).not.toBeNull();
+    expect(getComputedStyle(header!).flexWrap).toBe('wrap');
+    expect(getComputedStyle(header!).overflowX).not.toBe('auto');
+    root.unmount();
+  });
+
+  it('shows a retry action when reference data fails to load', async () => {
+    referenceDataMocks.getUserSigintGroups
+      .mockRejectedValueOnce(new Error('groups failed'))
+      .mockResolvedValueOnce([]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Не вдалося завантажити довідкові дані.');
+    const retry = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Повторити завантаження',
+    );
+    expect(retry).toBeDefined();
+
+    await act(async () => {
+      retry?.click();
+      await Promise.resolve();
+    });
+    expect(referenceDataMocks.getUserSigintGroups).toHaveBeenCalledTimes(2);
+    expect(container.textContent).not.toContain('Не вдалося завантажити довідкові дані.');
     root.unmount();
   });
 
