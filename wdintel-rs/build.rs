@@ -12,6 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let version_hash = get_git_hash()?;
     let version = format!("1.0.{version_hash}");
     (&file).write_all(version.as_bytes())?;
+    println!("cargo:rustc-env=ECHO_BUILD_VERSION={version}");
 
     Ok(())
 }

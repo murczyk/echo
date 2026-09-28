@@ -26,6 +26,7 @@ import type {
   AiAgentEchoProxyUpsertReq,
   AiAgentIdReq,
   AiAgentMessageItem,
+  AiAgentMessageCitation,
   AiAgentProviderItem,
   AiAgentProviderRuntimeProfileItem,
   AiAgentRequestCancelRsp,
@@ -68,10 +69,12 @@ export type AiAgentEventType =
   | 'request_start'
   | 'progress'
   | 'assistant_delta'
+  | 'assistant_snapshot'
   | 'tool_start'
   | 'tool_update'
   | 'tool_end'
   | 'source'
+  | 'message_citations'
   | 'completion'
   | 'cancellation'
   | 'error';
@@ -85,6 +88,7 @@ export type AiAgentEvent = {
   toolCallId: string | null;
   toolName: string | null;
   toolLabel?: string | null;
+  citations?: AiAgentMessageCitation[];
   sourceTitle: string | null;
   sourceUrl: string | null;
   method: string | null;
@@ -298,6 +302,20 @@ export function normalizeAiAgentEvent(
     toolName:
       payloadString(payloadValue(payload, 'toolName', 'tool_name')) ?? payloadString(payload.tool),
     toolLabel: payloadString(payloadValue(payload, 'toolLabel', 'tool_label')),
+    citations: Array.isArray(payload.citations)
+      ? payload.citations.filter(
+          (item): item is AiAgentMessageCitation =>
+            item != null &&
+            typeof item === 'object' &&
+            'messageId' in item &&
+            typeof item.messageId === 'number' &&
+            Number.isSafeInteger(item.messageId) &&
+            item.messageId > 0 &&
+            'messageIdentifier' in item &&
+            typeof item.messageIdentifier === 'string' &&
+            item.messageIdentifier.length > 0,
+        )
+      : [],
     sourceTitle:
       payloadString(payloadValue(payload, 'sourceTitle', 'source_title')) ??
       payloadString(payload.title),

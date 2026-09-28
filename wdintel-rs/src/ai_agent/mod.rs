@@ -2,9 +2,10 @@ mod access;
 pub mod admin;
 pub mod auth;
 mod chat_monitoring;
+mod citations;
 pub(crate) mod dispatcher;
 mod events;
-mod lifecycle;
+pub(crate) mod lifecycle;
 pub mod middleware;
 pub mod profile;
 pub mod provider_gateway;
@@ -704,6 +705,12 @@ pub(super) async fn conversation_detail(
         .all(dbx)
         .await
         .c(h!())?;
+    let request_ids = requests
+        .iter()
+        .filter(|request| request.response.is_some())
+        .map(|request| request.id)
+        .collect::<Vec<_>>();
+    let mut citations = citations::load(dbx, &request_ids).await.c(h!())?;
     let mut messages = Vec::new();
     for request in requests {
         let request_state = request.state;
@@ -712,6 +719,7 @@ pub(super) async fn conversation_detail(
             request_state: request_state.clone(),
             role: "user".to_string(),
             content: request.prompt,
+            citations: Vec::new(),
             created_at: request.queued_at.and_utc().timestamp_millis(),
         });
         if let Some(response) = request.response {
@@ -719,6 +727,10 @@ pub(super) async fn conversation_detail(
                 request_id: request.id.to_string(),
                 request_state,
                 role: "assistant".to_string(),
+                citations: citations::referenced(
+                    citations.remove(&request.id).unwrap_or_default(),
+                    &response,
+                ),
                 content: response,
                 created_at: request
                     .completed_at

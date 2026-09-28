@@ -878,20 +878,20 @@ async fn load_activity_datetimes(
         .chunks(crate::config::API_INTEGRATION_IGGY_ENRICHMENT_ID_BATCH_SIZE)
     {
         let query = Query::select()
-            .column((SigintInboxItem::Table, SigintInboxItem::Id))
+            .column((SignalMessage::Table, SignalMessage::Id))
             .expr_as(
                 Expr::cust("COALESCE(sigint_inbox_item.datetime, signal_message.timestamp, signal_message.created_at)"),
                 Alias::new("activity_at"),
             )
-            .from(SigintInboxItem::Table)
+            .from(SignalMessage::Table)
             .join(
-                JoinType::InnerJoin,
-                SignalMessage::Table,
+                JoinType::LeftJoin,
+                SigintInboxItem::Table,
                 Expr::col((SigintInboxItem::Table, SigintInboxItem::Id))
                     .equals((SignalMessage::Table, SignalMessage::Id)),
             )
             .and_where(
-                Expr::col((SigintInboxItem::Table, SigintInboxItem::Id))
+                Expr::col((SignalMessage::Table, SignalMessage::Id))
                     .is_in(inbox_item_ids.iter().copied()),
             )
             .to_string(PostgresQueryBuilder);
@@ -1684,6 +1684,127 @@ mod tests {
                 event.payload["event_type"].as_str().unwrap().to_string()
             })
             .collect()
+    }
+
+    async fn insert_unprocessed_grouped_message(
+        env: &Env,
+        group: &datasource_group::Model,
+        timestamp: Option<NaiveDateTime>,
+    ) -> signal_message::Model {
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                datasource_group_id: Set(Some(group.id)),
+                created_at: Set(Utc::now().naive_utc()),
+                timestamp: Set(timestamp),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_message_group(
+            &env.dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(message.id),
+                group_master_key: Set(Some(group.group_master_key.clone())),
+                datasource_group_id: Set(Some(group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        message
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn echo_3379_delayed_inbox_creation_keeps_sync_and_outbox_working() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let group = find_test_datasource_group(&env.dbx).await.unwrap();
+        let integration = insert_integration(&env, login.id).await;
+        let intercepted_at = Utc::now().naive_utc() - ChronoDuration::hours(2);
+        for timestamp in [Some(intercepted_at), None] {
+            let message =
+                insert_unprocessed_grouped_message(&env, &group, timestamp)
+                    .await;
+            let synced_at = Utc::now().naive_utc();
+            let messages = load_inbox_messages(
+                &env,
+                &login.id,
+                message.created_at - ChronoDuration::microseconds(1),
+                synced_at,
+            )
+            .await
+            .unwrap();
+            let messages = enrich_inbox_messages(&env, messages).await.unwrap();
+            assert_eq!(messages.len(), 1);
+            assert_eq!(messages[0].0, message.id);
+            assert_eq!(
+                messages[0].1.activity_at_ms,
+                timestamp
+                    .unwrap_or(message.created_at)
+                    .and_utc()
+                    .timestamp_millis()
+            );
+            set_sync_completed(&env.dbx, integration.id, synced_at)
+                .await
+                .unwrap();
+            clear_iggy_events(&env, integration.id).await;
+            mk_sigint_inbox_item(
+                &env.dbx,
+                sigint_inbox_item::ActiveModel {
+                    id: Set(message.id),
+                    datetime: Set(Some(
+                        intercepted_at - ChronoDuration::hours(1),
+                    )),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            assert!(load_inbox_messages(
+                &env,
+                &login.id,
+                synced_at,
+                Utc::now().naive_utc()
+            )
+            .await
+            .unwrap()
+            .is_empty());
+            let events =
+                load_pending_events(&env.dbx, integration.id).await.unwrap();
+            let event = events
+                .iter()
+                .find(|event| {
+                    event.sigint_inbox_item_id == Some(message.id)
+                        && event.payload["event_type"]
+                            == "sigint_inbox_item_created"
+                })
+                .unwrap();
+            let messages =
+                load_pending_event_messages(&env, &login.id, &events)
+                    .await
+                    .unwrap();
+            let enriched = &messages[&message.id];
+            assert_eq!(
+                enriched.activity_at_ms,
+                (intercepted_at - ChronoDuration::hours(1))
+                    .and_utc()
+                    .timestamp_millis()
+            );
+            let payload: serde_json::Value = serde_json::from_slice(
+                &render_pending_event(
+                    event,
+                    Some(enriched),
+                    PendingEventAction::Publish,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(payload[0], message.id);
+            assert_eq!(payload[1]["activity_at_ms"], enriched.activity_at_ms);
+        }
     }
 
     #[actix_web::test]

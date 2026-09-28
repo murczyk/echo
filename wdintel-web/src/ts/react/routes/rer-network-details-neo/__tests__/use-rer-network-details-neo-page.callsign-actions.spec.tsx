@@ -79,6 +79,50 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe('useRerNetworkDetailsNeoPageCallsignActions', () => {
+  it('defaults to 21 days and reloads only the network section when its period changes', async () => {
+    renderHarness([101]);
+
+    expect(latestState?.networkCallsignsPeriod).toBe('Last21Days');
+    expect(latestState?.catalogCallsignsPeriod).toBe('Last21Days');
+    expect(latestState?.interceptedCallsignsPeriod).toBe('Last21Days');
+
+    await act(async () => {
+      latestActions?.setNetworkCallsignsPeriod('Last7Days');
+      await Promise.resolve();
+    });
+
+    expect(latestState?.networkCallsignsPeriod).toBe('Last7Days');
+    expect(latestState?.catalogCallsignsPeriod).toBe('Last21Days');
+    expect(latestState?.interceptedCallsignsPeriod).toBe('Last21Days');
+    expect(loadCallsigns).toHaveBeenCalledWith(17, { network: 'Last7Days' });
+  });
+
+  it('reloads only the catalog section when its period changes', async () => {
+    renderHarness([101]);
+
+    await act(async () => {
+      latestActions?.setCatalogCallsignsPeriod('Unlimited');
+      await Promise.resolve();
+    });
+
+    expect(latestState?.catalogCallsignsPeriod).toBe('Unlimited');
+    expect(latestState?.networkCallsignsPeriod).toBe('Last21Days');
+    expect(loadCallsigns).toHaveBeenCalledWith(17, { catalog: 'Unlimited' });
+  });
+
+  it('reloads only the intercepted section when its period changes', async () => {
+    renderHarness([101]);
+
+    await act(async () => {
+      latestActions?.setInterceptedCallsignsPeriod('Last7Days');
+      await Promise.resolve();
+    });
+
+    expect(latestState?.interceptedCallsignsPeriod).toBe('Last7Days');
+    expect(latestState?.networkCallsignsPeriod).toBe('Last21Days');
+    expect(loadCallsigns).toHaveBeenCalledWith(17, { intercepted: 'Last7Days' });
+  });
+
   it('defaults a new callsign when the network has exactly one unit', () => {
     renderHarness([101]);
 

@@ -1,18 +1,13 @@
 import { useCallback } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
-import {
-  addKnownCallsignsToNetwork,
-  createNetworkCallsign,
-  updateNetworkCallsign,
-} from '../../services/api/callsigns';
+import { addKnownCallsignsToNetwork, updateNetworkCallsign } from '../../services/api/callsigns';
 import {
   formatErrorMessage,
   canManageNetworkCallsignActions,
   type NetworkDetailsNeoPageState,
 } from './use-rer-network-details-neo-page.shared';
 import {
-  buildNetworkCallsignTabData,
   mergeNetworkCallsigns,
   removeKnownCallsignIdsFromNetworkCallsignGroups,
 } from './network-callsigns.tab';
@@ -61,18 +56,20 @@ export function useRerNetworkDetailsNeoPageCallsignMutations({ state, setState }
             current.networkCallsignGroups,
             [knownCallsignId],
           );
-          const derived = buildNetworkCallsignTabData(
-            nextNetworkCallsignGroups,
-            current.callsignActivityMap,
-            nextNetworkCallsigns,
-          );
+          const nextCatalogCallsignGroups = current.catalogCallsignGroups
+            .map((group) => ({
+              ...group,
+              knownCallsigns: group.knownCallsigns.filter(
+                (knownCallsign) => knownCallsign.id !== knownCallsignId,
+              ),
+            }))
+            .filter((group) => group.knownCallsigns.length > 0);
 
           return {
             ...current,
             networkCallsigns: nextNetworkCallsigns,
             networkCallsignGroups: nextNetworkCallsignGroups,
-            catalogCallsignGroups: derived.catalogCallsignGroups,
-            unknownInterceptedCallsigns: derived.unknownInterceptedCallsigns,
+            catalogCallsignGroups: nextCatalogCallsignGroups,
             callsignCount: nextNetworkCallsigns.length,
             callsignCatalogAddInFlightIds: current.callsignCatalogAddInFlightIds.filter(
               (item) => item !== knownCallsignId,
@@ -160,17 +157,10 @@ export function useRerNetworkDetailsNeoPageCallsignMutations({ state, setState }
           const nextNetworkCallsigns = mergeNetworkCallsigns(current.networkCallsigns, [
             updatedNetworkCallsign,
           ]);
-          const derived = buildNetworkCallsignTabData(
-            current.networkCallsignGroups,
-            current.callsignActivityMap,
-            nextNetworkCallsigns,
-          );
 
           return {
             ...current,
             networkCallsigns: nextNetworkCallsigns,
-            catalogCallsignGroups: derived.catalogCallsignGroups,
-            unknownInterceptedCallsigns: derived.unknownInterceptedCallsigns,
             callsignCount: nextNetworkCallsigns.length,
             callsignUpdateInFlightIds: current.callsignUpdateInFlightIds.filter(
               (item) => item !== networkCallsign.id,

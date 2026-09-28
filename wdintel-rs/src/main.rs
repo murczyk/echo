@@ -17,6 +17,7 @@ use tokio_util::sync::CancellationToken;
 
 pub mod ai_agent;
 pub mod ai_callsign;
+mod ai_control_panel;
 pub mod ai_engine;
 pub mod ai_intel_report;
 pub mod ai_settlement;
@@ -1031,6 +1032,8 @@ pub struct OrbitReviewWorkflowPs {
 #[derive(clap::Subcommand, Debug)]
 #[command(author, version, about, long_about = None)]
 enum Cmd {
+    /// Inspect harness releases and roll out selected AI namespaces.
+    AiControlPanel(ai_control_panel::Options),
     Server(ServerPs),
     Bgworker,
     ReportWorker,
@@ -1654,9 +1657,16 @@ async fn async_main(
     let mode = args.mode;
     let action = args.action;
 
+    if let Cmd::AiControlPanel(options) = action {
+        return ai_control_panel::run(mode, options)
+            .await
+            .map_err(Into::into);
+    }
+
     utils::worker_watch::spawn_metrics_logger();
 
     match action {
+        Cmd::AiControlPanel(_) => unreachable!(),
         Cmd::Server(ps) => {
             server::main_server(mode, ps, token, shutdown_handle.clone()).await
         }

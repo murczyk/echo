@@ -1,10 +1,11 @@
+use super::types::AiAgentMessageCitation;
 use crate::config::{
     AI_AGENT_EVENT_PAYLOAD_MAX_BYTES, AI_AGENT_PROGRESS_MAX_CHARS,
 };
 use crate::entities::{ai_agent_request, ai_agent_request_event};
 use crate::error::AppError;
 use crate::h;
-use crate::types::ShortContext;
+use crate::types::{Context, ShortContext};
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection,
@@ -18,10 +19,12 @@ const EVENT_TYPES: &[&str] = &[
     "request_start",
     "progress",
     "assistant_delta",
+    "assistant_snapshot",
     "tool_start",
     "tool_update",
     "tool_end",
     "source",
+    "message_citations",
     "completion",
     "cancellation",
     "error",
@@ -38,10 +41,12 @@ const HIDDEN_EVENT_TYPES: &[&str] = &[
 const RUNNER_EVENT_TYPES: &[&str] = &[
     "progress",
     "assistant_delta",
+    "assistant_snapshot",
     "tool_start",
     "tool_update",
     "tool_end",
     "source",
+    "message_citations",
 ];
 
 pub async fn append_runner(
@@ -86,6 +91,58 @@ async fn append_while_running(
     append_in_transaction(&txn, request_id, event_type, payload).await?;
     txn.commit().await.c(h!())?;
     Ok(true)
+}
+
+pub(super) async fn replace_message_citations(
+    txn: &DatabaseTransaction,
+    request_id: Uuid,
+    citations: &[AiAgentMessageCitation],
+) -> Result<(), AppError> {
+    ai_agent_request_event::Entity::delete_many()
+        .filter(ai_agent_request_event::Column::RequestId.eq(request_id))
+        .filter(
+            ai_agent_request_event::Column::EventType.eq("message_citations"),
+        )
+        .exec(txn)
+        .await
+        .c(h!())?;
+    for payload in citation_event_payloads(citations) {
+        append_in_transaction(txn, request_id, "message_citations", payload)
+            .await
+            .context(h!())?;
+    }
+    Ok(())
+}
+
+fn citation_payload_fits(citations: &[&AiAgentMessageCitation]) -> bool {
+    let payload = serde_json::json!({ "citations": citations });
+    serde_json::to_vec(&payload)
+        .map(|encoded| encoded.len() <= AI_AGENT_EVENT_PAYLOAD_MAX_BYTES)
+        .unwrap_or(false)
+}
+
+fn citation_event_payloads(citations: &[AiAgentMessageCitation]) -> Vec<Value> {
+    let mut payloads = Vec::new();
+    let mut batch: Vec<&AiAgentMessageCitation> = Vec::new();
+    for citation in citations {
+        batch.push(citation);
+        if citation_payload_fits(&batch) {
+            continue;
+        }
+        batch.pop();
+        if !batch.is_empty() {
+            payloads.push(serde_json::json!({ "citations": &batch }));
+            batch.clear();
+        }
+        batch.push(citation);
+        if !citation_payload_fits(&batch) {
+            batch.clear();
+        }
+    }
+    if !batch.is_empty() {
+        payloads.push(serde_json::json!({ "citations": &batch }));
+    }
+    payloads
 }
 
 pub async fn append_in_transaction(
@@ -157,10 +214,49 @@ pub fn normalize_runner_event(event: Value) -> Option<(String, Value)> {
         payload.remove("event_type");
     }
     payload = sanitize(payload);
+    if event_type == "message_citations" {
+        let citations = super::citations::parse(&payload)?;
+        payload = serde_json::json!({ "citations": citations });
+    }
+    if event_type == "assistant_snapshot" {
+        let text = payload.get("text").and_then(Value::as_str)?;
+        if text.is_empty() {
+            return None;
+        }
+        let stored = serde_json::json!({ "text": text });
+        let Ok(encoded) = serde_json::to_vec(&stored) else {
+            return None;
+        };
+        if encoded.len() > AI_AGENT_EVENT_PAYLOAD_MAX_BYTES {
+            return None;
+        }
+        payload = stored;
+    }
     if event_type == "progress" {
         payload = normalize_progress(payload);
     }
     Some((event_type, payload))
+}
+
+#[derive(Debug)]
+pub enum AssistantTextUpdate {
+    Append(String),
+    Replace(String),
+}
+
+pub fn assistant_text_update(
+    event_type: &str,
+    payload: &Value,
+) -> Option<AssistantTextUpdate> {
+    match event_type {
+        "assistant_snapshot" => Some(AssistantTextUpdate::Replace(
+            payload.get("text")?.as_str()?.to_string(),
+        )),
+        "assistant_delta" => Some(AssistantTextUpdate::Append(
+            assistant_delta(payload)?.to_string(),
+        )),
+        _ => None,
+    }
 }
 
 pub fn assistant_delta(payload: &Value) -> Option<&str> {
@@ -175,6 +271,7 @@ fn normalize_event_type(event_type: &str) -> String {
     match event_type {
         "requestStart" => "request_start",
         "assistantDelta" => "assistant_delta",
+        "assistantSnapshot" => "assistant_snapshot",
         "toolStart" => "tool_start",
         "toolUpdate" => "tool_update",
         "toolEnd" => "tool_end",
@@ -296,6 +393,52 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_replaces_text_and_drops_empty_or_oversized_payloads() {
+        let (_, payload) = normalize_runner_event(serde_json::json!({
+            "type": "assistant_snapshot",
+            "text": "Final [джерело](/rer-analysis-neo?m=77)"
+        }))
+        .unwrap();
+        match assistant_text_update("assistant_snapshot", &payload) {
+            Some(AssistantTextUpdate::Replace(text)) => {
+                assert!(text.contains("m=77"));
+            }
+            other => panic!("expected replacement, got {other:?}"),
+        }
+        assert!(normalize_runner_event(serde_json::json!({
+            "type": "assistant_snapshot",
+            "text": ""
+        }))
+        .is_none());
+        let huge = "x".repeat(crate::config::AI_AGENT_EVENT_PAYLOAD_MAX_BYTES);
+        assert!(normalize_runner_event(serde_json::json!({
+            "type": "assistant_snapshot",
+            "text": huge
+        }))
+        .is_none());
+        let mut response = "draft".to_string();
+        let mut response_chars = response.chars().count();
+        if let Some(AssistantTextUpdate::Append(delta)) = assistant_text_update(
+            "assistant_delta",
+            &serde_json::json!({ "delta": " more" }),
+        ) {
+            response_chars =
+                response_chars.saturating_add(delta.chars().count());
+            response.push_str(&delta);
+        }
+        if let Some(AssistantTextUpdate::Replace(text)) =
+            assistant_text_update("assistant_snapshot", &payload)
+        {
+            response.clear();
+            response.push_str(&text);
+            response_chars = text.chars().count();
+        }
+        assert_eq!(response, payload["text"].as_str().unwrap());
+        assert_eq!(response_chars, response.chars().count());
+        assert!(!response.contains("draft"));
+    }
+
+    #[test]
     fn progress_is_one_short_sentence() {
         let (_, payload) = normalize_runner_event(serde_json::json!({
             "type":"progress",
@@ -316,6 +459,31 @@ mod tests {
             }))
             .is_none());
         }
+    }
+
+    #[test]
+    fn citation_events_stay_within_the_payload_cap() {
+        let citations = (0..500)
+            .map(|index| {
+                let prefix = format!("{index:03}-");
+                AiAgentMessageCitation {
+                    message_id: index + 1,
+                    message_identifier: format!(
+                        "{prefix}{}",
+                        "m".repeat(512 - prefix.len())
+                    ),
+                }
+            })
+            .collect::<Vec<_>>();
+        let payloads = citation_event_payloads(&citations);
+        assert!(payloads.len() >= 2);
+        let mut count = 0_usize;
+        for payload in &payloads {
+            let encoded = serde_json::to_vec(payload).unwrap();
+            assert!(encoded.len() <= AI_AGENT_EVENT_PAYLOAD_MAX_BYTES);
+            count += payload["citations"].as_array().unwrap().len();
+        }
+        assert_eq!(count, citations.len());
     }
 
     #[test]

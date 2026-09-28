@@ -10,32 +10,41 @@ const childMockState = vi.hoisted(() => ({
   networkCallsignsError: null as string | null,
   catalogCallsignsError: null as string | null,
   interceptedCallsignsError: null as string | null,
-  period: null as string | null,
+  networkPeriod: null as string | null,
+  catalogPeriod: null as string | null,
+  interceptedPeriod: null as string | null,
 }));
 
-vi.mock('.././NetworkCallsignsNetworkTable', () => ({
+vi.mock('../NetworkCallsignsNetworkTable', () => ({
   NetworkCallsignsNetworkTable: (props: { loadingError: string | null; period: string }) => {
     childMockState.networkCallsignsError = props.loadingError;
-    childMockState.period = props.period;
+    childMockState.networkPeriod = props.period;
     return <div data-testid="network-table">network</div>;
   },
 }));
 
-vi.mock('.././NetworkCallsignsCatalogTable', () => ({
-  NetworkCallsignsCatalogTable: (props: { loadingError: string | null }) => {
+vi.mock('../NetworkCallsignsCatalogTable', () => ({
+  NetworkCallsignsCatalogTable: (props: { loadingError: string | null; period: string }) => {
     childMockState.catalogCallsignsError = props.loadingError;
+    childMockState.catalogPeriod = props.period;
     return <div data-testid="catalog-table">catalog</div>;
   },
 }));
 
-vi.mock('.././NetworkCallsignsInterceptedPanel', () => ({
+vi.mock('../NetworkFreqCallsignPeriodSettings', () => ({
+  NetworkFreqCallsignPeriodSettings: (props: { period: string }) => (
+    <div data-testid="intercepted-period-settings">{props.period}</div>
+  ),
+}));
+
+vi.mock('../NetworkCallsignsInterceptedPanel', () => ({
   NetworkCallsignsInterceptedPanel: (props: { loadingError: string | null }) => {
     childMockState.interceptedCallsignsError = props.loadingError;
     return <div data-testid="intercepted-panel">intercepted</div>;
   },
 }));
 
-import { NetworkDetailsCallsignsPanel } from '.././NetworkCallsignsTables';
+import { NetworkDetailsCallsignsPanel } from '../NetworkCallsignsTables';
 
 type Rendered = {
   container: HTMLDivElement;
@@ -132,7 +141,9 @@ describe('NetworkDetailsCallsignsPanel', () => {
     childMockState.networkCallsignsError = null;
     childMockState.catalogCallsignsError = null;
     childMockState.interceptedCallsignsError = null;
-    childMockState.period = null;
+    childMockState.networkPeriod = null;
+    childMockState.catalogPeriod = null;
+    childMockState.interceptedPeriod = null;
     for (const item of rendered.splice(0)) {
       act(() => {
         item.root.unmount();
@@ -160,8 +171,12 @@ describe('NetworkDetailsCallsignsPanel', () => {
       onSectionModeChange: vi.fn(),
       statusFilter: 'All',
       onStatusFilterChange: vi.fn(),
-      period: 'Last21Days',
-      onPeriodChange: vi.fn(),
+      networkPeriod: 'Last21Days',
+      onNetworkPeriodChange: vi.fn(),
+      catalogPeriod: 'Last7Days',
+      onCatalogPeriodChange: vi.fn(),
+      interceptedPeriod: 'Unlimited',
+      onInterceptedPeriodChange: vi.fn(),
       interceptedExpanded: false,
       onToggleInterceptedExpanded: vi.fn(),
       onOpenCreateDrawer: vi.fn(),
@@ -183,7 +198,11 @@ describe('NetworkDetailsCallsignsPanel', () => {
     expect(view.container.textContent).toContain('network');
     expect(view.container.textContent).toContain('catalog');
     expect(view.container.textContent).toContain('intercepted');
-    expect(childMockState.period).toBe('Last21Days');
+    expect(childMockState.networkPeriod).toBe('Last21Days');
+    expect(childMockState.catalogPeriod).toBe('Last7Days');
+    expect(
+      view.container.querySelector('[data-testid="intercepted-period-settings"]')?.textContent,
+    ).toBe('Unlimited');
     expect(childMockState.networkCallsignsError).toBe('Позивні мережі помилка');
     expect(childMockState.catalogCallsignsError).toBe('Каталог помилка');
     expect(childMockState.interceptedCallsignsError).toBe('Перехоплення помилка');
@@ -217,8 +236,12 @@ describe('NetworkDetailsCallsignsPanel', () => {
       onSectionModeChange: vi.fn(),
       statusFilter: 'All',
       onStatusFilterChange: vi.fn(),
-      period: 'Last21Days',
-      onPeriodChange: vi.fn(),
+      networkPeriod: 'Last21Days',
+      onNetworkPeriodChange: vi.fn(),
+      catalogPeriod: 'Last21Days',
+      onCatalogPeriodChange: vi.fn(),
+      interceptedPeriod: 'Last21Days',
+      onInterceptedPeriodChange: vi.fn(),
       interceptedExpanded: false,
       onToggleInterceptedExpanded: vi.fn(),
       onOpenCreateDrawer: vi.fn(),

@@ -26,6 +26,15 @@ function buildInboxResponse(ids: number[]): InboxMessagesRspRaw {
   };
 }
 
+function buildShortInboxResponse(ids: number[]): InboxMessagesRspRaw {
+  const response = buildInboxResponse(ids);
+  response.inbox_items = ids.map((id) => [
+    id,
+    { ...buildInboxMessage(id), text: `Card ${id}` } as never,
+  ]);
+  return response;
+}
+
 const compactTagIds = Array.from({ length: 18 }, (_, index) => index + 1);
 const compactTagsResponse = compactTagIds.map((id) => [
   id,
@@ -248,6 +257,143 @@ test('restores every feed position through editor tabs and close @regression', a
   await expect(feeds).toHaveCount(2);
   await expectVisibleAnchor(feeds.nth(0).locator('[data-duty-feed-scroller="true"]'), firstAnchor);
   await expectVisibleAnchor(feeds.nth(1).locator('[data-duty-feed-scroller="true"]'), secondAnchor);
+});
+
+// Regression: https://github.com/echoua/echo/issues/3615
+test('#3615 uses real upward wheel input to page an underfilled OFF feed @regression', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 3440, height: 1440 });
+  const olderCursors: number[] = [];
+  await installRerDutyShortStateMocks(page, {
+    userSettingsResponse: { tagsLayout: 'compact', disableAutoScroll: true },
+    inboxResponseForRequest: (request) => {
+      const beforeId = readBeforeId(request);
+      if (beforeId === 196) {
+        olderCursors.push(beforeId);
+        return buildInboxResponse(Array.from({ length: 20 }, (_, index) => index + 176));
+      }
+      if (beforeId != null || readSinceId(request) != null) return buildInboxResponse([]);
+      return buildShortInboxResponse([196, 197, 198, 199, 200]);
+    },
+  });
+
+  await page.goto('/rer-duty-neo?state-short=short-1');
+  const scroller = page.locator('[data-duty-feed-scroller="true"]');
+  await expect(page.locator('[data-duty-message-id]')).toHaveCount(5);
+  await expect
+    .poll(() => scroller.evaluate((element) => element.scrollHeight <= element.clientHeight + 1))
+    .toBe(true);
+
+  const bounds = await scroller.boundingBox();
+  if (!bounds) throw new Error('Duty feed scroller is not visible');
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.mouse.wheel(0, -240);
+
+  await expect.poll(() => olderCursors).toEqual([196]);
+  await expect(page.locator('[data-duty-message-id="176"]')).toBeVisible();
+  await expect
+    .poll(() => scroller.evaluate((element) => element.scrollHeight > element.clientHeight + 1))
+    .toBe(true);
+
+  await scroller.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await page.mouse.wheel(0, 480);
+  await expect.poll(() => scroller.evaluate((element) => element.scrollTop > 0)).toBe(true);
+});
+
+// Regression: https://github.com/echoua/echo/issues/3615
+test('#3615 uses real downward wheel input to page an underfilled historical window @regression', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 3440, height: 1440 });
+  const newerCursors: number[] = [];
+  const olderCursors: number[] = [];
+  await installRerDutyShortStateMocks(page, {
+    userSettingsResponse: { tagsLayout: 'compact', disableAutoScroll: true },
+    inboxResponseForRequest: (request) => {
+      const beforeId = readBeforeId(request);
+      const sinceId = readSinceId(request);
+      if (beforeId != null) {
+        olderCursors.push(beforeId);
+        return buildInboxResponse([]);
+      }
+      if (sinceId === 180) {
+        newerCursors.push(sinceId);
+        return buildInboxResponse(Array.from({ length: 20 }, (_, index) => index + 181));
+      }
+      if (sinceId != null) return buildInboxResponse([]);
+      return buildShortInboxResponse([176, 177, 178, 179, 180]);
+    },
+  });
+
+  await page.goto('/rer-duty-neo?state-short=short-1');
+  const scroller = page.locator('[data-duty-feed-scroller="true"]');
+  await expect(page.locator('[data-duty-message-id]')).toHaveCount(5);
+  await expect
+    .poll(() => scroller.evaluate((element) => element.scrollHeight <= element.clientHeight + 1))
+    .toBe(true);
+
+  const bounds = await scroller.boundingBox();
+  if (!bounds) throw new Error('Duty feed scroller is not visible');
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.mouse.wheel(0, 240);
+
+  await expect.poll(() => newerCursors).toEqual([180]);
+  await expect(page.locator('[data-duty-message-id="181"]')).toBeVisible();
+  expect(olderCursors).toEqual([]);
+});
+
+// Regression: https://github.com/echoua/echo/issues/3615
+test('#3615 preserves native overflow scrolling over a message-card button @regression', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await installRerDutyShortStateMocks(page, {
+    userSettingsResponse: { tagsLayout: 'compact', disableAutoScroll: true },
+    inboxResponse: buildInboxResponse(initialInboxIds),
+  });
+  await page.goto('/rer-duty-neo?state-short=short-1');
+  const scroller = page.locator('[data-duty-feed-scroller="true"]');
+  await expect(page.locator('[data-duty-message-id="40"]')).toBeAttached();
+  await expect
+    .poll(() => scroller.evaluate((element) => element.scrollHeight > element.clientHeight + 1))
+    .toBe(true);
+  await scroller.evaluate(async (element) => {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  });
+  const startingScrollTop = await scroller.evaluate((element) => {
+    const maximumScrollTop = element.scrollHeight - element.clientHeight;
+    if (maximumScrollTop <= 200) throw new Error('Duty feed has no safe interior scroll position');
+    element.scrollTop = Math.round(maximumScrollTop / 2);
+    return element.scrollTop;
+  });
+  expect(startingScrollTop).toBeGreaterThan(0);
+  const cardId = await scroller.evaluate((element) => {
+    const scrollerRect = element.getBoundingClientRect();
+    const card = Array.from(element.querySelectorAll<HTMLElement>('[data-duty-message-id]')).find(
+      (item) => {
+        const rect = item.getBoundingClientRect();
+        return (
+          rect.top >= scrollerRect.top &&
+          rect.bottom <= scrollerRect.bottom &&
+          item.querySelector('button')
+        );
+      },
+    );
+    if (!card?.dataset.dutyMessageId) throw new Error('No fully visible message-card button');
+    return card.dataset.dutyMessageId;
+  });
+  const cardButton = page.locator(`[data-duty-message-id="${cardId}"] button`).first();
+  const bounds = await cardButton.boundingBox();
+  if (!bounds) throw new Error('Message card button is not visible');
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.mouse.wheel(0, 480);
+  await expect
+    .poll(() => scroller.evaluate((element, start) => element.scrollTop > start, startingScrollTop))
+    .toBe(true);
 });
 
 // Regression: https://github.com/echoua/echo/issues/3546

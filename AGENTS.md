@@ -2,6 +2,24 @@
 
 - Read README.md to understand the general project purpose
 
+## Documentation scope
+
+- Keep `README.md` and `docs/README.md` human-readable, system-level overviews.
+  Prefer brevity, but scope matters more than length: cover only topics important
+  to understanding or operating the overall system. Use brief descriptions and
+  links to major components and relevant documentation subsections, leaving
+  detailed explanations at those destinations. Do not treat these overviews as
+  feature inventories, changelogs, or agent work logs.
+- Default to leaving both files unchanged when implementing a feature or fix.
+  Edit them only when existing overview text becomes inaccurate or essential
+  project setup or high-level architecture changes.
+- Put durable feature details, commands, rollout/recovery procedures, and
+  troubleshooting in documentation beside the owning component or a focused
+  `docs/` page. Put task history and validation summaries in the PR or issue.
+- When an overview edit is necessary, update the relevant existing text with
+  the smallest useful change. Do not append a section or link for every feature,
+  or copy implementation steps and detailed instructions into these files.
+
 ## Code style and checking
 
 - keep code formatted with `cargo fmt`
@@ -47,6 +65,13 @@
 - When asked to suggest or draft a commit message, ALWAYS use `.github/skills/conventional-commit-branch-scope/SKILL.md`.
 - Derive commit scope from the current branch name when possible, and do not replace a branch-derived ticket scope with ad hoc module scopes like `palettes` or `navbar`.
 - Do not mention Cursor (or other editor/assistant products) in commit messages; keep summaries about the codebase only.
+
+## Issue dashboard
+
+- The main issue dashboard is https://github.com/orgs/echoua/projects/1/views/1.
+- When asking the user for a ticket number, if `gh` is installed and authenticated, search the project's `Ready` column for relevant issues and suggest existing options with their numbers and links.
+- Also suggest creating a new issue. If the user chooses this option, create the issue, add it to the project, and set its status to `In Progress`.
+- Ensure the selected or newly created issue belongs to the project. Suggest labels (tags) based on similar recent issues in `Done`, `Testing`, and `Ready` from the current user and other users.
 
 ## Changelog
 

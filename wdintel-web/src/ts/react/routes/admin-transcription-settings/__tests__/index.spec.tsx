@@ -64,7 +64,10 @@ function button(label: string): HTMLButtonElement | undefined {
 async function clickButton(label: string) {
   await act(async () => {
     button(label)?.click();
-    await new Promise((resolve) => window.setTimeout(resolve, 410));
+  });
+  // PowerButton/PowerIconButton ignore clicks for 400ms after each press.
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(410);
   });
 }
 
@@ -76,7 +79,9 @@ async function clickDeleteAction() {
   expect(deleteItem).toBeDefined();
   await act(async () => {
     deleteItem?.click();
-    await new Promise((resolve) => window.setTimeout(resolve, 410));
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(410);
   });
 }
 
@@ -102,8 +107,9 @@ async function confirmMutation() {
   expect(document.body.textContent).toContain('wdintel-rs-bgworker');
   await clickButton('Підтвердити');
 }
-describe('AdminTranscriptionSettingsPage', () => {
+describe('AdminTranscriptionSettingsPage', { timeout: 15_000 }, () => {
   beforeEach(() => {
+    vi.useFakeTimers();
     window.history.replaceState({}, '', '/admin/transcription-settings');
     const storage = new Map<string, string>();
     Object.defineProperty(window, 'localStorage', {
@@ -118,6 +124,10 @@ describe('AdminTranscriptionSettingsPage', () => {
         },
         clear: () => {
           storage.clear();
+        },
+        key: (index: number) => Array.from(storage.keys())[index] ?? null,
+        get length() {
+          return storage.size;
         },
       },
     });
@@ -139,7 +149,7 @@ describe('AdminTranscriptionSettingsPage', () => {
 
   afterEach(() => {
     document.body.innerHTML = '';
-    delete (window as { localStorage?: Storage }).localStorage;
+    vi.useRealTimers();
   });
 
   it('redirects to system settings when transcription is disabled', async () => {
@@ -294,7 +304,9 @@ describe('AdminTranscriptionSettingsPage', () => {
     expect(lastPageItem).toBeDefined();
     await act(async () => {
       lastPageItem?.click();
-      await new Promise((resolve) => window.setTimeout(resolve, 410));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(410);
     });
 
     expect(mocks.listResults).toHaveBeenLastCalledWith(

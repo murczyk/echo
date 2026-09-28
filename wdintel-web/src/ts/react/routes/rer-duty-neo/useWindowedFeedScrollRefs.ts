@@ -15,6 +15,8 @@ export function useWindowedFeedScrollRefs(args: {
   isWatchMode: boolean;
   autoScrollAllowed: boolean;
   loadingNewer: boolean;
+  loadingOlder: boolean;
+  hasReachedStart: boolean;
   unreadPrefetchNeeded: boolean;
   pendingNewerFlushNeeded: boolean;
   enabled: boolean;
@@ -57,6 +59,8 @@ export function useWindowedFeedScrollRefs(args: {
   const isWatchModeRef = useRef(args.isWatchMode);
   const autoScrollAllowedRef = useRef(args.autoScrollAllowed);
   const loadingNewerRef = useRef(args.loadingNewer);
+  const loadingOlderRef = useRef(args.loadingOlder);
+  const hasReachedStartRef = useRef(args.hasReachedStart);
   const unreadPrefetchNeededRef = useRef(args.unreadPrefetchNeeded);
   const pendingNewerFlushNeededRef = useRef(args.pendingNewerFlushNeeded);
   const enabledRef = useRef(args.enabled);
@@ -104,6 +108,8 @@ export function useWindowedFeedScrollRefs(args: {
       isWatchModeRef,
       autoScrollAllowedRef,
       loadingNewerRef,
+      loadingOlderRef,
+      hasReachedStartRef,
       unreadPrefetchNeededRef,
       pendingNewerFlushNeededRef,
       enabledRef,
