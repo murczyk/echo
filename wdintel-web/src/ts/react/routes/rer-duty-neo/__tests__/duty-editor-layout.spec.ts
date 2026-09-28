@@ -21,7 +21,7 @@ describe('shouldUseActiveFeedLayout', () => {
     ).toBe(expected);
   });
 
-  it('uses active-only mode while embedded width is not measured', () => {
+  it('keeps all columns mounted until the embedded width is measured', () => {
     expect(
       shouldUseActiveFeedLayout({
         narrowScreen: false,
@@ -29,7 +29,7 @@ describe('shouldUseActiveFeedLayout', () => {
         availableWidth: null,
         feedCount: 4,
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('keeps desktop all-column mode when the editor is closed', () => {

@@ -47,6 +47,8 @@ function isItemFullyVisible(scroller: HTMLElement, target: HTMLElement): boolean
 
 export function useWindowedFeedScroll({
   itemIds,
+  initialAnchorSnapshot = null,
+  onAnchorSnapshotChange,
   loadingOlder,
   loadingNewer = false,
   hasReachedStart,
@@ -88,6 +90,7 @@ export function useWindowedFeedScroll({
     pendingNewerFlushNeeded,
     enabled,
   });
+  const initialAnchorSnapshotRef = useRef(initialAnchorSnapshot);
   const enabledBeforeRender = refs.enabledRef.current;
   refs.isWatchModeRef.current = isWatchMode;
   refs.autoScrollAllowedRef.current = autoScrollAllowed;
@@ -142,6 +145,7 @@ export function useWindowedFeedScroll({
     bottomLoadBufferPx,
     atBottomThresholdPx,
     unreadPrefetchNeeded,
+    onAnchorSnapshotChange,
   });
 
   useLayoutEffect(() => {
@@ -251,9 +255,9 @@ export function useWindowedFeedScroll({
       cancelAnimationFrame(directItemCenterRafRef.current);
       directItemCenterRafRef.current = null;
     }
-    if (wasActive) refs.anchorSnapshotRef.current = null;
+    if (wasActive) anchors.setAnchorSnapshot(null);
     if (wasActive) recordDutyScrollDebugEvent(debugFeedId, 'item-tracking:stop');
-  }, [debugFeedId, refs]);
+  }, [anchors, debugFeedId]);
 
   useEffect(() => stopDirectItemTracking, [stopDirectItemTracking]);
 
@@ -387,7 +391,7 @@ export function useWindowedFeedScroll({
       refs.previousResetKeyRef.current = resetKey;
       refs.hasInitialScrolledRef.current = false;
       refs.hasSeenNotAtBottomRef.current = false;
-      refs.anchorSnapshotRef.current = null;
+      anchors.setAnchorSnapshot(null);
       refs.preserveBottomAnchorRef.current = false;
       follow.stopBottomSettle();
       // A wait/ease armed for the previous feed would land on the reset result and
@@ -421,6 +425,25 @@ export function useWindowedFeedScroll({
       stopPendingAnchorRestore();
       refs.previousItemIdsRef.current = currentItemIds;
       if (!initialPositioningReady) {
+        anchors.captureAnchorSnapshot();
+        return;
+      }
+      const savedAnchorSnapshot = initialAnchorSnapshotRef.current;
+      initialAnchorSnapshotRef.current = null;
+      if (savedAnchorSnapshot) {
+        refs.hasInitialScrolledRef.current = true;
+        refs.liveBottomFollowRef.current = false;
+        anchors.setAnchorSnapshot(savedAnchorSnapshot);
+        const restoreOutcome = anchors.restoreAnchorPosition({
+          settleSynchronousLayout: true,
+          settleUpperClamp: true,
+        });
+        if (restoreOutcome === 'pending') schedulePendingAnchorRestore();
+        tracking.updateScrollState({
+          allowLoadOlder: false,
+          allowLoadNewer: false,
+          allowTopReached: false,
+        });
         anchors.captureAnchorSnapshot();
         return;
       }

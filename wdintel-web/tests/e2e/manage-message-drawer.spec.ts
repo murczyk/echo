@@ -15,16 +15,12 @@ type ManageMessageDrawerHost = 'duty' | 'analysis';
 type LinkedMessageKind =
   'with-report' | 'forwarded-report' | 'own-report-without-accessible-parent';
 
-async function expectEmbeddedEditor(page: Page, host: ManageMessageDrawerHost) {
+async function expectEmbeddedEditor(page: Page) {
   const editor = page.locator('[data-manage-message-presentation="embedded"]');
   await expect(editor).toBeVisible();
   await expect(page.locator('.MuiBackdrop-root:visible')).toHaveCount(0);
   const width = await editor.evaluate((element) => element.getBoundingClientRect().width);
   expect(width).toBeGreaterThan(0);
-  if (host === 'duty') {
-    expect(width).toBeGreaterThanOrEqual(439.5);
-    expect(width).toBeLessThanOrEqual(640.5);
-  }
   const surfaceStyle = await editor.evaluate((element) => {
     const style = getComputedStyle(element);
     return { animationDuration: style.animationDuration, boxShadow: style.boxShadow };
@@ -156,7 +152,7 @@ async function openOverflowingMessageEditor(page: Page, host: ManageMessageDrawe
   await expect(page.getByText('Analysis narrow fixture message 0')).toBeVisible();
   await page.getByRole('button', { name: 'Додати повідомлення' }).click();
   await expect(page.getByRole('heading', { name: 'Створити повідомлення' })).toBeVisible();
-  await expectEmbeddedEditor(page, host);
+  await expectEmbeddedEditor(page);
 }
 
 async function openCreateEditorWithLinkedMessage(
@@ -181,7 +177,7 @@ async function openCreateEditorWithLinkedMessage(
   if (dutyMocks) await dutyMocks.systemSettingsReady;
   await expect(page.getByText('E2E source for dirty replacement')).toBeVisible();
   await page.getByRole('button', { name: 'Додати повідомлення' }).click();
-  await expectEmbeddedEditor(page, host);
+  await expectEmbeddedEditor(page);
 }
 
 test.describe('@smoke manage message drawer linked-message regressions', () => {
@@ -202,6 +198,16 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
     await expect(page.locator('[data-manage-message-presentation]')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Додати повідомлення' })).toBeFocused();
     await expect(page.locator('[data-manage-message-focus-fallback]')).not.toBeFocused();
+  });
+
+  test('duty restores focus to the create action after closing with Escape', async ({ page }) => {
+    await openCreateMessageDrawer(page, 'duty');
+
+    await page.getByRole('textbox', { name: 'Текст повідомлення' }).press('Escape');
+
+    await expect(page.locator('[data-manage-message-presentation]')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Додати повідомлення' })).toBeFocused();
+    await expect(page.locator('[data-manage-message-focus-fallback]')).toHaveCount(0);
   });
 
   test('ownership journey preserves manual fields while parsed values follow source text', async ({
@@ -264,7 +270,7 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
     }) => {
       await page.setViewportSize({ width: 1280, height: 800 });
       await openCreateMessageDrawer(page, host);
-      await expectEmbeddedEditor(page, host);
+      await expectEmbeddedEditor(page);
       const source = page.getByRole('textbox', { name: 'Текст повідомлення' });
       await source.fill(`${host} responsive draft`);
 
@@ -273,23 +279,19 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       await expect(source).toHaveValue(`${host} responsive draft`);
 
       await page.setViewportSize({ width: 1024, height: 800 });
-      await expectEmbeddedEditor(page, host);
+      await expectEmbeddedEditor(page);
       await expect(source).toHaveValue(`${host} responsive draft`);
 
       await page.getByRole('button', { name: 'Скасувати', exact: true }).click();
       await page.getByRole('button', { name: 'Відхилити зміни' }).click();
       await expect(page.locator('[data-manage-message-presentation]')).toHaveCount(0);
-      await expect(
-        host === 'analysis'
-          ? page.getByRole('button', { name: 'Додати повідомлення' })
-          : page.locator('[data-manage-message-focus-fallback]'),
-      ).toBeFocused();
+      await expect(page.getByRole('button', { name: 'Додати повідомлення' })).toBeFocused();
     });
     test(`${host} edits a message with an intelligence report as a message`, async ({ page }) => {
       await openLinkedMessageEditDrawer(page, host, 'with-report');
 
       await expect(page.getByRole('heading', { name: 'Редагувати повідомлення' })).toBeVisible();
-      await expectEmbeddedEditor(page, host);
+      await expectEmbeddedEditor(page);
       await expect(page.getByRole('heading', { name: 'Редагувати розвіддонесення' })).toHaveCount(
         0,
       );
@@ -310,7 +312,7 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       );
 
       await expect(page.getByRole('heading', { name: 'Редагувати розвіддонесення' })).toBeVisible();
-      await expectEmbeddedEditor(page, host);
+      await expectEmbeddedEditor(page);
       await expect(page.getByRole('heading', { name: 'Редагувати повідомлення' })).toHaveCount(0);
       expect(drawer.getCopyRequestCount()).toBe(0);
     });
@@ -430,21 +432,59 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       ]),
     };
     const dutyMocks = await installRerDutyShortStateMocks(page, { shortState });
-    await page.setViewportSize({ width: 1280, height: 800 });
+    const scenarios = [
+      { width: 1024, visibleFeeds: 1, tabsVisible: true, density: 'single', mainColumns: 1 },
+      { width: 1280, visibleFeeds: 1, tabsVisible: true, density: 'compact', mainColumns: 1 },
+      { width: 1440, visibleFeeds: 1, tabsVisible: true, density: 'compact', mainColumns: 1 },
+      { width: 1600, visibleFeeds: 1, tabsVisible: true, density: 'compact', mainColumns: 2 },
+      { width: 3440, visibleFeeds: 4, tabsVisible: false, density: 'wide', mainColumns: 2 },
+    ];
+    await page.setViewportSize({ width: scenarios[0]!.width, height: 800 });
     await page.goto('/rer-duty-neo?state-short=short-1');
     await dutyMocks.systemSettingsReady;
-    await expect(page.locator('[data-duty-feed-column]')).toHaveCount(4);
 
-    await page.getByRole('button', { name: 'Додати повідомлення' }).click();
-    await expectEmbeddedEditor(page, 'duty');
-    await expect(page.getByRole('tablist', { name: 'Стрічки' })).toBeVisible();
-    await expect(page.locator('[data-duty-feed-column]')).toHaveCount(1);
+    for (const scenario of scenarios) {
+      await page.setViewportSize({ width: scenario.width, height: 800 });
+      await expect(page.locator('[data-duty-feed-column]')).toHaveCount(4);
 
-    await page.getByRole('button', { name: 'Скасувати', exact: true }).click();
-    await expect(page.locator('[data-duty-feed-column]')).toHaveCount(4);
+      await page.getByRole('button', { name: 'Додати повідомлення' }).click();
+      const editor = page.locator('[data-manage-message-presentation="embedded"]');
+      await expect(editor).toBeVisible();
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const workspace = document
+              .querySelector<HTMLElement>('[data-duty-workspace-main]')
+              ?.getBoundingClientRect();
+            const editorBounds = document
+              .querySelector<HTMLElement>('[data-manage-message-presentation="embedded"]')
+              ?.getBoundingClientRect();
+            return workspace && editorBounds ? editorBounds.width - workspace.width : null;
+          }),
+        )
+        .toBeCloseTo(0, 0);
+      await expect(page.getByRole('tablist', { name: 'Стрічки' })).toHaveCount(
+        scenario.tabsVisible ? 1 : 0,
+      );
+      await expect(page.locator('[data-duty-feed-column]')).toHaveCount(scenario.visibleFeeds);
+      await expect(page.locator('#create-message-form')).toHaveAttribute(
+        'data-manage-message-form-layout',
+        scenario.density,
+      );
+      await expect
+        .poll(() =>
+          page
+            .locator('#create-message-form')
+            .evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length),
+        )
+        .toBe(scenario.mainColumns);
+
+      await page.getByRole('button', { name: 'Скасувати', exact: true }).click();
+      await expect(page.locator('[data-duty-feed-column]')).toHaveCount(4);
+    }
   });
 
-  test('Duty keeps a lone feed card inside the remaining workspace width', async ({ page }) => {
+  test('Duty gives the feed and adaptive editor equal tracks with an 8px gap', async ({ page }) => {
     await page.setViewportSize({ width: 1220, height: 800 });
     const inboxResponse = buildMessageCardMediaPreviewInboxResponse({
       messageText: 'E2E responsive card width',
@@ -458,7 +498,7 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
     await expect(page.getByText('E2E responsive card width')).toBeVisible();
 
     await page.getByRole('button', { name: 'Додати повідомлення' }).click();
-    await expectEmbeddedEditor(page, 'duty');
+    await expectEmbeddedEditor(page);
     await page
       .locator('[data-manage-message-presentation="embedded"]')
       .evaluate((element) =>
@@ -477,18 +517,54 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
         ?.getBoundingClientRect();
       return workspace && card && editor
         ? {
+            workspaceWidth: workspace.width,
             workspaceLeft: workspace.left,
             workspaceRight: workspace.right,
             cardLeft: card.left,
             cardRight: card.right,
             editorLeft: editor.left,
+            editorWidth: editor.width,
+            editorBackground: getComputedStyle(
+              document.querySelector<HTMLElement>('[data-manage-message-presentation="embedded"]')!,
+            ).backgroundColor,
+            editorBorderLeft: getComputedStyle(
+              document.querySelector<HTMLElement>('[data-manage-message-presentation="embedded"]')!,
+            ).borderLeftStyle,
           }
         : null;
     });
     expect(bounds).not.toBeNull();
     expect(bounds!.cardLeft).toBeGreaterThanOrEqual(bounds!.workspaceLeft);
     expect(bounds!.cardRight).toBeLessThanOrEqual(bounds!.workspaceRight);
-    expect(bounds!.editorLeft - bounds!.workspaceRight).toBeCloseTo(16, 0);
+    expect(bounds!.editorLeft - bounds!.workspaceRight).toBeCloseTo(8, 0);
+    expect(bounds!.editorWidth).toBeCloseTo(bounds!.workspaceWidth, 0);
+    expect(bounds!.editorBackground).toBe('rgba(0, 0, 0, 0)');
+    expect(bounds!.editorBorderLeft).toBe('none');
+    await expect(page.locator('#create-message-form')).toHaveAttribute(
+      'data-manage-message-form-layout',
+      'compact',
+    );
+    await expect
+      .poll(() =>
+        page
+          .locator('#create-message-form')
+          .evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length),
+      )
+      .toBe(1);
+    await expect
+      .poll(() =>
+        page.getByLabel('Дата перехоплення').evaluate((element) => {
+          const form = element.closest('form');
+          let parent = element.parentElement;
+          while (parent && parent !== form) {
+            const style = getComputedStyle(parent);
+            if (style.display === 'grid') return style.gridTemplateColumns.split(' ').length;
+            parent = parent.parentElement;
+          }
+          return 0;
+        }),
+      )
+      .toBe(2);
   });
 
   test('Analysis editor follows the fluid right track from 1024px through ultrawide', async ({
@@ -777,7 +853,7 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
     await expect(dock.locator('[data-analysis-dock-panel="analytics"]')).toBeVisible();
 
     await page.getByRole('button', { name: 'Додати повідомлення' }).click();
-    await expectEmbeddedEditor(page, 'analysis');
+    await expectEmbeddedEditor(page);
     await expect(page.getByRole('button', { name: 'Додати повідомлення' })).toHaveCount(0);
     await expect(dock.locator('[data-analysis-dock-panel="analytics"]')).toHaveCount(0);
     await expect(dock.getByRole('tablist')).toHaveCount(0);

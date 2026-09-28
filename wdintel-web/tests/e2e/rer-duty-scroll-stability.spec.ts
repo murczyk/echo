@@ -103,6 +103,13 @@ async function readVisibleAnchor(scroller: Locator) {
   });
 }
 
+async function expectVisibleAnchor(scroller: Locator, expected: { id: number; offsetTop: number }) {
+  await expect.poll(async () => (await readVisibleAnchor(scroller)).id).toBe(expected.id);
+  await expect
+    .poll(async () => Math.abs((await readVisibleAnchor(scroller)).offsetTop - expected.offsetTop))
+    .toBeLessThan(1);
+}
+
 async function readAnchorOffset(anchor: Locator) {
   return anchor.evaluate((element) => {
     const scroller = element.closest('[data-duty-feed-scroller="true"]')!;
@@ -117,6 +124,131 @@ async function readBottomDistance(scroller: Locator) {
 }
 
 const initialInboxIds = Array.from({ length: 40 }, (_, index) => index + 1);
+
+test('keeps every feed position and the last scroll action inset while the editor opens @regression', async ({
+  page,
+}) => {
+  const shortState = {
+    waterfalls: Array.from({ length: 2 }, (_, index) => [
+      `mf-${index}`,
+      {
+        groups_selected: null,
+        groups_denied: null,
+        senders_selected: null,
+        denied_senders: null,
+        freqs_selected: null,
+        freqs_denied: null,
+        posts_selected: null,
+        posts_denied: null,
+        units_selected: null,
+        units_denied: null,
+        selected_unit_ids: null,
+        denied_unit_ids: null,
+        selected_device_names: null,
+        denied_device_names: null,
+        units_exact_match_only: null,
+        last_viewed_message_id: null,
+        highlight_keywords_enabled: null,
+        highlight_keyword_set_id: null,
+      },
+    ]),
+  };
+  await page.setViewportSize({ width: 1600, height: 900 });
+  const fixture = await installRerDutyShortStateMocks(page, {
+    shortState,
+    inboxResponseForRequest: (request) =>
+      readBeforeId(request) != null || readSinceId(request) != null
+        ? buildInboxResponse([])
+        : buildInboxResponse(initialInboxIds),
+  });
+
+  await page.goto('/rer-duty-neo?state-short=short-1');
+  await fixture.systemSettingsReady;
+  const feeds = page.locator('[data-duty-feed-column]');
+  await expect(page.locator('[data-duty-feed-column]')).toHaveCount(2);
+  const firstScroller = feeds.nth(0).locator('[data-duty-feed-scroller="true"]');
+  const lastScroller = feeds.nth(1).locator('[data-duty-feed-scroller="true"]');
+  await setBottomDistance(firstScroller, 320);
+  await setBottomDistance(lastScroller, 200);
+  const firstAnchor = await readVisibleAnchor(firstScroller);
+  const lastAnchor = await readVisibleAnchor(lastScroller);
+  await expect(feeds.last().locator('[data-duty-feed-scroll-button]')).toHaveAttribute(
+    'data-duty-right-offset',
+    '59px',
+  );
+
+  await page.getByRole('button', { name: 'Додати повідомлення' }).click();
+
+  await expect(page.locator('[data-manage-message-presentation="embedded"]')).toBeVisible();
+  await expect(page.locator('[data-duty-feed-column]')).toHaveCount(2);
+  await expectVisibleAnchor(firstScroller, firstAnchor);
+  await expectVisibleAnchor(lastScroller, lastAnchor);
+  await expect(feeds.last().locator('[data-duty-feed-scroll-button]')).toHaveAttribute(
+    'data-duty-right-offset',
+    '20px',
+  );
+});
+
+test('restores every feed position through editor tabs and close @regression', async ({ page }) => {
+  const shortState = {
+    waterfalls: Array.from({ length: 2 }, (_, index) => [
+      `mf-${index}`,
+      {
+        groups_selected: null,
+        groups_denied: null,
+        senders_selected: null,
+        denied_senders: null,
+        freqs_selected: null,
+        freqs_denied: null,
+        posts_selected: null,
+        posts_denied: null,
+        units_selected: null,
+        units_denied: null,
+        selected_unit_ids: null,
+        denied_unit_ids: null,
+        selected_device_names: null,
+        denied_device_names: null,
+        units_exact_match_only: null,
+        last_viewed_message_id: null,
+        highlight_keywords_enabled: null,
+        highlight_keyword_set_id: null,
+      },
+    ]),
+  };
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const fixture = await installRerDutyShortStateMocks(page, {
+    shortState,
+    inboxResponseForRequest: (request) =>
+      readBeforeId(request) != null || readSinceId(request) != null
+        ? buildInboxResponse([])
+        : buildInboxResponse(initialInboxIds),
+  });
+
+  await page.goto('/rer-duty-neo?state-short=short-1');
+  await fixture.systemSettingsReady;
+  const feeds = page.locator('[data-duty-feed-column]');
+  await expect(feeds).toHaveCount(2);
+  const firstScroller = feeds.nth(0).locator('[data-duty-feed-scroller="true"]');
+  const secondScroller = feeds.nth(1).locator('[data-duty-feed-scroller="true"]');
+  await setBottomDistance(firstScroller, 360);
+  await setBottomDistance(secondScroller, 180);
+  const firstAnchor = await readVisibleAnchor(firstScroller);
+  const secondAnchor = await readVisibleAnchor(secondScroller);
+
+  await page.getByRole('button', { name: 'Додати повідомлення' }).click();
+
+  await expect(page.getByRole('tab', { name: 'Стрічка 1' })).toBeVisible();
+  await expectVisibleAnchor(page.locator('[data-duty-feed-scroller="true"]'), firstAnchor);
+
+  await page.getByRole('tab', { name: 'Стрічка 2' }).click();
+  await expectVisibleAnchor(page.locator('[data-duty-feed-scroller="true"]'), secondAnchor);
+
+  await page.getByRole('button', { name: 'Скасувати', exact: true }).click();
+
+  await expect(feeds).toHaveCount(2);
+  await expectVisibleAnchor(feeds.nth(0).locator('[data-duty-feed-scroller="true"]'), firstAnchor);
+  await expectVisibleAnchor(feeds.nth(1).locator('[data-duty-feed-scroller="true"]'), secondAnchor);
+});
 
 // Regression: https://github.com/echoua/echo/issues/3546
 test('uses creation time for Duty ordering and display with an event-time Analysis preference @smoke @regression', async ({

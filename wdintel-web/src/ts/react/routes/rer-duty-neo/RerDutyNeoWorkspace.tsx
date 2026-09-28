@@ -1,7 +1,7 @@
 import { Backdrop, Box, ButtonBase, CircularProgress, Skeleton, Tooltip } from '@mui/material';
 import { isPresent } from '../../utils/misc';
-import { useCallback, useState } from 'react';
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { Dispatch, MutableRefObject, Ref, SetStateAction } from 'react';
 
 import { FeedColumn, type FeedColumnHandle } from './FeedColumn';
 import type { FeedColumnModel } from './types';
@@ -15,6 +15,7 @@ import { CreateMessageFab } from '../shared/manage-message/CreateMessageFab';
 import { DUTY_WORKSPACE_CREATE_MESSAGE_RIGHT_INSET } from '../shared/manage-message/floating-control-geometry';
 import { useObservedWidth } from '../../hooks/use-observed-width';
 import { shouldUseActiveFeedLayout } from './duty-editor-layout';
+import type { AnchorSnapshot } from './windowed-feed-scroll-shared';
 
 function dutyFeedColumnMaxWidth(feedCount: number, narrow: boolean): string {
   if (narrow) return '100%';
@@ -263,6 +264,7 @@ type RerDutyNeoWorkspaceProps = {
   buildFeedColumnModel: (feed: MessageFeedState) => FeedColumnModel;
   columnRefsRef: MutableRefObject<Record<string, FeedColumnHandle | null>>;
   createMessageFeed: () => void;
+  createMessageFabRef?: Ref<HTMLButtonElement>;
   openCreateMessageComposer: () => void;
   isInitialLoading: boolean;
   messageFeeds: MessageFeedState[];
@@ -278,6 +280,7 @@ export function RerDutyNeoWorkspace({
   buildFeedColumnModel,
   columnRefsRef,
   createMessageFeed,
+  createMessageFabRef,
   openCreateMessageComposer,
   isInitialLoading,
   messageFeeds,
@@ -291,6 +294,20 @@ export function RerDutyNeoWorkspace({
   const [feedsWithOpenPanels, setFeedsWithOpenPanels] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  const feedScrollAnchorsRef = useRef(new Map<string, AnchorSnapshot>());
+  const handleScrollAnchorSnapshotChange = useCallback(
+    (feedId: string, snapshot: AnchorSnapshot | null) => {
+      if (snapshot) feedScrollAnchorsRef.current.set(feedId, snapshot);
+      else feedScrollAnchorsRef.current.delete(feedId);
+    },
+    [],
+  );
+  useEffect(() => {
+    const activeFeedIds = new Set(messageFeeds.map((feed) => feed.id));
+    for (const feedId of feedScrollAnchorsRef.current.keys()) {
+      if (!activeFeedIds.has(feedId)) feedScrollAnchorsRef.current.delete(feedId);
+    }
+  }, [messageFeeds]);
   const handlePanelOpenChange = useCallback((feedId: string, panelOpen: boolean) => {
     setFeedsWithOpenPanels((current) => {
       if (current.has(feedId) === panelOpen) return current;
@@ -324,6 +341,9 @@ export function RerDutyNeoWorkspace({
             ...column.view,
             scrollTrackingEnabled: true,
             workspaceFabAvoidance: 'above' as const,
+            initialScrollAnchorSnapshot:
+              feedScrollAnchorsRef.current.get(activeOnlyFeed.id) ?? null,
+            onScrollAnchorSnapshotChange: handleScrollAnchorSnapshotChange,
           },
           actions: {
             ...column.actions,
@@ -511,9 +531,12 @@ export function RerDutyNeoWorkspace({
                       // A lone desktop feed owns its scroll action; only multi-feed layouts need
                       // to reserve horizontal space for the workspace-level create action.
                       workspaceFabAvoidance:
-                        messageFeeds.length > 1 && index === messageFeeds.length - 1
+                        !editorOpen && messageFeeds.length > 1 && index === messageFeeds.length - 1
                           ? 'left'
                           : 'none',
+                      initialScrollAnchorSnapshot:
+                        feedScrollAnchorsRef.current.get(feed.id) ?? null,
+                      onScrollAnchorSnapshotChange: handleScrollAnchorSnapshotChange,
                     };
                     return (
                       <FeedColumn
@@ -544,6 +567,7 @@ export function RerDutyNeoWorkspace({
       )}
       {!editorOpen && feedsWithOpenPanels.size === 0 ? (
         <CreateMessageFab
+          ref={createMessageFabRef}
           onClick={openCreateMessageComposer}
           rightInset={DUTY_WORKSPACE_CREATE_MESSAGE_RIGHT_INSET}
         />

@@ -47,6 +47,7 @@ import { dutyTopScrollButtonSx } from './top-action-styles';
 import { useWindowedFeedScroll } from './useWindowedFeedScroll';
 import {
   ScrollNavigationIntent,
+  type AnchorSnapshot,
   type ExplicitScrollNavigation,
 } from './windowed-feed-scroll-shared';
 import { useFeedIdleViewportOffload } from './useFeedIdleViewportOffload';
@@ -636,6 +637,8 @@ export const FeedColumnContent = memo(
       unreadPrefetchNeeded = true,
       pendingNewerFlushNeeded = false,
       workspaceFabAvoidance = 'none',
+      initialScrollAnchorSnapshot = null,
+      onScrollAnchorSnapshotChange,
     } = view;
     const {
       authUserName,
@@ -691,8 +694,16 @@ export const FeedColumnContent = memo(
       [networkMap],
     );
     const itemIds = useMemo(() => feed.items.map(([id]) => id), [feed.items]);
+    const handleAnchorSnapshotChange = useCallback(
+      (snapshot: AnchorSnapshot | null) => {
+        onScrollAnchorSnapshotChange?.(feed.id, snapshot);
+      },
+      [feed.id, onScrollAnchorSnapshotChange],
+    );
     const scroll = useWindowedFeedScroll({
       itemIds,
+      initialAnchorSnapshot: initialScrollAnchorSnapshot,
+      onAnchorSnapshotChange: handleAnchorSnapshotChange,
       debugFeedId: feed.id,
       isWatchMode,
       autoScrollAllowed,
