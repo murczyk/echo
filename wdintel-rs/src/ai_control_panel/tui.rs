@@ -1,6 +1,8 @@
 use super::{session_log::SessionLog, Options};
 use crate::{
-    config::{AI_CONTROL_PANEL_LOG_LINES, AI_CONTROL_PANEL_POLL_MS},
+    config::{
+        AI_CONTROL_PANEL_LOG_LINES, AI_CONTROL_PANEL_POLL_MS, APP_BUILD_VERSION,
+    },
     h,
     types::{Mode, ShortContext},
 };
@@ -407,7 +409,7 @@ pub fn run(mode: Mode, mut options: Options) -> anyhow::Result<()> {
     app.log(format!(
         "Session started: mode={mode}, repo={}, build={}",
         options.repo.display(),
-        include_str!("../../version.txt").trim()
+        APP_BUILD_VERSION
     ));
     let result = run_terminal(&mut app, mode, &options);
     app.poll();

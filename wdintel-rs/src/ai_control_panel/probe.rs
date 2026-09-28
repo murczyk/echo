@@ -1,5 +1,6 @@
 use crate::config::{
     read_config, AI_AGENT_HARNESS_RELEASE, AI_CONTROL_PANEL_LOCK_KEY,
+    APP_BUILD_VERSION,
 };
 use crate::h;
 use crate::types::{Mode, ShortContext};
@@ -197,7 +198,7 @@ pub async fn inspect(mode: Mode) -> anyhow::Result<Value> {
     result["running_match"] = json!(running.matches);
     result["running_details"] = json!(running.details);
     result["running_processes"] = json!(running.processes);
-    result["build"] = json!(include_str!("../../version.txt").trim());
+    result["build"] = json!(APP_BUILD_VERSION);
     Ok(result)
 }
 
