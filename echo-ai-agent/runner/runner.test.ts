@@ -598,14 +598,14 @@ test("passes an inherited callsign through applicable analysis tools", () => {
   assert.deepEqual(analysisPeriodRequestBody(params, context), {
     since_date_inclusive_ms: Date.parse("2026-07-04T21:00:00Z"),
     till_date_noninclusive_ms: Date.parse("2026-08-04T21:00:00Z"),
-    selected_callsigns: ["Сивий"],
+    selected_callsigns: ["сивий"],
   });
   assert.deepEqual(inboxMessagesRequestBody(params, context), {
     since_date_inclusive_ms: Date.parse("2026-07-04T21:00:00Z"),
     till_date_inclusive_ms: Date.parse("2026-08-04T21:00:00Z") - 1,
     newest_first: true,
     skip_group_stats: true,
-    selected_callsigns: ["Сивий"],
+    selected_callsigns: ["сивий"],
   });
 });
 
@@ -899,7 +899,7 @@ test("guides last-three-days gist follow-ups through inbox pagination and UID co
   );
   assert.match(prompt, /inherit the most recent period, group scope/);
   assert.match(prompt, /named subjects, and callsigns/);
-  assert.match(prompt, /selectedCallsigns on every applicable tool/);
+  assert.match(prompt, /BOTH message-text search and extracted-callsign search/);
   assert.match(prompt, /following every returned next cursor/);
   assert.match(prompt, /using a UID returned with an inbox message/);
   assert.match(prompt, /“за останню добу” mean the rolling 24 hours/);
@@ -908,11 +908,35 @@ test("guides last-three-days gist follow-ups through inbox pagination and UID co
   assert.match(prompt, /Copy the citation field from the message unchanged/);
 });
 
+test("states the exact 90-day callsign windows for a fixed Kyiv instant", () => {
+  const prompt = systemPrompt(
+    validatePayload(
+      {
+        ...normalPayload,
+        timeContext: {
+          timeZone: "Europe/Kyiv",
+          requestStartedAtUtc: "2026-09-28T12:00:00Z",
+        },
+      },
+      false,
+    ),
+  );
+  assert.match(
+    prompt,
+    /\[\{"kind":"date_range","sinceDate":"2026-08-29","tillDateInclusive":"2026-09-28"\},\{"kind":"date_range","sinceDate":"2026-07-29","tillDateInclusive":"2026-08-28"\},\{"kind":"date_range","sinceDate":"2026-07-01","tillDateInclusive":"2026-07-28"\}\]/,
+  );
+  assert.match(
+    prompt,
+    /equipment, an acronym, or otherwise does not identify the person/,
+  );
+  assert.match(prompt, /Explicit user periods still take precedence/);
+});
+
 test("announces the runner protocol and harness release", () => {
   assert.deepEqual(runnerHello(), {
     type: "runner_hello",
     protocolVersion: 1,
-    harnessRelease: "2026.09.27.3",
+    harnessRelease: "2026.09.28.1",
   });
 });
 

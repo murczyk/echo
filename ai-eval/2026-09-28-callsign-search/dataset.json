@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "callsign-search",
+  "revision": "2026-09-28.2",
+  "category": "callsign-search",
+  "skills": [
+    "current_user",
+    "inbox_messages",
+    "messages_by_id",
+    "interception_context"
+  ],
+  "caseFiles": [
+    "cases.json",
+    "raw/cases-v1.json"
+  ],
+  "artifacts": {
+    "cases.json": "7b7cb53561b5c00466bd8c112fa6d41c10782dc0f3a60a4a96a1b1391864a956",
+    "raw/cases-v1.json": "4eebcd796458c7f8d5003809a386eb73236b55d4402f7e0f05b6c27e40a86ccf"
+  }
+}
