@@ -80,29 +80,41 @@ tests =
                                 Shared.update route (Msg.EventServiceEventsReceived (Err (httpError 500))) shared
                         in
                         Expect.equal ( True, 1 ) ( updated.eventService.isPolling, updated.eventService.retryCount )
-        , test "persistent event failure is reported once while polling keeps retrying" <|
+        , test "temporary event failures do not consume the persistent error notification" <|
             \_ ->
                 withSession <|
                     \route shared ->
                         let
-                            eventService =
-                                shared.eventService
+                            fail failure state =
+                                Shared.update route (Msg.EventServiceEventsReceived (Err (apiError failure))) state
 
-                            exhausted =
-                                { shared | eventService = { eventService | retryCount = 5, retryDelay = 30000 } }
+                            interrupted =
+                                List.range 1 8
+                                    |> List.foldl (\_ state -> fail Http.NetworkError state |> Tuple.first) shared
 
-                            ( updated, persistentFailureEffect ) =
-                                Shared.update route (Msg.EventServiceEventsReceived (Err (httpError 500))) exhausted
+                            ( unexpected, firstEffect ) =
+                                fail (Http.BadStatus 403) interrupted
 
-                            ( _, laterFailureEffect ) =
-                                Shared.update route (Msg.EventServiceEventsReceived (Err (httpError 500))) updated
+                            ( _, repeatedEffect ) =
+                                fail (Http.BadStatus 403) unexpected
+
+                            ( recovered, _ ) =
+                                Shared.update route (Msg.EventServiceEventsReceived (Ok { events = [], lastEventId = Just "recovered", deploymentMaintenance = Nothing })) unexpected
                         in
                         Expect.all
-                            [ \_ -> Expect.equal True updated.eventService.isPolling
-                            , \_ -> Expect.equal 6 updated.eventService.retryCount
-                            , \_ -> Expect.equal 30000 updated.eventService.retryDelay
-                            , \_ -> Expect.equal True (isBatchEffect persistentFailureEffect)
-                            , \_ -> Expect.equal False (isBatchEffect laterFailureEffect)
+                            [ \_ -> Expect.equal True interrupted.eventService.isPolling
+                            , \_ -> Expect.equal True interrupted.eventService.connectionInterrupted
+                            , \_ -> Expect.equal False interrupted.eventService.persistentErrorReported
+                            , \_ -> Expect.equal 8 interrupted.eventService.retryCount
+                            , \_ -> Expect.equal 30000 interrupted.eventService.retryDelay
+                            , \_ -> Expect.equal False unexpected.eventService.connectionInterrupted
+                            , \_ -> Expect.equal True unexpected.eventService.persistentErrorReported
+                            , \_ -> Expect.equal True (isBatchEffect firstEffect)
+                            , \_ -> Expect.equal False (isBatchEffect repeatedEffect)
+                            , \_ -> Expect.equal False recovered.eventService.connectionInterrupted
+                            , \_ -> Expect.equal False recovered.eventService.persistentErrorReported
+                            , \_ -> Expect.equal 0 recovered.eventService.retryCount
+                            , \_ -> Expect.equal (Just "recovered") recovered.eventService.lastEventId
                             ]
                             ()
         , test "keep-alive 401 stops queued ticks and ignores late responses" <|
@@ -114,7 +126,8 @@ tests =
                                 Navbar.init ()
 
                             ( stopped, effect ) =
-                                Navbar.update route (Navbar.KeepAliveDone (Err (httpError 401))) navbar
+                                Navbar.update route (Navbar.KeepAliveDone (Err (httpError 401)))
+                                    { navbar | connectionInterrupted = True }
 
                             ( afterLateResponse, _ ) =
                                 Navbar.update route (Navbar.KeepAliveDone (Ok ())) stopped
@@ -124,27 +137,91 @@ tests =
                         in
                         Expect.all
                             [ \_ -> Expect.equal True stopped.keepAliveStopped
+                            , \_ -> Expect.equal False stopped.connectionInterrupted
                             , \_ -> Expect.equal E.logout effect
                             , \_ -> Expect.equal E.none tickEffect
                             ]
                             ()
-        , test "temporary keep-alive errors are surfaced without ending the session" <|
-            \_ ->
-                withSession <|
-                    \route _ ->
-                        let
-                            ( navbar, _ ) =
-                                Navbar.init ()
-
-                            ( updated, effect ) =
-                                Navbar.update route (Navbar.KeepAliveDone (Err (httpError 500))) navbar
-                        in
-                        Expect.all
-                            [ \_ -> Expect.equal False updated.keepAliveStopped
-                            , \_ -> Expect.notEqual E.none effect
-                            ]
-                            ()
+        , describe "temporary background failures self-clear without toasts"
+            (List.map temporaryFailureTest [ Http.NetworkError, Http.Timeout, Http.BadStatus 500, Http.BadStatus 503, Http.BadStatus 599 ])
+        , describe "unexpected keep-alive errors retain reporting"
+            (List.map unexpectedFailureTest [ Http.BadStatus 400, Http.BadStatus 403, Http.BadStatus 429, Http.BadUrl "invalid", Http.BadBody "invalid" ])
         ]
+
+
+temporaryFailureTest : Http.Error -> Test
+temporaryFailureTest failure =
+    test (Debug.toString failure) <|
+        \_ ->
+            withSession <|
+                \route shared ->
+                    let
+                        ( navbar, _ ) =
+                            Navbar.init ()
+
+                        ( interrupted, firstEffect ) =
+                            Navbar.update route (Navbar.KeepAliveDone (Err (apiError failure))) navbar
+
+                        ( _, repeatedEffect ) =
+                            Navbar.update route (Navbar.KeepAliveDone (Err (apiError failure))) interrupted
+
+                        ( recovered, _ ) =
+                            Navbar.update route (Navbar.KeepAliveDone (Ok ())) interrupted
+
+                        ( _, tickEffect ) =
+                            Navbar.update route Navbar.Slept interrupted
+
+                        eventService =
+                            shared.eventService
+
+                        ( polling, pollingEffect ) =
+                            Shared.update route (Msg.EventServiceEventsReceived (Err (apiError failure)))
+                                { shared | eventService = { eventService | retryCount = 5 } }
+
+                        ( pollingRecovered, _ ) =
+                            Shared.update route (Msg.EventServiceEventsReceived (Ok { events = [], lastEventId = Nothing, deploymentMaintenance = Nothing })) polling
+                    in
+                    Expect.all
+                        [ \_ -> Expect.equal False interrupted.keepAliveStopped
+                        , \_ -> Expect.equal True interrupted.connectionInterrupted
+                        , \_ -> Expect.equal E.none firstEffect
+                        , \_ -> Expect.equal E.none repeatedEffect
+                        , \_ -> Expect.notEqual E.none tickEffect
+                        , \_ -> Expect.equal False recovered.connectionInterrupted
+                        , \_ -> Expect.equal True polling.eventService.isPolling
+                        , \_ -> Expect.equal True polling.eventService.connectionInterrupted
+                        , \_ -> Expect.equal False (isBatchEffect pollingEffect)
+                        , \_ -> Expect.notEqual E.none pollingEffect
+                        , \_ -> Expect.equal False pollingRecovered.eventService.connectionInterrupted
+                        ]
+                        ()
+
+
+unexpectedFailureTest : Http.Error -> Test
+unexpectedFailureTest failure =
+    test (Debug.toString failure) <|
+        \_ ->
+            withSession <|
+                \route _ ->
+                    let
+                        ( navbar, _ ) =
+                            Navbar.init ()
+
+                        ( updated, effect ) =
+                            Navbar.update route (Navbar.KeepAliveDone (Err (apiError failure)))
+                                { navbar | connectionInterrupted = True }
+                    in
+                    Expect.all
+                        [ \_ -> Expect.equal False updated.keepAliveStopped
+                        , \_ -> Expect.equal False updated.connectionInterrupted
+                        , \_ -> Expect.notEqual E.none effect
+                        ]
+                        ()
+
+
+apiError : Http.Error -> ApiError
+apiError failure =
+    { httpError = failure, formErrors = Dict.empty, errors = [] }
 
 
 httpError : Int -> ApiError

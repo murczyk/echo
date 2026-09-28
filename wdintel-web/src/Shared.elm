@@ -582,7 +582,14 @@ update req msg model =
                         model.eventService
 
                     newEventService =
-                        { eventService | isPolling = True, error = Nothing, retryCount = 0, retryDelay = 1000 }
+                        { eventService
+                            | isPolling = True
+                            , error = Nothing
+                            , retryCount = 0
+                            , retryDelay = 1000
+                            , connectionInterrupted = False
+                            , persistentErrorReported = False
+                        }
                 in
                 ( { model | eventService = newEventService }
                 , E.sendCmd <| Task.perform (\_ -> EventServicePollEvents) (Task.succeed ())
@@ -610,6 +617,8 @@ update req msg model =
                     { eventService
                         | lastEventId = response.lastEventId
                         , error = Nothing
+                        , connectionInterrupted = False
+                        , persistentErrorReported = False
                         , retryCount = 0
                         , retryDelay = 1000
                     }
@@ -653,6 +662,8 @@ update req msg model =
                 newEventService =
                     { eventService
                         | error = Just (formatError error)
+                        , connectionInterrupted = Utils.Api.ErrorHandling.isTemporaryConnectionError error
+                        , persistentErrorReported = eventService.persistentErrorReported || shouldNotifyAboutPersistentFailure
                         , retryCount = newRetryCount
                         , retryDelay = newRetryDelay
                     }
@@ -661,7 +672,9 @@ update req msg model =
                     E.sendCmd <| Task.perform (\_ -> EventServiceRetryPolling) (Process.sleep (toFloat newRetryDelay))
 
                 shouldNotifyAboutPersistentFailure =
-                    eventService.retryCount == 5
+                    newRetryCount >= 6
+                        && not eventService.persistentErrorReported
+                        && not (Utils.Api.ErrorHandling.isTemporaryConnectionError error)
             in
             if not model.eventService.isPolling then
                 ( model, E.none )
@@ -694,7 +707,7 @@ update req msg model =
                     model.eventService
 
                 newEventService =
-                    { eventService | retryCount = 0, retryDelay = 1000 }
+                    { eventService | retryCount = 0, retryDelay = 1000, persistentErrorReported = False }
             in
             ( { model | eventService = newEventService }, E.none )
 

@@ -1,10 +1,26 @@
-module Utils.Api.ErrorHandling exposing (ErrorDetails, formatErrorForShowError, formatErrorForShowErrorWithDetails)
+module Utils.Api.ErrorHandling exposing (ErrorDetails, formatErrorForShowError, formatErrorForShowErrorWithDetails, isTemporaryConnectionError)
 
 import Core.Types
 import Effect as E
 import Http
 import Shared.Msg
 import Utils.Api.Temp exposing (responseDecodeErrorPrefix)
+
+
+isTemporaryConnectionError : Core.Types.ApiError -> Bool
+isTemporaryConnectionError error =
+    case error.httpError of
+        Http.NetworkError ->
+            True
+
+        Http.Timeout ->
+            True
+
+        Http.BadStatus code ->
+            code >= 500 && code < 600
+
+        _ ->
+            False
 
 
 {-| Error details structure for comprehensive error handling
