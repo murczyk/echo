@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { adjustQueryDateRangeForDirectMessage, createInitialQueryState, emptyQueryState, parseQueryStateFromWindow } from '../helpers';
+import {
+  adjustQueryDateRangeForDirectMessage,
+  createInitialQueryState,
+  emptyQueryState,
+  parseQueryStateFromWindow,
+} from '../helpers';
 import type { AnalysisQueryState } from '../types';
 
 function createQueryState(overrides: Partial<AnalysisQueryState> = {}): AnalysisQueryState {
@@ -207,5 +212,4 @@ describe('rer-analysis-neo direct-link dates', () => {
     }
     expect(adjustQueryDateRangeForDirectMessage(state, { ...message, date: null })).toBe(state);
   });
-
 });

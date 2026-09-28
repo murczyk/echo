@@ -987,11 +987,18 @@ describe('useRerAnalysisNeoPage', () => {
       renderHook();
       await flushEffects();
       expect(inboxMessagesMock.fetchInboxWindow).toHaveBeenCalledTimes(1);
-      act(() => latest?.updateQueryState(patch));
+      await act(async () => {
+        latest?.updateQueryState(patch);
+        request.resolve(buildDirectLinkWindow());
+        await Promise.resolve();
+      });
       await flushEffects();
-      request.resolve(buildDirectLinkWindow());
-      await flushEffects();
-      expect(latest?.queryState).toMatchObject(patch);
+      expect(latest?.queryState).toMatchObject({
+        fromDateTimeStr: '2026-08-28T00:00',
+        toDateTimeStr: '2026-08-29T00:00',
+        ...patch,
+      });
+      expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].focusedWindow).toBeNull();
       expect(latest?.directMessageNavigation).toBeNull();
       expect(latest?.messagesLoading).toBe(false);
       expect(new URL(window.location.href).searchParams.has('m')).toBe(false);

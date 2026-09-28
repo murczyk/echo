@@ -194,6 +194,7 @@ export function useRerAnalysisNeoPage(
     targetMessageUid !== null,
   );
   const targetMessageLoadedRef = useRef(false);
+  const targetMessageRequestRef = useRef(0);
   const targetMessageIdRef = useRef<number | null>(null);
   const targetMessageContextSawReloadRef = useRef(false);
   const [centerTabPending, startCenterTabTransition] = useTransition();
@@ -310,6 +311,8 @@ export function useRerAnalysisNeoPage(
       return;
     }
     let cancelled = false;
+    const requestId = ++targetMessageRequestRef.current;
+    const isCurrentRequest = () => !cancelled && requestId === targetMessageRequestRef.current;
     const isContextRefresh = targetMessageLoadedRef.current;
     if (isContextRefresh) {
       targetMessageContextSawReloadRef.current = false;
@@ -323,7 +326,7 @@ export function useRerAnalysisNeoPage(
       inboxReq: buildInboxReq(directMessageWindowQueryState, [], true),
     })
       .then((res) => {
-        if (cancelled) return;
+        if (!isCurrentRequest()) return;
         if (res == null) {
           if (isContextRefresh) {
             setTargetMessageWindow(null);
@@ -360,7 +363,7 @@ export function useRerAnalysisNeoPage(
         if (isContextRefresh) setTargetMessageContextResponsePending(false);
       })
       .catch((err) => {
-        if (cancelled) return;
+        if (!isCurrentRequest()) return;
         if (!targetMessageLoadedRef.current) {
           setTargetMessageContextActive(false);
         }
@@ -372,7 +375,7 @@ export function useRerAnalysisNeoPage(
         );
       })
       .finally(() => {
-        if (!cancelled) setTargetMessageLoading(false);
+        if (isCurrentRequest()) setTargetMessageLoading(false);
       });
     return () => {
       cancelled = true;
@@ -391,6 +394,15 @@ export function useRerAnalysisNeoPage(
     removeMessageUidFromWindowUrl();
   }, []);
 
+  const clearTargetMessageContext = useCallback(() => {
+    targetMessageRequestRef.current += 1;
+    setTargetMessageContextActive(false);
+    setTargetMessageLoading(false);
+    setTargetMessageContextLoading(false);
+    setTargetMessageContextResponsePending(false);
+    clearTargetMessageFocus();
+  }, [clearTargetMessageFocus]);
+
   useEffect(() => {
     const nextBoundary = {
       fromDateTimeStr: queryStateWithResolvedRoleDate.fromDateTimeStr,
@@ -407,13 +419,9 @@ export function useRerAnalysisNeoPage(
     ) {
       return;
     }
-    setTargetMessageContextActive(false);
-    setTargetMessageLoading(false);
-    setTargetMessageContextLoading(false);
-    setTargetMessageContextResponsePending(false);
-    clearTargetMessageFocus();
+    clearTargetMessageContext();
   }, [
-    clearTargetMessageFocus,
+    clearTargetMessageContext,
     queryStateWithResolvedRoleDate.fromDateTimeStr,
     queryStateWithResolvedRoleDate.search,
     queryStateWithResolvedRoleDate.toDateTimeStr,
@@ -823,10 +831,23 @@ export function useRerAnalysisNeoPage(
     (patch: Partial<AnalysisQueryState>) => {
       const normalizedPatch =
         patch.unitsSelected?.length === 0 ? { ...patch, unitsExactMatchOnly: null } : patch;
+      const boundary = directQueryBoundaryRef.current;
+      if (
+        targetMessageContextActive &&
+        ((patch.fromDateTimeStr != null && patch.fromDateTimeStr !== boundary.fromDateTimeStr) ||
+          (patch.toDateTimeStr != null && patch.toDateTimeStr !== boundary.toDateTimeStr) ||
+          (patch.search != null && patch.search !== boundary.search))
+      ) {
+        clearTargetMessageContext();
+      }
       data.invalidateFilterSectionLoadsForPatch(normalizedPatch);
       setQueryState((current) => normalizeQueryState({ ...current, ...normalizedPatch }));
     },
-    [data.invalidateFilterSectionLoadsForPatch],
+    [
+      clearTargetMessageContext,
+      data.invalidateFilterSectionLoadsForPatch,
+      targetMessageContextActive,
+    ],
   );
 
   const applySavedFilter = useCallback(
