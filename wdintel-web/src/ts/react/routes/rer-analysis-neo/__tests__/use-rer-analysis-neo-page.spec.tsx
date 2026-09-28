@@ -232,6 +232,36 @@ function buildAnalysisData() {
   };
 }
 
+function buildDirectLinkWindow(): InboxWindowRsp {
+  return {
+    targetMessageId: 50,
+    messagesBefore: 0,
+    messagesAfter: 0,
+    hasMoreBefore: false,
+    hasMoreAfter: false,
+    inbox: {
+      inboxItems: [
+        [
+          50,
+          {
+            text: 'target',
+            date: '2026-01-01',
+            time: '10:00',
+            timestamp: null,
+            createdAt: Date.UTC(2026, 7, 20, 9),
+          } as InboxMessage,
+        ],
+      ],
+      pollCursorId: null,
+      callsigns: [],
+      signalProfiles: {},
+      signalGroups: [],
+      freqPelengsSummary: null,
+      pageLimit: 20,
+    },
+  };
+}
+
 function buildSavedFilters() {
   return {
     applySavedFilter: vi.fn(),
@@ -1091,6 +1121,70 @@ describe('useRerAnalysisNeoPage', () => {
     expect(new URL(window.location.href).searchParams.get('m')).toBe('missing-uid');
   });
 
+  // Regression: https://github.com/echoua/echo/issues/2726
+  it.each([
+    { roles: ['Rer'], from: '2026-08-20T00:00', to: '2026-08-21T00:00' },
+    { roles: ['Cyber'], from: '2026-07-06T00:00', to: '2026-10-04T00:00' },
+  ])(
+    'keeps direct-link focus while resolving $roles defaults and saved time basis',
+    async ({ roles, from, to }) => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-12-28T12:00:00Z'));
+      try {
+        const userRequest = deferred<User>();
+        const settingsRequest = deferred<{ messageSortBy: string }>();
+        currentUserMock.fetchCurrentUser.mockReturnValueOnce(userRequest.promise);
+        userSettingsMock.fetchUserSettings.mockReturnValueOnce(settingsRequest.promise);
+        const focusedWindow = buildDirectLinkWindow();
+        inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(focusedWindow);
+        window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
+        renderHook(roles[0] === 'Rer' ? [] : ['Rer']);
+        await flushEffects();
+        expect(inboxMessagesMock.fetchInboxWindow).not.toHaveBeenCalled();
+        userRequest.resolve({ name: 'tester', roles } as User);
+        await flushEffects();
+        expect(inboxMessagesMock.fetchInboxWindow).not.toHaveBeenCalled();
+        settingsRequest.resolve({ messageSortBy: 'creation' });
+        await flushEffects();
+        expect(inboxMessagesMock.fetchInboxWindow).toHaveBeenCalledTimes(1);
+        expect(inboxMessagesMock.fetchInboxWindow.mock.calls[0][0].inboxReq.sortBy).toBe(
+          'IMSCreatedAt',
+        );
+        expect(latest?.queryState).toMatchObject({ fromDateTimeStr: from, toDateTimeStr: to });
+        expect(latest?.directMessageNavigation?.targetMessageId).toBe(50);
+        expect(new URL(window.location.href).searchParams.get('m')).toBe('target-uid');
+        expect(new URL(window.location.href).searchParams.get('fromDateTime')).toBe(from);
+        expect(new URL(window.location.href).searchParams.get('toDateTime')).toBe(to);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it.each([{ fromDateTimeStr: '2026-08-27T00:00' }, { search: 'user search' }])(
+    'ignores a late direct-link response after a user edit: %j',
+    async (patch) => {
+      const request = deferred<InboxWindowRsp>();
+      inboxMessagesMock.fetchInboxWindow.mockReturnValueOnce(request.promise);
+      window.history.replaceState(
+        {},
+        '',
+        `${window.location.pathname}?m=target-uid&fromDateTime=2026-08-28T00%3A00&toDateTime=2026-08-29T00%3A00`,
+      );
+      renderHook();
+      await flushEffects();
+      expect(inboxMessagesMock.fetchInboxWindow).toHaveBeenCalledTimes(1);
+      act(() => latest?.updateQueryState(patch));
+      await flushEffects();
+      request.resolve(buildDirectLinkWindow());
+      await flushEffects();
+      expect(latest?.queryState).toMatchObject(patch);
+      expect(latest?.directMessageNavigation).toBeNull();
+      expect(latest?.messagesLoading).toBe(false);
+      expect(new URL(window.location.href).searchParams.has('m')).toBe(false);
+    },
+  );
+
   it('opens the direct-link message window with its references', async () => {
     const targetMessage = {
       text: 'target',
@@ -1109,7 +1203,7 @@ describe('useRerAnalysisNeoPage', () => {
     window.history.replaceState(
       {},
       '',
-      `${window.location.pathname}?m=target-uid&fromDateTime=2026-08-28T00%3A00&toDateTime=2099-08-29T00%3A00`,
+      `${window.location.pathname}?m=target-uid&fromDateTime=2026-08-28T00%3A00&toDateTime=2026-08-29T00%3A00`,
     );
     const focusedWindow = {
       targetMessageId: 50,
@@ -1141,8 +1235,8 @@ describe('useRerAnalysisNeoPage', () => {
       expect.objectContaining({ messageRef: 'target-uid' }),
     );
     expect(latest?.queryState).toMatchObject({
-      fromDateTimeStr: '2026-08-19T00:00',
-      toDateTimeStr: '2099-08-29T00:00',
+      fromDateTimeStr: '2026-08-20T00:00',
+      toDateTimeStr: '2026-08-21T00:00',
     });
     expect(latest?.directMessageNavigation).not.toBeNull();
     expect(latest?.directMessageNavigation).toMatchObject({

@@ -136,6 +136,49 @@ async function setupDirectLinkAnalysisNeoPage(
 }
 
 test.describe('@smoke', () => {
+  // Regression: https://github.com/echoua/echo/issues/2726
+  test('@regression opens an older linked message without widening the range and survives reload', async ({
+    page,
+  }) => {
+    await page.clock.setFixedTime(new Date('2026-09-28T12:00:00Z'));
+    const response = createLoadedInboxResponse();
+    const [messageId, message] = response.inbox_items[0];
+    Object.assign(message, { date: '24.09.2026', time: '12:34:56', timestamp: null });
+    await setupAnalysisNeoPage(page, { inboxResponse: response });
+    await page.route('**/api/user', (route) =>
+      route.fulfill({
+        json: {
+          id: 'operator',
+          name: 'operator',
+          roles: ['Rer'],
+          sigint_zone_id: null,
+          organism_id: null,
+          delta_login: null,
+          goi_configured_for_organism: false,
+          goi_full_access_for_organism: false,
+          goi_host: null,
+          goi_integrations: [],
+          last_release_seen: null,
+        },
+      }),
+    );
+    await page.goto(`/rer-analysis-neo?m=${message.messageUid}`);
+    const expectedParams = {
+      m: message.messageUid,
+      fromDateTime: '2026-09-24T00:00',
+      toDateTime: '2026-09-25T00:00',
+    };
+    const readParams = () => {
+      const params = new URL(page.url()).searchParams;
+      return Object.fromEntries(Object.keys(expectedParams).map((key) => [key, params.get(key)]));
+    };
+    await expect(page.locator(`[data-message-id="${messageId}"]`)).toBeVisible();
+    await expect.poll(readParams).toEqual(expectedParams);
+    await page.reload();
+    await expect(page.locator(`[data-message-id="${messageId}"]`)).toBeVisible();
+    await expect.poll(readParams).toEqual(expectedParams);
+  });
+
   test('@message-references analysis neo resolves group and sender names for a direct-link target', async ({
     page,
   }) => {
