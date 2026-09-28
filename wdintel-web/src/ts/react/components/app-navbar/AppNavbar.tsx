@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
-import { CircularProgress } from '@mui/material';
+import { CircularProgress, Tooltip } from '@mui/material';
+import WifiOffIcon from '@mui/icons-material/WifiOff';
 import {
   Link,
   Menu,
@@ -99,6 +100,7 @@ export interface AppNavbarProps {
   };
   activeName: string;
   isNavbarVisible: boolean;
+  isReconnecting?: boolean;
   supportsFullscreenToggle: boolean;
   onLogout: () => void;
   onThemeChange: (theme: string) => void;
@@ -111,6 +113,7 @@ export function AppNavbar({
   shared,
   activeName,
   isNavbarVisible,
+  isReconnecting = false,
   supportsFullscreenToggle,
   onLogout,
   onThemeChange,
@@ -587,6 +590,18 @@ export function AppNavbar({
           </div>
 
           <div className="app-navbar-toolbar ml-auto flex shrink-0 items-center gap-2">
+            {isReconnecting && (
+              <Tooltip title="Відновлення з’єднання…">
+                <span
+                  className="inline-flex items-center text-white"
+                  role="status"
+                  aria-label="Відновлення з’єднання…"
+                  tabIndex={0}
+                >
+                  <WifiOffIcon sx={{ fontSize: 'var(--echo-size-icon-sm)' }} />
+                </span>
+              </Tooltip>
+            )}
             <ChangelogDropdown
               shared={shared}
               openDropdown={openDropdown}

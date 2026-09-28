@@ -3,16 +3,15 @@ module Core.EventService exposing
     , init
     )
 
+import Core.EventTypes
+
+
+
 -- TYPES
 
 
 type alias EventState =
-    { isPolling : Bool
-    , lastEventId : Maybe String
-    , error : Maybe String
-    , retryCount : Int
-    , retryDelay : Int -- milliseconds
-    }
+    Core.EventTypes.EventState
 
 
 -- INIT
@@ -23,6 +22,8 @@ init =
     { isPolling = False
     , lastEventId = Nothing
     , error = Nothing
+    , connectionInterrupted = False
+    , persistentErrorReported = False
     , retryCount = 0
     , retryDelay = 1000 -- Start with 1 second
     }

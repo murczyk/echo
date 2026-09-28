@@ -9,6 +9,8 @@ type alias EventState =
     { isPolling : Bool
     , lastEventId : Maybe String
     , error : Maybe String
+    , connectionInterrupted : Bool
+    , persistentErrorReported : Bool
     , retryCount : Int
     , retryDelay : Int
     }
