@@ -271,7 +271,8 @@ Kyiv calendar days, or an explicit inclusive Kyiv date range plus optional
 selected groups; the runner converts them to each endpoint's required
 epoch-millisecond bounds. Callsign-frequency matching additionally requires
 callsigns returned by another tool. Non-analysis POST tools may accept a
-bounded JSON body. Harness routes,
+bounded JSON body. Inbox tools also expose text search; [search behavior](SEARCH.md)
+describes complementary text/tag retrieval, syntax and bounded date expansion. Harness routes,
 redirects, arbitrary URLs, path traversal, other methods, built-in Pi shell,
 read, write, and edit tools are unavailable. The only additional tool is
 `report_progress`.

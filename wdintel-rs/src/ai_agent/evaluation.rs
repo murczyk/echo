@@ -1,0 +1,51 @@
+use crate::h;
+use crate::types::ShortContext;
+use sea_orm::{EntityTrait, JoinType, QuerySelect, QueryTrait, RelationTrait};
+use serde::Deserialize;
+use std::io::Read;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SearchInput {
+    search: Option<String>,
+    selected_callsigns: Option<Vec<String>>,
+}
+
+/// Compiles fixture searches with the same filters as the inbox API, without
+/// loading credentials or connecting to an application database.
+pub fn search_query() -> anyhow::Result<()> {
+    use crate::entities::sigint_inbox_item;
+    use crate::rer_importer::analysis::{
+        filter_search, filter_selected_callsigns,
+    };
+
+    let mut input = String::new();
+    std::io::stdin()
+        .take(65_537)
+        .read_to_string(&mut input)
+        .c(h!())?;
+    anyhow::ensure!(
+        input.len() <= 65_536,
+        "evaluation query input is too large"
+    );
+    let input: SearchInput = serde_json::from_str(&input).c(h!())?;
+    let query = sigint_inbox_item::Entity::find()
+        .select_only()
+        .column(sigint_inbox_item::Column::Id)
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def(),
+        );
+    let query = filter_search(query, &input.search).c(h!())?;
+    let query =
+        filter_selected_callsigns(query, &input.selected_callsigns).c(h!())?;
+    serde_json::to_writer(
+        std::io::stdout(),
+        &serde_json::json!({
+            "sql": query.build(sea_orm::DbBackend::Postgres).to_string(),
+            "skills": super::route_registry::skills_json(),
+        }),
+    )
+    .c(h!())?;
+    Ok(())
+}

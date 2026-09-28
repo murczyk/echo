@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "suites": [
+    {
+      "id": "callsign-search",
+      "category": "callsign-search",
+      "path": "ai-eval/2026-09-28-callsign-search",
+      "runner": "harness"
+    },
+    {
+      "id": "callsign-extraction",
+      "category": "callsign-extraction",
+      "path": "ai-eval/2026-08-10-callsign-prompt",
+      "runner": "legacy"
+    },
+    {
+      "id": "callsign-feedback",
+      "category": "callsign-extraction",
+      "path": "ai-eval/2026-09-06-callsign-feedback",
+      "runner": "legacy"
+    },
+    {
+      "id": "intelligence-report",
+      "category": "report-generation",
+      "path": "ai-eval/2026-08-19-intelligence-report-prompt",
+      "runner": "legacy"
+    },
+    {
+      "id": "settlements",
+      "category": "settlement-extraction",
+      "path": "ai-eval/2026-08-28-settlement-prompt",
+      "runner": "legacy"
+    },
+    {
+      "id": "documents",
+      "category": "document-extraction",
+      "path": "ai-eval/2026-08-17-document-extractor-regressions",
+      "runner": "legacy"
+    },
+    {
+      "id": "document-ocr",
+      "category": "document-extraction",
+      "path": "archive/2026-08-09-document-ocr-evaluation",
+      "runner": "legacy"
+    }
+  ]
+}

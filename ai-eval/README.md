@@ -1,5 +1,8 @@
 # AI evaluation artifacts
 
+`catalog.json` groups collections by category. For repeatable agent benchmarks,
+see [Harness evaluations](HARNESS.md).
+
 Each evaluation lives in a dated directory named `YYYY-MM-DD-name`. Prompts,
 notes, extraction tools, examples, and memory are tracked in Git. Raw
 production-derived corpora live only in the evaluation's gitignored `raw/`
