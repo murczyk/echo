@@ -16,6 +16,13 @@ impl MigrationTrait for Migration {
             .get_connection()
             .execute_unprepared(
                 r#"
+alter table ai_agent_request_event
+    add column map_summary jsonb;
+
+create index ai_agent_request_event_map_artifact_idx
+    on ai_agent_request_event (request_id, sequence)
+    where event_type = 'map_artifact';
+
 do $$
 declare
     existing_name text;
@@ -69,6 +76,11 @@ alter table ai_agent_request_event
                 r#"
 delete from ai_agent_request_event
 where event_type = 'map_artifact';
+
+drop index if exists ai_agent_request_event_map_artifact_idx;
+
+alter table ai_agent_request_event
+    drop column map_summary;
 
 alter table ai_agent_request_event
     drop constraint if exists ai_agent_request_event_event_type_check;

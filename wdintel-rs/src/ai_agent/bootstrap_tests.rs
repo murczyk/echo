@@ -728,6 +728,12 @@ async fn map_publication_replay_cancellation_and_access_follow_request_ownership
         .await
         .unwrap();
     assert_eq!(stored.len(), 1);
+    let stored_summary = stored[0].map_summary.as_ref().unwrap();
+    assert_eq!(stored_summary["totalCount"], 1);
+    assert_eq!(stored_summary["validCount"], 1);
+    assert_eq!(stored_summary["invalidCount"], 0);
+    assert!(stored_summary.get("records").is_none());
+    let published_event = stored[0].clone();
     let mut state = crate::ai_agent::SseState {
         dbx: env.dbx.clone(),
         request_id: request.id,
@@ -869,6 +875,9 @@ async fn map_publication_replay_cancellation_and_access_follow_request_ownership
             .await
             .unwrap()
             .unwrap();
+    let mut without_payload = published_event.clone().into_active_model();
+    without_payload.payload = Set(serde_json::json!({}));
+    without_payload.update(&env.dbx).await.unwrap();
     let detail =
         crate::ai_agent::conversation_detail(&env.dbx, conversation.clone())
             .await
@@ -887,6 +896,9 @@ async fn map_publication_replay_cancellation_and_access_follow_request_ownership
         .as_str()
         .unwrap()
         .contains("echo-map:"));
+    let mut restored = published_event.clone().into_active_model();
+    restored.payload = Set(published_event.payload);
+    restored.update(&env.dbx).await.unwrap();
     assert!(maps::document_for_owner(&env, fixture.human.id, &req)
         .await
         .is_ok());

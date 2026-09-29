@@ -16,7 +16,6 @@ use actix_web::{
     web::{Data, Json},
     HttpResponse,
 };
-use sea_orm::sea_query::Expr;
 use sea_orm::{
     ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder,
     QuerySelect,
@@ -88,29 +87,20 @@ pub(super) async fn load_summaries(
     let events = ai_agent_request_event::Entity::find()
         .select_only()
         .column(ai_agent_request_event::Column::RequestId)
-        .expr_as(
-            Expr::cust_with_expr(
-                "($1 -> 'document') - 'records'",
-                Expr::col(ai_agent_request_event::Column::Payload),
-            ),
-            "summary",
-        )
+        .column(ai_agent_request_event::Column::MapSummary)
         .filter(
             ai_agent_request_event::Column::RequestId
                 .is_in(request_ids.iter().copied()),
         )
         .filter(ai_agent_request_event::Column::EventType.eq("map_artifact"))
+        .filter(ai_agent_request_event::Column::MapSummary.is_not_null())
         .order_by_asc(ai_agent_request_event::Column::Sequence)
         .into_tuple::<(Uuid, Value)>()
         .all(dbx)
         .await
         .c(h!())?;
     let mut seen = HashSet::new();
-    for (request_id, mut payload) in events {
-        if !payload.is_object() {
-            continue;
-        }
-        payload["requestId"] = Value::String(request_id.to_string());
+    for (request_id, payload) in events {
         if let Ok(summary) =
             serde_json::from_value::<AiAgentMapSummary>(payload)
         {

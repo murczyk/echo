@@ -193,19 +193,32 @@ pub async fn append_in_transaction(
     payload: Value,
 ) -> Result<ai_agent_request_event::Model, AppError> {
     let payload = prepare_payload(event_type, payload)?;
+    let map_summary = if event_type == "map_artifact" {
+        let document =
+            super::maps::parse(&payload).ok_or_else(|| AppError::BL {
+                msg: "Invalid map document".to_string(),
+            })?;
+        Some(serde_json::to_value(document.summary(request_id)).c(h!())?)
+    } else {
+        None
+    };
     let sequence = ai_agent_request_event::Entity::find()
+        .select_only()
+        .column(ai_agent_request_event::Column::Sequence)
         .filter(ai_agent_request_event::Column::RequestId.eq(request_id))
         .order_by_desc(ai_agent_request_event::Column::Sequence)
+        .into_tuple::<i64>()
         .one(txn)
         .await
         .c(h!())?
-        .map_or(1, |event| event.sequence + 1);
+        .map_or(1, |sequence| sequence + 1);
     let event = ai_agent_request_event::ActiveModel {
         request_id: Set(request_id),
         sequence: Set(sequence),
         event_type: Set(event_type.to_string()),
         payload: Set(payload),
         created_at: Set(Utc::now().naive_utc()),
+        map_summary: Set(map_summary),
     }
     .insert(txn)
     .await

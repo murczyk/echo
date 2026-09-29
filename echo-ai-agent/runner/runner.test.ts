@@ -938,7 +938,7 @@ test("announces the runner protocol and harness release", () => {
   assert.deepEqual(runnerHello(), {
     type: "runner_hello",
     protocolVersion: 1,
-    harnessRelease: "2026.09.29.4",
+    harnessRelease: "2026.09.29.5",
   });
 });
 

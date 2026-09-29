@@ -38,7 +38,10 @@ failed/cancelled requests with no answer text.
 
 Conversation responses and runner history contain summaries, with empty defaults
 for old conversations. Browser event replay also exposes summaries, never the
-full records. `echo_map_list` recovers references after compaction;
+full records. Each event stores its summary atomically in a separate nullable
+`map_summary` column. History selects this column through the partial map-event
+index, avoiding full-document JSON reads when opening long conversations.
+`echo_map_list` recovers references after compaction;
 `echo_map_get` retrieves records in windows of at most 16, including published
 maps from previous conversation turns. Full documents are fetched only when
 needed. Optional source citations must come from retrieved message citations.
@@ -96,16 +99,17 @@ attachment generation are follow-up work.
 
 ## Rollout
 
-Release `2026.09.29.4` requires migration
+Release `2026.09.29.5` requires migration
 `m20260929_152018_ai_agent_map_artifacts` and the matching backend/frontend.
 Deploy the migration and Echo build, restart backend/workers, then upgrade the
 selected idle namespace. Do not run the new runner against an older backend.
-The migration only extends the request-event constraint; its analytics declaration
-has no replicated column changes.
+The migration extends the request-event constraint and adds the summary column
+and partial index. This table is excluded from analytics replication, as declared
+in the migration impact manifest.
 
 ```sh
-just ai-control-panel upgrade --host local --release 2026.09.29.4 --dry-run
-just ai-control-panel upgrade --host local --release 2026.09.29.4
+just ai-control-panel upgrade --host local --release 2026.09.29.5 --dry-run
+just ai-control-panel upgrade --host local --release 2026.09.29.5
 ```
 
 Replace `local` with each explicitly selected installation. The
