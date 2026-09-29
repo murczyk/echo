@@ -26,7 +26,15 @@ import { useDutyFeedColumnModel } from './useDutyFeedColumnModel';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { RerDutyNeoWorkspace } from './RerDutyNeoWorkspace';
 import type { InboxMessage } from '../../../../Bindings';
-import { ManageMessageDrawer } from '../shared/manage-message/ManageMessageDrawer';
+import {
+  ManageMessageDrawer,
+  type ManageMessageEditorHandle,
+} from '../shared/manage-message/ManageMessageDrawer';
+import {
+  MANAGE_MESSAGE_EDITOR_TRANSITION_EASING,
+  MANAGE_MESSAGE_EDITOR_TRANSITION_MS,
+  useManageMessageEditorPresentation,
+} from '../shared/manage-message/ManageMessageEditorSurface';
 import type { ReportEditLoadState } from '../shared/manage-message/useManageMessageDrawer';
 import { AudioTranscriptionPreferencesProvider } from '../shared/message-card/MessageCardAudioTranscription';
 import { fetchInboxItemContext, fetchMessagesByIds } from '../../services/api/inbox-messages';
@@ -38,6 +46,7 @@ import {
   scrollToAndHighlightMessage,
   type MessageCardEtalonDisplayModel,
 } from '../shared/message-card/message-card.utils';
+import { dutyEditorLayoutColumns } from './duty-editor-layout';
 
 export type RerDutyNeoPageProps = {
   /** Auth user display name from the host page (avoids duplicate /api/user request). */
@@ -62,6 +71,9 @@ export function RerDutyNeoPage({
   const [editTargetLoadState, setEditTargetLoadState] = useState<ReportEditLoadState>({
     status: 'idle',
   });
+  const editorRef = useRef<ManageMessageEditorHandle>(null);
+  const editorInitialFocusTargetRef = useRef<HTMLElement | null>(null);
+  const createMessageFabRef = useRef<HTMLButtonElement | null>(null);
   const reportLoadControllerRef = useRef<AbortController | null>(null);
   const cancelReportEditLoad = useCallback(() => {
     reportLoadControllerRef.current?.abort();
@@ -88,9 +100,32 @@ export function RerDutyNeoPage({
     mediaSummaryEnabled,
     messageTextPreviewLines,
   } = useRerDutyPageSettings();
-  const openReportEditor = useCallback(
-    (reportId: number) => {
+  const requestEditorIntent = useCallback(
+    (
+      key: string,
+      sourceFeedId: string | null,
+      commit: () => void,
+      invokingControl?: HTMLElement,
+    ) => {
       if (!canWriteMessages(currentUser?.roles)) return;
+      const focusTarget =
+        invokingControl ??
+        (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+      editorInitialFocusTargetRef.current = focusTarget;
+      const applyIntent = () => {
+        if (sourceFeedId) setActiveFeedId(sourceFeedId);
+        commit();
+      };
+      if (editorRef.current) {
+        editorRef.current.requestIntentChange({ key, focusTarget, commit: applyIntent });
+      } else {
+        applyIntent();
+      }
+    },
+    [currentUser?.roles],
+  );
+  const startReportEditor = useCallback(
+    (reportId: number) => {
       cancelReportEditLoad();
       const controller = new AbortController();
       reportLoadControllerRef.current = controller;
@@ -119,34 +154,63 @@ export function RerDutyNeoPage({
           });
         });
     },
-    [cancelReportEditLoad, currentUser?.roles],
+    [cancelReportEditLoad],
+  );
+  const openReportEditor = useCallback(
+    (sourceFeedId: string, reportId: number) => {
+      requestEditorIntent(`edit-report:${reportId}`, sourceFeedId, () =>
+        startReportEditor(reportId),
+      );
+    },
+    [requestEditorIntent, startReportEditor],
   );
   const openMessageEditor = useCallback(
-    (target: { id: number; message: InboxMessage }) => {
-      if (!canWriteMessages(currentUser?.roles)) return;
-      cancelReportEditLoad();
-      setCreateMessageOpen(false);
-      setReportSource(null);
-      setEditAsReport(isIntelligenceReport(target.message));
-      setEditTarget(target);
+    (
+      sourceFeedId: string,
+      target: { id: number; message: InboxMessage },
+      invokingControl?: HTMLElement,
+    ) => {
+      const isReport = isIntelligenceReport(target.message);
+      requestEditorIntent(
+        `${isReport ? 'edit-report' : 'edit-message'}:${target.id}`,
+        sourceFeedId,
+        () => {
+          cancelReportEditLoad();
+          setCreateMessageOpen(false);
+          setReportSource(null);
+          setEditAsReport(isReport);
+          setEditTarget(target);
+        },
+        invokingControl,
+      );
     },
-    [cancelReportEditLoad, currentUser?.roles],
+    [cancelReportEditLoad, requestEditorIntent],
   );
   const openReportComposer = useCallback(
-    (source: {
-      id: number;
-      message: InboxMessage;
-      senderName?: string | null;
-      etalonDisplayModel: MessageCardEtalonDisplayModel;
-    }) => {
-      if (!canWriteMessages(currentUser?.roles)) return;
-      cancelReportEditLoad();
-      setCreateMessageOpen(false);
-      setEditAsReport(false);
-      setEditTarget(null);
-      setReportSource(source);
+    (
+      sourceFeedId: string,
+      source: {
+        id: number;
+        message: InboxMessage;
+        senderName?: string | null;
+        etalonDisplayModel: MessageCardEtalonDisplayModel;
+      },
+      invokingControl: HTMLElement,
+    ) => {
+      requestEditorIntent(
+        `create-report:${source.id}`,
+        sourceFeedId,
+        () => {
+          cancelReportEditLoad();
+          setCreateMessageOpen(false);
+          setEditAsReport(false);
+          setEditTarget(null);
+          setReportSource(source);
+        },
+        invokingControl,
+      );
     },
-    [cancelReportEditLoad, currentUser?.roles],
+    [cancelReportEditLoad, requestEditorIntent],
   );
   const previousFeedCountRef = useRef(0);
   const radioFeaturesAllowed = canUseRadioFeatures(currentUser?.roles);
@@ -317,9 +381,7 @@ export function RerDutyNeoPage({
     collapseMediaPreviews,
     mediaSummaryEnabled,
     messageTextPreviewLines,
-    openReportEditor: (reportId) => {
-      void openReportEditor(reportId);
-    },
+    openReportEditor,
     openMessageEditor,
     openReportComposer,
   });
@@ -337,13 +399,14 @@ export function RerDutyNeoPage({
   }, [activeFeedIdSafe, flushPendingNewerMessages]);
   const [hasCompletedInitialLoad, setHasCompletedInitialLoad] = useState(false);
   const openCreateMessageComposer = useCallback(() => {
-    if (!canWriteMessages(currentUser?.roles)) return;
-    cancelReportEditLoad();
-    setEditTarget(null);
-    setEditAsReport(false);
-    setReportSource(null);
-    setCreateMessageOpen(true);
-  }, [cancelReportEditLoad, currentUser?.roles]);
+    requestEditorIntent('create-message', activeFeedIdSafe, () => {
+      cancelReportEditLoad();
+      setEditTarget(null);
+      setEditAsReport(false);
+      setReportSource(null);
+      setCreateMessageOpen(true);
+    });
+  }, [activeFeedIdSafe, cancelReportEditLoad, requestEditorIntent]);
   const closeMessageEditor = useCallback(() => {
     cancelReportEditLoad();
     setCreateMessageOpen(false);
@@ -351,10 +414,45 @@ export function RerDutyNeoPage({
     setEditAsReport(false);
     setReportSource(null);
   }, [cancelReportEditLoad]);
+  const editorIntentKey = createMessageOpen
+    ? 'create-message'
+    : reportSource
+      ? `create-report:${reportSource.id}`
+      : editTarget
+        ? `${editAsReport ? 'edit-report' : 'edit-message'}:${editTarget.id}`
+        : editTargetLoadState.status !== 'idle'
+          ? `edit-report:${editTargetLoadState.reportId}`
+          : null;
+  const editorOpen = editorIntentKey !== null;
+  const editorPresentation = useManageMessageEditorPresentation();
+  const reduceEditorMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
+  const editorEmbeddedOpen = editorOpen && editorPresentation === 'embedded';
+  const previousCanWriteRef = useRef<boolean | null>(null);
+
+  useEffect(() => {
+    if (deviceAccess.status === 'loading') return;
+    const canWrite = canWriteMessages(currentUser?.roles);
+    if (previousCanWriteRef.current === true && !canWrite && editorOpen) {
+      cancelReportEditLoad();
+      if (editorRef.current) editorRef.current.closeWithoutConfirmation();
+      else closeMessageEditor();
+      notify({
+        message: 'Доступ до створення та редагування повідомлень втрачено.',
+        severity: 'error',
+      });
+    }
+    previousCanWriteRef.current = canWrite;
+  }, [
+    cancelReportEditLoad,
+    closeMessageEditor,
+    currentUser?.roles,
+    deviceAccess.status,
+    editorOpen,
+    notify,
+  ]);
 
   useEffect(() => () => cancelReportEditLoad(), [cancelReportEditLoad]);
   const handleCreatedMessage = useCallback(() => {
-    setCreateMessageOpen(false);
     // Do not reloadFeeds(): that re-pins the scroller to the bottom.
     reloadEmptyFeeds();
     notify({
@@ -421,7 +519,21 @@ export function RerDutyNeoPage({
   const content = (
     <RadioFeaturesProvider allowed={radioFeaturesAllowed}>
       <Box
-        className="flex flex-col w-full min-h-0"
+        className="w-full min-h-0"
+        data-duty-editor-layout
+        style={{
+          display: editorPresentation === 'embedded' ? 'grid' : 'flex',
+          gridTemplateColumns:
+            editorPresentation === 'embedded'
+              ? dutyEditorLayoutColumns(editorEmbeddedOpen)
+              : undefined,
+          columnGap:
+            editorPresentation === 'embedded' ? (editorEmbeddedOpen ? '8px' : '0px') : undefined,
+          transition:
+            editorPresentation === 'embedded' && !reduceEditorMotion
+              ? `grid-template-columns ${MANAGE_MESSAGE_EDITOR_TRANSITION_MS}ms ${MANAGE_MESSAGE_EDITOR_TRANSITION_EASING}, column-gap ${MANAGE_MESSAGE_EDITOR_TRANSITION_MS}ms ${MANAGE_MESSAGE_EDITOR_TRANSITION_EASING}`
+              : 'none',
+        }}
         sx={{
           zoom: narrowScreen ? DUTY_MOBILE_ROOT_ZOOM : 1,
           height: narrowScreen
@@ -437,79 +549,109 @@ export function RerDutyNeoPage({
           position: 'relative',
         }}
       >
-        <Box className="flex items-center justify-between flex-wrap gap-2 mb-2 shrink-0" />
+        <Box className="flex min-w-0 min-h-0 flex-1 flex-col">
+          <Box className="flex items-center justify-between flex-wrap gap-2 mb-2 shrink-0" />
 
-        <PointBlacklistPaletteNamesCacheProvider>
-          <MessageDeviceAccessProvider allowed={cyberEchoEnabled}>
-            <AudioTranscriptionPreferencesProvider
-              collapsedByDefault={audioTranscriptionCollapsed}
-              enabled={audioTranscriptionEnabled}
-            >
-              <DutyExcludeMenuContext.Provider value={dutyExcludeMenuEnabled ?? true}>
-                <RerDutyNeoWorkspace
-                  activeFeedId={activeFeedIdSafe}
-                  buildFeedColumnModel={buildFeedColumnModel}
-                  columnRefsRef={columnRefsRef}
-                  createMessageFeed={createMessageFeed}
-                  openCreateMessageComposer={openCreateMessageComposer}
-                  isInitialLoading={isInitialLoading}
-                  messageFeeds={messageFeeds}
-                  narrowScreen={narrowScreen}
-                  onSelectFeed={setActiveFeedId}
-                  showLoadingBackdrop={showLoadingBackdrop}
-                />
-              </DutyExcludeMenuContext.Provider>
-            </AudioTranscriptionPreferencesProvider>
-          </MessageDeviceAccessProvider>
-        </PointBlacklistPaletteNamesCacheProvider>
+          <PointBlacklistPaletteNamesCacheProvider>
+            <MessageDeviceAccessProvider allowed={cyberEchoEnabled}>
+              <AudioTranscriptionPreferencesProvider
+                collapsedByDefault={audioTranscriptionCollapsed}
+                enabled={audioTranscriptionEnabled}
+              >
+                <DutyExcludeMenuContext.Provider value={dutyExcludeMenuEnabled ?? true}>
+                  <RerDutyNeoWorkspace
+                    activeFeedId={activeFeedIdSafe}
+                    buildFeedColumnModel={buildFeedColumnModel}
+                    columnRefsRef={columnRefsRef}
+                    createMessageFeed={createMessageFeed}
+                    createMessageFabRef={createMessageFabRef}
+                    openCreateMessageComposer={openCreateMessageComposer}
+                    isInitialLoading={isInitialLoading}
+                    messageFeeds={messageFeeds}
+                    narrowScreen={narrowScreen}
+                    onSelectFeed={setActiveFeedId}
+                    showLoadingBackdrop={showLoadingBackdrop}
+                    editorOpen={editorOpen}
+                    editorEmbeddedOpen={editorEmbeddedOpen}
+                  />
+                </DutyExcludeMenuContext.Provider>
+              </AudioTranscriptionPreferencesProvider>
+            </MessageDeviceAccessProvider>
+          </PointBlacklistPaletteNamesCacheProvider>
 
-        <ManageMessageDrawer
-          open={
-            createMessageOpen ||
-            isPresent(editTarget) ||
-            isPresent(reportSource) ||
-            editTargetLoadState.status !== 'idle'
-          }
-          cyberEchoEnabled={cyberEchoEnabled}
-          currentUser={currentUser}
-          editTarget={editTarget}
-          editAsReport={editAsReport}
-          editTargetLoadState={editTargetLoadState}
-          onRetryEditTargetLoad={() => {
-            if (editTargetLoadState.status !== 'idle')
-              openReportEditor(editTargetLoadState.reportId);
-          }}
-          reportSource={reportSource}
-          onClose={closeMessageEditor}
-          onSubmitEdit={
-            editTarget && !editAsReport
-              ? async (messageId, message) => {
-                  handleEditedMessage(messageId, message);
+          <DeleteConfirmDialog
+            open={isPresent(deleteConfirmId)}
+            onClose={() => {
+              setDeleteConfirmId(null);
+              setDeleteConfirmFeedId(null);
+            }}
+            onConfirm={handleDeleteConfirm}
+          />
+        </Box>
+
+        <Box
+          data-duty-editor-dock={editorEmbeddedOpen ? 'true' : undefined}
+          sx={{
+            display: editorPresentation === 'embedded' ? 'flex' : 'contents',
+            position: editorPresentation === 'embedded' ? 'relative' : undefined,
+            minWidth: 0,
+            minHeight: 0,
+            overflow: editorPresentation === 'embedded' ? 'hidden' : undefined,
+            '&::before': editorEmbeddedOpen
+              ? {
+                  content: '""',
+                  position: 'absolute',
+                  inset: '0 auto 0 0',
+                  width: '1px',
+                  backgroundColor: 'divider',
+                  pointerEvents: 'none',
+                  zIndex: 1,
                 }
-              : undefined
-          }
-          onEditSuccess={() => {
-            if (editAsReport) {
-              reloadFeeds();
-            } else {
-              reloadEditedFeeds();
+              : undefined,
+          }}
+        >
+          <ManageMessageDrawer
+            ref={editorRef}
+            open={editorOpen}
+            intentKey={editorIntentKey ?? 'closed'}
+            presentation={editorPresentation}
+            adaptiveEmbeddedForm
+            fillEmbeddedSurface
+            transparentEmbeddedSurface
+            initialFocusTarget={editorInitialFocusTargetRef.current}
+            focusFallbackRef={createMessageFabRef}
+            cyberEchoEnabled={cyberEchoEnabled}
+            currentUser={currentUser}
+            editTarget={editTarget}
+            editAsReport={editAsReport}
+            editTargetLoadState={editTargetLoadState}
+            onRetryEditTargetLoad={() => {
+              if (editTargetLoadState.status !== 'idle')
+                startReportEditor(editTargetLoadState.reportId);
+            }}
+            reportSource={reportSource}
+            onClose={closeMessageEditor}
+            onSubmitEdit={
+              editTarget && !editAsReport
+                ? async (messageId, message) => {
+                    handleEditedMessage(messageId, message);
+                  }
+                : undefined
             }
-          }}
-          onDeleteSuccess={() => {
-            reloadFeeds();
-            notify({ message: 'Розвіддонесення успішно видалено.', severity: 'success' });
-          }}
-          onCreated={handleCreatedMessage}
-        />
-
-        <DeleteConfirmDialog
-          open={isPresent(deleteConfirmId)}
-          onClose={() => {
-            setDeleteConfirmId(null);
-            setDeleteConfirmFeedId(null);
-          }}
-          onConfirm={handleDeleteConfirm}
-        />
+            onEditSuccess={() => {
+              if (editAsReport) {
+                reloadFeeds();
+              } else {
+                reloadEditedFeeds();
+              }
+            }}
+            onDeleteSuccess={() => {
+              reloadFeeds();
+              notify({ message: 'Розвіддонесення успішно видалено.', severity: 'success' });
+            }}
+            onCreated={handleCreatedMessage}
+          />
+        </Box>
       </Box>
     </RadioFeaturesProvider>
   );

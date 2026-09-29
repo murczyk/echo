@@ -15,14 +15,22 @@ export type RerDutyFeedsBundle = ReturnType<typeof useRerDutyFeeds>;
 
 export type DutyFeedColumnActionsDeps = {
   feeds: RerDutyFeedsBundle;
-  openReportEditor: (reportId: number) => void;
-  openMessageEditor: (target: { id: number; message: InboxMessage }) => void;
-  openReportComposer: (source: {
-    id: number;
-    message: InboxMessage;
-    senderName?: string | null;
-    etalonDisplayModel: MessageCardEtalonDisplayModel;
-  }) => void;
+  openReportEditor: (feedId: string, reportId: number) => void;
+  openMessageEditor: (
+    feedId: string,
+    target: { id: number; message: InboxMessage },
+    focusTarget?: HTMLElement,
+  ) => void;
+  openReportComposer: (
+    feedId: string,
+    source: {
+      id: number;
+      message: InboxMessage;
+      senderName?: string | null;
+      etalonDisplayModel: MessageCardEtalonDisplayModel;
+    },
+    focusTarget: HTMLElement,
+  ) => void;
 };
 
 /**
@@ -87,21 +95,30 @@ export function useDutyFeedColumnActions(
       onMessageImportant: (msgId, currentlyImportant) =>
         handleMessageImportant(feedId, msgId, currentlyImportant),
       onMessageCopy: handleMessageCopy,
-      onMessageCreateReport: (messageId, message, etalonDisplayModel) => {
+      onMessageCreateReport: (messageId, message, etalonDisplayModel, focusTarget) => {
         const { senderName } = buildMessageCardDisplayLabels(message, {
           groupInfos: deps.feeds.groupInfos,
           profiles: deps.feeds.profiles,
         });
-        deps.openReportComposer({ id: messageId, message, senderName, etalonDisplayModel });
+        deps.openReportComposer(
+          feedId,
+          {
+            id: messageId,
+            message,
+            senderName,
+            etalonDisplayModel,
+          },
+          focusTarget,
+        );
       },
       onMessageEditReport: (reportId) => {
-        deps.openReportEditor(reportId);
+        deps.openReportEditor(feedId, reportId);
       },
       onMessageExcludeEntity: (entity, value) =>
         applyFilter(feedId, excludeMessageEntityFromFilters(feed.filter, entity, value)),
       onMessageToggleTag: (msgId, tagId) => handleToggleTag(feedId, msgId, tagId),
-      onMessageEdit: (messageId, message) => {
-        deps.openMessageEditor({ id: messageId, message });
+      onMessageEdit: (messageId, message, focusTarget) => {
+        deps.openMessageEditor(feedId, { id: messageId, message }, focusTarget);
       },
       onScrollToTop: () => {
         cancelFollowTail(feedId);
@@ -193,12 +210,13 @@ export function useDutyFeedColumnActions(
       onMessageImportant: (msgId, currentlyImportant) =>
         latest().onMessageImportant(msgId, currentlyImportant),
       onMessageCopy: (text, feedbackId) => latest().onMessageCopy(text, feedbackId),
-      onMessageCreateReport: (msgId, message, etalonDisplayModel) =>
-        latest().onMessageCreateReport(msgId, message, etalonDisplayModel),
+      onMessageCreateReport: (msgId, message, etalonDisplayModel, focusTarget) =>
+        latest().onMessageCreateReport(msgId, message, etalonDisplayModel, focusTarget),
       onMessageEditReport: (reportId) => latest().onMessageEditReport(reportId),
       onMessageExcludeEntity: (entity, value) => latest().onMessageExcludeEntity(entity, value),
       onMessageToggleTag: (msgId, tagId) => latest().onMessageToggleTag(msgId, tagId),
-      onMessageEdit: (messageId, message) => latest().onMessageEdit(messageId, message),
+      onMessageEdit: (messageId, message, focusTarget) =>
+        latest().onMessageEdit(messageId, message, focusTarget),
       onScrollToTop: () => latest().onScrollToTop?.(),
       onReachedBottom: (context) => latest().onReachedBottom?.(context),
       onLeftBottom: () => latest().onLeftBottom?.(),

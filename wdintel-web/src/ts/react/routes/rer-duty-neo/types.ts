@@ -15,7 +15,7 @@ import type { MessageCardBotTagAction } from '../shared/message-card/message-car
 import type { AddPointHighlightBlacklistRequest } from '../shared/message-card/point-highlight-blacklist';
 import type { DutyWorkspaceFabAvoidance } from './duty-scroll-fab-position';
 import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
-import type { ReachedBottomContext } from './windowed-feed-scroll-shared';
+import type { AnchorSnapshot, ReachedBottomContext } from './windowed-feed-scroll-shared';
 import type { MessageCardEtalonDisplayModel } from '../shared/message-card/message-card.utils';
 
 export type TailAvailability = 'unknown' | 'checking' | 'loading' | 'available' | 'exhausted';
@@ -46,6 +46,8 @@ export type FeedColumnModel = {
     /** When true, flush `pendingNewerItems` into the window after scroll idle. */
     pendingNewerFlushNeeded?: boolean;
     workspaceFabAvoidance?: DutyWorkspaceFabAvoidance;
+    initialScrollAnchorSnapshot?: AnchorSnapshot | null;
+    onScrollAnchorSnapshotChange?: (feedId: string, snapshot: AnchorSnapshot | null) => void;
   };
   filterPanel: FeedFilterPanelModel;
   keywordsPanel: {
@@ -96,11 +98,12 @@ export type FeedColumnModel = {
       msgId: number,
       message: InboxMessage,
       etalonDisplayModel: MessageCardEtalonDisplayModel,
+      focusTarget: HTMLElement,
     ) => void;
     onMessageEditReport: (reportId: number) => void;
     onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
     onMessageToggleTag: (msgId: number, tagId: number) => void;
-    onMessageEdit: (messageId: number, message: InboxMessage) => void;
+    onMessageEdit: (messageId: number, message: InboxMessage, focusTarget?: HTMLElement) => void;
     onCreateFeed?: () => void;
     onScrollToTop?: () => void;
     /** Called at the physical bottom. Return false to preserve the current anchor instead of following an unread pending tail. */

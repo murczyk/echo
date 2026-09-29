@@ -62,6 +62,12 @@ export type ReportEditLoadState =
   | { status: 'loading'; reportId: number }
   | { status: 'error'; reportId: number; message: string };
 
+export type ManageMessageIntentChange = {
+  key: string;
+  commit: () => void;
+  focusTarget?: HTMLElement | null;
+};
+
 export type UseManageMessageDrawerProps = {
   open: boolean;
   cyberEchoEnabled: boolean;
@@ -84,6 +90,9 @@ export type UseManageMessageDrawerProps = {
   editTargetLoadState?: ReportEditLoadState;
   editSaveInFlight?: boolean;
   onSubmitEdit?: (id: number, message: InboxMessage) => void | Promise<void>;
+  interactionActive?: boolean;
+  keepOpenAfterCreate?: boolean;
+  intentKey?: string;
 };
 
 export function useManageMessageDrawer({
@@ -99,6 +108,9 @@ export function useManageMessageDrawer({
   editTargetLoadState = { status: 'idle' },
   editSaveInFlight,
   onSubmitEdit,
+  interactionActive = true,
+  keepOpenAfterCreate = false,
+  intentKey,
 }: UseManageMessageDrawerProps) {
   const radioFeaturesAllowed = canUseRadioFeatures(currentUser?.roles);
   const isEditMode = isPresent(editTarget);
@@ -118,14 +130,22 @@ export function useManageMessageDrawer({
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [copyLoading, setCopyLoading] = useState(false);
+  const [reportCopyError, setReportCopyError] = useState<string | null>(null);
+  const [reportCopyRetryAttempt, setReportCopyRetryAttempt] = useState(0);
   const [reportCopyLoadedSourceId, setReportCopyLoadedSourceId] = useState<number | null>(null);
   const [originalReportText, setOriginalReportText] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [referenceDataError, setReferenceDataError] = useState<string | null>(null);
+  const [referenceDataRetryAttempt, setReferenceDataRetryAttempt] = useState(0);
   const [quickSuggestion, setQuickSuggestion] = useState<QuickIntelReportSuggestionState>({
     status: 'idle',
   });
   const [quickSuggestionAttempt, setQuickSuggestionAttempt] = useState(0);
   const [discardConfirmationOpen, setDiscardConfirmationOpen] = useState(false);
+  const [createSucceeded, setCreateSucceeded] = useState(false);
+  const pendingIntentChangeRef = useRef<ManageMessageIntentChange | null>(null);
+  const editorRootRef = useRef<HTMLDivElement>(null);
+  const editorOwnsInteractionRef = useRef(false);
   const reportCopyLoaded =
     isReportCreateMode && reportCopyLoadedSourceId === (reportSource?.id ?? null);
 
@@ -170,6 +190,21 @@ export function useManageMessageDrawer({
   const [freqLoading, setFreqLoading] = useState(false);
   const [freqInput, setFreqInput] = useState('');
 
+  const handleReferenceDataError = useCallback((description: string, error: unknown) => {
+    console.error(description, error);
+    setReferenceDataError('Не вдалося завантажити довідкові дані.');
+  }, []);
+
+  const retryReferenceData = useCallback(() => {
+    setReferenceDataError(null);
+    setReferenceDataRetryAttempt((attempt) => attempt + 1);
+  }, []);
+
+  const retryReportCopy = useCallback(() => {
+    setReportCopyError(null);
+    setReportCopyRetryAttempt((attempt) => attempt + 1);
+  }, []);
+
   useEffect(() => {
     if (!formReady || !cyberEchoEnabled) {
       setDeviceNameOptions([]);
@@ -185,7 +220,7 @@ export function useManageMessageDrawer({
           setDeviceNameOptions(results.map((c) => c.name));
         }
       })
-      .catch(console.error)
+      .catch((error) => handleReferenceDataError('Failed to load device names', error))
       .finally(() => {
         if (active) setDeviceNamesLoading(false);
       });
@@ -193,7 +228,13 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [cyberEchoEnabled, deviceNameInput, formReady]);
+  }, [
+    cyberEchoEnabled,
+    deviceNameInput,
+    formReady,
+    handleReferenceDataError,
+    referenceDataRetryAttempt,
+  ]);
 
   useEffect(() => {
     if (!formReady || !radioFeaturesAllowed) return;
@@ -206,7 +247,7 @@ export function useManageMessageDrawer({
           setPostOptions(results.map((p) => p.name));
         }
       })
-      .catch(console.error)
+      .catch((error) => handleReferenceDataError('Failed to load post names', error))
       .finally(() => {
         if (active) setPostLoading(false);
       });
@@ -214,7 +255,13 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [postInput, formReady, radioFeaturesAllowed]);
+  }, [
+    postInput,
+    formReady,
+    handleReferenceDataError,
+    radioFeaturesAllowed,
+    referenceDataRetryAttempt,
+  ]);
 
   useEffect(() => {
     if (!formReady) return;
@@ -227,7 +274,7 @@ export function useManageMessageDrawer({
           setUnitOptions(results.map((u) => u.name));
         }
       })
-      .catch(console.error)
+      .catch((error) => handleReferenceDataError('Failed to load unit names', error))
       .finally(() => {
         if (active) setUnitLoading(false);
       });
@@ -235,7 +282,7 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [unitInput, formReady]);
+  }, [formReady, handleReferenceDataError, referenceDataRetryAttempt, unitInput]);
 
   useEffect(() => {
     if (!formReady) return;
@@ -248,7 +295,7 @@ export function useManageMessageDrawer({
           setNetworkNameOptions(results);
         }
       })
-      .catch(console.error)
+      .catch((error) => handleReferenceDataError('Failed to load network names', error))
       .finally(() => {
         if (active) setNetworkNameLoading(false);
       });
@@ -256,7 +303,7 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [networkNameInput, formReady]);
+  }, [formReady, handleReferenceDataError, networkNameInput, referenceDataRetryAttempt]);
 
   useEffect(() => {
     if (!formReady) return;
@@ -274,12 +321,18 @@ export function useManageMessageDrawer({
           ...Object.fromEntries(units.map((unit) => [unit.id, unit.name])),
         }));
       })
-      .catch(console.error);
+      .catch((error) => handleReferenceDataError('Failed to load network units', error));
 
     return () => {
       active = false;
     };
-  }, [networkNameOptions, networkUnitNamesById, formReady]);
+  }, [
+    formReady,
+    handleReferenceDataError,
+    networkNameOptions,
+    networkUnitNamesById,
+    referenceDataRetryAttempt,
+  ]);
 
   useEffect(() => {
     if (!formReady) return;
@@ -292,7 +345,7 @@ export function useManageMessageDrawer({
           setCallsignOptions(results.map((c) => c.name));
         }
       })
-      .catch(console.error)
+      .catch((error) => handleReferenceDataError('Failed to load callsigns', error))
       .finally(() => {
         if (active) setCallsignLoading(false);
       });
@@ -300,7 +353,7 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [callsignInput, formReady]);
+  }, [callsignInput, formReady, handleReferenceDataError, referenceDataRetryAttempt]);
 
   useEffect(() => {
     if (!formReady || !radioFeaturesAllowed) return;
@@ -313,7 +366,7 @@ export function useManageMessageDrawer({
           setFreqOptions(results.map((f) => f.name));
         }
       })
-      .catch(console.error)
+      .catch((error) => handleReferenceDataError('Failed to load frequencies', error))
       .finally(() => {
         if (active) setFreqLoading(false);
       });
@@ -321,7 +374,13 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [freqInput, formReady, radioFeaturesAllowed]);
+  }, [
+    formReady,
+    freqInput,
+    handleReferenceDataError,
+    radioFeaturesAllowed,
+    referenceDataRetryAttempt,
+  ]);
 
   const resolver = useMemo(
     () => zodResolver(makeMessageSchema(isEditMode, false, isReportMode, radioFeaturesAllowed)),
@@ -396,10 +455,80 @@ export function useManageMessageDrawer({
   const hasUnsavedChanges = formState.isDirty || uppyFiles.length > 0;
 
   useEffect(() => {
-    if (!formReady) return;
-    window.addEventListener('paste', handlePaste);
-    return () => window.removeEventListener('paste', handlePaste);
-  }, [formReady, handlePaste]);
+    if (!open || !hasUnsavedChanges) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges, open]);
+
+  useEffect(() => {
+    if (!open || !hasUnsavedChanges) return;
+    const handleNavigationClick = (event: MouseEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
+      const target = event.target instanceof Element ? event.target.closest('a[href]') : null;
+      if (
+        !(target instanceof HTMLAnchorElement) ||
+        editorRootRef.current?.contains(target) ||
+        target.target === '_blank' ||
+        target.hasAttribute('download')
+      ) {
+        return;
+      }
+      const destination = target.href;
+      if (!destination || destination === window.location.href) return;
+      event.preventDefault();
+      pendingIntentChangeRef.current = {
+        key: `navigate:${destination}`,
+        focusTarget: target,
+        commit: () => window.location.assign(destination),
+      };
+      setDiscardConfirmationOpen(true);
+    };
+    document.addEventListener('click', handleNavigationClick, true);
+    return () => document.removeEventListener('click', handleNavigationClick, true);
+  }, [hasUnsavedChanges, open]);
+
+  useEffect(() => {
+    if (!formReady || !interactionActive) {
+      editorOwnsInteractionRef.current = false;
+      return;
+    }
+    const updateOwnership = (event: Event) => {
+      const root = editorRootRef.current;
+      editorOwnsInteractionRef.current = Boolean(
+        root && event.target instanceof Node && root.contains(event.target),
+      );
+    };
+    const handleScopedPaste = (event: ClipboardEvent) => {
+      const root = editorRootRef.current;
+      if (!root) return;
+      const targetInside = event.target instanceof Node && root.contains(event.target);
+      const focusInside =
+        document.activeElement instanceof Node && root.contains(document.activeElement);
+      if (!targetInside && !focusInside && !editorOwnsInteractionRef.current) return;
+      handlePaste(event);
+    };
+    document.addEventListener('pointerdown', updateOwnership, true);
+    document.addEventListener('focusin', updateOwnership, true);
+    window.addEventListener('paste', handleScopedPaste);
+    return () => {
+      document.removeEventListener('pointerdown', updateOwnership, true);
+      document.removeEventListener('focusin', updateOwnership, true);
+      window.removeEventListener('paste', handleScopedPaste);
+    };
+  }, [formReady, handlePaste, interactionActive]);
 
   const dutySettings = useDutySettings();
   const autoParseEnabled = dutySettings.messageAutoParseEnabled;
@@ -549,7 +678,7 @@ export function useManageMessageDrawer({
           }
         }
       } catch (e) {
-        console.error('Failed to load groups', e);
+        handleReferenceDataError('Failed to load groups', e);
       } finally {
         if (active) setGroupsLoading(false);
       }
@@ -569,12 +698,12 @@ export function useManageMessageDrawer({
             .filter((label): label is string => !!label),
         );
       })
-      .catch((e) => console.error('Failed to load tags', e));
+      .catch((error) => handleReferenceDataError('Failed to load tags', error));
 
     return () => {
       active = false;
     };
-  }, [formReady]);
+  }, [formReady, handleReferenceDataError, referenceDataRetryAttempt]);
 
   useEffect(() => {
     if (!formReady) return;
@@ -586,9 +715,11 @@ export function useManageMessageDrawer({
     setFreqInput('');
     setShowAdvanced(false);
     setErrorMsg(null);
+    setReferenceDataError(null);
     setSelectedNetwork(null);
     setUnitLocked(false);
     setReportCopyLoadedSourceId(null);
+    setReportCopyError(null);
     setOriginalReportText(reportParents.map(({ text }) => text).join('\n\n'));
     if (isEditMode && editTarget) {
       const metadata = editTarget.message.metadata ?? [];
@@ -646,6 +777,7 @@ export function useManageMessageDrawer({
       return;
     }
     let active = true;
+    setReportCopyError(null);
     setCopyLoading(true);
     const controller = new AbortController();
     copyDirectSubmit(reportParentIds, { signal: controller.signal })
@@ -674,7 +806,7 @@ export function useManageMessageDrawer({
       })
       .catch((error) => {
         if (!active) return;
-        setErrorMsg(formatDirectSubmitError(error, 'copy'));
+        setReportCopyError(formatDirectSubmitError(error, 'copy'));
       })
       .finally(() => {
         if (active) setCopyLoading(false);
@@ -684,7 +816,15 @@ export function useManageMessageDrawer({
       active = false;
       controller.abort();
     };
-  }, [formReady, isReportCreateMode, isReportMode, reportParentIdsKey, reportSource?.id, reset]);
+  }, [
+    formReady,
+    isReportCreateMode,
+    isReportMode,
+    reportCopyRetryAttempt,
+    reportParentIdsKey,
+    reportSource?.id,
+    reset,
+  ]);
 
   useEffect(() => {
     if (!formReady || !isReportCreateMode || !reportCopyLoaded || !reportSource) {
@@ -824,12 +964,16 @@ export function useManageMessageDrawer({
     setDeviceNameInput('');
     setShowAdvanced(false);
     setErrorMsg(null);
+    setReferenceDataError(null);
+    setReportCopyError(null);
+    pendingIntentChangeRef.current = null;
     onClose();
   };
 
   const handleBrowserBack = () => {
     if (saving) return false;
     if (hasUnsavedChanges) {
+      pendingIntentChangeRef.current = null;
       setDiscardConfirmationOpen(true);
       return false;
     }
@@ -845,19 +989,81 @@ export function useManageMessageDrawer({
 
   const closeDrawerAfterSubmit = () => requestDrawerClose();
 
+  const handleCreateSuccess = useCallback(
+    (submittedValues: MessageFormData) => {
+      if (!keepOpenAfterCreate) {
+        closeDrawerAfterSubmit();
+        return;
+      }
+      uppy.cancelAll();
+      reset({
+        ...getInitialCreateFormValues(),
+        signalGroupMasterKey: submittedValues.signalGroupMasterKey ?? '',
+        deviceName: cyberEchoEnabled ? (submittedValues.deviceName ?? '') : '',
+        unit: submittedValues.unit ?? '',
+      });
+      setDeviceNameInput('');
+      setPostInput('');
+      setUnitInput('');
+      setNetworkNameInput('');
+      setCallsignInput('');
+      setFreqInput('');
+      setSelectedNetwork(null);
+      setUnitLocked(false);
+      setShowAdvanced(false);
+      setErrorMsg(null);
+      setCreateSucceeded(true);
+    },
+    [cyberEchoEnabled, getInitialCreateFormValues, keepOpenAfterCreate, reset, uppy],
+  );
+
+  useEffect(() => {
+    if (formState.isDirty) setCreateSucceeded(false);
+  }, [formState.isDirty]);
+
+  useEffect(() => {
+    setCreateSucceeded(false);
+  }, [intentKey, open]);
+
   const handleDrawerClose = () => {
     if (saving) return;
     if (hasUnsavedChanges) {
+      pendingIntentChangeRef.current = null;
       setDiscardConfirmationOpen(true);
       return;
     }
     requestDrawerClose();
   };
 
-  const cancelDiscard = () => setDiscardConfirmationOpen(false);
+  const requestIntentChange = useCallback(
+    (change: ManageMessageIntentChange) => {
+      if (saving) return;
+      if (!hasUnsavedChanges) {
+        change.commit();
+        return;
+      }
+      pendingIntentChangeRef.current = change;
+      setDiscardConfirmationOpen(true);
+    },
+    [hasUnsavedChanges, saving],
+  );
+
+  const cancelDiscard = () => {
+    pendingIntentChangeRef.current = null;
+    setDiscardConfirmationOpen(false);
+  };
 
   const confirmDiscard = () => {
     setDiscardConfirmationOpen(false);
+    const pendingIntentChange = pendingIntentChangeRef.current;
+    pendingIntentChangeRef.current = null;
+    if (pendingIntentChange) {
+      uppy.cancelAll();
+      reset();
+      setErrorMsg(null);
+      pendingIntentChange.commit();
+      return;
+    }
     requestDrawerClose();
   };
 
@@ -880,6 +1086,7 @@ export function useManageMessageDrawer({
     onCreated,
     onEditSuccess,
     handleDrawerCloseAfterSubmit: closeDrawerAfterSubmit,
+    handleCreateSuccess,
   });
 
   return {
@@ -907,6 +1114,10 @@ export function useManageMessageDrawer({
     handleBodyChange,
     errorMsg,
     setErrorMsg,
+    reportCopyError,
+    retryReportCopy,
+    referenceDataError,
+    retryReferenceData,
     tagOptions,
     tagsMap,
     setTagsMap,
@@ -958,10 +1169,13 @@ export function useManageMessageDrawer({
     handleToggleAutoParse,
     handleDrawerClose,
     closeDrawerWithoutConfirmation: closeDrawerAfterSubmit,
+    requestIntentChange,
+    editorRootRef,
     discardConfirmationOpen,
     cancelDiscard,
     confirmDiscard,
     onSubmit,
     recentValues,
+    createSucceeded,
   };
 }

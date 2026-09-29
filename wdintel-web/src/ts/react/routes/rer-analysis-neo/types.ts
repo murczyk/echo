@@ -344,8 +344,12 @@ export type AnalysisPageActions = {
   downloadReport: () => void;
   closeEditor: () => void;
   openReport: () => void;
-  openEditor: (messageId: number) => void;
-  openReportCreator: (messageId: number, etalonDisplayModel: MessageCardEtalonDisplayModel) => void;
+  openEditor: (messageId: number, focusTarget?: HTMLElement) => void;
+  openReportCreator: (
+    messageId: number,
+    etalonDisplayModel: MessageCardEtalonDisplayModel,
+    focusTarget?: HTMLElement,
+  ) => void;
   openReportEditor: (messageId: number) => void;
   retryEditTargetLoad: () => void;
   refreshMapDateRange: (range: { startDate: number; endDate: number }) => void;

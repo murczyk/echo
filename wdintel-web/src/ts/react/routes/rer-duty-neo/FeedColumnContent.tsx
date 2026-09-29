@@ -47,6 +47,7 @@ import { dutyTopScrollButtonSx } from './top-action-styles';
 import { useWindowedFeedScroll } from './useWindowedFeedScroll';
 import {
   ScrollNavigationIntent,
+  type AnchorSnapshot,
   type ExplicitScrollNavigation,
 } from './windowed-feed-scroll-shared';
 import { useFeedIdleViewportOffload } from './useFeedIdleViewportOffload';
@@ -136,11 +137,12 @@ type DutyMessageCardItemProps = {
     msgId: number,
     message: InboxMessage,
     etalonDisplayModel: MessageCardEtalonDisplayModel,
+    focusTarget: HTMLElement,
   ) => void;
   onMessageEditReport: (reportId: number) => void;
   onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
   onMessageToggleTag: (msgId: number, tagId: number) => void;
-  onMessageEdit: (messageId: number, message: InboxMessage) => void;
+  onMessageEdit: (messageId: number, message: InboxMessage, focusTarget?: HTMLElement) => void;
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
   onAddPointHighlightBlacklist?: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
 };
@@ -275,11 +277,13 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
           ? undefined
           : () => onMessageCopy(etalonDisplayModel.copyLocationValue ?? '', `location-${id}`)
       }
-      onCreateReport={() => onMessageCreateReport(id, msg, etalonDisplayModel)}
+      onCreateReport={(focusTarget) =>
+        onMessageCreateReport(id, msg, etalonDisplayModel, focusTarget)
+      }
       onEditReport={onMessageEditReport}
       onExcludeMessageEntity={(entity, value) => onMessageExcludeEntity(entity, value)}
       onToggleTag={(tagId) => onMessageToggleTag(id, tagId)}
-      onEditDetails={() => onMessageEdit(id, msg)}
+      onEditDetails={(focusTarget) => onMessageEdit(id, msg, focusTarget)}
       onOpenPointsOnMap={onOpenPointsOnMap}
       onAddPointHighlightBlacklist={onAddPointHighlightBlacklist}
       rightHeaderInsetPx={0}
@@ -324,11 +328,12 @@ type DutyMessageListProps = {
     msgId: number,
     message: InboxMessage,
     etalonDisplayModel: MessageCardEtalonDisplayModel,
+    focusTarget: HTMLElement,
   ) => void;
   onMessageEditReport: (reportId: number) => void;
   onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
   onMessageToggleTag: (msgId: number, tagId: number) => void;
-  onMessageEdit: (messageId: number, message: InboxMessage) => void;
+  onMessageEdit: (messageId: number, message: InboxMessage, focusTarget?: HTMLElement) => void;
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
   onAddPointHighlightBlacklist?: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
   setItemRef: (id: number) => (node: HTMLDivElement | null) => void;
@@ -636,6 +641,8 @@ export const FeedColumnContent = memo(
       unreadPrefetchNeeded = true,
       pendingNewerFlushNeeded = false,
       workspaceFabAvoidance = 'none',
+      initialScrollAnchorSnapshot = null,
+      onScrollAnchorSnapshotChange,
     } = view;
     const {
       authUserName,
@@ -691,8 +698,16 @@ export const FeedColumnContent = memo(
       [networkMap],
     );
     const itemIds = useMemo(() => feed.items.map(([id]) => id), [feed.items]);
+    const handleAnchorSnapshotChange = useCallback(
+      (snapshot: AnchorSnapshot | null) => {
+        onScrollAnchorSnapshotChange?.(feed.id, snapshot);
+      },
+      [feed.id, onScrollAnchorSnapshotChange],
+    );
     const scroll = useWindowedFeedScroll({
       itemIds,
+      initialAnchorSnapshot: initialScrollAnchorSnapshot,
+      onAnchorSnapshotChange: handleAnchorSnapshotChange,
       debugFeedId: feed.id,
       isWatchMode,
       autoScrollAllowed,
