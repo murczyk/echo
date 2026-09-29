@@ -141,7 +141,7 @@ type DutyMessageCardItemProps = {
   onMessageEditReport: (reportId: number) => void;
   onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
   onMessageToggleTag: (msgId: number, tagId: number) => void;
-  onMessageEdit: (messageId: number, message: InboxMessage) => void;
+  onMessageEdit: (messageId: number, message: InboxMessage, focusTarget?: HTMLElement) => void;
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
   onAddPointHighlightBlacklist?: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
 };
@@ -280,7 +280,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       onEditReport={onMessageEditReport}
       onExcludeMessageEntity={(entity, value) => onMessageExcludeEntity(entity, value)}
       onToggleTag={(tagId) => onMessageToggleTag(id, tagId)}
-      onEditDetails={() => onMessageEdit(id, msg)}
+      onEditDetails={(focusTarget) => onMessageEdit(id, msg, focusTarget)}
       onOpenPointsOnMap={onOpenPointsOnMap}
       onAddPointHighlightBlacklist={onAddPointHighlightBlacklist}
       rightHeaderInsetPx={0}
@@ -329,7 +329,7 @@ type DutyMessageListProps = {
   onMessageEditReport: (reportId: number) => void;
   onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
   onMessageToggleTag: (msgId: number, tagId: number) => void;
-  onMessageEdit: (messageId: number, message: InboxMessage) => void;
+  onMessageEdit: (messageId: number, message: InboxMessage, focusTarget?: HTMLElement) => void;
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
   onAddPointHighlightBlacklist?: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
   setItemRef: (id: number) => (node: HTMLDivElement | null) => void;

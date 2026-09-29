@@ -24,7 +24,11 @@ export type DutyFeedColumnModelDeps = {
   mediaSummaryEnabled: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
   openReportEditor: (feedId: string, reportId: number) => void;
-  openMessageEditor: (feedId: string, target: { id: number; message: InboxMessage }) => void;
+  openMessageEditor: (
+    feedId: string,
+    target: { id: number; message: InboxMessage },
+    focusTarget?: HTMLElement,
+  ) => void;
   openReportComposer: (
     feedId: string,
     source: {

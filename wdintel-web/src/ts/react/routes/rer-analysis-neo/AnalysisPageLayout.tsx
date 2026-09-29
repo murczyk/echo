@@ -53,6 +53,7 @@ export function RerAnalysisNeoPage({
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
   const [editorSourceMessageId, setEditorSourceMessageId] = useState<number | null>(null);
   const editorRef = useRef<ManageMessageEditorHandle>(null);
+  const editorInitialFocusTargetRef = useRef<HTMLElement | null>(null);
   const { ref: layoutRef, width: layoutWidth } = useObservedWidth<HTMLDivElement>();
   const reportFocusTargetRef = useRef<HTMLElement | null>(null);
   const reportFallbackFocusRef = useRef<HTMLDivElement | null>(null);
@@ -108,15 +109,6 @@ export function RerAnalysisNeoPage({
     leftPanelOpen: leftPanelVisible,
     editorOpen,
   });
-  const canRestoreLeftPanelInline = shouldInlineAnalysisLeftPanel({
-    layoutWidth,
-    viewportWidth,
-    desktop: !isNarrowLayout,
-    leftPanelOpen: true,
-    editorOpen: false,
-  });
-  const inlineLeftPanelWasVisibleRef = useRef(inlineLeftPanelVisible);
-  const restoreLeftPanelAfterEditorRef = useRef(false);
   const inlineRightDockVisible =
     editorPresentation === 'embedded' && (editorOpen || (!isNarrowLayout && rightPanelVisible));
   const centerTabs = getAnalysisCenterTabs(page.analysisMapInSidebar, page.radioFeaturesAllowed);
@@ -133,10 +125,17 @@ export function RerAnalysisNeoPage({
     [page.openReport],
   );
   const requestEditorIntent = useCallback(
-    (key: string, sourceMessageId: number | null, commit: () => void) => {
+    (
+      key: string,
+      sourceMessageId: number | null,
+      commit: () => void,
+      invokingControl?: HTMLElement,
+    ) => {
       if (!canWriteMessages(page.currentUser?.roles)) return;
       const focusTarget =
-        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        invokingControl ??
+        (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+      editorInitialFocusTargetRef.current = focusTarget;
       const applyIntent = () => {
         if (page.rightPanelOpen) page.toggleRightPanel();
         if (key === 'create-message') {
@@ -173,13 +172,18 @@ export function RerAnalysisNeoPage({
     requestEditorIntent('create-message', null, () => setCreateMessageOpen(true));
   }, [requestEditorIntent]);
   const openMessageEditor = useCallback(
-    (messageId: number) => {
+    (messageId: number, invokingControl?: HTMLElement) => {
       const message = page.messages.find(([id]) => id === messageId)?.[1];
       const intentKind = message && isIntelligenceReport(message) ? 'edit-report' : 'edit-message';
-      requestEditorIntent(`${intentKind}:${messageId}`, messageId, () => {
-        page.setCenterTab('messages');
-        page.openEditor(messageId);
-      });
+      requestEditorIntent(
+        `${intentKind}:${messageId}`,
+        messageId,
+        () => {
+          page.setCenterTab('messages');
+          page.openEditor(messageId);
+        },
+        invokingControl,
+      );
     },
     [page.messages, page.openEditor, page.setCenterTab, requestEditorIntent],
   );
@@ -246,29 +250,6 @@ export function RerAnalysisNeoPage({
     if (editorOpen && page.rightPanelOpen) page.toggleRightPanel();
   }, [editorOpen, page.rightPanelOpen, page.toggleRightPanel]);
 
-  useEffect(() => {
-    const movedInlineFiltersToDrawer =
-      editorPresentation === 'embedded' &&
-      editorOpen &&
-      leftPanelVisible &&
-      inlineLeftPanelWasVisibleRef.current &&
-      !inlineLeftPanelVisible;
-    if (movedInlineFiltersToDrawer) {
-      restoreLeftPanelAfterEditorRef.current = true;
-      page.toggleLeftPanel();
-    } else if (!editorOpen && restoreLeftPanelAfterEditorRef.current) {
-      restoreLeftPanelAfterEditorRef.current = false;
-      if (!leftPanelVisible && canRestoreLeftPanelInline) page.toggleLeftPanel();
-    }
-    inlineLeftPanelWasVisibleRef.current = inlineLeftPanelVisible;
-  }, [
-    editorOpen,
-    editorPresentation,
-    canRestoreLeftPanelInline,
-    inlineLeftPanelVisible,
-    leftPanelVisible,
-    page.toggleLeftPanel,
-  ]);
   const previousCanWriteRef = useRef<boolean | null>(null);
   useEffect(() => {
     const canWrite = canWriteMessages(page.currentUser?.roles);
@@ -418,6 +399,7 @@ export function RerAnalysisNeoPage({
                     adaptiveEmbeddedForm
                     fillEmbeddedSurface
                     transparentEmbeddedSurface
+                    initialFocusTarget={editorInitialFocusTargetRef.current}
                     focusFallbackRef={createMessageFabRef}
                     cyberEchoEnabled={page.cyberEchoEnabled}
                     currentUser={page.currentUser}

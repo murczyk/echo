@@ -32,6 +32,7 @@ const manageMessageDrawerPropsHistory = vi.hoisted(
       adaptiveEmbeddedForm?: boolean;
       fillEmbeddedSurface?: boolean;
       transparentEmbeddedSurface?: boolean;
+      initialFocusTarget?: HTMLElement | null;
     }>,
 );
 
@@ -243,7 +244,7 @@ vi.mock('.././components/AnalysisMapPane', () => ({
 
 vi.mock('.././components/AnalysisMessagesPane', () => ({
   AnalysisMessagesPane: (props: {
-    onOpenEditor?: (messageId: number) => void;
+    onOpenEditor?: (messageId: number, focusTarget?: HTMLElement) => void;
     onCreateReport?: (messageId: number, etalonDisplayModel: unknown) => void;
     onEditReport?: (messageId: number) => void;
     editorSourceMessageId?: number | null;
@@ -254,7 +255,7 @@ vi.mock('.././components/AnalysisMessagesPane', () => ({
         <button
           type="button"
           aria-label="analysis-edit-message"
-          onClick={() => props.onOpenEditor?.(42)}
+          onClick={(event) => props.onOpenEditor?.(42, event.currentTarget)}
         />
         <button
           type="button"
@@ -323,7 +324,11 @@ vi.mock('../../shared/manage-message/ManageMessageDrawer', () => ({
       commit: () => void;
     }>(null);
     useImperativeHandle(ref, () => ({
-      requestIntentChange(change: { key: string; commit: () => void }) {
+      requestIntentChange(change: {
+        key: string;
+        focusTarget?: HTMLElement | null;
+        commit: () => void;
+      }) {
         if (change.key === props.intentKey) return;
         if (editorGuardMocks.dirty) setPendingIntent(change);
         else change.commit();
@@ -999,6 +1004,9 @@ describe('RerAnalysisNeoPage', () => {
   it('selects Messages and records the source id for message editing', async () => {
     const page = buildPage();
     page.centerTab = 'summary';
+    page.openEditor.mockImplementation((messageId: number) => {
+      page.editorMessage = { id: messageId, message: { messageUid: 'm-42' } as never };
+    });
     useRerAnalysisNeoPageMock.mockReturnValue(page);
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -1006,12 +1014,14 @@ describe('RerAnalysisNeoPage', () => {
     const root = createRoot(container);
 
     await act(async () => root.render(<RerAnalysisNeoPage />));
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>('[aria-label="analysis-edit-message"]')?.click();
-    });
+    const editButton = container.querySelector<HTMLButtonElement>(
+      '[aria-label="analysis-edit-message"]',
+    );
+    await act(async () => editButton?.click());
 
     expect(page.setCenterTab).toHaveBeenCalledWith('messages');
     expect(page.openEditor).toHaveBeenCalledWith(42);
+    expect(manageMessageDrawerPropsHistory.at(-1)?.initialFocusTarget).toBe(editButton);
     expect(messagesPanePropsHistory.at(-1)?.editorSourceMessageId).toBe(42);
     root.unmount();
   });
@@ -1183,7 +1193,7 @@ describe('RerAnalysisNeoPage', () => {
     wideRoot.unmount();
   });
 
-  it('dismisses filters that were inline before an embedded editor opens', async () => {
+  it('moves inline filters into the drawer without closing them', async () => {
     const page = buildPage();
     useRerAnalysisNeoPageMock.mockReturnValue(page);
     useMediaQueryMock.mockImplementation((query) => query === '(min-width:1024px)');
@@ -1213,7 +1223,8 @@ describe('RerAnalysisNeoPage', () => {
       container.querySelector<HTMLButtonElement>('[aria-label="create-message-fab"]')?.click();
     });
 
-    expect(page.toggleLeftPanel).toHaveBeenCalledOnce();
+    expect(container.querySelector('[data-testid="analysis-drawer-left"]')).not.toBeNull();
+    expect(page.toggleLeftPanel).not.toHaveBeenCalled();
     root.unmount();
   });
 });

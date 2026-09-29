@@ -91,6 +91,15 @@ describe('useDutyFeedColumnActions', () => {
 
     await act(async () => root.render(<Harness />));
 
+    const editFocusTarget = document.createElement('button');
+    const editMessage = minimalInboxMessage();
+    actions!.onMessageEdit(40, editMessage, editFocusTarget);
+    expect(deps.openMessageEditor).toHaveBeenCalledWith(
+      'mf-0',
+      { id: 40, message: editMessage },
+      editFocusTarget,
+    );
+
     expect(
       actions!.onReachedBottom?.({
         hasSeenNotAtBottom: true,

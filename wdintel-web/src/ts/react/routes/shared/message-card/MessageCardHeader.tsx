@@ -86,7 +86,7 @@ type ActionIconsRowProps = {
   onCopyEtalon?: () => void;
   onCopyLocation?: () => void;
   onDelete?: () => void;
-  onEditDetails?: () => void;
+  onEditDetails?: (focusTarget: HTMLElement) => void;
   onExcludeMessageEntity?: (entity: MessageEntityFilterKind, value: string) => void;
   attachmentArchiveDownload?: MessageCardAttachmentArchiveDownloadAction;
   headerRowRef: RefObject<HTMLDivElement | null>;
@@ -232,6 +232,7 @@ function ActionIconsRow({
     useState<MenuAnchorPosition | null>(null);
   const [navigationMenuAnchorPosition, setNavigationMenuAnchorPosition] =
     useState<MenuAnchorPosition | null>(null);
+  const overflowMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [stackedLayout, setStackedLayout] = useState(false);
   const canShowPrimaryActions =
     !readOnly && isPresent(onBookmark) && isPresent(onImportant) && isPresent(onCopyText);
@@ -256,7 +257,7 @@ function ActionIconsRow({
           title: 'Редагувати',
           icon: <EditIcon fontSize="small" />,
           selected: false,
-          onClick: onEditDetails,
+          onClick: (event) => onEditDetails(overflowMenuTriggerRef.current ?? event.currentTarget),
         }
       : null,
     isPresent(attachmentArchiveDownload)
@@ -320,6 +321,7 @@ function ActionIconsRow({
 
   function openOverflowMenu(event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
+    overflowMenuTriggerRef.current = event.currentTarget;
     setOverflowMenuAnchorPosition(getMenuAnchorPosition(event));
   }
 
@@ -911,7 +913,7 @@ export type MessageCardHeaderProps = {
   onCopyEtalon?: () => void;
   onCopyLocation?: () => void;
   onDelete?: () => void;
-  onEditDetails?: () => void;
+  onEditDetails?: (focusTarget: HTMLElement) => void;
   onExcludeMessageEntity?: (entity: MessageEntityFilterKind, value: string) => void;
   attachmentArchiveDownload?: MessageCardAttachmentArchiveDownloadAction;
 };

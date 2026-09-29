@@ -2434,6 +2434,38 @@ describe('ManageMessageDrawer edit mode', () => {
     fallback.remove();
   });
 
+  it('restores focus to an explicitly captured invoking control', async () => {
+    const container = document.createElement('div');
+    const invokingControl = document.createElement('button');
+    document.body.appendChild(container);
+    document.body.appendChild(invokingControl);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+          initialFocusTarget={invokingControl}
+        />,
+      );
+    });
+
+    await act(async () => {
+      const closeButton = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent?.trim() === 'Закрити',
+      );
+      closeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    });
+    expect(document.activeElement).toBe(invokingControl);
+
+    root.unmount();
+    invokingControl.remove();
+  });
+
   it('initializes shared create fields from recent values without applying suggestions as defaults', async () => {
     setRecentValues({
       group: ['g-1'],

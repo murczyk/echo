@@ -93,6 +93,7 @@ export type Props = {
   adaptiveEmbeddedForm?: boolean;
   fillEmbeddedSurface?: boolean;
   transparentEmbeddedSurface?: boolean;
+  initialFocusTarget?: HTMLElement | null;
   focusFallbackRef?: React.RefObject<HTMLElement | null>;
 };
 
@@ -413,8 +414,10 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
     const canWrite = canWriteMessages(props.currentUser?.roles);
     const returnFocusRef = React.useRef<HTMLElement | null>(null);
     const wasOpenRef = React.useRef(false);
-    if (props.open && !wasOpenRef.current && document.activeElement instanceof HTMLElement) {
-      returnFocusRef.current = document.activeElement;
+    if (props.open && !wasOpenRef.current) {
+      returnFocusRef.current =
+        props.initialFocusTarget ??
+        (document.activeElement instanceof HTMLElement ? document.activeElement : null);
     }
     const restoreFocus = React.useCallback(() => {
       scheduleAfterPaint(() => {

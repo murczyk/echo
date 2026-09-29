@@ -104,7 +104,7 @@ type Props = {
   onDeleteMessage: (messageId: number) => void;
   onCancelBotTagAction?: () => void;
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void;
-  onOpenEditor: (messageId: number) => void;
+  onOpenEditor: (messageId: number, focusTarget?: HTMLElement) => void;
   onCreateReport: (messageId: number, etalonDisplayModel: MessageCardEtalonDisplayModel) => void;
   onEditReport: (messageId: number) => void | Promise<void>;
   onLoadMoreMessages: () => Promise<boolean>;
@@ -317,7 +317,7 @@ type AnalysisMessageCardItemProps = {
   onAddPointHighlightBlacklist: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
   onCancelBotTagAction?: () => void;
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void;
-  onOpenEditor: (messageId: number) => void;
+  onOpenEditor: (messageId: number, focusTarget?: HTMLElement) => void;
   onSaveMessageUpdate: (
     messageId: number,
     updater: (message: InboxMessage) => InboxMessage,
@@ -492,7 +492,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       onCreateReport={() => onCreateReport(id, etalonDisplayModel)}
       onEditReport={onEditReport}
       onDelete={() => onDeleteOpen(id)}
-      onEditDetails={() => onOpenEditor(id)}
+      onEditDetails={(focusTarget) => onOpenEditor(id, focusTarget)}
       onToggleTag={(tagId) => onToggleMessageTag(id, tagId)}
       botTagAction={botTagAction?.messageId === id ? botTagAction : null}
       onCancelBotTagAction={onCancelBotTagAction}
@@ -1098,11 +1098,10 @@ function AnalysisMessagesPaneComponent({
   );
 
   const handleOpenEditor = useCallback(
-    (messageId: number) => {
-      blurActiveElement();
-      onOpenEditor(messageId);
+    (messageId: number, focusTarget?: HTMLElement) => {
+      onOpenEditor(messageId, focusTarget);
     },
-    [blurActiveElement, onOpenEditor],
+    [onOpenEditor],
   );
 
   const isFocusedPositionLoading = (position: MessageLoadPosition) => {

@@ -102,7 +102,7 @@ export type FeedColumnModel = {
     onMessageEditReport: (reportId: number) => void;
     onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
     onMessageToggleTag: (msgId: number, tagId: number) => void;
-    onMessageEdit: (messageId: number, message: InboxMessage) => void;
+    onMessageEdit: (messageId: number, message: InboxMessage, focusTarget?: HTMLElement) => void;
     onCreateFeed?: () => void;
     onScrollToTop?: () => void;
     /** Called at the physical bottom. Return false to preserve the current anchor instead of following an unread pending tail. */

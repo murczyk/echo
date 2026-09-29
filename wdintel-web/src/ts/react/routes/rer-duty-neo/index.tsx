@@ -72,6 +72,7 @@ export function RerDutyNeoPage({
     status: 'idle',
   });
   const editorRef = useRef<ManageMessageEditorHandle>(null);
+  const editorInitialFocusTargetRef = useRef<HTMLElement | null>(null);
   const createMessageFabRef = useRef<HTMLButtonElement | null>(null);
   const reportLoadControllerRef = useRef<AbortController | null>(null);
   const cancelReportEditLoad = useCallback(() => {
@@ -100,10 +101,17 @@ export function RerDutyNeoPage({
     messageTextPreviewLines,
   } = useRerDutyPageSettings();
   const requestEditorIntent = useCallback(
-    (key: string, sourceFeedId: string | null, commit: () => void) => {
+    (
+      key: string,
+      sourceFeedId: string | null,
+      commit: () => void,
+      invokingControl?: HTMLElement,
+    ) => {
       if (!canWriteMessages(currentUser?.roles)) return;
       const focusTarget =
-        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        invokingControl ??
+        (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+      editorInitialFocusTargetRef.current = focusTarget;
       const applyIntent = () => {
         if (sourceFeedId) setActiveFeedId(sourceFeedId);
         commit();
@@ -157,7 +165,11 @@ export function RerDutyNeoPage({
     [requestEditorIntent, startReportEditor],
   );
   const openMessageEditor = useCallback(
-    (sourceFeedId: string, target: { id: number; message: InboxMessage }) => {
+    (
+      sourceFeedId: string,
+      target: { id: number; message: InboxMessage },
+      invokingControl?: HTMLElement,
+    ) => {
       const isReport = isIntelligenceReport(target.message);
       requestEditorIntent(
         `${isReport ? 'edit-report' : 'edit-message'}:${target.id}`,
@@ -169,6 +181,7 @@ export function RerDutyNeoPage({
           setEditAsReport(isReport);
           setEditTarget(target);
         },
+        invokingControl,
       );
     },
     [cancelReportEditLoad, requestEditorIntent],
@@ -599,6 +612,7 @@ export function RerDutyNeoPage({
             adaptiveEmbeddedForm
             fillEmbeddedSurface
             transparentEmbeddedSurface
+            initialFocusTarget={editorInitialFocusTargetRef.current}
             focusFallbackRef={createMessageFabRef}
             cyberEchoEnabled={cyberEchoEnabled}
             currentUser={currentUser}

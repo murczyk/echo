@@ -52,7 +52,7 @@ vi.mock('../../../shared/message-card/MessageCard', () => ({
     onCreateReport: () => void;
     onEditReport?: (id: number) => void;
     onDelete: () => void;
-    onEditDetails: () => void;
+    onEditDetails: (focusTarget: HTMLElement) => void;
     onCopyEtalon?: () => void;
     onCopyLocation?: () => void;
     messageComments?: Array<{ id: number; login: string; comment: string }>;
@@ -79,7 +79,7 @@ vi.mock('../../../shared/message-card/MessageCard', () => ({
       <button type="button" onClick={props.onDelete}>
         delete-{props.id}
       </button>
-      <button type="button" onClick={props.onEditDetails}>
+      <button type="button" onClick={(event) => props.onEditDetails(event.currentTarget)}>
         edit-{props.id}
       </button>
       {props.onCopyEtalon != null ? (
@@ -418,9 +418,11 @@ describe('AnalysisMessagesPane', () => {
     );
     rendered.push(view);
 
-    await click(getButton(view.container, 'edit-7'));
+    const editButton = getButton(view.container, 'edit-7');
+    editButton.focus();
+    await click(editButton);
 
-    expect(onOpenEditor).toHaveBeenCalledWith(7);
+    expect(onOpenEditor).toHaveBeenCalledWith(7, editButton);
   });
 
   it('passes analysis-only message update wiring into cards', async () => {

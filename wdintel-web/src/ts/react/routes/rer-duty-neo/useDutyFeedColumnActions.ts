@@ -16,7 +16,11 @@ export type RerDutyFeedsBundle = ReturnType<typeof useRerDutyFeeds>;
 export type DutyFeedColumnActionsDeps = {
   feeds: RerDutyFeedsBundle;
   openReportEditor: (feedId: string, reportId: number) => void;
-  openMessageEditor: (feedId: string, target: { id: number; message: InboxMessage }) => void;
+  openMessageEditor: (
+    feedId: string,
+    target: { id: number; message: InboxMessage },
+    focusTarget?: HTMLElement,
+  ) => void;
   openReportComposer: (
     feedId: string,
     source: {
@@ -108,8 +112,8 @@ export function useDutyFeedColumnActions(
       onMessageExcludeEntity: (entity, value) =>
         applyFilter(feedId, excludeMessageEntityFromFilters(feed.filter, entity, value)),
       onMessageToggleTag: (msgId, tagId) => handleToggleTag(feedId, msgId, tagId),
-      onMessageEdit: (messageId, message) => {
-        deps.openMessageEditor(feedId, { id: messageId, message });
+      onMessageEdit: (messageId, message, focusTarget) => {
+        deps.openMessageEditor(feedId, { id: messageId, message }, focusTarget);
       },
       onScrollToTop: () => {
         cancelFollowTail(feedId);
@@ -206,7 +210,8 @@ export function useDutyFeedColumnActions(
       onMessageEditReport: (reportId) => latest().onMessageEditReport(reportId),
       onMessageExcludeEntity: (entity, value) => latest().onMessageExcludeEntity(entity, value),
       onMessageToggleTag: (msgId, tagId) => latest().onMessageToggleTag(msgId, tagId),
-      onMessageEdit: (messageId, message) => latest().onMessageEdit(messageId, message),
+      onMessageEdit: (messageId, message, focusTarget) =>
+        latest().onMessageEdit(messageId, message, focusTarget),
       onScrollToTop: () => latest().onScrollToTop?.(),
       onReachedBottom: (context) => latest().onReachedBottom?.(context),
       onLeftBottom: () => latest().onLeftBottom?.(),

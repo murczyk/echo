@@ -249,7 +249,7 @@ export function AnalysisCenterPanel({
             onDeleteMessage={page.onDeleteMessage}
             onCancelBotTagAction={page.onCancelBotTagAction}
             onMarkBotTagWrong={page.onMarkBotTagWrong}
-            onOpenEditor={page.openEditor}
+            onOpenEditor={(messageId, focusTarget) => page.openEditor(messageId, focusTarget)}
             onCreateReport={page.openReportCreator}
             onEditReport={page.openReportEditor}
             onLoadMoreMessages={page.loadMoreMessages}
