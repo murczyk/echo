@@ -522,7 +522,7 @@ export function RerAnalysisNeoPage({
           onUpdate={page.updateReport}
         />
 
-        {centerTab === 'messages' && !editorOpen ? (
+        {!analysisMapVisible && !editorOpen ? (
           <CreateMessageFab ref={createMessageFabRef} onClick={openCreateMessageComposer} />
         ) : null}
       </Box>

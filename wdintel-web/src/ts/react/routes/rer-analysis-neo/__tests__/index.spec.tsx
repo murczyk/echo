@@ -886,9 +886,34 @@ describe('RerAnalysisNeoPage', () => {
     });
   });
 
-  it.each(['summary', 'map'] as const)('hides generic create on the %s tab', async (centerTab) => {
+  it('opens generic create from Summary without changing the active center tab', async () => {
     const page = buildPage();
-    page.centerTab = centerTab;
+    page.centerTab = 'summary';
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+    const createButton = container.querySelector<HTMLButtonElement>(
+      '[aria-label="create-message-fab"]',
+    );
+
+    expect(createButton).not.toBeNull();
+    await act(async () => createButton?.click());
+
+    expect(page.setCenterTab).not.toHaveBeenCalled();
+    expect(manageMessageDrawerPropsHistory.at(-1)).toMatchObject({
+      open: true,
+      intentKey: 'create-message',
+    });
+    root.unmount();
+  });
+
+  it('hides generic create while the map is visible', async () => {
+    const page = buildPage();
+    page.centerTab = 'map';
     useRerAnalysisNeoPageMock.mockReturnValue(page);
     const container = document.createElement('div');
     document.body.appendChild(container);
