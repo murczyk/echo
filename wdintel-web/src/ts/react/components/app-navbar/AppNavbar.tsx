@@ -517,7 +517,8 @@ export function AppNavbar({
               <div className="relative h-7 w-8">
                 <div className="main-image absolute" style={{ height: '28px', width: '28px' }}>
                   <img
-                    src="/img/SIGINT_190_kraken_transparent.png"
+                    src="/img/kraken-mark.png"
+                    alt="Echo"
                     style={{ width: '28px', height: '28px' }}
                   />
                 </div>

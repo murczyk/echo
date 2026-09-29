@@ -1,6 +1,6 @@
 +++
-title = "Аналітичне ПЗ обробки даних РЕР ЕХО"
-description = "Аналітичне ПЗ обробки даних РЕР"
+title = "ЕХО"
+description = "Аналітичне програмне забезпечення ЕХО"
 template = "section.html"
 sort_by = "weight"
 draft = false

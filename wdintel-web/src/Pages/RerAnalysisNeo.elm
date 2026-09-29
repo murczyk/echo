@@ -60,7 +60,7 @@ subscriptions _ =
 
 view : Auth.User -> Model -> View Msg
 view user _ =
-    { title = "РЕР-аналіз"
+    { title = "Аналіз"
     , body =
         [ div
             [ class "app-shell-fill-height box-border min-h-0 w-full flex flex-col overflow-visible lg:overflow-hidden"

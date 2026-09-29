@@ -1,6 +1,6 @@
 base_url = "/docs/"
-title = "Аналітичне ПЗ обробки даних РЕР ЕХО"
-description = "Аналітичне ПЗ обробки даних РЕР"
+title = "ЕХО"
+description = "Аналітичне програмне забезпечення ЕХО"
 theme = "linkita"
 compile_sass = false
 default_language = "uk"

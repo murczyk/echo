@@ -4581,7 +4581,7 @@ reportTemplateToApiType model template =
 
 view : Shared.Model -> B.User -> Route () -> Model -> View Msg
 view shared user route model =
-    { title = "РЕР-аналіз"
+    { title = "Аналіз"
     , body =
         [ div []
             [ Pages_.RerAnalysis.MainBody.view user model shared route

@@ -45,7 +45,7 @@ test.describe('@smoke @regression', () => {
     await setupAnalysisNeoPage(page, { inboxResponse: createLoadedInboxResponse() });
     await page.goto('/rer-analysis-neo');
 
-    await expect(page).toHaveTitle('РЕР-аналіз');
+    await expect(page).toHaveTitle('Аналіз');
     await expect(page.getByRole('heading', { name: 'Аналіз' })).toBeVisible();
 
     await expect(page.getByText('Analysis summary fixture message', { exact: true })).toBeVisible();
