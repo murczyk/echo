@@ -25,6 +25,7 @@ vi.mock('@mui/material', () => ({
 const imageEditorEscapeHandler = vi.fn(() => false);
 const consumeInitialAction = vi.fn();
 const reportVisibilityStorageKey = 'echo.message-attachment-preview.report-visible';
+const messageVisibilityStorageKey = 'echo.message-attachment-preview.message-visible';
 
 vi.mock('../../renderers/ImageAttachmentPreviewRenderer.tsx', () => ({
   ImageAttachmentPreviewRenderer: ({
@@ -503,6 +504,39 @@ describe('MessageCardAttachmentPreviewDialog', () => {
       ).click(),
     );
     expect(localStorage.getItem(reportVisibilityStorageKey)).toBe('true');
+  });
+
+  it('keeps message panel visibility separate from the report preference', async () => {
+    localStorage.setItem(reportVisibilityStorageKey, 'false');
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () =>
+      root?.render(
+        <MessageCardAttachmentPreviewDialog
+          item={items[0]!}
+          navigation={{ index: 0, count: 1, onPrevious: vi.fn(), onNext: vi.fn() }}
+          onClose={vi.fn()}
+          reportDraft={{ kind: 'message', value: 'Чернетка', onChange: vi.fn() }}
+        />,
+      ),
+    );
+
+    expect(
+      container.querySelector('[data-report-visible]')?.getAttribute('data-report-visible'),
+    ).toBe('true');
+
+    await act(async () =>
+      (
+        container?.querySelector(
+          '[aria-label="Перемкнути панель розвіддонесення"]',
+        ) as HTMLButtonElement
+      ).click(),
+    );
+
+    expect(localStorage.getItem(messageVisibilityStorageKey)).toBe('false');
+    expect(localStorage.getItem(reportVisibilityStorageKey)).toBe('false');
   });
 
   it('does not change the report preference outside report mode', async () => {

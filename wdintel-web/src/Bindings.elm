@@ -12769,6 +12769,22 @@ aiIntelReportAttemptListRspEncoder struct =
         ]
 
 
+type alias AiAgentActivityPresentation =
+    { key : Int
+    , title : String
+    , detail : Maybe (String)
+    }
+
+
+aiAgentActivityPresentationEncoder : AiAgentActivityPresentation -> Json.Encode.Value
+aiAgentActivityPresentationEncoder struct =
+    Json.Encode.object
+        [ ( "key", (Json.Encode.int) struct.key )
+        , ( "title", (Json.Encode.string) struct.title )
+        , ( "detail", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.detail )
+        ]
+
+
 type alias AiAgentProviderItem =
     { id : String
     , name : String
@@ -13330,6 +13346,8 @@ type alias AiAgentRequestEventItem =
     , eventType : String
     , payloadJson : String
     , createdAt : Int
+    , activityPresentation : Maybe (AiAgentActivityPresentation)
+    , activityOnly : Bool
     }
 
 
@@ -13340,6 +13358,8 @@ aiAgentRequestEventItemEncoder struct =
         , ( "eventType", (Json.Encode.string) struct.eventType )
         , ( "payloadJson", (Json.Encode.string) struct.payloadJson )
         , ( "createdAt", (Json.Encode.int) struct.createdAt )
+        , ( "activityPresentation", (Maybe.withDefault Json.Encode.null << Maybe.map (aiAgentActivityPresentationEncoder)) struct.activityPresentation )
+        , ( "activityOnly", (Json.Encode.bool) struct.activityOnly )
         ]
 
 
@@ -23064,6 +23084,14 @@ aiIntelReportAttemptListRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (aiIntelReportAttemptItemDecoder))))
 
 
+aiAgentActivityPresentationDecoder : Json.Decode.Decoder AiAgentActivityPresentation
+aiAgentActivityPresentationDecoder =
+    Json.Decode.succeed AiAgentActivityPresentation
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "key" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "title" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "detail" (Json.Decode.nullable (Json.Decode.string))))
+
+
 aiAgentProviderItemDecoder : Json.Decode.Decoder AiAgentProviderItem
 aiAgentProviderItemDecoder =
     Json.Decode.succeed AiAgentProviderItem
@@ -23349,6 +23377,8 @@ aiAgentRequestEventItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "eventType" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "payloadJson" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "activityPresentation" (Json.Decode.nullable (aiAgentActivityPresentationDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "activityOnly" (Json.Decode.bool)))
 
 
 aiAgentAdminRequestDetailDecoder : Json.Decode.Decoder AiAgentAdminRequestDetail

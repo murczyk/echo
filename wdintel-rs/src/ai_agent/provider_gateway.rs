@@ -277,10 +277,16 @@ async fn proxy_openai_request(
             futures_util::future::ready(Some(result))
         },
     );
-    Ok(HttpResponse::build(status)
-        .insert_header((header::CONTENT_TYPE, expected_content_type))
-        .insert_header((header::CACHE_CONTROL, "no-store"))
-        .streaming(stream))
+    let mut response = if streamed {
+        super::event_stream_response(status, "no-store, no-transform")
+    } else {
+        let mut response = HttpResponse::build(status);
+        response
+            .insert_header((header::CONTENT_TYPE, expected_content_type))
+            .insert_header((header::CACHE_CONTROL, "no-store"));
+        response
+    };
+    Ok(response.streaming(stream))
 }
 
 #[derive(Default)]
@@ -391,6 +397,47 @@ fn provider_error(status: StatusCode, message: &'static str) -> HttpResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[actix_web::test]
+    async fn open_event_stream_delivers_first_frame_with_compression_enabled() {
+        use actix_web::{body::MessageBody, middleware::Compress, web, App};
+        use futures_util::{future::poll_fn, stream};
+
+        let app = actix_web::test::init_service(
+            App::new().wrap(Compress::default()).route(
+                "/events",
+                web::get().to(|| async {
+                    let stream = stream::once(async {
+                        Ok::<_, AppError>(Bytes::from_static(
+                            b"id: 1\nevent: request_start\ndata: {}\n\n",
+                        ))
+                    })
+                    .chain(stream::pending());
+                    super::super::event_stream_response(
+                        StatusCode::OK,
+                        "no-cache, no-transform",
+                    )
+                    .streaming(stream)
+                }),
+            ),
+        )
+        .await;
+        let request = actix_web::test::TestRequest::get()
+            .uri("/events")
+            .insert_header((header::ACCEPT_ENCODING, "br, gzip, deflate"))
+            .to_request();
+        let response = actix_web::test::call_service(&app, request).await;
+        let mut body = Box::pin(response.into_body());
+        let chunk = tokio::time::timeout(
+            Duration::from_secs(1),
+            poll_fn(|context| body.as_mut().poll_next(context)),
+        )
+        .await
+        .expect("#3064: the first event must arrive before the stream ends")
+        .expect("the event stream stays open")
+        .unwrap();
+        assert_eq!(chunk, b"id: 1\nevent: request_start\ndata: {}\n\n"[..]);
+    }
     use actix_web::test::TestRequest;
 
     #[test]

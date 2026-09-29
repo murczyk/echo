@@ -43,7 +43,7 @@ type Props = {
   busy: boolean;
   existingMedia?: MessageMediaInfo[];
   errorMsg?: string | null;
-  reportTextPreviewEnabled?: boolean;
+  textPreviewMode?: 'message' | 'report';
 };
 
 function fileUploadPresentation(
@@ -96,16 +96,18 @@ export function AttachmentsSection({
   busy,
   existingMedia = [],
   errorMsg,
-  reportTextPreviewEnabled = false,
+  textPreviewMode,
 }: Props) {
   const { control, watch, setValue } = useFormContext<MessageFormData>();
   const deletedMediaIds = watch('deleted_media_ids') || [];
   const reportTextValue =
-    useWatch({ control, name: 'full_body', disabled: !reportTextPreviewEnabled }) ?? '';
+    useWatch({ control, name: 'full_body', disabled: !textPreviewMode }) ?? '';
   const reportDraft = useMemo(
     () =>
-      reportTextPreviewEnabled
+      textPreviewMode
         ? {
+            kind: textPreviewMode,
+            label: textPreviewMode === 'report' ? 'Текст розвіддонесення' : 'Текст повідомлення',
             value: reportTextValue,
             onChange: (value: string) =>
               setValue('full_body', value, {
@@ -116,7 +118,7 @@ export function AttachmentsSection({
             disabled: busy,
           }
         : undefined,
-    [busy, reportTextPreviewEnabled, reportTextValue, setValue],
+    [busy, reportTextValue, setValue, textPreviewMode],
   );
   const existingMediaIds = useMemo(
     () => new Set(existingMedia.map((media) => media.id)),

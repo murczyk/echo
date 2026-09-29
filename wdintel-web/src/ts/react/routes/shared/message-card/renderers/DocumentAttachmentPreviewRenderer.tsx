@@ -347,6 +347,7 @@ export function DocumentAttachmentPreviewRenderer({
           />
           {reportDraft != null ? (
             <ReportTextPreviewAction
+              kind={reportDraft.kind}
               active={reportVisible}
               onClick={() => {
                 const next = !reportVisible;

@@ -125,6 +125,7 @@ export function AudioAttachmentPreviewRenderer({
           additionalActions={
             reportDraft ? (
               <ReportTextPreviewAction
+                kind={reportDraft.kind}
                 active={reportVisible}
                 onClick={() => onReportVisibleChange(!reportVisible)}
               />

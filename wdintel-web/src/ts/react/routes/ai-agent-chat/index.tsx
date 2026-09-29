@@ -4,8 +4,6 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import SendOutlinedIcon from '@mui/icons-material/SendOutlined';
 import {
   Box,
-  Card,
-  CardContent,
   CircularProgress,
   Divider,
   IconButton,
@@ -20,9 +18,15 @@ import {
   Typography,
 } from '@mui/material';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import type { AiAgentMessageCitation } from '../../../../Bindings';
+import type { AiAgentActivityPresentation, AiAgentMessageCitation } from '../../../../Bindings';
 import { CitationMarkdown } from './CitationMarkdown';
 import { ConversationHistoryItem } from './ConversationHistoryItem';
+import {
+  RequestActivity,
+  RequestDuration,
+  type RequestActivityItem,
+  type ToolActivity,
+} from './RequestActivity';
 import {
   AI_AGENT_NEW_CONVERSATION_EVENT,
   conversationIdFromUrl,
@@ -51,16 +55,6 @@ import {
 import { HttpRequestError } from '../../services/api/client';
 import { streamAiAgentEventsWithReconnect } from './stream';
 
-type ToolActivity = {
-  id: string;
-  name: string;
-  status: 'running' | 'completed' | 'failed';
-  summary: string | null;
-  method: string | null;
-  path: string | null;
-  httpStatus: number | null;
-};
-
 type Source = { title: string; url: string | null };
 
 export type LiveRequest = {
@@ -68,10 +62,14 @@ export type LiveRequest = {
   conversationId: string;
   prompt: string;
   createdAt: number;
+  finishedAt?: number;
   state: AiAgentRequestState;
   assistantText: string;
   progress: string[];
+  currentActivity?: string;
+  currentActivityPresentation?: AiAgentActivityPresentation | null;
   tools: ToolActivity[];
+  activity?: RequestActivityItem[];
   sources: Source[];
   citations?: AiAgentMessageCitation[];
   lastSequence: number;
@@ -222,7 +220,7 @@ export function activeRequestsFromConversation(
 }
 
 function updateTool(tools: ToolActivity[], event: AiAgentEvent): ToolActivity[] {
-  const id = event.toolName ?? event.toolCallId ?? `tool-${event.sequence}`;
+  const id = event.toolCallId ?? event.toolName ?? `tool-${event.sequence}`;
   const current = tools.find((tool) => tool.id === id);
   const next: ToolActivity = {
     id,
@@ -232,31 +230,92 @@ function updateTool(tools: ToolActivity[], event: AiAgentEvent): ToolActivity[] 
     method: event.method ?? current?.method ?? null,
     path: event.path ?? current?.path ?? null,
     httpStatus: event.status ?? current?.httpStatus ?? null,
+    presentation: event.activityPresentation ?? null,
   };
   return current ? tools.map((tool) => (tool.id === id ? next : tool)) : [...tools, next];
 }
 
 function appendUnique(items: string[], value: string | null): string[] {
-  return value && !items.includes(value) ? [...items, value] : items;
+  return value && items.at(-1) !== value ? [...items, value] : items;
+}
+
+function finishRequest(
+  request: LiveRequest,
+  state: AiAgentRequestState,
+  finishedAt: number,
+): LiveRequest {
+  return {
+    ...request,
+    state,
+    finishedAt: request.finishedAt ?? finishedAt,
+    tools: request.tools.map((tool) =>
+      tool.status === 'running' ? { ...tool, status: 'cancelled' } : tool,
+    ),
+  };
 }
 
 export function applyAiAgentEvent(request: LiveRequest, event: AiAgentEvent): LiveRequest {
   if (event.sequence <= request.lastSequence) return request;
   const next = { ...request, lastSequence: event.sequence };
+  if (event.activityOnly) {
+    const presentation = event.activityPresentation;
+    const runningTool = [...request.tools].reverse().find((tool) => tool.status === 'running');
+    const current = runningTool ? runningTool.presentation : request.currentActivityPresentation;
+    if (TERMINAL_STATES.has(request.state) || !presentation || current?.key !== presentation.key)
+      return next;
+    return {
+      ...next,
+      currentActivityPresentation:
+        request.currentActivityPresentation?.key === presentation.key
+          ? presentation
+          : request.currentActivityPresentation,
+      tools: request.tools.map((tool) =>
+        tool.presentation?.key === presentation.key ? { ...tool, presentation } : tool,
+      ),
+    };
+  }
 
   switch (event.type) {
     case 'request_start':
-      return { ...next, state: 'running' };
+      return { ...next, state: TERMINAL_STATES.has(request.state) ? request.state : 'running' };
     case 'assistant_delta':
       return { ...next, assistantText: request.assistantText + (event.text ?? '') };
     case 'assistant_snapshot':
       return { ...next, assistantText: event.text ?? '' };
-    case 'progress':
-      return { ...next, progress: appendUnique(request.progress, event.text) };
+    case 'progress': {
+      const progress = appendUnique(request.progress, event.text);
+      return {
+        ...next,
+        progress,
+        currentActivity: event.text ?? request.currentActivity,
+        currentActivityPresentation: event.activityPresentation ?? null,
+        activity:
+          progress === request.progress
+            ? request.activity
+            : [...(request.activity ?? []), { text: event.text! }],
+      };
+    }
     case 'tool_start':
     case 'tool_update':
-    case 'tool_end':
-      return { ...next, tools: updateTool(request.tools, event) };
+    case 'tool_end': {
+      const tools = updateTool(request.tools, event);
+      const updated: LiveRequest = {
+        ...next,
+        tools,
+        currentActivityPresentation: event.activityPresentation ?? null,
+        currentActivity:
+          event.toolLabel ??
+          tools.find((tool) => tool.id === (event.toolCallId ?? event.toolName))?.name ??
+          request.currentActivity,
+        activity:
+          tools.length === request.tools.length
+            ? request.activity
+            : [...(request.activity ?? []), { toolId: tools[tools.length - 1].id }],
+      };
+      return TERMINAL_STATES.has(updated.state)
+        ? finishRequest(updated, updated.state, updated.finishedAt ?? event.createdAt)
+        : updated;
+    }
     case 'message_citations': {
       const citations = new Map(
         (request.citations ?? []).map((item) => [item.messageIdentifier, item]),
@@ -276,17 +335,13 @@ export function applyAiAgentEvent(request: LiveRequest, event: AiAgentEvent): Li
     }
     case 'completion':
       return {
-        ...next,
-        state: 'completed',
+        ...finishRequest({ ...next, finishedAt: event.createdAt }, 'completed', event.createdAt),
         assistantText: request.assistantText || event.text || '',
       };
     case 'cancellation':
-      return { ...next, state: 'cancelled' };
+      return finishRequest({ ...next, finishedAt: event.createdAt }, 'cancelled', event.createdAt);
     case 'error':
-      return {
-        ...next,
-        state: 'failed',
-      };
+      return finishRequest({ ...next, finishedAt: event.createdAt }, 'failed', event.createdAt);
     default:
       return next;
   }
@@ -365,7 +420,15 @@ function AssistantMessage({
   );
 }
 
-function ConversationMessage({ message }: { message: AiAgentMessage }) {
+function ConversationMessage({
+  message,
+  onRetry,
+  retryDisabled = false,
+}: {
+  message: AiAgentMessage;
+  onRetry?: (prompt: string) => void;
+  retryDisabled?: boolean;
+}) {
   if (message.role === 'assistant') {
     return <AssistantMessage content={message.content} citations={message.citations} />;
   }
@@ -405,42 +468,27 @@ function ConversationMessage({ message }: { message: AiAgentMessage }) {
           {stateMessage}
         </Typography>
       ) : null}
+      {message.requestState === 'failed' && onRetry ? (
+        <PowerButton
+          type="button"
+          size="small"
+          variant="text"
+          color="inherit"
+          startIcon={<RefreshIcon />}
+          disabled={retryDisabled}
+          onClick={() => onRetry(message.content)}
+          sx={{ mt: 0.5, color: 'text.secondary' }}
+        >
+          Спробувати ще раз
+        </PowerButton>
+      ) : null}
     </Box>
   );
 }
 
 function LiveResponse({ request }: { request: LiveRequest }) {
-  const hasActivity = request.progress.length > 0 || request.tools.length > 0;
   return (
     <Stack spacing={1.5} alignItems="flex-start">
-      {hasActivity ? (
-        <Card variant="outlined" sx={{ width: '100%', borderRadius: 0 }}>
-          <CardContent sx={{ '&:last-child': { pb: 2 } }}>
-            <Typography variant="subtitle2" component="h3">
-              Хід виконання
-            </Typography>
-            {request.progress.map((progress, index) => (
-              <Typography key={`${index}-${progress}`} variant="body2" color="text.secondary">
-                {progress}
-              </Typography>
-            ))}
-            {request.tools.map((tool) => (
-              <Stack key={tool.id} direction="row" spacing={1} alignItems="center" sx={{ mt: 0.5 }}>
-                {tool.status === 'running' ? <CircularProgress size={14} /> : null}
-                <Typography variant="body2" color="text.secondary">
-                  {tool.name}
-                  {tool.status === 'running'
-                    ? ' · виконується…'
-                    : tool.status === 'failed'
-                      ? ` · не вдалося${tool.summary ? `: ${tool.summary}` : ''}`
-                      : ''}
-                </Typography>
-              </Stack>
-            ))}
-          </CardContent>
-        </Card>
-      ) : null}
-
       {request.assistantText ? (
         <AssistantMessage content={request.assistantText} citations={request.citations} />
       ) : null}
@@ -458,7 +506,29 @@ function LiveResponse({ request }: { request: LiveRequest }) {
   );
 }
 
-function LiveRequestView({
+function requestStatus(request: LiveRequest): string {
+  if (request.state === 'completed') return 'Хід виконання';
+  if (request.state === 'failed') return 'Не вдалося виконати запит';
+  if (request.state === 'cancelled') return 'Скасовано';
+  if (request.state === 'queued') return 'Готуємо запит…';
+  return (
+    [...request.tools].reverse().find((tool) => tool.status === 'running')?.name ??
+    request.currentActivity ??
+    request.progress.at(-1) ??
+    'ЕХО Агент працює…'
+  );
+}
+
+function currentActivityPresentation(request: LiveRequest) {
+  if (TERMINAL_STATES.has(request.state)) return { title: requestStatus(request), detail: null };
+  const runningTool = [...request.tools].reverse().find((tool) => tool.status === 'running');
+  const presentation = runningTool ? runningTool.presentation : request.currentActivityPresentation;
+  if (presentation) return presentation;
+  const [title, ...detail] = requestStatus(request).split(' · ');
+  return { title, detail: detail.join(' · ') || null };
+}
+
+function RequestControls({
   request,
   cancelling,
   onCancel,
@@ -468,6 +538,52 @@ function LiveRequestView({
   cancelling: boolean;
   onCancel: (id: string) => void;
   onReconnect: (request: LiveRequest) => void;
+}) {
+  return (
+    <Stack direction="row" alignItems="center">
+      <Tooltip title="Скасувати запит">
+        <span>
+          <IconButton
+            type="button"
+            aria-label="Скасувати запит"
+            disabled={cancelling}
+            onClick={() => onCancel(request.id)}
+            sx={{ width: 28, height: 28, color: 'inherit', opacity: 0.65 }}
+          >
+            {cancelling ? <CircularProgress size={14} /> : <CloseIcon sx={{ fontSize: 16 }} />}
+          </IconButton>
+        </span>
+      </Tooltip>
+      {request.streamError ? (
+        <Tooltip title="Відновити потік">
+          <IconButton
+            type="button"
+            aria-label="Відновити потік"
+            onClick={() => onReconnect(request)}
+            sx={{ width: 28, height: 28, color: 'inherit' }}
+          >
+            <RefreshIcon sx={{ fontSize: 16 }} />
+          </IconButton>
+        </Tooltip>
+      ) : null}
+    </Stack>
+  );
+}
+
+function LiveRequestView({
+  request,
+  cancelling,
+  onCancel,
+  onReconnect,
+  onRetry,
+  retryDisabled,
+}: {
+  request: LiveRequest;
+  cancelling: boolean;
+  onCancel: (id: string) => void;
+  onReconnect: (request: LiveRequest) => void;
+  onRetry: (prompt: string) => void;
+  retryDisabled: boolean;
 }) {
   const prompt: AiAgentMessage = {
     id: `${request.id}-live-user`,
@@ -479,61 +595,36 @@ function LiveRequestView({
     createdAt: request.createdAt,
   };
   const active = !TERMINAL_STATES.has(request.state);
+  const presentation = currentActivityPresentation(request);
 
   return (
     <Stack spacing={1} data-testid={`live-request-${request.id}`}>
-      <ConversationMessage message={prompt} />
-      {active ? (
-        <Stack
-          direction="row"
-          spacing={1}
-          alignItems="center"
-          sx={{ color: 'text.secondary', minHeight: 32 }}
-        >
-          <CircularProgress size={14} color="inherit" />
-          <Typography
-            variant="body2"
-            sx={{
-              animation: 'aiAgentPulse 1.8s ease-in-out infinite',
-              '@keyframes aiAgentPulse': {
-                '0%, 100%': { opacity: 0.45 },
-                '50%': { opacity: 1 },
-              },
-            }}
-          >
-            {request.state === 'queued' ? 'Готуємо запит…' : 'ЕХО Агент готує відповідь…'}
-          </Typography>
-          <Tooltip title="Скасувати запит">
-            <span>
-              <IconButton
-                type="button"
-                aria-label="Скасувати запит"
-                disabled={cancelling}
-                onClick={() => onCancel(request.id)}
-                sx={{ width: 28, height: 28, color: 'inherit', opacity: 0.65 }}
-              >
-                {cancelling ? <CircularProgress size={14} /> : <CloseIcon sx={{ fontSize: 16 }} />}
-              </IconButton>
-            </span>
-          </Tooltip>
-          {request.streamError ? (
-            <PowerButton
-              type="button"
-              size="small"
-              variant="text"
-              color="inherit"
-              startIcon={<RefreshIcon />}
-              onClick={() => onReconnect(request)}
-            >
-              Відновити потік
-            </PowerButton>
-          ) : null}
-        </Stack>
-      ) : request.state === 'cancelled' ? (
-        <Typography variant="caption" color="text.secondary">
-          Скасовано
-        </Typography>
-      ) : null}
+      <ConversationMessage message={prompt} onRetry={onRetry} retryDisabled={retryDisabled} />
+      <RequestActivity
+        tools={request.tools}
+        activity={request.activity ?? []}
+        active={active}
+        completed={request.state === 'completed'}
+        status={presentation.title}
+        detail={presentation.detail}
+        duration={
+          <RequestDuration
+            createdAt={request.createdAt}
+            finishedAt={request.finishedAt}
+            active={active}
+          />
+        }
+        controls={
+          active ? (
+            <RequestControls
+              request={request}
+              cancelling={cancelling}
+              onCancel={onCancel}
+              onReconnect={onReconnect}
+            />
+          ) : undefined
+        }
+      />
       <LiveResponse request={request} />
     </Stack>
   );
@@ -797,11 +888,18 @@ export function AiAgentChat({
       liveRequestsRef.current.map((request) => {
         const userMessage = userByRequestId.get(request.id);
         if (request.conversationId !== conversation.id || !userMessage) return request;
+        const assistantMessage = assistantByRequestId.get(request.id);
         return {
-          ...request,
+          ...(TERMINAL_STATES.has(userMessage.requestState)
+            ? finishRequest(
+                assistantMessage ? { ...request, finishedAt: assistantMessage.createdAt } : request,
+                userMessage.requestState,
+                Date.now(),
+              )
+            : request),
           state: userMessage.requestState,
-          assistantText: assistantByRequestId.get(request.id)?.content ?? request.assistantText,
-          citations: assistantByRequestId.get(request.id)?.citations ?? request.citations,
+          assistantText: assistantMessage?.content ?? request.assistantText,
+          citations: assistantMessage?.citations ?? request.citations,
         };
       }),
     );
@@ -917,13 +1015,22 @@ export function AiAgentChat({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    const prompt = draft.trim();
+    await submitPrompt(draft.trim());
+  }
+
+  function retryRequest(prompt: string) {
+    void submitPrompt(prompt, { preserveDraft: true });
+  }
+
+  async function submitPrompt(prompt: string, { preserveDraft = false } = {}) {
     if (
       !prompt ||
       !providerId ||
       submittingRef.current ||
       loadingConversation ||
-      conversationLoadFailed
+      conversationLoadFailed ||
+      (preserveDraft &&
+        liveRequestsRef.current.some((request) => !TERMINAL_STATES.has(request.state)))
     )
       return;
     const viewSequence = viewSequenceRef.current;
@@ -931,8 +1038,9 @@ export function AiAgentChat({
     followOutputRef.current = viewportIsNearBottom();
     submittingRef.current = true;
     setSubmitting(true);
-    setPendingSubmission({ id: `pending-${Date.now()}`, prompt, createdAt: Date.now() });
-    setDraft('');
+    const createdAt = Date.now();
+    setPendingSubmission({ id: `pending-${createdAt}`, prompt, createdAt });
+    if (!preserveDraft) setDraft('');
     setError(null);
 
     try {
@@ -954,7 +1062,7 @@ export function AiAgentChat({
           id: created.id,
           conversationId: created.conversationId,
           prompt,
-          createdAt: Date.now(),
+          createdAt,
           state: created.state,
           assistantText: '',
           progress: [],
@@ -973,7 +1081,7 @@ export function AiAgentChat({
         notify({ severity: 'error', message });
         return;
       }
-      setDraft((current) => current || prompt);
+      if (!preserveDraft) setDraft((current) => current || prompt);
       setPendingSubmission(null);
       setError(message);
       notify({ severity: 'error', message });
@@ -994,7 +1102,11 @@ export function AiAgentChat({
     try {
       const state = await cancelAiAgentRequest(id);
       if (!mountedRef.current || viewSequence !== viewSequenceRef.current) return;
-      updateLiveRequest(id, (current) => ({ ...current, state }));
+      updateLiveRequest(id, (current) =>
+        TERMINAL_STATES.has(state)
+          ? finishRequest(current, state, Date.now())
+          : { ...current, state },
+      );
       void refreshConversation(request.conversationId);
     } catch (cancelError) {
       notify({
@@ -1022,6 +1134,8 @@ export function AiAgentChat({
   );
   const visibleMessages = messages.filter((message) => !liveRequestIds.has(message.requestId));
   const interactionLocked = submitting || activeRequestExists;
+  const retryDisabled =
+    interactionLocked || loadingConversation || conversationLoadFailed || !selectedProvider;
 
   if (unavailable && error) {
     return <AiAgentChatUnavailable message={error} onRetry={() => void loadPage()} />;
@@ -1157,7 +1271,12 @@ export function AiAgentChat({
                 </Box>
               ) : (
                 visibleMessages.map((message) => (
-                  <ConversationMessage key={message.id} message={message} />
+                  <ConversationMessage
+                    key={message.id}
+                    message={message}
+                    onRetry={retryRequest}
+                    retryDisabled={retryDisabled}
+                  />
                 ))
               )}
               {liveRequests.map((request) => (
@@ -1166,6 +1285,8 @@ export function AiAgentChat({
                   request={request}
                   cancelling={cancellingIds.has(request.id)}
                   onCancel={(id) => void cancelRequest(id)}
+                  onRetry={retryRequest}
+                  retryDisabled={retryDisabled}
                   onReconnect={(current) =>
                     void connectToRequest(current.id, current.conversationId)
                   }

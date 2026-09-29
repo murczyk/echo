@@ -128,12 +128,14 @@ function ActionIconButton({
   icon,
   onClick,
   selected = false,
+  importantAction = false,
   buttonProps,
 }: {
   title: string;
   icon: JSX.Element;
   onClick: (event: MouseEvent<HTMLButtonElement>) => void;
   selected?: boolean;
+  importantAction?: boolean;
   buttonProps?: Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children' | 'onClick' | 'type'>;
 }) {
   return (
@@ -142,6 +144,7 @@ function ActionIconButton({
       title={title}
       aria-label={title}
       data-selected={selected ? 'true' : undefined}
+      data-important-action={importantAction ? 'true' : undefined}
       className="message-card-action-btn"
       onClick={(event) => {
         blurActiveElement();
@@ -392,6 +395,8 @@ function ActionIconsRow({
         }
         onClick={onImportant!}
         selected={msg.important}
+        importantAction
+        buttonProps={{ 'aria-pressed': msg.important }}
       />
     ) : null,
     canShowPrimaryActions ? (
@@ -1116,7 +1121,20 @@ function MessageCardHeaderComponent({
         className="message-card-header-end flex min-w-0 flex-1 items-center justify-end"
         style={{ paddingRight: `${rightInsetPx}px` }}
       >
-        <div ref={rightHeaderContentRef} data-message-card-header-right="true">
+        <div
+          ref={rightHeaderContentRef}
+          data-message-card-header-right="true"
+          className="inline-flex items-center gap-2"
+        >
+          {msg.important ? (
+            <span
+              className="message-card-important-status"
+              data-message-card-important-status="true"
+            >
+              <FlagIcon aria-hidden className="message-card-important-status__icon" />
+              Важливе
+            </span>
+          ) : null}
           {topRight ?? <div className="min-h-7" />}
         </div>
       </div>
