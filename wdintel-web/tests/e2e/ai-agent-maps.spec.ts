@@ -9,8 +9,8 @@ const main: AiAgentMapSummary = {
   requestId,
   title: 'Головна мапа',
   isMain: true,
-  totalCount: 2,
-  validCount: 1,
+  totalCount: 3,
+  validCount: 2,
   invalidCount: 1,
   warnings: ['Рядок 2: Некоректна координата Y'],
 };
@@ -20,6 +20,7 @@ const sub = {
   title: 'Підмапа',
   isMain: false,
   totalCount: 1,
+  validCount: 1,
   invalidCount: 0,
   warnings: [],
 };
@@ -61,7 +62,12 @@ function document(summary: AiAgentMapSummary): AiAgentMapDocument {
   };
   return {
     ...summary,
-    records: summary.id === main.id ? [valid, invalid] : summary.validCount ? [valid] : [invalid],
+    records:
+      summary.id === main.id
+        ? [valid, { ...valid, name: 'Спільна координата: Подія Б' }, invalid]
+        : summary.validCount
+          ? [valid]
+          : [invalid],
   };
 }
 async function installMaps(page: Page, longHistory = false) {
@@ -166,7 +172,9 @@ test('@regression #3064 map chips replace documents, preserve drafts, reload, an
   const mainChip = chat.locator('.ai-map-chip').filter({ hasText: 'мапа' }).first();
   await expect(chat.locator('.ai-map-chip-image').first()).toHaveCSS('width', '24px');
   await expect(chat.locator('.ai-map-chip-image').first()).toHaveCSS('height', '24px');
-  await expect(chat.locator('.ai-map-preview-image')).toHaveCSS('height', '120px');
+  await expect(chat.locator('.ai-map-preview')).toHaveCSS('width', '144px');
+  await expect(chat.locator('.ai-map-preview-image')).toHaveCSS('height', '96px');
+  await expect(chat.locator('.ai-map-preview-count')).toHaveText('2');
   const draft = chat.getByRole('textbox', { name: 'Повідомлення' });
   await draft.fill('Чернетка збережеться');
   const scroll = chat.getByTestId('ai-agent-chat-messages');
@@ -180,6 +188,9 @@ test('@regression #3064 map chips replace documents, preserve drafts, reload, an
   const panel = page.getByRole('region', { name: 'Мапа відповіді' });
   await expect(panel.getByRole('heading', { name: main.title, exact: true })).toBeVisible();
   await expect(panel.getByTestId('ai-map-canvas')).toBeVisible();
+  await expect(panel.getByRole('combobox')).toHaveCount(0);
+  await expect(panel.locator('.leaflet-marker-icon').first()).toHaveCSS('width', '20px');
+  await expect(panel.locator('.leaflet-marker-icon').first()).toHaveCSS('height', '20px');
   await expect
     .poll(() =>
       panel
@@ -202,8 +213,30 @@ test('@regression #3064 map chips replace documents, preserve drafts, reload, an
   await expect(details).toContainText('2026-09-28T11:20:00');
   await expect(details).toContainText('Вантаж А & Б');
   await expect(details.getByRole('link', { name: /Джерело А/ })).toBeVisible();
-  await panel.getByRole('combobox', { name: 'Базовий шар мапи' }).click();
-  await page.getByRole('option', { name: 'OpenStreetMap' }).click();
+  const stageBox = await panel.getByTestId('ai-map-stage').boundingBox();
+  const detailsBox = await details.boundingBox();
+  expect(detailsBox!.y).toBeGreaterThan(stageBox!.y);
+  expect(detailsBox!.y + detailsBox!.height).toBeLessThan(stageBox!.y + stageBox!.height);
+  await panel.getByRole('button', { name: 'Закрити картку запису' }).click();
+  await expect(details).toHaveCount(0);
+  await panel.getByRole('button', { name: 'Наступна координата', exact: true }).click();
+  await expect(details).toContainText('Спільна координата: Подія Б');
+  await panel.getByRole('button', { name: 'Наступна координата', exact: true }).click();
+  await expect(details).toContainText('Некоректний запис');
+  await panel.getByRole('button', { name: 'Наступна координата', exact: true }).click();
+  await expect(details).toContainText('Головна мапа: Подія А');
+  await panel.getByRole('button', { name: 'Попередня координата', exact: true }).click();
+  await expect(details).toContainText('Некоректний запис');
+  await panel.getByRole('button', { name: 'Закрити картку запису' }).click();
+  await panel.getByRole('button', { name: 'OpenStreetMap', exact: true }).click();
+  await expect(panel.getByRole('button', { name: 'OpenStreetMap', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await panel.getByText('Попередження координат (1)', { exact: true }).click();
+  await panel.getByRole('button', { name: '3. Некоректний запис', exact: true }).click();
+  await expect(details).toContainText('654866');
+  await panel.getByRole('button', { name: 'Закрити картку запису' }).click();
   for (const format of ['CSV', 'KMZ']) {
     await panel.getByRole('button', { name: 'Завантажити мапу' }).click();
     const downloaded = page.waitForEvent('download');
@@ -278,6 +311,22 @@ test('@regression #3064 Echo breakpoint switches map panel to a full height draw
   rect = await panel.boundingBox();
   expect(rect!.width).toBe(390);
   expect(rect!.height).toBe(844);
+  await panel.getByRole('button', { name: 'Закрити мапу' }).click();
+  await page.setViewportSize({ width: 320, height: 640 });
+  await chat.locator('.ai-map-preview').click();
+  await expect(panel).toBeVisible();
+  await expect(panel.getByRole('combobox')).toHaveCount(0);
+  await panel.locator('.leaflet-marker-icon').last().click();
+  const details = panel.getByTestId('ai-map-record-details');
+  await expect(details).toBeVisible();
+  const stage = await panel.getByTestId('ai-map-stage').boundingBox();
+  const card = await details.boundingBox();
+  expect(card!.x).toBeGreaterThanOrEqual(stage!.x);
+  expect(card!.x + card!.width).toBeLessThanOrEqual(stage!.x + stage!.width);
+  const layer = await panel
+    .getByRole('button', { name: 'OpenStreetMap', exact: true })
+    .boundingBox();
+  expect(card!.y + card!.height).toBeLessThan(layer!.y);
   await panel.getByRole('button', { name: 'Закрити мапу' }).click();
   state.fail = true;
   await chat.locator('.ai-map-preview').click();

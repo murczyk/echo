@@ -73,9 +73,8 @@ export function MapPreview({
           <MapOutlinedIcon fontSize="small" />
         )}
       </span>
-      <span>
-        {inline ? 'мапа' : `${summary.title} · ${summary.validCount}/${summary.totalCount} точок`}
-      </span>
+      {!inline ? <span className="ai-map-preview-count">{summary.validCount}</span> : null}
+      <span>{inline ? 'мапа' : summary.title}</span>
     </button>
   );
 }

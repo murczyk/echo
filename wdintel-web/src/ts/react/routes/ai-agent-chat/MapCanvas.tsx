@@ -21,8 +21,8 @@ export default function MapCanvas({
           if (record.latitude == null || record.longitude == null) return [];
           const icon = L.icon({
             iconUrl: `/img/google_earth_icons/${record.sidc}.png`,
-            iconSize: [32, 32],
-            iconAnchor: [16, 16],
+            iconSize: [20, 20],
+            iconAnchor: [10, 10],
           });
           return [
             L.marker([record.latitude, record.longitude], {

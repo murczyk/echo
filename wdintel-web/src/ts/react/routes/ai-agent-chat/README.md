@@ -21,12 +21,16 @@ current view. The backend rejects deletion while a request is queued or running.
 ## Point-map documents
 
 Registered map links render lazy inline thumbnails. Each answer's latest main
-map has a larger ending preview. Opening either selects the document in a right
+map has a compact 144 × 96 px ending thumbnail with a point-count badge. Opening either selects the document in a right
 panel; the Echo 1024 px breakpoint switches between equal chat/map widths and a
 full-height drawer. Opening, replacing and closing a map preserve chat scroll
 and draft text. Conversation changes clear selection, while reload restores the
 published documents. Full records and exports are fetched with request ownership
-and source access checks; failures use existing toasts. See the
+and source access checks; failures use existing toasts. The map uses the same
+floating layer buttons as coordinate previews and 20 px markers. Clicking a
+point opens a dismissible detail card over the map. Previous/next controls
+browse every record, including overlapping points; records with invalid
+coordinates also remain accessible under coordinate warnings and in CSV. See the
 [map contract and rollout](../../../../../../echo-ai-agent/MAPS.md).
 
 Regression coverage:
