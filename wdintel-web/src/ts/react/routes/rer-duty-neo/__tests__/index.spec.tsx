@@ -133,9 +133,14 @@ vi.mock('../RerDutyNeoWorkspace', () => ({
           <button
             type="button"
             aria-label="Створити розвіддонесення"
-            onClick={() => {
+            onClick={(event) => {
               const [id, message] = messageFeeds[0].items[0];
-              buildFeedColumnModel(messageFeeds[0]).actions.onMessageCreateReport(id, message);
+              buildFeedColumnModel(messageFeeds[0]).actions.onMessageCreateReport(
+                id,
+                message,
+                undefined,
+                event.currentTarget,
+              );
             }}
           />
         </>

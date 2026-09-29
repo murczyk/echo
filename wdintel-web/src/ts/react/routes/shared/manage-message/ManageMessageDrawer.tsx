@@ -436,7 +436,7 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
     const drawerState = useManageMessageDrawer({
       ...props,
       interactionActive,
-      keepOpenAfterCreate: presentation === 'embedded',
+      keepOpenAfterCreate: presentation === 'embedded' && props.reportSource == null,
       onClose: handleClosed,
       open: props.open && canWrite,
     });

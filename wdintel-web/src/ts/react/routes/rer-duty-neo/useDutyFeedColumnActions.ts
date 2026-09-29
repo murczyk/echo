@@ -29,6 +29,7 @@ export type DutyFeedColumnActionsDeps = {
       senderName?: string | null;
       etalonDisplayModel: MessageCardEtalonDisplayModel;
     },
+    focusTarget: HTMLElement,
   ) => void;
 };
 
@@ -94,17 +95,21 @@ export function useDutyFeedColumnActions(
       onMessageImportant: (msgId, currentlyImportant) =>
         handleMessageImportant(feedId, msgId, currentlyImportant),
       onMessageCopy: handleMessageCopy,
-      onMessageCreateReport: (messageId, message, etalonDisplayModel) => {
+      onMessageCreateReport: (messageId, message, etalonDisplayModel, focusTarget) => {
         const { senderName } = buildMessageCardDisplayLabels(message, {
           groupInfos: deps.feeds.groupInfos,
           profiles: deps.feeds.profiles,
         });
-        deps.openReportComposer(feedId, {
-          id: messageId,
-          message,
-          senderName,
-          etalonDisplayModel,
-        });
+        deps.openReportComposer(
+          feedId,
+          {
+            id: messageId,
+            message,
+            senderName,
+            etalonDisplayModel,
+          },
+          focusTarget,
+        );
       },
       onMessageEditReport: (reportId) => {
         deps.openReportEditor(feedId, reportId);
@@ -205,8 +210,8 @@ export function useDutyFeedColumnActions(
       onMessageImportant: (msgId, currentlyImportant) =>
         latest().onMessageImportant(msgId, currentlyImportant),
       onMessageCopy: (text, feedbackId) => latest().onMessageCopy(text, feedbackId),
-      onMessageCreateReport: (msgId, message, etalonDisplayModel) =>
-        latest().onMessageCreateReport(msgId, message, etalonDisplayModel),
+      onMessageCreateReport: (msgId, message, etalonDisplayModel, focusTarget) =>
+        latest().onMessageCreateReport(msgId, message, etalonDisplayModel, focusTarget),
       onMessageEditReport: (reportId) => latest().onMessageEditReport(reportId),
       onMessageExcludeEntity: (entity, value) => latest().onMessageExcludeEntity(entity, value),
       onMessageToggleTag: (msgId, tagId) => latest().onMessageToggleTag(msgId, tagId),

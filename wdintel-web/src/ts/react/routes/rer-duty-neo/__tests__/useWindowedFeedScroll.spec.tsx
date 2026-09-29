@@ -6,7 +6,11 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWindowedFeedScroll } from '../useWindowedFeedScroll';
 import { useRerDutyNavigation } from '../useRerDutyNavigation';
-import { ScrollNavigationIntent, type ReachedBottomContext } from '../windowed-feed-scroll-shared';
+import {
+  ScrollNavigationIntent,
+  type AnchorSnapshot,
+  type ReachedBottomContext,
+} from '../windowed-feed-scroll-shared';
 
 const renderedItemRefs = new Map<number, (node: HTMLDivElement | null) => void>();
 let latestScrollHandle: ReturnType<typeof useWindowedFeedScroll> | null = null;
@@ -36,6 +40,7 @@ function TestScroller(props: {
   resetKey?: string;
   itemHeightPx?: number;
   bottomLoadBufferPx?: number;
+  onAnchorSnapshotChange?: (snapshot: AnchorSnapshot | null) => void;
 }) {
   const scroll = useWindowedFeedScroll({
     itemIds: props.ids,
@@ -57,6 +62,7 @@ function TestScroller(props: {
     initialPositioningReady: props.initialPositioningReady ?? true,
     unreadPrefetchNeeded: props.unreadPrefetchNeeded,
     pendingNewerFlushNeeded: props.pendingNewerFlushNeeded,
+    onAnchorSnapshotChange: props.onAnchorSnapshotChange,
     resetKey: props.resetKey,
     topLoadBufferPx: 80,
     bottomLoadBufferPx: props.bottomLoadBufferPx ?? 80,
@@ -1663,6 +1669,42 @@ describe('useWindowedFeedScroll', () => {
       await waitForAnimationFrame();
     });
     expect(scroller.scrollTop).toBe(75);
+  });
+
+  it('retains a direct-message anchor when the tracked feed unmounts', async () => {
+    const ids = [1, 2, 3, 4];
+    const onAnchorSnapshotChange = vi.fn();
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={[]}
+          isWatchMode={false}
+          onAnchorSnapshotChange={onAnchorSnapshotChange}
+        />,
+      );
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setClampedScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 200 });
+    mockVerticalLayout(scroller, { items: createItemLayouts(ids) });
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={ids}
+          isWatchMode={false}
+          onAnchorSnapshotChange={onAnchorSnapshotChange}
+        />,
+      );
+    });
+
+    scroller.scrollTop = 0;
+    latestScrollHandle?.scrollToItem(3);
+    expect(onAnchorSnapshotChange.mock.calls.at(-1)?.[0]).not.toBeNull();
+    onAnchorSnapshotChange.mockClear();
+
+    await act(async () => root.unmount());
+
+    expect(onAnchorSnapshotChange.mock.calls).toEqual([]);
   });
 
   it('does not center a fully visible tail message', async () => {

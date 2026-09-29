@@ -37,6 +37,7 @@ export type DutyFeedColumnModelDeps = {
       senderName?: string | null;
       etalonDisplayModel: MessageCardEtalonDisplayModel;
     },
+    focusTarget: HTMLElement,
   ) => void;
 };
 

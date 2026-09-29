@@ -51,7 +51,6 @@ export function RerAnalysisNeoPage({
   const page = useRerAnalysisNeoPage(authUserName, authUserRoles);
   const theme = useTheme();
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
-  const [editorSourceMessageId, setEditorSourceMessageId] = useState<number | null>(null);
   const editorRef = useRef<ManageMessageEditorHandle>(null);
   const editorInitialFocusTargetRef = useRef<HTMLElement | null>(null);
   const { ref: layoutRef, width: layoutWidth } = useObservedWidth<HTMLDivElement>();
@@ -125,12 +124,7 @@ export function RerAnalysisNeoPage({
     [page.openReport],
   );
   const requestEditorIntent = useCallback(
-    (
-      key: string,
-      sourceMessageId: number | null,
-      commit: () => void,
-      invokingControl?: HTMLElement,
-    ) => {
+    (key: string, commit: () => void, invokingControl?: HTMLElement) => {
       if (!canWriteMessages(page.currentUser?.roles)) return;
       const focusTarget =
         invokingControl ??
@@ -149,7 +143,6 @@ export function RerAnalysisNeoPage({
         } else {
           setCreateMessageOpen(false);
         }
-        setEditorSourceMessageId(sourceMessageId);
         commit();
       };
       if (editorRef.current) {
@@ -169,7 +162,7 @@ export function RerAnalysisNeoPage({
     ],
   );
   const openCreateMessageComposer = useCallback(() => {
-    requestEditorIntent('create-message', null, () => setCreateMessageOpen(true));
+    requestEditorIntent('create-message', () => setCreateMessageOpen(true));
   }, [requestEditorIntent]);
   const openMessageEditor = useCallback(
     (messageId: number, invokingControl?: HTMLElement) => {
@@ -177,7 +170,6 @@ export function RerAnalysisNeoPage({
       const intentKind = message && isIntelligenceReport(message) ? 'edit-report' : 'edit-message';
       requestEditorIntent(
         `${intentKind}:${messageId}`,
-        messageId,
         () => {
           page.setCenterTab('messages');
           page.openEditor(messageId);
@@ -188,17 +180,25 @@ export function RerAnalysisNeoPage({
     [page.messages, page.openEditor, page.setCenterTab, requestEditorIntent],
   );
   const openReportCreator = useCallback(
-    (messageId: number, etalonDisplayModel: Parameters<typeof page.openReportCreator>[1]) => {
-      requestEditorIntent(`create-report:${messageId}`, messageId, () => {
-        page.setCenterTab('messages');
-        page.openReportCreator(messageId, etalonDisplayModel);
-      });
+    (
+      messageId: number,
+      etalonDisplayModel: Parameters<typeof page.openReportCreator>[1],
+      invokingControl?: HTMLElement,
+    ) => {
+      requestEditorIntent(
+        `create-report:${messageId}`,
+        () => {
+          page.setCenterTab('messages');
+          page.openReportCreator(messageId, etalonDisplayModel);
+        },
+        invokingControl,
+      );
     },
     [page.openReportCreator, page.setCenterTab, requestEditorIntent],
   );
   const openReportEditor = useCallback(
     (messageId: number) => {
-      requestEditorIntent(`edit-report:${messageId}`, messageId, () => {
+      requestEditorIntent(`edit-report:${messageId}`, () => {
         page.setCenterTab('messages');
         page.openReportEditor(messageId);
       });
@@ -221,7 +221,6 @@ export function RerAnalysisNeoPage({
     } else {
       setCreateMessageOpen(false);
     }
-    setEditorSourceMessageId(null);
   }, [page.closeEditor, page.editTargetLoadState.status, page.editorMessage, page.reportSource]);
 
   const toggleRightPanel = useCallback(() => {
@@ -372,7 +371,6 @@ export function RerAnalysisNeoPage({
                         isCompactLayout={isAnalysisCompactLayout}
                         isNarrowLayout={isNarrowLayout}
                         rightPanelVisible={inlineRightDockVisible}
-                        editorSourceMessageId={editorSourceMessageId}
                         messagesPanelId={messagesPanelId}
                         messagesTabId={messagesTabId}
                         summaryPanelId={summaryPanelId}

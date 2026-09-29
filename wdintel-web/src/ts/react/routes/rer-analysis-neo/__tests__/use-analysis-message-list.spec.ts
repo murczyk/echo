@@ -474,6 +474,40 @@ describe('useAnalysisMessageList pagination', () => {
     expect(h.latest.messages).toEqual([...page(1), ...page(2)]);
   });
 
+  it('replaces only the current page while preserving loaded history', async () => {
+    const h = renderHook();
+    harnesses.push(h);
+    const firstPage = Array.from(
+      { length: 20 },
+      (_, index) => [40 - index, buildMessage()] as [number, InboxMessage],
+    );
+    const secondPage = Array.from(
+      { length: 20 },
+      (_, index) => [20 - index, buildMessage()] as [number, InboxMessage],
+    );
+
+    await act(async () => {
+      await h.latest.setMessages(firstPage);
+    });
+    fetchInboxMessagesMock.mockResolvedValueOnce({
+      inboxItems: secondPage,
+      callsigns: [],
+      pageLimit: 20,
+    });
+    await act(async () => {
+      await h.latest.loadMoreMessages();
+    });
+    const refreshedPage = secondPage.map(
+      ([id, message]) => [id, { ...message, text: `refreshed-${id}` }] as [number, InboxMessage],
+    );
+
+    act(() => {
+      h.latest.replaceCurrentMessagePage(refreshedPage);
+    });
+
+    expect(h.latest.messages).toEqual([...firstPage, ...refreshedPage]);
+  });
+
   it('updates messages and pageIndex together before message hydration finishes', async () => {
     const hydration = deferred<void>();
     const h = renderHook(

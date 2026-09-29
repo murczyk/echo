@@ -24,7 +24,6 @@ type Props = {
   summaryTabId: string;
   mapPanelId: string;
   mapTabId: string;
-  editorSourceMessageId: number | null;
 };
 
 export function AnalysisCenterPanel({
@@ -40,7 +39,6 @@ export function AnalysisCenterPanel({
   summaryTabId,
   mapPanelId,
   mapTabId,
-  editorSourceMessageId,
 }: Props) {
   // Flush, full-height divider on the column edge for every tab — mirrors the
   // left panel's `border-r` so both sides read identically. (Previously the
@@ -275,7 +273,6 @@ export function AnalysisCenterPanel({
             networks={page.networks}
             unitsMap={page.unitsMap}
             directMessageNavigation={page.directMessageNavigation}
-            editorSourceMessageId={editorSourceMessageId}
           />
         </Box>
 

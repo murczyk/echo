@@ -49,7 +49,7 @@ vi.mock('@mui/material', () => ({
 vi.mock('../../../shared/message-card/MessageCard', () => ({
   AnalysisMessageCard: (props: {
     id: number;
-    onCreateReport: () => void;
+    onCreateReport: (focusTarget: HTMLElement) => void;
     onEditReport?: (id: number) => void;
     onDelete: () => void;
     onEditDetails: (focusTarget: HTMLElement) => void;
@@ -70,7 +70,7 @@ vi.mock('../../../shared/message-card/MessageCard', () => ({
           .map((comment) => `${comment.login}:${comment.comment}`)
           .join('|')}
       </span>
-      <button type="button" onClick={props.onCreateReport}>
+      <button type="button" onClick={(event) => props.onCreateReport(event.currentTarget)}>
         report-{props.id}
       </button>
       <button type="button" onClick={() => props.onEditReport?.(91)}>
@@ -200,7 +200,6 @@ function buildProps(
     directMessageNavigation: null,
     onOpenPointsOnMap: vi.fn(),
     onAddPointHighlightBlacklist: vi.fn().mockResolvedValue(undefined),
-    editorSourceMessageId: null,
     ...overrides,
   };
 }
@@ -273,14 +272,30 @@ describe('AnalysisMessagesPane', () => {
     }
   });
 
-  it('highlights the editor source without scrolling the message viewport', async () => {
+  it('highlights a direct-link target without scrolling the message viewport', async () => {
     const scrollIntoView = vi.fn();
     Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
       configurable: true,
       value: scrollIntoView,
     });
     const renderedPane = await renderComponent(
-      buildProps({ messages: [[7, buildMessage()]], editorSourceMessageId: 7 }),
+      buildProps({
+        messages: [[7, buildMessage()]],
+        directMessageNavigation: {
+          targetMessageId: 7,
+          targetMessageIndex: 0,
+          totalCount: 1,
+          focusActive: true,
+          newestFirst: true,
+          canLoadEarlier: false,
+          canLoadLater: false,
+          loadingEarlier: false,
+          loadingLater: false,
+          onClearFocus: vi.fn(),
+          onLoadEarlier: vi.fn().mockResolvedValue(false),
+          onLoadLater: vi.fn().mockResolvedValue(false),
+        },
+      }),
     );
     rendered.push(renderedPane);
 
@@ -354,18 +369,23 @@ describe('AnalysisMessagesPane', () => {
     );
     rendered.push(view);
 
-    await click(getButton(view.container, 'report-7'));
+    const createReportButton = getButton(view.container, 'report-7');
+    await click(createReportButton);
     await click(getButton(view.container, 'edit-report-7'));
 
-    expect(onCreateReport).toHaveBeenCalledWith(7, {
-      primaryKind: 'network',
-      displayValue: 'р/м Актуальна мережа',
-      copyEtalonValue: 'р/м Актуальна мережа',
-      copyLocationValue: null,
-      renderedNetworks: [{ networkId: 3, label: 'р/м Актуальна мережа', badge: false }],
-      showInlineLocationTooltip: false,
-      locationDisplayValue: null,
-    });
+    expect(onCreateReport).toHaveBeenCalledWith(
+      7,
+      {
+        primaryKind: 'network',
+        displayValue: 'р/м Актуальна мережа',
+        copyEtalonValue: 'р/м Актуальна мережа',
+        copyLocationValue: null,
+        renderedNetworks: [{ networkId: 3, label: 'р/м Актуальна мережа', badge: false }],
+        showInlineLocationTooltip: false,
+        locationDisplayValue: null,
+      },
+      createReportButton,
+    );
     expect(onEditReport).toHaveBeenCalledWith(91);
   });
 

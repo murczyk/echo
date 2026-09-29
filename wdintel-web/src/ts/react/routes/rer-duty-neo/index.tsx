@@ -195,14 +195,20 @@ export function RerDutyNeoPage({
         senderName?: string | null;
         etalonDisplayModel: MessageCardEtalonDisplayModel;
       },
+      invokingControl: HTMLElement,
     ) => {
-      requestEditorIntent(`create-report:${source.id}`, sourceFeedId, () => {
-        cancelReportEditLoad();
-        setCreateMessageOpen(false);
-        setEditAsReport(false);
-        setEditTarget(null);
-        setReportSource(source);
-      });
+      requestEditorIntent(
+        `create-report:${source.id}`,
+        sourceFeedId,
+        () => {
+          cancelReportEditLoad();
+          setCreateMessageOpen(false);
+          setEditAsReport(false);
+          setEditTarget(null);
+          setReportSource(source);
+        },
+        invokingControl,
+      );
     },
     [cancelReportEditLoad, requestEditorIntent],
   );

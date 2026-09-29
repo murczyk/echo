@@ -137,6 +137,7 @@ type DutyMessageCardItemProps = {
     msgId: number,
     message: InboxMessage,
     etalonDisplayModel: MessageCardEtalonDisplayModel,
+    focusTarget: HTMLElement,
   ) => void;
   onMessageEditReport: (reportId: number) => void;
   onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
@@ -276,7 +277,9 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
           ? undefined
           : () => onMessageCopy(etalonDisplayModel.copyLocationValue ?? '', `location-${id}`)
       }
-      onCreateReport={() => onMessageCreateReport(id, msg, etalonDisplayModel)}
+      onCreateReport={(focusTarget) =>
+        onMessageCreateReport(id, msg, etalonDisplayModel, focusTarget)
+      }
       onEditReport={onMessageEditReport}
       onExcludeMessageEntity={(entity, value) => onMessageExcludeEntity(entity, value)}
       onToggleTag={(tagId) => onMessageToggleTag(id, tagId)}
@@ -325,6 +328,7 @@ type DutyMessageListProps = {
     msgId: number,
     message: InboxMessage,
     etalonDisplayModel: MessageCardEtalonDisplayModel,
+    focusTarget: HTMLElement,
   ) => void;
   onMessageEditReport: (reportId: number) => void;
   onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;

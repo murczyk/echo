@@ -98,6 +98,7 @@ export type FeedColumnModel = {
       msgId: number,
       message: InboxMessage,
       etalonDisplayModel: MessageCardEtalonDisplayModel,
+      focusTarget: HTMLElement,
     ) => void;
     onMessageEditReport: (reportId: number) => void;
     onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;

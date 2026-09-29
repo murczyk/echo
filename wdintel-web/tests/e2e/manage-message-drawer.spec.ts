@@ -210,6 +210,62 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
     await expect(page.locator('[data-manage-message-focus-fallback]')).toHaveCount(0);
   });
 
+  for (const host of ['duty', 'analysis'] as const satisfies ManageMessageDrawerHost[]) {
+    test(`${host} restores focus to the report action after closing`, async ({ page }) => {
+      await page.setViewportSize({ width: 1600, height: 900 });
+      await openCreateEditorWithLinkedMessage(page, host);
+      await page.getByRole('textbox', { name: 'Текст повідомлення' }).press('Escape');
+
+      const reportAction = page
+        .getByRole('button', { name: 'Створити розвіддонесення', exact: true })
+        .first();
+      await reportAction.click();
+      const sourceOutlineStyle = await reportAction.evaluate((element) => {
+        const card = element.closest<HTMLElement>('[data-message-card-root]');
+        return card == null ? null : getComputedStyle(card).outlineStyle;
+      });
+      expect(sourceOutlineStyle).toBe('none');
+      await expect(page.getByRole('heading', { name: 'Створити розвіддонесення' })).toBeVisible();
+      await page.getByRole('button', { name: 'Закрити', exact: true }).click();
+
+      await expect(page.locator('[data-manage-message-presentation]')).toHaveCount(0);
+      await expect(reportAction).toBeFocused();
+    });
+
+    test(`${host} closes the report composer after successful creation`, async ({ page }) => {
+      await page.setViewportSize({ width: 1600, height: 900 });
+      await openCreateEditorWithLinkedMessage(page, host);
+      await page.getByRole('textbox', { name: 'Текст повідомлення' }).press('Escape');
+      await page.route('**/api/1.1/messages/copy', async (route) => {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({
+            payloads: [{ full_body: 'Copied report source', parent_signal_message_ids: [42] }],
+          }),
+        });
+      });
+      await page.route('**/api/1.1/submit-direct', async (route) => {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({ signal_message_id: 501 }),
+        });
+      });
+
+      await page
+        .getByRole('button', { name: 'Створити розвіддонесення', exact: true })
+        .first()
+        .click();
+      await page
+        .getByRole('textbox', { name: 'Текст розвіддонесення' })
+        .fill('Created intelligence report');
+      await page.getByRole('combobox', { name: 'Відправити в групу' }).click();
+      await page.getByRole('option', { name: 'Не відправляти', exact: true }).click();
+      await page.getByRole('button', { name: 'Створити', exact: true }).click();
+
+      await expect(page.locator('[data-manage-message-presentation]')).toHaveCount(0);
+    });
+  }
+
   test('@regression #3620 auto-parses by default and allows saving after an AI warning', async ({
     page,
   }) => {

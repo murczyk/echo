@@ -1641,11 +1641,12 @@ describe('ManageMessageDrawer edit mode', () => {
     root.unmount();
   });
 
-  it('allows report submission while a suggestion request is pending', async () => {
+  it('closes an embedded report composer after submission while a suggestion is pending', async () => {
     directSubmitMocks.copyDirectSubmit.mockResolvedValue({
       payloads: [{ full_body: 'copied source', parent_signal_message_ids: [42] }],
     });
     aiIntelReportMocks.quickIntelReportSuggestion.mockReturnValue(new Promise(() => {}));
+    const onClose = vi.fn();
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -1654,9 +1655,10 @@ describe('ManageMessageDrawer edit mode', () => {
       root.render(
         <ManageMessageDrawer
           open
+          presentation="embedded"
           cyberEchoEnabled={false}
           currentUser={{ roles: ['Rer'] } as User}
-          onClose={vi.fn()}
+          onClose={onClose}
           reportSource={{ id: 42, message: buildMessage() }}
         />,
       );
@@ -1681,6 +1683,7 @@ describe('ManageMessageDrawer edit mode', () => {
     expect(directSubmitMocks.submitDirect).toHaveBeenCalledWith(
       expect.objectContaining({ full_body: 'Готовий текст оператора' }),
     );
+    expect(onClose).toHaveBeenCalledTimes(1);
 
     root.unmount();
   });
@@ -4186,7 +4189,7 @@ describe('ManageMessageDrawer edit mode', () => {
     root.unmount();
   });
 
-  it('closes and reports edit success when the response has no inline message', async () => {
+  it('closes a report editor and reports success when the response has no inline message', async () => {
     const onSubmitEdit = vi.fn();
     const onEditSuccess = vi.fn();
     const onClose = vi.fn();
@@ -4207,6 +4210,7 @@ describe('ManageMessageDrawer edit mode', () => {
             setOpen(false);
           }}
           editTarget={{ id: 124, message: buildMessage() }}
+          editAsReport
           onSubmitEdit={onSubmitEdit}
           onEditSuccess={onEditSuccess}
         />

@@ -192,6 +192,104 @@ test.describe('@smoke @regression', () => {
       .toBe(offsetBefore);
   });
 
+  test('analysis neo keeps the visible message anchored after refreshing loaded history', async ({
+    page,
+  }) => {
+    const template = createOverflowingInboxResponse();
+    const buildPage = (startId: number) => ({
+      ...template,
+      inbox_items: template.inbox_items.map(([, message], index) => {
+        const id = startId - index;
+        return [
+          id,
+          {
+            ...message,
+            messageUid: `analysis-refresh-e2e-message-${id}`,
+            text: `Analysis refresh fixture message ${id}`,
+          },
+        ];
+      }),
+    });
+    const newestPage = buildPage(140);
+    const olderPage = buildPage(120);
+    const refreshedOlderPage = {
+      ...olderPage,
+      inbox_items: olderPage.inbox_items.map(([id, message], index) => [
+        id,
+        index === 0
+          ? {
+              ...message,
+              text: 'Refreshed older analysis message',
+            }
+          : message,
+      ]),
+    } as typeof olderPage;
+    let olderPageRequestCount = 0;
+    await setupAnalysisNeoPage(page, { inboxResponse: newestPage });
+    await page.route('**/api/rer-importer/get-inbox', async (route) => {
+      const body = route.request().postDataJSON() as {
+        before_id_noninclusive?: number | null;
+      };
+      if (body.before_id_noninclusive != null) olderPageRequestCount += 1;
+      const response =
+        body.before_id_noninclusive == null
+          ? newestPage
+          : olderPageRequestCount > 1
+            ? refreshedOlderPage
+            : olderPage;
+      await route.fulfill({
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify(response),
+      });
+    });
+    await page.goto('/rer-analysis-neo');
+
+    const messageList = page.locator('section[aria-labelledby] ul').first();
+    const scrollContainer = messageList.locator('..');
+    await scrollContainer.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+      element.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+    await expect(messageList.locator('li')).toHaveCount(40);
+
+    const anchor = page.locator('[data-message-id="122"]');
+    await expect(anchor).toBeVisible();
+    await anchor.evaluate((element) => {
+      const container = element.closest('ul')?.parentElement;
+      if (container == null) throw new Error('Message scroll container is missing');
+      container.scrollTop +=
+        element.getBoundingClientRect().top - container.getBoundingClientRect().top - 24;
+      container.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+    const offsetBefore = await anchor.evaluate((element) => {
+      const container = element.closest('ul')?.parentElement;
+      if (container == null) throw new Error('Message scroll container is missing');
+      return Math.round(
+        element.getBoundingClientRect().top -
+          container.getBoundingClientRect().top -
+          container.clientTop,
+      );
+    });
+
+    await page.getByRole('button', { name: 'Оновити' }).click();
+
+    await expect(page.getByText('Refreshed older analysis message', { exact: true })).toBeVisible();
+    await expect(anchor).toBeVisible();
+    await expect
+      .poll(() =>
+        anchor.evaluate((element) => {
+          const container = element.closest('ul')?.parentElement;
+          if (container == null) return null;
+          return Math.round(
+            element.getBoundingClientRect().top -
+              container.getBoundingClientRect().top -
+              container.clientTop,
+          );
+        }),
+      )
+      .toBe(offsetBefore);
+  });
+
   test('analysis neo keeps the compact panel toggle available during initial loading', async ({
     page,
   }) => {

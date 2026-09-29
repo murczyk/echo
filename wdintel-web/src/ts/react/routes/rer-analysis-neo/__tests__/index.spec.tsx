@@ -245,13 +245,16 @@ vi.mock('.././components/AnalysisMapPane', () => ({
 vi.mock('.././components/AnalysisMessagesPane', () => ({
   AnalysisMessagesPane: (props: {
     onOpenEditor?: (messageId: number, focusTarget?: HTMLElement) => void;
-    onCreateReport?: (messageId: number, etalonDisplayModel: unknown) => void;
+    onCreateReport?: (
+      messageId: number,
+      etalonDisplayModel: unknown,
+      focusTarget: HTMLElement,
+    ) => void;
     onEditReport?: (messageId: number) => void;
-    editorSourceMessageId?: number | null;
   }) => {
     messagesPanePropsHistory.push(props);
     return (
-      <div data-testid="messages-pane" data-editor-source-id={props.editorSourceMessageId ?? ''}>
+      <div data-testid="messages-pane">
         <button
           type="button"
           aria-label="analysis-edit-message"
@@ -260,7 +263,7 @@ vi.mock('.././components/AnalysisMessagesPane', () => ({
         <button
           type="button"
           aria-label="analysis-create-report"
-          onClick={() => props.onCreateReport?.(42, {})}
+          onClick={(event) => props.onCreateReport?.(42, {}, event.currentTarget)}
         />
         <button
           type="button"
@@ -1003,7 +1006,7 @@ describe('RerAnalysisNeoPage', () => {
     root.unmount();
   });
 
-  it('selects Messages and records the source id for message editing', async () => {
+  it('selects Messages when opening message editing', async () => {
     const page = buildPage();
     page.centerTab = 'summary';
     page.openEditor.mockImplementation((messageId: number) => {
@@ -1020,11 +1023,11 @@ describe('RerAnalysisNeoPage', () => {
       '[aria-label="analysis-edit-message"]',
     );
     await act(async () => editButton?.click());
+    await act(async () => root.render(<RerAnalysisNeoPage />));
 
     expect(page.setCenterTab).toHaveBeenCalledWith('messages');
     expect(page.openEditor).toHaveBeenCalledWith(42);
     expect(manageMessageDrawerPropsHistory.at(-1)?.initialFocusTarget).toBe(editButton);
-    expect(messagesPanePropsHistory.at(-1)?.editorSourceMessageId).toBe(42);
     root.unmount();
   });
 

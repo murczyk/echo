@@ -105,7 +105,11 @@ type Props = {
   onCancelBotTagAction?: () => void;
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void;
   onOpenEditor: (messageId: number, focusTarget?: HTMLElement) => void;
-  onCreateReport: (messageId: number, etalonDisplayModel: MessageCardEtalonDisplayModel) => void;
+  onCreateReport: (
+    messageId: number,
+    etalonDisplayModel: MessageCardEtalonDisplayModel,
+    focusTarget: HTMLElement,
+  ) => void;
   onEditReport: (messageId: number) => void | Promise<void>;
   onLoadMoreMessages: () => Promise<boolean>;
   onVisiblePageChange: (pageIndex: number) => void;
@@ -135,7 +139,6 @@ type Props = {
   networks?: Network[];
   unitsMap?: Record<number, Unit>;
   directMessageNavigation: AnalysisDirectMessageNavigation | null;
-  editorSourceMessageId: number | null;
 };
 
 function getMissingBottomScrollSpace(container: HTMLElement): number {
@@ -309,7 +312,11 @@ type AnalysisMessageCardItemProps = {
   messageComments: MessageComment[];
   networkDisplayMap: Record<number, string>;
   botTagAction?: BotTagAction | null;
-  onCreateReport: (id: number, etalonDisplayModel: MessageCardEtalonDisplayModel) => void;
+  onCreateReport: (
+    id: number,
+    etalonDisplayModel: MessageCardEtalonDisplayModel,
+    focusTarget: HTMLElement,
+  ) => void;
   onEditReport: (id: number) => void | Promise<void>;
   onCopyFeedback: (value: string) => void;
   onDeleteOpen: (messageId: number) => void;
@@ -489,7 +496,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
               });
             }
       }
-      onCreateReport={() => onCreateReport(id, etalonDisplayModel)}
+      onCreateReport={(focusTarget) => onCreateReport(id, etalonDisplayModel, focusTarget)}
       onEditReport={onEditReport}
       onDelete={() => onDeleteOpen(id)}
       onEditDetails={(focusTarget) => onOpenEditor(id, focusTarget)}
@@ -569,7 +576,6 @@ function AnalysisMessagesPaneComponent({
   networks,
   unitsMap,
   directMessageNavigation,
-  editorSourceMessageId,
 }: Props) {
   const theme = useTheme();
   const { notify } = useOptionalPowerSnackbar();
@@ -642,15 +648,6 @@ function AnalysisMessagesPaneComponent({
   useEffect(() => {
     referenceTimeMsRef.current = Date.now();
   }, [messages]);
-
-  useEffect(() => {
-    if (editorSourceMessageId == null) return;
-    const targetElement = scrollContainerRef.current?.querySelector<HTMLElement>(
-      `[data-message-id="${editorSourceMessageId}"]`,
-    );
-    if (!targetElement) return;
-    return scrollToAndHighlightMessage(targetElement, { scroll: false });
-  }, [editorSourceMessageId, messages]);
 
   useLayoutEffect(() => {
     if (preserveScrollOnPageChangeRef.current) {

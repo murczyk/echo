@@ -77,7 +77,7 @@ type ActionIconsRowProps = {
   copiedFeedbackId: string | null;
   onBookmark?: () => void;
   onImportant?: () => void;
-  onCreateReport?: () => void;
+  onCreateReport?: (focusTarget: HTMLElement) => void;
   onCopyText?: () => void;
   onCopyFreq?: () => void;
   onCopyTextWithNetwork?: () => void;
@@ -376,7 +376,7 @@ function ActionIconsRow({
         key="report"
         title="Створити розвіддонесення"
         icon={<NoteAddIcon className="message-card-action-btn__icon" />}
-        onClick={onCreateReport}
+        onClick={(event) => onCreateReport(event.currentTarget)}
       />
     ) : null,
     canShowPrimaryActions ? (
@@ -904,7 +904,7 @@ export type MessageCardHeaderProps = {
   topRight?: ReactNode;
   onBookmark?: () => void;
   onImportant?: () => void;
-  onCreateReport?: () => void;
+  onCreateReport?: (focusTarget: HTMLElement) => void;
   onCopyText?: () => void;
   onCopyFreq?: () => void;
   onCopyTextWithNetwork?: () => void;

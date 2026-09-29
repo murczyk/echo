@@ -282,7 +282,7 @@ export function useWindowedFeedScroll({
   const directItemTargetIdRef = useRef<number | null>(null);
   const directItemCenterRafRef = useRef<number | null>(null);
 
-  const stopDirectItemTracking = useCallback(() => {
+  const cancelDirectItemTracking = useCallback(() => {
     const wasActive =
       directItemTargetIdRef.current !== null || directItemCenterRafRef.current !== null;
     directItemTargetIdRef.current = null;
@@ -290,11 +290,20 @@ export function useWindowedFeedScroll({
       cancelAnimationFrame(directItemCenterRafRef.current);
       directItemCenterRafRef.current = null;
     }
-    if (wasActive) anchors.setAnchorSnapshot(null);
     if (wasActive) recordDutyScrollDebugEvent(debugFeedId, 'item-tracking:stop');
-  }, [anchors, debugFeedId]);
+    return wasActive;
+  }, [debugFeedId]);
 
-  useEffect(() => stopDirectItemTracking, [stopDirectItemTracking]);
+  const stopDirectItemTracking = useCallback(() => {
+    if (cancelDirectItemTracking()) anchors.setAnchorSnapshot(null);
+  }, [anchors, cancelDirectItemTracking]);
+
+  useEffect(
+    () => () => {
+      cancelDirectItemTracking();
+    },
+    [cancelDirectItemTracking],
+  );
 
   const fallbackInputRef = useRef<{ direction: 'older' | 'newer'; generation: number } | null>(
     null,
