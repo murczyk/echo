@@ -368,6 +368,62 @@ describe('AiAgentChat request queue', () => {
     expect(connections.get('request-1')?.signal.aborted).toBe(false);
   });
 
+  it.each(['Незавершена нотатка', ''])(
+    '#3064 preserves the composer on retry rejection and submits once for rapid retry clicks (draft: %s)',
+    async (draft) => {
+      mocks.submit.mockResolvedValueOnce({
+        id: 'request-failed',
+        conversationId: CONVERSATION.id,
+        state: 'running',
+      });
+      setTextarea('Повтори цей початковий запит');
+      submitForm();
+      await flush();
+      await act(async () => streamEvent('request-failed', 1, 'error', 'internal diagnostic'));
+      await act(async () => setTextarea(draft));
+
+      let rejectRetry!: (error: Error) => void;
+      mocks.submit.mockImplementationOnce(
+        () =>
+          new Promise((_, reject) => {
+            rejectRetry = reject;
+          }),
+      );
+      const request = container.querySelector(
+        '[data-testid="live-request-request-failed"]',
+      ) as HTMLElement;
+      const retry = Array.from(request.querySelectorAll('button')).find(
+        (button) => button.textContent?.trim() === 'Спробувати ще раз',
+      ) as HTMLButtonElement;
+      expect(retry).toBeDefined();
+      await act(async () => {
+        clickButton('Спробувати ще раз', request);
+        clickButton('Спробувати ще раз', request);
+      });
+      await flush();
+
+      expect(mocks.submit).toHaveBeenCalledTimes(2);
+      expect(mocks.submit).toHaveBeenLastCalledWith({
+        conversationId: CONVERSATION.id,
+        providerId: PROVIDER.id,
+        message: 'Повтори цей початковий запит',
+      });
+      expect(retry.disabled).toBe(true);
+      expect((container.querySelector('textarea') as HTMLTextAreaElement).value).toBe(draft);
+
+      await act(async () => rejectRetry(new Error('мережа недоступна')));
+      await flush();
+
+      expect(retry.disabled).toBe(false);
+      expect((container.querySelector('textarea') as HTMLTextAreaElement).value).toBe(draft);
+      expect(container.querySelector('[data-testid="pending-ai-agent-request"]')).toBeNull();
+      expect(mocks.notify).toHaveBeenCalledWith({
+        severity: 'error',
+        message: 'Не вдалося надіслати запит: мережа недоступна',
+      });
+    },
+  );
+
   it('restores a failed submission and reports it through a toast', async () => {
     mocks.submit.mockRejectedValueOnce(new Error('мережа недоступна'));
     setTextarea('Не втратити цей текст');
@@ -413,7 +469,7 @@ describe('AiAgentChat request queue', () => {
     });
     expect(request.textContent).not.toContain('тимчасово недоступно');
 
-    await act(async () => clickButton('Відновити потік', request));
+    await act(async () => clickAriaButton('Відновити потік', request));
     await flush();
 
     expect(mocks.stream).toHaveBeenCalledTimes(2);

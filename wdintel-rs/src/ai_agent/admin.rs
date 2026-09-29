@@ -875,6 +875,16 @@ pub async fn get_request(
             event_type: event.event_type,
             payload_json: event.payload.to_string(),
             created_at: event.created_at.and_utc().timestamp_millis(),
+            activity_presentation: event
+                .payload
+                .get("activityPresentation")
+                .cloned()
+                .and_then(|value| serde_json::from_value(value).ok()),
+            activity_only: event
+                .payload
+                .get("activityOnly")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
         })
         .collect();
     Ok(Json(AiAgentAdminRequestDetail {

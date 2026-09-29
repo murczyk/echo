@@ -1,6 +1,6 @@
 use super::{
-    access, auth, chat_monitoring, dispatcher::DispatcherClient, events,
-    lifecycle, review,
+    access, activity_titles::ActivityTitles, auth, chat_monitoring,
+    dispatcher::DispatcherClient, events, lifecycle, review,
 };
 use crate::config::{
     AI_AGENT_DESTROY_STOPPED_DAYS, AI_AGENT_DISPATCHER_TIMEOUT_SEC,
@@ -22,7 +22,7 @@ use crate::entities::{
 };
 use crate::error::AppError;
 use crate::h;
-use crate::types::{error, info, Env, ShortContext};
+use crate::types::{error, info, Context, Env, ShortContext};
 use chrono::{Duration, Utc};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseBackend,
@@ -469,6 +469,50 @@ async fn run_request(
     }
 }
 
+async fn append_request_preparation(
+    env: &Env,
+    request_id: Uuid,
+    activity_titles: &mut ActivityTitles,
+) -> anyhow::Result<bool> {
+    if !events::append_request_start(
+        &env.dbx,
+        request_id,
+        json!({ "requestId": request_id }),
+    )
+    .await
+    .context(h!())?
+    {
+        return Ok(false);
+    }
+    append_presented_event(
+        env,
+        request_id,
+        "progress",
+        json!({ "summary": "Готую середовище" }),
+        activity_titles,
+    )
+    .await
+    .context(h!())
+}
+
+async fn append_presented_event(
+    env: &Env,
+    request_id: Uuid,
+    event_type: &str,
+    mut payload: Value,
+    activity_titles: &mut ActivityTitles,
+) -> anyhow::Result<bool> {
+    let activity = activity_titles.prepare(event_type, &mut payload);
+    let appended =
+        events::append_runner(&env.dbx, request_id, event_type, payload)
+            .await
+            .context(h!())?;
+    if appended {
+        activity_titles.submitted(activity);
+    }
+    Ok(appended)
+}
+
 async fn run_request_inner(
     env: &Env,
     request: &ai_agent_request::Model,
@@ -477,6 +521,18 @@ async fn run_request_inner(
     let request_started_at = Utc::now();
     if cancellation.is_cancelled() {
         return Err(interrupted_error());
+    }
+    let mut activity_titles = ActivityTitles::new(
+        env.dbx.clone(),
+        request.id,
+        &request.prompt,
+        cancellation,
+    );
+    if !append_request_preparation(env, request.id, &mut activity_titles)
+        .await
+        .context(h!())?
+    {
+        return Ok(RunOutcome::Cancelled);
     }
     if !access::settings(&env.dbx).await?.feature_enabled {
         return Err(AppError::Forbidden(
@@ -538,15 +594,6 @@ async fn run_request_inner(
         }
     }
     if request_is_cancelled(env, request.id).await? {
-        return Ok(RunOutcome::Cancelled);
-    }
-    if !events::append_request_start(
-        &env.dbx,
-        request.id,
-        json!({ "requestId": request.id }),
-    )
-    .await?
-    {
         return Ok(RunOutcome::Cancelled);
     }
     let provider_transport = access::agent_provider_transport(&ai_engine)
@@ -664,13 +711,14 @@ async fn run_request_inner(
                                     .to_string(),
                             });
                         }
-                        if !events::append_runner(
-                            &env.dbx,
+                        if !append_presented_event(
+                            env,
                             request.id,
                             &event_type,
                             payload,
+                            &mut activity_titles,
                         )
-                        .await?
+                        .await.context(h!())?
                         {
                             let _ = stream.terminate().await;
                             return Ok(RunOutcome::Cancelled);

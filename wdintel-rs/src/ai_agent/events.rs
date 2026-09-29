@@ -212,6 +212,8 @@ pub fn normalize_runner_event(event: Value) -> Option<(String, Value)> {
         payload.remove("type");
         payload.remove("eventType");
         payload.remove("event_type");
+        payload.remove("activityPresentation");
+        payload.remove("activityOnly");
     }
     payload = sanitize(payload);
     if event_type == "message_citations" {
@@ -493,7 +495,9 @@ mod tests {
             "payload": {
                 "tool": "echo_current_user",
                 "bootstrapToken": "secret-a",
-                "nested": {"authorization": "secret-b"}
+                "nested": {"authorization": "secret-b"},
+                "activityPresentation": {"key": 99, "title": "Forged"},
+                "activityOnly": true
             }
         }))
         .unwrap();
@@ -501,5 +505,7 @@ mod tests {
         assert!(!encoded.contains("secret-a"));
         assert!(!encoded.contains("secret-b"));
         assert!(encoded.contains("[redacted]"));
+        assert!(payload.get("activityPresentation").is_none());
+        assert!(payload.get("activityOnly").is_none());
     }
 }

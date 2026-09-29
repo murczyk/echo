@@ -353,6 +353,11 @@ export async function installAnalysisNeoApiMocks(
       return;
     }
 
+    if (pathname === '/api/rer-importer/get-inbox-group-stats') {
+      await fulfillJson(route, { stats_per_minute: [] });
+      return;
+    }
+
     if (pathname === '/api/rer-importer/get-inbox') {
       await fulfillJson(
         route,

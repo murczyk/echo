@@ -1,4 +1,5 @@
 mod access;
+mod activity_titles;
 pub mod admin;
 pub mod auth;
 mod chat_monitoring;
@@ -28,9 +29,11 @@ use crate::h;
 use crate::types::{Deserialize, Env, ShortContext};
 use actix_identity::Identity;
 use actix_web::{
-    get, post,
+    get,
+    http::{header, StatusCode},
+    post,
     web::{Json, Path, Query},
-    HttpRequest, HttpResponse,
+    HttpRequest, HttpResponse, HttpResponseBuilder,
 };
 use bytes::Bytes;
 use chrono::Utc;
@@ -537,11 +540,23 @@ pub async fn request_events(
             Err(err) => Some((Err(err), None)),
         }
     });
-    Ok(HttpResponse::Ok()
-        .insert_header(("Content-Type", "text/event-stream"))
-        .insert_header(("Cache-Control", "no-cache"))
-        .insert_header(("X-Accel-Buffering", "no"))
-        .streaming(stream))
+    Ok(
+        event_stream_response(StatusCode::OK, "no-cache, no-transform")
+            .streaming(stream),
+    )
+}
+
+fn event_stream_response(
+    status: StatusCode,
+    cache_control: &'static str,
+) -> HttpResponseBuilder {
+    let mut response = HttpResponse::build(status);
+    response
+        .insert_header((header::CONTENT_TYPE, "text/event-stream"))
+        .insert_header(header::ContentEncoding::Identity)
+        .insert_header((header::CACHE_CONTROL, cache_control))
+        .insert_header(("X-Accel-Buffering", "no"));
+    response
 }
 
 async fn next_sse_chunk(
@@ -598,6 +613,16 @@ fn render_sse_events(
             event_type: event.event_type.clone(),
             payload_json: event.payload.to_string(),
             created_at: event.created_at.and_utc().timestamp_millis(),
+            activity_presentation: event
+                .payload
+                .get("activityPresentation")
+                .cloned()
+                .and_then(|value| serde_json::from_value(value).ok()),
+            activity_only: event
+                .payload
+                .get("activityOnly")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
         };
         chunk.push_str(&format!(
             "id: {}\nevent: {}\ndata: {}\n\n",
