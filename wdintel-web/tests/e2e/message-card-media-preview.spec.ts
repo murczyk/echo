@@ -75,6 +75,13 @@ async function openMarkdownPreview(page: Page) {
   return page.getByRole('dialog', { name: 'Перегляд документа' });
 }
 
+async function openLegacyOfficePreview(page: Page, name: string) {
+  const documents = page.getByRole('button', { name: /^(Розгорнути|Згорнути) документи:/ });
+  if ((await documents.getAttribute('aria-expanded')) !== 'true') await documents.click();
+  await page.getByRole('button', { name }).click();
+  return page.getByRole('dialog', { name: 'Перегляд документа' });
+}
+
 async function expectOpenInNewTab(link: Locator, expectedUrl: string) {
   await expect(link).toHaveAttribute('href', new URL(expectedUrl).pathname);
   await expect(link).toHaveAttribute('target', '_blank');
@@ -111,7 +118,7 @@ test.describe('@smoke @regression', () => {
   for (const host of ['duty', 'analysis'] as const) {
     // Regression: https://github.com/echoua/echo/issues/3405
     test(`${host} message card preview smoke covers the shared contract`, async ({ page }) => {
-      await openMessageCardPreviewHost(page, host);
+      await openMessageCardPreviewHost(page, host, { withLegacyOffice: true });
 
       await expect(
         page.getByRole('link', {
@@ -164,6 +171,25 @@ test.describe('@smoke @regression', () => {
       ).toBeVisible();
       await expect(markdownDialog.getByText('first item')).toBeVisible();
       await markdownDialog.getByRole('button', { name: 'Закрити' }).click();
+
+      const docDialog = await openLegacyOfficePreview(
+        page,
+        MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.doc,
+      );
+      await expect(docDialog.getByText('Український абзац')).toBeVisible();
+      await expect(docDialog.locator('table').first()).toBeVisible();
+      await expect(docDialog.getByRole('link', { name: 'Скачати' })).toBeVisible();
+      await docDialog.getByRole('button', { name: 'Закрити' }).click();
+
+      const xlsDialog = await openLegacyOfficePreview(
+        page,
+        MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.xls,
+      );
+      await expect(xlsDialog.getByText('Ідентифікатор')).toBeVisible();
+      await xlsDialog.getByRole('button', { name: 'Sparse' }).click();
+      await expect(xlsDialog.getByText('Змішані текст')).toBeVisible();
+      await expect(xlsDialog.getByRole('link', { name: 'Скачати' })).toBeVisible();
+      await xlsDialog.getByRole('button', { name: 'Закрити' }).click();
     });
   }
 
@@ -175,6 +201,25 @@ test.describe('@smoke @regression', () => {
     await expect(imageDialog).toBeVisible();
     await imageDialog.getByRole('button', { name: 'Закрити' }).click();
     await expect(imageDialog).toHaveCount(0);
+  });
+
+  test('DOC/XLS malformed input preserves the shared download fallback', async ({ page }) => {
+    for (const host of ['duty', 'analysis'] as const) {
+      await openMessageCardPreviewHost(page, host, { withLegacyOffice: true });
+      await page.route(
+        `**/test-assets/message-card-media-preview/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.xls}`,
+        (route) =>
+          route.fulfill({ contentType: 'application/vnd.ms-excel', body: 'not a CFB file' }),
+      );
+
+      const dialog = await openLegacyOfficePreview(
+        page,
+        MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.xls,
+      );
+      await expect(dialog.getByText('Помилка перегляду')).toBeVisible();
+      await expect(dialog.getByRole('link', { name: 'Скачати' })).toBeVisible();
+      await dialog.getByRole('button', { name: 'Закрити' }).click();
+    }
   });
 
   test('image thumbnail loading fills the tile without blocking its download overlay', async ({

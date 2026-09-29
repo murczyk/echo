@@ -10,7 +10,9 @@ const DOCUMENT_PREVIEW_CAPABILITIES: Record<
   MessageCardDocumentPreviewCapabilities
 > = {
   pdf: { zoomable: true, carouselSwipeable: true },
+  doc: { zoomable: true, carouselSwipeable: true },
   docx: { zoomable: true, carouselSwipeable: true },
+  xls: { zoomable: true, carouselSwipeable: false },
   xlsx: { zoomable: true, carouselSwipeable: false },
   csv: { zoomable: true, carouselSwipeable: false },
   txt: { zoomable: false, carouselSwipeable: true },
