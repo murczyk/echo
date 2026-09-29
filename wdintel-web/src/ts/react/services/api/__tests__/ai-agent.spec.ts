@@ -4,12 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   getJson: vi.fn(),
   postJson: vi.fn(),
+  postBytes: vi.fn(),
   postVoid: vi.fn(),
 }));
 
 vi.mock('../client', () => ({
   getJson: mocks.getJson,
   postJson: mocks.postJson,
+  postBytes: mocks.postBytes,
   postVoid: mocks.postVoid,
 }));
 
@@ -22,6 +24,9 @@ import {
   streamAiAgentEvents,
   testAiAgentDispatcher,
   updateAiAgentConversation,
+  normalizeAiAgentEvent,
+  getAiAgentMap,
+  downloadAiAgentMap,
 } from '../ai-agent';
 
 beforeEach(() => vi.clearAllMocks());
@@ -32,6 +37,51 @@ afterEach(() => {
 });
 
 describe('AI agent API mapping', () => {
+  it('#3064 exposes map summaries in replay and retrieves/downloads with the request identity', async () => {
+    const summary = {
+      id: '11111111-1111-4111-8111-111111111111',
+      requestId: 'request-1',
+      title: 'Події',
+      isMain: true,
+      totalCount: 2,
+      validCount: 1,
+      invalidCount: 1,
+      warnings: ['Рядок 2: INVALID'],
+    };
+    const event = normalizeAiAgentEvent(
+      {
+        sequence: 1,
+        eventType: 'map_artifact',
+        createdAt: 1,
+        payloadJson: JSON.stringify({
+          document: { ...summary, records: [{ name: 'Private record' }] },
+        }),
+      },
+      'request-1',
+    );
+    expect(event.map).toEqual(summary);
+    expect(event.map).not.toHaveProperty('records');
+    const signal = new AbortController().signal;
+    mocks.postJson.mockResolvedValue({ ...summary, records: [] });
+    await getAiAgentMap(summary, signal);
+    expect(mocks.postJson).toHaveBeenCalledWith(
+      '/api/ai-agent/maps/get',
+      { requestId: summary.requestId, mapId: summary.id },
+      { signal },
+    );
+    const blob = new Blob(['CSV'], { type: 'text/csv' });
+    mocks.postBytes.mockResolvedValue(blob);
+    await expect(downloadAiAgentMap(summary, 'csv')).resolves.toBe(blob);
+    await downloadAiAgentMap(summary, 'kmz');
+    expect(mocks.postBytes).toHaveBeenCalledWith('/api/ai-agent/maps/csv', {
+      requestId: summary.requestId,
+      mapId: summary.id,
+    });
+    expect(mocks.postBytes).toHaveBeenCalledWith('/api/ai-agent/maps/kmz', {
+      requestId: summary.requestId,
+      mapId: summary.id,
+    });
+  });
   it('round-trips provider runtime profiles for allowed engines', async () => {
     const response = {
       featureEnabled: true,
@@ -230,6 +280,7 @@ describe('AI agent API mapping', () => {
       'request-1-user',
       'request-1-assistant',
     ]);
+    expect(conversation.messages.every((message) => message.maps.length === 0)).toBe(true);
     expect(conversation.messages.map((message) => message.requestState)).toEqual([
       'completed',
       'completed',

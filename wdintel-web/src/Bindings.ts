@@ -4997,6 +4997,69 @@ export type AiAgentMessageCitation = {
   messageIdentifier: string;
 };
 
+export type AiAgentMapRecordInput = {
+  sidc: string;
+  name: string;
+  observationDatetime: string | null;
+  coordinateSystem: string;
+  x: string;
+  y: string;
+  comments: Array<string>;
+  sources: Array<AiAgentMessageCitation>;
+};
+
+export type AiAgentMapRecord = {
+  sidc: string;
+  name: string;
+  observationDatetime: string | null;
+  platformType: string;
+  coordinateSystem: string;
+  originalX: string;
+  originalY: string;
+  x: string;
+  y: string;
+  latitude: number | null;
+  longitude: number | null;
+  comments: Array<string>;
+  sources: Array<AiAgentMessageCitation>;
+  warnings: Array<string>;
+};
+
+export type AiAgentMapDocument = {
+  id: string;
+  title: string;
+  isMain: boolean;
+  records: Array<AiAgentMapRecord>;
+  warnings: Array<string>;
+  totalCount: number;
+  validCount: number;
+  invalidCount: number;
+};
+
+export type AiAgentMapSummary = {
+  id: string;
+  requestId: string;
+  title: string;
+  isMain: boolean;
+  warnings: Array<string>;
+  totalCount: number;
+  validCount: number;
+  invalidCount: number;
+};
+
+export type AiAgentMapPrepareReq = {
+  records: Array<AiAgentMapRecordInput>;
+};
+
+export type AiAgentMapPrepareRsp = {
+  records: Array<AiAgentMapRecord>;
+};
+
+export type AiAgentMapGetReq = {
+  requestId: string;
+  mapId: string;
+};
+
 export type AiAgentMessageItem = {
   requestId: string;
   requestState: string;
@@ -5004,6 +5067,7 @@ export type AiAgentMessageItem = {
   content: string;
   createdAt: number;
   citations: Array<AiAgentMessageCitation>;
+  maps: Array<AiAgentMapSummary>;
 };
 
 export type AiAgentConversationDetail = {

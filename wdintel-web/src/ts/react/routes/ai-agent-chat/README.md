@@ -18,6 +18,24 @@ confirmation and removes the row only after the server accepts deletion. Deletin
 the viewed conversation replaces its URL with `/`; deleting another preserves the
 current view. The backend rejects deletion while a request is queued or running.
 
+## Point-map documents
+
+Registered map links render lazy inline thumbnails. Each answer's latest main
+map has a larger ending preview. Opening either selects the document in a right
+panel; the Echo 1024 px breakpoint switches between equal chat/map widths and a
+full-height drawer. Opening, replacing and closing a map preserve chat scroll
+and draft text. Conversation changes clear selection, while reload restores the
+published documents. Full records and exports are fetched with request ownership
+and source access checks; failures use existing toasts. See the
+[map contract and rollout](../../../../../../echo-ai-agent/MAPS.md).
+
+Regression coverage:
+
+- `wdintel-web/src/ts/react/routes/ai-agent-chat/__tests__/maps.spec.tsx`
+- `wdintel-web/src/ts/react/routes/ai-agent-chat/__tests__/chat-flow.spec.tsx`
+- `wdintel-web/src/ts/react/services/api/__tests__/ai-agent.spec.ts`
+- `wdintel-web/tests/e2e/ai-agent-maps.spec.ts`
+
 ## Live progress
 
 Each request shows a softly pulsating current-action title beside elapsed time

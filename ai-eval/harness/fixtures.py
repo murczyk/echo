@@ -65,6 +65,9 @@ ROLLBACK;"""
 
 
 def response(case, path, body, settings):
+    if path == "/api/ai-agent/maps/prepare":
+        return json.loads(checked([settings["binary"], "--mode", "debug", "ai-eval-maps"],
+                                  json.dumps({"operation": "prepare", "records": body.get("records", [])}), timeout=30))
     visible = [item for item in case["messages"] if item["groupKey"] in case["groups"]]
     if path == "/api/user":
         return {"id": "019fc7f7-9770-7f83-9c1a-211af29b02e6", "name": "Evaluation", "roles": ["ApiAgent", "Rer"]}

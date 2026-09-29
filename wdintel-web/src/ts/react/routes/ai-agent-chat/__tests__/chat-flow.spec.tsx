@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   delete: vi.fn(),
   stream: vi.fn(),
   notify: vi.fn(),
+  map: vi.fn(),
 }));
 
 vi.mock('../../../services/api/ai-agent', async (importOriginal) => ({
@@ -29,6 +30,7 @@ vi.mock('../../../services/api/ai-agent', async (importOriginal) => ({
   submitAiAgentRequest: mocks.submit,
   cancelAiAgentRequest: mocks.cancel,
   deleteAiAgentConversation: mocks.delete,
+  getAiAgentMap: mocks.map,
 }));
 vi.mock('../stream', () => ({
   streamAiAgentEventsWithReconnect: mocks.stream,
@@ -36,6 +38,7 @@ vi.mock('../stream', () => ({
 vi.mock('../../../components/PowerSnackbar', () => ({
   usePowerSnackbar: () => ({ notify: mocks.notify }),
 }));
+vi.mock('../MapCanvas', () => ({ default: () => <div>Точки мапи</div> }));
 
 import { AiAgentChat } from '..';
 import { AI_AGENT_NEW_CONVERSATION_EVENT } from '../conversation-url';
@@ -147,6 +150,7 @@ beforeEach(async () => {
   mocks.conversation.mockResolvedValue({ ...CONVERSATION, messages: [] });
   mocks.cancel.mockResolvedValue('cancelled');
   mocks.delete.mockResolvedValue(undefined);
+  mocks.map.mockImplementation(async (summary) => ({ ...summary, records: [] }));
   mocks.stream.mockImplementation(
     ({ requestId, signal, onEvent }: { requestId: string } & StreamConnection) =>
       new Promise<void>((resolve, reject) => {
@@ -176,6 +180,80 @@ afterEach(async () => {
   vi.clearAllMocks();
 });
 describe('AiAgentChat request queue', () => {
+  it('#3064 deduplicates replayed publications, replaces maps, and preserves draft text', async () => {
+    mocks.submit.mockResolvedValueOnce({
+      id: 'request-maps',
+      conversationId: CONVERSATION.id,
+      state: 'running',
+    });
+    setTextarea('Побудуй мапу');
+    submitForm();
+    await flush();
+    const summary = {
+      id: '11111111-1111-4111-8111-111111111111',
+      requestId: 'request-maps',
+      title: 'Головна',
+      isMain: true,
+      totalCount: 1,
+      validCount: 1,
+      invalidCount: 0,
+      warnings: [],
+    };
+    const emitMap = (sequence: number, value = summary) =>
+      connections.get('request-maps')?.onEvent({
+        sequence,
+        requestId: 'request-maps',
+        type: 'map_artifact',
+        createdAt: Date.now(),
+        map: value,
+        text: null,
+        toolCallId: null,
+        toolName: null,
+        sourceTitle: null,
+        sourceUrl: null,
+        method: null,
+        path: null,
+        status: null,
+        isError: null,
+      });
+    await act(async () => emitMap(1, { ...summary, isMain: false, title: 'Підмапа' }));
+    expect(container.querySelectorAll('.ai-map-chip')).toHaveLength(1);
+    expect(container.querySelectorAll('.ai-map-preview')).toHaveLength(0);
+    await act(async () => clickAriaButton('Відкрити мапу: Підмапа'));
+    await flush();
+    expect(document.querySelector('section[aria-label="Мапа відповіді"]')).not.toBeNull();
+    await act(async () => clickAriaButton('Закрити мапу', document.body));
+    const main = { ...summary, id: '44444444-4444-4444-8444-444444444444' };
+    await act(async () => {
+      emitMap(2, main);
+      emitMap(3, main);
+    });
+    expect(container.querySelectorAll('.ai-map-preview')).toHaveLength(1);
+    expect(container.querySelectorAll('.ai-map-chip')).toHaveLength(1);
+    setTextarea('Наступна чернетка');
+    await act(async () => clickAriaButton('Відкрити мапу: Головна'));
+    await flush();
+    expect(document.querySelector('section[aria-label="Мапа відповіді"]')).not.toBeNull();
+    expect((container.querySelector('textarea') as HTMLTextAreaElement).value).toBe(
+      'Наступна чернетка',
+    );
+    const next = { ...summary, id: '33333333-3333-4333-8333-333333333333', title: 'Наступна' };
+    await act(async () => emitMap(4, next));
+    await act(async () => clickAriaButton('Відкрити мапу: Наступна'));
+    await flush();
+    expect(document.querySelector('section[aria-label="Мапа відповіді"]')?.textContent).toContain(
+      'Наступна',
+    );
+    await act(async () => clickAriaButton('Закрити мапу', document.body));
+    await flush();
+    expect((container.querySelector('textarea') as HTMLTextAreaElement).value).toBe(
+      'Наступна чернетка',
+    );
+    await act(async () => clickAriaButton('Відкрити мапу: Наступна'));
+    await act(async () => window.dispatchEvent(new Event(AI_AGENT_NEW_CONVERSATION_EVENT)));
+    await flush();
+    expect(document.querySelector('section[aria-label="Мапа відповіді"]')).toBeNull();
+  });
   it('keeps following new progress when the viewport is at the bottom', async () => {
     const originalScrollIntoView = Object.getOwnPropertyDescriptor(
       HTMLElement.prototype,

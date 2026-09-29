@@ -18,8 +18,15 @@ import {
   Typography,
 } from '@mui/material';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import type { AiAgentActivityPresentation, AiAgentMessageCitation } from '../../../../Bindings';
+import type {
+  AiAgentActivityPresentation,
+  AiAgentMapSummary,
+  AiAgentMessageCitation,
+} from '../../../../Bindings';
 import { CitationMarkdown } from './CitationMarkdown';
+import { MapPanel } from './MapPanel';
+import { MapPreview } from './MapPreview';
+import { ConversationMapsContext, MapSelectionContext } from './map-documents';
 import { ConversationHistoryItem } from './ConversationHistoryItem';
 import {
   RequestActivity,
@@ -72,6 +79,7 @@ export type LiveRequest = {
   activity?: RequestActivityItem[];
   sources: Source[];
   citations?: AiAgentMessageCitation[];
+  maps?: AiAgentMapSummary[];
   lastSequence: number;
   streamError: string | null;
 };
@@ -211,6 +219,7 @@ export function activeRequestsFromConversation(
       state: message.requestState,
       assistantText: assistantByRequestId.get(message.requestId)?.content ?? '',
       citations: assistantByRequestId.get(message.requestId)?.citations ?? [],
+      maps: assistantByRequestId.get(message.requestId)?.maps ?? [],
       progress: [],
       tools: [],
       sources: [],
@@ -324,6 +333,13 @@ export function applyAiAgentEvent(request: LiveRequest, event: AiAgentEvent): Li
         citations.set(citation.messageIdentifier, citation);
       return { ...next, citations: [...citations.values()] };
     }
+    case 'map_artifact': {
+      if (!event.map || event.map.requestId !== request.id) return next;
+      const maps = request.maps ?? [];
+      return maps.some((summary) => summary.id === event.map!.id)
+        ? next
+        : { ...next, maps: [...maps, event.map] };
+    }
     case 'source': {
       const source = {
         title: event.sourceUrl ? (event.sourceTitle ?? 'Джерело') : 'Дані Echo',
@@ -357,9 +373,11 @@ export function shouldIgnoreStreamError(
 function MarkdownContent({
   children,
   citations,
+  maps,
 }: {
   children: string;
   citations: AiAgentMessageCitation[];
+  maps: AiAgentMapSummary[];
 }) {
   return (
     <Box
@@ -386,7 +404,9 @@ function MarkdownContent({
         '& th, & td': { border: 1, borderColor: 'divider', px: 1, py: 0.75, textAlign: 'left' },
       }}
     >
-      <CitationMarkdown citations={citations}>{children}</CitationMarkdown>
+      <CitationMarkdown citations={citations} maps={maps}>
+        {children}
+      </CitationMarkdown>
     </Box>
   );
 }
@@ -394,10 +414,16 @@ function MarkdownContent({
 function AssistantMessage({
   content,
   citations = [],
+  maps = [],
 }: {
   content: string;
   citations?: AiAgentMessageCitation[];
+  maps?: AiAgentMapSummary[];
 }) {
+  const mainMap = [...maps].reverse().find((summary) => summary.isMain);
+  const unreferencedMaps = maps.filter(
+    (summary) => summary.id !== mainMap?.id && !content.includes(`](echo-map:${summary.id})`),
+  );
   return (
     <Box
       sx={{
@@ -415,7 +441,17 @@ function AssistantMessage({
       <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 0.5 }}>
         ЕХО Агент
       </Typography>
-      <MarkdownContent citations={citations}>{content}</MarkdownContent>
+      <MarkdownContent citations={citations} maps={maps}>
+        {content}
+      </MarkdownContent>
+      {unreferencedMaps.length ? (
+        <p className="flex flex-wrap gap-echo-xs">
+          {unreferencedMaps.map((summary) => (
+            <MapPreview key={`${summary.requestId}:${summary.id}`} summary={summary} inline />
+          ))}
+        </p>
+      ) : null}
+      {mainMap ? <MapPreview key={`${mainMap.requestId}:${mainMap.id}`} summary={mainMap} /> : null}
     </Box>
   );
 }
@@ -430,7 +466,13 @@ function ConversationMessage({
   retryDisabled?: boolean;
 }) {
   if (message.role === 'assistant') {
-    return <AssistantMessage content={message.content} citations={message.citations} />;
+    return (
+      <AssistantMessage
+        content={message.content}
+        citations={message.citations}
+        maps={message.maps}
+      />
+    );
   }
 
   const stateMessage =
@@ -489,8 +531,12 @@ function ConversationMessage({
 function LiveResponse({ request }: { request: LiveRequest }) {
   return (
     <Stack spacing={1.5} alignItems="flex-start">
-      {request.assistantText ? (
-        <AssistantMessage content={request.assistantText} citations={request.citations} />
+      {request.assistantText || request.maps?.length ? (
+        <AssistantMessage
+          content={request.assistantText}
+          citations={request.citations}
+          maps={request.maps}
+        />
       ) : null}
 
       {request.state === 'failed' ? (
@@ -591,6 +637,7 @@ function LiveRequestView({
     requestState: request.state,
     role: 'user',
     citations: [],
+    maps: [],
     content: request.prompt,
     createdAt: request.createdAt,
   };
@@ -649,6 +696,8 @@ export function AiAgentChat({
   const [loadingConversation, setLoadingConversation] = useState(false);
   const [conversationLoadFailed, setConversationLoadFailed] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [selectedMap, setSelectedMap] = useState<AiAgentMapSummary | null>(null);
+  const mapOpenerRef = useRef<HTMLElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const liveRequestsRef = useRef<LiveRequest[]>([]);
@@ -900,6 +949,7 @@ export function AiAgentChat({
           state: userMessage.requestState,
           assistantText: assistantMessage?.content ?? request.assistantText,
           citations: assistantMessage?.citations ?? request.citations,
+          maps: assistantMessage?.maps ?? request.maps,
         };
       }),
     );
@@ -913,6 +963,8 @@ export function AiAgentChat({
     setActiveConversationId(null);
     setProviderId(defaultProviderIdRef.current);
     setMessages([]);
+    setSelectedMap(null);
+    mapOpenerRef.current = null;
     clearLiveRequests();
     setDraft('');
     setPendingSubmission(null);
@@ -1123,6 +1175,30 @@ export function AiAgentChat({
     }
   }
 
+  function selectMap(summary: AiAgentMapSummary, opener: HTMLElement) {
+    mapOpenerRef.current = opener;
+    setSelectedMap(summary);
+  }
+
+  function closeMap() {
+    setSelectedMap(null);
+    window.requestAnimationFrame(() => {
+      if (mapOpenerRef.current?.isConnected) mapOpenerRef.current.focus({ preventScroll: true });
+    });
+  }
+
+  const conversationMaps = useMemo(
+    () => [
+      ...new Map(
+        [
+          ...messages.flatMap((message) => message.maps ?? []),
+          ...liveRequests.flatMap((request) => request.maps ?? []),
+        ].map((summary) => [summary.id, summary]),
+      ).values(),
+    ],
+    [messages, liveRequests],
+  );
+
   const selectedProvider = useMemo(
     () => configuration?.providers.find((provider) => provider.id === providerId) ?? null,
     [configuration, providerId],
@@ -1143,7 +1219,7 @@ export function AiAgentChat({
   if (!configuration || loading) return <AiAgentChatInitialLoading />;
   if (!configuration.enabled) return null;
 
-  return (
+  const view = (
     <Box
       sx={{
         width: '100%',
@@ -1204,7 +1280,10 @@ export function AiAgentChat({
           ))}
         </List>
       </Box>
-      <Stack sx={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative' }}>
+      <Stack
+        data-testid="ai-agent-chat-pane"
+        sx={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative' }}
+      >
         {!historyOpen ? (
           <Stack
             spacing={0.5}
@@ -1256,7 +1335,11 @@ export function AiAgentChat({
               </PowerButton>
             ) : null}
 
-            <Stack spacing={1.5} sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pr: 0.5 }}>
+            <Stack
+              data-testid="ai-agent-chat-messages"
+              spacing={1.5}
+              sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pr: 0.5 }}
+            >
               {loadingConversation ? (
                 <Box sx={{ flex: 1, display: 'flex', justifyContent: 'center', py: 5 }}>
                   <CircularProgress />
@@ -1301,6 +1384,7 @@ export function AiAgentChat({
                       requestState: 'queued',
                       role: 'user',
                       citations: [],
+                      maps: [],
                       content: pendingSubmission.prompt,
                       createdAt: pendingSubmission.createdAt,
                     }}
@@ -1411,6 +1495,18 @@ export function AiAgentChat({
           </Stack>
         </Box>
       </Stack>
+      {selectedMap ? (
+        <MapPanel
+          key={`${selectedMap.requestId}:${selectedMap.id}`}
+          summary={selectedMap}
+          onClose={closeMap}
+        />
+      ) : null}
     </Box>
+  );
+  return (
+    <ConversationMapsContext.Provider value={conversationMaps}>
+      <MapSelectionContext.Provider value={selectMap}>{view}</MapSelectionContext.Provider>
+    </ConversationMapsContext.Provider>
   );
 }

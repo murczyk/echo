@@ -13,6 +13,20 @@ pub struct ReadOnlyRoute {
 
 pub const ROUTES: &[ReadOnlyRoute] = &[
     ReadOnlyRoute {
+        method: "POST",
+        path: "/api/ai-agent/maps/prepare",
+        skill: "map_prepare",
+        label: "Готую точки мапи",
+        request_kind: "mapRecords",
+    },
+    ReadOnlyRoute {
+        method: "POST",
+        path: "/api/ai-agent/maps/get",
+        skill: "map_get",
+        label: "Читаю збережену мапу",
+        request_kind: "mapDocument",
+    },
+    ReadOnlyRoute {
         method: "GET",
         path: "/api/user",
         skill: "current_user",
@@ -161,6 +175,8 @@ mod tests {
                     | "interceptionContext"
                     | "messageIds"
                     | "messageUuids"
+                    | "mapRecords"
+                    | "mapDocument"
             ));
         }
         let daily_activity = ROUTES

@@ -18,16 +18,17 @@ use crate::config::{
 };
 use crate::entities::{
     ai_agent_container, ai_agent_conversation, ai_agent_engine_runtime_profile,
-    ai_agent_request,
+    ai_agent_request, ai_agent_request_event,
 };
 use crate::error::AppError;
 use crate::h;
 use crate::types::{error, info, Context, Env, ShortContext};
 use chrono::{Duration, Utc};
+use sea_orm::sea_query::{Expr, ExprTrait, Query};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseBackend,
-    EntityTrait, FromQueryResult, IntoActiveModel, QueryFilter, QueryOrder,
-    QuerySelect, Statement, TransactionTrait,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition,
+    DatabaseBackend, EntityTrait, FromQueryResult, IntoActiveModel,
+    QueryFilter, QueryOrder, QuerySelect, Statement, TransactionTrait,
 };
 use serde_json::{json, Value};
 use sqlx::pool::PoolConnection;
@@ -857,7 +858,7 @@ async fn assign_agent(
     Ok(true)
 }
 
-async fn load_history(
+pub(super) async fn load_history(
     env: &Env,
     request: &ai_agent_request::Model,
 ) -> Result<Vec<Value>, AppError> {
@@ -866,7 +867,35 @@ async fn load_history(
             ai_agent_request::Column::ConversationId
                 .eq(request.conversation_id),
         )
-        .filter(ai_agent_request::Column::State.eq("completed"))
+        .filter(ai_agent_request::Column::State.is_in([
+            "completed",
+            "failed",
+            "cancelled",
+        ]))
+        .filter(
+            Condition::any()
+                .add(ai_agent_request::Column::State.eq("completed"))
+                .add(Expr::exists(
+                    Query::select()
+                        .expr(Expr::val(1))
+                        .from(ai_agent_request_event::Entity)
+                        .and_where(
+                            Expr::col((
+                                ai_agent_request_event::Entity,
+                                ai_agent_request_event::Column::RequestId,
+                            ))
+                            .equals((
+                                ai_agent_request::Entity,
+                                ai_agent_request::Column::Id,
+                            )),
+                        )
+                        .and_where(
+                            ai_agent_request_event::Column::EventType
+                                .eq("map_artifact"),
+                        )
+                        .to_owned(),
+                )),
+        )
         .filter(ai_agent_request::Column::Id.ne(request.id))
         .order_by_desc(ai_agent_request::Column::QueuedAt)
         .order_by_desc(ai_agent_request::Column::Id)
@@ -881,16 +910,22 @@ async fn load_history(
     let mut citations = super::citations::load(&env.dbx, &request_ids)
         .await
         .c(h!())?;
+    let mut maps = super::maps::load_summaries(&env.dbx, &request_ids)
+        .await
+        .c(h!())?;
     let requests = requests.into_iter().rev();
     Ok(requests
         .flat_map(|request| {
-            let response = request.response.unwrap_or_default();
+            let request_maps = maps.remove(&request.id).unwrap_or_default();
+            let response = request.response.filter(|response| !response.is_empty()).unwrap_or_else(|| request_maps.iter()
+                .map(|summary| format!("{}: [мапа](echo-map:{})", summary.title, summary.id))
+                .collect::<Vec<_>>().join("\n"));
             let citations = super::citations::referenced(
                 citations.remove(&request.id).unwrap_or_default(), &response,
             );
             [
                 json!({ "role": "user", "content": request.prompt }),
-                json!({ "role": "assistant", "content": response, "citations": citations }),
+                json!({ "role": "assistant", "content": response, "citations": citations, "maps": request_maps }),
             ]
         })
         .collect())

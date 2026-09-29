@@ -1,5 +1,5 @@
 import { emitUnauthorizedEvent } from '../../auth-redirect';
-import { getJson, postJson, postVoid } from './client';
+import { getJson, postBytes, postJson, postVoid } from './client';
 import type {
   AiAgentActivityPresentation,
   AiAgentAdminRequestDetail,
@@ -28,6 +28,9 @@ import type {
   AiAgentIdReq,
   AiAgentMessageItem,
   AiAgentMessageCitation,
+  AiAgentMapDocument,
+  AiAgentMapGetReq,
+  AiAgentMapSummary,
   AiAgentProviderItem,
   AiAgentProviderRuntimeProfileItem,
   AiAgentRequestCancelRsp,
@@ -76,6 +79,7 @@ export type AiAgentEventType =
   | 'tool_end'
   | 'source'
   | 'message_citations'
+  | 'map_artifact'
   | 'completion'
   | 'cancellation'
   | 'error';
@@ -92,6 +96,7 @@ export type AiAgentEvent = {
   activityPresentation?: AiAgentActivityPresentation | null;
   activityOnly?: boolean;
   citations?: AiAgentMessageCitation[];
+  map?: AiAgentMapSummary | null;
   sourceTitle: string | null;
   sourceUrl: string | null;
   method: string | null;
@@ -192,6 +197,48 @@ export type AiAgentUserStatus = {
 
 type EventPayload = Record<string, unknown>;
 
+function mapSummary(value: unknown, requestId: string): AiAgentMapSummary | null {
+  if (!value || typeof value !== 'object') return null;
+  const document = value as AiAgentMapDocument;
+  if (
+    typeof document.id !== 'string' ||
+    typeof document.title !== 'string' ||
+    typeof document.isMain !== 'boolean' ||
+    !Array.isArray(document.warnings) ||
+    ![document.totalCount, document.validCount, document.invalidCount].every(
+      (count) => Number.isSafeInteger(count) && count >= 0,
+    ) ||
+    document.totalCount !== document.validCount + document.invalidCount
+  )
+    return null;
+  return {
+    id: document.id,
+    requestId,
+    title: document.title,
+    isMain: document.isMain,
+    warnings: document.warnings,
+    totalCount: document.totalCount,
+    validCount: document.validCount,
+    invalidCount: document.invalidCount,
+  };
+}
+
+export async function getAiAgentMap(
+  summary: AiAgentMapSummary,
+  signal?: AbortSignal,
+): Promise<AiAgentMapDocument> {
+  const req: AiAgentMapGetReq = { requestId: summary.requestId, mapId: summary.id };
+  return postJson<AiAgentMapDocument>('/api/ai-agent/maps/get', req, { signal });
+}
+
+export async function downloadAiAgentMap(
+  summary: AiAgentMapSummary,
+  format: 'csv' | 'kmz',
+): Promise<Blob> {
+  const req: AiAgentMapGetReq = { requestId: summary.requestId, mapId: summary.id };
+  return postBytes(`/api/ai-agent/maps/${format}`, req);
+}
+
 const REQUEST_STATES: readonly AiAgentRequestState[] = [
   'queued',
   'running',
@@ -274,6 +321,7 @@ function normalizeMessage(value: AiAgentMessageItem): AiAgentMessage {
     id: `${value.requestId}-${value.role}`,
     requestState: requestState(value.requestState),
     role: value.role,
+    maps: value.maps ?? [],
   };
 }
 
@@ -307,6 +355,7 @@ export function normalizeAiAgentEvent(
     toolLabel: payloadString(payloadValue(payload, 'toolLabel', 'tool_label')),
     activityPresentation: value.activityPresentation ?? null,
     activityOnly: value.activityOnly ?? false,
+    map: value.eventType === 'map_artifact' ? mapSummary(payload.document, requestId) : null,
     citations: Array.isArray(payload.citations)
       ? payload.citations.filter(
           (item): item is AiAgentMessageCitation =>

@@ -3,6 +3,7 @@ import { spawnSync, execFileSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
+import { randomUUID } from "node:crypto";
 
 const input = JSON.parse(await readFile(process.argv[2], "utf8"));
 const nativeFetch = globalThis.fetch;
@@ -10,6 +11,7 @@ const emit = (value: unknown) => process.stdout.write(`${JSON.stringify(value)}\
 const fixtureHost = "echo-eval.invalid";
 let runtimeDirectory: string | undefined;
 const observations: Promise<void>[] = [];
+const mapDocuments = new Map<string, { requestId: string; document: any }>();
 
 // The worker is an isolated process. Inject transport at the fetch boundary so
 // historical runners and the current runner execute their unchanged agent loop.
@@ -24,6 +26,7 @@ globalThis.fetch = async (resource, init) => {
     headers.delete("authorization");
     if (input.engine.token) headers.set("authorization", `Bearer ${input.engine.token}`);
     const response = await nativeFetch(`${endpoint}/chat/completions`, { ...init, headers, redirect: "error" });
+    if (!response.ok) emit({ type: "eval_provider_error", status: response.status });
     observations.push(response.clone().text().then((text) => {
       for (const line of text.split("\n")) {
         if (!line.startsWith("data:")) continue;
@@ -42,6 +45,12 @@ globalThis.fetch = async (resource, init) => {
   }
   const body = init?.body ? JSON.parse(String(init.body)) : {};
   const started = Date.now();
+  if (url.pathname === "/api/ai-agent/maps/get") {
+    const stored = mapDocuments.get(body.mapId);
+    const authorized = stored?.requestId === body.requestId;
+    emit({ type: "eval_retrieval", path: url.pathname, body, response: authorized ? stored!.document : null, status: authorized ? 200 : 404, latencyMs: Date.now() - started });
+    return new Response(JSON.stringify(authorized ? stored!.document : { error: "Map not found" }), { status: authorized ? 200 : 404, headers: { "content-type": "application/json" } });
+  }
   const result = spawnSync("python3", [join(input.root, "ai-eval/harness/fixtures.py")], {
     input: JSON.stringify({ case: input.case, path: url.pathname, body, settings: input.settings }),
     encoding: "utf8", timeout: 30000, maxBuffer: 4 * 1024 * 1024,
@@ -79,6 +88,8 @@ try {
     const payload = validatePayload({ ...input.payload, prompt, history }, false);
     let answer = "";
     const citations: unknown[] = [];
+    const requestId = randomUUID();
+    const maps: any[] = [];
     const write = process.stdout.write.bind(process.stdout);
     process.stdout.write = ((chunk: any, ...args: any[]) => {
       for (const line of String(chunk).trim().split("\n")) {
@@ -87,13 +98,26 @@ try {
           if (event.type === "assistant_delta") answer += event.delta;
           if (event.type === "assistant_snapshot") answer = event.text;
           if (event.type === "message_citations") citations.push(...event.citations);
+          if (event.type === "map_artifact" && !mapDocuments.has(event.document.id)) {
+            mapDocuments.set(event.document.id, { requestId, document: event.document });
+            const { records: _records, ...summary } = event.document;
+            maps.push({ ...summary, requestId });
+          }
         } catch { /* Only complete JSON events contribute to conversation state. */ }
       }
       return write(chunk, ...args);
     }) as typeof process.stdout.write;
     try { await runAgent(payload); } finally { process.stdout.write = write; }
+    for (const summary of maps) {
+      const exported = execFileSync(input.settings.binary, ["--mode", "debug", "ai-eval-maps"], {
+        input: JSON.stringify({ operation: "export", document: mapDocuments.get(summary.id)!.document }),
+        cwd: input.root, encoding: "utf8", maxBuffer: 4 * 1024 * 1024,
+        env: { ...process.env, RUST_LOG: "off" },
+      });
+      emit({ type: "eval_map_export", id: summary.id, ...JSON.parse(exported) });
+    }
     emit({ type: "eval_answer", text: answer });
-    history.push({ role: "user", content: prompt }, { role: "assistant", content: answer, citations });
+    history.push({ role: "user", content: prompt }, { role: "assistant", content: answer, citations, maps });
   }
 } catch (error) {
   emit({ type: "eval_error", message: error instanceof Error ? error.message : "Evaluation failed" });

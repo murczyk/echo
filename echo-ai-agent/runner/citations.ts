@@ -287,6 +287,7 @@ export function chooseCitedAnswer(
 export function citationRepairPrompt(
   draft: string,
   citations: MessageCitation[],
+  mapReferences: string[] = [],
 ): string {
   const links = [
     ...new Map(
@@ -302,6 +303,7 @@ export function citationRepairPrompt(
     "Rewrite the draft so every claim taken from an individual message is followed immediately by that message's markdown link.",
     "Copy only links from the list, character for character. A message id, tool name, or shortened URL is not a citation. Do not invent, alter, or add any other link. Do not call tools. Keep the same facts and language.",
     "If a listed message was not used, do not cite it.",
+    ...(mapReferences.length ? ["Preserve the draft's registered map links from this list without changing their IDs:", ...mapReferences] : []),
     "",
     "Links:",
     links,

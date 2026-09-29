@@ -25,6 +25,7 @@ const EVENT_TYPES: &[&str] = &[
     "tool_end",
     "source",
     "message_citations",
+    "map_artifact",
     "completion",
     "cancellation",
     "error",
@@ -47,6 +48,7 @@ const RUNNER_EVENT_TYPES: &[&str] = &[
     "tool_end",
     "source",
     "message_citations",
+    "map_artifact",
 ];
 
 pub async fn append_runner(
@@ -87,6 +89,45 @@ async fn append_while_running(
     if request.state != "running" || request.cancellation_requested {
         txn.commit().await.c(h!())?;
         return Ok(false);
+    }
+    if event_type == "map_artifact" {
+        let document = super::maps::parse(&payload)
+            .ok_or_else(|| AppError::BL {
+                msg: "Invalid map document".to_string(),
+            })
+            .c(h!())?;
+        let document = super::maps::prepare::canonicalize(document).c(h!())?;
+        let published = super::maps::load_documents(&txn, &[request_id])
+            .await
+            .c(h!())?
+            .remove(&request_id)
+            .unwrap_or_default();
+        if let Some(existing) =
+            published.iter().find(|existing| existing.id == document.id)
+        {
+            if existing != &document {
+                return Err(AppError::BL {
+                    msg: "Published maps are immutable".to_string(),
+                });
+            }
+            txn.commit().await.c(h!())?;
+            return Ok(true);
+        }
+        if published.len() >= crate::config::AI_AGENT_MAP_MAX_DOCUMENTS {
+            return Err(AppError::BL {
+                msg: "Map document limit reached".to_string(),
+            });
+        }
+        append_in_transaction(
+            &txn,
+            request_id,
+            event_type,
+            serde_json::json!({ "document": document }),
+        )
+        .await
+        .context(h!())?;
+        txn.commit().await.c(h!())?;
+        return Ok(true);
     }
     append_in_transaction(&txn, request_id, event_type, payload).await?;
     txn.commit().await.c(h!())?;
@@ -219,6 +260,10 @@ pub fn normalize_runner_event(event: Value) -> Option<(String, Value)> {
     if event_type == "message_citations" {
         let citations = super::citations::parse(&payload)?;
         payload = serde_json::json!({ "citations": citations });
+    }
+    if event_type == "map_artifact" {
+        let document = super::maps::parse(&payload)?;
+        payload = serde_json::json!({ "document": document });
     }
     if event_type == "assistant_snapshot" {
         let text = payload.get("text").and_then(Value::as_str)?;

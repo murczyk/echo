@@ -1,5 +1,8 @@
 {
   "migrations": {
+    "echo:m20260929_152018_ai_agent_map_artifacts": {
+      "changes": []
+    },
     "echo:m20260928_145311_enable_message_auto_parse": {
       "changes": []
     },

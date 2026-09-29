@@ -1,0 +1,66 @@
+.ai-map-chip,
+.ai-map-preview {
+  cursor: pointer;
+  color: var(--echo-color-text);
+  background: var(--echo-color-surface);
+  border: 1px solid var(--echo-color-border);
+  border-radius: var(--echo-radius-sm);
+  overflow: hidden;
+  vertical-align: middle;
+}
+
+.ai-map-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--echo-spacing-xs);
+  padding-right: var(--echo-spacing-xs);
+  font-size: inherit;
+}
+
+.ai-map-chip-image {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  overflow: hidden;
+}
+
+.ai-map-chip-surface {
+  position: absolute;
+  width: 96px;
+  height: 96px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.ai-map-preview {
+  display: block;
+  width: 100%;
+  margin-top: var(--echo-spacing-sm);
+  text-align: left;
+}
+
+.ai-map-preview-image {
+  position: relative;
+  height: 120px;
+  display: grid;
+  place-items: center;
+}
+
+.ai-map-preview-surface {
+  position: absolute;
+  inset: 0;
+}
+
+.ai-map-preview > span:last-child {
+  display: block;
+  padding: var(--echo-spacing-xs) var(--echo-spacing-sm);
+}
+
+.ai-map-chip:focus-visible,
+.ai-map-preview:focus-visible {
+  outline: 2px solid var(--echo-color-focus);
+  outline-offset: 2px;
+}

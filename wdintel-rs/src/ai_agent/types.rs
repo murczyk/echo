@@ -98,6 +98,8 @@ pub struct AiAgentMessageItem {
     pub created_at: i64,
     #[serde(default)]
     pub citations: Vec<AiAgentMessageCitation>,
+    #[serde(default)]
+    pub maps: Vec<super::maps::types::AiAgentMapSummary>,
 }
 
 #[derive(

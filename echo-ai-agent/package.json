@@ -4,7 +4,7 @@
   "type": "module",
   "version": "0.0.0",
   "scripts": {
-    "test": "node --experimental-strip-types --test runner/runner.test.ts"
+    "test": "node --experimental-strip-types --test runner/*.test.ts"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.83.0",
