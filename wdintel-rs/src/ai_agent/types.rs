@@ -5,6 +5,16 @@ use elm_rs::{Elm, ElmDecode, ElmEncode};
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 #[serde(rename_all = "camelCase")]
+pub struct AiAgentActivityPresentation {
+    pub key: i64,
+    pub title: String,
+    pub detail: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
 pub struct AiAgentProviderItem {
     pub id: String,
     pub name: String,
@@ -359,6 +369,10 @@ pub struct AiAgentRequestEventItem {
     pub event_type: String,
     pub payload_json: String,
     pub created_at: i64,
+    #[serde(default)]
+    pub activity_presentation: Option<AiAgentActivityPresentation>,
+    #[serde(default)]
+    pub activity_only: bool,
 }
 
 #[derive(
