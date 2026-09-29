@@ -27,6 +27,9 @@ export function useWindowedFeedScrollAnchors(args: {
   bottomLoadBufferPx: number;
   atBottomThresholdPx: number;
   unreadPrefetchNeeded: boolean;
+  onAnchorSnapshotChange?: (
+    snapshot: WindowedFeedScrollRefs['anchorSnapshotRef']['current'],
+  ) => void;
 }) {
   const {
     refs,
@@ -35,7 +38,16 @@ export function useWindowedFeedScrollAnchors(args: {
     bottomLoadBufferPx,
     atBottomThresholdPx,
     unreadPrefetchNeeded,
+    onAnchorSnapshotChange,
   } = args;
+
+  const setAnchorSnapshot = useCallback(
+    (snapshot: WindowedFeedScrollRefs['anchorSnapshotRef']['current']) => {
+      refs.anchorSnapshotRef.current = snapshot;
+      onAnchorSnapshotChange?.(snapshot);
+    },
+    [onAnchorSnapshotChange, refs],
+  );
 
   const collectVisibleAnchors = useCallback((): VisibleAnchor[] => {
     const scroller = refs.scrollerRef.current;
@@ -116,23 +128,23 @@ export function useWindowedFeedScrollAnchors(args: {
   const captureAnchorSnapshot = useCallback(() => {
     const scroller = refs.scrollerRef.current;
     if (!scroller) {
-      refs.anchorSnapshotRef.current = null;
+      setAnchorSnapshot(null);
       return;
     }
     const anchors = collectVisibleAnchors();
     const itemOffsets = collectMountedItemOffsets();
     if (anchors.length === 0 && itemOffsets.size === 0) {
-      refs.anchorSnapshotRef.current = null;
+      setAnchorSnapshot(null);
       return;
     }
-    refs.anchorSnapshotRef.current = {
+    setAnchorSnapshot({
       anchors,
       itemOffsets,
       itemIds: refs.itemIdsRef.current.slice(),
       scrollTop: scroller.scrollTop,
       scrollHeight: scroller.scrollHeight,
-    };
-  }, [collectMountedItemOffsets, collectVisibleAnchors, refs]);
+    });
+  }, [collectMountedItemOffsets, collectVisibleAnchors, refs, setAnchorSnapshot]);
 
   const touchAnchorSnapshotScrollMetrics = useCallback(() => {
     const scroller = refs.scrollerRef.current;
@@ -144,12 +156,12 @@ export function useWindowedFeedScrollAnchors(args: {
     ) {
       return;
     }
-    refs.anchorSnapshotRef.current = {
+    setAnchorSnapshot({
       ...snapshot,
       scrollTop: scroller.scrollTop,
       scrollHeight: scroller.scrollHeight,
-    };
-  }, [refs]);
+    });
+  }, [refs, setAnchorSnapshot]);
 
   const captureVisibleAnchorSnapshot = useCallback(() => {
     const scroller = refs.scrollerRef.current;
@@ -163,14 +175,14 @@ export function useWindowedFeedScrollAnchors(args: {
     for (const anchor of anchors) {
       itemOffsets.set(anchor.id, anchor.offsetTop);
     }
-    refs.anchorSnapshotRef.current = {
+    setAnchorSnapshot({
       anchors,
       itemOffsets,
       itemIds: refs.itemIdsRef.current.slice(),
       scrollTop: scroller.scrollTop,
       scrollHeight: scroller.scrollHeight,
-    };
-  }, [collectVisibleAnchors, refs, touchAnchorSnapshotScrollMetrics]);
+    });
+  }, [collectVisibleAnchors, refs, setAnchorSnapshot, touchAnchorSnapshotScrollMetrics]);
 
   const publishDebugMetrics = useCallback(
     (scroller: HTMLDivElement, previousScrollTop: number) => {
@@ -397,6 +409,7 @@ export function useWindowedFeedScrollAnchors(args: {
       collectVisibleAnchors,
       captureAnchorSnapshot,
       captureVisibleAnchorSnapshot,
+      setAnchorSnapshot,
       restoreAnchorPosition,
       publishDebugMetrics,
       reportVisibleMessageIds,
@@ -408,6 +421,7 @@ export function useWindowedFeedScrollAnchors(args: {
       publishDebugMetrics,
       reportVisibleMessageIds,
       restoreAnchorPosition,
+      setAnchorSnapshot,
     ],
   );
 }

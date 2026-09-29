@@ -233,6 +233,24 @@ describe('MessageCard', () => {
     expect(document.body.textContent).not.toContain('Видалити');
   });
 
+  it('keeps the overflow trigger available for focus restoration when editing', async () => {
+    const onEditDetails = vi.fn();
+    const view = await renderCard({ displayMode: 'analysis', onEditDetails });
+    const overflow = view.container.querySelector('button[aria-label="Більше дій"]');
+    if (!(overflow instanceof HTMLButtonElement)) throw new Error('overflow button not found');
+    overflow.focus();
+    await click(overflow);
+    const editButton = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
+    ).find((item) => item.textContent?.trim() === 'Редагувати');
+    if (editButton == null) throw new Error('missing Редагувати');
+    editButton.focus();
+
+    await click(editButton);
+
+    expect(onEditDetails).toHaveBeenCalledWith(overflow);
+  });
+
   // Regression: https://github.com/echoua/echo/issues/3569
   it('keeps delete access independent from message write access', async () => {
     const onDelete = vi.fn();

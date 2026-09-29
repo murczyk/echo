@@ -68,6 +68,7 @@ type Params = {
   invalidateMessagePaging: () => void;
   invalidateMessagePageRequests: () => void;
   getCurrentMessagePageCursor: () => import('./types').AnalysisMessagePageCursor;
+  replaceCurrentMessagePage: (messages: Array<[number, InboxMessage]>) => void;
   refreshMessageCounts: () => void;
   setAorEntries: Setter<AnalysisAorEntry[]>;
   setCounts: Setter<import('../../../../Bindings').CountStatsRsp | null>;
@@ -146,6 +147,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     optionsFreqValuesRef,
     queryState,
     refreshMessageCounts,
+    replaceCurrentMessagePage,
     reloadTriggerKey,
     rightSidebarTab,
     rightSidebarVisible,
@@ -200,6 +202,10 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       const shouldRefreshMessageCounts = options.refreshMessageCounts !== false;
       const preserveMessagePage = options.preserveMessagePage === true;
       const messagePageCursor = preserveMessagePage ? getCurrentMessagePageCursor() : undefined;
+      const setReloadedMessages =
+        preserveMessagePage && !focusedMessageActive
+          ? replaceCurrentMessagePage
+          : (messages: Array<[number, InboxMessage]>) => setMessages(messages);
 
       if (shouldRefreshMessageCounts) refreshMessageCounts();
 
@@ -236,7 +242,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
           setMapOpenMessages,
           setMapPoints,
           showSettlements,
-          setMessages,
+          setMessages: setReloadedMessages,
           loadMessageComments,
           setMessagesLoading,
           setNetworks,
@@ -303,6 +309,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       optionsFreqValuesRef,
       queryState,
       refreshMessageCounts,
+      replaceCurrentMessagePage,
       reloadTriggerKey,
       setAorEntries,
       setCounts,

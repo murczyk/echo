@@ -1,7 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act, createElement, useEffect, useState } from 'react';
+import { act, createElement, forwardRef, useEffect, useImperativeHandle, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,9 +12,11 @@ const useRerDutyFeedsMock = vi.hoisted(() => vi.fn());
 const notifyMock = vi.hoisted(() => vi.fn());
 const fetchInboxItemContextMock = vi.hoisted(() => vi.fn());
 const fetchMessagesByIdsMock = vi.hoisted(() => vi.fn());
+const useMediaQueryMock = vi.hoisted(() => vi.fn(() => false));
 const nextCreatedResponse = vi.hoisted(() => ({
   value: null as null | { signal_message_id: number },
 }));
+const editorGuardMocks = vi.hoisted(() => ({ dirty: false }));
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -131,41 +133,76 @@ vi.mock('../RerDutyNeoWorkspace', () => ({
           <button
             type="button"
             aria-label="Створити розвіддонесення"
-            onClick={() => {
+            onClick={(event) => {
               const [id, message] = messageFeeds[0].items[0];
-              buildFeedColumnModel(messageFeeds[0]).actions.onMessageCreateReport(id, message);
+              buildFeedColumnModel(messageFeeds[0]).actions.onMessageCreateReport(
+                id,
+                message,
+                undefined,
+                event.currentTarget,
+              );
             }}
           />
         </>
+      ) : null}
+      {messageFeeds[1]?.items[0] ? (
+        <button
+          type="button"
+          aria-label="Редагувати повідомлення стрічки 2"
+          onClick={() => {
+            const [id, message] = messageFeeds[1].items[0];
+            buildFeedColumnModel(messageFeeds[1]).actions.onMessageEdit(id, message);
+          }}
+        />
       ) : null}
     </div>
   ),
 }));
 vi.mock('../../shared/manage-message/ManageMessageDrawer', () => ({
-  ManageMessageDrawer: ({
-    open,
-    onClose,
-    onCreated,
-    editTarget,
-    editAsReport,
-    editTargetLoadState,
-    reportSource,
-    onSubmitEdit,
-    onEditSuccess,
-    onDeleteSuccess,
-  }: {
-    open: boolean;
-    onClose: () => void;
-    onCreated?: (result: { signal_message_id: number }) => Promise<void> | void;
-    editTarget?: { id: number; message: any } | null;
-    editAsReport?: boolean;
-    editTargetLoadState?: { status: string; reportId?: number };
-    reportSource?: { id: number; message: any } | null;
-    onSubmitEdit?: (id: number, message: any) => Promise<void> | void;
-    onEditSuccess?: (result: { signal_message_id: number }) => Promise<void> | void;
-    onDeleteSuccess?: (messageId: number) => Promise<void> | void;
-  }) =>
-    open ? (
+  ManageMessageDrawer: forwardRef(function ManageMessageDrawerMock(
+    {
+      open,
+      onClose,
+      onCreated,
+      editTarget,
+      editAsReport,
+      editTargetLoadState,
+      reportSource,
+      onSubmitEdit,
+      onEditSuccess,
+      onDeleteSuccess,
+      intentKey,
+      presentation,
+    }: {
+      open: boolean;
+      onClose: () => void;
+      onCreated?: (result: { signal_message_id: number }) => Promise<void> | void;
+      editTarget?: { id: number; message: any } | null;
+      editAsReport?: boolean;
+      editTargetLoadState?: { status: string; reportId?: number };
+      reportSource?: { id: number; message: any } | null;
+      onSubmitEdit?: (id: number, message: any) => Promise<void> | void;
+      onEditSuccess?: (result: { signal_message_id: number }) => Promise<void> | void;
+      onDeleteSuccess?: (messageId: number) => Promise<void> | void;
+      intentKey?: string;
+      presentation?: 'modal' | 'embedded';
+    },
+    ref,
+  ) {
+    const [pendingIntent, setPendingIntent] = useState<null | {
+      key: string;
+      commit: () => void;
+    }>(null);
+    useImperativeHandle(ref, () => ({
+      requestIntentChange(change: { key: string; commit: () => void }) {
+        if (change.key === intentKey) return;
+        if (editorGuardMocks.dirty) setPendingIntent(change);
+        else change.commit();
+      },
+      closeWithoutConfirmation: onClose,
+      focus: () => {},
+    }));
+    return open ? (
       <div
         role="dialog"
         data-testid="composer"
@@ -209,15 +246,33 @@ vi.mock('../../shared/manage-message/ManageMessageDrawer', () => ({
           aria-label="Створити повідомлення"
           onClick={async () => {
             if (nextCreatedResponse.value) {
-              onClose();
+              if (presentation !== 'embedded') onClose();
               await onCreated?.(nextCreatedResponse.value);
             }
           }}
         >
           Створити
         </button>
+        {pendingIntent ? (
+          <div role="alertdialog">
+            <button type="button" onClick={() => setPendingIntent(null)}>
+              Продовжити редагування
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                editorGuardMocks.dirty = false;
+                setPendingIntent(null);
+                pendingIntent.commit();
+              }}
+            >
+              Відхилити зміни
+            </button>
+          </div>
+        ) : null}
       </div>
-    ) : null,
+    ) : null;
+  }),
 }));
 vi.mock('../dialogs', () => ({ DeleteConfirmDialog: () => null }));
 vi.mock('../../../components/PowerAlert', () => ({
@@ -274,7 +329,7 @@ vi.mock('@mui/material', () => ({
   ),
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Typography: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  useMediaQuery: () => false,
+  useMediaQuery: useMediaQueryMock,
   useTheme: () => ({ breakpoints: { down: () => false } }),
 }));
 
@@ -439,10 +494,13 @@ async function click(element: Element | null) {
 describe('RerDutyNeoPage creation workflow', () => {
   beforeEach(() => {
     useRerDutyFeedsMock.mockReset();
+    useMediaQueryMock.mockReset();
+    useMediaQueryMock.mockReturnValue(false);
     notifyMock.mockReset();
     fetchInboxItemContextMock.mockReset();
     fetchMessagesByIdsMock.mockReset();
     nextCreatedResponse.value = null;
+    editorGuardMocks.dirty = false;
     vi.useFakeTimers();
     vi.stubGlobal('requestAnimationFrame', undefined);
   });
@@ -479,6 +537,24 @@ describe('RerDutyNeoPage creation workflow', () => {
     await act(async () => {
       root.unmount();
     });
+  });
+
+  it('keeps the embedded composer open after creation', async () => {
+    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1024px)');
+    nextCreatedResponse.value = { signal_message_id: 101 };
+    const { container, root, state } = await renderPage();
+
+    await click(container.querySelector('button[aria-label="Додати повідомлення"]'));
+    await click(container.querySelector('button[aria-label="Створити повідомлення"]'));
+
+    expect(container.querySelector('[data-testid="composer"]')).not.toBeNull();
+    expect(state.reloadEmptyFeeds).toHaveBeenCalledTimes(1);
+    expect(notifyMock).toHaveBeenCalledWith({
+      message: 'Повідомлення успішно створено.',
+      severity: 'success',
+    });
+
+    await act(async () => root.unmount());
   });
 
   it('opens edit mode, submits the returned message, and closes the drawer', async () => {
@@ -638,6 +714,34 @@ describe('RerDutyNeoPage creation workflow', () => {
     root.unmount();
   });
 
+  it('animates the embedded editor track without replacing the feed layout', async () => {
+    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1024px)');
+    const { container, root } = await renderPage();
+    const layout = container.querySelector<HTMLElement>('[data-duty-editor-layout]');
+
+    expect(layout?.style.display).toBe('grid');
+    expect(layout?.style.gridTemplateColumns).toBe('minmax(0, 1fr) minmax(0, 0fr)');
+    expect(layout?.style.transition).toContain('grid-template-columns');
+
+    await click(container.querySelector('button[aria-label="Додати повідомлення"]'));
+
+    expect(layout?.style.gridTemplateColumns).toBe('minmax(0, 1fr) minmax(0, 1fr)');
+    expect(layout?.style.columnGap).toBe('8px');
+    await act(async () => root.unmount());
+  });
+
+  it('removes spatial editor layout motion when the user prefers reduced motion', async () => {
+    useMediaQueryMock.mockImplementation(
+      (query) => query === '(min-width:1024px)' || query === '(prefers-reduced-motion: reduce)',
+    );
+    const { container, root } = await renderPage();
+
+    expect(
+      container.querySelector<HTMLElement>('[data-duty-editor-layout]')?.style.transition,
+    ).toBe('none');
+    await act(async () => root.unmount());
+  });
+
   it('applies each frequency mode transfer as one complete filter update', async () => {
     const { container, root, state } = await renderPage();
     state.messageFeeds[0].filter.freqsDenied = ['153.6250', '154.0000'];
@@ -769,5 +873,71 @@ describe('RerDutyNeoPage creation workflow', () => {
     expect(drawer?.getAttribute('data-edit-target-id')).toBe('42');
     expect(drawer?.getAttribute('data-edit-target-load-status')).toBe('idle');
     root.unmount();
+  });
+
+  it('changes source feed and intent only after a dirty replacement is discarded', async () => {
+    const { container, root } = await renderPage((state) => {
+      state.messageFeeds[1].items = [[84, minimalInboxMessage({ text: 'feed two' })]];
+    });
+
+    await click(container.querySelector('button[aria-label="Редагувати повідомлення"]'));
+    expect(container.querySelector('[data-testid="active-feed"]')?.textContent).toBe('feed-1');
+    expect(
+      container.querySelector('[data-testid="composer"]')?.getAttribute('data-edit-target-id'),
+    ).toBe('42');
+
+    editorGuardMocks.dirty = true;
+    await click(container.querySelector('button[aria-label="Редагувати повідомлення стрічки 2"]'));
+    expect(container.querySelector('[data-testid="active-feed"]')?.textContent).toBe('feed-1');
+    expect(
+      container.querySelector('[data-testid="composer"]')?.getAttribute('data-edit-target-id'),
+    ).toBe('42');
+
+    await click(
+      Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Продовжити редагування',
+      ) ?? null,
+    );
+    expect(container.querySelector('[data-testid="active-feed"]')?.textContent).toBe('feed-1');
+
+    await click(container.querySelector('button[aria-label="Редагувати повідомлення стрічки 2"]'));
+    await click(
+      Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Відхилити зміни',
+      ) ?? null,
+    );
+    expect(container.querySelector('[data-testid="active-feed"]')?.textContent).toBe('feed-2');
+    expect(
+      container.querySelector('[data-testid="composer"]')?.getAttribute('data-edit-target-id'),
+    ).toBe('84');
+    root.unmount();
+  });
+
+  it('does not begin async report loading before dirty replacement confirmation', async () => {
+    const request = deferred<Array<[number, any]>>();
+    fetchMessagesByIdsMock.mockReturnValueOnce(request.promise);
+    const { container, root } = await renderPage();
+    await click(container.querySelector('button[aria-label="Редагувати повідомлення"]'));
+    editorGuardMocks.dirty = true;
+
+    await click(container.querySelector('button[aria-label="Редагувати розвіддонесення"]'));
+    expect(fetchMessagesByIdsMock).not.toHaveBeenCalled();
+    expect(
+      container.querySelector('[data-testid="composer"]')?.getAttribute('data-edit-target-id'),
+    ).toBe('42');
+
+    await click(
+      Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Відхилити зміни',
+      ) ?? null,
+    );
+    expect(fetchMessagesByIdsMock).toHaveBeenCalledOnce();
+    expect(
+      container
+        .querySelector('[data-testid="composer"]')
+        ?.getAttribute('data-edit-target-load-status'),
+    ).toBe('loading');
+
+    await act(async () => root.unmount());
   });
 });

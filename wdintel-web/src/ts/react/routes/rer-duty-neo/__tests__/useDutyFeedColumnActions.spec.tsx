@@ -91,6 +91,15 @@ describe('useDutyFeedColumnActions', () => {
 
     await act(async () => root.render(<Harness />));
 
+    const editFocusTarget = document.createElement('button');
+    const editMessage = minimalInboxMessage();
+    actions!.onMessageEdit(40, editMessage, editFocusTarget);
+    expect(deps.openMessageEditor).toHaveBeenCalledWith(
+      'mf-0',
+      { id: 40, message: editMessage },
+      editFocusTarget,
+    );
+
     expect(
       actions!.onReachedBottom?.({
         hasSeenNotAtBottom: true,
@@ -161,14 +170,20 @@ describe('useDutyFeedColumnActions', () => {
       messageId: number,
       message: typeof message,
       etalonDisplayModel: typeof etalonDisplayModel,
+      focusTarget: HTMLElement,
     ) => void;
-    act(() => createReport(40, message, etalonDisplayModel));
+    const focusTarget = document.createElement('button');
+    act(() => createReport(40, message, etalonDisplayModel, focusTarget));
 
-    expect(openReportComposer).toHaveBeenCalledWith({
-      id: 40,
-      message,
-      senderName: 'Імʼя Відправника',
-      etalonDisplayModel,
-    });
+    expect(openReportComposer).toHaveBeenCalledWith(
+      'mf-0',
+      {
+        id: 40,
+        message,
+        senderName: 'Імʼя Відправника',
+        etalonDisplayModel,
+      },
+      focusTarget,
+    );
   });
 });

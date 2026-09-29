@@ -107,6 +107,189 @@ test.describe('@smoke @regression', () => {
     expect(cardBoxes.every(({ left, right }) => left >= 0 && right <= 375)).toBe(true);
   });
 
+  test('analysis neo keeps the visible message anchored after creating a message', async ({
+    page,
+  }) => {
+    const initialPage = createOverflowingInboxResponse();
+    const refreshedPage = {
+      ...initialPage,
+      inbox_items: initialPage.inbox_items.map(([id, message], index) => [
+        id,
+        index === 0
+          ? {
+              ...message,
+              text: Array.from(
+                { length: 80 },
+                () => 'Creation refresh changes content above the visible message.',
+              ).join(' '),
+            }
+          : message,
+      ]),
+    } as typeof initialPage;
+    let created = false;
+    let inboxRequestCount = 0;
+    await setupAnalysisNeoPage(page, {
+      inboxResponse: initialPage,
+      signalGroups: ['editor-e2e-group'],
+    });
+    await page.route('**/api/rer-importer/get-inbox', async (route) => {
+      inboxRequestCount += 1;
+      await route.fulfill({
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify(created ? refreshedPage : initialPage),
+      });
+    });
+    await page.route('**/api/1.1/submit-direct', async (route) => {
+      created = true;
+      await route.fulfill({
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify({ signal_message_id: 701 }),
+      });
+    });
+    await page.goto('/rer-analysis-neo');
+
+    const anchor = page.locator('[data-message-id="105"]');
+    await expect(anchor).toBeVisible();
+    await anchor.evaluate((element) => {
+      const container = element.closest('ul')?.parentElement;
+      if (container == null) throw new Error('Message scroll container is missing');
+      container.scrollTop +=
+        element.getBoundingClientRect().top - container.getBoundingClientRect().top - 24;
+      container.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+    await page.getByRole('button', { name: 'Додати повідомлення' }).click();
+    await page.getByRole('button', { name: 'Закрити ліву панель' }).click();
+    await expect(page.getByRole('heading', { name: 'Створити повідомлення' })).toBeVisible();
+    const offsetBefore = await anchor.evaluate((element) => {
+      const container = element.closest('ul')?.parentElement;
+      if (container == null) throw new Error('Message scroll container is missing');
+      return Math.round(
+        element.getBoundingClientRect().top -
+          container.getBoundingClientRect().top -
+          container.clientTop,
+      );
+    });
+    await page.getByRole('textbox', { name: 'Текст повідомлення' }).fill('Нове повідомлення');
+    await page.getByRole('combobox', { name: 'Група', exact: true }).click();
+    await page.getByRole('option', { name: 'editor-e2e-group', exact: true }).click();
+    const inboxRequestsBeforeCreate = inboxRequestCount;
+    await page.getByRole('button', { name: 'Створити', exact: true }).click();
+
+    await expect(page.getByText('Повідомлення успішно створено.')).toBeVisible();
+    await expect.poll(() => inboxRequestCount).toBeGreaterThan(inboxRequestsBeforeCreate);
+    await expect
+      .poll(() =>
+        anchor.evaluate((element) => {
+          const container = element.closest('ul')?.parentElement;
+          if (container == null) return null;
+          return Math.round(
+            element.getBoundingClientRect().top -
+              container.getBoundingClientRect().top -
+              container.clientTop,
+          );
+        }),
+      )
+      .toBe(offsetBefore);
+  });
+
+  test('analysis neo keeps the visible message anchored after refreshing loaded history', async ({
+    page,
+  }) => {
+    const template = createOverflowingInboxResponse();
+    const buildPage = (startId: number) => ({
+      ...template,
+      inbox_items: template.inbox_items.map(([, message], index) => {
+        const id = startId - index;
+        return [
+          id,
+          {
+            ...message,
+            messageUid: `analysis-refresh-e2e-message-${id}`,
+            text: `Analysis refresh fixture message ${id}`,
+          },
+        ];
+      }),
+    });
+    const newestPage = buildPage(140);
+    const olderPage = buildPage(120);
+    const refreshedOlderPage = {
+      ...olderPage,
+      inbox_items: olderPage.inbox_items.map(([id, message], index) => [
+        id,
+        index === 0
+          ? {
+              ...message,
+              text: 'Refreshed older analysis message',
+            }
+          : message,
+      ]),
+    } as typeof olderPage;
+    let olderPageRequestCount = 0;
+    await setupAnalysisNeoPage(page, { inboxResponse: newestPage });
+    await page.route('**/api/rer-importer/get-inbox', async (route) => {
+      const body = route.request().postDataJSON() as {
+        before_id_noninclusive?: number | null;
+      };
+      if (body.before_id_noninclusive != null) olderPageRequestCount += 1;
+      const response =
+        body.before_id_noninclusive == null
+          ? newestPage
+          : olderPageRequestCount > 1
+            ? refreshedOlderPage
+            : olderPage;
+      await route.fulfill({
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify(response),
+      });
+    });
+    await page.goto('/rer-analysis-neo');
+
+    const messageList = page.locator('section[aria-labelledby] ul').first();
+    const scrollContainer = messageList.locator('..');
+    await scrollContainer.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+      element.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+    await expect(messageList.locator('li')).toHaveCount(40);
+
+    const anchor = page.locator('[data-message-id="122"]');
+    await expect(anchor).toBeVisible();
+    await anchor.evaluate((element) => {
+      const container = element.closest('ul')?.parentElement;
+      if (container == null) throw new Error('Message scroll container is missing');
+      container.scrollTop +=
+        element.getBoundingClientRect().top - container.getBoundingClientRect().top - 24;
+      container.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+    const offsetBefore = await anchor.evaluate((element) => {
+      const container = element.closest('ul')?.parentElement;
+      if (container == null) throw new Error('Message scroll container is missing');
+      return Math.round(
+        element.getBoundingClientRect().top -
+          container.getBoundingClientRect().top -
+          container.clientTop,
+      );
+    });
+
+    await page.getByRole('button', { name: 'Оновити' }).click();
+
+    await expect(page.getByText('Refreshed older analysis message', { exact: true })).toBeVisible();
+    await expect(anchor).toBeVisible();
+    await expect
+      .poll(() =>
+        anchor.evaluate((element) => {
+          const container = element.closest('ul')?.parentElement;
+          if (container == null) return null;
+          return Math.round(
+            element.getBoundingClientRect().top -
+              container.getBoundingClientRect().top -
+              container.clientTop,
+          );
+        }),
+      )
+      .toBe(offsetBefore);
+  });
+
   test('analysis neo keeps the compact panel toggle available during initial loading', async ({
     page,
   }) => {

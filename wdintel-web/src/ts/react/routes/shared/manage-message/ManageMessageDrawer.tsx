@@ -3,7 +3,6 @@ import { RadioFeaturesProvider } from '../RadioFeatures';
 import React from 'react';
 import { FormProvider, Controller, useFormContext } from 'react-hook-form';
 import {
-  Drawer,
   Typography,
   TextField,
   Button,
@@ -30,11 +29,14 @@ import type { User, InboxMessage } from '../../../../../Bindings';
 import { ConfirmDangerDialog } from '../../../components/ConfirmDangerDialog';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerForm } from '../../../components/PowerForm';
-import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { deleteMessage } from '../../../services/api/inbox-message-actions';
 import { formatDirectSubmitError } from '../../../services/api/direct-submit';
 
 import { useManageMessageDrawer } from './useManageMessageDrawer';
+import {
+  ManageMessageEditorSurface,
+  type ManageMessageEditorPresentation,
+} from './ManageMessageEditorSurface';
 import { AutoParseStatusIcon } from './AutoParseStatusIcon';
 import { MessageParserFeedbackProvider } from './MessageParserFeedback';
 import { FormSectionWrapper } from './drawer-sections/FormSectionWrapper';
@@ -48,6 +50,7 @@ import { AdvancedFieldsSection } from './drawer-sections/AdvancedFieldsSection';
 import type { MessageFormData } from './manage-message-drawer.schema';
 import type {
   QuickIntelReportSuggestionState,
+  ManageMessageIntentChange,
   ReportEditLoadState,
 } from './useManageMessageDrawer';
 import { MessageCardMetadata } from '../message-card/MessageCardHeader';
@@ -57,6 +60,8 @@ import {
   type MessageCardEtalonDisplayModel,
 } from '../message-card/message-card.utils';
 import { formatDateNoYear, formatTime } from '../../rer-duty-neo/utils';
+import { useObservedWidth } from '../../../hooks/use-observed-width';
+import { resolveManageMessageEmbeddedFormLayout } from './manage-message-editor-layout';
 
 export type Props = {
   open: boolean;
@@ -82,7 +87,37 @@ export type Props = {
   onRetryEditTargetLoad?: () => void;
   editSaveInFlight?: boolean;
   onSubmitEdit?: (id: number, message: InboxMessage) => void | Promise<void>;
+  intentKey?: string;
+  presentation?: ManageMessageEditorPresentation;
+  interactionActive?: boolean;
+  adaptiveEmbeddedForm?: boolean;
+  fillEmbeddedSurface?: boolean;
+  transparentEmbeddedSurface?: boolean;
+  initialFocusTarget?: HTMLElement | null;
+  focusFallbackRef?: React.RefObject<HTMLElement | null>;
 };
+
+export type { ManageMessageIntentChange } from './useManageMessageDrawer';
+
+export type ManageMessageEditorHandle = {
+  requestIntentChange: (change: ManageMessageIntentChange) => void;
+  closeWithoutConfirmation: () => void;
+  focus: () => void;
+};
+
+function scheduleAfterPaint(callback: () => void) {
+  if (typeof window.requestAnimationFrame === 'function') {
+    const frameId = window.requestAnimationFrame(callback);
+    return () => window.cancelAnimationFrame(frameId);
+  }
+  let cancelled = false;
+  queueMicrotask(() => {
+    if (!cancelled) callback();
+  });
+  return () => {
+    cancelled = true;
+  };
+}
 
 function ReportTextRow({
   originalText,
@@ -96,6 +131,8 @@ function ReportTextRow({
   onApplyQuickSuggestion,
   onSelectAdjacentQuickSuggestion,
   onRetryQuickSuggestion,
+  presentation,
+  embeddedMainColumns,
 }: {
   originalText: string;
   sourceMessage: InboxMessage | null;
@@ -108,6 +145,8 @@ function ReportTextRow({
   onApplyQuickSuggestion: () => void;
   onSelectAdjacentQuickSuggestion: (offset: number) => void;
   onRetryQuickSuggestion: () => void;
+  presentation: ManageMessageEditorPresentation;
+  embeddedMainColumns: 1 | 2;
 }) {
   const { control } = useFormContext<MessageFormData>();
   const reportTextRef = React.useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
@@ -124,7 +163,12 @@ function ReportTextRow({
       sx={{
         gridColumn: '1 / -1',
         display: 'grid',
-        gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) minmax(0, 1fr)' },
+        gridTemplateColumns:
+          presentation === 'embedded'
+            ? embeddedMainColumns === 2
+              ? 'repeat(2, minmax(0, 1fr))'
+              : 'minmax(0, 1fr)'
+            : { xs: '1fr', md: 'minmax(0, 1fr) minmax(0, 1fr)' },
         gap: 3,
         minWidth: 0,
       }}
@@ -300,14 +344,13 @@ function ReportSourceHeader({
   return (
     <Box
       data-testid="report-source-header"
+      style={{ flexWrap: 'wrap', overflowX: 'visible' }}
       sx={{
         gridColumn: '1 / -1',
         display: 'flex',
         alignItems: 'center',
-        flexWrap: 'nowrap',
         gap: 2,
         minWidth: 0,
-        overflowX: 'auto',
         pb: 0.5,
         '& .message-card-header-meta__icon': {
           color: 'text.secondary',
@@ -353,536 +396,721 @@ function ReportSourceHeader({
   );
 }
 
-export function ManageMessageDrawer(props: Props) {
-  const canWrite = canWriteMessages(props.currentUser?.roles);
-  const drawerState = useManageMessageDrawer({ ...props, open: props.open && canWrite });
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false);
-  const [deleteInFlight, setDeleteInFlight] = React.useState(false);
+export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, Props>(
+  function ManageMessageDrawer(props, ref) {
+    const presentation = props.presentation ?? 'modal';
+    const interactionActive = props.interactionActive ?? true;
+    const intentKey = props.intentKey ?? 'manage-message';
+    const { ref: editorWidthRef, width: editorWidth } = useObservedWidth<HTMLDivElement>();
+    const adaptiveEmbeddedForm = presentation === 'embedded' && props.adaptiveEmbeddedForm === true;
+    const embeddedFormLayout = resolveManageMessageEmbeddedFormLayout(
+      adaptiveEmbeddedForm ? editorWidth : null,
+    );
+    const embeddedMainColumns = adaptiveEmbeddedForm ? embeddedFormLayout.mainColumns : 1;
+    const compactMessageBody = adaptiveEmbeddedForm && embeddedFormLayout.density === 'compact';
+    const wideMessageBody = adaptiveEmbeddedForm && embeddedFormLayout.density === 'wide';
+    const messageBodyRows = compactMessageBody ? 6 : wideMessageBody ? 4 : 12;
+    const messageBodyMinHeight = compactMessageBody ? 162 : wideMessageBody ? 130 : null;
+    const canWrite = canWriteMessages(props.currentUser?.roles);
+    const returnFocusRef = React.useRef<HTMLElement | null>(null);
+    const wasOpenRef = React.useRef(false);
+    if (props.open && !wasOpenRef.current) {
+      returnFocusRef.current =
+        props.initialFocusTarget ??
+        (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+    }
+    const restoreFocus = React.useCallback(() => {
+      scheduleAfterPaint(() => {
+        const returnTarget = returnFocusRef.current;
+        const target =
+          returnTarget?.isConnected && returnTarget !== document.body
+            ? returnTarget
+            : props.focusFallbackRef?.current;
+        target?.focus();
+      });
+    }, [props.focusFallbackRef]);
+    const handleClosed = React.useCallback(() => {
+      props.onClose();
+      restoreFocus();
+    }, [props.onClose, restoreFocus]);
+    const drawerState = useManageMessageDrawer({
+      ...props,
+      interactionActive,
+      keepOpenAfterCreate: presentation === 'embedded' && props.reportSource == null,
+      onClose: handleClosed,
+      open: props.open && canWrite,
+    });
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false);
+    const [deleteInFlight, setDeleteInFlight] = React.useState(false);
 
-  const {
-    isEditMode,
-    isReportMode,
-    isReportCreateMode,
-    originalReportText,
-    quickSuggestion,
-    applyQuickSuggestion,
-    selectAdjacentQuickSuggestion,
-    retryQuickSuggestion,
-    existingMedia,
-    showAdvanced,
-    setShowAdvanced,
-    signalGroups,
-    groupsLoading,
-    formDisabled,
-    saving,
-    parsing,
-    parseStatus,
-    parserFeedback,
-    debounceKey,
-    errorMsg,
-    setErrorMsg,
-    tagOptions,
-    deviceNameOptions,
-    deviceNamesLoading,
-    setDeviceNameInput,
-    uppy,
-    uppyFiles,
-    fileInputRef,
-    handleFileSelect,
-    handleDrop,
-    handleDropzoneKeyDown,
-    methods,
-    canSubmit,
-    handleParse,
-    acceptParsedField,
-    autoParseEnabled,
-    autoParseSettingsDisabled,
-    autoParseSettingsLoadError,
-    retryAutoParseSettings,
-    handleToggleAutoParse,
-    handleDrawerClose,
-    closeDrawerWithoutConfirmation,
-    discardConfirmationOpen,
-    cancelDiscard,
-    confirmDiscard,
-    onSubmit,
-    recentValues,
-  } = drawerState;
-  const [settingsAnchorEl, setSettingsAnchorEl] = React.useState<null | HTMLElement>(null);
-  const isSettingsOpen = Boolean(settingsAnchorEl);
+    const {
+      isEditMode,
+      isReportMode,
+      isReportCreateMode,
+      originalReportText,
+      quickSuggestion,
+      applyQuickSuggestion,
+      selectAdjacentQuickSuggestion,
+      retryQuickSuggestion,
+      existingMedia,
+      showAdvanced,
+      setShowAdvanced,
+      signalGroups,
+      groupsLoading,
+      formDisabled,
+      saving,
+      parsing,
+      parseStatus,
+      parserFeedback,
+      debounceKey,
+      errorMsg,
+      setErrorMsg,
+      reportCopyError,
+      retryReportCopy,
+      referenceDataError,
+      retryReferenceData,
+      tagOptions,
+      deviceNameOptions,
+      deviceNamesLoading,
+      setDeviceNameInput,
+      uppy,
+      uppyFiles,
+      fileInputRef,
+      handleFileSelect,
+      handleDrop,
+      handleDropzoneKeyDown,
+      methods,
+      canSubmit,
+      handleParse,
+      acceptParsedField,
+      autoParseEnabled,
+      autoParseSettingsDisabled,
+      autoParseSettingsLoadError,
+      retryAutoParseSettings,
+      handleToggleAutoParse,
+      handleDrawerClose,
+      closeDrawerWithoutConfirmation,
+      discardConfirmationOpen,
+      cancelDiscard,
+      confirmDiscard,
+      requestIntentChange,
+      editorRootRef,
+      onSubmit,
+      recentValues,
+      createSucceeded,
+    } = drawerState;
+    const [settingsAnchorEl, setSettingsAnchorEl] = React.useState<null | HTMLElement>(null);
+    const isSettingsOpen = Boolean(settingsAnchorEl);
 
-  const handleOpenSettings = (event: React.MouseEvent<HTMLElement>) => {
-    setSettingsAnchorEl(event.currentTarget);
-  };
+    const handleOpenSettings = (event: React.MouseEvent<HTMLElement>) => {
+      setSettingsAnchorEl(event.currentTarget);
+    };
 
-  const handleCloseSettings = () => {
-    setSettingsAnchorEl(null);
-  };
-  const dismissDisabled = saving || deleteInFlight;
-  const busy = formDisabled || deleteInFlight;
-  const parseDisabled = busy || parsing;
-  const reportEditLoading = props.editTargetLoadState?.status === 'loading';
-  const reportEditError = props.editTargetLoadState?.status === 'error';
-  const isReportEditIntent =
-    Boolean(props.editAsReport) && (isEditMode || props.editTargetLoadState?.status !== 'idle');
-  const reportDeleteId = isEditMode && isReportMode ? (props.editTarget?.id ?? null) : null;
-  const reportSourceGroupName = props.reportSource?.message.groupMasterKey
-    ? (signalGroups.find((group) => group.masterKey === props.reportSource?.message.groupMasterKey)
-        ?.name ?? props.reportSource.message.groupMasterKey)
-    : null;
+    const handleCloseSettings = () => {
+      setSettingsAnchorEl(null);
+    };
+    const dismissDisabled = saving || deleteInFlight;
+    const busy = formDisabled || deleteInFlight;
+    const parseDisabled = busy || parsing;
+    const messageTextRef = React.useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+    const focusedMessageIntentRef = React.useRef<string | null>(null);
+    const reportEditLoading = props.editTargetLoadState?.status === 'loading';
+    const reportEditError = props.editTargetLoadState?.status === 'error';
+    const isReportEditIntent =
+      Boolean(props.editAsReport) && (isEditMode || props.editTargetLoadState?.status !== 'idle');
+    const reportDeleteId = isEditMode && isReportMode ? (props.editTarget?.id ?? null) : null;
+    const reportSourceGroupName = props.reportSource?.message.groupMasterKey
+      ? (signalGroups.find(
+          (group) => group.masterKey === props.reportSource?.message.groupMasterKey,
+        )?.name ?? props.reportSource.message.groupMasterKey)
+      : null;
+    const titleId = React.useId();
 
-  const handleDeleteConfirm = async () => {
-    if (reportDeleteId == null || deleteInFlight) return;
-    setDeleteInFlight(true);
-    setErrorMsg(null);
-    try {
-      await deleteMessage({ id: reportDeleteId });
-    } catch (error) {
+    React.useEffect(() => {
+      if (!props.open) {
+        focusedMessageIntentRef.current = null;
+        return;
+      }
+      if (busy || isEditMode || isReportMode || focusedMessageIntentRef.current === intentKey) {
+        return;
+      }
+      return scheduleAfterPaint(() => {
+        if (!messageTextRef.current) return;
+        focusedMessageIntentRef.current = intentKey;
+        messageTextRef.current.focus();
+      });
+    }, [busy, intentKey, isEditMode, isReportMode, props.open]);
+
+    React.useEffect(() => {
+      if (!createSucceeded || isReportMode) return;
+      return scheduleAfterPaint(() => messageTextRef.current?.focus());
+    }, [createSucceeded, isReportMode]);
+
+    const focusEditor = React.useCallback(() => {
+      const root = editorRootRef.current;
+      const target = root?.querySelector<HTMLElement>(
+        '[aria-invalid="true"], textarea:not(:disabled), input:not(:disabled), button:not(:disabled)',
+      );
+      (target ?? root)?.focus();
+    }, [editorRootRef]);
+    const handleCancelDiscard = React.useCallback(() => {
+      cancelDiscard();
+      scheduleAfterPaint(focusEditor);
+    }, [cancelDiscard, focusEditor]);
+
+    React.useImperativeHandle(
+      ref,
+      () => ({
+        requestIntentChange(change) {
+          if (dismissDisabled) return;
+          if (change.key === intentKey) {
+            focusEditor();
+            return;
+          }
+          requestIntentChange({
+            ...change,
+            commit: () => {
+              returnFocusRef.current =
+                change.focusTarget ??
+                (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+              change.commit();
+              scheduleAfterPaint(focusEditor);
+            },
+          });
+        },
+        closeWithoutConfirmation: closeDrawerWithoutConfirmation,
+        focus: focusEditor,
+      }),
+      [
+        closeDrawerWithoutConfirmation,
+        dismissDisabled,
+        focusEditor,
+        intentKey,
+        requestIntentChange,
+      ],
+    );
+
+    React.useEffect(() => {
+      wasOpenRef.current = props.open;
+    }, [props.open]);
+
+    const handleDeleteConfirm = async () => {
+      if (reportDeleteId == null || deleteInFlight) return;
+      setDeleteInFlight(true);
+      setErrorMsg(null);
+      try {
+        await deleteMessage({ id: reportDeleteId });
+      } catch (error) {
+        setDeleteInFlight(false);
+        setDeleteConfirmOpen(false);
+        setErrorMsg(formatDirectSubmitError(error, 'delete'));
+        return;
+      }
+
       setDeleteInFlight(false);
       setDeleteConfirmOpen(false);
-      setErrorMsg(formatDirectSubmitError(error, 'delete'));
-      return;
-    }
+      closeDrawerWithoutConfirmation();
+      try {
+        await props.onDeleteSuccess?.(reportDeleteId);
+      } catch (error) {
+        console.error('Error handling report deletion', error);
+      }
+    };
 
-    setDeleteInFlight(false);
-    setDeleteConfirmOpen(false);
-    closeDrawerWithoutConfirmation();
-    try {
-      await props.onDeleteSuccess?.(reportDeleteId);
-    } catch (error) {
-      console.error('Error handling report deletion', error);
-    }
-  };
-
-  return (
-    <RadioFeaturesProvider allowed={drawerState.radioFeaturesAllowed}>
-      <Drawer
-        anchor="right"
-        open={props.open && canWrite}
-        onClose={dismissDisabled ? undefined : handleDrawerClose}
-        sx={{ zIndex: 1200 }}
-        ModalProps={{
-          closeAfterTransition: true,
-          BackdropProps: {
-            sx: (theme) => pageDrawerBackdropSx(theme),
-          },
-        }}
-        slotProps={{
-          paper: {
-            sx: {
-              width:
-                isReportEditIntent || isReportMode ? '100vw' : { xs: '100%', sm: 720, md: 1040 },
-              maxWidth: '100vw',
-              display: 'flex',
-              backgroundColor: 'background.default',
-              backgroundImage: 'none',
-            },
-          },
-        }}
-      >
-        <div className="relative flex flex-col h-full flex-1 min-h-0">
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              p: 2.5,
-              borderBottom: '1px solid',
-              borderColor: 'divider',
-            }}
+    return (
+      <RadioFeaturesProvider allowed={drawerState.radioFeaturesAllowed}>
+        <ManageMessageEditorSurface
+          open={props.open && canWrite}
+          onRequestClose={handleDrawerClose}
+          dismissDisabled={dismissDisabled}
+          presentation={presentation}
+          titleId={titleId}
+          fillEmbeddedSurface={props.fillEmbeddedSurface}
+          transparentEmbeddedSurface={props.transparentEmbeddedSurface}
+        >
+          <div
+            ref={editorRootRef}
+            className="relative flex flex-col h-full flex-1 min-h-0"
+            tabIndex={-1}
           >
-            <Typography variant="h6">
-              {isReportMode
-                ? isReportEditIntent
-                  ? 'Редагувати розвіддонесення'
-                  : 'Створити розвіддонесення'
-                : isEditMode
-                  ? 'Редагувати повідомлення'
-                  : 'Створити повідомлення'}
-            </Typography>
-          </Box>
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                boxSizing: 'border-box',
+                height: adaptiveEmbeddedForm ? { xs: 38, lg: 42 } : undefined,
+                px: adaptiveEmbeddedForm ? 2 : 2.5,
+                pt: adaptiveEmbeddedForm ? 0 : 2.5,
+                pb: adaptiveEmbeddedForm ? { xs: 0.5, lg: 1 } : 2.5,
+                flexShrink: 0,
+                borderBottom: '1px solid',
+                borderColor: 'divider',
+              }}
+            >
+              <Typography id={titleId} variant={adaptiveEmbeddedForm ? 'subtitle2' : 'h6'}>
+                {isReportMode
+                  ? isReportEditIntent
+                    ? 'Редагувати розвіддонесення'
+                    : 'Створити розвіддонесення'
+                  : isEditMode
+                    ? 'Редагувати повідомлення'
+                    : 'Створити повідомлення'}
+              </Typography>
+            </Box>
 
-          <Box sx={{ flex: 1, p: 2.5, overflowY: 'auto' }}>
-            {reportEditLoading ? null : reportEditError ? (
-              <PowerAlert
-                severity="error"
-                action={<Button onClick={props.onRetryEditTargetLoad}>Повторити</Button>}
-              >
-                {props.editTargetLoadState?.status === 'error'
-                  ? props.editTargetLoadState.message
-                  : null}
-              </PowerAlert>
-            ) : (
-              <>
-                {!isEditMode && !isReportMode && autoParseSettingsLoadError ? (
-                  <PowerAlert
-                    severity="error"
-                    autoHideDuration={null}
-                    dismissible={false}
-                    action={<Button onClick={retryAutoParseSettings}>Повторити</Button>}
-                    sx={{ mb: 2 }}
-                  >
-                    {autoParseSettingsLoadError}
-                  </PowerAlert>
-                ) : null}
-                {errorMsg && (
-                  <PowerAlert severity="error" onClose={() => setErrorMsg(null)} sx={{ mb: 2 }}>
-                    {errorMsg}
-                  </PowerAlert>
-                )}
-
-                <MessageParserFeedbackProvider
-                  feedback={parserFeedback}
-                  onAccept={acceptParsedField}
+            <Box
+              ref={editorWidthRef}
+              data-manage-message-scroll
+              sx={{ flex: 1, p: 2.5, overflowY: 'auto' }}
+            >
+              {reportEditLoading ? null : reportEditError ? (
+                <PowerAlert
+                  severity="error"
+                  action={<Button onClick={props.onRetryEditTargetLoad}>Повторити</Button>}
                 >
-                  <FormProvider {...methods}>
-                    <PowerForm
-                      id="create-message-form"
-                      noValidate
-                      onSubmit={methods.handleSubmit(onSubmit)}
-                      canSubmit={canSubmit && !deleteInFlight}
-                      globalSubmitShortcut
-                      sx={{
-                        display: 'grid',
-                        gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) minmax(0, 1fr)' },
-                        gap: 3,
-                        alignItems: 'start',
-                      }}
+                  {props.editTargetLoadState?.status === 'error'
+                    ? props.editTargetLoadState.message
+                    : null}
+                </PowerAlert>
+              ) : (
+                <>
+                  {!isEditMode && !isReportMode && autoParseSettingsLoadError ? (
+                    <PowerAlert
+                      severity="error"
+                      autoHideDuration={null}
+                      dismissible={false}
+                      action={<Button onClick={retryAutoParseSettings}>Повторити</Button>}
+                      sx={{ mb: 2 }}
                     >
-                      {isReportMode ? (
-                        <ReportTextRow
-                          originalText={originalReportText}
-                          sourceMessage={props.reportSource?.message ?? null}
-                          sourceGroupName={reportSourceGroupName}
-                          sourceSenderName={
-                            props.reportSource?.senderName ??
-                            props.reportSource?.message.sender ??
-                            null
-                          }
-                          sourceEtalonDisplayModel={props.reportSource?.etalonDisplayModel ?? null}
-                          deviceAccess={props.cyberEchoEnabled}
-                          busy={busy}
-                          quickSuggestion={quickSuggestion}
-                          onApplyQuickSuggestion={applyQuickSuggestion}
-                          onSelectAdjacentQuickSuggestion={selectAdjacentQuickSuggestion}
-                          onRetryQuickSuggestion={retryQuickSuggestion}
-                        />
-                      ) : null}
-
-                      {/* LEFT COLUMN */}
-                      <Box component="fieldset" sx={{ minWidth: 0, border: 0, p: 0, m: 0 }}>
-                        {!isReportMode ? (
-                          <>
-                            <Typography component="legend" variant="subtitle2" sx={{ mb: 1 }}>
-                              Вміст повідомлення <span aria-hidden="true">*</span>
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                              Додайте текст повідомлення або принаймні одне вкладення.
-                            </Typography>
-                          </>
+                      {autoParseSettingsLoadError}
+                    </PowerAlert>
+                  ) : null}
+                  {reportCopyError ? (
+                    <PowerAlert
+                      severity="error"
+                      autoHideDuration={null}
+                      dismissible={false}
+                      action={<Button onClick={retryReportCopy}>Повторити копіювання</Button>}
+                      sx={{ mb: 2 }}
+                    >
+                      {reportCopyError}
+                    </PowerAlert>
+                  ) : null}
+                  {referenceDataError ? (
+                    <PowerAlert
+                      severity="error"
+                      autoHideDuration={null}
+                      dismissible={false}
+                      action={<Button onClick={retryReferenceData}>Повторити завантаження</Button>}
+                      sx={{ mb: 2 }}
+                    >
+                      {referenceDataError}
+                    </PowerAlert>
+                  ) : null}
+                  {errorMsg && (
+                    <PowerAlert severity="error" onClose={() => setErrorMsg(null)} sx={{ mb: 2 }}>
+                      {errorMsg}
+                    </PowerAlert>
+                  )}
+                  <MessageParserFeedbackProvider
+                    feedback={parserFeedback}
+                    onAccept={acceptParsedField}
+                  >
+                    <FormProvider {...methods}>
+                      <PowerForm
+                        id="create-message-form"
+                        noValidate
+                        onSubmit={methods.handleSubmit(onSubmit)}
+                        canSubmit={canSubmit && !deleteInFlight}
+                        globalSubmitShortcut={interactionActive}
+                        data-manage-message-form-layout={
+                          adaptiveEmbeddedForm ? embeddedFormLayout.density : undefined
+                        }
+                        style={
+                          adaptiveEmbeddedForm
+                            ? ({
+                                '--manage-message-section-columns':
+                                  embeddedFormLayout.sectionColumns,
+                                '--manage-message-metadata-columns':
+                                  embeddedFormLayout.metadataColumns,
+                              } as React.CSSProperties)
+                            : undefined
+                        }
+                        sx={{
+                          display: 'grid',
+                          gridTemplateColumns:
+                            presentation === 'embedded'
+                              ? embeddedMainColumns === 2
+                                ? 'repeat(2, minmax(0, 1fr))'
+                                : 'minmax(0, 1fr)'
+                              : { xs: '1fr', md: 'minmax(0, 1fr) minmax(0, 1fr)' },
+                          gap: 3,
+                          alignItems: 'start',
+                          '& .MuiInputBase-root': {
+                            fontSize: {
+                              xs: 'var(--echo-typography-font-size-lg)',
+                              sm: 'var(--echo-typography-font-size-base)',
+                            },
+                          },
+                          '& .MuiInputLabel-root:not(.MuiInputLabel-shrink)': {
+                            fontSize: {
+                              xs: 'var(--echo-typography-font-size-lg)',
+                              sm: 'var(--echo-typography-font-size-base)',
+                            },
+                          },
+                        }}
+                      >
+                        {isReportMode ? (
+                          <ReportTextRow
+                            originalText={originalReportText}
+                            sourceMessage={props.reportSource?.message ?? null}
+                            sourceGroupName={reportSourceGroupName}
+                            sourceSenderName={
+                              props.reportSource?.senderName ??
+                              props.reportSource?.message.sender ??
+                              null
+                            }
+                            sourceEtalonDisplayModel={
+                              props.reportSource?.etalonDisplayModel ?? null
+                            }
+                            deviceAccess={props.cyberEchoEnabled}
+                            busy={busy}
+                            quickSuggestion={quickSuggestion}
+                            onApplyQuickSuggestion={applyQuickSuggestion}
+                            onSelectAdjacentQuickSuggestion={selectAdjacentQuickSuggestion}
+                            onRetryQuickSuggestion={retryQuickSuggestion}
+                            presentation={presentation}
+                            embeddedMainColumns={embeddedMainColumns}
+                          />
                         ) : null}
-                        <Stack spacing={2.5}>
+
+                        {/* LEFT COLUMN */}
+                        <Box component="fieldset" sx={{ minWidth: 0, border: 0, p: 0, m: 0 }}>
                           {!isReportMode ? (
-                            <FormSectionWrapper
-                              title="Джерело"
-                              action={
-                                !isEditMode ? (
-                                  <>
-                                    <ButtonGroup
-                                      variant="outlined"
-                                      size="small"
-                                      aria-label="Дії парсингу"
-                                    >
-                                      <Button
-                                        onClick={() => void handleParse()}
+                            <>
+                              <Typography component="legend" variant="subtitle2" sx={{ mb: 1 }}>
+                                Вміст повідомлення <span aria-hidden="true">*</span>
+                              </Typography>
+                              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                Додайте текст повідомлення або принаймні одне вкладення.
+                              </Typography>
+                            </>
+                          ) : null}
+                          <Stack spacing={2.5}>
+                            {!isReportMode ? (
+                              <FormSectionWrapper
+                                title="Джерело"
+                                action={
+                                  !isEditMode ? (
+                                    <>
+                                      <ButtonGroup
                                         variant="outlined"
                                         size="small"
-                                        startIcon={
-                                          <AutoParseStatusIcon
-                                            status={parseStatus}
-                                            debounceKey={debounceKey}
-                                          />
-                                        }
-                                        disabled={parseDisabled}
+                                        aria-label="Дії парсингу"
                                       >
-                                        {autoParseEnabled ? 'Авто-парсинг' : 'Розпарсити'}
-                                      </Button>
-                                      <Tooltip title="Налаштування парсингу">
                                         <Button
-                                          onClick={handleOpenSettings}
-                                          aria-label="Налаштування парсингу"
-                                          aria-haspopup="menu"
-                                          aria-expanded={isSettingsOpen ? 'true' : undefined}
-                                          disabled={busy || autoParseSettingsDisabled}
-                                          sx={{ minWidth: 32, px: 0.75 }}
-                                        >
-                                          <ArrowDropDownIcon fontSize="small" />
-                                        </Button>
-                                      </Tooltip>
-                                    </ButtonGroup>
-                                    <Menu
-                                      anchorEl={settingsAnchorEl}
-                                      open={isSettingsOpen}
-                                      onClose={handleCloseSettings}
-                                      anchorOrigin={{
-                                        vertical: 'bottom',
-                                        horizontal: 'right',
-                                      }}
-                                      transformOrigin={{
-                                        vertical: 'top',
-                                        horizontal: 'right',
-                                      }}
-                                    >
-                                      <MenuItem
-                                        disabled={autoParseSettingsDisabled}
-                                        onClick={() => {
-                                          handleToggleAutoParse(!autoParseEnabled);
-                                        }}
-                                      >
-                                        <FormControlLabel
-                                          control={
-                                            <Switch
-                                              checked={autoParseEnabled}
-                                              size="small"
-                                              tabIndex={-1}
+                                          onClick={() => void handleParse()}
+                                          variant="outlined"
+                                          size="small"
+                                          startIcon={
+                                            <AutoParseStatusIcon
+                                              status={parseStatus}
+                                              debounceKey={debounceKey}
                                             />
                                           }
-                                          label="Парсити автоматично"
-                                          sx={{ pointerEvents: 'none', m: 0 }}
-                                        />
-                                      </MenuItem>
-                                    </Menu>
-                                  </>
-                                ) : null
-                              }
-                            >
-                              <Controller
-                                name="full_body"
-                                control={methods.control}
-                                render={({ field }) => (
-                                  <TextField
-                                    {...field}
-                                    onChange={(event) => {
-                                      drawerState.handleBodyChange(event.target.value);
-                                      field.onChange(event);
-                                    }}
-                                    label="Текст повідомлення"
-                                    fullWidth
-                                    multiline
-                                    rows={12}
-                                    disabled={busy}
-                                  />
-                                )}
-                              />
-                            </FormSectionWrapper>
-                          ) : null}
+                                          disabled={parseDisabled}
+                                        >
+                                          {autoParseEnabled ? 'Авто-парсинг' : 'Розпарсити'}
+                                        </Button>
+                                        <Tooltip title="Налаштування парсингу">
+                                          <Button
+                                            onClick={handleOpenSettings}
+                                            aria-label="Налаштування парсингу"
+                                            aria-haspopup="menu"
+                                            aria-expanded={isSettingsOpen ? 'true' : undefined}
+                                            disabled={busy || autoParseSettingsDisabled}
+                                            sx={{ minWidth: 32, px: 0.75 }}
+                                          >
+                                            <ArrowDropDownIcon fontSize="small" />
+                                          </Button>
+                                        </Tooltip>
+                                      </ButtonGroup>
+                                      <Menu
+                                        anchorEl={settingsAnchorEl}
+                                        open={isSettingsOpen}
+                                        onClose={handleCloseSettings}
+                                        anchorOrigin={{
+                                          vertical: 'bottom',
+                                          horizontal: 'right',
+                                        }}
+                                        transformOrigin={{
+                                          vertical: 'top',
+                                          horizontal: 'right',
+                                        }}
+                                      >
+                                        <MenuItem
+                                          disabled={autoParseSettingsDisabled}
+                                          onClick={() => {
+                                            handleToggleAutoParse(!autoParseEnabled);
+                                          }}
+                                        >
+                                          <FormControlLabel
+                                            control={
+                                              <Switch
+                                                checked={autoParseEnabled}
+                                                size="small"
+                                                tabIndex={-1}
+                                              />
+                                            }
+                                            label="Парсити автоматично"
+                                            sx={{ pointerEvents: 'none', m: 0 }}
+                                          />
+                                        </MenuItem>
+                                      </Menu>
+                                    </>
+                                  ) : null
+                                }
+                              >
+                                <Controller
+                                  name="full_body"
+                                  control={methods.control}
+                                  render={({ field }) => (
+                                    <TextField
+                                      {...field}
+                                      onChange={(event) => {
+                                        drawerState.handleBodyChange(event.target.value);
+                                        field.onChange(event);
+                                      }}
+                                      label="Текст повідомлення"
+                                      fullWidth
+                                      multiline
+                                      rows={messageBodyRows}
+                                      inputRef={messageTextRef}
+                                      disabled={busy}
+                                      sx={
+                                        messageBodyMinHeight != null
+                                          ? {
+                                              '& .MuiInputBase-root': {
+                                                minHeight: messageBodyMinHeight,
+                                              },
+                                            }
+                                          : undefined
+                                      }
+                                    />
+                                  )}
+                                />
+                              </FormSectionWrapper>
+                            ) : null}
 
-                          <AttachmentsSection
-                            uppy={uppy}
-                            uppyFiles={uppyFiles}
-                            fileInputRef={fileInputRef}
-                            handleFileSelect={handleFileSelect}
-                            handleDrop={handleDrop}
-                            handleDropzoneKeyDown={handleDropzoneKeyDown}
+                            <AttachmentsSection
+                              uppy={uppy}
+                              uppyFiles={uppyFiles}
+                              fileInputRef={fileInputRef}
+                              handleFileSelect={handleFileSelect}
+                              handleDrop={handleDrop}
+                              handleDropzoneKeyDown={handleDropzoneKeyDown}
+                              busy={busy}
+                              existingMedia={existingMedia}
+                              errorMsg={drawerState.attachmentErrorMsg}
+                              reportTextPreviewEnabled={isReportMode}
+                            />
+                          </Stack>
+                        </Box>
+
+                        {/* RIGHT COLUMN */}
+                        <Stack spacing={2.5}>
+                          <SystemSection
+                            signalGroups={signalGroups}
+                            groupsLoading={groupsLoading}
                             busy={busy}
-                            existingMedia={existingMedia}
-                            errorMsg={drawerState.attachmentErrorMsg}
-                            reportTextPreviewEnabled={isReportMode}
+                            isEditMode={isEditMode}
+                            isReportMode={isReportMode}
+                            groupEditable={isReportMode}
+                            cyberEchoEnabled={props.cyberEchoEnabled}
+                            deviceNameOptions={deviceNameOptions}
+                            deviceNamesLoading={deviceNamesLoading}
+                            setDeviceNameInput={setDeviceNameInput}
+                            recentValues={recentValues}
                           />
-                        </Stack>
-                      </Box>
 
-                      {/* RIGHT COLUMN */}
-                      <Stack spacing={2.5}>
-                        <SystemSection
-                          signalGroups={signalGroups}
-                          groupsLoading={groupsLoading}
-                          busy={busy}
-                          isEditMode={isEditMode}
-                          isReportMode={isReportMode}
-                          groupEditable={isReportMode}
-                          cyberEchoEnabled={props.cyberEchoEnabled}
-                          deviceNameOptions={deviceNameOptions}
-                          deviceNamesLoading={deviceNamesLoading}
-                          setDeviceNameInput={setDeviceNameInput}
-                          recentValues={recentValues}
-                        />
+                          <MetadataSection
+                            showAdvanced={showAdvanced}
+                            busy={busy}
+                            recentValues={recentValues}
+                            tagOptions={tagOptions}
+                            postOptions={drawerState.postOptions}
+                            postLoading={drawerState.postLoading}
+                            setPostInput={drawerState.setPostInput}
+                            unitOptions={drawerState.unitOptions}
+                            unitLoading={drawerState.unitLoading}
+                            setUnitInput={drawerState.setUnitInput}
+                            unitLocked={drawerState.unitLocked}
+                            callsignOptions={drawerState.callsignOptions}
+                            callsignLoading={drawerState.callsignLoading}
+                            callsignInput={drawerState.callsignInput}
+                            setCallsignInput={drawerState.setCallsignInput}
+                          />
 
-                        <MetadataSection
-                          showAdvanced={showAdvanced}
-                          busy={busy}
-                          recentValues={recentValues}
-                          tagOptions={tagOptions}
-                          postOptions={drawerState.postOptions}
-                          postLoading={drawerState.postLoading}
-                          setPostInput={drawerState.setPostInput}
-                          unitOptions={drawerState.unitOptions}
-                          unitLoading={drawerState.unitLoading}
-                          setUnitInput={drawerState.setUnitInput}
-                          unitLocked={drawerState.unitLocked}
-                          callsignOptions={drawerState.callsignOptions}
-                          callsignLoading={drawerState.callsignLoading}
-                          callsignInput={drawerState.callsignInput}
-                          setCallsignInput={drawerState.setCallsignInput}
-                        />
+                          <NetworkSection
+                            radioFeaturesAllowed={drawerState.radioFeaturesAllowed}
+                            isEditMode={isEditMode}
+                            busy={busy}
+                            recentValues={recentValues}
+                            networkNameOptions={drawerState.networkNameOptions}
+                            networkNameLoading={drawerState.networkNameLoading}
+                            setNetworkNameInput={drawerState.setNetworkNameInput}
+                            networkUnitNamesById={drawerState.networkUnitNamesById}
+                            selectedNetwork={drawerState.selectedNetwork}
+                            setSelectedNetwork={drawerState.setSelectedNetwork}
+                            freqOptions={drawerState.freqOptions}
+                            freqLoading={drawerState.freqLoading}
+                            setFreqInput={drawerState.setFreqInput}
+                            unitLocked={drawerState.unitLocked}
+                            setUnitLocked={drawerState.setUnitLocked}
+                          />
 
-                        <NetworkSection
-                          radioFeaturesAllowed={drawerState.radioFeaturesAllowed}
-                          isEditMode={isEditMode}
-                          busy={busy}
-                          recentValues={recentValues}
-                          networkNameOptions={drawerState.networkNameOptions}
-                          networkNameLoading={drawerState.networkNameLoading}
-                          setNetworkNameInput={drawerState.setNetworkNameInput}
-                          networkUnitNamesById={drawerState.networkUnitNamesById}
-                          selectedNetwork={drawerState.selectedNetwork}
-                          setSelectedNetwork={drawerState.setSelectedNetwork}
-                          freqOptions={drawerState.freqOptions}
-                          freqLoading={drawerState.freqLoading}
-                          setFreqInput={drawerState.setFreqInput}
-                          unitLocked={drawerState.unitLocked}
-                          setUnitLocked={drawerState.setUnitLocked}
-                        />
+                          <LocationsSection
+                            busy={busy}
+                            recentValues={recentValues}
+                            open={props.open && canWrite}
+                            onError={setErrorMsg}
+                          />
 
-                        <LocationsSection
-                          busy={busy}
-                          recentValues={recentValues}
-                          open={props.open && canWrite}
-                          onError={setErrorMsg}
-                        />
+                          {!isReportMode ? (
+                            <>
+                              {drawerState.radioFeaturesAllowed ? (
+                                <DmrSection
+                                  showAdvanced={showAdvanced}
+                                  busy={busy}
+                                  recentValues={recentValues}
+                                />
+                              ) : null}
 
-                        {!isReportMode ? (
-                          <>
-                            {drawerState.radioFeaturesAllowed ? (
-                              <DmrSection
+                              <AdvancedFieldsSection
                                 showAdvanced={showAdvanced}
                                 busy={busy}
                                 recentValues={recentValues}
+                                signalNameOptions={drawerState.signalNameOptions}
+                                signalNameLoading={drawerState.signalNameLoading}
+                                setSignalNameInput={drawerState.setSignalNameInput}
                               />
-                            ) : null}
+                            </>
+                          ) : null}
+                        </Stack>
+                      </PowerForm>
+                    </FormProvider>
+                  </MessageParserFeedbackProvider>
 
-                            <AdvancedFieldsSection
-                              showAdvanced={showAdvanced}
-                              busy={busy}
-                              recentValues={recentValues}
-                              signalNameOptions={drawerState.signalNameOptions}
-                              signalNameLoading={drawerState.signalNameLoading}
-                              setSignalNameInput={drawerState.setSignalNameInput}
-                            />
-                          </>
-                        ) : null}
-                      </Stack>
-                    </PowerForm>
-                  </FormProvider>
-                </MessageParserFeedbackProvider>
+                  {reportDeleteId != null ? (
+                    <Box sx={{ display: { xs: 'flex', md: 'none' }, mt: 3, pt: 1 }}>
+                      <Button
+                        onClick={() => setDeleteConfirmOpen(true)}
+                        disabled={busy}
+                        color="error"
+                        variant="outlined"
+                        startIcon={<DeleteOutlineIcon />}
+                        fullWidth
+                      >
+                        Видалити
+                      </Button>
+                    </Box>
+                  ) : !isReportMode ? (
+                    <Box sx={{ display: { xs: 'flex', md: 'none' }, mt: 3, pt: 1 }}>
+                      <Button
+                        onClick={() => setShowAdvanced((prev) => !prev)}
+                        disabled={busy}
+                        color="inherit"
+                        variant="outlined"
+                        fullWidth
+                      >
+                        {showAdvanced ? 'Приховати розширені поля' : 'Розширені поля'}
+                      </Button>
+                    </Box>
+                  ) : null}
+                </>
+              )}
+            </Box>
 
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 2,
+                p: 2.5,
+                borderTop: '1px solid',
+                borderColor: 'divider',
+              }}
+            >
+              <Box sx={{ display: { xs: 'none', md: 'flex' } }}>
                 {reportDeleteId != null ? (
-                  <Box sx={{ display: { xs: 'flex', md: 'none' }, mt: 3, pt: 1 }}>
-                    <Button
-                      onClick={() => setDeleteConfirmOpen(true)}
-                      disabled={busy}
-                      color="error"
-                      variant="outlined"
-                      startIcon={<DeleteOutlineIcon />}
-                      fullWidth
-                    >
-                      Видалити
-                    </Button>
-                  </Box>
+                  <Button
+                    onClick={() => setDeleteConfirmOpen(true)}
+                    disabled={busy}
+                    color="error"
+                    startIcon={<DeleteOutlineIcon />}
+                  >
+                    Видалити
+                  </Button>
                 ) : !isReportMode ? (
-                  <Box sx={{ display: { xs: 'flex', md: 'none' }, mt: 3, pt: 1 }}>
-                    <Button
-                      onClick={() => setShowAdvanced((prev) => !prev)}
-                      disabled={busy}
-                      color="inherit"
-                      variant="outlined"
-                      fullWidth
-                    >
-                      {showAdvanced ? 'Приховати розширені поля' : 'Розширені поля'}
-                    </Button>
-                  </Box>
+                  <Button
+                    onClick={() => setShowAdvanced((prev) => !prev)}
+                    disabled={busy}
+                    color="inherit"
+                  >
+                    {showAdvanced ? 'Приховати розширені поля' : 'Розширені поля'}
+                  </Button>
                 ) : null}
-              </>
-            )}
-          </Box>
-
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 2,
-              p: 2.5,
-              borderTop: '1px solid',
-              borderColor: 'divider',
-            }}
-          >
-            <Box sx={{ display: { xs: 'none', md: 'flex' } }}>
-              {reportDeleteId != null ? (
-                <Button
-                  onClick={() => setDeleteConfirmOpen(true)}
-                  disabled={busy}
-                  color="error"
-                  startIcon={<DeleteOutlineIcon />}
-                >
-                  Видалити
+              </Box>
+              <Box sx={{ display: 'flex', gap: 2, ml: 'auto' }}>
+                <Button onClick={handleDrawerClose} disabled={dismissDisabled}>
+                  Закрити
                 </Button>
-              ) : !isReportMode ? (
                 <Button
-                  onClick={() => setShowAdvanced((prev) => !prev)}
-                  disabled={busy}
-                  color="inherit"
+                  type="submit"
+                  form="create-message-form"
+                  variant="contained"
+                  color="primary"
+                  disabled={!canSubmit || busy || reportEditLoading || reportEditError}
+                  startIcon={saving && <CircularProgress size={20} color="inherit" />}
                 >
-                  {showAdvanced ? 'Приховати розширені поля' : 'Розширені поля'}
+                  {saving
+                    ? 'Збереження...'
+                    : isReportEditIntent || isEditMode
+                      ? 'Зберегти'
+                      : 'Створити'}
                 </Button>
-              ) : null}
+              </Box>
             </Box>
-            <Box sx={{ display: 'flex', gap: 2, ml: 'auto' }}>
-              <Button onClick={handleDrawerClose} disabled={dismissDisabled}>
-                Скасувати
-              </Button>
-              <Button
-                type="submit"
-                form="create-message-form"
-                variant="contained"
-                color="primary"
-                disabled={!canSubmit || busy || reportEditLoading || reportEditError}
-                startIcon={saving && <CircularProgress size={20} color="inherit" />}
-              >
-                {saving
-                  ? 'Збереження...'
-                  : isReportEditIntent || isEditMode
-                    ? 'Зберегти'
-                    : 'Створити'}
-              </Button>
-            </Box>
-          </Box>
-          {reportEditLoading ? (
-            <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center">
-              <CircularProgress aria-label="Завантаження розвіддонесення" />
-            </div>
-          ) : null}
-        </div>
-      </Drawer>
-      <ConfirmDangerDialog
-        open={discardConfirmationOpen}
-        onClose={cancelDiscard}
-        onConfirm={confirmDiscard}
-        title="Відхилити незбережені зміни?"
-        description="Усі незбережені зміни буде втрачено."
-        cancelLabel="Продовжити редагування"
-        confirmLabel="Відхилити зміни"
-        disabled={dismissDisabled}
-      />
-      <ConfirmDangerDialog
-        open={deleteConfirmOpen}
-        onClose={() => setDeleteConfirmOpen(false)}
-        onConfirm={() => void handleDeleteConfirm()}
-        title="Видалити розвіддонесення?"
-        description="Цю дію неможливо скасувати."
-        submitting={deleteInFlight}
-        disabled={saving}
-      />
-    </RadioFeaturesProvider>
-  );
-}
+            {reportEditLoading ? (
+              <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center">
+                <CircularProgress aria-label="Завантаження розвіддонесення" />
+              </div>
+            ) : null}
+          </div>
+        </ManageMessageEditorSurface>
+        <ConfirmDangerDialog
+          open={discardConfirmationOpen}
+          onClose={handleCancelDiscard}
+          onConfirm={confirmDiscard}
+          disableRestoreFocus
+          title="Відхилити незбережені зміни?"
+          description="Усі незбережені зміни буде втрачено."
+          cancelLabel="Продовжити редагування"
+          confirmLabel="Відхилити зміни"
+          disabled={dismissDisabled}
+        />
+        <ConfirmDangerDialog
+          open={deleteConfirmOpen}
+          onClose={() => setDeleteConfirmOpen(false)}
+          onConfirm={() => void handleDeleteConfirm()}
+          title="Видалити розвіддонесення?"
+          description="Цю дію неможливо скасувати."
+          submitting={deleteInFlight}
+          disabled={saving}
+        />
+      </RadioFeaturesProvider>
+    );
+  },
+);

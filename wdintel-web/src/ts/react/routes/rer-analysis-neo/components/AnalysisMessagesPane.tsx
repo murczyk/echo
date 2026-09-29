@@ -104,8 +104,12 @@ type Props = {
   onDeleteMessage: (messageId: number) => void;
   onCancelBotTagAction?: () => void;
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void;
-  onOpenEditor: (messageId: number) => void;
-  onCreateReport: (messageId: number, etalonDisplayModel: MessageCardEtalonDisplayModel) => void;
+  onOpenEditor: (messageId: number, focusTarget?: HTMLElement) => void;
+  onCreateReport: (
+    messageId: number,
+    etalonDisplayModel: MessageCardEtalonDisplayModel,
+    focusTarget: HTMLElement,
+  ) => void;
   onEditReport: (messageId: number) => void | Promise<void>;
   onLoadMoreMessages: () => Promise<boolean>;
   onVisiblePageChange: (pageIndex: number) => void;
@@ -308,7 +312,11 @@ type AnalysisMessageCardItemProps = {
   messageComments: MessageComment[];
   networkDisplayMap: Record<number, string>;
   botTagAction?: BotTagAction | null;
-  onCreateReport: (id: number, etalonDisplayModel: MessageCardEtalonDisplayModel) => void;
+  onCreateReport: (
+    id: number,
+    etalonDisplayModel: MessageCardEtalonDisplayModel,
+    focusTarget: HTMLElement,
+  ) => void;
   onEditReport: (id: number) => void | Promise<void>;
   onCopyFeedback: (value: string) => void;
   onDeleteOpen: (messageId: number) => void;
@@ -316,7 +324,7 @@ type AnalysisMessageCardItemProps = {
   onAddPointHighlightBlacklist: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
   onCancelBotTagAction?: () => void;
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void;
-  onOpenEditor: (messageId: number) => void;
+  onOpenEditor: (messageId: number, focusTarget?: HTMLElement) => void;
   onSaveMessageUpdate: (
     messageId: number,
     updater: (message: InboxMessage) => InboxMessage,
@@ -488,10 +496,10 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
               });
             }
       }
-      onCreateReport={() => onCreateReport(id, etalonDisplayModel)}
+      onCreateReport={(focusTarget) => onCreateReport(id, etalonDisplayModel, focusTarget)}
       onEditReport={onEditReport}
       onDelete={() => onDeleteOpen(id)}
-      onEditDetails={() => onOpenEditor(id)}
+      onEditDetails={(focusTarget) => onOpenEditor(id, focusTarget)}
       onToggleTag={(tagId) => onToggleMessageTag(id, tagId)}
       botTagAction={botTagAction?.messageId === id ? botTagAction : null}
       onCancelBotTagAction={onCancelBotTagAction}
@@ -1087,11 +1095,10 @@ function AnalysisMessagesPaneComponent({
   );
 
   const handleOpenEditor = useCallback(
-    (messageId: number) => {
-      blurActiveElement();
-      onOpenEditor(messageId);
+    (messageId: number, focusTarget?: HTMLElement) => {
+      onOpenEditor(messageId, focusTarget);
     },
-    [blurActiveElement, onOpenEditor],
+    [onOpenEditor],
   );
 
   const isFocusedPositionLoading = (position: MessageLoadPosition) => {
@@ -1135,6 +1142,7 @@ function AnalysisMessagesPaneComponent({
     >
       <Box
         ref={scrollContainerRef}
+        data-analysis-message-scroller
         tabIndex={directMessageNavigation?.focusActive ? 0 : undefined}
         onScroll={handleScroll}
         onWheel={clearFocusOnScrollStart}

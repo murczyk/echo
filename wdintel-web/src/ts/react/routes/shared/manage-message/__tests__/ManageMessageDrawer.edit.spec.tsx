@@ -3,7 +3,7 @@
  */
 import type { User } from '../../../../../Bindings';
 import type { ComponentProps, ReactNode, Ref } from 'react';
-import { act, forwardRef, useState } from 'react';
+import { act, createRef, forwardRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { InboxMessage } from '../../../../../../Bindings';
@@ -343,7 +343,13 @@ const pickerValuesByLabel = new Map<string, unknown>();
 const timePickerOnChange = new Map<string, (value: unknown) => void>();
 let drawerModalProps: { closeAfterTransition?: boolean } | undefined;
 let drawerSlotProps:
-  { paper?: { sx?: { width?: string | Record<string, string | number> } } } | undefined;
+  | {
+      paper?: {
+        style?: { width?: string; maxWidth?: string };
+        sx?: { width?: string | Record<string, string | number> };
+      };
+    }
+  | undefined;
 type DrawerCloseReason = 'escapeKeyDown' | 'backdropClick';
 let drawerOnClose: ((event: unknown, reason: DrawerCloseReason) => void) | undefined;
 
@@ -451,18 +457,47 @@ vi.mock('@mui/material', () => ({
     onClose,
     ModalProps,
     slotProps,
+    ...props
   }: {
     children?: ReactNode;
     open?: boolean;
     onClose?: (event: unknown, reason: DrawerCloseReason) => void;
     ModalProps?: { closeAfterTransition?: boolean };
-    slotProps?: { paper?: { sx?: { width?: string | Record<string, string | number> } } };
+    slotProps?: {
+      paper?: {
+        style?: { width?: string; maxWidth?: string };
+        sx?: { width?: string | Record<string, string | number> };
+      };
+    };
   }) => {
     drawerOnClose = onClose;
     drawerModalProps = ModalProps;
     drawerSlotProps = slotProps;
-    return open ? <div role="dialog">{children}</div> : null;
+    return open ? (
+      <div role="dialog" {...(props as Record<string, unknown>)}>
+        {children}
+      </div>
+    ) : null;
   },
+  Paper: forwardRef(
+    (
+      {
+        children,
+        component = 'div',
+        ...props
+      }: { children?: ReactNode; component?: string } & Record<string, unknown>,
+      ref,
+    ) => {
+      const Component = component as keyof HTMLElementTagNameMap;
+      const { sx: _sx, elevation: _elevation, ...rest } = props;
+      return (
+        <Component {...rest} ref={ref as never}>
+          {children}
+        </Component>
+      );
+    },
+  ),
+  useMediaQuery: () => false,
   Button: ({
     children,
     type = 'button',
@@ -670,7 +705,7 @@ vi.mock('@mui/material', () => ({
   },
 }));
 
-import { ManageMessageDrawer } from '../ManageMessageDrawer';
+import { ManageMessageDrawer, type ManageMessageEditorHandle } from '../ManageMessageDrawer';
 
 function buildMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
   return {
@@ -821,6 +856,34 @@ describe('ManageMessageDrawer edit mode', () => {
     root.unmount();
   });
 
+  it('blocks a page unload while the editor has unsaved changes', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+        />,
+      );
+    });
+    await act(async () => {
+      textFieldPropsByLabel
+        .get('Текст повідомлення')
+        ?.onChange?.({ target: { value: 'Незбережена чернетка' } });
+    });
+
+    const event = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+
+    root.unmount();
+  });
+
   it('shows an inert report-edit loading shell without a header close action', async () => {
     setRecentValues({});
     const onClose = vi.fn();
@@ -855,11 +918,11 @@ describe('ManageMessageDrawer edit mode', () => {
 
     expect(container.querySelector('button[aria-label="Закрити"]')).toBeNull();
 
-    const cancel = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === 'Скасувати',
+    const close = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Закрити',
     );
-    expect(cancel).toBeDefined();
-    act(() => cancel?.click());
+    expect(close).toBeDefined();
+    act(() => close?.click());
     expect(onClose).toHaveBeenCalledOnce();
 
     act(() => drawerOnClose?.({}, 'escapeKeyDown'));
@@ -892,10 +955,10 @@ describe('ManageMessageDrawer edit mode', () => {
       await Promise.resolve();
     });
 
-    const cancel = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === 'Скасувати',
+    const close = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Закрити',
     );
-    act(() => cancel?.click());
+    act(() => close?.click());
 
     expect(onClose).not.toHaveBeenCalled();
     expect(container.querySelector('[role="alertdialog"]')?.textContent).toContain(
@@ -987,6 +1050,245 @@ describe('ManageMessageDrawer edit mode', () => {
     root.unmount();
   });
 
+  it('keeps the current dirty intent until replacement is discarded', async () => {
+    const editorRef = createRef<ManageMessageEditorHandle>();
+    const replace = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          ref={editorRef}
+          open
+          intentKey="edit-message:10"
+          presentation="embedded"
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+          editTarget={{ id: 10, message: buildMessage() }}
+        />,
+      );
+      await Promise.resolve();
+    });
+    await act(async () => {
+      textFieldPropsByLabel
+        .get('Текст повідомлення')
+        ?.onChange?.({ target: { value: 'dirty replacement' } });
+      await Promise.resolve();
+    });
+
+    act(() => {
+      editorRef.current?.requestIntentChange({ key: 'edit-message:20', commit: replace });
+    });
+    expect(replace).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="alertdialog"]')?.textContent).toContain(
+      'Відхилити незбережені зміни?',
+    );
+
+    const discard = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Відхилити зміни',
+    );
+    act(() => discard?.click());
+    expect(replace).toHaveBeenCalledOnce();
+
+    root.unmount();
+  });
+
+  it('keeps the same draft while presentation crosses the responsive breakpoint', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const render = (presentation: 'embedded' | 'modal') =>
+      root.render(
+        <ManageMessageDrawer
+          open
+          intentKey="create-message"
+          presentation={presentation}
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+        />,
+      );
+
+    await act(async () => {
+      render('embedded');
+      await Promise.resolve();
+    });
+    await act(async () => {
+      textFieldPropsByLabel
+        .get('Текст повідомлення')
+        ?.onChange?.({ target: { value: 'responsive draft' } });
+      await Promise.resolve();
+    });
+    await act(async () => {
+      render('modal');
+      await Promise.resolve();
+    });
+
+    expect(textFieldPropsByLabel.get('Текст повідомлення')?.value).toBe('responsive draft');
+    expect(container.querySelector('[data-manage-message-presentation="modal"]')).not.toBeNull();
+    root.unmount();
+  });
+
+  it('uses the measured Analysis editor width to select the compact form layout', async () => {
+    setRecentValues({});
+    const boundingRectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect');
+    boundingRectSpy.mockReturnValue({
+      bottom: 0,
+      height: 800,
+      left: 0,
+      right: 720,
+      top: 0,
+      width: 720,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    try {
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            intentKey="create-message"
+            presentation="embedded"
+            adaptiveEmbeddedForm
+            cyberEchoEnabled={false}
+            currentUser={{ roles: ['Rer'] } as User}
+            onClose={vi.fn()}
+          />,
+        );
+        await Promise.resolve();
+      });
+
+      expect(
+        container
+          .querySelector('#create-message-form')
+          ?.getAttribute('data-manage-message-form-layout'),
+      ).toBe('compact');
+    } finally {
+      act(() => root.unmount());
+      boundingRectSpy.mockRestore();
+    }
+  });
+
+  it('does not capture a file paste from a feed filter', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <>
+          <input aria-label="Фільтр стрічки" />
+          <ManageMessageDrawer
+            open
+            intentKey="create-message"
+            presentation="embedded"
+            cyberEchoEnabled={false}
+            currentUser={{ roles: ['Rer'] } as User}
+            onClose={vi.fn()}
+          />
+        </>,
+      );
+      await Promise.resolve();
+    });
+    const filter = container.querySelector('[aria-label="Фільтр стрічки"]') as HTMLInputElement;
+    const paste = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, 'clipboardData', {
+      value: {
+        items: [
+          {
+            kind: 'file',
+            getAsFile: () => new File(['image'], 'outside.png', { type: 'image/png' }),
+          },
+        ],
+      },
+    });
+    await act(async () => {
+      filter.focus();
+      filter.dispatchEvent(paste);
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Вкладення (0)');
+    expect(paste.defaultPrevented).toBe(false);
+    root.unmount();
+  });
+
+  it('keeps an active parse but disables paste while editor interaction is inactive', async () => {
+    let resolveParse!: (value: unknown) => void;
+    directSubmitMocks.parseDirectSubmit.mockReturnValue(
+      new Promise((resolve) => {
+        resolveParse = resolve;
+      }),
+    );
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const render = (interactionActive: boolean) =>
+      root.render(
+        <ManageMessageDrawer
+          open
+          intentKey="create-message"
+          presentation="embedded"
+          interactionActive={interactionActive}
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+        />,
+      );
+
+    await act(async () => {
+      render(true);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      textFieldPropsByLabel
+        .get('Текст повідомлення')
+        ?.onChange?.({ target: { value: 'frequency 149.500' } });
+    });
+    const parseButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Розпарсити'),
+    );
+    await act(async () => {
+      parseButton?.click();
+      await Promise.resolve();
+      render(false);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      resolveParse({ text: 'parsed', freq: '149.500', coords: [], to: [], locations: [] });
+      await Promise.resolve();
+    });
+    expect(autocompleteValuesByLabel.get('Частота (МГц)')).toBe('149.500');
+
+    const paste = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, 'clipboardData', {
+      value: {
+        items: [
+          {
+            kind: 'file',
+            getAsFile: () => new File(['image'], 'hidden.png', { type: 'image/png' }),
+          },
+        ],
+      },
+    });
+    await act(async () => {
+      window.dispatchEvent(paste);
+      await Promise.resolve();
+    });
+    expect(container.textContent).toContain('Вкладення (0)');
+    expect(paste.defaultPrevented).toBe(false);
+    root.unmount();
+  });
+
   it('keeps report text empty while copied fields are loading', async () => {
     directSubmitMocks.copyDirectSubmit.mockReturnValue(new Promise(() => {}));
     const container = document.createElement('div');
@@ -1010,6 +1312,111 @@ describe('ManageMessageDrawer edit mode', () => {
     );
     expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.value).toBe('');
 
+    root.unmount();
+  });
+
+  it('shows a retry action when copying a report source fails', async () => {
+    directSubmitMocks.copyDirectSubmit
+      .mockRejectedValueOnce(new Error('copy failed'))
+      .mockResolvedValueOnce({
+        payloads: [{ full_body: 'copied after retry', parent_signal_message_ids: [42] }],
+      });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+          reportSource={{ id: 42, message: buildMessage({ text: 'source card body' }) }}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('copy failed');
+    const retry = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Повторити копіювання',
+    );
+    expect(retry).toBeDefined();
+
+    await act(async () => {
+      retry?.click();
+      await Promise.resolve();
+    });
+
+    expect(directSubmitMocks.copyDirectSubmit).toHaveBeenCalledTimes(2);
+    expect(textFieldPropsByLabel.get('Текст оригінального повідомлення')?.value).toBe(
+      'copied after retry',
+    );
+    expect(container.textContent).not.toContain('copy failed');
+    root.unmount();
+  });
+
+  it('wraps report source metadata instead of hiding it behind horizontal scrolling', async () => {
+    directSubmitMocks.copyDirectSubmit.mockResolvedValue({
+      payloads: [{ full_body: 'copied source', parent_signal_message_ids: [42] }],
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+          reportSource={{ id: 42, message: buildMessage() }}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    const header = container.querySelector<HTMLElement>('[data-testid="report-source-header"]');
+    expect(header).not.toBeNull();
+    expect(getComputedStyle(header!).flexWrap).toBe('wrap');
+    expect(getComputedStyle(header!).overflowX).not.toBe('auto');
+    root.unmount();
+  });
+
+  it('shows a retry action when reference data fails to load', async () => {
+    referenceDataMocks.getUserSigintGroups
+      .mockRejectedValueOnce(new Error('groups failed'))
+      .mockResolvedValueOnce([]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Не вдалося завантажити довідкові дані.');
+    const retry = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Повторити завантаження',
+    );
+    expect(retry).toBeDefined();
+
+    await act(async () => {
+      retry?.click();
+      await Promise.resolve();
+    });
+    expect(referenceDataMocks.getUserSigintGroups).toHaveBeenCalledTimes(2);
+    expect(container.textContent).not.toContain('Не вдалося завантажити довідкові дані.');
     root.unmount();
   });
 
@@ -1234,11 +1641,12 @@ describe('ManageMessageDrawer edit mode', () => {
     root.unmount();
   });
 
-  it('allows report submission while a suggestion request is pending', async () => {
+  it('closes an embedded report composer after submission while a suggestion is pending', async () => {
     directSubmitMocks.copyDirectSubmit.mockResolvedValue({
       payloads: [{ full_body: 'copied source', parent_signal_message_ids: [42] }],
     });
     aiIntelReportMocks.quickIntelReportSuggestion.mockReturnValue(new Promise(() => {}));
+    const onClose = vi.fn();
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -1247,9 +1655,10 @@ describe('ManageMessageDrawer edit mode', () => {
       root.render(
         <ManageMessageDrawer
           open
+          presentation="embedded"
           cyberEchoEnabled={false}
           currentUser={{ roles: ['Rer'] } as User}
-          onClose={vi.fn()}
+          onClose={onClose}
           reportSource={{ id: 42, message: buildMessage() }}
         />,
       );
@@ -1274,6 +1683,7 @@ describe('ManageMessageDrawer edit mode', () => {
     expect(directSubmitMocks.submitDirect).toHaveBeenCalledWith(
       expect.objectContaining({ full_body: 'Готовий текст оператора' }),
     );
+    expect(onClose).toHaveBeenCalledTimes(1);
 
     root.unmount();
   });
@@ -1383,7 +1793,7 @@ describe('ManageMessageDrawer edit mode', () => {
     expect(reportTextRow?.textContent).not.toContain('Оригінальний текст');
     expect(reportTextRow?.textContent).not.toContain('Розвіддонесення');
     expect(reportTextRow?.parentElement?.firstElementChild).toBe(reportTextRow);
-    expect(drawerSlotProps?.paper?.sx?.width).toBe('100vw');
+    expect(drawerSlotProps?.paper?.style?.width).toBe('100vw');
     expect(container.querySelector('textarea[aria-label="Коментар"]')).toBeNull();
     expect(container.textContent).not.toContain('Розширені поля');
     expect(container.textContent).not.toContain('DMR метадані');
@@ -1992,9 +2402,13 @@ describe('ManageMessageDrawer edit mode', () => {
     root.unmount();
   });
 
-  it('restores focus before hiding the drawer from assistive technology', async () => {
+  it('restores focus to the page fallback when the invoking control is unavailable', async () => {
     const container = document.createElement('div');
+    const fallback = document.createElement('button');
     document.body.appendChild(container);
+    document.body.appendChild(fallback);
+    const focusFallbackRef = createRef<HTMLElement>();
+    focusFallbackRef.current = fallback;
     const root = createRoot(container);
 
     await act(async () => {
@@ -2004,13 +2418,55 @@ describe('ManageMessageDrawer edit mode', () => {
           cyberEchoEnabled={false}
           currentUser={{ roles: ['Rer'] } as User}
           onClose={vi.fn()}
+          focusFallbackRef={focusFallbackRef}
         />,
       );
     });
 
     expect(drawerModalProps?.closeAfterTransition).toBe(true);
+    await act(async () => {
+      const closeButton = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent?.trim() === 'Закрити',
+      );
+      closeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    });
+    expect(document.activeElement).toBe(fallback);
 
     root.unmount();
+    fallback.remove();
+  });
+
+  it('restores focus to an explicitly captured invoking control', async () => {
+    const container = document.createElement('div');
+    const invokingControl = document.createElement('button');
+    document.body.appendChild(container);
+    document.body.appendChild(invokingControl);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+          initialFocusTarget={invokingControl}
+        />,
+      );
+    });
+
+    await act(async () => {
+      const closeButton = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent?.trim() === 'Закрити',
+      );
+      closeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    });
+    expect(document.activeElement).toBe(invokingControl);
+
+    root.unmount();
+    invokingControl.remove();
   });
 
   it('initializes shared create fields from recent values without applying suggestions as defaults', async () => {
@@ -2702,6 +3158,7 @@ describe('ManageMessageDrawer edit mode', () => {
     expect(submitButton.disabled).toBe(false);
 
     await act(async () => {
+      form.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
       window.dispatchEvent(
         new KeyboardEvent('keydown', {
           key: 'Enter',
@@ -2734,6 +3191,94 @@ describe('ManageMessageDrawer edit mode', () => {
     expect(container.querySelector('form')).toBeNull();
     expect(container.textContent).not.toContain('Сталася помилка');
     root.unmount();
+  });
+
+  it('keeps an embedded create editor open, resets it, and restores text focus after success', async () => {
+    const onClose = vi.fn();
+    const onCreated = vi.fn();
+    referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
+    referenceDataMocks.getGroupInfosBatch.mockResolvedValue([
+      { masterKey: 'g-1', name: 'Group 1' },
+    ]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          presentation="embedded"
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={onClose}
+          onCreated={onCreated}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(
+      Array.from(container.querySelectorAll('button')).some(
+        (button) => button.textContent === 'Закрити',
+      ),
+    ).toBe(true);
+    expect(container.textContent).not.toContain('Скасувати');
+
+    await act(async () => {
+      autocompleteOnChangeByLabel.get('Група')?.(null, {
+        masterKey: 'g-1',
+        name: 'Group 1',
+      });
+      textFieldPropsByLabel.get('Текст повідомлення')?.onChange?.({
+        target: { value: 'new message body' },
+      });
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      container
+        .querySelector('form')
+        ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      for (let index = 0; index < 5; index += 1) await Promise.resolve();
+    });
+
+    const messageText = container.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="Текст повідомлення"]',
+    );
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onCreated).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('form')).not.toBeNull();
+    expect(messageText?.value).toBe('');
+    expect(container.textContent).not.toContain('Повідомлення успішно створено.');
+    expect(document.activeElement).toBe(messageText);
+    expect(
+      Array.from(container.querySelectorAll('button')).some(
+        (button) => button.textContent === 'Закрити',
+      ),
+    ).toBe(true);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          intentKey="create-message:next"
+          presentation="embedded"
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={onClose}
+          onCreated={onCreated}
+        />,
+      );
+    });
+    expect(
+      Array.from(container.querySelectorAll('button')).some(
+        (button) => button.textContent === 'Закрити',
+      ),
+    ).toBe(true);
+    expect(container.textContent).not.toContain('Скасувати');
+
+    await act(async () => root.unmount());
   });
 
   it('blocks submission while parsing and restores eligibility after parsing completes', async () => {
@@ -3644,7 +4189,7 @@ describe('ManageMessageDrawer edit mode', () => {
     root.unmount();
   });
 
-  it('closes and reports edit success when the response has no inline message', async () => {
+  it('closes a report editor and reports success when the response has no inline message', async () => {
     const onSubmitEdit = vi.fn();
     const onEditSuccess = vi.fn();
     const onClose = vi.fn();
@@ -3665,6 +4210,7 @@ describe('ManageMessageDrawer edit mode', () => {
             setOpen(false);
           }}
           editTarget={{ id: 124, message: buildMessage() }}
+          editAsReport
           onSubmitEdit={onSubmitEdit}
           onEditSuccess={onEditSuccess}
         />

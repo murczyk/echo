@@ -153,6 +153,7 @@ type BuildReloadParamsInput = {
   invalidateMessagePaging: () => void;
   invalidateMessagePageRequests: () => void;
   getCurrentMessagePageCursor: MessageList['getCurrentMessagePageCursor'];
+  replaceCurrentMessagePage: MessageList['replaceCurrentMessagePage'];
   refreshMessageCounts: MessageList['refreshMessageCounts'];
   setAorEntries: MessageList['setAorEntries'];
   setCounts: MessageList['setCounts'];
@@ -223,6 +224,7 @@ export function buildReloadOrchestratorParams(input: BuildReloadParamsInput) {
     invalidateMessagePaging: input.invalidateMessagePaging,
     invalidateMessagePageRequests: input.invalidateMessagePageRequests,
     getCurrentMessagePageCursor: input.getCurrentMessagePageCursor,
+    replaceCurrentMessagePage: input.replaceCurrentMessagePage,
     refreshMessageCounts: input.refreshMessageCounts,
     setAorEntries: input.setAorEntries,
     setCounts: input.setCounts,

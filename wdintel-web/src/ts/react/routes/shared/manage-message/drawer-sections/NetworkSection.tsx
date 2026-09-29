@@ -56,8 +56,14 @@ export function NetworkSection({
       <Box
         sx={{
           display: 'grid',
-          gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+          gridTemplateColumns: {
+            xs: '1fr',
+            sm: 'repeat(var(--manage-message-metadata-columns, 2), minmax(0, 1fr))',
+          },
           gap: 2,
+          '& > :last-child': {
+            gridColumn: radioFeaturesAllowed ? undefined : '1 / -1',
+          },
         }}
       >
         {radioFeaturesAllowed ? (

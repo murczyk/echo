@@ -348,6 +348,22 @@ Regression coverage:
 - **Source implementation:** `routes/rer-analysis-neo/index.tsx`.
 - **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 
+## Analysis editor and right-panel exclusivity
+
+- **Status:** normative
+- **Behavior ID:** `react-analysis-editor-right-panel-exclusivity`
+- **Affected route/component:** Analysis workspace, analytics panel, filters, messages pane, and shared message editor.
+- **User action or external event:** the user opens a create/edit intent, toggles Analytics, toggles filters, or closes the editor.
+- **Expected observable result:** the embedded editor and Analytics are mutually exclusive and only the active right-side surface is mounted. Opening an editor closes Analytics; opening Analytics closes a clean editor or uses the existing discard confirmation for a dirty editor. Cancelling discard leaves the editor open and Analytics closed. The Analysis editor surface is flush with the center workspace divider, transparent, and borderless, so its horizontal separators meet the single shared vertical boundary. Its compact title aligns with the center tabs, while its lower divider aligns with the top edge of the message feed. Its create FAB is absent while any create/edit intent is open. Opening a generic create intent preserves the active center tab; opening an edit or report intent from a message activates Messages and highlights the source without forcing a feed scroll.
+- **Loading/empty/error/success behavior:** editor/report loading and mutation feedback follow the shared editor contract. Replacing a dirty editor with Analytics does not change either surface until discard is confirmed.
+- **URL, localStorage, or user-settings persistence:** opening an editor closes the URL-owned right-panel state; opening Analytics after editor dismissal restores the existing right-panel query ownership. Existing Analysis center and filter ownership remains unchanged.
+- **API endpoint and compatibility requirements:** existing Analysis and message/report request contracts remain unchanged.
+- **Responsive and keyboard requirements:** the embedded editor uses the same fluid right grid track as Analytics. With filters closed, the center and editor split the workspace into equal `1fr` tracks; with inline filters open, the layout is `400px 1fr 1fr`. Filters remain inline beside an embedded editor only at widths `>=1600px` and only when at least `360px` remains for the center workspace; below that threshold, filters use the existing drawer. The editor form responds to its measured width: below `560px` it uses one main column and stacks paired controls; from `560px` it keeps one main column while paired controls use two columns; from `720px` it uses two main columns while keeping compact nested sections stacked; from `900px` nested paired controls may also use two columns. Coordinate values and their preview stay side by side in equal-size panels. MGRS remains fully visible on one line; narrow panels collapse copy/delete into an actions menu, while wide panels retain the separate buttons. Below the shared editor breakpoint, the editor uses its full-screen modal surface and suppresses the filter and Analytics drawers, so the editor remains the topmost modal. The mounted right-side surface exclusively owns its keyboard interaction.
+- **Known race/idempotency constraints:** a pending dirty-editor confirmation cannot open Analytics early, discard the draft without confirmation, or let a late source highlight move the reader's scroll position.
+- **Source implementation:** `routes/rer-analysis-neo/AnalysisPageLayout.tsx`, `routes/rer-analysis-neo/AnalysisRightDock.tsx`, `routes/rer-analysis-neo/analysis-editor-layout.ts`, `routes/rer-analysis-neo/components/AnalysisMessagesPane.tsx`.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/index.spec.tsx`, `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/AnalysisRightDock.spec.tsx`, `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/analysis-editor-layout.spec.ts`, `wdintel-web/src/ts/react/routes/rer-analysis-neo/components/__tests__/AnalysisMessagesPane.spec.tsx`.
+- **Original Echo issue/PR, if known:** [#3547](https://github.com/echoua/echo/issues/3547)
+
 ## Analysis direct-link failure presentation
 
 - **Status:** inferred characterization

@@ -92,7 +92,7 @@ export function AttachmentDropzone({
       />
       <CloudUploadOutlinedIcon fontSize="small" sx={{ color: 'text.secondary', flexShrink: 0 }} />
       <Box sx={{ minWidth: 0 }}>
-        <Typography variant="body2" color="text.secondary" noWrap>
+        <Typography variant="body2" color="text.secondary">
           Натисніть, перетягніть або вставте (Cmd/Ctrl+V) файли сюди
         </Typography>
         <Typography variant="caption" color="text.disabled" noWrap component="div">

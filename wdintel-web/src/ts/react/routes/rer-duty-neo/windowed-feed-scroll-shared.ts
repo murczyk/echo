@@ -76,6 +76,8 @@ export type WindowedFeedScrollCallbacks = {
 
 export type UseWindowedFeedScrollOptions = {
   itemIds: readonly number[];
+  initialAnchorSnapshot?: AnchorSnapshot | null;
+  onAnchorSnapshotChange?: (snapshot: AnchorSnapshot | null) => void;
   loadingOlder: boolean;
   loadingNewer?: boolean;
   hasReachedStart: boolean;

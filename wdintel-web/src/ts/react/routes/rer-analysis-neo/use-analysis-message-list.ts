@@ -12,7 +12,11 @@ import type {
 import { fetchAnalysisCallsignInfos, fetchInboxMessages } from '../../services/api/analysis';
 import { isAbortError } from '../../services/api/client';
 import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
-import { ANALYSIS_MESSAGES_PAGE_SIZE, buildInboxReq } from './helpers';
+import {
+  ANALYSIS_MESSAGES_PAGE_SIZE,
+  buildInboxReq,
+  getFirstLoadedMessagesPageIndex,
+} from './helpers';
 import { loadMissingMessageCommentsForMessages } from './use-analysis-data.comments';
 import { mergeAnalysisCallsignInfoMap } from './use-analysis-data.callsigns';
 import { isAnalysisInboxPageExhausted, toErrorMessage } from './use-analysis-data.shared';
@@ -255,6 +259,27 @@ export function useAnalysisMessageList({
 
   const getCurrentMessagePageCursor = useCallback(
     () => pageCursorsRef.current[pageIndex] ?? FIRST_PAGE_CURSOR,
+    [pageIndex],
+  );
+
+  const replaceCurrentMessagePage = useCallback(
+    (pageMessages: Array<[number, InboxMessage]>) => {
+      setMessages((current) => {
+        const firstLoadedPageIndex = getFirstLoadedMessagesPageIndex(pageIndex, current.length);
+        const pageStart = Math.max(
+          0,
+          (pageIndex - firstLoadedPageIndex) * ANALYSIS_MESSAGES_PAGE_SIZE,
+        );
+        const refreshedIds = new Set(pageMessages.map(([messageId]) => messageId));
+        const retainedBefore = current
+          .slice(0, pageStart)
+          .filter(([messageId]) => !refreshedIds.has(messageId));
+        const retainedAfter = current
+          .slice(pageStart + ANALYSIS_MESSAGES_PAGE_SIZE)
+          .filter(([messageId]) => !refreshedIds.has(messageId));
+        return [...retainedBefore, ...pageMessages, ...retainedAfter];
+      });
+    },
     [pageIndex],
   );
 
@@ -619,6 +644,7 @@ export function useAnalysisMessageList({
     nolimitShown,
     pageIndex,
     refreshMessageCounts,
+    replaceCurrentMessagePage,
     setAorEntries,
     setCounts,
     setHasLoadedInitialMessages,

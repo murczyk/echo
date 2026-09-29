@@ -23,14 +23,22 @@ export type DutyFeedColumnModelDeps = {
   collapseMediaPreviews: boolean;
   mediaSummaryEnabled: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
-  openReportEditor: (reportId: number) => void;
-  openMessageEditor: (target: { id: number; message: InboxMessage }) => void;
-  openReportComposer: (source: {
-    id: number;
-    message: InboxMessage;
-    senderName?: string | null;
-    etalonDisplayModel: MessageCardEtalonDisplayModel;
-  }) => void;
+  openReportEditor: (feedId: string, reportId: number) => void;
+  openMessageEditor: (
+    feedId: string,
+    target: { id: number; message: InboxMessage },
+    focusTarget?: HTMLElement,
+  ) => void;
+  openReportComposer: (
+    feedId: string,
+    source: {
+      id: number;
+      message: InboxMessage;
+      senderName?: string | null;
+      etalonDisplayModel: MessageCardEtalonDisplayModel;
+    },
+    focusTarget: HTMLElement,
+  ) => void;
 };
 
 function dutyFeedColumnMaxWidth(feedCount: number, narrow: boolean): string {

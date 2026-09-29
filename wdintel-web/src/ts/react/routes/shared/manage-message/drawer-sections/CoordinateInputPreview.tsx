@@ -111,7 +111,7 @@ export function CoordinateInputPreview({ value, busy, onError }: Props) {
             }}
           >
             <MapOutlinedIcon sx={{ fontSize: 24, opacity: 0.6 }} />
-            <Typography variant="caption" color="text.secondary" sx={{ fontSize: 11 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontSize: 12 }}>
               Превʼю координат
             </Typography>
           </Box>

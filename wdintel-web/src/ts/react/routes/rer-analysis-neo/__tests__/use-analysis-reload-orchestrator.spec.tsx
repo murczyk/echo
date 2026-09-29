@@ -102,6 +102,7 @@ function buildParams(overrides: Partial<Parameters<typeof useAnalysisReloadOrche
       beforeIdNoninclusive: 120,
       sinceIdNoninclusive: null,
     })),
+    replaceCurrentMessagePage: vi.fn(),
     invalidateMessagePageRequests: vi.fn(),
     invalidateMessagePaging: vi.fn(),
     refreshMessageCounts: vi.fn(),
@@ -256,6 +257,9 @@ describe('useAnalysisReloadOrchestrator', () => {
       }),
     );
     expect(params.getCurrentMessagePageCursor).toHaveBeenCalledTimes(1);
+    const reloadParams = reloadAnalysisDataMock.reloadAnalysisData.mock.calls[0]?.[0];
+    reloadParams?.setMessages([[119, { text: 'refreshed' } as InboxMessage]]);
+    expect(params.replaceCurrentMessagePage).toHaveBeenCalledWith([[119, { text: 'refreshed' }]]);
     expect(params.refreshMessageCounts).toHaveBeenCalledTimes(1);
   });
 
