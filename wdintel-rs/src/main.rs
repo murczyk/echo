@@ -1034,6 +1034,8 @@ pub struct OrbitReviewWorkflowPs {
 enum Cmd {
     /// Inspect harness releases and roll out selected AI namespaces.
     AiControlPanel(ai_control_panel::Options),
+    /// Compile an inbox search for isolated evaluation fixtures.
+    AiEvalSearchQuery,
     Server(ServerPs),
     Bgworker,
     ReportWorker,
@@ -1657,6 +1659,10 @@ async fn async_main(
     let mode = args.mode;
     let action = args.action;
 
+    if matches!(action, Cmd::AiEvalSearchQuery) {
+        return ai_agent::evaluation::search_query().map_err(Into::into);
+    }
+
     if let Cmd::AiControlPanel(options) = action {
         return ai_control_panel::run(mode, options)
             .await
@@ -1666,7 +1672,7 @@ async fn async_main(
     utils::worker_watch::spawn_metrics_logger();
 
     match action {
-        Cmd::AiControlPanel(_) => unreachable!(),
+        Cmd::AiControlPanel(_) | Cmd::AiEvalSearchQuery => unreachable!(),
         Cmd::Server(ps) => {
             server::main_server(mode, ps, token, shutdown_handle.clone()).await
         }

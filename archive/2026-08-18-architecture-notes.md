@@ -1,6 +1,6 @@
 # Echo architecture
 
-Echo is a SIGINT analytical web application deployed as one application
+Echo is an analytical web application deployed as one application
 container per installation. PostgreSQL 18 stores authoritative data in two
 required databases: the main `wd` database and the independent `wd_files`
 device file registry. They use separate connections and may share one

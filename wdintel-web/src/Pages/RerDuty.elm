@@ -669,7 +669,7 @@ body isDarkMode shared user model =
 
 view : Bool -> Shared.Model -> Model -> View Msg
 view dark shared model =
-    { title = "РЕР-оперативний"
+    { title = "Оперативний"
     , body =
         case model.currentUser of
             Success currentUser ->

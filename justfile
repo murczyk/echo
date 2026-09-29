@@ -1692,6 +1692,10 @@ ai-sync-from-cloud:
     local_directory="${WD_FASTTEXT_MODELS}/"
     s5cmd --endpoint-url "$ENDPOINT_URL" cp --if-source-newer --show-progress "$remote_files" "$local_directory"
 
+# List, validate, run, or compare versioned harness evaluations.
+ai-eval *args:
+    python3 ai-eval/harness/cli.py {{ args }}
+
 # Download all evaluation corpora, or one: just ai-eval-sync-from-cloud [2026-08-09-document-ocr-evaluation]
 ai-eval-sync-from-cloud evaluation="":
     bash ai-eval/sync.sh from-cloud "{{ evaluation }}"

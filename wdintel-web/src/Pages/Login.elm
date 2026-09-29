@@ -554,10 +554,10 @@ body _ deltaLoginFlag sharedToasts model =
                             , style "height" "60px"
                             ]
                             [ img
-                                [ src "/img/SIGINT_190_kraken_transparent.png"
+                                [ src "/img/kraken-mark.png"
                                 , style "width" "60px"
                                 , style "height" "60px"
-                                , alt "SIGINT 190 Kraken"
+                                , alt "Echo"
                                 ]
                                 []
                             ]

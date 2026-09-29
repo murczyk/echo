@@ -49,6 +49,7 @@ type alias Model =
     , openDropdown : Maybe String
     , mobileNavOpen : Bool
     , keepAliveStopped : Bool
+    , connectionInterrupted : Bool
     }
 
 
@@ -58,6 +59,7 @@ init _ =
       , openDropdown = Nothing
       , mobileNavOpen = False
       , keepAliveStopped = False
+      , connectionInterrupted = False
       }
     , E.batch
         [ E.sendCmd <| Task.perform (\_ -> Slept) (Process.sleep keepAliveInterval)
@@ -135,13 +137,19 @@ update route msg model =
             if model.keepAliveStopped then
                 ( model, E.none )
 
+            else if Utils.Api.ErrorHandling.isTemporaryConnectionError error then
+                ( { model | connectionInterrupted = True }, E.none )
+
             else
-                ( { model | keepAliveStopped = error.httpError == Http.BadStatus 401 }
+                ( { model
+                    | keepAliveStopped = error.httpError == Http.BadStatus 401
+                    , connectionInterrupted = False
+                  }
                 , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка підтримання сесії" error
                 )
 
         KeepAliveDone (Ok _) ->
-            ( model, E.none )
+            ( { model | connectionInterrupted = False }, E.none )
 
         ToggleNavbarVisibility ->
             ( { model
@@ -304,6 +312,12 @@ view user activeName shared route { toContentMsg, model, content } =
                   )
                 , ( "activeName", Encode.string activeName )
                 , ( "isNavbarVisible", Encode.bool model.isNavbarVisible )
+                , ( "isReconnecting"
+                  , Encode.bool
+                        ((not model.keepAliveStopped && model.connectionInterrupted)
+                            || (shared.eventService.isPolling && shared.eventService.connectionInterrupted)
+                        )
+                  )
                 , ( "supportsFullscreenToggle", Encode.bool supportsFullscreenToggle )
                 ]
 

@@ -1,4 +1,4 @@
-# SIGINT inbox Iggy events
+# Inbox Iggy events
 
 The configured inbox topic carries the existing creation record as a JSON pair
 `[sigint_inbox_item_id, inbox_message]`. The message includes the existing

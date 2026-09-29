@@ -4,6 +4,7 @@ pub mod auth;
 mod chat_monitoring;
 mod citations;
 pub(crate) mod dispatcher;
+pub mod evaluation;
 mod events;
 pub(crate) mod lifecycle;
 pub mod middleware;

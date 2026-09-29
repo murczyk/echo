@@ -1,0 +1,60 @@
+# Callsign investigations
+
+The runner uses two independent inbox requests: `search` for message text and
+`selectedCallsigns` for extracted tags. Both run even when one already finds
+messages. Their results are combined by message ID, with separate pagination.
+Combining both fields in one request means AND, which excludes untagged evidence.
+
+Tags are incomplete and can be incorrect. Query arguments are trimmed,
+lowercased and deduplicated. The agent evaluates context to distinguish a person
+from equipment, acronyms and unrelated names. Ukrainian/Russian alternatives
+are inferred from the conversation and evidence; no callsign alias table or
+question-template routing is installed.
+
+The loaded instructions are in `runner/search-guidance.ts`, imported into the
+system prompt and inbox-tool description. The installed skill file is not the
+source of these instructions: Pi skill loading is disabled.
+
+Search follows the existing Echo parser and query builder:
+
+- Ordinary words use Russian stemming. Eligible plain terms also match
+  prefixes; OR and negation disable the additional prefix query.
+- Unquoted `or` and `-word` support alternatives and exclusions.
+- Quotes mean a case-insensitive body substring, not an exact token or
+  full-text phrase. `%` is a wildcard; underscore is literal.
+- Quoted alternatives require separate requests. Extracted substring filters
+  are ANDed, even if the input placed `or` between them.
+- Non-frequency dotted terms become literal substring filters. Frequencies
+  and lowercase `xxxx-xxxx-xxxx` message UIDs become structured filters.
+- `+`, `*`, and parentheses do not add operators or grouping.
+- Full-text and literal search cover the parsed message body. Header and
+  attachment/OCR coverage must not be assumed.
+
+When indexed text and tags are empty, the agent also checks literal body text,
+including relevant inflections or distinctive word stems. These broader matches
+still require contextual review. With no explicit user period, searches without identifying evidence, including
+equipment, acronym, and other non-person matches, extend from 31 days to the
+preceding 31 days and then 28 days: at most 90 Kyiv calendar days, keeping the
+existing 31-day request cap. User-specified
+periods and group restrictions are preserved. Errors and incomplete pagination
+must never be described as proof that no evidence exists.
+
+The [harness evaluations](../ai-eval/HARNESS.md) exercise both retrieval paths,
+actual PostgreSQL search semantics, citations, spelling expansion, permissions
+and date limits. They include untagged production-derived examples for #3572.
+
+## Rollout
+
+Release `2026.09.28.1` requires the matching Echo build; no database migration is
+added. Deploy/restart Echo first, then upgrade only the intended namespace:
+
+```sh
+just dev-tmux-restart
+just ai-control-panel upgrade --host local --release 2026.09.28.1 --dry-run
+just ai-control-panel upgrade --host local --release 2026.09.28.1
+```
+
+For another host, deploy that Echo build and replace `local` with its explicit
+alias. Rescan and require a matching executable/release. Validate a cited
+conversation before expanding rollout. Preserve the previous immutable release
+and container backups for rollback; follow `CONTROL_PANEL.md` for recovery.

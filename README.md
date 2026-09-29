@@ -1,6 +1,6 @@
 ## Running
 
-SIGINT analytical platform webapp.
+Echo web application.
 
 **USE THIS REPO WITH [GIT Large File Storage](https://git-lfs.com/)**
 

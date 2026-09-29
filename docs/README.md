@@ -1,6 +1,6 @@
 # Echo architecture
 
-Echo is a SIGINT analytical web application deployed as one application
+Echo is an analytical web application deployed as one application
 container per installation. PostgreSQL 18 is the system of record, Redis owns
 sessions, TOTP login challenges, and other transient coordination, and
 separate API, background-worker, and report-worker processes isolate
@@ -56,9 +56,9 @@ flowchart LR
     vector -.-> observability["Optional observability\nSigNoz"]
 ```
 
-SIGINT inbox writes enqueue Iggy events in PostgreSQL transactions. The
+Inbox writes enqueue Iggy events in PostgreSQL transactions. The
 background worker publishes them to the configured Iggy topic; see
-[SIGINT inbox Iggy events](iggy-events.md).
+[Inbox Iggy events](iggy-events.md).
 
 ClickHouse diagnostic storage uses an explicit 1–7 day retention policy for
 both analytics and SigNoz, including archived system logs. See the
@@ -119,7 +119,7 @@ when the exact byte count and SHA-256 match an earlier completed upload of the
 same file. Reuse publishes a separate immutable revision binding without
 another transfer; it does not change FileSync invalidation semantics.
 
-SIGINT TUS and multipart fallback uploads use
+TUS and multipart fallback uploads use
 `<storage_dir>/file_upload_tus`. Per-upload UUID file locks serialize writes,
 consumption, and cleanup across local processes. Lock files remain after cleanup
 to avoid replacing an inode while another process still holds it. Admission
@@ -142,7 +142,7 @@ including truncated field headers and boundaries. A process-wide admission
 limit permits two buffered multipart requests at a time and queues additional
 requests before reading their bodies; cancellation removes a waiting request.
 Admission remains held through the response body and detached Alpine, Delta,
-and Terminal conversion work; SIGINT fallback streams to its spool with a
+and Terminal conversion work; inbox fallback streams to its spool with a
 per-file size limit and does not consume this buffer limit.
 
 Alpine converter upload, polling and result download share a one-hour overall
@@ -159,7 +159,7 @@ error and release its multipart admission when the task finishes. Admission
 remains held while conversion buffers are alive; source and result logs contain
 byte counts instead of file payloads.
 
-New SIGINT inbox attachments whose extensions are supported by the AlpineQuest
+New inbox attachments whose extensions are supported by the AlpineQuest
 converter create one `signal_message_media_conversion_job` row per file. Each
 row links the source media and message and records the source MD5. A singleton
 worker converts jobs sequentially, verifies the stored source against that MD5,
@@ -389,6 +389,6 @@ binary and database schema are compatible.
 The previous accumulated architecture and rollout notes are preserved in the
 [architecture notes archive](../archive/2026-08-18-architecture-notes.md).
 
-SIGINT multipart fallback uses an inactivity timeout: transfers may last longer
+Multipart fallback uses an inactivity timeout: transfers may last longer
 than ten minutes while bytes continue to arrive. Success, failure, and
 cancellation clear the watchdog.
