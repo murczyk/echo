@@ -34,6 +34,7 @@ import { useBrowserBackOverlay } from '../../../../hooks/use-browser-back-overla
 const isDownloadIdle = () => false;
 const allowDownloadStart = () => true;
 const REPORT_VISIBILITY_STORAGE_KEY = 'echo.message-attachment-preview.report-visible';
+const MESSAGE_VISIBILITY_STORAGE_KEY = 'echo.message-attachment-preview.message-visible';
 const ATTACHMENT_PREVIEW_HEADER_HEIGHT_PX = 52;
 const ATTACHMENT_PREVIEW_STAGE_NAVIGATION_ZONE_RATIO = 0.25;
 const consumeEvent = (event: KeyboardEvent) => {
@@ -53,9 +54,11 @@ function getHoveredStageNavigationSide(
   return null;
 }
 
-function getStoredReportVisibility() {
+function getStoredTextPreviewVisibility(kind: 'message' | 'report') {
+  const storageKey =
+    kind === 'message' ? MESSAGE_VISIBILITY_STORAGE_KEY : REPORT_VISIBILITY_STORAGE_KEY;
   try {
-    return localStorage.getItem(REPORT_VISIBILITY_STORAGE_KEY) !== 'false';
+    return localStorage.getItem(storageKey) !== 'false';
   } catch {
     return true;
   }
@@ -96,11 +99,16 @@ export function MessageCardAttachmentPreviewDialog({
   const previewKind = getPreviewKind(item);
   const dialogLabel = getPreviewDialogLabel(previewKind);
   const reportTextPreviewEnabled = reportDraft != null;
+  const textPreviewKind = reportDraft?.kind ?? 'report';
   const [isEditing, setIsEditing] = useState(false);
   const [pendingInitialAction, setPendingInitialAction] = useState(initialAction);
   const [childOverlayOpen, setChildOverlayOpen] = useState(false);
   const childOverlayOpenRef = useRef(false);
-  const [reportVisible, setReportVisible] = useState(getStoredReportVisibility);
+  const [textPreviewVisibility, setTextPreviewVisibility] = useState(() => ({
+    message: getStoredTextPreviewVisibility('message'),
+    report: getStoredTextPreviewVisibility('report'),
+  }));
+  const reportVisible = textPreviewVisibility[textPreviewKind];
   const [hoveredStageNavigationSide, setHoveredStageNavigationSide] =
     useState<AttachmentPreviewStageNavigationSide>(null);
   const [dismissChildOverlay, setDismissChildOverlay] = useState(0);
@@ -116,15 +124,22 @@ export function MessageCardAttachmentPreviewDialog({
   }, []);
   const onReportVisibleChange = useCallback(
     (visible: boolean) => {
-      setReportVisible(visible);
+      setTextPreviewVisibility((visibility) => ({
+        ...visibility,
+        [textPreviewKind]: visible,
+      }));
       if (!reportTextPreviewEnabled) return;
+      const storageKey =
+        textPreviewKind === 'message'
+          ? MESSAGE_VISIBILITY_STORAGE_KEY
+          : REPORT_VISIBILITY_STORAGE_KEY;
       try {
-        localStorage.setItem(REPORT_VISIBILITY_STORAGE_KEY, String(visible));
+        localStorage.setItem(storageKey, String(visible));
       } catch {
         // Ignore unavailable browser storage.
       }
     },
-    [reportTextPreviewEnabled],
+    [reportTextPreviewEnabled, textPreviewKind],
   );
   const finalizeDialogClose = useCallback(() => {
     blurActiveAttachmentPreviewElement();

@@ -201,6 +201,28 @@ a {
   background: var(--color-card);
 }
 
+.message-card-root[data-important='true'] {
+  border-color: var(--color-error);
+}
+
+.message-card-important-status {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background-color: color-mix(in srgb, var(--color-error) 12%, transparent);
+  color: var(--color-error);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+}
+
+.message-card-important-status__icon {
+  font-size: 14px !important;
+}
+
 .message-card-thumbnail-shell {
   width: 72px;
   min-width: 72px;
@@ -797,12 +819,21 @@ html[data-bs-theme='dark'] .message-card-root {
   background-color: color-mix(in srgb, var(--color-action) 18%, transparent);
 }
 
+.message-card-action-btn[data-important-action='true'][data-selected='true'] {
+  color: var(--color-error);
+  background-color: color-mix(in srgb, var(--color-error) 12%, transparent);
+}
+
 .message-card-action-btn:hover {
   background-color: color-mix(in srgb, var(--color-action) 8%, transparent);
 }
 
 .message-card-action-btn[data-selected='true']:hover {
   background-color: color-mix(in srgb, var(--color-action) 18%, transparent);
+}
+
+.message-card-action-btn[data-important-action='true'][data-selected='true']:hover {
+  background-color: color-mix(in srgb, var(--color-error) 18%, transparent);
 }
 
 .message-card-action-btn__icon {

@@ -47,7 +47,7 @@ async function renderSection(
   existingMedia: any[] = [],
   uppy: any = {},
   options: {
-    reportTextPreviewEnabled?: boolean;
+    textPreviewMode?: 'message' | 'report';
     initialReportText?: string;
   } = {},
 ) {
@@ -71,7 +71,7 @@ async function renderSection(
           handleDropzoneKeyDown={vi.fn()}
           busy={false}
           existingMedia={existingMedia}
-          reportTextPreviewEnabled={options.reportTextPreviewEnabled}
+          textPreviewMode={options.textPreviewMode}
         />
       </Form>,
     );
@@ -557,43 +557,50 @@ describe('AttachmentsSection media previews', () => {
     act(() => root.unmount());
   });
 
-  it('shares report text with the attachment preview draft in report mode', async () => {
-    const existingMedia = [
-      {
-        id: 'media-doc',
-        fileName: 'report.pdf',
-        contentType: 'application/pdf',
-        sizeBytes: 2048,
-        href: 'https://example.com/report.pdf',
-        transcription: null,
-      },
-    ];
+  it.each([
+    ['message', 'Текст повідомлення'],
+    ['report', 'Текст розвіддонесення'],
+  ] as const)(
+    'shares %s text with the attachment preview draft',
+    async (textPreviewMode, label) => {
+      const existingMedia = [
+        {
+          id: 'media-doc',
+          fileName: 'report.pdf',
+          contentType: 'application/pdf',
+          sizeBytes: 2048,
+          href: 'https://example.com/report.pdf',
+          transcription: null,
+        },
+      ];
 
-    const { container, root } = await renderSection(
-      [],
-      existingMedia,
-      {},
-      {
-        reportTextPreviewEnabled: true,
-        initialReportText: 'Початковий текст',
-      },
-    );
+      const { container, root } = await renderSection(
+        [],
+        existingMedia,
+        {},
+        {
+          textPreviewMode,
+          initialReportText: 'Початковий текст',
+        },
+      );
 
-    await act(async () => {
-      container
-        .querySelector('button[aria-label="Переглянути report.pdf"]')
-        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
+      await act(async () => {
+        container
+          .querySelector('button[aria-label="Переглянути report.pdf"]')
+          ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
 
-    expect(previewMocks.reportDraft?.value).toBe('Початковий текст');
+      expect(previewMocks.reportDraft?.value).toBe('Початковий текст');
+      expect(previewMocks.reportDraft?.label).toBe(label);
 
-    await act(async () => {
-      previewMocks.reportDraft?.onChange('Оновлений текст');
-    });
+      await act(async () => {
+        previewMocks.reportDraft?.onChange('Оновлений текст');
+      });
 
-    expect(container.querySelector('[data-testid="full-body"]')?.textContent).toBe(
-      'Оновлений текст',
-    );
-    act(() => root.unmount());
-  });
+      expect(container.querySelector('[data-testid="full-body"]')?.textContent).toBe(
+        'Оновлений текст',
+      );
+      act(() => root.unmount());
+    },
+  );
 });
