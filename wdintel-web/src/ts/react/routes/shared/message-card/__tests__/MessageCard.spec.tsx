@@ -220,6 +220,35 @@ afterEach(() => {
 });
 
 describe('MessageCard', () => {
+  it('labels important messages in the right side of the card header', async () => {
+    const importantView = await renderCard({ msg: buildMessage({ important: true }) });
+    const regularView = await renderCard({ msg: buildMessage({ important: false }) });
+    const status = importantView.container.querySelector(
+      '[data-message-card-important-status="true"]',
+    );
+    const rightHeader = importantView.container.querySelector(
+      '[data-message-card-header-right="true"]',
+    );
+
+    expect(status?.textContent).toBe('Важливе');
+    expect(rightHeader?.contains(status)).toBe(true);
+    expect(
+      regularView.container.querySelector('[data-message-card-important-status="true"]'),
+    ).toBeNull();
+  });
+
+  it('exposes the shared important state on the card and its action', async () => {
+    const view = await renderCard({ msg: buildMessage({ important: true }) });
+    const card = view.container.querySelector('[data-message-card-root="true"]');
+    const importantAction = view.container.querySelector(
+      'button[aria-label="Позначити як не важливе"]',
+    );
+
+    expect(card?.getAttribute('data-important')).toBe('true');
+    expect(importantAction?.getAttribute('data-important-action')).toBe('true');
+    expect(importantAction?.getAttribute('aria-pressed')).toBe('true');
+  });
+
   // Regression: https://github.com/echoua/echo/issues/3569
   it('does not expose deletion without independent delete access', async () => {
     const view = await renderCard(
