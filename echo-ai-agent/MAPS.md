@@ -21,8 +21,12 @@ handles Escape first.
 ## Runner and persistence
 
 `echo_map_create` prepares a draft with a title and `isMain` flag.
-`echo_map_append` submits 1–32 ordered records per call to Echo's pure preparation
-API. Canonical records live in a registry outside generic response compaction.
+`echo_map_append` accepts 1–128 ordered records per call and automatically splits
+preparation into batches of at most 32. All batches must succeed before the draft
+changes; a failure or cancellation leaves the entire append retryable without
+duplicate records. Verbose tickets/tables use about 16 source rows per call,
+including every event/subgroup in those rows. Echo's preparation API is pure.
+Canonical records live in a registry outside generic response compaction.
 Tool results contain a reference, counts, and warnings. Repeated coordinates
 remain separate events. A document is limited to 512 records and a request to
 16 documents and 32 comment cells per record; the existing 256 KiB event limit
@@ -99,7 +103,7 @@ attachment generation are follow-up work.
 
 ## Rollout
 
-Release `2026.09.29.6` requires migration
+Release `2026.09.29.7` requires migration
 `m20260929_152018_ai_agent_map_artifacts` and the matching backend/frontend.
 Deploy the migration and Echo build, restart backend/workers, then upgrade the
 selected idle namespace. Do not run the new runner against an older backend.
@@ -108,8 +112,8 @@ and partial index. This table is excluded from analytics replication, as declare
 in the migration impact manifest.
 
 ```sh
-just ai-control-panel upgrade --host local --release 2026.09.29.6 --dry-run
-just ai-control-panel upgrade --host local --release 2026.09.29.6
+just ai-control-panel upgrade --host local --release 2026.09.29.7 --dry-run
+just ai-control-panel upgrade --host local --release 2026.09.29.7
 ```
 
 Replace `local` with each explicitly selected installation. The

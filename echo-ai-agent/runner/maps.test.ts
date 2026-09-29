@@ -22,10 +22,9 @@ test("#3064 batches preserve ordered coincident events until explicit immutable 
   const execute = async (name: string, params: any, signal?: AbortSignal) =>
     JSON.parse((await tools.find((tool) => tool.name === name)!.execute("call", params, signal)).content[0].text as string);
   const { id } = await execute("echo_map_create", { title: "Події", isMain: true });
-  await assert.rejects(() => execute("echo_map_append", { id, records: Array.from({ length: 33 }, (_, i) => record(i)) }), /limits/);
+  await assert.rejects(() => execute("echo_map_append", { id, records: Array.from({ length: 129 }, (_, i) => record(i)) }), /limits/);
   assert.equal(requests.length, 0);
-  for (let offset = 0; offset < 107; offset += 32)
-    await execute("echo_map_append", { id, records: Array.from({ length: Math.min(32, 107 - offset) }, (_, i) => record(offset + i + 1)) });
+  await execute("echo_map_append", { id, records: Array.from({ length: 107 }, (_, i) => record(i + 1)) });
   assert.deepEqual(requests.map((request) => request.body.records.length), [32, 32, 32, 11]);
   assert.equal(events.length, 0);
   assert.equal((await execute("echo_map_list", {})).maps[0].published, false);
@@ -44,6 +43,32 @@ test("#3064 batches preserve ordered coincident events until explicit immutable 
   registry.discardDrafts();
   assert.equal(registry.get(draft.id), undefined);
   assert.equal(registry.get(id)?.totalCount, 107);
+});
+
+test("#3064 split preparation failures and cancellation leave a bulk append retryable without duplicate records", async () => {
+  for (const cancelled of [false, true]) {
+    const registry = new MapRegistry();
+    const { id } = registry.create("Пакет", true);
+    const controller = new AbortController();
+    let calls = 0;
+    let fail = true;
+    const tools = createMapTools(registry, async (_path, body: any) => {
+      calls += 1;
+      if (calls === 2 && fail) {
+        if (cancelled) controller.abort();
+        else throw new Error("Preparation failed");
+      }
+      return { records: body.records };
+    }, () => {}, () => {}, () => true);
+    const append = tools.find((tool) => tool.name === "echo_map_append")!;
+    const records = Array.from({ length: 33 }, (_, i) => record(i + 1));
+    await assert.rejects(() => append.execute("call", { id, records }, controller.signal), cancelled ? /abort/i : /Preparation failed/);
+    assert.equal(registry.get(id)?.totalCount, 0);
+    fail = false;
+    await append.execute("retry", { id, records });
+    assert.equal(calls, 4);
+    assert.deepEqual(registry.get(id)?.records.map((item) => item.name), records.map((item) => item.name));
+  }
 });
 
 test("#3064 aborted preparation and unregistered sources cannot alter canonical records", async () => {
