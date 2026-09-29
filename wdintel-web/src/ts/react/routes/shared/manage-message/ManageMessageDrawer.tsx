@@ -913,7 +913,7 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
                               busy={busy}
                               existingMedia={existingMedia}
                               errorMsg={drawerState.attachmentErrorMsg}
-                              reportTextPreviewEnabled={isReportMode}
+                              textPreviewMode={isReportMode ? 'report' : 'message'}
                             />
                           </Stack>
                         </Box>
