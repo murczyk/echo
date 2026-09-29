@@ -401,6 +401,96 @@ describe('AiAgentChat request queue', () => {
     );
   });
 
+  it('#3064 stops queued and running tasks from the composer, deduplicates clicks and retains published maps and drafts', async () => {
+    mocks.submit
+      .mockResolvedValueOnce({ id: 'request-1', conversationId: CONVERSATION.id, state: 'queued' })
+      .mockResolvedValueOnce({
+        id: 'request-2',
+        conversationId: CONVERSATION.id,
+        state: 'running',
+      });
+    setTextarea('Перший запит');
+    submitForm();
+    await flush();
+    setTextarea('Другий запит');
+    submitForm();
+    await flush();
+    setTextarea('Чернетка наступного запиту');
+    const map = {
+      id: '33333333-3333-4333-8333-333333333333',
+      requestId: 'request-1',
+      title: 'Опублікована мапа',
+      isMain: false,
+      totalCount: 107,
+      validCount: 107,
+      invalidCount: 0,
+      warnings: [],
+    };
+    await act(async () =>
+      connections.get('request-1')!.onEvent({
+        sequence: 1,
+        requestId: 'request-1',
+        type: 'map_artifact',
+        createdAt: Date.now(),
+        text: null,
+        toolCallId: null,
+        toolName: null,
+        sourceTitle: null,
+        sourceUrl: null,
+        method: null,
+        path: null,
+        status: null,
+        isError: null,
+        map,
+      }),
+    );
+    let acceptStop!: () => void;
+    mocks.cancel
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            acceptStop = () => resolve('cancelled');
+          }),
+      )
+      .mockRejectedValueOnce(new Error('Сервіс недоступний'));
+    await act(async () => {
+      clickAriaButton('Зупинити всі запити');
+      clickAriaButton('Зупинити всі запити');
+    });
+    await flush();
+    expect(mocks.cancel.mock.calls).toEqual([['request-1'], ['request-2']]);
+    expect(mocks.notify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'error',
+        message: 'Не вдалося скасувати запит: Сервіс недоступний',
+      }),
+    );
+    await act(async () => acceptStop());
+    await flush();
+    const stop = container.querySelector(
+      'button[aria-label="Зупинити запит"]',
+    ) as HTMLButtonElement;
+    expect(stop.disabled).toBe(false);
+    expect(
+      container.querySelector('[data-testid="live-request-request-1"]')?.textContent,
+    ).toContain('Скасовано');
+    expect(container.querySelector('.ai-map-chip')).not.toBeNull();
+    expect((container.querySelector('textarea') as HTMLTextAreaElement).value).toBe(
+      'Чернетка наступного запиту',
+    );
+    await act(async () => {
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 410));
+      clickAriaButton('Зупинити запит');
+    });
+    await flush();
+    expect(mocks.cancel.mock.calls).toEqual([['request-1'], ['request-2'], ['request-2']]);
+    expect(container.querySelector('button[aria-label="Зупинити запит"]')).toBeNull();
+    expect(container.querySelector('.ai-map-chip')).not.toBeNull();
+    expect((container.querySelector('textarea') as HTMLTextAreaElement).value).toBe(
+      'Чернетка наступного запиту',
+    );
+  });
+
   it('keeps a completed request and its answer when cancellation loses the terminal-state race', async () => {
     mocks.submit.mockResolvedValueOnce({
       id: 'request-1',
@@ -437,7 +527,7 @@ describe('AiAgentChat request queue', () => {
     const request = container.querySelector(
       '[data-testid="live-request-request-1"]',
     ) as HTMLElement;
-    await act(async () => clickAriaButton('Скасувати запит', request));
+    await act(async () => clickAriaButton('Зупинити запит'));
     await flush();
 
     expect(request.textContent).not.toContain('Завершено');

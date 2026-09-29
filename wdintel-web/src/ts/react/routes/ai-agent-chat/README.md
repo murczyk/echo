@@ -38,6 +38,15 @@ Regression coverage:
 
 ## Live progress
 
+The composer shows **Зупинити** while this conversation has queued or running
+requests, including after reload or a stream interruption. It cancels all active
+requests in the viewed conversation; each activity row can still cancel its own
+request. Pending cancellations suppress duplicate calls, failures show a toast
+and remain retryable, and a completed request keeps its final answer if it wins
+the cancellation race. Stopping preserves the composer draft, partial response
+and published maps. The backend revokes request credentials and terminates the
+runner; switching conversations only detaches the browser stream.
+
 Each request shows a softly pulsating current-action title beside elapsed time
 and cancel/reconnect controls. An optional second line contains factual dates,
 source scope, or message counts. Both lines truncate visually and retain their

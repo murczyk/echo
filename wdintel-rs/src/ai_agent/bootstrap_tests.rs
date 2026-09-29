@@ -140,6 +140,7 @@ async fn bootstrap_app(
         .service(crate::ai_agent::maps::get_map)
         .service(crate::ai_agent::maps::download_csv)
         .service(crate::ai_agent::maps::download_kmz)
+        .service(crate::ai_agent::cancel_request)
 }
 
 async fn test_human_login(
@@ -597,7 +598,9 @@ async fn message_citations_survive_reload_without_cross_request_sources() {
 async fn map_publication_replay_cancellation_and_access_follow_request_ownership(
 ) {
     use crate::ai_agent::maps::types::*;
-    use crate::ai_agent::types::AiAgentMessageCitation;
+    use crate::ai_agent::types::{
+        AiAgentMessageCitation, AiAgentRequestCancelRsp, AiAgentRequestIdReq,
+    };
     use crate::ai_agent::{events, maps};
     use crate::entities::{ai_agent_request_event, signal_message};
     let (mut env, _guard) = cleanup_locked().await.unwrap();
@@ -672,12 +675,27 @@ async fn map_publication_replay_cancellation_and_access_follow_request_ownership
         &app,
         api("/api/ai-agent/maps/prepare")
             .set_json(AiAgentMapPrepareReq {
-                records: vec![input.clone(); 17],
+                records: vec![input.clone(); 33],
             })
             .to_request(),
     )
     .await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    for count in [18, 32] {
+        let response = test::call_service(
+            &app,
+            api("/api/ai-agent/maps/prepare")
+                .set_json(AiAgentMapPrepareReq {
+                    records: vec![input.clone(); count],
+                })
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let prepared: AiAgentMapPrepareRsp =
+            test::read_body_json(response).await;
+        assert_eq!(prepared.records.len(), count);
+    }
     let response = test::call_service(
         &app,
         api("/api/ai-agent/maps/prepare")
@@ -857,10 +875,21 @@ async fn map_publication_replay_cancellation_and_access_follow_request_ownership
     assert!(std::str::from_utf8(&test::read_body(response).await)
         .unwrap()
         .contains("\"INVALID\""));
-    let mut cancelled = request.clone().into_active_model();
-    cancelled.cancellation_requested = Set(true);
-    cancelled.state = Set("cancelled".to_string());
-    cancelled.update(&env.dbx).await.unwrap();
+    for _ in 0..2 {
+        let response = test::call_service(
+            &app,
+            human_api("/api/ai-agent/requests/cancel")
+                .set_json(AiAgentRequestIdReq {
+                    request_id: request.id.to_string(),
+                })
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let cancelled: AiAgentRequestCancelRsp =
+            test::read_body_json(response).await;
+        assert_eq!(cancelled.state, "cancelled");
+    }
     assert!(!events::append_runner(
         &env.dbx,
         request.id,

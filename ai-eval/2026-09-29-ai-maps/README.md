@@ -53,7 +53,7 @@ Each run freezes its runner and dataset fingerprint under `raw/runs/<run>/`.
 Reusing a run name with different inputs is rejected. The grader verifies every
 ordered record, SIDC/name/date/platform metadata, original and normalized
 coordinates, independent WGS-84 positions, invalid-row warnings/counts, preserved
-comment values, registered map references, and 1–16 record preparation batches.
+comment values, registered map references, and 1–32 record preparation batches.
 It parses the production CSV and KMZ, including padded comments, placemark
 geometry, explicit SIDC metadata, escaping, styles, and embedded icons. Zero
 valid records must produce CSV and no KMZ. Selected coordinates need not also

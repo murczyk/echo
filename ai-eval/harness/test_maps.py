@@ -34,8 +34,8 @@ class MapDocumentGrading(unittest.TestCase):
                    'comments': row['commentTokens'], 'sources': row['sources']} for row in cls.case['expect']['records']]
         records = []
         cls.events = []
-        for offset in range(0, len(inputs), 16):
-            batch = inputs[offset:offset + 16]
+        for offset in range(0, len(inputs), 32):
+            batch = inputs[offset:offset + 32]
             records.extend(production({'operation': 'prepare', 'records': batch})['records'])
             cls.events.append({'type': 'eval_retrieval', 'path': '/api/ai-agent/maps/prepare', 'body': {'records': batch}})
         identifier = '11111111-1111-4111-8111-111111111111'
@@ -64,7 +64,7 @@ class MapDocumentGrading(unittest.TestCase):
         export = next(event for event in events if event['type'] == 'eval_map_export')
         export['csv'] = '\n'.join(export['csv'].splitlines()[:-1])
         export['kmz'] = 'bm90IGEgemlw'
-        events[0]['body']['records'] *= 2
+        events[0]['body']['records'] = [events[0]['body']['records'][0]] * 33
         failures = grade_maps(self.case, events)['failures']
         self.assertIn('csv_structure', failures)
         self.assertIn('download_parse', failures)

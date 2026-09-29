@@ -91,7 +91,7 @@ def grade_maps(case, events, failed=False):
         except (ValueError, KeyError, TypeError, ET.ParseError, zipfile.BadZipFile):
             failures.append('download_parse')
     batches = [event for event in events if event.get('type') == 'eval_retrieval' and event.get('path') == '/api/ai-agent/maps/prepare']
-    if not batches or any(not 1 <= len(event['body'].get('records', [])) <= 16 for event in batches):
+    if not batches or any(not 1 <= len(event['body'].get('records', [])) <= 32 for event in batches):
         failures.append('batching')
     return {'passed': not failures, 'failures': sorted(set(failures)), 'retrievedIds': [], 'citedIds': [],
             'recordCount': len(records), 'validCount': valid, 'mapCount': len(documents),

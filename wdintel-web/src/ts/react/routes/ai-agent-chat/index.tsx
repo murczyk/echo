@@ -2,6 +2,7 @@ import AddCommentOutlinedIcon from '@mui/icons-material/AddCommentOutlined';
 import CloseIcon from '@mui/icons-material/Close';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SendOutlinedIcon from '@mui/icons-material/SendOutlined';
+import StopOutlinedIcon from '@mui/icons-material/StopOutlined';
 import {
   Box,
   CircularProgress,
@@ -1203,7 +1204,8 @@ export function AiAgentChat({
     () => configuration?.providers.find((provider) => provider.id === providerId) ?? null,
     [configuration, providerId],
   );
-  const activeRequestExists = liveRequests.some((request) => !TERMINAL_STATES.has(request.state));
+  const activeRequests = liveRequests.filter((request) => !TERMINAL_STATES.has(request.state));
+  const activeRequestExists = activeRequests.length > 0;
   const liveRequestIds = useMemo(
     () => new Set(liveRequests.map((request) => request.id)),
     [liveRequests],
@@ -1446,6 +1448,7 @@ export function AiAgentChat({
                   inputProps={{ 'aria-label': 'Провайдер ШІ' }}
                   sx={{
                     maxWidth: '70%',
+                    minWidth: 0,
                     color: 'text.secondary',
                     fontSize: '0.75rem',
                     opacity: 0.65,
@@ -1467,29 +1470,53 @@ export function AiAgentChat({
                     </MenuItem>
                   ))}
                 </Select>
-                <IconButton
-                  type="submit"
-                  aria-label="Надіслати"
-                  disabled={
-                    submitting ||
-                    loadingConversation ||
-                    conversationLoadFailed ||
-                    !draft.trim() ||
-                    !selectedProvider
-                  }
-                  size="small"
-                  sx={{
-                    bgcolor: 'text.primary',
-                    color: 'background.paper',
-                    '&:hover': { bgcolor: 'text.secondary' },
-                  }}
-                >
-                  {submitting ? (
-                    <CircularProgress size={16} color="inherit" />
-                  ) : (
-                    <SendOutlinedIcon fontSize="small" />
-                  )}
-                </IconButton>
+                <Stack direction="row" alignItems="center" spacing={1}>
+                  {activeRequestExists ? (
+                    <PowerButton
+                      type="button"
+                      size="small"
+                      aria-label={
+                        activeRequests.length === 1 ? 'Зупинити запит' : 'Зупинити всі запити'
+                      }
+                      disabled={activeRequests.every((request) => cancellingIds.has(request.id))}
+                      startIcon={
+                        activeRequests.some((request) => cancellingIds.has(request.id)) ? (
+                          <CircularProgress size={14} color="inherit" />
+                        ) : (
+                          <StopOutlinedIcon />
+                        )
+                      }
+                      onClick={() =>
+                        void Promise.all(activeRequests.map((request) => cancelRequest(request.id)))
+                      }
+                    >
+                      Зупинити
+                    </PowerButton>
+                  ) : null}
+                  <IconButton
+                    type="submit"
+                    aria-label="Надіслати"
+                    disabled={
+                      submitting ||
+                      loadingConversation ||
+                      conversationLoadFailed ||
+                      !draft.trim() ||
+                      !selectedProvider
+                    }
+                    size="small"
+                    sx={{
+                      bgcolor: 'text.primary',
+                      color: 'background.paper',
+                      '&:hover': { bgcolor: 'text.secondary' },
+                    }}
+                  >
+                    {submitting ? (
+                      <CircularProgress size={16} color="inherit" />
+                    ) : (
+                      <SendOutlinedIcon fontSize="small" />
+                    )}
+                  </IconButton>
+                </Stack>
               </Stack>
             </Box>
           </Stack>

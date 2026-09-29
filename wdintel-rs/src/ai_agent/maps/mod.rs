@@ -230,7 +230,9 @@ pub async fn prepare_map(
         || req.records.len() > AI_AGENT_MAP_BATCH_MAX_RECORDS
     {
         return Err(AppError::BL {
-            msg: "Пакет мапи має містити від 1 до 16 записів".to_string(),
+            msg: format!(
+                "Пакет мапи має містити від 1 до {AI_AGENT_MAP_BATCH_MAX_RECORDS} записів"
+            ),
         });
     }
     let records = req

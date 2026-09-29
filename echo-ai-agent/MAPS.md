@@ -21,7 +21,7 @@ handles Escape first.
 ## Runner and persistence
 
 `echo_map_create` prepares a draft with a title and `isMain` flag.
-`echo_map_append` submits 1–16 ordered records per call to Echo's pure preparation
+`echo_map_append` submits 1–32 ordered records per call to Echo's pure preparation
 API. Canonical records live in a registry outside generic response compaction.
 Tool results contain a reference, counts, and warnings. Repeated coordinates
 remain separate events. A document is limited to 512 records and a request to
@@ -42,7 +42,7 @@ full records. Each event stores its summary atomically in a separate nullable
 `map_summary` column. History selects this column through the partial map-event
 index, avoiding full-document JSON reads when opening long conversations.
 `echo_map_list` recovers references after compaction;
-`echo_map_get` retrieves records in windows of at most 16, including published
+`echo_map_get` retrieves records in windows of at most 32, including published
 maps from previous conversation turns. Full documents are fetched only when
 needed. Optional source citations must come from retrieved message citations.
 
@@ -99,7 +99,7 @@ attachment generation are follow-up work.
 
 ## Rollout
 
-Release `2026.09.29.5` requires migration
+Release `2026.09.29.6` requires migration
 `m20260929_152018_ai_agent_map_artifacts` and the matching backend/frontend.
 Deploy the migration and Echo build, restart backend/workers, then upgrade the
 selected idle namespace. Do not run the new runner against an older backend.
@@ -108,8 +108,8 @@ and partial index. This table is excluded from analytics replication, as declare
 in the migration impact manifest.
 
 ```sh
-just ai-control-panel upgrade --host local --release 2026.09.29.5 --dry-run
-just ai-control-panel upgrade --host local --release 2026.09.29.5
+just ai-control-panel upgrade --host local --release 2026.09.29.6 --dry-run
+just ai-control-panel upgrade --host local --release 2026.09.29.6
 ```
 
 Replace `local` with each explicitly selected installation. The

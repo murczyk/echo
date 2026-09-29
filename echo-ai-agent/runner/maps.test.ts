@@ -22,27 +22,28 @@ test("#3064 batches preserve ordered coincident events until explicit immutable 
   const execute = async (name: string, params: any, signal?: AbortSignal) =>
     JSON.parse((await tools.find((tool) => tool.name === name)!.execute("call", params, signal)).content[0].text as string);
   const { id } = await execute("echo_map_create", { title: "Події", isMain: true });
-  await assert.rejects(() => execute("echo_map_append", { id, records: Array.from({ length: 17 }, (_, i) => record(i)) }), /limits/);
+  await assert.rejects(() => execute("echo_map_append", { id, records: Array.from({ length: 33 }, (_, i) => record(i)) }), /limits/);
   assert.equal(requests.length, 0);
-  await execute("echo_map_append", { id, records: Array.from({ length: 16 }, (_, i) => record(i + 1)) });
-  await execute("echo_map_append", { id, records: [record(17)] });
+  for (let offset = 0; offset < 107; offset += 32)
+    await execute("echo_map_append", { id, records: Array.from({ length: Math.min(32, 107 - offset) }, (_, i) => record(offset + i + 1)) });
+  assert.deepEqual(requests.map((request) => request.body.records.length), [32, 32, 32, 11]);
   assert.equal(events.length, 0);
   assert.equal((await execute("echo_map_list", {})).maps[0].published, false);
   const first = await execute("echo_map_get", { id });
-  assert.equal(first.records.length, 16);
-  assert.equal(first.nextOffset, 16);
-  assert.equal((await execute("echo_map_get", { id, offset: 16 })).records[0].name, "Подія 17");
+  assert.equal(first.records.length, 32);
+  assert.equal(first.nextOffset, 32);
+  assert.equal((await execute("echo_map_get", { id, offset: 32 })).records[0].name, "Подія 33");
   const published = await execute("echo_map_publish", { id });
   await execute("echo_map_publish", { id });
   assert.equal(events.length, 1);
   assert.equal(published.reference, `[мапа](echo-map:${id})`);
-  assert.equal(events[0].document.totalCount, 17);
-  assert.deepEqual(events[0].document.records.map((item: MapRecord) => item.name), Array.from({ length: 17 }, (_, i) => `Подія ${i + 1}`));
+  assert.equal(events[0].document.totalCount, 107);
+  assert.deepEqual(events[0].document.records.map((item: MapRecord) => item.name), Array.from({ length: 107 }, (_, i) => `Подія ${i + 1}`));
   await assert.rejects(() => execute("echo_map_append", { id, records: [record(18)] }), /immutable/);
   const draft = registry.create("Чернетка", false);
   registry.discardDrafts();
   assert.equal(registry.get(draft.id), undefined);
-  assert.equal(registry.get(id)?.totalCount, 17);
+  assert.equal(registry.get(id)?.totalCount, 107);
 });
 
 test("#3064 aborted preparation and unregistered sources cannot alter canonical records", async () => {
