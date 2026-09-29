@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { MapRegistry, createMapTools, preserveMapReferences, validateMapSummaries, type MapRecord } from "./maps.ts";
+import { MapRegistry, createMapTools, preserveMapReferences, publishReferencedDrafts, stripUnpublishedMapLinks, validateMapSummaries, type MapRecord } from "./maps.ts";
 import { citationRepairPrompt, canonicalizeAnswer } from "./citations.ts";
 
 const source = { messageId: 77, messageIdentifier: "source-77" };
@@ -71,7 +71,7 @@ test("#3064 split preparation failures and cancellation leave a bulk append retr
   }
 });
 
-test("#3064 aborted preparation and unregistered sources cannot alter canonical records", async () => {
+test("#3064 aborted preparation cannot alter canonical records", async () => {
   const registry = new MapRegistry();
   const { id } = registry.create("Скасовано", true);
   const controller = new AbortController();
@@ -82,12 +82,51 @@ test("#3064 aborted preparation and unregistered sources cannot alter canonical 
     return { records: [record(1)] };
   }, () => assert.fail("Unpublished draft emitted an event"), () => {}, () => false);
   const append = tools.find((tool) => tool.name === "echo_map_append")!;
-  await assert.rejects(() => append.execute("call", { id, records: [{ ...record(1), sources: [source] }] }), /retrieved message citations/);
-  assert.equal(calls, 0);
   await assert.rejects(() => append.execute("call", { id, records: [record(1)] }, controller.signal), /abort/i);
+  assert.equal(calls, 1);
   assert.equal(registry.get(id)?.totalCount, 0);
   registry.discardDrafts();
   assert.deepEqual(registry.list(), []);
+});
+
+test("#3064 append accepts an empty SIDC, omits unknown citations, and publishes a linked draft", async () => {
+  const registry = new MapRegistry();
+  const events: any[] = [];
+  const requests: any[] = [];
+  const tools = createMapTools(registry, async (path, body) => {
+    requests.push({ path, body });
+    return { records: (body as any).records.map((input: any) => ({ ...record(0), ...input, sources: input.sources ?? [] })) };
+  }, (event) => events.push(event), () => {}, (citation) => citation.messageId === source.messageId);
+  const execute = async (name: string, params: any) =>
+    JSON.parse((await tools.find((tool) => tool.name === name)!.execute("call", params)).content[0].text as string);
+  const created = await execute("echo_map_create", { title: "Без SIDC", isMain: true });
+  assert.equal(created.reference, undefined);
+  const appended = await execute("echo_map_append", {
+    id: created.id,
+    records: [{
+      sidc: "",
+      name: "Точка",
+      coordinateSystem: "sk42",
+      x: "5215227",
+      y: "6548669",
+      sources: [source, { messageId: 4, messageIdentifier: "invented" }],
+    }],
+  });
+  assert.equal(appended.reference, undefined);
+  assert.equal(appended.omittedSourceCount, 1);
+  assert.equal(requests[0].body.records[0].sidc, "");
+  assert.deepEqual(requests[0].body.records[0].sources, [source]);
+  assert.equal(events.length, 0);
+  const empty = registry.create("Порожня", false);
+  const answer = `[мапа](echo-map:${created.id}) [мапа](echo-map:${empty.id}) [мапа](echo-map:22222222-2222-4222-8222-222222222222)`;
+  publishReferencedDrafts(answer, registry, (event) => events.push(event));
+  assert.equal(events.length, 1);
+  assert.equal(events[0].type, "map_artifact");
+  assert.equal(events[0].document.records[0].sources[0].messageId, source.messageId);
+  const stripped = stripUnpublishedMapLinks(answer, registry.list());
+  assert.equal(stripped, `[мапа](echo-map:${created.id})  `);
+  assert.equal(registry.list().find((item) => item.id === created.id)?.reference, `[мапа](echo-map:${created.id})`);
+  assert.equal(registry.list().find((item) => item.id === empty.id)?.reference, undefined);
 });
 
 test("#3064 history restores summaries and retrieves bounded records with request ownership", async () => {

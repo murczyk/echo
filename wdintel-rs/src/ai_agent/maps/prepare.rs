@@ -3,16 +3,14 @@ use crate::config::*;
 use crate::h;
 use crate::types::ShortContext;
 
+const MISSING_SIDC_WARNING: &str =
+    "SIDC не надано; використано стандартну позначку";
+
 fn bounded(value: &str) -> bool {
     value.chars().count() <= AI_AGENT_MAP_TEXT_MAX_CHARS
 }
 
 fn validate_record(input: &AiAgentMapRecordInput) -> anyhow::Result<()> {
-    anyhow::ensure!(
-        input.sidc.len() == 20
-            && input.sidc.bytes().all(|ch| ch.is_ascii_digit()),
-        "SIDC must contain 20 digits"
-    );
     anyhow::ensure!(
         !input.name.trim().is_empty()
             && [&input.name, &input.coordinate_system, &input.x, &input.y]
@@ -41,6 +39,17 @@ pub fn prepare_record(
 ) -> anyhow::Result<AiAgentMapRecord> {
     validate_record(&input).c(h!())?;
     let mut warnings = Vec::new();
+    let sidc = if input.sidc.trim().is_empty() {
+        warnings.push(MISSING_SIDC_WARNING.to_string());
+        AI_AGENT_MAP_FALLBACK_SIDC.to_string()
+    } else {
+        anyhow::ensure!(
+            input.sidc.len() == 20
+                && input.sidc.bytes().all(|byte| byte.is_ascii_digit()),
+            "SIDC must contain 20 digits"
+        );
+        input.sidc.clone()
+    };
     let observation_datetime = normalize_datetime(
         input.observation_datetime.as_deref(),
         &mut warnings,
@@ -50,7 +59,7 @@ pub fn prepare_record(
     let position =
         prepare_position(&x, &y, &input.coordinate_system, &mut warnings);
     Ok(AiAgentMapRecord {
-        sidc: input.sidc,
+        sidc,
         name: input.name.trim().to_string(),
         observation_datetime,
         platform_type: AI_AGENT_MAP_PLATFORM_TYPE.to_string(),
@@ -201,6 +210,19 @@ fn project(_x: &str, _y: &str) -> anyhow::Result<(f64, f64)> {
     anyhow::bail!("Coordinate projection is unavailable")
 }
 
+fn sidc_input(record: &AiAgentMapRecord) -> String {
+    if record.sidc.trim().is_empty()
+        || record
+            .warnings
+            .iter()
+            .any(|warning| warning == MISSING_SIDC_WARNING)
+    {
+        String::new()
+    } else {
+        record.sidc.clone()
+    }
+}
+
 pub fn canonicalize(
     mut document: AiAgentMapDocument,
 ) -> anyhow::Result<AiAgentMapDocument> {
@@ -217,7 +239,7 @@ pub fn canonicalize(
         .into_iter()
         .map(|record| {
             prepare_record(AiAgentMapRecordInput {
-                sidc: record.sidc,
+                sidc: sidc_input(&record),
                 name: record.name,
                 observation_datetime: record.observation_datetime,
                 coordinate_system: record.coordinate_system,

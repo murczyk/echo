@@ -8,7 +8,7 @@ import {
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { createMapTools, MapRegistry, MAP_GUIDANCE, preserveMapReferences, validateMapSummaries, type MapSummary } from "./maps.ts";
+import { createMapTools, MapRegistry, MAP_GUIDANCE, preserveMapReferences, publishReferencedDrafts, stripUnpublishedMapLinks, validateMapSummaries, type MapSummary } from "./maps.ts";
 import { INBOX_SEARCH_DESCRIPTION, SEARCH_GUIDANCE } from "./search-guidance.ts";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -33,7 +33,7 @@ const MAX_INPUT_BYTES = 512 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.09.29.7";
+const HARNESS_RELEASE = "2026.09.29.8";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -2711,6 +2711,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
     if (cancelled) return;
     validateFinalAssistantMessage(currentTurnAssistantMessages);
     const draft = turnAssistantText(currentTurnAssistantMessages);
+    publishReferencedDrafts(draft, mapRegistry, emit);
     const historyCitations = payload.history.flatMap(
       (entry) => entry.citations ?? [],
     );
@@ -2734,7 +2735,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
         )
       : null;
     if (cancelled) return;
-    const finalText = preserveMapReferences(draft, preserveRequestedCitation(
+    const finalText = stripUnpublishedMapLinks(preserveMapReferences(draft, preserveRequestedCitation(
       chooseCitedAnswer(
         draft,
         repair,
@@ -2743,7 +2744,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       ),
       repairCitations,
       deliveredCitationsThisTurn.length,
-    ), mapRegistry.list());
+    ), mapRegistry.list()), mapRegistry.list());
     const snapshot = assistantSnapshotEvent(draft, finalText);
     if (snapshot) emit(snapshot);
   } finally {

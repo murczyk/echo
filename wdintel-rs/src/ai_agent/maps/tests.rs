@@ -30,6 +30,39 @@ fn document(records: Vec<AiAgentMapRecord>) -> AiAgentMapDocument {
 }
 
 #[test]
+fn issue_3064_missing_sidc_uses_the_fallback_symbol() {
+    let mut missing = input("5215227", "6548669");
+    missing.sidc.clear();
+    let record = prepare::prepare_record(missing).unwrap();
+    assert_eq!(record.sidc, crate::config::AI_AGENT_MAP_FALLBACK_SIDC);
+    assert!(record
+        .warnings
+        .iter()
+        .any(|warning| warning.contains("SIDC")));
+    let document = document(vec![record]);
+    assert_eq!(
+        document.records[0].sidc,
+        crate::config::AI_AGENT_MAP_FALLBACK_SIDC
+    );
+    assert!(document.records[0]
+        .warnings
+        .iter()
+        .any(|warning| warning.contains("SIDC")));
+    assert!(document
+        .warnings
+        .iter()
+        .any(|warning| warning.contains("SIDC")));
+    assert_eq!(prepare::canonicalize(document.clone()).unwrap(), document);
+    let supplied =
+        prepare::prepare_record(input("5215227", "6548669")).unwrap();
+    assert_eq!(supplied.sidc, "10062000001209020000");
+    assert!(supplied.warnings.is_empty());
+    let mut invalid = input("5215227", "6548669");
+    invalid.sidc = "123".to_string();
+    assert!(prepare::prepare_record(invalid).is_err());
+}
+
+#[test]
 fn issue_3064_keeps_original_coordinates_dates_and_invalid_components() {
     let record =
         prepare::prepare_record(input("52-15227", "65 48669")).unwrap();

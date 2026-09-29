@@ -94,7 +94,11 @@ metadata, observation time, platform, original coordinates, and comments.
 `sidc`, `app6d`, and `app6d sidc` explicitly retain the SIDC. Styles follow the
 existing normal/highlight SIDC icon conventions. If a supplied valid SIDC has no
 packaged icon, its metadata remains intact and its image uses Echo's existing
-fallback infantry icon in both the panel and KMZ. The supplied delivery and
+fallback infantry icon in both the panel and KMZ. A record with no SIDC is
+stored as that fallback symbol and a warning; a non-empty value that is not 20
+digits is rejected. Citations that were not retrieved are omitted. Unpublished
+tool results do not include the markdown link. A successful answer that links a
+nonempty draft publishes that draft; links to empty or unknown drafts are removed. The supplied delivery and
 assault SIDCs have packaged SVG/PNG assets generated with
 [milsymbol 2.2.0](https://github.com/spatialillusions/milsymbol/tree/v2.2.0),
 using `new ms.Symbol(sidc, {size: 100}).asSVG()` and transparent PNG rendering.
@@ -103,7 +107,7 @@ attachment generation are follow-up work.
 
 ## Rollout
 
-Release `2026.09.29.7` requires migration
+Release `2026.09.29.8` requires migration
 `m20260929_152018_ai_agent_map_artifacts` and the matching backend/frontend.
 Deploy the migration and Echo build, restart backend/workers, then upgrade the
 selected idle namespace. Do not run the new runner against an older backend.
@@ -112,8 +116,8 @@ and partial index. This table is excluded from analytics replication, as declare
 in the migration impact manifest.
 
 ```sh
-just ai-control-panel upgrade --host local --release 2026.09.29.7 --dry-run
-just ai-control-panel upgrade --host local --release 2026.09.29.7
+just ai-control-panel upgrade --host local --release 2026.09.29.8 --dry-run
+just ai-control-panel upgrade --host local --release 2026.09.29.8
 ```
 
 Replace `local` with each explicitly selected installation. The
