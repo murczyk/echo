@@ -46,7 +46,6 @@ import {
   scrollToAndHighlightMessage,
   type MessageCardEtalonDisplayModel,
 } from '../shared/message-card/message-card.utils';
-import { useObservedWidth } from '../../hooks/use-observed-width';
 import { dutyEditorLayoutColumns } from './duty-editor-layout';
 
 export type RerDutyNeoPageProps = {
@@ -406,8 +405,7 @@ export function RerDutyNeoPage({
           ? `edit-report:${editTargetLoadState.reportId}`
           : null;
   const editorOpen = editorIntentKey !== null;
-  const { ref: editorLayoutRef, width: editorLayoutWidth } = useObservedWidth<HTMLDivElement>();
-  const editorPresentation = useManageMessageEditorPresentation(editorLayoutWidth);
+  const editorPresentation = useManageMessageEditorPresentation();
   const reduceEditorMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const editorEmbeddedOpen = editorOpen && editorPresentation === 'embedded';
   const previousCanWriteRef = useRef<boolean | null>(null);
@@ -502,7 +500,6 @@ export function RerDutyNeoPage({
   const content = (
     <RadioFeaturesProvider allowed={radioFeaturesAllowed}>
       <Box
-        ref={editorLayoutRef}
         className="w-full min-h-0"
         data-duty-editor-layout
         style={{

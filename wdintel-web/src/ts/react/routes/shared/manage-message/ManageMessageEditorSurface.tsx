@@ -10,7 +10,7 @@ import {
 
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 
-export const MANAGE_MESSAGE_EDITOR_EMBEDDED_MIN_LAYOUT_WIDTH = 1200;
+export const MANAGE_MESSAGE_EDITOR_EMBEDDED_MIN_VIEWPORT_WIDTH = 1024;
 export const MANAGE_MESSAGE_EDITOR_WIDTH = 'clamp(440px, 40vw, 640px)';
 export const MANAGE_MESSAGE_EDITOR_GAP = 16;
 export const MANAGE_MESSAGE_EDITOR_TRANSITION_MS = 180;
@@ -31,21 +31,18 @@ type ManageMessageEditorSurfaceProps = {
 };
 
 export function resolveManageMessageEditorPresentation(
-  layoutWidth: number | null,
+  viewportWidth: number | null,
 ): ManageMessageEditorPresentation {
-  return layoutWidth != null && layoutWidth >= MANAGE_MESSAGE_EDITOR_EMBEDDED_MIN_LAYOUT_WIDTH
+  return viewportWidth != null && viewportWidth >= MANAGE_MESSAGE_EDITOR_EMBEDDED_MIN_VIEWPORT_WIDTH
     ? 'embedded'
     : 'modal';
 }
 
-export function useManageMessageEditorPresentation(
-  layoutWidth: number | null,
-): ManageMessageEditorPresentation {
+export function useManageMessageEditorPresentation(): ManageMessageEditorPresentation {
   const viewportCanEmbed = useMediaQuery(
-    `(min-width:${MANAGE_MESSAGE_EDITOR_EMBEDDED_MIN_LAYOUT_WIDTH}px)`,
+    `(min-width:${MANAGE_MESSAGE_EDITOR_EMBEDDED_MIN_VIEWPORT_WIDTH}px)`,
   );
-  if (layoutWidth == null || layoutWidth <= 0) return viewportCanEmbed ? 'embedded' : 'modal';
-  return resolveManageMessageEditorPresentation(layoutWidth);
+  return viewportCanEmbed ? 'embedded' : 'modal';
 }
 
 export function ManageMessageEditorSurface({

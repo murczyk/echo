@@ -535,7 +535,7 @@ describe('RerDutyNeoPage creation workflow', () => {
   });
 
   it('keeps the embedded composer open after creation', async () => {
-    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1200px)');
+    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1024px)');
     nextCreatedResponse.value = { signal_message_id: 101 };
     const { container, root, state } = await renderPage();
 
@@ -710,7 +710,7 @@ describe('RerDutyNeoPage creation workflow', () => {
   });
 
   it('animates the embedded editor track without replacing the feed layout', async () => {
-    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1200px)');
+    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1024px)');
     const { container, root } = await renderPage();
     const layout = container.querySelector<HTMLElement>('[data-duty-editor-layout]');
 
@@ -727,7 +727,7 @@ describe('RerDutyNeoPage creation workflow', () => {
 
   it('removes spatial editor layout motion when the user prefers reduced motion', async () => {
     useMediaQueryMock.mockImplementation(
-      (query) => query === '(min-width:1200px)' || query === '(prefers-reduced-motion: reduce)',
+      (query) => query === '(min-width:1024px)' || query === '(prefers-reduced-motion: reduce)',
     );
     const { container, root } = await renderPage();
 

@@ -305,11 +305,11 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       await expectModalEditor(page);
       await expect(source).toHaveValue(`${host} responsive draft`);
 
-      await page.setViewportSize({ width: 1024, height: 800 });
+      await page.setViewportSize({ width: 1023, height: 800 });
       await expectModalEditor(page);
       await expect(source).toHaveValue(`${host} responsive draft`);
 
-      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.setViewportSize({ width: 1024, height: 800 });
       await expectEmbeddedEditor(page);
       await expect(source).toHaveValue(`${host} responsive draft`);
 

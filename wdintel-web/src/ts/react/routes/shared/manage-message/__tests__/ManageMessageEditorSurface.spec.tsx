@@ -6,7 +6,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  MANAGE_MESSAGE_EDITOR_EMBEDDED_MIN_LAYOUT_WIDTH,
+  MANAGE_MESSAGE_EDITOR_EMBEDDED_MIN_VIEWPORT_WIDTH,
   MANAGE_MESSAGE_EDITOR_WIDTH,
   ManageMessageEditorSurface,
   resolveManageMessageEditorPresentation,
@@ -246,13 +246,10 @@ describe('ManageMessageEditorSurface', () => {
 });
 
 describe('resolveManageMessageEditorPresentation', () => {
-  it('embeds only when the measured layout can fit the workspace and editor', () => {
+  it('uses the documented 1024px viewport breakpoint', () => {
     expect(resolveManageMessageEditorPresentation(null)).toBe('modal');
-    expect(
-      resolveManageMessageEditorPresentation(MANAGE_MESSAGE_EDITOR_EMBEDDED_MIN_LAYOUT_WIDTH - 1),
-    ).toBe('modal');
-    expect(
-      resolveManageMessageEditorPresentation(MANAGE_MESSAGE_EDITOR_EMBEDDED_MIN_LAYOUT_WIDTH),
-    ).toBe('embedded');
+    expect(resolveManageMessageEditorPresentation(1023)).toBe('modal');
+    expect(resolveManageMessageEditorPresentation(1024)).toBe('embedded');
+    expect(MANAGE_MESSAGE_EDITOR_EMBEDDED_MIN_VIEWPORT_WIDTH).toBe(1024);
   });
 });
