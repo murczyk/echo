@@ -59,11 +59,11 @@ categorical failures or engine identity and generation duration.
 
 ## Deployment and verification
 
-Deploy the matching Echo backend and frontend. This presentation change does
-not change the agent protocol, require a migration, or modify the installed
-immutable harness `2026.09.29.2`. No harness upgrade is needed. If title generation
-is unavailable, inspect the enabled agent-allowed local engine and its service;
-the immediate public action continues to work while it recovers.
+Deploy the matching Echo backend and frontend. Title generation changes no
+agent protocol and requires no migration or additional harness upgrade beyond
+the [live-progress release](../../../echo-ai-agent/PROGRESS.md#rollout). If title
+generation is unavailable, inspect the enabled agent-allowed local engine and
+its service; the immediate public action continues to work while it recovers.
 
 Submit **знайди 20 головних подій за тиждень, по підрозділах противника** in a new
 development conversation. Verify a short action title, muted factual detail,

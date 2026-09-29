@@ -938,7 +938,7 @@ test("announces the runner protocol and harness release", () => {
   assert.deepEqual(runnerHello(), {
     type: "runner_hello",
     protocolVersion: 1,
-    harnessRelease: "2026.09.29.2",
+    harnessRelease: "2026.09.29.3",
   });
 });
 
@@ -1218,13 +1218,14 @@ test("reports validated query scope and actual delivered message counts", () => 
     label: "Перевіряю доступні джерела",
     requestKind: "json",
   });
+  const groupResponse = [{ name: "Радіомережа А" }, { name: "Радіомережа Б" }];
   const groupResult = tracker.finish(
     groupRoute,
     tracker.start(groupRoute, undefined),
-    [],
-    JSON.stringify({ items: [{ name: "Радіомережа А" }], _echoTruncation: {} }),
+    groupResponse,
+    compactToolResponse(groupRoute, groupResponse, 1),
   );
-  assert.equal(groupResult, "Доступно груп джерел для пошуку: 1");
+  assert.equal(groupResult, "Отримано груп джерел для перегляду: 1");
 });
 
 // Regression: https://github.com/echoua/echo/issues/3064

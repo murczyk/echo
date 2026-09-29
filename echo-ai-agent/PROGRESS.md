@@ -38,7 +38,8 @@ messages delivered for the whole request. The following date, source, and
 search scope describes the current call. Counts reflect actual compacted
 responses, not requested events or completed analysis. When retrieval and
 delivery counts differ, both are stated; a withheld response is never described
-as an empty search. A detailed call
+as an empty search. Source-group results state the records delivered for
+review rather than the total number of accessible groups. A detailed call
 label is retained through later updates or errors so a generic route title
 cannot replace its scope. Lifecycle payloads retain their existing audit
 identity and arguments. Progress sentences remain separate from answer text;
@@ -69,17 +70,17 @@ Regression coverage:
 
 ## Rollout
 
-Release `2026.09.29.2` requires its matching Echo build and frontend. Update and
+Release `2026.09.29.3` requires its matching Echo build and frontend. Update and
 restart Echo before upgrading the selected namespace. From that checkout:
 
 ```sh
-just ai-control-panel upgrade --host local --release 2026.09.29.2 --dry-run
-just ai-control-panel upgrade --host local --release 2026.09.29.2
+just ai-control-panel upgrade --host local --release 2026.09.29.3 --dry-run
+just ai-control-panel upgrade --host local --release 2026.09.29.3
 ```
 
 For another installation, replace `local` with its explicit host alias. Require
 an idle namespace, rescan after the upgrade, and run the verification query
-before expanding rollout. The dispatcher retains `2026.09.29.1` and its existing
+before expanding rollout. The dispatcher retains `2026.09.29.2` and its existing
 predecessors so unselected namespaces can remain on their current release.
 Preserve the previous immutable bundle and container backups; use the
 [control panel recovery procedure](CONTROL_PANEL.md#upgrade-and-recovery) if an
