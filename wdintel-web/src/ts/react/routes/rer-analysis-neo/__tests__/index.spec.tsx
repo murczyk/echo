@@ -655,9 +655,7 @@ describe('RerAnalysisNeoPage', () => {
       container.querySelector<HTMLButtonElement>('[aria-label="create-message-fab"]')?.click();
     });
 
-    expect(workspace?.style.gridTemplateColumns).toBe(
-      '0px minmax(0, 1fr) clamp(640px, 48%, 800px)',
-    );
+    expect(workspace?.style.gridTemplateColumns).toBe('0px minmax(0, 1fr) minmax(0, 1fr)');
     await act(async () => root.unmount());
   });
 
