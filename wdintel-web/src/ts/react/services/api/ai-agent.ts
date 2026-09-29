@@ -1,6 +1,7 @@
 import { emitUnauthorizedEvent } from '../../auth-redirect';
 import { getJson, postJson, postVoid } from './client';
 import type {
+  AiAgentActivityPresentation,
   AiAgentAdminRequestDetail,
   AiAgentAdminRequestItem,
   AiAgentAdminRequestListReq,
@@ -88,6 +89,8 @@ export type AiAgentEvent = {
   toolCallId: string | null;
   toolName: string | null;
   toolLabel?: string | null;
+  activityPresentation?: AiAgentActivityPresentation | null;
+  activityOnly?: boolean;
   citations?: AiAgentMessageCitation[];
   sourceTitle: string | null;
   sourceUrl: string | null;
@@ -302,6 +305,8 @@ export function normalizeAiAgentEvent(
     toolName:
       payloadString(payloadValue(payload, 'toolName', 'tool_name')) ?? payloadString(payload.tool),
     toolLabel: payloadString(payloadValue(payload, 'toolLabel', 'tool_label')),
+    activityPresentation: value.activityPresentation ?? null,
+    activityOnly: value.activityOnly ?? false,
     citations: Array.isArray(payload.citations)
       ? payload.citations.filter(
           (item): item is AiAgentMessageCitation =>

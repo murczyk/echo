@@ -4948,6 +4948,12 @@ export type AiIntelReportAttemptListRsp = {
   items: Array<AiIntelReportAttemptItem>;
 };
 
+export type AiAgentActivityPresentation = {
+  key: number;
+  title: string;
+  detail: string | null;
+};
+
 export type AiAgentProviderItem = {
   id: string;
   name: string;
@@ -5173,6 +5179,8 @@ export type AiAgentRequestEventItem = {
   eventType: string;
   payloadJson: string;
   createdAt: number;
+  activityPresentation: AiAgentActivityPresentation | null;
+  activityOnly: boolean;
 };
 
 export type AiAgentAdminRequestDetail = {

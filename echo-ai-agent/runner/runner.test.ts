@@ -13,6 +13,7 @@ import {
   createToolLifecycleGuard,
   createToolInvocationGuard,
   createToolResponseCompactor,
+  createRouteActivityTracker,
   dailyActivityRequestBody,
   directionFindingsRequestBody,
   inboxMessagesRequestBody,
@@ -21,6 +22,7 @@ import {
   normalizedToolLifecycleEvent,
   runnerHello,
   sourceEvent,
+  subscribeToEvents,
   systemPrompt,
   testConnection,
   completedRepairText,
@@ -936,7 +938,7 @@ test("announces the runner protocol and harness release", () => {
   assert.deepEqual(runnerHello(), {
     type: "runner_hello",
     protocolVersion: 1,
-    harnessRelease: "2026.09.28.1",
+    harnessRelease: "2026.09.29.3",
   });
 });
 
@@ -1004,6 +1006,264 @@ test("suppresses progress lifecycle and labels route lifecycle events", () => {
       is_error: true,
       errorSummary: "Не вдалося завантажити дані за вказаними параметрами.",
     },
+  );
+});
+
+// Regression: https://github.com/echoua/echo/issues/3064
+test("streams individual tool steps before the whole batch finishes", () => {
+  const events: Record<string, unknown>[] = [];
+  let consume: (event: any) => void = () => {};
+  let emitAssistant = true;
+  subscribeToEvents(
+    {
+      subscribe: (listener: (event: any) => void) => {
+        consume = listener;
+        return () => {};
+      },
+    },
+    new Map([["echo_inbox_messages", "Шукаю перехоплення"]]),
+    () => {},
+    () => {},
+    () => emitAssistant,
+    (event) => events.push(event),
+  );
+  consume({ type: "turn_start" });
+  consume({
+    type: "message_update",
+    assistantMessageEvent: {
+      type: "thinking_delta",
+      delta: "Private reasoning",
+    },
+  });
+  consume({
+    type: "message_update",
+    assistantMessageEvent: {
+      type: "toolcall_start",
+      contentIndex: 0,
+      partial: {
+        content: [
+          {
+            type: "toolCall",
+            id: "first-page",
+            name: "echo_inbox_messages",
+            arguments: { private: "Internal arguments" },
+          },
+        ],
+      },
+    },
+  });
+  assert.deepEqual(events, []);
+  consume({
+    type: "tool_execution_start",
+    toolCallId: "first-page",
+    toolName: "echo_inbox_messages",
+    args: { period: { kind: "relative_days", days: 7 } },
+  });
+  consume({
+    type: "tool_execution_end",
+    toolCallId: "first-page",
+    toolName: "echo_inbox_messages",
+    isError: false,
+  });
+  assert.equal(events.at(-1)?.type, "tool_end");
+  assert.equal(events.at(-1)?.tool_call_id, "first-page");
+  consume({
+    type: "tool_execution_start",
+    toolCallId: "second-page",
+    toolName: "echo_inbox_messages",
+    args: { period: { kind: "relative_days", days: 7 } },
+  });
+  assert.equal(events.at(-1)?.type, "tool_start");
+  assert.equal(events.at(-1)?.tool_call_id, "second-page");
+  consume({
+    type: "tool_execution_end",
+    toolCallId: "second-page",
+    toolName: "echo_inbox_messages",
+    isError: false,
+  });
+  consume({ type: "turn_start" });
+  consume({
+    type: "message_update",
+    assistantMessageEvent: { type: "text_delta", delta: "Підсумок" },
+  });
+  assert.equal(events.at(-2)?.type, "tool_end");
+  assert.deepEqual(events.at(-1), { type: "assistant_delta", delta: "Підсумок" });
+  const beforeRepair = events.length;
+  emitAssistant = false;
+  consume({ type: "turn_start" });
+  consume({
+    type: "message_update",
+    assistantMessageEvent: { type: "text_delta", delta: "Private repair" },
+  });
+  assert.equal(events.length, beforeRepair);
+  assert.equal(JSON.stringify(events).includes("Private"), false);
+  assert.equal(JSON.stringify(events).includes("Internal arguments"), false);
+});
+
+// Regression: https://github.com/echoua/echo/issues/3064
+test("reports validated query scope and actual delivered message counts", () => {
+  const tracker = createRouteActivityTracker();
+  const route = validateSkill({
+    method: "POST",
+    path: "/api/rer-importer/get-inbox",
+    skill: "inbox_messages",
+    label: "Шукаю перехоплення",
+    requestKind: "inboxMessages",
+  });
+  const context = validatePayload(normalPayload, false).timeContext!;
+  const body = inboxMessagesRequestBody(
+    {
+      period: { kind: "relative_days", days: 7 },
+      selectedGroups: ["private-group-key"],
+      search: "техніка",
+    },
+    context,
+  );
+  const first = tracker.start(route, body);
+  assert.match(first.label, /груп джерел: 1/);
+  assert.match(first.label, /пошук «техніка»/);
+  assert.match(first.label, /добірка 1/);
+  assert.match(first.label, /29 лип.*4 серп/);
+  const response = {
+    signal_groups: [{ master_key: "private-group-key", name: "Радіомережа А" }],
+    inbox_items: [
+      [100, { text: "Not forwarded" }],
+      [101, { text: "Not forwarded" }],
+    ],
+  };
+  const result = tracker.finish(
+    route,
+    first,
+    response,
+    JSON.stringify({
+      messages: [{ id: 100 }],
+      nextCursor: 100,
+    }),
+  );
+  assert.match(
+    result,
+    /Переглядаю повідомлення з добірки: 1 · зібрано для запиту: 1/,
+  );
+  assert.match(result, /джерела «Радіомережа А»/);
+  assert.match(result, /отримано: 2; для перегляду: 1/);
+  const withheld = tracker.finish(route, first, response, "{}");
+  assert.equal(withheld.includes("немає повідомлень"), false);
+  assert.match(withheld, /отримано: 2; для перегляду: 0/);
+  const second = tracker.start(route, { ...body, before_id_noninclusive: 100 });
+  assert.match(second.label, /добірка 2/);
+  const secondResult = tracker.finish(
+    route,
+    second,
+    response,
+    JSON.stringify({
+      messages: [{ id: 100 }, { id: 99 }],
+      nextCursor: null,
+    }),
+  );
+  assert.match(
+    secondResult,
+    /Переглядаю повідомлення з добірки: 2 · зібрано для запиту: 2/,
+  );
+  const otherScope = tracker.start(route, { ...body, search: "зв’язок" });
+  const otherResult = tracker.finish(
+    route,
+    otherScope,
+    { inbox_items: [[98, {}]] },
+    JSON.stringify({ messages: [{ id: 98 }] }),
+  );
+  assert.match(
+    otherResult,
+    /Переглядаю повідомлення з добірки: 1 · зібрано для запиту: 3/,
+  );
+  assert.match(otherResult, /пошук «зв’язок»/);
+  const empty = tracker.start(route, { ...body, before_id_noninclusive: 99 });
+  const emptyResult = tracker.finish(
+    route,
+    empty,
+    {},
+    JSON.stringify({ messages: [], nextCursor: null }),
+  );
+  assert.match(
+    emptyResult,
+    /У цій добірці немає повідомлень · зібрано для запиту: 3/,
+  );
+  for (const label of [
+    first.label,
+    result,
+    second.label,
+    secondResult,
+    emptyResult,
+  ]) {
+    assert.equal(label.includes("private-group-key"), false);
+    assert.equal(label.includes("100"), false);
+    assert.equal(label.includes("Not forwarded"), false);
+  }
+  const privateSearch = tracker.start(route, {
+    ...body,
+    search:
+      "техніка https://private.invalid 019fc7f7-9770-7f83-9c1a-211af29b02e6 aaaa-bbbb-cccc",
+  });
+  assert.equal(privateSearch.label.includes("private.invalid"), false);
+  assert.equal(privateSearch.label.includes("019fc7f7"), false);
+  assert.equal(privateSearch.label.includes("aaaa-bbbb-cccc"), false);
+  const multipleCallsigns = tracker.start(route, {
+    ...body,
+    selected_callsigns: ["Сивий", "Білий", "Третій"],
+  });
+  assert.match(multipleCallsigns.label, /позивні «Сивий», «Білий» та ще 1/);
+  const groupRoute = validateSkill({
+    method: "POST",
+    path: "/api/user/sigint-groups-detailed",
+    skill: "accessible_group_details",
+    label: "Перевіряю доступні джерела",
+    requestKind: "json",
+  });
+  const groupResponse = [{ name: "Радіомережа А" }, { name: "Радіомережа Б" }];
+  const groupResult = tracker.finish(
+    groupRoute,
+    tracker.start(groupRoute, undefined),
+    groupResponse,
+    compactToolResponse(groupRoute, groupResponse, 1),
+  );
+  assert.equal(groupResult, "Отримано груп джерел для перегляду: 1");
+});
+
+// Regression: https://github.com/echoua/echo/issues/3064
+test("keeps enriched tool labels through later updates and failure", () => {
+  const events: Record<string, unknown>[] = [];
+  let consume: (event: any) => void = () => {};
+  subscribeToEvents(
+    {
+      subscribe: (listener: typeof consume) => {
+        consume = listener;
+        return () => {};
+      },
+    },
+    new Map([["echo_inbox_messages", "Шукаю перехоплення"]]),
+    () => {},
+    () => {},
+    () => true,
+    (event) => events.push(event),
+  );
+  const call = { toolName: "echo_inbox_messages", toolCallId: "page-2" };
+  const label = "Шукаю перехоплення за тиждень · добірка 2";
+  consume({
+    ...call,
+    type: "tool_execution_update",
+    partialResult: { details: { activityLabel: label } },
+  });
+  consume({ ...call, type: "tool_execution_update" });
+  consume({ type: "turn_start" });
+  consume({
+    ...call,
+    type: "tool_execution_end",
+    isError: true,
+    result: { details: {} },
+  });
+  assert.equal(events.length, 3);
+  assert.deepEqual(
+    events.map((event) => event.toolLabel),
+    [label, label, label],
   );
 });
 
