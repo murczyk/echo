@@ -635,7 +635,9 @@ describe('RerAnalysisNeoPage', () => {
     });
 
     expect(container.querySelector('[data-testid="manage-message-drawer"]')).not.toBeNull();
-    expect(useRerAnalysisNeoPageMock.mock.results[0]?.value.reload).toHaveBeenCalledTimes(1);
+    expect(useRerAnalysisNeoPageMock.mock.results[0]?.value.reload).toHaveBeenCalledWith({
+      preserveMessagePage: true,
+    });
     expect(notifyMock).toHaveBeenCalledWith({
       message: 'Повідомлення успішно створено.',
       severity: 'success',

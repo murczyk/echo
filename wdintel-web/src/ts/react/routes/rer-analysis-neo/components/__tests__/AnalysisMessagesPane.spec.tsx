@@ -230,6 +230,37 @@ async function click(element: HTMLElement): Promise<void> {
     element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   });
 }
+
+function setScrollMetrics(
+  scrollBox: HTMLElement,
+  metrics: { clientHeight: number; scrollHeight: number; scrollTop: number },
+) {
+  let scrollTop = metrics.scrollTop;
+  Object.defineProperty(scrollBox, 'clientHeight', {
+    configurable: true,
+    value: metrics.clientHeight,
+  });
+  Object.defineProperty(scrollBox, 'scrollHeight', {
+    configurable: true,
+    value: metrics.scrollHeight,
+  });
+  Object.defineProperty(scrollBox, 'scrollTop', {
+    configurable: true,
+    get: () => scrollTop,
+    set: (value: number) => {
+      scrollTop = Math.max(0, Math.min(value, metrics.scrollHeight - metrics.clientHeight));
+    },
+  });
+}
+
+async function flushAnimationFrames(count = 4): Promise<void> {
+  for (let frame = 0; frame < count; frame += 1) {
+    await act(async () => {
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    });
+  }
+}
+
 describe('AnalysisMessagesPane', () => {
   const rendered: Rendered[] = [];
 
@@ -501,5 +532,92 @@ describe('AnalysisMessagesPane', () => {
     });
 
     expect(scrollBox?.scrollTop).toBe(0);
+  });
+
+  it('keeps the first visible message anchored during viewport preservation', async () => {
+    let captureViewport: (() => void) | null = null;
+    const initialProps = buildProps({
+      messages: [[7, buildMessage({ text: 'before refresh' })]],
+      onViewportCaptureChange: (capture) => {
+        captureViewport = capture;
+      },
+    });
+    const view = await renderComponent(initialProps);
+    rendered.push(view);
+
+    const anchor = view.container.querySelector<HTMLElement>('[data-message-id="7"]');
+    const scrollBox = anchor?.closest('ul')?.parentElement as HTMLElement | null;
+    if (anchor == null || scrollBox == null) throw new Error('Message scroll box is missing');
+    setScrollMetrics(scrollBox, { clientHeight: 600, scrollHeight: 3000, scrollTop: 700 });
+    scrollBox.getBoundingClientRect = () => ({ top: 0 }) as DOMRect;
+    let anchorLayoutTop = 720;
+    anchor.getBoundingClientRect = () =>
+      ({
+        top: anchorLayoutTop - scrollBox.scrollTop,
+        bottom: anchorLayoutTop - scrollBox.scrollTop + 100,
+      }) as DOMRect;
+    act(() => captureViewport?.());
+
+    anchorLayoutTop += 180;
+    await act(async () => {
+      view.root.render(
+        <AnalysisMessagesPane
+          {...initialProps}
+          viewportPreservationKey={1}
+          messages={[[7, buildMessage({ text: 'after refresh' })]]}
+        />,
+      );
+    });
+
+    expect(scrollBox.scrollTop).toBe(880);
+    expect(anchor.getBoundingClientRect().top).toBe(20);
+  });
+
+  it('keeps page navigation authoritative during viewport preservation', async () => {
+    let captureViewport: (() => void) | null = null;
+    const onPageNavigationHandled = vi.fn();
+    const messages = Array.from(
+      { length: 40 },
+      (_, index) => [40 - index, buildMessage()] as [number, InboxMessage],
+    );
+    const props = buildProps({
+      messages,
+      onPageNavigationHandled,
+      onViewportCaptureChange: (capture) => {
+        captureViewport = capture;
+      },
+      pageIndex: 0,
+    });
+    const view = await renderComponent(props);
+    rendered.push(view);
+
+    const messageCard = view.container.querySelector('[data-testid="message-card-40"]');
+    const scrollBox = messageCard?.closest('ul')?.parentElement as HTMLElement | null;
+    if (scrollBox == null) throw new Error('Message scroll box is missing');
+    setScrollMetrics(scrollBox, { clientHeight: 600, scrollHeight: 4000, scrollTop: 700 });
+    scrollBox.getBoundingClientRect = () => ({ top: 0 }) as DOMRect;
+    scrollBox.querySelectorAll<HTMLElement>('[data-message-id]').forEach((element, index) => {
+      element.getBoundingClientRect = () =>
+        ({
+          bottom: (index + 1) * 100 - scrollBox.scrollTop,
+          top: index * 100 - scrollBox.scrollTop,
+        }) as DOMRect;
+    });
+    act(() => captureViewport?.());
+
+    await act(async () => {
+      view.root.render(
+        <AnalysisMessagesPane
+          {...props}
+          pageIndex={1}
+          pageNavigationTarget={1}
+          viewportPreservationKey={1}
+        />,
+      );
+    });
+    await flushAnimationFrames();
+
+    expect(scrollBox.scrollTop).toBe(2000);
+    expect(onPageNavigationHandled).toHaveBeenCalledOnce();
   });
 });

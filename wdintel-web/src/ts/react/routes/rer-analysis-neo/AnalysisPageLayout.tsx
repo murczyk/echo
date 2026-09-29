@@ -428,7 +428,7 @@ export function RerAnalysisNeoPage({
                       });
                     }}
                     onCreated={async () => {
-                      page.reload();
+                      page.reload({ preserveMessagePage: true });
                       notify({
                         message: page.reportSource
                           ? 'Розвіддонесення успішно створено.'
