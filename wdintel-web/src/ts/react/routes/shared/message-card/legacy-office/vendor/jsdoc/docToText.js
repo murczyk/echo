@@ -247,11 +247,16 @@
     var numEntries = Math.floor(dirBytes.length / 128);
     if (numEntries > ECHO_PREVIEW_MAX_CFB_ENTRIES) return null;
     var root = null;
-    var byName = {};
+    var rootIndex = -1;
+    var entries = [];
     for (var n = 0; n < numEntries; n++) {
       var base = n * 128;
       var type = dirBytes[base + 66]; // 0 unalloc, 1 storage, 2 stream, 5 root
-      if (type !== 1 && type !== 2 && type !== 5) continue;
+      if (type === 0) {
+        entries.push(null);
+        continue;
+      }
+      if (type !== 1 && type !== 2 && type !== 5) return null;
       var nameLen = dirDv.getUint16(base + 64, true); // bytes incl. terminator
       var name = '';
       if (nameLen > 2) {
@@ -263,11 +268,78 @@
       var start = dirDv.getUint32(base + 116, true);
       var sizeLow = dirDv.getUint32(base + 120, true);
       var sizeHigh = dirDv.getUint32(base + 124, true); // 0 for v3
-      var entry = { name: name, type: type, start: start, size: sizeHigh * 0x100000000 + sizeLow };
-      if (type === 5) root = entry;
-      else if (type === 2) byName[name] = entry;
+      if (nameLen < 2 || nameLen > 64 || nameLen % 2 !== 0) return null;
+      if (dirDv.getUint16(base + nameLen - 2, true) !== 0) return null;
+      var entry = {
+        index: n,
+        parentIndex: null,
+        name: name,
+        type: type,
+        start: start,
+        size: sizeHigh * 0x100000000 + sizeLow,
+        left: dirDv.getUint32(base + 68, true),
+        right: dirDv.getUint32(base + 72, true),
+        child: dirDv.getUint32(base + 76, true),
+      };
+      if (type === 5) {
+        if (root) return null;
+        root = entry;
+        rootIndex = n;
+      }
+      entries.push(entry);
     }
     if (!root) return null;
+    if (root.left !== FREESECT || root.right !== FREESECT) return null;
+    function validDirectoryReference(reference) {
+      return reference === FREESECT || (reference < entries.length && entries[reference]);
+    }
+    for (var entryIndex = 0; entryIndex < entries.length; entryIndex++) {
+      var directoryEntry = entries[entryIndex];
+      if (!directoryEntry) continue;
+      if (
+        !validDirectoryReference(directoryEntry.left) ||
+        !validDirectoryReference(directoryEntry.right) ||
+        !validDirectoryReference(directoryEntry.child) ||
+        (directoryEntry.type === 2 && directoryEntry.child !== FREESECT)
+      )
+        return null;
+    }
+    var visitedEntries = {};
+    visitedEntries[rootIndex] = true;
+    var pendingEntries =
+      root.child === FREESECT ? [] : [{ index: root.child, parentIndex: rootIndex }];
+    while (pendingEntries.length) {
+      var pendingEntry = pendingEntries.pop();
+      if (visitedEntries[pendingEntry.index]) return null;
+      var currentEntry = entries[pendingEntry.index];
+      if (!currentEntry) return null;
+      visitedEntries[pendingEntry.index] = true;
+      currentEntry.parentIndex = pendingEntry.parentIndex;
+      if (currentEntry.left !== FREESECT)
+        pendingEntries.push({ index: currentEntry.left, parentIndex: pendingEntry.parentIndex });
+      if (currentEntry.right !== FREESECT)
+        pendingEntries.push({ index: currentEntry.right, parentIndex: pendingEntry.parentIndex });
+      if (currentEntry.child !== FREESECT)
+        pendingEntries.push({ index: currentEntry.child, parentIndex: currentEntry.index });
+    }
+    var allocatedEntries = 0;
+    var namesByParent = {};
+    var byName = {};
+    for (var reachableIndex = 0; reachableIndex < entries.length; reachableIndex++) {
+      var reachableEntry = entries[reachableIndex];
+      if (!reachableEntry) continue;
+      allocatedEntries++;
+      if (!visitedEntries[reachableIndex]) return null;
+      if (reachableIndex === rootIndex) continue;
+      var parentNames = namesByParent[reachableEntry.parentIndex] || {};
+      var normalizedName = reachableEntry.name.toLowerCase();
+      if (parentNames[normalizedName]) return null;
+      parentNames[normalizedName] = true;
+      namesByParent[reachableEntry.parentIndex] = parentNames;
+      if (reachableEntry.type === 2 && reachableEntry.parentIndex === rootIndex)
+        byName[reachableEntry.name] = reachableEntry;
+    }
+    if (allocatedEntries !== Object.keys(visitedEntries).length) return null;
 
     // -- Mini-FAT + mini stream (small streams live here). --
     var miniStream = readChain(root.start, root.size, 'root-mini-stream');

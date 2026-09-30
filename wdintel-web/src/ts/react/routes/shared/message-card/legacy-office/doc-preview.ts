@@ -33,6 +33,12 @@ export function buildDocPreview(buffer: ArrayBuffer): DocPreviewResult {
     throw new LegacyOfficePreviewError(LegacyOfficePreviewErrorCode.FileTooLarge);
   }
   const cfb = validateCfbContainer(buffer);
+  if (
+    cfb.directory.some(
+      (entry) => entry.type === 1 && /^(?:vba|macros|_vba_project_cur)$/i.test(entry.name),
+    )
+  )
+    throw new LegacyOfficePreviewError(LegacyOfficePreviewErrorCode.UnsupportedStructure);
   if (cfb.streams.has('EncryptedPackage') || cfb.streams.has('EncryptionInfo')) {
     throw new LegacyOfficePreviewError(LegacyOfficePreviewErrorCode.Encrypted);
   }

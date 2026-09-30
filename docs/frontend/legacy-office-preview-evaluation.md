@@ -20,10 +20,13 @@ formatter, so it displays `25.00%`, not a currency-prefixed percentage.
 Before a candidate parser is called, CFB validation checks physical sector
 bounds; exact FAT, DIFAT, mini-FAT, directory and stream chains; cycles,
 overlaps, duplicate ownership, markers, and role conflicts. DOC FIB/CLX and
-BIFF8 record framing are validated. Encrypted files, macros, embedded OLE,
-external workbook references, hyperlinks, and unsafe drawing/object records
-are rejected. Drawing payloads that meet the bounded BIFF placement/framing
-rules are skipped and never enter the preview DTO.
+BIFF8 record framing are validated. Encrypted files, macros, external workbook
+references, hyperlinks, and unsafe drawing/object records are rejected. Nested
+OLE storage is structurally validated, but embedded-object content is ignored:
+only root Word streams and the main document body enter the parser and preview
+DTO. Drawing payloads that meet the bounded BIFF placement/framing rules are
+skipped and never enter the preview DTO. Embedded-object rendering remains out
+of scope.
 
 The production worker assets receive a restrictive per-worker CSP, duplicated
 in all 12 standalone Echo nginx site configurations. In particular,

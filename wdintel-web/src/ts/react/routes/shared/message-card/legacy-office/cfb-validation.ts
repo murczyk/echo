@@ -12,7 +12,14 @@ const DIFSECT = 0xfffffffc;
 const HEADER_SIZE = 512;
 const DIRECTORY_ENTRY_SIZE = 128;
 
-type CfbDirectoryEntry = { name: string; type: number; startSector: number; size: number };
+type CfbDirectoryEntry = {
+  index: number;
+  parentIndex: number | null;
+  name: string;
+  type: number;
+  startSector: number;
+  size: number;
+};
 type CfbDirectoryReferences = { left: number; right: number; child: number };
 
 export type ValidatedCfb = {
@@ -205,6 +212,8 @@ export function validateCfbContainer(buffer: ArrayBuffer): ValidatedCfb {
       const sizeHigh = sector.getUint32(offset + 124, true);
       if (sizeHigh !== 0 || sizeLow > buffer.byteLength) reject();
       const entry = {
+        index: directoryNodes.length,
+        parentIndex: null,
         name,
         type,
         startSector: sector.getUint32(offset + 116, true),
@@ -225,7 +234,7 @@ export function validateCfbContainer(buffer: ArrayBuffer): ValidatedCfb {
   if (directoryBytes / DIRECTORY_ENTRY_SIZE !== directoryNodes.length) reject();
   const root = directory.find((entry) => entry.type === 5);
   if (root == null || directory.filter((entry) => entry.type === 5).length !== 1) reject();
-  const rootIndex = directoryNodes.indexOf(root);
+  const rootIndex = root.index;
   const rootReferences = directoryReferences[rootIndex];
   if (
     rootReferences == null ||
@@ -248,17 +257,34 @@ export function validateCfbContainer(buffer: ArrayBuffer): ValidatedCfb {
     if (entry.type === 2 && references.child !== FREESECT) reject();
   }
   const visitedDirectoryEntries = new Set<number>([rootIndex]);
-  const pendingDirectoryEntries = rootReferences.child === FREESECT ? [] : [rootReferences.child];
+  const pendingDirectoryEntries =
+    rootReferences.child === FREESECT
+      ? []
+      : [{ index: rootReferences.child, parentIndex: rootIndex }];
   while (pendingDirectoryEntries.length > 0) {
-    const index = pendingDirectoryEntries.pop();
-    if (index == null || visitedDirectoryEntries.has(index)) reject();
+    const pending = pendingDirectoryEntries.pop();
+    if (pending == null || visitedDirectoryEntries.has(pending.index)) reject();
+    const { index, parentIndex } = pending;
     visitedDirectoryEntries.add(index);
+    const entry = directoryNodes[index];
+    if (entry == null) reject();
+    entry.parentIndex = parentIndex;
     const references = directoryReferences[index]!;
-    for (const reference of [references.left, references.right, references.child]) {
-      if (reference !== FREESECT) pendingDirectoryEntries.push(reference);
-    }
+    for (const reference of [references.left, references.right])
+      if (reference !== FREESECT) pendingDirectoryEntries.push({ index: reference, parentIndex });
+    if (references.child !== FREESECT)
+      pendingDirectoryEntries.push({ index: references.child, parentIndex: index });
   }
   if (visitedDirectoryEntries.size !== directory.length) reject();
+  const namesByParent = new Map<number, Set<string>>();
+  for (const entry of directory) {
+    if (entry.index === rootIndex || entry.parentIndex == null) continue;
+    const names = namesByParent.get(entry.parentIndex) ?? new Set<string>();
+    const normalizedName = entry.name.toLowerCase();
+    if (names.has(normalizedName)) reject();
+    names.add(normalizedName);
+    namesByParent.set(entry.parentIndex, names);
+  }
   const miniFatChain = walkFat(firstMiniFatSector, 'mini-fat', miniFatSectorCount * sectorSize);
   if (miniFatChain.length !== miniFatSectorCount) reject();
   const rootMiniStream =
@@ -302,28 +328,29 @@ export function validateCfbContainer(buffer: ArrayBuffer): ValidatedCfb {
     return chain;
   };
   const miniSectors = new Set<number>();
-  const regularChains = new Map<string, number[]>();
-  const miniChains = new Map<string, number[]>();
+  const regularChains = new Map<number, number[]>();
+  const miniChains = new Map<number, number[]>();
   for (const entry of directory) {
     if (entry.type !== 2) continue;
     if (entry.size === 0) {
       if (entry.startSector !== ENDOFCHAIN && entry.startSector !== FREESECT) reject();
-      miniChains.set(entry.name, []);
+      miniChains.set(entry.index, []);
     } else if (entry.size < 4096)
-      miniChains.set(entry.name, walkMini(entry.startSector, entry.size));
+      miniChains.set(entry.index, walkMini(entry.startSector, entry.size));
     else
-      regularChains.set(entry.name, walkFat(entry.startSector, `stream:${entry.name}`, entry.size));
+      regularChains.set(
+        entry.index,
+        walkFat(entry.startSector, `stream:${entry.index}`, entry.size),
+      );
   }
   const streams = new Map<string, CfbDirectoryEntry>();
-  const normalizedStreamNames = new Set<string>();
+  let streamCount = 0;
   for (const entry of directory)
     if (entry.type === 2) {
-      if (streams.size >= LEGACY_OFFICE_MAX_CFB_STREAMS)
+      streamCount += 1;
+      if (streamCount > LEGACY_OFFICE_MAX_CFB_STREAMS)
         reject(LegacyOfficePreviewErrorCode.ResourceLimit);
-      const normalizedName = entry.name.toLowerCase();
-      if (streams.has(entry.name) || normalizedStreamNames.has(normalizedName)) reject();
-      streams.set(entry.name, entry);
-      normalizedStreamNames.add(normalizedName);
+      if (entry.parentIndex === rootIndex) streams.set(entry.name, entry);
     }
   const copyRegularChain = (chain: readonly number[], size: number): Uint8Array => {
     checkedByteLength(size, 1);
@@ -345,9 +372,9 @@ export function validateCfbContainer(buffer: ArrayBuffer): ValidatedCfb {
   const readStream = (name: string): Uint8Array => {
     const entry = streams.get(name);
     if (entry == null) reject(LegacyOfficePreviewErrorCode.UnsupportedStructure);
-    const regularChain = regularChains.get(name);
+    const regularChain = regularChains.get(entry.index);
     if (regularChain != null) return copyRegularChain(regularChain, entry.size);
-    const miniChain = miniChains.get(name);
+    const miniChain = miniChains.get(entry.index);
     if (miniChain == null) reject();
     checkedByteLength(entry.size, 1);
     reserve(entry.size);
