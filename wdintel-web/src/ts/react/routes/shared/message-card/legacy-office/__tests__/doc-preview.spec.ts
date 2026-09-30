@@ -236,6 +236,68 @@ describe('legacy Word DOC preview', () => {
     }
   });
 
+  it.each([
+    [
+      'paragraph',
+      { kind: 'p', runs: [{ text: 'final' }] },
+      { kind: 'p', runs: [{ text: 'later' }] },
+    ],
+    [
+      'list item',
+      { kind: 'p', list: { kind: 'bullet', ilvl: 0 }, runs: [{ text: 'final' }] },
+      { kind: 'p', list: { kind: 'bullet', ilvl: 0 }, runs: [{ text: 'later' }] },
+    ],
+  ])('bounds the final %s by the global text capacity', async (_name, finalBlock, laterBlock) => {
+    const globalReader = globalThis as typeof globalThis & { __echoLegacyDocToText?: unknown };
+    const originalReader = globalReader.__echoLegacyDocToText;
+    const precedingTextLength = LEGACY_OFFICE_MAX_TEXT_CODE_UNITS - 3;
+    const precedingParagraphs = Array.from(
+      { length: Math.ceil(precedingTextLength / LEGACY_OFFICE_MAX_ITEM_TEXT_CODE_UNITS) },
+      (_, index) => ({
+        kind: 'p',
+        runs: [
+          {
+            text: 'a'.repeat(
+              Math.min(
+                LEGACY_OFFICE_MAX_ITEM_TEXT_CODE_UNITS,
+                precedingTextLength - index * LEGACY_OFFICE_MAX_ITEM_TEXT_CODE_UNITS,
+              ),
+            ),
+          },
+        ],
+      }),
+    );
+    const reader = Object.assign(() => null, {
+      model: () => ({ body: [...precedingParagraphs, finalBlock, laterBlock] }),
+    });
+    globalReader.__echoLegacyDocToText = reader;
+    try {
+      const preview = buildDocPreview(await fixtureBuffer('structured-document.doc'));
+      const emittedText = preview.blocks.reduce(
+        (total, block) =>
+          total +
+          (block.type === 'paragraph'
+            ? block.text.length
+            : block.type === 'list'
+              ? block.items.reduce((itemTotal, item) => itemTotal + item.text.length, 0)
+              : block.rows.flat().reduce((cellTotal, cell) => cellTotal + cell.text.length, 0)),
+        0,
+      );
+
+      expect(emittedText).toBe(LEGACY_OFFICE_MAX_TEXT_CODE_UNITS);
+      expect(preview.blocks.at(-1)).toEqual(
+        finalBlock.list == null
+          ? { type: 'paragraph', text: 'fin' }
+          : { type: 'list', ordered: false, items: [{ level: 0, text: 'fin' }] },
+      );
+      expect(JSON.stringify(preview)).not.toContain('later');
+      expect(preview.truncated).toBe(true);
+      expect(validateDocPreviewResult(preview)).toEqual(preview);
+    } finally {
+      globalReader.__echoLegacyDocToText = originalReader;
+    }
+  });
+
   it('fails closed for bytes that are not a CFB DOC', () => {
     expect(() => buildDocPreview(new TextEncoder().encode('{\\rtf1}').buffer)).toThrow(
       LegacyOfficePreviewError,

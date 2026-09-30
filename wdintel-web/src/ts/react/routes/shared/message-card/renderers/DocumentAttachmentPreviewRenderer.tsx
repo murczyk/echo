@@ -56,6 +56,7 @@ function DocumentPreview({ document, zoom }: { document: MessageCardDocument; zo
         />
       ) : document.kind === 'doc' || document.kind === 'xls' ? (
         <LegacyOfficeDocumentPreview
+          key={`${document.kind}:${document.href}`}
           href={document.href}
           zoom={zoom}
           sizeBytes={document.sizeBytes ?? null}

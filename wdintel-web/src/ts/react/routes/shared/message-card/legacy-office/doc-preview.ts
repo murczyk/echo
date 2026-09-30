@@ -136,6 +136,16 @@ export function buildDocPreview(buffer: ArrayBuffer): DocPreviewResult {
       if (stopAfterCell) break;
     } else {
       pendingCellParagraphs = [];
+      const remainingText = LEGACY_OFFICE_MAX_TEXT_CODE_UNITS - emittedText;
+      if (remainingText <= 0) {
+        truncated = true;
+        break;
+      }
+      const stopAfterBlock = text.length > remainingText;
+      if (stopAfterBlock) {
+        text = text.slice(0, remainingText);
+        truncated = true;
+      }
       emittedText += text.length;
       flushTable();
       const list = candidateParagraph.list;
@@ -151,6 +161,7 @@ export function buildDocPreview(buffer: ArrayBuffer): DocPreviewResult {
         flushList();
         blocks.push({ type: 'paragraph', text });
       }
+      if (stopAfterBlock) break;
     }
   }
   flushTable();
