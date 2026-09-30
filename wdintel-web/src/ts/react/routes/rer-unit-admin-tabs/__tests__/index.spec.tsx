@@ -8,22 +8,22 @@ const mocks = vi.hoisted(() => ({
   getUnitActivity: vi.fn(),
 }));
 
-vi.mock('../../services/api/inbox-messages', () => ({
+vi.mock('../../../services/api/inbox-messages', () => ({
   fetchInboxMessages: mocks.fetchInboxMessages,
 }));
-vi.mock('../../services/api/units', () => ({
+vi.mock('../../../services/api/units', () => ({
   getUnitActivity: mocks.getUnitActivity,
 }));
-vi.mock('../../components/PowerAlert', () => ({
+vi.mock('../../../components/PowerAlert', () => ({
   PowerAlert: ({ children }: { children: unknown }) => <div role="alert">{children}</div>,
 }));
-vi.mock('../rer-network-details-neo/components/NetworkDetailsActivityChart', () => ({
+vi.mock('../../rer-network-details-neo/components/NetworkDetailsActivityChart', () => ({
   NetworkDetailsActivityChart: ({ headingId }: { headingId: string }) => (
     <div data-testid="activity-chart" aria-labelledby={headingId} />
   ),
 }));
 
-import { UnitActivityPanel, UnitInterceptionsPanel } from './index';
+import { UnitActivityPanel, UnitInterceptionsPanel } from '../index';
 
 function inboxItem(id: number, text: string) {
   return [

@@ -97,9 +97,10 @@ async fn cleanup_orbit_other_units_for_login(
             .await
             .c(h!())?;
     }
-    if !inactive_unit_ids.is_empty() {
-        crate::orbit::reconcile_sigint_unit_deduplicate_candidates(
+    for unit_id in &inactive_unit_ids {
+        crate::orbit::reevaluate_sigint_unit_deduplicate_candidate(
             &transaction,
+            *unit_id,
         )
         .await
         .c(h!())?;
@@ -134,6 +135,18 @@ inner join sigint_unit
     on sigint_unit.id = link.sigint_unit_id
     and sigint_unit.deleted = false
 where orbit_unit_echelon.key = 'other'
+  and not exists (
+      select 1
+      from orbit_unit_sigint_unit other_link
+      inner join orbit_unit other_orbit_unit
+          on other_orbit_unit.unit_id = other_link.orbit_unit_id
+          and other_orbit_unit.deleted = false
+      left join orbit_unit_echelon other_echelon
+          on other_echelon.id = other_orbit_unit.unit_echelon_id
+      where other_link.sigint_unit_id = sigint_unit.id
+        and other_link.is_suppressed = false
+        and other_echelon.key is distinct from 'other'
+  )
 order by sigint_unit.id
             "#
             .to_string(),
@@ -2948,6 +2961,13 @@ mod tests {
             None,
         )
         .await;
+        let mixed_other = insert_orbit_unit(
+            &env.dbx,
+            "Mixed command post",
+            Some(other_echelon.id),
+            None,
+        )
+        .await;
         let active = mk_sigint_unit(
             &env.dbx,
             sigint_unit::ActiveModel {
@@ -2978,12 +2998,34 @@ mod tests {
         )
         .await
         .unwrap();
+        let mixed = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Inactive mixed unit".to_string()),
+                active: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         link_orbit_unit(&env.dbx, other.unit_id, active.id).await;
         link_orbit_unit(&env.dbx, other.unit_id, inactive.id).await;
         link_orbit_unit(&env.dbx, brigade.unit_id, regular.id).await;
+        link_orbit_unit(&env.dbx, mixed_other.unit_id, mixed.id).await;
+        link_orbit_unit(&env.dbx, brigade.unit_id, mixed.id).await;
         crate::orbit::reconcile_sigint_unit_deduplicate_candidates(&env.dbx)
             .await
             .unwrap();
+        let manually_reviewed = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Manually reviewed unit".to_string()),
+                is_deduplicate_candidate: Set(Some(true)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         assert_eq!(
             sigint_unit::Entity::find_by_id(active.id)
                 .one(&env.dbx)
@@ -3043,6 +3085,23 @@ mod tests {
                 .unwrap()
                 .unwrap()
                 .deleted
+        );
+        assert!(
+            !sigint_unit::Entity::find_by_id(mixed.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .deleted
+        );
+        assert_eq!(
+            sigint_unit::Entity::find_by_id(manually_reviewed.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .is_deduplicate_candidate,
+            Some(true)
         );
         assert!(orbit_unit::Entity::find_by_id(other.unit_id)
             .one(&env.dbx)

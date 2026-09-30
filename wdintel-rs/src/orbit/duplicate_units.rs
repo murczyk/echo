@@ -1197,6 +1197,17 @@ mod tests {
     }
 
     #[test]
+    fn legacy_generated_names_remain_derived_after_suffix_changes() {
+        let mut pks = unit(1, "4 мсб", true, Uuid::new_v4(), "4 мсб", "");
+        pks.military_district = "ПКС".to_string();
+        let mut airborne = unit(2, "4 мсб", true, Uuid::new_v4(), "4 мсб", "");
+        airborne.other = "ПДВ".to_string();
+
+        assert!(unit_name_is_derived(&pks));
+        assert!(unit_name_is_derived(&airborne));
+    }
+
+    #[test]
     fn automatic_merge_rejects_a_custom_name_that_the_survivor_would_lose() {
         let system_login_id = Uuid::new_v4();
         let active = unit(1, "4 мсб", true, Uuid::new_v4(), "4 мсб", "");

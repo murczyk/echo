@@ -70,6 +70,8 @@ pub(crate) fn unit_name_is_derived(unit: &sigint_unit::Model) -> bool {
     unit.name.trim().is_empty()
         || unit.name == generated_unit_name(unit)
         || unit.name == generated_unit_name_with_airborne(unit, true)
+        || unit.name
+            == unit_name_from_hierarchy_without_suffixes(unit_hierarchy(unit))
 }
 
 pub(crate) fn generated_unit_name(unit: &sigint_unit::Model) -> String {
@@ -138,7 +140,25 @@ fn unit_name_from_hierarchy_with_airborne(
     let append_pks =
         hierarchy[crate::orbit::EchoEchelon::MilitaryDistrict.index()].trim()
             == SIGINT_UNIT_NAME_PKS_MILITARY_DISTRICT;
-    let mut name_parts = hierarchy
+    let mut name_parts = unit_name_parts(hierarchy);
+    if append_airborne {
+        name_parts.push(SIGINT_UNIT_NAME_AIRBORNE_SUFFIX);
+    }
+    if append_pks {
+        name_parts.push(SIGINT_UNIT_NAME_PKS_SUFFIX);
+    }
+    name_parts.join(" ")
+}
+
+fn unit_name_from_hierarchy_without_suffixes(hierarchy: [&str; 14]) -> String {
+    if !hierarchy_has_name_echelon_below_corps(&hierarchy) {
+        return String::new();
+    }
+    unit_name_parts(hierarchy).join(" ")
+}
+
+fn unit_name_parts(hierarchy: [&str; 14]) -> Vec<&str> {
+    hierarchy
         .into_iter()
         .enumerate()
         .skip(SIGINT_UNIT_NAME_FIRST_INCLUDED_ECHELON_INDEX)
@@ -151,14 +171,7 @@ fn unit_name_from_hierarchy_with_airborne(
             !part.is_empty() && !unit_name_part_is_blacklisted(*echelon, part)
         })
         .map(|(_, part)| part)
-        .collect::<Vec<_>>();
-    if append_airborne {
-        name_parts.push(SIGINT_UNIT_NAME_AIRBORNE_SUFFIX);
-    }
-    if append_pks {
-        name_parts.push(SIGINT_UNIT_NAME_PKS_SUFFIX);
-    }
-    name_parts.join(" ")
+        .collect()
 }
 
 fn hierarchy_has_name_echelon_below_corps(hierarchy: &[&str; 14]) -> bool {

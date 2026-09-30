@@ -95,9 +95,6 @@ async fn activate_inactive_units_with_policy(
     let activated = activate_units_for_login(&transaction, &login, &units)
         .await
         .c(h!())?;
-    crate::orbit::reconcile_sigint_unit_deduplicate_candidates(&transaction)
-        .await
-        .c(h!())?;
     transaction.commit().await.c(h!())?;
 
     if !activated.is_empty() {
@@ -138,21 +135,14 @@ where
         link_threshold.saturating_add(1).into(),
         link_threshold.into(),
     ];
-    let candidate_filter = candidate_ids
-        .filter(|candidate_ids| !candidate_ids.is_empty())
-        .map(|candidate_ids| {
-            let placeholders = candidate_ids
-                .iter()
-                .enumerate()
-                .map(|(index, unit_id)| {
-                    values.push((*unit_id).into());
-                    format!("${}", index + 4)
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("and unit.id in ({placeholders})")
-        })
-        .unwrap_or_default();
+    let candidate_filter = match candidate_ids {
+        Some([]) => return Ok(Vec::new()),
+        Some(candidate_ids) => {
+            values.push(candidate_ids.to_vec().into());
+            "and unit.id = any($4::bigint[])"
+        }
+        None => "",
+    };
     sigint_unit::Model::find_by_statement(Statement::from_sql_and_values(
         DbBackend::Postgres,
         format!(
@@ -165,7 +155,7 @@ where unit.active = false
   and (
       select count(*)
       from (
-          select link.item_id
+          select distinct link.item_id
           from sigint_inbox_item_unit link
           where link.unit_id = unit.id
             and link.created_at > now() - $1 * interval '1 day'
@@ -205,8 +195,9 @@ mod tests {
         unit_id: i64,
         count: usize,
         created_at: chrono::NaiveDateTime,
+        duplicate_first_item: bool,
     ) {
-        for _ in 0..count {
+        for index in 0..count {
             let item = mk_sigint_inbox_item(&env.dbx, Default::default())
                 .await
                 .unwrap();
@@ -220,6 +211,18 @@ mod tests {
             .insert(&env.dbx)
             .await
             .unwrap();
+            if duplicate_first_item && index == 0 {
+                sigint_inbox_item_unit::ActiveModel {
+                    item_id: Set(item.id),
+                    unit_id: Set(unit_id),
+                    kind: Set(SigintInboxItemUnitKind::Network),
+                    created_at: Set(created_at),
+                    ..Default::default()
+                }
+                .insert(&env.dbx)
+                .await
+                .unwrap();
+            }
         }
     }
 
@@ -256,13 +259,14 @@ mod tests {
         .await
         .unwrap();
         let recent = Utc::now().naive_utc() - ChronoDuration::minutes(5);
-        insert_links(&env, eligible.id, 3, recent).await;
-        insert_links(&env, boundary.id, 2, recent).await;
+        insert_links(&env, eligible.id, 3, recent, false).await;
+        insert_links(&env, boundary.id, 2, recent, true).await;
         insert_links(
             &env,
             stale.id,
             3,
             Utc::now().naive_utc() - ChronoDuration::days(8),
+            false,
         )
         .await;
 
@@ -279,7 +283,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(eligible.active);
-        assert_eq!(eligible.is_deduplicate_candidate, Some(false));
+        assert_eq!(eligible.is_deduplicate_candidate, Some(true));
         assert!(
             !sigint_unit::Entity::find_by_id(boundary.id)
                 .one(&env.dbx)
