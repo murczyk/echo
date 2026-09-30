@@ -26,7 +26,13 @@ const MESSAGE_CARD_PREVIEW_SHELL_CONFIG_BY_KIND = {
   pdf: {
     disableRestoreFocus: true,
   },
+  doc: {
+    disableRestoreFocus: true,
+  },
   docx: {
+    disableRestoreFocus: true,
+  },
+  xls: {
     disableRestoreFocus: true,
   },
   xlsx: {

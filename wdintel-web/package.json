@@ -26,6 +26,7 @@
     "test:elm": "elm-test",
     "test:ts": "vitest run",
     "test:structure-check": "node scripts/test-structure-check.mjs",
+    "test:legacy-office": "node scripts/qualify-legacy-office-production-workers.mjs",
     "pretest:ts": "npm run tokens:check && npm run test:structure-check",
     "pretest:ts:ci": "npm run tokens:check && npm run test:structure-check",
     "test:ts:ci": "vitest run",
