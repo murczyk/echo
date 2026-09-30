@@ -185,10 +185,7 @@ test.describe('@smoke @regression', () => {
           const [outer, nested] = lists;
           return (
             lists.every((list) => {
-              const style = getComputedStyle(list);
-              return (
-                style.listStyleType !== 'none' && Number.parseFloat(style.paddingInlineStart) > 0
-              );
+              return getComputedStyle(list).listStyleType === 'none';
             }) &&
             outer != null &&
             nested != null &&
@@ -198,12 +195,7 @@ test.describe('@smoke @regression', () => {
       ).toBe(true);
       expect(
         await docDialog.locator('ul').evaluateAll((lists) => {
-          return lists.every((list) => {
-            const style = getComputedStyle(list);
-            return (
-              style.listStyleType !== 'none' && Number.parseFloat(style.paddingInlineStart) > 0
-            );
-          });
+          return lists.every((list) => getComputedStyle(list).listStyleType === 'none');
         }),
       ).toBe(true);
       await expect(docDialog.getByRole('link', { name: 'Скачати' })).toBeVisible();

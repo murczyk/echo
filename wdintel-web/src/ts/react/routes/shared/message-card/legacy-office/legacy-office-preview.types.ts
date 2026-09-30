@@ -12,7 +12,11 @@ export type XlsPreviewResult = {
 export type DocPreviewResult = {
   blocks: Array<
     | { type: 'paragraph'; text: string }
-    | { type: 'list'; ordered: boolean; items: Array<{ level: number; text: string }> }
+    | {
+        type: 'list';
+        ordered: boolean;
+        items: Array<{ level: number; marker: string; text: string }>;
+      }
     | { type: 'table'; rows: Array<Array<{ text: string }>> }
   >;
   truncated: boolean;
@@ -120,21 +124,27 @@ export function validateDocPreviewResult(value: unknown): DocPreviewResult | nul
       Array.isArray(item.items) &&
       item.items.length > 0
     ) {
-      const items: Array<{ level: number; text: string }> = [];
+      const items: Array<{ level: number; marker: string; text: string }> = [];
       for (const listItem of item.items) {
         if (typeof listItem !== 'object' || listItem == null) return null;
-        if (!hasExactKeys(listItem, ['level', 'text'])) return null;
-        const listRecord = listItem as { level?: unknown; text?: unknown };
+        if (!hasExactKeys(listItem, ['level', 'marker', 'text'])) return null;
+        const listRecord = listItem as { level?: unknown; marker?: unknown; text?: unknown };
         if (
           !Number.isInteger(listRecord.level) ||
           (listRecord.level as number) < 0 ||
           (listRecord.level as number) > LEGACY_OFFICE_MAX_LIST_NESTING ||
+          typeof listRecord.marker !== 'string' ||
+          listRecord.marker.length > LEGACY_OFFICE_MAX_LIST_MARKER_CODE_UNITS ||
           !isBoundedString(listRecord.text)
         )
           return null;
-        text += listRecord.text.length;
+        text += listRecord.marker.length + listRecord.text.length;
         runs += 1;
-        items.push({ level: listRecord.level as number, text: listRecord.text });
+        items.push({
+          level: listRecord.level as number,
+          marker: listRecord.marker,
+          text: listRecord.text,
+        });
       }
       blocks.push({ type: 'list', ordered: item.ordered, items });
     } else if (
@@ -183,6 +193,7 @@ import {
   LEGACY_OFFICE_MAX_DOC_RUNS,
   LEGACY_OFFICE_MAX_DOC_TABLE_CELLS,
   LEGACY_OFFICE_MAX_ITEM_TEXT_CODE_UNITS,
+  LEGACY_OFFICE_MAX_LIST_MARKER_CODE_UNITS,
   LEGACY_OFFICE_MAX_LIST_NESTING,
   LEGACY_OFFICE_MAX_ROWS,
   LEGACY_OFFICE_MAX_SHEETS,

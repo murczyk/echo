@@ -8,6 +8,7 @@ import { buildDocPreview } from '../doc-preview';
 import {
   LEGACY_OFFICE_MAX_DOC_TABLE_CELLS,
   LEGACY_OFFICE_MAX_ITEM_TEXT_CODE_UNITS,
+  LEGACY_OFFICE_MAX_LIST_MARKER_CODE_UNITS,
   LEGACY_OFFICE_MAX_TEXT_CODE_UNITS,
 } from '../legacy-office-limits';
 import { validateDocPreviewResult } from '../legacy-office-preview.types';
@@ -50,7 +51,8 @@ describe('legacy Word DOC preview', () => {
   });
 
   it('reads the locally generated LibreOffice Writer DOC fixture', async () => {
-    const preview = buildDocPreview(await fixtureBuffer('structured-document.doc'));
+    const buffer = await fixtureBuffer('structured-document.doc');
+    const preview = buildDocPreview(buffer);
     const text = preview.blocks
       .flatMap((block) =>
         block.type === 'paragraph'
@@ -65,6 +67,10 @@ describe('legacy Word DOC preview', () => {
     expect(text).toContain('Вкладений пункт');
     expect(text).toContain('Друга таблиця');
     expect(text).toContain('Фінальний абзац');
+    const lists = preview.blocks.filter((block) => block.type === 'list');
+    expect(lists.flatMap((list) => list.items.map((item) => item.marker))).toEqual(
+      expect.arrayContaining(['1.', '2.', '•']),
+    );
   });
 
   it('keeps multi-paragraph table cells and surrounding paragraphs in the generated DOC fixture', async () => {
@@ -142,6 +148,35 @@ describe('legacy Word DOC preview', () => {
           rows: [[{ text: 'Перший абзац\nДругий абзац' }, { text: 'Інша комірка' }]],
         },
         { type: 'paragraph', text: 'Після таблиці' },
+      ]);
+    } finally {
+      globalReader.__echoLegacyDocToText = originalReader;
+    }
+  });
+
+  // Regression: ECHO-2769
+  it('preserves generated list markers without inferring their format', async () => {
+    const globalReader = globalThis as typeof globalThis & { __echoLegacyDocToText?: unknown };
+    const originalReader = globalReader.__echoLegacyDocToText;
+    globalReader.__echoLegacyDocToText = Object.assign(() => null, {
+      model: () => ({
+        body: [
+          { kind: 'p', list: { kind: 'number', ilvl: 0, marker: '5.' }, runs: [{ text: 'five' }] },
+          { kind: 'p', list: { kind: 'number', ilvl: 1, marker: 'B)' }, runs: [{ text: 'beta' }] },
+        ],
+      }),
+    });
+    try {
+      const preview = buildDocPreview(await fixtureBuffer('structured-document.doc'));
+      expect(preview.blocks).toEqual([
+        {
+          type: 'list',
+          ordered: true,
+          items: [
+            { level: 0, marker: '5.', text: 'five' },
+            { level: 1, marker: 'B)', text: 'beta' },
+          ],
+        },
       ]);
     } finally {
       globalReader.__echoLegacyDocToText = originalReader;
@@ -288,10 +323,97 @@ describe('legacy Word DOC preview', () => {
       expect(preview.blocks.at(-1)).toEqual(
         finalBlock.list == null
           ? { type: 'paragraph', text: 'fin' }
-          : { type: 'list', ordered: false, items: [{ level: 0, text: 'fin' }] },
+          : { type: 'list', ordered: false, items: [{ level: 0, marker: '', text: 'fin' }] },
       );
       expect(JSON.stringify(preview)).not.toContain('later');
       expect(preview.truncated).toBe(true);
+      expect(validateDocPreviewResult(preview)).toEqual(preview);
+    } finally {
+      globalReader.__echoLegacyDocToText = originalReader;
+    }
+  });
+
+  // Regression: ECHO-2769
+  it('truncates list text after counting its marker against the global budget', async () => {
+    const globalReader = globalThis as typeof globalThis & { __echoLegacyDocToText?: unknown };
+    const originalReader = globalReader.__echoLegacyDocToText;
+    const length = LEGACY_OFFICE_MAX_TEXT_CODE_UNITS - 4;
+    const preceding = Array.from(
+      { length: Math.ceil(length / LEGACY_OFFICE_MAX_ITEM_TEXT_CODE_UNITS) },
+      (_, index) => ({
+        kind: 'p',
+        runs: [
+          {
+            text: 'a'.repeat(
+              Math.min(
+                LEGACY_OFFICE_MAX_ITEM_TEXT_CODE_UNITS,
+                length - index * LEGACY_OFFICE_MAX_ITEM_TEXT_CODE_UNITS,
+              ),
+            ),
+          },
+        ],
+      }),
+    );
+    globalReader.__echoLegacyDocToText = Object.assign(() => null, {
+      model: () => ({
+        body: [
+          ...preceding,
+          { kind: 'p', list: { kind: 'number', ilvl: 0, marker: '5.' }, runs: [{ text: 'final' }] },
+          { kind: 'p', runs: [{ text: 'later' }] },
+        ],
+      }),
+    });
+    try {
+      const preview = buildDocPreview(await fixtureBuffer('structured-document.doc'));
+      expect(preview.blocks.at(-1)).toEqual({
+        type: 'list',
+        ordered: true,
+        items: [{ level: 0, marker: '5.', text: 'fi' }],
+      });
+      expect(preview.truncated).toBe(true);
+      expect(JSON.stringify(preview)).not.toContain('later');
+      expect(validateDocPreviewResult(preview)).toEqual(preview);
+    } finally {
+      globalReader.__echoLegacyDocToText = originalReader;
+    }
+  });
+
+  it('truncates oversized list markers independently of item text', async () => {
+    const globalReader = globalThis as typeof globalThis & { __echoLegacyDocToText?: unknown };
+    const originalReader = globalReader.__echoLegacyDocToText;
+    globalReader.__echoLegacyDocToText = Object.assign(() => null, {
+      model: () => ({
+        body: [
+          {
+            kind: 'p',
+            list: {
+              kind: 'number',
+              ilvl: 0,
+              marker: 'x'.repeat(LEGACY_OFFICE_MAX_LIST_MARKER_CODE_UNITS + 1),
+            },
+            runs: [{ text: 'safe' }],
+          },
+        ],
+      }),
+    });
+    try {
+      const preview = buildDocPreview(await fixtureBuffer('structured-document.doc'));
+      expect(preview).toEqual({
+        blocks: [
+          {
+            type: 'list',
+            ordered: true,
+            items: [
+              {
+                level: 0,
+                marker: 'x'.repeat(LEGACY_OFFICE_MAX_LIST_MARKER_CODE_UNITS),
+                text: 'safe',
+              },
+            ],
+          },
+        ],
+        truncated: true,
+      });
       expect(validateDocPreviewResult(preview)).toEqual(preview);
     } finally {
       globalReader.__echoLegacyDocToText = originalReader;

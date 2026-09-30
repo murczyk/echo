@@ -24,7 +24,7 @@ import { XlsxSheetTabs } from '../xlsx/XlsxSheetTabs';
 
 type LegacyKind = 'doc' | 'xls';
 type DocListItem = Extract<DocPreviewResult['blocks'][number], { type: 'list' }>['items'][number];
-type DocListNode = { text: string; children: DocListNode[] };
+type DocListNode = { marker: string; text: string; children: DocListNode[] };
 
 function NestedDocList({ items, ordered }: { items: DocListItem[]; ordered: boolean }) {
   const roots: DocListNode[] = [];
@@ -39,16 +39,16 @@ function NestedDocList({ items, ordered }: { items: DocListItem[]; ordered: bool
     }
     const parent = ancestors.at(-1);
     if (parent == null) continue;
-    const node = { text: item.text, children: [] };
+    const node = { marker: item.marker, text: item.text, children: [] };
     parent.children.push(node);
     ancestors.push({ level: item.level, children: node.children });
   }
   const List = ordered ? 'ol' : 'ul';
   const renderNodes = (nodes: DocListNode[]) => (
-    <List className={ordered ? 'list-decimal pl-6' : 'list-disc pl-6'}>
+    <List className="list-none pl-6">
       {nodes.map((node, index) => (
         <li key={index}>
-          {node.text}
+          <span>{node.marker || (ordered ? `${index + 1}.` : '•')}</span> {node.text}
           {node.children.length > 0 ? renderNodes(node.children) : null}
         </li>
       ))}

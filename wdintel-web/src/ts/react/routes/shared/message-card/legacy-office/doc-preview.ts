@@ -8,6 +8,7 @@ import {
   LEGACY_OFFICE_MAX_DOC_TABLE_CELLS,
   LEGACY_OFFICE_MAX_FILE_BYTES,
   LEGACY_OFFICE_MAX_ITEM_TEXT_CODE_UNITS,
+  LEGACY_OFFICE_MAX_LIST_MARKER_CODE_UNITS,
   LEGACY_OFFICE_MAX_TEXT_CODE_UNITS,
 } from './legacy-office-limits';
 import type { DocPreviewResult } from './legacy-office-preview.types';
@@ -15,7 +16,7 @@ import type { DocPreviewResult } from './legacy-office-preview.types';
 type CandidateRun = { text?: unknown };
 type CandidateParagraph = {
   kind?: unknown;
-  list?: { ilvl?: unknown; kind?: unknown } | null;
+  list?: { ilvl?: unknown; kind?: unknown; marker?: unknown } | null;
   runs?: CandidateRun[];
 };
 type CandidateReader = {
@@ -136,19 +137,25 @@ export function buildDocPreview(buffer: ArrayBuffer): DocPreviewResult {
       if (stopAfterCell) break;
     } else {
       pendingCellParagraphs = [];
+      const list = candidateParagraph.list;
+      let marker = typeof list?.marker === 'string' ? list.marker : '';
+      if (marker.length > LEGACY_OFFICE_MAX_LIST_MARKER_CODE_UNITS) {
+        marker = marker.slice(0, LEGACY_OFFICE_MAX_LIST_MARKER_CODE_UNITS);
+        truncated = true;
+      }
       const remainingText = LEGACY_OFFICE_MAX_TEXT_CODE_UNITS - emittedText;
       if (remainingText <= 0) {
         truncated = true;
         break;
       }
-      const stopAfterBlock = text.length > remainingText;
+      const stopAfterBlock = marker.length + text.length > remainingText;
       if (stopAfterBlock) {
-        text = text.slice(0, remainingText);
+        marker = marker.slice(0, remainingText);
+        text = text.slice(0, remainingText - marker.length);
         truncated = true;
       }
-      emittedText += text.length;
+      emittedText += marker.length + text.length;
       flushTable();
-      const list = candidateParagraph.list;
       if (list != null) {
         const ordered = list.kind === 'number';
         const level = typeof list.ilvl === 'number' ? Math.min(Math.max(list.ilvl, 0), 9) : 0;
@@ -156,7 +163,7 @@ export function buildDocPreview(buffer: ArrayBuffer): DocPreviewResult {
           flushList();
           pendingList = { type: 'list', ordered, items: [] };
         }
-        pendingList.items.push({ level, text });
+        pendingList.items.push({ level, marker, text });
       } else {
         flushList();
         blocks.push({ type: 'paragraph', text });

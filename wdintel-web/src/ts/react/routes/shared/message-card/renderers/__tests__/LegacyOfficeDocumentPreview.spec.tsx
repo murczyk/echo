@@ -36,8 +36,9 @@ describe('LegacyOfficeDocumentPreview', () => {
           type: 'list',
           ordered: true,
           items: [
-            { level: 0, text: 'Пункт' },
-            { level: 1, text: 'Вкладений пункт' },
+            { level: 0, marker: '5.', text: 'Пункт' },
+            { level: 0, marker: 'B)', text: 'Літера' },
+            { level: 1, marker: '•', text: 'Вкладений пункт' },
           ],
         },
         { type: 'table', rows: [[{ text: 'Перший рядок\nДругий рядок' }]] },
@@ -55,8 +56,10 @@ describe('LegacyOfficeDocumentPreview', () => {
     });
 
     expect(container.querySelector('p')?.textContent).toBe('Абзац');
-    expect(container.querySelector('ol li')?.firstChild?.textContent).toBe('Пункт');
-    expect(container.querySelector('ol li ol li')?.textContent).toBe('Вкладений пункт');
+    expect(container.querySelector('ol')?.classList.contains('list-none')).toBe(true);
+    expect(container.querySelector('ol li span')?.textContent).toBe('5.');
+    expect(container.querySelectorAll('ol > li span')[1]?.textContent).toBe('B)');
+    expect(container.querySelector('ol > li:last-child ol li span')?.textContent).toBe('•');
     expect(container.querySelector('table td')?.textContent).toBe('Перший рядок\nДругий рядок');
     expect(container.querySelector('table td')?.classList.contains('whitespace-pre-line')).toBe(
       true,
