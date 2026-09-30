@@ -11,6 +11,7 @@ use super::types::{
 use crate::config::{
     SIGINT_UNIT_INCONSISTENCY_LOWER_ORBIT_ECHELON_REASON_UK,
     SIGINT_UNIT_INCONSISTENCY_MULTIPLE_ORBIT_LINKS_REASON_UK,
+    SIGINT_UNIT_NAME_AIRBORNE_COMBAT_UNIT_TYPE_KEY,
 };
 use crate::entities::*;
 use crate::error::AppError;
@@ -216,6 +217,68 @@ pub async fn unit_orbit_links(
         );
     }
     Ok(unit_links)
+}
+
+pub(crate) async fn airborne_sigint_unit_ids<C>(
+    dbx: &C,
+    sigint_unit_ids: &[i64],
+) -> anyhow::Result<BTreeSet<i64>>
+where
+    C: ConnectionTrait,
+{
+    if sigint_unit_ids.is_empty() {
+        return Ok(BTreeSet::new());
+    }
+    let unit_ids = dbx
+        .query_all_raw(Statement::from_sql_and_values(
+            dbx.get_database_backend(),
+            r#"
+                select distinct link.sigint_unit_id
+                from orbit_unit_sigint_unit link
+                inner join orbit_unit unit
+                    on unit.unit_id = link.orbit_unit_id
+                    and unit.deleted = false
+                inner join orbit_combat_unit_type combat_type
+                    on combat_type.id = unit.combat_unit_type_id
+                where link.sigint_unit_id = any($1::bigint[])
+                    and link.is_suppressed = false
+                    and combat_type.key = $2
+            "#,
+            [
+                sigint_unit_ids.to_vec().into(),
+                SIGINT_UNIT_NAME_AIRBORNE_COMBAT_UNIT_TYPE_KEY.into(),
+            ],
+        ))
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|row| row.try_get("", "sigint_unit_id").c(h!()))
+        .collect::<anyhow::Result<BTreeSet<_>>>()
+        .c(h!())?;
+    Ok(unit_ids)
+}
+
+async fn orbit_unit_is_airborne<C>(
+    dbx: &C,
+    unit: &orbit_unit::Model,
+) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
+    let Some(combat_unit_type_id) = unit.combat_unit_type_id else {
+        return Ok(false);
+    };
+    Ok(
+        orbit_combat_unit_type::Entity::find_by_id(combat_unit_type_id)
+            .filter(
+                orbit_combat_unit_type::Column::Key
+                    .eq(SIGINT_UNIT_NAME_AIRBORNE_COMBAT_UNIT_TYPE_KEY),
+            )
+            .one(dbx)
+            .await
+            .c(h!())?
+            .is_some(),
+    )
 }
 
 pub async fn unit_has_orbit(
@@ -2316,8 +2379,13 @@ where
         present_in_orbit: Some(true),
         duplicate_unit_ids: Vec::new(),
     };
-    if super::generated_unit_name_req(&unit_req).is_empty() {
+    let is_airborne = orbit_unit_is_airborne(dbx, orbit_unit).await.c(h!())?;
+    let generated_name =
+        super::generated_unit_name_req_with_airborne(&unit_req, is_airborne);
+    if generated_name.is_empty() {
         unit_req.name = preferred_orbit_full_unit_name(orbit_unit);
+    } else if is_airborne {
+        unit_req.name = Some(generated_name);
     }
     Ok(unit_req)
 }

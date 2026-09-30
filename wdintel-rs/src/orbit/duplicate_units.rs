@@ -784,8 +784,7 @@ fn option_is_preserved<T: Copy + PartialEq>(
 }
 
 fn unit_name_is_derived(unit: &sigint_unit::Model) -> bool {
-    unit.name.trim().is_empty()
-        || unit.name == crate::sigint::unit::generated_unit_name(unit)
+    crate::sigint::unit::unit_name_is_derived(unit)
 }
 
 fn selection(

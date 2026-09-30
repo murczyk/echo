@@ -589,6 +589,11 @@ pub const SIGINT_UNIT_NAME_ARMY_BLACKLIST_TERMS: &[&str] =
     &["ув(с)", "ув", "тн"];
 pub const SIGINT_UNIT_NAME_CORPS_BLACKLIST_TERMS: &[&str] =
     SIGINT_UNIT_NAME_ARMY_BLACKLIST_TERMS;
+pub const SIGINT_UNIT_NAME_AIRBORNE_COMBAT_UNIT_TYPE_KEY: &str = "airborne";
+pub const SIGINT_UNIT_NAME_AIRBORNE_OTHER: &str = "ПДВ";
+pub const SIGINT_UNIT_NAME_AIRBORNE_SUFFIX: &str = "ПДВ";
+pub const SIGINT_UNIT_NAME_PKS_MILITARY_DISTRICT: &str = "ПКС";
+pub const SIGINT_UNIT_NAME_PKS_SUFFIX: &str = "ПКС";
 pub const SIGINT_UNIT_CHANGELOG_LIMIT: u64 = 200;
 pub const SIGINT_UNIT_MERGE_ADVISORY_LOCK_NAMESPACE: &str =
     "sigint-unit-merge:";
