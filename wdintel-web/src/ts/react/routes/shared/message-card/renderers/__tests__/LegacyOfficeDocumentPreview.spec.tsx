@@ -94,4 +94,50 @@ describe('LegacyOfficeDocumentPreview', () => {
     expect(container.querySelector('[data-xlsx-tabs]')?.textContent).toBe('Перший,Другий');
     root.unmount();
   });
+
+  // Regression: ECHO-2769
+  it('preserves missing list indentation levels without placeholder items', async () => {
+    vi.mocked(runWorkerTask).mockResolvedValueOnce({
+      truncated: false,
+      blocks: [
+        {
+          type: 'list',
+          ordered: true,
+          items: [
+            { level: 2, marker: 'A.', text: 'Leading level two' },
+            { level: 2, marker: 'B.', text: 'Second level two' },
+            { level: 3, marker: 'i.', text: 'Level three child' },
+            { level: 1, marker: '•', text: 'Return level one' },
+            { level: 0, marker: '5.', text: 'Return level zero' },
+          ],
+        },
+      ],
+    });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(new ArrayBuffer(8), { headers: { 'content-length': '8' } }),
+    );
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    document.body.appendChild(container);
+
+    await act(async () => {
+      root.render(<LegacyOfficeDocumentPreview href="/levels.doc" zoom={100} kind="doc" />);
+    });
+
+    const items = [...container.querySelectorAll('li')];
+    expect(items.map((item) => item.textContent)).toEqual([
+      'A. Leading level two',
+      'B. Second level twoi. Level three child',
+      'i. Level three child',
+      '• Return level one',
+      '5. Return level zero',
+    ]);
+    expect(items[0]?.style.paddingInlineStart).toBe('3rem');
+    expect(items[1]?.style.paddingInlineStart).toBe('3rem');
+    expect(items[2]?.style.paddingInlineStart).toBe('0rem');
+    expect(items[3]?.style.paddingInlineStart).toBe('1.5rem');
+    expect(items[4]?.style.paddingInlineStart).toBe('0rem');
+    expect(container.querySelectorAll('li')).toHaveLength(5);
+    root.unmount();
+  });
 });
