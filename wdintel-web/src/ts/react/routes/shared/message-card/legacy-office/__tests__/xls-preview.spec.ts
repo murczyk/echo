@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { LegacyOfficePreviewError, LegacyOfficePreviewErrorCode } from '../legacy-office-errors';
 import { validateCfbContainer } from '../cfb-validation';
 import { buildXlsPreview } from '../xls-preview';
+import { LEGACY_OFFICE_MAX_CELLS } from '../legacy-office-limits';
 import * as XLSX from '../vendor/sheetjs/xlsx-0.20.3.mjs';
 
 async function fixtureBuffer(name: string): Promise<ArrayBuffer> {
@@ -42,6 +43,21 @@ describe('legacy BIFF8 XLS preview', () => {
     expect(preview.sheets[0]?.rows[3]?.[1]).toBe('$1,234.75');
     expect(preview.sheets[0]?.rows[5]?.[0]).toBe('Об’єднана комірка');
     expect(preview.sheets[1]?.rows[5]?.[3]).toBe('Кінець');
+  });
+
+  it('caps sparse workbook slots before materializing more than the transfer limit', () => {
+    const sheet = XLSX.utils.aoa_to_sheet([['kept']]);
+    sheet['!ref'] = 'A1:CV5000';
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, 'Sparse');
+    const preview = buildXlsPreview(XLSX.write(workbook, { type: 'array', bookType: 'xls' }));
+
+    expect(preview.truncated).toBe(true);
+    expect(preview.sheets[0]?.truncated).toBe(true);
+    expect(
+      preview.sheets.flatMap((item) => item.rows).reduce((sum, row) => sum + row.length, 0),
+    ).toBe(LEGACY_OFFICE_MAX_CELLS);
+    expect(preview.sheets[0]?.rows[0]?.[0]).toBe('kept');
   });
 
   it('rejects non-CFB bytes before the candidate parser is invoked', () => {

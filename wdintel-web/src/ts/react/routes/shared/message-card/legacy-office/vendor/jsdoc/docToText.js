@@ -134,8 +134,16 @@
     var sectorSize = 1 << sectorShift; // 512 (v3) or 4096 (v4)
     var miniSectorSize = 1 << miniSectorShift; // 64
     if ((sectorSize !== 512 && sectorSize !== 4096) || miniSectorSize !== 64) return null;
-    if ((bytes.length - 512) % sectorSize !== 0) return null;
-    var sectorCount = (bytes.length - 512) / sectorSize;
+    var majorVersion = dv.getUint16(26, true);
+    if ((majorVersion !== 3 && majorVersion !== 4) || (majorVersion === 3) !== (sectorSize === 512))
+      return null;
+    var headerSectorSize = majorVersion === 4 ? sectorSize : 512;
+    if (bytes.length < headerSectorSize) return null;
+    if (majorVersion === 4)
+      for (var headerPadding = 512; headerPadding < headerSectorSize; headerPadding++)
+        if (bytes[headerPadding] !== 0) return null;
+    if ((bytes.length - headerSectorSize) % sectorSize !== 0) return null;
+    var sectorCount = (bytes.length - headerSectorSize) / sectorSize;
     if (sectorCount <= 0) return null;
 
     var numFatSectors = dv.getUint32(44, true);
@@ -148,7 +156,7 @@
 
     function sectorOffset(sid) {
       if (sid >= sectorCount) throw new Error('CFB sector outside file');
-      return 512 + sid * sectorSize;
+      return headerSectorSize + sid * sectorSize;
     }
     if (
       numFatSectors > sectorCount ||
@@ -531,6 +539,7 @@
       if (r.keepN) pp.keepNext = 1; // keep with next paragraph
       if (r.keepL) pp.keepLines = 1; // keep lines together
       if (r.pgBrk) pp.pageBreak = 1; // page break before
+      if (r.inTable) pp.inTable = r.inTable;
       if (r.tabs) pp.tabs = r.tabs; // tab stops [{ pos (twips), align, leader }]
       if (r.pShd != null) pp.shd = r.pShd; // paragraph background fill (COLORREF)
       if (r.pBrc) pp.borders = r.pBrc; // box borders { top/left/bottom/right: { color, width (pt), type } }
@@ -993,6 +1002,10 @@
         pp.pgBrk = buf[gp + 2]; // sprmPFPageBreakBefore
       else if (sc === 0x2417)
         pp.ttp = buf[gp + 2]; // sprmPFTtp (table-terminating paragraph = row mark)
+      else if (sc === 0x2416)
+        pp.inTable = buf[gp + 2]; // sprmPFInTable
+      else if (sc === 0x6649)
+        pp.inTable = buf[gp + 2] | (buf[gp + 3] << 8); // sprmPItap (table depth)
       else if (sc === 0xc60d || sc === 0xc615) {
         // sprmPChgTabsPapx / sprmPChgTabs: custom tab stops
         var tcb = buf[gp + 2],
@@ -1771,25 +1784,22 @@
     // the row or splitting it in two.
     function endCellMark(fc) {
       var row = paraRow ? paraRow(fc) : null; // one PAPX lookup per cell mark
+      // Word writes a regular cell mark followed by an empty row terminator for
+      // the final cell. Reuse that completed cell only when the terminator has
+      // no content of its own; otherwise flush the terminal cell first.
+      if (!(row && row.ttp && !buf && !runs.length && lastCellPara)) {
+        endPara('cell', null);
+        lastCellPara = paras[paras.length - 1];
+      }
       if (row && row.ttp) {
-        // row terminator: close the row
-        buf = '';
-        runs = [];
-        curKey = null;
-        curProps = null; // the terminator paragraph itself is empty
+        // row terminator: promote the cell completed by this marker
         if (lastCellPara && lastCellPara.kind === 'cell') {
           lastCellPara.kind = 'rowEnd';
           if (row.tblw) lastCellPara.tblw = row.tblw;
           if (row.tblShd) lastCellPara.tblShd = row.tblShd;
           if (row.tblMerge) lastCellPara.tblMerge = row.tblMerge;
-        } else {
-          endPara('rowEnd', null, row.tblw, row.tblShd, row.tblMerge); // defensive: a row with no preceding cell
         }
         lastCellPara = null;
-      } else {
-        // ordinary cell mark
-        endPara('cell', null);
-        lastCellPara = paras[paras.length - 1];
       }
     }
     function feed(code, fc, cp) {
@@ -1868,7 +1878,8 @@
         return;
       }
       if (code === 0x0a || code === 0x0b || code === 0x0c || code === 0x0d) {
-        endPara('p', fc);
+        var paragraphProps = paraPP ? paraPP(fc) : null;
+        endPara(paragraphProps && paragraphProps.inTable ? 'cellPart' : 'p', fc);
         return;
       }
       // picture placeholder (0x01): emit an image run, paired in order with the

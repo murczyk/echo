@@ -59,7 +59,7 @@ export function buildXlsPreview(buffer: ArrayBuffer): XlsPreviewResult {
     throw new LegacyOfficePreviewError(LegacyOfficePreviewErrorCode.UnsupportedStructure);
   }
   const sheets: XlsPreviewResult['sheets'] = [];
-  let retainedCells = 0;
+  let materializedSlots = 0;
   let emittedText = 0;
   let truncated = names.length > LEGACY_OFFICE_MAX_SHEETS;
   for (const name of names.slice(0, LEGACY_OFFICE_MAX_SHEETS)) {
@@ -86,6 +86,11 @@ export function buildXlsPreview(buffer: ArrayBuffer): XlsPreviewResult {
     for (let row = 0; row < keepRows; row += 1) {
       const values: string[] = [];
       for (let column = 0; column < keepColumns; column += 1) {
+        if (materializedSlots >= LEGACY_OFFICE_MAX_CELLS) {
+          sheetTruncated = true;
+          truncated = true;
+          break;
+        }
         const address = XLSX.utils.encode_cell({ r: row, c: column });
         const cell = sheet[address] as SheetCell | undefined;
         let text = cell?.w ?? cell?.v ?? '';
@@ -96,17 +101,14 @@ export function buildXlsPreview(buffer: ArrayBuffer): XlsPreviewResult {
           display = display.slice(0, LEGACY_OFFICE_MAX_ITEM_TEXT_CODE_UNITS);
           sheetTruncated = true;
         }
-        if (display !== '') retainedCells += 1;
         emittedText += display.length;
-        if (
-          retainedCells > LEGACY_OFFICE_MAX_CELLS ||
-          emittedText > LEGACY_OFFICE_MAX_TEXT_CODE_UNITS
-        ) {
+        if (emittedText > LEGACY_OFFICE_MAX_TEXT_CODE_UNITS) {
           sheetTruncated = true;
           truncated = true;
           break;
         }
         values.push(display);
+        materializedSlots += 1;
       }
       rows.push(values);
       if (truncated) break;

@@ -45,7 +45,7 @@ function NestedDocList({ items, ordered }: { items: DocListItem[]; ordered: bool
   }
   const List = ordered ? 'ol' : 'ul';
   const renderNodes = (nodes: DocListNode[]) => (
-    <List>
+    <List className={ordered ? 'list-decimal pl-6' : 'list-disc pl-6'}>
       {nodes.map((node, index) => (
         <li key={index}>
           {node.text}
@@ -203,7 +203,7 @@ export function LegacyOfficeDocumentPreview({
                     {row.map((cell, cellIndex) => (
                       <td
                         key={cellIndex}
-                        className="border border-slate-300 p-2 align-top dark:border-slate-600"
+                        className="whitespace-pre-line border border-slate-300 p-2 align-top dark:border-slate-600"
                       >
                         {cell.text}
                       </td>

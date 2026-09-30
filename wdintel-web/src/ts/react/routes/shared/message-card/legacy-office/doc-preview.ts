@@ -72,6 +72,7 @@ export function buildDocPreview(buffer: ArrayBuffer): DocPreviewResult {
   let tableCells = 0;
   let truncated = false;
   let pendingTableRows: Array<Array<{ text: string }>> = [];
+  let pendingCellParagraphs: string[] = [];
   let pendingList: Extract<DocPreviewResult['blocks'][number], { type: 'list' }> | null = null;
   const flushTable = () => {
     const rows = pendingTableRows.filter((row) => row.length > 0);
@@ -94,23 +95,48 @@ export function buildDocPreview(buffer: ArrayBuffer): DocPreviewResult {
       candidateParagraph.runs
         ?.map((run) => (typeof run.text === 'string' ? run.text : ''))
         .join('') ?? '';
-    if (text.length > LEGACY_OFFICE_MAX_ITEM_TEXT_CODE_UNITS) {
+    const isTableCellPart = candidateParagraph.kind === 'cellPart';
+    const isTableCell = candidateParagraph.kind === 'cell' || candidateParagraph.kind === 'rowEnd';
+    if (!isTableCellPart && !isTableCell && text.length > LEGACY_OFFICE_MAX_ITEM_TEXT_CODE_UNITS) {
       text = text.slice(0, LEGACY_OFFICE_MAX_ITEM_TEXT_CODE_UNITS);
       truncated = true;
     }
-    emittedText += text.length;
-    if (candidateParagraph.kind === 'cell' || candidateParagraph.kind === 'rowEnd') {
+    if (isTableCellPart) {
+      pendingCellParagraphs.push(text);
+      continue;
+    }
+    if (isTableCell) {
       flushList();
-      const row = pendingTableRows.at(-1);
-      if (row == null) pendingTableRows.push([{ text }]);
-      else row.push({ text });
-      tableCells += 1;
-      if (tableCells > LEGACY_OFFICE_MAX_DOC_TABLE_CELLS) {
+      let cellText = [...pendingCellParagraphs, text].join('\n');
+      pendingCellParagraphs = [];
+      if (cellText.length > LEGACY_OFFICE_MAX_ITEM_TEXT_CODE_UNITS) {
+        cellText = cellText.slice(0, LEGACY_OFFICE_MAX_ITEM_TEXT_CODE_UNITS);
+        truncated = true;
+      }
+      if (tableCells >= LEGACY_OFFICE_MAX_DOC_TABLE_CELLS) {
         truncated = true;
         break;
       }
+      const remainingText = LEGACY_OFFICE_MAX_TEXT_CODE_UNITS - emittedText;
+      if (remainingText <= 0) {
+        truncated = true;
+        break;
+      }
+      const stopAfterCell = cellText.length > remainingText;
+      if (stopAfterCell) {
+        cellText = cellText.slice(0, remainingText);
+        truncated = true;
+      }
+      emittedText += cellText.length;
+      const row = pendingTableRows.at(-1);
+      if (row == null) pendingTableRows.push([{ text: cellText }]);
+      else row.push({ text: cellText });
+      tableCells += 1;
       if (candidateParagraph.kind === 'rowEnd') pendingTableRows.push([]);
+      if (stopAfterCell) break;
     } else {
+      pendingCellParagraphs = [];
+      emittedText += text.length;
       flushTable();
       const list = candidateParagraph.list;
       if (list != null) {

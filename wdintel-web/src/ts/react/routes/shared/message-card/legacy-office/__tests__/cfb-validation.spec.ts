@@ -119,6 +119,40 @@ function nestedStreamCountCfb(streamCount: number): ArrayBuffer {
   return buffer;
 }
 
+function version4Cfb(): ArrayBuffer {
+  const sectorSize = 4096;
+  const buffer = new ArrayBuffer(sectorSize * 3);
+  const view = new DataView(buffer);
+  new Uint8Array(buffer).set([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+  view.setUint16(26, 4, true);
+  view.setUint16(28, 0xfffe, true);
+  view.setUint16(30, 12, true);
+  view.setUint16(32, 6, true);
+  view.setUint32(40, 1, true);
+  view.setUint32(44, 1, true);
+  view.setUint32(48, 0, true);
+  view.setUint32(56, 4096, true);
+  view.setUint32(60, ENDOFCHAIN, true);
+  view.setUint32(68, ENDOFCHAIN, true);
+  for (let index = 0; index < 109; index += 1) view.setUint32(76 + index * 4, FREESECT, true);
+  view.setUint32(76, 1, true);
+  const rootOffset = sectorSize;
+  for (const [index, character] of [...'Root Entry'].entries())
+    view.setUint16(rootOffset + index * 2, character.charCodeAt(0), true);
+  view.setUint16(rootOffset + 20, 0, true);
+  view.setUint16(rootOffset + 64, 22, true);
+  view.setUint8(rootOffset + 66, 5);
+  view.setUint32(rootOffset + 68, FREESECT, true);
+  view.setUint32(rootOffset + 72, FREESECT, true);
+  view.setUint32(rootOffset + 76, FREESECT, true);
+  view.setUint32(rootOffset + 116, ENDOFCHAIN, true);
+  for (let index = 0; index < sectorSize / 4; index += 1)
+    view.setUint32(sectorSize * 2 + index * 4, FREESECT, true);
+  view.setUint32(sectorSize * 2, ENDOFCHAIN, true);
+  view.setUint32(sectorSize * 2 + 4, FATSECT, true);
+  return buffer;
+}
+
 describe('CFB directory hierarchy', () => {
   it('accepts duplicate stream names under different storages and exposes root streams only', () => {
     const result = validateCfbContainer(nestedCfb());
@@ -154,6 +188,16 @@ describe('CFB directory hierarchy', () => {
       return;
     }
     throw new Error('Expected the 1,001st nested stream to be rejected');
+  });
+
+  it('uses the full version-4 header sector and rejects malformed padding', () => {
+    expect(validateCfbContainer(version4Cfb()).directory).toHaveLength(1);
+    const padded = version4Cfb();
+    new Uint8Array(padded)[512] = 1;
+    expect(() => validateCfbContainer(padded)).toThrow(LegacyOfficePreviewError);
+    expect(() => validateCfbContainer(version4Cfb().slice(0, 4096))).toThrow(
+      LegacyOfficePreviewError,
+    );
   });
 
   it('rejects nested-chain ownership reuse, cycles, multiple parents, and unreachable entries', () => {

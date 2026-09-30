@@ -40,7 +40,7 @@ describe('LegacyOfficeDocumentPreview', () => {
             { level: 1, text: 'Вкладений пункт' },
           ],
         },
-        { type: 'table', rows: [[{ text: 'Комірка' }]] },
+        { type: 'table', rows: [[{ text: 'Перший рядок\nДругий рядок' }]] },
       ],
     });
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
@@ -57,7 +57,10 @@ describe('LegacyOfficeDocumentPreview', () => {
     expect(container.querySelector('p')?.textContent).toBe('Абзац');
     expect(container.querySelector('ol li')?.firstChild?.textContent).toBe('Пункт');
     expect(container.querySelector('ol li ol li')?.textContent).toBe('Вкладений пункт');
-    expect(container.querySelector('table td')?.textContent).toBe('Комірка');
+    expect(container.querySelector('table td')?.textContent).toBe('Перший рядок\nДругий рядок');
+    expect(container.querySelector('table td')?.classList.contains('whitespace-pre-line')).toBe(
+      true,
+    );
     expect(container.querySelector('article')?.getAttribute('tabindex')).toBe('0');
     expect(
       container.querySelector('table')?.parentElement?.classList.contains('overflow-auto'),

@@ -59,8 +59,15 @@ export function validateCfbContainer(buffer: ArrayBuffer): ValidatedCfb {
   if (!((majorVersion === 3 && sectorShift === 9) || (majorVersion === 4 && sectorShift === 12)))
     reject();
   const sectorSize = 1 << sectorShift;
-  if ((buffer.byteLength - HEADER_SIZE) % sectorSize !== 0) reject();
-  const sectorCount = (buffer.byteLength - HEADER_SIZE) / sectorSize;
+  const headerSectorSize = majorVersion === 4 ? sectorSize : HEADER_SIZE;
+  if (buffer.byteLength < headerSectorSize) reject();
+  if (
+    majorVersion === 4 &&
+    new Uint8Array(buffer, HEADER_SIZE, headerSectorSize - HEADER_SIZE).some((value) => value !== 0)
+  )
+    reject();
+  if ((buffer.byteLength - headerSectorSize) % sectorSize !== 0) reject();
+  const sectorCount = (buffer.byteLength - headerSectorSize) / sectorSize;
   if (sectorCount <= 0) reject();
   let allocatedBytes = 0;
   const reserve = (size: number) => {
@@ -75,7 +82,7 @@ export function validateCfbContainer(buffer: ArrayBuffer): ValidatedCfb {
   const entriesPerSector = sectorSize / 4;
   const sectorOffset = (sector: number) => {
     if (!Number.isInteger(sector) || sector < 0 || sector >= sectorCount) reject();
-    return HEADER_SIZE + sector * sectorSize;
+    return headerSectorSize + sector * sectorSize;
   };
   const readSector = (sector: number) => new DataView(buffer, sectorOffset(sector), sectorSize);
   const firstDirectorySector = view.getUint32(48, true);

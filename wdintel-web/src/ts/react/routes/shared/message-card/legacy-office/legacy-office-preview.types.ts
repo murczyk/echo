@@ -72,7 +72,7 @@ export function validateXlsPreviewResult(value: unknown): XlsPreviewResult | nul
         !row.every(isBoundedString)
       )
         return null;
-      cells += row.filter((cell) => cell !== '').length;
+      cells += row.length;
       text += row.reduce((total, cell) => total + cell.length, 0);
       if (cells > LEGACY_OFFICE_MAX_CELLS || text > LEGACY_OFFICE_MAX_TEXT_CODE_UNITS) return null;
       rows.push(row);

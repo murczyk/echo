@@ -1,4 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 
 import {
   createDeferredMediaResponse,
@@ -178,6 +180,32 @@ test.describe('@smoke @regression', () => {
       );
       await expect(docDialog.getByText('Український абзац')).toBeVisible();
       await expect(docDialog.locator('table').first()).toBeVisible();
+      expect(
+        await docDialog.locator('ol').evaluateAll((lists) => {
+          const [outer, nested] = lists;
+          return (
+            lists.every((list) => {
+              const style = getComputedStyle(list);
+              return (
+                style.listStyleType !== 'none' && Number.parseFloat(style.paddingInlineStart) > 0
+              );
+            }) &&
+            outer != null &&
+            nested != null &&
+            nested.getBoundingClientRect().left > outer.getBoundingClientRect().left
+          );
+        }),
+      ).toBe(true);
+      expect(
+        await docDialog.locator('ul').evaluateAll((lists) => {
+          return lists.every((list) => {
+            const style = getComputedStyle(list);
+            return (
+              style.listStyleType !== 'none' && Number.parseFloat(style.paddingInlineStart) > 0
+            );
+          });
+        }),
+      ).toBe(true);
       await expect(docDialog.getByRole('link', { name: 'Скачати' })).toBeVisible();
       await docDialog.getByRole('button', { name: 'Закрити' }).click();
 
@@ -220,6 +248,26 @@ test.describe('@smoke @regression', () => {
       await expect(dialog.getByRole('link', { name: 'Скачати' })).toBeVisible();
       await dialog.getByRole('button', { name: 'Закрити' }).click();
     }
+  });
+
+  test('DOC table-cell paragraphs retain visible line breaks', async ({ page }) => {
+    await openMessageCardPreviewHost(page, 'duty', { withLegacyOffice: true });
+    await page.route('**/test-assets/message-card-media-preview/e2e-preview.doc', async (route) => {
+      await route.fulfill({
+        contentType: 'application/msword',
+        body: await readFile(
+          resolve(process.cwd(), 'tests/fixtures/legacy-office/table-cell-paragraphs.doc'),
+        ),
+      });
+    });
+
+    const dialog = await openLegacyOfficePreview(
+      page,
+      MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.doc,
+    );
+    const cell = dialog.locator('td', { hasText: 'First cell paragraph one' });
+    await expect(cell).toHaveText('First cell paragraph one\nFirst cell paragraph two');
+    await expect(cell).toHaveCSS('white-space', 'pre-line');
   });
 
   test('image thumbnail loading fills the tile without blocking its download overlay', async ({
