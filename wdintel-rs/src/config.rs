@@ -23,6 +23,7 @@ pub const PG_POOL_BGWORKER_MAX_CONNECTIONS: u32 = 20;
 pub const PG_WDFILE_POOL_MAX_CONNECTIONS: u32 = 10;
 pub const PG_WDFILE_MIGRATION_POOL_MAX_CONNECTIONS: u32 = 1;
 pub const MIGRATION_ADVISORY_LOCK_NAME: &str = "echo:migrations";
+pub const MIGRATION_ADVISORY_LOCK_RETRY_MILLIS: u64 = 250;
 pub const FILE_REGISTRY_UNAVAILABLE_RETRY_AFTER_SECS: u64 = 60;
 pub(crate) const DEVICE_FILE_CONTENT_REUSE_MAX_BODY_BYTES: usize = 1024;
 pub const DEVICE_FILE_CONTENT_UPLOAD_MAX_BYTES: u64 = 2 * 1024 * 1024 * 1024;
@@ -1234,6 +1235,7 @@ pub const INBOX_ITEM_UNIT_SYNC_QUERY_BATCH_SIZE: usize = 20_000;
 pub const INBOX_ITEM_UNIT_SYNC_INSERT_BATCH_SIZE: usize = 5_000;
 pub const INBOX_ITEM_UNIT_REPROCESS_BATCH_SIZE: u64 = 500;
 pub const INBOX_UNIT_EQUIVALENT_NAME_VARIANT_LIMIT: usize = 128;
+pub const INBOX_UNIT_STRUCTURAL_PREFILTER_MIN_TRIGRAM_CHARS: usize = 3;
 pub const SIGINT_INBOX_NETWORK_CHECK_SLEEP_SECS: u64 = 2 * 60 * 60;
 pub const SIGINT_INBOX_NETWORK_CHECK_BATCH_SIZE: u64 = 500;
 pub const SIGINT_INBOX_NETWORK_CHECK_MISMATCH_LOG_LIMIT: usize = 10;
@@ -1274,6 +1276,7 @@ pub const UNIT_FORMATION_EQUIVALENT_NOTIONS: &[(&str, &[&str])] = &[
     ("оббпс", &["об бпс", "оббпс"]),
     ("а", &["а", "за", "зва", "оа"]),
     ("в", &["в", "b"]),
+    ("пкс", &["пкс", "рвсп"]),
     ("оптадн", &["оптадн", "оптдн"]),
     ("габат", &["габат", "габатр"]),
     ("шр", &["шр v", "шр", "шр в"]),

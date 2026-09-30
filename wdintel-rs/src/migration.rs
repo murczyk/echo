@@ -3,7 +3,7 @@ use crate::types::*;
 use sea_orm::{ConnectionTrait, DatabaseConnection};
 use sea_orm_migration::MigratorTrait;
 use sqlx::{pool::PoolConnection, Postgres};
-use std::{fs, path::Path};
+use std::{fs, path::Path, time::Duration};
 use tokio::process::Command;
 // use std::env;
 
@@ -48,18 +48,26 @@ async fn acquire_migration_lock(
         .await
         .context(h!())?;
     connection.close_on_drop();
-    sqlx::query(
-        r#"
-select pg_advisory_lock(
+    loop {
+        let acquired = sqlx::query_scalar::<_, bool>(
+            r#"
+select pg_try_advisory_lock(
     hashtextextended(current_database() || ':' || $1::text, 0)
 )
 "#,
-    )
-    .bind(crate::config::MIGRATION_ADVISORY_LOCK_NAME)
-    .execute(&mut *connection)
-    .await
-    .context(h!())?;
-    Ok(connection)
+        )
+        .bind(crate::config::MIGRATION_ADVISORY_LOCK_NAME)
+        .fetch_one(&mut *connection)
+        .await
+        .context(h!())?;
+        if acquired {
+            return Ok(connection);
+        }
+        tokio::time::sleep(Duration::from_millis(
+            crate::config::MIGRATION_ADVISORY_LOCK_RETRY_MILLIS,
+        ))
+        .await;
+    }
 }
 
 fn require_current_analytics_exclusions(mode: Mode) -> anyhow::Result<()> {
@@ -197,7 +205,7 @@ pub async fn request_analytics_table_reconciliation() {
 mod tests {
     use super::{acquire_migration_lock, parse_analytics_exclusions};
     use crate::types::{serial, Mode};
-    use sea_orm::DatabaseConnection;
+    use sea_orm::{ConnectionTrait, DatabaseConnection};
     use std::collections::BTreeSet;
     use std::time::Duration;
     use tokio::sync::oneshot;
@@ -238,6 +246,14 @@ mod tests {
     async fn migration_lock_serializes_callers() {
         crate::tests::test::init().await;
         let dbx = crate::new_pg_pool_from_mode(Mode::Test).await.unwrap();
+        dbx.execute_unprepared(
+            r#"
+drop table if exists migration_lock_concurrent_index_test;
+create table migration_lock_concurrent_index_test (id bigint);
+"#,
+        )
+        .await
+        .unwrap();
         let first_dbx = dbx.clone();
         let (first_entered_tx, first_entered_rx) = oneshot::channel();
         let (release_first_tx, release_first_rx) = oneshot::channel();
@@ -260,6 +276,15 @@ mod tests {
         assert!(timeout(Duration::from_millis(100), &mut second_entered_rx)
             .await
             .is_err());
+        timeout(
+            Duration::from_secs(2),
+            dbx.execute_unprepared(
+                "create index concurrently migration_lock_concurrent_index_test_idx on migration_lock_concurrent_index_test (id);",
+            ),
+        )
+        .await
+        .unwrap()
+        .unwrap();
         release_first_tx.send(()).unwrap();
         first.await.unwrap().unwrap();
         timeout(Duration::from_secs(1), second_entered_rx)
@@ -267,6 +292,11 @@ mod tests {
             .unwrap()
             .unwrap();
         second.await.unwrap().unwrap();
+        dbx.execute_unprepared(
+            "drop table migration_lock_concurrent_index_test;",
+        )
+        .await
+        .unwrap();
     }
 
     #[tokio::test]

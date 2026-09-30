@@ -434,7 +434,8 @@ fn capture_library_unit(text: &str) -> Vec<UnitInfo> {
         .build()
         .expect("Invalid Regex");
         static ref UNIT_STANDALONE_RE: Regex = RegexBuilder::new(
-            &r#"\b(?<name>$s1)\b"#.replace("$s1", &list_standalone().join("|"))
+            &r#"(?:^|\W)(?<name>$s1)\b"#
+                .replace("$s1", &list_standalone().join("|"))
         )
         .case_insensitive(true)
         .build()
@@ -721,6 +722,7 @@ mod tests {
             &["габат", "габатр"],
             &["шр V", "шр", "шр В"],
             &["об РЕБ", "обРЕБ"],
+            &["ПКС", "РВСП"],
         ] {
             let expected = normalize_unit_formation_name(equivalents[0]);
             for equivalent in equivalents {
@@ -1103,6 +1105,45 @@ mod tests {
             Some("3 а".to_string()),
             to_unit_txt(parse_library_unit(&String::from("334 ошп 3 А")))
         );
+    }
+
+    #[test]
+    fn parse_library_unit_keeps_command_post_and_rvsp_variants() {
+        let body = |qualifier| {
+            format!(
+                r#"Отримано з поста "Пост 6"
+--------------------------------------
+23.09.2026, 19:15:37
+156.4150
+УКХ р/м 5 мср 2 мсб 2 мсп {qualifier}, р-н КРУПЄЦ Курська область
+АКА
+БЕЛЬБЕК
+
+1.  Бельбек, я Ака, 3 карандаша дома. Как принял?"#
+            )
+        };
+
+        for qualifier in [
+            "кт РВСП",
+            "кт   РВСП",
+            "кт\tРВСП",
+            "кт\nРВСП",
+            "(кт) РВСП",
+            "(кт) ПКС",
+        ] {
+            let unit = to_unit_txt(parse_library_unit(&body(qualifier)))
+                .expect("expected parsed unit");
+            assert_eq!(
+                normalize_unit_formation_name(&unit),
+                "5 мср 2 мсб 2 мсп кт пкс",
+                "qualifier: {qualifier:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_library_unit_ignores_bare_command_post_qualifier() {
+        assert!(parse_library_unit(&"кт".to_string()).is_empty());
     }
 
     #[test]
