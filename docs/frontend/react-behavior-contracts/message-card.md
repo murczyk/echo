@@ -175,18 +175,18 @@
 - **Source implementation:** `src/ts/react/routes/shared/message-card/attachment-preview/`, `renderers/`, and coordinate components.
 - **Current retained test(s):** `wdintel-web/tests/e2e/message-card-media-preview.spec.ts`
 
-## Converted KMZ attachment preview
+## KML/KMZ attachment preview
 
 - **Status:** normative
 - **Behavior ID:** `react-message-card-kmz-conversion-preview`
 - **Affected route/component:** `KmzAttachmentPreviewLink` and `KmzAttachmentPreviewMap`
 - **User role or permission:** users permitted to view and download the message attachment
-- **Preconditions:** an attachment has a KMZ conversion job and an original download URL
+- **Preconditions:** an attachment has an original download URL. Native `.kml` and `.kmz` files are previewable without a conversion job; other supported geodata files remain conversion-backed.
 - **User action or external event:** open the attachment after conversion is pending or complete
-- **Expected observable result:** the component resolves conversion status, loads the converted preview in the shared coordinate-map shell, and presents original and converted downloads with their respective filenames. When a parent attachment carousel is available, the KMZ preview opens inside that shared carousel instead of mounting a second dialog, and a completed conversion exposes one combined archive download beside the attachment trigger. A completed conversion for a non-KMZ source contributes the original and converted artifacts to archive eligibility; pending, failed, or already-KMZ sources do not fabricate a second downloadable artifact.
-- **Loading/empty/error/success behavior:** pending conversion remains pending until status resolves; preview or conversion failures remain explicit instead of presenting a fabricated map
+- **Expected observable result:** native files load through the authenticated source-preview endpoint in the shared coordinate-map shell. Converted files resolve conversion status then load the same response shape. Points, lines, and polygon rings (including holes) fit bounds together. Polygons without a three-coordinate exterior are skipped; malformed interior rings are skipped while valid holes remain. The header always exposes the original download; a distinct converted KMZ is available only for a completed non-native conversion. The parent carousel is reused and map dragging does not trigger swipe navigation.
+- **Loading/empty/error/success behavior:** pending and processing conversion states have distinct copy. Preview or conversion failures show a recoverable explanation with expandable technical details; polling stops with a recoverable timeout instead of spinning indefinitely. Native sources exceeding the 25 MiB preview limit show an explicit download-only state.
 - **URL, localStorage, or user-settings persistence:** none
-- **API endpoint and compatibility requirements:** status, preview, converted-download, and combined-archive requests retain the media ID; the original download retains its original URL
+- **API endpoint and compatibility requirements:** native source preview uses `/api/messenger/media/{media_id}/kml-preview`; status, converted preview/download, and retry retain the media ID. Original downloads retain their original URL. Conversion polling only continues for pending or processing work; a failed conversion retry requeues the existing job.
 - **Responsive and keyboard requirements:** the attachment trigger and both download links remain keyboard reachable; arrow keys focused inside the Leaflet map remain map input and do not navigate the attachment carousel.
 - **Known race/idempotency constraints:** closing or replacing the attachment aborts stale status and preview requests
 - **Source implementation:** `wdintel-web/src/ts/react/routes/shared/message-card/KmzAttachmentPreviewLink.tsx`, `wdintel-web/src/ts/react/routes/shared/message-card/KmzAttachmentPreviewMap.tsx`

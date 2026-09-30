@@ -1,6 +1,6 @@
 use crate::config::{
     KMZ_CONTENT_TYPE, RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES,
-    SIGINT_MEDIA_CONVERSION_STATUS_DONE,
+    SIGINT_MEDIA_CONVERSION_STATUS_DONE, SIGINT_MEDIA_CONVERSION_STATUS_ERROR,
     SIGINT_MEDIA_CONVERSION_STATUS_PENDING,
     SIGINT_MEDIA_KMZ_CONVERSION_EXTENSIONS,
     SIGINT_MEDIA_KMZ_CONVERSION_MAX_SOURCE_BYTES,
@@ -16,7 +16,7 @@ use crate::messenger::media::MediaUploadInput;
 use crate::types::{Env, ShortContext};
 use crate::users::{ensure_base_role, login_id_from_identity};
 use actix_web::http::header;
-use actix_web::{get, web, HttpResponse};
+use actix_web::{get, post, web, HttpResponse};
 use md5::{Digest, Md5};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction,
@@ -30,13 +30,12 @@ use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 use zip::write::SimpleFileOptions;
 
+#[path = "preview.rs"]
+mod attachment_preview;
 pub mod types;
 pub mod worker;
 
-use types::{
-    SignalMediaKmzConversionStatusRsp, SignalMediaKmzPreviewLineString,
-    SignalMediaKmzPreviewRsp,
-};
+use types::{SignalMediaKmzConversionStatusRsp, SignalMediaKmzPreviewRsp};
 
 pub async fn schedule_uploaded_media<C>(
     dbx: &C,
@@ -52,7 +51,7 @@ where
         "stored media count does not match upload count"
     );
     for (media, upload) in media.iter().zip(uploads) {
-        if !is_supported_source(media) {
+        if !is_supported_source(media) || is_native_source(media) {
             continue;
         }
         if usize::try_from(media.size_bytes).c(h!())?
@@ -185,20 +184,71 @@ pub async fn preview(
     let bytes = fetch_completed_result_bytes(env.as_ref(), &media, storage_key)
         .await
         .c(h!())?;
-    let preview =
-        crate::palitra::kmz::parse_coordinates_from_file(file_name, &bytes)
+    Ok(web::Json(
+        converted_preview(file_name, &bytes).await.c(h!())?,
+    ))
+}
+
+/// Native KML/KMZ previews never create or depend on an Alpine conversion job.
+#[get("/api/messenger/media/{media_id}/kml-preview")]
+pub async fn source_preview(
+    user: actix_identity::Identity,
+    env: web::Data<Env>,
+    path: web::Path<(Uuid,)>,
+) -> Result<web::Json<SignalMediaKmzPreviewRsp>, AppError> {
+    let media = authorized_media(&user, env.as_ref(), path.0)
+        .await
+        .c(h!())?;
+    if !is_native_source(&media) {
+        return Err(AppError::BL {
+            msg: "Attachment is not native KML or KMZ".to_string(),
+        });
+    }
+    let bytes = worker::fetch_source_bytes(env.as_ref(), &media)
+        .await
+        .c(h!())?;
+    Ok(web::Json(
+        attachment_preview::parse_attachment(source_extension(&media), &bytes)
             .await
-            .c(h!())?;
-    Ok(web::Json(SignalMediaKmzPreviewRsp {
-        points: preview.points,
-        line_strings: preview
-            .line_strings
-            .into_iter()
-            .map(|line| SignalMediaKmzPreviewLineString {
-                coords: line.coords,
-                color: line.color,
-            })
-            .collect(),
+            .c(h!())?,
+    ))
+}
+
+#[post("/api/messenger/media/{media_id}/kmz-conversion/retry")]
+pub async fn retry(
+    user: actix_identity::Identity,
+    env: web::Data<Env>,
+    path: web::Path<(Uuid,)>,
+) -> Result<web::Json<SignalMediaKmzConversionStatusRsp>, AppError> {
+    let (_, job) = authorized_job(&user, env.as_ref(), path.0).await.c(h!())?;
+    if job.status != SIGINT_MEDIA_CONVERSION_STATUS_ERROR {
+        return Err(AppError::BL {
+            msg: "Conversion is not failed".to_string(),
+        });
+    }
+    signal_message_media_conversion_job::Entity::update_many()
+        .col_expr(
+            signal_message_media_conversion_job::Column::Status,
+            sea_orm::sea_query::Expr::value(
+                SIGINT_MEDIA_CONVERSION_STATUS_PENDING,
+            ),
+        )
+        .col_expr(
+            signal_message_media_conversion_job::Column::LastError,
+            sea_orm::sea_query::Expr::value(Option::<String>::None),
+        )
+        .filter(signal_message_media_conversion_job::Column::Id.eq(job.id))
+        .filter(
+            signal_message_media_conversion_job::Column::Status
+                .eq(SIGINT_MEDIA_CONVERSION_STATUS_ERROR),
+        )
+        .exec(&env.dbx)
+        .await
+        .c(h!())?;
+    Ok(web::Json(SignalMediaKmzConversionStatusRsp {
+        status: SIGINT_MEDIA_CONVERSION_STATUS_PENDING.to_string(),
+        error: None,
+        converted_file_name: None,
     }))
 }
 
@@ -374,6 +424,33 @@ async fn authorized_job(
     ),
     AppError,
 > {
+    let media = authorized_media(user, env, media_id).await.c(h!())?;
+    let job = signal_message_media_conversion_job::Entity::find()
+        .filter(
+            signal_message_media_conversion_job::Column::SourceMediaId
+                .eq(media.id),
+        )
+        .one(&env.dbx)
+        .await
+        .c(h!())?;
+    let job = match job {
+        Some(job) => job,
+        None if is_eligible_source(&media) && !is_native_source(&media) => {
+            schedule_stored_media(env, &media).await.c(h!())?
+        }
+        None => return Err(AppError::NotFound),
+    };
+    if job.signal_message_id != media.signal_message_id {
+        return Err(AppError::NotFound);
+    }
+    Ok((media, job))
+}
+
+async fn authorized_media(
+    user: &actix_identity::Identity,
+    env: &Env,
+    media_id: Uuid,
+) -> Result<signal_message_media::Model, AppError> {
     ensure_base_role(&env.dbx, user).await.c(h!())?;
     let login = login_id_from_identity(user).c(h!())?;
     let media = signal_message_media::Entity::find_by_id(media_id)
@@ -389,25 +466,7 @@ async fn authorized_job(
     )
     .await
     .c(h!())?;
-    let job = signal_message_media_conversion_job::Entity::find()
-        .filter(
-            signal_message_media_conversion_job::Column::SourceMediaId
-                .eq(media.id),
-        )
-        .one(&env.dbx)
-        .await
-        .c(h!())?;
-    let job = match job {
-        Some(job) => job,
-        None if is_eligible_source(&media) => {
-            schedule_stored_media(env, &media).await.c(h!())?
-        }
-        None => return Err(AppError::NotFound),
-    };
-    if job.signal_message_id != media.signal_message_id {
-        return Err(AppError::NotFound);
-    }
-    Ok((media, job))
+    Ok(media)
 }
 
 fn completed_result(
@@ -427,12 +486,40 @@ fn completed_result(
     ))
 }
 
+async fn converted_preview(
+    _converted_file_name: &str,
+    bytes: &[u8],
+) -> anyhow::Result<SignalMediaKmzPreviewRsp> {
+    attachment_preview::parse_attachment("kmz", bytes).await
+}
+
 fn is_supported_source(media: &signal_message_media::Model) -> bool {
     SIGINT_MEDIA_KMZ_CONVERSION_EXTENSIONS
         .iter()
         .any(|extension| {
             source_extension(media).eq_ignore_ascii_case(extension)
         })
+}
+
+pub(crate) fn is_native_source(media: &signal_message_media::Model) -> bool {
+    ["kml", "kmz"].iter().any(|extension| {
+        source_extension(media).eq_ignore_ascii_case(extension)
+    })
+}
+
+/// A preview outcome is deliberately independent from the conversion queue.
+pub fn preview_availability(
+    media: &signal_message_media::Model,
+) -> Option<String> {
+    if !is_native_source(media) {
+        return None;
+    }
+    if usize::try_from(media.size_bytes).ok().is_none_or(|size| {
+        size > crate::config::SIGINT_MEDIA_KML_PREVIEW_MAX_SOURCE_BYTES
+    }) {
+        return Some("limit_exceeded".to_string());
+    }
+    Some("ready".to_string())
 }
 
 fn is_eligible_source(media: &signal_message_media::Model) -> bool {
@@ -582,6 +669,28 @@ mod tests {
             assert!(is_eligible_source(&media_with_extension(extension)));
         }
         assert!(!is_eligible_source(&media_with_extension("txt")));
+    }
+
+    #[tokio::test]
+    async fn completed_converted_preview_uses_kmz_format_with_a_normal_file_name(
+    ) {
+        use std::io::Write;
+
+        let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        archive
+            .start_file("doc.kml", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        archive
+            .write_all(
+                br#"<kml><Placemark><Point><coordinates>30,50</coordinates></Point></Placemark></kml>"#,
+            )
+            .unwrap();
+        let bytes = archive.finish().unwrap().into_inner();
+
+        let preview = converted_preview("route_converted.kmz", &bytes)
+            .await
+            .unwrap();
+        assert_eq!(preview.points.len(), 1);
     }
 
     #[serial]

@@ -19,6 +19,9 @@ export type KmzAttachmentPreviewSource = {
   originalHref: string;
   fileName: string;
   initialStatus: string;
+  nativeFormat?: 'kml' | 'kmz' | null;
+  nativePreview?: boolean;
+  previewStatus?: string | null;
 };
 
 export type MessageCardPreviewNavigation = {

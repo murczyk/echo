@@ -511,7 +511,10 @@ export function MessageCardMessageBody({
   );
   const kmzConversionHrefSet = new Set(
     (msg.media ?? [])
-      .filter((attachment) => attachment.kmzConversionStatus != null)
+      .filter(
+        (attachment) =>
+          attachment.kmzConversionStatus != null || attachment.kmlPreviewStatus != null,
+      )
       .map((attachment) => normalizeAttachmentHref(attachment.href)),
   );
   const documents = collectMessageDocuments(msg).filter(
@@ -538,7 +541,7 @@ export function MessageCardMessageBody({
     (attachment) => !isAudioMediaAttachment(attachment) && !isVideoMediaAttachment(attachment),
   );
   const kmzPreviewAttachments = downloadAttachments.filter(
-    (attachment) => attachment.kmzConversionStatus != null,
+    (attachment) => attachment.kmzConversionStatus != null || attachment.kmlPreviewStatus != null,
   );
   const mediaAttachmentCount = images.length + videoAttachments.length;
   const documentAttachmentCount = documents.length + downloadAttachments.length;
@@ -663,6 +666,13 @@ export function MessageCardMessageBody({
           originalHref: String(attachment.href ?? ''),
           fileName: mediaAttachmentDisplayName(attachment),
           initialStatus: attachment.kmzConversionStatus ?? 'pending',
+          nativePreview: attachment.kmlPreviewStatus === 'ready',
+          previewStatus: attachment.kmlPreviewStatus,
+          nativeFormat: (/\.kml$/i.test(mediaAttachmentDisplayName(attachment))
+            ? 'kml'
+            : /\.kmz$/i.test(mediaAttachmentDisplayName(attachment))
+              ? 'kmz'
+              : null) as 'kml' | 'kmz' | null,
         },
       })),
       ...audioPreviewSources.map((audio) => ({ type: 'audio' as const, value: audio })),
@@ -1002,6 +1012,8 @@ export function MessageCardMessageBody({
                     originalHref={String(attachment.href ?? '')}
                     fileName={mediaAttachmentDisplayName(attachment)}
                     initialStatus={attachment.kmzConversionStatus ?? 'pending'}
+                    nativePreview={attachment.kmlPreviewStatus === 'ready'}
+                    previewStatus={attachment.kmlPreviewStatus}
                     selected={selected}
                     onPreview={() => {
                       blurActiveElement();

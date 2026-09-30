@@ -246,6 +246,9 @@ pub struct MessageMediaInfo {
     pub summary: Option<crate::media_summary::types::MediaSummaryStatus>,
     #[serde(default)]
     pub kmz_conversion_status: Option<String>,
+    /// Independent from conversion status: native KML/KMZ can be previewed directly.
+    #[serde(default)]
+    pub kml_preview_status: Option<String>,
 }
 
 #[derive(

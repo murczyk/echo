@@ -570,6 +570,7 @@ operatyvkaEncoder struct =
 type alias Polygon =
     { tessellate : Maybe (Tessellate)
     , outerBoundaryIs : Maybe (OuterBoundaryIs)
+    , innerBoundaryIs : List (OuterBoundaryIs)
     }
 
 
@@ -578,6 +579,7 @@ polygonEncoder struct =
     Json.Encode.object
         [ ( "tessellate", (Maybe.withDefault Json.Encode.null << Maybe.map (tessellateEncoder)) struct.tessellate )
         , ( "outerBoundaryIs", (Maybe.withDefault Json.Encode.null << Maybe.map (outerBoundaryIsEncoder)) struct.outerBoundaryIs )
+        , ( "innerBoundaryIs", (Json.Encode.list (outerBoundaryIsEncoder)) struct.innerBoundaryIs )
         ]
 
 
@@ -7051,6 +7053,7 @@ type alias MessageMediaInfo =
     , ocr : Maybe (OcrMediaSummary)
     , summary : Maybe (MediaSummaryStatus)
     , kmzConversionStatus : Maybe (String)
+    , kmlPreviewStatus : Maybe (String)
     }
 
 
@@ -7066,6 +7069,7 @@ messageMediaInfoEncoder struct =
         , ( "ocr", (Maybe.withDefault Json.Encode.null << Maybe.map (ocrMediaSummaryEncoder)) struct.ocr )
         , ( "summary", (Maybe.withDefault Json.Encode.null << Maybe.map (mediaSummaryStatusEncoder)) struct.summary )
         , ( "kmz_conversion_status", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.kmzConversionStatus )
+        , ( "kml_preview_status", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.kmlPreviewStatus )
         ]
 
 
@@ -7087,7 +7091,9 @@ signalMediaKmzConversionStatusRspEncoder struct =
 
 type alias SignalMediaKmzPreviewLineString =
     { coords : List (Coords)
-    , color : Maybe (String)
+    , color : String
+    , opacity : Float
+    , label : Maybe (String)
     }
 
 
@@ -7095,21 +7101,65 @@ signalMediaKmzPreviewLineStringEncoder : SignalMediaKmzPreviewLineString -> Json
 signalMediaKmzPreviewLineStringEncoder struct =
     Json.Encode.object
         [ ( "coords", (Json.Encode.list (coordsEncoder)) struct.coords )
-        , ( "color", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.color )
+        , ( "color", (Json.Encode.string) struct.color )
+        , ( "opacity", (Json.Encode.float) struct.opacity )
+        , ( "label", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.label )
+        ]
+
+
+type alias SignalMediaKmzPreviewPoint =
+    { coords : Coords
+    , label : Maybe (String)
+    , color : String
+    , opacity : Float
+    }
+
+
+signalMediaKmzPreviewPointEncoder : SignalMediaKmzPreviewPoint -> Json.Encode.Value
+signalMediaKmzPreviewPointEncoder struct =
+    Json.Encode.object
+        [ ( "coords", (coordsEncoder) struct.coords )
+        , ( "label", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.label )
+        , ( "color", (Json.Encode.string) struct.color )
+        , ( "opacity", (Json.Encode.float) struct.opacity )
+        ]
+
+
+type alias SignalMediaKmzPreviewPolygon =
+    { rings : List (List (Coords))
+    , strokeColor : String
+    , strokeOpacity : Float
+    , fillColor : String
+    , fillOpacity : Float
+    , label : Maybe (String)
+    }
+
+
+signalMediaKmzPreviewPolygonEncoder : SignalMediaKmzPreviewPolygon -> Json.Encode.Value
+signalMediaKmzPreviewPolygonEncoder struct =
+    Json.Encode.object
+        [ ( "rings", (Json.Encode.list (Json.Encode.list (coordsEncoder))) struct.rings )
+        , ( "stroke_color", (Json.Encode.string) struct.strokeColor )
+        , ( "stroke_opacity", (Json.Encode.float) struct.strokeOpacity )
+        , ( "fill_color", (Json.Encode.string) struct.fillColor )
+        , ( "fill_opacity", (Json.Encode.float) struct.fillOpacity )
+        , ( "label", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.label )
         ]
 
 
 type alias SignalMediaKmzPreviewRsp =
-    { points : List (PalitraPoint)
+    { points : List (SignalMediaKmzPreviewPoint)
     , lineStrings : List (SignalMediaKmzPreviewLineString)
+    , polygons : List (SignalMediaKmzPreviewPolygon)
     }
 
 
 signalMediaKmzPreviewRspEncoder : SignalMediaKmzPreviewRsp -> Json.Encode.Value
 signalMediaKmzPreviewRspEncoder struct =
     Json.Encode.object
-        [ ( "points", (Json.Encode.list (palitraPointEncoder)) struct.points )
+        [ ( "points", (Json.Encode.list (signalMediaKmzPreviewPointEncoder)) struct.points )
         , ( "line_strings", (Json.Encode.list (signalMediaKmzPreviewLineStringEncoder)) struct.lineStrings )
+        , ( "polygons", (Json.Encode.list (signalMediaKmzPreviewPolygonEncoder)) struct.polygons )
         ]
 
 
@@ -15525,6 +15575,7 @@ polygonDecoder =
     Json.Decode.succeed Polygon
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tessellate" (Json.Decode.nullable (tessellateDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "outerBoundaryIs" (Json.Decode.nullable (outerBoundaryIsDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "innerBoundaryIs" (Json.Decode.list (outerBoundaryIsDecoder))))
 
 
 extendedDataDecoder : Json.Decode.Decoder ExtendedData
@@ -19445,6 +19496,7 @@ messageMediaInfoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ocr" (Json.Decode.nullable (ocrMediaSummaryDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "summary" (Json.Decode.nullable (mediaSummaryStatusDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kmz_conversion_status" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kml_preview_status" (Json.Decode.nullable (Json.Decode.string))))
 
 
 signalMediaKmzConversionStatusRspDecoder : Json.Decode.Decoder SignalMediaKmzConversionStatusRsp
@@ -19459,14 +19511,37 @@ signalMediaKmzPreviewLineStringDecoder : Json.Decode.Decoder SignalMediaKmzPrevi
 signalMediaKmzPreviewLineStringDecoder =
     Json.Decode.succeed SignalMediaKmzPreviewLineString
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coords" (Json.Decode.list (coordsDecoder))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "opacity" (Json.Decode.float)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.nullable (Json.Decode.string))))
+
+
+signalMediaKmzPreviewPointDecoder : Json.Decode.Decoder SignalMediaKmzPreviewPoint
+signalMediaKmzPreviewPointDecoder =
+    Json.Decode.succeed SignalMediaKmzPreviewPoint
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coords" (coordsDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "opacity" (Json.Decode.float)))
+
+
+signalMediaKmzPreviewPolygonDecoder : Json.Decode.Decoder SignalMediaKmzPreviewPolygon
+signalMediaKmzPreviewPolygonDecoder =
+    Json.Decode.succeed SignalMediaKmzPreviewPolygon
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rings" (Json.Decode.list (Json.Decode.list (coordsDecoder)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "stroke_color" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "stroke_opacity" (Json.Decode.float)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fill_color" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fill_opacity" (Json.Decode.float)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.nullable (Json.Decode.string))))
 
 
 signalMediaKmzPreviewRspDecoder : Json.Decode.Decoder SignalMediaKmzPreviewRsp
 signalMediaKmzPreviewRspDecoder =
     Json.Decode.succeed SignalMediaKmzPreviewRsp
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "points" (Json.Decode.list (palitraPointDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "points" (Json.Decode.list (signalMediaKmzPreviewPointDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "line_strings" (Json.Decode.list (signalMediaKmzPreviewLineStringDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "polygons" (Json.Decode.list (signalMediaKmzPreviewPolygonDecoder))))
 
 
 sigintZoneDecoder : Json.Decode.Decoder SigintZone

@@ -197,7 +197,7 @@ export function canDownloadAllMessageAttachments(attachments: MessageMediaInfo[]
     attachments.filter(
       (attachment) =>
         attachment.kmzConversionStatus === 'done' &&
-        !mediaAttachmentDisplayName(attachment).toLowerCase().endsWith('.kmz'),
+        !/\.kmz?$/i.test(mediaAttachmentDisplayName(attachment)),
     ).length;
   if (downloadableFileCount <= 1 || attachments.length > RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES) {
     return false;

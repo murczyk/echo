@@ -1,5 +1,14 @@
-import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
-import { Box, Button, CircularProgress, Stack, Tooltip, Typography } from '@mui/material';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
+import {
+  Box,
+  Button,
+  CircularProgress,
+  IconButton,
+  MenuItem,
+  Stack,
+  Tooltip,
+  Typography,
+} from '@mui/material';
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 
 import type {
@@ -7,11 +16,14 @@ import type {
   SignalMediaKmzPreviewRsp,
 } from '../../../../../../Bindings';
 import { PowerAlert } from '../../../../components/PowerAlert';
+import { PowerMenu } from '../../../../components/PowerMenu';
 import { useOptionalPowerSnackbar } from '../../../../components/PowerSnackbar';
 import {
   getKmzAttachmentConversionStatus,
   getKmzAttachmentPreview,
+  getNativeKmlAttachmentPreview,
   kmzAttachmentConversionDownloadUrl,
+  retryKmzAttachmentConversion,
 } from '../../../../services/api/kmz-attachment-conversion';
 import { isAbortError } from '../../../../services/api/client';
 import { BaseLayerId, DEFAULT_BASE_LAYER_ID } from '../../../../../maps/base-layers';
@@ -30,36 +42,58 @@ import type {
 } from '../attachment-preview/message-card-preview.types';
 
 const CONVERSION_STATUS_POLL_MS = 2_000;
+const CONVERSION_STATUS_MAX_POLLS = 60;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function hasPreviewGeometry(preview: SignalMediaKmzPreviewRsp): boolean {
-  return preview.points.length > 0 || preview.lineStrings.some((line) => line.coords.length >= 2);
+function isTerminalPreviewError(details: string): boolean {
+  return /preview limit exceeded|invalid kml|kmz archive|archive.*(?:entries|expanded|size)|unsupported preview format/i.test(
+    details,
+  );
 }
 
-function DownloadAction({
+function previewErrorCopy(details: string): string {
+  if (/original file is larger than 25 mib/i.test(details)) {
+    return 'Перевищено ліміт попереднього перегляду 25 МіБ.';
+  }
+  if (/more than 100,000 coordinates/i.test(details)) {
+    return 'Перевищено ліміт у 100 000 координат для попереднього перегляду.';
+  }
+  if (/archive.*(?:entries|expanded|size limit)|archive expands/i.test(details)) {
+    return 'Перевищено ліміт розпакування KMZ для попереднього перегляду.';
+  }
+  if (isTerminalPreviewError(details)) {
+    return 'Файл не можна відобразити у попередньому перегляді.';
+  }
+  return 'Не вдалося відкрити попередній перегляд.';
+}
+
+function hasPreviewGeometry(preview: SignalMediaKmzPreviewRsp): boolean {
+  return (
+    preview.points.length > 0 ||
+    preview.lineStrings.some((line) => line.coords.length >= 2) ||
+    preview.polygons.some((polygon) => polygon.rings.some((ring) => ring.length >= 3))
+  );
+}
+
+function ConvertedKmzDownloadMenu({
   href,
   fileName,
   fallbackFileName,
-  label,
-  variant,
   downloadKey,
-  disabled,
   isDownloadStarting,
   onDownloadStart,
 }: {
-  href?: string;
+  href: string;
   fileName: string;
   fallbackFileName: string;
-  label: string;
-  variant: 'outlined' | 'contained';
   downloadKey: string;
-  disabled: boolean;
 } & Partial<MessageCardDownloadGuardProps>) {
+  const [anchorElement, setAnchorElement] = useState<HTMLElement | null>(null);
   const downloading = isDownloadStarting?.(downloadKey) ?? false;
-  const unavailable = disabled || downloading || href == null || href === '';
+  const unavailable = downloading || href === '';
   const startDownload = (event: MouseEvent<HTMLElement>) => {
     if (unavailable) {
       event.preventDefault();
@@ -71,29 +105,41 @@ function DownloadAction({
   };
 
   return (
-    <Tooltip title={downloading ? 'Завантаження…' : label} enterDelay={300}>
-      <span>
-        <Button
+    <>
+      <Tooltip title="Додаткові завантаження" enterDelay={300}>
+        <IconButton
+          aria-label="Додаткові завантаження"
+          aria-controls={anchorElement ? 'converted-kmz-download-menu' : undefined}
+          aria-expanded={anchorElement ? 'true' : undefined}
+          aria-haspopup="menu"
+          onClick={(event) => setAnchorElement(event.currentTarget)}
+          size="small"
+        >
+          <MoreVertIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
+      <PowerMenu
+        id="converted-kmz-download-menu"
+        anchorEl={anchorElement}
+        open={anchorElement != null}
+        onClose={() => setAnchorElement(null)}
+      >
+        <MenuItem
           component="a"
           href={unavailable ? undefined : href}
           download={mediaDownloadAttr(fileName, fallbackFileName)}
           target="_blank"
           rel="noopener noreferrer"
           disabled={unavailable}
-          aria-label={downloading ? 'Завантаження…' : label}
-          aria-busy={downloading}
-          onClick={startDownload}
-          size="small"
-          variant={variant}
-          startIcon={
-            downloading ? <CircularProgress size={16} color="inherit" /> : <DownloadOutlinedIcon />
-          }
-          sx={{ textTransform: 'none', whiteSpace: 'nowrap' }}
+          onClick={(event) => {
+            startDownload(event);
+            setAnchorElement(null);
+          }}
         >
-          {label}
-        </Button>
-      </span>
-    </Tooltip>
+          {downloading ? 'Завантаження…' : `Завантажити ${fileName}`}
+        </MenuItem>
+      </PowerMenu>
+    </>
   );
 }
 
@@ -115,32 +161,57 @@ export function KmzAttachmentPreviewRenderer({
   const [convertedFileName, setConvertedFileName] = useState<string | null>(null);
   const [preview, setPreview] = useState<SignalMediaKmzPreviewRsp | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [errorDetails, setErrorDetails] = useState<string | null>(null);
+  const [retryable, setRetryable] = useState(true);
   const [baseLayerId, setBaseLayerId] = useState<BaseLayerId>(DEFAULT_BASE_LAYER_ID);
 
   useEffect(() => {
     notifyRef.current = notify;
   }, [notify]);
 
-  const reportError = useCallback((message: string) => {
-    setLoadError(message);
-    notifyRef.current({ severity: 'error', message: `Не вдалося відкрити KMZ: ${message}` });
-  }, []);
+  const reportError = useCallback(
+    (details: string, message = 'Не вдалося відкрити попередній перегляд.', canRetry = true) => {
+      setLoadError(message);
+      setErrorDetails(details);
+      setRetryable(canRetry);
+      notifyRef.current({ severity: 'error', message });
+    },
+    [],
+  );
 
   useEffect(() => {
     setStatus(source.initialStatus);
     setConvertedFileName(null);
     setPreview(null);
     setLoadError(null);
+    setErrorDetails(null);
+    setRetryable(true);
     setReloadKey(0);
   }, [source.initialStatus, source.mediaId]);
 
   useEffect(() => {
+    if (source.previewStatus === 'limit_exceeded') {
+      setLoadError('Перевищено ліміт попереднього перегляду 25 МіБ. Оригінал можна завантажити.');
+      setErrorDetails(null);
+      setRetryable(false);
+      return;
+    }
     const controller = new AbortController();
     let pollTimer: number | null = null;
+    let pollCount = 0;
 
     const load = async () => {
       try {
         setLoadError(null);
+        setErrorDetails(null);
+        setRetryable(true);
+        if (source.nativePreview) {
+          const nativePreview = await getNativeKmlAttachmentPreview(source.mediaId, {
+            signal: controller.signal,
+          });
+          if (!controller.signal.aborted) setPreview(nativePreview);
+          return;
+        }
         const result: SignalMediaKmzConversionStatusRsp = await getKmzAttachmentConversionStatus(
           source.mediaId,
           {
@@ -159,12 +230,26 @@ export function KmzAttachmentPreviewRenderer({
         }
         setPreview(null);
         if (result.status === 'error') {
-          reportError(result.error ?? 'Конвертація завершилася з помилкою.');
+          reportError(
+            result.error ?? 'Конвертація завершилася з помилкою.',
+            'Не вдалося підготувати попередній перегляд.',
+          );
+          return;
+        }
+        pollCount += 1;
+        if (pollCount >= CONVERSION_STATUS_MAX_POLLS) {
+          reportError(
+            'Перевищено час очікування завершення конвертації.',
+            'Конвертація триває надто довго. Спробуйте повторити пізніше.',
+          );
           return;
         }
         pollTimer = window.setTimeout(load, CONVERSION_STATUS_POLL_MS);
       } catch (error) {
-        if (!isAbortError(error)) reportError(errorMessage(error));
+        if (!isAbortError(error)) {
+          const details = errorMessage(error);
+          reportError(details, previewErrorCopy(details), !isTerminalPreviewError(details));
+        }
       }
     };
 
@@ -173,7 +258,7 @@ export function KmzAttachmentPreviewRenderer({
       controller.abort();
       if (pollTimer !== null) window.clearTimeout(pollTimer);
     };
-  }, [reloadKey, reportError, source.mediaId]);
+  }, [reloadKey, reportError, source.mediaId, source.nativePreview, source.previewStatus]);
 
   const convertedReady = status === 'done';
   const stage =
@@ -194,9 +279,41 @@ export function KmzAttachmentPreviewRenderer({
           <PowerAlert
             severity="error"
             autoHideDuration={null}
-            action={<Button onClick={() => setReloadKey((value) => value + 1)}>Повторити</Button>}
+            action={
+              source.previewStatus === 'limit_exceeded' || !retryable ? undefined : (
+                <Button
+                  onClick={() => {
+                    if (status === 'error' && !source.nativePreview) {
+                      void retryKmzAttachmentConversion(source.mediaId)
+                        .then(() => setReloadKey((value) => value + 1))
+                        .catch((error: unknown) => reportError(errorMessage(error)));
+                    } else {
+                      setReloadKey((value) => value + 1);
+                    }
+                  }}
+                >
+                  Повторити
+                </Button>
+              )
+            }
           >
-            {loadError}
+            <Stack spacing={0.5}>
+              <span>{loadError}</span>
+              {errorDetails ? (
+                <Box component="details">
+                  <Box component="summary" sx={{ cursor: 'pointer' }}>
+                    Технічні деталі
+                  </Box>
+                  <Typography
+                    component="pre"
+                    variant="caption"
+                    sx={{ m: 0, whiteSpace: 'pre-wrap' }}
+                  >
+                    {errorDetails}
+                  </Typography>
+                </Box>
+              ) : null}
+            </Stack>
           </PowerAlert>
         ) : preview ? (
           <PowerAlert severity="info" autoHideDuration={null}>
@@ -206,7 +323,11 @@ export function KmzAttachmentPreviewRenderer({
           <Stack direction="row" spacing={1.5} alignItems="center">
             <CircularProgress size={22} />
             <Typography color="text.secondary">
-              {convertedReady ? 'Завантаження попереднього перегляду…' : 'Конвертація файлу в KMZ…'}
+              {convertedReady || source.nativePreview
+                ? `Завантаження попереднього перегляду ${source.nativeFormat?.toUpperCase() ?? 'KMZ'}…`
+                : status === 'pending'
+                  ? 'Очікування початку конвертації…'
+                  : 'Конвертація вихідного файлу…'}
             </Typography>
           </Stack>
         )}
@@ -220,35 +341,26 @@ export function KmzAttachmentPreviewRenderer({
       header={
         <MessageCardAttachmentPreviewHeader
           fileName={source.fileName}
+          download={{
+            href: source.originalHref,
+            fileName: mediaDownloadAttr(source.fileName, 'attachment'),
+          }}
+          downloadKey={`media:${source.mediaId}`}
+          isDownloadStarting={isDownloadStarting}
+          onDownloadStart={onDownloadStart}
           navigation={navigation}
           onClose={onClose}
-          additionalActions={
-            <>
-              <DownloadAction
-                href={source.originalHref}
-                fileName={source.fileName}
-                fallbackFileName="attachment"
-                label="Завантажити оригінал"
-                variant="outlined"
-                downloadKey={`media:${source.mediaId}`}
-                disabled={source.originalHref === ''}
-                isDownloadStarting={isDownloadStarting}
-                onDownloadStart={onDownloadStart}
-              />
-              <DownloadAction
-                href={
-                  convertedReady ? kmzAttachmentConversionDownloadUrl(source.mediaId) : undefined
-                }
-                fileName={convertedFileName ?? 'converted.kmz'}
+          overflowAction={
+            !source.nativePreview && convertedReady && convertedFileName ? (
+              <ConvertedKmzDownloadMenu
+                href={kmzAttachmentConversionDownloadUrl(source.mediaId)}
+                fileName={convertedFileName}
                 fallbackFileName="converted.kmz"
-                label="Завантажити конвертований KMZ"
-                variant="contained"
                 downloadKey={`media-converted:${source.mediaId}`}
-                disabled={!convertedReady}
                 isDownloadStarting={isDownloadStarting}
                 onDownloadStart={onDownloadStart}
               />
-            </>
+            ) : null
           }
         />
       }
