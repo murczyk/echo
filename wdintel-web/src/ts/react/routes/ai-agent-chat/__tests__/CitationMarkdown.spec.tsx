@@ -54,6 +54,14 @@ describe('AI message citations', () => {
     document.body.innerHTML = '';
     vi.resetAllMocks();
   });
+  it('keeps single newlines in answers as line breaks', async () => {
+    await render('5271298, 6684479\n5278075, 6683751\n\n- список');
+    const paragraph = container.querySelector('p');
+    expect(paragraph?.querySelectorAll('br')).toHaveLength(1);
+    expect(paragraph?.textContent).toBe('5271298, 6684479\n5278075, 6683751');
+    expect(container.querySelectorAll('li')).toHaveLength(1);
+  });
+
   it('deduplicates streamed citations, displays authoritative metadata and the full hover body', async () => {
     mocks.fetch.mockResolvedValue(response());
     await render(`Summary ${link.slice(0, -8)}`);
