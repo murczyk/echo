@@ -228,18 +228,18 @@ Symbol names come from the generated
 Release `2026.09.29.8` requires migration
 `m20260929_152018_ai_agent_map_artifacts` and the matching backend/frontend.
 That migration extends the request-event constraint and adds the summary column
-and partial index. It remains required. Release `2026.10.01.3` adds map editing
+and partial index. It remains required. Release `2026.10.01.4` adds map editing
 and scripts and also requires `m20260929_195200_ai_agent_map_workspace`
 (`ai_agent_map`, `ai_agent_map_revision`, `ai_agent_request_map_target`). Deploy
 the migrations and Echo build, restart backend/workers, then upgrade the selected
-idle namespace. Do not run the `2026.10.01.3` runner against an older backend. Until the namespace is upgraded, chat requests fail with «ШІ-агент оновлюється. Повторіть запит за кілька хвилин.»; upgrade the namespace right after restarting the backend.
-Runners `2026.10.01.1`, `2026.10.01.2`, `2026.09.29.8` and `.9` remain in the compatible set. The map tables are excluded
+idle namespace. Do not run the `2026.10.01.4` runner against an older backend. Until the namespace is upgraded, chat requests fail with «ШІ-агент оновлюється. Повторіть запит за кілька хвилин.»; upgrade the namespace right after restarting the backend.
+Runners `2026.10.01.1`–`.3`, `2026.09.29.8` and `.9` remain in the compatible set. The map tables are excluded
 from analytics replication; the migration impact manifest and
 `deploy/clickhouse/env/tables-exclude.txt` both record that exclusion.
 
 ```sh
-just ai-control-panel upgrade --host local --release 2026.10.01.3 --dry-run
-just ai-control-panel upgrade --host local --release 2026.10.01.3
+just ai-control-panel upgrade --host local --release 2026.10.01.4 --dry-run
+just ai-control-panel upgrade --host local --release 2026.10.01.4
 ```
 
 Replace `local` with each explicitly selected installation. The
