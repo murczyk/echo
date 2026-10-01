@@ -1,7 +1,7 @@
 /** @vitest-environment happy-dom */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AiAgentEvent } from '../../../services/api/ai-agent';
 
@@ -31,6 +31,17 @@ vi.mock('../../../services/api/ai-agent', async (importOriginal) => ({
   cancelAiAgentRequest: mocks.cancel,
   deleteAiAgentConversation: mocks.delete,
   getAiAgentMap: mocks.map,
+  openAiAgentMapWorkspace: async (summary: unknown, signal?: AbortSignal) => {
+    const document = await mocks.map(summary, signal);
+    return {
+      revision: 1,
+      canUndo: false,
+      canRedo: false,
+      document,
+      changes: { addedCount: 0, updatedCount: 0, removedCount: 0, changes: [] },
+      revisions: [],
+    };
+  },
 }));
 vi.mock('../stream', () => ({
   streamAiAgentEventsWithReconnect: mocks.stream,
@@ -39,8 +50,16 @@ vi.mock('../../../components/PowerSnackbar', () => ({
   usePowerSnackbar: () => ({ notify: mocks.notify }),
 }));
 vi.mock('../MapCanvas', () => ({ default: () => <div>Точки мапи</div> }));
+vi.mock('../app6d-catalog', async (importOriginal) => {
+  const { APP6D_CATALOG } = await import('./app6d-catalog-fixture');
+  return {
+    ...(await importOriginal<typeof import('../app6d-catalog')>()),
+    loadCatalog: () => Promise.resolve(APP6D_CATALOG),
+  };
+});
 
 import { AiAgentChat } from '..';
+import { resetSharedMapDocuments } from '../map-documents';
 import { AI_AGENT_NEW_CONVERSATION_EVENT } from '../conversation-url';
 import { HttpRequestError } from '../../../services/api/client';
 
@@ -178,8 +197,14 @@ afterEach(async () => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   vi.clearAllMocks();
+  resetSharedMapDocuments();
 });
 describe('AiAgentChat request queue', () => {
+  // The map workspace is lazy and pulls in milsymbol; load it once up front so
+  // its first transform does not count against an individual test.
+  beforeAll(async () => {
+    await import('../MapWorkspace');
+  }, 60_000);
   it('#3064 deduplicates replayed publications, replaces maps, and preserves draft text', async () => {
     mocks.submit.mockResolvedValueOnce({
       id: 'request-maps',
@@ -221,7 +246,10 @@ describe('AiAgentChat request queue', () => {
     expect(container.querySelectorAll('.ai-map-preview')).toHaveLength(0);
     await act(async () => clickAriaButton('Відкрити мапу: Підмапа'));
     await flush();
-    expect(document.querySelector('section[aria-label="Мапа відповіді"]')).not.toBeNull();
+    await vi.waitFor(
+      () => expect(document.querySelector('section[aria-label="Мапа відповіді"]')).not.toBeNull(),
+      { timeout: 10_000 },
+    );
     await act(async () => clickAriaButton('Закрити мапу', document.body));
     const main = { ...summary, id: '44444444-4444-4444-8444-444444444444' };
     await act(async () => {
@@ -233,7 +261,10 @@ describe('AiAgentChat request queue', () => {
     setTextarea('Наступна чернетка');
     await act(async () => clickAriaButton('Відкрити мапу: Головна'));
     await flush();
-    expect(document.querySelector('section[aria-label="Мапа відповіді"]')).not.toBeNull();
+    await vi.waitFor(
+      () => expect(document.querySelector('section[aria-label="Мапа відповіді"]')).not.toBeNull(),
+      { timeout: 10_000 },
+    );
     expect((container.querySelector('textarea') as HTMLTextAreaElement).value).toBe(
       'Наступна чернетка',
     );
@@ -241,8 +272,14 @@ describe('AiAgentChat request queue', () => {
     await act(async () => emitMap(4, next));
     await act(async () => clickAriaButton('Відкрити мапу: Наступна'));
     await flush();
-    expect(document.querySelector('section[aria-label="Мапа відповіді"]')?.textContent).toContain(
-      'Наступна',
+    await vi.waitFor(
+      () =>
+        expect(
+          document.querySelector<HTMLInputElement>(
+            'section[aria-label="Мапа відповіді"] input[aria-label="Назва мапи"]',
+          )?.value,
+        ).toBe('Наступна'),
+      { timeout: 10_000 },
     );
     await act(async () => clickAriaButton('Закрити мапу', document.body));
     await flush();

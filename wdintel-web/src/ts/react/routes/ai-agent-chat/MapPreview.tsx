@@ -4,6 +4,8 @@ import type { AiAgentMapSummary } from '../../../../Bindings';
 import { MapSelectionContext, useMapDocument } from './map-documents';
 import './maps.css';
 
+const MapSymbolStrip = lazy(() => import('./MapSymbolStrip'));
+
 const CoordinatePreviewMapSurface = lazy(() =>
   import('../shared/message-card/CoordinatePreviewMapSurface').then((module) => ({
     default: module.CoordinatePreviewMapSurface,
@@ -73,8 +75,15 @@ export function MapPreview({
           <MapOutlinedIcon fontSize="small" />
         )}
       </span>
-      {!inline ? <span className="ai-map-preview-count">{summary.validCount}</span> : null}
-      <span>{inline ? 'мапа' : summary.title}</span>
+      {!inline ? (
+        <span className="ai-map-preview-count">{document?.validCount ?? summary.validCount}</span>
+      ) : null}
+      {!inline && document?.records.length ? (
+        <Suspense fallback={null}>
+          <MapSymbolStrip records={document.records} />
+        </Suspense>
+      ) : null}
+      <span>{inline ? 'мапа' : (document?.title ?? summary.title)}</span>
     </button>
   );
 }

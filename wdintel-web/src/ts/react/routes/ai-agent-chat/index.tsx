@@ -18,16 +18,25 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AiAgentActivityPresentation,
+  AiAgentMapEditTarget,
   AiAgentMapSummary,
   AiAgentMessageCitation,
 } from '../../../../Bindings';
 import { CitationMarkdown } from './CitationMarkdown';
-import { MapPanel } from './MapPanel';
+import { MapEditContext } from './MapEditContext';
 import { MapPreview } from './MapPreview';
-import { ConversationMapsContext, MapSelectionContext } from './map-documents';
+import {
+  ConversationMapsContext,
+  invalidateMapDocument,
+  MapSelectionContext,
+} from './map-documents';
+
+const MapWorkspace = lazy(() =>
+  import('./MapWorkspace').then((module) => ({ default: module.MapWorkspace })),
+);
 import { ConversationHistoryItem } from './ConversationHistoryItem';
 import {
   RequestActivity,
@@ -98,6 +107,7 @@ const GENERIC_STREAM_FAILURE = 'Не вдалося відновити з’єд
 const ACTIVE_CONVERSATION_STORAGE_KEY = 'echo.ai-agent.active-conversation-id';
 
 export const AI_AGENT_CHAT_CARD_HEIGHT = '100%';
+const AI_AGENT_CHAT_MAP_DOCK_WIDTH = '420px';
 export type AiAgentAvailabilityState = 'enabled' | 'disabled' | 'unavailable';
 
 export const AI_AGENT_CHAT_INITIAL_LOADING_SX = {
@@ -698,6 +708,11 @@ export function AiAgentChat({
   const [conversationLoadFailed, setConversationLoadFailed] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [selectedMap, setSelectedMap] = useState<AiAgentMapSummary | null>(null);
+  const [mapRefreshToken, setMapRefreshToken] = useState(0);
+  const mapTargetRef = useRef<AiAgentMapEditTarget | null>(null);
+  const editedMapsRef = useRef(new Map<string, AiAgentMapEditTarget>());
+  const [mapEditEnabled, setMapEditEnabled] = useState(true);
+  const [mapSelectionCount, setMapSelectionCount] = useState(0);
   const mapOpenerRef = useRef<HTMLElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
@@ -1043,6 +1058,13 @@ export function AiAgentChat({
 
     const current = liveRequestsRef.current.find((request) => request.id === requestId);
     if (!controller.signal.aborted && current && TERMINAL_STATES.has(current.state)) {
+      setMapRefreshToken((token) => token + 1);
+      const edited = editedMapsRef.current.get(requestId);
+      if (edited) {
+        editedMapsRef.current.delete(requestId);
+        // Refresh previews of the edited map even when its workspace is closed.
+        invalidateMapDocument({ requestId: edited.requestId, id: edited.mapId });
+      }
       await refreshConversation(conversationId);
     }
   }
@@ -1097,11 +1119,22 @@ export function AiAgentChat({
     setError(null);
 
     try {
+      const mapTarget = mapTargetRef.current;
+      const mapEdit =
+        selectedMap &&
+        mapEditEnabled &&
+        mapTarget &&
+        mapTarget.requestId === selectedMap.requestId &&
+        mapTarget.mapId === selectedMap.id
+          ? mapTarget
+          : null;
       const created = await submitAiAgentRequest({
         conversationId: activeConversationIdRef.current,
         providerId,
         message: prompt,
+        ...(mapEdit ? { mapEdit } : {}),
       });
+      if (mapEdit) editedMapsRef.current.set(created.id, mapEdit);
       if (!mountedRef.current) return;
       void refreshConversationList();
       if (viewSequence !== viewSequenceRef.current) return;
@@ -1179,6 +1212,7 @@ export function AiAgentChat({
   function selectMap(summary: AiAgentMapSummary, opener: HTMLElement) {
     mapOpenerRef.current = opener;
     setSelectedMap(summary);
+    setMapEditEnabled(true);
   }
 
   function closeMap() {
@@ -1284,7 +1318,12 @@ export function AiAgentChat({
       </Box>
       <Stack
         data-testid="ai-agent-chat-pane"
-        sx={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative' }}
+        sx={{
+          flex: selectedMap ? { xs: 1, lg: `0 0 ${AI_AGENT_CHAT_MAP_DOCK_WIDTH}` } : 1,
+          minWidth: 0,
+          minHeight: 0,
+          position: 'relative',
+        }}
       >
         {!historyOpen ? (
           <Stack
@@ -1414,6 +1453,17 @@ export function AiAgentChat({
                 py: 1,
               }}
             >
+              {selectedMap ? (
+                <MapEditContext
+                  title={selectedMap.title}
+                  enabled={mapEditEnabled}
+                  selectionCount={mapSelectionCount}
+                  onToggle={() => setMapEditEnabled((enabled) => !enabled)}
+                  onPrompt={(text) =>
+                    setDraft((current) => (current ? `${current} ${text}` : text))
+                  }
+                />
+              ) : null}
               <TextField
                 fullWidth
                 multiline
@@ -1523,11 +1573,18 @@ export function AiAgentChat({
         </Box>
       </Stack>
       {selectedMap ? (
-        <MapPanel
-          key={`${selectedMap.requestId}:${selectedMap.id}`}
-          summary={selectedMap}
-          onClose={closeMap}
-        />
+        <Suspense fallback={null}>
+          <MapWorkspace
+            key={`${selectedMap.requestId}:${selectedMap.id}`}
+            summary={selectedMap}
+            refreshToken={mapRefreshToken}
+            onTargetChange={(target) => {
+              mapTargetRef.current = target;
+              setMapSelectionCount(target?.selectedPointIds.length ?? 0);
+            }}
+            onClose={closeMap}
+          />
+        </Suspense>
       ) : null}
     </Box>
   );

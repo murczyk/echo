@@ -29,8 +29,16 @@ import type {
   AiAgentMessageItem,
   AiAgentMessageCitation,
   AiAgentMapDocument,
+  AiAgentMapEditReq,
+  AiAgentMapEditRsp,
+  AiAgentMapEditTarget,
   AiAgentMapGetReq,
+  AiAgentMapIcon,
+  AiAgentMapKmzReq,
+  AiAgentMapRevisionReq,
   AiAgentMapSummary,
+  AiAgentMapWorkspaceReq,
+  AiAgentMapWorkspaceRsp,
   AiAgentProviderItem,
   AiAgentProviderRuntimeProfileItem,
   AiAgentRequestCancelRsp,
@@ -227,16 +235,42 @@ export async function getAiAgentMap(
   summary: AiAgentMapSummary,
   signal?: AbortSignal,
 ): Promise<AiAgentMapDocument> {
-  const req: AiAgentMapGetReq = { requestId: summary.requestId, mapId: summary.id };
+  const req: AiAgentMapGetReq = { requestId: summary.requestId, mapId: summary.id, revision: null };
   return postJson<AiAgentMapDocument>('/api/ai-agent/maps/get', req, { signal });
 }
 
 export async function downloadAiAgentMap(
   summary: AiAgentMapSummary,
   format: 'csv' | 'kmz',
+  icons: AiAgentMapIcon[] = [],
 ): Promise<Blob> {
-  const req: AiAgentMapGetReq = { requestId: summary.requestId, mapId: summary.id };
-  return postBytes(`/api/ai-agent/maps/${format}`, req);
+  const ids = { requestId: summary.requestId, mapId: summary.id, revision: null };
+  if (format === 'csv') {
+    const req: AiAgentMapGetReq = ids;
+    return postBytes('/api/ai-agent/maps/csv', req);
+  }
+  const req: AiAgentMapKmzReq = { ...ids, icons };
+  return postBytes('/api/ai-agent/maps/kmz', req);
+}
+
+export async function openAiAgentMapWorkspace(
+  summary: AiAgentMapSummary,
+  signal?: AbortSignal,
+): Promise<AiAgentMapWorkspaceRsp> {
+  const req: AiAgentMapWorkspaceReq = { requestId: summary.requestId, mapId: summary.id };
+  return postJson<AiAgentMapWorkspaceRsp>('/api/ai-agent/maps/workspace', req, { signal });
+}
+
+export async function editAiAgentMap(req: AiAgentMapEditReq): Promise<AiAgentMapEditRsp> {
+  return postJson<AiAgentMapEditRsp>('/api/ai-agent/maps/edit', req);
+}
+
+export async function undoAiAgentMap(req: AiAgentMapRevisionReq): Promise<AiAgentMapWorkspaceRsp> {
+  return postJson<AiAgentMapWorkspaceRsp>('/api/ai-agent/maps/undo', req);
+}
+
+export async function redoAiAgentMap(req: AiAgentMapRevisionReq): Promise<AiAgentMapWorkspaceRsp> {
+  return postJson<AiAgentMapWorkspaceRsp>('/api/ai-agent/maps/redo', req);
 }
 
 const REQUEST_STATES: readonly AiAgentRequestState[] = [
@@ -542,11 +576,13 @@ export async function submitAiAgentRequest(input: {
   conversationId: string | null;
   providerId: string;
   message: string;
+  mapEdit?: AiAgentMapEditTarget | null;
 }): Promise<AiAgentRequestCreated> {
   const req: AiAgentRequestCreateReq = {
     conversationId: input.conversationId,
     aiEngineId: input.providerId,
     prompt: input.message,
+    mapEdit: input.mapEdit ?? null,
   };
   const response = await postJson<AiAgentRequestCreateRsp>('/api/ai-agent/requests/create', req);
   return {

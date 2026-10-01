@@ -66,20 +66,24 @@ describe('AI agent API mapping', () => {
     await getAiAgentMap(summary, signal);
     expect(mocks.postJson).toHaveBeenCalledWith(
       '/api/ai-agent/maps/get',
-      { requestId: summary.requestId, mapId: summary.id },
+      { requestId: summary.requestId, mapId: summary.id, revision: null },
       { signal },
     );
     const blob = new Blob(['CSV'], { type: 'text/csv' });
     mocks.postBytes.mockResolvedValue(blob);
     await expect(downloadAiAgentMap(summary, 'csv')).resolves.toBe(blob);
-    await downloadAiAgentMap(summary, 'kmz');
+    const icons = [{ sidc: '10031000001211020000', pngBase64: 'iVBORw0KGgo=' }];
+    await downloadAiAgentMap(summary, 'kmz', icons);
     expect(mocks.postBytes).toHaveBeenCalledWith('/api/ai-agent/maps/csv', {
       requestId: summary.requestId,
       mapId: summary.id,
+      revision: null,
     });
     expect(mocks.postBytes).toHaveBeenCalledWith('/api/ai-agent/maps/kmz', {
       requestId: summary.requestId,
       mapId: summary.id,
+      revision: null,
+      icons,
     });
   });
   it('round-trips provider runtime profiles for allowed engines', async () => {

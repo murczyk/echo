@@ -34,8 +34,14 @@ const empty = {
   invalidCount: 1,
 };
 const source = { messageId: 77, messageIdentifier: 'map-source' };
+function recordId(summary: AiAgentMapSummary, index: number): string {
+  const prefix =
+    summary.id === sub.id ? 'bbbbbbbb' : summary.id === empty.id ? 'cccccccc' : 'aaaaaaaa';
+  return `${prefix}-aaaa-4aaa-8aaa-aaaaaaaaaaa${index + 1}`;
+}
 function document(summary: AiAgentMapSummary): AiAgentMapDocument {
   const valid = {
+    id: recordId(summary, 0),
     sidc: summary.id === sub.id ? '10062000009999990000' : '10062000001209020000',
     name: `${summary.title}: Подія А`,
     observationDatetime: '2026-09-28T11:20:00',
@@ -53,6 +59,7 @@ function document(summary: AiAgentMapSummary): AiAgentMapDocument {
   };
   const invalid = {
     ...valid,
+    id: recordId(summary, 2),
     name: 'Некоректний запис',
     originalY: '654866',
     y: 'INVALID',
@@ -64,7 +71,11 @@ function document(summary: AiAgentMapSummary): AiAgentMapDocument {
     ...summary,
     records:
       summary.id === main.id
-        ? [valid, { ...valid, name: 'Спільна координата: Подія Б' }, invalid]
+        ? [
+            valid,
+            { ...valid, id: recordId(summary, 1), name: 'Спільна координата: Подія Б' },
+            invalid,
+          ]
         : summary.validCount
           ? [valid]
           : [invalid],
@@ -79,7 +90,15 @@ async function installMaps(page: Page, longHistory = false) {
     createdAt: 1,
     updatedAt: 1,
   };
-  const state = { delayMain: false, fail: false, retainedOnly: false, loads: [] as string[] };
+  const state = {
+    delayMain: false,
+    fail: false,
+    retainedOnly: false,
+    loads: [] as string[],
+    revision: 1,
+    sidc: '10062000001209020000',
+    edits: [] as Array<Record<string, unknown>>,
+  };
   const references = `Події [мапа](echo-map:${main.id}).\n\nГрупа [мапа](echo-map:${sub.id}).\n\nНеповні [мапа](echo-map:${empty.id}).`;
   const paragraphs = Array.from({ length: 16 }, (_, index) => `Подія ${index + 1}.`).join('\n\n');
   const content = longHistory ? `${paragraphs}\n\n${references}\n\n${paragraphs}` : references;
@@ -127,9 +146,93 @@ async function installMaps(page: Page, longHistory = false) {
     const summary = [main, sub, empty].find((item) => item.id === body.mapId);
     return summary ? route.fulfill({ json: document(summary) }) : route.fulfill({ status: 404 });
   });
+  const workspace = (summary: AiAgentMapSummary) => {
+    const doc = document(summary);
+    const edited = state.revision > 1;
+    if (edited) doc.records = doc.records.map((record) => ({ ...record, sidc: state.sidc }));
+    return {
+      revision: state.revision,
+      canUndo: edited,
+      canRedo: false,
+      document: doc,
+      changes: {
+        addedCount: 0,
+        updatedCount: edited ? 1 : 0,
+        removedCount: 0,
+        changes: edited
+          ? [
+              {
+                id: doc.records[0].id,
+                name: doc.records[0].name,
+                kind: 'update',
+                latitude: null,
+                longitude: null,
+                fields: [],
+              },
+            ]
+          : [],
+      },
+      revisions: [
+        ...(edited
+          ? [
+              {
+                revision: 2,
+                parentRevision: 1,
+                origin: 'user',
+                summary: 'змінено 1',
+                createdAt: '2026-10-01T10:05:00',
+              },
+            ]
+          : []),
+        {
+          revision: 1,
+          parentRevision: null,
+          origin: 'artifact',
+          summary: 'Опублікована мапа',
+          createdAt: '2026-10-01T10:00:00',
+        },
+      ],
+    };
+  };
+  await page.route('**/api/ai-agent/maps/workspace', async (route) => {
+    const body = route.request().postDataJSON();
+    expect(body).toEqual({ requestId, mapId: body.mapId });
+    if (state.delayMain && body.mapId === main.id) {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+    }
+    if (state.fail) return route.fulfill({ status: 403, body: 'Джерело мапи недоступне' });
+    const summary = [main, sub, empty].find((item) => item.id === body.mapId);
+    if (!summary) return route.fulfill({ status: 404 });
+    return route.fulfill({ json: workspace(summary) });
+  });
+  await page.route('**/api/ai-agent/maps/edit', (route) => {
+    const body = route.request().postDataJSON();
+    state.edits.push(body);
+    expect(body.expectedRevision).toBe(state.revision);
+    state.revision += 1;
+    state.sidc = '10031000001209020000';
+    return route.fulfill({ json: { revision: state.revision } });
+  });
+  await page.route('**/api/ai-agent/maps/undo', (route) => {
+    expect(route.request().postDataJSON()).toEqual({
+      requestId,
+      mapId: main.id,
+      expectedRevision: 2,
+    });
+    state.revision = 1;
+    return route.fulfill({ json: workspace(main) });
+  });
   for (const format of ['csv', 'kmz'])
     await page.route(`**/api/ai-agent/maps/${format}`, (route) => {
-      expect(route.request().postDataJSON()).toEqual({ requestId, mapId: main.id });
+      const body = route.request().postDataJSON();
+      const { icons, ...identity } = body;
+      expect(identity).toEqual({ requestId, mapId: main.id, revision: null });
+      if (format === 'kmz') {
+        expect(icons.map((icon: { sidc: string }) => icon.sidc)).toEqual(['10062000001209020000']);
+        expect(icons[0].pngBase64).toMatch(/^iVBORw0KGgo/);
+      } else {
+        expect(icons).toBeUndefined();
+      }
       return route.fulfill({
         contentType:
           format === 'csv' ? 'text/csv; charset=utf-8' : 'application/vnd.google-earth.kmz',
@@ -163,7 +266,7 @@ async function installMaps(page: Page, longHistory = false) {
   return state;
 }
 
-test('@regression #3064 map chips replace documents, preserve drafts, reload, and download', async ({
+test('@regression #3064 map chips open a map-first workspace that edits symbols as revisions', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -171,10 +274,10 @@ test('@regression #3064 map chips replace documents, preserve drafts, reload, an
   const chat = page.locator('ai-agent-chat');
   const mainChip = chat.locator('.ai-map-chip').filter({ hasText: 'мапа' }).first();
   await expect(chat.locator('.ai-map-chip-image').first()).toHaveCSS('width', '24px');
-  await expect(chat.locator('.ai-map-chip-image').first()).toHaveCSS('height', '24px');
   await expect(chat.locator('.ai-map-preview')).toHaveCSS('width', '144px');
-  await expect(chat.locator('.ai-map-preview-image')).toHaveCSS('height', '96px');
   await expect(chat.locator('.ai-map-preview-count')).toHaveText('2');
+  await chat.locator('.ai-map-preview').scrollIntoViewIfNeeded();
+  await expect(chat.locator('.ai-map-symbol-strip img')).toHaveCount(1);
   const draft = chat.getByRole('textbox', { name: 'Повідомлення' });
   await draft.fill('Чернетка збережеться');
   const scroll = chat.getByTestId('ai-agent-chat-messages');
@@ -186,11 +289,10 @@ test('@regression #3064 map chips replace documents, preserve drafts, reload, an
   expect(scrollBefore).toBeGreaterThan(0);
   await page.keyboard.press('Enter');
   const panel = page.getByRole('region', { name: 'Мапа відповіді' });
-  await expect(panel.getByRole('heading', { name: main.title, exact: true })).toBeVisible();
+  const title = panel.getByRole('textbox', { name: 'Назва мапи' });
+  await expect(title).toHaveValue(main.title);
   await expect(panel.getByTestId('ai-map-canvas')).toBeVisible();
-  await expect(panel.getByRole('combobox')).toHaveCount(0);
-  await expect(panel.locator('.leaflet-marker-icon').first()).toHaveCSS('width', '20px');
-  await expect(panel.locator('.leaflet-marker-icon').first()).toHaveCSS('height', '20px');
+  await expect(panel.locator('.leaflet-marker-icon')).toHaveCount(2);
   await expect
     .poll(() =>
       panel
@@ -198,68 +300,94 @@ test('@regression #3064 map chips replace documents, preserve drafts, reload, an
         .first()
         .evaluate(
           (element) =>
-            element instanceof HTMLImageElement && element.complete && element.naturalWidth > 0,
+            element instanceof HTMLImageElement &&
+            element.src.startsWith('data:image/svg+xml') &&
+            element.complete &&
+            element.naturalWidth > 0,
         ),
     )
     .toBe(true);
+  const [first, second] = await panel.locator('.leaflet-marker-icon').evaluateAll((elements) =>
+    elements.map((element) => {
+      const box = element.getBoundingClientRect();
+      return { x: box.x, y: box.y };
+    }),
+  );
+  // Coincident records are fanned out so both stay clickable.
+  expect(Math.hypot(first.x - second.x, first.y - second.y)).toBeGreaterThan(8);
   await expect(draft).toHaveValue('Чернетка збережеться');
   expect(await scroll.evaluate((element) => element.scrollTop)).toBe(scrollBefore);
   const chatBox = await chat.getByTestId('ai-agent-chat-pane').boundingBox();
   const mapBox = await panel.boundingBox();
-  expect(Math.abs(chatBox!.width - mapBox!.width)).toBeLessThan(3);
+  expect(Math.round(chatBox!.width)).toBe(420);
+  expect(mapBox!.width).toBeGreaterThan(chatBox!.width);
+  await expect(chat.getByRole('button', { name: /Редагую: Головна мапа/ })).toBeVisible();
+
+  const inspector = panel.getByRole('complementary', { name: 'Інспектор мапи' });
+  await expect(inspector.getByRole('tab', { name: "Об'єкти (3)" })).toBeVisible();
+  await expect(inspector.getByRole('button', { name: /Некоректний запис/ })).toBeVisible();
   await panel.locator('.leaflet-marker-icon').first().focus();
   await page.keyboard.press('Enter');
   const details = panel.getByTestId('ai-map-record-details');
-  await expect(details).toContainText('2026-09-28T11:20:00');
+  await expect(details).toContainText('2026-09-28 11:20:00');
   await expect(details).toContainText('Вантаж А & Б');
   await expect(details.getByRole('link', { name: /Джерело А/ })).toBeVisible();
-  const stageBox = await panel.getByTestId('ai-map-stage').boundingBox();
-  const detailsBox = await details.boundingBox();
-  expect(detailsBox!.y).toBeGreaterThan(stageBox!.y);
-  expect(detailsBox!.y + detailsBox!.height).toBeLessThan(stageBox!.y + stageBox!.height);
-  await panel.getByRole('button', { name: 'Закрити картку запису' }).click();
-  await expect(details).toHaveCount(0);
-  await panel.getByRole('button', { name: 'Наступна координата', exact: true }).click();
-  await expect(details).toContainText('Спільна координата: Подія Б');
-  await panel.getByRole('button', { name: 'Наступна координата', exact: true }).click();
-  await expect(details).toContainText('Некоректний запис');
-  await panel.getByRole('button', { name: 'Наступна координата', exact: true }).click();
-  await expect(details).toContainText('Головна мапа: Подія А');
-  await panel.getByRole('button', { name: 'Попередня координата', exact: true }).click();
-  await expect(details).toContainText('Некоректний запис');
-  await panel.getByRole('button', { name: 'Закрити картку запису' }).click();
+  await expect(chat.getByRole('button', { name: /вибрано 1/ })).toBeVisible();
+  await expect(chat.getByRole('button', { name: 'Зміни тип вибраних точок на' })).toBeVisible();
+
+  const editor = panel.getByTestId('ai-map-symbol-editor');
+  await expect(editor).toContainText('Ворожий');
+  await editor.getByRole('button', { name: 'Дружній' }).click();
+  await editor.getByRole('button', { name: 'Застосувати до 1' }).click();
+  await expect.poll(() => state.edits.length).toBe(1);
+  expect(state.edits[0]).toMatchObject({
+    requestId,
+    mapId: main.id,
+    expectedRevision: 1,
+    operations: [
+      {
+        op: 'setComponents',
+        selector: { ids: [document(main).records[0].id] },
+        components: { identity: '3' },
+      },
+    ],
+  });
+  await expect(editor).toContainText('Дружній');
+  await panel.getByRole('button', { name: 'Історія змін' }).click();
+  await expect(page.getByRole('menuitem', { name: /2\. змінено 1/ })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await panel.getByRole('button', { name: 'Скасувати зміну' }).click();
+  await expect(editor).toContainText('Ворожий');
+  await expect(panel.getByRole('button', { name: 'Скасувати зміну' })).toBeDisabled();
+
   await panel.getByRole('button', { name: 'OpenStreetMap', exact: true }).click();
   await expect(panel.getByRole('button', { name: 'OpenStreetMap', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
-  await panel.getByText('Попередження координат (1)', { exact: true }).click();
-  await panel.getByRole('button', { name: '3. Некоректний запис', exact: true }).click();
+  await inspector.getByRole('tab', { name: /Об'єкти/ }).click();
+  await inspector.getByRole('button', { name: /Некоректний запис/ }).click();
   await expect(details).toContainText('654866');
-  await panel.getByRole('button', { name: 'Закрити картку запису' }).click();
   for (const format of ['CSV', 'KMZ']) {
     await panel.getByRole('button', { name: 'Завантажити мапу' }).click();
     const downloaded = page.waitForEvent('download');
     await page.getByRole('menuitem', { name: format, exact: true }).click();
     expect((await downloaded).suggestedFilename()).toBe(`map-${main.id}.${format.toLowerCase()}`);
   }
-  await page.keyboard.press('Escape');
+  await panel.getByRole('button', { name: 'Закрити мапу' }).click();
   await expect(panel).toHaveCount(0);
   await expect(mainChip).toBeFocused();
   state.delayMain = true;
   await mainChip.click();
   await chat.locator('.ai-map-chip').nth(1).click();
-  await expect(panel.getByRole('heading', { name: sub.title, exact: true })).toBeVisible();
-  await expect(panel.locator('.leaflet-marker-icon')).toHaveAttribute(
-    'src',
-    '/img/google_earth_icons/10061000001211020000.png',
-  );
+  await expect(title).toHaveValue(sub.title);
   await page.waitForTimeout(1000);
-  await expect(panel.getByRole('heading', { name: sub.title, exact: true })).toBeVisible();
+  await expect(title).toHaveValue(sub.title);
   await panel.getByRole('button', { name: 'Закрити мапу' }).click();
   await expect(draft).toHaveValue('Чернетка збережеться');
+  state.delayMain = false;
   await chat.locator('.ai-map-preview').click();
-  await expect(panel.getByRole('heading', { name: main.title, exact: true })).toBeVisible();
+  await expect(title).toHaveValue(main.title);
   await page.reload();
   await expect(chat.locator('.ai-map-preview')).toHaveCount(1);
   await expect(panel).toHaveCount(0);
@@ -276,10 +404,10 @@ test('@regression #3064 map chips replace documents, preserve drafts, reload, an
   await expect(chat.locator('.ai-map-chip')).toHaveCount(1);
   await expect(chat.locator('.ai-map-preview')).toHaveCount(0);
   await chat.locator('.ai-map-chip').click();
-  await expect(panel.getByRole('heading', { name: sub.title, exact: true })).toBeVisible();
+  await expect(title).toHaveValue(sub.title);
 });
 
-test('@regression #3064 Echo breakpoint switches map panel to a full height drawer with CSV-only invalid rows', async ({
+test('@regression #3064 Echo breakpoint switches the map workspace to a full height drawer with CSV-only invalid rows', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1024, height: 900 });
@@ -288,16 +416,18 @@ test('@regression #3064 Echo breakpoint switches map panel to a full height draw
   await chat.locator('.ai-map-preview').click();
   const panel = page.getByRole('region', { name: 'Мапа відповіді' });
   await expect(panel).toBeVisible();
-  expect(await panel.evaluate((element) => element.parentElement?.tagName)).toBe('ASIDE');
+  expect(await panel.evaluate((element) => element.parentElement?.className)).toContain(
+    'ai-map-workspace-frame',
+  );
   await panel.getByRole('button', { name: 'Закрити мапу' }).click();
   await page.setViewportSize({ width: 1023, height: 900 });
   await chat.locator('.ai-map-chip').nth(2).click();
-  await expect(panel).toContainText('KMZ недоступний');
+  await expect(panel).toContainText('1 без координат');
   let rect = await panel.boundingBox();
   expect(rect!.width).toBe(1023);
   expect(rect!.height).toBe(900);
   await panel.getByRole('button', { name: 'Завантажити мапу' }).click();
-  await expect(page.getByRole('menuitem', { name: 'KMZ', exact: true })).toHaveAttribute(
+  await expect(page.getByRole('menuitem', { name: /^KMZ/ })).toHaveAttribute(
     'aria-disabled',
     'true',
   );
@@ -315,18 +445,17 @@ test('@regression #3064 Echo breakpoint switches map panel to a full height draw
   await page.setViewportSize({ width: 320, height: 640 });
   await chat.locator('.ai-map-preview').click();
   await expect(panel).toBeVisible();
-  await expect(panel.getByRole('combobox')).toHaveCount(0);
   await panel.locator('.leaflet-marker-icon').last().click();
   const details = panel.getByTestId('ai-map-record-details');
   await expect(details).toBeVisible();
   const stage = await panel.getByTestId('ai-map-stage').boundingBox();
-  const card = await details.boundingBox();
-  expect(card!.x).toBeGreaterThanOrEqual(stage!.x);
-  expect(card!.x + card!.width).toBeLessThanOrEqual(stage!.x + stage!.width);
-  const layer = await panel
-    .getByRole('button', { name: 'OpenStreetMap', exact: true })
+  const inspector = await panel
+    .getByRole('complementary', { name: 'Інспектор мапи' })
     .boundingBox();
-  expect(card!.y + card!.height).toBeLessThan(layer!.y);
+  expect(inspector!.y).toBeGreaterThanOrEqual(stage!.y + stage!.height - 1);
+  expect(inspector!.x + inspector!.width).toBeLessThanOrEqual(320);
+  await panel.getByRole('button', { name: 'Сховати панель об’єктів' }).click();
+  await expect(panel.getByRole('complementary', { name: 'Інспектор мапи' })).toHaveCount(0);
   await panel.getByRole('button', { name: 'Закрити мапу' }).click();
   state.fail = true;
   await chat.locator('.ai-map-preview').click();

@@ -9,6 +9,34 @@ export const MapSelectionContext = createContext<
   ((summary: AiAgentMapSummary, opener: HTMLElement) => void) | null
 >(null);
 
+const artifactLoads = new Map<string, Promise<AiAgentMapDocument>>();
+const documentUpdates = new EventTarget();
+
+function documentKey(summary: Pick<AiAgentMapSummary, 'requestId' | 'id'>): string {
+  return `${summary.requestId}:${summary.id}`;
+}
+
+export function resetSharedMapDocuments() {
+  artifactLoads.clear();
+}
+
+/** Tells every preview of this map that a new revision is current. */
+export function invalidateMapDocument(summary: Pick<AiAgentMapSummary, 'requestId' | 'id'>) {
+  artifactLoads.delete(documentKey(summary));
+  documentUpdates.dispatchEvent(new Event(documentKey(summary)));
+}
+
+export function loadSharedMapDocument(summary: AiAgentMapSummary): Promise<AiAgentMapDocument> {
+  const key = documentKey(summary);
+  const existing = artifactLoads.get(key);
+  if (existing) return existing;
+  const pending = getAiAgentMap(summary).finally(() => {
+    if (artifactLoads.get(key) === pending) artifactLoads.delete(key);
+  });
+  artifactLoads.set(key, pending);
+  return pending;
+}
+
 export function useMapDocument(summary: AiAgentMapSummary, enabled = true) {
   const [document, setDocument] = useState<AiAgentMapDocument | null>(null);
   const [failed, setFailed] = useState(false);
@@ -18,17 +46,25 @@ export function useMapDocument(summary: AiAgentMapSummary, enabled = true) {
     setDocument(null);
     setFailed(false);
     if (!enabled) return;
-    const controller = new AbortController();
-    void getAiAgentMap(summary, controller.signal)
+    let cancelled = false;
+    void loadSharedMapDocument(summary)
       .then((response) => {
-        if (!controller.signal.aborted) setDocument(response);
+        if (!cancelled) setDocument(response);
       })
       .catch(() => {
-        if (controller.signal.aborted) return;
+        if (cancelled) return;
         setFailed(true);
         notify({ severity: 'error', message: 'Не вдалося завантажити мапу. Спробуйте ще раз.' });
       });
-    return () => controller.abort();
+    return () => {
+      cancelled = true;
+    };
   }, [summary.requestId, summary.id, enabled, retry, notify]);
+  useEffect(() => {
+    const key = documentKey(summary);
+    const refresh = () => setRetry((value) => value + 1);
+    documentUpdates.addEventListener(key, refresh);
+    return () => documentUpdates.removeEventListener(key, refresh);
+  }, [summary.requestId, summary.id]);
   return { document, failed, retry: () => setRetry((value) => value + 1) };
 }
