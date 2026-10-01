@@ -256,6 +256,51 @@ describe('MessageCard', () => {
     expect(document.body.textContent).toContain('Перейти');
     expect(document.body.textContent).toContain('Виключити');
 
+    const copySection = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
+    ).find((item) => item.textContent?.trim() === 'Копіювати…');
+    if (copySection == null) throw new Error('missing copy section');
+    await click(copySection);
+
+    expect(document.body.querySelectorAll('[role="menu"]')).toHaveLength(1);
+    expect(document.body.querySelector('[role="menu"]')?.getAttribute('aria-label')).toBe(
+      'Копіювання повідомлення',
+    );
+    expect(document.body.querySelector('[aria-label="Назад до додаткових дій"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('Копіювати повідомлення');
+
+    const back = document.body.querySelector('[aria-label="Назад до додаткових дій"]');
+    if (!(back instanceof HTMLElement)) throw new Error('missing menu back button');
+    await click(back);
+    expect(document.body.querySelector('[role="menu"]')?.getAttribute('aria-label')).toBe(
+      'Додаткові дії повідомлення',
+    );
+    expect(document.body.textContent).toContain('Копіювати');
+
+    const navigateSection = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
+    ).find((item) => item.textContent?.trim() === 'Перейти…');
+    if (navigateSection == null) throw new Error('missing navigate section');
+    await click(navigateSection);
+    expect(document.body.querySelector('[role="menu"]')?.getAttribute('aria-label')).toBe(
+      'Перехід по повідомленню',
+    );
+    expect(document.body.querySelectorAll('[role="menu"]')).toHaveLength(1);
+
+    const navigateBack = document.body.querySelector('[aria-label="Назад до додаткових дій"]');
+    if (!(navigateBack instanceof HTMLElement)) throw new Error('missing navigate back button');
+    await click(navigateBack);
+
+    const excludeSection = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
+    ).find((item) => item.textContent?.trim() === 'Виключити…');
+    if (excludeSection == null) throw new Error('missing exclude section');
+    await click(excludeSection);
+    expect(document.body.querySelector('[role="menu"]')?.getAttribute('aria-label')).toBe(
+      'Виключення з фільтрів',
+    );
+    expect(document.body.querySelectorAll('[role="menu"]')).toHaveLength(1);
+
     clientWidth.mockRestore();
     scrollWidth.mockRestore();
   });
