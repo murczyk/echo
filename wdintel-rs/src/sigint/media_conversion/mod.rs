@@ -181,7 +181,7 @@ pub async fn preview(
     let (media, job) =
         authorized_job(&user, env.as_ref(), path.0).await.c(h!())?;
     let (storage_key, file_name) = completed_result(&job).c(h!())?;
-    ensure_preview_source_size(job.converted_size_bytes.c(h!())?)?;
+    ensure_preview_source_size(job.converted_size_bytes.c(h!())?).c(h!())?;
     let bytes = fetch_completed_result_bytes(env.as_ref(), &media, storage_key)
         .await
         .c(h!())?;
@@ -205,7 +205,7 @@ pub async fn source_preview(
             msg: "Attachment is not native KML or KMZ".to_string(),
         });
     }
-    ensure_preview_source_size(media.size_bytes)?;
+    ensure_preview_source_size(media.size_bytes).c(h!())?;
     let bytes = worker::fetch_source_bytes(env.as_ref(), &media)
         .await
         .c(h!())?;

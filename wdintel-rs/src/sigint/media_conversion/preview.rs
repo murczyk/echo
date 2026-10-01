@@ -432,7 +432,9 @@ fn polygon_rings(
     else {
         return Ok(None);
     };
-    let outer = coords(outer).c(h!())?;
+    let Ok(outer) = coords(outer) else {
+        return Ok(None);
+    };
     if outer.len() < 3 {
         return Ok(None);
     }
@@ -570,6 +572,20 @@ mod tests {
         let preview = parse_kml_bytes(kml).unwrap();
         assert_eq!(preview.polygons.len(), 1);
         assert_eq!(preview.polygons[0].rings.len(), 2);
+    }
+
+    #[test]
+    fn skips_polygon_with_invalid_exterior_and_preserves_other_geometry() {
+        let kml = br#"<kml><Placemark><MultiGeometry>
+          <Point><coordinates>30,50</coordinates></Point>
+          <LineString><coordinates>30,50 31,51</coordinates></LineString>
+          <Polygon><outerBoundaryIs><LinearRing><coordinates>not-a-coordinate</coordinates></LinearRing></outerBoundaryIs></Polygon>
+        </MultiGeometry></Placemark></kml>"#;
+
+        let preview = parse_kml_bytes(kml).unwrap();
+        assert_eq!(preview.points.len(), 1);
+        assert_eq!(preview.line_strings.len(), 1);
+        assert!(preview.polygons.is_empty());
     }
 
     #[tokio::test]
