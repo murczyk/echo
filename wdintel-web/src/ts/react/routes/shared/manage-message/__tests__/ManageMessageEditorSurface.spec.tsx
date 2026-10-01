@@ -21,6 +21,7 @@ describe('ManageMessageEditorSurface', () => {
   let root: Root;
 
   beforeEach(() => {
+    document.documentElement.style.setProperty('--background-color', '#eff0f1');
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -29,6 +30,7 @@ describe('ManageMessageEditorSurface', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+    document.documentElement.style.removeProperty('--background-color');
     vi.restoreAllMocks();
   });
 
@@ -152,6 +154,7 @@ describe('ManageMessageEditorSurface', () => {
     expect(paper?.getAttribute('role')).toBe('dialog');
     expect(paper?.getAttribute('aria-modal')).toBe('true');
     expect(paper?.getAttribute('aria-labelledby')).toBe('message-editor-title');
+    expect(paper && getComputedStyle(paper).backgroundColor).toBe('#eff0f1');
   });
 
   it('does not render a closed embedded surface', async () => {

@@ -1379,9 +1379,15 @@ describe('ManageMessageDrawer edit mode', () => {
     });
 
     const header = container.querySelector<HTMLElement>('[data-testid="report-source-header"]');
+    const metadata = header?.querySelector<HTMLElement>('.report-source-metadata');
+    const metadataItems = metadata?.querySelector<HTMLElement>(':scope > div > div');
     expect(header).not.toBeNull();
     expect(getComputedStyle(header!).flexWrap).toBe('wrap');
     expect(getComputedStyle(header!).overflowX).not.toBe('auto');
+    expect(getComputedStyle(metadata!).whiteSpace).not.toBe('nowrap');
+    expect(getComputedStyle(metadata!).flexShrink).not.toBe('0');
+    expect(getComputedStyle(metadataItems!).flexWrap).toBe('wrap');
+    expect(metadata?.querySelector('.message-card-text--nowrap')).toBeNull();
     root.unmount();
   });
 
