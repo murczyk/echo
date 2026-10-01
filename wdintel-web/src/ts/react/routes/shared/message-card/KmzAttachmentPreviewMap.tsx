@@ -26,6 +26,7 @@ function geometryColor(color: string | null): string {
 
 function addPreviewLayers(layerGroup: L.FeatureGroup, preview: KmzPreview): void {
   const renderer = L.canvas({ padding: 0.25 });
+  const pointRadius = preview.points.length > 500 ? 2 : 4;
   for (const line of preview.lineStrings) {
     const coords = line.coords.filter(validCoords);
     if (coords.length < 2) continue;
@@ -48,9 +49,9 @@ function addPreviewLayers(layerGroup: L.FeatureGroup, preview: KmzPreview): void
     if (!validCoords(point.coords)) continue;
     const marker = L.circleMarker([point.coords.lat, point.coords.lng], {
       renderer,
-      radius: 8,
-      color: '#ffffff',
-      weight: 3,
+      radius: pointRadius,
+      color: geometryColor(point.color),
+      weight: 1,
       fillColor: geometryColor(point.color),
       fillOpacity: point.opacity,
     });

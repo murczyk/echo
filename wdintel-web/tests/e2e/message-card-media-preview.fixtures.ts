@@ -299,6 +299,7 @@ function buildMessageCardMediaPreviewMessage({
               file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kml,
               size_bytes: 256,
               href: kml,
+              kmz_conversion_status: 'done',
             },
             {
               id: 'e2e-kmz',
@@ -306,6 +307,7 @@ function buildMessageCardMediaPreviewMessage({
               file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kmz,
               size_bytes: 256,
               href: kmz,
+              kmz_conversion_status: 'done',
             },
             {
               id: 'e2e-gpx',
@@ -553,7 +555,11 @@ export async function installMessageCardMediaPreviewAssetRoutes(
     }
 
     if (fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kml) {
-      await fulfillAsset(route, KML_PREVIEW_FIXTURE, 'application/vnd.google-earth.kml+xml');
+      await route.fulfill({
+        contentType: 'application/vnd.google-earth.kml+xml',
+        headers: { 'content-disposition': 'attachment; filename="e2e-route.kml"' },
+        body: KML_PREVIEW_FIXTURE,
+      });
       return;
     }
 
@@ -713,6 +719,30 @@ async function installMessageCardMediaPreviewHostFixture(
   }
 
   if (withKmlPreviews) {
+    await page.route('**/api/messenger/media/e2e-kml/kmz-conversion/archive.zip', (route) =>
+      route.fulfill({
+        contentType: 'application/zip',
+        headers: { 'content-disposition': 'attachment; filename="e2e-route_files.zip"' },
+        body: KMZ_PREVIEW_FIXTURE,
+      }),
+    );
+    await page.route('**/api/messenger/media/e2e-kml/kmz-conversion/status', (route) =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'done',
+          error: null,
+          converted_file_name: 'e2e-route_converted.kmz',
+        }),
+      }),
+    );
+    await page.route('**/api/messenger/media/e2e-kml/kmz-conversion/download', (route) =>
+      route.fulfill({
+        contentType: 'application/vnd.google-earth.kmz',
+        headers: { 'content-disposition': 'attachment; filename="e2e-route_converted.kmz"' },
+        body: KMZ_PREVIEW_FIXTURE,
+      }),
+    );
     await page.route('**/api/messenger/media/e2e-gpx/kmz-conversion/status', (route) =>
       route.fulfill({
         contentType: 'application/json',
@@ -839,6 +869,23 @@ export async function openLegacyKmlPreviewHost(
         error: null,
         converted_file_name: 'legacy-route_converted.kmz',
       }),
+    }),
+  );
+  await page.route('**/api/messenger/media/legacy-kml/kmz-conversion/status', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'done',
+        error: null,
+        converted_file_name: 'legacy-route_converted.kmz',
+      }),
+    }),
+  );
+  await page.route('**/api/messenger/media/legacy-kml/kmz-conversion/download', (route) =>
+    route.fulfill({
+      contentType: 'application/vnd.google-earth.kmz',
+      headers: { 'content-disposition': 'attachment; filename="legacy-route_converted.kmz"' },
+      body: KMZ_PREVIEW_FIXTURE,
     }),
   );
   await page.route('**/api/messenger/media/legacy-gpx/kmz-conversion/download', (route) =>

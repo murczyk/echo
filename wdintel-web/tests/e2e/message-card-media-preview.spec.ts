@@ -234,8 +234,27 @@ test.describe('@smoke @regression', () => {
       });
       await openLegacyKmlPreviewHost(page, host);
 
+      const beforeKmlRequests = requests.length;
+      await page.getByRole('button', { name: 'legacy-route.kml' }).click();
+      const kmlDialog = page.getByRole('dialog', { name: 'Попередній перегляд KML' });
+      await expect(kmlDialog.locator('[data-kmz-preview-map="true"]')).toBeVisible();
+      await expect
+        .poll(() => requests.slice(beforeKmlRequests))
+        .toContainEqual(
+          expect.stringContaining('/api/messenger/media/legacy-kml/kmz-conversion/status'),
+        );
+      await expectDownloadFile(
+        kmlDialog.getByRole('link', { name: 'Скачати' }),
+        'legacy-route.kml',
+      );
+      await kmlDialog.getByRole('button', { name: 'Додаткові завантаження' }).click();
+      await expectDownloadFile(
+        page.getByRole('menuitem', { name: 'Завантажити legacy-route_converted.kmz' }),
+        'legacy-route_converted.kmz',
+      );
+      await kmlDialog.getByRole('button', { name: 'Закрити' }).click();
+
       for (const [fileName, label, originalFileName] of [
-        ['legacy-route.kml', 'Попередній перегляд KML', 'e2e-route.kml'],
         ['legacy-route.kmz', 'Попередній перегляд KMZ', 'e2e-route.kmz'],
       ] as const) {
         const beforeRequests = requests.length;
@@ -271,14 +290,8 @@ test.describe('@smoke @regression', () => {
       expect(requests.slice(beforeLimitRequests)).not.toContainEqual(
         expect.stringContaining('/test-assets/message-card-media-preview/e2e-route.kml'),
       );
-      expect(requests.slice(beforeLimitRequests)).not.toContainEqual(
-        expect.stringContaining('/kmz-conversion/status'),
-      );
       const limitDownload = limitDialog.getByRole('link', { name: 'Скачати' });
-      const limitDownloadsBefore = downloads;
-      await limitDownload.click({ noWaitAfter: true });
-      await limitDownload.click({ force: true, noWaitAfter: true });
-      await expect.poll(() => downloads).toBe(limitDownloadsBefore + 1);
+      await expectDownloadFile(limitDownload, 'legacy-oversized.kml');
       await limitDialog.getByRole('button', { name: 'Закрити' }).click();
 
       const beforeConvertedRequests = requests.length;
@@ -324,17 +337,37 @@ test.describe('@smoke @regression', () => {
       const documents = page.getByRole('button', { name: /^(Розгорнути|Згорнути) документи:/ });
       if ((await documents.getAttribute('aria-expanded')) !== 'true') await documents.click();
 
+      await expectDownloadFile(
+        page.getByRole('link', {
+          name: `Завантажити оригінал і конвертований KMZ: ${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kml}`,
+        }),
+        'e2e-route_files.zip',
+      );
+      await expect(
+        page.getByRole('link', {
+          name: `Завантажити оригінал і конвертований KMZ: ${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kmz}`,
+        }),
+      ).toHaveCount(0);
+
       await page
         .getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kml })
         .click();
       await expect(page.getByRole('dialog', { name: 'Попередній перегляд KML' })).toBeVisible();
       const dialog = page.getByRole('dialog');
       await expect(dialog.locator('[data-kmz-preview-map="true"]')).toBeVisible();
-      await expect(dialog.getByRole('link', { name: 'Скачати' })).toBeVisible();
+      await expectDownloadFile(
+        dialog.getByRole('link', { name: 'Скачати' }),
+        MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kml,
+      );
       await expect(dialog.getByRole('button', { name: 'Закрити' })).toBeVisible();
       await expect(dialog.getByRole('button', { name: 'Попереднє' })).toBeVisible();
       await expect(dialog.getByRole('button', { name: 'Наступне' })).toBeVisible();
-      await expect(dialog.getByRole('button', { name: 'Додаткові завантаження' })).toHaveCount(0);
+      await expect(dialog.getByRole('button', { name: 'Додаткові завантаження' })).toBeVisible();
+      await dialog.getByRole('button', { name: 'Додаткові завантаження' }).click();
+      await expectDownloadFile(
+        page.getByRole('menuitem', { name: 'Завантажити e2e-route_converted.kmz' }),
+        'e2e-route_converted.kmz',
+      );
 
       const counter = dialog.locator('[data-attachment-preview-counter="true"]:visible');
       const beforeDrag = await counter.textContent();

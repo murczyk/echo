@@ -10,6 +10,7 @@ const api = vi.hoisted(() => ({
   retry: vi.fn(),
   worker: vi.fn(),
   fetch: vi.fn(),
+  notify: vi.fn(),
 }));
 
 vi.mock('@mui/material', () => ({
@@ -35,7 +36,7 @@ vi.mock('../../../../../components/PowerMenu', () => ({
   PowerMenu: ({ children, open }: any) => (open ? <div>{children}</div> : null),
 }));
 vi.mock('../../../../../components/PowerSnackbar', () => ({
-  useOptionalPowerSnackbar: () => ({ notify: vi.fn() }),
+  useOptionalPowerSnackbar: () => ({ notify: api.notify }),
 }));
 vi.mock('../../../../../services/api/kmz-attachment-conversion', () => ({
   getKmzAttachmentConversionStatus: api.getStatus,
@@ -58,15 +59,17 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewLayout', () => ({
   ),
 }));
 vi.mock('../../attachment-preview/MessageCardAttachmentPreviewHeader', () => ({
-  MessageCardAttachmentPreviewHeader: ({ download, overflowAction }: any) => (
+  MessageCardAttachmentPreviewHeader: ({ download, overflowAction, status }: any) => (
     <div>
       <a data-testid="original" href={download.href} download={download.fileName} />
+      {status}
       {overflowAction}
     </div>
   ),
 }));
 
 import { KmzAttachmentPreviewRenderer } from '../KmzAttachmentPreviewRenderer';
+import type { KmzAttachmentPreviewSource } from '../../attachment-preview/message-card-preview.types';
 
 let root: Root | null = null;
 let host: HTMLDivElement | null = null;
@@ -87,7 +90,7 @@ const convertedSource = {
   initialStatus: 'pending' as const,
 };
 
-async function render(source = nativeSource) {
+async function render(source: KmzAttachmentPreviewSource = nativeSource) {
   host = document.createElement('div');
   document.body.append(host);
   root = createRoot(host);
@@ -108,6 +111,7 @@ afterEach(async () => {
 
 describe('KmzAttachmentPreviewRenderer', () => {
   it('loads a native document and keeps its original download', async () => {
+    api.getStatus.mockResolvedValue({ status: 'pending', convertedFileName: null });
     api.fetch.mockResolvedValue({ buffer: new ArrayBuffer(1) });
     api.worker.mockResolvedValue({
       points: [{ coords: { lat: 50, lng: 30 } }],
@@ -124,6 +128,53 @@ describe('KmzAttachmentPreviewRenderer', () => {
       expect.any(String),
       expect.any(AbortSignal),
     );
+    expect(host?.querySelector('[data-testid="original"]')?.getAttribute('href')).toBe(
+      '/original/native',
+    );
+    expect(api.getStatus).toHaveBeenCalledWith('native', { signal: expect.any(AbortSignal) });
+  });
+
+  it('keeps a native KML map independent of a failed conversion job', async () => {
+    api.getStatus
+      .mockResolvedValueOnce({ status: 'error', error: 'conversion failed' })
+      .mockResolvedValueOnce({ status: 'done', convertedFileName: 'route_converted.kmz' });
+    api.retry.mockResolvedValue(undefined);
+    api.fetch.mockResolvedValue({ buffer: new ArrayBuffer(1) });
+    api.worker.mockResolvedValue({
+      points: [{ coords: { lat: 50, lng: 30 } }],
+      lineStrings: [],
+      polygons: [],
+    });
+
+    await render({ ...nativeSource, initialStatus: 'error' });
+    await vi.waitFor(() => expect(host?.querySelector('[data-testid="map"]')).not.toBeNull());
+    const map = host?.querySelector('[data-testid="map"]');
+    await vi.waitFor(() =>
+      expect(host?.querySelector('[aria-label="Повторити конвертацію KMZ"]')).not.toBeNull(),
+    );
+    expect(api.notify).not.toHaveBeenCalled();
+    await act(async () =>
+      (
+        host?.querySelector('[aria-label="Повторити конвертацію KMZ"]') as HTMLButtonElement
+      ).click(),
+    );
+    await vi.waitFor(() => expect(api.retry).toHaveBeenCalledWith('native'));
+    await vi.waitFor(() =>
+      expect(host?.querySelector('[aria-label="Додаткові завантаження"]')).not.toBeNull(),
+    );
+    expect(host?.querySelector('[data-testid="map"]')).toBe(map);
+    expect(api.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a completed conversion download available for oversized KML', async () => {
+    api.getStatus.mockResolvedValue({ status: 'done', convertedFileName: 'route_converted.kmz' });
+    await render({ ...nativeSource, sizeBytes: 25 * 1024 * 1024 + 1 });
+
+    await vi.waitFor(() => expect(host?.textContent).toContain('Перевищено ліміт'));
+    await vi.waitFor(() =>
+      expect(host?.querySelector('[aria-label="Додаткові завантаження"]')).not.toBeNull(),
+    );
+    expect(api.fetch).not.toHaveBeenCalled();
     expect(host?.querySelector('[data-testid="original"]')?.getAttribute('href')).toBe(
       '/original/native',
     );
@@ -206,9 +257,35 @@ describe('KmzAttachmentPreviewRenderer', () => {
     );
   });
 
+  it('retries fetching a completed converted KMZ after a preview failure', async () => {
+    api.getStatus.mockResolvedValue({ status: 'done', convertedFileName: 'route_converted.kmz' });
+    api.fetch.mockRejectedValueOnce(new Error('network failed')).mockResolvedValue({
+      buffer: new ArrayBuffer(1),
+    });
+    api.worker.mockResolvedValue({
+      points: [{ coords: { lat: 50, lng: 30 } }],
+      lineStrings: [],
+      polygons: [],
+    });
+
+    await render(convertedSource);
+    await vi.waitFor(() => expect(host?.textContent).toContain('network failed'));
+    await act(async () =>
+      (
+        Array.from(host?.querySelectorAll('button') ?? []).find(
+          (button) => button.textContent === 'Повторити',
+        ) as HTMLButtonElement
+      ).click(),
+    );
+    await vi.waitFor(() => expect(host?.querySelector('[data-testid="map"]')).not.toBeNull());
+    expect(api.fetch).toHaveBeenCalledTimes(2);
+    expect(api.retry).not.toHaveBeenCalled();
+  });
+
   it('stops a stalled file fetch with a retryable timeout error', async () => {
     vi.useFakeTimers();
     try {
+      api.getStatus.mockResolvedValue({ status: 'pending', convertedFileName: null });
       let requestSignal: AbortSignal | undefined;
       api.fetch.mockImplementation((_: string, __: number, ___: string, signal: AbortSignal) => {
         requestSignal = signal;
@@ -221,7 +298,9 @@ describe('KmzAttachmentPreviewRenderer', () => {
       expect(requestSignal?.aborted).toBe(true);
       expect(host?.textContent).toContain('Час очікування');
       expect(host?.textContent).toContain('KMZ_REQUEST_TIMEOUT');
-      expect(host?.querySelector('button')?.textContent).toBe('Повторити');
+      expect(
+        Array.from(host?.querySelectorAll('button') ?? []).map((button) => button.textContent),
+      ).toContain('Повторити');
     } finally {
       vi.useRealTimers();
     }
