@@ -59,9 +59,6 @@ pub struct Polygon {
     pub tessellate: Option<Tessellate>,
     #[serde(rename = "outerBoundaryIs")]
     pub outer_boundary_is: Option<OuterBoundaryIs>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    #[serde(rename = "innerBoundaryIs", default)]
-    pub inner_boundary_is: Vec<OuterBoundaryIs>,
 }
 
 #[derive(
@@ -231,15 +228,7 @@ pub struct PolyStyle {
 }
 
 #[derive(
-    Default,
-    Elm,
-    ElmEncode,
-    ElmDecode,
-    Debug,
-    Serialize,
-    Deserialize,
-    PartialEq,
-    Clone,
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct Style {
     #[serde(skip_serializing_if = "Option::is_none")]

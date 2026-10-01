@@ -203,7 +203,6 @@ export type Operatyvka = {
 export type Polygon = {
   tessellate: Tessellate | null;
   outerBoundaryIs: OuterBoundaryIs | null;
-  innerBoundaryIs: Array<OuterBoundaryIs>;
 };
 
 export type ExtendedData = {

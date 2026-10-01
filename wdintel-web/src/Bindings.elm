@@ -570,7 +570,6 @@ operatyvkaEncoder struct =
 type alias Polygon =
     { tessellate : Maybe (Tessellate)
     , outerBoundaryIs : Maybe (OuterBoundaryIs)
-    , innerBoundaryIs : List (OuterBoundaryIs)
     }
 
 
@@ -579,7 +578,6 @@ polygonEncoder struct =
     Json.Encode.object
         [ ( "tessellate", (Maybe.withDefault Json.Encode.null << Maybe.map (tessellateEncoder)) struct.tessellate )
         , ( "outerBoundaryIs", (Maybe.withDefault Json.Encode.null << Maybe.map (outerBoundaryIsEncoder)) struct.outerBoundaryIs )
-        , ( "innerBoundaryIs", (Json.Encode.list (outerBoundaryIsEncoder)) struct.innerBoundaryIs )
         ]
 
 
@@ -15499,7 +15497,6 @@ polygonDecoder =
     Json.Decode.succeed Polygon
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tessellate" (Json.Decode.nullable (tessellateDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "outerBoundaryIs" (Json.Decode.nullable (outerBoundaryIsDecoder))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "innerBoundaryIs" (Json.Decode.list (outerBoundaryIsDecoder))))
 
 
 extendedDataDecoder : Json.Decode.Decoder ExtendedData

@@ -170,7 +170,6 @@ pub async fn status(
     }))
 }
 
-
 #[post("/api/messenger/media/{media_id}/kmz-conversion/retry")]
 pub async fn retry(
     user: actix_identity::Identity,
@@ -381,7 +380,21 @@ async fn authorized_job(
     ),
     AppError,
 > {
-    let media = authorized_media(user, env, media_id).await.c(h!())?;
+    ensure_base_role(&env.dbx, user).await.c(h!())?;
+    let login = login_id_from_identity(user).c(h!())?;
+    let media = signal_message_media::Entity::find_by_id(media_id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
+        .c(h!())?;
+    crate::messenger::media::ensure_media_access(
+        &env.dbx,
+        &login,
+        media.signal_message_id,
+    )
+    .await
+    .c(h!())?;
     let job = signal_message_media_conversion_job::Entity::find()
         .filter(
             signal_message_media_conversion_job::Column::SourceMediaId
@@ -401,29 +414,6 @@ async fn authorized_job(
         return Err(AppError::NotFound);
     }
     Ok((media, job))
-}
-
-async fn authorized_media(
-    user: &actix_identity::Identity,
-    env: &Env,
-    media_id: Uuid,
-) -> Result<signal_message_media::Model, AppError> {
-    ensure_base_role(&env.dbx, user).await.c(h!())?;
-    let login = login_id_from_identity(user).c(h!())?;
-    let media = signal_message_media::Entity::find_by_id(media_id)
-        .one(&env.dbx)
-        .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)
-        .c(h!())?;
-    crate::messenger::media::ensure_media_access(
-        &env.dbx,
-        &login,
-        media.signal_message_id,
-    )
-    .await
-    .c(h!())?;
-    Ok(media)
 }
 
 fn completed_result(
@@ -451,7 +441,7 @@ fn is_supported_source(media: &signal_message_media::Model) -> bool {
         })
 }
 
-pub(crate) fn is_native_source(media: &signal_message_media::Model) -> bool {
+fn is_native_source(media: &signal_message_media::Model) -> bool {
     ["kml", "kmz"].iter().any(|extension| {
         source_extension(media).eq_ignore_ascii_case(extension)
     })
