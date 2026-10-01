@@ -76,10 +76,9 @@ function getPreviewDialogLabel(item: MessageCardPreviewItem, previewKind: string
   if (previewKind === 'audio') return 'Перегляд аудіо';
   if (previewKind === 'coordinate-map') return 'Перегляд координат';
   if (previewKind === 'kmz-map' && item.type === 'kmz') {
-    if (!item.value.nativePreview) return 'Попередній перегляд KMZ';
     if (item.value.nativeFormat === 'kml') return 'Попередній перегляд KML';
     if (item.value.nativeFormat === 'kmz') return 'Попередній перегляд KMZ';
-    return 'Попередній перегляд геоданих';
+    return 'Попередній перегляд конвертованого KMZ';
   }
   return 'Перегляд документа';
 }

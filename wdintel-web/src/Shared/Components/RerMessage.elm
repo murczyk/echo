@@ -1166,6 +1166,10 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                 displayFileName =
                     withDefault "<файл без назви>" attachment.fileName
 
+                nativePreview =
+                    String.endsWith ".kml" (String.toLower displayFileName)
+                        || String.endsWith ".kmz" (String.toLower displayFileName)
+
                 transcriptionBesidePlayer =
                     Config.featureAudioTranscriptionBesidePlayer
                         && vps.audioTranscriptionEnabled
@@ -1175,8 +1179,19 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                            )
 
                 downloadLink =
-                    case ( attachment.kmzConversionStatus, attachment.kmlPreviewStatus ) of
-                        ( Nothing, Nothing ) ->
+                    if nativePreview || attachment.kmzConversionStatus /= Nothing then
+                        node "kmz-attachment-preview"
+                            [ class "shrink-0"
+                            , attribute "media-id" attachment.id
+                            , attribute "original-href" attachment.href
+                            , attribute "file-name" displayFileName
+                            , attribute "conversion-status" (Maybe.withDefault "" attachment.kmzConversionStatus)
+                            , attribute "size-bytes" (String.fromInt attachment.sizeBytes)
+                            , attribute "content-type" attachment.contentType
+                            ]
+                            []
+
+                    else
                             a
                                 [ class "btn btn-outline-secondary btn-sm shrink-0"
                                 , href attachment.href
@@ -1187,16 +1202,6 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                                 , text displayFileName
                                 ]
 
-                        ( conversionStatus, previewStatus ) ->
-                            node "kmz-attachment-preview"
-                                [ class "shrink-0"
-                                , attribute "media-id" attachment.id
-                                , attribute "original-href" attachment.href
-                                , attribute "file-name" displayFileName
-                                , attribute "conversion-status" (Maybe.withDefault "" conversionStatus)
-                                , attribute "native-preview-status" (Maybe.withDefault "" previewStatus)
-                                ]
-                                []
             in
             if transcriptionBesidePlayer then
                 div [ class "mb-2 flex w-full items-start gap-2" ] <|

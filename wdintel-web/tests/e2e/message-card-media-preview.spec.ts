@@ -13,6 +13,14 @@ function resolveFixtureUrl(page: Page, pathname: string) {
   return new URL(pathname, page.url()).href;
 }
 
+async function expectDownloadFile(locator: Locator, fileName: string) {
+  const [download] = await Promise.all([
+    locator.page().waitForEvent('download'),
+    locator.click({ force: true, noWaitAfter: true }),
+  ]);
+  expect(download.suggestedFilename()).toBe(fileName);
+}
+
 async function createPlayableVideoFixture(page: Page): Promise<Buffer> {
   const base64 = await page.evaluate(async () => {
     const canvas = document.createElement('canvas');
@@ -226,9 +234,9 @@ test.describe('@smoke @regression', () => {
       });
       await openLegacyKmlPreviewHost(page, host);
 
-      for (const [fileName, mediaId, label] of [
-        ['legacy-route.kml', 'legacy-kml', 'Попередній перегляд KML'],
-        ['legacy-route.kmz', 'legacy-kmz', 'Попередній перегляд KMZ'],
+      for (const [fileName, label, originalFileName] of [
+        ['legacy-route.kml', 'Попередній перегляд KML', 'e2e-route.kml'],
+        ['legacy-route.kmz', 'Попередній перегляд KMZ', 'e2e-route.kmz'],
       ] as const) {
         const beforeRequests = requests.length;
         await page.getByRole('button', { name: fileName }).click();
@@ -237,10 +245,13 @@ test.describe('@smoke @regression', () => {
         await expect(dialog.locator('[data-kmz-preview-map="true"]')).toBeVisible();
         await expect
           .poll(() => requests.slice(beforeRequests))
-          .toContainEqual(expect.stringContaining(`/api/messenger/media/${mediaId}/kml-preview`));
+          .toContainEqual(
+            expect.stringContaining(`/test-assets/message-card-media-preview/${originalFileName}`),
+          );
         expect(requests.slice(beforeRequests)).not.toContainEqual(
           expect.stringContaining('/kmz-conversion/status'),
         );
+        await expect(dialog.getByRole('button', { name: 'Додаткові завантаження' })).toHaveCount(0);
         const originalDownload = dialog.getByRole('link', { name: 'Скачати' });
         const downloadsBefore = downloads;
         await originalDownload.click({ noWaitAfter: true });
@@ -251,18 +262,18 @@ test.describe('@smoke @regression', () => {
 
       const beforeLimitRequests = requests.length;
       await page.getByRole('button', { name: 'legacy-oversized.kml' }).click();
+      const limitDialog = page.getByRole('dialog', { name: 'Попередній перегляд KML' });
       await expect(
-        page.getByText(
+        limitDialog.getByText(
           'Перевищено ліміт попереднього перегляду 25 МіБ. Оригінал можна завантажити.',
         ),
       ).toBeVisible();
       expect(requests.slice(beforeLimitRequests)).not.toContainEqual(
-        expect.stringContaining('/kml-preview'),
+        expect.stringContaining('/test-assets/message-card-media-preview/e2e-route.kml'),
       );
       expect(requests.slice(beforeLimitRequests)).not.toContainEqual(
         expect.stringContaining('/kmz-conversion/status'),
       );
-      const limitDialog = page.getByRole('dialog');
       const limitDownload = limitDialog.getByRole('link', { name: 'Скачати' });
       const limitDownloadsBefore = downloads;
       await limitDownload.click({ noWaitAfter: true });
@@ -272,7 +283,9 @@ test.describe('@smoke @regression', () => {
 
       const beforeConvertedRequests = requests.length;
       await page.getByRole('button', { name: 'legacy-route.gpx' }).click();
-      const convertedDialog = page.getByRole('dialog', { name: 'Попередній перегляд KMZ' });
+      const convertedDialog = page.getByRole('dialog', {
+        name: 'Попередній перегляд конвертованого KMZ',
+      });
       await expect(convertedDialog).toBeVisible();
       await expect(convertedDialog.locator('[data-kmz-preview-map="true"]')).toBeVisible();
       await expect
@@ -280,11 +293,15 @@ test.describe('@smoke @regression', () => {
         .toContainEqual(
           expect.stringContaining('/api/messenger/media/legacy-gpx/kmz-conversion/status'),
         );
-      const convertedDownload = convertedDialog.getByRole('link', { name: 'Скачати' });
-      const convertedDownloadsBefore = downloads;
-      await convertedDownload.click({ noWaitAfter: true });
-      await convertedDownload.click({ force: true, noWaitAfter: true });
-      await expect.poll(() => downloads).toBe(convertedDownloadsBefore + 1);
+      await expectDownloadFile(
+        convertedDialog.getByRole('link', { name: 'Скачати' }),
+        'legacy-route.gpx',
+      );
+      await convertedDialog.getByRole('button', { name: 'Додаткові завантаження' }).click();
+      await expectDownloadFile(
+        page.getByRole('menuitem', { name: 'Завантажити legacy-route_converted.kmz' }),
+        'legacy-route_converted.kmz',
+      );
     });
   }
 
@@ -342,16 +359,23 @@ test.describe('@smoke @regression', () => {
       await page
         .getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.gpx })
         .click();
-      await expect(page.getByRole('dialog', { name: 'Попередній перегляд KMZ' })).toBeVisible();
+      await expect(
+        page.getByRole('dialog', { name: 'Попередній перегляд конвертованого KMZ' }),
+      ).toBeVisible();
+      await expect(dialog.locator('[data-kmz-preview-map="true"]')).toBeVisible();
+      await expectDownloadFile(
+        dialog.getByRole('link', { name: 'Скачати' }),
+        MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.gpx,
+      );
       const overflow = dialog.getByRole('button', { name: 'Додаткові завантаження' });
       await expect(overflow).toBeVisible();
-      await overflow.focus();
-      await page.keyboard.press('Enter');
-      await expect(
+      await overflow.click();
+      await expectDownloadFile(
         page.getByRole('menuitem', {
           name: 'Завантажити e2e-route_converted.kmz',
         }),
-      ).toBeVisible();
+        'e2e-route_converted.kmz',
+      );
     });
   }
 

@@ -184,7 +184,6 @@ describe('inbox API normalization', () => {
         ocr: null,
         summary: null,
         kmzConversionStatus: 'done',
-        kmlPreviewStatus: null,
       },
     ]);
   });
@@ -248,20 +247,6 @@ describe('normalizeMessageMediaInfo', () => {
       ocr: null,
       summary: null,
       kmzConversionStatus: null,
-      kmlPreviewStatus: null,
     });
-  });
-
-  it('maps the server-authorized native KML preview state', () => {
-    expect(
-      normalizeMessageMediaInfo({
-        id: 'm2',
-        content_type: 'application/vnd.google-earth.kmz',
-        file_name: 'map.kmz',
-        size_bytes: 2048,
-        href: '/api/messenger/media/m2',
-        kml_preview_status: 'ready',
-      }),
-    ).toMatchObject({ kmlPreviewStatus: 'ready' });
   });
 });

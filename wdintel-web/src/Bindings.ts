@@ -2724,42 +2724,12 @@ export type MessageMediaInfo = {
   ocr: OcrMediaSummary | null;
   summary: MediaSummaryStatus | null;
   kmzConversionStatus: string | null;
-  kmlPreviewStatus: string | null;
 };
 
 export type SignalMediaKmzConversionStatusRsp = {
   status: string;
   error: string | null;
   convertedFileName: string | null;
-};
-
-export type SignalMediaKmzPreviewLineString = {
-  coords: Array<Coords>;
-  color: string;
-  opacity: number;
-  label: string | null;
-};
-
-export type SignalMediaKmzPreviewPoint = {
-  coords: Coords;
-  label: string | null;
-  color: string;
-  opacity: number;
-};
-
-export type SignalMediaKmzPreviewPolygon = {
-  rings: Array<Array<Coords>>;
-  strokeColor: string;
-  strokeOpacity: number;
-  fillColor: string;
-  fillOpacity: number;
-  label: string | null;
-};
-
-export type SignalMediaKmzPreviewRsp = {
-  points: Array<SignalMediaKmzPreviewPoint>;
-  lineStrings: Array<SignalMediaKmzPreviewLineString>;
-  polygons: Array<SignalMediaKmzPreviewPolygon>;
 };
 
 export type SigintZone = {

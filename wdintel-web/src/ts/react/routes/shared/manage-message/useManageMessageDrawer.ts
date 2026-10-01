@@ -433,7 +433,6 @@ export function useManageMessageDrawer({
         ocr: m.ocr ?? (raw as any).ocr ?? null,
         summary: m.summary ?? (raw as any).summary ?? null,
         kmzConversionStatus: m.kmzConversionStatus ?? (raw as any).kmz_conversion_status ?? null,
-        kmlPreviewStatus: m.kmlPreviewStatus ?? (raw as any).kml_preview_status ?? null,
       };
     });
   }, [isEditMode, editTarget?.message.media, reportSource?.message.media]);

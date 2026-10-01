@@ -911,8 +911,6 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::delta::login::handle_redirect)
             .service(crate::rer_importer::messenger_media)
             .service(crate::sigint::media_conversion::status)
-            .service(crate::sigint::media_conversion::preview)
-            .service(crate::sigint::media_conversion::source_preview)
             .service(crate::sigint::media_conversion::retry)
             .service(crate::sigint::media_conversion::download)
             .service(crate::sigint::media_conversion::download_archive)

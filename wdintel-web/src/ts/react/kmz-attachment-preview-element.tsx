@@ -10,13 +10,15 @@ function KmzAttachmentPreviewElementContent({
   originalHref,
   fileName,
   initialStatus,
-  previewStatus,
+  sizeBytes,
+  contentType,
 }: {
   mediaId: string;
   originalHref: string;
   fileName: string;
   initialStatus: string;
-  previewStatus: string | null;
+  sizeBytes: number | null;
+  contentType: string | null;
 }) {
   const downloadGuard = useMessageCardDownloadGuard();
 
@@ -26,8 +28,8 @@ function KmzAttachmentPreviewElementContent({
       originalHref={originalHref}
       fileName={fileName}
       initialStatus={initialStatus}
-      nativePreview={previewStatus === 'ready'}
-      previewStatus={previewStatus}
+      sizeBytes={sizeBytes}
+      contentType={contentType}
       isDownloadStarting={downloadGuard.isDownloadStarting}
       onDownloadStart={downloadGuard.onDownloadStart}
     />
@@ -38,7 +40,14 @@ class KmzAttachmentPreviewElement extends HTMLElement {
   private root: Root | null = null;
 
   static get observedAttributes() {
-    return ['media-id', 'original-href', 'file-name', 'conversion-status', 'native-preview-status'];
+    return [
+      'media-id',
+      'original-href',
+      'file-name',
+      'size-bytes',
+      'content-type',
+      'conversion-status',
+    ];
   }
 
   connectedCallback() {
@@ -74,7 +83,8 @@ class KmzAttachmentPreviewElement extends HTMLElement {
             originalHref={this.getAttribute('original-href') ?? ''}
             fileName={this.getAttribute('file-name') || '<файл без назви>'}
             initialStatus={this.getAttribute('conversion-status') ?? 'pending'}
-            previewStatus={this.getAttribute('native-preview-status') || null}
+            sizeBytes={Number(this.getAttribute('size-bytes')) || null}
+            contentType={this.getAttribute('content-type') || null}
           />
         </PowerSnackbarProvider>
       </NeoMuiThemeProvider>,

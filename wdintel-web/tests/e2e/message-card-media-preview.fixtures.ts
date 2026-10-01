@@ -1,6 +1,7 @@
 import { expect, type Page, type Route } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { strToU8, zipSync } from 'fflate';
 
 import type { InboxMessagesRspRaw } from '../../src/ts/react/services/api/inbox-messages';
 import { installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
@@ -35,7 +36,6 @@ const LEGACY_KML_PREVIEW_MEDIA = [
     ocr: null,
     summary: null,
     kmz_conversion_status: null,
-    kml_preview_status: 'ready',
   },
   {
     id: 'legacy-kmz',
@@ -47,7 +47,6 @@ const LEGACY_KML_PREVIEW_MEDIA = [
     ocr: null,
     summary: null,
     kmz_conversion_status: null,
-    kml_preview_status: 'ready',
   },
   {
     id: 'legacy-kml-limit',
@@ -59,7 +58,6 @@ const LEGACY_KML_PREVIEW_MEDIA = [
     ocr: null,
     summary: null,
     kmz_conversion_status: null,
-    kml_preview_status: 'limit_exceeded',
   },
   {
     id: 'legacy-gpx',
@@ -71,7 +69,6 @@ const LEGACY_KML_PREVIEW_MEDIA = [
     ocr: null,
     summary: null,
     kmz_conversion_status: 'pending',
-    kml_preview_status: null,
   },
 ];
 
@@ -79,11 +76,13 @@ const MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX = '/test-assets/message-card-media
 
 const TRANSPARENT_PNG_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4////fwAJ+wP7bq8W2QAAAABJRU5ErkJggg==';
+const KML_PREVIEW_FIXTURE = `<?xml version="1.0"?><kml><Document><Placemark><name>Preview point</name><Style><IconStyle><color>ff0000ff</color></IconStyle></Style><Point><coordinates>30.52,50.45</coordinates></Point></Placemark><Placemark><Style><LineStyle><color>ff00ff00</color></LineStyle></Style><LineString><coordinates>30.5,50.4 30.6,50.5</coordinates></LineString></Placemark><Placemark><Style><LineStyle><color>ffff0000</color></LineStyle><PolyStyle><color>7fff0000</color></PolyStyle></Style><Polygon><outerBoundaryIs><LinearRing><coordinates>30.45,50.4 30.6,50.4 30.6,50.55 30.45,50.4</coordinates></LinearRing></outerBoundaryIs><innerBoundaryIs><LinearRing><coordinates>30.5,50.45 30.55,50.45 30.5,50.5 30.5,50.45</coordinates></LinearRing></innerBoundaryIs></Polygon></Placemark></Document></kml>`;
+const KMZ_PREVIEW_FIXTURE = Buffer.from(zipSync({ 'doc.kml': strToU8(KML_PREVIEW_FIXTURE) }));
 
 export type DeferredMediaResponse = {
   waitForRequest: () => Promise<void>;
   release: () => void;
-  fulfill: (route: Route, body: BodyInit, contentType: string) => Promise<void>;
+  fulfill: (route: Route, body: string | Buffer, contentType: string) => Promise<void>;
 };
 
 export function createDeferredMediaResponse(): DeferredMediaResponse {
@@ -300,7 +299,6 @@ function buildMessageCardMediaPreviewMessage({
               file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kml,
               size_bytes: 256,
               href: kml,
-              kml_preview_status: 'ready',
             },
             {
               id: 'e2e-kmz',
@@ -308,7 +306,6 @@ function buildMessageCardMediaPreviewMessage({
               file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kmz,
               size_bytes: 256,
               href: kmz,
-              kml_preview_status: 'ready',
             },
             {
               id: 'e2e-gpx',
@@ -478,7 +475,11 @@ function buildLegacyKmlPreviewInboxResponse(): InboxMessagesRspRaw {
   } as InboxMessagesRspRaw;
 }
 
-async function fulfillAsset(route: Route, body: BodyInit, contentType: string): Promise<void> {
+async function fulfillAsset(
+  route: Route,
+  body: string | Buffer,
+  contentType: string,
+): Promise<void> {
   await route.fulfill({
     contentType,
     body,
@@ -551,12 +552,22 @@ export async function installMessageCardMediaPreviewAssetRoutes(
       return;
     }
 
-    if (
-      fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kml ||
-      fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kmz ||
-      fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.gpx
-    ) {
-      await fulfillAsset(route, '<kml />', 'application/vnd.google-earth.kml+xml');
+    if (fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kml) {
+      await fulfillAsset(route, KML_PREVIEW_FIXTURE, 'application/vnd.google-earth.kml+xml');
+      return;
+    }
+
+    if (fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kmz) {
+      await fulfillAsset(route, KMZ_PREVIEW_FIXTURE, 'application/vnd.google-earth.kmz');
+      return;
+    }
+
+    if (fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.gpx) {
+      await route.fulfill({
+        contentType: 'application/gpx+xml',
+        headers: { 'content-disposition': 'attachment; filename="e2e-route.gpx"' },
+        body: '<gpx />',
+      });
       return;
     }
 
@@ -702,23 +713,6 @@ async function installMessageCardMediaPreviewHostFixture(
   }
 
   if (withKmlPreviews) {
-    const preview = {
-      points: [
-        {
-          coords: { lat: 50.45, lng: 30.52 },
-          label: 'E2E KML point',
-          color: '#1976d2',
-          opacity: 1,
-        },
-      ],
-      line_strings: [],
-      polygons: [],
-    };
-    for (const mediaId of ['e2e-kml', 'e2e-kmz']) {
-      await page.route(`**/api/messenger/media/${mediaId}/kml-preview`, (route) =>
-        route.fulfill({ contentType: 'application/json', body: JSON.stringify(preview) }),
-      );
-    }
     await page.route('**/api/messenger/media/e2e-gpx/kmz-conversion/status', (route) =>
       route.fulfill({
         contentType: 'application/json',
@@ -729,8 +723,12 @@ async function installMessageCardMediaPreviewHostFixture(
         }),
       }),
     );
-    await page.route('**/api/messenger/media/e2e-gpx/kmz-conversion/preview', (route) =>
-      route.fulfill({ contentType: 'application/json', body: JSON.stringify(preview) }),
+    await page.route('**/api/messenger/media/e2e-gpx/kmz-conversion/download', (route) =>
+      route.fulfill({
+        contentType: 'application/vnd.google-earth.kmz',
+        headers: { 'content-disposition': 'attachment; filename="e2e-route_converted.kmz"' },
+        body: KMZ_PREVIEW_FIXTURE,
+      }),
     );
   }
 }
@@ -833,23 +831,6 @@ export async function openLegacyKmlPreviewHost(
     await installRerDutyShortStateMocks(page, { inboxResponse });
   }
 
-  const preview = {
-    points: [
-      {
-        coords: { lat: 50.45, lng: 30.52 },
-        label: 'Legacy KML point',
-        color: '#1976d2',
-        opacity: 1,
-      },
-    ],
-    line_strings: [],
-    polygons: [],
-  };
-  for (const mediaId of ['legacy-kml', 'legacy-kmz']) {
-    await page.route(`**/api/messenger/media/${mediaId}/kml-preview`, (route) =>
-      route.fulfill({ contentType: 'application/json', body: JSON.stringify(preview) }),
-    );
-  }
   await page.route('**/api/messenger/media/legacy-gpx/kmz-conversion/status', (route) =>
     route.fulfill({
       contentType: 'application/json',
@@ -860,8 +841,12 @@ export async function openLegacyKmlPreviewHost(
       }),
     }),
   );
-  await page.route('**/api/messenger/media/legacy-gpx/kmz-conversion/preview', (route) =>
-    route.fulfill({ contentType: 'application/json', body: JSON.stringify(preview) }),
+  await page.route('**/api/messenger/media/legacy-gpx/kmz-conversion/download', (route) =>
+    route.fulfill({
+      contentType: 'application/vnd.google-earth.kmz',
+      headers: { 'content-disposition': 'attachment; filename="legacy-route_converted.kmz"' },
+      body: KMZ_PREVIEW_FIXTURE,
+    }),
   );
   await page.goto(host === 'analysis' ? '/rer-analysis' : '/rer-duty');
 }

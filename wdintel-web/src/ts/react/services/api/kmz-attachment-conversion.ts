@@ -1,7 +1,4 @@
-import type {
-  SignalMediaKmzConversionStatusRsp,
-  SignalMediaKmzPreviewRsp,
-} from '../../../../Bindings';
+import type { SignalMediaKmzConversionStatusRsp } from '../../../../Bindings';
 import { transformSnakeToCamel } from '../../../snake-to-camel';
 import { getJson, postJson, type RequestOptions } from './client';
 
@@ -15,25 +12,6 @@ export async function getKmzAttachmentConversionStatus(
 ): Promise<SignalMediaKmzConversionStatusRsp> {
   const response = await getJson<unknown>(conversionUrl(mediaId, 'status'), options);
   return transformSnakeToCamel<SignalMediaKmzConversionStatusRsp>(response);
-}
-
-export async function getKmzAttachmentPreview(
-  mediaId: string,
-  options?: RequestOptions,
-): Promise<SignalMediaKmzPreviewRsp> {
-  const response = await getJson<unknown>(conversionUrl(mediaId, 'preview'), options);
-  return transformSnakeToCamel<SignalMediaKmzPreviewRsp>(response);
-}
-
-export async function getNativeKmlAttachmentPreview(
-  mediaId: string,
-  options?: RequestOptions,
-): Promise<SignalMediaKmzPreviewRsp> {
-  const response = await getJson<unknown>(
-    `/api/messenger/media/${encodeURIComponent(mediaId)}/kml-preview`,
-    options,
-  );
-  return transformSnakeToCamel<SignalMediaKmzPreviewRsp>(response);
 }
 
 export async function retryKmzAttachmentConversion(

@@ -1133,13 +1133,6 @@ pub const SIGINT_MEDIA_CONVERSION_ADVISORY_LOCK_KEY: i64 =
     0x4543_484f_4b4d_5a31;
 pub const SIGINT_MEDIA_KMZ_CONVERSION_MAX_SOURCE_BYTES: usize =
     200 * 1024 * 1024;
-/// Limits for the interactive KML/KMZ attachment preview.  These are deliberately
-/// separate from conversion limits: a file may still be downloaded or converted
-/// even when rendering it in a browser would be unsafe.
-pub const SIGINT_MEDIA_KML_PREVIEW_MAX_SOURCE_BYTES: usize = 25 * 1024 * 1024;
-pub const SIGINT_MEDIA_KMZ_PREVIEW_MAX_ENTRIES: usize = 1_000;
-pub const SIGINT_MEDIA_KMZ_PREVIEW_MAX_EXTRACTED_BYTES: u64 = 100 * 1024 * 1024;
-pub const SIGINT_MEDIA_KML_PREVIEW_MAX_COORDINATES: usize = 100_000;
 pub const SIGINT_MEDIA_CONVERSION_STATUS_PENDING: &str = "pending";
 pub const SIGINT_MEDIA_CONVERSION_STATUS_PROCESSING: &str = "processing";
 pub const SIGINT_MEDIA_CONVERSION_STATUS_DONE: &str = "done";

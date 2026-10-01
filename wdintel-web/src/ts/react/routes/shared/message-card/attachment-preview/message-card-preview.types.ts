@@ -18,10 +18,10 @@ export type KmzAttachmentPreviewSource = {
   mediaId: string;
   originalHref: string;
   fileName: string;
+  sizeBytes?: number | null;
+  contentType?: string | null;
   initialStatus: string;
   nativeFormat?: 'kml' | 'kmz' | null;
-  nativePreview?: boolean;
-  previewStatus?: string | null;
 };
 
 export type MessageCardPreviewNavigation = {

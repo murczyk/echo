@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { type MessageCardDownloadGuardProps } from './MessageCardMedia';
 import { MessageCardAttachmentPreviewProvider } from './attachment-preview/MessageCardAttachmentPreviewProvider';
 import type { KmzAttachmentPreviewSource } from './attachment-preview/message-card-preview.types';
+import { isNativeKmlOrKmz } from './kmz/kmz-preview-utils';
 
 type Props = KmzAttachmentPreviewSource & {
   selected?: boolean;
@@ -16,27 +17,23 @@ export function KmzAttachmentPreviewLink({
   originalHref,
   fileName,
   initialStatus,
-  nativePreview,
-  previewStatus,
+  sizeBytes,
+  contentType,
   selected = false,
   onPreview,
   isDownloadStarting,
   onDownloadStart,
 }: Props) {
   const [open, setOpen] = useState(false);
-  const nativeFormat: 'kml' | 'kmz' | null = /\.kml$/i.test(fileName)
-    ? 'kml'
-    : /\.kmz$/i.test(fileName)
-      ? 'kmz'
-      : null;
+  const nativeFormat = isNativeKmlOrKmz(fileName, contentType);
   const source = {
     mediaId,
     originalHref,
     fileName,
+    sizeBytes,
+    contentType,
     initialStatus,
     nativeFormat,
-    nativePreview,
-    previewStatus,
   };
 
   return (

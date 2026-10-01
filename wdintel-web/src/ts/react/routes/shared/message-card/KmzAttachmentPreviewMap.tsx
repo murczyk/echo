@@ -2,14 +2,14 @@ import * as L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useCallback, useRef } from 'react';
 
-import type { Coords, SignalMediaKmzPreviewRsp } from '../../../../../Bindings';
+import type { KmzPreview, KmzPreviewCoords } from './kmz/kmz-preview-types';
 import type { BaseLayerId } from '../../../../maps/base-layers';
 import { fitGeometryLayers } from '../../rer-palitra-neo/components/PalitraPreviewDialog.layers';
 import { MessageCardMapPreview } from './MessageCardMapPreview';
 
 const FALLBACK_GEOMETRY_COLOR = '#060606';
 
-function validCoords(coords: Coords): coords is Coords {
+function validCoords(coords: KmzPreviewCoords): coords is KmzPreviewCoords {
   return (
     Number.isFinite(coords.lat) &&
     Number.isFinite(coords.lng) &&
@@ -24,7 +24,7 @@ function geometryColor(color: string | null): string {
   return color && /^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/i.test(color) ? color : FALLBACK_GEOMETRY_COLOR;
 }
 
-function addPreviewLayers(layerGroup: L.FeatureGroup, preview: SignalMediaKmzPreviewRsp): void {
+function addPreviewLayers(layerGroup: L.FeatureGroup, preview: KmzPreview): void {
   const renderer = L.canvas({ padding: 0.25 });
   for (const line of preview.lineStrings) {
     const coords = line.coords.filter(validCoords);
@@ -98,7 +98,7 @@ export function KmzAttachmentPreviewMap({
   preview,
   baseLayerId,
 }: {
-  preview: SignalMediaKmzPreviewRsp;
+  preview: KmzPreview;
   baseLayerId: BaseLayerId;
 }) {
   const layersRef = useRef<L.FeatureGroup | null>(null);

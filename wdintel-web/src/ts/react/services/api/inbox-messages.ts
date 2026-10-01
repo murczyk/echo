@@ -98,7 +98,6 @@ export type MessageMediaInfoRaw = Partial<MessageMediaInfo> & {
   file_name?: string | null;
   size_bytes?: number;
   kmz_conversion_status?: string | null;
-  kml_preview_status?: string | null;
 };
 
 export function normalizeMessageMediaInfo(m: MessageMediaInfoRaw): MessageMediaInfo {
@@ -114,7 +113,6 @@ export function normalizeMessageMediaInfo(m: MessageMediaInfoRaw): MessageMediaI
     summary: m.summary ?? null,
     kmzConversionStatus: (m.kmzConversionStatus ?? raw.kmz_conversion_status ?? null) as
       string | null,
-    kmlPreviewStatus: (m.kmlPreviewStatus ?? raw.kml_preview_status ?? null) as string | null,
   };
 }
 

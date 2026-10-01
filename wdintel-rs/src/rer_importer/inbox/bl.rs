@@ -964,8 +964,6 @@ pub async fn aggregate_to_inbox_messages(
                 kmz_conversion_status: kmz_conversion_statuses
                     .get(&m.id)
                     .cloned(),
-                kml_preview_status:
-                    crate::sigint::media_conversion::preview_availability(m),
             })
             .collect_vec();
         let images = media
