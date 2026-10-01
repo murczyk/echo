@@ -309,6 +309,10 @@ test("#3064 echo_map_set_symbol turns plain words or a SIDC into one edit", asyn
   assert.deepEqual(requests[1].body.operations[0].components, { symbolSet: "01", mainIcon: "110300", modifier1: "00", modifier2: "00", identity: "3", status: "1" });
   assert.equal(typed.type, "БпЛА");
   await assert.rejects(() => setSymbol.execute("c", { target: "all", type: "щось дивне" }), /Не знайдено тип позначки/);
+  for (const [identity, expected] of [["ворожа", "6"], ["вороже", "6"], ["дружня", "3"], ["дружнє", "3"], ["нейтральна", "4"], ["невідома", "1"], ["підозрілі", "5"]]) {
+    assert.equal((resolver.resolve({ identity }) as any).components.identity, expected, identity);
+  }
+  assert.equal((resolver.resolve({ status: "знищена" }) as any).components.status, "4");
   await assert.rejects(() => setSymbol.execute("d", { target: "all", sidc: "123" }), /20 цифр/);
 });
 

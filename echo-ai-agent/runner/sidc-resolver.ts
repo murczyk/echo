@@ -31,16 +31,29 @@ export type SymbolPatch =
   | { sidc: string }
   | { components: Record<string, string>; typeLabel?: string };
 
+/** Adjective in every gender and number: stem + masculine/feminine/neuter/plural. */
+function forms(code: string, ...stems: string[]): Record<string, string> {
+  const entries: Record<string, string> = {};
+  for (const stem of stems) {
+    for (const ending of ["ий", "ій", "а", "я", "е", "є", "і", "ый", "ая", "ое", "ые"]) entries[stem + ending] = code;
+  }
+  return entries;
+}
+
 const IDENTITIES: Record<string, string> = {
-  pending: "0", unknown: "1", невідомий: "1", невідомі: "1",
-  "assumed friend": "2", friend: "3", friendly: "3", дружній: "3", дружні: "3", свої: "3", наші: "3",
-  neutral: "4", нейтральний: "4", нейтральні: "4",
-  suspect: "5", підозрілий: "5", підозрілі: "5",
-  hostile: "6", enemy: "6", ворожий: "6", ворожі: "6", противник: "6", ворог: "6",
+  pending: "0", unknown: "1", "assumed friend": "2", friend: "3", friendly: "3", neutral: "4", suspect: "5", hostile: "6", enemy: "6",
+  ...forms("1", "невідом", "неизвестн"),
+  ...forms("3", "дружн", "дружествен", "св"), свої: "3", наш: "3", наша: "3", наше: "3", наші: "3", наши: "3",
+  ...forms("4", "нейтральн"),
+  ...forms("5", "підозріл", "подозрительн"),
+  ...forms("6", "ворож", "вражеск"), противник: "6", ворог: "6", враг: "6",
 };
 const STATUSES: Record<string, string> = {
-  present: "0", наявний: "0", planned: "1", anticipated: "1", запланований: "1", заплановані: "1", ймовірний: "1",
-  damaged: "3", пошкоджений: "3", пошкоджені: "3", destroyed: "4", знищений: "4", знищені: "4", знищено: "4",
+  present: "0", planned: "1", anticipated: "1", damaged: "3", destroyed: "4",
+  ...forms("0", "наявн"),
+  ...forms("1", "запланован", "ймовірн", "планируем"),
+  ...forms("3", "пошкоджен", "поврежден"),
+  ...forms("4", "знищен", "уничтожен"), знищено: "4", уничтожено: "4",
 };
 const ECHELONS: Record<string, string> = {
   team: "11", crew: "11", група: "11", екіпаж: "11", розрахунок: "11", squad: "12", відділення: "12",
