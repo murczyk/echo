@@ -1225,6 +1225,16 @@ mod tests {
     }
 
     #[test]
+    fn automatic_merge_preserves_a_custom_airborne_suffix() {
+        let system_login_id = Uuid::new_v4();
+        let active = unit(1, "2 бат", true, Uuid::new_v4(), "2 бат", "");
+        let custom = unit(2, "2 бат ПДВ", false, system_login_id, "2 бат", "");
+        let candidates = vec![candidate(active), candidate(custom)];
+
+        assert_eq!(automatic_merge(&candidates, system_login_id), None);
+    }
+
+    #[test]
     fn manual_merge_preview_preserves_the_survivor_name() {
         let survivor = unit(1, "4 мсб", true, Uuid::new_v4(), "4 мсб", "");
         let duplicate =

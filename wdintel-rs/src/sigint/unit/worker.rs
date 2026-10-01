@@ -4,6 +4,7 @@ use super::{
 };
 use crate::config::{
     SIGINT_UNIT_AUTO_ACTIVATION_ADVISORY_LOCK_KEY,
+    SIGINT_UNIT_AUTO_ACTIVATION_BATCH_SIZE,
     SIGINT_UNIT_AUTO_ACTIVATION_INTERVAL_SECS,
     SIGINT_UNIT_AUTO_ACTIVATION_LINK_THRESHOLD,
     SIGINT_UNIT_AUTO_ACTIVATION_LOOKBACK_DAYS,
@@ -132,14 +133,14 @@ where
     let lock_clause = if lock_rows { "for update of unit" } else { "" };
     let mut values = vec![
         lookback_days.into(),
-        link_threshold.saturating_add(1).into(),
         link_threshold.into(),
+        SIGINT_UNIT_AUTO_ACTIVATION_BATCH_SIZE.into(),
     ];
     let candidate_filter = match candidate_ids {
         Some([]) => return Ok(Vec::new()),
         Some(candidate_ids) => {
             values.push(candidate_ids.to_vec().into());
-            "and unit.id = any($4::bigint[])"
+            "and candidate_unit.id = any($4::bigint[])"
         }
         None => "",
     };
@@ -148,20 +149,23 @@ where
         format!(
             r#"
 select unit.*
-from sigint_unit unit
+from (
+    select link.unit_id
+    from sigint_inbox_item_unit link
+    inner join sigint_unit candidate_unit
+        on candidate_unit.id = link.unit_id
+        and candidate_unit.active = false
+        and candidate_unit.deleted = false
+    where link.created_at > now() - $1 * interval '1 day'
+      {candidate_filter}
+    group by link.unit_id
+    having count(distinct link.item_id) > $2
+    order by link.unit_id
+    limit $3
+) candidate
+inner join sigint_unit unit on unit.id = candidate.unit_id
 where unit.active = false
   and unit.deleted = false
-  {candidate_filter}
-  and (
-      select count(*)
-      from (
-          select distinct link.item_id
-          from sigint_inbox_item_unit link
-          where link.unit_id = unit.id
-            and link.created_at > now() - $1 * interval '1 day'
-          limit $2
-      ) recent_link
-  ) > $3
 order by unit.id
 {lock_clause}
                 "#

@@ -69,7 +69,6 @@ pub fn unit_name(unit: &Unit) -> String {
 pub(crate) fn unit_name_is_derived(unit: &sigint_unit::Model) -> bool {
     unit.name.trim().is_empty()
         || unit.name == generated_unit_name(unit)
-        || unit.name == generated_unit_name_with_airborne(unit, true)
         || unit.name
             == unit_name_from_hierarchy_without_suffixes(unit_hierarchy(unit))
 }

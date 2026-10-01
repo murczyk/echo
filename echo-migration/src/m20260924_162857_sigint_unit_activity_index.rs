@@ -12,24 +12,34 @@ pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager
-            .get_connection()
-            .execute_unprepared(
-                "create index concurrently if not exists sigint_inbox_item_unit_unit_created_at_item_idx on sigint_inbox_item_unit (unit_id, created_at desc, item_id);",
-            )
-            .await
-            .map_err(|error| DbErr::Migration(format!("{}: {error}", h!())))?;
+        for sql in [
+            "create index concurrently if not exists sigint_inbox_item_unit_unit_created_at_item_idx on sigint_inbox_item_unit (unit_id, created_at desc, item_id);",
+            "create index concurrently if not exists sigint_inbox_item_unit_created_at_unit_item_idx on sigint_inbox_item_unit (created_at desc, unit_id, item_id);",
+        ] {
+            manager
+                .get_connection()
+                .execute_unprepared(sql)
+                .await
+                .map_err(|error| {
+                    DbErr::Migration(format!("{}: {error}", h!()))
+                })?;
+        }
         Ok(())
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager
-            .get_connection()
-            .execute_unprepared(
-                "drop index concurrently if exists sigint_inbox_item_unit_unit_created_at_item_idx;",
-            )
-            .await
-            .map_err(|error| DbErr::Migration(format!("{}: {error}", h!())))?;
+        for sql in [
+            "drop index concurrently if exists sigint_inbox_item_unit_created_at_unit_item_idx;",
+            "drop index concurrently if exists sigint_inbox_item_unit_unit_created_at_item_idx;",
+        ] {
+            manager
+                .get_connection()
+                .execute_unprepared(sql)
+                .await
+                .map_err(|error| {
+                    DbErr::Migration(format!("{}: {error}", h!()))
+                })?;
+        }
         Ok(())
     }
 
