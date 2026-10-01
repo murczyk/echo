@@ -29,6 +29,98 @@ struct Styles {
     normal_maps: HashMap<String, String>,
 }
 
+struct PreviewResult {
+    preview: SignalMediaKmzPreviewRsp,
+    coordinate_count: usize,
+}
+
+impl Default for PreviewResult {
+    fn default() -> Self {
+        Self {
+            preview: SignalMediaKmzPreviewRsp {
+                points: vec![],
+                line_strings: vec![],
+                polygons: vec![],
+            },
+            coordinate_count: 0,
+        }
+    }
+}
+
+impl PreviewResult {
+    fn remaining_coordinates(&self) -> usize {
+        SIGINT_MEDIA_KML_PREVIEW_MAX_COORDINATES
+            .saturating_sub(self.coordinate_count)
+    }
+
+    fn add_points(
+        &mut self,
+        points: Vec<Coords>,
+        label: Option<String>,
+        color: String,
+        opacity: f64,
+    ) -> anyhow::Result<()> {
+        self.accept_coordinates(points.len()).c(h!())?;
+        self.preview.points.extend(points.into_iter().map(|coords| {
+            SignalMediaKmzPreviewPoint {
+                coords,
+                label: label.clone(),
+                color: color.clone(),
+                opacity,
+            }
+        }));
+        Ok(())
+    }
+
+    fn add_line_string(
+        &mut self,
+        coords: Vec<Coords>,
+        color: String,
+        opacity: f64,
+        label: Option<String>,
+    ) -> anyhow::Result<()> {
+        self.accept_coordinates(coords.len()).c(h!())?;
+        self.preview
+            .line_strings
+            .push(SignalMediaKmzPreviewLineString {
+                coords,
+                color,
+                opacity,
+                label,
+            });
+        Ok(())
+    }
+
+    fn add_polygon(
+        &mut self,
+        rings: Vec<Vec<Coords>>,
+        stroke_color: String,
+        stroke_opacity: f64,
+        fill_color: String,
+        fill_opacity: f64,
+        label: Option<String>,
+    ) -> anyhow::Result<()> {
+        self.accept_coordinates(rings.iter().map(Vec::len).sum())
+            .c(h!())?;
+        self.preview.polygons.push(SignalMediaKmzPreviewPolygon {
+            rings,
+            stroke_color,
+            stroke_opacity,
+            fill_color,
+            fill_opacity,
+            label,
+        });
+        Ok(())
+    }
+
+    fn accept_coordinates(&mut self, additional: usize) -> anyhow::Result<()> {
+        ensure_additional_coordinate_budget(self.coordinate_count, additional)
+            .c(h!())?;
+        self.coordinate_count += additional;
+        Ok(())
+    }
+}
+
 pub async fn parse_attachment(
     extension: &str,
     bytes: &[u8],
@@ -75,24 +167,12 @@ fn parse_attachment_blocking(
         .collect::<Vec<_>>();
     paths.sort();
     anyhow::ensure!(!paths.is_empty(), "KMZ archive contains no KML documents");
-    let mut result = SignalMediaKmzPreviewRsp {
-        points: vec![],
-        line_strings: vec![],
-        polygons: vec![],
-    };
+    let mut result = PreviewResult::default();
     for path in paths {
         let bytes = std::fs::read(path).c(h!())?;
-        let parsed = parse_kml_bytes(&bytes).c(h!())?;
-        ensure_additional_coordinate_budget(
-            &result,
-            preview_coordinate_count(&parsed),
-        )
-        .c(h!())?;
-        result.points.extend(parsed.points);
-        result.line_strings.extend(parsed.line_strings);
-        result.polygons.extend(parsed.polygons);
+        parse_kml_bytes_into(&bytes, &mut result).c(h!())?;
     }
-    Ok(result)
+    Ok(result.preview)
 }
 
 fn is_kml(path: &Path) -> bool {
@@ -102,6 +182,15 @@ fn is_kml(path: &Path) -> bool {
 }
 
 fn parse_kml_bytes(bytes: &[u8]) -> anyhow::Result<SignalMediaKmzPreviewRsp> {
+    let mut result = PreviewResult::default();
+    parse_kml_bytes_into(bytes, &mut result).c(h!())?;
+    Ok(result.preview)
+}
+
+fn parse_kml_bytes_into(
+    bytes: &[u8],
+    result: &mut PreviewResult,
+) -> anyhow::Result<()> {
     let input = std::str::from_utf8(bytes)
         .context("Invalid KML encoding")
         .c(h!())?;
@@ -111,13 +200,8 @@ fn parse_kml_bytes(bytes: &[u8]) -> anyhow::Result<SignalMediaKmzPreviewRsp> {
         .c(h!())?;
     let mut styles = Styles::default();
     index_styles(&kml.nodes, &mut styles).c(h!())?;
-    let mut result = SignalMediaKmzPreviewRsp {
-        points: vec![],
-        line_strings: vec![],
-        polygons: vec![],
-    };
-    parse_nodes(&kml.nodes, &styles, &mut result).c(h!())?;
-    Ok(result)
+    parse_nodes(&kml.nodes, &styles, result).c(h!())?;
+    Ok(())
 }
 
 fn index_styles(nodes: &[Node], styles: &mut Styles) -> anyhow::Result<()> {
@@ -282,7 +366,7 @@ fn lookup_style(reference: &str, styles: &Styles) -> Option<Style> {
 fn parse_nodes(
     nodes: &[Node],
     styles: &Styles,
-    result: &mut SignalMediaKmzPreviewRsp,
+    result: &mut PreviewResult,
 ) -> anyhow::Result<()> {
     parse_nodes_at_depth(nodes, styles, result, 0).c(h!())
 }
@@ -290,7 +374,7 @@ fn parse_nodes(
 fn parse_nodes_at_depth(
     nodes: &[Node],
     styles: &Styles,
-    result: &mut SignalMediaKmzPreviewRsp,
+    result: &mut PreviewResult,
     depth: usize,
 ) -> anyhow::Result<()> {
     anyhow::ensure!(
@@ -319,7 +403,7 @@ fn parse_nodes_at_depth(
 fn parse_placemark(
     placemark: &Placemark,
     styles: &Styles,
-    result: &mut SignalMediaKmzPreviewRsp,
+    result: &mut PreviewResult,
 ) -> anyhow::Result<()> {
     let style = resolved_style(placemark, styles);
     let label = placemark
@@ -354,17 +438,17 @@ fn parse_placemark(
         if let Some(coordinates) =
             coordinates.and_then(|point| point.coordinates.as_deref())
         {
-            let points = coords(coordinates).c(h!())?;
-            ensure_additional_coordinate_budget(result, points.len())
+            let points = coords(coordinates, result.remaining_coordinates(), 1)
+                .map_err(CoordinateListError::into_anyhow)
                 .c(h!())?;
-            for coords in points {
-                result.points.push(SignalMediaKmzPreviewPoint {
-                    coords,
-                    label: label.clone(),
-                    color: point_color.0.clone(),
-                    opacity: point_color.1,
-                });
-            }
+            result
+                .add_points(
+                    points,
+                    label.clone(),
+                    point_color.0.clone(),
+                    point_color.1,
+                )
+                .c(h!())?;
         }
     }
     for line in std::iter::once(placemark.line_string.as_ref()).chain(
@@ -378,16 +462,18 @@ fn parse_placemark(
             .and_then(|line| line.coordinates.as_ref())
             .and_then(|coordinates| coordinates.body.as_deref())
         {
-            let coords = coords(raw).c(h!())?;
+            let coords = coords(raw, result.remaining_coordinates(), 2)
+                .map_err(CoordinateListError::into_anyhow)
+                .c(h!())?;
             if coords.len() >= 2 {
-                ensure_additional_coordinate_budget(result, coords.len())
+                result
+                    .add_line_string(
+                        coords,
+                        line_color.0.clone(),
+                        line_color.1,
+                        label.clone(),
+                    )
                     .c(h!())?;
-                result.line_strings.push(SignalMediaKmzPreviewLineString {
-                    coords,
-                    color: line_color.0.clone(),
-                    opacity: line_color.1,
-                    label: label.clone(),
-                });
             }
         }
     }
@@ -401,20 +487,19 @@ fn parse_placemark(
         )
         .flatten()
     {
-        if let Some(rings) = polygon_rings(polygon).c(h!())? {
-            ensure_additional_coordinate_budget(
-                result,
-                rings.iter().map(Vec::len).sum(),
-            )
-            .c(h!())?;
-            result.polygons.push(SignalMediaKmzPreviewPolygon {
-                rings,
-                stroke_color: line_color.0.clone(),
-                stroke_opacity: line_color.1,
-                fill_color: fill_color.0.clone(),
-                fill_opacity: fill_color.1,
-                label: label.clone(),
-            });
+        if let Some(rings) =
+            polygon_rings(polygon, result.remaining_coordinates()).c(h!())?
+        {
+            result
+                .add_polygon(
+                    rings,
+                    line_color.0.clone(),
+                    line_color.1,
+                    fill_color.0.clone(),
+                    fill_color.1,
+                    label.clone(),
+                )
+                .c(h!())?;
         }
     }
     Ok(())
@@ -422,6 +507,7 @@ fn parse_placemark(
 
 fn polygon_rings(
     polygon: &Polygon,
+    remaining: usize,
 ) -> anyhow::Result<Option<Vec<Vec<Coords>>>> {
     let Some(outer) = polygon
         .outer_boundary_is
@@ -432,12 +518,17 @@ fn polygon_rings(
     else {
         return Ok(None);
     };
-    let Ok(outer) = coords(outer) else {
-        return Ok(None);
+    let outer = match coords(outer, remaining, 3) {
+        Ok(outer) => outer,
+        Err(CoordinateListError::Invalid(_)) => return Ok(None),
+        Err(CoordinateListError::Limit) => {
+            return Err(coordinate_limit_error()).c(h!())
+        }
     };
     if outer.len() < 3 {
         return Ok(None);
     }
+    let mut coordinate_count = outer.len();
     let mut rings = vec![outer];
     for boundary in &polygon.inner_boundary_is {
         let Some(raw) = boundary
@@ -448,10 +539,16 @@ fn polygon_rings(
         else {
             continue;
         };
-        let Ok(ring) = coords(raw) else {
-            continue;
-        };
+        let ring =
+            match coords(raw, remaining.saturating_sub(coordinate_count), 3) {
+                Ok(ring) => ring,
+                Err(CoordinateListError::Invalid(_)) => continue,
+                Err(CoordinateListError::Limit) => {
+                    return Err(coordinate_limit_error()).c(h!())
+                }
+            };
         if ring.len() >= 3 {
+            coordinate_count += ring.len();
             rings.push(ring);
         }
     }
@@ -473,8 +570,54 @@ pub fn ensure_source_size(size_bytes: usize) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn coords(raw: &str) -> anyhow::Result<Vec<Coords>> {
-    Coords::list_from_kml_coordinates(raw).c(h!())
+enum CoordinateListError {
+    Invalid(anyhow::Error),
+    Limit,
+}
+
+impl CoordinateListError {
+    fn into_anyhow(self) -> anyhow::Error {
+        match self {
+            Self::Invalid(error) => error,
+            Self::Limit => coordinate_limit_error(),
+        }
+    }
+}
+
+fn coords(
+    raw: &str,
+    remaining: usize,
+    minimum_coordinates: usize,
+) -> Result<Vec<Coords>, CoordinateListError> {
+    let mut result = vec![];
+    let mut first_error = None;
+    for token in raw.split_whitespace().map(str::trim) {
+        if token.is_empty() {
+            continue;
+        }
+        match crate::geometry_import::parse_kml_coordinate(token) {
+            Ok(coordinate) => {
+                result.push(Coords {
+                    lat: coordinate.lat,
+                    lng: coordinate.lon,
+                });
+                if result.len() > remaining
+                    && result.len() >= minimum_coordinates
+                {
+                    return Err(CoordinateListError::Limit);
+                }
+            }
+            Err(error) if first_error.is_none() => first_error = Some(error),
+            Err(_) => {}
+        }
+    }
+    if result.is_empty() {
+        return Err(CoordinateListError::Invalid(
+            first_error
+                .unwrap_or_else(|| anyhow::anyhow!("bad coordinates: {raw}")),
+        ));
+    }
+    Ok(result)
 }
 
 fn kml_color(raw: &str) -> Option<(String, f64)> {
@@ -492,32 +635,20 @@ fn kml_color(raw: &str) -> Option<(String, f64)> {
     ))
 }
 
-fn preview_coordinate_count(preview: &SignalMediaKmzPreviewRsp) -> usize {
-    preview.points.len()
-        + preview
-            .line_strings
-            .iter()
-            .map(|line| line.coords.len())
-            .sum::<usize>()
-        + preview
-            .polygons
-            .iter()
-            .flat_map(|polygon| polygon.rings.iter())
-            .map(Vec::len)
-            .sum::<usize>()
-}
-
 fn ensure_additional_coordinate_budget(
-    preview: &SignalMediaKmzPreviewRsp,
+    coordinate_count: usize,
     additional: usize,
 ) -> anyhow::Result<()> {
-    let count = preview_coordinate_count(preview);
     anyhow::ensure!(
-        count.saturating_add(additional)
+        coordinate_count.saturating_add(additional)
             <= SIGINT_MEDIA_KML_PREVIEW_MAX_COORDINATES,
         "Preview limit exceeded: more than 100,000 coordinates"
     );
     Ok(())
+}
+
+fn coordinate_limit_error() -> anyhow::Error {
+    anyhow::anyhow!("Preview limit exceeded: more than 100,000 coordinates")
 }
 
 #[cfg(test)]
@@ -586,6 +717,72 @@ mod tests {
         assert_eq!(preview.points.len(), 1);
         assert_eq!(preview.line_strings.len(), 1);
         assert!(preview.polygons.is_empty());
+    }
+
+    fn kml_with_point_placemarks(count: usize) -> String {
+        format!(
+            "<kml>{}</kml>",
+            "<Placemark><Point><coordinates>30,50</coordinates></Point></Placemark>"
+                .repeat(count)
+        )
+    }
+
+    #[test]
+    fn accepts_the_coordinate_limit_and_rejects_one_more_small_placemark() {
+        let preview = parse_kml_bytes(
+            kml_with_point_placemarks(SIGINT_MEDIA_KML_PREVIEW_MAX_COORDINATES)
+                .as_bytes(),
+        )
+        .unwrap();
+        assert_eq!(
+            preview.points.len(),
+            SIGINT_MEDIA_KML_PREVIEW_MAX_COORDINATES
+        );
+
+        let error = parse_kml_bytes(
+            kml_with_point_placemarks(
+                SIGINT_MEDIA_KML_PREVIEW_MAX_COORDINATES + 1,
+            )
+            .as_bytes(),
+        )
+        .unwrap_err();
+        assert!(format!("{error:#}")
+            .contains("Preview limit exceeded: more than 100,000 coordinates"));
+    }
+
+    #[test]
+    fn rejects_an_oversized_single_geometry_while_parsing_coordinates() {
+        let coordinates =
+            "30,50 ".repeat(SIGINT_MEDIA_KML_PREVIEW_MAX_COORDINATES + 1);
+        let kml = format!(
+            "<kml><Placemark><LineString><coordinates>{coordinates}</coordinates></LineString></Placemark></kml>"
+        );
+
+        let error = parse_kml_bytes(kml.as_bytes()).unwrap_err();
+        assert!(format!("{error:#}")
+            .contains("Preview limit exceeded: more than 100,000 coordinates"));
+    }
+
+    #[tokio::test]
+    async fn rejects_kmz_members_that_exceed_the_coordinate_limit_in_aggregate()
+    {
+        let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        for (name, count) in [
+            ("one.kml", SIGINT_MEDIA_KML_PREVIEW_MAX_COORDINATES / 2),
+            ("two.kml", SIGINT_MEDIA_KML_PREVIEW_MAX_COORDINATES / 2 + 1),
+        ] {
+            archive
+                .start_file(name, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            archive
+                .write_all(kml_with_point_placemarks(count).as_bytes())
+                .unwrap();
+        }
+        let bytes = archive.finish().unwrap().into_inner();
+
+        let error = parse_attachment("kmz", &bytes).await.unwrap_err();
+        assert!(format!("{error:#}")
+            .contains("Preview limit exceeded: more than 100,000 coordinates"));
     }
 
     #[tokio::test]
