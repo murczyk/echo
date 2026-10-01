@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { MapRegistry, createMapTools, preserveMapReferences, publishReferencedDrafts, stripUnpublishedMapLinks, validateMapSummaries, type MapRecord } from "./maps.ts";
+import { createHash } from "node:crypto";
+import { MapRegistry, createMapTools, preserveMapReferences, publishReferencedDrafts, sanitizeEditOperations, stripUnpublishedMapLinks, validateMapEdit, validateMapSummaries, type MapRecord } from "./maps.ts";
 import { citationRepairPrompt, canonicalizeAnswer } from "./citations.ts";
 
 const source = { messageId: 77, messageIdentifier: "source-77" };
@@ -152,6 +153,112 @@ test("#3064 history restores summaries and retrieves bounded records with reques
   assert.deepEqual(delivered, [source]);
   await assert.rejects(() => get.execute("read", { id: "22222222-2222-4222-8222-222222222222" }), /Unknown map/);
   assert.throws(() => validateMapSummaries([{ ...summary, validCount: 50 }]), /Invalid map summary/);
+});
+
+const editing = {
+  requestId: "11111111-1111-4111-8111-111111111111",
+  mapId: "22222222-2222-4222-8222-222222222222",
+  revision: 3,
+  selectedPointIds: ["019fa4a6-5a92-7692-a8d1-4f5e701d568c"],
+};
+
+test("#3064 an editing follow-up reads the current revision of every map", async () => {
+  const otherId = "33333333-3333-4333-8333-333333333333";
+  const registry = new MapRegistry([{
+    id: editing.mapId, requestId: editing.requestId, title: "Активна", isMain: true,
+    totalCount: 1, validCount: 1, invalidCount: 0, warnings: [],
+  }, {
+    id: otherId, requestId: editing.requestId, title: "Інша", isMain: false,
+    totalCount: 1, validCount: 1, invalidCount: 0, warnings: [],
+  }]);
+  const requests: any[] = [];
+  const tools = createMapTools(registry, async (path, body) => {
+    requests.push({ path, body });
+    return { records: [record(1)], totalCount: 1, validCount: 1, invalidCount: 0, warnings: [] };
+  }, () => {}, () => {}, () => true, () => {}, editing);
+  const get = tools.find((tool) => tool.name === "echo_map_get")!;
+  await get.execute("active", { id: editing.mapId });
+  await get.execute("other", { id: otherId });
+  assert.deepEqual(Object.keys(requests[0].body).sort(), ["mapId", "requestId"]);
+  assert.equal(requests[0].body.mapId, editing.mapId);
+  assert.equal(requests[1].body.mapId, otherId);
+});
+
+test("#3064 echo_map_edit is absent until an editing target is supplied", () => {
+  const tools = createMapTools(new MapRegistry(), async () => ({}), () => {}, () => {}, () => true);
+  assert.equal(tools.some((tool) => tool.name === "echo_map_edit"), false);
+});
+
+test("#3064 echo_map_edit saves a compact revision and keeps the cursor on failure", async () => {
+  const requests: any[] = [];
+  let fail = true;
+  const tools = createMapTools(new MapRegistry(), async (path, body) => {
+    requests.push({ path, body });
+    if (path === "/api/ai-agent/maps/get") return { records: [] };
+    if (fail) throw new Error("Echo returned HTTP 409: Мапа змінилася. Оновіть перегляд і повторіть дію.");
+    return {
+      revision: 4,
+      removedCount: 1,
+      addedCount: 0,
+      document: { records: [{ name: "secret" }] },
+      records: [{ name: "secret" }],
+      changes: [{ id: editing.selectedPointIds[0], kind: "remove" }],
+    };
+  }, () => {}, () => {}, (citation) => citation.messageId === source.messageId, () => {}, editing);
+  const edit = tools.find((tool) => tool.name === "echo_map_edit")!;
+  const operations = [{
+    op: "update",
+    selector: { selected: true, ignored: true },
+    fields: { observationDatetime: null, unexpected: 1 },
+    sidc: null,
+    record: {
+      name: "Нова",
+      coordinateSystem: "sk42",
+      x: "1",
+      y: "2",
+      sources: [source, { messageId: 4, messageIdentifier: "invented" }],
+    },
+  }];
+  await assert.rejects(() => edit.execute("edit", { operations }), /Мапа змінилася/);
+  fail = false;
+  const response = JSON.parse((await edit.execute("edit", { operations })).content[0].text as string);
+  assert.equal(requests[0].path, "/api/ai-agent/maps/edit");
+  assert.equal(requests[0].body.mapId, editing.mapId);
+  assert.equal(requests[0].body.expectedRevision, 3);
+  assert.equal(requests[1].body.expectedRevision, 3);
+  assert.equal(requests[0].body.idempotencyKey, requests[1].body.idempotencyKey);
+  const sanitized = sanitizeEditOperations(operations, editing.selectedPointIds, (citation) => citation.messageId === source.messageId);
+  assert.notEqual(requests[0].body.idempotencyKey, createHash("sha256").update(`3\n${JSON.stringify(sanitized)}`).digest("hex"));
+  assert.deepEqual(sanitized[0].selector, { ids: editing.selectedPointIds, expect: "many" });
+  assert.equal(sanitized[0].fields.clearObservationDatetime, true);
+  assert.equal(sanitized[0].record.sidc, "");
+  assert.deepEqual(sanitized[0].record.sources, [source]);
+  assert.equal("document" in response, false);
+  assert.equal("records" in response, false);
+  assert.equal(response.revision, 4);
+  await assert.rejects(() => edit.execute("edit", { operations }), /Немає вибраних точок/);
+  assert.equal(requests[2].path, "/api/ai-agent/maps/get");
+  const renamed = JSON.parse((await edit.execute("edit", { operations: [{ op: "setTitle", title: "Нова назва" }], summary: " Перейменовано " })).content[0].text as string);
+  const rename = requests.filter((request) => request.path === "/api/ai-agent/maps/edit").at(-1);
+  assert.equal(rename.body.expectedRevision, 4);
+  assert.equal(rename.body.summary, "Перейменовано");
+  assert.deepEqual(rename.body.operations, [{ op: "setTitle", title: "Нова назва" }]);
+  assert.notEqual(rename.body.idempotencyKey, requests[0].body.idempotencyKey);
+  const nextRequest = createMapTools(new MapRegistry(), async (path, body) => {
+    requests.push({ path, body });
+    return { revision: 4 };
+  }, () => {}, () => {}, () => true, () => {}, editing).find((tool) => tool.name === "echo_map_edit")!;
+  await nextRequest.execute("edit", { operations });
+  assert.notEqual(requests.at(-1).body.idempotencyKey, requests[0].body.idempotencyKey);
+  assert.equal(renamed.revision, 4);
+});
+
+test("#3064 map edit sanitizer rejects an empty selection and duplicate targets", () => {
+  assert.throws(() => sanitizeEditOperations([{ op: "remove", selector: { selected: true } }], [], () => false), /Немає вибраних точок/);
+  assert.throws(() => validateMapEdit({ ...editing, selectedPointIds: [editing.selectedPointIds[0], editing.selectedPointIds[0]] }), /unique/);
+  assert.throws(() => validateMapEdit({ ...editing, extra: true }), /unsupported field/);
+  assert.throws(() => validateMapEdit({ ...editing, requestId: "not-a-uuid" }), /UUID/);
+  assert.throws(() => validateMapEdit({ ...editing, revision: 0 }), /positive/);
 });
 
 test("#3064 citation repair preserves registered map references alongside source chips", () => {

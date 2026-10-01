@@ -29,18 +29,28 @@ export function validateCitations(value: unknown): MessageCitation[] {
   });
 }
 
+/** Full message text kept beside its citation for map scripts. */
+export interface CitedMessage extends MessageCitation {
+  text: string;
+  datetime: string;
+  author: string;
+  group: string;
+}
+
 export function prepareMessageCitations(
   skill: string,
   value: unknown,
 ): {
   body: unknown;
   citations: MessageCitation[];
+  messages: CitedMessage[];
 } {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return { body: value, citations: [] };
+    return { body: value, citations: [], messages: [] };
   }
   const body = { ...(value as JsonObject) };
   const citations: MessageCitation[] = [];
+  const messages: CitedMessage[] = [];
   const enrich = (item: unknown): unknown => {
     if (
       !Array.isArray(item) ||
@@ -63,6 +73,19 @@ export function prepareMessageCitations(
     if (identifier.length > 512) return item;
     const citation = { messageId: item[0], messageIdentifier: identifier };
     citations.push(citation);
+    messages.push({
+      ...citation,
+      text: message.text,
+      datetime:
+        typeof message.timestamp === "number"
+          ? new Date(message.timestamp * 1000).toISOString()
+          : "",
+      author: typeof message.sender === "string" ? message.sender : "",
+      group:
+        typeof message.group_master_key === "string"
+          ? message.group_master_key
+          : "",
+    });
     return [item[0], { ...message, citation: citationHref(citation) }];
   };
   if (skill === "inbox_messages" && Array.isArray(body.inbox_items)) {
@@ -75,7 +98,7 @@ export function prepareMessageCitations(
   ) {
     body.messages = body.messages.map(enrich);
   }
-  return { body, citations };
+  return { body, citations, messages };
 }
 
 export function deliveredCitations(

@@ -40,6 +40,8 @@ node --experimental-strip-types --check "$BUNDLE_DIR/runner/runner.ts"
 test_root=$(mktemp -d /tmp/echo-ai-agent-check.XXXXXX)
 cp "$BUNDLE_DIR/package.json" "$BUNDLE_DIR/package-lock.json" "$test_root/"
 cp -a "$BUNDLE_DIR/runner" "$test_root/runner"
+mkdir -p "$test_root/template"
+cp -a "$BUNDLE_DIR/template/python" "$test_root/template/python"
 npm ci --prefix "$test_root" --ignore-scripts --no-audit --no-fund
 ECHO_AI_AGENT_ROUTE_REGISTRY="$BUNDLE_DIR/../wdintel-rs/src/ai_agent/route_registry.rs" \
   npm test --prefix "$test_root"
