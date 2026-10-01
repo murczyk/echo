@@ -37,6 +37,11 @@ server {
     }
 
 
+    location ~* ^/assets/(?:doc|xls)-preview\.worker-[a-z0-9_-]+\.js$ {
+        add_header Content-Security-Policy "default-src 'none'; base-uri 'none'; connect-src 'none'; form-action 'none'; script-src 'self'; worker-src 'none'" always;
+        try_files $uri =404;
+    }
+
     location / {
         try_files $uri /index.html;
     }

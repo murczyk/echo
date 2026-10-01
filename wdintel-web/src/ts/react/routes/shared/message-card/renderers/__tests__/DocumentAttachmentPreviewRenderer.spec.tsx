@@ -153,6 +153,16 @@ vi.mock('../XlsxDocumentPreview.tsx', () => ({
   XlsxDocumentPreview: () => <div data-document-kind="xlsx" />,
 }));
 
+vi.mock('../LegacyOfficeDocumentPreview.tsx', async () => {
+  const { useState } = await import('react');
+  return {
+    LegacyOfficeDocumentPreview: ({ href, kind }: { href: string; kind: string }) => {
+      const [loadedAttachment] = useState(`${kind}:${href}`);
+      return <div data-legacy-office-preview>{loadedAttachment}</div>;
+    },
+  };
+});
+
 vi.mock('../CsvDocumentPreview.tsx', () => ({
   CsvDocumentPreview: () => <div data-document-kind="csv" />,
 }));
@@ -415,6 +425,49 @@ describe('DocumentAttachmentPreviewRenderer', () => {
       document.body.querySelector('button[aria-label="Вийти з повноекранного режиму"]'),
     ).toBeNull();
     expect(document.body.querySelector('[data-preview-stage="document"]')).not.toBeNull();
+    root.unmount();
+  });
+
+  // Regression: ECHO-2769
+  it('remounts ready DOC/XLS previews when navigating between legacy attachments', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const documents: TestDocumentPreviewDialogProps['documents'] = [
+      { href: 'https://example.test/files/first.doc', fileName: 'first.doc', kind: 'doc' },
+      { href: 'https://example.test/files/second.xls', fileName: 'second.xls', kind: 'xls' },
+    ];
+    const commonProps = {
+      documents,
+      open: true,
+      onClose: vi.fn(),
+      onIndexChange: vi.fn(),
+      isDownloadStarting: () => false,
+      onDownloadStart: vi.fn(() => true),
+    };
+
+    await act(async () => {
+      root.render(<TestDocumentPreviewDialog {...commonProps} currentIndex={0} />);
+    });
+    expect(container.querySelector('[data-legacy-office-preview]')?.textContent).toBe(
+      'doc:https://example.test/files/first.doc',
+    );
+
+    await act(async () => {
+      root.render(<TestDocumentPreviewDialog {...commonProps} currentIndex={1} />);
+    });
+    expect(container.querySelector('[data-legacy-office-preview]')?.textContent).toBe(
+      'xls:https://example.test/files/second.xls',
+    );
+    expect(container.textContent).not.toContain('first.doc');
+
+    await act(async () => {
+      root.render(<TestDocumentPreviewDialog {...commonProps} currentIndex={0} />);
+    });
+    expect(container.querySelector('[data-legacy-office-preview]')?.textContent).toBe(
+      'doc:https://example.test/files/first.doc',
+    );
+    expect(container.textContent).not.toContain('second.xls');
     root.unmount();
   });
 

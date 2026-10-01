@@ -1,4 +1,6 @@
 import { expect, type Page, type Route } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 
 import type { InboxMessagesRspRaw } from '../../src/ts/react/services/api/inbox-messages';
 import { installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
@@ -14,6 +16,8 @@ export const MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES = {
   audio: 'e2e-audio.wav',
   text: 'e2e-preview.txt',
   markdown: 'e2e-preview.md',
+  doc: 'e2e-preview.doc',
+  xls: 'e2e-preview.xls',
 } as const;
 
 const MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX = '/test-assets/message-card-media-preview';
@@ -97,6 +101,11 @@ const MARKDOWN_PREVIEW_TEXT = [
   '',
   '[Safe link](https://example.test/safe-link)',
 ].join('\n');
+const LEGACY_OFFICE_FIXTURES_DIRECTORY = resolve(process.cwd(), 'tests/fixtures/legacy-office');
+const [DOC_PREVIEW_FIXTURE, XLS_PREVIEW_FIXTURE] = await Promise.all([
+  readFile(resolve(LEGACY_OFFICE_FIXTURES_DIRECTORY, 'structured-document.doc')),
+  readFile(resolve(LEGACY_OFFICE_FIXTURES_DIRECTORY, 'formatted-workbook.xls')),
+]);
 
 function buildMessageCardMediaPreviewMessage({
   withPolishContent = false,
@@ -107,6 +116,7 @@ function buildMessageCardMediaPreviewMessage({
   palitraEtalon,
   messageText,
   withCompletedOcrAndSummary = false,
+  withLegacyOffice = false,
 }: {
   withPolishContent?: boolean;
   withPartialCoordinateError?: boolean;
@@ -116,6 +126,7 @@ function buildMessageCardMediaPreviewMessage({
   palitraEtalon?: string;
   messageText?: string;
   withCompletedOcrAndSummary?: boolean;
+  withLegacyOffice?: boolean;
 } = {}): Record<string, unknown> {
   const image1 = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1}`;
   const image2 = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image2}`;
@@ -124,6 +135,8 @@ function buildMessageCardMediaPreviewMessage({
   const audio = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.audio}`;
   const text = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.text}`;
   const markdown = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.markdown}`;
+  const doc = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.doc}`;
+  const xls = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.xls}`;
 
   return {
     messageUid: 'e2e-message-card-preview',
@@ -201,6 +214,24 @@ function buildMessageCardMediaPreviewMessage({
         size_bytes: 192,
         href: markdown,
       },
+      ...(withLegacyOffice
+        ? [
+            {
+              id: 'e2e-doc',
+              content_type: 'application/msword',
+              file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.doc,
+              size_bytes: DOC_PREVIEW_FIXTURE.byteLength,
+              href: doc,
+            },
+            {
+              id: 'e2e-xls',
+              content_type: 'application/vnd.ms-excel',
+              file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.xls,
+              size_bytes: XLS_PREVIEW_FIXTURE.byteLength,
+              href: xls,
+            },
+          ]
+        : []),
       {
         id: 'e2e-audio',
         content_type: 'audio/wav',
@@ -256,6 +287,7 @@ export function buildMessageCardMediaPreviewInboxResponse({
   palitraEtalon,
   messageText,
   withCompletedOcrAndSummary = false,
+  withLegacyOffice = false,
 }: {
   withPolishContent?: boolean;
   withPartialCoordinateError?: boolean;
@@ -265,6 +297,7 @@ export function buildMessageCardMediaPreviewInboxResponse({
   palitraEtalon?: string;
   messageText?: string;
   withCompletedOcrAndSummary?: boolean;
+  withLegacyOffice?: boolean;
 } = {}): InboxMessagesRspRaw {
   return {
     inbox_items: [
@@ -279,6 +312,7 @@ export function buildMessageCardMediaPreviewInboxResponse({
           palitraEtalon,
           messageText,
           withCompletedOcrAndSummary,
+          withLegacyOffice,
         }) as never,
       ],
     ],
@@ -353,6 +387,16 @@ export async function installMessageCardMediaPreviewAssetRoutes(
       return;
     }
 
+    if (fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.doc) {
+      await fulfillAsset(route, DOC_PREVIEW_FIXTURE, 'application/msword');
+      return;
+    }
+
+    if (fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.xls) {
+      await fulfillAsset(route, XLS_PREVIEW_FIXTURE, 'application/vnd.ms-excel');
+      return;
+    }
+
     await route.fulfill({ status: 404, body: 'Not found' });
   });
 }
@@ -369,6 +413,7 @@ async function installMessageCardMediaPreviewHostFixture(
   messageText: string | undefined,
   enableAudioTranscription: boolean,
   withCompletedOcrAndSummary: boolean,
+  withLegacyOffice: boolean,
   messageReferenceResponse: unknown | undefined,
   messageReferenceDelayMs: number,
   signalGroups: InboxMessagesRspRaw['signal_groups'] | undefined,
@@ -383,6 +428,7 @@ async function installMessageCardMediaPreviewHostFixture(
       palitraEtalon,
       messageText,
       withCompletedOcrAndSummary,
+      withLegacyOffice,
     }),
     signal_groups: signalGroups ?? [],
   };
@@ -506,6 +552,7 @@ export async function openMessageCardPreviewHost(
     messageText,
     enableAudioTranscription = false,
     withCompletedOcrAndSummary = false,
+    withLegacyOffice = false,
     deferredImageResponse,
     messageReferenceResponse,
     messageReferenceDelayMs = 0,
@@ -522,6 +569,7 @@ export async function openMessageCardPreviewHost(
     messageText?: string;
     enableAudioTranscription?: boolean;
     withCompletedOcrAndSummary?: boolean;
+    withLegacyOffice?: boolean;
     deferredImageResponse?: DeferredMediaResponse;
     messageReferenceResponse?: unknown;
     messageReferenceDelayMs?: number;
@@ -541,6 +589,7 @@ export async function openMessageCardPreviewHost(
     messageText,
     enableAudioTranscription,
     withCompletedOcrAndSummary,
+    withLegacyOffice,
     messageReferenceResponse,
     messageReferenceDelayMs,
     signalGroups,

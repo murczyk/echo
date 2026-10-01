@@ -1,7 +1,7 @@
 import type { MediaSummaryStatus, OcrMediaSummary } from '../../../../../Bindings';
 
 export type MessageCardDocumentKind =
-  'pdf' | 'docx' | 'xlsx' | 'csv' | 'txt' | 'md' | 'unsupported';
+  'pdf' | 'doc' | 'docx' | 'xls' | 'xlsx' | 'csv' | 'txt' | 'md' | 'unsupported';
 
 export type MessageCardDocument = {
   id?: string | null;

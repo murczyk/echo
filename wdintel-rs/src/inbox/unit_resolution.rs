@@ -9,6 +9,7 @@ use crate::config::{
     INBOX_ITEM_UNIT_SYNC_INSERT_BATCH_SIZE,
     INBOX_ITEM_UNIT_SYNC_QUERY_BATCH_SIZE,
     INBOX_UNIT_EQUIVALENT_NAME_VARIANT_LIMIT,
+    INBOX_UNIT_STRUCTURAL_PREFILTER_MIN_TRIGRAM_CHARS,
 };
 use crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind;
 use crate::entities::{
@@ -27,10 +28,10 @@ use log::{debug, info, warn};
 use regex::RegexBuilder;
 use sea_orm::sea_query::{Expr, LockBehavior, LockType, OnConflict};
 use sea_orm::{
-    ActiveValue::NotSet, ActiveValue::Set, ColumnTrait, ConnectionTrait,
-    DatabaseConnection, EntityTrait, ExprTrait, JoinType, ModelTrait,
-    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, QueryTrait,
-    RelationTrait, TransactionTrait,
+    ActiveValue::NotSet, ActiveValue::Set, ColumnTrait, Condition,
+    ConnectionTrait, DatabaseConnection, EntityTrait, ExprTrait, JoinType,
+    ModelTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
+    QueryTrait, RelationTrait, TransactionTrait,
 };
 use std::collections::{BTreeSet, HashMap};
 use std::time::Duration as StdDuration;
@@ -192,17 +193,66 @@ fn unit_text_candidates(
 }
 
 fn normalize_structural_text(value: &str) -> String {
-    value
-        .split(|character: char| !character.is_alphanumeric())
-        .filter(|word| !word.is_empty())
-        .map(str::to_lowercase)
-        .join(" ")
+    crate::unit::normalize_unit_formation_name(value)
 }
 
 fn contains_structural_segment(value: &str, segment: &str) -> bool {
     let value = format!(" {} ", normalize_structural_text(value));
     let segment = format!(" {} ", normalize_structural_text(segment));
     value.contains(&segment)
+}
+
+fn equivalent_unit_notion_aliases(word: &str) -> Vec<&str> {
+    let aliases = crate::config::UNIT_FORMATION_EQUIVALENT_NOTIONS
+        .iter()
+        .find_map(|(canonical, aliases)| {
+            (*canonical == word).then_some(*aliases)
+        })
+        .unwrap_or_default();
+    std::iter::once(word)
+        .chain(aliases.iter().copied())
+        .unique()
+        .collect_vec()
+}
+
+fn structural_alias_has_trigram(alias: &str) -> bool {
+    alias
+        .split(|character: char| !character.is_alphanumeric())
+        .any(|word| {
+            word.chars().count()
+                >= INBOX_UNIT_STRUCTURAL_PREFILTER_MIN_TRIGRAM_CHARS
+        })
+}
+
+fn structural_word_condition(word: &str) -> (Condition, bool) {
+    let normalized = normalize_structural_text(word);
+    let aliases = equivalent_unit_notion_aliases(&normalized);
+    let aliases = if aliases
+        .iter()
+        .all(|alias| structural_alias_has_trigram(alias))
+    {
+        aliases
+    } else {
+        vec![word]
+    };
+    let has_trigram = aliases
+        .iter()
+        .all(|alias| structural_alias_has_trigram(alias));
+    let condition = aliases
+        .into_iter()
+        .map(|alias| {
+            alias
+                .split(|character: char| !character.is_alphanumeric())
+                .filter(|word| !word.is_empty())
+                .fold(Condition::all(), |condition, word| {
+                    condition.add(
+                        orbit_unit::Column::GenerativeUnitNameFull
+                            .ilike(format!("%{word}%")),
+                    )
+                })
+        })
+        .fold(Condition::any(), |condition, alias| condition.add(alias));
+    (condition, has_trigram)
 }
 
 async fn structural_candidates<C>(
@@ -212,16 +262,17 @@ async fn structural_candidates<C>(
 where
     C: ConnectionTrait,
 {
-    let segments = crate::unit::parse_library_unit_segments(unit_v2)
-        .into_iter()
-        .map(|segment| normalize_unit_label(&segment))
+    let parsed_segments = crate::unit::parse_library_unit_segments(unit_v2);
+    let segments = parsed_segments
+        .iter()
+        .map(|segment| normalize_structural_text(segment))
         .filter(|segment| !segment.is_empty())
         .unique()
         .collect_vec();
     if segments.is_empty() {
         return Ok(Vec::new());
     }
-    let words = segments
+    let words = parsed_segments
         .iter()
         .flat_map(|segment| {
             segment
@@ -236,11 +287,30 @@ where
         .find_also_related(orbit_unit_echelon::Entity)
         .filter(orbit_unit::Column::Deleted.eq(false))
         .filter(orbit_unit::Column::GenerativeUnitNameFull.is_not_null());
+    let mut has_trigram_prefilter = false;
     for word in words {
-        query = query.filter(
-            orbit_unit::Column::GenerativeUnitNameFull
-                .ilike(format!("%{word}%")),
-        );
+        let (condition, has_trigram) = structural_word_condition(&word);
+        query = query.filter(condition);
+        has_trigram_prefilter |= has_trigram;
+    }
+    if !has_trigram_prefilter {
+        // Pair short words so pg_trgm can constrain the candidate query.
+        let anchor = parsed_segments
+            .iter()
+            .filter(|segment| {
+                segment
+                    .split(|character: char| !character.is_alphanumeric())
+                    .filter(|word| !word.is_empty())
+                    .count()
+                    > 1
+            })
+            .max_by_key(|segment| segment.chars().count());
+        if let Some(anchor) = anchor {
+            query =
+                query.filter(orbit_unit::Column::GenerativeUnitNameFull.ilike(
+                    format!("%{}%", collapse_unit_label_whitespace(anchor)),
+                ));
+        }
     }
 
     Ok(query
@@ -455,14 +525,7 @@ fn equivalent_sigint_unit_name_variants(
         .chain(
             normalized
                 .split_whitespace()
-                .map(|word| {
-                    crate::config::UNIT_FORMATION_EQUIVALENT_NOTIONS
-                        .iter()
-                        .find_map(|(canonical, aliases)| {
-                            (*canonical == word).then_some(aliases.to_vec())
-                        })
-                        .unwrap_or_else(|| vec![word])
-                })
+                .map(equivalent_unit_notion_aliases)
                 .multi_cartesian_product()
                 .map(|words| words.join(" ")),
         )
@@ -1826,6 +1889,35 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn rvsp_variants_match_pks_sigint_unit_name() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let hierarchy = unique_unit_label();
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set(format!("{hierarchy} (кт) ПКС")),
+                active: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for qualifier in ["кт\tРВСП", "(кт) РВСП", "(кт) ПКС"]
+        {
+            let unit_v2 = format!("{hierarchy} {qualifier}");
+            assert_eq!(
+                resolve_sigint_unit_id(&env.dbx, Some(&unit_v2), None)
+                    .await
+                    .unwrap(),
+                Some(unit.id),
+                "qualifier: {qualifier:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn duplicate_exact_sigint_unit_names_are_not_linked() {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
@@ -2243,6 +2335,37 @@ mod tests {
         );
         delete_orbit_units(&env.dbx, vec![battalion_orbit, brigade_orbit])
             .await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn structural_matching_normalizes_equivalent_unit_notions() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let hierarchy = unique_unit_label();
+        let orbit_unit = insert_orbit_unit(
+            &env.dbx,
+            &format!("{hierarchy} (кт) ПКС"),
+            None,
+            "brigade",
+            &[unit.id],
+        )
+        .await;
+        let unit_v2 = format!("{hierarchy} кт РВСП");
+
+        assert_eq!(
+            resolve_sigint_unit_id(&env.dbx, Some(&unit_v2), None)
+                .await
+                .unwrap(),
+            Some(unit.id)
+        );
+        delete_orbit_units(&env.dbx, vec![orbit_unit]).await;
     }
 
     #[tokio::test]

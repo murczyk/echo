@@ -220,6 +220,101 @@ afterEach(() => {
 });
 
 describe('MessageCard', () => {
+  it.each([
+    { displayMode: 'duty' as const, hasExcludeSection: true },
+    { displayMode: 'analysis' as const, hasExcludeSection: false },
+  ])(
+    'moves all actions into the menu and keeps the important status separate on narrow $displayMode cards',
+    async ({ displayMode, hasExcludeSection }) => {
+      const clientWidth = vi
+        .spyOn(HTMLElement.prototype, 'clientWidth', 'get')
+        .mockReturnValue(390);
+      const scrollWidth = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(40);
+
+      const view = await renderCard({
+        displayMode,
+        messageTimeBasis: 'creation',
+        msg: buildMessage({ createdAt: Date.UTC(2026, 6, 17, 0, 30), important: true }),
+      });
+      const visibleActions = Array.from(
+        view.container.querySelectorAll<HTMLButtonElement>('.message-card-header-actions button'),
+      ).map((action) => action.getAttribute('aria-label'));
+
+      expect(visibleActions).toEqual(['Більше дій']);
+      const importantStatus = view.container.querySelector(
+        '[data-message-card-important-status-position="mobile"]',
+      );
+      const overflowAction = view.container.querySelector('button[aria-label="Більше дій"]');
+
+      expect(importantStatus?.textContent).toContain('Важливе');
+      expect(importantStatus?.nextElementSibling?.contains(overflowAction)).toBe(true);
+      expect(
+        view.container.querySelectorAll('[data-message-card-timestamp-item="true"]'),
+      ).toHaveLength(2);
+      expect(view.container.querySelector('.message-card-header-timestamps')?.classList).toContain(
+        'message-card-header-timestamps--mobile-nowrap',
+      );
+
+      await openOverflowMenu(view.container);
+      expect(document.body.textContent).toContain('Створити розвіддонесення');
+      expect(document.body.textContent).toContain('Позначити як не важливе');
+      expect(document.body.textContent).toContain('Додати в закладки');
+      expect(document.body.textContent).toContain('Копіювати');
+      expect(document.body.textContent).toContain('Перейти');
+      if (hasExcludeSection) expect(document.body.textContent).toContain('Виключити');
+
+      const copySection = Array.from(
+        document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
+      ).find((item) => item.textContent?.trim() === 'Копіювати…');
+      if (copySection == null) throw new Error('missing copy section');
+      await click(copySection);
+
+      expect(document.body.querySelectorAll('[role="menu"]')).toHaveLength(1);
+      expect(document.body.querySelector('[role="menu"]')?.getAttribute('aria-label')).toBe(
+        'Копіювання повідомлення',
+      );
+      expect(document.body.querySelector('[aria-label="Назад до додаткових дій"]')).not.toBeNull();
+      expect(document.body.textContent).toContain('Копіювати повідомлення');
+
+      const back = document.body.querySelector('[aria-label="Назад до додаткових дій"]');
+      if (!(back instanceof HTMLElement)) throw new Error('missing menu back button');
+      await click(back);
+      expect(document.body.querySelector('[role="menu"]')?.getAttribute('aria-label')).toBe(
+        'Додаткові дії повідомлення',
+      );
+      expect(document.body.textContent).toContain('Копіювати');
+
+      const navigateSection = Array.from(
+        document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
+      ).find((item) => item.textContent?.trim() === 'Перейти…');
+      if (navigateSection == null) throw new Error('missing navigate section');
+      await click(navigateSection);
+      expect(document.body.querySelector('[role="menu"]')?.getAttribute('aria-label')).toBe(
+        'Перехід по повідомленню',
+      );
+      expect(document.body.querySelectorAll('[role="menu"]')).toHaveLength(1);
+
+      const navigateBack = document.body.querySelector('[aria-label="Назад до додаткових дій"]');
+      if (!(navigateBack instanceof HTMLElement)) throw new Error('missing navigate back button');
+      await click(navigateBack);
+
+      if (hasExcludeSection) {
+        const excludeSection = Array.from(
+          document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
+        ).find((item) => item.textContent?.trim() === 'Виключити…');
+        if (excludeSection == null) throw new Error('missing exclude section');
+        await click(excludeSection);
+        expect(document.body.querySelector('[role="menu"]')?.getAttribute('aria-label')).toBe(
+          'Виключення з фільтрів',
+        );
+        expect(document.body.querySelectorAll('[role="menu"]')).toHaveLength(1);
+      }
+
+      clientWidth.mockRestore();
+      scrollWidth.mockRestore();
+    },
+  );
+
   // Regression: https://github.com/echoua/echo/issues/3569
   it('does not expose deletion without independent delete access', async () => {
     const view = await renderCard(

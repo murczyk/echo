@@ -27,14 +27,14 @@ pub(super) async fn enrich(
         Ok(Err(error)) => {
             warn!("direct submit AI callsign parsing failed: {error:#}");
             parsed.ai_callsign_warning = Some(
-                "Не вдалося розпізнати позивні за допомогою ШІ. Застосовано звичайний парсинг; повідомлення можна зберегти."
+                "Не вдалося розпізнати позивні за допомогою ШІ. Застосовано звичайний парсинг. Повідомлення можна зберегти."
                     .to_string(),
             );
         }
         Err(error) => {
             warn!("direct submit AI callsign parsing timed out: {error}");
             parsed.ai_callsign_warning = Some(format!(
-                "ШІ не відповів за {DIRECT_SUBMIT_AI_CALLSIGN_TIMEOUT_SECS} секунд. Застосовано звичайний парсинг; повідомлення можна зберегти."
+                "ШІ не відповів за {DIRECT_SUBMIT_AI_CALLSIGN_TIMEOUT_SECS} секунд. Застосовано звичайний парсинг. Повідомлення можна зберегти."
             ));
         }
     }
