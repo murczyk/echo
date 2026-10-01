@@ -862,12 +862,14 @@ function MetaLine({
   title,
   text,
   iconKind,
+  wrapText = false,
   children,
 }: {
   icon: JSX.Element;
   title: string;
   text: string;
   iconKind?: 'group';
+  wrapText?: boolean;
   children?: ReactNode;
 }) {
   return (
@@ -881,7 +883,9 @@ function MetaLine({
       >
         {icon}
       </span>
-      <HeaderText nowrap>{children ?? text}</HeaderText>
+      <HeaderText nowrap={!wrapText} wrap={wrapText}>
+        {children ?? text}
+      </HeaderText>
     </div>
   );
 }
@@ -1013,12 +1017,14 @@ export function MessageCardMetadata({
   senderName,
   etalonDisplayModel,
   metadataTrigger,
+  wrapText = false,
 }: {
   msg: InboxMessage;
   groupName: string | null;
   senderName: string | null;
   etalonDisplayModel: MessageCardEtalonDisplayModel;
   metadataTrigger?: ReactNode;
+  wrapText?: boolean;
 }) {
   const radioFeaturesAllowed = useRadioFeatures();
   const canUseMessageDevices = useMessageDeviceAccess();
@@ -1029,17 +1035,26 @@ export function MessageCardMetadata({
 
   return (
     <div className="flex w-full items-start gap-2">
-      <div className="flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-0">
+      <div
+        className="flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-0"
+        style={{ flexWrap: 'wrap' }}
+      >
         {isPresent(groupName) ? (
           <MetaLine
             icon={<GraphicEqOutlinedIcon />}
             iconKind="group"
             title="Група"
             text={groupName}
+            wrapText={wrapText}
           />
         ) : null}
         {isPresent(senderName) ? (
-          <MetaLine icon={<AccountCircleOutlinedIcon />} title="Відправник" text={senderName}>
+          <MetaLine
+            icon={<AccountCircleOutlinedIcon />}
+            title="Відправник"
+            text={senderName}
+            wrapText={wrapText}
+          >
             <AuthorLabel accountId={msg.sender} fallback={senderName} />
           </MetaLine>
         ) : null}
@@ -1051,15 +1066,22 @@ export function MessageCardMetadata({
             >
               <SettingsInputAntennaOutlinedIcon titleAccess="Частота" />
             </span>
-            <HeaderText className="whitespace-nowrap">{msg.freq}</HeaderText>
+            <HeaderText className={wrapText ? undefined : 'whitespace-nowrap'} wrap={wrapText}>
+              {msg.freq}
+            </HeaderText>
           </div>
         ) : null}
         {isPresent(deviceName) && deviceName !== '' ? (
-          <MetaLine icon={<DevicesIcon />} title="Пристрій" text={deviceName} />
+          <MetaLine icon={<DevicesIcon />} title="Пристрій" text={deviceName} wrapText={wrapText} />
         ) : null}
         <NetworkEtalonSection etalonDisplayModel={etalonDisplayModel} />
         {showTopGridLocation ? (
-          <MetaLine icon={<PlaceOutlinedIcon />} title="Локація" text={locationDisplayValue} />
+          <MetaLine
+            icon={<PlaceOutlinedIcon />}
+            title="Локація"
+            text={locationDisplayValue}
+            wrapText={wrapText}
+          />
         ) : null}
       </div>
       {metadataTrigger ? <div className="flex shrink-0 items-center">{metadataTrigger}</div> : null}
@@ -1124,7 +1146,11 @@ function MessageCardHeaderComponent({
     analysisHref,
   );
   const dateTimeBlock = (
-    <div className="message-card-header-timestamps inline-flex flex-wrap items-center">
+    <div
+      className={`message-card-header-timestamps inline-flex ${
+        displayMode === 'duty' ? 'flex-nowrap' : 'flex-wrap'
+      } items-center`}
+    >
       {messageTimeBasis === 'creation' ? (
         <div
           className="message-card-timestamp-item"

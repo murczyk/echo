@@ -224,7 +224,11 @@ describe('MessageCard', () => {
     const clientWidth = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(320);
     const scrollWidth = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(40);
 
-    const view = await renderCard({ displayMode: 'duty', msg: buildMessage({ important: true }) });
+    const view = await renderCard({
+      displayMode: 'duty',
+      messageTimeBasis: 'creation',
+      msg: buildMessage({ createdAt: Date.UTC(2026, 6, 17, 0, 30), important: true }),
+    });
     const visibleActions = Array.from(
       view.container.querySelectorAll<HTMLButtonElement>('.message-card-header-actions button'),
     ).map((action) => action.getAttribute('aria-label'));
@@ -237,6 +241,12 @@ describe('MessageCard', () => {
 
     expect(importantStatus?.textContent).toContain('Важливе');
     expect(importantStatus?.nextElementSibling?.contains(overflowAction)).toBe(true);
+    expect(
+      view.container.querySelectorAll('[data-message-card-timestamp-item="true"]'),
+    ).toHaveLength(2);
+    expect(view.container.querySelector('.message-card-header-timestamps')?.classList).toContain(
+      'flex-nowrap',
+    );
 
     await openOverflowMenu(view.container);
     expect(document.body.textContent).toContain('Створити розвіддонесення');
