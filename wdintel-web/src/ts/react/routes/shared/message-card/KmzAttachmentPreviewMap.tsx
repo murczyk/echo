@@ -24,9 +24,40 @@ function geometryColor(color: string | null): string {
   return color && /^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/i.test(color) ? color : FALLBACK_GEOMETRY_COLOR;
 }
 
-function addPreviewLayers(layerGroup: L.FeatureGroup, preview: KmzPreview): void {
+export function addPreviewLayers(layerGroup: L.FeatureGroup, preview: KmzPreview): void {
   const renderer = L.canvas({ padding: 0.25 });
   const pointRadius = preview.points.length > 500 ? 2 : 4;
+  for (const polygon of preview.polygons) {
+    const [outer, ...inner] = polygon.rings;
+    const outerRing = outer
+      ?.filter(validCoords)
+      .map(({ lat, lng }) => [lat, lng] as [number, number]);
+    if (outerRing == null || outerRing.length < 3) continue;
+    const rings = [
+      outerRing,
+      ...inner
+        .map((ring) =>
+          ring.filter(validCoords).map(({ lat, lng }) => [lat, lng] as [number, number]),
+        )
+        .filter((ring) => ring.length >= 3),
+    ];
+    const layer = L.polygon(rings, {
+      renderer,
+      interactive: false,
+      color: geometryColor(polygon.strokeColor),
+      opacity: polygon.strokeOpacity,
+      fillColor: geometryColor(polygon.fillColor),
+      fillOpacity: polygon.fillOpacity,
+      weight: 2,
+      lineJoin: 'round',
+    });
+    if (polygon.label?.trim()) {
+      const label = document.createElement('span');
+      label.textContent = polygon.label;
+      layer.bindTooltip(label);
+    }
+    layerGroup.addLayer(layer);
+  }
   for (const line of preview.lineStrings) {
     const coords = line.coords.filter(validCoords);
     if (coords.length < 2) continue;
@@ -61,37 +92,6 @@ function addPreviewLayers(layerGroup: L.FeatureGroup, preview: KmzPreview): void
       marker.bindTooltip(label);
     }
     layerGroup.addLayer(marker);
-  }
-  for (const polygon of preview.polygons) {
-    const [outer, ...inner] = polygon.rings;
-    const outerRing = outer
-      ?.filter(validCoords)
-      .map(({ lat, lng }) => [lat, lng] as [number, number]);
-    if (outerRing == null || outerRing.length < 3) continue;
-    const rings = [
-      outerRing,
-      ...inner
-        .map((ring) =>
-          ring.filter(validCoords).map(({ lat, lng }) => [lat, lng] as [number, number]),
-        )
-        .filter((ring) => ring.length >= 3),
-    ];
-    const layer = L.polygon(rings, {
-      renderer,
-      interactive: false,
-      color: geometryColor(polygon.strokeColor),
-      opacity: polygon.strokeOpacity,
-      fillColor: geometryColor(polygon.fillColor),
-      fillOpacity: polygon.fillOpacity,
-      weight: 2,
-      lineJoin: 'round',
-    });
-    if (polygon.label?.trim()) {
-      const label = document.createElement('span');
-      label.textContent = polygon.label;
-      layer.bindTooltip(label);
-    }
-    layerGroup.addLayer(layer);
   }
 }
 

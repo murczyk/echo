@@ -12,6 +12,7 @@ import {
 import type { KmzPreview, KmzPreviewCoords } from './kmz-preview-types';
 
 const decoder = new TextDecoder();
+const KMZ_INPUT_CHUNK_BYTES = 1024;
 
 function fail(code: string): never {
   throw new Error(code);
@@ -21,6 +22,9 @@ function number(value: unknown, fallback: number): number {
 }
 function color(value: unknown): string | null {
   return typeof value === 'string' && /^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/i.test(value) ? value : null;
+}
+function nonblankLabel(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null;
 }
 function coord(value: Position): KmzPreviewCoords | null {
   const [lng, lat] = value;
@@ -54,7 +58,7 @@ function addFeature(
 ) {
   if (feature.geometry == null) return;
   const properties = feature.properties ?? {};
-  const label = typeof properties.name === 'string' ? properties.name : null;
+  const label = nonblankLabel(properties.name) ?? nonblankLabel(properties.description);
   const strokeColor = color(properties.stroke);
   const fillColor = color(properties.fill);
   const strokeOpacity = number(properties['stroke-opacity'], 1);
@@ -144,29 +148,58 @@ function kmzKmlTexts(bytes: Uint8Array): string[] {
   let expanded = 0;
   let limitError: 'KMZ_TOO_MANY_ENTRIES' | 'KMZ_EXPANDED_TOO_LARGE' | null = null;
   const files: Array<{ name: string; chunks: Uint8Array[] }> = [];
+  const activeFiles = new Set<{ terminate: () => void; chunks: Uint8Array[] }>();
+  const stop = (error: 'KMZ_TOO_MANY_ENTRIES' | 'KMZ_EXPANDED_TOO_LARGE') => {
+    limitError ??= error;
+    for (const file of activeFiles) {
+      file.chunks.length = 0;
+      file.terminate();
+    }
+    activeFiles.clear();
+    for (const file of files) file.chunks.length = 0;
+  };
   const unzip = new Unzip((file) => {
+    if (limitError != null) return;
     entries += 1;
     if (entries > MAX_KMZ_PREVIEW_ENTRIES) {
-      limitError = 'KMZ_TOO_MANY_ENTRIES';
+      stop('KMZ_TOO_MANY_ENTRIES');
       return;
     }
     if (!/\.kml$/i.test(file.name)) return;
+    const remaining = MAX_KMZ_PREVIEW_EXPANDED_BYTES - expanded;
+    if (file.originalSize != null && file.originalSize > remaining) {
+      stop('KMZ_EXPANDED_TOO_LARGE');
+      return;
+    }
     const chunks: Uint8Array[] = [];
+    const activeFile = { terminate: () => file.terminate(), chunks };
+    activeFiles.add(activeFile);
     file.ondata = (error, data, final) => {
+      if (limitError != null) return;
       if (error != null) fail('KMZ_MALFORMED');
       if (expanded + data.length > MAX_KMZ_PREVIEW_EXPANDED_BYTES) {
-        limitError = 'KMZ_EXPANDED_TOO_LARGE';
+        stop('KMZ_EXPANDED_TOO_LARGE');
         return;
       }
       expanded += data.length;
       chunks.push(data);
-      if (final) files.push({ name: file.name, chunks });
+      if (final) {
+        activeFiles.delete(activeFile);
+        files.push({ name: file.name, chunks });
+      }
     };
     file.start();
   });
   unzip.register(UnzipInflate);
   try {
-    unzip.push(bytes, true);
+    for (
+      let offset = 0;
+      offset < bytes.length && limitError == null;
+      offset += KMZ_INPUT_CHUNK_BYTES
+    ) {
+      const end = Math.min(offset + KMZ_INPUT_CHUNK_BYTES, bytes.length);
+      unzip.push(bytes.subarray(offset, end), end === bytes.length);
+    }
   } catch (error) {
     if (error instanceof Error && /^KMZ_(TOO_MANY_ENTRIES|EXPANDED_TOO_LARGE)$/.test(error.message))
       throw error;
