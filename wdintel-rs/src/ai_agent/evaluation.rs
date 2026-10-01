@@ -49,3 +49,71 @@ pub fn search_query() -> anyhow::Result<()> {
     .c(h!())?;
     Ok(())
 }
+
+#[derive(Deserialize)]
+#[serde(tag = "operation", rename_all = "camelCase", deny_unknown_fields)]
+enum MapInput {
+    Prepare {
+        records: Vec<super::maps::types::AiAgentMapRecordInput>,
+    },
+    Export {
+        document: super::maps::types::AiAgentMapDocument,
+    },
+}
+
+pub fn maps() -> anyhow::Result<()> {
+    use crate::config::AI_AGENT_EVENT_PAYLOAD_MAX_BYTES;
+    use base64::Engine;
+    let mut input = String::new();
+    std::io::stdin()
+        .take(AI_AGENT_EVENT_PAYLOAD_MAX_BYTES as u64 + 1)
+        .read_to_string(&mut input)
+        .c(h!())?;
+    anyhow::ensure!(
+        input.len() <= AI_AGENT_EVENT_PAYLOAD_MAX_BYTES,
+        "Map evaluation input is too large"
+    );
+    let input: MapInput = serde_json::from_str(&input).c(h!())?;
+    let result = match input {
+        MapInput::Prepare { records } => {
+            anyhow::ensure!(
+                !records.is_empty()
+                    && records.len()
+                        <= crate::config::AI_AGENT_MAP_BATCH_MAX_RECORDS,
+                "Invalid map batch"
+            );
+            let records = records
+                .into_iter()
+                .map(super::maps::prepare::prepare_record)
+                .collect::<anyhow::Result<Vec<_>>>()
+                .c(h!())?;
+            serde_json::json!({ "records": records })
+        }
+        MapInput::Export { document } => {
+            let document =
+                super::maps::prepare::canonicalize(document).c(h!())?;
+            let csv =
+                String::from_utf8(super::maps::export::csv(&document).c(h!())?)
+                    .c(h!())?;
+            let kmz = if document.valid_count > 0 {
+                Some(
+                    base64::engine::general_purpose::STANDARD.encode(
+                        super::maps::export::kmz(
+                            &document,
+                            std::path::Path::new(
+                                "wdintel-web/static/img/google_earth_icons",
+                            ),
+                            &Default::default(),
+                        )
+                        .c(h!())?,
+                    ),
+                )
+            } else {
+                None
+            };
+            serde_json::json!({ "document": document, "csv": csv, "kmz": kmz })
+        }
+    };
+    serde_json::to_writer(std::io::stdout(), &result).c(h!())?;
+    Ok(())
+}

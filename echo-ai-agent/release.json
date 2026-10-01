@@ -1,10 +1,18 @@
 {
   "schemaVersion": 1,
-  "release": "2026.09.29.3",
+  "release": "2026.10.01.2",
   "runnerProtocolVersion": 1,
   "nodeVersion": "24.19.0",
   "piVersion": "0.83.0",
   "supportedRunnerReleases": [
+    "2026.10.01.2",
+    "2026.10.01.1",
+    "2026.09.29.9",
+    "2026.09.29.8",
+    "2026.09.29.7",
+    "2026.09.29.6",
+    "2026.09.29.5",
+    "2026.09.29.4",
     "2026.09.29.3",
     "2026.09.29.2",
     "2026.09.29.1",
@@ -18,7 +26,9 @@
     "2026.08.05.2"
   ],
   "requiredMigrations": [
-    "m20260927_112500_ai_agent_citation_events"
+    "m20260927_112500_ai_agent_citation_events",
+    "m20260929_152018_ai_agent_map_artifacts",
+    "m20260929_195200_ai_agent_map_workspace"
   ],
   "namespaceTemplates": true
 }

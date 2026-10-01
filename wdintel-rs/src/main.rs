@@ -1036,6 +1036,8 @@ enum Cmd {
     AiControlPanel(ai_control_panel::Options),
     /// Compile an inbox search for isolated evaluation fixtures.
     AiEvalSearchQuery,
+    /// Prepare map fixtures and parse production CSV/KMZ exports without a database.
+    AiEvalMaps,
     Server(ServerPs),
     Bgworker,
     ReportWorker,
@@ -1662,6 +1664,9 @@ async fn async_main(
     if matches!(action, Cmd::AiEvalSearchQuery) {
         return ai_agent::evaluation::search_query().map_err(Into::into);
     }
+    if matches!(action, Cmd::AiEvalMaps) {
+        return ai_agent::evaluation::maps().map_err(Into::into);
+    }
 
     if let Cmd::AiControlPanel(options) = action {
         return ai_control_panel::run(mode, options)
@@ -1672,7 +1677,7 @@ async fn async_main(
     utils::worker_watch::spawn_metrics_logger();
 
     match action {
-        Cmd::AiControlPanel(_) | Cmd::AiEvalSearchQuery => unreachable!(),
+        Cmd::AiControlPanel(_) | Cmd::AiEvalSearchQuery | Cmd::AiEvalMaps => unreachable!(),
         Cmd::Server(ps) => {
             server::main_server(mode, ps, token, shutdown_handle.clone()).await
         }

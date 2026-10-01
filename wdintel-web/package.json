@@ -76,6 +76,7 @@
     "mammoth": "^1.11.0",
     "material-react-table": "^3.0.1",
     "mgrs": "^2.0.0",
+    "milsymbol": "2.2.0",
     "pdfjs-dist": "^5.4.296",
     "proj4": "^2.12.1",
     "react": "^18.3.1",
@@ -83,11 +84,11 @@
     "react-hook-form": "^7.53.0",
     "react-markdown": "^9.0.1",
     "react-pdf": "^10.4.1",
-    "tus-js-client": "^4.3.1",
     "react-virtuoso": "^4.18.1",
     "read-excel-file": "^9.2.0",
     "rehype-raw": "^7.0.0",
     "remark-gfm": "^4.0.1",
+    "tus-js-client": "^4.3.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {

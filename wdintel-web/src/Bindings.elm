@@ -12903,6 +12903,492 @@ aiAgentMessageCitationEncoder struct =
         ]
 
 
+type alias AiAgentMapRecordInput =
+    { sidc : String
+    , name : String
+    , observationDatetime : Maybe (String)
+    , coordinateSystem : String
+    , x : String
+    , y : String
+    , comments : List (String)
+    , sources : List (AiAgentMessageCitation)
+    }
+
+
+aiAgentMapRecordInputEncoder : AiAgentMapRecordInput -> Json.Encode.Value
+aiAgentMapRecordInputEncoder struct =
+    Json.Encode.object
+        [ ( "sidc", (Json.Encode.string) struct.sidc )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "observationDatetime", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.observationDatetime )
+        , ( "coordinateSystem", (Json.Encode.string) struct.coordinateSystem )
+        , ( "x", (Json.Encode.string) struct.x )
+        , ( "y", (Json.Encode.string) struct.y )
+        , ( "comments", (Json.Encode.list (Json.Encode.string)) struct.comments )
+        , ( "sources", (Json.Encode.list (aiAgentMessageCitationEncoder)) struct.sources )
+        ]
+
+
+type alias AiAgentMapRecord =
+    { id : String
+    , sidc : String
+    , name : String
+    , observationDatetime : Maybe (String)
+    , platformType : String
+    , coordinateSystem : String
+    , originalX : String
+    , originalY : String
+    , x : String
+    , y : String
+    , latitude : Maybe (Float)
+    , longitude : Maybe (Float)
+    , comments : List (String)
+    , sources : List (AiAgentMessageCitation)
+    , warnings : List (String)
+    }
+
+
+aiAgentMapRecordEncoder : AiAgentMapRecord -> Json.Encode.Value
+aiAgentMapRecordEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "sidc", (Json.Encode.string) struct.sidc )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "observationDatetime", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.observationDatetime )
+        , ( "platformType", (Json.Encode.string) struct.platformType )
+        , ( "coordinateSystem", (Json.Encode.string) struct.coordinateSystem )
+        , ( "originalX", (Json.Encode.string) struct.originalX )
+        , ( "originalY", (Json.Encode.string) struct.originalY )
+        , ( "x", (Json.Encode.string) struct.x )
+        , ( "y", (Json.Encode.string) struct.y )
+        , ( "latitude", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.latitude )
+        , ( "longitude", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.longitude )
+        , ( "comments", (Json.Encode.list (Json.Encode.string)) struct.comments )
+        , ( "sources", (Json.Encode.list (aiAgentMessageCitationEncoder)) struct.sources )
+        , ( "warnings", (Json.Encode.list (Json.Encode.string)) struct.warnings )
+        ]
+
+
+type alias AiAgentMapDocument =
+    { id : String
+    , title : String
+    , isMain : Bool
+    , records : List (AiAgentMapRecord)
+    , warnings : List (String)
+    , totalCount : Int
+    , validCount : Int
+    , invalidCount : Int
+    }
+
+
+aiAgentMapDocumentEncoder : AiAgentMapDocument -> Json.Encode.Value
+aiAgentMapDocumentEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "title", (Json.Encode.string) struct.title )
+        , ( "isMain", (Json.Encode.bool) struct.isMain )
+        , ( "records", (Json.Encode.list (aiAgentMapRecordEncoder)) struct.records )
+        , ( "warnings", (Json.Encode.list (Json.Encode.string)) struct.warnings )
+        , ( "totalCount", (Json.Encode.int) struct.totalCount )
+        , ( "validCount", (Json.Encode.int) struct.validCount )
+        , ( "invalidCount", (Json.Encode.int) struct.invalidCount )
+        ]
+
+
+type alias AiAgentMapSummary =
+    { id : String
+    , requestId : String
+    , title : String
+    , isMain : Bool
+    , warnings : List (String)
+    , totalCount : Int
+    , validCount : Int
+    , invalidCount : Int
+    }
+
+
+aiAgentMapSummaryEncoder : AiAgentMapSummary -> Json.Encode.Value
+aiAgentMapSummaryEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "requestId", (Json.Encode.string) struct.requestId )
+        , ( "title", (Json.Encode.string) struct.title )
+        , ( "isMain", (Json.Encode.bool) struct.isMain )
+        , ( "warnings", (Json.Encode.list (Json.Encode.string)) struct.warnings )
+        , ( "totalCount", (Json.Encode.int) struct.totalCount )
+        , ( "validCount", (Json.Encode.int) struct.validCount )
+        , ( "invalidCount", (Json.Encode.int) struct.invalidCount )
+        ]
+
+
+type alias AiAgentMapPrepareReq =
+    { records : List (AiAgentMapRecordInput)
+    }
+
+
+aiAgentMapPrepareReqEncoder : AiAgentMapPrepareReq -> Json.Encode.Value
+aiAgentMapPrepareReqEncoder struct =
+    Json.Encode.object
+        [ ( "records", (Json.Encode.list (aiAgentMapRecordInputEncoder)) struct.records )
+        ]
+
+
+type alias AiAgentMapPrepareRsp =
+    { records : List (AiAgentMapRecord)
+    }
+
+
+aiAgentMapPrepareRspEncoder : AiAgentMapPrepareRsp -> Json.Encode.Value
+aiAgentMapPrepareRspEncoder struct =
+    Json.Encode.object
+        [ ( "records", (Json.Encode.list (aiAgentMapRecordEncoder)) struct.records )
+        ]
+
+
+type alias AiAgentMapGetReq =
+    { requestId : String
+    , mapId : String
+    , revision : Maybe (Int)
+    }
+
+
+aiAgentMapGetReqEncoder : AiAgentMapGetReq -> Json.Encode.Value
+aiAgentMapGetReqEncoder struct =
+    Json.Encode.object
+        [ ( "requestId", (Json.Encode.string) struct.requestId )
+        , ( "mapId", (Json.Encode.string) struct.mapId )
+        , ( "revision", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.revision )
+        ]
+
+
+type alias AiAgentMapIcon =
+    { sidc : String
+    , pngBase64 : String
+    }
+
+
+aiAgentMapIconEncoder : AiAgentMapIcon -> Json.Encode.Value
+aiAgentMapIconEncoder struct =
+    Json.Encode.object
+        [ ( "sidc", (Json.Encode.string) struct.sidc )
+        , ( "pngBase64", (Json.Encode.string) struct.pngBase64 )
+        ]
+
+
+type alias AiAgentMapKmzReq =
+    { requestId : String
+    , mapId : String
+    , revision : Maybe (Int)
+    , icons : List (AiAgentMapIcon)
+    }
+
+
+aiAgentMapKmzReqEncoder : AiAgentMapKmzReq -> Json.Encode.Value
+aiAgentMapKmzReqEncoder struct =
+    Json.Encode.object
+        [ ( "requestId", (Json.Encode.string) struct.requestId )
+        , ( "mapId", (Json.Encode.string) struct.mapId )
+        , ( "revision", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.revision )
+        , ( "icons", (Json.Encode.list (aiAgentMapIconEncoder)) struct.icons )
+        ]
+
+
+type alias AiAgentMapEditTarget =
+    { requestId : String
+    , mapId : String
+    , revision : Int
+    , selectedPointIds : List (String)
+    }
+
+
+aiAgentMapEditTargetEncoder : AiAgentMapEditTarget -> Json.Encode.Value
+aiAgentMapEditTargetEncoder struct =
+    Json.Encode.object
+        [ ( "requestId", (Json.Encode.string) struct.requestId )
+        , ( "mapId", (Json.Encode.string) struct.mapId )
+        , ( "revision", (Json.Encode.int) struct.revision )
+        , ( "selectedPointIds", (Json.Encode.list (Json.Encode.string)) struct.selectedPointIds )
+        ]
+
+
+type alias AiAgentMapSelector =
+    { ids : List (String)
+    , names : List (String)
+    , sidc : Maybe (String)
+    , all : Bool
+    , expect : Maybe (String)
+    }
+
+
+aiAgentMapSelectorEncoder : AiAgentMapSelector -> Json.Encode.Value
+aiAgentMapSelectorEncoder struct =
+    Json.Encode.object
+        [ ( "ids", (Json.Encode.list (Json.Encode.string)) struct.ids )
+        , ( "names", (Json.Encode.list (Json.Encode.string)) struct.names )
+        , ( "sidc", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.sidc )
+        , ( "all", (Json.Encode.bool) struct.all )
+        , ( "expect", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.expect )
+        ]
+
+
+type alias AiAgentMapFieldPatch =
+    { name : Maybe (String)
+    , observationDatetime : Maybe (String)
+    , clearObservationDatetime : Bool
+    , comments : Maybe (List (String))
+    , coordinateSystem : Maybe (String)
+    , x : Maybe (String)
+    , y : Maybe (String)
+    }
+
+
+aiAgentMapFieldPatchEncoder : AiAgentMapFieldPatch -> Json.Encode.Value
+aiAgentMapFieldPatchEncoder struct =
+    Json.Encode.object
+        [ ( "name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.name )
+        , ( "observationDatetime", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.observationDatetime )
+        , ( "clearObservationDatetime", (Json.Encode.bool) struct.clearObservationDatetime )
+        , ( "comments", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.comments )
+        , ( "coordinateSystem", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.coordinateSystem )
+        , ( "x", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.x )
+        , ( "y", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.y )
+        ]
+
+
+type alias AiAgentMapSidcComponents =
+    { group1 : Maybe (String)
+    , context : Maybe (String)
+    , identity : Maybe (String)
+    , symbolSet : Maybe (String)
+    , status : Maybe (String)
+    , headquartersOrTaskForce : Maybe (String)
+    , echelon : Maybe (String)
+    , mainIcon : Maybe (String)
+    , modifier1 : Maybe (String)
+    , modifier2 : Maybe (String)
+    }
+
+
+aiAgentMapSidcComponentsEncoder : AiAgentMapSidcComponents -> Json.Encode.Value
+aiAgentMapSidcComponentsEncoder struct =
+    Json.Encode.object
+        [ ( "group1", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.group1 )
+        , ( "context", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.context )
+        , ( "identity", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.identity )
+        , ( "symbolSet", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.symbolSet )
+        , ( "status", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.status )
+        , ( "headquartersOrTaskForce", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.headquartersOrTaskForce )
+        , ( "echelon", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.echelon )
+        , ( "mainIcon", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.mainIcon )
+        , ( "modifier1", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.modifier1 )
+        , ( "modifier2", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.modifier2 )
+        ]
+
+
+type alias AiAgentMapPatchOp =
+    { op : String
+    , selector : Maybe (AiAgentMapSelector)
+    , record : Maybe (AiAgentMapRecordInput)
+    , fields : Maybe (AiAgentMapFieldPatch)
+    , components : Maybe (AiAgentMapSidcComponents)
+    , sidc : Maybe (String)
+    , title : Maybe (String)
+    }
+
+
+aiAgentMapPatchOpEncoder : AiAgentMapPatchOp -> Json.Encode.Value
+aiAgentMapPatchOpEncoder struct =
+    Json.Encode.object
+        [ ( "op", (Json.Encode.string) struct.op )
+        , ( "selector", (Maybe.withDefault Json.Encode.null << Maybe.map (aiAgentMapSelectorEncoder)) struct.selector )
+        , ( "record", (Maybe.withDefault Json.Encode.null << Maybe.map (aiAgentMapRecordInputEncoder)) struct.record )
+        , ( "fields", (Maybe.withDefault Json.Encode.null << Maybe.map (aiAgentMapFieldPatchEncoder)) struct.fields )
+        , ( "components", (Maybe.withDefault Json.Encode.null << Maybe.map (aiAgentMapSidcComponentsEncoder)) struct.components )
+        , ( "sidc", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.sidc )
+        , ( "title", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.title )
+        ]
+
+
+type alias AiAgentMapEditReq =
+    { requestId : String
+    , mapId : String
+    , expectedRevision : Int
+    , idempotencyKey : String
+    , summary : Maybe (String)
+    , operations : List (AiAgentMapPatchOp)
+    }
+
+
+aiAgentMapEditReqEncoder : AiAgentMapEditReq -> Json.Encode.Value
+aiAgentMapEditReqEncoder struct =
+    Json.Encode.object
+        [ ( "requestId", (Json.Encode.string) struct.requestId )
+        , ( "mapId", (Json.Encode.string) struct.mapId )
+        , ( "expectedRevision", (Json.Encode.int) struct.expectedRevision )
+        , ( "idempotencyKey", (Json.Encode.string) struct.idempotencyKey )
+        , ( "summary", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.summary )
+        , ( "operations", (Json.Encode.list (aiAgentMapPatchOpEncoder)) struct.operations )
+        ]
+
+
+type alias AiAgentMapRevisionReq =
+    { requestId : String
+    , mapId : String
+    , expectedRevision : Int
+    }
+
+
+aiAgentMapRevisionReqEncoder : AiAgentMapRevisionReq -> Json.Encode.Value
+aiAgentMapRevisionReqEncoder struct =
+    Json.Encode.object
+        [ ( "requestId", (Json.Encode.string) struct.requestId )
+        , ( "mapId", (Json.Encode.string) struct.mapId )
+        , ( "expectedRevision", (Json.Encode.int) struct.expectedRevision )
+        ]
+
+
+type alias AiAgentMapRevisionInfo =
+    { revision : Int
+    , parentRevision : Maybe (Int)
+    , origin : String
+    , summary : String
+    , createdAt : String
+    }
+
+
+aiAgentMapRevisionInfoEncoder : AiAgentMapRevisionInfo -> Json.Encode.Value
+aiAgentMapRevisionInfoEncoder struct =
+    Json.Encode.object
+        [ ( "revision", (Json.Encode.int) struct.revision )
+        , ( "parentRevision", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.parentRevision )
+        , ( "origin", (Json.Encode.string) struct.origin )
+        , ( "summary", (Json.Encode.string) struct.summary )
+        , ( "createdAt", (Json.Encode.string) struct.createdAt )
+        ]
+
+
+type alias AiAgentMapWorkspaceReq =
+    { requestId : String
+    , mapId : String
+    }
+
+
+aiAgentMapWorkspaceReqEncoder : AiAgentMapWorkspaceReq -> Json.Encode.Value
+aiAgentMapWorkspaceReqEncoder struct =
+    Json.Encode.object
+        [ ( "requestId", (Json.Encode.string) struct.requestId )
+        , ( "mapId", (Json.Encode.string) struct.mapId )
+        ]
+
+
+type alias AiAgentMapFieldChange =
+    { field : String
+    , before : String
+    , after : String
+    }
+
+
+aiAgentMapFieldChangeEncoder : AiAgentMapFieldChange -> Json.Encode.Value
+aiAgentMapFieldChangeEncoder struct =
+    Json.Encode.object
+        [ ( "field", (Json.Encode.string) struct.field )
+        , ( "before", (Json.Encode.string) struct.before )
+        , ( "after", (Json.Encode.string) struct.after )
+        ]
+
+
+type alias AiAgentMapEditChange =
+    { id : String
+    , name : String
+    , kind : String
+    , latitude : Maybe (Float)
+    , longitude : Maybe (Float)
+    , fields : List (AiAgentMapFieldChange)
+    }
+
+
+aiAgentMapEditChangeEncoder : AiAgentMapEditChange -> Json.Encode.Value
+aiAgentMapEditChangeEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "kind", (Json.Encode.string) struct.kind )
+        , ( "latitude", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.latitude )
+        , ( "longitude", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.longitude )
+        , ( "fields", (Json.Encode.list (aiAgentMapFieldChangeEncoder)) struct.fields )
+        ]
+
+
+type alias AiAgentMapEditDiff =
+    { addedCount : Int
+    , updatedCount : Int
+    , removedCount : Int
+    , changes : List (AiAgentMapEditChange)
+    }
+
+
+aiAgentMapEditDiffEncoder : AiAgentMapEditDiff -> Json.Encode.Value
+aiAgentMapEditDiffEncoder struct =
+    Json.Encode.object
+        [ ( "addedCount", (Json.Encode.int) struct.addedCount )
+        , ( "updatedCount", (Json.Encode.int) struct.updatedCount )
+        , ( "removedCount", (Json.Encode.int) struct.removedCount )
+        , ( "changes", (Json.Encode.list (aiAgentMapEditChangeEncoder)) struct.changes )
+        ]
+
+
+type alias AiAgentMapWorkspaceRsp =
+    { revision : Int
+    , canUndo : Bool
+    , canRedo : Bool
+    , document : AiAgentMapDocument
+    , changes : AiAgentMapEditDiff
+    , revisions : List (AiAgentMapRevisionInfo)
+    }
+
+
+aiAgentMapWorkspaceRspEncoder : AiAgentMapWorkspaceRsp -> Json.Encode.Value
+aiAgentMapWorkspaceRspEncoder struct =
+    Json.Encode.object
+        [ ( "revision", (Json.Encode.int) struct.revision )
+        , ( "canUndo", (Json.Encode.bool) struct.canUndo )
+        , ( "canRedo", (Json.Encode.bool) struct.canRedo )
+        , ( "document", (aiAgentMapDocumentEncoder) struct.document )
+        , ( "changes", (aiAgentMapEditDiffEncoder) struct.changes )
+        , ( "revisions", (Json.Encode.list (aiAgentMapRevisionInfoEncoder)) struct.revisions )
+        ]
+
+
+type alias AiAgentMapEditRsp =
+    { revision : Int
+    , matchedIds : List (String)
+    , addedCount : Int
+    , updatedCount : Int
+    , removedCount : Int
+    , totalCount : Int
+    , truncated : Bool
+    , changes : List (AiAgentMapEditChange)
+    , canUndo : Bool
+    , canRedo : Bool
+    }
+
+
+aiAgentMapEditRspEncoder : AiAgentMapEditRsp -> Json.Encode.Value
+aiAgentMapEditRspEncoder struct =
+    Json.Encode.object
+        [ ( "revision", (Json.Encode.int) struct.revision )
+        , ( "matchedIds", (Json.Encode.list (Json.Encode.string)) struct.matchedIds )
+        , ( "addedCount", (Json.Encode.int) struct.addedCount )
+        , ( "updatedCount", (Json.Encode.int) struct.updatedCount )
+        , ( "removedCount", (Json.Encode.int) struct.removedCount )
+        , ( "totalCount", (Json.Encode.int) struct.totalCount )
+        , ( "truncated", (Json.Encode.bool) struct.truncated )
+        , ( "changes", (Json.Encode.list (aiAgentMapEditChangeEncoder)) struct.changes )
+        , ( "canUndo", (Json.Encode.bool) struct.canUndo )
+        , ( "canRedo", (Json.Encode.bool) struct.canRedo )
+        ]
+
+
 type alias AiAgentMessageItem =
     { requestId : String
     , requestState : String
@@ -12910,6 +13396,7 @@ type alias AiAgentMessageItem =
     , content : String
     , createdAt : Int
     , citations : List (AiAgentMessageCitation)
+    , maps : List (AiAgentMapSummary)
     }
 
 
@@ -12922,6 +13409,7 @@ aiAgentMessageItemEncoder struct =
         , ( "content", (Json.Encode.string) struct.content )
         , ( "createdAt", (Json.Encode.int) struct.createdAt )
         , ( "citations", (Json.Encode.list (aiAgentMessageCitationEncoder)) struct.citations )
+        , ( "maps", (Json.Encode.list (aiAgentMapSummaryEncoder)) struct.maps )
         ]
 
 
@@ -12951,6 +13439,7 @@ type alias AiAgentRequestCreateReq =
     { conversationId : Maybe (String)
     , aiEngineId : Maybe (String)
     , prompt : String
+    , mapEdit : Maybe (AiAgentMapEditTarget)
     }
 
 
@@ -12960,6 +13449,7 @@ aiAgentRequestCreateReqEncoder struct =
         [ ( "conversationId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.conversationId )
         , ( "aiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineId )
         , ( "prompt", (Json.Encode.string) struct.prompt )
+        , ( "mapEdit", (Maybe.withDefault Json.Encode.null << Maybe.map (aiAgentMapEditTargetEncoder)) struct.mapEdit )
         ]
 
 
@@ -23151,6 +23641,249 @@ aiAgentMessageCitationDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageIdentifier" (Json.Decode.string)))
 
 
+aiAgentMapRecordInputDecoder : Json.Decode.Decoder AiAgentMapRecordInput
+aiAgentMapRecordInputDecoder =
+    Json.Decode.succeed AiAgentMapRecordInput
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sidc" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "observationDatetime" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coordinateSystem" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "x" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "y" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comments" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sources" (Json.Decode.list (aiAgentMessageCitationDecoder))))
+
+
+aiAgentMapRecordDecoder : Json.Decode.Decoder AiAgentMapRecord
+aiAgentMapRecordDecoder =
+    Json.Decode.succeed AiAgentMapRecord
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sidc" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "observationDatetime" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "platformType" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coordinateSystem" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "originalX" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "originalY" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "x" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "y" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "latitude" (Json.Decode.nullable (Json.Decode.float))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "longitude" (Json.Decode.nullable (Json.Decode.float))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comments" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sources" (Json.Decode.list (aiAgentMessageCitationDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "warnings" (Json.Decode.list (Json.Decode.string))))
+
+
+aiAgentMapDocumentDecoder : Json.Decode.Decoder AiAgentMapDocument
+aiAgentMapDocumentDecoder =
+    Json.Decode.succeed AiAgentMapDocument
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "title" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "isMain" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "records" (Json.Decode.list (aiAgentMapRecordDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "warnings" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "totalCount" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "validCount" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "invalidCount" (Json.Decode.int)))
+
+
+aiAgentMapSummaryDecoder : Json.Decode.Decoder AiAgentMapSummary
+aiAgentMapSummaryDecoder =
+    Json.Decode.succeed AiAgentMapSummary
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "requestId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "title" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "isMain" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "warnings" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "totalCount" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "validCount" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "invalidCount" (Json.Decode.int)))
+
+
+aiAgentMapPrepareReqDecoder : Json.Decode.Decoder AiAgentMapPrepareReq
+aiAgentMapPrepareReqDecoder =
+    Json.Decode.succeed AiAgentMapPrepareReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "records" (Json.Decode.list (aiAgentMapRecordInputDecoder))))
+
+
+aiAgentMapPrepareRspDecoder : Json.Decode.Decoder AiAgentMapPrepareRsp
+aiAgentMapPrepareRspDecoder =
+    Json.Decode.succeed AiAgentMapPrepareRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "records" (Json.Decode.list (aiAgentMapRecordDecoder))))
+
+
+aiAgentMapGetReqDecoder : Json.Decode.Decoder AiAgentMapGetReq
+aiAgentMapGetReqDecoder =
+    Json.Decode.succeed AiAgentMapGetReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "requestId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mapId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "revision" (Json.Decode.nullable (Json.Decode.int))))
+
+
+aiAgentMapIconDecoder : Json.Decode.Decoder AiAgentMapIcon
+aiAgentMapIconDecoder =
+    Json.Decode.succeed AiAgentMapIcon
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sidc" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "pngBase64" (Json.Decode.string)))
+
+
+aiAgentMapKmzReqDecoder : Json.Decode.Decoder AiAgentMapKmzReq
+aiAgentMapKmzReqDecoder =
+    Json.Decode.succeed AiAgentMapKmzReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "requestId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mapId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "revision" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "icons" (Json.Decode.list (aiAgentMapIconDecoder))))
+
+
+aiAgentMapEditTargetDecoder : Json.Decode.Decoder AiAgentMapEditTarget
+aiAgentMapEditTargetDecoder =
+    Json.Decode.succeed AiAgentMapEditTarget
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "requestId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mapId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "revision" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selectedPointIds" (Json.Decode.list (Json.Decode.string))))
+
+
+aiAgentMapSelectorDecoder : Json.Decode.Decoder AiAgentMapSelector
+aiAgentMapSelectorDecoder =
+    Json.Decode.succeed AiAgentMapSelector
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ids" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "names" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sidc" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "all" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "expect" (Json.Decode.nullable (Json.Decode.string))))
+
+
+aiAgentMapFieldPatchDecoder : Json.Decode.Decoder AiAgentMapFieldPatch
+aiAgentMapFieldPatchDecoder =
+    Json.Decode.succeed AiAgentMapFieldPatch
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "observationDatetime" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "clearObservationDatetime" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comments" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coordinateSystem" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "x" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "y" (Json.Decode.nullable (Json.Decode.string))))
+
+
+aiAgentMapSidcComponentsDecoder : Json.Decode.Decoder AiAgentMapSidcComponents
+aiAgentMapSidcComponentsDecoder =
+    Json.Decode.succeed AiAgentMapSidcComponents
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group1" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "context" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "identity" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "symbolSet" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "headquartersOrTaskForce" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "echelon" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mainIcon" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modifier1" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modifier2" (Json.Decode.nullable (Json.Decode.string))))
+
+
+aiAgentMapPatchOpDecoder : Json.Decode.Decoder AiAgentMapPatchOp
+aiAgentMapPatchOpDecoder =
+    Json.Decode.succeed AiAgentMapPatchOp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "op" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selector" (Json.Decode.nullable (aiAgentMapSelectorDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "record" (Json.Decode.nullable (aiAgentMapRecordInputDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fields" (Json.Decode.nullable (aiAgentMapFieldPatchDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "components" (Json.Decode.nullable (aiAgentMapSidcComponentsDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sidc" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "title" (Json.Decode.nullable (Json.Decode.string))))
+
+
+aiAgentMapEditReqDecoder : Json.Decode.Decoder AiAgentMapEditReq
+aiAgentMapEditReqDecoder =
+    Json.Decode.succeed AiAgentMapEditReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "requestId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mapId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "expectedRevision" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "idempotencyKey" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "summary" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operations" (Json.Decode.list (aiAgentMapPatchOpDecoder))))
+
+
+aiAgentMapRevisionReqDecoder : Json.Decode.Decoder AiAgentMapRevisionReq
+aiAgentMapRevisionReqDecoder =
+    Json.Decode.succeed AiAgentMapRevisionReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "requestId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mapId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "expectedRevision" (Json.Decode.int)))
+
+
+aiAgentMapRevisionInfoDecoder : Json.Decode.Decoder AiAgentMapRevisionInfo
+aiAgentMapRevisionInfoDecoder =
+    Json.Decode.succeed AiAgentMapRevisionInfo
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "revision" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "parentRevision" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "origin" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "summary" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.string)))
+
+
+aiAgentMapWorkspaceReqDecoder : Json.Decode.Decoder AiAgentMapWorkspaceReq
+aiAgentMapWorkspaceReqDecoder =
+    Json.Decode.succeed AiAgentMapWorkspaceReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "requestId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mapId" (Json.Decode.string)))
+
+
+aiAgentMapFieldChangeDecoder : Json.Decode.Decoder AiAgentMapFieldChange
+aiAgentMapFieldChangeDecoder =
+    Json.Decode.succeed AiAgentMapFieldChange
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "field" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "before" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "after" (Json.Decode.string)))
+
+
+aiAgentMapEditChangeDecoder : Json.Decode.Decoder AiAgentMapEditChange
+aiAgentMapEditChangeDecoder =
+    Json.Decode.succeed AiAgentMapEditChange
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kind" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "latitude" (Json.Decode.nullable (Json.Decode.float))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "longitude" (Json.Decode.nullable (Json.Decode.float))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fields" (Json.Decode.list (aiAgentMapFieldChangeDecoder))))
+
+
+aiAgentMapEditDiffDecoder : Json.Decode.Decoder AiAgentMapEditDiff
+aiAgentMapEditDiffDecoder =
+    Json.Decode.succeed AiAgentMapEditDiff
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "addedCount" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updatedCount" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "removedCount" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "changes" (Json.Decode.list (aiAgentMapEditChangeDecoder))))
+
+
+aiAgentMapWorkspaceRspDecoder : Json.Decode.Decoder AiAgentMapWorkspaceRsp
+aiAgentMapWorkspaceRspDecoder =
+    Json.Decode.succeed AiAgentMapWorkspaceRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "revision" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "canUndo" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "canRedo" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "document" (aiAgentMapDocumentDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "changes" (aiAgentMapEditDiffDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "revisions" (Json.Decode.list (aiAgentMapRevisionInfoDecoder))))
+
+
+aiAgentMapEditRspDecoder : Json.Decode.Decoder AiAgentMapEditRsp
+aiAgentMapEditRspDecoder =
+    Json.Decode.succeed AiAgentMapEditRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "revision" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "matchedIds" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "addedCount" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updatedCount" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "removedCount" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "totalCount" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "truncated" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "changes" (Json.Decode.list (aiAgentMapEditChangeDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "canUndo" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "canRedo" (Json.Decode.bool)))
+
+
 aiAgentMessageItemDecoder : Json.Decode.Decoder AiAgentMessageItem
 aiAgentMessageItemDecoder =
     Json.Decode.succeed AiAgentMessageItem
@@ -23160,6 +23893,7 @@ aiAgentMessageItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "citations" (Json.Decode.list (aiAgentMessageCitationDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "maps" (Json.Decode.list (aiAgentMapSummaryDecoder))))
 
 
 aiAgentConversationDetailDecoder : Json.Decode.Decoder AiAgentConversationDetail
@@ -23179,6 +23913,7 @@ aiAgentRequestCreateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "conversationId" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "prompt" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mapEdit" (Json.Decode.nullable (aiAgentMapEditTargetDecoder))))
 
 
 aiAgentRequestCreateRspDecoder : Json.Decode.Decoder AiAgentRequestCreateRsp

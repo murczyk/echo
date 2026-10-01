@@ -1,5 +1,23 @@
 {
   "migrations": {
+    "echo:m20260929_195200_ai_agent_map_workspace": {
+      "changes": [
+        { "table": "public.ai_agent_map", "strategy": "excluded" },
+        { "table": "public.ai_agent_map_revision", "strategy": "excluded" },
+        {
+          "table": "public.ai_agent_request_map_target",
+          "strategy": "excluded"
+        }
+      ]
+    },
+    "echo:m20260929_152018_ai_agent_map_artifacts": {
+      "changes": [
+        {
+          "table": "public.ai_agent_request_event",
+          "strategy": "excluded"
+        }
+      ]
+    },
     "echo:m20260928_145311_enable_message_auto_parse": {
       "changes": []
     },

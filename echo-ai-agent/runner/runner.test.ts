@@ -27,10 +27,12 @@ import {
   testConnection,
   completedRepairText,
   validateFinalAssistantMessage,
+  formatEchoHttpError,
   validatePayload,
   validateSkill,
   writeModelsFile,
 } from "./runner.ts";
+import { EDIT_GUIDANCE, MAP_GUIDANCE } from "./maps.ts";
 
 test("accepts a non-empty final assistant response", () => {
   assert.doesNotThrow(() =>
@@ -934,11 +936,51 @@ test("states the exact 90-day callsign windows for a fixed Kyiv instant", () => 
   assert.match(prompt, /Explicit user periods still take precedence/);
 });
 
+test("accepts a map edit target and keeps ordinary prompts unchanged", () => {
+  const plain = systemPrompt(validatePayload(normalPayload, false));
+  assert.match(plain, /Never attempt mutation/);
+  assert.equal(plain.includes(EDIT_GUIDANCE), false);
+  assert.match(plain, /When asked for a map or CSV\/KMZ from points/);
+  const mapEdit = {
+    requestId: "11111111-1111-4111-8111-111111111111",
+    mapId: "22222222-2222-4222-8222-222222222222",
+    revision: 1,
+    selectedPointIds: ["33333333-3333-5333-8333-333333333333"],
+  };
+  const editing = systemPrompt(validatePayload({ ...normalPayload, mapEdit }, false));
+  assert.ok(editing.includes(MAP_GUIDANCE));
+  assert.ok(editing.includes(EDIT_GUIDANCE));
+  assert.equal(
+    validateSkill({
+      method: "POST",
+      path: "/api/ai-agent/maps/edit",
+      skill: "map_edit",
+      label: "Оновлюю перегляд мапи",
+      requestKind: "mapEdit",
+    }).requestKind,
+    "mapEdit",
+  );
+  assert.throws(() =>
+    validateSkill({
+      method: "POST",
+      path: "/api/ai-agent/maps/get",
+      skill: "map_edit",
+      label: "Оновлюю перегляд мапи",
+      requestKind: "mapEdit",
+    }),
+  );
+  assert.equal(
+    formatEchoHttpError(409, "plain", { message: "  Мапа змінилася.\nОновіть перегляд  " }),
+    "Echo returned HTTP 409: Мапа змінилася. Оновіть перегляд",
+  );
+  assert.equal(formatEchoHttpError(500, "   ", null), "Echo returned HTTP 500");
+});
+
 test("announces the runner protocol and harness release", () => {
   assert.deepEqual(runnerHello(), {
     type: "runner_hello",
     protocolVersion: 1,
-    harnessRelease: "2026.09.29.3",
+    harnessRelease: "2026.10.01.2",
   });
 });
 

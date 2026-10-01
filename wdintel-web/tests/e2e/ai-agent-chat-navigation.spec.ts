@@ -83,6 +83,111 @@ async function openHistory(page: Page) {
   await expect(page.locator('ai-agent-chat aside')).toHaveAttribute('aria-hidden', 'false');
 }
 
+for (const width of [1280, 320]) {
+  test(`@regression #3064 composer stops a restored long task and preserves the draft at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await installChat(page, true);
+    const requestId = 'request-stop';
+    let cancelled = false;
+    let attempts = 0;
+    let acceptStop!: () => void;
+    let finishStream!: () => void;
+    const stopAccepted = new Promise<void>((resolve) => {
+      acceptStop = resolve;
+    });
+    const streamFinished = new Promise<void>((resolve) => {
+      finishStream = resolve;
+    });
+    const partial = Array.from(
+      { length: 80 },
+      (_, index) => `Часткова відповідь ${index + 1}.`,
+    ).join('\n\n');
+    await page.route('**/api/ai-agent/conversations/get', (route) =>
+      route.fulfill({
+        json: {
+          ...conversation,
+          messages: [
+            {
+              requestId,
+              requestState: cancelled ? 'cancelled' : 'running',
+              role: 'user',
+              content: 'Тривалий запит',
+              createdAt: 1,
+            },
+            {
+              requestId,
+              requestState: cancelled ? 'cancelled' : 'running',
+              role: 'assistant',
+              content: partial,
+              createdAt: 1,
+            },
+          ],
+        },
+      }),
+    );
+    await page.route('**/api/ai-agent/requests/*/events*', async (route) => {
+      await streamFinished;
+      await route.fulfill({
+        contentType: 'text/event-stream',
+        body: `data: ${JSON.stringify({ sequence: 1, eventType: 'cancellation', createdAt: Date.now(), payloadJson: '{}' })}\n\n`,
+      });
+    });
+    await page.route('**/api/ai-agent/requests/cancel', async (route) => {
+      expect(route.request().postDataJSON()).toEqual({ requestId });
+      attempts += 1;
+      if (attempts === 1) return route.fulfill({ status: 500, body: 'Сервіс недоступний' });
+      await stopAccepted;
+      cancelled = true;
+      await route.fulfill({ json: { state: 'cancelled' } });
+    });
+    try {
+      await page.goto(`/?conversation=${conversationId}`);
+      const chat = page.locator('ai-agent-chat');
+      const input = chat.getByPlaceholder('Повідомлення');
+      const stop = chat.getByRole('button', { name: 'Зупинити запит', exact: true });
+      await expect(stop).toBeVisible();
+      await expect(stop).toBeInViewport();
+      const box = await stop.boundingBox();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+      await input.fill('Чернетка наступного запиту');
+      await stop.focus();
+      const failedAt = Date.now();
+      await page.keyboard.press('Enter');
+      await expect(
+        page.getByRole('alert').filter({ hasText: 'Не вдалося скасувати запит' }),
+      ).toBeVisible();
+      await expect(stop).toBeEnabled();
+      await expect(input).toHaveValue('Чернетка наступного запиту');
+      await page.getByRole('button', { name: 'Закрити сповіщення', exact: true }).click();
+      await expect(
+        page.getByRole('alert').filter({ hasText: 'Не вдалося скасувати запит' }),
+      ).toHaveCount(0);
+      await expect.poll(() => Date.now() - failedAt).toBeGreaterThan(410);
+      await stop.click();
+      await expect.poll(() => attempts).toBe(2);
+      await expect(stop).toBeDisabled();
+      await stop.evaluate((button: HTMLButtonElement) => button.click());
+      expect(attempts).toBe(2);
+      acceptStop();
+      finishStream();
+      await expect(stop).toHaveCount(0);
+      await expect(chat).toContainText(/скасовано/i);
+      await expect(chat).toContainText('Часткова відповідь 80.');
+      await expect(input).toHaveValue('Чернетка наступного запиту');
+      await page.reload();
+      await expect(chat).toContainText(/скасовано/i);
+      await expect(chat).toContainText('Часткова відповідь 80.');
+      await expect(stop).toHaveCount(0);
+    } finally {
+      acceptStop();
+      finishStream();
+    }
+  });
+}
+
 test('@regression #3064 parallel searches stream independent activity before the answer finishes', async ({
   page,
 }) => {
