@@ -620,7 +620,11 @@ async fn run_request_inner(
             None
         };
     let history = load_history(env, request).await?;
-    let runner_payload = runner_payload_for_provider(
+    let map_edit =
+        super::maps::workspace::load_request_target(&env.dbx, request.id)
+            .await
+            .c(h!())?;
+    let mut runner_payload = runner_payload_for_provider(
         json!({
             "echoPublicHost": env.config.public_host,
             "modelName": ai_engine.model_name,
@@ -647,6 +651,9 @@ async fn run_request_inner(
         ai_engine.token,
         gateway_capability,
     );
+    if let Some(map_edit) = map_edit {
+        runner_payload["mapEdit"] = serde_json::to_value(map_edit).c(h!())?;
+    }
     let payload = bounded_runner_payload(runner_payload, history)?;
     let dispatcher = DispatcherClient::from_env(env).await?;
     let mut stream = dispatcher

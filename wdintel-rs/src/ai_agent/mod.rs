@@ -397,6 +397,17 @@ pub async fn create_request(
         settings.mattermost_chat_enabled,
     )
     .await?;
+    if let Some(target) = &req.map_edit {
+        maps::workspace::store_request_target(
+            &txn,
+            human.id,
+            conversation.id,
+            request_id,
+            target,
+        )
+        .await
+        .c(h!())?;
+    }
     let conversation_id = conversation.id;
     let mut conversation = conversation.into_active_model();
     conversation.updated_at = Set(now);

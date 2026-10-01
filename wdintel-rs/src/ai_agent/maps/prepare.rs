@@ -3,7 +3,7 @@ use crate::config::*;
 use crate::h;
 use crate::types::ShortContext;
 
-const MISSING_SIDC_WARNING: &str =
+pub(super) const MISSING_SIDC_WARNING: &str =
     "SIDC не надано; використано стандартну позначку";
 
 fn bounded(value: &str) -> bool {
@@ -59,6 +59,7 @@ pub fn prepare_record(
     let position =
         prepare_position(&x, &y, &input.coordinate_system, &mut warnings);
     Ok(AiAgentMapRecord {
+        id: uuid::Uuid::now_v7().to_string(),
         sidc,
         name: input.name.trim().to_string(),
         observation_datetime,
@@ -223,6 +224,66 @@ fn sidc_input(record: &AiAgentMapRecord) -> String {
     }
 }
 
+pub(super) fn refresh_coordinates(
+    record: &mut AiAgentMapRecord,
+    coordinate_system: &str,
+    original_x: &str,
+    original_y: &str,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        bounded(coordinate_system)
+            && bounded(original_x)
+            && bounded(original_y)
+            && !coordinate_system.trim().is_empty(),
+        "Map record exceeds field limits"
+    );
+    let x = normalize_component(original_x);
+    let y = normalize_component(original_y);
+    let mut warnings = record
+        .warnings
+        .iter()
+        .filter(|warning| !is_coordinate_warning(warning))
+        .cloned()
+        .collect::<Vec<_>>();
+    let position = prepare_position(&x, &y, coordinate_system, &mut warnings);
+    record.coordinate_system = coordinate_system.to_string();
+    record.original_x = original_x.to_string();
+    record.original_y = original_y.to_string();
+    record.x = x;
+    record.y = y;
+    record.latitude = position.map(|point| point.0);
+    record.longitude = position.map(|point| point.1);
+    record.warnings = warnings;
+    Ok(())
+}
+
+pub(super) fn normalize_comments(
+    comments: Vec<String>,
+) -> anyhow::Result<Vec<String>> {
+    anyhow::ensure!(
+        comments.len() <= AI_AGENT_MAP_MAX_COMMENTS
+            && comments.iter().all(|value| bounded(value)),
+        "Map record exceeds field limits"
+    );
+    Ok(comments
+        .into_iter()
+        .map(|comment| {
+            comment
+                .replace(['"', '“', '”', '«', '»'], "")
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .collect())
+}
+
+fn is_coordinate_warning(warning: &str) -> bool {
+    warning.starts_with("Некоректна координата ")
+        || warning == "Непідтримувана система координат"
+        || warning.starts_with("Координати поза очікуваною територією")
+        || warning.starts_with("Не вдалося перетворити координати")
+}
+
 pub fn canonicalize(
     mut document: AiAgentMapDocument,
 ) -> anyhow::Result<AiAgentMapDocument> {
@@ -234,6 +295,11 @@ pub fn canonicalize(
             && document.records.len() <= AI_AGENT_MAP_MAX_RECORDS,
         "Invalid map document"
     );
+    let ids = document
+        .records
+        .iter()
+        .map(|record| record.id.clone())
+        .collect::<Vec<_>>();
     document.records = document
         .records
         .into_iter()
@@ -251,6 +317,11 @@ pub fn canonicalize(
         })
         .collect::<anyhow::Result<Vec<_>>>()
         .c(h!())?;
+    for (record, id) in document.records.iter_mut().zip(ids) {
+        if !id.is_empty() {
+            record.id = id;
+        }
+    }
     document.total_count = document.records.len();
     document.valid_count = document
         .records

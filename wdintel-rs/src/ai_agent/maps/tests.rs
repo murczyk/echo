@@ -155,7 +155,7 @@ fn issue_3064_kmz_escapes_metadata_and_omits_invalid_geometry() {
     let document = document(vec![record.clone(), record, invalid.clone()]);
     let icons = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../wdintel-web/static/img/google_earth_icons");
-    let bytes = export::kmz(&document, &icons).unwrap();
+    let bytes = export::kmz(&document, &icons, &Default::default()).unwrap();
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
     assert!(archive.by_name("10062000001209020000.png").is_ok());
     let mut kml = String::new();
@@ -176,5 +176,103 @@ fn issue_3064_kmz_escapes_metadata_and_omits_invalid_geometry() {
     assert!(kml.contains("<coordinates>33.63917508028498,47.068994364500"));
     let document = self::document(vec![invalid]);
     assert!(export::csv(&document).is_ok());
-    assert!(export::kmz(&document, &icons).is_err());
+    assert!(export::kmz(&document, &icons, &Default::default()).is_err());
+}
+
+#[test]
+fn missing_kmz_icon_is_an_identity_png() {
+    let base = prepare::prepare_record(input("5215227", "6548669")).unwrap();
+    let mut records = Vec::new();
+    for sidc in [
+        "10031000001211020000",
+        "10051000001211020000",
+        "10061000001211020000",
+    ] {
+        let mut record = base.clone();
+        record.sidc = sidc.to_string();
+        records.push(record);
+    }
+    let document = AiAgentMapDocument {
+        id: "11111111-1111-4111-8111-111111111111".to_string(),
+        title: "Іконки".to_string(),
+        is_main: true,
+        records,
+        warnings: Vec::new(),
+        total_count: 3,
+        valid_count: 3,
+        invalid_count: 0,
+    };
+    let bytes = export::kmz(
+        &document,
+        Path::new("/no/such/echo-icons"),
+        &Default::default(),
+    )
+    .unwrap();
+    let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
+    let friend = png_entry(&mut archive, "10031000001211020000.png");
+    let suspect = png_entry(&mut archive, "10051000001211020000.png");
+    let hostile = png_entry(&mut archive, "10061000001211020000.png");
+    for icon in [&friend, &suspect, &hostile] {
+        assert_eq!(&icon[..8], b"\x89PNG\r\n\x1a\n");
+    }
+    assert!(friend.windows(3).any(|pixel| pixel == [0, 168, 220]));
+    assert!(hostile.windows(3).any(|pixel| pixel == [255, 0, 0]));
+    assert_ne!(friend, hostile);
+    assert_ne!(suspect, hostile);
+}
+
+// Regression: https://github.com/echoua/echo/issues/3064
+#[test]
+fn browser_rendered_icons_take_precedence_and_invalid_images_are_rejected() {
+    use base64::Engine;
+    let png = b"\x89PNG\r\n\x1a\nrendered".to_vec();
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&png);
+    let icon = |sidc: &str, png_base64: &str| AiAgentMapIcon {
+        sidc: sidc.to_string(),
+        png_base64: png_base64.to_string(),
+    };
+    let icons = export::decode_icons(&[icon("10031000001211020000", &encoded)])
+        .unwrap();
+    assert!(export::decode_icons(&[icon("1003", &encoded)]).is_err());
+    assert!(export::decode_icons(&[icon(
+        "10031000001211020000",
+        &base64::engine::general_purpose::STANDARD.encode(b"<svg/>")
+    )])
+    .is_err());
+    let mut record = prepare::prepare_record(AiAgentMapRecordInput {
+        sidc: "10031000001211020000".to_string(),
+        name: "Точка".to_string(),
+        observation_datetime: None,
+        coordinate_system: "msk2000".to_string(),
+        x: "5215227".to_string(),
+        y: "6548669".to_string(),
+        comments: Vec::new(),
+        sources: Vec::new(),
+    })
+    .unwrap();
+    record.id = "33333333-3333-4333-8333-333333333333".to_string();
+    let document = AiAgentMapDocument {
+        id: "11111111-1111-4111-8111-111111111111".to_string(),
+        title: "Іконки".to_string(),
+        is_main: true,
+        records: vec![record],
+        warnings: Vec::new(),
+        total_count: 1,
+        valid_count: 1,
+        invalid_count: 0,
+    };
+    let bytes =
+        export::kmz(&document, Path::new("/no/such/dir"), &icons).unwrap();
+    let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
+    assert_eq!(png_entry(&mut archive, "10031000001211020000.png"), png);
+}
+
+fn png_entry(
+    archive: &mut zip::ZipArchive<Cursor<Vec<u8>>>,
+    name: &str,
+) -> Vec<u8> {
+    let mut file = archive.by_name(name).unwrap();
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).unwrap();
+    bytes
 }

@@ -444,6 +444,7 @@ mod m20260927_112500_ai_agent_citation_events;
 
 mod m20260928_145311_enable_message_auto_parse;
 mod m20260929_152018_ai_agent_map_artifacts;
+mod m20260929_195200_ai_agent_map_workspace;
 
 pub struct Migrator;
 
@@ -1060,6 +1061,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260927_112500_ai_agent_citation_events::Migration),
             Box::new(m20260928_145311_enable_message_auto_parse::Migration),
             Box::new(m20260929_152018_ai_agent_map_artifacts::Migration),
+            Box::new(m20260929_195200_ai_agent_map_workspace::Migration),
         ]
     }
 }

@@ -123,6 +123,8 @@ pub struct AiAgentRequestCreateReq {
     pub conversation_id: Option<String>,
     pub ai_engine_id: Option<String>,
     pub prompt: String,
+    #[serde(default)]
+    pub map_edit: Option<super::maps::types::AiAgentMapEditTarget>,
 }
 
 #[derive(

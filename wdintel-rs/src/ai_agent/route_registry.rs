@@ -27,6 +27,13 @@ pub const ROUTES: &[ReadOnlyRoute] = &[
         request_kind: "mapDocument",
     },
     ReadOnlyRoute {
+        method: "POST",
+        path: "/api/ai-agent/maps/edit",
+        skill: "map_edit",
+        label: "Оновлюю перегляд мапи",
+        request_kind: "mapEdit",
+    },
+    ReadOnlyRoute {
         method: "GET",
         path: "/api/user",
         skill: "current_user",
@@ -177,6 +184,7 @@ mod tests {
                     | "messageUuids"
                     | "mapRecords"
                     | "mapDocument"
+                    | "mapEdit"
             ));
         }
         let daily_activity = ROUTES

@@ -103,6 +103,7 @@ pub fn maps() -> anyhow::Result<()> {
                             std::path::Path::new(
                                 "wdintel-web/static/img/google_earth_icons",
                             ),
+                            &Default::default(),
                         )
                         .c(h!())?,
                     ),

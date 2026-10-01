@@ -1,8 +1,10 @@
+pub mod edit;
 pub mod export;
 pub mod prepare;
 #[cfg(test)]
 mod tests;
 pub mod types;
+pub mod workspace;
 
 use self::types::*;
 use crate::config::AI_AGENT_MAP_BATCH_MAX_RECORDS;
@@ -184,15 +186,6 @@ async fn check_sources(
     Ok(())
 }
 
-async fn authorized_document(
-    env: &Env,
-    user: &Identity,
-    req: &AiAgentMapGetReq,
-) -> Result<AiAgentMapDocument, AppError> {
-    let owner_id = owner_id(env, user).await.c(h!())?;
-    document_for_owner(env, owner_id, req).await
-}
-
 pub(super) async fn document_for_owner(
     env: &Env,
     owner_id: Uuid,
@@ -251,33 +244,55 @@ pub async fn get_map(
     env: Data<Env>,
     req: Json<AiAgentMapGetReq>,
 ) -> Result<Json<AiAgentMapDocument>, AppError> {
-    Ok(Json(authorized_document(&env, &user, &req).await.c(h!())?))
+    let owner_id = owner_id(&env, &user).await.c(h!())?;
+    Ok(Json(
+        workspace::document_for_view(&env, owner_id, &req)
+            .await
+            .c(h!())?,
+    ))
 }
 
 async fn download(
     env: &Env,
     user: &Identity,
     req: &AiAgentMapGetReq,
-    format: &str,
+    kmz_icons: Option<&[AiAgentMapIcon]>,
 ) -> Result<HttpResponse, AppError> {
     super::access::current_human_login(&env.dbx, user, false)
         .await
         .c(h!())?;
-    let document = authorized_document(env, user, req).await.c(h!())?;
-    let (content_type, bytes) = if format == "csv" {
-        ("text/csv; charset=utf-8", export::csv(&document).c(h!())?)
-    } else {
-        if document.valid_count == 0 {
-            return Err(AppError::BL {
-                msg: "Мапа не містить коректних точок; доступний CSV"
-                    .to_string(),
-            });
-        }
-        (
-            "application/vnd.google-earth.kmz",
-            export::kmz(&document, &crate::icons::get_icon_path(&env.config))
+    let owner_id = owner_id(env, user).await.c(h!())?;
+    let document = workspace::document_for_view(env, owner_id, req)
+        .await
+        .c(h!())?;
+    let (format, content_type, bytes) = match kmz_icons {
+        None => (
+            "csv",
+            "text/csv; charset=utf-8",
+            export::csv(&document).c(h!())?,
+        ),
+        Some(icons) => {
+            if document.valid_count == 0 {
+                return Err(AppError::BL {
+                    msg: "Мапа не містить коректних точок; доступний CSV"
+                        .to_string(),
+                });
+            }
+            let icons =
+                export::decode_icons(icons).map_err(|error| AppError::BL {
+                    msg: error.to_string(),
+                })?;
+            (
+                "kmz",
+                "application/vnd.google-earth.kmz",
+                export::kmz(
+                    &document,
+                    &crate::icons::get_icon_path(&env.config),
+                    &icons,
+                )
                 .c(h!())?,
-        )
+            )
+        }
     };
     Ok(HttpResponse::Ok()
         .content_type(content_type)
@@ -295,14 +310,20 @@ pub async fn download_csv(
     env: Data<Env>,
     req: Json<AiAgentMapGetReq>,
 ) -> Result<HttpResponse, AppError> {
-    download(&env, &user, &req, "csv").await
+    download(&env, &user, &req, None).await
 }
 
 #[post("/api/ai-agent/maps/kmz")]
 pub async fn download_kmz(
     user: Identity,
     env: Data<Env>,
-    req: Json<AiAgentMapGetReq>,
+    req: Json<AiAgentMapKmzReq>,
 ) -> Result<HttpResponse, AppError> {
-    download(&env, &user, &req, "kmz").await
+    let req = req.into_inner();
+    let get = AiAgentMapGetReq {
+        request_id: req.request_id,
+        map_id: req.map_id,
+        revision: req.revision,
+    };
+    download(&env, &user, &get, Some(&req.icons)).await
 }
