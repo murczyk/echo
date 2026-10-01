@@ -97,8 +97,9 @@ free-form scripts, so the runner adds simpler paths and checks:
   missing `Дата`), target coordinates as written (malformed components are
   kept for validation) and the full report as comment. A SIDC in the report is
   kept; `symbol` (a SIDC or words such as «дружній БпЛА») applies to the rest.
-  Units keep qualifiers («104 гв. дшп»); operator callsigns are never used as
-  names. A block counts
+  Units keep qualifiers («104 гв. дшп»); without a unit field, unit
+  designations from the posting header are used; operator callsigns and
+  poster names are never used as names. A block counts
   as a report only when it has report fields, not when a sentence merely names
   the format. Its `sourceCount` becomes the expected record count for that
   draft. When the prompt contains such reports, the system prompt names their

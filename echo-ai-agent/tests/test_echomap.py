@@ -248,6 +248,13 @@ class RecipeTest(unittest.TestCase):
         emit_records([record for record in parsed if '3 дшб' in record.name])
         self.assertEqual(len(state.result()['records']), 1)
 
+    def test_header_units_name_reports_without_a_unit_field(self):
+        named = '[25.09.2026 1:00] 2 дшб 328 дшп: Детали полета\nДата: 24.09.2026\nКоординаты цели: 5272881, 6679505\n'
+        poster = '[25.09.2026 1:00] Vladislav: Детали полета\nДата: 24.09.2026\nКоординаты цели: 5272881, 6679505\n'
+        self.assertEqual(recipes._flight_record(named, None)[0].name, '2 дшб 328 дшп')
+        self.assertEqual(recipes._flight_record(poster, None)[0].name, 'Політ')
+        self.assertEqual(recipes._header_unit('[25.09.2026 0:54] БПС 3 дшб: Детали полета\n'), '3 дшб')
+
     def test_message_dates_use_kyiv_time(self):
         self.assertEqual(recipes._kyiv_date('2026-09-24T22:54:00.000Z'), '25.09.2026')
         self.assertEqual(recipes._kyiv_date('2026-12-24T22:30:00Z'), '25.12.2026')

@@ -163,6 +163,20 @@ def _target_coordinates(value):
     return (parts + ["", ""])[0], (parts + ["", ""])[1]
 
 
+_HEADER_AUTHOR = re.compile(r"^\s*(?:\[[^\]\n]*\]\s*)?([^\n:\[\]]+?)\s*:\s*(?:\n\s*)?(?:Детали полета|Деталі польоту)", re.IGNORECASE)
+
+
+def _header_unit(block):
+    """Units named in the posting header («2 дшб 328 дшп: Детали полета»),
+    used only when the report has no unit field. Only designations with a
+    known unit level count, so a poster's name is never used."""
+    header = _HEADER_AUTHOR.match(block)
+    if not header:
+        return ""
+    parts = [part for part in _designations(header.group(1)) if _level(part) in (1, 2, 3, 4)]
+    return " ".join(_smallest_first(parts))
+
+
 _COMMENT_START = re.compile(r"^\s*(Комментарий|Коментар)\s*:", re.IGNORECASE | re.MULTILINE)
 
 
@@ -176,7 +190,7 @@ def _flight_record(block, source, default_sidc="", posting_date=""):
     coordinates = fields.first("Координаты цели", "Координати цілі", "Координаты", "Координати").split("\n")[0]
     x, y = _target_coordinates(coordinates)
     # Callsigns name the operator, not the unit, so they are never used here.
-    name = unit_name(fields.first("Подразделение", "Підрозділ"))
+    name = unit_name(fields.first("Подразделение", "Підрозділ")) or _header_unit(block)
     supplied = fields.first("SIDC", "APP6D", "APP-6D").replace(" ", "")
     sidc = supplied if len(supplied) == 20 and supplied.isdigit() else default_sidc
     record = Record(
