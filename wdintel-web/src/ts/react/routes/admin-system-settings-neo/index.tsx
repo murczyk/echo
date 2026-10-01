@@ -604,11 +604,13 @@ function MainSettingsSection({
 function DutySettingsSection({
   form,
   patchForm,
+  loading,
   replayStatus,
   replayStatusError,
 }: {
   form: SystemSettingsForm;
   patchForm: PatchSystemSettingsForm;
+  loading: boolean;
   replayStatus: RerDutyTestReplayStatus | null;
   replayStatusError: string | null;
 }) {
@@ -645,6 +647,7 @@ function DutySettingsSection({
         control={
           <Switch
             checked={form.dutyTestEnabled}
+            disabled={loading}
             onChange={(_, checked) => {
               patchForm({ dutyTestEnabled: checked });
             }}
@@ -1191,6 +1194,7 @@ export function AdminSystemSettingsNeoPage() {
                         <DutySettingsSection
                           form={form}
                           patchForm={patchForm}
+                          loading={loadInProgress}
                           replayStatus={replayStatus}
                           replayStatusError={replayStatusError}
                         />
