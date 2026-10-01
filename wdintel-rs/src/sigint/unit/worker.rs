@@ -8,18 +8,24 @@ use crate::config::{
     SIGINT_UNIT_AUTO_ACTIVATION_INTERVAL_SECS,
     SIGINT_UNIT_AUTO_ACTIVATION_LINK_THRESHOLD,
     SIGINT_UNIT_AUTO_ACTIVATION_LOOKBACK_DAYS,
+    SIGINT_UNIT_AUTO_ACTIVATION_SCAN_BATCH_SIZE,
 };
-use crate::entities::sigint_unit;
+use crate::entities::{
+    sea_orm_active_enums::SigintInboxItemUnitKind, sigint_unit,
+};
 use crate::h;
 use crate::types::{error, info, Env, ShortContext};
 use crate::utils::worker_watch;
 use sea_orm::{
-    ConnectionTrait, DbBackend, FromQueryResult, Statement, TransactionTrait,
+    ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, FromQueryResult,
+    Iterable, QueryFilter, QueryOrder, QuerySelect, Statement,
+    TransactionTrait,
 };
 use std::sync::Arc;
 use tokio::time::{Duration, MissedTickBehavior};
 
 pub async fn run_inactive_unit_activation_worker_nofail(env: Arc<Env>) {
+    let mut cursor = None;
     let mut interval = tokio::time::interval(Duration::from_secs(
         SIGINT_UNIT_AUTO_ACTIVATION_INTERVAL_SECS,
     ));
@@ -28,7 +34,7 @@ pub async fn run_inactive_unit_activation_worker_nofail(env: Arc<Env>) {
         interval.tick().await;
         let _loop_guard =
             worker_watch::loop_guard("inactive_unit_activation_worker");
-        match activate_inactive_units_once(&env).await {
+        match activate_inactive_units_once(&env, &mut cursor).await {
             Ok(0) => {}
             Ok(count) => {
                 info!("inactive_unit_activation_worker activated {count} units")
@@ -42,11 +48,14 @@ pub async fn run_inactive_unit_activation_worker_nofail(env: Arc<Env>) {
 
 pub(crate) async fn activate_inactive_units_once(
     env: &Env,
+    cursor: &mut Option<i64>,
 ) -> anyhow::Result<usize> {
     activate_inactive_units_with_policy(
         env,
         SIGINT_UNIT_AUTO_ACTIVATION_LOOKBACK_DAYS,
         SIGINT_UNIT_AUTO_ACTIVATION_LINK_THRESHOLD,
+        SIGINT_UNIT_AUTO_ACTIVATION_SCAN_BATCH_SIZE,
+        cursor,
     )
     .await
     .c(h!())
@@ -56,9 +65,20 @@ async fn activate_inactive_units_with_policy(
     env: &Env,
     lookback_days: i64,
     link_threshold: i64,
+    scan_batch_size: u64,
+    cursor: &mut Option<i64>,
 ) -> anyhow::Result<usize> {
     let transaction = env.dbx.begin().await.c(h!())?;
     if !acquire_worker_lock(&transaction).await.c(h!())? {
+        return Ok(0);
+    }
+    let candidate_ids =
+        load_inactive_unit_ids(&transaction, *cursor, scan_batch_size)
+            .await
+            .c(h!())?;
+    if candidate_ids.is_empty() {
+        transaction.commit().await.c(h!())?;
+        *cursor = None;
         return Ok(0);
     }
     let candidates = load_activation_candidates(
@@ -66,12 +86,22 @@ async fn activate_inactive_units_with_policy(
         lookback_days,
         link_threshold,
         false,
-        None,
+        &candidate_ids,
     )
     .await
     .c(h!())?;
+    let next_cursor = if candidates.len()
+        == SIGINT_UNIT_AUTO_ACTIVATION_BATCH_SIZE as usize
+    {
+        candidates.last().map(|unit| unit.id)
+    } else if candidate_ids.len() == scan_batch_size as usize {
+        candidate_ids.last().copied()
+    } else {
+        None
+    };
     if candidates.is_empty() {
         transaction.commit().await.c(h!())?;
+        *cursor = next_cursor;
         return Ok(0);
     }
     let candidate_ids =
@@ -84,12 +114,13 @@ async fn activate_inactive_units_with_policy(
         lookback_days,
         link_threshold,
         true,
-        Some(&candidate_ids),
+        &candidate_ids,
     )
     .await
     .c(h!())?;
     if units.is_empty() {
         transaction.commit().await.c(h!())?;
+        *cursor = next_cursor;
         return Ok(0);
     }
     let login = crate::users::system_login_id(&transaction).await.c(h!())?;
@@ -97,11 +128,54 @@ async fn activate_inactive_units_with_policy(
         .await
         .c(h!())?;
     transaction.commit().await.c(h!())?;
+    *cursor = next_cursor;
 
     if !activated.is_empty() {
         fanout_unit_changed_data(env).await.c(h!())?;
     }
     Ok(activated.len())
+}
+
+async fn load_inactive_unit_ids<C>(
+    dbx: &C,
+    after_id: Option<i64>,
+    limit: u64,
+) -> anyhow::Result<Vec<i64>>
+where
+    C: ConnectionTrait,
+{
+    let unit_ids = load_inactive_unit_ids_after(dbx, after_id, limit)
+        .await
+        .c(h!())?;
+    if unit_ids.is_empty() && after_id.is_some() {
+        return load_inactive_unit_ids_after(dbx, None, limit).await.c(h!());
+    }
+    Ok(unit_ids)
+}
+
+async fn load_inactive_unit_ids_after<C>(
+    dbx: &C,
+    after_id: Option<i64>,
+    limit: u64,
+) -> anyhow::Result<Vec<i64>>
+where
+    C: ConnectionTrait,
+{
+    let mut query = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Active.eq(false))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .order_by_asc(sigint_unit::Column::Id)
+        .limit(limit);
+    if let Some(after_id) = after_id {
+        query = query.filter(sigint_unit::Column::Id.gt(after_id));
+    }
+    query
+        .select_only()
+        .column(sigint_unit::Column::Id)
+        .into_tuple::<i64>()
+        .all(dbx)
+        .await
+        .c(h!())
 }
 
 async fn acquire_worker_lock<C>(dbx: &C) -> anyhow::Result<bool>
@@ -125,48 +199,44 @@ async fn load_activation_candidates<C>(
     lookback_days: i64,
     link_threshold: i64,
     lock_rows: bool,
-    candidate_ids: Option<&[i64]>,
+    candidate_ids: &[i64],
 ) -> anyhow::Result<Vec<sigint_unit::Model>>
 where
     C: ConnectionTrait,
 {
+    if candidate_ids.is_empty() {
+        return Ok(Vec::new());
+    }
     let lock_clause = if lock_rows { "for update of unit" } else { "" };
-    let mut values = vec![
+    let values = vec![
         lookback_days.into(),
+        activation_link_scan_limit(link_threshold).into(),
         link_threshold.into(),
         SIGINT_UNIT_AUTO_ACTIVATION_BATCH_SIZE.into(),
+        candidate_ids.to_vec().into(),
     ];
-    let candidate_filter = match candidate_ids {
-        Some([]) => return Ok(Vec::new()),
-        Some(candidate_ids) => {
-            values.push(candidate_ids.to_vec().into());
-            "and candidate_unit.id = any($4::bigint[])"
-        }
-        None => "",
-    };
     sigint_unit::Model::find_by_statement(Statement::from_sql_and_values(
         DbBackend::Postgres,
         format!(
             r#"
 select unit.*
-from (
-    select link.unit_id
-    from sigint_inbox_item_unit link
-    inner join sigint_unit candidate_unit
-        on candidate_unit.id = link.unit_id
-        and candidate_unit.active = false
-        and candidate_unit.deleted = false
-    where link.created_at > now() - $1 * interval '1 day'
-      {candidate_filter}
-    group by link.unit_id
-    having count(distinct link.item_id) > $2
-    order by link.unit_id
-    limit $3
-) candidate
-inner join sigint_unit unit on unit.id = candidate.unit_id
-where unit.active = false
+from sigint_unit unit
+where unit.id = any($5::bigint[])
+  and unit.active = false
   and unit.deleted = false
+  and (
+      select count(distinct recent_link.item_id)
+      from (
+          select link.item_id
+          from sigint_inbox_item_unit link
+          where link.unit_id = unit.id
+            and link.created_at > now() - $1 * interval '1 day'
+          order by link.created_at desc, link.item_id
+          limit $2
+      ) recent_link
+  ) > $3
 order by unit.id
+limit $4
 {lock_clause}
                 "#
         ),
@@ -177,13 +247,21 @@ order by unit.id
     .c(h!())
 }
 
+fn activation_link_scan_limit(link_threshold: i64) -> i64 {
+    // The unique (item_id, unit_id, kind) key allows at most one row per kind.
+    let link_kind_count =
+        i64::try_from(SigintInboxItemUnitKind::iter().count())
+            .unwrap_or(i64::MAX);
+    link_threshold
+        .max(0)
+        .saturating_add(1)
+        .saturating_mul(link_kind_count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::{
-        sea_orm_active_enums::SigintInboxItemUnitKind, sigint_inbox_item_unit,
-        sigint_unit_changelog,
-    };
+    use crate::entities::{sigint_inbox_item_unit, sigint_unit_changelog};
     use crate::functest::tests::{
         cleanup, mk_sigint_inbox_item, mk_sigint_unit,
     };
@@ -234,16 +312,6 @@ mod tests {
     #[serial]
     async fn worker_activates_only_units_above_the_recent_link_threshold() {
         let env = cleanup().await.unwrap();
-        let eligible = mk_sigint_unit(
-            &env.dbx,
-            sigint_unit::ActiveModel {
-                active: Set(false),
-                is_deduplicate_candidate: Set(Some(true)),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
         let boundary = mk_sigint_unit(
             &env.dbx,
             sigint_unit::ActiveModel {
@@ -262,6 +330,16 @@ mod tests {
         )
         .await
         .unwrap();
+        let eligible = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                active: Set(false),
+                is_deduplicate_candidate: Set(Some(true)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         let recent = Utc::now().naive_utc() - ChronoDuration::minutes(5);
         insert_links(&env, eligible.id, 3, recent, false).await;
         insert_links(&env, boundary.id, 2, recent, true).await;
@@ -274,12 +352,21 @@ mod tests {
         )
         .await;
 
+        let mut cursor = None;
         assert_eq!(
-            activate_inactive_units_with_policy(&env, 7, 2)
+            activate_inactive_units_with_policy(&env, 7, 2, 2, &mut cursor)
+                .await
+                .unwrap(),
+            0
+        );
+        assert_eq!(cursor, Some(stale.id));
+        assert_eq!(
+            activate_inactive_units_with_policy(&env, 7, 2, 2, &mut cursor)
                 .await
                 .unwrap(),
             1
         );
+        assert_eq!(cursor, None);
 
         let eligible = sigint_unit::Entity::find_by_id(eligible.id)
             .one(&env.dbx)

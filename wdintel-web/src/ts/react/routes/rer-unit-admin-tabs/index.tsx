@@ -100,7 +100,7 @@ function unitInterceptionsRequest(
     onlyWithMetadata: null,
     withoutMetadata: null,
     onlyWithMedia: null,
-    sortBy: 'IMSTimestamp',
+    sortBy: 'IMSCreatedAt',
     reportTagsOnlyThisUnit: null,
     ignoreImportedCoords: null,
     includePelengLocations: null,

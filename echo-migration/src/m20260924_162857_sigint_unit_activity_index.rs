@@ -14,7 +14,7 @@ impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         for sql in [
             "create index concurrently if not exists sigint_inbox_item_unit_unit_created_at_item_idx on sigint_inbox_item_unit (unit_id, created_at desc, item_id);",
-            "create index concurrently if not exists sigint_inbox_item_unit_created_at_unit_item_idx on sigint_inbox_item_unit (created_at desc, unit_id, item_id);",
+            "create index concurrently if not exists sigint_unit_inactive_id_idx on sigint_unit (id) where active = false and deleted = false;",
         ] {
             manager
                 .get_connection()
@@ -29,7 +29,7 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         for sql in [
-            "drop index concurrently if exists sigint_inbox_item_unit_created_at_unit_item_idx;",
+            "drop index concurrently if exists sigint_unit_inactive_id_idx;",
             "drop index concurrently if exists sigint_inbox_item_unit_unit_created_at_item_idx;",
         ] {
             manager

@@ -88,7 +88,11 @@ describe('unit admin tabs', () => {
     expect(container.textContent).toContain('Message 6');
     expect(container.textContent).not.toContain('Message 5');
     expect(mocks.fetchInboxMessages.mock.calls[0][0]).toEqual(
-      expect.objectContaining({ selectedUnitIds: [42], loadLatest: true }),
+      expect.objectContaining({
+        selectedUnitIds: [42],
+        loadLatest: true,
+        sortBy: 'IMSCreatedAt',
+      }),
     );
 
     await act(async () => button(container, 'Завантажити ще')?.click());
