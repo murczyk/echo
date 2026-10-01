@@ -1175,18 +1175,8 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                            )
 
                 downloadLink =
-                    case attachment.kmzConversionStatus of
-                        Just conversionStatus ->
-                            node "kmz-attachment-preview"
-                                [ class "shrink-0"
-                                , attribute "media-id" attachment.id
-                                , attribute "original-href" attachment.href
-                                , attribute "file-name" displayFileName
-                                , attribute "conversion-status" conversionStatus
-                                ]
-                                []
-
-                        Nothing ->
+                    case ( attachment.kmzConversionStatus, attachment.kmlPreviewStatus ) of
+                        ( Nothing, Nothing ) ->
                             a
                                 [ class "btn btn-outline-secondary btn-sm shrink-0"
                                 , href attachment.href
@@ -1196,6 +1186,17 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                                 [ i [ class "bi bi-download me-2" ] []
                                 , text displayFileName
                                 ]
+
+                        ( conversionStatus, previewStatus ) ->
+                            node "kmz-attachment-preview"
+                                [ class "shrink-0"
+                                , attribute "media-id" attachment.id
+                                , attribute "original-href" attachment.href
+                                , attribute "file-name" displayFileName
+                                , attribute "conversion-status" (Maybe.withDefault "" conversionStatus)
+                                , attribute "native-preview-status" (Maybe.withDefault "" previewStatus)
+                                ]
+                                []
             in
             if transcriptionBesidePlayer then
                 div [ class "mb-2 flex w-full items-start gap-2" ] <|

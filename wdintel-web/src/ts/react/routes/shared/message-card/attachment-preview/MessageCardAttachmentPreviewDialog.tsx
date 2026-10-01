@@ -31,10 +31,10 @@ import {
 } from './AttachmentPreviewStageCarouselNav';
 import { useBrowserBackOverlay } from '../../../../hooks/use-browser-back-overlay';
 
-const isDownloadIdle = () => false;
-const allowDownloadStart = () => true;
 const REPORT_VISIBILITY_STORAGE_KEY = 'echo.message-attachment-preview.report-visible';
 const MESSAGE_VISIBILITY_STORAGE_KEY = 'echo.message-attachment-preview.message-visible';
+const isDownloadIdle = () => false;
+const allowDownloadStart = () => true;
 const ATTACHMENT_PREVIEW_HEADER_HEIGHT_PX = 52;
 const ATTACHMENT_PREVIEW_STAGE_NAVIGATION_ZONE_RATIO = 0.25;
 const consumeEvent = (event: KeyboardEvent) => {

@@ -7,6 +7,7 @@ import { installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
 import { installRerDutyShortStateMocks } from './rer-duty-short-state.fixtures';
 
 export type MessageCardMediaPreviewHost = 'analysis' | 'duty';
+export type LegacyKmlPreviewHost = MessageCardMediaPreviewHost;
 
 export const MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES = {
   image1: 'e2e-image-1.png',
@@ -22,6 +23,57 @@ export const MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES = {
   kmz: 'e2e-route.kmz',
   gpx: 'e2e-route.gpx',
 } as const;
+
+const LEGACY_KML_PREVIEW_MEDIA = [
+  {
+    id: 'legacy-kml',
+    content_type: 'application/vnd.google-earth.kml+xml',
+    file_name: 'legacy-route.kml',
+    size_bytes: 256,
+    href: '/test-assets/message-card-media-preview/e2e-route.kml',
+    transcription: null,
+    ocr: null,
+    summary: null,
+    kmz_conversion_status: null,
+    kml_preview_status: 'ready',
+  },
+  {
+    id: 'legacy-kmz',
+    content_type: 'application/vnd.google-earth.kmz',
+    file_name: 'legacy-route.kmz',
+    size_bytes: 256,
+    href: '/test-assets/message-card-media-preview/e2e-route.kmz',
+    transcription: null,
+    ocr: null,
+    summary: null,
+    kmz_conversion_status: null,
+    kml_preview_status: 'ready',
+  },
+  {
+    id: 'legacy-kml-limit',
+    content_type: 'application/vnd.google-earth.kml+xml',
+    file_name: 'legacy-oversized.kml',
+    size_bytes: 26 * 1024 * 1024,
+    href: '/test-assets/message-card-media-preview/e2e-route.kml',
+    transcription: null,
+    ocr: null,
+    summary: null,
+    kmz_conversion_status: null,
+    kml_preview_status: 'limit_exceeded',
+  },
+  {
+    id: 'legacy-gpx',
+    content_type: 'application/gpx+xml',
+    file_name: 'legacy-route.gpx',
+    size_bytes: 256,
+    href: '/test-assets/message-card-media-preview/e2e-route.gpx',
+    transcription: null,
+    ocr: null,
+    summary: null,
+    kmz_conversion_status: 'pending',
+    kml_preview_status: null,
+  },
+];
 
 const MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX = '/test-assets/message-card-media-preview';
 
@@ -361,6 +413,69 @@ export function buildMessageCardMediaPreviewInboxResponse({
     freq_pelengs_summary: null,
     page_limit: 20,
   };
+}
+
+function buildLegacyKmlPreviewInboxResponse(): InboxMessagesRspRaw {
+  return {
+    inbox_items: [
+      [
+        102,
+        {
+          message_uuid: null,
+          message_uid: 'legacy-kml-preview-message',
+          text: 'Legacy KML preview fixture',
+          media: LEGACY_KML_PREVIEW_MEDIA,
+          images: [],
+          image_recognized: [],
+          date: null,
+          time: null,
+          is_time_null: null,
+          freq: null,
+          coords: null,
+          coords_with_locality: [],
+          callsigns: [],
+          callsigns_alg2: [],
+          checked: false,
+          important: false,
+          bookmarked: false,
+          timestamp: 1_720_000_000_000,
+          created_at: null,
+          created_at_order: null,
+          has_date_in_header: false,
+          group_master_key: null,
+          sender: null,
+          extended_form: null,
+          message_comments: [],
+          post: null,
+          post_id: null,
+          unit: null,
+          unit_ids: [],
+          callsign_tokens: null,
+          signal_tokens: null,
+          point_tokens: null,
+          no_headers_body: null,
+          keyword_tokens: null,
+          text_marked: null,
+          datasource_id: null,
+          location: null,
+          tags: null,
+          network_ids: null,
+          network_name: null,
+          device_name: null,
+          inbox_tags: null,
+          metadata: [],
+          parent_messages: [],
+          intelligence_reports: [],
+        },
+      ],
+    ],
+    poll_cursor_id: null,
+    callsigns: [],
+    signal_profiles: {},
+    signal_groups: [],
+    freq_pelengs_summary: null,
+    page_limit: 20,
+  } as InboxMessagesRspRaw;
 }
 
 async function fulfillAsset(route: Route, body: BodyInit, contentType: string): Promise<void> {
@@ -704,4 +819,49 @@ export async function openMessageCardPreviewHost(
     });
     if ((await coordinates.getAttribute('aria-expanded')) !== 'true') await coordinates.click();
   }
+}
+
+export async function openLegacyKmlPreviewHost(
+  page: Page,
+  host: LegacyKmlPreviewHost,
+): Promise<void> {
+  await installMessageCardMediaPreviewAssetRoutes(page);
+  const inboxResponse = buildLegacyKmlPreviewInboxResponse();
+  if (host === 'analysis') {
+    await installAnalysisNeoApiMocks(page, { inboxResponse });
+  } else {
+    await installRerDutyShortStateMocks(page, { inboxResponse });
+  }
+
+  const preview = {
+    points: [
+      {
+        coords: { lat: 50.45, lng: 30.52 },
+        label: 'Legacy KML point',
+        color: '#1976d2',
+        opacity: 1,
+      },
+    ],
+    line_strings: [],
+    polygons: [],
+  };
+  for (const mediaId of ['legacy-kml', 'legacy-kmz']) {
+    await page.route(`**/api/messenger/media/${mediaId}/kml-preview`, (route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify(preview) }),
+    );
+  }
+  await page.route('**/api/messenger/media/legacy-gpx/kmz-conversion/status', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'done',
+        error: null,
+        converted_file_name: 'legacy-route_converted.kmz',
+      }),
+    }),
+  );
+  await page.route('**/api/messenger/media/legacy-gpx/kmz-conversion/preview', (route) =>
+    route.fulfill({ contentType: 'application/json', body: JSON.stringify(preview) }),
+  );
+  await page.goto(host === 'analysis' ? '/rer-analysis' : '/rer-duty');
 }

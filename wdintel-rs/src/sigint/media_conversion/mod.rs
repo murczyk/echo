@@ -114,7 +114,7 @@ where
         .map(|job| (job.source_media_id, job.status))
         .collect::<HashMap<_, _>>();
     for media in media {
-        if is_eligible_source(media) {
+        if is_eligible_source(media) && !is_native_source(media) {
             statuses.entry(media.id).or_insert_with(|| {
                 SIGINT_MEDIA_CONVERSION_STATUS_PENDING.to_string()
             });
@@ -921,6 +921,23 @@ mod tests {
         .insert(&env.dbx)
         .await
         .unwrap();
+        let native_media = signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
+            content_type: Set(
+                "application/vnd.google-earth.kml+xml".to_string()
+            ),
+            file_ext: Set(Some("kml".to_string())),
+            file_name: Set(Some("route.kml".to_string())),
+            size_bytes: Set(12),
+            created_at: Set(chrono::Utc::now().naive_utc()),
+            is_encrypted: Set(true),
+            storage_key: Set(Some("test/route.kml".to_string())),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
         let oversized_size =
             i64::try_from(SIGINT_MEDIA_KMZ_CONVERSION_MAX_SOURCE_BYTES)
                 .unwrap()
@@ -940,10 +957,13 @@ mod tests {
         .insert(&env.dbx)
         .await
         .unwrap();
-        let ignored_media_id = ignored_media.id;
+        let native_media_id = native_media.id;
         let oversized_media_id = oversized_media.id;
-        let media =
-            vec![supported_media.clone(), ignored_media, oversized_media];
+        let media = vec![
+            supported_media.clone(),
+            ignored_media,
+            oversized_media.clone(),
+        ];
         let uploads = vec![
             MediaUploadInput {
                 path: supported_path.to_string_lossy().into_owned(),
@@ -966,12 +986,21 @@ mod tests {
             },
         ];
 
-        let statuses = load_statuses(&env.dbx, &media).await.unwrap();
+        let statuses = load_statuses(
+            &env.dbx,
+            &[
+                supported_media.clone(),
+                native_media,
+                oversized_media.clone(),
+            ],
+        )
+        .await
+        .unwrap();
         assert_eq!(
             statuses.get(&supported_media.id).map(String::as_str),
             Some(SIGINT_MEDIA_CONVERSION_STATUS_PENDING)
         );
-        assert!(!statuses.contains_key(&ignored_media_id));
+        assert!(!statuses.contains_key(&native_media_id));
         assert!(!statuses.contains_key(&oversized_media_id));
 
         schedule_uploaded_media(&env.dbx, message.id, &media, &uploads)
@@ -987,6 +1016,12 @@ mod tests {
         assert_eq!(job.signal_message_id, message.id);
         assert_eq!(job.source_media_id, supported_media.id);
         assert_eq!(job.source_file_name, "route.gpx");
+        let statuses =
+            load_statuses(&env.dbx, &[supported_media]).await.unwrap();
+        assert_eq!(
+            statuses.get(&job.source_media_id).map(String::as_str),
+            Some(SIGINT_MEDIA_CONVERSION_STATUS_PENDING)
+        );
         assert_eq!(
             job.source_file_md5,
             format!("{:x}", Md5::digest(supported_bytes))

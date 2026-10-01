@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import {
   createDeferredMediaResponse,
   MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES,
+  openLegacyKmlPreviewHost,
   openMessageCardPreviewHost,
 } from './message-card-media-preview.fixtures';
 
@@ -210,6 +211,80 @@ test.describe('@smoke @regression', () => {
       await expect(xlsDialog.getByText('Змішані текст')).toBeVisible();
       await expect(xlsDialog.getByRole('link', { name: 'Скачати' })).toBeVisible();
       await xlsDialog.getByRole('button', { name: 'Закрити' }).click();
+    });
+  }
+
+  for (const host of ['duty', 'analysis'] as const) {
+    test(`${host} legacy Elm route previews native KML/KMZ and preserves downloads`, async ({
+      page,
+    }) => {
+      const requests: string[] = [];
+      let downloads = 0;
+      page.on('request', (request) => requests.push(request.url()));
+      page.on('download', () => {
+        downloads += 1;
+      });
+      await openLegacyKmlPreviewHost(page, host);
+
+      for (const [fileName, mediaId, label] of [
+        ['legacy-route.kml', 'legacy-kml', 'Попередній перегляд KML'],
+        ['legacy-route.kmz', 'legacy-kmz', 'Попередній перегляд KMZ'],
+      ] as const) {
+        const beforeRequests = requests.length;
+        await page.getByRole('button', { name: fileName }).click();
+        const dialog = page.getByRole('dialog', { name: label });
+        await expect(dialog).toBeVisible();
+        await expect(dialog.locator('[data-kmz-preview-map="true"]')).toBeVisible();
+        await expect
+          .poll(() => requests.slice(beforeRequests))
+          .toContainEqual(expect.stringContaining(`/api/messenger/media/${mediaId}/kml-preview`));
+        expect(requests.slice(beforeRequests)).not.toContainEqual(
+          expect.stringContaining('/kmz-conversion/status'),
+        );
+        const originalDownload = dialog.getByRole('link', { name: 'Скачати' });
+        const downloadsBefore = downloads;
+        await originalDownload.click({ noWaitAfter: true });
+        await originalDownload.click({ force: true, noWaitAfter: true });
+        await expect.poll(() => downloads).toBe(downloadsBefore + 1);
+        await dialog.getByRole('button', { name: 'Закрити' }).click();
+      }
+
+      const beforeLimitRequests = requests.length;
+      await page.getByRole('button', { name: 'legacy-oversized.kml' }).click();
+      await expect(
+        page.getByText(
+          'Перевищено ліміт попереднього перегляду 25 МіБ. Оригінал можна завантажити.',
+        ),
+      ).toBeVisible();
+      expect(requests.slice(beforeLimitRequests)).not.toContainEqual(
+        expect.stringContaining('/kml-preview'),
+      );
+      expect(requests.slice(beforeLimitRequests)).not.toContainEqual(
+        expect.stringContaining('/kmz-conversion/status'),
+      );
+      const limitDialog = page.getByRole('dialog');
+      const limitDownload = limitDialog.getByRole('link', { name: 'Скачати' });
+      const limitDownloadsBefore = downloads;
+      await limitDownload.click({ noWaitAfter: true });
+      await limitDownload.click({ force: true, noWaitAfter: true });
+      await expect.poll(() => downloads).toBe(limitDownloadsBefore + 1);
+      await limitDialog.getByRole('button', { name: 'Закрити' }).click();
+
+      const beforeConvertedRequests = requests.length;
+      await page.getByRole('button', { name: 'legacy-route.gpx' }).click();
+      const convertedDialog = page.getByRole('dialog', { name: 'Попередній перегляд KMZ' });
+      await expect(convertedDialog).toBeVisible();
+      await expect(convertedDialog.locator('[data-kmz-preview-map="true"]')).toBeVisible();
+      await expect
+        .poll(() => requests.slice(beforeConvertedRequests))
+        .toContainEqual(
+          expect.stringContaining('/api/messenger/media/legacy-gpx/kmz-conversion/status'),
+        );
+      const convertedDownload = convertedDialog.getByRole('link', { name: 'Скачати' });
+      const convertedDownloadsBefore = downloads;
+      await convertedDownload.click({ noWaitAfter: true });
+      await convertedDownload.click({ force: true, noWaitAfter: true });
+      await expect.poll(() => downloads).toBe(convertedDownloadsBefore + 1);
     });
   }
 
