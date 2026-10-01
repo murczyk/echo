@@ -350,6 +350,8 @@ pub struct UpdateUnitReq {
     pub orbit_note: Option<Option<String>>,
     #[serde(default, deserialize_with = "deserialize_optional_update")]
     pub present_in_orbit: Option<Option<bool>>,
+    #[serde(default, deserialize_with = "deserialize_optional_update")]
+    pub is_deduplicate_candidate: Option<Option<bool>>,
 }
 
 impl From<Unit> for UpdateUnitReq {
@@ -375,8 +377,66 @@ impl From<Unit> for UpdateUnitReq {
             comment: unit.comment,
             orbit_note: Some(unit.orbit_note),
             present_in_orbit: Some(unit.present_in_orbit),
+            is_deduplicate_candidate: Some(unit.is_deduplicate_candidate),
         }
     }
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub enum UnitActivityPeriod {
+    Day,
+    Week,
+    Month,
+    ThreeMonths,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UnitActivityReq {
+    pub unit_id: i64,
+    pub period: UnitActivityPeriod,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UnitActivityBucket {
+    pub started_at: i64,
+    pub interception_count: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UnitActivityRsp {
+    pub buckets: Vec<UnitActivityBucket>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct CleanupOrbitOtherUnitsReq {
+    #[serde(default)]
+    pub ignore_active: bool,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct CleanupOrbitOtherUnitRoadblock {
+    pub id: i64,
+    pub name: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct CleanupOrbitOtherUnitsRsp {
+    pub deleted_count: i64,
+    pub active_units: Vec<CleanupOrbitOtherUnitRoadblock>,
 }
 
 #[derive(
@@ -545,9 +605,9 @@ pub struct OrbitParentUnit {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct OrbitChildUnit {
-    pub sigint_unit_id: i64,
+    pub sigint_unit_id: Option<i64>,
     pub name: String,
-    pub active: bool,
+    pub active: Option<bool>,
     pub orbit_unit_ids: Vec<String>,
     pub is_generative: bool,
     pub is_operational: bool,

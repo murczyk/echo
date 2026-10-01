@@ -104,19 +104,29 @@ where
     if lock {
         units = units.lock_exclusive();
     }
+    let units = units.all(db).await.c(h!())?;
+    let unit_ids = units.iter().map(|unit| unit.id).collect::<Vec<_>>();
+    let airborne_unit_ids =
+        crate::sigint::unit::orbit::airborne_sigint_unit_ids(db, &unit_ids)
+            .await
+            .c(h!())?;
     Ok(units
-        .all(db)
-        .await
-        .c(h!())?
         .into_iter()
-        .filter_map(proposed_name_change)
+        .filter_map(|unit| {
+            let is_airborne = airborne_unit_ids.contains(&unit.id);
+            proposed_name_change(unit, is_airborne)
+        })
         .collect())
 }
 
 fn proposed_name_change(
     unit: sigint_unit::Model,
+    is_airborne: bool,
 ) -> Option<GeneratedNameChange> {
-    let generated_name = crate::sigint::unit::generated_unit_name(&unit);
+    let generated_name = crate::sigint::unit::generated_unit_name_with_airborne(
+        &unit,
+        is_airborne,
+    );
     if generated_name.is_empty() || unit.name == generated_name {
         return None;
     }
@@ -252,7 +262,10 @@ async fn persist_change_batch(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::sigint_unit_changelog;
+    use crate::entities::{
+        orbit_combat_unit_type, orbit_unit, orbit_unit_sigint_unit,
+        sigint_unit_changelog,
+    };
     use chrono::Utc;
     use sea_orm::{ActiveModelTrait, ActiveValue::Set, IntoActiveModel};
     use serial_test::serial;
@@ -268,7 +281,7 @@ mod tests {
         unit.military_district = "Західний ВО".to_string();
         unit.army_region = "ЗС РФ".to_string();
 
-        let change = proposed_name_change(unit).unwrap();
+        let change = proposed_name_change(unit, false).unwrap();
 
         assert_eq!(change.generated_name, "2 р 1 мсб 10 омсбр 20 ЗВА");
     }
@@ -279,7 +292,7 @@ mod tests {
         unit.other = "1 р".to_string();
         unit.company = "1 р".to_string();
 
-        let change = proposed_name_change(unit).unwrap();
+        let change = proposed_name_change(unit, false).unwrap();
 
         assert_eq!(change.generated_name, "1 р");
     }
@@ -290,7 +303,7 @@ mod tests {
         unit.other = "1".to_string();
         unit.company = "1 р".to_string();
 
-        let change = proposed_name_change(unit).unwrap();
+        let change = proposed_name_change(unit, false).unwrap();
 
         assert_eq!(change.generated_name, "1 р");
     }
@@ -303,21 +316,78 @@ mod tests {
         unit.division = "УВ \"Бєлгород\"".to_string();
         unit.army = "УВ \"Север\"".to_string();
 
-        let change = proposed_name_change(unit).unwrap();
+        let change = proposed_name_change(unit, false).unwrap();
 
         assert_eq!(change.generated_name, "1 мсб");
     }
 
     #[test]
     fn skips_empty_generated_names() {
-        assert!(proposed_name_change(sigint_unit("current name")).is_none());
-        assert!(proposed_name_change(sigint_unit("")).is_none());
+        assert!(
+            proposed_name_change(sigint_unit("current name"), false).is_none()
+        );
+        assert!(proposed_name_change(sigint_unit(""), false).is_none());
         let mut high_echelon_unit = sigint_unit("Західний ВО ЗС РФ");
         high_echelon_unit.corps = "11 АК".to_string();
         high_echelon_unit.army = "20 ЗВА".to_string();
         high_echelon_unit.military_district = "Західний ВО".to_string();
         high_echelon_unit.army_region = "ЗС РФ".to_string();
-        assert!(proposed_name_change(high_echelon_unit).is_none());
+        assert!(proposed_name_change(high_echelon_unit, false).is_none());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn generated_names_append_airborne_suffix_for_orbit_links() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                battalion: Set("2 бат".to_string()),
+                name: Set("Custom name".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let combat_unit_type = orbit_combat_unit_type::Entity::find()
+            .filter(orbit_combat_unit_type::Column::Key.eq(
+                crate::config::SIGINT_UNIT_NAME_AIRBORNE_COMBAT_UNIT_TYPE_KEY,
+            ))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let orbit_unit_id = uuid::Uuid::new_v4();
+        orbit_unit::ActiveModel {
+            unit_id: Set(orbit_unit_id),
+            combat_unit_type_id: Set(Some(combat_unit_type.id)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        orbit_unit_sigint_unit::ActiveModel {
+            orbit_unit_id: Set(orbit_unit_id),
+            sigint_unit_id: Set(unit.id),
+            is_manual: Set(true),
+            is_suppressed: Set(false),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let change = load_name_changes(
+            &env.dbx,
+            Some(&[unit.id]),
+            false,
+            tui::UnitActivityScope::Both,
+        )
+        .await
+        .unwrap()
+        .pop()
+        .unwrap();
+
+        assert_eq!(change.generated_name, "2 бат ПДВ");
     }
 
     #[tokio::test]

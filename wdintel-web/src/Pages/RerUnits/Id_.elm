@@ -55,6 +55,8 @@ type Tab
     | Management
     | ChildUnits
     | Changelog
+    | Interceptions
+    | Activity
 
 
 type UnitEditSection
@@ -87,7 +89,7 @@ type alias Model =
 
 
 init : Auth.User -> Route { id : String } -> () -> ( Model, Effect Msg )
-init _ route _ =
+init user route _ =
     let
         unitId =
             route.params.id
@@ -107,18 +109,24 @@ init _ route _ =
       , detailsLoading = unitId /= Nothing
       , detailsLoadFailed = False
       , activeTab =
-            case Dict.get "tab" route.query of
-                Just "files" ->
+            case ( Core.Auth.hasRole "Admin" user, Dict.get "tab" route.query ) of
+                ( _, Just "files" ) ->
                     Files
 
-                Just "networks" ->
+                ( _, Just "networks" ) ->
                     Networks
 
-                Just "management" ->
+                ( True, Just "management" ) ->
                     Management
 
-                Just "changelog" ->
+                ( True, Just "changelog" ) ->
                     Changelog
+
+                ( True, Just "interceptions" ) ->
+                    Interceptions
+
+                ( True, Just "activity" ) ->
+                    Activity
 
                 _ ->
                     Overview
@@ -313,9 +321,6 @@ updateDetails result model =
                 , changelogLoading = model.activeTab == Changelog && model.changelog == Nothing
                 , activeTab =
                     if model.activeTab == ChildUnits && List.isEmpty details.orbitUnits then
-                        Overview
-
-                    else if model.activeTab == Management && not details.canEditUnitLabels && List.isEmpty details.labels then
                         Overview
 
                     else
@@ -833,7 +838,7 @@ detailsView user shared model details =
         , orbitLinkDialog model details.unit
         , tabsView model.activeTab
             (not (List.isEmpty details.orbitUnits))
-            (details.canEditUnitLabels || not (List.isEmpty details.labels))
+            (Core.Auth.hasRole "Admin" user)
         , case model.activeTab of
             Overview ->
                 overviewTab user shared model details
@@ -852,6 +857,12 @@ detailsView user shared model details =
 
             Changelog ->
                 changelogTab shared model
+
+            Interceptions ->
+                unitAdminTab details.unit.id "interceptions"
+
+            Activity ->
+                unitAdminTab details.unit.id "activity"
         ]
 
 
@@ -1071,7 +1082,7 @@ defaultUnitMasks unit =
 
 
 tabsView : Tab -> Bool -> Bool -> Html Msg
-tabsView activeTab hasOrbitUnit showManagement =
+tabsView activeTab hasOrbitUnit isAdmin =
     let
         tabButton tab label =
             button
@@ -1092,6 +1103,28 @@ tabsView activeTab hasOrbitUnit showManagement =
                 , onClick (ChangeTab tab)
                 ]
                 [ text label ]
+
+        adminTabButton tab label =
+            button
+                [ class "px-4 py-2 text-sm font-medium border-b-2 bg-transparent flex-shrink-0 whitespace-nowrap"
+                , classList
+                    [ ( "border-primary text-primary", activeTab == tab )
+                    , ( "border-transparent text-secondary", activeTab /= tab )
+                    ]
+                , type_ "button"
+                , attribute "role" "tab"
+                , attribute "aria-selected"
+                    (if activeTab == tab then
+                        "true"
+
+                     else
+                        "false"
+                    )
+                , onClick (ChangeTab tab)
+                ]
+                [ i [ class "bi bi-shield-lock me-2" ] []
+                , text label
+                ]
     in
     nav
         [ class "d-flex border-bottom overflow-x-auto"
@@ -1105,12 +1138,40 @@ tabsView activeTab hasOrbitUnit showManagement =
 
           else
             text ""
-        , tabButton Changelog "Журнал змін"
-        , if showManagement then
-            tabButton Management "Керування"
+        , if isAdmin then
+            adminTabButton Management "Керування"
 
           else
             text ""
+        , if isAdmin then
+            adminTabButton Changelog "Журнал змін"
+
+          else
+            text ""
+        , if isAdmin then
+            adminTabButton Interceptions "Перехоплення"
+
+          else
+            text ""
+        , if isAdmin then
+            adminTabButton Activity "Активність"
+
+          else
+            text ""
+        ]
+
+
+unitAdminTab : Int -> String -> Html Msg
+unitAdminTab unitId tab =
+    div
+        [ attribute "role" "tabpanel"
+        , class "border rounded p-4 bg-card"
+        ]
+        [ node "unit-admin-tab"
+            [ attribute "data-unit-id" (String.fromInt unitId)
+            , attribute "data-tab" tab
+            ]
+            []
         ]
 
 
@@ -1374,11 +1435,17 @@ childUnitRow unit =
     tr []
         [ td []
             [ div [ class "d-flex align-items-center gap-2" ]
-                ([ childUnitStatus unit.active
-                 , a
-                    [ href ("/rer-units/" ++ String.fromInt unit.sigintUnitId) ]
-                    [ text unit.name ]
-                 ]
+                ((case ( unit.active, unit.sigintUnitId ) of
+                    ( Just active, Just sigintUnitId ) ->
+                        [ childUnitStatus active
+                        , a
+                            [ href ("/rer-units/" ++ String.fromInt sigintUnitId) ]
+                            [ text unit.name ]
+                        ]
+
+                    _ ->
+                        [ text unit.name ]
+                 )
                     ++ List.map (childUnitOrbitLink unit.name) unit.orbitUnitIds
                 )
             ]
